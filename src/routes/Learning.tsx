@@ -91,7 +91,7 @@ function PastAttempts() {
         />
       </div>
       <div className="hidden overflow-hidden rounded-card border border-line md:block">
-        <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center gap-3 bg-surface-hover-bg px-4 py-3 font-bold text-fg-muted text-xs uppercase tracking-wide">
+        <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
           <div>{m.quiz_col_quiz()}</div>
           <div>{m.quiz_col_workspace()}</div>
           <div>{m.quiz_col_score()}</div>
@@ -100,16 +100,16 @@ function PastAttempts() {
         </div>
         {data.map((a: Attempt) => (
           <div
-            className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center gap-3 border-divider border-t py-2 pr-2 pl-4"
+            className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center border-divider border-t pr-2 pl-4 text-sm"
             key={a.id}
           >
-            <div className="truncate font-semibold text-fg">{a.quizName}</div>
-            <div className="truncate text-fg-secondary text-sm">
-              {a.workspaceName}
+            <div className="truncate py-3 pr-4">{a.quizName}</div>
+            <div className="truncate py-3 pr-4">{a.workspaceName}</div>
+            <div className="whitespace-nowrap py-3 pr-4">{score(a)}</div>
+            <div className="whitespace-nowrap py-3 pr-4 text-fg-muted">
+              {date(a)}
             </div>
-            <div>{score(a)}</div>
-            <div className="text-fg-muted text-sm">{date(a)}</div>
-            {menu(a)}
+            <div className="-my-2 flex justify-end">{menu(a)}</div>
           </div>
         ))}
       </div>

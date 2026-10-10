@@ -145,7 +145,7 @@ export function PastReviews() {
             />
           </div>
           <div className="hidden overflow-hidden rounded-card border border-line xl:block">
-            <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] gap-3 bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide">
+            <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
               <div>{m.quiz_col_date()}</div>
               <div>{m.quiz_col_workspace()}</div>
               <div>{m.past_col_chapter()}</div>
@@ -194,23 +194,25 @@ function Row({
     r.answered < r.total &&
     m.past_stopped({ answered: r.answered, total: r.total });
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] items-center gap-3 border-divider border-t py-2.5 pr-2 pl-4">
-      <p className="t-meta text-fg-secondary">{formatDate(r.startedAt)}</p>
-      <WorkspaceCell review={r} />
-      <p className="t-meta truncate text-fg-secondary">
-        {groupName(r.group, r.chapterName)}
+    <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] items-center border-divider border-t pr-2 pl-4 text-sm">
+      <p className="whitespace-nowrap py-3 pr-4 text-fg-muted">
+        {formatDate(r.startedAt)}
       </p>
-      <p>
+      <div className="py-3 pr-4">
+        <WorkspaceCell review={r} />
+      </div>
+      <p className="truncate py-3 pr-4">{groupName(r.group, r.chapterName)}</p>
+      <p className="whitespace-nowrap py-3 pr-4">
         <ScoreText score={r.quiz} />
       </p>
-      <p>
+      <p className="whitespace-nowrap py-3 pr-4">
         <ScoreText score={r.cards} />
       </p>
-      <p className="t-meta text-fg-muted">
+      <p className="whitespace-nowrap py-3 pr-4 text-fg-muted">
         {m.past_minutes({ count: minutes })}
       </p>
-      <div className="min-w-0">
-        <p className="t-meta text-fg-secondary">
+      <div className="min-w-0 whitespace-nowrap py-3 pr-4">
+        <p>
           {stopped ? m.past_status_incomplete() : m.past_status_completed()}
         </p>
         {stopped && <p className="truncate text-fg-muted text-xs">{stopped}</p>}
