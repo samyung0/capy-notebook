@@ -1384,8 +1384,14 @@ the page. Inline formulas stay capped at their line's width. A shared note's
 server markup scrolls in the static equation block's own `overflow-auto` box.
 Both boxes carry `scroll-fade-x` (as Tabs do): while more of the formula is
 hidden at an edge, that edge fades over 28px, driven by the box's own scroll
-timeline with no script; a formula that fits never fades. The note editor's
-equation wrapper has no mask, which would break its formula menu.
+timeline with no script. The utility's mask exists only while that timeline
+is active (its keyframes turn `--scroll-fade-on` to 1, read by an `if()` on
+`mask-image`), so a formula that fits has no mask at all and its text keeps
+subpixel antialiasing; this holds for every `scroll-fade-x` user, and
+HoverActions holds the mask on with `--scroll-fade-on: 1` for its fixed edge.
+A box that grows to fit while scrolled keeps its last fade until it scrolls
+again (Chromium and WebKit). The note editor's equation wrapper has no mask,
+which would break its formula menu.
 
 Block formula previews and MathLive share 16px vertical padding and the same
 math font size. Opening an existing block reserves its preview height while

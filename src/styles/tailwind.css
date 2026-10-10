@@ -152,8 +152,17 @@
 }
 
 /* Horizontal scroll fade driven by the element's own scroll position, no JS.
-   Nothing fades until the content overflows; browsers without scroll-driven
-   animations keep the mask at its 0px edges, so nothing fades there either. */
+   The mask exists only while the scroll timeline is active, which turns
+   --scroll-fade-on to 1: a box that does not overflow, or a browser without
+   scroll-driven animations, has no mask, so its text keeps subpixel
+   antialiasing. A browser without if() keeps the plain mask, whose 0px edges
+   fade nothing until the content overflows. Keyframes cannot set the mask
+   themselves: var() in a keyframe resolves once, so the edges would freeze. */
+@property --scroll-fade-on {
+  syntax: "<integer>";
+  inherits: false;
+  initial-value: 0;
+}
 @property --scroll-fade-start {
   syntax: "<length>";
   inherits: false;
@@ -166,10 +175,12 @@
 }
 @keyframes scroll-fade-x {
   from {
+    --scroll-fade-on: 1;
     --scroll-fade-start: 0px;
     --scroll-fade-end: 28px;
   }
   to {
+    --scroll-fade-on: 1;
     --scroll-fade-start: 28px;
     --scroll-fade-end: 0px;
   }
@@ -181,6 +192,17 @@
     #000 var(--scroll-fade-start),
     #000 calc(100% - var(--scroll-fade-end)),
     transparent
+  );
+  mask-image: if(
+    style(--scroll-fade-on: 1):
+      linear-gradient(
+        to right,
+        transparent,
+        #000 var(--scroll-fade-start),
+        #000 calc(100% - var(--scroll-fade-end)),
+        transparent
+      );
+    else: none
   );
   @supports (animation-timeline: scroll()) {
     /* Longhands on purpose: the build minifier expands the shorthand with

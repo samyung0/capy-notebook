@@ -145,7 +145,7 @@ test('question formula accepts physical digits and retains them after commit', a
   await expect(formula).toHaveJSProperty('value', '5');
 });
 
-test('a wide display formula scrolls in its own box with an edge fade and the page does not', async ({
+test('a wide display formula scrolls in its own box with an edge fade, a fitting one has no mask, and the page does not scroll', async ({
   page,
 }) => {
   await page.setViewportSize({ height: 844, width: 390 });
@@ -178,6 +178,7 @@ test('a wide display formula scrolls in its own box with an edge fade and the pa
         client: box?.clientWidth ?? 0,
         fade: `${style?.getPropertyValue('--scroll-fade-start')} ${style?.getPropertyValue('--scroll-fade-end')}`,
         left: box?.scrollLeft ?? 0,
+        mask: style?.maskImage,
         outer,
         pageOverflow: page.scrollWidth - page.clientWidth + window.scrollX,
         scroll: box?.scrollWidth ?? 0,
@@ -199,4 +200,16 @@ test('a wide display formula scrolls in its own box with an edge fade and the pa
   expect(after.pageOverflow).toBe(0);
   // Scrolled to the end, the end fade is gone and the hidden start fades.
   await expect.poll(async () => (await measure(true)).fade).toBe('28px 0px');
+  // Opened on a wide screen the same formula fits: no fade and no mask at
+  // all, so its text keeps subpixel antialiasing. (Reloaded: a box that grows
+  // to fit while scrolled keeps its last fade until it scrolls again.)
+  await page.setViewportSize({ height: 844, width: 1440 });
+  await page.reload();
+  await expect(formula.locator('.ML__base')).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(async () => {
+      const { client, fade, mask, scroll } = await measure();
+      return { fade, fits: scroll <= client, mask };
+    })
+    .toEqual({ fade: '0px 0px', fits: true, mask: 'none' });
 });
