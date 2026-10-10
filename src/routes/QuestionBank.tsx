@@ -178,12 +178,7 @@ export default function QuestionBank() {
   const [conflict, setConflict] = useState(false);
   const [commentFor, setCommentFor] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
-  const {
-    data: syllabus,
-    error: syllabusError,
-    isPending: syllabusPending,
-    fetchStatus,
-  } = useQuery({ ...bankSyllabusQuery(), meta: { errorBoundary: false } });
+  const { data: syllabus, fetchStatus } = useQuery(bankSyllabusQuery());
   const mode = syllabus?.editor && search.mode === 'edit' ? 'edit' : 'view';
   // Learners' results lead the list rows in view mode only.
   const { data: results, error: resultsError } = useQuery({
@@ -192,20 +187,14 @@ export default function QuestionBank() {
     meta: { errorBoundary: false },
   });
   const marks = mode === 'view' && !resultsError ? results?.marks : undefined;
-  const {
-    data: topicSummary,
-    error: summaryError,
-    isPending: summaryPending,
-  } = useQuery({
+  const { data: topicSummary } = useQuery({
     ...bankSummaryQuery(topicId),
     enabled: summary,
-    meta: { errorBoundary: false },
   });
   // The summary's finished date and next topic come from the landing's list.
   const { data: progress } = useQuery({
     ...bankProgressQuery(),
     enabled: summary,
-    meta: { errorBoundary: false },
   });
   const searchText = useDebounced(filter);
   // The server filters with the learner's results at request time; loaded
@@ -230,7 +219,6 @@ export default function QuestionBank() {
     fetchPreviousPage,
   } = useInfiniteQuery({
     ...bankListQuery(topicId, listFilters, anchor),
-    meta: { errorBoundary: false },
     // The side list stays while a new filter loads.
     placeholderData: keepPreviousData,
   });
@@ -530,28 +518,17 @@ export default function QuestionBank() {
           unreviewed={unreviewed}
         />
       )
-    ) : syllabusPending ? (
+    ) : (
       <SkeletonList count={8} rowHeight={28} />
-    ) : null;
+    );
 
   let body: ReactNode;
   if (fetchStatus === 'paused') body = <QueryPausedState />;
-  else if (syllabusPending)
+  else if (!syllabus)
     body = (
       <div aria-label={m.a11y_loading()} role="status">
         <Skeleton className="h-64 w-full" />
       </div>
-    );
-  else if (syllabusError)
-    body = (
-      <BankError
-        error={syllabusError}
-        onRetry={() =>
-          void client.invalidateQueries({
-            queryKey: bankSyllabusQuery().queryKey,
-          })
-        }
-      />
     );
   else if (!topicId)
     body = (
@@ -562,19 +539,7 @@ export default function QuestionBank() {
       />
     );
   else if (summary) {
-    if (summaryError)
-      body = (
-        <BankError
-          error={summaryError}
-          onRetry={() =>
-            void client.invalidateQueries({
-              queryKey: bankSummaryQuery(topicId).queryKey,
-            })
-          }
-        />
-      );
-    else if (summaryPending) body = <Skeleton className="h-64 w-full" />;
-    else
+    if (topicSummary)
       body = (
         <TopicSummary
           next={nextTopic}
@@ -597,16 +562,8 @@ export default function QuestionBank() {
           topicLabel={place?.item.label ?? ''}
         />
       );
-  } else if (listError)
-    body = (
-      <BankError
-        error={listError}
-        onRetry={() =>
-          void client.invalidateQueries({ queryKey: bankTopicKey(topicId) })
-        }
-      />
-    );
-  else if (listPending || listStale)
+    else body = <Skeleton className="h-64 w-full" />;
+  } else if (listPending || listStale)
     body = <Skeleton className="h-64 w-full" />;
   else if (rows.length)
     body = (
@@ -619,6 +576,7 @@ export default function QuestionBank() {
         loadingMore={isFetchingNextPage}
         loadMore={() => fetchNextPage(joinFetch)}
         mode={mode}
+        moreError={isFetchingNextPage ? null : listError}
         onComment={setCommentFor}
         onEdit={(detail) => setEditing(structuredClone(detail))}
         onReview={(detail) =>
@@ -893,6 +851,7 @@ function BankQuestions({
   hasEarlier,
   loadingMore,
   loadMore,
+  moreError,
   loadEarlier,
   questionId,
   topicId,
@@ -908,6 +867,8 @@ function BankQuestions({
   hasEarlier: boolean;
   loadingMore: boolean;
   loadMore: () => Promise<unknown>;
+  /** The last page load failed; loading more waits for Retry. */
+  moreError: Error | null;
   loadEarlier: () => Promise<{
     data?: { pages: { items: BankRow[] }[] };
     error: Error | null;
@@ -971,7 +932,7 @@ function BankQuestions({
   const endRef = useRef<HTMLDivElement>(null);
   const nearEnd = useNear(endRef, '0px 0px 800px 0px', scrollRef);
   useEffect(() => {
-    if (!nearEnd || isFetching || error) return;
+    if (!nearEnd || isFetching || error || moreError) return;
     if (range.end < rows.length) setRange({ ...range, end: range.end + PAGE });
     else if (hasMore && !loadingMore) void loadMore();
   });
@@ -1098,6 +1059,9 @@ function BankQuestions({
             void refetch();
           }}
         />
+      )}
+      {!error && moreError && (
+        <BankError error={moreError} onRetry={() => void loadMore()} />
       )}
       <div aria-hidden className="-mt-12" ref={endRef} />
     </div>
@@ -1841,15 +1805,12 @@ function BankLanding({
   view: boolean;
   onOpen: (topicId: string, next: string | null) => void;
 }) {
-  const { data, error, isPending, refetch } = useQuery({
+  const { data, isPending } = useQuery({
     ...bankProgressQuery(),
     enabled: view,
-    meta: { errorBoundary: false },
   });
   let progress: ReactNode = null;
   if (view && isPending) progress = <SkeletonList count={3} rowHeight={52} />;
-  else if (view && error)
-    progress = <BankError error={error} onRetry={() => void refetch()} />;
   else if (view && data?.topics.length) {
     // The server lists the most recently answered first.
     const going = data.topics.filter(isStarted);
