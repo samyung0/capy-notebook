@@ -13,7 +13,7 @@ import type { OpenItem } from '@/features/materials/openItem';
 import { m } from '@/i18n';
 import { deferStorageRefusal, describeError } from '@/lib/errors';
 import { materialIconName } from '@/lib/fileIcons';
-import { FileKindTile } from './FileKindTile';
+import { FileKindGrid, FileKindTile } from './FileKindTile';
 import {
   GenerateForm,
   type GenerateMode,
@@ -78,7 +78,7 @@ export function GenerateFilePanel({
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-5">
-      <div className="grid shrink-0 grid-cols-4 gap-2">
+      <FileKindGrid className="shrink-0">
         {KINDS.map((k) => (
           <FileKindTile
             icon={materialIconName(k)}
@@ -88,7 +88,7 @@ export function GenerateFilePanel({
             selected={mode === k}
           />
         ))}
-      </div>
+      </FileKindGrid>
       <GenerateForm
         chapters={chapters ?? []}
         existingTitles={(materials ?? []).map((mt) => mt.title)}

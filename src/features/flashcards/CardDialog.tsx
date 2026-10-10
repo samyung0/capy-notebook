@@ -12,6 +12,7 @@ import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
@@ -93,6 +94,7 @@ export function CardDialog({
           </Button>
           {onRemove && (
             <Button
+              className="hidden md:inline-flex"
               onClick={onRemove}
               size="lg"
               type="button"
@@ -128,9 +130,28 @@ export function CardDialog({
       }
       width={920}
     >
-      {/* Note-embedded sets pass no title: their name is never shown. */}
-      {setTitle && (
-        <p className="t-meta -mt-3 mb-4 text-fg-muted">{setTitle}</p>
+      {/* Note-embedded sets pass no title: their name is never shown. Below md
+          Remove sits up here so the footer keeps two buttons. */}
+      {(setTitle || onRemove) && (
+        <div
+          className={cn(
+            '-mt-3 mb-3 flex items-center justify-between gap-3',
+            !setTitle && 'md:hidden'
+          )}
+        >
+          <p className="t-meta text-fg-muted">{setTitle}</p>
+          {onRemove && (
+            <Button
+              className="h-7 md:hidden"
+              onClick={onRemove}
+              size="sm"
+              type="button"
+              variant="danger-light"
+            >
+              {m.editor_remove_card()}
+            </Button>
+          )}
+        </div>
       )}
       <div className="grid gap-7 md:grid-cols-2">
         <div className="flex flex-col gap-4">

@@ -15,7 +15,7 @@ import type { OpenItem } from '@/features/materials/openItem';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import { m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
-import { FileKindTile } from './FileKindTile';
+import { FileKindGrid, FileKindTile } from './FileKindTile';
 import { nextGenerateTitle } from './generateTitle';
 
 type CreateKind = MaterialKind | 'docx' | 'xlsx' | 'csv' | 'pptx';
@@ -148,7 +148,7 @@ export function CreateFilePanel({
         nav={false}
         sections={SECTIONS.map((section) => ({
           content: (
-            <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-2">
+            <FileKindGrid>
               {section.tiles.map((tile) => (
                 <FileKindTile
                   icon={tile.icon}
@@ -158,7 +158,7 @@ export function CreateFilePanel({
                   selected={selected === tile.kind}
                 />
               ))}
-            </div>
+            </FileKindGrid>
           ),
           id: section.id,
           label: section.label(),

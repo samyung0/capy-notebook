@@ -31,6 +31,10 @@ test('quiz tabs retain both drafts and reveal name validation before saving', as
     .first()
     .getByRole('button', { name: m.action_remove() })
     .click();
+  await page
+    .getByRole('dialog', { name: m.quiz_remove_question_confirm_title() })
+    .getByRole('button', { name: m.action_remove() })
+    .click();
   await expect(questions).toHaveCount(9);
 
   await generalTab.click();

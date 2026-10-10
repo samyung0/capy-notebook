@@ -32,3 +32,13 @@ export function FileKindTile({
     </button>
   );
 }
+
+/** Lays out FileKindTiles: two columns on phones, four from sm. */
+export function FileKindGrid({ className, ...rest }: ComponentProps<'div'>) {
+  return (
+    <div
+      className={cn('grid grid-cols-2 gap-2 sm:grid-cols-4', className)}
+      {...rest}
+    />
+  );
+}

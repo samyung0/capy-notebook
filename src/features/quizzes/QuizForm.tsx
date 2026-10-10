@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
 import type { Question } from '@/api/types';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import type { UploadQuestionAsset } from '@/features/questions/BlockEditor';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
@@ -36,6 +37,7 @@ export function QuizForm({
   uploadAsset?: UploadQuestionAsset;
 }) {
   const [editing, setEditing] = useState<Question | null>(null);
+  const [removing, setRemoving] = useState<string | null>(null);
   return (
     <div className="grid gap-10">
       <QuizQuestionList
@@ -59,9 +61,7 @@ export function QuizForm({
               className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="trash"
               iconLeftClassName="size-3.5 sm:size-3.75"
-              onClick={() =>
-                onQuestionsChange(questions.filter((q) => q.id !== question.id))
-              }
+              onClick={() => setRemoving(question.id)}
               rounded="large"
               size="sm"
               type="button"
@@ -82,6 +82,16 @@ export function QuizForm({
       >
         {m.quiz_add_question()}
       </Button>
+      <ConfirmDialog
+        body={m.quiz_remove_question_confirm_body()}
+        confirmLabel={m.action_remove()}
+        onClose={() => setRemoving(null)}
+        onConfirm={() =>
+          onQuestionsChange(questions.filter((q) => q.id !== removing))
+        }
+        open={removing !== null}
+        title={m.quiz_remove_question_confirm_title()}
+      />
       {editing && (
         <Suspense fallback={null}>
           <QuestionDialog

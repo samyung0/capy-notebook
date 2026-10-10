@@ -80,6 +80,8 @@ export function FlashcardsEditor({
   const saving = useRef(Promise.resolve());
   const [editing, setEditing] = useState<number | 'new' | null>(null);
   const [confirm, setConfirm] = useState<'reset' | 'save' | null>(null);
+  // Index of the card waiting on the remove confirmation.
+  const [removing, setRemoving] = useState<number | null>(null);
   const { isPending: savePending, mutateAsync: saveCards } =
     useUpdateFlashcardContent(setId);
   // Picked images by local id, and the object URLs that preview them.
@@ -181,7 +183,7 @@ export function FlashcardsEditor({
                 <ToolbarButton
                   disabled={isPending}
                   label={m.editor_remove_card()}
-                  onClick={() => change(draft.filter((_, i) => i !== index))}
+                  onClick={() => setRemoving(index)}
                   tooltipSide="top"
                   variant="danger-light"
                 >
@@ -237,10 +239,7 @@ export function FlashcardsEditor({
             onClose={() => setEditing(null)}
             onRemove={
               typeof editing === 'number'
-                ? () => {
-                    change(draft.filter((_, i) => i !== editing));
-                    setEditing(null);
-                  }
+                ? () => setRemoving(editing)
                 : undefined
             }
             onSave={(faces) => {
@@ -263,6 +262,17 @@ export function FlashcardsEditor({
             }
           />
         )}
+        <ConfirmDialog
+          body={m.editor_remove_card_confirm_body()}
+          confirmLabel={m.action_remove()}
+          onClose={() => setRemoving(null)}
+          onConfirm={() => {
+            change(draft.filter((_, i) => i !== removing));
+            if (editing === removing) setEditing(null);
+          }}
+          open={removing !== null}
+          title={m.editor_remove_card_confirm_title()}
+        />
         <ConfirmDialog
           body={m.edit_reset_confirm_body()}
           confirmLabel={m.action_reset()}
