@@ -111,7 +111,7 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
   const workspace = await api(page, '/api/workspaces', 'POST', {
     description: 'Cell biology lecture files, worksheets and the term data.',
     name: `${PREFIX} ${run}`,
-    tags: ['biology', 'term 1'],
+    tags: [{ value: 'biology' }, { value: 'term 1' }],
   });
   const batchId = `perf_${run}`;
   for (const upload of UPLOADS) {
