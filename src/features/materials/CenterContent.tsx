@@ -397,6 +397,7 @@ export function MaterialContent({
               />
             )}
             <MaterialAttributionFooter
+              className="pb-28 lg:pb-4"
               inline
               provenance={material.provenance}
             />
@@ -480,7 +481,9 @@ export function MaterialContent({
 }
 
 /** A material's credits after its document, in the reading column the static
- * renderer uses for it, so View and Edit (NoteEditorCore) end alike. */
+ * renderer uses for it, so View and Edit (NoteEditorCore) end alike. Like
+ * every footer ending a view here, it clears the workspace's floating bar,
+ * which shows below lg. */
 function DocumentAttribution({
   kind,
   provenance,
@@ -492,7 +495,7 @@ function DocumentAttribution({
   return (
     <MaterialAttributionFooter
       className={cn(
-        'mx-auto w-full px-5 sm:px-10',
+        'mx-auto w-full px-5 pb-28 sm:px-10 lg:pb-4',
         (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl'
       )}
       inline
@@ -548,7 +551,11 @@ function QuizPreview({
         />
       </div>
       <QuizQuestionList disabled questions={questions} />
-      <MaterialAttributionFooter inline provenance={provenance} />
+      <MaterialAttributionFooter
+        className="pb-28 lg:pb-4"
+        inline
+        provenance={provenance}
+      />
     </TabContent>
   );
 }

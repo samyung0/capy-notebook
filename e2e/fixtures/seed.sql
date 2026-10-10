@@ -169,4 +169,32 @@ INSERT INTO flashcard_cards (card_id, material_id) VALUES
   ('c_e2e_mut_1',  'dk_e2e_mutate')
 ON CONFLICT (card_id) DO NOTHING;
 
+-- A library-built note crediting its own book, embedding a quiz that credits
+-- another (embedded rows record their own provenance).
+INSERT INTO materials (
+  id, created_by, workspace_id, workspace_name, kind, title, content,
+  chapter_id, scope_chapters, scope_file_names, privacy, color, created_at, updated_at, revision, updated_by,
+  parent_material_id, provenance
+) VALUES
+  (
+    'note_e2e_credits', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'note',
+    'E2E Credited Note',
+    '{"schemaVersion":1,"value":[{"type":"h1","id":"note_e2e_credits:title","children":[{"text":"E2E Credited Note"}]},{"type":"p","id":"note_e2e_credits:body","children":[{"text":"Adapted from the note source"}]},{"type":"material_ref","id":"note_e2e_credits:quiz","materialId":"qz_e2e_credits","refKind":"quiz","children":[{"text":""}]}]}'::jsonb,
+    'ch_e2e_private', '{}', '{}', 'private', 'blue', now(), now(), 1, 'u_owner',
+    NULL,
+    '{"books":[{"id":"e2e_note_book","title":"Note Source Book","authors":["Note Author"],"license":"CC BY 4.0","excerptIds":["e2e_n1"],"version":1}]}'::jsonb
+  ),
+  (
+    'qz_e2e_credits', 'u_owner', 'ws_e2e_private', 'E2E Private Workspace', 'quiz',
+    '6f1d2c3b-0e2e-4c4e-9d1a-c4ed175e2e01',
+    '{"schemaVersion":1,"value":[{"type":"quiz","id":"qz_e2e_credits:quiz","children":[{"type":"quiz_question","id":"q_cred_1","question":{"id":"q_cred_1","stem":[],"parts":[{"id":"q_cred_1:part:1","blocks":[{"type":"text","text":"Credited quiz prompt?"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"},"children":[{"text":""}]}]}]}'::jsonb,
+    NULL, '{}', '{}', 'private', 'blue', now(), now(), 1, 'u_owner',
+    'note_e2e_credits',
+    '{"books":[{"id":"e2e_quiz_book","title":"Quiz Source Book","authors":["Quiz Author"],"license":"CC BY-SA 4.0","excerptIds":["e2e_q1"],"version":1}],"license":"CC BY-SA 4.0"}'::jsonb
+  )
+ON CONFLICT (id) DO UPDATE SET
+  content = EXCLUDED.content,
+  provenance = EXCLUDED.provenance,
+  revision = 1;
+
 COMMIT;

@@ -222,7 +222,8 @@ function NoteAttribution({
   return (
     <MaterialAttributionFooter
       className={cn(
-        'mx-auto w-full px-5 sm:px-10',
+        // Clears the workspace's floating bar, which shows below lg.
+        'mx-auto w-full px-5 pb-28 sm:px-10 lg:pb-4',
         displayWidth === 'half' && 'md:max-w-3xl'
       )}
       inline
