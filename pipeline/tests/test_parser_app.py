@@ -1175,6 +1175,51 @@ def test_office_run_keeps_only_evidence_in_bundle(monkeypatch, tmp_path):
         assert (image.format, image.size) == ("PNG", (200, 284))
 
 
+def test_a_pdf_parse_bundles_page_one_from_its_repaired_bytes(monkeypatch, tmp_path):
+    """PDFs get their thumbnail from the parse as Office files do, so the
+    ingest worker never renders a document itself."""
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
+    from types import SimpleNamespace
+
+    import pymupdf
+    from odl import document, refine
+    from PIL import Image
+
+    def pdf(width: float, height: float) -> bytes:
+        with pymupdf.open() as doc:
+            doc.new_page(width=width, height=height).insert_text((40, 60), "Page")
+            return doc.tobytes()
+
+    monkeypatch.setattr(
+        document,
+        "normalize_document",
+        lambda *_args: SimpleNamespace(
+            data=pdf(595, 842), preview_pdf=None, source_format="pdf"
+        ),
+    )
+    monkeypatch.setattr(
+        refine,
+        "parse_pdf",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            content_list=[{"type": "text", "text": "Page", "page_idx": 0}],
+            markdown="Page",
+            ocr_pages=[],
+            page_count=1,
+            phases={},
+            repaired_fonts=["F1"],
+            furniture=[],
+            parsed_pdf=pdf(800, 400),
+        ),
+    )
+    result = parser_app.run_document(parser_app.Document(b"%PDF", "lecture.pdf"))
+    bundle = parser_app._bundle_bytes(result, "fingerprint", "request", {})
+    with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+        page = archive.read("page1.png")
+    with Image.open(io.BytesIO(page)) as image:
+        # The repaired 800 x 400 page, not the 595 x 842 source.
+        assert (image.format, image.size) == ("PNG", (200, 100))
+
+
 def test_a_failed_page_render_leaves_the_parse_and_bundle_intact(monkeypatch, tmp_path):
     monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
     from types import SimpleNamespace

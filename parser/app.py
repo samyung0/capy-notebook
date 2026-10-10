@@ -275,20 +275,18 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
         "_repaired_fonts": output.repaired_fonts,
         "_furniture": output.furniture,
     }
-    if normalized.preview_pdf is not None:
-        # The list-card thumbnail comes from this conversion, so ingest never
-        # converts the file again for it. Optional: it never fails the parse.
-        from odl.capture import page_thumbnail
+    # The list-card thumbnail comes from the PDF this parse holds (an Office
+    # file's conversion, or the repaired bytes), inside this bounded child, so
+    # ingest neither converts nor renders anything for it. Optional: it never
+    # fails the parse.
+    from odl.capture import page_thumbnail
 
-        started = time.perf_counter()
-        try:
-            result["_page_image"] = page_thumbnail(normalized.data)
-        except Exception as exc:  # noqa: BLE001 - a missing thumbnail is fine
-            print(f"page thumbnail skipped: {type(exc).__name__}: {exc}", flush=True)
-        result["_phases"] = {
-            **output.phases,
-            "thumbnail": time.perf_counter() - started,
-        }
+    started = time.perf_counter()
+    try:
+        result["_page_image"] = page_thumbnail(output.parsed_pdf or normalized.data)
+    except Exception as exc:  # noqa: BLE001 - a missing thumbnail is fine
+        print(f"page thumbnail skipped: {type(exc).__name__}: {exc}", flush=True)
+    result["_phases"] = {**output.phases, "thumbnail": time.perf_counter() - started}
     pending = ocr_path is not None and bool(output.ocr_pages)
     if pending:
         # The bytes of the work-dir PDF every repair read.
@@ -1215,7 +1213,7 @@ def _bundle_bytes(
     measurements: dict[str, Any],
 ) -> bytes:
     """Only what ingest reads: the receipt, blocks, refinement, a repaired PDF
-    and an Office file's page-1 thumbnail (``page1.png``).
+    and the document's page-1 thumbnail (``page1.png``).
 
     Figures are reached at question time by rendering the source page, so image
     files and the ODL Markdown stay in the parse work directory.
