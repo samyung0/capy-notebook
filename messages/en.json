@@ -1663,7 +1663,6 @@
   "question_ui_reviewed": "Reviewed",
   "question_ui_not_reviewed": "Not reviewed",
   "question_ui_questions_load_failed": "Couldn't load these questions",
-  "question_ui_try_again": "Try again",
   "question_ui_comment_on_this_question": "Comment on this question",
   "question_ui_send_comment": "Send comment",
   "question_ui_correct_letter": "Correct: {letter}",

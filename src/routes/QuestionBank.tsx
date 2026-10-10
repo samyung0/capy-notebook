@@ -33,6 +33,7 @@ import {
   commentBankQuestionBodyTextMax,
 } from '@/api/gen/validators';
 import type { BankTopicProgress } from '@/api/types';
+import { ErrorState } from '@/components/app/ErrorState';
 import {
   FilterPopover,
   type FilterSection,
@@ -41,7 +42,7 @@ import {
 import { PageHeader, Panel, PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import { Skeleton, SkeletonList } from '@/components/ui/feedback';
@@ -2020,13 +2021,16 @@ function TopicName({
 }
 
 function BankError({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  const { description, icon, title } = describeError(error);
   return (
-    <div className="space-y-3" role="alert">
-      <p>{describeError(error).description}</p>
-      <Button onClick={onRetry} variant="ghost-hover">
-        {m.question_ui_try_again()}
-      </Button>
-    </div>
+    <ErrorState
+      action={<ErrorAction onClick={onRetry}>{m.action_retry()}</ErrorAction>}
+      className="py-10"
+      description={description}
+      icon={icon}
+      title={title}
+      variant="panel"
+    />
   );
 }
 
