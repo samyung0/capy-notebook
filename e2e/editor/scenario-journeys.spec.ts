@@ -445,7 +445,11 @@ test('permanent account state survives reload until Reset without replaying the 
     node.open = true;
   });
   await panel.getByRole('button', { exact: true, name: 'Reset' }).click();
-  await expect(panel).toHaveAttribute('data-scenario-status', 'idle');
+  // Reset is a scenario run (it leaves for Workspaces and reloads every
+  // query), so it gets launch()'s budget.
+  await expect(panel).toHaveAttribute('data-scenario-status', 'idle', {
+    timeout: 40_000,
+  });
   await expect(blocked).toHaveCount(0);
 });
 
