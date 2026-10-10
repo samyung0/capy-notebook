@@ -252,7 +252,23 @@ Text leaves do not need IDs. Runtime values must never be written onto nodes:
 Media nodes persist `assetId` and stable metadata. Uploads go through the
 note's material route, so standalone notes upload too (see
 [backend-storage-quota.md](../backend-storage-quota.md)). Renderers resolve signed URLs
-at runtime.
+at runtime. An `img`, `image`, `audio` or `file` node always names its asset
+and carries no `url` or `src` (Epo, 2026-10-10): the browser's document check
+(`validateMediaElement`), Go (`validateMedia` in `materialdoc`) and the
+collaboration server refuse it otherwise. The server refuses it when the
+update arrives (`media_assets` in `collaboration-rs/crates/notes/src/limits.rs`,
+on the elements whose `type`, `assetId`, `url` or `src` the update set or
+deleted), so only that writer's update is lost, and its store checks it again.
+
+Pasted images take the same asset path (`pastedImages.ts`): clipboard image
+files become upload placeholders, as dropped files do; an `<img>` in pasted
+HTML, which Plate's image parser turns into a URL-only node, becomes a
+placeholder in its place whose element fetches the URL in the browser (a
+`data:` URL, a host that allows CORS) and uploads the bytes, or a link to the
+URL when the browser cannot read it. Nothing is fetched by a server. Without
+asset uploads (`allowExternalAssets` off) a pasted image is a link. The image
+plugin's URL embed (`disableEmbedInsert`) is off, so no URL-only image node is
+made.
 
 Each asset belongs to one note, and the server keeps it that way; the browser
 does nothing but render. A save that stops using an asset (once it was
@@ -277,9 +293,15 @@ browser never calls an adopt route.
 Image, YouTube, mermaid, chart and graph blocks share `MediaFrame`: a toolbar docked top-right
 that shows on hover, and in edit mode two side handles that resize the block
 symmetrically and store `width` as a percentage string (`"62%"`), a whole number
-from 20 to 100. The Node and Go validators accept exactly that on these five
-blocks (`MEDIA_WIDTH` and `mediaWidth`, `^(?:[2-9][0-9]|100)%$`) and refuse any
-other width, so a resized block never gets its room refused. The browser's
+from 20 to 100. Go and the collaboration server accept exactly that on these five
+blocks (`mediaWidth` and `validate_width`, `^(?:[2-9][0-9]|100)%$`) and refuse any
+other width, so a resized block never gets its room refused. Charts, graphs and
+interactive blocks are top-level blocks and store only their own fields
+(`id`, `type`, `block`, `children`, `width`; `id`, `type`, `html`, `caption`,
+`children`): the browser refuses any other field as Go and the server do, with
+no compatibility path for the interactive block's old `title` (Epo,
+2026-10-10). `diagram` and `mindmap` are material kinds whose document holds a
+`mermaid` block; they are not node types. The browser's
 document check (`isMaterialNode` in `src/features/materials/document.ts`)
 applies the same rule, so a JSON import carrying another width fails on its
 own with the import's error toast instead of getting the room refused. Frames stop at
@@ -1142,12 +1164,18 @@ projection before committing a replacement; its block precondition also checks
 the live Yjs content. Rejected saves retain the local draft. Every flashcard set edits through
 `FlashcardsEditor` (`src/features/flashcards/`): the workspace file's edit mode,
 a standalone set and `/flashcards/$id/edit` for an embedded one. Like the quiz
-edit page it stages everything on screen: the card dialog (front, a back of at
-most 2,000 characters, one optional image under the front) and Remove change
+edit page it stages everything on screen: the card dialog (a front of at most
+4,000 characters, a back of at most 2,000, one optional image under the front)
+and Remove change
 only the draft, Reset (with a confirmation) restores the loaded set, and Save
 (with a confirmation) uploads the picked card images, then writes the whole set
 atomically through `PATCH /api/flashcards/{id}/content`, preserving study state
-for retained ids and dropping blank cards. There are no single-card endpoints.
+for retained ids and dropping blank cards. There are no single-card endpoints. The
+caps (`fieldlimits.CardFront` and `CardBack`, counted in runes) hold on every
+path: the content API, Go's document check (`ValidateCardText`), the agent's
+`create_material` cards and card commands (refused up front, contract 19) and
+the collaboration server's store (`CARD_FRONT_MAX`/`CARD_BACK_MAX`, which a Go
+test reads), with a card image exactly `{assetId}`.
 Explicit quiz/flashcard study and edit opens fetch fresh content before seeding
 their view or draft; rendering references in a note does not force all their
 detail queries to refresh.

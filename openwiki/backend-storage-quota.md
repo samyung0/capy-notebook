@@ -510,6 +510,7 @@ direction.
 | Label name, tag value | 35 |
 | Email (invite identifier, deletion confirm, users.email) | 254 |
 | Profile name | 60 |
+| Flashcard front / back (content API, Go document check, agent tools, collaboration store) | 4,000 / 2,000 |
 
 User-typed values are rejected with a 422; the source details dialog refuses
 oversized file names before upload. Values the user did not type are clamped
