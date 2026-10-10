@@ -45,6 +45,7 @@ import type {
   PublicQuiz as GenPublicQuiz,
   Quiz as GenQuiz,
   ResourceEffectOperation as GenResourceEffectOperation,
+  ReviewAnswer as GenReviewAnswer,
   ReviewItem as GenReviewItem,
   ReviewSession as GenReviewSession,
   SearchResult as GenSearchResult,
@@ -263,8 +264,15 @@ export type PublicQuiz = Omit<GenPublicQuiz, 'questions'> & {
 export type ReviewItem = Omit<GenReviewItem, 'question'> & {
   question?: LearnerQuestion;
 };
-export type ReviewSession = Omit<GenReviewSession, 'items'> & {
+/** An item answered earlier in a resumed session, with its record; a
+ * question is the graded one, key included, with the answers given. */
+export type ReviewAnswer = Omit<GenReviewAnswer, 'question' | 'answers'> & {
+  question?: Question;
+  answers?: Answers;
+};
+export type ReviewSession = Omit<GenReviewSession, 'items' | 'done'> & {
   items: ReviewItem[];
+  done: ReviewAnswer[];
 };
 /** The Study tab's summary; Quick review items are cards, never questions. */
 export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
@@ -459,6 +467,7 @@ import type {
   Question,
   QuestionType,
 } from '@/features/questions/types';
+import type { Answers } from '@/features/quizzes/grade';
 
 /* ---------------- Generate (request options, not wire response types) ----------------
    Every generation is scoped: `chapters` (ids) and/or `fileIds` narrow the

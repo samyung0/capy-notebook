@@ -2,6 +2,7 @@ import { HttpResponse, http } from 'msw';
 import type {
   PastReview,
   ProgressWorkspace,
+  ReviewAnswer,
   ReviewItem,
   ReviewMode,
   ReviewSessionRef,
@@ -13,6 +14,7 @@ import {
   type FlashcardsElement,
   flashcardsElementToCards,
 } from '@/features/materials/document';
+import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { gradeQuestions, learnerView } from './answerKeys';
 import * as db from './db';
@@ -361,7 +363,14 @@ function rate(materialId: string, itemId: string, missed: boolean) {
 
 type Answer =
   | { kind: 'card'; rating: number }
-  | { kind: 'question'; correct: number; total: number };
+  | {
+      kind: 'question';
+      rating: number;
+      correct: number;
+      total: number;
+      answers: Answers;
+      graded: Question;
+    };
 type Session = {
   workspaceId: string;
   group: ReviewSuggestion['group'];
@@ -736,6 +745,7 @@ export const studyHandlers = [
     return HttpResponse.json({
       answered: 0,
       chapterId,
+      done: [],
       evidence: mode
         ? suggestionsOf(String(params.id)).find((sg) => sg.group === group)
             ?.evidence
@@ -760,16 +770,35 @@ export const studyHandlers = [
       (it) => !session.answers.has(`${it.materialId}/${it.itemId}`)
     );
     const all = pool(session.workspaceId);
+    const current = (materialId: string, itemId: string) =>
+      all.find((p) => p.materialId === materialId && p.itemId === itemId);
+    // Answered items in answer order, with their records, for Previous.
+    const done = [...session.answers].flatMap(([key, a]): ReviewAnswer[] => {
+      const [materialId, itemId] = key.split('/');
+      const found = current(materialId, itemId);
+      if (!found) return [];
+      // The learner view's question gives way to the graded one.
+      const { question: _learner, ...item } = found;
+      return a.kind === 'card'
+        ? [{ ...item, rating: a.rating }]
+        : [
+            {
+              ...item,
+              answers: a.answers,
+              correct: a.correct,
+              question: a.graded,
+              rating: a.rating,
+              total: a.total,
+            },
+          ];
+    });
     return HttpResponse.json({
       answered: session.answers.size,
       chapterId: session.chapterId,
+      done,
       group: session.group,
       items: left
-        .map((it) =>
-          all.find(
-            (p) => p.materialId === it.materialId && p.itemId === it.itemId
-          )
-        )
+        .map((it) => current(it.materialId, it.itemId))
         .filter(Boolean),
       mode: session.mode,
       total: session.items.length,
@@ -817,11 +846,16 @@ export const studyHandlers = [
       : undefined;
     if (!question) return new HttpResponse(null, { status: 404 });
     const graded = gradeQuestions([question], body.answers);
-    rate(body.materialId, body.itemId, graded.awarded / graded.max < 0.5);
+    const score = graded.max > 0 ? graded.awarded / graded.max : 0;
+    rate(body.materialId, body.itemId, score < 0.5);
     if (body.session)
       answer(body.session, body.materialId, body.itemId, {
+        answers: body.answers,
         correct: graded.awarded,
+        graded: graded.questions[0],
         kind: 'question',
+        // ScoreRating: below 0.5 Again, below 0.7 Hard, otherwise Good.
+        rating: score < 0.5 ? 1 : score < 0.7 ? 2 : 3,
         total: graded.max,
       });
     return HttpResponse.json({

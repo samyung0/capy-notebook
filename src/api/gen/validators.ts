@@ -4882,10 +4882,30 @@ export const ResumeReviewSessionParams = zod.object({
   "id": zod.uuid()
 })
 
+export const resumeReviewSessionResponseDoneItemRatingMax = 4;
+
+
+
 export const ResumeReviewSessionResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
   "chapterId": zod.string().optional(),
+  "done": zod.array(zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).optional(),
+  "back": zod.string().optional(),
+  "correct": zod.number().optional(),
+  "front": zod.string().optional(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
+  "itemId": zod.string(),
+  "kind": zod.enum(['card', 'question']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "rating": zod.int().min(1).max(resumeReviewSessionResponseDoneItemRatingMax),
+  "total": zod.number().optional()
+})),
   "evidence": zod.object({
   "forgotten": zod.int(),
   "lastPractisedAt": zod.iso.datetime({"offset":true}),
@@ -6193,10 +6213,30 @@ export const GetWorkspaceReviewQueryParams = zod.object({
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('A suggestion\'s mode; omitted for a review from the workspace list')
 })
 
+export const getWorkspaceReviewResponseDoneItemRatingMax = 4;
+
+
+
 export const GetWorkspaceReviewResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
   "chapterId": zod.string().optional(),
+  "done": zod.array(zod.object({
+  "answers": zod.record(zod.string(), zod.unknown()).optional(),
+  "back": zod.string().optional(),
+  "correct": zod.number().optional(),
+  "front": zod.string().optional(),
+  "image": zod.object({
+  "assetId": zod.string()
+}).optional(),
+  "itemId": zod.string(),
+  "kind": zod.enum(['card', 'question']),
+  "materialId": zod.string(),
+  "materialTitle": zod.string(),
+  "question": zod.record(zod.string(), zod.unknown()).optional(),
+  "rating": zod.int().min(1).max(getWorkspaceReviewResponseDoneItemRatingMax),
+  "total": zod.number().optional()
+})),
   "evidence": zod.object({
   "forgotten": zod.int(),
   "lastPractisedAt": zod.iso.datetime({"offset":true}),

@@ -373,9 +373,23 @@ type ReviewSession struct {
 	ReviewSessionInfo
 	// Items are the items still to answer; Answered of Total counts a resumed
 	// session's progress.
-	Items    []ReviewItem `json:"items" nullable:"false"`
-	Answered int          `json:"answered"`
-	Total    int          `json:"total"`
+	Items []ReviewItem `json:"items" nullable:"false"`
+	// Done are a resumed session's answered items in answer order, so
+	// Previous can show them again, read only. Empty for a new session.
+	Done     []ReviewAnswer `json:"done" nullable:"false"`
+	Answered int            `json:"answered"`
+	Total    int            `json:"total"`
+}
+
+// ReviewAnswer is an item answered earlier in a session with what was
+// recorded: a card's rating, or a question's rating, marks and answers, its
+// Question the graded one with its key.
+type ReviewAnswer struct {
+	ReviewItem
+	Rating  int            `json:"rating" minimum:"1" maximum:"4"`
+	Correct *float64       `json:"correct,omitempty"`
+	Total   *float64       `json:"total,omitempty"`
+	Answers map[string]any `json:"answers,omitempty"`
 }
 
 // ErrReviewGroup refuses a session of a chapter that is not the workspace's.
@@ -384,7 +398,7 @@ var ErrReviewGroup = errors.New("no such review group in this workspace")
 // WorkspaceReview is a new session: a suggestion's items (mode set) or, from
 // the workspace list, the whole workspace's.
 func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info ReviewSessionInfo, now time.Time) (ReviewSession, error) {
-	out := ReviewSession{ReviewSessionInfo: info, Items: []ReviewItem{}}
+	out := ReviewSession{ReviewSessionInfo: info, Items: []ReviewItem{}, Done: []ReviewAnswer{}}
 	if info.Group == GroupChapter {
 		var ok bool
 		if info.ChapterID == nil {
@@ -530,10 +544,11 @@ func (s *Store) ReviewSessionWorkspace(ctx context.Context, userID, id string) (
 	return wsID, err
 }
 
-// ResumeReviewSession is an unfinished session's items still to answer, read
-// from their materials now; items that left their material or workspace drop.
+// ResumeReviewSession is an unfinished session's answered items with their
+// records and the items still to answer, read from their materials now; items
+// that left their material or workspace drop.
 func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (ReviewSession, error) {
-	out := ReviewSession{Items: []ReviewItem{}}
+	out := ReviewSession{Items: []ReviewItem{}, Done: []ReviewAnswer{}}
 	var wsID string
 	var raw []byte
 	err := s.pool.QueryRow(ctx, `SELECT workspace_id, group_kind, chapter_id, mode, evidence, items FROM review_sessions
@@ -549,49 +564,90 @@ func (s *Store) ResumeReviewSession(ctx context.Context, userID, id string) (Rev
 	if err := json.Unmarshal(raw, &served); err != nil {
 		return out, err
 	}
-	answered := map[string]bool{}
-	rows, err := s.pool.Query(ctx, `SELECT material_id, item_id FROM review_answers WHERE session_id=$1`, id)
-	if err != nil {
-		return out, err
-	}
-	for rows.Next() {
-		var m, i string
-		if err := rows.Scan(&m, &i); err != nil {
-			rows.Close()
-			return out, err
-		}
-		answered[m+"/"+i] = true
-	}
-	rows.Close()
-	if err := rows.Err(); err != nil {
-		return out, err
-	}
-	out.Total, out.Answered = len(served), len(answered)
+	// The served items as their materials hold them now, read once per material.
 	byMaterial := map[string]map[string]studyItem{}
-	for _, it := range served {
-		if answered[it.MaterialID+"/"+it.ItemID] {
-			continue
-		}
-		items, ok := byMaterial[it.MaterialID]
+	current := func(materialID, itemID string) (studyItem, bool, error) {
+		items, ok := byMaterial[materialID]
 		if !ok {
 			items = map[string]studyItem{}
-			mt, err := s.GetMaterial(ctx, it.MaterialID)
+			mt, err := s.GetMaterial(ctx, materialID)
 			if err != nil && !errors.Is(err, ErrNotFound) {
-				return out, err
+				return studyItem{}, false, err
 			}
 			if err == nil && mt.WorkspaceID == wsID && mt.ParentMaterialID == "" {
 				parsed, err := itemsOf(mt)
 				if err != nil {
-					return out, err
+					return studyItem{}, false, err
 				}
 				for _, p := range parsed {
 					p.MaterialTitle = mt.Title
 					items[p.ItemID] = p
 				}
 			}
-			byMaterial[it.MaterialID] = items
+			byMaterial[materialID] = items
 		}
-		if p, ok := items[it.ItemID]; ok {
+		it, ok := items[itemID]
+		return it, ok, nil
+	}
+
+	answered := map[string]bool{}
+	rows, err := s.pool.Query(ctx, `SELECT material_id, item_id, rating, correct, total, answers, graded
+		FROM review_answers WHERE session_id=$1 ORDER BY answered_at, material_id, item_id`, id)
+	if err != nil {
+		return out, err
+	}
+	type record struct {
+		ReviewAnswer
+		graded  []byte
+		answers []byte
+	}
+	var records []record
+	for rows.Next() {
+		var r record
+		if err := rows.Scan(&r.MaterialID, &r.ItemID, &r.Rating, &r.Correct, &r.Total, &r.answers, &r.graded); err != nil {
+			rows.Close()
+			return out, err
+		}
+		answered[r.MaterialID+"/"+r.ItemID] = true
+		records = append(records, r)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	out.Total, out.Answered = len(served), len(answered)
+	for _, r := range records {
+		it, ok, err := current(r.MaterialID, r.ItemID)
+		if err != nil {
+			return out, err
+		}
+		if !ok {
+			continue
+		}
+		done := r.ReviewAnswer
+		done.ReviewItem = it.ReviewItem
+		// A question shows as it was graded, key included, with its answers.
+		if it.Kind == "question" && len(r.graded) > 0 {
+			if err := json.Unmarshal(r.graded, &done.Question); err != nil {
+				return out, err
+			}
+			if len(r.answers) > 0 {
+				if err := json.Unmarshal(r.answers, &done.Answers); err != nil {
+					return out, err
+				}
+			}
+		}
+		out.Done = append(out.Done, done)
+	}
+	for _, it := range served {
+		if answered[it.MaterialID+"/"+it.ItemID] {
+			continue
+		}
+		p, ok, err := current(it.MaterialID, it.ItemID)
+		if err != nil {
+			return out, err
+		}
+		if ok {
 			out.Items = append(out.Items, p.ReviewItem)
 		}
 	}

@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { ReviewAnswer } from './reviewAnswer.ts';
 import type { ReviewEvidence } from './reviewEvidence.ts';
 import type { ReviewItem } from './reviewItem.ts';
 import type { ReviewSessionGroup } from './reviewSessionGroup.ts';
@@ -14,6 +15,7 @@ export interface ReviewSession {
   readonly $schema?: string;
   answered: number;
   chapterId?: string;
+  done: ReviewAnswer[];
   evidence?: ReviewEvidence;
   group: ReviewSessionGroup;
   items: ReviewItem[];

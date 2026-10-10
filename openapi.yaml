@@ -4053,6 +4053,50 @@ components:
       required:
         - parseMode
       type: object
+    ReviewAnswer:
+      additionalProperties: false
+      properties:
+        answers:
+          additionalProperties: {}
+          type: object
+        back:
+          type: string
+        correct:
+          format: double
+          type: number
+        front:
+          type: string
+        image:
+          $ref: "#/components/schemas/CardImage"
+        itemId:
+          type: string
+        kind:
+          enum:
+            - card
+            - question
+          type: string
+        materialId:
+          type: string
+        materialTitle:
+          type: string
+        question:
+          additionalProperties: {}
+          type: object
+        rating:
+          format: int64
+          maximum: 4
+          minimum: 1
+          type: integer
+        total:
+          format: double
+          type: number
+      required:
+        - rating
+        - materialId
+        - materialTitle
+        - itemId
+        - kind
+      type: object
     ReviewEvidence:
       additionalProperties: false
       properties:
@@ -4147,6 +4191,10 @@ components:
           type: integer
         chapterId:
           type: string
+        done:
+          items:
+            $ref: "#/components/schemas/ReviewAnswer"
+          type: array
         evidence:
           $ref: "#/components/schemas/ReviewEvidence"
         group:
@@ -4171,6 +4219,7 @@ components:
           type: integer
       required:
         - items
+        - done
         - answered
         - total
         - group

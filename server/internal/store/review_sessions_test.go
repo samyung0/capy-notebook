@@ -155,6 +155,10 @@ func TestReviewSessionRecords(t *testing.T) {
 	if resumed.Answered != 1 || resumed.Total != 3 || len(resumed.Items) != 2 || resumed.Items[0].ItemID != cards[1].ID {
 		t.Fatalf("resumed = %+v", resumed)
 	}
+	// The answered card comes back with its rating, for Previous to show.
+	if len(resumed.Done) != 1 || resumed.Done[0].ItemID != cards[0].ID || resumed.Done[0].Rating != 1 || resumed.Done[0].Front != "Golgi" {
+		t.Fatalf("resumed done = %+v", resumed.Done)
+	}
 	overview, err := f.s.ReviewOverview(ctx, f.user, time.Now())
 	if err != nil {
 		t.Fatal(err)
