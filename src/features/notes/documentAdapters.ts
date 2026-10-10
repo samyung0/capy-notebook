@@ -1,4 +1,5 @@
 import type { QueryClient } from '@tanstack/react-query';
+import type { Descendant } from 'platejs';
 import type { PlateEditor } from 'platejs/react';
 import { resolveEditorAsset } from '@/api/editorAssets';
 import { cardsQuery, quizEditQuery } from '@/api/hooks';
@@ -15,7 +16,11 @@ import {
 } from '@/features/materials/document';
 import { questionAssetIds } from '@/features/questions/types';
 import type { ExportFormat } from './export/render';
-import { importMarkdownValue, sanitizeLinks } from './markdownImport';
+import {
+  importMarkdownValue,
+  replaceUrlImages,
+  sanitizeLinks,
+} from './markdownImport';
 import { uploadOrLink } from './pastedImages';
 
 /** Loaded only when the user imports/exports a .docx — keeps mammoth/jszip/xml
@@ -120,16 +125,22 @@ export async function exportNoteDocument(
   );
 }
 
+/** A DOCX's pictures, which mammoth gives as `data:` URL images, upload like
+ * pasted ones (Epo, 2026-10-10, main 1be046ea), or are left out without asset
+ * uploads, so its text and pictures both land. */
 export async function importDocxDocument(
   editor: PlateEditor,
-  buffer: ArrayBuffer
+  buffer: ArrayBuffer,
+  allowExternalAssets: boolean
 ): Promise<MaterialDocument> {
   const { importDocx } = await loadDocxIo();
   const result = await importDocx(editor, buffer);
-  return sanitizeLinks(
+  const value = replaceUrlImages(
     editor,
-    createMaterialDocument(result.nodes as MaterialValue)
+    result.nodes as Descendant[],
+    uploadOrLink(editor, allowExternalAssets)
   );
+  return sanitizeLinks(editor, createMaterialDocument(value as MaterialValue));
 }
 
 export function downloadEditorFile(blob: Blob, filename: string) {

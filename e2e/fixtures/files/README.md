@@ -244,3 +244,8 @@ Live provider grants, URLs and credentials do not belong in committed fixtures.
 
 Mocked imports do not verify OAuth, consent, Picker behavior, or live provider
 access. Those checks are excluded from the initial unattended UAT gate.
+
+`pictures/two-pictures.docx` (regenerate with `generate_pictures.py`, standard
+library only) holds two paragraphs and two small inline PNGs: the note editor's
+DOCX import case, where pictures upload as assets
+(`e2e/editor/upload-placeholder.spec.ts`).

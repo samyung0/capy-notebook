@@ -139,7 +139,11 @@ export function NoteToolbar({ className }: { className?: string }) {
     try {
       const document =
         kind === 'docx'
-          ? await importDocxDocument(editor, await file.arrayBuffer())
+          ? await importDocxDocument(
+              editor,
+              await file.arrayBuffer(),
+              allowExternalAssets
+            )
           : kind === 'json'
             ? importJsonDocument(editor, await file.text())
             : importMarkdownDocument(

@@ -353,3 +353,37 @@ test.describe('upload presence', () => {
     await expect.poll(named).toBe(false);
   });
 });
+
+// Epo 2026-10-10 (main 1be046ea): a DOCX's pictures upload as assets through
+// the same flow, so its text and pictures both land.
+test("a DOCX's pictures upload as skeletons beside its text", async ({
+  page,
+}) => {
+  await holdUploads(page);
+  const editor = await openEmptyLine(page);
+  await page
+    .getByRole('button', { exact: true, name: m.editor_import() })
+    .click();
+  const [chooser] = await Promise.all([
+    page.waitForEvent('filechooser'),
+    page
+      .getByRole('button', { exact: true, name: m.editor_import_docx() })
+      .click(),
+  ]);
+  await chooser.setFiles('e2e/fixtures/files/pictures/two-pictures.docx');
+
+  await expect(editor.getByText('Pictures before')).toBeVisible();
+  await expect(editor.getByText('Pictures between')).toBeVisible();
+  const placeholders = editor.locator('.slate-placeholder');
+  await expect(placeholders).toHaveCount(2);
+  await expect(placeholders.getByRole('status')).toHaveCount(2);
+  await page.screenshot({
+    path: test.info().outputPath('docx-uploading.png'),
+  });
+  await page.evaluate(() => window.dispatchEvent(new Event('release-uploads')));
+  await expect(
+    editor.getByRole('img', { name: 'pasted-image.png' })
+  ).toHaveCount(2);
+  await expect(placeholders).toHaveCount(0);
+  await page.screenshot({ path: test.info().outputPath('docx-uploaded.png') });
+});
