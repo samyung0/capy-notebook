@@ -5,6 +5,8 @@ import {
   useSearch,
 } from '@tanstack/react-router';
 import { useMaterial } from '@/api/hooks';
+import { isMissing } from '@/api/queryClient';
+import { ErrorState } from '@/components/app/ErrorState';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { TabContent } from '@/components/app/tabPanel';
@@ -27,8 +29,9 @@ export default function FlashcardsEdit() {
   const { returnTo } = useSearch({
     from: '/auth-shell/flashcards/$flashcardSetId/edit',
   });
-  const { data: material, isError } = useMaterial(setId, {
-    errorBoundary: false,
+  // Other failures without data go to the error boundary.
+  const { data: material, error } = useMaterial(setId, {
+    errorBoundary: 'unlessMissing',
   });
   const block = material?.content.value.find(
     (node): node is FlashcardsElement => node.type === 'flashcards'
@@ -62,8 +65,13 @@ export default function FlashcardsEdit() {
       }
     >
       <TabContent>
-        {isError ? (
-          <p role="alert">{m.flashcards_unable_load()}</p>
+        {isMissing(error) ? (
+          <ErrorState
+            description={m.error_private_body()}
+            testId="private-or-unavailable"
+            title={m.error_private_title()}
+            variant="page"
+          />
         ) : material ? (
           <>
             <FlashcardsEditor

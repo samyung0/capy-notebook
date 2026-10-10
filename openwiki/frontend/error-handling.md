@@ -65,6 +65,11 @@ the last usable result. Secondary and optional queries must opt out with:
 meta: { errorBoundary: false }
 ```
 
+A page whose resource can be private or missing (flashcard study and edit, quiz
+attempt) uses `meta: { errorBoundary: 'unlessMissing' }` instead: 401 and 404
+stay in the page as the non-disclosing private-or-unavailable state, and every
+other failure without data goes to the boundary with its normal copy and Retry.
+
 The owning component must then destructure and render the relevant query error
 state. Destructuring is required so TanStack Query's tracked-property proxy
 subscribes to those fields.

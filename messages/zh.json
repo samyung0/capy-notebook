@@ -1225,7 +1225,6 @@
   "quiz_edit": "编辑测验",
   "image_too_large": "图片不能超过 {limit}，这张图片压缩后仍然太大。",
   "quiz_unable_load": "无法加载测验。",
-  "flashcards_unable_load": "无法加载卡组。",
   "note_updated": "更新于 {date}",
   "quiz_prompt_placeholder": "题目",
   "quiz_signin_save_title": "登录以保存成绩",

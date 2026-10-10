@@ -20,9 +20,16 @@ declare module '@tanstack/react-query' {
       errorToast?: false;
     };
     queryMeta: {
-      errorBoundary?: false;
+      /** false: the component renders every error itself. 'unlessMissing':
+       * it renders only private or missing (401/404); the rest throw. */
+      errorBoundary?: false | 'unlessMissing';
     };
   }
+}
+
+/** Private or missing: one non-disclosing answer for both. */
+export function isMissing(error: unknown): boolean {
+  return isApiError(error) && (error.status === 404 || error.status === 401);
 }
 
 function shouldRetry(failureCount: number, error: unknown): boolean {
@@ -47,6 +54,7 @@ export const queryClient = new QueryClient({
       throwOnError: (error, query) =>
         query.state.data === undefined &&
         query.meta?.errorBoundary !== false &&
+        !(query.meta?.errorBoundary === 'unlessMissing' && isMissing(error)) &&
         !isAccountForbiddenError(error),
     },
   },

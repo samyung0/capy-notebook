@@ -136,7 +136,7 @@ import type {
 } from './types';
 
 export interface QueryUiOptions {
-  errorBoundary?: false;
+  errorBoundary?: false | 'unlessMissing';
 }
 
 export interface MutationUiOptions {
@@ -144,9 +144,9 @@ export interface MutationUiOptions {
 }
 
 function queryMeta(options?: QueryUiOptions) {
-  return options?.errorBoundary === false
-    ? ({ errorBoundary: false } as const)
-    : undefined;
+  return options?.errorBoundary === undefined
+    ? undefined
+    : { errorBoundary: options.errorBoundary };
 }
 
 function mutationMeta(options?: MutationUiOptions) {

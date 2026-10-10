@@ -5,8 +5,8 @@ import {
   useParams,
   useRouter,
 } from '@tanstack/react-router';
-import { isApiError } from '@/api/client';
 import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
+import { isMissing } from '@/api/queryClient';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
@@ -36,7 +36,7 @@ function Attempt({ quizId }: { quizId: string }) {
     isLoading,
     isFetchedAfterMount,
   } = useQuiz(quizId, {
-    errorBoundary: false,
+    errorBoundary: 'unlessMissing',
     fresh: true,
   });
   const { mutateAsync: submit } = useSubmitAttempt({ errorToast: false });
@@ -63,17 +63,9 @@ function Attempt({ quizId }: { quizId: string }) {
         </div>
       </PanelWithInvertedRadius>
     );
-  if (isError || !quiz) {
-    const denied =
-      isApiError(error) && (error.status === 404 || error.status === 401);
-    return (
-      <WorkspaceError
-        backLabel={m.quiz_back()}
-        backTo="/quizzes"
-        title={denied ? m.error_private_title() : m.quiz_unable_load()}
-      />
-    );
-  }
+  // Other failures without data go to the error boundary.
+  if (isMissing(error) || !quiz)
+    return <WorkspaceError backLabel={m.quiz_back()} backTo="/quizzes" />;
 
   return (
     <AttemptBody

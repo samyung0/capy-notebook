@@ -4,13 +4,13 @@ import {
   useParams,
   useRouter,
 } from '@tanstack/react-router';
-import { isApiError } from '@/api/client';
 import {
   useCards,
   useCloneFlashcardSet,
   useFlashcardSet,
   useRateReviewItem,
 } from '@/api/hooks';
+import { isMissing } from '@/api/queryClient';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
@@ -40,13 +40,13 @@ function Study({ setId }: { setId: string }) {
     fetchStatus: setFetchStatus,
     isFetchedAfterMount: setFetched,
     error: setError,
-  } = useFlashcardSet(setId, { errorBoundary: false, fresh: true });
+  } = useFlashcardSet(setId, { errorBoundary: 'unlessMissing', fresh: true });
   const {
     data: cards,
     fetchStatus: cardsFetchStatus,
     isFetchedAfterMount: cardsFetched,
     error: cardsError,
-  } = useCards(setId, { errorBoundary: false, fresh: true });
+  } = useCards(setId, { errorBoundary: 'unlessMissing', fresh: true });
   const { mutateAsync: rateItem } = useRateReviewItem();
   const { isPending: cloneIsPending, mutate: cloneSet } = useCloneFlashcardSet({
     errorToast: false,
@@ -63,18 +63,11 @@ function Study({ setId }: { setId: string }) {
       </PanelWithInvertedRadius>
     );
   }
-  const error = setError ?? cardsError;
-  if (error) {
-    const denied =
-      isApiError(error) && (error.status === 404 || error.status === 401);
+  // Other failures without data go to the error boundary.
+  if (isMissing(setError) || isMissing(cardsError))
     return (
-      <WorkspaceError
-        backLabel={m.flashcards_back_to()}
-        backTo="/flashcards"
-        title={denied ? m.error_private_title() : m.flashcards_unable_load()}
-      />
+      <WorkspaceError backLabel={m.flashcards_back_to()} backTo="/flashcards" />
     );
-  }
   if (!set || !cards || !setFetched || !cardsFetched)
     return (
       <PanelWithInvertedRadius>

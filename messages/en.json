@@ -1225,7 +1225,6 @@
   "quiz_edit": "Edit quiz",
   "image_too_large": "Images must be {limit} or smaller, and this one is still too large after shrinking.",
   "quiz_unable_load": "Unable to load quiz.",
-  "flashcards_unable_load": "Unable to load flashcards.",
   "note_updated": "Updated {date}",
   "quiz_prompt_placeholder": "Question prompt",
   "quiz_signin_save_title": "Sign in to save your score",
