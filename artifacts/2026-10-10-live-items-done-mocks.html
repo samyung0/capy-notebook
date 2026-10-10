@@ -41,116 +41,56 @@ code { font-family: var(--mono); font-size: 0.9em }
 </style>
 
 <div class="wrap">
-  <h1>Live item editors: one Done button</h1>
-  <p class="lede">Quizzes, flashcard sets and Mermaid diagrams now save every change as you type (Epo, 2026-10-10). Save, Cancel and Reset are gone; each editor closes with one Done. Every frame uses the app's compiled CSS and tokens. Numbers in brackets point at the questions at the end.</p>
+  <h1>Live item editors: no Save, no Done</h1>
+  <p class="lede">Reference for the live-items UI work (Epo, 2026-10-10). Quizzes, flashcard sets and Mermaid diagrams save every change as you type. Save, Cancel and Reset are gone and there is no Done: dialogs close with their close button or Esc; the quiz and flashcards edit pages and the standalone Mermaid editor leave editing through the View/Edit switch, as notes do, with the cloud status after the title and Undo/Redo buttons. Every frame uses the app's compiled CSS and tokens.</p>
   <div class="toolbar" role="group" aria-label="App theme in frames">
     <span class="lede">App theme</span>
     <button type="button" data-theme-btn="mocha" aria-pressed="true">Mocha</button>
     <button type="button" data-theme-btn="latte" aria-pressed="false">Latte</button>
   </div>
 
-  <h2>0. The live state, everywhere the same</h2>
-  <p class="lede">One status reads the editor's state, with the icons the note header uses. Undo and Redo undo only your own edits (others' typing stays). Offline edits stay on this device and sync on reconnect (2026-10-04).</p>
+  <h2>0. The live state</h2>
+  <p class="lede">The status uses the icons the note header uses. Undo and Redo undo only your own edits (others' typing stays). Offline edits stay on this device and sync on reconnect (2026-10-04).</p>
   <div class="frame" data-f="legend" data-w="1280" data-h="120"></div>
 
   <h2>1. Question dialog</h2>
-  <p class="lede">Fields edit the quiz directly. The outline row of an unfinished part carries the warning icon; the preview says why (D4). Editing a block opens inside the dialog as today, with a back arrow instead of its own Save.</p>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">A</span><h3>Done in the footer, where Save was</h3><span class="rec">RECOMMENDED</span></div>
-    <p>Undo, Redo and the status sit at the footer's left; Remove part (when a part is selected) and Done at its right. The close X stays and does the same as Done.</p>
-    <div class="frame" data-f="qd-a" data-w="1280" data-h="800"></div>
-  </section>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">A</span><h3>Editing a block inside A</h3></div>
-    <p>The block editor swaps in as today. A back arrow returns to the outline; the footer does not change, so Done always closes the whole dialog.</p>
-    <div class="frame" data-f="qd-a-block" data-w="1280" data-h="800"></div>
-  </section>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">B</span><h3>Done in the title row, no footer</h3></div>
-    <p>The X becomes a small Done pill; the status and Undo/Redo sit beside it. More room for the outline and preview, but Done is far from the thumb on phones, the dialogs lose the footer the other dialogs share, and Remove part has to move into the part row's menu.</p>
-    <div class="frame" data-f="qd-b" data-w="1280" data-h="800"></div>
-  </section>
+  <p class="lede">Fields edit the quiz directly. The footer holds Undo, Redo and the status at its left and Remove part at its right; the dialog closes with X or Esc. The outline row of an unfinished part carries the warning icon and the preview says what is missing (D4). Editing a block opens inside the dialog as today, with a back arrow instead of its own Save.</p>
+  <div class="frame" data-f="qd-a" data-w="1280" data-h="800"></div>
+  <p class="lede" style="margin-top:20px">Editing a block inside the dialog:</p>
+  <div class="frame" data-f="qd-a-block" data-w="1280" data-h="800" style="margin-top:10px"></div>
   <div class="phones">
-    <figure><div class="frame" data-f="qd-a-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>A on a phone (the bottom sheet, Outline tab)</figcaption></figure>
-    <figure><div class="frame" data-f="qd-b-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>B on a phone</figcaption></figure>
+    <figure><div class="frame" data-f="qd-a-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>On a phone (the bottom sheet, Outline tab)</figcaption></figure>
   </div>
 
   <h2>2. Card dialog</h2>
-  <p class="lede">Front, image and back edit the set as you type; the image uploads as soon as it is picked (D6). Remove card stays next to Done, as it sat next to Save.</p>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">A</span><h3>Footer: Undo, Redo, status, then Remove card and Done</h3><span class="rec">RECOMMENDED</span></div>
-    <p>The same footer as the question dialog. Shown here while offline: the status says the edits are kept on this device.</p>
-    <div class="frame" data-f="cd-a" data-w="1280" data-h="800"></div>
-  </section>
+  <p class="lede">Front, image and back edit the set as you type; the image uploads as soon as it is picked (D6). Shown offline: the status says the edits are kept on this device.</p>
+  <div class="frame" data-f="cd-a" data-w="1280" data-h="800"></div>
   <div class="phones">
-    <figure><div class="frame" data-f="cd-a-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>A on a phone (fields only, as today)</figcaption></figure>
+    <figure><div class="frame" data-f="cd-a-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>On a phone (fields only, as today)</figcaption></figure>
   </div>
 
   <h2>3. Note Mermaid dialog</h2>
-  <p class="lede">The source edits the diagram block in the note, per character, so two people can type in one diagram. CodeMirror's own Undo (Ctrl+Z) undoes your typing; the footer buttons do the same.</p>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">A</span><h3>Footer as the other dialogs</h3><span class="rec">RECOMMENDED</span></div>
-    <p>Option D's layout stays (source left, live preview right); Cancel and Save give way to the status and Done.</p>
-    <div class="frame" data-f="md-a" data-w="1280" data-h="760"></div>
-  </section>
+  <p class="lede">Option D's layout (source left, live preview right); Cancel and Save give way to the footer status. CodeMirror's own Undo (Ctrl+Z) undoes your typing; the footer buttons do the same.</p>
+  <div class="frame" data-f="md-a" data-w="1280" data-h="760"></div>
 
   <h2>4. Standalone Mermaid editor</h2>
-  <p class="lede">Option A of 2026-10-09 without Cancel and Save. The header keeps the note-style cloud status beside the title and the View switch.</p>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">A</span><h3>Done at the bar's right, where Save was</h3><span class="rec">RECOMMENDED</span></div>
-    <p>Done goes back to View, like the header's switch; the bar keeps the theme dropdown (and Preview on phones).</p>
-    <div class="frame" data-f="ms-a" data-w="1280" data-h="800"></div>
-  </section>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">B</span><h3>The header switch reads Done while editing</h3></div>
-    <p>No button in the bar; the View/Edit switch says Done instead of View for live items. One exit instead of two, but it changes the 2026-10-09 switch label for these items only.</p>
-    <div class="frame" data-f="ms-b" data-w="1280" data-h="800"></div>
-  </section>
+  <p class="lede">Option A of 2026-10-09 without Cancel and Save: the cloud status after the title, the View switch to leave editing, Undo and Redo at the bar's right.</p>
+  <div class="frame" data-f="ms-a" data-w="1280" data-h="800"></div>
   <div class="phones">
-    <figure><div class="frame" data-f="ms-a-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>A on a phone (Preview toggle, Done)</figcaption></figure>
+    <figure><div class="frame" data-f="ms-a-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>On a phone (Preview toggle)</figcaption></figure>
   </div>
 
   <h2>5. Quiz edit page</h2>
-  <p class="lede">The questions render as learners see them, each with Edit and Remove. Reset and Save are gone. A question that is not complete yet carries a warning: learners see it as it is typed, but it is not marked until it is complete (D4).</p>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">A</span><h3>Done at the bottom right, where Save was; warning as a chip</h3></div>
-    <p>The status sits left of Done. The incomplete question gets an amber chip next to its number; the reason shows on hover and in the dialog.</p>
-    <div class="frame" data-f="qe-a" data-w="1280" data-h="900"></div>
-  </section>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">B</span><h3>Done in the page header; warning as a line under the question</h3><span class="rec">RECOMMENDED</span></div>
-    <p>The status icon sits after the title, as on notes, and Done at the header's right, so both stay in view on a long quiz. The warning is a line that names what is missing, readable without hover (phones).</p>
-    <div class="frame" data-f="qe-b" data-w="1280" data-h="900"></div>
-  </section>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">B</span><h3>General tab: the name saves on blur</h3></div>
-    <p>No Save button: leaving the field saves the name (metadata, last write wins) and a short "Saved" shows under it.</p>
-    <div class="frame" data-f="qe-general" data-w="1280" data-h="560"></div>
-  </section>
+  <p class="lede">The questions render as learners see them, each with Edit and Remove. The cloud status follows the title; Undo, Redo and the View switch sit at the header's right. An incomplete question shows a line under it saying what is missing: learners see it as it is typed, but it is not marked until it is complete (D4). The General tab's name saves on blur.</p>
+  <div class="frame" data-f="qe-b" data-w="1280" data-h="900"></div>
+  <div class="frame" data-f="qe-general" data-w="1280" data-h="560" style="margin-top:20px"></div>
   <div class="phones">
-    <figure><div class="frame" data-f="qe-a-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>A on a phone (Done after the last question)</figcaption></figure>
-    <figure><div class="frame" data-f="qe-b-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>B on a phone</figcaption></figure>
+    <figure><div class="frame" data-f="qe-b-phone" data-w="390" data-h="800" data-scale="0.82"></div><figcaption>On a phone</figcaption></figure>
   </div>
 
   <h2>6. Flashcards edit page</h2>
-  <p class="lede">The card grid with its hover toolbar and the dashed Add card tile. Reset and Save are gone; a card edit or removal applies at once. Same two placements as the quiz page.</p>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">A</span><h3>Done at the bottom right</h3></div>
-    <div class="frame" data-f="fe-a" data-w="1280" data-h="800"></div>
-  </section>
-  <section class="opt">
-    <div class="opt-head"><span class="tag">B</span><h3>Done in the page header</h3><span class="rec">RECOMMENDED</span></div>
-    <div class="frame" data-f="fe-b" data-w="1280" data-h="800"></div>
-  </section>
-
-  <h2>Questions for Epo</h2>
-  <ul class="q">
-    <li>(1) Dialogs (question, card, note Mermaid): A, Done in the footer with the status at its left (recommended), or B, Done in the title row?</li>
-    <li>(2) Edit pages (quiz, flashcards): B, status after the title and Done in the header (recommended), or A, Done at the bottom where Save was?</li>
-    <li>(3) Standalone Mermaid: A, Done in the bar (recommended), or B, the header switch reads Done?</li>
-    <li>(4) Incomplete question: a line under the question naming what is missing (recommended), or an amber chip with the reason on hover?</li>
-    <li>(5) Undo and Redo buttons in the dialogs and pages, or keyboard only (Ctrl+Z / Ctrl+Shift+Z) like today's dialogs?</li>
-  </ul>
+  <p class="lede">The card grid with its hover toolbar and the dashed Add card tile; a card edit or removal applies at once. Same header as the quiz page.</p>
+  <div class="frame" data-f="fe-b" data-w="1280" data-h="800"></div>
 </div>
 <script>
 /* The app's compiled stylesheet (tailwind v4 build captured for
@@ -190,7 +130,6 @@ const STATUS = {
 const status = (state = 'saved', cls = '') =>
   `<span role="status" data-state="${state}" class="lv-status ${cls}">${icon(STATUS[state][0], 16)}<span>${STATUS[state][1]}</span></span>`;
 const undoRedo = () => `${iconBtn('undo', 'Undo')}${iconBtn('redo', 'Redo')}`;
-const done = (size = 'lg') => btn('Done', { size });
 
 const MK_CSS = `
 .lv-status{display:inline-flex;align-items:center;gap:6px;font-size:.8125rem;color:var(--text-secondary,var(--color-fg-muted));white-space:nowrap}
@@ -229,7 +168,7 @@ const phoneBar = () => `
 const editPanel = ({ title, trail, headerRight = '', titleAfter = '', tabs = '', body, phone = false }) => `
 <div class="t-body flex h-full flex-col gap-2.5 bg-page p-1.5 text-fg sm:p-2.5">
   ${phone ? phoneBar() : ''}
-  <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card-xl bg-surface">
+  <div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-card-xl bg-surface" style="min-width:0">
     <div class="flex items-start justify-between gap-3 px-${phone ? 4 : 6} pt-${phone ? 4 : 6} pb-2">
       <div class="min-w-0">
         <div class="flex items-center gap-1.5 text-sm text-fg-muted">${icon('back', 16)}<span class="truncate">${trail}</span></div>
@@ -251,7 +190,7 @@ const tabs = (active, phone = false) => `
 
 const OPTIONS = ['Diffusion', 'Osmosis', 'Active transport', 'Endocytosis'];
 const question = ({ n, stem, options, incomplete = null, warn = 'line', chosen = -1, phone = false }) => `
-<div class="flex flex-col gap-3 py-5 ${n > 1 ? 'border-t border-divider' : ''}">
+<div class="flex flex-col gap-3 py-5 ${n > 1 ? 'border-t border-divider' : ''}" style="min-width:0">
   <div class="flex items-start justify-between gap-3">
     <div class="flex min-w-0 items-start gap-3">
       <strong class="w-6 shrink-0 text-base">${n}.</strong>
@@ -262,7 +201,7 @@ const question = ({ n, stem, options, incomplete = null, warn = 'line', chosen =
     </div>
     ${phone ? '' : `<div class="flex shrink-0 gap-1">${btn('Edit', { size: 'sm', variant: 'ghost-hover', iconLeft: 'pencil' })}${btn('Remove', { size: 'sm', variant: 'danger-light', iconLeft: 'trash' })}</div>`}
   </div>
-  <div class="grid gap-2 sm:grid-cols-2" style="padding-left:36px">
+  <div class="grid gap-2" style="padding-left:36px;grid-template-columns:${phone ? '1fr' : 'repeat(2,minmax(0,1fr))'}">
     ${options.map((o, i) => `<div class="flex items-center gap-3 rounded-input border ${i === chosen ? 'border-action-accent' : 'border-line'} px-3.5 py-2.5 text-sm"><strong class="text-fg-muted">${'ABCD'[i]}</strong>${o}</div>`).join('')}
   </div>
   ${incomplete && warn === 'line' ? `<p class="flex items-center gap-1.5 text-sm font-medium lv-warn" style="padding-left:36px">${icon('alert', 15)}${incomplete}</p>` : ''}
@@ -288,10 +227,9 @@ const dialogCard = ({ width, title, sub = '', titleRight = null, body, footer = 
   </div>
 </div>`;
 
-const footerA = ({ state = 'saved', remove = '', phone = false } = {}) =>
-  phone
-    ? `<div class="flex w-full flex-col gap-3"><div class="flex items-center gap-1">${undoRedo()}${status(state, 'ml-1')}</div><div class="flex items-center justify-end gap-2">${remove}${done()}</div></div>`
-    : `<div class="flex items-center gap-1">${undoRedo()}${status(state, 'ml-2')}</div><div class="ml-auto flex items-center gap-2">${remove}${done()}</div>`;
+/** No Done (Epo 2026-10-10): the dialog closes with its X or Esc. */
+const footerA = ({ state = 'saved', remove = '' } = {}) =>
+  `<div class="flex items-center gap-1">${undoRedo()}${status(state, 'ml-2')}</div><div class="ml-auto flex items-center gap-2">${remove}</div>`;
 
 const outlineRow = (label, text, { mark = '', selected = false, warn = false } = {}) => `
 <div class="flex min-w-0 items-center gap-1 rounded-button ${selected ? 'bg-tint-accent-1' : ''}">
@@ -340,23 +278,18 @@ const blockEditorBody = () => `
 const pageBehind = () => `<div class="lv-fill">${editPanel({ title: 'Edit quiz', trail: 'Biology 101 · Cell transport quiz', tabs: tabs('Questions'), body: quizList('line') })}</div>`;
 
 const questionDialog = (variant) => {
-  const titleRight =
-    variant === 'b' ? `<div class="flex items-center gap-1">${undoRedo()}${status('syncing', 'mx-2')}${done('sm')}</div>` : null;
-  const footer =
-    variant === 'b'
-      ? ''
-      : footerA({ state: 'syncing', remove: btn('Remove part', { variant: 'danger-light' }) });
+  const titleRight = null;
+  const footer = footerA({ state: 'syncing', remove: btn('Remove part', { variant: 'danger-light' }) });
   const body = variant === 'a-block' ? blockEditorBody() : questionBody();
   return `${pageBehind()}<div class="lv-dim"></div><div class="lv-center">${dialogCard({ width: 920, title: '<span>Edit question</span>', sub: 'Question 2 of 12', titleRight, body, footer })}</div>`;
 };
 
 const questionDialogPhone = (variant) => {
-  const titleRight =
-    variant === 'b' ? `<div class="flex items-center gap-0.5">${iconBtn('undo', 'Undo')}${status('syncing', 'mx-1')}${done('sm')}</div>` : null;
+  const titleRight = null;
   const body = `
     <div class="scroll-fade-x mb-3 flex gap-1 inset-shadow-[0_-1px_var(--color-divider)]">${['Outline', 'Preview'].map((t, i) => `<button class="border-b-2 px-3 py-2 text-sm ${i === 0 ? 'border-action font-bold' : 'border-transparent font-semibold text-fg-muted'}">${t}</button>`).join('')}</div>
     ${outline()}`;
-  const footer = variant === 'b' ? '' : footerA({ state: 'syncing', phone: true, remove: btn('Remove part', { variant: 'danger-light' }) });
+  const footer = footerA({ state: 'syncing', remove: btn('Remove part', { variant: 'danger-light' }) });
   return `<div class="lv-fill bg-page"></div><div class="lv-dim"></div><div class="lv-sheet">${dialogCard({ width: 390, title: '<span>Edit question</span>', sub: 'Question 2 of 12', titleRight, body, footer, phone: true, sheet: true })}</div>`;
 };
 
@@ -382,7 +315,7 @@ const cardPreview = () => `
 const cardDialog = (phone = false) => {
   const title = '<span>Edit card</span><span class="font-medium text-fg-muted">4/10</span>';
   const body = `<div class="grid gap-7" style="grid-template-columns:${phone ? '1fr' : '1fr 1fr'}">${cardFields()}${phone ? '' : cardPreview()}</div>`;
-  const footer = footerA({ state: 'offline', phone, remove: btn('Remove card', { variant: 'danger-light' }) });
+  const footer = footerA({ state: 'offline', remove: btn('Remove card', { variant: 'danger-light' }) });
   const card = dialogCard({ width: phone ? 390 : 920, title, body, footer, phone });
   const behind = phone ? '<div class="lv-fill bg-page"></div>' : `<div class="lv-fill">${FRAMES['fe-b']()}</div>`;
   return `${behind}<div class="lv-dim"></div><div class="lv-center" ${phone ? 'style="align-items:flex-start;padding-top:24px"' : ''}>${card}</div>`;
@@ -451,6 +384,8 @@ const standaloneShell = ({ headerStatus, toggle, barRight, phone = false }) => `
 
 const cloudIcon = (state = 'saved') => `<span class="inline-flex px-1 text-fg-muted" title="${STATUS[state][1]}">${icon(STATUS[state][0], 18)}</span>`;
 const modeToggle = (label, iconName) => btn(label, { size: 'sm', variant: 'ghost-hover', iconLeft: iconName });
+/** The View/Edit switch shows the mode it switches to (2026-10-09). */
+const viewSwitch = (phone = false) => (phone ? iconBtn('view', 'View') : modeToggle('View', 'view'));
 
 /* ------------------------------------------------------- flashcards page */
 
@@ -473,28 +408,18 @@ const FRAMES = {
 </div>`,
   'qd-a': () => questionDialog('a'),
   'qd-a-block': () => questionDialog('a-block'),
-  'qd-b': () => questionDialog('b'),
   'qd-a-phone': () => questionDialogPhone('a'),
-  'qd-b-phone': () => questionDialogPhone('b'),
   'cd-a': () => cardDialog(false),
   'cd-a-phone': () => cardDialog(true),
   'md-a': () => mermaidDialog(),
-  'ms-a': () => standaloneShell({ headerStatus: cloudIcon('saved'), toggle: modeToggle('View', 'view'), barRight: done('sm') }),
-  'ms-b': () => standaloneShell({ headerStatus: cloudIcon('saved'), toggle: btn('Done', { size: 'sm' }), barRight: '' }),
-  'ms-a-phone': () => standaloneShell({ headerStatus: cloudIcon('syncing'), toggle: iconBtn('view', 'View'), barRight: done('sm'), phone: true }),
-  'qe-a': () =>
-    editPanel({
-      title: 'Edit quiz',
-      trail: 'Biology 101 · Cell transport quiz',
-      tabs: tabs('Questions'),
-      body: `<h2 class="t-card-title mb-2">Questions</h2>${quizList('chip')}<div class="mt-6 flex items-center justify-end gap-3 border-t border-divider pt-5">${undoRedo()}${status('saved', 'mr-2')}${done()}</div>`,
-    }),
+  'ms-a': () => standaloneShell({ headerStatus: cloudIcon('saved'), toggle: viewSwitch(), barRight: undoRedo() }),
+  'ms-a-phone': () => standaloneShell({ headerStatus: cloudIcon('syncing'), toggle: viewSwitch(true), barRight: undoRedo(), phone: true }),
   'qe-b': () =>
     editPanel({
       title: 'Edit quiz',
       titleAfter: cloudIcon('saved'),
       trail: 'Biology 101 · Cell transport quiz',
-      headerRight: `${undoRedo()}<span class="w-2"></span>${done()}`,
+      headerRight: `${undoRedo()}<span class="w-2"></span>${viewSwitch()}`,
       tabs: tabs('Questions'),
       body: `<h2 class="t-card-title mb-2">Questions</h2>${quizList('line')}`,
     }),
@@ -503,20 +428,12 @@ const FRAMES = {
       title: 'Edit quiz',
       titleAfter: cloudIcon('saved'),
       trail: 'Biology 101 · Cell transport quiz',
-      headerRight: `${undoRedo()}<span class="w-2"></span>${done()}`,
+      headerRight: `${undoRedo()}<span class="w-2"></span>${viewSwitch()}`,
       tabs: tabs('General'),
       body: `<div class="mb-6"><h2 class="t-card-title">General</h2><p class="text-sm text-fg-muted">The quiz name shows in the workspace and its chapters.</p></div>
         <div class="grid gap-4 sm:grid-cols-2"><label class="flex flex-col gap-1.5"><span class="t-subtitle flex items-center font-medium">Quiz name<span class="t-meta ml-auto font-normal text-fg-muted">22/120</span></span>
         <div class="flex h-11 items-center rounded-input border border-line bg-field px-3.5 text-sm">Cell transport quiz</div>
         <span class="lv-status mt-0.5">${icon('check', 15)}Saved</span></label></div>`,
-    }),
-  'qe-a-phone': () =>
-    editPanel({
-      phone: true,
-      title: 'Edit quiz',
-      trail: 'Cell transport quiz',
-      tabs: tabs('Questions', true),
-      body: `${question({ n: 2, stem: 'Which process needs energy from respiration to move ions against their concentration gradient?', options: ['Diffusion', 'Osmosis', 'Active transport', 'Facilitated diffusion'], incomplete: 'Not marked yet: choose the correct option.', warn: 'chip', phone: true })}<div class="flex items-center justify-between gap-2 border-t border-divider pt-4">${status('saved')}${done()}</div>`,
     }),
   'qe-b-phone': () =>
     editPanel({
@@ -524,22 +441,16 @@ const FRAMES = {
       title: 'Edit quiz',
       titleAfter: cloudIcon('saved'),
       trail: 'Cell transport quiz',
-      headerRight: done('sm'),
+      headerRight: `${iconBtn('undo', 'Undo')}${viewSwitch(true)}`,
       tabs: tabs('Questions', true),
       body: question({ n: 2, stem: 'Which process needs energy from respiration to move ions against their concentration gradient?', options: ['Diffusion', 'Osmosis', 'Active transport', 'Facilitated diffusion'], incomplete: 'Not marked yet: choose the correct option.', warn: 'line', phone: true }),
-    }),
-  'fe-a': () =>
-    editPanel({
-      title: 'Edit flashcards',
-      trail: 'Biology 101 · Cell transport cards',
-      body: `${cardGrid()}<div class="mt-6 flex items-center justify-end gap-3">${undoRedo()}${status('saved', 'mr-2')}${done()}</div>`,
     }),
   'fe-b': () =>
     editPanel({
       title: 'Edit flashcards',
       titleAfter: cloudIcon('syncing'),
       trail: 'Biology 101 · Cell transport cards',
-      headerRight: `${undoRedo()}<span class="w-2"></span>${done()}`,
+      headerRight: `${undoRedo()}<span class="w-2"></span>${viewSwitch()}`,
       body: cardGrid(),
     }),
 };
@@ -555,8 +466,9 @@ function doc(key) {
 
 function fit(el) {
   const w = +el.dataset.w, h = +el.dataset.h;
-  const room = document.querySelector('.wrap').clientWidth - 32;
-  const max = el.dataset.scale ? Math.min(w * +el.dataset.scale, room) : el.parentElement.clientWidth;
+  const inner = (node) => { const cs = getComputedStyle(node); return node.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight); };
+  const room = inner(document.querySelector('.wrap'));
+  const max = el.dataset.scale ? Math.min(w * +el.dataset.scale, room) : Math.min(inner(el.parentElement), room);
   const scale = Math.min(1, max / w);
   el.style.width = w * scale + 'px';
   el.style.height = h * scale + 'px';
