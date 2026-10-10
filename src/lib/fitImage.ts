@@ -10,7 +10,11 @@ export const IMAGE_ACCEPT =
 const MAX_SIDE = 2000;
 const QUALITIES = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4];
 const EXTENSION = /\.[^.]*$/;
-const EXTENSIONS: Record<string, string> = {
+/** The image types the server stores as editor images, by the extension its
+ * reservation wants (server/internal/httpapi/editor_assets.go). */
+export const IMAGE_EXTENSIONS: Record<string, string> = {
+  'image/avif': 'avif',
+  'image/gif': 'gif',
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
@@ -104,7 +108,7 @@ export async function fitImage(file: File, maxBytes: number): Promise<File> {
       if (blob && blob.size <= maxBytes)
         return new File(
           [blob],
-          `${file.name.replace(EXTENSION, '')}.${EXTENSIONS[blob.type] ?? 'png'}`,
+          `${file.name.replace(EXTENSION, '')}.${IMAGE_EXTENSIONS[blob.type] ?? 'png'}`,
           { type: blob.type }
         );
     } finally {

@@ -60,22 +60,41 @@ describe('uploads in presence', () => {
     expect(seenByOther(clients, 'block-a')).toBe(false);
   });
 
-  it('keeps a paste of many uploads inside the server awareness entry', () => {
-    const { uploader } = room();
-    uploader.setLocalStateField('cursor', {
-      anchor: { assoc: 0, item: { client: 2 ** 31, clock: 1e6 }, type: null },
-      focus: { assoc: 0, item: { client: 2 ** 31, clock: 1e6 }, type: null },
-    });
+  // REVIEW5 E1, E3: the room closes a channel past a 64 KiB entry.
+  it('names at most 100 uploads, and counts at most 100 short ids it receives', () => {
+    const clients = room();
+    const { uploader } = clients;
     uploader.setLocalStateField('data', {
       color: '#7c3aed',
       name: 'A'.repeat(80),
     });
     // Placeholder ids are nanoids, 21 characters.
-    for (let n = 0; n < 2500; n++)
-      announceUpload(uploader, n.toString(36).padStart(21, '0'));
-    // The room keeps entries up to 64 KiB (MAX_AWARENESS_ENTRY).
+    const id = (n: number) => n.toString(36).padStart(21, '0');
+    for (let n = 0; n < 150; n++) announceUpload(uploader, id(n));
+    expect(uploader.getLocalState()?.uploads).toHaveLength(100);
     expect(JSON.stringify(uploader.getLocalState()).length).toBeLessThan(
-      64 * 1024
+      4 * 1024
     );
+    clients.relay();
+    expect(seenByOther(clients, id(99))).toBe(true);
+    expect(seenByOther(clients, id(100))).toBe(false);
+
+    // A hostile list: long ids and ids past the first 100 do not count.
+    const { other } = clients;
+    const hostile = new Awareness(new Y.Doc());
+    hostile.setLocalStateField('uploads', [
+      'x'.repeat(33),
+      ...Array.from({ length: 200 }, (_, n) => `h${n}`),
+    ]);
+    applyAwarenessUpdate(
+      other,
+      encodeAwarenessUpdate(hostile, [hostile.clientID]),
+      'remote'
+    );
+    const seen = (block: string) =>
+      uploadingElsewhere(other.getStates(), other.clientID, block);
+    expect(seen('x'.repeat(33))).toBe(false);
+    expect(seen('h98')).toBe(true);
+    expect(seen('h99')).toBe(false);
   });
 });

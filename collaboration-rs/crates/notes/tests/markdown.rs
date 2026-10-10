@@ -128,6 +128,21 @@ fn agent_images_become_links() {
             },
         ])
     );
+    // An image that goes, alone in a quote, list item or cell, leaves an
+    // empty text there instead of failing the conversion (REVIEW5 S2).
+    for (source, kind) in [
+        ("> ![q](javascript:x)", "blockquote"),
+        ("- ![i](diagram.png)", "p"),
+        ("| a |\n|---|\n| ![t](/t.png) |", "table"),
+    ] {
+        let converted = converter.convert(source).unwrap();
+        notes::material::assert_canonical(&converted.document.value, "note").unwrap();
+        let value = serde_json::to_value(&converted.document.value).unwrap();
+        let text = value.to_string();
+        assert_eq!(value[0]["type"], kind, "{source}: {text}");
+        assert!(!text.contains("\"img\""), "{source}: {text}");
+        assert!(text.contains(r#"{"text":""}"#), "{source}: {text}");
+    }
 }
 
 fn strip_ids(value: &mut Value) {

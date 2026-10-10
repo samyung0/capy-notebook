@@ -10,10 +10,15 @@ import type { Awareness } from 'y-protocols/awareness';
  * leaves or its awareness times out, the block is the empty placeholder again.
  *
  * Size: an id is at most 21 characters, ~24 bytes of the server's 64 KiB
- * awareness entry (a cursor takes ~200 B), so one tab can name about 2,500
- * uploads at once, far past what a paste or an imported document brings.
+ * awareness entry, which the room refuses past (closing the channel). A tab
+ * names at most 100 uploads, under 3 KiB (pasted images upload four at a time,
+ * so the rest wait unnamed, as empty placeholders for the others); a list a
+ * client receives counts only its first 100 ids of up to 32 characters, so a
+ * hostile list costs no more to scan (REVIEW5 E1, E3).
  */
 const UPLOADS = 'uploads';
+const MAX_UPLOADS = 100;
+const MAX_ID = 32;
 
 /** The editor's room presence, when it has one (a collaborative editor). */
 export function editorAwareness(editor: unknown): Awareness | null {
@@ -24,17 +29,23 @@ export function editorAwareness(editor: unknown): Awareness | null {
 
 function listed(state: unknown): string[] {
   const uploads = (state as Record<string, unknown> | null)?.[UPLOADS];
-  return Array.isArray(uploads) ? uploads : [];
+  if (!Array.isArray(uploads)) return [];
+  return uploads
+    .slice(0, MAX_UPLOADS)
+    .filter(
+      (id): id is string => typeof id === 'string' && id.length <= MAX_ID
+    );
 }
 
 /** Names `id` as an upload in this client's awareness until the returned
- * function runs (the upload finished, failed or was cancelled). */
+ * function runs (the upload finished, failed or was cancelled); past 100
+ * named uploads, not at all. */
 export function announceUpload(awareness: Awareness | null, id: string) {
-  if (!awareness) return () => undefined;
-  awareness.setLocalStateField(UPLOADS, [
-    ...listed(awareness.getLocalState()).filter((other) => other !== id),
-    id,
-  ]);
+  const named = awareness ? listed(awareness.getLocalState()) : [];
+  if (!awareness || (named.length >= MAX_UPLOADS && !named.includes(id)))
+    return () => undefined;
+  if (!named.includes(id))
+    awareness.setLocalStateField(UPLOADS, [...named, id]);
   return () => {
     const rest = listed(awareness.getLocalState()).filter(
       (other) => other !== id

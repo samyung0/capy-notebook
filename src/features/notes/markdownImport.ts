@@ -39,7 +39,8 @@ const PLAIN: DeserializeMdOptions = {
  * assets only (Epo, 2026-10-10), so each becomes something else. */
 export type UrlImage = { text: string; url: string };
 
-function webUrl(url: string): string | null {
+/** `url` as an absolute http(s) URL, or null. */
+export function webUrl(url: string): string | null {
   try {
     const parsed = new URL(url);
     return parsed.protocol === 'https:' || parsed.protocol === 'http:'
@@ -77,7 +78,9 @@ export function urlImageLink(
 }
 
 /** `nodes` with each URL image replaced by what `replace` gives. One inside
- * an inline element (an image in a link) becomes its alt text there. */
+ * an inline element (an image in a link) becomes its alt text there; an
+ * element left with nothing (a quote, list item or cell that held only a
+ * dropped image) keeps an empty text leaf. */
 export function replaceUrlImages(
   editor: SlateEditor,
   nodes: Descendant[],
@@ -99,17 +102,32 @@ export function replaceUrlImages(
         .join('')
         .trim();
       if (inline) return [{ text: text || (webUrl(node.url) ?? '') }];
-      return replace({ text, url: node.url });
+      const replaced = replace({ text, url: node.url });
+      // A list item that held only a dropped image stays an empty item.
+      if (replaced.length || node.listStyleType === undefined) return replaced;
+      const list = Object.fromEntries(
+        ['indent', 'listStart', 'listStyleType', 'checked']
+          .filter((key) => node[key] !== undefined)
+          .map((key) => [key, node[key]])
+      );
+      return [
+        {
+          ...list,
+          children: [{ text: '' }],
+          type: editor.getType(KEYS.p),
+        } as Descendant,
+      ];
     }
+    const children = replaceUrlImages(
+      editor,
+      node.children,
+      replace,
+      inline || editor.api.isInline(node)
+    );
     return [
       {
         ...node,
-        children: replaceUrlImages(
-          editor,
-          node.children,
-          replace,
-          inline || editor.api.isInline(node)
-        ),
+        children: children.length ? children : [{ text: '' }],
       } as Descendant,
     ];
   });
