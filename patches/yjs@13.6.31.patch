@@ -1,0 +1,32 @@
+diff --git a/dist/yjs.cjs b/dist/yjs.cjs
+index 5b5690e..0967784 100644
+--- a/dist/yjs.cjs
++++ b/dist/yjs.cjs
+@@ -3334,7 +3334,10 @@ const cleanupTransactions = (transactionCleanups, i) => {
+         });
+         fs.push(() => doc.emit('afterTransaction', [transaction, doc]));
+         fs.push(() => {
+-          if (transaction._needFormattingCleanup) {
++          // Capy patch: a doc built with `meta: { formattingCleanup: false }`
++          // skips this cleanup, which deletes redundant format markers in a
++          // new local transaction that its provider sends to every peer.
++          if (transaction._needFormattingCleanup && doc.meta?.formattingCleanup !== false) {
+             cleanupYTextAfterTransaction(transaction);
+           }
+         });
+diff --git a/dist/yjs.mjs b/dist/yjs.mjs
+index 10d633d..1f28cc4 100644
+--- a/dist/yjs.mjs
++++ b/dist/yjs.mjs
+@@ -3297,7 +3297,10 @@ const cleanupTransactions = (transactionCleanups, i) => {
+         });
+         fs.push(() => doc.emit('afterTransaction', [transaction, doc]));
+         fs.push(() => {
+-          if (transaction._needFormattingCleanup) {
++          // Capy patch: a doc built with `meta: { formattingCleanup: false }`
++          // skips this cleanup, which deletes redundant format markers in a
++          // new local transaction that its provider sends to every peer.
++          if (transaction._needFormattingCleanup && doc.meta?.formattingCleanup !== false) {
+             cleanupYTextAfterTransaction(transaction);
+           }
+         });

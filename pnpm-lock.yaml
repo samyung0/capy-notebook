@@ -8,6 +8,7 @@ settings:
 patchedDependencies:
   "@hocuspocus/provider@3.4.4": 81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5
   "@hocuspocus/server@4.5.0": 538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a
+  yjs@13.6.31: d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1
 
 importers:
   .:
@@ -47,7 +48,7 @@ importers:
         version: 5.3.0
       "@hocuspocus/provider":
         specifier: 3.4.4
-        version: 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        version: 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       "@hookform/resolvers":
         specifier: ^5.4.0
         version: 5.7.1(@sinclair/typebox@0.31.30)(@standard-schema/spec@1.1.0)(ajv@8.20.0)(react-hook-form@7.85.0(react@19.2.8))(valibot@1.4.2(typescript@7.0.2))(zod@4.4.3)
@@ -152,7 +153,7 @@ importers:
         version: 53.0.0(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@platejs/yjs":
         specifier: 53.2.0
-        version: 53.2.0(@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(slate@0.126.0)(y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31))
+        version: 53.2.0(@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(slate@0.126.0)(y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))
       "@radix-ui/react-menu":
         specifier: 2.1.24
         version: 2.1.24(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -161,7 +162,7 @@ importers:
         version: 10.70.0(react@19.2.8)
       "@slate-yjs/core":
         specifier: ^1.0.2
-        version: 1.0.2(slate@0.126.0)(yjs@13.6.31)
+        version: 1.0.2(slate@0.126.0)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       "@tanstack/react-query":
         specifier: ^5.59.0
         version: 5.101.4(react@19.2.8)
@@ -302,7 +303,7 @@ importers:
         version: 2.9.0
       yjs:
         specifier: ^13.6.31
-        version: 13.6.31
+        version: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -396,19 +397,19 @@ importers:
         version: 4.125.0(@cloudflare/workers-types@5.20260823.1)
       y-protocols:
         specifier: 1.0.7
-        version: 1.0.7(yjs@13.6.31)
+        version: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
 
   collaboration:
     dependencies:
       "@hocuspocus/server":
         specifier: 4.5.0
-        version: 4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        version: 4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       "@sentry/node":
         specifier: ^10.70.0
         version: 10.70.0(@opentelemetry/core@2.10.0(@opentelemetry/api@1.9.1))(supports-color@10.2.2)
       "@slate-yjs/core":
         specifier: 1.0.2
-        version: 1.0.2(slate@0.124.1)(yjs@13.6.31)
+        version: 1.0.2(slate@0.124.1)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       ioredis:
         specifier: 5.6.1
         version: 5.6.1(supports-color@10.2.2)
@@ -420,14 +421,14 @@ importers:
         version: 0.124.1
       yjs:
         specifier: 13.6.31
-        version: 13.6.31
+        version: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
       zod:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
       "@hocuspocus/provider":
         specifier: 3.4.4
-        version: 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        version: 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       "@platejs/basic-nodes":
         specifier: ^53.0.0
         version: 53.0.0(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -529,7 +530,7 @@ importers:
     dependencies:
       "@maily-to/core":
         specifier: 0.3.7
-        version: 0.3.7(@tiptap/extension-code-block@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2))(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+        version: 0.3.7(@tiptap/extension-code-block@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2))(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       "@maily-to/render":
         specifier: 0.2.3
         version: 0.2.3(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -15251,27 +15252,27 @@ snapshots:
     dependencies:
       lib0: 0.2.117
 
-  "@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)":
+  "@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))":
     dependencies:
       "@hocuspocus/common": 3.4.4
       "@lifeomic/attempt": 3.1.0
       lib0: 0.2.117
       ws: 8.21.3
-      y-protocols: 1.0.7(yjs@13.6.31)
-      yjs: 13.6.31
+      y-protocols: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
 
-  "@hocuspocus/server@4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)":
+  "@hocuspocus/server@4.5.0(patch_hash=538d0ffda9cd2c02358a9a33c46cf3ed40fcdc9e41355f296121c0281366bd7a)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))":
     dependencies:
       "@hocuspocus/common": 4.5.0
       async-mutex: 0.5.0
       crossws: 0.4.10
       kleur: 4.1.5
       lib0: 0.2.117
-      y-protocols: 1.0.7(yjs@13.6.31)
-      yjs: 13.6.31
+      y-protocols: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
     transitivePeerDependencies:
       - srvx
 
@@ -15606,7 +15607,7 @@ snapshots:
 
   "@lix-js/server-protocol-schema@0.1.1": {}
 
-  "@maily-to/core@0.3.7(@tiptap/extension-code-block@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2))(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)":
+  "@maily-to/core@0.3.7(@tiptap/extension-code-block@2.27.2(@tiptap/core@2.27.2(@tiptap/pm@2.27.2))(@tiptap/pm@2.27.2))(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))":
     dependencies:
       "@radix-ui/react-dropdown-menu": 2.1.24(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       "@radix-ui/react-popover": 1.1.23(@types/react-dom@19.2.4(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -15644,7 +15645,7 @@ snapshots:
       tailwindcss: 4.3.3
       tippy.js: 6.3.7
       uuid: 11.1.1
-      y-prosemirror: 1.3.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
+      y-prosemirror: 1.3.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
     transitivePeerDependencies:
       - "@tiptap/extension-code-block"
       - "@types/react"
@@ -16287,18 +16288,18 @@ snapshots:
       - scheduler
       - use-sync-external-store
 
-  "@platejs/yjs@53.2.0(@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(slate@0.126.0)(y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31))":
+  "@platejs/yjs@53.2.0(@hocuspocus/provider@3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(platejs@53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8)))(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(slate@0.126.0)(y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))":
     dependencies:
-      "@hocuspocus/provider": 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31)
-      "@slate-yjs/core": 1.0.2(slate@0.126.0)(yjs@13.6.31)
+      "@hocuspocus/provider": 3.4.4(patch_hash=81efcc291ca63f791c07b9fba81a0318116b624169238a4985733cbe3464a3c5)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      "@slate-yjs/core": 1.0.2(slate@0.126.0)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
       platejs: 53.3.3(@types/react@19.2.18)(immer@10.2.0)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)(scheduler@0.27.0)(use-sync-external-store@1.6.0(react@19.2.8))
       react: 19.2.8
       react-compiler-runtime: 1.0.0(react@19.2.8)
       react-dom: 19.2.8(react@19.2.8)
-      y-indexeddb: 9.0.12(yjs@13.6.31)
-      y-protocols: 1.0.7(yjs@13.6.31)
-      y-webrtc: 10.3.0(supports-color@10.2.2)(yjs@13.6.31)
-      yjs: 13.6.31
+      y-indexeddb: 9.0.12(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      y-protocols: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      y-webrtc: 10.3.0(supports-color@10.2.2)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
     transitivePeerDependencies:
       - slate
 
@@ -18156,17 +18157,17 @@ snapshots:
 
   "@sindresorhus/merge-streams@4.0.0": {}
 
-  "@slate-yjs/core@1.0.2(slate@0.124.1)(yjs@13.6.31)":
+  "@slate-yjs/core@1.0.2(slate@0.124.1)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))":
     dependencies:
       slate: 0.124.1
-      y-protocols: 1.0.7(yjs@13.6.31)
-      yjs: 13.6.31
+      y-protocols: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
 
-  "@slate-yjs/core@1.0.2(slate@0.126.0)(yjs@13.6.31)":
+  "@slate-yjs/core@1.0.2(slate@0.126.0)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))":
     dependencies:
       slate: 0.126.0
-      y-protocols: 1.0.7(yjs@13.6.31)
-      yjs: 13.6.31
+      y-protocols: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
 
   "@speed-highlight/core@1.2.24": {}
 
@@ -23670,31 +23671,31 @@ snapshots:
 
   xtend@4.0.2: {}
 
-  y-indexeddb@9.0.12(yjs@13.6.31):
+  y-indexeddb@9.0.12(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)):
     dependencies:
       lib0: 0.2.117
-      yjs: 13.6.31
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
 
-  y-prosemirror@1.3.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(y-protocols@1.0.7(yjs@13.6.31))(yjs@13.6.31):
+  y-prosemirror@1.3.7(prosemirror-model@1.25.11)(prosemirror-state@1.4.4)(prosemirror-view@1.42.3)(y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)))(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)):
     dependencies:
       lib0: 0.2.117
       prosemirror-model: 1.25.11
       prosemirror-state: 1.4.4
       prosemirror-view: 1.42.3
-      y-protocols: 1.0.7(yjs@13.6.31)
-      yjs: 13.6.31
+      y-protocols: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
 
-  y-protocols@1.0.7(yjs@13.6.31):
+  y-protocols@1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)):
     dependencies:
       lib0: 0.2.117
-      yjs: 13.6.31
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
 
-  y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31):
+  y-webrtc@10.3.0(supports-color@10.2.2)(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)):
     dependencies:
       lib0: 0.2.117
       simple-peer: 9.11.1(supports-color@10.2.2)
-      y-protocols: 1.0.7(yjs@13.6.31)
-      yjs: 13.6.31
+      y-protocols: 1.0.7(yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1))
+      yjs: 13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1)
     optionalDependencies:
       ws: 8.21.3
     transitivePeerDependencies:
@@ -23720,7 +23721,7 @@ snapshots:
       y18n: 5.0.8
       yargs-parser: 21.1.1
 
-  yjs@13.6.31:
+  yjs@13.6.31(patch_hash=d8e2189957b3401ec280ef40b4fabdc91b05a1b9a520bcf03b065d499406f9e1):
     dependencies:
       lib0: 0.2.117
 

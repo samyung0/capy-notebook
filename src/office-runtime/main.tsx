@@ -227,19 +227,32 @@ function OfficeRuntime() {
       unsubscribeRef.current?.();
       replicaRef.current = replica;
       if (!replica) return;
-      for (const update of pendingUpdates.current.splice(0))
-        replica.applyUpdate(update);
       const revision = revisionRef.current,
         epoch = epochRef.current;
+      // The XLSX replica refuses an update from its worker, later.
+      const refused = (error: unknown) => {
+        if (revision !== null)
+          post({
+            message: error instanceof Error ? error.message : String(error),
+            revision,
+            type: 'error',
+          });
+      };
+      for (const update of pendingUpdates.current.splice(0))
+        void Promise.resolve(replica.applyUpdate(update)).catch(refused);
       if (revision === null || epoch === null) return;
       unsubscribeRef.current = replica.onUpdate((update, origin) => {
         if (origin !== 'local') return;
         const bytes = update.slice().buffer;
         post({ bytes, epoch, revision, type: 'update' }, [bytes]);
       });
-      const bytes = replica.encodeStateAsUpdate().slice().buffer;
-      post({ bytes, epoch, revision, type: 'collaboration-ready' }, [bytes]);
-      sendMenus();
+      // The XLSX replica answers from its worker, after the updates above.
+      void Promise.resolve(replica.encodeStateAsUpdate()).then((state) => {
+        if (replicaRef.current !== replica) return;
+        const bytes = state.slice().buffer;
+        post({ bytes, epoch, revision, type: 'collaboration-ready' }, [bytes]);
+        sendMenus();
+      }, refused);
     },
     [sendMenus]
   );
@@ -392,7 +405,8 @@ function OfficeRuntime() {
       }
       if (message.type === 'update' && message.epoch === epochRef.current) {
         const update = new Uint8Array(message.bytes);
-        if (replicaRef.current) replicaRef.current.applyUpdate(update);
+        // A refusal (the XLSX worker's comes later) is this message's error.
+        if (replicaRef.current) await replicaRef.current.applyUpdate(update);
         else pendingUpdates.current.push(update);
         return;
       }
@@ -402,8 +416,10 @@ function OfficeRuntime() {
         replicaRef.current &&
         revisionRef.current !== null
       ) {
+        const replica = replicaRef.current;
         await flush();
-        const bytes = replicaRef.current.encodeStateAsUpdate().slice().buffer;
+        const state = await replica.encodeStateAsUpdate();
+        const bytes = state.slice().buffer;
         post(
           {
             bytes,

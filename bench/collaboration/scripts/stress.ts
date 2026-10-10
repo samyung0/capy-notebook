@@ -899,7 +899,8 @@ async function connect(room: Room, name: string): Promise<Peer> {
 }
 
 async function join(room: Room, name: string): Promise<Peer> {
-  const doc = new Y.Doc();
+  // An Office peer skips Yjs's formatting cleanup, as the app's host does (sourceDocOptions in src/features/files/sourceProvider.ts).
+  const doc = new Y.Doc(room.kind === 'office' ? { meta: { formattingCleanup: false } } : {});
   const first = await room.token();
   let token: string | null = first.token;
   const provider = new HocuspocusProvider({

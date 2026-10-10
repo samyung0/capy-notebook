@@ -1,6 +1,15 @@
 import { HocuspocusProvider } from '@hocuspocus/provider';
 import type * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
+import type { SourceSession } from '@/api/types';
+
+/** Options for a source room's Y.Doc. An Office document skips Yjs's
+ * after-transaction formatting cleanup (patches/yjs@13.6.31.patch), which
+ * would delete redundant format markers in a local transaction sent to the
+ * room: yrs keeps them in Office editors and rooms. Text keeps the cleanup. */
+export function sourceDocOptions(format: SourceSession['format']) {
+  return format === 'text' ? {} : { meta: { formattingCleanup: false } };
+}
 
 /** The slice of HocuspocusProvider that source editing drives. Under MSW an
  * in-page provider registered by the mocks stands in for the sidecar. */

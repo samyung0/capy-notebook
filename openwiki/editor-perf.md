@@ -129,7 +129,9 @@ Per file it reports:
   `Runtime.queryObjects`. Every call is bounded (5 s) and a worker's detach
   fails what is pending, so a worker that ends or stops answering is listed
   with `missing` (and counted in `workersMissing`), never waited on. Linear memory never shrinks, so `wasmMB` is also
-  the high-water mark. `performance.measureUserAgentSpecificMemory` would
+  the high-water mark; the modules grow it in steps of up to 64 MiB
+  ([frontend/office-files.md](frontend/office-files.md)), so it can run ahead
+  of what an engine holds by one step. `performance.measureUserAgentSpecificMemory` would
   need cross-origin isolation, which the app does not have;
 - `runner`: the CPU model and core count of the machine that ran it, in every
   Office result (the shared runner pool mixes EPYC models);
@@ -182,7 +184,29 @@ asynchronous render could miss, `frameSignal: "next frame"`) and the long
 tasks from the post to that frame (`longTask`). It fails when an edit never
 arrives or never reaches its frame, or the runtime reports an error; XLSX
 also checks the cell reads the peer's last value. It runs on its own page,
-so the typing figures stay comparable with earlier runs.
+so the typing figures stay comparable with earlier runs. XLSX also reports
+`toPaint` (receipt to the next painted grid: an init script records when the
+grid canvas is cleared for a frame, `window.__xlsxPaints`), the long tasks up
+to that paint, and `longestTask`, since the editor's workbook worker paints
+after the frame the apply returned in.
+
+XLSX has three more report-only cases. `large paste and row insert` posts a
+peer's 8,000-cell paste (1,000 rows by 8 columns from the fixture's cell) and
+row insert (a whole recalculation) straight to the runtime as host updates;
+the XLSX engine in Node (the fork's loader) makes each from the fixture and
+its room's state under its own client id, so the room never sees them. Then
+it pastes the same block from the clipboard and runs Insert › Row above as a
+menu command: per operation the longest and summed long tasks and the delay
+to the painted grid. `typing while a peer pastes and inserts a row` types
+twenty values with Enter into the gradebook's column while the same kind of
+updates arrive, checks the selection walked on by twenty and every value is
+in its cell, and reports the typing span and the long tasks meanwhile.
+`rows-50k.xlsx: open to Edit and scrolling` opens one 50,000-row sheet
+(`gen_large_xlsx.py 1 50000 values`, seeded with the load-test files) in Edit
+and scrolls it 60 and 600 px a frame for 3 s: grid paints and animation
+frames per second, the longest gap between paints, the long tasks, and the
+heap with the workers. The typing cases report the keystroke p95 and, for
+XLSX, Enter to the painted grid (`enterToPaintP50Ms`, `enterToPaintP95Ms`).
 
 It runs unthrottled: CDP's CPU throttle reaches neither the runtime frame nor
 the engine workers. Every file fails on unpainted keys, typing that sends no

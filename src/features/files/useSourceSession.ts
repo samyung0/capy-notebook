@@ -47,6 +47,7 @@ import {
   OFFICE_EDITING_PAUSED_REASON,
   SOURCE_PUBLISHING_REASON,
   type SourceProvider,
+  sourceDocOptions,
 } from './sourceProvider';
 
 export type SourceSaveState =
@@ -354,7 +355,8 @@ export function useSourceSession(
       if (!response.ok) throw new SourceSessionError(m.error_file_body());
       const bytes = new Uint8Array(await response.arrayBuffer());
       if (cancelled) return;
-      const shared = new Y.Doc();
+      const docOptions = sourceDocOptions(session.format);
+      const shared = new Y.Doc(docOptions);
       doc = shared;
       // A text session carries its state; an Office editor takes its document
       // from the room's sync (the stored state may be a change over the seed).
@@ -367,7 +369,9 @@ export function useSourceSession(
         sameSourceLineage(session.format)
       );
       const draft = found[0];
-      const opened = draft ? await openRecoveryGroup(found, report) : null;
+      const opened = draft
+        ? await openRecoveryGroup(found, report, docOptions)
+        : null;
       if (cancelled) return;
       if (draft && opened && typeof opened === 'object') {
         reportRecoveryGroup(found, report);

@@ -64,9 +64,9 @@ export function XlsxEditorHost({
       // Settles pending input first, or throws.
       return apiRef.current.save();
     });
-    onFlusher(() => {
+    onFlusher(async () => {
       if (!apiRef.current) throw new Error('Editor is still loading');
-      apiRef.current.flush();
+      await apiRef.current.flush();
     });
     return () => {
       onExporter(null);
@@ -95,8 +95,9 @@ export function XlsxEditorHost({
     onRenderer(async (kind) => {
       const api = apiRef.current;
       if (!api) throw new Error('Editor is still loading');
-      const draw = api.handle.displayList.bind(api.handle);
-      if (kind === 'print') return sheetPages(draw, api.handle.sheetInfo());
+      const draw = api.handle.displayList;
+      if (kind === 'print')
+        return sheetPages(draw, await api.handle.sheetInfo());
       const viewport = api.visibleViewport();
       if (!viewport) throw new Error('Nothing to render');
       return [await viewportPage(draw, viewport)];
@@ -116,8 +117,8 @@ export function XlsxEditorHost({
         initialZoom={initialZoom}
         onCommandStateChange={setCommandState}
         onFirstPaint={() => {
-          if (apiRef.current)
-            onAnalysis(analyzeOpenWorkbook(apiRef.current.handle));
+          const info = apiRef.current?.sheetInfo();
+          if (info) onAnalysis(analyzeOpenWorkbook({ sheetInfo: () => info }));
         }}
         onPendingChange={onPendingChange}
         onReady={(api) => {

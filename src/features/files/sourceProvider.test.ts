@@ -3,6 +3,7 @@ import * as Y from 'yjs';
 import {
   createSourceProvider,
   SOURCE_PUBLISHING_REASON,
+  sourceDocOptions,
 } from './sourceProvider';
 
 type Handlers = {
@@ -70,4 +71,36 @@ it('reports other authentication failures at once', () => {
     reason: 'permission-denied',
   });
   expect(provider.disconnect).not.toHaveBeenCalled();
+});
+
+// Two peers bold the same story at once, so the merged update doubles every
+// format marker. Yjs's cleanup deletes the doubles in a local transaction the
+// host would send; an Office document skips it (patches/yjs@13.6.31.patch).
+// The host never types the Office roots, as here: only nested texts clean up.
+it('an Office document sends nothing after a remote update leaves redundant format markers; text sends the cleanup', () => {
+  const peers = [new Y.Doc(), new Y.Doc()];
+  peers[0].getMap('body').set('story', new Y.Text('bold'));
+  const seed = Y.encodeStateAsUpdate(peers[0]);
+  Y.applyUpdate(peers[1], seed);
+  const formats = peers.map((peer) => {
+    const before = Y.encodeStateVector(peer);
+    (peer.getMap('body').get('story') as Y.Text).format(0, 4, { bold: true });
+    return Y.encodeStateAsUpdate(peer, before);
+  });
+  const sent = (format: 'docx' | 'text') => {
+    const host = new Y.Doc(sourceDocOptions(format));
+    Y.applyUpdate(host, seed, 'room');
+    const own: Uint8Array[] = [];
+    host.on('update', (update: Uint8Array, origin: unknown) => {
+      if (origin !== 'room') own.push(update);
+    });
+    Y.applyUpdate(host, Y.mergeUpdates(formats), 'room');
+    const story = host.getMap('body').get('story') as Y.Text;
+    expect(story.toDelta()).toEqual([
+      { attributes: { bold: true }, insert: 'bold' },
+    ]);
+    return own.length;
+  };
+  expect(sent('docx')).toBe(0);
+  expect(sent('text')).toBe(1);
 });

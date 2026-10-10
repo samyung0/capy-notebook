@@ -101,6 +101,14 @@ bridge with the editor. The React editor and editor WASM are imported only after
 the user presses Edit. DOCX lowering runs in a disposable worker that terminates
 as soon as it transfers the immutable display list, so its parser, transient
 Yrs projection, and viewer linear memory are absent during ordinary reading.
+Every editor and viewer WASM module grows its linear memory in steps as large
+as the memory already is, at most 64 MiB (`vendor/betteroffice/crates/wasm-alloc`):
+Rust's allocator alone grows it by the 64 KiB a request needs, and each grow
+costs the browser time that rises with the memory's size (0.1 ms at 16 MiB,
+1.6 ms at 512 MiB in Chrome), so a 248-page DOCX took 69 s to open in View,
+54 s of it growing memory, against 16 s with the steps (Chrome on Windows,
+median of three, 2026-10-09). Memory can run ahead of what an engine holds by
+one step.
 Viewer analysis reuses the already-open handle, so sheet/slide metadata does not
 trigger a second parse. Every viewer and editor sends `ready` once its first
 pages, grid or slide (pictures included) are painted, with the runtime's own
@@ -121,6 +129,36 @@ the viewport; the others get a plain-text copy (roles, links and language kept),
 swapped in at idle, so screen readers reach the whole document while scrolling
 stays cheap. The positioned mirror follows the viewport only once the scroll
 has held still for 300 ms, so pages that scroll past keep their plain text.
+
+The XLSX editor keeps its workbook (the engine and its Yrs document) in a
+dedicated worker, one per open file (`openWorkbookWorker` in
+`@betteroffice/xlsx`, `packages/xlsx/src/worker/`); the runtime's main thread
+holds no copy. The editor talks to it through an async proxy whose requests run
+in the order they are posted, and the replica the runtime hands the host is
+that proxy: peer updates are posted to the worker, its local updates come back
+before the reply of the request that made them, and `encodeStateAsUpdate`
+answers once every earlier request has run. The worker draws frames: the
+display list of the scrolled window plus everything the chrome reads at once
+(sheet info, the editable text of every non-empty drawn cell, read in blocks
+under the engine's 100,000-cell range cap, the focus cell, the selection's
+formatting and merges, read again only when the selection or the workbook
+changes, history, proposals), one request in flight and a view change meanwhile
+asked for again at the next animation frame. The main thread
+paints the frame and places the selection, the open cell edit and the remote
+cursors from that same frame in one commit, so a peer's frame never moves them
+off the pixels. A committed cell input is drawn over its cell until the
+worker's frame shows it. Every change the editor makes names the active sheet's
+id and runs only while that sheet is still the active one, so a peer's sheet
+removal or reorder that reaches the worker first drops it (a draft is dropped,
+as above) rather than landing it elsewhere. Bold, italic and strikethrough flip
+from the range's state when the worker reaches them. A display list reuses the
+grid geometry the sheet info memoized: building one walks every cell for row
+autofit (130 ms native on a 50,000-row sheet). A change the host makes through
+the editor's `handle` repaints like the editor's own. Closing or swapping the
+file while it opens ends its worker at once, and a browser without module
+workers gets an explicit open error, with no main-thread fallback. Print pages
+take one display-list request per band, so a change that lands while they are
+drawn can show on some pages and not others.
 
 DOCX view mode (`DocxDisplayListViewer`) makes that mirror its text layer, as a
 PDF viewer's: there is no second copy of the text. The positioned mirror's text
@@ -206,6 +244,18 @@ The parent owns the Hocuspocus provider and Y.Doc. The isolated iframe exchanges
 raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
+
+The parent's Y.Doc runs no formatting cleanup, matching yrs in the editor and
+the room. Stock Yjs, after every remote update to a text with formatting,
+deletes the redundant format markers it leaves in a new local transaction,
+which the provider and the iframe relay would send on. Yjs 13.6.31 carries a
+Capy pnpm patch (`patches/yjs@13.6.31.patch`) that skips that cleanup for a
+doc built with `meta: { formattingCleanup: false }`. `sourceDocOptions`
+(`src/features/files/sourceProvider.ts`) sets it for an Office session's
+document, a recovered draft group of an Office file, and an Office room in the
+mock collaboration service. The stress bench's Office peers and the UAT
+journey that re-exports a stored Office state build theirs with the same
+option. Text sources and notes keep the cleanup.
 
 Each format accepts exactly one fork-owned state schema and rejects every
 other; there are no migrations. Office editing state stores only what users
@@ -976,10 +1026,11 @@ shifted that sheet's index. Once a draft is dropped neither the grid nor the
 formula bar keeps the focus, so the keys still being typed do nothing until a
 click. Clicking a sheet
 tab gives the grid the keys. A cell wider
-or taller than the view stays put while it spans it. The editor only asks the engine where
+or taller than the view stays put while it spans it. The editor only asks the worker where
 the cell is (`cellPosition`, from the geometry `sheet_info` memoized) when the
-painted frame, if it is the live view, does not show it whole, and a key that
-scrolls paints once. Firefox caps an element's height near 17.9M px, so its
+painted frame, if it is the live view and newer than the last change, does not
+show it whole; an Enter that commits and scrolls draws the commit's frame and
+the scrolled one. Firefox caps an element's height near 17.9M px, so its
 scroll area stops short of the last ~150k rows; keys there still land in the
 edit.
 

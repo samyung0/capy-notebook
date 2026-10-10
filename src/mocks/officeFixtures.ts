@@ -1,5 +1,6 @@
 import longXlsxURL from '../../bench/editor/fixtures/office/large-gradebook.xlsx?url';
 import longDocxURL from '../../bench/editor/fixtures/office/long-handbook.docx?url';
+import rowsXlsxURL from '../../bench/editor/fixtures/office/rows-50k.xlsx?url';
 import longPptxURL from '../../bench/parsers/fixtures/docs/jp_llm2.pptx?url';
 import xlsxURL from '../../e2e/fixtures/files/rich-content/course-guide.xlsx?url';
 import docxURL from '../../e2e/fixtures/files/rich-content/exchange-plan.docx?url';
@@ -10,6 +11,7 @@ import longXlsxStateURL from './fixtures/long-xlsx-checkpoint.bin?url';
 import docxStateURL from './fixtures/rich-docx-checkpoint.bin?url';
 import pptxStateURL from './fixtures/rich-pptx-checkpoint.bin?url';
 import xlsxStateURL from './fixtures/rich-xlsx-checkpoint.bin?url';
+import rowsXlsxStateURL from './fixtures/rows-xlsx-checkpoint.bin?url';
 
 export const biologyOfficeFixtures = [
   {
@@ -60,6 +62,16 @@ export const biologyOfficeFixtures = [
           sizeBytes: 1_362_647,
           sourceURL: longXlsxURL,
           stateURL: longXlsxStateURL,
+        },
+        // One sheet of 50,000 rows, scrolled by the spec.
+        {
+          format: 'xlsx',
+          id: 'bio-office-xlsx-rows',
+          kind: 'sheet',
+          name: 'rows-50k.xlsx',
+          sizeBytes: 3_282_402,
+          sourceURL: rowsXlsxURL,
+          stateURL: rowsXlsxStateURL,
         },
         {
           format: 'pptx',

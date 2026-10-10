@@ -13,6 +13,7 @@ for (const [format, file, checkpoint] of [
   // The Office perf spec's large files (VITE_LOAD_TEST_SEED).
   ['docx', 'bench/editor/fixtures/office/long-handbook.docx', 'long-docx'],
   ['xlsx', 'bench/editor/fixtures/office/large-gradebook.xlsx', 'long-xlsx'],
+  ['xlsx', 'bench/editor/fixtures/office/rows-50k.xlsx', 'rows-xlsx'],
   ['pptx', 'bench/parsers/fixtures/docs/jp_llm2.pptx', 'long-pptx'],
 ] as const) {
   const result = await seedOffice(
