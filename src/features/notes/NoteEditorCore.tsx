@@ -728,6 +728,7 @@ export function NoteEditorCore({
         const unsaved = hasUnsavedWork() || !!recorder.current?.unsaved;
         if (unsaved) recorder.current?.refuse();
         pendingCheckpoints.current.clear();
+        checkpointEmbeds.current.clear();
         saveDelay.retain([]);
         setStatus('error');
         reportRejection.current?.(
