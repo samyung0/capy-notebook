@@ -1051,7 +1051,11 @@ including an empty block, without text anchors or a quote. The browser captures
 the block ID when the comment dialog opens. It reads the current native range
 when both endpoints belong to that editor, so a fast Comment click does not
 capture an older range while Slate's throttled selection sync is pending.
-Commands opened outside the editor retain its stored Slate selection.
+Commands opened outside the editor retain its stored Slate selection; the
+command palette first stores the same live native range when Ctrl+K opens
+it, before its search input takes focus (`liveSelection` in
+`editorTransforms.ts`), so a shortcut pressed before that sync still acts
+on what is selected.
 
 The block's comment count opens a popover (`BlockDiscussionThreads`) listing
 its threads, divided by rules. A thread is a flat list of comments in creation

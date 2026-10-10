@@ -52,6 +52,7 @@ import { errorCopy } from '@/lib/errors';
 import { textLength } from '@/lib/textLength';
 import { firstLineMiddle } from './BlockInteractions';
 import { useEditorRuntime } from './EditorRuntime';
+import { liveSelection } from './editorTransforms';
 
 const COMMENT_DECORATION_KEY = 'capy_comment_highlight';
 
@@ -401,16 +402,7 @@ export function CollaborationProvider({
       openComment: () => {
         if (!canEdit) return;
         // A toolbar click can precede Slate's throttled native selection sync.
-        const nativeSelection = editor.api.getWindow()?.getSelection();
-        const selection =
-          nativeSelection &&
-          editor.api.hasSelectableTarget(nativeSelection.anchorNode) &&
-          editor.api.hasTarget(nativeSelection.focusNode)
-            ? editor.api.toSlateRange(nativeSelection, {
-                exactMatch: false,
-                suppressThrow: true,
-              })
-            : editor.selection;
+        const selection = liveSelection(editor);
         if (!selection) return;
         const blockId = editor.api.node([selection.anchor.path[0]])?.[0]?.id;
         if (typeof blockId !== 'string' || !blockId) return;

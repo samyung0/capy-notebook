@@ -21,7 +21,11 @@ for (const target of [
       exact: true,
     });
     await selectEditorLine(page, paragraph);
-    if (target === 'cursor' || target === 'immediate selection')
+    if (
+      target === 'cursor' ||
+      target === 'immediate selection' ||
+      target === 'palette selection'
+    )
       await page.keyboard.press('ArrowLeft');
     if (target === 'empty block') {
       await page.keyboard.press('Backspace');
@@ -32,7 +36,7 @@ for (const target of [
         editor.getByText(EDITOR_NOTE.secondParagraph, { exact: true })
       ).toBeVisible();
     }
-    if (target !== 'selected text' && target !== 'palette selection') {
+    if (target !== 'selected text') {
       await expect(
         page.getByRole('toolbar', { name: m.editor_selection_actions() })
       ).toBeHidden();
@@ -55,7 +59,22 @@ for (const target of [
         await paragraph.elementHandle()
       );
     } else if (target === 'palette selection') {
-      await page.keyboard.press('ControlOrMeta+k');
+      // Ctrl+K in the same task: the palette, whose input then takes focus,
+      // must store the native selection Slate has not synced yet.
+      await paragraph.evaluate((text) => {
+        const range = document.createRange();
+        range.selectNodeContents(text);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        window.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            bubbles: true,
+            ctrlKey: true,
+            key: 'k',
+          })
+        );
+      });
       const palette = page.getByRole('dialog', {
         name: m.editor_command_palette(),
       });
