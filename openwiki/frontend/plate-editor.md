@@ -540,7 +540,7 @@ fewest changes, and an insert or a clone (a move) creates the text. The
 editors bind CodeMirror to the text itself (`yTextCodeMirror.ts`: local
 changes go in under the binding's origin, remote ones come back as one
 CodeMirror transaction kept out of its history); the note block's dialog finds
-it by the block's id (`mermaidSourceText`). A source a room still holds as a
+it by the block's path, top-level or nested (`mermaidSourceText`). A source a room still holds as a
 string (written before shape A) becomes a text when an editor first binds it,
 outside every Undo. The Rust server bootstraps sources as texts, reads them as
 their strings in the projection and the metrics, bounds a string typed into

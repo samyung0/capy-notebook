@@ -672,9 +672,10 @@ export function MermaidElement(props: PlateElementProps) {
                 </ToolbarButton>
                 <MediaBlockActions
                   element={props.element}
-                  onEdit={() =>
-                    setEditing(mermaidSourceText(editor, element.id))
-                  }
+                  onEdit={() => {
+                    const at = locate();
+                    setEditing(at ? mermaidSourceText(editor, at) : null);
+                  }}
                 />
               </>
             )

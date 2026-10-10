@@ -1,5 +1,6 @@
 import { YjsEditor } from '@slate-yjs/core';
 import {
+  type Descendant,
   NodeApi,
   type Operation,
   type Path,
@@ -49,24 +50,43 @@ export function stampMermaidTheme<O extends Operation>(
   return { ...operation, node: { ...operation.node, theme } };
 }
 
-/** The source text (shape A) of the top-level mermaid block `id` in the
- * note's shared document, for its dialog to edit live. Null outside a
- * collaborative editor. */
+/** The source text (shape A) of the mermaid block at `at`, top-level or
+ * nested (a column, a callout), for its dialog to edit live. The block's
+ * Y.XmlText is found the way slate-yjs maps a path (`getYTarget`): at each
+ * level, the Slate children before it count their text lengths, an element
+ * one. Null outside a collaborative editor or where the path holds no
+ * mermaid block. */
 export function mermaidSourceText(
   editor: SlateEditor,
-  id: string
+  at: Path
 ): Y.Text | null {
   if (!YjsEditor.isYjsEditor(editor)) return null;
-  for (const op of editor.sharedRoot.toDelta() as { insert: unknown }[]) {
-    const block = op.insert;
-    if (
-      block instanceof Y.XmlText &&
-      block.getAttribute('type') === 'mermaid' &&
-      block.getAttribute('id') === id
-    )
-      return blockSource(block);
+  let parent: Y.XmlText = editor.sharedRoot;
+  let children = editor.children as Descendant[];
+  for (const index of at) {
+    const offset = children
+      .slice(0, index)
+      .reduce(
+        (total, child) =>
+          total + ('text' in child ? (child.text as string).length : 1),
+        0
+      );
+    let position = 0;
+    let found: Y.XmlText | null = null;
+    for (const { insert } of parent.toDelta() as { insert: unknown }[]) {
+      if (position === offset && insert instanceof Y.XmlText) {
+        found = insert;
+        break;
+      }
+      position += typeof insert === 'string' ? insert.length : 1;
+      if (position > offset) break;
+    }
+    const node = children[index];
+    if (!(found && node && 'children' in node)) return null;
+    parent = found;
+    children = node.children as Descendant[];
   }
-  return null;
+  return parent.getAttribute('type') === 'mermaid' ? blockSource(parent) : null;
 }
 
 /** Replaces the caption text of the mermaid block at `at`. */

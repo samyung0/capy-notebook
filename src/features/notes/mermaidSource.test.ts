@@ -126,11 +126,31 @@ it('finds a block source for its dialog, turning a stored string into a text out
   const undo = new Y.UndoManager(root, {
     trackedOrigins: new Set([LOCAL_EDIT]),
   });
-  const text = mermaidSourceText(editor as never, 'd1');
+  const text = mermaidSourceText(editor as never, [1]);
   expect(text).toBeInstanceOf(Y.Text);
   expect(String(text)).toBe(SOURCE);
   expect(legacy.getAttribute('source')).toBe(text);
   expect(undo.undoStack).toHaveLength(0);
-  expect(mermaidSourceText(editor as never, 'd1')).toBe(text);
+  expect(mermaidSourceText(editor as never, [1])).toBe(text);
   expect((editor.children[1] as never)['source']).toBe(SOURCE);
+});
+
+// REVIEW4 S1: a mermaid block inside a container (a callout, a column) opens
+// its dialog too: its text is found by the block's path, not among the
+// top-level blocks alone.
+it('finds a nested block source by its path', () => {
+  const { editor } = setup([
+    { children: [{ text: 'before' }], id: 'p1', type: 'p' },
+    {
+      children: [
+        { children: [{ text: 'inside' }], id: 'p2', type: 'p' },
+        mermaid('d2', 'graph LR\n  In --> Out'),
+      ],
+      id: 'c1',
+      type: 'callout',
+    },
+  ]);
+  const text = mermaidSourceText(editor as never, [1, 1]);
+  expect(String(text)).toBe('graph LR\n  In --> Out');
+  expect(mermaidSourceText(editor as never, [1, 0])).toBeNull();
 });
