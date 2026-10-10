@@ -62,6 +62,7 @@ Very happy, very demure.
 
 If you don't need UAT data or backend (pure UI):
 - `VITE_USE_MSW=true`
+- `VITE_EMBED_ORIGIN=http://127.0.0.1:5180` (interactive blocks; without it they show "Interactive blocks are not set up on this site.")
 - `pnpm run dev`
 - Open `https://localhost:5173`
 
