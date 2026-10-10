@@ -72,6 +72,14 @@ fn main() {
             std::process::exit(1);
         }
     };
+    #[cfg(target_os = "linux")]
+    match raise_open_files() {
+        Ok(limit) => log(Level::Info, "open_files_limit", json!({ "soft": limit })),
+        Err(error) => {
+            observe::capture(&error, None, &[("stage", "open_files_limit")]);
+            std::process::exit(1);
+        }
+    }
     #[allow(clippy::expect_used)]
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
@@ -81,6 +89,31 @@ fn main() {
         observe::capture(&error, None, &[("stage", "startup")]);
         std::process::exit(1);
     }
+}
+
+/// Raises the open-file soft limit to the hard limit, as Go's and Node's
+/// runtimes do at startup: every client socket, gateway call and database
+/// connection is a descriptor, and Docker gives a container a soft limit of
+/// 1024 (prod Phase B: the server stopped near 1,000 connections). The server
+/// does not start under a limit it could not raise.
+#[cfg(target_os = "linux")]
+fn raise_open_files() -> Result<u64, String> {
+    use rlimit::Resource;
+    let (_, hard) = Resource::NOFILE
+        .get()
+        .map_err(|error| format!("reading the open-file limit: {error}"))?;
+    Resource::NOFILE
+        .set(hard, hard)
+        .map_err(|error| format!("raising the open-file limit to {hard}: {error}"))?;
+    let (soft, hard) = Resource::NOFILE
+        .get()
+        .map_err(|error| format!("reading the open-file limit: {error}"))?;
+    if soft != hard {
+        return Err(format!(
+            "the open-file limit is {soft} after raising it to {hard}"
+        ));
+    }
+    Ok(soft)
 }
 
 /// The longest wait for a pooled database connection.
@@ -335,5 +368,21 @@ async fn shutdown(app: &app::Shared) {
     }
     for wait in waits {
         let _ = wait.await;
+    }
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    /// The kernel's own view (`/proc/self/limits`) after the raise: soft
+    /// equals hard (prod Phase B: soft 1024 under a hard 524288).
+    #[test]
+    fn the_open_file_limit_is_raised_to_the_hard_limit() {
+        let raised = super::raise_open_files().expect("raised");
+        let files = rlimit::ProcLimits::read_self()
+            .expect("/proc/self/limits")
+            .max_open_files
+            .expect("Max open files");
+        assert_eq!(files.soft_limit, Some(raised));
+        assert_eq!(files.soft_limit, files.hard_limit);
     }
 }

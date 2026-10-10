@@ -2939,6 +2939,7 @@ dependencies = [
  "rand 0.9.5",
  "redis",
  "reqwest",
+ "rlimit",
  "sentry",
  "serde",
  "serde_json",

@@ -426,6 +426,17 @@ The prod file runs `/migrate` once per deploy, starts the API with
    7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
    lean on swap; they bound a runaway call, not the expected footprint.
 
+   Every client socket, gateway call and database connection is an open
+   file. The compose files give the collaboration service `nofile` 524288,
+   and the server raises its soft limit to the hard one at startup, as Go and
+   Node do, logging `open_files_limit`. If the raise fails, the server exits
+   instead of serving. Docker's default soft limit of 1024 held it near 1,000
+   connections in the production capacity run. To check:
+
+   ```bash
+   docker exec $(docker ps -qf name=collaboration) sh -c 'grep "open files" /proc/1/limits'
+   ```
+
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
    WASM toolchain and `uv sync` come from the layer cache until their lockfile

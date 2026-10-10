@@ -183,6 +183,14 @@ services:
       COLLABORATION_UAT_PUBLICATION_HOLD: ${COLLABORATION_UAT_PUBLICATION_HOLD:-}
     expose:
       - "1234"
+    # Every client socket, gateway call and database connection is a
+    # descriptor; Docker's default soft limit of 1024 held the server near
+    # 1,000 connections (prod Phase B). The server also raises its soft limit
+    # to the hard one at startup, as Go and Node do.
+    ulimits:
+      nofile:
+        soft: 524288
+        hard: 524288
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "-", "http://127.0.0.1:1234/healthz"]
       interval: 5s

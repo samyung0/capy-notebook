@@ -34,6 +34,9 @@ uuid.workspace = true
 ydoc.workspace = true
 yrs.workspace = true
 
+[target.'cfg(target_os = "linux")'.dependencies]
+rlimit = "0.10"
+
 [dev-dependencies]
 sentry = { workspace = true, features = ["test"] }
 tokio-tungstenite = "0.29"
