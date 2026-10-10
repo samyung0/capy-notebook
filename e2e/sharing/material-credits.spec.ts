@@ -47,9 +47,13 @@ test('a note credits its embedded quiz inside the embed and in its footer', asyn
   await expectEditorLive(ownerPage);
   await check(ownerPage);
 
-  // Removing its last question removes the embed; once the note saves, the
-  // footer is read again and drops the quiz's credit.
+  // Removing its last question (confirmed) removes the embed; once the note
+  // saves, the footer is read again and drops the quiz's credit.
   await ownerPage
+    .getByRole('button', { exact: true, name: m.action_remove() })
+    .click();
+  await ownerPage
+    .getByRole('dialog')
     .getByRole('button', { exact: true, name: m.action_remove() })
     .click();
   const noteFooter = footers(ownerPage).filter({ hasText: note.noteBook });
