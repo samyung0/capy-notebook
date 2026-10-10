@@ -92,8 +92,8 @@ func tableCells(value any) bool {
 	return true
 }
 
-// gapMarker is a numbered blank in a gaps part's text: "(1) ______".
-var gapMarker = regexp.MustCompile(`\((\d+)\) ?_{3,}`)
+// GapMarker is a numbered blank in a gaps part's text: "(1) ______".
+var GapMarker = regexp.MustCompile(`\((\d+)\) ?_{3,}`)
 
 var quantityPattern = regexp.MustCompile(`^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?(?:\s*/\s*[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?)?$`)
 
@@ -730,7 +730,7 @@ func gapsNumbered(p map[string]any) bool {
 		if b["type"] != "text" {
 			continue
 		}
-		for _, match := range gapMarker.FindAllStringSubmatch(text, -1) {
+		for _, match := range GapMarker.FindAllStringSubmatch(text, -1) {
 			if match[1] != strconv.Itoa(next) {
 				return false
 			}

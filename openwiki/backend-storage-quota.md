@@ -99,6 +99,10 @@ no durable B2 parse cache or preview PDF. Temporary parse output is a platform
 cost and does not increase `files.size_bytes` or user storage usage. Migration
 0016 removes the preview columns; migration 0038 releases the B2 parse caches.
 Native PDFs reuse `blob_path`.
+File thumbnails (`files.thumbnail_key`, one small WebP per file), text-source
+previews (`files.preview`) and material list previews (`materials.preview`) are
+likewise a platform cost: never charged, no reservation, and `size_bytes` stays
+the source or content alone ([thumbnails.md](thumbnails.md)).
 Google-native imports now store editable Office exports; those source bytes and
 saved editing state still count toward the owner's quota. Export sizes can differ
 substantially from the previous Google PDF export, in either direction.

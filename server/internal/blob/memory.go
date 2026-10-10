@@ -59,6 +59,11 @@ func (s *Memory) PresignGetWithExpiry(_ context.Context, path string) (Presigned
 	}, nil
 }
 
+// PresignStableGet is constant per path, which is stable within any hour.
+func (s *Memory) PresignStableGet(_ context.Context, path string) (string, error) {
+	return "memory://" + path, nil
+}
+
 func (s *Memory) PresignPut(_ context.Context, path, contentType string, _ int64) (PresignedPut, error) {
 	return PresignedPut{
 		URL:       "memory-put://" + path,
@@ -237,6 +242,15 @@ func (s *Disk) PresignGetWithExpiry(_ context.Context, path string) (PresignedGe
 		return PresignedGet{}, err
 	}
 	return PresignedGet{URL: "file://" + full, ExpiresAt: time.Now().UTC().Add(s.ttl)}, nil
+}
+
+// PresignStableGet is constant per path, which is stable within any hour.
+func (s *Disk) PresignStableGet(_ context.Context, path string) (string, error) {
+	full, err := s.resolve(path)
+	if err != nil {
+		return "", err
+	}
+	return "file://" + full, nil
 }
 
 func (s *Disk) PresignPut(_ context.Context, path, contentType string, _ int64) (PresignedPut, error) {

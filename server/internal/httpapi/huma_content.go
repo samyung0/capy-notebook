@@ -167,6 +167,9 @@ func (a *api) listOwnedFiles(ctx context.Context, in *filesListInput) (*filePage
 	if err != nil {
 		return nil, hErr(err)
 	}
+	if err := a.signFileThumbnails(ctx, page.Items); err != nil {
+		return nil, hErr(err)
+	}
 	return &filePageOutput{Body: page}, nil
 }
 
@@ -178,7 +181,36 @@ func (a *api) listWorkspaceFiles(ctx context.Context, in *workspaceIDInput) (*fi
 	if err != nil {
 		return nil, hErr(err)
 	}
+	if err := a.signFileThumbnails(ctx, res); err != nil {
+		return nil, hErr(err)
+	}
 	return &filesOutput{Body: res}, nil
+}
+
+// signFileThumbnails gives each row its hour-stable thumbnail link. Callers
+// pass only rows an access-scoped query returned for this caller, so a link is
+// minted exactly for files the caller can already read (openwiki/thumbnails.md,
+// TestListThumbnailsFollowReadAccess). Signing is local: no database call.
+func (a *api) signFileThumbnails(ctx context.Context, files []store.File) error {
+	for i := range files {
+		url, err := a.thumbnailURL(ctx, files[i].ThumbnailKey)
+		if err != nil {
+			return err
+		}
+		files[i].ThumbnailURL = url
+	}
+	return nil
+}
+
+func (a *api) thumbnailURL(ctx context.Context, key string) (*string, error) {
+	if key == "" || a.blob == nil {
+		return nil, nil
+	}
+	url, err := a.blob.PresignStableGet(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return &url, nil
 }
 
 func (a *api) getFile(ctx context.Context, in *fileIDInput) (*fileOutput, error) {

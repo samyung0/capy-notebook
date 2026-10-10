@@ -1783,6 +1783,13 @@ components:
         position:
           format: int64
           type: integer
+        preview:
+          properties:
+            text:
+              type: string
+          required:
+            - text
+          type: object
         previewUrl:
           type: string
         provenance:
@@ -1795,6 +1802,9 @@ components:
           type: integer
         status:
           $ref: "#/components/schemas/FileStatus"
+        thumbnailUrl:
+          description: Hour-stable presigned GET of the page-1 thumbnail; list rows only
+          type: string
         workspaceId:
           type: string
       required:
@@ -2731,6 +2741,10 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/MaterialKind"
+        preview:
+          additionalProperties: true
+          description: List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md
+          type: object
         privacy:
           $ref: "#/components/schemas/Privacy"
         questionCount:
@@ -2801,6 +2815,10 @@ components:
         position:
           format: int64
           type: integer
+        preview:
+          additionalProperties: true
+          description: List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md
+          type: object
         provenance:
           $ref: "#/components/schemas/Provenance"
         sizeBytes:
@@ -5659,12 +5677,19 @@ components:
           type: string
         materialKind:
           type: string
+        preview:
+          additionalProperties: true
+          description: A material's list-card preview, or {text} for a text source file; see openwiki/thumbnails.md
+          type: object
         purgeAfter:
           format: date-time
           type: string
         sizeBytes:
           format: int64
           type: integer
+        thumbnailUrl:
+          description: Hour-stable presigned GET of a source file's page-1 thumbnail
+          type: string
         title:
           type: string
         trashedAt:

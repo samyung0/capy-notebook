@@ -1161,10 +1161,61 @@ def test_office_run_keeps_only_evidence_in_bundle(monkeypatch, tmp_path):
     )
     result = parser_app.run_document(parser_app.Document(b"office", "example.docx"))
     assert result["_page_evidence"]["page_texts"][0].strip() == "Source text"
+    assert "thumbnail" in result["_phases"]
     bundle = parser_app._bundle_bytes(result, "fingerprint", "request", {})
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         assert not any(name.lower().endswith(".pdf") for name in archive.namelist())
         assert json.loads(archive.read("manifest.json"))["source_format"] == "docx"
+        page = archive.read("page1.png")
+    # Page 1 of the conversion in hand, so ingest never converts it again.
+    from PIL import Image
+
+    with Image.open(io.BytesIO(page)) as image:
+        # An A4 page 200 px wide; PyMuPDF rounds 283.03 up.
+        assert (image.format, image.size) == ("PNG", (200, 284))
+
+
+def test_a_failed_page_render_leaves_the_parse_and_bundle_intact(monkeypatch, tmp_path):
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
+    from types import SimpleNamespace
+
+    import pymupdf
+    from odl import capture, document, refine
+
+    with pymupdf.open() as pdf:
+        pdf.new_page().insert_text((50, 100), "Source text")
+        data = pdf.tobytes()
+    monkeypatch.setattr(
+        document,
+        "normalize_document",
+        lambda *_args: SimpleNamespace(
+            data=data, preview_pdf=data, source_format="pptx"
+        ),
+    )
+    monkeypatch.setattr(
+        refine,
+        "parse_pdf",
+        lambda *_args, **_kwargs: SimpleNamespace(
+            content_list=[{"type": "text", "text": "Source text", "page_idx": 0}],
+            markdown="Source text",
+            ocr_pages=[],
+            page_count=1,
+            phases={},
+            repaired_fonts=[],
+            furniture=[],
+            parsed_pdf=None,
+        ),
+    )
+
+    def broken(_pdf):
+        raise RuntimeError("render failed")
+
+    monkeypatch.setattr(capture, "page_thumbnail", broken)
+    result = parser_app.run_document(parser_app.Document(b"office", "deck.pptx"))
+    assert "_page_image" not in result
+    bundle = parser_app._bundle_bytes(result, "fingerprint", "request", {})
+    with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
+        assert "page1.png" not in archive.namelist()
 
 
 @pytest.mark.asyncio

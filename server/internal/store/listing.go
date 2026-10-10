@@ -144,12 +144,13 @@ type MaterialListItem struct {
 	ChapterName   string       `json:"chapterName"`
 	Privacy       Privacy      `json:"privacy"`
 	// SharePath is the signed share link of a standalone quiz or flashcard set.
-	SharePath     string    `json:"sharePath,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
-	SizeBytes     int64     `json:"sizeBytes"`
-	QuestionCount *int      `json:"questionCount,omitempty"`
-	CardCount     *int      `json:"cardCount,omitempty"`
+	SharePath     string          `json:"sharePath,omitempty"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	UpdatedAt     time.Time       `json:"updatedAt"`
+	SizeBytes     int64           `json:"sizeBytes"`
+	QuestionCount *int            `json:"questionCount,omitempty"`
+	CardCount     *int            `json:"cardCount,omitempty"`
+	Preview       MaterialPreview `json:"preview,omitempty"`
 }
 
 type MaterialPage struct {
@@ -206,7 +207,8 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			m.privacy, m.created_at, m.updated_at, m.size_bytes,
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
-			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END
+			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
+			m.preview
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
 		LEFT JOIN chapters c ON c.id=m.chapter_id`+where+
@@ -221,7 +223,7 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
 			&item.ChapterID, &item.ChapterName,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
-			&item.QuestionCount, &item.CardCount); err != nil {
+			&item.QuestionCount, &item.CardCount, &item.Preview); err != nil {
 			return MaterialPage{}, err
 		}
 		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, "")

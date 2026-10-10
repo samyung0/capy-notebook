@@ -908,6 +908,12 @@ Sources: [upload reservation and finalization](../server/internal/store/uploads.
 
 ### File status and previews
 
+List rows carry a file's thumbnail as `thumbnailUrl`, an hour-stable presigned
+link that follows the file's read access: handlers sign only rows their
+access-scoped queries returned, so members, link and public readers get links
+for the files they can open and nobody else does; the anonymous summary carries
+none ([thumbnails.md](thumbnails.md)).
+
 Workspace file status describes processing after upload finalization:
 `pending` is queued, `processing` is parsing or indexing, `ready` is finished
 (including store-only files with `indexed=false`), and `failed` means processing
@@ -961,7 +967,9 @@ Sources: [upload expiry and pruning](../server/internal/store/uploads.go#L202),
 
 Physical deletion is coordinated through `pending_blob_deletions`, a durable
 database outbox. Reference-count triggers cover source objects, parsed objects,
-editor assets, upload-session paths, source collaboration bases and refresh candidates. Image-caption payloads are owned by `image_caption_associations`; optional audio caches use `artifact_cache`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
+editor assets, upload-session paths, source collaboration bases and refresh candidates,
+and file thumbnails (`files.thumbnail_key`: a new capture releases the old key;
+[thumbnails.md](thumbnails.md)). Image-caption payloads are owned by `image_caption_associations`; optional audio caches use `artifact_cache`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
 foreign-key cascades, so deleting a file, deleting a workspace, or purging an
 account all reach the same cleanup path without relying on an HTTP handler to
 enumerate bucket keys.
@@ -1081,7 +1089,7 @@ The sweep:
 
 - runs once at server startup and then every 30 days;
 - lists `sources/`, `captions/`, `derived-text/`, `parse-bundles/`, `previews/`,
-  and `editor-assets/`;
+  `editor-assets/` and `thumbs/`;
 - ignores objects newer than 48 hours so in-flight finalization is not reported;
 - treats both live blob rows and upload-session source/destination paths as
   known references; and

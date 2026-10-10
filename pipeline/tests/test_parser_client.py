@@ -567,6 +567,42 @@ def test_office_bundle_requires_evidence_and_rejects_pdfs(tmp_path: Path, monkey
         parser_client._extract(artifact, raw, FAST_VERSION, office=True)
 
 
+def test_an_office_bundle_may_carry_its_page_image(tmp_path: Path, monkeypatch):
+    """``page1.png`` is optional and bounded; ingest reads it back for the
+    file's thumbnail and finds None in a bundle without one."""
+    raw = tmp_path / "raw"
+    raw.mkdir()
+    evidence = json.dumps(
+        {
+            "furniture": [],
+            "page_evidence": {"page_texts": ["Hello"], "visible_headings": []},
+        }
+    )
+    png = b"\x89PNG\r\n\x1a\n" + b"page"
+    artifact = _install_artifact(
+        monkeypatch,
+        tmp_path,
+        fingerprint="with-page",
+        extra={"refinement.json": evidence, "page1.png": png},
+    )
+    parser_client._extract(artifact, raw, FAST_VERSION, office=True)
+    assert parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE) == png
+
+    bare = _install_artifact(
+        monkeypatch, tmp_path, fingerprint="bare", extra={"refinement.json": evidence}
+    )
+    assert parser_client.artifact_entry(bare, parser_client.PAGE_IMAGE) is None
+
+    big = _install_artifact(
+        monkeypatch,
+        tmp_path,
+        fingerprint="big-page",
+        extra={"refinement.json": evidence, "page1.png": png + b"x" * (1 << 20)},
+    )
+    with pytest.raises(parser_client.ParserClientError, match="entry exceeds"):
+        parser_client._extract(big, raw, FAST_VERSION, office=True)
+
+
 def test_extract_requires_the_frozen_furniture_entry(tmp_path: Path, monkeypatch):
     """``refinement.json`` is part of the bundle contract: the chunk stage
     cannot pack without the parser's furniture decision."""

@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 )
@@ -85,5 +86,94 @@ func TestPresignPutSignsDeclaredSize(t *testing.T) {
 	// The browser sets Content-Length itself and may not send it by hand.
 	if _, ok := signed.Headers["Content-Length"]; ok {
 		t.Error("headers for the browser carry Content-Length")
+	}
+}
+
+func testB2(t *testing.T, pathStyle bool) *B2 {
+	t.Helper()
+	store, err := NewB2(B2Config{
+		Endpoint:     "https://s3.us-west-004.backblazeb2.com",
+		Region:       "us-west-004",
+		Bucket:       "capy-notebook",
+		KeyID:        "test-key-id",
+		AppKey:       "test-app-key",
+		UsePathStyle: pathStyle,
+	})
+	if err != nil {
+		t.Fatalf("NewB2: %v", err)
+	}
+	return store
+}
+
+// Thumbnail links are signed per list row; the browser caches them only while
+// the URL stays byte-identical, so it must not change within an hour.
+func TestPresignStableGetIsStableWithinTheHour(t *testing.T) {
+	store := testB2(t, false)
+	sign := func(at string) string {
+		t.Helper()
+		now, err := time.Parse(time.RFC3339, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		store.now = func() time.Time { return now }
+		signed, err := store.PresignStableGet(context.Background(), "thumbs/f_1/abc.webp")
+		if err != nil {
+			t.Fatalf("PresignStableGet: %v", err)
+		}
+		return signed
+	}
+	first := sign("2026-10-11T09:00:05Z")
+	if again := sign("2026-10-11T09:59:59Z"); again != first {
+		t.Fatalf("URL changed within the hour:\n%s\n%s", first, again)
+	}
+	if next := sign("2026-10-11T10:00:00Z"); next == first {
+		t.Fatal("URL did not change in the next hour")
+	}
+	q, err := url.ParseQuery(first[strings.Index(first, "?")+1:])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := q.Get("X-Amz-Date"); got != "20261011T090000Z" {
+		t.Errorf("X-Amz-Date = %q, want the truncated hour", got)
+	}
+	if got := q.Get("X-Amz-Expires"); got != "7200" {
+		t.Errorf("X-Amz-Expires = %q, want 7200", got)
+	}
+}
+
+// The hand-built request must name the same object, host and credential scope
+// as the SDK's own presign, in both addressing styles.
+func TestPresignStableGetAddressesTheSDKObject(t *testing.T) {
+	for _, pathStyle := range []bool{false, true} {
+		store := testB2(t, pathStyle)
+		key := "thumbs/f_1/a b+c.webp"
+		stable, err := store.PresignStableGet(context.Background(), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		sdk, err := store.PresignGet(context.Background(), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		mine, err := url.Parse(stable)
+		if err != nil {
+			t.Fatal(err)
+		}
+		theirs, err := url.Parse(sdk)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if mine.Host != theirs.Host || mine.EscapedPath() != theirs.EscapedPath() {
+			t.Errorf("pathStyle=%v: %s%s, SDK %s%s", pathStyle,
+				mine.Host, mine.EscapedPath(), theirs.Host, theirs.EscapedPath())
+		}
+		scope := func(u *url.URL) string {
+			credential := u.Query().Get("X-Amz-Credential")
+			parts := strings.SplitN(credential, "/", 3)
+			return parts[0] + "/" + parts[2]
+		}
+		if scope(mine) != scope(theirs) {
+			t.Errorf("credential scope %q, SDK %q", scope(mine), scope(theirs))
+		}
 	}
 }

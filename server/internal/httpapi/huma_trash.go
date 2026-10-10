@@ -57,6 +57,12 @@ func (a *api) listTrash(ctx context.Context, in *trashListInput) (*trashPageOutp
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// The listing holds only the caller's own trash; see signFileThumbnails.
+	for i := range page.Items {
+		if page.Items[i].ThumbnailURL, err = a.thumbnailURL(ctx, page.Items[i].ThumbnailKey); err != nil {
+			return nil, hErr(err)
+		}
+	}
 	return &trashPageOutput{Body: page}, nil
 }
 

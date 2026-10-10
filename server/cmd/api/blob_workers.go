@@ -161,6 +161,7 @@ var sweptPrefixes = []string{
 	"parse-bundles/",
 	"previews/",
 	"editor-assets/",
+	"thumbs/",
 }
 
 // runBlobSweep reports unreferenced objects on a long interval.
