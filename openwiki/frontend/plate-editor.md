@@ -1381,7 +1381,11 @@ MathPreview's own box (question views, question-editor and note equation
 previews, note View); the inert field leaves wheel and touch to that box, which
 is `relative` so MathLive's absolutely positioned screen-reader node cannot widen
 the page. Inline formulas stay capped at their line's width. A shared note's
-server markup scrolls in the equation block's own `overflow-auto` box.
+server markup scrolls in the static equation block's own `overflow-auto` box.
+Both boxes carry `scroll-fade-x` (as Tabs do): while more of the formula is
+hidden at an edge, that edge fades over 28px, driven by the box's own scroll
+timeline with no script; a formula that fits never fades. The note editor's
+equation wrapper has no mask, which would break its formula menu.
 
 Block formula previews and MathLive share 16px vertical padding and the same
 math font size. Opening an existing block reserves its preview height while

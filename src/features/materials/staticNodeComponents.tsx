@@ -292,7 +292,8 @@ function BlockEquation(props: SlateElementProps) {
   );
   return (
     <SlateElement {...props}>
-      <div className={EQUATION_BLOCK_CLASS}>
+      {/* A shared page's static markup scrolls in this box, so it fades too. */}
+      <div className={cn(EQUATION_BLOCK_CLASS, 'scroll-fade-x')}>
         <Equation displayMode tex={tex} />
       </div>
       {props.children}
