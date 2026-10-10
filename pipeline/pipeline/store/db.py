@@ -1451,6 +1451,36 @@ def set_file_source_sha256(cur, file_id: str, source_sha256: str) -> None:
     )
 
 
+def file_thumbnail_key(cur, file_id: str) -> str:
+    cur.execute("SELECT thumbnail_key FROM files WHERE id=%s", (file_id,))
+    row = cur.fetchone()
+    return str(row[0] or "") if row else ""
+
+
+def set_file_thumbnail(cur, file_id: str, source_sha256: str, key: str) -> bool:
+    """Point a live file at the thumbnail of the bytes it still holds. The
+    blob triggers reference the key and release the one it replaces."""
+    cur.execute(
+        "UPDATE files SET thumbnail_key=%s WHERE id=%s AND source_sha256=%s AND trashed_at IS NULL",
+        (key, file_id, source_sha256),
+    )
+    return cur.rowcount == 1
+
+
+def set_file_text_preview(cur, file_id: str, source_sha256: str, text: str) -> None:
+    cur.execute(
+        """UPDATE files SET preview=jsonb_build_object('text', %s::text)
+        WHERE id=%s AND source_sha256=%s AND trashed_at IS NULL
+          AND preview IS DISTINCT FROM jsonb_build_object('text', %s::text)""",
+        (text, file_id, source_sha256, text),
+    )
+
+
+def enqueue_blob_deletion(cur, object_path: str) -> None:
+    """Queue an object no row took; the SQL function skips a referenced path."""
+    cur.execute("SELECT blob_enqueue_deletion(%s, interval '0')", (object_path,))
+
+
 def file_source_sha256(cur, file_id: str) -> str:
     cur.execute("SELECT source_sha256 FROM files WHERE id=%s", (file_id,))
     row = cur.fetchone()

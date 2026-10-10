@@ -151,15 +151,6 @@ async def render_knowledge(
 def _office_capture(
     row: dict, page: int, bbox: list[float] | None, max_edge: int
 ) -> tuple[bytes, list[float], tuple[int, int]]:
-    if not cfg.parser_url:
-        raise CaptureUnavailable(
-            "the Office converter is unavailable", "unavailable_target"
-        )
-    endpoint = urlsplit(cfg.parser_url)
-    url = urlunsplit((endpoint.scheme, endpoint.netloc, "/capture_page", "", ""))
-    headers = (
-        {"Authorization": f"Bearer {cfg.parser_token}"} if cfg.parser_token else {}
-    )
     try:
         with tempfile.TemporaryDirectory(prefix="capy-office-capture-") as directory:
             source = Path(directory) / "source"
@@ -174,31 +165,51 @@ def _office_capture(
                 raise CaptureUnavailable(
                     "the source bytes are unavailable", "unavailable_target"
                 )
-            with (
-                source.open("rb") as handle,
-                requests.post(
-                    url,
-                    headers=headers,
-                    files={
-                        "file": (str(row["name"]), handle, "application/octet-stream")
-                    },
-                    data={
-                        "filename": row["name"],
-                        "page": str(page),
-                        "bbox": json.dumps(bbox),
-                        "max_edge": str(max_edge),
-                    },
-                    timeout=cfg.parser_timeout,
-                    stream=True,
-                ) as response,
-            ):
-                response.raise_for_status()
-                body = bytearray()
-                for chunk in response.iter_content(64 << 10):
-                    body.extend(chunk)
-                    if len(body) > 8 << 20:
-                        raise CaptureUnavailable("the capture exceeds its byte limit")
-                result = json.loads(body)
+            return office_capture_file(source, str(row["name"]), page, bbox, max_edge)
+    except (requests.RequestException, OSError, ValueError, KeyError, TypeError) as exc:
+        raise CaptureUnavailable(
+            "the temporary Office capture could not be rendered", "unavailable_target"
+        ) from exc
+
+
+def office_capture_file(
+    source: Path, name: str, page: int, bbox: list[float] | None, max_edge: int
+) -> tuple[bytes, list[float], tuple[int, int]]:
+    """Render a page of a local Office file through the parser's converter.
+    ``name`` carries the Office extension the parser dispatches on."""
+    if not cfg.parser_url:
+        raise CaptureUnavailable(
+            "the Office converter is unavailable", "unavailable_target"
+        )
+    endpoint = urlsplit(cfg.parser_url)
+    url = urlunsplit((endpoint.scheme, endpoint.netloc, "/capture_page", "", ""))
+    headers = (
+        {"Authorization": f"Bearer {cfg.parser_token}"} if cfg.parser_token else {}
+    )
+    try:
+        with (
+            source.open("rb") as handle,
+            requests.post(
+                url,
+                headers=headers,
+                files={"file": (name, handle, "application/octet-stream")},
+                data={
+                    "filename": name,
+                    "page": str(page),
+                    "bbox": json.dumps(bbox),
+                    "max_edge": str(max_edge),
+                },
+                timeout=cfg.parser_timeout,
+                stream=True,
+            ) as response,
+        ):
+            response.raise_for_status()
+            body = bytearray()
+            for chunk in response.iter_content(64 << 10):
+                body.extend(chunk)
+                if len(body) > 8 << 20:
+                    raise CaptureUnavailable("the capture exceeds its byte limit")
+            result = json.loads(body)
         jpeg = base64.b64decode(result["jpeg"], validate=True)
         box, size = result["box"], result["size"]
         if (

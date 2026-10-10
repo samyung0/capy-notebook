@@ -62,7 +62,7 @@ from ..retrieval.confidence import ocr_pages, score_chunks
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
-from . import capacity, import_stage, source_text, telemetry
+from . import capacity, import_stage, source_text, telemetry, thumbnail
 from . import plan as ingest_plan
 
 log = logging.getLogger("capy.worker")
@@ -2168,6 +2168,9 @@ async def _process_ingest_job(
             source_sha256=source_sha256,
         )
         if reused:
+            await _capture_thumbnail(
+                payload, file_id, processing_plan, local_path, source_sha256
+            )
             await asyncio.to_thread(cleanup_source)
             await asyncio.to_thread(_release_parse_artifact, payload)
             return
@@ -2307,6 +2310,9 @@ async def _process_ingest_job(
         _publish_progress(
             ws, file_id, "done", 100, status="ready", message=note, indexed=True
         )
+        await _capture_thumbnail(
+            payload, file_id, processing_plan, local_path, source_sha256
+        )
         await asyncio.to_thread(cleanup_source)
         await asyncio.to_thread(_release_parse_artifact, payload)
         return
@@ -2350,10 +2356,33 @@ async def _process_ingest_job(
     )
     if not committed:
         return
+    _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
+    await _capture_thumbnail(
+        payload, file_id, processing_plan, local_path, source_sha256
+    )
     await asyncio.to_thread(cleanup_source)
     await asyncio.to_thread(_release_parse_artifact, payload)
-    _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
     log.info("indexed %s: %s", name, result)
+
+
+async def _capture_thumbnail(
+    payload: dict,
+    file_id: str,
+    processing_plan: ingest_plan.ProcessingPlan,
+    local_path: str | None,
+    source_sha256: str,
+) -> None:
+    """The card thumbnail of a committed ingest; failures stay inside
+    ``thumbnail.capture_source`` and never reach the job."""
+    artifact = payload.get("parseArtifact")
+    await asyncio.to_thread(
+        thumbnail.capture_source,
+        file_id=file_id,
+        plan=processing_plan,
+        local_path=local_path,
+        source_sha256=source_sha256,
+        artifact=artifact if isinstance(artifact, dict) else None,
+    )
 
 
 async def main_async(job_type: str = "ingest") -> None:

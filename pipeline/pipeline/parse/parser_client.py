@@ -608,6 +608,18 @@ def extract_artifact(
     return content_list
 
 
+def repaired_pdf(artifact: Mapping[str, Any]) -> bytes | None:
+    """The bundle's font-repaired ``parsed.pdf``, or None when the parser left
+    the source bytes as they were. Read after ``extract_artifact`` verified the
+    same bundle in this job, within the same per-entry byte limit."""
+    with zipfile.ZipFile(_shared_path(str(artifact["key"]))) as archive:
+        for info in _validated_entries(archive):
+            if info.filename == "parsed.pdf":
+                with archive.open(info) as entry:
+                    return entry.read(_entry_limit(info))
+    return None
+
+
 def discard_artifact(artifact: Mapping[str, Any]) -> None:
     """Remove one handed-off artifact from the shared spool.
 

@@ -254,6 +254,19 @@ def write_bytes(blob_path: str, data: bytes | bytearray, content_type: str) -> N
             time.sleep(0.1 * attempt)
 
 
+def put_object(
+    blob_path: str, data: bytes, content_type: str, cache_control: str
+) -> None:
+    """One write with response metadata, no retry (a thumbnail capture)."""
+    _s3_client().put_object(
+        Bucket=cfg.b2_bucket,
+        Key=blob_path,
+        Body=data,
+        ContentType=content_type,
+        CacheControl=cache_control,
+    )
+
+
 def download_file(
     blob_path: str,
     local_path: str,
