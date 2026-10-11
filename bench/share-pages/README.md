@@ -68,7 +68,10 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
 7. Deletes what it created.
 
 Reported per page, profile and edge state (the median of the runs): the
-document's TTFB, simulated FCP and LCP (and the unthrottled ones the runner
+document's TTFB, the Worker's own `Server-Timing` for an uncached render
+(`api`, the API read, and `total`, until the page was built; a Worker's clock
+moves only on I/O, so CPU work such as rendering is the rest of TTFB and shows
+as CPU time in Workers Logs), simulated FCP and LCP (and the unthrottled ones the runner
 observed, in the JSON), CLS (load only, before any scroll) with the
 shifting elements, TBT, transfer bytes by
 type, request count and the performance score, and whether a second visitor

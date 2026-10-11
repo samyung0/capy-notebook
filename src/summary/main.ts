@@ -1,5 +1,6 @@
 import fileIcons from '@/assets/catppuccin.svg?no-inline';
 import { bindPublicChrome } from '@/components/app/publicChrome';
+import { afterPaint } from '@/lib/afterPaint';
 import { applyFullStyles } from '@/lib/fullStyles';
 
 /* The Worker renders the whole page, header and ⋮ included; this only wires
@@ -7,9 +8,11 @@ import { applyFullStyles } from '@/lib/fullStyles';
    without React. */
 
 bindPublicChrome();
+// Everything below that downloads waits for first paint.
+const painted = afterPaint();
 // The page arrives with only the CSS its HTML uses; the menus and theme
 // switch it renders are covered, and the rest is applied here.
-void applyFullStyles();
+void painted.then(applyFullStyles);
 
 // The summary and file panel reference the same Vite-hashed sprite.
 for (const icon of document.querySelectorAll<SVGUseElement>(
@@ -22,6 +25,7 @@ const workspaceId =
   document.getElementById('summary-actions')?.dataset.workspaceId;
 // Analytics loads after the page, never ahead of it.
 if (workspaceId)
-  void import('@/lib/analytics').then(({ track }) =>
-    track('summary_viewed', { workspaceId })
-  );
+  void painted.then(async () => {
+    const { track } = await import('@/lib/analytics');
+    track('summary_viewed', { workspaceId });
+  });

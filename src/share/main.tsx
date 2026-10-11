@@ -6,6 +6,7 @@ import {
 } from '@/features/materials/youtubeUrl';
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
 import { overwriteGetLocale } from '@/i18n/paraglide/runtime';
+import { afterPaint } from '@/lib/afterPaint';
 import { applyFullStyles } from '@/lib/fullStyles';
 import { SHARE_STATE_ID, type ShareState } from './state';
 import '@/styles/tailwind.css';
@@ -23,21 +24,24 @@ const state = JSON.parse(
 overwriteGetLocale(() => 'en');
 
 bindPublicChrome();
+// Everything below waits for first paint, so no download competes with it.
+const painted = afterPaint();
 // The page arrives with only the CSS its HTML uses; anything rendered here
 // waits for the full stylesheets.
-const styled = applyFullStyles();
+const styled = painted.then(applyFullStyles);
 
 // Analytics loads after the page, never ahead of it. Public pages carry no
 // error reporting (Sentry stays in the app).
-void import('@/lib/analytics').then(({ trackPageView }) =>
+void painted.then(async () => {
+  const { trackPageView } = await import('@/lib/analytics');
   trackPageView(
     `/share/${state.kind}/${
       { flashcards: '$flashcardSetId', notes: '$noteId', quizzes: '$quizId' }[
         state.kind
       ]
     }`
-  )
-);
+  );
+});
 
 if (state.kind === 'notes') {
   document.addEventListener('click', (event) => {
@@ -60,11 +64,28 @@ if (state.kind === 'notes') {
   // scrolls past it.
   const islands = [...document.querySelectorAll<HTMLElement>('[data-island]')];
   if (islands.length)
-    void Promise.all([import('./islands'), styled]).then(
-      ([{ hydrateIslands }]) => hydrateIslands(state, islands)
-    );
+    void painted.then(async () => {
+      const [{ hydrateIslands }] = await Promise.all([
+        import('./islands'),
+        styled,
+      ]);
+      hydrateIslands(state, islands);
+    });
 } else {
-  void Promise.all([import('./hydrateStudy'), styled]).then(
-    ([{ hydrateStudy }]) => hydrateStudy(state)
-  );
+  // Each kind downloads only its own page code.
+  void painted.then(async () => {
+    if (state.kind === 'quizzes') {
+      const [{ hydrateQuiz }] = await Promise.all([
+        import('./hydrateQuiz'),
+        styled,
+      ]);
+      await hydrateQuiz(state);
+    } else {
+      const [{ hydrateFlashcards }] = await Promise.all([
+        import('./hydrateFlashcards'),
+        styled,
+      ]);
+      await hydrateFlashcards(state);
+    }
+  });
 }

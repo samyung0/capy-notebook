@@ -25,6 +25,7 @@ const quiz = {
   updatedAt: '2026-10-04T10:00:00Z',
 };
 const TOKEN = await shareToken(DEV_SHARE_LINK_SECRET, 'mat_0123456789');
+const SERVER_TIMING = /^api;dur=\d+, total;dur=\d+$/;
 const request = (path: string, init?: RequestInit) =>
   new Request(`https://app.example.test${path}`, init);
 describe('anonymous material routes', () => {
@@ -55,6 +56,8 @@ describe('anonymous material routes', () => {
       'public, s-maxage=300, max-age=0, must-revalidate'
     );
     expect(first.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    // What the render waited on, read by bench/share-pages.
+    expect(first.headers.get('Server-Timing')).toMatch(SERVER_TIMING);
     const html = await first.text();
     expect(html).toContain('<title>Cell quiz | Capy Notebook</title>');
     expect(html).toContain('Updated Oct 4, 2026');

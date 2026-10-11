@@ -8,7 +8,9 @@ import { m } from '@/i18n';
 import { overwriteGetLocale } from '@/i18n/paraglide/runtime';
 import { jsonForHTML } from '@/lib/html';
 import { seoHead, snippet } from '@/lib/seoHead';
+import { SharedFlashcards } from './SharedFlashcards';
 import { plainText, SharedNote, withoutRepeatedTitle } from './SharedNote';
+import { SharedQuiz } from './SharedQuiz';
 import { StudyPage, type StudyState } from './StudyPage';
 import { SHARE_STATE_ID, type ShareState } from './state';
 
@@ -115,7 +117,15 @@ export function renderSharePage({
       modified: item.updatedAt,
       name: item.name,
     });
-    body = renderToString(<StudyPage state={page} />);
+    body = renderToString(
+      <StudyPage>
+        {page.kind === 'quizzes' ? (
+          <SharedQuiz quiz={page.quiz} token={page.token} />
+        ) : (
+          <SharedFlashcards set={page.set} token={page.token} />
+        )}
+      </StudyPage>
+    );
   }
   return template
     .replace('<!--capy-share-head-->', () => head + extraHead)

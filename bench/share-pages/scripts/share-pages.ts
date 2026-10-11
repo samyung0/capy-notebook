@@ -445,15 +445,23 @@ async function audit(port: number, url: string, profile: Profile) {
       event.method === 'Network.responseReceived' &&
       event.params.type === 'Document'
   ) as { params: { response: { headers: Record<string, string> } } } | undefined;
-  const edge =
+  const header = (wanted: string) =>
     Object.entries(document?.params.response.headers ?? {}).find(
-      ([name]) => name.toLowerCase() === 'cf-cache-status'
-    )?.[1] ?? 'none';
+      ([name]) => name.toLowerCase() === wanted
+    )?.[1];
+  // The Worker's own timing (workers/site/handler.ts): `api` and `total` ms.
+  const server = Object.fromEntries(
+    (header('server-timing') ?? '').split(',').flatMap((entry) => {
+      const [name, duration] = entry.trim().split(';dur=');
+      return duration ? [[name, Number(duration)]] : [];
+    })
+  ) as { api?: number; total?: number };
   return {
-    edge,
+    edge: header('cf-cache-status') ?? 'none',
     lhr: result.lhr,
     metrics,
     report: result.report as string,
+    server,
     shifts: shifts ?? [],
     // The DevTools trace, which opens in the Performance panel.
     trace: result.artifacts.Trace,
@@ -501,6 +509,14 @@ async function measure(
     } satisfies Metrics,
     /** Each run's CF-Cache-Status for its document. */
     edges: runs.map(({ edge }) => edge),
+    /** Median Server-Timing of the runs: on a miss, this run's render; on a
+     * hit, the render that filled the cache. */
+    server: {
+      // Missing when the release predates the header.
+      api: median(runs.flatMap(({ server }) => server.api ?? [])),
+      total: median(runs.flatMap(({ server }) => server.total ?? [])),
+    },
+    servers: runs.map(({ server }) => server),
     lhr: middle.lhr,
     report: middle.report,
     runs: runs.map(({ metrics }) => metrics),
@@ -517,7 +533,7 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
     '',
     `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse} · ${results.chromium} · median of ${RUNS}`,
     '',
-    "Uncached: a unique query string, so the Worker renders the page. Cached: the clean URL, requested just before. Edge is each run's own CF-Cache-Status. TTFB is the document's server response time. Every run is a first visit: the browser's cache is empty.",
+    "Uncached: a unique query string, so the Worker renders the page. Cached: the clean URL, requested just before. Edge is each run's own CF-Cache-Status. TTFB is the document's server response time; Worker is the Worker's own Server-Timing for an uncached render, the time until the page was built with the API read in brackets (CPU time never shows in a Worker's clock, so the render itself is the rest of TTFB). Every run is a first visit: the browser's cache is empty.",
   ];
   for (const [profile, label] of [
     [
@@ -533,8 +549,8 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
       '',
       `**${label}**`,
       '',
-      '| Page | Edge | TTFB ms | FCP ms | LCP ms | CLS | TBT ms | Total KB | Document KB | Script KB | Requests | Score |',
-      '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
+      '| Page | Edge | TTFB ms | Worker ms (API) | FCP ms | LCP ms | CLS | TBT ms | Total KB | Document KB | Script KB | Requests | Score |',
+      '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
     );
     for (const page of results.pages)
       for (const edge of EDGES) {
@@ -546,7 +562,7 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
           .map((status) => (status === expected ? status : `**${status}**`))
           .join(' ');
         lines.push(
-          `| ${page.kind} | ${edge} (${statuses}) | ${ms(m.ttfb)} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
+          `| ${page.kind} | ${edge} (${statuses}) | ${ms(m.ttfb)} | ${edge === 'uncached' ? `${ms(measured.server.total)} (${ms(measured.server.api)})` : '—'} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
         );
       }
   }
@@ -672,6 +688,8 @@ try {
     edges: measured.edges,
     median: measured.median,
     runs: measured.runs,
+    server: measured.server,
+    servers: measured.servers,
     shifts: measured.shifts,
   });
   const snapshot = {

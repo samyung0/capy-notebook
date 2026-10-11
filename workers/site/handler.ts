@@ -101,6 +101,14 @@ async function inlineStylesheets(
   );
 }
 
+/** How long a render waited, as `Server-Timing`: `api` is the API read and
+ * `total` the time from the request until the page was built. A Worker's
+ * clock moves only on I/O, so CPU work (rendering, cutting the CSS) never
+ * shows here; it is the rest of TTFB, and CPU time in Workers Logs. A cached
+ * copy carries the timing of the render that filled it. */
+const serverTiming = (start: number, api: number) =>
+  `api;dur=${api}, total;dur=${Date.now() - start}`;
+
 const headers = (extra: HeadersInit = {}) => {
   const result = new Headers(extra);
   result.set('Cache-Control', 'no-store');
@@ -113,6 +121,7 @@ export async function handleSiteRequest(
   env: SiteBindings,
   fetcher: typeof fetch = fetch
 ): Promise<Response> {
+  const start = Date.now();
   const url = new URL(request.url);
   const failure = async (status: number) => {
     let template: string | undefined;
@@ -198,6 +207,7 @@ export async function handleSiteRequest(
       const id =
         kind && (await verifiedShareToken(env.SHARE_LINK_SECRET, token));
       if (!(kind && id)) return failure(404);
+      const apiStart = Date.now();
       const upstream = await fetcher(
         new Request(`${apiOrigin}/api/public/${kind}/${token}`, {
           headers: { Accept: 'application/json' },
@@ -214,6 +224,7 @@ export async function handleSiteRequest(
         return failure(503);
       }
       const data = JSON.parse(await boundedText(upstream, 4 * 1024 * 1024));
+      const api = Date.now() - apiStart;
       const asset = await env.ASSETS.fetch(
         new Request(`${appOrigin}/share.html`)
       );
@@ -251,11 +262,13 @@ export async function handleSiteRequest(
         ),
         { headers: responseHeaders }
       );
+      rendered.headers.set('Server-Timing', serverTiming(start, api));
       return head(rendered);
     }
     // Unsigned or forged links stop here, before any API or database work.
     const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);
     if (!id) return failure(404);
+    const apiStart = Date.now();
     const upstream = await fetcher(
       new Request(`${apiOrigin}/api/public/workspaces/${id}/summary`, {
         headers: { Accept: 'application/json' },
@@ -274,6 +287,7 @@ export async function handleSiteRequest(
     const summary = summarySchema.parse(
       JSON.parse(await boundedText(upstream, 512 * 1024))
     );
+    const api = Date.now() - apiStart;
     const responseHeaders = headers({
       'Content-Type': 'text/html; charset=utf-8',
     });
@@ -303,6 +317,7 @@ export async function handleSiteRequest(
       ),
       { headers: responseHeaders }
     );
+    rendered.headers.set('Server-Timing', serverTiming(start, api));
     return head(rendered);
   } catch (error) {
     const isPublic = url.pathname.startsWith('/p/');
