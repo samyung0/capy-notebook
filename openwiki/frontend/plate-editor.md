@@ -455,12 +455,18 @@ origin is opaque), where `theme` holds `--bg`, `--fg`, `--muted`, `--accent`,
 `--border` and `--font` (the style's `--font-sans`) read from the app's
 tokens plus `--scheme` (the app's computed `color-scheme`), and `font` is the
 app's cached Fustat latin woff2, which the frame registers with `FontFace`
-because its CSP allows no font request. Before the snippet the wrapper
+because its CSP allows fonts only from the four CDNs below. Before the snippet the wrapper
 applies a base sheet: `color-scheme: var(--scheme)` (a scheme differing from
 the page would paint the frame opaque), `accent-color: var(--accent)`, and a
 body with no margin, `16px/1.5 var(--font)` in `--fg` on a transparent
 background, with form controls inheriting the font; the snippet's own CSS
-overrides it. The agent guidance names the variables and the base. The share
+overrides it. The agent guidance names the variables and the base. The
+frame's CSP (`embed/_headers`) lets a snippet load scripts, stylesheets and
+fonts from `https://cdnjs.cloudflare.com`, `https://cdn.jsdelivr.net`,
+`https://esm.sh` and `https://unpkg.com` and make no other request (no
+fetch, network images, frames or workers); the agent guidance names the four
+CDNs and asks for exact versions, and the playground's `check_note` refuses any
+other origin (SECURITY.md path 11). The share
 page hydrates the same `HtmlEmbedView` island without View source (visitors
 read the block, they don't need its source) and
 loads the same Fustat file, so it renders identically. The host accepts only `{type: 'resize', height}`

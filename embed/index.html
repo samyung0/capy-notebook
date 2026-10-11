@@ -9,9 +9,11 @@
     // The note posts {type: 'render', html, theme, font} once; the snippet
     // then replaces this page, so its inline scripts and load events run as on
     // a normal page, and the frame reports its height as {type: 'resize',
-    // height}. The CSP header in _headers blocks every request, and this page
-    // makes none: `font` carries the note's Fustat bytes, and BASE gives the
-    // snippet the note's look, which its own CSS overrides.
+    // height}. The CSP header in _headers blocks every request but scripts,
+    // stylesheets and fonts from four public CDNs, for the snippet's
+    // libraries; this page makes none: `font` carries the note's Fustat
+    // bytes, and BASE gives the snippet the note's look, which its own CSS
+    // overrides.
     const BASE =
       ':root{color-scheme:var(--scheme);accent-color:var(--accent)}' +
       'body{margin:0;font:16px/1.5 var(--font);color:var(--fg);background:transparent}' +
