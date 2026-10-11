@@ -440,9 +440,12 @@ The prod file runs `/migrate` once per deploy, starts the API with
    Each WebSocket has an 8 KiB read buffer (`READ_BUFFER` in `http.rs`;
    tungstenite's default is 128 KiB). An idle connection costs about 30 KiB
    in all, measured on a local stack with 2,000 idle connections; Node used
-   27 KB per connection in the production run. A connection also keeps a
-   write buffer as large as the largest message it was sent, so a viewer of a
-   2 MB note holds about 2 MB until it disconnects. When peers leave, the
+   27 KB per connection in the production run. A connection's write buffer
+   grows to the message it sends (a viewer joining a 2 MB note is sent the
+   whole note) and is given back once written: the server vendors tungstenite
+   with that one patch (`collaboration-rs/third_party/tungstenite`,
+   `THIRD-PARTY-NOTICES.md`; upstream keeps the capacity, about 2.3 MiB per
+   viewer of the 2 MB test note, Epo 2026-10-11). When peers leave, the
    process keeps the small allocations they freed and reuses them for later
    joins, so RSS stays near its peak instead of falling back.
 
