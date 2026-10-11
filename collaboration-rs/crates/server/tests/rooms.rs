@@ -146,11 +146,15 @@ async fn note_named(env: &Env, text: &str, prefix: &str) -> (String, String) {
 }
 
 fn uuid_like() -> String {
+    // A counter too: two tests in one clock tick (100 ns on Windows) took the
+    // same user id.
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let nanos = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|elapsed| elapsed.as_nanos())
         .unwrap_or(0);
-    format!("{nanos:x}")
+    let next = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("{nanos:x}{next:x}")
 }
 
 fn token(room: &str, user: &str, access: &str) -> String {
