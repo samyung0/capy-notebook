@@ -2,6 +2,7 @@ import { convertLatexToMarkup } from 'mathlive/ssr';
 import { renderToString } from 'react-dom/server';
 import type { AnonymousNote } from '@/api/types';
 import { TooltipProvider } from '@/components/ui/Tooltip';
+import type { MaterialValue } from '@/features/materials/document';
 import { quizMeta } from '@/features/quizzes/QuizPage';
 import { m } from '@/i18n';
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
@@ -9,7 +10,12 @@ import { overwriteGetLocale } from '@/i18n/paraglide/runtime';
 import { jsonForHTML } from '@/lib/html';
 import { seoHead, snippet } from '@/lib/seoHead';
 import { SharedFlashcards } from './SharedFlashcards';
-import { plainText, SharedNote, withoutRepeatedTitle } from './SharedNote';
+import {
+  NoteBlocks,
+  plainText,
+  SharedNote,
+  withoutRepeatedTitle,
+} from './SharedNote';
 import { SharedQuiz } from './SharedQuiz';
 import { StudyPage, type StudyState } from './StudyPage';
 import { SHARE_STATE_ID, type ShareState } from './state';
@@ -45,18 +51,54 @@ const hasMath = (node: unknown): boolean =>
       Array.isArray(node.children) &&
       node.children.some(hasMath)));
 
-/** `page` in `template` (share.html). Throws when a note's content is not a
- * material document. */
-export function renderSharePage({
+/** About how many bytes of a note's block JSON render before the page is
+ * first sent (the first screen or more), and then per streamed slice. */
+const SLICE_BYTES = { first: 24 * 1024, rest: 128 * 1024 };
+
+/** Holds the place of the blocks that stream after the first slice. */
+const REST_ID = 'capy-share-rest';
+
+/** Top-level blocks in runs of about `first`, then `rest` bytes of JSON. */
+function slices(value: MaterialValue, { first, rest }: typeof SLICE_BYTES) {
+  const runs: MaterialValue[] = [[]];
+  let size = 0;
+  for (const block of value) {
+    if (size >= (runs.length === 1 ? first : rest)) {
+      runs.push([]);
+      size = 0;
+    }
+    runs.at(-1)?.push(block);
+    size += JSON.stringify(block).length;
+  }
+  return runs;
+}
+
+/** A page in the order the Worker sends it: `first` (the head and the
+ * note's first blocks), each of `rest` (later blocks, rendered when called)
+ * and `last`. Joined, they are the whole page. Only a long note has a
+ * `rest`. */
+export type SharePagePieces = {
+  first: string;
+  last: string;
+  rest: (() => string)[];
+};
+
+/** `page` in `template` (share.html), in pieces. Throws when a note's content
+ * is not a material document. */
+export function renderSharePagePieces({
   canonical,
   page,
+  sliceBytes = SLICE_BYTES,
   template,
 }: {
   canonical: string;
   page: SharePage;
+  sliceBytes?: typeof SLICE_BYTES;
   template: string;
-}): string {
+}): SharePagePieces {
   let body: string;
+  // A placeholder block where the streamed blocks go, and how to render them.
+  let streamed: { placeholder: string; rest: (() => string)[] } | undefined;
   let state: ShareState;
   let head: string;
   let extraHead = '';
@@ -83,13 +125,41 @@ export function renderSharePage({
       modified: note.updatedAt,
       name: note.name,
     });
+    const props = { mathMarkup, note, toc: document.value, token };
+    // Only the blocks: what the editor root holds. Each slice is its own
+    // render, so its React ids get their own prefix to stay unique.
+    const blocks = (value: MaterialValue, slice: number) => {
+      const html = renderToString(
+        <TooltipProvider>
+          <NoteBlocks document={{ ...document, value }} {...props} />
+        </TooltipProvider>,
+        { identifierPrefix: `s${slice}-` }
+      );
+      const root = 'data-slate-node="value">';
+      return html.slice(
+        html.indexOf(root) + root.length,
+        html.lastIndexOf('</div></div>')
+      );
+    };
+    const [firstRun, ...laterRuns] = slices(document.value, sliceBytes);
+    const placeholder = {
+      children: [{ text: '' }],
+      id: REST_ID,
+      type: 'p',
+    } as MaterialValue[number];
+    if (laterRuns.length)
+      streamed = {
+        placeholder: blocks([placeholder], 0),
+        rest: laterRuns.map((run, index) => () => blocks(run, index + 1)),
+      };
     body = renderToString(
       <TooltipProvider>
         <SharedNote
-          document={document}
-          mathMarkup={mathMarkup}
-          note={note}
-          token={token}
+          document={{
+            ...document,
+            value: streamed ? [...firstRun, placeholder] : firstRun,
+          }}
+          {...props}
         />
       </TooltipProvider>
     );
@@ -127,13 +197,28 @@ export function renderSharePage({
       </StudyPage>
     );
   }
-  return template
+  const html = template
     .replace('<!--capy-share-head-->', () => head + extraHead)
     .replace(
       '<!--capy-share-body-->',
       () =>
         `<div id="root">${body}</div><script type="application/json" id="${SHARE_STATE_ID}">${jsonForHTML(state)}</script>`
     );
+  if (!streamed) return { first: html, last: '', rest: [] };
+  const at = html.indexOf(streamed.placeholder);
+  return {
+    first: html.slice(0, at),
+    last: html.slice(at + streamed.placeholder.length),
+    rest: streamed.rest,
+  };
+}
+
+/** The whole page at once. */
+export function renderSharePage(
+  args: Parameters<typeof renderSharePagePieces>[0]
+): string {
+  const { first, last, rest } = renderSharePagePieces(args);
+  return first + rest.map((render) => render()).join('') + last;
 }
 
 /** The template markers the Worker checks before rendering. */

@@ -3,7 +3,9 @@
    checked with src; the Worker sees only this surface. */
 declare module 'capy-share-render' {
   export const SHARE_TEMPLATE_MARKERS: string[];
-  export function renderSharePage(input: {
+  /** The page in the order it is sent: `first`, each of `rest` (a long
+   * note's later blocks, rendered when called) and `last`. */
+  export function renderSharePagePieces(input: {
     canonical: string;
     page: { kind: 'quizzes' | 'flashcards' | 'notes'; token: string } & (
       | { note: unknown }
@@ -11,5 +13,5 @@ declare module 'capy-share-render' {
       | { set: unknown }
     );
     template: string;
-  }): string;
+  }): { first: string; last: string; rest: (() => string)[] };
 }

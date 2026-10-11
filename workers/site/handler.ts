@@ -4,6 +4,10 @@ import { handlePublicRequest, SHARED_CACHE } from './public';
 import { renderFailure, renderSummary, summarySchema } from './summary';
 import { pageClasses, usedCss } from './usedCss';
 
+type SharePagePieces = ReturnType<
+  typeof import('capy-share-render')['renderSharePagePieces']
+>;
+
 type SiteBindings = Pick<
   Cloudflare.Env,
   'API_ORIGIN' | 'APP_ORIGIN' | 'SHARE_LINK_SECRET'
@@ -62,6 +66,46 @@ const STYLESHEET =
 // Hashed or deploy-scoped files, so an isolate keeps what it parsed.
 const stylesheets = new Map<string, Promise<ReturnType<typeof usedCss>>>();
 
+/** A page's stylesheets, each ready to cut to the rules a set of classes
+ * uses (parsed once per isolate: the files are hashed or deploy-scoped). */
+async function stylesheetCuts(
+  html: string,
+  assets: SiteBindings['ASSETS'],
+  origin: string
+) {
+  const hrefs = [...new Set([...html.matchAll(STYLESHEET)].map((m) => m[2]))];
+  const cuts = new Map(
+    await Promise.all(
+      hrefs.map(async (href) => {
+        let cut = stylesheets.get(href);
+        if (!cut) {
+          cut = assets
+            .fetch(new Request(new URL(href, origin)))
+            .then(async (asset) => {
+              if (!asset.ok) throw new Error(`Stylesheet ${href} unavailable`);
+              return usedCss(await boundedText(asset, 1024 * 1024));
+            });
+          stylesheets.set(href, cut);
+          cut.catch(() => stylesheets.delete(href));
+        }
+        return [href, await cut] as const;
+      })
+    )
+  );
+  return {
+    /** `page` with each stylesheet link replaced by the rules `classes` use. */
+    inline: (page: string, classes: Set<string>) =>
+      page.replace(
+        STYLESHEET,
+        (_, before: string, href: string, after: string) =>
+          `<style>${cuts.get(href)?.(classes)}</style><link rel="preload" as="style" fetchpriority="low"${before}href="${href}"${after} data-full-css>`
+      ),
+    /** Every stylesheet's rules for `classes`, in page order. */
+    rules: (classes: Set<string>) =>
+      hrefs.map((href) => cuts.get(href)?.(classes)).join(''),
+  };
+}
+
 /** Puts the rules the page uses from its stylesheets in the HTML: the browser
  * paints from the document alone instead of waiting a round trip per
  * stylesheet, without the bytes of the whole Tailwind build. Each full
@@ -74,31 +118,52 @@ async function inlineStylesheets(
   assets: SiteBindings['ASSETS'],
   origin: string
 ): Promise<string> {
-  const hrefs = [...new Set([...html.matchAll(STYLESHEET)].map((m) => m[2]))];
-  const classes = pageClasses(html);
-  const css = new Map(
-    await Promise.all(
-      hrefs.map(async (href) => {
-        let subset = stylesheets.get(href);
-        if (!subset) {
-          subset = assets
-            .fetch(new Request(new URL(href, origin)))
-            .then(async (asset) => {
-              if (!asset.ok) throw new Error(`Stylesheet ${href} unavailable`);
-              return usedCss(await boundedText(asset, 1024 * 1024));
-            });
-          stylesheets.set(href, subset);
-          subset.catch(() => stylesheets.delete(href));
-        }
-        return [href, (await subset)(classes)] as const;
+  const sheets = await stylesheetCuts(html, assets, origin);
+  return sheets.inline(html, pageClasses(html));
+}
+
+/** A long note's page as it renders: the head and first blocks go out at
+ * once, each later slice of blocks as soon as it is rendered. A slice that
+ * uses classes not covered yet is preceded by every rule the page has used
+ * so far, in stylesheet order, so later rules keep their place in the
+ * cascade; the page script drops these once the full stylesheets apply. */
+async function streamPage(
+  { first, last, rest }: SharePagePieces,
+  assets: SiteBindings['ASSETS'],
+  origin: string,
+  init: ResponseInit
+): Promise<Response> {
+  const sheets = await stylesheetCuts(first, assets, origin);
+  const classes = pageClasses(first + last);
+  const { readable, writable } = new TransformStream<Uint8Array>();
+  const writer = writable.getWriter();
+  const encoder = new TextEncoder();
+  const write = (text: string) => writer.write(encoder.encode(text));
+  const send = async () => {
+    await write(sheets.inline(first, classes));
+    for (const render of rest) {
+      // Let what is written so far leave before rendering more.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      const html = render();
+      const before = classes.size;
+      for (const name of pageClasses(html)) classes.add(name);
+      if (classes.size > before)
+        await write(`<style data-css-subset>${sheets.rules(classes)}</style>`);
+      await write(html);
+    }
+    await write(last);
+    await writer.close();
+  };
+  send().catch((error) => {
+    console.error(
+      JSON.stringify({
+        error: error instanceof Error ? error.name : 'Error',
+        event: 'share_stream_failed',
       })
-    )
-  );
-  return html.replace(
-    STYLESHEET,
-    (_, before: string, href: string, after: string) =>
-      `<style>${css.get(href)}</style><link rel="preload" as="style" fetchpriority="low"${before}href="${href}"${after} data-full-css>`
-  );
+    );
+    return writer.abort(error);
+  });
+  return new Response(readable, init);
 }
 
 /** How long a render waited, as `Server-Timing`: `api` is the API read and
@@ -233,7 +298,7 @@ export async function handleSiteRequest(
         return failure(503);
       }
       const template = await boundedText(asset, 512 * 1024);
-      const { renderSharePage, SHARE_TEMPLATE_MARKERS } = await import(
+      const { renderSharePagePieces, SHARE_TEMPLATE_MARKERS } = await import(
         'capy-share-render'
       );
       if (!SHARE_TEMPLATE_MARKERS.every((marker) => template.includes(marker)))
@@ -250,20 +315,25 @@ export async function handleSiteRequest(
       responseHeaders.set('Cache-Control', SHARED_CACHE);
       if (data.privacy === 'link')
         responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
-      const rendered = new Response(
-        await inlineStylesheets(
-          renderSharePage({
-            canonical: `${appOrigin}${url.pathname}`,
-            page,
-            template,
-          }),
-          env.ASSETS,
-          appOrigin
-        ),
-        { headers: responseHeaders }
+      const pieces = renderSharePagePieces({
+        canonical: `${appOrigin}${url.pathname}`,
+        page,
+        template,
+      });
+      // For a long note, the time until its first blocks were ready.
+      responseHeaders.set('Server-Timing', serverTiming(start, api));
+      if (pieces.rest.length)
+        return request.method === 'HEAD'
+          ? new Response(null, { headers: responseHeaders })
+          : await streamPage(pieces, env.ASSETS, appOrigin, {
+              headers: responseHeaders,
+            });
+      return head(
+        new Response(
+          await inlineStylesheets(pieces.first, env.ASSETS, appOrigin),
+          { headers: responseHeaders }
+        )
       );
-      rendered.headers.set('Server-Timing', serverTiming(start, api));
-      return head(rendered);
     }
     // Unsigned or forged links stop here, before any API or database work.
     const id = await verifiedShareID(env.SHARE_LINK_SECRET, url.pathname);

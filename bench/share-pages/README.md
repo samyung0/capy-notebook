@@ -27,9 +27,9 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    HTML frames), so their layout shift shows apart from the rest, and a
    near-limit note: the app's load-test note
    (`src/mocks/noteContent/loadTest.ts`, every kind of block padded to 95% of
-   the 2 MB content limit), whose inlined CSS is not compared (its blocks are
-   the every-block note's, and the page is too tall for a full-page
-   screenshot). Nothing is parsed, embedded or sent to a model.
+   the 2 MB content limit), long enough that the Worker streams it (its
+   blocks after the first screen arrive in slices, each with the rules it
+   adds). Nothing is parsed, embedded or sent to a model.
 3. Waits until each item's public API answers 200. It never requests the
    page itself, so the first page request is a real miss.
 4. Inlined CSS check (fails the run): the Worker inlines only the rules a

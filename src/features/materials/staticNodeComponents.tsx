@@ -3,14 +3,20 @@
  * Styling is shared with the editable components via nodeStyles. */
 
 import { getTableColumnCount } from '@platejs/table';
-import { KEYS, NodeApi, type Path, type TTableElement } from 'platejs';
+import {
+  type Descendant,
+  KEYS,
+  NodeApi,
+  type Path,
+  type TTableElement,
+} from 'platejs';
 import {
   SlateElement,
   type SlateElementProps,
   SlateLeaf,
   type SlateLeafProps,
 } from 'platejs/static';
-import { type CSSProperties, useContext } from 'react';
+import { type CSSProperties, createContext, useContext } from 'react';
 import { Button } from '@/components/ui/Button';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { CalloutIcon } from '@/features/notes/CalloutIcon';
@@ -222,9 +228,15 @@ function Callout(props: SlateElementProps) {
   );
 }
 
+/** The whole note's blocks when the editor holds only some of them: a shared
+ * note streams its blocks in slices (src/share/server.tsx), and its table of
+ * contents still lists every heading. */
+export const TocSourceContext = createContext<Descendant[] | null>(null);
+
 /* toc — scrolls the preview instead of moving an editor selection */
 function Toc(props: SlateElementProps) {
-  const headings = props.editor.children.filter((node) =>
+  const source = useContext(TocSourceContext) ?? props.editor.children;
+  const headings = source.filter((node) =>
     KEYS.heading.includes(node.type as (typeof KEYS.heading)[number])
   );
   return (

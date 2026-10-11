@@ -13,6 +13,9 @@ import { pageClasses, usedCss } from '../../../workers/site/usedCss';
 
 const INLINED =
   /<style>([\s\S]*?)<\/style><link rel="preload" as="style"[^>]*href="([^"]+)"[^>]*data-full-css>/g;
+// A streamed note's rules for its later blocks, which the page script drops
+// once the full stylesheets apply.
+const STREAMED = /<style data-css-subset>[\s\S]*?<\/style>/g;
 
 /** The served page as the Worker sends it (the subset) and with the full
  * stylesheets inlined instead. A page from before the Worker cut its CSS is
@@ -33,10 +36,12 @@ async function variants(html: string, origin: string) {
     if (!sheets.has(href))
       sheets.set(href, await (await fetch(new URL(href, origin))).text());
   return {
-    full: html.replace(
-      INLINED,
-      (_, _css, href: string) => `<style>${sheets.get(href)}</style>`
-    ),
+    full: html
+      .replace(
+        INLINED,
+        (_, _css, href: string) => `<style>${sheets.get(href)}</style>`
+      )
+      .replace(STREAMED, ''),
     subset: html.replace(INLINED, (_, css: string) => `<style>${css}</style>`),
   };
 }
@@ -57,7 +62,8 @@ async function open(
   const page = await browser.newPage({ colorScheme, viewport });
   await page.route('**/*', (route) => {
     const request = route.request();
-    if (request.url() === url) return route.fulfill({ body: html, contentType: 'text/html' });
+    if (request.url() === url)
+      return route.fulfill({ body: html, contentType: 'text/html' });
     if (['script', 'stylesheet'].includes(request.resourceType()))
       return route.abort();
     return route.continue();
@@ -192,7 +198,12 @@ export async function compareStyles(
               document
                 .elementsFromPoint(x, y)
                 .slice(0, 3)
-                .map((e) => `${e.tagName.toLowerCase()}.${e.getAttribute('class') ?? ''}`.slice(0, 60))
+                .map((e) =>
+                  `${e.tagName.toLowerCase()}.${e.getAttribute('class') ?? ''}`.slice(
+                    0,
+                    60
+                  )
+                )
                 .join(' < '),
             [changed.x, changed.y]
           );

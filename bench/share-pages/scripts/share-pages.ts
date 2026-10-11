@@ -57,13 +57,7 @@ if (
   throw new Error('UAT_APP_URL host is not present in UAT_ALLOWED_HOSTS');
 
 type Json = Record<string, unknown>;
-type Shared = {
-  kind: string;
-  path: string;
-  publicApi: string;
-  /** Compare the inlined CSS against the full stylesheets (default true). */
-  styles?: false;
-};
+type Shared = { kind: string; path: string; publicApi: string };
 
 /** An authenticated API call with a fresh Clerk session token. */
 async function api(
@@ -276,9 +270,6 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
       kind: 'notes-near-limit',
       path: nearLimitPath,
       publicApi: `/api/public/notes/${token(nearLimitPath)}`,
-      // Its blocks are the every-block note's, and a page this tall is
-      // beyond a full-page screenshot.
-      styles: false,
     },
   ];
 }
@@ -815,9 +806,7 @@ function summary(
   );
   for (const page of results.pages)
     lines.push(
-      page.styles === undefined
-        ? `- ${page.kind}: not compared (the every-block note's blocks; too tall for a full-page screenshot)`
-        : `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}${page.styles.noise.length ? ` (rendering noise, the full page differs from itself too: ${page.styles.noise.join('; ')})` : ''}`
+      `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}${page.styles.noise.length ? ` (rendering noise, the full page differs from itself too: ${page.styles.noise.join('; ')})` : ''}`
     );
   lines.push(
     '',
@@ -867,14 +856,12 @@ async function run(page: Page) {
   const styles = [];
   for (const item of shared)
     styles.push(
-      item.styles === false
-        ? undefined
-        : await compareStyles(
-            page.context().browser()!,
-            `${appUrl}${item.path}`,
-            item.kind,
-            out
-          )
+      await compareStyles(
+        page.context().browser()!,
+        `${appUrl}${item.path}`,
+        item.kind,
+        out
+      )
     );
 
   const chrome = await chromium.launch({
@@ -983,8 +970,7 @@ try {
     results.forged.length > 0 ||
     results.pages.some(
       (item) =>
-        item.cache.failures.length > 0 ||
-        (item.styles?.differences.length ?? 0) > 0
+        item.cache.failures.length > 0 || item.styles.differences.length > 0
     );
 } finally {
   await cleanUp(page).catch((error) => {

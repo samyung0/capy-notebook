@@ -1,14 +1,18 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
 import type { AnonymousNote } from '@/api/types';
+import { parseMaterialDocument } from '@/features/materials/document';
 import { MATERIAL_SCHEMA_VERSION } from '@/lib/const';
-import { renderSharePage } from './server';
+import everyBlock from '../../server/internal/materialdoc/testdata/every-block-note.json';
+import { renderSharePage, renderSharePagePieces } from './server';
 
 const TEMPLATE =
   '<html lang="en"><head><!--capy-share-head--></head><body><!--capy-share-body--></body></html>';
 const text = (value: string) => ({ text: value });
 const STATE = /id="share-state">(.*?)<\/script>/;
 const JSON_LD = /<script type="application\/ld\+json">(.*?)<\/script>/;
+const IMAGE_PRELOAD = /<link rel="preload" as="image"[^>]*\/>/g;
+const REACT_ID = /_(?:s\d+-)?R_[0-9a-z]+_/g;
 
 const note: AnonymousNote = {
   author: { name: 'Mia' },
@@ -144,5 +148,43 @@ describe('renderSharePage', () => {
       kind: 'notes',
       token: 'mat_note.sig',
     });
+  });
+});
+
+describe('a streamed note', () => {
+  const everyBlockNote = {
+    ...note,
+    // Parsed once, as stored notes are: an element without an id would get
+    // a new random one in every render.
+    content: parseMaterialDocument(everyBlock),
+    name: 'Every block',
+  } as unknown as AnonymousNote;
+  const render = (sliceBytes: { first: number; rest: number }) =>
+    renderSharePagePieces({
+      canonical: 'https://app.example.test/share/notes/mat_note.sig',
+      page: { kind: 'notes', note: everyBlockNote, token: 'mat_note.sig' },
+      sliceBytes,
+      template: TEMPLATE,
+    });
+
+  it('is the same page whether its blocks render at once or one by one', () => {
+    const whole = render({
+      first: Number.POSITIVE_INFINITY,
+      rest: Number.POSITIVE_INFINITY,
+    });
+    expect(whole.rest).toHaveLength(0);
+    const pieces = render({ first: 1, rest: 1 });
+    expect(pieces.rest.length).toBeGreaterThan(20);
+    const joined =
+      pieces.first + pieces.rest.map((piece) => piece()).join('') + pieces.last;
+    // React hoists a preload for each image to the top of the page; a
+    // streamed page has them only for the blocks it sends first, so later
+    // images do not compete with the first screen. Each slice's React ids
+    // carry its own prefix.
+    const comparable = (html: string) =>
+      html.replaceAll(IMAGE_PRELOAD, '').replaceAll(REACT_ID, '_ID_');
+    expect(comparable(joined)).toBe(comparable(whole.first));
+    const ids = [...joined.matchAll(/ id="([^"]+)"/g)].map(([, id]) => id);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

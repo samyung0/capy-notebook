@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { MATERIAL_SCHEMA_VERSION } from '../../src/lib/const';
 import { DEV_SHARE_LINK_SECRET, shareToken } from '../../src/lib/shareLink';
 import { handleSiteRequest } from './handler';
 
@@ -75,6 +76,49 @@ describe('anonymous material routes', () => {
       `https://api.example.test/api/public/quizzes/${TOKEN}`
     );
     // The first render imports the share renderer bundle.
+  }, 20_000);
+
+  it('streams a long note: its first blocks first, new rules before the slice using them', async () => {
+    const paragraph = (i: number) => ({
+      children: [{ text: `Paragraph ${i} ${'cells divide '.repeat(20)}` }],
+      id: `p${i}`,
+      type: 'p',
+    });
+    const long = {
+      author: { name: 'Mia' },
+      content: {
+        schemaVersion: MATERIAL_SCHEMA_VERSION,
+        value: [
+          ...Array.from({ length: 400 }, (_, i) => paragraph(i)),
+          // A block whose classes the first slice never used.
+          { children: [{ text: 'Last heading' }], id: 'h', type: 'h2' },
+        ],
+      },
+      embeds: [],
+      id: 'mat_0123456789',
+      name: 'Long note',
+      privacy: 'link',
+      updatedAt: '2026-10-04T10:00:00Z',
+    };
+    const response = await handleSiteRequest(
+      request(`/share/notes/${TOKEN}`),
+      env,
+      vi.fn<typeof fetch>(async () => Response.json(long))
+    );
+    expect(response.status).toBe(200);
+    expect(response.headers.get('Cache-Control')).toBe(
+      'public, s-maxage=300, max-age=0, must-revalidate'
+    );
+    const html = await response.text();
+    const at = (text: string) => html.indexOf(text);
+    expect(at('Paragraph 0 ')).toBeGreaterThan(
+      at('<style>body{color:red}</style>')
+    );
+    expect(at('Paragraph 399 ')).toBeGreaterThan(at('Paragraph 0 '));
+    // The heading's rules arrive with its slice, after the first one.
+    expect(at('<style data-css-subset>')).toBeGreaterThan(at('Paragraph 0 '));
+    expect(at('Last heading')).toBeGreaterThan(at('<style data-css-subset>'));
+    expect(html.trimEnd().endsWith('</html>')).toBe(true);
   }, 20_000);
 
   it('answers a private or missing item with the not-found page', async () => {
