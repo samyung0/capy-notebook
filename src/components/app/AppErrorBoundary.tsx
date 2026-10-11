@@ -1,6 +1,10 @@
-import { useQueryErrorResetBoundary } from '@tanstack/react-query';
+import {
+  onlineManager,
+  type QueryClient,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { type ErrorComponentProps, Link } from '@tanstack/react-router';
-import { Component, type ErrorInfo, type ReactNode } from 'react';
+import { Component, type ErrorInfo, type ReactNode, useEffect } from 'react';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { describeError } from '@/lib/errors';
@@ -30,8 +34,18 @@ function resetKeysChanged(
   return previous.some((value, index) => !Object.is(value, next[index]));
 }
 
+/** Retry from a boundary: every failed query starts over, including ones whose
+ * component has not mounted yet (a route loader's prefetch), which would
+ * otherwise rethrow their cached error without fetching. */
+function resetFailedQueries(queryClient: QueryClient) {
+  void queryClient.resetQueries({
+    predicate: (query) => query.state.status === 'error',
+  });
+}
+
 class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
   state: BoundaryState = { error: null };
+  #unsubscribeOnline?: () => void;
 
   static getDerivedStateFromError(error: unknown): BoundaryState {
     return { error };
@@ -39,6 +53,18 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
 
   componentDidCatch(error: unknown, info: ErrorInfo) {
     console.error('Unhandled React error', error, info.componentStack);
+  }
+
+  // The failed queries' observers unmounted with the children, so
+  // refetchOnReconnect cannot reach them; reset to remount and refetch.
+  componentDidMount() {
+    this.#unsubscribeOnline = onlineManager.subscribe((online) => {
+      if (online && this.state.error) this.reset();
+    });
+  }
+
+  componentWillUnmount() {
+    this.#unsubscribeOnline?.();
   }
 
   componentDidUpdate(previous: BoundaryCoreProps) {
@@ -94,22 +120,37 @@ export function AppErrorBoundary({
   resetKeys,
   variant = 'panel',
 }: BoundaryProps) {
-  const { reset } = useQueryErrorResetBoundary();
+  const queryClient = useQueryClient();
   return (
-    <BoundaryCore onReset={reset} resetKeys={resetKeys} variant={variant}>
+    <BoundaryCore
+      onReset={() => resetFailedQueries(queryClient)}
+      resetKeys={resetKeys}
+      variant={variant}
+    >
       {children}
     </BoundaryCore>
   );
 }
 
 export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
-  const { reset: resetQueries } = useQueryErrorResetBoundary();
+  const queryClient = useQueryClient();
   const description = describeError(error);
   const reload = description.action === 'reload';
   const retry = () => {
-    resetQueries();
+    resetFailedQueries(queryClient);
     reset();
   };
+
+  // Same as BoundaryCore: retry when the connection comes back.
+  useEffect(
+    () =>
+      onlineManager.subscribe((online) => {
+        if (!online) return;
+        resetFailedQueries(queryClient);
+        reset();
+      }),
+    [queryClient, reset]
+  );
 
   return (
     <main className="h-full overflow-hidden p-1.5 sm:p-2.5">

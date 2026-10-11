@@ -229,7 +229,18 @@ resubscribed), while renaming, moving and deleting still work.
 
 TanStack Query's `onlineManager` pauses network work until connectivity
 returns; loading UI should describe that it is waiting rather than escalating
-the pause to an error.
+the pause to an error. A paused query is not loading (`isLoading` is false), so
+a page gated on it checks `fetchStatus === 'paused'` before its missing state
+and shows `QueryPausedState`; the workspace page does this, so opening a
+workspace offline reads "Waiting for connection", not private or unavailable.
+
+A query that throws to `AppErrorBoundary` or `RouteErrorComponent` loses its
+observer, so neither `refetchOnReconnect` nor the event stream's reconnect
+refetch reaches it. Both boundaries therefore retry by themselves when
+`onlineManager` comes back online. Retry, manual or on reconnect, resets every
+query in error, not only the thrown one: a route loader's failed prefetch has no
+observer yet, and its component would otherwise rethrow the cached error
+without fetching once it mounts.
 
 ## Streaming failures
 

@@ -13,6 +13,7 @@ import type { Citation, Region } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
@@ -78,7 +79,11 @@ export default function WorkspaceOpen() {
   const search = useSearch({ strict: false }) as WorkspaceOpenSearch;
 
   // Other failures without data go to the error boundary.
-  const { data: ws, isLoading: wsLoading } = useWorkspace(workspaceId, {
+  const {
+    data: ws,
+    fetchStatus: wsFetchStatus,
+    isLoading: wsLoading,
+  } = useWorkspace(workspaceId, {
     errorBoundary: 'unlessMissing',
   });
   const { data: chapters } = useChapters(workspaceId);
@@ -188,6 +193,14 @@ export default function WorkspaceOpen() {
       />
     );
   }
+
+  // Offline before the first load: the fetch resumes on reconnect.
+  if (!ws && wsFetchStatus === 'paused')
+    return (
+      <Panel sectionClassName="items-center justify-center h-full">
+        <QueryPausedState />
+      </Panel>
+    );
 
   if (!ws)
     return (
