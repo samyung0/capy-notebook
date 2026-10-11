@@ -5,7 +5,8 @@ import {
   useParams,
   useRouter,
 } from '@tanstack/react-router';
-import { useCloneQuiz, useQuiz, useSubmitAttempt } from '@/api/hooks';
+import { useState } from 'react';
+import { useQuiz, useSubmitAttempt, useWorkspace } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
@@ -15,9 +16,9 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
 import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/crumbs';
+import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
-import { toastCloneError } from '@/lib/authToasts';
 
 /** `/quizzes/$quizId/attempt`, inside the app. Shared links open the public
  * page instead (src/share/SharedQuiz.tsx). */
@@ -40,8 +41,11 @@ function Attempt({ quizId }: { quizId: string }) {
     fresh: true,
   });
   const { mutateAsync: submit } = useSubmitAttempt({ errorToast: false });
-  const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz({
-    errorToast: false,
+  const [cloning, setCloning] = useState(false);
+  // In a workspace only its members and editors clone, and an embedded item
+  // goes with its note.
+  const { data: workspace } = useWorkspace(quiz?.workspaceId ?? '', {
+    errorBoundary: false,
   });
   const frozen = useAccountFrozen();
   const navigate = useNavigate();
@@ -70,27 +74,33 @@ function Attempt({ quizId }: { quizId: string }) {
   return (
     <AttemptBody
       actions={
-        !quiz.canEdit && (
-          <Button
-            disabled={frozen || cloneQuizIsPending}
-            iconLeft="plus"
-            onClick={() =>
-              cloneQuiz(quizId, {
-                onError: (err) => toastCloneError(err, 'quiz'),
-                onSuccess: (copy) => {
-                  navigate({
-                    params: { quizId: copy.id },
-                    to: '/quizzes/$quizId/attempt',
-                  });
-                },
-              })
-            }
-            rounded="large"
-            size="sm"
-            variant="outline"
-          >
-            {cloneQuizIsPending ? m.action_cloning() : m.quiz_clone()}
-          </Button>
+        !quiz.canEdit &&
+        !quiz.parentMaterialId &&
+        (!quiz.workspaceId || workspace?.canClone) && (
+          <>
+            <Button
+              disabled={frozen}
+              iconLeft="plus"
+              onClick={() => setCloning(true)}
+              rounded="large"
+              size="sm"
+              variant="outline"
+            >
+              {m.action_clone_quiz()}
+            </Button>
+            {cloning && (
+              <CloneItemDialog
+                item={{
+                  id: quiz.id,
+                  kind: 'quiz',
+                  name: quiz.name,
+                  type: 'material',
+                  workspaceId: quiz.workspaceId,
+                }}
+                onClose={() => setCloning(false)}
+              />
+            )}
+          </>
         )
       }
       emptyAction={

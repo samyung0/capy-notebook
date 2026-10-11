@@ -126,8 +126,7 @@ export const failureScenarios = [
     method: 'post',
     paths: [
       '/api/workspaces/:id/clone',
-      '/api/quizzes/:id/clone',
-      '/api/flashcards/:id/clone',
+      '/api/files/:id/clone',
       '/api/materials/:id/clone',
     ],
     status: 403,

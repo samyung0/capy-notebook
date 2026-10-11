@@ -42,7 +42,8 @@ const kinds = [
   },
 ] as const;
 
-/** ⋮ → Clone opens the dashboard's dialog, which clones on confirm. */
+/** ⋮ → Clone opens the dashboard's clone dialog; a standalone item clones
+ * to No workspace under its own name. */
 async function cloneThroughDashboard(page: Page, label: string) {
   await page.getByRole('button', { name: m.a11y_open_menu() }).click();
   await page.getByRole('menuitem', { name: label }).click();
@@ -220,7 +221,7 @@ for (const kind of kinds) {
       for (const item of [kind.link, kind.public]) {
         const cloned = waitForApi(
           otherPage,
-          apiEndsWith(`${kind.api}/${item.id}/clone`, 'POST')
+          apiEndsWith(`/api/materials/${item.id}/clone`, 'POST')
         );
         await otherPage.goto(await sharePath(ownerApi, kind.api, item));
         await cloneThroughDashboard(otherPage, kind.clone);

@@ -38,6 +38,8 @@ import type {
   BillingInfo,
   CalendarEvent,
   Chapter,
+  CloneFileReq,
+  CloneMaterialReq,
   CloneWorkspaceResult,
   ContentOrderItem,
   Conversation,
@@ -1631,13 +1633,44 @@ export function useCreateStandaloneNote() {
   });
 }
 
-/** Clone a readable material into a private standalone copy. */
+/** Copy a material into a workspace the caller edits (in a chapter, an
+ * existing one or one named), or with no workspace into a private copy. */
 export function useCloneMaterial(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: (id: string) => api.post<Material>(`/materials/${id}/clone`),
-    onSuccess: () => invalidateOwnedMaterials(qc),
+    mutationFn: ({ id, body }: { id: string; body: CloneMaterialReq }) =>
+      api.post<Material>(`/materials/${id}/clone`, body),
+    onSuccess: (material, { body }) => {
+      trackItemCloned(
+        material.kind === 'quiz' || material.kind === 'flashcards'
+          ? material.kind
+          : 'material'
+      );
+      invalidateAllMaterials(qc);
+      // Explore lists clone counts.
+      qc.invalidateQueries({ queryKey: qk.exploreQuizzes });
+      qc.invalidateQueries({ queryKey: qk.exploreFlashcardSets });
+      if (body.chapterName && material.workspaceId)
+        qc.invalidateQueries({ queryKey: qk.chapters(material.workspaceId) });
+    },
+  });
+}
+
+/** Copy a file into a workspace the caller edits, in a chapter or none. */
+export function useCloneFile(options?: MutationUiOptions) {
+  const qc = useQueryClient();
+  return useMutation({
+    meta: mutationMeta(options),
+    mutationFn: ({ id, body }: { id: string; body: CloneFileReq }) =>
+      api.post<SourceFile>(`/files/${id}/clone`, body),
+    onSuccess: (file, { body }) => {
+      trackItemCloned('file');
+      qc.invalidateQueries({ queryKey: qk.files(file.workspaceId) });
+      qc.invalidateQueries({ queryKey: qk.ownedFilesRoot });
+      if (body.chapterName)
+        qc.invalidateQueries({ queryKey: qk.chapters(file.workspaceId) });
+    },
   });
 }
 
@@ -2638,36 +2671,6 @@ export function useCloneWorkspace(options?: MutationUiOptions) {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.exploreWorkspaces });
-    },
-  });
-}
-
-/** Copy a shared quiz into the caller's library (most recent workspace). */
-export function useCloneQuiz(options?: MutationUiOptions) {
-  const qc = useQueryClient();
-  return useMutation({
-    meta: mutationMeta(options),
-    mutationFn: (id: string) => api.post<EditableQuiz>(`/quizzes/${id}/clone`),
-    onSuccess: () => {
-      trackItemCloned('quiz');
-      invalidateOwnedMaterials(qc);
-      qc.invalidateQueries({ queryKey: qk.exploreQuizzes });
-      invalidateAllMaterials(qc);
-    },
-  });
-}
-
-/** Copy shared flashcards (with reset SRS state) into the caller's library. */
-export function useCloneFlashcardSet(options?: MutationUiOptions) {
-  const qc = useQueryClient();
-  return useMutation({
-    meta: mutationMeta(options),
-    mutationFn: (id: string) =>
-      api.post<FlashcardSet>(`/flashcards/${id}/clone`),
-    onSuccess: () => {
-      trackItemCloned('flashcards');
-      qc.invalidateQueries({ queryKey: qk.exploreFlashcardSets });
-      invalidateAllMaterials(qc);
     },
   });
 }

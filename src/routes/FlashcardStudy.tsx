@@ -4,11 +4,12 @@ import {
   useParams,
   useRouter,
 } from '@tanstack/react-router';
+import { useState } from 'react';
 import {
   useCards,
-  useCloneFlashcardSet,
   useFlashcardSet,
   useRateReviewItem,
+  useWorkspace,
 } from '@/api/hooks';
 import { isMissing } from '@/api/queryClient';
 import { PanelWithInvertedRadius } from '@/components/app/layout';
@@ -20,10 +21,10 @@ import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/crumbs';
+import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cardCountBucket, flashcardsStudySource, track } from '@/lib/analytics';
-import { toastCloneError } from '@/lib/authToasts';
 import { SRS_RATINGS } from '@/lib/srs';
 
 /** `/flashcards/$flashcardSetId`, inside the app. Shared links open the public
@@ -48,8 +49,11 @@ function Study({ setId }: { setId: string }) {
     error: cardsError,
   } = useCards(setId, { errorBoundary: 'unlessMissing', fresh: true });
   const { mutateAsync: rateItem } = useRateReviewItem();
-  const { isPending: cloneIsPending, mutate: cloneSet } = useCloneFlashcardSet({
-    errorToast: false,
+  const [cloning, setCloning] = useState(false);
+  // In a workspace only its members and editors clone, and an embedded item
+  // goes with its note.
+  const { data: workspace } = useWorkspace(set?.workspaceId ?? '', {
+    errorBoundary: false,
   });
   const frozen = useAccountFrozen();
   const navigate = useNavigate();
@@ -80,27 +84,33 @@ function Study({ setId }: { setId: string }) {
   return (
     <StudyBody
       actions={
-        !set.canEdit && (
-          <Button
-            disabled={frozen || cloneIsPending}
-            iconLeft="plus"
-            onClick={() =>
-              cloneSet(setId, {
-                onError: (err) => toastCloneError(err, 'flashcards'),
-                onSuccess: (copy) => {
-                  navigate({
-                    params: { flashcardSetId: copy.id },
-                    to: '/flashcards/$flashcardSetId',
-                  });
-                },
-              })
-            }
-            rounded="large"
-            size="sm"
-            variant="outline"
-          >
-            {cloneIsPending ? m.action_cloning() : m.action_clone_flashcards()}
-          </Button>
+        !set.canEdit &&
+        !set.parentMaterialId &&
+        (!set.workspaceId || workspace?.canClone) && (
+          <>
+            <Button
+              disabled={frozen}
+              iconLeft="plus"
+              onClick={() => setCloning(true)}
+              rounded="large"
+              size="sm"
+              variant="outline"
+            >
+              {m.action_clone_flashcards()}
+            </Button>
+            {cloning && (
+              <CloneItemDialog
+                item={{
+                  id: set.id,
+                  kind: 'flashcards',
+                  name: set.name,
+                  type: 'material',
+                  workspaceId: set.workspaceId,
+                }}
+                onClose={() => setCloning(false)}
+              />
+            )}
+          </>
         )
       }
       cards={cards}

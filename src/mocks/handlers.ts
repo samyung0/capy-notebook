@@ -8,6 +8,8 @@ import {
 import type {
   Attempt,
   Chapter,
+  CloneFileReq,
+  CloneMaterialReq,
   CreateWorkspaceReq,
   EditableQuiz,
   FlashcardSet,
@@ -537,6 +539,54 @@ type SourceUploadReservation = {
   workspaceId: string;
 };
 const sourceUploadReservations = new Map<string, SourceUploadReservation>();
+
+/** A clone's chapter: the picked one, or one by name (any case), created
+ * when missing. */
+function mockCloneChapter(
+  workspaceId: string,
+  { chapterId, chapterName }: { chapterId?: string; chapterName?: string }
+): string | null {
+  const name = chapterName?.trim();
+  if (!name) return chapterId ?? null;
+  const existing = db.chapters.find(
+    (chapter) =>
+      chapter.workspaceId === workspaceId &&
+      chapter.name.trim().toLowerCase() === name.toLowerCase()
+  );
+  if (existing) return existing.id;
+  const chapter: Chapter = {
+    fileIds: [],
+    id: uid('ch'),
+    name,
+    order: db.chapters.filter((c) => c.workspaceId === workspaceId).length,
+    workspaceId,
+  };
+  db.chapters.push(chapter);
+  return chapter.id;
+}
+
+/** Explore's public quizzes and flashcards, as material clone sources. */
+function publicCloneSource(id: string): Material | undefined {
+  const quiz = db.publicQuizzes.find((q) => q.id === id);
+  if (quiz) {
+    return db.makeMaterial({
+      ...ownerMaterialAccess,
+      chapterId: null,
+      content: quizDocument(quiz.questions),
+      createdAt: new Date().toISOString(),
+      id,
+      kind: 'quiz',
+      privacy: 'public',
+      scopeChapters: [],
+      scopeFileNames: [],
+      title: quiz.name,
+      workspaceId: '',
+      workspaceName: '',
+    });
+  }
+  const index = db.publicFlashcardSets.findIndex((set) => set.id === id);
+  return index >= 0 ? db.flashcardSetMaterials()[index] : undefined;
+}
 
 export const handlers = [
   ...questionBankHandlers,
@@ -1570,6 +1620,25 @@ export const handlers = [
         }
       });
     return HttpResponse.json({ workspace }, { status: 201 });
+  }),
+  http.post('/api/files/:id/clone', async ({ params, request }) => {
+    const body = (await request.json()) as CloneFileReq;
+    const source = db.files.find((file) => file.id === params.id);
+    if (!source || !db.workspaces.some((ws) => ws.id === body.workspaceId))
+      return new HttpResponse(null, { status: 404 });
+    const id = uid('f');
+    const links = db.fileLinks[source.id];
+    if (links) db.fileLinks[id] = { ...links };
+    const file = {
+      ...source,
+      addedAt: new Date().toISOString(),
+      chapterId: mockCloneChapter(body.workspaceId, body),
+      id,
+      name: body.name.trim(),
+      workspaceId: body.workspaceId,
+    };
+    db.files.push(file);
+    return HttpResponse.json(file, { status: 201 });
   }),
   /* ---------------- chapters & files ---------------- */
   http.get('/api/workspaces/:id/chapters', async ({ params }) =>
@@ -2703,58 +2772,62 @@ export const handlers = [
     trashMaterial(String(params.id), 'quiz');
     return new HttpResponse(null, { status: 204 });
   }),
-  // A standalone material (a note) clones into a private standalone copy.
-  http.post('/api/materials/:id/clone', async ({ params }) => {
-    const source = db.materials.find(
-      (material) => material.id === params.id && !material.parentMaterialId
-    );
-    if (!source) return new HttpResponse(null, { status: 404 });
+  // A material copies into a workspace (a taken title refuses it, as the
+  // server does) or standalone; Explore's public items clone too.
+  http.post('/api/materials/:id/clone', async ({ params, request }) => {
+    const body = (await request.json()) as CloneMaterialReq;
+    const workspaceId = body.workspaceId ?? '';
+    const workspace = db.workspaces.find((ws) => ws.id === workspaceId);
+    const source =
+      db.materials.find(
+        (material) => material.id === params.id && !material.parentMaterialId
+      ) ?? publicCloneSource(String(params.id));
+    if (!source || (workspaceId && !workspace))
+      return new HttpResponse(null, { status: 404 });
+    const title = body.title.trim();
+    if (
+      workspaceId &&
+      db.materials.some(
+        (mt) =>
+          mt.workspaceId === workspaceId &&
+          mt.title.trim().toLowerCase() === title.toLowerCase()
+      )
+    ) {
+      return HttpResponse.json(
+        {
+          code: 'title_taken',
+          message: 'a material with this name already exists in this workspace',
+        },
+        { status: 409 }
+      );
+    }
+    const id = uid('mat');
+    const cards =
+      source.kind === 'flashcards'
+        ? materialCards(source).map((card) => ({ ...card, id: uid('c') }))
+        : [];
     const material = db.makeMaterial({
       ...ownerMaterialAccess,
-      chapterId: null,
+      chapterId: workspace ? mockCloneChapter(workspace.id, body) : null,
       color: source.color,
-      content: structuredClone(source.content),
+      content:
+        source.kind === 'flashcards'
+          ? flashcardsDocument(cards, id)
+          : structuredClone(source.content),
       createdAt: new Date().toISOString(),
-      id: uid('mat'),
-      isOwner: true,
+      id,
+      isOwner: workspace ? workspace.isOwner : true,
       kind: source.kind,
       privacy: 'private',
       scopeChapters: [],
       scopeFileNames: [],
-      title: source.title,
-      workspaceId: '',
-      workspaceName: '',
+      title,
+      workspaceId,
+      workspaceName: workspace?.name ?? '',
     });
     db.materials.unshift(material);
+    for (const card of cards) db.flashcardCards[card.id] = { materialId: id };
     return HttpResponse.json(material, { status: 201 });
-  }),
-  http.post('/api/quizzes/:id/clone', async ({ params }) => {
-    const sourceMaterial = db.materials.find(
-      (material) => material.id === params.id && material.kind === 'quiz'
-    );
-    const publicQuiz = db.publicQuizzes.find((quiz) => quiz.id === params.id);
-    if (!sourceMaterial && !publicQuiz)
-      return new HttpResponse(null, { status: 404 });
-    const source = sourceMaterial
-      ? db.quizFromMaterial(sourceMaterial)
-      : publicQuiz!;
-    const material = db.makeMaterial({
-      ...ownerMaterialAccess,
-      chapterId: null,
-      content: quizDocument(source.questions),
-      createdAt: new Date().toISOString(),
-      id: uid('qz'),
-      isOwner: true,
-      kind: 'quiz',
-      privacy: 'private',
-      scopeChapters: source.chapters,
-      scopeFileNames: [],
-      title: source.name,
-      workspaceId: '',
-      workspaceName: '',
-    });
-    db.materials.unshift(material);
-    return HttpResponse.json(db.quizFromMaterial(material), { status: 201 });
   }),
   http.get('/api/attempts', ({ request }) => {
     const params = new URL(request.url).searchParams;
@@ -2908,45 +2981,6 @@ export const handlers = [
     const body = (await request.json()) as Pick<FlashcardSet, 'privacy'>;
     material.privacy = body.privacy;
     return HttpResponse.json(db.flashcardSetFromMaterial(material));
-  }),
-  http.post('/api/flashcards/:id/clone', async ({ params }) => {
-    let source = db.materials.find(
-      (material) => material.id === params.id && material.kind === 'flashcards'
-    );
-    if (!source) {
-      const index = db.publicFlashcardSets.findIndex(
-        (flashcardSet) => flashcardSet.id === params.id
-      );
-      source = index >= 0 ? db.flashcardSetMaterials()[index] : undefined;
-    }
-    if (!source) return new HttpResponse(null, { status: 404 });
-    const cards = materialCards(source).map((card) => ({
-      ...card,
-      id: uid('c'),
-    }));
-    const id = uid('dk');
-    const material = db.makeMaterial({
-      ...ownerMaterialAccess,
-      chapterId: null,
-      color: source.color,
-      content: flashcardsDocument(cards, id),
-      createdAt: new Date().toISOString(),
-      id,
-      kind: 'flashcards',
-      privacy: 'private',
-      scopeChapters: source.scopeChapters,
-      scopeFileNames: [],
-      title: source.title,
-      workspaceId: '',
-      workspaceName: '',
-    });
-    db.materials.unshift(material);
-    cards.forEach((card) => {
-      db.flashcardCards[card.id] = { materialId: id };
-    });
-    return HttpResponse.json(db.flashcardSetFromMaterial(material), {
-      status: 201,
-    });
   }),
   http.get('/api/flashcards/:id/cards', async ({ params }) => {
     const mt = db.materials.find(

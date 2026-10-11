@@ -5,11 +5,12 @@ import type { PublicWorkspace } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { trackItemCloned } from '@/lib/analytics';
-import { toastCloneError } from '@/lib/authToasts';
+import { cloneErrorMessage } from './CloneItemDialog';
 import { WorkspaceFormDialog } from './WorkspaceFormDialog';
 
 /** Clone asks for the copy's name, description, icon, tags and cover,
- * prefilled from the source, and opens the copy once it exists. */
+ * prefilled from the source, and opens the copy once it exists; a refusal
+ * shows in the form. */
 export function CloneWorkspaceDialog({
   open,
   setOpen,
@@ -47,7 +48,7 @@ export function CloneWorkspaceDialog({
       iconId: workspace.iconId,
       // An owner's copy sits next to the source, so its name tells them apart.
       name: workspace.isOwner
-        ? m.workspace_copy_name({ name: workspace.name })
+        ? m.copy_name({ name: workspace.name })
         : workspace.name,
       // Tag ids are the source owner's; the copy reuses or creates by value.
       tags: workspace.tags.map(({ value }) => ({ value })),
@@ -56,15 +57,13 @@ export function CloneWorkspaceDialog({
   );
   return (
     <WorkspaceFormDialog
+      errorMessage={cloneErrorMessage}
       mode="clone"
       onSubmit={async ({ cover, ...values }) => {
-        const { workspace: cloned } = await cloneWorkspace(
-          {
-            body: { ...values, ...(cover ? { cover } : {}) },
-            id: workspace.id,
-          },
-          { onError: (err) => toastCloneError(err, 'workspace') }
-        );
+        const { workspace: cloned } = await cloneWorkspace({
+          body: { ...values, ...(cover ? { cover } : {}) },
+          id: workspace.id,
+        });
         trackItemCloned('workspace');
         userToast({ title: m.workspace_cloned(), variant: 'success' });
         onCloned?.();

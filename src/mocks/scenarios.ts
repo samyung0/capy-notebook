@@ -967,7 +967,7 @@ function viewOnlyContent(scope: 'own' | 'member'): RequestHandler[] {
             )?.workspaceId
           )) ||
         (scope === 'own' &&
-          /^POST \/api\/(workspaces|quizzes|flashcards|materials)\/[^/]+\/clone$/.test(
+          /^POST \/api\/(workspaces|files|materials)\/[^/]+\/clone$/.test(
             route
           ));
       if (!refused) return;

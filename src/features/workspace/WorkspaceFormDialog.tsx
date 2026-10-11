@@ -12,6 +12,7 @@ import {
 import type { CoverConfig, CreateWorkspaceReq, Workspace } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { DialogFooter, SimpleDialog } from '@/components/ui/Dialog';
+import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { flattenTagErrors } from '@/components/ui/flattenTagErrors';
 import { IconPicker } from '@/components/ui/IconPicker';
@@ -43,6 +44,7 @@ export function WorkspaceFormDialog({
   onSubmit,
   mode,
   embedded = false,
+  errorMessage,
 }: {
   open: boolean;
   setOpen: (open: boolean) => void;
@@ -54,6 +56,9 @@ export function WorkspaceFormDialog({
   /** clone creates like create, from a form prefilled with the source. */
   mode: 'create' | 'clone' | 'edit';
   embedded?: boolean;
+  /** Shows a failed submit under the form; without it the mutation's own
+   * toast reports it. */
+  errorMessage?: (error: unknown) => string;
 }) {
   const {
     formState: { isDirty, isValid, isSubmitting },
@@ -76,9 +81,11 @@ export function WorkspaceFormDialog({
   // random seed that the created cover keeps.
   const [draftSeed] = useState(randomSeed);
   const ownerId = workspace.id ?? draftSeed;
+  const [formError, setFormError] = useState<string | null>(null);
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
+      setFormError(null);
       reset({
         ...workspace,
         cover: workspace.cover ?? null,
@@ -97,6 +104,7 @@ export function WorkspaceFormDialog({
   }, [mode, open, reset, trigger, workspace]);
 
   const submit = handleSubmit(async (values) => {
+    setFormError(null);
     try {
       const { cover } = values;
       await onSubmit(
@@ -105,8 +113,9 @@ export function WorkspaceFormDialog({
           : values
       );
       setOpen(false);
-    } catch {
-      // Preserve the draft; the global mutation handler reports the failure.
+    } catch (error) {
+      // Preserve the draft; the form or the mutation's toast reports it.
+      if (errorMessage) setFormError(errorMessage(error));
     }
   });
   const fields = (
@@ -237,6 +246,7 @@ export function WorkspaceFormDialog({
           </div>
         )}
       />
+      <FormAlert message={formError} />
     </div>
   );
   const footer = (

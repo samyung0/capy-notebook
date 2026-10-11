@@ -25,6 +25,7 @@ export function FileListItem({
   chapters = [],
   onDeleted,
   readOnly = false,
+  canClone = false,
   canRetry = false,
   study,
 }: {
@@ -39,6 +40,8 @@ export function FileListItem({
   onDeleted?: (id: string) => void;
   /** Shared workspace viewers can open files but cannot mutate them. */
   readOnly?: boolean;
+  /** Members and editors may copy the file elsewhere (workspace.canClone). */
+  canClone?: boolean;
   /** The workspace owner may retry a failed file's processing. */
   canRetry?: boolean;
   /** The reader's own progress on this file, while progress is on. */
@@ -83,9 +86,10 @@ export function FileListItem({
           </span>
           <StudyMark className="mr-6" state={study?.state} />
         </Link>
-        {!readOnly && (
+        {(!readOnly || canClone) && (
           <ContentActions
             beforeDelete={beforeDelete}
+            canClone={canClone && file.status === 'ready'}
             chapters={chapters}
             color={color}
             content={toFileActionTarget(file)}
@@ -95,22 +99,27 @@ export function FileListItem({
               active && 'bg-surface-hover-bg'
             )}
             hoverIconContainerClassName="p-1"
-            leadingItems={[
-              ...(failed && canRetry
-                ? [
-                    {
-                      icon: 'refresh' as const,
-                      label: m.files_retry_processing(),
-                      onClick: () => setRetrying(true),
-                      warning: true,
-                    },
+            leadingItems={
+              readOnly
+                ? []
+                : [
+                    ...(failed && canRetry
+                      ? [
+                          {
+                            icon: 'refresh' as const,
+                            label: m.files_retry_processing(),
+                            onClick: () => setRetrying(true),
+                            warning: true,
+                          },
+                        ]
+                      : []),
+                    ...(study?.menuItems ?? []),
                   ]
-                : []),
-              ...(study?.menuItems ?? []),
-            ]}
+            }
             onDeleted={() => onDeleted?.(file.id)}
             propertiesClassName="grid grid-cols-[auto_1fr] gap-x-6 gap-y-2"
             propertyLabelClassName="text-fg-secondary"
+            readOnly={readOnly}
             renameTitle={m.files_rename()}
             workspaceId={workspaceId}
           />

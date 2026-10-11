@@ -21,11 +21,13 @@ import { formatFileSize } from '@/features/files/fileUtils';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { CloneItemDialog } from './CloneItemDialog';
 import type { ContentActionTarget } from './contentActionTarget';
 
 export function ContentActions({
   showMove = true,
   beforeDelete,
+  canClone = false,
   chapters,
   color,
   content,
@@ -45,6 +47,8 @@ export function ContentActions({
 }: {
   showMove?: boolean;
   beforeDelete?: () => boolean;
+  /** Offers Clone, also to a read-only viewer who may copy (workspace.canClone). */
+  canClone?: boolean;
   chapters: Chapter[];
   color?: UserColor;
   content?: ContentActionTarget;
@@ -73,9 +77,19 @@ export function ContentActions({
   const [propertiesOpen, setPropertiesOpen] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [moveOpen, setMoveOpen] = useState(false);
+  const [cloneOpen, setCloneOpen] = useState(false);
 
   const items: MenuItem[] = [
     ...leadingItems,
+    ...(canClone && content
+      ? [
+          {
+            icon: 'clone' as const,
+            label: m.action_clone(),
+            onClick: () => setCloneOpen(true),
+          },
+        ]
+      : []),
     ...(!readOnly && content
       ? [
           {
@@ -145,7 +159,7 @@ export function ContentActions({
 
   return (
     <>
-      {!readOnly && display === 'hover' && (
+      {items.length > 0 && display === 'hover' && (
         <HoverActions
           className={hoverClassName}
           iconContainerClassName={hoverIconContainerClassName}
@@ -156,6 +170,27 @@ export function ContentActions({
 
       {content && (
         <>
+          {cloneOpen && (
+            <CloneItemDialog
+              item={
+                content.type === 'file'
+                  ? {
+                      id: content.id,
+                      name: content.name,
+                      type: 'file',
+                      workspaceId,
+                    }
+                  : {
+                      id: content.id,
+                      kind: content.kind,
+                      name: content.name,
+                      type: 'material',
+                      workspaceId,
+                    }
+              }
+              onClose={() => setCloneOpen(false)}
+            />
+          )}
           {renameOpen && (
             <NameFormDialog
               defaultName={content.name}

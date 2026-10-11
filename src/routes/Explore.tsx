@@ -1,8 +1,5 @@
-import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
-  useCloneFlashcardSet,
-  useCloneQuiz,
   useExploreFlashcardSets,
   useExploreQuizzes,
   useExploreWorkspaces,
@@ -16,6 +13,10 @@ import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
+import {
+  type CloneItem,
+  CloneItemDialog,
+} from '@/features/workspace/CloneItemDialog';
 import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import {
   AccountStatusButton,
@@ -43,11 +44,8 @@ export default function Explore() {
     isLoading: flashcardSetsIsLoading,
   } = useExploreFlashcardSets();
   const [cloneSource, setCloneSource] = useState<PublicWorkspace | null>(null);
-  const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
+  const [cloneItem, setCloneItem] = useState<CloneItem | null>(null);
   const frozen = useAccountFrozen();
-  const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
-    useCloneFlashcardSet();
-  const navigate = useNavigate();
 
   return (
     <PanelWithInvertedRadius
@@ -140,16 +138,15 @@ export default function Explore() {
                 </div>
                 <Button
                   className="mt-3"
-                  disabled={frozen || cloneQuizIsPending}
+                  disabled={frozen}
                   iconLeft="plus"
                   onClick={() =>
-                    cloneQuiz(q.id, {
-                      onSuccess: (copy) => {
-                        navigate({
-                          params: { quizId: copy.id },
-                          to: '/quizzes/$quizId/attempt',
-                        });
-                      },
+                    setCloneItem({
+                      id: q.id,
+                      kind: 'quiz',
+                      name: q.name,
+                      type: 'material',
+                      workspaceId: q.workspaceId,
                     })
                   }
                   size="sm"
@@ -183,16 +180,15 @@ export default function Explore() {
                 </div>
                 <Button
                   className="mt-3"
-                  disabled={frozen || cloneFlashcardSetIsPending}
+                  disabled={frozen}
                   iconLeft="plus"
                   onClick={() =>
-                    cloneFlashcardSet(flashcardSet.id, {
-                      onSuccess: (copy) => {
-                        navigate({
-                          params: { flashcardSetId: copy.id },
-                          to: '/flashcards/$flashcardSetId',
-                        });
-                      },
+                    setCloneItem({
+                      id: flashcardSet.id,
+                      kind: 'flashcards',
+                      name: flashcardSet.name,
+                      type: 'material',
+                      workspaceId: flashcardSet.workspaceId,
                     })
                   }
                   size="sm"
@@ -205,6 +201,9 @@ export default function Explore() {
           </div>
         )}
       </div>
+      {cloneItem && (
+        <CloneItemDialog item={cloneItem} onClose={() => setCloneItem(null)} />
+      )}
       {cloneSource && (
         <CloneWorkspaceDialog
           open

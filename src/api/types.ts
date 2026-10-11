@@ -88,6 +88,8 @@ export type {
   BillingInfo,
   Canvas as ThinkingCanvas,
   Chapter,
+  CloneFileReq,
+  CloneMaterialReq,
   CloneWorkspaceResp as CloneWorkspaceResult,
   CollaborationTokenResponse as MaterialCollaborationToken,
   ContentOrderItem,

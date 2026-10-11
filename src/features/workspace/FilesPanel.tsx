@@ -322,6 +322,7 @@ export function FilesPanel({
     return (
       <MaterialListItem
         active={openItem?.kind === 'material' && openItem.id === mt.id}
+        canClone={!!workspace?.canClone}
         chapters={chapters ?? []}
         color="purple"
         data={mt}
@@ -378,6 +379,7 @@ export function FilesPanel({
           <FileListItem
             active={isFileActive(item.id)}
             beforeDelete={isFileActive(item.id) ? beforeReplace : undefined}
+            canClone={!!workspace?.canClone}
             canRetry={!!workspace?.isOwner}
             chapters={chapters}
             color="purple"

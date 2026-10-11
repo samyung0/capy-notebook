@@ -21,6 +21,7 @@ export function MaterialListItem({
   workspaceId,
   generating = false,
   readOnly = false,
+  canClone = false,
   study,
 }: {
   data: MaterialRef;
@@ -35,6 +36,8 @@ export function MaterialListItem({
   workspaceId: string;
   generating?: boolean;
   readOnly?: boolean;
+  /** Members and editors may copy the material elsewhere (workspace.canClone). */
+  canClone?: boolean;
   /** The reader's own progress on this material, while progress is on. */
   study?: StudyRow;
 }) {
@@ -70,8 +73,9 @@ export function MaterialListItem({
         <StudyMark className="mr-6" state={study?.state} />
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
-      {!readOnly && !generating && (
+      {(!readOnly || canClone) && !generating && (
         <ContentActions
+          canClone={canClone}
           chapters={chapters}
           color={color}
           content={toMaterialActionTarget(matRef)}
@@ -81,9 +85,10 @@ export function MaterialListItem({
             active && 'bg-surface-hover-bg'
           )}
           hoverIconContainerClassName="p-1"
-          leadingItems={study?.menuItems}
+          leadingItems={readOnly ? [] : study?.menuItems}
           onDeleted={onDeleted}
           onMove={(chapterId) => onMove?.(chapterId)}
+          readOnly={readOnly}
           renameTitle={m.material_rename()}
           workspaceId={workspaceId}
         />

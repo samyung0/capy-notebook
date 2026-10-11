@@ -10,6 +10,7 @@ import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
 import { ButtonCard } from '@/components/ui/ButtonCard';
 import { Card } from '@/components/ui/Card';
 import { ContentSwap } from '@/components/ui/ContentSwap';
+import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputField } from '@/components/ui/Input';
 import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
@@ -101,18 +102,6 @@ export function AuthCard({
       )}
       <div className={cn('mt-7', className)}>{children}</div>
     </Card>
-  );
-}
-
-export function FormAlert({ message }: { message: string | null }) {
-  if (!message) return null;
-  return (
-    <p
-      className="mt-2 w-full rounded-button bg-tint-error px-3 py-2 text-sm text-tint-error-fg"
-      role="alert"
-    >
-      {message}
-    </p>
   );
 }
 

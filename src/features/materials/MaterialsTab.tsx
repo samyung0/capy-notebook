@@ -2,9 +2,6 @@ import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import {
-  useCloneFlashcardSet,
-  useCloneMaterial,
-  useCloneQuiz,
   useCreateFlashcardSet,
   useCreateQuiz,
   useCreateStandaloneNote,
@@ -40,11 +37,10 @@ import {
   MaterialCard,
   materialKindLabel,
 } from '@/features/materials/MaterialListCard';
+import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
-import { trackItemCloned } from '@/lib/analytics';
-import { toastCloneError } from '@/lib/authToasts';
 import {
   csv,
   type FilesSearch,
@@ -241,47 +237,7 @@ export function MaterialsTab({
   } = useUpdateFlashcardSetSharing();
   const { isPending: noteSharingIsPending, mutateAsync: shareNote } =
     useUpdateMaterialSharing();
-  const { mutate: cloneQuiz } = useCloneQuiz();
-  const { mutate: cloneFlashcardSet } = useCloneFlashcardSet();
-  const { mutate: cloneMaterial } = useCloneMaterial();
-
-  function clone(item: MaterialListItem) {
-    const onError = (err: unknown) => toastCloneError(err, 'material');
-    if (item.kind === 'quiz') {
-      cloneQuiz(item.id, {
-        onError,
-        onSuccess: (quiz) => {
-          trackItemCloned('quiz');
-          navigate({
-            params: { quizId: quiz.id },
-            to: '/quizzes/$quizId/attempt',
-          });
-        },
-      });
-    } else if (item.kind === 'flashcards') {
-      cloneFlashcardSet(item.id, {
-        onError,
-        onSuccess: (set) => {
-          trackItemCloned('flashcards');
-          navigate({
-            params: { flashcardSetId: set.id },
-            to: '/flashcards/$flashcardSetId',
-          });
-        },
-      });
-    } else {
-      cloneMaterial(item.id, {
-        onError,
-        onSuccess: (material) => {
-          trackItemCloned('material');
-          navigate({
-            params: { materialId: material.id },
-            to: '/materials/$materialId',
-          });
-        },
-      });
-    }
-  }
+  const [cloning, setCloning] = useState<MaterialListItem | null>(null);
 
   function menuFor(item: MaterialListItem): MenuItem[] {
     const standalone = !item.workspaceId;
@@ -340,7 +296,7 @@ export function MaterialsTab({
       disabled: frozen,
       icon: 'clone',
       label: m.action_clone(),
-      onClick: () => clone(item),
+      onClick: () => setCloning(item),
     });
     items.push({
       danger: true,
@@ -471,6 +427,18 @@ export function MaterialsTab({
             noteSharingIsPending
           }
           title={m.flashcards_share_title({ name: sharing.title })}
+        />
+      )}
+      {cloning && (
+        <CloneItemDialog
+          item={{
+            id: cloning.id,
+            kind: cloning.kind,
+            name: cloning.title,
+            type: 'material',
+            workspaceId: cloning.workspaceId,
+          }}
+          onClose={() => setCloning(null)}
         />
       )}
       <TrashConfirmDialog

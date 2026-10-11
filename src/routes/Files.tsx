@@ -315,6 +315,12 @@ function ActiveFiles({
                 <ItemCard
                   actions={
                     <ContentActions
+                      canClone={
+                        file.status === 'ready' &&
+                        !!workspaces.find(
+                          (workspace) => workspace.id === file.workspaceId
+                        )?.canClone
+                      }
                       chapters={[]}
                       content={toFileActionTarget(file)}
                       display="menu"
