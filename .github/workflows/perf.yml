@@ -288,8 +288,11 @@ jobs:
           node-version: 22
       - run: pnpm install --frozen-lockfile
       - run: pnpm run e2e:install
-      # Exit 1: provisioning or a caching check failed. Lighthouse metrics are
-      # report-only until their budgets are signed off.
+      # The near-limit note is built by the app's own code, which imports the
+      # compiled messages (Vite compiles them for the app; nothing does here).
+      - run: pnpm email:compile
+      # Exit 1: provisioning, a caching or inlined CSS check, or a budget
+      # failed.
       - name: Measure shared pages on UAT
         run: pnpm bench:share-pages
         env:
