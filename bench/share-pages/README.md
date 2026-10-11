@@ -45,7 +45,7 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    cookies, language and user agent gets the same bytes with
    `CF-Cache-Status: HIT`, and so does `HEAD`; a forged link gets the 404 page,
    `no-store`, and is not served from the cache.
-6. Lighthouse 13, `SHARE_PERF_RUNS` times (3 by default) per page, profile
+6. Lighthouse 13, `SHARE_PERF_RUNS` times (5 by default) per page, profile
    and edge state, in a Chromium separate from the signed-in one. Profiles:
    **desktop**, closer to most visitors: 40 ms RTT and 10 Mbps applied to
    the real requests (DevTools throttling), full-speed CPU, so the

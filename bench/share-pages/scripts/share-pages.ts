@@ -31,7 +31,7 @@ import { compareStyles } from './styles';
 const directory = path.dirname(fileURLToPath(import.meta.url));
 const fixtures = path.join(directory, '../fixtures');
 const out = process.env.SHARE_PERF_OUT ?? path.join(directory, '../.results');
-const RUNS = Number(process.env.SHARE_PERF_RUNS ?? 3);
+const RUNS = Number(process.env.SHARE_PERF_RUNS ?? 5);
 const PREFIX = 'Perf share page';
 const SHARED_CACHE = 'public, s-maxage=300, max-age=0, must-revalidate';
 
