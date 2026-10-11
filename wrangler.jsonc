@@ -4,6 +4,9 @@
   "main": "workers/site/index.ts",
   // The share page renderer, built by `vite build --ssr` (vite.config.ts).
   "alias": { "capy-share-render": "./dist/_ssr/server.js" },
+  // A smaller script for every new isolate to load and compile (7.5 MB
+  // unminified, 3.8 MB minified).
+  "minify": true,
   "compatibility_date": "2026-08-27",
   "compatibility_flags": ["nodejs_compat"],
   "assets": {
@@ -58,6 +61,10 @@
           "/summary.html"
         ]
       },
+      // Run the Worker beside the UAT VM (Netcup, Germany): every render reads
+      // the API there, and one location keeps its isolates warm. A visitor's
+      // cache hit is still answered by the nearest edge.
+      "placement": { "region": "aws:eu-central-1" },
       "workers_dev": false,
       "preview_urls": false,
       // Both app hosts point to capy-uat and need separate scriptless /api/* routes.

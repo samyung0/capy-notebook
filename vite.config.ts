@@ -64,7 +64,16 @@ export default defineConfig(({ isSsrBuild, mode }) => {
         outDir: 'dist/_ssr',
         rollupOptions: {
           input: path.resolve(import.meta.dirname, 'src/share/server.tsx'),
-          output: { inlineDynamicImports: true },
+          // Lazy imports stay their own chunks: the Worker's bundler then
+          // runs them only when imported, which a server render never does
+          // (the app's embed editor, the asset resolve, the media preview).
+          // Inlined, every one of them ran on each isolate's first render
+          // (ssr.target webworker inlines them unless told not to).
+          output: {
+            chunkFileNames: 'chunks/[name]-[hash].js',
+            entryFileNames: 'server.js',
+            inlineDynamicImports: false,
+          },
         },
       }
     : undefined;
