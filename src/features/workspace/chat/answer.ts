@@ -7,7 +7,16 @@ import {
   tokenize,
   walkAST,
 } from '@openuidev/lang-core';
-import type { ChartProps, DiagramProps, ScatterProps } from './schema';
+import type { PlotBlock } from '@/features/questions/types';
+import { questionBlockSchema } from '@/features/questions/validation';
+import type {
+  ChartProps,
+  CurveProps,
+  DiagramProps,
+  InteractiveProps,
+  PlotProps,
+  ScatterProps,
+} from './schema';
 
 const STATEMENT_HEAD = /^\s*[A-Za-z_]\w*\s*=/;
 const ROOT_HEAD = /^[ \t]*root\s*=\s*Answer\s*\(/m;
@@ -124,6 +133,37 @@ export function validScatterData(props: ScatterProps): boolean {
   );
 }
 
+const nodes = (value: unknown) =>
+  Array.isArray(value) ? value.filter(isElement) : [];
+
+/** A Plot's props as the shared plot block, or null when the block schema
+ * (finite numbers, [x, y] pairs, the plot limits) refuses them. */
+export function plotBlock(props: PlotProps): PlotBlock | null {
+  const lines = nodes(props.lines).map(({ props: line }) => ({
+    axis: line.axis,
+    value: line.value,
+    ...(line.label ? { label: line.label } : {}),
+  }));
+  const marks = nodes(props.marks).map(({ props: mark }) => ({
+    label: mark.label ?? '',
+    x: mark.x,
+    y: mark.y,
+  }));
+  const parsed = questionBlockSchema.safeParse({
+    series: nodes(props.series).map(({ props: curve }) => ({
+      name: curve.name,
+      points: curve.points,
+    })),
+    title: props.title,
+    type: 'plot',
+    xTitle: props.xLabel,
+    yTitle: props.yLabel,
+    ...(lines.length ? { lines } : {}),
+    ...(marks.length ? { marks } : {}),
+  });
+  return parsed.success && parsed.data.type === 'plot' ? parsed.data : null;
+}
+
 export const chartKey = (props: unknown, statementId?: string) =>
   JSON.stringify([statementId, props]);
 
@@ -134,7 +174,15 @@ export function inspectAnswer(result: ParseResult | null) {
   const damagedStatements = new Set(
     errors
       .filter((error) =>
-        ['Chart', 'Series', 'ScatterChart', 'Point'].includes(error.component)
+        [
+          'Chart',
+          'Series',
+          'ScatterChart',
+          'Point',
+          'Plot',
+          'Curve',
+          'RefLine',
+        ].includes(error.component)
       )
       .map((error) => error.statementId)
   );
@@ -159,7 +207,7 @@ export function inspectAnswer(result: ParseResult | null) {
     if (!isElement(value)) return;
     const statement = value.statementId ?? owner;
     if (
-      (value.typeName === 'Chart' || value.typeName === 'ScatterChart') &&
+      ['Chart', 'ScatterChart', 'Plot'].includes(value.typeName) &&
       damaged(value, statement)
     ) {
       // Errors identify statements, so charts inline in one damaged statement
@@ -171,7 +219,9 @@ export function inspectAnswer(result: ParseResult | null) {
       (value.typeName === 'Chart' &&
         !validChartData(value.props as unknown as ChartProps)) ||
       (value.typeName === 'ScatterChart' &&
-        !validScatterData(value.props as unknown as ScatterProps))
+        !validScatterData(value.props as unknown as ScatterProps)) ||
+      (value.typeName === 'Plot' &&
+        !plotBlock(value.props as unknown as PlotProps))
     ) {
       invalidData = true;
       return;
@@ -183,8 +233,20 @@ export function inspectAnswer(result: ParseResult | null) {
         lines.push(['```mermaid', code.trim(), '```'].join('\n'));
       return;
     }
+    if (value.typeName === 'Curve') {
+      const { name, points } = value.props as unknown as CurveProps;
+      lines.push(
+        `${name}: ${points.map(([x, y]) => `(${x}, ${y})`).join(' ')}`
+      );
+      return;
+    }
+    if (value.typeName === 'Interactive') {
+      const { title } = value.props as unknown as InteractiveProps;
+      if (typeof title === 'string' && title.trim()) lines.push(title);
+      return;
+    }
     for (const [name, prop] of Object.entries(value.props)) {
-      if (['kind', 'passages', 'illustrative'].includes(name)) continue;
+      if (['kind', 'passages', 'illustrative', 'axis'].includes(name)) continue;
       if (typeof prop === 'string' && prop.trim()) lines.push(prop);
       else if (typeof prop === 'number' && Number.isFinite(prop))
         lines.push(`${name}: ${prop}`);

@@ -150,3 +150,29 @@ def test_chart_measurements_survive_the_checkpoint_projection():
     assert "[250, 200]" in text and "before · after" in text
     assert "x: 10" in text and "y: 12" in text
     assert "[9]" not in text
+
+
+def test_plot_points_and_reference_lines_survive_the_checkpoint_projection():
+    text = openui.text_of(
+        'root = Answer([Plot("AP", [Curve("Vm", [[0, -70], [1.5, 30]])], "t (ms)", '
+        '"V (mV)", [2], true, [RefLine("y", -55, "threshold")], [Point(1, 0, "peak")])])'
+    )
+    assert text.splitlines() == [
+        "AP",
+        "t (ms)",
+        "V (mV)",
+        "Vm",
+        "[[0, -70], [1.5, 30]]",
+        "value: -55",
+        "threshold",
+        "x: 1",
+        "y: 0",
+        "peak",
+    ]
+
+
+def test_interactive_projects_its_title_without_the_html():
+    text = openui.text_of(
+        'root = Answer([Interactive("Slide the pH", "<input type=range>", [2])])'
+    )
+    assert text == "Slide the pH"

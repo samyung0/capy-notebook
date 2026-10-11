@@ -2006,8 +2006,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
 5. The final answer is an OpenUI Lang program (`retrieval/openui.py`): a
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
-   `Accordion`, `Reveal`, `Tags`, `Facts`, `Cards`, `Table`, `Chart`,
-   `ScatterChart`, `AskUser` and their items). The catalog lives in
+   `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`,
+   `ScatterChart`, `Plot`, `Diagram`, `Interactive`, `AskUser` and their
+   items). The catalog lives in
    `src/features/workspace/chat/schema.ts`; `pnpm gen:openui` renders it into
    the prompt text `prompts/openui_lang.txt` (appended to the chat system
    prompt, about 2,000 tokens) and the spec `generated/openui_library.json`
@@ -2549,7 +2550,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `create_ledger` | conversation ledger | Offered to any turn with `material.create`. String todos add IDs, `{id, todo}` adds or overwrites that ID. Unmentioned todos remain, max ten unfinished. Repeated edits are allowed but only the first changed plan in a turn counts as progress. Retains no source evidence |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -2831,10 +2832,20 @@ A citation is:
 
 In the browser, `src/features/workspace/chat/LangAnswer.tsx` renders a
 program answer through `@openuidev/react-lang`'s `Renderer` and the
-Capy-owned components in `chat/blocks/` (prose through Streamdown, tabs,
-steps, accordions, callouts, tags, label/value rows, cards, tables, SVG charts
-themed by `--chart-1..6`, reveals, and Mermaid diagrams through the notes'
-renderer, drawn once their code stops growing while the answer streams). Answers stored before the program format
+Capy-owned components in `chat/blocks/` (prose through Streamdown with
+`$…$`/`$$…$$` math drawn by KaTeX, which loads with the first formula; a
+single `$` follows Pandoc's rule so prices stay text, and a formula KaTeX
+cannot read shows its source; tabs,
+steps, accordions, callouts, label/value rows, cards, tables, SVG charts
+themed by `--chart-1..6`, plots (`Plot` with `Curve`, `RefLine` and `Point`
+marks, mapped onto the shared `plot` question block and drawn by `PlotChart`;
+numbers the block schema refuses withhold the plot like a damaged chart, and the
+text projection keeps its points and labels), reveals, and Mermaid diagrams through the notes'
+renderer, drawn once their code stops growing while the answer streams, and
+interactives in the notes' sandboxed html-embed frame (`HtmlEmbed`, the same
+64 KB cap and theme variables), mounted once their html has stopped changing
+for a second while the answer streams; their text projection keeps the title
+and drops the html, here and in the Python summary text). Answers stored before the program format
 still render as Markdown. Inline `[k]` markers come from the message's
 citation list by `n`; tables and charts put their sources under the block.
 The prompt reserves `AskUser` for required user input and excludes simple follow-up questions.

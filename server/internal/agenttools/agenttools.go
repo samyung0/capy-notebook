@@ -435,10 +435,23 @@ func editCommandSchema() map[string]any {
 	}
 }
 
+// noteFigureFences are the chart and plot fences: one question block as JSON
+// (src/features/questions/validation.ts, questions.ValidateBlock).
+var noteFigureFences = fmt.Sprintf("```chart fences comparing labelled categories, JSON "+
+	`{"type": "chart", "kind": "bar"|"hbar"|"line"|"area"|"pie"|"stacked", "title", "labels": [...], `+
+	`"series": [{"name", "values": one number per label}], "unit"?}; `+
+	"```plot fences for a quantity along a numeric axis (a membrane potential over time, a "+
+	`titration curve), JSON {"type": "plot", "title", "xTitle", "yTitle" (axis names with units), `+
+	`"series": 1 to %d [{"name", "points": [[x, y], ...] in x order, at most %d}], `+
+	`"lines"?: [{"axis": "x"|"y", "value", "label"?}] dashed reference lines, `+
+	`"marks"?: [{"x", "y", "label"}] labelled points}; `,
+	fieldlimits.QuestionPlotSeries, fieldlimits.QuestionPlotPoints)
+
 // noteMarkdownDescription is the fence format notes are written in; the
 // editor's markdown import reads the same fences (src/features/notes/blocks).
-const noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
+var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
+	noteFigureFences +
 	"```quiz fences (YAML `questions:` list, each in the quiz question format) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
 	"items; and ```html-embed fences for an interactive (YAML: `caption`, `html: |`), at most 10 " +

@@ -1,9 +1,16 @@
 import { createContext, useContext } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
+import { PlotChart } from '@/components/charts/PlotChart';
 import { m } from '@/i18n';
-import { chartKey, validChartData, validScatterData } from '../answer';
+import {
+  chartKey,
+  plotBlock,
+  validChartData,
+  validScatterData,
+} from '../answer';
 import type {
   ChartProps,
+  PlotProps,
   PointProps,
   ScatterProps,
   SeriesProps,
@@ -209,6 +216,32 @@ export function Chart({
           name: node.props.name,
           values: node.props.values,
         })),
+      }}
+      frame={Frame}
+    />
+  );
+}
+
+/** The shared plot block's renderer in the chat frame (values table, sources,
+ * illustrative note); props the block schema refuses draw nothing. */
+export function Plot({
+  props,
+  statementId,
+}: {
+  props: PlotProps;
+  statementId?: string;
+}) {
+  const invalid = useContext(InvalidChartContext);
+  const block = invalid.has(chartKey(props, statementId))
+    ? null
+    : plotBlock(props);
+  if (!block) return null;
+  return (
+    <PlotChart
+      data={{
+        ...block,
+        illustrative: props.illustrative,
+        passages: props.passages,
       }}
       frame={Frame}
     />

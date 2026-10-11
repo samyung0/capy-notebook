@@ -47,6 +47,22 @@ export const chatFixtures = [
   },
   {
     content: [
+      'root = Answer([intro, rule, steps, cards, check])',
+      `intro = Md(${JSON.stringify('A loan of $1,200 at 5% a year grows as $A = P(1 + r)^t$, so after 2 years it is worth\n\n$$A = 1200 \\times 1.05^2 = 1323$$\n\nA $5-$10 fee is not part of the formula.')})`,
+      `rule = Callout("info", "Quadratic formula", ${JSON.stringify('The roots of $ax^2 + bx + c = 0$ are $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$.')})`,
+      'steps = Steps([s1, s2])',
+      `s1 = Step("Substitute", ${JSON.stringify('With $a = 1$, $b = -3$, $c = 2$: $\\Delta = 9 - 8 = 1$.')})`,
+      `s2 = Step("Solve", ${JSON.stringify('$$x = \\frac{3 \\pm 1}{2} \\in \\{1, 2\\}$$')})`,
+      `cards = Cards([Card("Mean", ${JSON.stringify('$\\bar{x} = \\frac{1}{n}\\sum_{i=1}^{n} x_i$')}), Card("Variance", ${JSON.stringify('$\\sigma^2 = \\frac{1}{n}\\sum (x_i - \\bar{x})^2$')})])`,
+      `check = Reveal("Check the second root", ${JSON.stringify('$2^2 - 3 \\cdot 2 + 2 = 0$, and a $3 coffee is still $3.')})`,
+    ].join('\n'),
+    hint: 'Inline and display math in Md, Callout, Steps, Cards and Reveal, beside dollar prices that stay text.',
+    id: 'chat-openui-math',
+    label: 'OpenUI: math',
+    prompt: 'Explain compound interest and the quadratic formula.',
+  },
+  {
+    content: [
       'root = Answer([intro, tabs, details, hint])',
       'intro = Md("Compare how substances cross the cell membrane.", [1])',
       'tabs = Tabs([passive, active])',
@@ -71,8 +87,7 @@ export const chatFixtures = [
   },
   {
     content: [
-      'root = Answer([tags, facts, cards, info, tip, warning, success, danger])',
-      'tags = Tags(["Cell biology", "Revision", "细胞膜", "A longer keyword that wraps"])',
+      'root = Answer([facts, cards, info, tip, warning, success, danger])',
       'facts = Facts([Fact("Topic", "Cell membranes"), Fact("Time", "20 minutes"), Fact("Goal", "Explain transport without notes")])',
       'cards = Cards([Card("Recall", "Correct answers in this illustrative practice set.", null, "8 / 10"), Card("Next step", "Revisit concentration gradients."), Card("Confidence", "Check with a new example, not familiarity.")])',
       'info = Callout("info", "Definition", "Diffusion is net movement down a concentration gradient.")',
@@ -81,7 +96,7 @@ export const chatFixtures = [
       'success = Callout("success", "Checkpoint", "You can explain why net movement slows down.")',
       'danger = Callout("danger", "Incorrect claim", "Equilibrium does not mean that particles stop moving.")',
     ].join('\n'),
-    hint: 'Metric/concept cards, facts, wrapping tags and all five callout styles.',
+    hint: 'Metric/concept cards, facts and all five callout styles.',
     id: 'chat-openui-cards',
     label: 'OpenUI: cards, facts + callouts',
     prompt: 'Make a revision card for membrane transport.',
@@ -133,6 +148,24 @@ export const chatFixtures = [
   },
   {
     content: [
+      'root = Answer([intro, plot, after])',
+      'intro = Md("Once the membrane reaches threshold, voltage-gated channels open in turn and the spike runs by itself.", [1])',
+      'plot = Plot("An action potential", [vm], "Time (ms)", "Membrane potential (mV)", null, true, [threshold], [na, k, under])',
+      'vm = Curve("Membrane potential", [[0, -70], [0.5, -70], [0.8, -62], [1, -55], [1.2, -20], [1.5, 30], [1.8, 0], [2.2, -50], [2.6, -80], [3.2, -75], [4, -70], [5, -70]])',
+      'threshold = RefLine("y", -55, "threshold −55 mV")',
+      'na = Point(1.2, -20, "Na⁺ floods in")',
+      'k = Point(2.2, -50, "K⁺ flows out")',
+      'under = Point(2.6, -80, "undershoot")',
+      'after = Md("Notice the dashed line: below −55 mV nothing happens; once it is crossed, the whole spike follows.")',
+    ].join('\n'),
+    hint: 'An illustrative voltage trace with a dashed threshold line, labelled points and the values table.',
+    id: 'chat-openui-plot',
+    label: 'OpenUI: plot',
+    passages: [1],
+    prompt: 'Plot an action potential and label what happens.',
+  },
+  {
+    content: [
       'root = Answer([intro, diagram, after])',
       'intro = Md("A neuron fires when its membrane voltage crosses a threshold; the rest of the spike then runs by itself.", [1])',
       'diagram = Diagram("One action potential", "flowchart TD\\nA[Resting at -70 mV] --> B{Stimulus reaches -55 mV?}\\nB -- no --> A\\nB -- yes --> C[Na+ channels open, Na+ rushes in]\\nC --> D[Peak near +30 mV]\\nD --> E[K+ channels open, K+ leaves]\\nE --> F[Undershoot below rest]\\nF --> A", [1])',
@@ -143,6 +176,25 @@ export const chatFixtures = [
     label: 'OpenUI: diagram',
     passages: [1],
     prompt: 'Show how a neuron fires as a diagram.',
+  },
+  {
+    content: [
+      'root = Answer([intro, widget, after])',
+      'intro = Md("Enzymes speed up as they warm, until heat starts to unfold them.", [1])',
+      `widget = Interactive("Enzyme activity and temperature", ${JSON.stringify(
+        [
+          '<style>.w{display:grid;gap:8px}.track{height:14px;border-radius:7px;background:color-mix(in srgb,var(--muted) 25%,transparent)}.bar{height:100%;border-radius:7px;background:var(--accent)}small{color:var(--muted)}</style>',
+          '<div class="w"><label>Temperature: <b id="t"></b> °C</label><input id="r" type="range" min="0" max="70" value="37"><div class="track"><div id="b" class="bar"></div></div><small>Activity, relative to the best temperature</small></div>',
+          "<script>const r=document.getElementById('r'),b=document.getElementById('b'),t=document.getElementById('t');function draw(){const x=+r.value;const a=x<=37?x/37:Math.max(0,1-(x-37)/15);t.textContent=x;b.style.width=a*100+'%';}r.oninput=draw;draw();</script>",
+        ].join('\n')
+      )}, [1])`,
+      'after = Md("Drag past 40 °C: activity falls fast because the active site loses its shape.")',
+    ].join('\n'),
+    hint: 'A sandboxed html-embed frame with a slider, its caption and a cited source.',
+    id: 'chat-openui-interactive',
+    label: 'OpenUI: interactive',
+    passages: [1],
+    prompt: 'Let me play with how temperature changes enzyme activity.',
   },
   {
     content: [

@@ -3,10 +3,11 @@
 import { createParser } from '@openuidev/lang-core';
 import { ignoreEmptyExtras } from './answer';
 import { AskUser } from './blocks/AskUser';
-import { Chart, ScatterChart } from './blocks/ChatChart';
+import { Chart, Plot, ScatterChart } from './blocks/ChatChart';
 import { Diagram } from './blocks/ChatDiagram';
+import { Interactive } from './blocks/ChatInteractive';
 import { ChatTable } from './blocks/ChatTable';
-import { Accordion, Cards, ChatTabs, Facts, Tags } from './blocks/layout';
+import { Accordion, Cards, ChatTabs, Facts } from './blocks/layout';
 import { Callout, Md, Reveal, Steps } from './blocks/text';
 import { buildLibrary } from './schema';
 
@@ -23,11 +24,15 @@ export const chatLibrary = buildLibrary({
   Card: leaf,
   Cards,
   Chart,
+  Curve: leaf,
   Diagram,
   Fact: leaf,
   Facts,
+  Interactive,
   Md,
+  Plot,
   Point: leaf,
+  RefLine: leaf,
   Reveal,
   Row: leaf,
   ScatterChart,
@@ -37,7 +42,6 @@ export const chatLibrary = buildLibrary({
   Tab: leaf,
   Table: ChatTable,
   Tabs: ChatTabs,
-  Tags,
 });
 
 const schema = chatLibrary.toJSONSchema();

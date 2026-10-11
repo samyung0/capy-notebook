@@ -21,7 +21,6 @@ const stubs = Object.fromEntries(
     'Accordion',
     'AccordionItem',
     'Reveal',
-    'Tags',
     'Facts',
     'Fact',
     'Cards',
@@ -32,7 +31,11 @@ const stubs = Object.fromEntries(
     'Series',
     'ScatterChart',
     'Point',
+    'Plot',
+    'Curve',
+    'RefLine',
     'Diagram',
+    'Interactive',
     'AskUser',
   ].map((name) => [name, stub])
 ) as unknown as Renderers;

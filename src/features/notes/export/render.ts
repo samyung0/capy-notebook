@@ -20,7 +20,10 @@ export interface TocEntry {
 export type Figure =
   | { type: 'math'; tex: string; display: boolean; html?: string }
   | { type: 'mermaid'; source: string }
-  | { type: 'chart'; block: Extract<QuestionBlock, { type: 'chart' }> }
+  | {
+      type: 'chart';
+      block: Extract<QuestionBlock, { type: 'chart' | 'plot' }>;
+    }
   | { type: 'image'; source: string }
   | { type: 'youtube'; videoId: string };
 export interface ExportImage {
@@ -436,10 +439,10 @@ export async function renderExport(
         ? `${description ? `${escapeMd(description)}\n\n` : ''}${fence(source, 'mermaid')}`
         : `<p>${await picture({ source, type: 'mermaid' }, description || 'Diagram', true)}</p><p>${escapeHtml(description)}</p>`;
     }
-    if (type === 'chart' || type === 'graph') {
+    if (type === 'chart' || type === 'plot' || type === 'graph') {
       const block = node.block as Extract<
         QuestionBlock,
-        { type: 'chart' | 'graph' }
+        { type: 'chart' | 'plot' | 'graph' }
       >;
       if (block.type === 'graph') {
         const source =
@@ -451,13 +454,25 @@ export async function renderExport(
       const table = questionBlocks([
         {
           header: true,
-          rows: [
-            ['', ...block.series.map((series) => series.name)],
-            ...block.labels.map((label, i) => [
-              label,
-              ...block.series.map((series) => String(series.values[i])),
-            ]),
-          ],
+          rows:
+            block.type === 'plot'
+              ? [
+                  ['', block.xTitle, block.yTitle],
+                  ...block.series.flatMap((series) =>
+                    series.points.map(([x, y]) => [
+                      series.name,
+                      String(x),
+                      String(y),
+                    ])
+                  ),
+                ]
+              : [
+                  ['', ...block.series.map((series) => series.name)],
+                  ...block.labels.map((label, i) => [
+                    label,
+                    ...block.series.map((series) => String(series.values[i])),
+                  ]),
+                ],
           type: 'table',
         },
       ]);

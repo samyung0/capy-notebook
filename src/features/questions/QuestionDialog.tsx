@@ -56,6 +56,7 @@ const blockLabels = {
   graph: m.question_ui_graph,
   image: m.question_ui_image,
   part: m.question_ui_part,
+  plot: m.question_ui_plot,
   table: m.question_ui_table,
   text: m.question_ui_text,
 };
@@ -83,7 +84,7 @@ const marksLabel = (count: number) =>
 const blockSummary = (block: QuestionBlock) =>
   (block.type === 'text'
     ? block.text
-    : block.type === 'chart'
+    : block.type === 'chart' || block.type === 'plot'
       ? block.title
       : block.type === 'graph' || block.type === 'image'
         ? block.description
@@ -109,7 +110,9 @@ export interface QuestionDialogProps {
   uploadAsset?: UploadQuestionAsset;
 }
 
-export function newQuestionBlock(type: QuestionBlock['type']): QuestionBlock {
+/** A plot has no editor, so it is never added empty. */
+type AddableBlock = Exclude<QuestionBlock['type'], 'plot'>;
+export function newQuestionBlock(type: AddableBlock): QuestionBlock {
   switch (type) {
     case 'text':
       return { text: '', type };
@@ -277,7 +280,7 @@ function QuestionDialogSession({
     setDraft(changeBlocks(draft, location, blocks));
     setSelected({ kind: 'block', location: { ...location, index: target } });
   };
-  const add = (type: QuestionBlock['type'] | 'part') => {
+  const add = (type: AddableBlock | 'part') => {
     setAddOpen(false);
     if (type === 'part') {
       const part = blankQuestion().parts[0];

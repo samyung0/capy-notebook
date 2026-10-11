@@ -540,6 +540,7 @@ export const staticNoteComponents = {
   // Match editable Paragraph: default to div so indent-list belowNodes can
   // inject <ol>/<div> without nesting block elements inside <p>.
   p: element('div', PARAGRAPH_CLASS),
+  plot: QuestionFigure,
   /* study blocks */
   quiz: QuizElement,
   quiz_question: QuizQuestionElement,

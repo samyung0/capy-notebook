@@ -69,6 +69,7 @@ const listTargets = [...KEYS.heading, KEYS.p, KEYS.blockquote, KEYS.img];
 /** Persisted custom block node types (study blocks, diagrams, interactives). */
 const CUSTOM_BLOCK_TYPES = [
   'chart',
+  'plot',
   'graph',
   'quiz',
   'quiz_question',
@@ -90,6 +91,7 @@ const staticCustomBlockPlugins = [
         isVoid:
           type === 'quiz_question' ||
           type === 'chart' ||
+          type === 'plot' ||
           type === 'graph' ||
           type === 'html_embed',
         type,

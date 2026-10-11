@@ -33,6 +33,7 @@ export const CUSTOM_BLOCK_LANGS = [
   FLASHCARDS_KEY,
   MERMAID_KEY,
   'chart',
+  'plot',
   'graph',
   HTML_EMBED_LANG,
 ] as const;
@@ -68,7 +69,7 @@ export function customBlockNode(
         : 'cards: []';
     return materialRefNode('', type, body);
   }
-  if (type === 'chart' || type === 'graph') {
+  if (type === 'chart' || type === 'plot' || type === 'graph') {
     const block = questionBlockSchema.parse(JSON.parse(code));
     if (block.type !== type || (block.type === 'graph' && 'url' in block.image))
       throw new Error('Invalid figure block.');
@@ -98,7 +99,11 @@ function htmlEmbedFenceNode(code: string): HtmlEmbedElement {
 }
 
 export function customBlockCode(element: CustomMaterialElement): string {
-  if (element.type === 'chart' || element.type === 'graph')
+  if (
+    element.type === 'chart' ||
+    element.type === 'plot' ||
+    element.type === 'graph'
+  )
     return JSON.stringify(element.block);
   if (element.type === QUIZ_KEY)
     return quizFenceBody(quizElementToBlock(element));

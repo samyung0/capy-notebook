@@ -116,7 +116,7 @@ func preview(kind string, nodes []map[string]any) (json.RawMessage, error) {
 // Media, embeds and diagrams have no preview block; containers are read
 // through.
 var previewSkipped = set("hr", "toc", "audio", "file", "video", "mermaid", "diagram", "mindmap",
-	"chart", "graph", HTMLEmbedType, RefType, "quiz", "flashcards")
+	"chart", "plot", "graph", HTMLEmbedType, RefType, "quiz", "flashcards")
 
 type noteBuilder struct {
 	blocks []previewBlock
@@ -272,7 +272,7 @@ func questionPreviewOf(q map[string]any) *questionPreview {
 	}
 	out.Stem = clipRunes(text, previewStemRunes)
 	for _, raw := range append(append([]any{}, stem...), partBlocks...) {
-		if block, _ := raw.(map[string]any); block["type"] == "chart" || block["type"] == "graph" {
+		if block, _ := raw.(map[string]any); block["type"] == "chart" || block["type"] == "plot" || block["type"] == "graph" {
 			out.HasChart = true
 		}
 	}

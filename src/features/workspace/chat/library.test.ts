@@ -32,6 +32,13 @@ describe('generated prompt and spec', () => {
     expect(chart?.props.slice(4)).toEqual(['passages', 'unit', 'illustrative']);
     const table = spec.components.find((c) => c.name === 'Table');
     expect(table?.props.slice(2)).toEqual(['passages', 'caption']);
+    const plot = spec.components.find((c) => c.name === 'Plot');
+    expect(plot?.props.slice(4)).toEqual([
+      'passages',
+      'illustrative',
+      'lines',
+      'marks',
+    ]);
   });
 });
 
@@ -114,6 +121,50 @@ describe('local answer recovery', () => {
       gap: false,
       invalidCharts: new Set(),
       text: 'Cycle\n\n```mermaid\nflowchart TD\nA --> B\n```',
+    });
+  });
+
+  it('withholds a plot whose points the plot block refuses', () => {
+    for (const curve of ['Curve("Vm", [[0, -70], [1]])', 'Curve("Vm", "x")']) {
+      const inspected = inspectAnswer(
+        parseAnswer(
+          `root = Answer([Md("Keep this."), Plot("AP", [${curve}], "t", "V", null, true)])`
+        )
+      );
+      expect(inspected.gap).toBe(true);
+      expect(inspected.text).toBe('Keep this.');
+    }
+  });
+
+  it('projects a plot with its points, reference lines and marks', () => {
+    const result = parseAnswer(
+      'root = Answer([Plot("AP", [Curve("Vm", [[0, -70], [1, 30]])], "t", "V", null, true, [RefLine("y", -55, "threshold")], [Point(0.5, 0, "peak")])])'
+    );
+    expect(inspectAnswer(result)).toEqual({
+      gap: false,
+      invalidCharts: new Set(),
+      text: [
+        'AP',
+        'Vm: (0, -70) (1, 30)',
+        't',
+        'V',
+        'value: -55',
+        'threshold',
+        'x: 0.5',
+        'y: 0',
+        'peak',
+      ].join('\n\n'),
+    });
+  });
+
+  it('projects an interactive as its title, without the html', () => {
+    const result = parseAnswer(
+      'root = Answer([Interactive("Slide the pH", "<input type=\\"range\\">", [2])])'
+    );
+    expect(inspectAnswer(result)).toEqual({
+      gap: false,
+      invalidCharts: new Set(),
+      text: 'Slide the pH',
     });
   });
 

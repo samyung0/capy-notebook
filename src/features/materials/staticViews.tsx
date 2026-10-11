@@ -166,8 +166,8 @@ export function MermaidView({
 /** Unresized charts open at their question-figure width (max-w-md). */
 const CHART_WIDTH = '28rem';
 
-/** A chart or graph with its click-to-preview. The editor adds its toolbar
- * and resize handles. */
+/** A chart, plot or graph with its click-to-preview. The editor adds its
+ * toolbar and resize handles. */
 export function FigureView({
   block,
   onWidthChange,
@@ -187,7 +187,7 @@ export function FigureView({
         onOpen={preview.onOpen}
         onWidthChange={onWidthChange}
         toolbar={toolbar}
-        width={width ?? (block.type === 'chart' ? CHART_WIDTH : block.width)}
+        width={width ?? (block.type === 'graph' ? block.width : CHART_WIDTH)}
       >
         {/* The figure fills the frame so the handles scale it. */}
         <div className="[&_figure]:my-0 [&_figure]:w-full [&_figure]:max-w-none [&_img]:w-full">
@@ -199,14 +199,15 @@ export function FigureView({
           <MediaPreview
             onOpenChange={preview.setOpen}
             open={preview.open}
-            title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
+            title={
+              block.type === 'chart'
+                ? m.editor_chart()
+                : block.type === 'plot'
+                  ? m.question_ui_plot()
+                  : m.editor_graph()
+            }
           >
-            {block.type === 'chart' ? (
-              // Chart text uses the page colours, so it keeps a page-coloured panel.
-              <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
-                <QuestionBlockView block={block} />
-              </div>
-            ) : (
+            {block.type === 'graph' ? (
               <div
                 className="[&_img]:h-(--preview-height) [&_img]:w-auto"
                 style={
@@ -218,6 +219,11 @@ export function FigureView({
                   } as CSSProperties
                 }
               >
+                <QuestionBlockView block={block} />
+              </div>
+            ) : (
+              // Chart text uses the page colours, so it keeps a page-coloured panel.
+              <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
                 <QuestionBlockView block={block} />
               </div>
             )}

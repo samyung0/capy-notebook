@@ -508,20 +508,27 @@ function useSelectOnMouseDown(element: TElement) {
   };
 }
 
-/** Edit, Copy and Delete at the end of a media block's hover toolbar. */
+/** Edit, Copy and Delete at the end of a media block's hover toolbar; a plot,
+ * which has no editor, has no Edit. */
 function MediaBlockActions({
   element,
   onEdit,
 }: {
   element: TElement;
-  onEdit: () => void;
+  onEdit?: () => void;
 }) {
   const editor = useEditorRef();
   return (
     <>
-      <ToolbarButton label={m.action_edit()} onClick={onEdit} tooltipSide="top">
-        <EditorIcon name="pencil" />
-      </ToolbarButton>
+      {onEdit ? (
+        <ToolbarButton
+          label={m.action_edit()}
+          onClick={onEdit}
+          tooltipSide="top"
+        >
+          <EditorIcon name="pencil" />
+        </ToolbarButton>
+      ) : null}
       <CopyBlockButton element={element} />
       <ToolbarButton
         label={m.action_delete()}
@@ -559,8 +566,13 @@ export function VisualBlockElement(props: PlateElementProps) {
             readOnly ? undefined : (
               <MediaBlockActions
                 element={props.element}
-                onEdit={() =>
-                  dialogs?.openVisual(block, (next) => update({ block: next }))
+                onEdit={
+                  block.type === 'plot'
+                    ? undefined
+                    : () =>
+                        dialogs?.openVisual(block, (next) =>
+                          update({ block: next })
+                        )
                 }
               />
             )

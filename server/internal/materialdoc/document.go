@@ -587,16 +587,16 @@ func validateNode(node map[string]any, depth int) error {
 		return validateQuiz(node)
 	case "quiz_question":
 		return validateQuizQuestion(node)
-	case "chart", "graph":
+	case "chart", "plot", "graph":
 		if depth != 0 {
-			return errors.New("chart and graph embeds must be top-level blocks")
+			return errors.New("chart, plot and graph embeds must be top-level blocks")
 		}
 		if err := requireID(node); err != nil {
 			return err
 		}
 		leaf := children[0].(map[string]any)
 		if len(children) != 1 || len(leaf) != 1 || leaf["text"] != "" {
-			return errors.New("chart and graph embeds require one empty text leaf")
+			return errors.New("chart, plot and graph embeds require one empty text leaf")
 		}
 		block, ok := node["block"].(map[string]any)
 		if !ok || block["type"] != typ {
@@ -1069,7 +1069,7 @@ var (
 func writeIndexBlock(node map[string]any, out *[]string) {
 	typ, _ := node["type"].(string)
 	switch {
-	case typ == "chart" || typ == "graph":
+	case typ == "chart" || typ == "plot" || typ == "graph":
 		key := "title"
 		if typ == "graph" {
 			key = "description"

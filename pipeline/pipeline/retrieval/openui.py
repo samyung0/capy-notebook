@@ -305,8 +305,14 @@ def _refs_in(value: Any) -> Iterator[Ref]:
             yield from _refs_in(item)
 
 
-# Enum-valued arguments are presentation, not content.
-_KIND_PROPS = {"Callout": "kind", "Chart": "kind"}
+# Enum-valued arguments are presentation, not content; an interactive's html
+# is code, summarized by its title.
+_SKIPPED_PROPS = {
+    "Callout": "kind",
+    "Chart": "kind",
+    "RefLine": "axis",
+    "Interactive": "html",
+}
 
 
 def to_text(program: Program) -> str:
@@ -325,15 +331,15 @@ def to_text(program: Program) -> str:
     for call in walk(program):
         names = COMPONENTS.get(call.name, [])
         for index, arg in enumerate(call.args):
-            if index < len(names) and names[index] == _KIND_PROPS.get(call.name):
+            if index < len(names) and names[index] == _SKIPPED_PROPS.get(call.name):
                 continue
             arg = resolve(arg)
             if isinstance(arg, str) and arg.strip():
                 lines.append(arg.strip())
             elif (
                 index < len(names)
-                and call.name == "Point"
-                and names[index] in ("x", "y")
+                and call.name in ("Point", "RefLine")
+                and names[index] in ("x", "y", "value")
                 and isinstance(arg, (int, float))
                 and not isinstance(arg, bool)
             ):
@@ -346,6 +352,11 @@ def to_text(program: Program) -> str:
                 and all(
                     isinstance(n, (int, float)) and not isinstance(n, bool) for n in arg
                 )
+            ) or (
+                call.name == "Curve"
+                and index < len(names)
+                and names[index] == "points"
+                and isinstance(arg, list)
             ):
                 lines.append(json.dumps(arg, ensure_ascii=False))
             elif isinstance(arg, list) and arg and all(isinstance(x, str) for x in arg):

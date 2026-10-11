@@ -71,12 +71,6 @@
       ]
     },
     {
-      "name": "Tags",
-      "props": [
-        "tags"
-      ]
-    },
-    {
       "name": "Facts",
       "props": [
         "items"
@@ -160,10 +154,46 @@
       ]
     },
     {
+      "name": "Plot",
+      "props": [
+        "title",
+        "series",
+        "xLabel",
+        "yLabel",
+        "passages",
+        "illustrative",
+        "lines",
+        "marks"
+      ]
+    },
+    {
+      "name": "Curve",
+      "props": [
+        "name",
+        "points"
+      ]
+    },
+    {
+      "name": "RefLine",
+      "props": [
+        "axis",
+        "value",
+        "label"
+      ]
+    },
+    {
       "name": "Diagram",
       "props": [
         "title",
         "code",
+        "passages"
+      ]
+    },
+    {
+      "name": "Interactive",
+      "props": [
+        "title",
+        "html",
         "passages"
       ]
     },

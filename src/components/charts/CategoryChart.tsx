@@ -17,7 +17,7 @@ export type ChartFrameProps = {
   yTitle?: string;
 };
 // Question charts sit at about the width of graph figures, title centred.
-function QuestionChartFrame({
+export function QuestionChartFrame({
   title,
   unit,
   legend,
@@ -41,9 +41,9 @@ function QuestionChartFrame({
 const H = 190;
 const COLORS = 6;
 
-const color = (index: number) => `var(--chart-${(index % COLORS) + 1})`;
+export const color = (index: number) => `var(--chart-${(index % COLORS) + 1})`;
 
-const format = (value: number) =>
+export const format = (value: number) =>
   Math.abs(value) >= 1000
     ? value.toLocaleString(undefined, { maximumFractionDigits: 0 })
     : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
