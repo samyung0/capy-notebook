@@ -336,6 +336,69 @@ async function checkForged() {
   return failures;
 }
 
+/** One plain request's time to headers and the Worker's Server-Timing. */
+async function timed(url: string, method = 'GET') {
+  const start = performance.now();
+  const response = await fetch(url, { method });
+  const ms = performance.now() - start;
+  await response.body?.cancel();
+  const timing = response.headers.get('server-timing') ?? '';
+  const entry = (name: string) =>
+    timing.match(new RegExp(`${name}(?:;desc="([^"]*)")?;dur=([0-9.]+)`));
+  return {
+    api: Number(entry('api')?.[2] ?? Number.NaN),
+    isolate: entry('isolate')?.[1],
+    ms,
+    total: Number(entry('total')?.[2] ?? Number.NaN),
+  };
+}
+
+const BREAKDOWN_SAMPLES = 10;
+
+/** The uncached time to first byte taken apart from the runner, one layer
+ * at a time, with plain requests on a kept-alive connection (no browser, no
+ * throttling): a static file (the edge), a forged link (the Worker alone:
+ * token check, no API), the public API through the Worker (Worker and API)
+ * and the uncached page (Worker, API and render). Report-only. */
+async function breakdown(item: Shared, id: string) {
+  const probes = {
+    edge: (i: number) => timed(`${appUrl}/favicon.svg?b=${id}-${i}`),
+    worker: (i: number) =>
+      timed(`${appUrl}/share/quizzes/mat_forged.AAAA?b=${id}-${i}`, 'HEAD'),
+    api: () => timed(`${appUrl}${item.publicApi}`),
+    page: (i: number) => timed(`${appUrl}${item.path}?b=${id}-${i}`),
+  };
+  const samples = Object.fromEntries(
+    Object.keys(probes).map((key) => [
+      key,
+      [] as Awaited<ReturnType<typeof timed>>[],
+    ])
+  ) as Record<keyof typeof probes, Awaited<ReturnType<typeof timed>>[]>;
+  // Interleaved, so every layer sees the same moments of the network.
+  for (let i = 0; i < BREAKDOWN_SAMPLES; i++)
+    for (const key of Object.keys(probes) as (keyof typeof probes)[])
+      samples[key].push(await probes[key](i));
+  const of = (
+    key: keyof typeof probes,
+    get: (s: Awaited<ReturnType<typeof timed>>) => number
+  ) => median(samples[key].map(get).filter((v) => !Number.isNaN(v)));
+  return {
+    apiMs: of('api', (s) => s.ms),
+    edgeMs: of('edge', (s) => s.ms),
+    newIsolates: Object.fromEntries(
+      Object.entries(samples).map(([key, list]) => [
+        key,
+        list.filter((s) => s.isolate === 'new').length,
+      ])
+    ),
+    pageApiMs: of('page', (s) => s.api),
+    pageMs: of('page', (s) => s.ms),
+    pageTotalMs: of('page', (s) => s.total),
+    samples,
+    workerMs: of('worker', (s) => s.ms),
+  };
+}
+
 type Metrics = {
   bytes: Record<string, number>;
   cls: number;
@@ -726,6 +789,20 @@ function summary(
     lines.push(
       `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}${page.styles.noise.length ? ` (rendering noise, the full page differs from itself too: ${page.styles.noise.join('; ')})` : ''}`
     );
+  lines.push(
+    '',
+    `**Uncached time to first byte, layer by layer** (median of ${BREAKDOWN_SAMPLES} plain requests from the runner on a kept-alive connection; new isolates out of ${BREAKDOWN_SAMPLES} in brackets)`,
+    '',
+    '| Page | Static file (edge) | Forged link (Worker only) | Public API via Worker | Uncached page | Worker total (API) |',
+    '| --- | ---: | ---: | ---: | ---: | ---: |'
+  );
+  for (const page of results.pages) {
+    const b = page.breakdown;
+    const n = b.newIsolates;
+    lines.push(
+      `| ${page.kind} | ${ms(b.edgeMs)} (${n.edge}) | ${ms(b.workerMs)} (${n.worker}) | ${ms(b.apiMs)} (${n.api}) | ${ms(b.pageMs)} (${n.page}) | ${ms(b.pageTotalMs)} (${ms(b.pageApiMs)}) |`
+    );
+  }
   lines.push('', '**Cache hit for a second visitor**', '');
   for (const page of results.pages)
     lines.push(
@@ -754,6 +831,8 @@ async function run(page: Page) {
   const forged = await checkForged();
   const caches = [];
   for (const item of shared) caches.push(await checkCaching(item));
+  const breakdowns = [];
+  for (const item of shared) breakdowns.push(await breakdown(item, id));
   // Fresh contexts of the signed-in browser carry no session.
   const styles = [];
   for (const item of shared)
@@ -791,6 +870,7 @@ async function run(page: Page) {
           cached: await measure(LIGHTHOUSE_PORT, () => url, profile, true),
         };
       pages.push({
+        breakdown: breakdowns[index],
         cache: caches[index],
         kind: item.kind,
         styles: styles[index],
