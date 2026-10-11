@@ -29,11 +29,9 @@ import { Input, InputField } from '@/components/ui/Input';
 import { Tabs } from '@/components/ui/Tabs';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
+import { blockHomeCrumb } from '@/features/quizzes/crumbs';
 import { QuizForm } from '@/features/quizzes/QuizForm';
-import {
-  blockHomeCrumb,
-  QuizPageHeader,
-} from '@/features/quizzes/QuizPageHeader';
+import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { usePickedImages } from '@/features/quizzes/usePickedImages';
 import { m } from '@/i18n';
 import { textLength } from '@/lib/textLength';

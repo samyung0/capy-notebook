@@ -1971,8 +1971,8 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	if len(p.Workspaces) > 0 {
 		workspaces = p.Workspaces
 	}
-	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT a.id, a.material_id, m.workspace_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
-		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`SELECT a.id, a.material_id, m.workspace_id, w.icon_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at
+		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
 		WHERE a.user_id=$1 AND ($2::text[] IS NULL OR m.workspace_id = ANY($2))
 		ORDER BY %s %s NULLS LAST, a.taken_at DESC, a.id
 		LIMIT $3 OFFSET $4`, order, dir), userID, workspaces, p.Limit+1, p.Offset)
@@ -1983,7 +1983,7 @@ func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams
 	out := []Attempt{}
 	for rows.Next() {
 		var a Attempt
-		if err := rows.Scan(&a.ID, &a.MaterialID, &a.WorkspaceID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.MaterialID, &a.WorkspaceID, &a.IconID, &a.QuizName, &a.WorkspaceName, &a.Chapters, &a.Correct, &a.Total, &a.Pct, &a.TakenAt); err != nil {
 			return nil, false, err
 		}
 		out = append(out, a)
@@ -2060,10 +2060,10 @@ func (s *Store) CreateAttempt(ctx context.Context, userID, materialID string, co
 // the owner via the attempts.user_id column recorded at submit time.
 func (s *Store) GetAttempt(ctx context.Context, id, userID string) (AttemptDetail, error) {
 	var d AttemptDetail
-	err := s.pool.QueryRow(ctx, `SELECT a.id, a.material_id, m.workspace_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at, a.answers, a.questions
-		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id
+	err := s.pool.QueryRow(ctx, `SELECT a.id, a.material_id, m.workspace_id, w.icon_id, a.quiz_name, a.workspace_name, a.chapters, a.correct, a.total, a.pct, a.taken_at, a.answers, a.questions
+		FROM attempts a LEFT JOIN materials m ON m.id=a.material_id LEFT JOIN workspaces w ON w.id=m.workspace_id
 		WHERE a.id=$1 AND a.user_id=$2`, id, userID).
-		Scan(&d.ID, &d.MaterialID, &d.WorkspaceID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
+		Scan(&d.ID, &d.MaterialID, &d.WorkspaceID, &d.IconID, &d.QuizName, &d.WorkspaceName, &d.Chapters, &d.Correct, &d.Total, &d.Pct, &d.TakenAt, &d.Answers, &d.Questions)
 	if isNoRows(err) {
 		return d, ErrNotFound
 	}

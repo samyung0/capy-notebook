@@ -1,5 +1,10 @@
-import { Link, type LinkOptions, linkOptions } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
+import type { LinkOptions } from '@tanstack/react-router';
+import {
+  type ComponentType,
+  createContext,
+  type ReactNode,
+  useContext,
+} from 'react';
 import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -17,32 +22,12 @@ export const NoFrame: Frame = ({ children }) => children;
 /** A breadcrumb segment; with a link it opens that page. */
 export type Crumb = { label: string; link?: LinkOptions };
 
-/** A block's first crumb: its workspace, or the Blocks tab when standalone. */
-export const blockHomeCrumb = (block: {
-  workspaceId: string;
-  workspaceName: string;
-}): Crumb =>
-  block.workspaceId && block.workspaceName
-    ? {
-        label: block.workspaceName,
-        link: linkOptions({
-          params: { workspaceId: block.workspaceId },
-          to: '/workspaces/$workspaceId',
-        }),
-      }
-    : {
-        label: m.files_tab_blocks(),
-        link: linkOptions({ search: { tab: 'blocks' }, to: '/files' }),
-      };
-
-/** The Blocks tab filtered to one kind, e.g. every quiz. */
-export const blockKindCrumb = (
-  label: string,
-  kind: 'quiz' | 'flashcards'
-): Crumb => ({
-  label,
-  link: linkOptions({ search: { kind, tab: 'blocks' }, to: '/files' }),
-});
+/** Draws a crumb's link: the app passes the router's Link (main.tsx). Shared
+ * pages leave it out, since their crumbs never link, and so never download
+ * the router. */
+export const CrumbLinkContext = createContext<ComponentType<
+  LinkOptions & { children: ReactNode; className?: string }
+> | null>(null);
 
 /** Back arrow and breadcrumb above the page title; `actions` sit on the title line. */
 export function QuizPageHeader({
@@ -67,6 +52,7 @@ export function QuizPageHeader({
    * beside this header; public pages have their own header and pass none. */
   topBar?: ReactNode;
 }) {
+  const CrumbLink = useContext(CrumbLinkContext);
   return (
     <header className="flex items-start">
       <div
@@ -102,8 +88,8 @@ export function QuizPageHeader({
               {trail.map((item, i) => (
                 <span className="flex min-w-0 items-center gap-1.5" key={i}>
                   {i > 0 && <span aria-hidden>/</span>}
-                  {item.link ? (
-                    <Link
+                  {item.link && CrumbLink ? (
+                    <CrumbLink
                       {...item.link}
                       className={cn(
                         'truncate underline-offset-2 hover:text-fg hover:underline',
@@ -111,7 +97,7 @@ export function QuizPageHeader({
                       )}
                     >
                       {item.label}
-                    </Link>
+                    </CrumbLink>
                   ) : (
                     <span
                       className={cn(

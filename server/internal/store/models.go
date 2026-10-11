@@ -251,7 +251,10 @@ type Attempt struct {
 	// WorkspaceName are the submit-time snapshot that keeps the row readable.
 	MaterialID *string `json:"materialId"`
 	// WorkspaceID is the quiz's current workspace, null with MaterialID.
-	WorkspaceID   *string   `json:"workspaceId"`
+	WorkspaceID *string `json:"workspaceId"`
+	// IconID is that workspace's catalog icon, filled by the attempts list
+	// and a single result, which show it beside the workspace name.
+	IconID        *string   `json:"iconId,omitempty"`
 	QuizName      string    `json:"quizName"`
 	WorkspaceName string    `json:"workspaceName"`
 	Chapters      []string  `json:"chapters" nullable:"false"`

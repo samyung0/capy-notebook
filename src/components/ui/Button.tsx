@@ -1,5 +1,5 @@
+import { Slot, Slottable } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
 import { cn } from '@/lib/cn';
 import { Icon, type IconName } from './Icon';
 
@@ -116,7 +116,7 @@ export function Button({
   asChild = false,
   ...rest
 }: ButtonProps) {
-  const Component = asChild ? Slot.Root : 'button';
+  const Component = asChild ? Slot : 'button';
 
   return (
     <Component
@@ -130,7 +130,7 @@ export function Button({
       data-variant={variant}
       {...rest}
     >
-      <Slot.Slottable child={children}>
+      <Slottable child={children}>
         {(content) => (
           <>
             {iconLeft && (
@@ -150,7 +150,7 @@ export function Button({
             )}
           </>
         )}
-      </Slot.Slottable>
+      </Slottable>
     </Component>
   );
 }

@@ -1,4 +1,4 @@
-import { useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { useAttempts, useWorkspaces } from '@/api/hooks';
 import type { Attempt, AttemptSort } from '@/api/types';
@@ -13,6 +13,7 @@ import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
 import { formatPoints } from '@/features/quizzes/grade';
+import { WorkspaceCell } from '@/features/study/PastReviews';
 import { m } from '@/i18n';
 import { csv, sortSearch } from '@/lib/listSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
@@ -66,7 +67,7 @@ export function AllResults() {
         ]
       : [];
   const menu = (a: Attempt) => (
-    <div className="-my-2 flex justify-end">
+    <div className="relative z-10 -my-2 flex justify-end">
       <Menu
         items={[
           {
@@ -128,8 +129,12 @@ export function AllResults() {
             <div className="md:hidden">
               <BillingTable
                 columns={[
-                  { id: 'quiz', label: m.quiz_col_quiz() },
-                  { id: 'workspace', label: m.quiz_col_workspace() },
+                  { clamp: true, id: 'quiz', label: m.quiz_col_quiz() },
+                  {
+                    clamp: true,
+                    id: 'workspace',
+                    label: m.quiz_col_workspace(),
+                  },
                   { id: 'score', label: m.quiz_col_score() },
                   { id: 'date', label: m.quiz_col_date() },
                   { align: 'right', id: 'menu', label: '' },
@@ -138,16 +143,19 @@ export function AllResults() {
                   cells: {
                     date: formatDate(a),
                     menu: menu(a),
-                    quiz: a.quizName,
+                    quiz: <ResultLink attempt={a} />,
                     score: scoreText(a),
-                    workspace: a.workspaceName,
+                    workspace: (
+                      <WorkspaceCell iconId={a.iconId} name={a.workspaceName} />
+                    ),
                   },
+                  className: 'relative hover:bg-surface-hover-bg',
                   key: a.id,
                 }))}
               />
             </div>
             <div className="hidden overflow-hidden rounded-card border border-line md:block">
-              <div className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
+              <div className="grid grid-cols-[minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(7rem,1fr)_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
                 <div>{m.quiz_col_quiz()}</div>
                 <div>{m.quiz_col_workspace()}</div>
                 <div>{m.quiz_col_score()}</div>
@@ -156,11 +164,15 @@ export function AllResults() {
               </div>
               {rows.map((a) => (
                 <div
-                  className="grid grid-cols-[minmax(0,2.2fr)_minmax(0,1.6fr)_7rem_7rem_2.25rem] items-center border-divider border-t pr-2 pl-4 text-sm"
+                  className="relative grid grid-cols-[minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(7rem,1fr)_2.25rem] items-center border-divider border-t pr-2 pl-4 text-sm hover:bg-surface-hover-bg"
                   key={a.id}
                 >
-                  <div className="truncate py-3 pr-4">{a.quizName}</div>
-                  <div className="truncate py-3 pr-4">{a.workspaceName}</div>
+                  <div className="py-3 pr-4">
+                    <ResultLink attempt={a} />
+                  </div>
+                  <div className="py-3 pr-4">
+                    <WorkspaceCell iconId={a.iconId} name={a.workspaceName} />
+                  </div>
                   <div className="whitespace-nowrap py-3 pr-4">
                     {scoreText(a)}
                   </div>
@@ -186,6 +198,19 @@ export function AllResults() {
         )}
       </div>
     </div>
+  );
+}
+
+/** The quiz name, linking the whole row to the attempt's result. */
+function ResultLink({ attempt: a }: { attempt: Attempt }) {
+  return (
+    <Link
+      className="wrap-break-word line-clamp-2 after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action focus-visible:after:ring-inset"
+      params={{ attemptId: a.id }}
+      to="/quizzes/attempts/$attemptId"
+    >
+      {a.quizName}
+    </Link>
   );
 }
 

@@ -6,25 +6,13 @@ import { m } from '@/i18n';
 import { useMaterialRender } from './MaterialRenderContext';
 import { Mermaid } from './Mermaid';
 import type { MermaidTheme } from './mermaidThemes';
+import { previewHeight } from './previewHeight';
 
 const MAX_SCALE = 8;
-/** Media with a known size opens at most this many times it: small diagrams
- * stay readable without filling the screen. */
-const MAX_UPSCALE = 2;
 /** Pointer travel past which a press is a pan, not a click on the backdrop. */
 const CLICK_SLOP = 4;
 const ZOOM_BUTTON_CLASS =
   'rounded-button p-2 text-white/75 hover:bg-white/10 hover:text-white disabled:opacity-35 disabled:hover:bg-transparent';
-
-/**
- * CSS height that opens `width`×`height` media as large as the preview fits,
- * up to MAX_UPSCALE× its size. Set only the height (width auto) so the width
- * follows the aspect ratio. `inset` is the media's own horizontal and
- * vertical padding.
- */
-export function previewHeight(width: number, height: number, inset = '0px') {
-  return `min(100cqh - ${inset}, ${height * MAX_UPSCALE}px, (100cqw - ${inset}) * ${height / width})`;
-}
 
 /**
  * Full-screen look at an image or diagram on a deep backdrop: name on top,

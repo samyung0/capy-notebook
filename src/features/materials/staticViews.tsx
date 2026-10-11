@@ -27,12 +27,36 @@ import {
   openEditorAsset,
 } from './MediaAssetView';
 import { MediaFrame } from './MediaFrame';
-import { MediaPreview, MermaidPreview, previewHeight } from './MediaPreview';
 import { Mermaid } from './Mermaid';
+import { previewHeight } from './previewHeight';
 
 /* The read-only blocks that need the browser, apart from their Slate
    elements (staticNodeComponents.tsx) and free of Plate, so a server-rendered
    shared note hydrates them as islands without loading the renderer. */
+
+// The full-screen previews (zoom library, dialog) load on their first open and
+// stay mounted from then on, so closing still animates.
+const MediaPreview = lazy(() =>
+  import('./MediaPreview').then((mod) => ({ default: mod.MediaPreview }))
+);
+const MermaidPreview = lazy(() =>
+  import('./MediaPreview').then((mod) => ({ default: mod.MermaidPreview }))
+);
+
+/** `open` for a preview, and whether it has been opened yet. */
+function usePreview() {
+  const [open, setOpen] = useState(false);
+  const [opened, setOpened] = useState(false);
+  return {
+    onOpen: () => {
+      setOpened(true);
+      setOpen(true);
+    },
+    open,
+    opened,
+    setOpen,
+  };
+}
 
 /** An image, audio or file with its caption and an open-in-new-tab action. */
 export function StaticMediaAsset({ element }: { element: MediaAssetNode }) {
@@ -106,14 +130,14 @@ export function MermaidView({
   /** Names the full-screen view; a block in a note leaves it to the context. */
   title?: string;
 } & Pick<MermaidElement, 'source' | 'theme' | 'width'>) {
-  const [previewing, setPreviewing] = useState(false);
+  const preview = usePreview();
   // A diagram that cannot be drawn shows its error, with nothing to enlarge.
   const [drawn, setDrawn] = useState(false);
   return (
     <>
       <MediaFrame
         fill
-        onOpen={drawn ? () => setPreviewing(true) : undefined}
+        onOpen={drawn ? preview.onOpen : undefined}
         width={width}
       >
         <Mermaid
@@ -123,14 +147,18 @@ export function MermaidView({
           theme={theme}
         />
       </MediaFrame>
-      <MermaidPreview
-        caption={caption}
-        code={source}
-        onOpenChange={setPreviewing}
-        open={previewing}
-        theme={theme}
-        title={title}
-      />
+      {preview.opened && (
+        <Suspense fallback={null}>
+          <MermaidPreview
+            caption={caption}
+            code={source}
+            onOpenChange={preview.setOpen}
+            open={preview.open}
+            theme={theme}
+            title={title}
+          />
+        </Suspense>
+      )}
     </>
   );
 }
@@ -149,14 +177,14 @@ export function FigureView({
   onWidthChange?: (width: string) => void;
   toolbar?: ReactNode;
 }) {
-  const [previewing, setPreviewing] = useState(false);
+  const preview = usePreview();
   return (
     <>
       <MediaFrame
         aspectRatio={
           block.type === 'graph' ? block.width / block.height : undefined
         }
-        onOpen={() => setPreviewing(true)}
+        onOpen={preview.onOpen}
         onWidthChange={onWidthChange}
         toolbar={toolbar}
         width={width ?? (block.type === 'chart' ? CHART_WIDTH : block.width)}
@@ -166,29 +194,36 @@ export function FigureView({
           <QuestionBlockView block={block} />
         </div>
       </MediaFrame>
-      <MediaPreview
-        onOpenChange={setPreviewing}
-        open={previewing}
-        title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
-      >
-        {block.type === 'chart' ? (
-          // Chart text uses the page colours, so it keeps a page-coloured panel.
-          <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
-            <QuestionBlockView block={block} />
-          </div>
-        ) : (
-          <div
-            className="[&_img]:h-(--preview-height) [&_img]:w-auto"
-            style={
-              {
-                '--preview-height': previewHeight(block.width, block.height),
-              } as CSSProperties
-            }
+      {preview.opened && (
+        <Suspense fallback={null}>
+          <MediaPreview
+            onOpenChange={preview.setOpen}
+            open={preview.open}
+            title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
           >
-            <QuestionBlockView block={block} />
-          </div>
-        )}
-      </MediaPreview>
+            {block.type === 'chart' ? (
+              // Chart text uses the page colours, so it keeps a page-coloured panel.
+              <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
+                <QuestionBlockView block={block} />
+              </div>
+            ) : (
+              <div
+                className="[&_img]:h-(--preview-height) [&_img]:w-auto"
+                style={
+                  {
+                    '--preview-height': previewHeight(
+                      block.width,
+                      block.height
+                    ),
+                  } as CSSProperties
+                }
+              >
+                <QuestionBlockView block={block} />
+              </div>
+            )}
+          </MediaPreview>
+        </Suspense>
+      )}
     </>
   );
 }

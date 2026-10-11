@@ -1,20 +1,31 @@
 import {
   createContext,
+  lazy,
   type ReactNode,
+  Suspense,
   useCallback,
   useContext,
   useEffect,
   useRef,
   useState,
 } from 'react';
-import { resolveEditorAsset } from '@/api/editorAssets';
 import { Skeleton } from '@/components/ui/feedback';
 import { onChildrenReady } from '@/features/notes/childrenReady';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { MediaFrame } from './MediaFrame';
-import { MediaPreview } from './MediaPreview';
+
+// Loaded when used: the authenticated resolve (with the app's query client
+// behind it) only where no AssetUrlContext answers, which is never on a shared
+// page, and the full-screen preview on its first open.
+const resolveEditorAsset = (assetId: string, signal?: AbortSignal) =>
+  import('@/api/editorAssets').then((mod) =>
+    mod.resolveEditorAsset(assetId, signal)
+  );
+const MediaPreview = lazy(() =>
+  import('./MediaPreview').then((mod) => ({ default: mod.MediaPreview }))
+);
 
 /** Persisted media node shape for workspace-backed asset elements. */
 export interface MediaAssetNode {
@@ -138,6 +149,8 @@ export function MediaAssetView({
   const [fill, setFill] = useState(false);
   const [aspectRatio, setAspectRatio] = useState<number>();
   const [previewing, setPreviewing] = useState(false);
+  // Mounted from the first open on, so closing still animates.
+  const [previewed, setPreviewed] = useState(false);
   // A presigned URL is short-lived; seeking past the buffered range re-reads
   // it. Re-resolve once, then let a second failure surface.
   const retried = useRef(false);
@@ -171,7 +184,10 @@ export function MediaAssetView({
         <MediaFrame
           aspectRatio={aspectRatio}
           fill={fill}
-          onOpen={() => setPreviewing(true)}
+          onOpen={() => {
+            setPreviewed(true);
+            setPreviewing(true);
+          }}
           onWidthChange={onWidthChange}
           toolbar={toolbar}
           width={element.width}
@@ -193,24 +209,29 @@ export function MediaAssetView({
           />
         </MediaFrame>
       )}
-      {asset.status === 'ready' && !waiting && element.type === 'img' && (
-        <MediaPreview
-          caption={element.caption?.map((node) => node.text).join('')}
-          onOpenChange={setPreviewing}
-          open={previewing}
-          title={element.name || asset.name}
-        >
-          <img
-            alt={element.name || asset.name}
-            className={cn(
-              'max-h-full max-w-full rounded-card',
-              // No intrinsic size: take the height, width from the viewBox.
-              fill && 'h-full w-auto'
-            )}
-            src={asset.url}
-          />
-        </MediaPreview>
-      )}
+      {asset.status === 'ready' &&
+        !waiting &&
+        element.type === 'img' &&
+        previewed && (
+          <Suspense fallback={null}>
+            <MediaPreview
+              caption={element.caption?.map((node) => node.text).join('')}
+              onOpenChange={setPreviewing}
+              open={previewing}
+              title={element.name || asset.name}
+            >
+              <img
+                alt={element.name || asset.name}
+                className={cn(
+                  'max-h-full max-w-full rounded-card',
+                  // No intrinsic size: take the height, width from the viewBox.
+                  fill && 'h-full w-auto'
+                )}
+                src={asset.url}
+              />
+            </MediaPreview>
+          </Suspense>
+        )}
       {asset.status === 'ready' && !waiting && element.type === 'audio' && (
         <audio
           className="w-full"

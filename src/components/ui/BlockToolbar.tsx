@@ -1,4 +1,4 @@
-import { Popover as PopoverPrimitive } from 'radix-ui';
+import * as PopoverPrimitive from '@radix-ui/react-popover';
 import { cn } from '@/lib/cn';
 import { PopupMotion } from './PopupMotion';
 

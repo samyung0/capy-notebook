@@ -60,13 +60,14 @@ import {
   fileListParams,
   sortSearch,
 } from '@/lib/listSearch';
+import { PREF_KEYS } from '@/lib/localPrefs';
 import type { FilesTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 export default function Files() {
   const navigate = useNavigate();
   const { tab = 'files' } = useSearch({ from: '/auth-shell/files' });
-  const [view, changeView] = useListView('capy.files.view', 'grid');
+  const [view, changeView] = useListView(PREF_KEYS.filesView);
   const [busy, setBusy] = useState(false);
 
   return (

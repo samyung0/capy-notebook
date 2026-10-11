@@ -1,0 +1,62 @@
+import { useState } from 'react';
+
+/**
+ * Display preferences one viewer keeps in this browser: list or grid views,
+ * the pinned file tree, which chapters are open. localStorage rather than
+ * IndexedDB because the first render reads them synchronously, so nothing
+ * flashes from the default. Values are JSON. Storage can be blocked (private
+ * windows); reads then give the fallback and writes are dropped.
+ *
+ * Every key lives here so the stored set stays in one place.
+ */
+export const PREF_KEYS = {
+  filesPinned: 'capy.workspace.filesPinned',
+  filesView: 'capy.files.view',
+  openChapters: (workspaceId: string) =>
+    `capy.workspace.openChapters.${workspaceId}`,
+  recentsView: 'capy.recents.view',
+} as const;
+
+function readPref<T>(
+  key: string,
+  fallback: T,
+  isValid: (value: unknown) => value is T
+): T {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw === null) return fallback;
+    const value: unknown = JSON.parse(raw);
+    return isValid(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/** A preference stored under `key`; a new key (another workspace) re-reads. */
+export function useLocalPref<T>(
+  key: string,
+  fallback: T,
+  isValid: (value: unknown) => value is T
+): [T, (next: T) => void] {
+  const [state, setState] = useState(() => ({
+    key,
+    value: readPref(key, fallback, isValid),
+  }));
+  let { value } = state;
+  if (state.key !== key) {
+    value = readPref(key, fallback, isValid);
+    setState({ key, value });
+  }
+  function change(next: T) {
+    setState({ key, value: next });
+    try {
+      localStorage.setItem(key, JSON.stringify(next));
+    } catch {
+      // per-viewer convenience only
+    }
+  }
+  return [value, change];
+}
+
+export const isBoolean = (value: unknown): value is boolean =>
+  typeof value === 'boolean';

@@ -27,8 +27,8 @@ export interface Thumbnail {
 const PAGE_KINDS: FileKind[] = ['pdf', 'doc', 'slides', 'sheet'];
 
 /** The card's 16:11 thumbnail, or the 44px tile of a recents row. Falls back
- * to the kind icon when there is nothing to draw or the image fails; a failed
- * image is not retried. */
+ * to the kind icon when there is nothing to draw or the image fails (a recents
+ * row then shows the bare icon); a failed image is not retried. */
 export const ThumbnailPanel = memo(function ThumbnailPanel({
   icon,
   fileKind,
@@ -100,10 +100,12 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
     <div
       aria-hidden
       className={cn(
-        'relative shrink-0 overflow-hidden bg-(--surface-canvas)',
+        'relative shrink-0 overflow-hidden',
         small
-          ? 'pv-small size-11 rounded-[9px] border border-divider'
-          : '@container aspect-[16/11] rounded-[13px]'
+          ? 'pv-small size-11 rounded-[9px]'
+          : '@container aspect-[16/11] rounded-[13px] bg-(--surface-canvas)',
+        // A recents row's bare kind icon sits without the tile.
+        small && body && 'border border-divider bg-(--surface-canvas)'
       )}
     >
       {body ?? fallback}

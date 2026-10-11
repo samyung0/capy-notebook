@@ -117,7 +117,8 @@ export default function Dashboard() {
       {CLERK_ACTIVE && <OnboardingDialog />}
       <CloneLinkDialog />
 
-      <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full">
+      {/* Wider than the shared bar so Recent Files' two grid columns breathe. */}
+      <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:[--top-inset-bar-width:360px] xl:[--top-inset-bar-width:420px]">
         <TopInsetBar />
         <Panel
           className="hidden min-h-0 flex-1 lg:flex"

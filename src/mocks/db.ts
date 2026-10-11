@@ -1290,7 +1290,10 @@ export const attemptSummary = ({
   answers: _,
   questions: __,
   ...attempt
-}: SeedAttempt): Attempt => attempt;
+}: SeedAttempt): Attempt => ({
+  ...attempt,
+  iconId: workspaces.find((ws) => ws.id === attempt.workspaceId)?.iconId,
+});
 
 export const attempts: SeedAttempt[] = [
   seedAttempt(

@@ -8,6 +8,7 @@
 export interface Attempt {
   chapters: string[];
   correct: number;
+  iconId?: string;
   id: string;
   /** @nullable */
   materialId: string | null;

@@ -1,5 +1,5 @@
+import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
 import { Icon, type IconName } from './Icon';
@@ -64,7 +64,7 @@ export function IconButton({
   iconClassName,
   ...rest
 }: IconButtonProps) {
-  const Tag = rest.asChild ? Slot.Root : 'button';
+  const Tag = rest.asChild ? Slot : 'button';
   const tooltipLabel = tooltip === true ? label : tooltip || undefined;
   const button = (
     <Tag

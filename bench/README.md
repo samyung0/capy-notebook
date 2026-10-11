@@ -280,7 +280,7 @@ history). Reports in [`rag/reports/`](rag/reports/):
 The [Qwen book review sample pack](rag/fixtures/knowledge-review-v2/README.md)
 stays: `lab/knowledge` uses it.
 
-The six subdirectories are frozen experiments, each with its own README,
+The seven subdirectories are frozen experiments, each with its own README,
 reproduction steps, and report. They describe completed runs on a preserved lab
 image — the scripts will not run against a production deployment.
 
@@ -292,6 +292,7 @@ image — the scripts will not run against a production deployment.
 | [`qwen38/`](rag/qwen38/)         | Qwen3.8 Flash against the prior DeepSeek run                 |
 | [`qwen37/`](rag/qwen37/)         | Embedding models over the knowledge library                  |
 | [`rerank/`](rag/rerank/)         | Rerankers over the knowledge library                         |
+| [`gemma2/`](rag/gemma2/)         | EmbeddingGemma 2 against Qwen3-Embedding-4B, dense and reranked |
 
 ## Not benchmarks
 

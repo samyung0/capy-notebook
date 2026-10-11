@@ -176,6 +176,7 @@ export const ListAttemptsResponse = zod.object({
   "items": zod.array(zod.object({
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
+  "iconId": zod.string().optional(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
@@ -201,6 +202,7 @@ export const GetAttemptResponse = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()),
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
+  "iconId": zod.string().optional(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
@@ -4583,6 +4585,7 @@ export const CreateAttemptResponse = zod.object({
   "answers": zod.record(zod.string(), zod.unknown()),
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
+  "iconId": zod.string().optional(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),
@@ -6960,6 +6963,7 @@ export const GetWorkspaceStudyResponse = zod.object({
   "recentAttempts": zod.array(zod.object({
   "chapters": zod.array(zod.string()),
   "correct": zod.number(),
+  "iconId": zod.string().optional(),
   "id": zod.string(),
   "materialId": zod.string().nullable(),
   "pct": zod.int(),

@@ -1,4 +1,4 @@
-import { Slot } from 'radix-ui';
+import { Slot } from '@radix-ui/react-slot';
 import {
   type ComponentProps,
   type Ref,
@@ -59,7 +59,7 @@ export function PopupMotion({
   }, [open, present, onExited]);
 
   if (!open && !present) return null;
-  const Content = asChild ? Slot.Root : 'div';
+  const Content = asChild ? Slot : 'div';
   return (
     <div
       aria-hidden={!open || undefined}
