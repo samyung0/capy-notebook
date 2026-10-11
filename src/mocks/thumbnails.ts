@@ -294,6 +294,24 @@ const notes: [string, MaterialValue][] = [
     ],
   ],
   [
+    'Onion cell practical',
+    [
+      heading(1, 'Onion cell practical'),
+      p('Stained with iodine; cell walls and nuclei stand out.'),
+      image(CELL_ASSET, 'onion-cells.svg'),
+      p('Drawn at ×100 and ×400.'),
+    ],
+  ],
+  [
+    'Microscope photos',
+    [
+      image(CELL_ASSET, 'slide-1.svg'),
+      image(CELL_ASSET, 'slide-2.svg'),
+      p('Slides 1 and 2 from Tuesday.'),
+    ],
+  ],
+  ['Whiteboard snap', [image(CELL_ASSET, 'whiteboard.svg')]],
+  [
     '細胞呼吸 筆記',
     [
       heading(1, '細胞呼吸 Cellular respiration'),
@@ -378,6 +396,15 @@ const decks: [string, MaterialValue][] = [
   ],
   ['Identify the organelle', deck(12, 'Name the labelled organelle', true)],
   ['生物 詞彙', deck(120, '光合作用')],
+  ['Label the diagram', deck(6, '', true)],
+  [
+    'Microscopy',
+    deck(
+      18,
+      'Identify the stage of mitosis shown and describe what the chromosomes are doing.',
+      true
+    ),
+  ],
   ['Physics formulae', deck(8, 'E = hf')],
   ['Transport terms', deck(2, 'Osmosis')],
   ['Just started', deck(1, 'Mitochondrion')],

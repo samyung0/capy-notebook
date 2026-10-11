@@ -94,3 +94,60 @@ test('a DOCX edit sends one thumbnail capture', async ({ page }) => {
   await page.waitForTimeout(1000);
   expect(captures).toEqual(['/api/files/bio-office-docx/thumbnail']);
 });
+
+// XLSX: the card is the first sheet, so only its edits count; a tab click
+// right after one draws it before the switch.
+test('an XLSX capture follows only first-sheet edits', async ({ page }) => {
+  test.setTimeout(180_000);
+  const captures: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/thumbnail'))
+      captures.push(new URL(request.url()).pathname);
+  });
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  await page.getByRole('button', { name: m.material_mode() }).click();
+  await expect(officeEditMenu(page, 'xlsx')).toBeVisible({ timeout: 30_000 });
+  const saved = page.locator('[data-save-state="saved"]');
+  await expect(saved).toBeVisible();
+
+  const tabs = frame.getByRole('tab');
+  const typeInCell = async () => {
+    const box = await frame.getByTestId('xlsx-scroll').boundingBox();
+    if (!box) throw new Error('Grid is not laid out');
+    await page.mouse.click(box.x + 150, box.y + 75);
+    await page.keyboard.press('7');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('ArrowUp');
+    await expect(frame.getByTestId('xlsx-formula-input')).toHaveValue('7');
+    await expect(saved).toBeVisible();
+  };
+  const hide = () =>
+    page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+
+  // A first-sheet edit, then straight to the second sheet: drawn on the way
+  // (after 5 s), and an edit there neither counts nor drops that drawing.
+  await typeInCell();
+  await tabs.nth(1).click();
+  await expect(tabs.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await page.waitForTimeout(7000);
+  await typeInCell();
+  await page.waitForTimeout(8000);
+  await expect
+    .poll(
+      async () => {
+        await hide();
+        return captures.length;
+      },
+      { intervals: [1000], timeout: 15_000 }
+    )
+    .toBe(1);
+  await page.waitForTimeout(1000);
+  await hide();
+  await page.waitForTimeout(1000);
+  expect(captures).toEqual(['/api/files/bio-office-xlsx/thumbnail']);
+});

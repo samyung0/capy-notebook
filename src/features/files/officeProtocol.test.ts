@@ -396,7 +396,11 @@ describe('source collaboration bridge', () => {
     };
     expect(isOfficeHostMessage(update)).toBe(true);
     expect(isOfficeHostMessage({ ...update, epoch: -1 })).toBe(false);
-    expect(isOfficeRuntimeMessage({ ...update, revision: 2 })).toBe(true);
+    // The runtime says whether its edit may change the list-card capture.
+    expect(isOfficeRuntimeMessage({ ...update, revision: 2 })).toBe(false);
+    expect(
+      isOfficeRuntimeMessage({ ...update, capture: false, revision: 2 })
+    ).toBe(true);
     expect(
       isOfficeRuntimeMessage({ ...update, revision: 2, type: 'flushed' })
     ).toBe(false);

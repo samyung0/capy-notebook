@@ -34,6 +34,8 @@ export type OfficeRenderer = (
  * null when there is nothing to capture now.
  */
 export type OfficeThumbnailer = () => Promise<OfficeRenderedPage | null>;
+/** Called on each local edit: whether it may change the capture. */
+export type OfficeCaptureScope = () => boolean;
 
 /** The menu item an id names, if any. */
 function findItem(

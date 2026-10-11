@@ -577,7 +577,8 @@ export function useOfficeRuntime({
           return;
         const replicaUpdate = new Uint8Array(message.bytes);
         Y.applyUpdate(active.doc, replicaUpdate, SOURCE_IFRAME_ORIGIN);
-        if (message.type === 'update') captureRef.current?.edited();
+        if (message.type === 'update' && message.capture)
+          captureRef.current?.edited();
         if (message.type === 'collaboration-ready') {
           const bytes = replicaCatchUp(active.doc, replicaUpdate).slice()
             .buffer;

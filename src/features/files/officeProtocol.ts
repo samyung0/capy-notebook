@@ -159,7 +159,16 @@ export type OfficeRuntimeMessage =
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'initialized' }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
-      type: 'update' | 'collaboration-ready';
+      type: 'update';
+      epoch: number;
+      bytes: ArrayBuffer;
+      revision: number;
+      /** The edit may change the list-card capture (XLSX: made on the first sheet). */
+      capture: boolean;
+    }
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'collaboration-ready';
       epoch: number;
       bytes: ArrayBuffer;
       revision: number;
@@ -389,7 +398,8 @@ export function isOfficeRuntimeMessage(
       return (
         isCount(raw.epoch) &&
         raw.bytes instanceof ArrayBuffer &&
-        (raw.type !== 'flushed' || typeof raw.id === 'string')
+        (raw.type !== 'flushed' || typeof raw.id === 'string') &&
+        (raw.type !== 'update' || typeof raw.capture === 'boolean')
       );
   }
   return (

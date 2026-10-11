@@ -61,7 +61,8 @@ def capture_source(
         return
     started = time.monotonic()
     try:
-        if plan.route == ingest_plan.RAW_TEXT:
+        # Text and CSV/TSV: the opening characters, drawn as text or a table.
+        if plan.route in (ingest_plan.RAW_TEXT, ingest_plan.DELIMITED_TEXT):
             _store_text_preview(file_id, source_sha256, Path(local_path))
             return
         if artifact is None and plan.route == ingest_plan.DOCUMENT_PARSE:

@@ -5,6 +5,7 @@ import {
   CardsLive,
   NoteLive,
   QuizLive,
+  TableLive,
   TextLive,
 } from '@/features/materials/preview/LivePreview';
 import { MermaidPreview } from '@/features/materials/preview/MermaidPreview';
@@ -63,8 +64,14 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
       />
     );
   } else if (preview && 'text' in preview) {
+    // Only CSV and TSV sheets carry text; workbooks have page images.
     if (preview.text.trim())
-      body = <TextLive markdown={fileKind === 'md'} text={preview.text} />;
+      body =
+        fileKind === 'sheet' ? (
+          <TableLive text={preview.text} />
+        ) : (
+          <TextLive markdown={fileKind === 'md'} text={preview.text} />
+        );
   } else if (preview) {
     switch (preview.kind) {
       case 'note':

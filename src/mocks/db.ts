@@ -665,6 +665,7 @@ export const files: SourceFile[] = [
       name: file.name,
       position:
         position + dialogFiles.length + 5 + biologyOfficeFixtures.length,
+      preview: { text: file.body.slice(0, 600) },
       revision: 1,
       sizeBytes: new TextEncoder().encode(file.body).byteLength,
       workspaceId: 'ws_bio',

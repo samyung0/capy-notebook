@@ -97,8 +97,8 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 | ----- | --------- |
 | PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the ingest encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). A bundle without the image (an older parser, a failed render) means no thumbnail |
 | Image (`image_caption`) | Pillow: first frame, EXIF orientation, shrunk to 200 px wide and cut at 400 px before it is converted and flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
-| Text (`raw_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters (a text-mode read, never cut mid-character; NUL removed) |
-| Store-only, audio, delimited text | none |
+| Text (`raw_text`) and CSV/TSV (`delimited_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters of the source (a text-mode read, never cut mid-character; NUL removed). Cards draw text and code as monospace lines, and a CSV or TSV (kind `sheet`) as a small table: its first 8 rows and 5 columns, the first row the header, tab-separated when the first line has a tab, quoted cells kept whole |
+| Store-only, audio | none |
 
 - The image is WebP, quality 60, 200 px wide (narrower images are not
   enlarged), cut at 400 px tall from the top: cards crop pages from the top.
@@ -161,7 +161,11 @@ already has `DATABASE_URL`).
 | `mindmap`, `diagram` | `{kind, source}`, the Mermaid source cut to 1 KB on a line boundary |
 
 Editor assets have no small variant (the stored object is the uploaded image,
-up to the plan image cap), so `{t:'image'}` and `hasImage` are markers only.
+up to the plan image cap), so `{t:'image'}` and `hasImage` are markers only:
+cards draw a tinted frame with the image glyph where the image is (a note that
+is only an image fills its page with it; under a long flashcard front the frame
+shrinks and the front keeps at most three lines). Epo kept the marker over
+small copies on 2026-10-11.
 
 Sources: [extractor](../server/internal/materialdoc/preview.go),
 [table test](../server/internal/materialdoc/preview_test.go),
@@ -264,13 +268,17 @@ image chunk alone (`imageOnlyWebP`; 464 bytes smaller).
   list and a thumbnail worker of its own (`thumbnail.worker.ts`, ended with the
   capture, or on an error, an unreadable message or 30 s) paints and encodes
   it, with the system fonts it falls back to (the same at that scale). The engine draws only the active sheet, so the request
-  names the first sheet (`onSheet`): while another sheet is active there is
-  nothing to capture.
-- Known limit (deferred 2026-10-11): a cycle whose drawing finds another
-  sheet active ends with nothing, so the card keeps its image until an edit is
-  captured with the first sheet active. Drawing a sheet that is not the active
-  one needs the engine's `display_list_for(sheet, viewport)` exposed by the
-  fork.
+  names the first sheet (`onSheet`).
+- XLSX edits count only on the first sheet (Epo, 2026-10-11: the card is the
+  first sheet, which is stable for the user's visual memory). The runtime's
+  `update` message says whether the edit may change the capture
+  (`capture`, from the host's `OfficeCaptureScope`; always true for DOCX
+  and PPTX), and only those start a capture cycle. The engine draws only the
+  active sheet, so a click on a sheet tab while first-sheet edits are not
+  drawn yet draws them before the switch, and a capture on another sheet sends
+  that drawing. Leaving the first sheet any other way within 5 s of an edit
+  ends that cycle with nothing; formulas on the first sheet that change with
+  other sheets wait for its next edit.
 
 Main-thread cost of one capture (production build, developer PC, 2026-10-11,
 three runs): XLSX at most about 1 ms in one task (the worker's own paint and
@@ -300,7 +308,14 @@ Sources: [endpoint test](../server/internal/httpapi/thumbnail_capture_test.go),
 
 ## Phase 2
 
-- Captures after an agent's `edit_document` on Office files need an export of
-  the current Office state; an open design question.
-- Note preview images and flashcard image fronts need a small copy of editor
-  assets.
+- Captures after an agent's `edit_document` on Office files: queued
+  2026-10-11 to the Rust harness session, which implements them and checks
+  their cost in its performance round. Epo's design: once per finished agent
+  response (Go's `FinalizeAssistantMessage` has the turn's edited files),
+  only when page 1 may have changed (XLSX a cell in the first sheet's capture
+  area, PPTX slide 1, DOCX always), export the live state and render page 1 on
+  the ingest host, whether or not the file is open in a browser.
+- Text previews after edits in a workspace with auto-process off: the preview
+  is written by ingest, so it waits for the next refresh. Queued with the
+  above: the source checkpoint save carries the opening text and Go writes
+  `files.preview`, as materials do on every write.

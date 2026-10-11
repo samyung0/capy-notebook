@@ -5,10 +5,17 @@ import {
   XlsxEditor,
   type XlsxEditorApi,
 } from '@betteroffice/xlsx-react';
-import { useEffect, useRef, useState } from 'react';
+import {
+  type PointerEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeRenderedPage,
 } from '@/features/files/officeProtocol';
 import type {
   OfficeCollaboration,
@@ -16,6 +23,7 @@ import type {
   OfficeFlusher,
 } from './officeCollaboration';
 import type {
+  OfficeCaptureScope,
   OfficeMenuReporter,
   OfficeRenderer,
   OfficeThumbnailer,
@@ -64,7 +72,10 @@ export function XlsxEditorHost({
   onPendingChange: (pending: boolean) => void;
   fileName: string;
   onSave: () => void;
-  onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
+  onThumbnailer: (
+    thumbnailer: OfficeThumbnailer | null,
+    scope?: OfficeCaptureScope
+  ) => void;
   onZoomChange: (zoom: number) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
@@ -116,28 +127,63 @@ export function XlsxEditorHost({
     });
     return () => onRenderer(null);
   }, [onRenderer]);
-  // The first sheet's top-left for the list cards, drawn by the workbook
-  // worker only while that sheet is the active one (the engine draws no
-  // other); on another sheet there is nothing to capture.
+  // The list cards show the first sheet's top-left, so only edits made on
+  // that sheet count. The workbook worker draws the active sheet alone: a
+  // click on a sheet tab with first-sheet edits not drawn yet draws them
+  // before the switch, and the next capture on another sheet takes that
+  // drawing (once: its bytes move to Capy).
+  const undrawnRef = useRef(false);
+  const leftWithRef = useRef<Promise<OfficeRenderedPage | null> | null>(null);
+  const onFirstSheet = () => apiRef.current?.sheetInfo()?.activeSheet === 0;
+  const drawFirstSheet = useCallback(async () => {
+    const api = apiRef.current;
+    const first = api?.sheetInfo()?.sheetIds[0];
+    if (!(api && first)) throw new Error('Editor is still loading');
+    undrawnRef.current = false;
+    try {
+      return await sheetThumbnail(
+        await api.handle.onSheet(first, 'displayList', THUMBNAIL_AREA)
+      );
+    } catch (error) {
+      if (error instanceof SheetGoneError) return null;
+      throw error;
+    }
+  }, []);
   useEffect(() => {
-    onThumbnailer(async () => {
-      const api = apiRef.current;
-      const first = api?.sheetInfo()?.sheetIds[0];
-      if (!(api && first)) throw new Error('Editor is still loading');
-      try {
-        return await sheetThumbnail(
-          await api.handle.onSheet(first, 'displayList', THUMBNAIL_AREA)
-        );
-      } catch (error) {
-        if (error instanceof SheetGoneError) return null;
-        throw error;
+    onThumbnailer(
+      () => {
+        const leftWith = leftWithRef.current;
+        leftWithRef.current = null;
+        if (!onFirstSheet()) return leftWith ?? Promise.resolve(null);
+        return drawFirstSheet();
+      },
+      () => {
+        if (!onFirstSheet()) return false;
+        undrawnRef.current = true;
+        return true;
       }
-    });
+    );
     return () => onThumbnailer(null);
-  }, [onThumbnailer]);
+  }, [drawFirstSheet, onThumbnailer]);
+  const leavingFirstSheet = (event: PointerEvent<HTMLDivElement>) => {
+    if (
+      !undrawnRef.current ||
+      !onFirstSheet() ||
+      !(event.target instanceof Element) ||
+      !event.target.closest('[role="tab"]')
+    )
+      return;
+    const drawing = drawFirstSheet();
+    // Its failure reaches the capture that sends it, if any.
+    drawing.catch(() => undefined);
+    leftWithRef.current = drawing;
+  };
 
   return (
-    <div className="office-editor-host">
+    <div
+      className="office-editor-host"
+      onPointerDownCapture={leavingFirstSheet}
+    >
       <XlsxEditor
         className="office-editor-host"
         collaboration={collaboration}

@@ -5,6 +5,7 @@ import type {
   QuestionType,
   QuizPreviewQuestion,
 } from '@/api/types';
+import { Icon } from '@/components/ui/Icon';
 import { orderItemsLabel } from '@/features/materials/countLabels';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -21,7 +22,12 @@ type NotePreview = Extract<MaterialPreview, { kind: 'note' }>;
 const BIG_PARAGRAPH = 140;
 /** Fronts longer than this use the small, left-aligned style. */
 const LONG_FRONT = 60;
+/** Fronts longer than this wrap under an image, which shrinks to make room. */
+const ONE_LINE_FRONT = 28;
 const TEXT_LINES = 12;
+const TABLE_ROWS = 8;
+const TABLE_COLUMNS = 5;
+const LINE_BREAK = /\r?\n/;
 
 export const NoteLive = memo(function NoteLive({
   blocks,
@@ -30,6 +36,15 @@ export const NoteLive = memo(function NoteLive({
     blocks.length === 1 &&
     blocks[0].t === 'p' &&
     blocks[0].text.length <= BIG_PARAGRAPH;
+  // A note that is only an image shows the frame over the whole page.
+  if (blocks.length === 1 && blocks[0].t === 'image')
+    return (
+      <div className="pv-live">
+        <div className="pv-paper">
+          <ImageMark lone />
+        </div>
+      </div>
+    );
   return (
     <div className="pv-live">
       <div className="pv-paper">
@@ -85,8 +100,20 @@ function Block({ block, big }: { block: PreviewBlock; big: boolean }) {
     case 'quote':
       return <p className="pv-quote">{block.text}</p>;
     case 'image':
-      return <div className="pv-img" />;
+      return <ImageMark />;
   }
+}
+
+/** Where a note or card front holds an image: previews carry no image bytes
+ * (editor assets have no small copy), so a tinted frame with the image glyph. */
+function ImageMark({ lone, short }: { lone?: boolean; short?: boolean }) {
+  return (
+    <div
+      className={cn('pv-img', lone && 'pv-img-lone', short && 'pv-img-short')}
+    >
+      <Icon name="image" size={22} strokeWidth={1.6} />
+    </div>
+  );
 }
 
 const LETTERS = 'ABCD';
@@ -205,7 +232,7 @@ export const CardsLive = memo(function CardsLive({
       {count >= 2 && <div className="pv-card pv-back-1" />}
       {count >= 3 && <div className="pv-card pv-back-2" />}
       <div className="pv-card pv-front">
-        {hasImage && <div className="pv-img" />}
+        {hasImage && <ImageMark short={front.length > ONE_LINE_FRONT} />}
         <p
           className={cn(
             hasImage ? 'pv-s' : 'pv-t',
@@ -241,3 +268,52 @@ export const TextLive = memo(function TextLive({
     </pre>
   );
 });
+
+/** A CSV or TSV file's opening rows as a small table, its first row the
+ * header. Tab-separated when the first line has a tab. */
+export const TableLive = memo(function TableLive({ text }: { text: string }) {
+  const lines = text.split(LINE_BREAK).filter((line) => line.trim());
+  const separator = lines[0]?.includes('\t') ? '\t' : ',';
+  const rows = lines
+    .slice(0, TABLE_ROWS)
+    .map((line) => splitRow(line, separator).slice(0, TABLE_COLUMNS));
+  return (
+    <div className="pv-live pv-sheet">
+      <table className="pv-table">
+        <tbody>
+          {rows.map((row, r) => (
+            <tr key={r}>
+              {row.map((cell, c) =>
+                r === 0 ? <th key={c}>{cell}</th> : <td key={c}>{cell}</td>
+              )}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+});
+
+/** One delimited line's cells; a quoted cell may hold the separator and
+ * doubled quotes. A quote left open at the cut ends the cell. */
+function splitRow(line: string, separator: string): string[] {
+  const cells: string[] = [];
+  let cell = '';
+  let quoted = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (quoted) {
+      if (char !== '"') cell += char;
+      else if (line[i + 1] === '"') {
+        cell += char;
+        i++;
+      } else quoted = false;
+    } else if (char === '"' && !cell) quoted = true;
+    else if (char === separator) {
+      cells.push(cell);
+      cell = '';
+    } else cell += char;
+  }
+  cells.push(cell);
+  return cells;
+}

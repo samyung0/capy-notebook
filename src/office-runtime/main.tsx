@@ -35,6 +35,7 @@ import type {
 } from './officeCollaboration';
 import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
 import {
+  type OfficeCaptureScope,
   type OfficeMenuSource,
   type OfficeRenderer,
   type OfficeThumbnailer,
@@ -95,6 +96,8 @@ function OfficeRuntime() {
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
   const thumbnailerRef = useRef<OfficeThumbnailer | null>(null);
+  // Whether a local edit may change the capture; every edit without one.
+  const captureScopeRef = useRef<OfficeCaptureScope | null>(null);
   const revisionRef = useRef<number | null>(null);
   // PPTX Presenter view: Capy opens the notes window, even from a click here.
   const askPresenter = useCallback(() => {
@@ -190,8 +193,9 @@ function OfficeRuntime() {
     rendererRef.current = renderer;
   }, []);
   const reportThumbnailer = useCallback(
-    (thumbnailer: OfficeThumbnailer | null) => {
+    (thumbnailer: OfficeThumbnailer | null, scope?: OfficeCaptureScope) => {
       thumbnailerRef.current = thumbnailer;
+      captureScopeRef.current = scope ?? null;
     },
     []
   );
@@ -253,7 +257,8 @@ function OfficeRuntime() {
       unsubscribeRef.current = replica.onUpdate((update, origin) => {
         if (origin !== 'local') return;
         const bytes = update.slice().buffer;
-        post({ bytes, epoch, revision, type: 'update' }, [bytes]);
+        const capture = captureScopeRef.current?.() ?? true;
+        post({ bytes, capture, epoch, revision, type: 'update' }, [bytes]);
       });
       // The XLSX replica answers from its worker, after the updates above.
       void Promise.resolve(replica.encodeStateAsUpdate()).then((state) => {

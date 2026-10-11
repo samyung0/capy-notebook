@@ -122,4 +122,16 @@ describe('ThumbnailPanel', () => {
       render({ fileKind: 'md', preview: { text: '# Lab notes\n- 25 mL' } })
     ).toContain('<span class="pv-mdh"># Lab notes');
   });
+
+  it('draws a CSV or TSV file as a table, quoted cells whole', () => {
+    const csv = render({
+      fileKind: 'sheet',
+      preview: { text: 'species,note\r\nfrog,"pond, ""east"""\n' },
+    });
+    expect(csv).toContain('<th>species</th><th>note</th>');
+    expect(csv).toContain('<td>frog</td><td>pond, &quot;east&quot;</td>');
+    expect(
+      render({ fileKind: 'sheet', preview: { text: 'a,b\tc\nd,e\tf' } })
+    ).toContain('<th>a,b</th><th>c</th>');
+  });
 });

@@ -256,12 +256,17 @@ def test_a_key_no_row_took_is_queued_for_deletion(
     assert ("thumbnail capture failed" in caplog.text) == fail_update
 
 
-def test_a_text_source_stores_its_first_600_characters(tmp_path, monkeypatch):
+@pytest.mark.parametrize(
+    "route,fmt", [(ingest_plan.RAW_TEXT, "md"), (ingest_plan.DELIMITED_TEXT, "csv")]
+)
+def test_a_text_source_stores_its_first_600_characters(
+    tmp_path, monkeypatch, route, fmt
+):
     source = tmp_path / "source-1"
     source.write_text("﻿" + "\x00é" * 700, encoding="utf-8")
     store = _Store(monkeypatch)
 
-    _capture(source, ingest_plan.RAW_TEXT, "md")
+    _capture(source, route, fmt)
 
     assert store.previews == [("f_1", "aa" * 32, "é" * 300)]
     assert store.puts == []
