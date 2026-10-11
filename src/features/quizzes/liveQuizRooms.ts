@@ -137,7 +137,7 @@ function useDocs<T>(
     },
     [...docs]
   );
-  return useSyncExternalStore(subscribe, () => {
+  const snapshot = () => {
     if (!docs[0]) return empty;
     const stale =
       !cache.current ||
@@ -145,7 +145,8 @@ function useDocs<T>(
       cache.current.key.some((doc, i) => doc !== docs[i]);
     if (stale) cache.current = { key: [...docs], value: read() };
     return (cache.current as { value: T }).value;
-  });
+  };
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
 /** Every question with its keys, as editors see it. */

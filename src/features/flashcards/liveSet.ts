@@ -149,12 +149,13 @@ export function useCards(doc: Y.Doc | null | undefined): FlashcardContent[] {
     },
     [doc]
   );
-  return useSyncExternalStore(subscribe, () => {
+  const snapshot = () => {
     if (!doc) return EMPTY;
     if (cache.current.doc !== doc)
       cache.current = { cards: readCards(doc), doc };
     return cache.current.cards;
-  });
+  };
+  return useSyncExternalStore(subscribe, snapshot, snapshot);
 }
 
 const EMPTY: FlashcardContent[] = [];

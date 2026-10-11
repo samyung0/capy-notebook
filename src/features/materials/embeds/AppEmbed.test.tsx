@@ -63,6 +63,8 @@ vi.mock('@/api/hooks', () => ({
     isError: false,
     isPending: false,
   }),
+  // The live editors wait for the account before joining their rooms.
+  useMe: () => ({ data: undefined }),
   useQuiz: () => ({
     data: {
       id: 'quiz',
@@ -72,10 +74,7 @@ vi.mock('@/api/hooks', () => ({
     isError: false,
     isPending: false,
   }),
-  useQuizEdit: () => ({ data: undefined }),
   useSubmitAttempt: () => ({ mutateAsync: vi.fn() }),
-  useUpdateFlashcardContent: () => ({ mutateAsync: vi.fn() }),
-  useUpdateQuizContent: () => ({ mutateAsync: vi.fn() }),
 }));
 
 const render = (node: ReactNode) =>

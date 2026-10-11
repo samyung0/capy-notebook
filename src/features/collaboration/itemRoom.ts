@@ -567,7 +567,9 @@ export function useItemRoom(
   }, [materialId, enabled, document, actorId, generation]);
   const snapshot = useSyncExternalStore(
     room?.subscribe ?? noSubscribe,
-    room?.getSnapshot ?? initialSnapshot
+    room?.getSnapshot ?? initialSnapshot,
+    // Rendered to a string (tests), no room has joined yet.
+    initialSnapshot
   );
   return { room, snapshot };
 }

@@ -38,8 +38,11 @@ test('quiz edits apply live and the name saves on blur', async ({ page }) => {
 
   await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(page).toHaveURL('/materials/qz_2');
+  // The header and the quiz both name it.
   await expect(
-    page.getByRole('heading', { exact: true, name: 'Genetics revision' })
+    page
+      .getByTestId('content-header')
+      .getByRole('heading', { exact: true, name: 'Genetics revision' })
   ).toBeVisible();
   await expect(questions).toHaveCount(9);
 });
