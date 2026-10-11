@@ -2512,6 +2512,46 @@ build, and the knowledge library is one more source while the switch is on.
   top-level blocks or a whole new value, never for typing. Go keeps its own
   union for the shared note (`AnonymousNote`) and the write-time family check;
   the projection stays on its idle schedule.
+- **Figures in notes.** A note written with Library on can
+  show a library figure as an ordinary image of that note: the model writes
+  `![caption](figure:<figure id>)` in `create_material` content or an
+  `insert_markdown` / `replace_block` command (the `workspace_building`
+  skill's library part says how; any other image URL becomes a link to it,
+  per the 2026-10-10 assets-only rule). The pipeline (`tools.note_figures`,
+  shared with the playground) reads the figures in one query
+  (`library.figures`: current version only, with the excerpts whose
+  `figure_ids` list each) and refuses the write, naming every bad id, for an
+  unknown, decorative or excluded figure, one on a page in the book's
+  `withheld_pages` (the per-work withheld switch reaches the reader only
+  there), one no excerpt lists, or one none of whose excerpts this turn read
+  (`read_knowledge` it first; the same read set excerpt_ids use). An accepted
+  figure's read excerpt joins the write's `excerpt_ids`, so its book enters
+  the provenance (and the note footer) exactly as a named excerpt does, and
+  its caption becomes the model's text (else the printed label) followed by
+  the printed credit in brackets (`(credit)`; a figure with no printed credit
+  shows none, its book still credited in the footer). After the ledger rules
+  pass, each figure's bbox is rendered as `capture_knowledge_page` renders it
+  (`capture.render_knowledge`, JPEG q80, long edge `CAPY_CAPTURE_MAX_EDGE`),
+  deterministic and CPU only, with no cache, and sent beside the write as
+  `figures: [{id, image}]` (base64; the post's timeout is 60 s then). Go
+  (`agent_figures.go`) takes the figure images the converted markdown
+  actually references: the converter keeps `figure:<id>` as the image node's
+  `assetId` (`markdownConvert.ts`), and Go points each at an editor asset
+  whose id derives from the tool call (`store.ChatAssetID(message,
+  call/figure/<id>)`), filling `name`, `contentType` and `sizeBytes` as an
+  upload's node carries them (`materialdoc.ResolveFigureRefs`); a reference
+  the request did not render is refused by name. Each image must be a JPEG
+  within the payer's plan image cap (else `quota_rejected`), is written at
+  `editor-assets/<asset id>/<blob>.jpg` and becomes a `ready` editor asset of
+  the note in a transaction that gates its bytes against the payer's quota:
+  for `create_material` the note's own transaction (`MaterialDraft.Assets`),
+  for an edit `EnsureAgentAssets` before the blocks are sent, like the
+  embedded rows. A replay returns the receipt before anything is stored; a
+  concurrent duplicate or a failed insert deletes the objects it wrote, a
+  retried edit reuses its assets, and a refused edit trashes the ones its
+  note does not reference (`DiscardAgentAssets`). From then on they are
+  ordinary note images (pruning, trash, children pass, clones, quota).
+  Request identity covers each figure's id and image digest.
 - **Answer.** A build turn ends like any turn: an OpenUI Lang answer
   (`LangRenderer`) listing the materials made, cited under the usual rules. The
   attribution the user sees for library content is the provenance footer on
@@ -2526,7 +2566,11 @@ build, and the knowledge library is one more source while the switch is on.
   `materials/<id>.json` under the run through `tools.ledger_write`, quizzes
   pass `server/cmd/quizcheck` and note fences are checked as the editor import
   will take them; `tools.store_ledger` is stubbed and `run.json` holds the
-  ledger, under `stored` exactly what the gateway would persist. The bank tools
+  ledger, under `stored` exactly what the gateway would persist. A note's
+  library figures go through `tools.note_figures` and the production render;
+  each crop is kept as `assets/<figure id>.jpg` under the run and recorded on
+  the material (`figures`), which the preview shows with its caption
+  (`AssetUrlContext` maps `figure:<id>` to the file). The bank tools
   read a local restore (`CAPY_PLAYGROUND_BANK_URL`), never the live bank, and
   decks (`create_deck`, `write_slide`, made the ppt-master way per `lab/playground/DECKS.md`) exist only there. Details, including
   the tool-description overrides and run restoration, are in
@@ -2550,7 +2594,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `create_ledger` | conversation ledger | Offered to any turn with `material.create`. String todos add IDs, `{id, todo}` adds or overwrites that ID. Unmentioned todos remain, max ten unfinished. Repeated edits are allowed but only the first changed plan in a turn counts as progress. Retains no source evidence |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |

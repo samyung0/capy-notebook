@@ -34,16 +34,19 @@ export function sanitizeLinks(
   );
 }
 
-/** Deserialize with the editor's markdown rules, then sanitize links. */
+/** Deserialize with the editor's markdown rules, then sanitize links.
+ * `transform` reshapes the deserialized nodes before the document check. */
 export function importMarkdownValue(
   editor: SlateEditor,
-  source: string
+  source: string,
+  transform?: (value: MaterialValue) => MaterialValue
 ): MaterialDocument {
   const api = (
     editor.getApi as unknown as (plugin: typeof MarkdownPlugin) => MarkdownApi
   )(MarkdownPlugin);
+  const value = api.markdown.deserialize(source);
   return sanitizeLinks(
     editor,
-    createMaterialDocument(api.markdown.deserialize(source))
+    createMaterialDocument(transform ? transform(value) : value)
   );
 }

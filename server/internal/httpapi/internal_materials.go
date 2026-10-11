@@ -54,6 +54,9 @@ type internalMaterialReq struct {
 	// Library attribution resolved by the retrieval service from the excerpt
 	// ids the model named. Absent for a workspace material.
 	Provenance *store.Provenance `json:"provenance"`
+	// The library figures a note's markdown places, rendered by the retrieval
+	// service; each becomes an editor asset of the note.
+	Figures []agentFigure `json:"figures"`
 	// FromBank is set by the bank copy route, never by a request body: the
 	// questions come from the bank, so the workspace needs no indexed content.
 	FromBank bool `json:"-"`
@@ -61,12 +64,12 @@ type internalMaterialReq struct {
 
 // hashPayload is the normalized request identity: everything the model chose.
 func (r internalMaterialReq) hashPayload() map[string]any {
-	return map[string]any{
+	return hashFigures(map[string]any{
 		"kind": r.Kind, "title": strings.TrimSpace(r.Title), "questions": r.Questions,
 		"cards": r.Cards, "content": r.Content,
 		"fileIds": r.FileIDs, "chapterIds": r.ChapterIDs, "provenance": r.Provenance,
 		"chapterId": r.ChapterID,
-	}
+	}, r.Figures)
 }
 
 const (
@@ -177,6 +180,10 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "unsupported material kind " + req.Kind})
 		return
 	}
+	if len(req.Figures) > 0 && req.Kind != "note" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "only a note shows figures"})
+		return
+	}
 	ctx := r.Context()
 	actorStatus, err := a.s.AccountAccess(ctx, req.UserID)
 	if err != nil {
@@ -272,9 +279,11 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		cards = append(cards, [2]string{c.Front, c.Back})
 	}
 	content, embedded := req.Content, []store.EmbeddedDraft(nil)
+	var assets []store.AgentAsset
 	if req.Kind == "note" {
+		figures := newAgentFigures(req.AssistantMessageID, req.ToolCallID, req.Figures)
 		var ok bool
-		if content, embedded, ok = a.convertAgentNote(w, r, req); !ok {
+		if content, embedded, ok = a.convertAgentNote(w, r, req, figures); !ok {
 			return
 		}
 		// A note always has text beside its fences and cannot say which
@@ -283,17 +292,33 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		for i := range embedded {
 			embedded[i].Provenance = req.Provenance
 		}
+		// Its figures are stored first and inserted with it, charged to the
+		// workspace owner like the note.
+		if len(figures.used) > 0 {
+			imageMaxBytes, err := a.s.ImageMaxBytes(ctx, ws.OwnerUserID)
+			if err != nil {
+				a.fail(w, err)
+				return
+			}
+			if assets, err = a.putAgentFigures(ctx, figures, imageMaxBytes); err != nil {
+				a.failDocument(w, err)
+				return
+			}
+		}
 	}
-	op, err := a.s.CreateMaterialOperation(ctx, store.MaterialDraft{
+	op, created, err := a.s.CreateMaterialOperation(ctx, store.MaterialDraft{
 		ID: store.ChatMaterialID(req.AssistantMessageID, req.ToolCallID), ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, WorkspaceName: ws.Name, Kind: store.MaterialKind(req.Kind), Title: title,
-		Questions: req.Questions, Cards: cards, Content: content, Embedded: embedded, ChapterID: chapterID,
-		ScopeChapters: chapterNames, ScopeFileNames: fileNames, Provenance: req.Provenance,
+		Questions: req.Questions, Cards: cards, Content: content, Embedded: embedded, Assets: assets,
+		ChapterID: chapterID, ScopeChapters: chapterNames, ScopeFileNames: fileNames, Provenance: req.Provenance,
 	}, store.AgentOperation{
 		ID: opID, ToolVersion: 1, RequestHash: hash, ActorUserID: req.UserID,
 		WorkspaceID: req.WorkspaceID, ConversationID: convID,
 		MessageID: req.AssistantMessageID, CallID: req.ToolCallID,
 	})
+	if err != nil || !created {
+		a.deleteAgentAssets(ctx, assets)
+	}
 	if err != nil {
 		if errors.Is(err, store.ErrEmptyMaterial) {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
@@ -313,10 +338,10 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 
 // convertAgentNote turns the agent's note markdown into the editor's document
 // through the collaboration service, with each quiz or flashcards fence
-// pointed at the row created beside the note. The row ids derive from the
-// tool call, so a replay creates nothing twice. ok is false once a response
-// has been written.
-func (a *api) convertAgentNote(w http.ResponseWriter, r *http.Request, req internalMaterialReq) (string, []store.EmbeddedDraft, bool) {
+// pointed at the row created beside the note and each figure at its asset.
+// The ids derive from the tool call, so a replay creates nothing twice. ok is
+// false once a response has been written.
+func (a *api) convertAgentNote(w http.ResponseWriter, r *http.Request, req internalMaterialReq, figures *agentFigures) (string, []store.EmbeddedDraft, bool) {
 	converted, err := a.s.ConvertAgentMarkdown(r.Context(), req.Content)
 	var refusal *store.EditRefusal
 	if errors.As(err, &refusal) {
@@ -332,6 +357,13 @@ func (a *api) convertAgentNote(w http.ResponseWriter, r *http.Request, req inter
 		ids[i] = store.ChatMaterialID(req.AssistantMessageID, fmt.Sprintf("%s/embedded/%d", req.ToolCallID, i))
 	}
 	content, err := materialdoc.ResolvePendingRefs(string(converted.Document), ids)
+	if err == nil {
+		content, err = figures.resolve(content)
+	}
+	if errors.As(err, &refusal) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": string(refusal.Code), "message": refusal.Message})
+		return "", nil, false
+	}
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": err.Error()})
 		return "", nil, false

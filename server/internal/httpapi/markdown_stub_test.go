@@ -7,9 +7,10 @@ import (
 )
 
 // withConverter stands in for the collaboration service's markdown converter
-// in front of next: each blank-line-separated block becomes a paragraph, and a
+// in front of next: each blank-line-separated block becomes a paragraph, a
 // ```quiz or ```flashcards fence whose body is JSON becomes a pending
-// reference with its draft, the shape the real converter returns.
+// reference with its draft, and `![caption](figure:<id>)` becomes an image
+// whose assetId is the figure reference, the shapes the real converter returns.
 func withConverter(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/internal/markdown/convert" {
@@ -37,6 +38,13 @@ func withConverter(next http.Handler) http.Handler {
 				value = append(value, map[string]any{
 					"type": "material_ref", "id": "ref_" + string(rune('a'+i)), "materialId": "",
 					"refKind": kind, "pending": body, "children": []any{map[string]any{"text": ""}},
+				})
+				continue
+			}
+			if caption, ref, ok := strings.Cut(strings.TrimPrefix(block, "!["), "](figure:"); ok && strings.HasPrefix(block, "![") {
+				value = append(value, map[string]any{
+					"type": "img", "id": "block_" + string(rune('a'+i)), "assetId": "figure:" + strings.TrimSuffix(ref, ")"),
+					"caption": []any{map[string]any{"text": caption}}, "children": []any{map[string]any{"text": ""}},
 				})
 				continue
 			}

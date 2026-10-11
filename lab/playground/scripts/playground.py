@@ -406,6 +406,11 @@ async def create_material_locally(
     from pipeline.retrieval import tools
 
     kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
+    content = str(args.get("content") or "")
+    figures = await tools.note_figures(ctx, [content] if kind == "note" else [])
+    if isinstance(figures, tools.ToolResult):
+        return figures
+    args = figures.credited(args)
     prepared = await tools.ledger_write(ctx, "create_material", args)
     if isinstance(prepared, tools.ToolResult):
         return prepared
@@ -413,19 +418,23 @@ async def create_material_locally(
     if kind == "quiz":
         problem = await check_quiz(args.get("questions") or [])
     else:
-        problem = await check_note(str(args.get("content") or ""))
+        problem = await check_note(content)
     if problem:
         return tools._refused(f"create_material: {problem}")
+    saved = await save_figures(state, figures)
+    if isinstance(saved, tools.ToolResult):
+        return saved
     rid, title = material_id(message_id, call_id), str(args.get("title") or "").strip()
     record = {
         "id": rid,
         "kind": kind,
         "title": title,
-        "content": args.get("content") or "",
+        "content": figures.markdown[0] if figures.markdown else content,
         "cards": args.get("cards") or [],
         "questions": args.get("questions") or [],
         "excerpt_ids": [str(e) for e in (args.get("excerpt_ids") or [])],
         "provenance": {"books": books} if books else None,
+        "figures": saved,
         "chapter_id": args.get("chapter_id") or None,
         "size": material_size(kind, args),
         "edits": [],
@@ -447,7 +456,23 @@ async def create_material_locally(
         }
     )
     ctx.ledger.complete(todo)
-    return result
+    return figures.noted(result)
+
+
+async def save_figures(state: dict[str, Any], figures) -> dict[str, Any]:
+    """Render the figures a write places with the production renderer and keep
+    each under the run's assets/, where the gateway would store the note's
+    image; the material records them by figure id for the preview."""
+    images = await figures.render()
+    if not isinstance(images, dict):
+        return images
+    saved = {}
+    for ref, image in images.items():
+        path = state["run_dir"] / "assets" / f"{ref}.jpg"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(image)
+        saved[ref] = {"file": f"assets/{ref}.jpg", "bytes": len(image)}
+    return saved
 
 
 async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
@@ -463,16 +488,33 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
             f"edit_document: {rid} is not a material this run created.",
             code="unavailable_target",
         )
+    commands = list(args.get("commands") or [])
+    placing = [
+        i
+        for i, c in enumerate(commands)
+        if c.get("type") in ("insert_markdown", "replace_block")
+    ]
+    figures = await tools.note_figures(
+        ctx, [str(commands[i].get("markdown") or "") for i in placing]
+    )
+    if isinstance(figures, tools.ToolResult):
+        return figures
+    args = figures.credited(args)
     prepared = await tools.ledger_write(ctx, "edit_document", args)
     if isinstance(prepared, tools.ToolResult):
         return prepared
     books, todo = prepared
-    commands = list(args.get("commands") or [])
     problem = await check_note(
         "\n".join(str(c.get("markdown") or "") for c in commands)
     )
     if problem:
         return tools._refused(f"edit_document: {problem}")
+    saved = await save_figures(state, figures)
+    if isinstance(saved, tools.ToolResult):
+        return saved
+    for i, markdown in zip(placing, figures.markdown, strict=True):
+        commands[i] = {**commands[i], "markdown": markdown}
+    record["figures"] = {**(record.get("figures") or {}), **saved}
     record["edits"].extend(commands)
     record["content"] = "\n".join(
         part
@@ -505,7 +547,7 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
         }
     )
     ctx.ledger.complete(todo)
-    return result
+    return figures.noted(result)
 
 
 async def deck_locally(
@@ -1875,6 +1917,14 @@ def build_app(target: str):
             raise HTTPException(404)
         return FileResponse(path)
 
+    @app.get("/api/runs/{run_id}/assets/{name}")
+    def get_asset(run_id: str, name: str):
+        """A figure a note placed, as the note stores it (save_figures)."""
+        path = RUNS / run_id / "assets" / name
+        if path.parent.parent.parent != RUNS or not path.exists():
+            raise HTTPException(404)
+        return FileResponse(path)
+
     @app.get("/api/runs/{run_id}/slides/{deck_id}/{n}.svg")
     def get_slide(run_id: str, deck_id: str, n: int):
         """A written slide as one image: an <img> loads nothing an SVG links,
@@ -2067,6 +2117,59 @@ def check_copy() -> None:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 
 
+def check_figures() -> None:
+    """A note placing a library figure keeps its render under the run's
+    assets/ and records it for the preview; an edit adds its own."""
+    from dataclasses import replace
+    from tempfile import TemporaryDirectory
+    from unittest.mock import patch
+
+    from pipeline.retrieval import library, tools
+
+    figure = library.Figure(
+        id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500], label="Figure 1",
+        credit="CC BY 4.0", decorative=False, excluded=False, withheld=False,
+        object_key="books/x.pdf", bytes=1, excerpt_ids=["exc_1"],
+    )
+
+    async def figures(ids):
+        return {i: replace(figure, id=i) for i in ids}
+
+    async def render(*_args):
+        return b"\xff\xd8\xffjpeg", [0, 0, 500, 500], (1, 1)
+
+    async def provenance(excerpt_ids):
+        return [{"id": "b", "title": "B", "excerptIds": list(excerpt_ids), "version": 1}]
+
+    async def flow(run_dir: Path) -> None:
+        ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS, library=True)
+        ctx.ledger.note_read("exc_1", 0, "1.1")
+        state = {"materials": [], "captures": [], "run_dir": run_dir}
+        made = await create_material_locally(
+            {"kind": "note", "content": "# A\n\n![](figure:fig_1)", "_tool_call_id": "c1"}, ctx, state, "m1"
+        )
+        assert not made.refused, made.text()
+        note = state["materials"][-1]
+        assert note["content"] == "# A\n\n![Figure 1 (CC BY 4.0)](figure:fig_1)"
+        assert note["figures"] == {"fig_1": {"file": "assets/fig_1.jpg", "bytes": 7}}
+        assert (run_dir / "assets" / "fig_1.jpg").read_bytes() == b"\xff\xd8\xffjpeg"
+        assert note["provenance"]["books"][0]["excerptIds"] == ["exc_1"]
+        edited = await edit_material_locally(
+            {"target": {"kind": "material", "id": note["id"]}, "excerpt_ids": ["exc_1"],
+             "commands": [{"type": "insert_markdown", "markdown": "![x](figure:fig_2)"}]},
+            ctx, state,
+        )
+        assert not edited.refused and set(note["figures"]) == {"fig_1", "fig_2"}, edited.text()
+
+    with (
+        TemporaryDirectory() as tmp,
+        patch.object(library, "figures", new=figures),
+        patch.object(library, "provenance", new=provenance),
+        patch("pipeline.retrieval.capture.render_knowledge", new=render),
+    ):
+        asyncio.run(flow(Path(tmp) / "runs" / "r1"))
+
+
 def check() -> None:
     assert merged({"search": {"top_k": 3}})["search"] == {
         **DEFAULT_CONFIG["search"],
@@ -2145,6 +2248,7 @@ def check() -> None:
         assert says in asyncio.run(check_note(bad)), bad
     check_decks()
     check_copy()
+    check_figures()
     # Preview requests must not inherit the monkeypatches of an active turn.
     from tempfile import TemporaryDirectory
     from unittest.mock import AsyncMock, patch

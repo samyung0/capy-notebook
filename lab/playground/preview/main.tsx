@@ -22,6 +22,7 @@ import {
 } from '@/features/materials/document';
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
+import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { convertAgentMarkdown } from '@/features/notes/markdownConvert';
 import { ThemeProvider } from '@/theme/ThemeProvider';
 
@@ -36,6 +37,9 @@ type Saved = {
   deck?: { slides: { brief: string; svg: string | null; title: string }[] };
   pptx?: string;
   provenance?: Provenance | null;
+  /** Library figures the note placed, by figure id: the image the app would
+   * store as the note's asset, saved under the run. */
+  figures?: Record<string, { bytes: number; file: string }> | null;
 };
 
 /** Each pending quiz or flashcards reference drawn in place; a fence the
@@ -136,11 +140,22 @@ function Deck({ run, saved }: { run: string; saved: Saved }) {
   );
 }
 
+/** A figure image keeps its `figure:<id>` reference here (the gateway would
+ * swap in the asset it stores); its saved file stands in for the asset. */
+function figureUrl(run: string, saved: Saved) {
+  return (assetId: string) => {
+    const file = assetId.startsWith('figure:')
+      ? saved.figures?.[assetId.slice('figure:'.length)]?.file
+      : undefined;
+    return file && `/api/runs/${encodeURIComponent(run)}/${file}`;
+  };
+}
+
 function Preview({ run, saved }: { run: string; saved: Saved }) {
   if (saved.kind === 'deck') return <Deck run={run} saved={saved} />;
   const { document, problems } = documentFor(saved);
   return (
-    <>
+    <AssetUrlContext.Provider value={figureUrl(run, saved)}>
       {problems.map((problem) => (
         <p
           className="mx-5 mt-4 rounded-card border border-solid-error/30 p-3 text-solid-error text-sm"
@@ -159,7 +174,7 @@ function Preview({ run, saved }: { run: string; saved: Saved }) {
       <MaterialAttributionFooter
         provenance={saved.provenance?.books ? saved.provenance : undefined}
       />
-    </>
+    </AssetUrlContext.Provider>
   );
 }
 

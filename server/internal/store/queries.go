@@ -1284,7 +1284,10 @@ type MaterialDraft struct {
 	ChapterName string
 	// A note's embedded quizzes and flashcard sets, created with it; their
 	// references in Content already point at the draft ids.
-	Embedded       []EmbeddedDraft
+	Embedded []EmbeddedDraft
+	// A note's images an agent placed (library figures), stored before the
+	// transaction and inserted with the note as its ready editor assets.
+	Assets         []AgentAsset
 	ScopeChapters  []string
 	ScopeFileNames []string
 	Color          UserColor
@@ -1391,30 +1394,42 @@ func (s *Store) CreateMaterialDraft(ctx context.Context, draft MaterialDraft) (M
 // operation id is serialized across replicas: a committed receipt with the
 // same request hash is returned as-is, a different request conflicts, and an
 // in-flight duplicate waits on the advisory lock instead of inserting twice.
-func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft, op AgentOperation) (AgentOperation, error) {
+// created is false when the receipt was already there, so the caller deletes
+// the objects of the draft's assets.
+func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft, op AgentOperation) (_ AgentOperation, created bool, _ error) {
 	mt, err := draft.material()
 	if err != nil {
-		return AgentOperation{}, err
+		return AgentOperation{}, false, err
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return AgentOperation{}, err
+		return AgentOperation{}, false, err
 	}
 	defer tx.Rollback(ctx)
 	existing, err := lockAgentOperationTx(ctx, tx, op.ID, op.RequestHash)
 	if err != nil {
-		return AgentOperation{}, err
+		return AgentOperation{}, false, err
 	}
 	if existing != nil {
-		return *existing, nil
+		return *existing, false, nil
 	}
 	id, err := s.createMaterialTx(ctx, tx, mt)
 	if err != nil {
-		return AgentOperation{}, err
+		return AgentOperation{}, false, err
 	}
 	mt.ID = id
 	if err := s.createEmbeddedTx(ctx, tx, mt, draft.Embedded); err != nil {
-		return AgentOperation{}, err
+		return AgentOperation{}, false, err
+	}
+	if len(draft.Assets) > 0 {
+		// createMaterialTx locked the note's scope; its payer pays for the images.
+		var ownerID string
+		if err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, id).Scan(&ownerID); err != nil {
+			return AgentOperation{}, false, err
+		}
+		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, ownerID, draft.ActorUserID, draft.Assets); err != nil {
+			return AgentOperation{}, false, err
+		}
 	}
 	op.Kind = "create_material"
 	op.Outcome = agenttools.OutcomeSucceeded
@@ -1428,12 +1443,12 @@ func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft
 		},
 	}
 	if err := insertAgentOperationTx(ctx, tx, op); err != nil {
-		return AgentOperation{}, err
+		return AgentOperation{}, false, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return AgentOperation{}, err
+		return AgentOperation{}, false, err
 	}
-	return op, nil
+	return op, true, nil
 }
 
 // ReplayAgentOperation returns the committed receipt for an operation id when

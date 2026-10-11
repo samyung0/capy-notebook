@@ -1045,6 +1045,69 @@ async def capture_target(excerpt_id: str) -> CaptureTarget:
     )
 
 
+@dataclass
+class Figure:
+    """A current library figure a note may show: where the book prints it,
+    its notes, whether the library shows it at all, and the excerpts that list
+    it (the reads that let a write use it)."""
+
+    id: str
+    book_title: str
+    page: int
+    bbox: list[float]
+    label: str
+    credit: str
+    decorative: bool
+    excluded: bool
+    # Its page holds a reprinted text the library withholds.
+    withheld: bool
+    object_key: str
+    bytes: int
+    excerpt_ids: list[str]
+
+
+async def figures(figure_ids: list[str]) -> dict[str, Figure]:
+    """The current figures among these ids, by id; an unknown id is absent."""
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT f.id, b.title, f.page, f.bbox, f.label, f.credit, f.decorative,
+                   f.excluded, f.page = ANY(b.withheld_pages) AS withheld,
+                   v.object_key, b.bytes,
+                   ARRAY(SELECT e.id FROM library_excerpts e
+                         WHERE e.content_id = f.content_id AND f.id = ANY(e.figure_ids)
+                         ORDER BY e.id) AS excerpt_ids
+            FROM library_figures f
+            JOIN rag_file_contents fc
+              ON fc.content_id = f.content_id AND fc.workspace_id = %s
+            JOIN library_books b ON b.id = f.book_id
+            JOIN library_book_versions v
+              ON v.book_id = b.id AND v.version = b.version
+            WHERE f.id = ANY(%s)
+            """,
+            (WORKSPACE, list(figure_ids)),
+        )
+        rows = await cur.fetchall()
+    return {
+        row["id"]: Figure(
+            id=row["id"],
+            book_title=row["title"],
+            page=int(row["page"]),
+            bbox=[float(v) for v in row["bbox"]],
+            label=row["label"],
+            credit=row["credit"],
+            decorative=row["decorative"],
+            excluded=row["excluded"],
+            withheld=bool(row["withheld"]),
+            object_key=row["object_key"] or "",
+            bytes=int(row["bytes"] or 0),
+            excerpt_ids=list(row["excerpt_ids"]),
+        )
+        for row in rows
+    }
+
+
 async def provenance(excerpt_ids: list[str]) -> list[dict[str, Any]]:
     """Attribution for the books behind these excerpts, one entry per book.
 

@@ -243,3 +243,121 @@ async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):
     )
     bare = (await tools._read_knowledge({"excerpt_id": "e_2"}, ctx)).text()
     assert "Figures:" not in bare and bare.endswith("Residuals.\n\n(end of excerpt)")
+
+
+# ------------------------------------------------------------ figures in notes
+
+
+async def test_figures_say_whether_the_library_shows_them(library_db):
+    found = await library.figures(["fig_1", "fig_missing"])
+    assert list(found) == ["fig_1"]
+    figure = found["fig_1"]
+    assert (figure.page, figure.object_key, figure.excerpt_ids) == (
+        7,
+        "books/sha.pdf",
+        ["e_intro"],
+    ), "the current version's figure, with the excerpt that lists it"
+    assert not (figure.withheld or figure.excluded or figure.decorative)
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_books SET withheld_pages = '{7}' WHERE id = 'ahss'"
+        )
+    assert (await library.figures(["fig_1"]))["fig_1"].withheld
+
+
+def _figure_writes(monkeypatch):
+    """A Library-on context whose renders and gateway posts are recorded."""
+    from test_agent import _created, _gateway_receipt, _library_ctx
+
+    ctx = _library_ctx(monkeypatch)
+    rendered: list[tuple] = []
+
+    async def _render(object_key, size, page, bbox, max_edge):
+        rendered.append((object_key, page, bbox))
+        return b"\xff\xd8\xffjpeg", bbox, (1, 1)
+
+    monkeypatch.setattr(tools.capture, "render_knowledge", _render)
+    sent = _gateway_receipt(monkeypatch, _created("mat_1", "Fit"))
+    return ctx, rendered, sent
+
+
+async def test_a_note_shows_a_figure_it_read_with_the_printed_credit(
+    library_db, monkeypatch
+):
+    with psycopg.connect(library_db, autocommit=True) as conn:
+        conn.execute(
+            "UPDATE library_figures SET label = 'Figure 1: [Scatter] plot', "
+            "credit = 'CC BY-SA, OpenIntro' WHERE id = 'fig_1'"
+        )
+    ctx, rendered, sent = _figure_writes(monkeypatch)
+    note = {
+        "kind": "note",
+        "content": "# Fit\n\n![](figure:fig_1)\n\n![a cell](https://e.com/c.png)",
+        "_tool_call_id": "c1",
+    }
+
+    unread = await tools._create_material(note, ctx)
+    assert unread.refused and "e_intro" in unread.text() and not sent
+
+    ctx.ledger.note_read("e_intro", 0, "8.1")
+    result = await tools._create_material(note, ctx)
+    assert not result.refused, result.text()
+    body = sent[0]
+    assert body["content"] == (
+        "# Fit\n\n![Figure 1: \\[Scatter\\] plot (CC BY-SA, OpenIntro)](figure:fig_1)"
+        "\n\n![a cell](https://e.com/c.png)"
+    ), "the caption is the printed label and credit"
+    assert body["figures"] == [{"id": "fig_1", "image": "/9j/anBlZw=="}]
+    assert rendered == [("books/sha.pdf", 7, [0.0, 0.0, 10.0, 10.0])]
+    assert body["provenance"]["books"][0]["excerptIds"] == ["e_intro"], (
+        "the figure's excerpt is credited without being named"
+    )
+    assert "1 image(s) with a web URL became links" in result.text()
+
+
+async def test_figures_the_library_does_not_show_refuse_the_write(
+    library_db, monkeypatch
+):
+    ctx, rendered, sent = _figure_writes(monkeypatch)
+    ctx.ledger.note_read("e_intro", 0, "8.1")
+    edit = {
+        "target": {"kind": "material", "id": "mat_1"},
+        "commands": [
+            {
+                "type": "insert_markdown",
+                "after_block_id": None,
+                "markdown": "![x](figure:fig_1)",
+            }
+        ],
+        "excerpt_ids": ["e_intro"],
+        "_tool_call_id": "c2",
+    }
+
+    def figure(*sql: str) -> None:
+        with psycopg.connect(library_db, autocommit=True) as conn:
+            for statement in sql:
+                conn.execute(statement)
+
+    for change, reason in (
+        ("UPDATE library_figures SET excluded = true", "is not shown by the library"),
+        ("UPDATE library_figures SET decorative = true", "is not shown by the library"),
+        ("UPDATE library_excerpts SET figure_ids = '{}'", "is listed by no excerpt"),
+        (
+            "UPDATE library_books SET withheld_pages = '{7}'",
+            "is on a page the library withholds",
+        ),
+    ):
+        figure(change)
+        result = await tools._edit_document(edit, ctx)
+        assert result.refused and f"fig_1 {reason}" in result.text(), change
+        figure(
+            "UPDATE library_figures SET excluded = false, decorative = false",
+            "UPDATE library_excerpts SET figure_ids = '{fig_1}' WHERE id = 'e_intro'",
+            "UPDATE library_books SET withheld_pages = '{}'",
+        )
+    assert not rendered and not sent
+
+    placed = await tools._edit_document(edit, ctx)
+    assert not placed.refused, placed.text()
+    assert sent[0]["figures"][0]["id"] == "fig_1"
+    assert sent[0]["commands"][0]["markdown"] == "![x](figure:fig_1)"

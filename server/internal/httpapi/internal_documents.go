@@ -346,6 +346,9 @@ type internalDocumentsEditReq struct {
 	// service from the excerpt ids the model named. It is appended to the
 	// material's stored record; absent for a workspace edit.
 	Provenance *store.Provenance `json:"provenance"`
+	// The library figures the commands' markdown places, rendered by the
+	// retrieval service; each becomes an editor asset of the note.
+	Figures []agentFigure `json:"figures"`
 }
 
 func (a *api) internalEditDocument(w http.ResponseWriter, r *http.Request) {
@@ -379,9 +382,9 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		return
 	}
 	opID := store.ChatOperationID(req.AssistantMessageID, req.ToolCallID)
-	hash, err := store.RequestHash(map[string]any{
+	hash, err := store.RequestHash(hashFigures(map[string]any{
 		"target": req.Target, "commands": req.Commands, "provenance": req.Provenance,
-	})
+	}, req.Figures))
 	if err != nil {
 		a.fail(w, err)
 		return
@@ -407,6 +410,8 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	// discarded unless the edit commits or its outcome is unknown, so a refused
 	// edit leaves no hidden rows behind.
 	var embedded []string
+	// The figure assets the edit added, discarded on the same terms.
+	var assets []string
 	discard := true
 	defer func() {
 		if discard && len(embedded) > 0 {
@@ -414,7 +419,16 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 				obs.Log(ctx).Warn("refused edit left its embedded rows", "note_id", req.Target.ID, "error", err)
 			}
 		}
+		if discard && len(assets) > 0 {
+			if err := a.s.DiscardAgentAssets(context.WithoutCancel(ctx), req.Target.ID, assets); err != nil {
+				obs.Log(ctx).Warn("refused edit left its figure assets", "note_id", req.Target.ID, "error", err)
+			}
+		}
 	}()
+	if len(req.Figures) > 0 && req.Target.Kind != agenttools.KindMaterial {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "only a note shows figures"})
+		return
+	}
 	switch req.Target.Kind {
 	case agenttools.KindMaterial:
 		mt, err := a.s.GetMaterial(ctx, req.Target.ID)
@@ -423,9 +437,10 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 			return
 		}
 		var drafts []store.EmbeddedDraft
+		figures := newAgentFigures(req.AssistantMessageID, req.ToolCallID, req.Figures)
 		written, markdownCommands := 0, 0
 		normalized, err = normalizeMaterialCommands(string(mt.Kind), req.Commands, func(i int, markdown string) ([]any, error) {
-			blocks, fences, err := a.noteBlocksFromMarkdown(ctx, req, i, markdown)
+			blocks, fences, err := a.noteBlocksFromMarkdown(ctx, req, i, markdown, figures)
 			drafts = append(drafts, fences...)
 			written += len(blocks)
 			markdownCommands++
@@ -474,6 +489,14 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 				return
 			}
 			embedded = append(embedded, draft.ID)
+		}
+		// Like the rows, the figures' assets exist before the blocks that
+		// reference them are inserted.
+		if len(figures.used) > 0 {
+			if assets, err = a.ensureFigureAssets(ctx, req, figures); err != nil {
+				a.failDocument(w, err)
+				return
+			}
 		}
 	case agenttools.KindSourceFile:
 		if req.Provenance != nil {
@@ -549,7 +572,7 @@ func (a *api) checkFooterLicence(ctx context.Context, mt store.Material, merged,
 // with ids derived from the tool call and command, so a retried edit finds
 // their rows instead of creating them again; the caller creates the rows
 // before the reference blocks are inserted, the order the editor uses.
-func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsEditReq, command int, markdown string) ([]any, []store.EmbeddedDraft, error) {
+func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsEditReq, command int, markdown string, figures *agentFigures) ([]any, []store.EmbeddedDraft, error) {
 	converted, err := a.s.ConvertAgentMarkdown(ctx, markdown)
 	if err != nil {
 		return nil, nil, err
@@ -561,6 +584,9 @@ func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsE
 	content, err := materialdoc.ResolvePendingRefs(string(converted.Document), ids)
 	if err != nil {
 		return nil, nil, refusal(agenttools.ErrInvalidInput, "%s", strings.TrimPrefix(err.Error(), materialdoc.ErrInvalid.Error()+": "))
+	}
+	if content, err = figures.resolve(content); err != nil {
+		return nil, nil, err
 	}
 	doc, err := materialdoc.Parse(content)
 	if err != nil {

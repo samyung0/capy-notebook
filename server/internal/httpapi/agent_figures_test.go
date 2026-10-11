@@ -1,0 +1,164 @@
+package httpapi_test
+
+import (
+	"bytes"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/blob"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+)
+
+// fakeJPEG passes the editor-asset JPEG signature check.
+func fakeJPEG(size int) []byte {
+	return append([]byte{0xff, 0xd8, 0xff, 0xe0}, bytes.Repeat([]byte{7}, size)...)
+}
+
+func assetObjects(t *testing.T, mem *blob.Memory, assetID string) int {
+	t.Helper()
+	listing, err := mem.ListObjects(t.Context(), "editor-assets/"+assetID+"/", "", 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return len(listing.Keys)
+}
+
+// A library figure an agent places in a note becomes the note's own editor
+// asset, charged to the workspace owner like an upload: stored once per tool
+// call (a replay stores nothing again), and only for the figures the
+// markdown uses.
+func TestAgentNoteStoresItsFiguresAsAssets(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	ctx := t.Context()
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	image := fakeJPEG(2000)
+	body := noteBody(msgID, "call_fig_note", "Figures "+msgID,
+		"# Neurons\n\n![Figure 16.10: The action potential (CC BY 4.0)](figure:fig_a)")
+	body["figures"] = []map[string]any{{"id": "fig_a", "image": image}, {"id": "fig_unused", "image": image}}
+	for range 2 {
+		if rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, body); rec.Code != http.StatusOK {
+			t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+		}
+	}
+	noteID := store.ChatMaterialID(msgID, "call_fig_note")
+	cleanupMaterial(t, st, noteID)
+
+	assetID := store.ChatAssetID(msgID, "call_fig_note/figure/fig_a")
+	var materialID, status, payer, owner string
+	var size int64
+	if err := st.Pool().QueryRow(ctx, `SELECT a.material_id, a.status, a.size_bytes, a.user_id, w.user_id
+		FROM editor_assets a JOIN workspaces w ON w.id=a.workspace_id WHERE a.id=$1`, assetID).
+		Scan(&materialID, &status, &size, &payer, &owner); err != nil {
+		t.Fatal(err)
+	}
+	if materialID != noteID || status != "ready" || size != int64(len(image)) || payer != owner {
+		t.Fatalf("asset = %s %s %d paid by %s, want the note's ready image paid by %s", materialID, status, size, payer, owner)
+	}
+	var assets int
+	if err := st.Pool().QueryRow(ctx, `SELECT count(*) FROM editor_assets WHERE material_id=$1`, noteID).Scan(&assets); err != nil {
+		t.Fatal(err)
+	}
+	if assets != 1 || assetObjects(t, mem, assetID) != 1 ||
+		assetObjects(t, mem, store.ChatAssetID(msgID, "call_fig_note/figure/fig_unused")) != 0 {
+		t.Fatalf("assets = %d, objects = %d, want the used figure stored once", assets, assetObjects(t, mem, assetID))
+	}
+	stored, err := st.GetMaterial(ctx, noteID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(stored.Content, assetID) || strings.Contains(stored.Content, "figure:") ||
+		!strings.Contains(stored.Content, "The action potential (CC BY 4.0)") {
+		t.Fatalf("content = %s, want the image pointing at its asset with its caption", stored.Content)
+	}
+}
+
+// A figure the write did not render, or one over the payer's image cap,
+// refuses the note and leaves nothing stored.
+func TestAgentNoteRefusesFiguresItCannotStore(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+
+	missing := noteBody(msgID, "call_fig_missing", "Missing "+msgID, "# A\n\n![x](figure:fig_gone)")
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, missing)
+	if rec.Code != http.StatusBadRequest || !strings.Contains(rec.Body.String(), "fig_gone") {
+		t.Fatalf("unrendered figure status = %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	large := noteBody(msgID, "call_fig_large", "Large "+msgID, "# A\n\n![x](figure:fig_big)")
+	large["figures"] = []map[string]any{{"id": "fig_big", "image": fakeJPEG(5 << 20)}}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, large)
+	var body struct {
+		Code string `json:"code"`
+	}
+	_ = json.Unmarshal(rec.Body.Bytes(), &body)
+	if rec.Code != http.StatusConflict || body.Code != "quota_rejected" {
+		t.Fatalf("over-cap figure status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	for _, call := range []string{"call_fig_missing", "call_fig_large"} {
+		if _, err := st.GetMaterial(t.Context(), store.ChatMaterialID(msgID, call)); err == nil {
+			t.Fatalf("%s created a note", call)
+		}
+	}
+	if listing, _ := mem.ListObjects(t.Context(), "editor-assets/", "", 10); len(listing.Keys) != 0 {
+		t.Fatalf("objects left = %+v", listing.Keys)
+	}
+}
+
+// An edit's figures are the note's assets before the blocks that reference
+// them reach the authority; a refused edit trashes them, and its retry
+// reuses them instead of storing them again.
+func TestAgentEditStoresFiguresBeforeTheirBlocks(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	assetID := store.ChatAssetID(msgID, "call_fig_edit/figure/fig_b")
+	var inserted []map[string]any
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Commands []struct {
+				Blocks []map[string]any `json:"blocks"`
+			} `json:"commands"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if _, err := st.GetEditorAsset(r.Context(), assetID); err != nil {
+			t.Errorf("the edit reached the authority before its asset: %v", err)
+		}
+		inserted = append(inserted, body.Commands[0].Blocks...)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"code":"stale_target","message":"retry"}`))
+	})))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_fig_edit_note", "Edit "+msgID, "# Lecture"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	noteID := store.ChatMaterialID(msgID, "call_fig_edit_note")
+	cleanupMaterial(t, st, noteID)
+	edit := map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"assistantMessageId": msgID, "toolCallId": "call_fig_edit",
+		"target":   map[string]any{"kind": "material", "id": noteID},
+		"commands": []map[string]any{{"type": "insert_markdown", "after_block_id": nil, "markdown": "![Figure 1 (Public domain)](figure:fig_b)"}},
+		"figures":  []map[string]any{{"id": "fig_b", "image": fakeJPEG(900)}},
+	}
+	for range 2 { // the authority refuses, so the second call is a retry
+		doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, edit)
+	}
+	if len(inserted) != 2 || inserted[0]["type"] != "img" || inserted[0]["assetId"] != assetID ||
+		inserted[1]["assetId"] != assetID {
+		t.Fatalf("inserted blocks = %+v, want the image pointing at %s both times", inserted, assetID)
+	}
+	asset, err := st.GetEditorAsset(t.Context(), assetID)
+	if err != nil || asset.MaterialID != noteID || !asset.Trashed {
+		t.Fatalf("asset = %+v (%v), want the note's, trashed after the refusal", asset, err)
+	}
+	if n := assetObjects(t, mem, assetID); n != 1 {
+		t.Fatalf("objects = %d, want the retry's second upload deleted", n)
+	}
+}
