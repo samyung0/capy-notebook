@@ -285,10 +285,26 @@ impl FrameCodec {
             }
             self.out_buffer.drain(0..len);
         }
+        // Patched for Capy: the room a large frame took is given back once it
+        // is written, so an idle socket does not keep a buffer the size of the
+        // largest message it was sent. Upstream keeps the capacity.
+        if self.out_buffer.capacity() > OUT_BUFFER_KEEP {
+            self.out_buffer.shrink_to_fit();
+        }
 
         Ok(())
     }
+
+    /// Patched for Capy: the write buffer's capacity, for the test that pins
+    /// the shrink.
+    pub(super) fn out_buffer_capacity(&self) -> usize {
+        self.out_buffer.capacity()
+    }
 }
+
+/// Patched for Capy: the most write-buffer capacity a socket keeps once its
+/// buffer is written.
+const OUT_BUFFER_KEEP: usize = 64 * 1024;
 
 #[cfg(test)]
 mod tests {

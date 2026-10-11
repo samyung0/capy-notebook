@@ -95,7 +95,9 @@ async fn fallback(
 /// is 128 KiB: 1.5 GiB for 10,000 idle sockets in the production capacity
 /// run). Presence and keystroke frames are a few hundred bytes; a larger
 /// frame reserves its own length and is read 8 KiB at a time. The write side
-/// allocates nothing up front, and each send flushes, so it holds one frame.
+/// allocates nothing up front, and each send flushes, so it holds one frame,
+/// and gives a large one's room back once written (the vendored tungstenite,
+/// `third_party/tungstenite`).
 const READ_BUFFER: usize = 8 * 1024;
 
 async fn healthz(State(app): State<Shared>) -> Response {
