@@ -10,10 +10,10 @@ import { createRoot } from 'react-dom/client';
 import '@/styles/tailwind.css';
 import type { MaterialKind, Provenance, Question } from '@/api/types';
 import { TooltipProvider } from '@/components/ui/Tooltip';
+import { parseFlashcardsFenceBody } from '@/features/materials/blocks';
 import {
   createMaterialDocument,
   flashcardsNode,
-  flashcardsNodeFromFence,
   isMaterialRefElement,
   type MaterialDocument,
   type MaterialNode,
@@ -46,7 +46,7 @@ function inlineFences(node: MaterialNode, problems: string[]): MaterialNode {
     try {
       return node.refKind === 'quiz'
         ? quizNodeFromFence(node.pending)
-        : flashcardsNodeFromFence(node.pending);
+        : flashcardsNode(parseFlashcardsFenceBody(node.pending).cards);
     } catch (error) {
       problems.push(`${node.refKind} fence: ${(error as Error).message}`);
       return node;
