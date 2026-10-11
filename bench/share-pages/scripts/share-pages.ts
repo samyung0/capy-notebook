@@ -27,6 +27,7 @@ import { chromium, type Page } from '@playwright/test';
 import lighthouse from 'lighthouse';
 import desktopConfig from 'lighthouse/core/config/desktop-config.js';
 import { signIn } from '../../../e2e/uat/support';
+import { buildBiologyLoadTestValue } from '../../../src/mocks/noteContent/loadTest';
 import { compareStyles } from './styles';
 
 const directory = path.dirname(fileURLToPath(import.meta.url));
@@ -56,7 +57,13 @@ if (
   throw new Error('UAT_APP_URL host is not present in UAT_ALLOWED_HOSTS');
 
 type Json = Record<string, unknown>;
-type Shared = { kind: string; path: string; publicApi: string };
+type Shared = {
+  kind: string;
+  path: string;
+  publicApi: string;
+  /** Compare the inlined CSS against the full stylesheets (default true). */
+  styles?: false;
+};
 
 /** An authenticated API call with a fresh Clerk session token. */
 async function api(
@@ -199,13 +206,13 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
           ? { ...node, children: without(node.children as Json[], types) }
           : node
       );
-  const sharedNote = async (types: string[], title: string) => {
+  const sharedNote = async (value: Json[], title: string) => {
     const note = await api(
       page,
       `/api/workspaces/${workspace.id}/materials`,
       'POST',
       {
-        content: { schemaVersion: 1, value: without(everyBlock.value, types) },
+        content: { schemaVersion: 1, value },
         kind: 'note',
         title: `${PREFIX} ${run} ${title}`,
       }
@@ -223,10 +230,19 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
     return sharePath;
   };
   const UNSHAREABLE = ['img', 'audio', 'file', 'material_ref'];
-  const notePath = await sharedNote(UNSHAREABLE, 'note');
+  const notePath = await sharedNote(
+    without(everyBlock.value, UNSHAREABLE),
+    'note'
+  );
   const serverOnlyPath = await sharedNote(
-    [...UNSHAREABLE, 'mermaid', 'html_embed'],
+    without(everyBlock.value, [...UNSHAREABLE, 'mermaid', 'html_embed']),
     'server-only note'
+  );
+  // The app's load-test note: every kind of block, padded to 95% of the
+  // 2 MB content limit (src/mocks/noteContent/loadTest.ts).
+  const nearLimitPath = await sharedNote(
+    without(buildBiologyLoadTestValue() as unknown as Json[], UNSHAREABLE),
+    'near-limit note'
   );
 
   const token = (sharePath: unknown) => String(sharePath).split('/').pop();
@@ -255,6 +271,14 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
       kind: 'notes-server-only',
       path: serverOnlyPath,
       publicApi: `/api/public/notes/${token(serverOnlyPath)}`,
+    },
+    {
+      kind: 'notes-near-limit',
+      path: nearLimitPath,
+      publicApi: `/api/public/notes/${token(nearLimitPath)}`,
+      // Its blocks are the every-block note's, and a page this tall is
+      // beyond a full-page screenshot.
+      styles: false,
     },
   ];
 }
@@ -599,6 +623,8 @@ const BUDGETS = {
   bytesKb: {
     flashcards: 480,
     notes: 720,
+    // Provisional: the notes budgets, until a developer signs off its own.
+    'notes-near-limit': 720,
     'notes-server-only': 480,
     quizzes: 520,
     workspace: 150,
@@ -610,6 +636,7 @@ const BUDGETS = {
   mobileLcpMs: {
     flashcards: 2500,
     notes: 3000,
+    'notes-near-limit': 3000,
     'notes-server-only': 3000,
     quizzes: 2500,
     workspace: 2500,
@@ -617,6 +644,7 @@ const BUDGETS = {
   mobileTbtMs: {
     flashcards: 250,
     notes: 450,
+    'notes-near-limit': 450,
     'notes-server-only': 100,
     quizzes: 300,
     workspace: 50,
@@ -787,7 +815,9 @@ function summary(
   );
   for (const page of results.pages)
     lines.push(
-      `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}${page.styles.noise.length ? ` (rendering noise, the full page differs from itself too: ${page.styles.noise.join('; ')})` : ''}`
+      page.styles === undefined
+        ? `- ${page.kind}: not compared (the every-block note's blocks; too tall for a full-page screenshot)`
+        : `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}${page.styles.noise.length ? ` (rendering noise, the full page differs from itself too: ${page.styles.noise.join('; ')})` : ''}`
     );
   lines.push(
     '',
@@ -837,12 +867,14 @@ async function run(page: Page) {
   const styles = [];
   for (const item of shared)
     styles.push(
-      await compareStyles(
-        page.context().browser()!,
-        `${appUrl}${item.path}`,
-        item.kind,
-        out
-      )
+      item.styles === false
+        ? undefined
+        : await compareStyles(
+            page.context().browser()!,
+            `${appUrl}${item.path}`,
+            item.kind,
+            out
+          )
     );
 
   const chrome = await chromium.launch({
@@ -951,7 +983,8 @@ try {
     results.forged.length > 0 ||
     results.pages.some(
       (item) =>
-        item.cache.failures.length > 0 || item.styles.differences.length > 0
+        item.cache.failures.length > 0 ||
+        (item.styles?.differences.length ?? 0) > 0
     );
 } finally {
   await cleanUp(page).catch((error) => {

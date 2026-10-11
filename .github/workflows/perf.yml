@@ -271,9 +271,10 @@ jobs:
     if: inputs.share_pages
     runs-on: ubuntu-24.04
     environment: uat
-    # Five pages, two Lighthouse profiles, uncached and cached, three runs
-    # each, plus the inlined CSS comparison: about 20 minutes.
-    timeout-minutes: 45
+    # Six pages (one a near-limit 2 MB note), two Lighthouse profiles,
+    # uncached and cached, five runs each, plus the inlined CSS comparison
+    # and the TTFB breakdown: about 35 to 45 minutes.
+    timeout-minutes: 60
     permissions:
       contents: read
     steps:

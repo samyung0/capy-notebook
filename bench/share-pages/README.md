@@ -24,8 +24,12 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    (`server/internal/materialdoc/testdata/every-block-note.json`) without its
    uploaded assets and material links, plus a second copy that also leaves
    out the blocks only the browser can draw (Mermaid diagrams and interactive
-   HTML frames), so their layout shift shows apart from the rest. Nothing is
-   parsed, embedded or sent to a model.
+   HTML frames), so their layout shift shows apart from the rest, and a
+   near-limit note: the app's load-test note
+   (`src/mocks/noteContent/loadTest.ts`, every kind of block padded to 95% of
+   the 2 MB content limit), whose inlined CSS is not compared (its blocks are
+   the every-block note's, and the page is too tall for a full-page
+   screenshot). Nothing is parsed, embedded or sent to a model.
 3. Waits until each item's public API answers 200. It never requests the
    page itself, so the first page request is a real miss.
 4. Inlined CSS check (fails the run): the Worker inlines only the rules a

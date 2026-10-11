@@ -10,7 +10,14 @@
     "noEmit": true,
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "types": ["node"]
+    "types": ["node", "vite/client"],
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    // The near-limit note comes from the app's own builder.
+    "paths": {
+      "@/*": ["../../src/*"],
+      "@paraglide/*": ["../../src/i18n/paraglide/*"]
+    }
   },
   "include": ["./**/*.ts"]
 }
