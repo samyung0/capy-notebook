@@ -85,10 +85,18 @@ async fn fallback(
     }
     let max = app.config.max_frame_bytes();
     upgrade
+        .read_buffer_size(READ_BUFFER)
         .max_message_size(max)
         .max_frame_size(max)
         .on_upgrade(move |socket| crate::socket::serve(app, socket))
 }
+
+/// Each socket's read buffer, allocated when it opens (tungstenite's default
+/// is 128 KiB: 1.5 GiB for 10,000 idle sockets in the production capacity
+/// run). Presence and keystroke frames are a few hundred bytes; a larger
+/// frame reserves its own length and is read 8 KiB at a time. The write side
+/// allocates nothing up front, and each send flushes, so it holds one frame.
+const READ_BUFFER: usize = 8 * 1024;
 
 async fn healthz(State(app): State<Shared>) -> Response {
     let release = std::env::var("RELEASE_SHA").unwrap_or_default();
