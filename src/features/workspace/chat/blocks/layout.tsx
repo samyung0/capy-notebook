@@ -1,12 +1,10 @@
 import { type ReactNode, useEffect, useState } from 'react';
-import { Badge } from '@/components/ui/Badge';
 import { Tabs } from '@/components/ui/Tabs';
 import type {
   AccordionItemProps,
   CardProps,
   FactProps,
   TabProps,
-  TagsProps,
 } from '../schema';
 import { Cites, elements } from './Cite';
 import { Prose } from './text';
@@ -65,18 +63,6 @@ export function Accordion({
           </summary>
           <div className="mt-1.5">{renderNode(item.props.children)}</div>
         </details>
-      ))}
-    </div>
-  );
-}
-
-export function Tags({ props }: { props: TagsProps }) {
-  return (
-    <div className="my-2 flex flex-wrap gap-1">
-      {(props.tags ?? []).map((tag, index) => (
-        <Badge key={`${index}-${tag}`} size="sm" tone="page">
-          {tag}
-        </Badge>
       ))}
     </div>
   );

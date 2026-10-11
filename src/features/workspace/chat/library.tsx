@@ -6,7 +6,7 @@ import { AskUser } from './blocks/AskUser';
 import { Chart, ScatterChart } from './blocks/ChatChart';
 import { Diagram } from './blocks/ChatDiagram';
 import { ChatTable } from './blocks/ChatTable';
-import { Accordion, Cards, ChatTabs, Facts, Tags } from './blocks/layout';
+import { Accordion, Cards, ChatTabs, Facts } from './blocks/layout';
 import { Callout, Md, Reveal, Steps } from './blocks/text';
 import { buildLibrary } from './schema';
 
@@ -37,7 +37,6 @@ export const chatLibrary = buildLibrary({
   Tab: leaf,
   Table: ChatTable,
   Tabs: ChatTabs,
-  Tags,
 });
 
 const schema = chatLibrary.toJSONSchema();

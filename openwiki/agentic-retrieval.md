@@ -2006,8 +2006,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
 5. The final answer is an OpenUI Lang program (`retrieval/openui.py`): a
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
-   `Accordion`, `Reveal`, `Tags`, `Facts`, `Cards`, `Table`, `Chart`,
-   `ScatterChart`, `AskUser` and their items). The catalog lives in
+   `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`,
+   `ScatterChart`, `Diagram`, `AskUser` and their items). The catalog lives in
    `src/features/workspace/chat/schema.ts`; `pnpm gen:openui` renders it into
    the prompt text `prompts/openui_lang.txt` (appended to the chat system
    prompt, about 2,000 tokens) and the spec `generated/openui_library.json`
@@ -2831,7 +2831,7 @@ A citation is:
 In the browser, `src/features/workspace/chat/LangAnswer.tsx` renders a
 program answer through `@openuidev/react-lang`'s `Renderer` and the
 Capy-owned components in `chat/blocks/` (prose through Streamdown, tabs,
-steps, accordions, callouts, tags, label/value rows, cards, tables, SVG charts
+steps, accordions, callouts, label/value rows, cards, tables, SVG charts
 themed by `--chart-1..6`, reveals, and Mermaid diagrams through the notes'
 renderer, drawn once their code stops growing while the answer streams). Answers stored before the program format
 still render as Markdown. Inline `[k]` markers come from the message's

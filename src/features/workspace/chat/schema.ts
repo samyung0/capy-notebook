@@ -40,7 +40,6 @@ export const revealProps = z.object({
   text: z.string(),
   passages,
 });
-export const tagsProps = z.object({ tags: z.array(z.string()) });
 export const factProps = z.object({ label: z.string(), value: z.string() });
 export const cardProps = z.object({
   title: z.string(),
@@ -72,7 +71,6 @@ export type MdProps = z.infer<typeof mdProps>;
 export type CalloutProps = z.infer<typeof calloutProps>;
 export type StepProps = z.infer<typeof stepProps>;
 export type RevealProps = z.infer<typeof revealProps>;
-export type TagsProps = z.infer<typeof tagsProps>;
 export type FactProps = z.infer<typeof factProps>;
 export type CardProps = z.infer<typeof cardProps>;
 export type RowProps = z.infer<typeof rowProps>;
@@ -139,7 +137,6 @@ export type Renderers = Record<
   | 'Accordion'
   | 'AccordionItem'
   | 'Reveal'
-  | 'Tags'
   | 'Facts'
   | 'Fact'
   | 'Cards'
@@ -189,12 +186,6 @@ export function buildLibrary(render: Renderers) {
       'Collapsed Markdown the reader opens on demand: a hint, a solution, extra detail.',
     name: 'Reveal',
     props: revealProps,
-  });
-  const Tags = defineComponent({
-    component: render.Tags,
-    description: 'A row of short keyword chips.',
-    name: 'Tags',
-    props: tagsProps,
   });
   const Fact = defineComponent({
     component: render.Fact,
@@ -303,7 +294,6 @@ export function buildLibrary(render: Renderers) {
     Callout.ref,
     Steps.ref,
     Reveal.ref,
-    Tags.ref,
     Facts.ref,
     Cards.ref,
     Table.ref,
@@ -357,7 +347,7 @@ export function buildLibrary(render: Renderers) {
   return createLibrary({
     componentGroups: [
       {
-        components: ['Answer', 'Md', 'Callout', 'Reveal', 'Tags'],
+        components: ['Answer', 'Md', 'Callout', 'Reveal'],
         name: 'Prose',
         notes: [
           '- Md is the default. A short question gets one or two Md blocks and nothing else.',
@@ -420,7 +410,6 @@ export function buildLibrary(render: Renderers) {
       Accordion,
       AccordionItem,
       Reveal,
-      Tags,
       Facts,
       Fact,
       Cards,

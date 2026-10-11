@@ -71,12 +71,6 @@
       ]
     },
     {
-      "name": "Tags",
-      "props": [
-        "tags"
-      ]
-    },
-    {
       "name": "Facts",
       "props": [
         "items"

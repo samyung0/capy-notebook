@@ -71,8 +71,7 @@ export const chatFixtures = [
   },
   {
     content: [
-      'root = Answer([tags, facts, cards, info, tip, warning, success, danger])',
-      'tags = Tags(["Cell biology", "Revision", "细胞膜", "A longer keyword that wraps"])',
+      'root = Answer([facts, cards, info, tip, warning, success, danger])',
       'facts = Facts([Fact("Topic", "Cell membranes"), Fact("Time", "20 minutes"), Fact("Goal", "Explain transport without notes")])',
       'cards = Cards([Card("Recall", "Correct answers in this illustrative practice set.", null, "8 / 10"), Card("Next step", "Revisit concentration gradients."), Card("Confidence", "Check with a new example, not familiarity.")])',
       'info = Callout("info", "Definition", "Diffusion is net movement down a concentration gradient.")',
@@ -81,7 +80,7 @@ export const chatFixtures = [
       'success = Callout("success", "Checkpoint", "You can explain why net movement slows down.")',
       'danger = Callout("danger", "Incorrect claim", "Equilibrium does not mean that particles stop moving.")',
     ].join('\n'),
-    hint: 'Metric/concept cards, facts, wrapping tags and all five callout styles.',
+    hint: 'Metric/concept cards, facts and all five callout styles.',
     id: 'chat-openui-cards',
     label: 'OpenUI: cards, facts + callouts',
     prompt: 'Make a revision card for membrane transport.',
