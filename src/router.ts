@@ -54,16 +54,27 @@ import {
 } from '@/features/materials/openItem';
 import { parseQuizEditSearch } from '@/features/quizzes/quizNavigation';
 import {
+  PAST_REVIEW_SORT_DEFAULT,
+  PAST_REVIEW_SORTS,
   parsePastReviewsSearch,
   parseResultsSearch,
   parseReviewSearch,
+  RESULT_SORT_DEFAULT,
+  RESULT_SORTS,
 } from '@/features/study/reviewSearch';
 import { features } from '@/lib/features';
 import {
+  FILE_SORT_DEFAULT,
+  FILE_SORTS,
   fileListParams,
+  MATERIAL_SORT_DEFAULT,
+  MATERIAL_SORTS,
   materialListParams,
   parseFilesSearch,
   parseWorkspacesSearch,
+  savedSort,
+  WORKSPACE_SORT_DEFAULT,
+  WORKSPACE_SORTS,
   workspaceListParams,
 } from '@/lib/listSearch';
 import {
@@ -204,6 +215,21 @@ const appRoutes = [
   }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
+    // A list opened without a sort in the URL shows the viewer's last pick.
+    beforeLoad: ({ search }) => {
+      const saved = savedSort(
+        'workspaces',
+        WORKSPACE_SORTS,
+        WORKSPACE_SORT_DEFAULT,
+        search
+      );
+      if (saved)
+        throw redirect({
+          replace: true,
+          search: { ...search, ...saved },
+          to: '/workspaces',
+        });
+    },
     component: lazyRouteComponent(() => import('@/routes/Workspaces')),
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => search,
@@ -239,6 +265,25 @@ const appRoutes = [
   blocksRedirect('/quizzes'),
   blocksRedirect('/flashcards'),
   createRoute({
+    beforeLoad: ({ search }) => {
+      const saved =
+        search.tab === 'results'
+          ? savedSort('results', RESULT_SORTS, RESULT_SORT_DEFAULT, search)
+          : search.tab === 'past'
+            ? savedSort(
+                'pastReviews',
+                PAST_REVIEW_SORTS,
+                PAST_REVIEW_SORT_DEFAULT,
+                search
+              )
+            : undefined;
+      if (saved)
+        throw redirect({
+          replace: true,
+          search: { ...search, ...saved },
+          to: '/learning',
+        });
+    },
     component: lazyRouteComponent(() => import('@/routes/Learning')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
@@ -338,6 +383,20 @@ const appRoutes = [
   }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
+    beforeLoad: ({ search }) => {
+      const saved =
+        search.tab === 'blocks'
+          ? savedSort('blocks', MATERIAL_SORTS, MATERIAL_SORT_DEFAULT, search)
+          : search.tab === 'trash'
+            ? undefined
+            : savedSort('files', FILE_SORTS, FILE_SORT_DEFAULT, search);
+      if (saved)
+        throw redirect({
+          replace: true,
+          search: { ...search, ...saved },
+          to: '/files',
+        });
+    },
     component: lazyRouteComponent(() => import('@/routes/Files')),
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => search,

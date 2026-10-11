@@ -267,7 +267,7 @@ function ActiveFiles({
           setSearch({ kind: undefined, workspace: undefined })
         }
         onSortChange={(next, asc) =>
-          setSearch(sortSearch(next, asc, FILE_SORT_DEFAULT))
+          setSearch(sortSearch('files', next, asc, FILE_SORT_DEFAULT))
         }
         onViewChange={onViewChange}
         selectionActions={
@@ -351,6 +351,11 @@ function ActiveFiles({
                       (workspace) => workspace.id === file.workspaceId
                     )?.name ?? ''
                   }
+                  workspaceIconId={
+                    workspaces.find(
+                      (workspace) => workspace.id === file.workspaceId
+                    )?.iconId
+                  }
                 />
               ))}
             </ItemList>
@@ -412,6 +417,11 @@ function TrashTab({
     isLoading,
     refetch,
   } = useTrash(undefined, true);
+  // Icons for the list's Workspace column; a deleted workspace has none.
+  const { data: workspaces = [] } = useWorkspaces(
+    { sort: 'accessed' },
+    { errorBoundary: false }
+  );
   const { mutateAsync: restore } = useRestoreTrashed();
   const { mutateAsync: purge } = usePurgeTrashed();
   const [purgeRequest, setPurgeRequest] = useState<{
@@ -485,7 +495,7 @@ function TrashTab({
               }
               iconLeft="trash"
               onClick={() => void prepareEmptyTrash()}
-              size="md"
+              size="sm"
               variant="danger-light"
             >
               {m.trash_empty_action()}
@@ -506,7 +516,7 @@ function TrashTab({
                   items: [...selection.selected],
                 })
               }
-              size="md"
+              size="sm"
               variant="danger-light"
             >
               {m.trash_delete_forever()}
@@ -519,7 +529,7 @@ function TrashTab({
             }
             iconLeft={selection.selecting ? 'x' : 'check'}
             onClick={selection.selecting ? selection.exit : selection.start}
-            size="md"
+            size="sm"
             variant="ghost-hover"
           >
             {selection.selecting ? m.action_cancel() : m.files_select()}
@@ -597,6 +607,9 @@ function TrashTab({
                   title={item.title}
                   view={view}
                   workspace={item.workspaceName || m.trash_standalone()}
+                  workspaceIconId={
+                    workspaces.find((ws) => ws.id === item.workspaceId)?.iconId
+                  }
                 />
               ))}
             </ItemList>

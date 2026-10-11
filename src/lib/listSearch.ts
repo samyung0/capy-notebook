@@ -7,6 +7,7 @@ import type {
   MaterialListParams,
   MaterialListSort,
 } from '@/api/types';
+import { PREF_KEYS, readPref, type SortedList, writePref } from './localPrefs';
 import { FILES_TABS, type FilesTab } from './tabSearch';
 
 /*
@@ -36,15 +37,42 @@ const anyList = (value: unknown) =>
     : undefined;
 const dirOf = (value: unknown) => (value === 'asc' ? 'asc' : undefined);
 
-/** A sort menu pick for the URL; the default order leaves both keys out. */
-export const sortSearch = <S extends string>(
+/** A sort menu pick for the URL; the default order leaves both keys out.
+ * The pick is remembered for `list`, see `savedSort`. */
+export function sortSearch<S extends string>(
+  list: SortedList,
   sort: S,
   ascending: boolean,
   fallback: S
-) => ({
-  dir: ascending ? ('asc' as const) : undefined,
-  sort: sort === fallback ? undefined : sort,
-});
+) {
+  const search = {
+    dir: ascending ? ('asc' as const) : undefined,
+    sort: sort === fallback ? undefined : sort,
+  };
+  writePref(PREF_KEYS.sort(list), search);
+  return search;
+}
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null;
+
+/** The list's remembered sort when the URL names none, for the route to
+ * redirect to, so the URL and the loader's prefetch carry it. Only known,
+ * non-default values come back, which every parser keeps, so the redirect
+ * cannot loop. */
+export function savedSort<S extends string>(
+  list: SortedList,
+  options: readonly S[],
+  fallback: S,
+  search: { sort?: unknown; dir?: unknown }
+): { sort?: S; dir?: 'asc' } | undefined {
+  if (search.sort !== undefined || search.dir !== undefined) return;
+  const saved = readPref(PREF_KEYS.sort(list), {}, isRecord);
+  const known = one(options, saved.sort);
+  const sort = known === fallback ? undefined : known;
+  const dir = dirOf(saved.dir);
+  return sort || dir ? { dir, sort } : undefined;
+}
 
 export const WORKSPACE_SORTS = [
   'accessed',
@@ -84,7 +112,7 @@ export const FILE_KINDS: FileKind[] = [
   'json',
   'unknown',
 ];
-const FILE_SORTS: FileListSort[] = ['added', 'name', 'size', 'kind'];
+export const FILE_SORTS: FileListSort[] = ['added', 'name', 'size', 'kind'];
 export const FILE_SORT_DEFAULT: FileListSort = 'added';
 export const MATERIAL_KINDS: MaterialListKind[] = [
   'note',
@@ -95,7 +123,7 @@ export const MATERIAL_LOCATIONS: MaterialListLocation[] = [
   'workspace',
   'standalone',
 ];
-const MATERIAL_SORTS: MaterialListSort[] = [
+export const MATERIAL_SORTS: MaterialListSort[] = [
   'updated',
   'created',
   'title',

@@ -108,7 +108,7 @@ export default function Workspaces() {
         ]}
         onResetFilters={() => setSearch({ tag: undefined })}
         onSortChange={(next, asc) =>
-          setSearch(sortSearch(next, asc, WORKSPACE_SORT_DEFAULT))
+          setSearch(sortSearch('workspaces', next, asc, WORKSPACE_SORT_DEFAULT))
         }
         sort={sort}
         sorts={sorts}

@@ -384,7 +384,9 @@ workspace and pages in SQL, thirty a page behind Load more; each attempt
 carries that `workspaceId`, null once the quiz is deleted, so a workspace
 filter leaves those out. The filter lists the user's workspaces as Files
 does. Sort and filter live in the URL (`parseResultsSearch`; the route picks
-the parser by `tab`).
+the parser by `tab`). Each list's last sort pick is remembered in the browser
+(`sortSearch`, `src/lib/localPrefs.ts`): opening Workspaces, Files, Blocks,
+Past reviews or All results without a sort in the URL redirects to it.
 
 ### Progress tab
 

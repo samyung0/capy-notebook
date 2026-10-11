@@ -8,12 +8,12 @@ import {
   toggleValue,
 } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
 import { formatPoints } from '@/features/quizzes/grade';
-import { WorkspaceCell } from '@/features/study/PastReviews';
 import { m } from '@/i18n';
 import { csv, sortSearch } from '@/lib/listSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
@@ -108,7 +108,7 @@ export function AllResults() {
           ]}
           onResetFilters={() => setSearch({ workspace: undefined })}
           onSortChange={(next, asc) =>
-            setSearch(sortSearch(next, asc, RESULT_SORT_DEFAULT))
+            setSearch(sortSearch('results', next, asc, RESULT_SORT_DEFAULT))
           }
           sort={sort}
           sorts={sorts}

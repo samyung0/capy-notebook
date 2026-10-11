@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   fileListParams,
   materialListParams,
   parseFilesSearch,
   parseWorkspacesSearch,
+  savedSort,
   sortSearch,
   workspaceListParams,
 } from './listSearch';
@@ -62,6 +63,41 @@ describe('list search', () => {
       sort: 'created',
       tag: ['bio', 'chem'],
     });
-    expect(sortSearch('added', false, 'added')).toEqual({});
+    expect(sortSearch('files', 'added', false, 'added')).toEqual({});
+  });
+});
+
+describe('remembered sort', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  function stubStorage() {
+    const store = new Map<string, string>();
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => store.get(key) ?? null,
+      setItem: (key: string, value: string) => store.set(key, value),
+    });
+    return store;
+  }
+  const SORTS = ['date', 'score'] as const;
+
+  it('comes back only when the URL names no sort', () => {
+    stubStorage();
+    sortSearch('results', 'score', true, 'date');
+    expect(savedSort('results', SORTS, 'date', {})).toEqual({
+      dir: 'asc',
+      sort: 'score',
+    });
+    expect(savedSort('results', SORTS, 'date', { sort: 'date' })).toBe(
+      undefined
+    );
+  });
+
+  // A redirect to a default or unknown sort would land on a URL without one
+  // and redirect again.
+  it('never returns a default or unknown sort', () => {
+    const store = stubStorage();
+    store.set('capy.sort.results', JSON.stringify({ sort: 'date' }));
+    expect(savedSort('results', SORTS, 'date', {})).toBe(undefined);
+    store.set('capy.sort.results', JSON.stringify({ sort: 'bogus' }));
+    expect(savedSort('results', SORTS, 'date', {})).toBe(undefined);
   });
 });

@@ -3,6 +3,7 @@ import type { MaterialListItem } from '@/api/types';
 import { ItemCard } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { formatFileSize } from '@/features/files/fileUtils';
 import { getLocale, m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
 import { cardCountLabel, questionCountLabel } from './countLabels';
@@ -38,6 +39,14 @@ export function materialKindLabel(kind: MaterialListItem['kind']): string {
   }
 }
 
+/** The list's Details column: the count where the kind has one, then the
+ * size, so a note's row is not empty. */
+function materialListDetails(item: MaterialListItem): string {
+  const size = formatFileSize(item.sizeBytes);
+  const count = materialDetails(item);
+  return count ? `${count} · ${size}` : size;
+}
+
 /** The per-kind detail line: question or card count, or nothing. */
 export function materialDetails(item: MaterialListItem): string {
   if (item.kind === 'quiz') return questionCountLabel(item.questionCount ?? 0);
@@ -50,16 +59,18 @@ export function MaterialCard({
   view,
   menu,
   link,
+  workspaceIconId,
 }: {
   item: MaterialListItem;
   view: ListView;
   menu: MenuItem[];
   link: LinkProps;
+  workspaceIconId?: string;
 }) {
   return (
     <ItemCard
       actions={<Menu items={menu} />}
-      details={materialDetails(item)}
+      details={materialListDetails(item)}
       icon={materialIconName(item.kind)}
       link={link}
       meta={relativeTime(item.updatedAt)}
@@ -70,6 +81,7 @@ export function MaterialCard({
       title={item.title}
       view={view}
       workspace={item.workspaceName}
+      workspaceIconId={workspaceIconId}
     />
   );
 }

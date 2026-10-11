@@ -8,13 +8,13 @@ import {
   toggleValue,
 } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
-import { iconUrl } from '@/lib/icon-catalog';
 import { csv, sortSearch } from '@/lib/listSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import {
@@ -106,7 +106,9 @@ export function PastReviews() {
             setSearch({ has: undefined, workspace: undefined })
           }
           onSortChange={(next, asc) =>
-            setSearch(sortSearch(next, asc, PAST_REVIEW_SORT_DEFAULT))
+            setSearch(
+              sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)
+            )
           }
           sort={sort}
           sorts={sorts}
@@ -235,31 +237,6 @@ const formatDate = (iso: string) =>
   new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium' }).format(
     new Date(iso)
   );
-
-/** A workspace's icon and name, wrapping to two lines. Learning's tables
- * share it; an attempt whose quiz is gone has no icon. */
-export function WorkspaceCell({
-  iconId,
-  name,
-}: {
-  iconId?: string;
-  name: string;
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-2.5">
-      {iconId && (
-        <img
-          alt=""
-          className="size-4 shrink-0 rounded-[4px]"
-          height={16}
-          src={iconUrl(iconId)}
-          width={16}
-        />
-      )}
-      <span className="wrap-break-word line-clamp-2">{name}</span>
-    </div>
-  );
-}
 
 function AgainMenu({ onAgain }: { onAgain: () => void }) {
   return (

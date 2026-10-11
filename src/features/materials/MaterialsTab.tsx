@@ -360,10 +360,10 @@ export function MaterialsTab({
             items={newMenu}
             trigger={
               <Button
-                className="rounded-card font-bold text-link"
+                className="px-1.5"
                 disabled={frozen}
                 iconLeft="plus"
-                size="md"
+                size="sm"
                 variant="ghost-hover"
               >
                 {m.files_new_block()}
@@ -381,7 +381,7 @@ export function MaterialsTab({
           })
         }
         onSortChange={(next, asc) =>
-          setSearch(sortSearch(next, asc, MATERIAL_SORT_DEFAULT))
+          setSearch(sortSearch('blocks', next, asc, MATERIAL_SORT_DEFAULT))
         }
         onViewChange={onViewChange}
         sort={sort}
@@ -417,6 +417,9 @@ export function MaterialsTab({
                   link={materialLink(item)}
                   menu={menuFor(item)}
                   view={view}
+                  workspaceIconId={
+                    workspaces.find((ws) => ws.id === item.workspaceId)?.iconId
+                  }
                 />
               ))}
             </ItemList>

@@ -8,6 +8,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import type { ListView } from './ListToolbar';
 import { type Thumbnail, ThumbnailPanel } from './ThumbnailPanel';
+import { WorkspaceCell } from './WorkspaceCell';
 
 /** Grid card and list row shared by the Create, Files and Trash pages.
  * Presentation only: the page owns navigation, actions and dialogs. */
@@ -26,6 +27,7 @@ export function ItemCard({
   icon,
   title,
   workspace,
+  workspaceIconId,
   details,
   meta,
   link,
@@ -38,6 +40,7 @@ export function ItemCard({
   title: string;
   /** List view only, like `details`. */
   workspace?: string;
+  workspaceIconId?: string;
   /** Question or card count, file size. */
   details?: string;
   /** Updated, added or expiry line: the grid card's one hint line. */
@@ -78,7 +81,11 @@ export function ItemCard({
             {title}
           </Title>
         </div>
-        <p className="truncate">{workspace}</p>
+        <div className="min-w-0">
+          {workspace && (
+            <WorkspaceCell iconId={workspaceIconId} name={workspace} />
+          )}
+        </div>
         <p>{details}</p>
         <p>{meta}</p>
         <div className="relative z-10 -my-2 flex justify-self-end">

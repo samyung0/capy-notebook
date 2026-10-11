@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 /**
  * Display preferences one viewer keeps in this browser: list or grid views,
- * the pinned file tree, which chapters are open. localStorage rather than
+ * list sorts, the pinned file tree, which chapters are open. localStorage rather than
  * IndexedDB because the first render reads them synchronously, so nothing
  * flashes from the default. Values are JSON. Storage can be blocked (private
  * windows); reads then give the fallback and writes are dropped.
@@ -15,9 +15,18 @@ export const PREF_KEYS = {
   openChapters: (workspaceId: string) =>
     `capy.workspace.openChapters.${workspaceId}`,
   recentsView: 'capy.recents.view',
+  sort: (list: SortedList) => `capy.sort.${list}`,
 } as const;
 
-function readPref<T>(
+/** The lists whose sort menu pick is remembered. */
+export type SortedList =
+  | 'workspaces'
+  | 'files'
+  | 'blocks'
+  | 'pastReviews'
+  | 'results';
+
+export function readPref<T>(
   key: string,
   fallback: T,
   isValid: (value: unknown) => value is T
@@ -49,13 +58,17 @@ export function useLocalPref<T>(
   }
   function change(next: T) {
     setState({ key, value: next });
-    try {
-      localStorage.setItem(key, JSON.stringify(next));
-    } catch {
-      // per-viewer convenience only
-    }
+    writePref(key, next);
   }
   return [value, change];
+}
+
+export function writePref(key: string, value: unknown): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // per-viewer convenience only
+  }
 }
 
 export const isBoolean = (value: unknown): value is boolean =>
