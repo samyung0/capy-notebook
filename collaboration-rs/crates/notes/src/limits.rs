@@ -463,6 +463,10 @@ fn plain_content<T: ReadTxn>(
         {
             let value = match item.content() {
                 ItemContent::Any(values) => Some(values.last().cloned().unwrap_or(Any::Null)),
+                // A Mermaid source text (admitted above only as `source`).
+                ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Text) => {
+                    Some(source_text())
+                }
                 _ => None,
             };
             shape
@@ -638,14 +642,24 @@ fn entry_of(branch: yrs::branch::BranchPtr, key: &str) -> Option<yrs::block::Ite
     branch.entry_item(key)
 }
 
-/// The plain value an entry holds while it is live.
+/// The plain value an entry holds while it is live; a Mermaid source text
+/// counts as a string ([source_text]).
 fn live_value(item: yrs::block::ItemPtr) -> Option<Any> {
     match item.content() {
-        ItemContent::Any(values) if !item.is_deleted() => {
-            Some(values.last().cloned().unwrap_or(Any::Null))
+        _ if item.is_deleted() => None,
+        ItemContent::Any(values) => Some(values.last().cloned().unwrap_or(Any::Null)),
+        ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Text) => {
+            Some(source_text())
         }
         _ => None,
     }
+}
+
+/// What a Mermaid `source` held as a text (shape A) stands for in the key
+/// checks: the string the projection reads from it, whose content they never
+/// need.
+fn source_text() -> Any {
+    Any::String(Arc::from(""))
 }
 
 /// A key's value after the update, read without applying it (REVIEW5 R2b).

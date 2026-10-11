@@ -327,3 +327,33 @@ fn a_source_set_by_command_keeps_typing_that_arrives_meanwhile() {
         "flowchart TD\n  A --> B --> C"
     );
 }
+
+/// The store requires a `mermaid` block's `source` (rust-core REVIEW5 R2b's
+/// key check): a new block whose source is a text goes in, as a writer
+/// inserts one, while a new block with no source is refused as missing it.
+/// Fails if the key checks read a source text as no value.
+#[test]
+fn a_new_block_needs_its_source_and_a_text_is_one() {
+    let room = room(&[paragraph("text")]);
+    let insert = |value: Value| {
+        edit(&room, 8, move |peer| {
+            let mut txn = peer.transact_mut();
+            let root = plate::content_root(&txn).unwrap();
+            let end = XmlTextRef::from(root).len(&txn);
+            slate_yjs::insert_nodes(&mut txn, root, end, &[value]);
+        })
+    };
+    let with_text = insert(mermaid(SOURCE));
+    let mut validator = validator(&room);
+    let (result, _) = admit(&mut validator, &room, &with_text);
+    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+    let mut without = mermaid(SOURCE);
+    without.as_object_mut().unwrap().remove("source");
+    without["id"] = json!("d9");
+    let refused = insert(without);
+    let (result, _) = admit(&mut validator, &room, &refused);
+    match result {
+        Err(Refusal::Content(reason)) => assert_eq!(reason, notes::limits::MISSING_KEY),
+        other => panic!("{other:?}"),
+    }
+}
