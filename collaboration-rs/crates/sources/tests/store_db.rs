@@ -1,4 +1,4 @@
-//! Sources against Postgres (server/migrations, 0074 included)
+//! Sources against Postgres (server/migrations, 0075 included)
 //! and Redis, with a stand-in gateway that answers the internal source routes
 //! as the Go API does under the delta-save contract (the checkpoint appends
 //! its `update` to `source_document_updates` in the CAS transaction).
