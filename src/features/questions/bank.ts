@@ -4,6 +4,7 @@ import {
   queryOptions,
 } from '@tanstack/react-query';
 import { api } from '@/api/client';
+import { persisted } from '@/api/queryPersistence';
 import type {
   BankCopyReq,
   BankCopyResult,
@@ -89,6 +90,7 @@ export type BankDetail = {
 };
 export const bankSyllabusQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<BankSyllabus>('/bank/syllabus'),
     queryKey: ['bank', 'syllabus'],
     retry: false,
@@ -246,6 +248,7 @@ export const bankSummaryQuery = (topicId: string) =>
 /** The /qb landing: topics with an answered question, latest first. */
 export const bankProgressQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<BankProgress>('/bank/progress'),
     queryKey: ['bank', 'progress'],
     retry: false,

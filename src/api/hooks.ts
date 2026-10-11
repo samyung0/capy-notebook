@@ -28,6 +28,7 @@ import {
   readEventStream,
   type StreamEvent,
 } from './eventStream';
+import { persisted } from './queryPersistence';
 import type {
   AccountStatus,
   Attempt,
@@ -182,7 +183,11 @@ function refetchContentIfLast(qc: QueryClient, wsId: string) {
 
 /* ---------------- account / shell ---------------- */
 export const meQuery = () =>
-  queryOptions({ queryFn: () => api.get<User>('/me'), queryKey: qk.me });
+  queryOptions({
+    ...persisted,
+    queryFn: () => api.get<User>('/me'),
+    queryKey: qk.me,
+  });
 export const useMe = (options?: QueryUiOptions) =>
   useQuery({ ...meQuery(), meta: queryMeta(options) });
 
@@ -196,6 +201,7 @@ export const useIngestSlots = (options?: QueryUiOptions) =>
 
 export const modelsQuery = (slot: ModelSlot) =>
   queryOptions({
+    ...persisted,
     queryFn: () =>
       api.get<ModelsResponse>(`/models?slot=${encodeURIComponent(slot)}`),
     queryKey: qk.models(slot),
@@ -219,6 +225,7 @@ export function useSetModelPrefs() {
 
 export const llmCredentialsQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<LLMCredentialsResponse>('/me/llm-credentials'),
     queryKey: qk.llmCredentials,
   });
@@ -316,6 +323,7 @@ export const useNotifications = (options?: QueryUiOptions, enabled = true) =>
     typeof qk.notifications,
     string
   >({
+    ...persisted,
     enabled,
     getNextPageParam: (page) => page.next || undefined,
     initialPageParam: '',
@@ -333,6 +341,7 @@ export const useNotifications = (options?: QueryUiOptions, enabled = true) =>
 
 export const useUnreadNotificationCount = (options?: QueryUiOptions) =>
   useQuery({
+    ...persisted,
     meta: queryMeta(options),
     queryFn: () => api.get<NotificationCount>('/notifications/unread-count'),
     queryKey: qk.notificationUnread,
@@ -551,6 +560,7 @@ export function useMarkNotificationsRead() {
 
 export const notificationPrefsQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<NotificationPrefs>('/notification-prefs'),
     queryKey: qk.notificationPrefs,
   });
@@ -689,6 +699,7 @@ export function useBillingPortal() {
 
 export const integrationsQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<IntegrationsStatus>('/integrations'),
     queryKey: qk.integrations,
   });
@@ -743,6 +754,7 @@ export function useInspectSourceImports(
  * Loaded once and filtered client-side (no per-keystroke request). */
 export const tagsQuery = (kind = 'workspace') =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<Tag[]>(`/tags?kind=${encodeURIComponent(kind)}`),
     queryKey: qk.tags(kind),
   });
@@ -768,6 +780,8 @@ export const workspacesQuery = (params: WorkspaceQuery = {}) => {
   if (tags.length) search.set('tag', tags.join(','));
   const qs = search.toString();
   return queryOptions({
+    // A search is not kept: one entry per query typed.
+    ...(params.q ? {} : persisted),
     queryFn: () => api.get<Workspace[]>(`/workspaces${qs ? `?${qs}` : ''}`),
     queryKey: qk.workspaces(params),
   });
@@ -779,6 +793,7 @@ export const useWorkspaces = (
 
 export const workspaceQuery = (id: string) =>
   queryOptions({
+    ...persisted,
     enabled: !!id,
     queryFn: () => api.get<Workspace>(`/workspaces/${id}`),
     queryKey: qk.workspace(id),
@@ -892,6 +907,7 @@ export const useSourceUploadPolicy = (
 
 export const chaptersQuery = (wsId: string) =>
   queryOptions({
+    ...persisted,
     enabled: !!wsId,
     queryFn: () => api.get<Chapter[]>(`/workspaces/${wsId}/chapters`),
     queryKey: qk.chapters(wsId),
@@ -905,6 +921,7 @@ export const useChapters = (wsId: string, options?: QueryUiOptions) =>
 
 export const filesQuery = (wsId: string) =>
   queryOptions({
+    ...persisted,
     enabled: !!wsId,
     queryFn: async ({ client }) => {
       const files = await api.get<SourceFile[]>(`/workspaces/${wsId}/files`);
@@ -942,6 +959,7 @@ export const useFiles = (wsId: string, options?: QueryUiOptions) =>
 
 export const fileQuery = (id: string | null) =>
   queryOptions({
+    ...persisted,
     enabled: !!id,
     queryFn: () => api.get<SourceFile>(`/files/${id}`),
     queryKey: qk.file(id ?? ''),
@@ -993,7 +1011,10 @@ export const useOwnedFiles = (params: FileListParams = {}) =>
 
 /** The dashboard recents: newest files across every workspace the caller is
  * a member of. The first page covers the card, which shows 20 items. */
-export const recentFilesQuery = () => ownedFilesQuery({ scope: 'member' });
+export const recentFilesQuery = () => ({
+  ...ownedFilesQuery({ scope: 'member' }),
+  ...persisted,
+});
 
 export function useUpdateFile(wsId: string) {
   const qc = useQueryClient();
@@ -1480,6 +1501,7 @@ function applyIngestEvent(qc: QueryClient, wsId: string, value: IngestEvent) {
 
 export const conversationsQuery = (wsId: string) =>
   queryOptions({
+    ...persisted,
     enabled: !!wsId,
     queryFn: () => api.get<Conversation[]>(`/workspaces/${wsId}/conversations`),
     queryKey: qk.conversations(wsId),
@@ -1530,6 +1552,7 @@ export function useGenerate(wsId: string, options?: MutationUiOptions) {
  * quizzes, flashcardSets) for the left panel. Not chapter-scoped. */
 export const materialsQuery = (wsId: string) =>
   queryOptions({
+    ...persisted,
     enabled: !!wsId,
     queryFn: () => api.get<MaterialRef[]>(`/workspaces/${wsId}/materials`),
     queryKey: qk.materials(wsId),
@@ -1577,13 +1600,15 @@ export const useOwnedMaterials = (params: MaterialListParams = {}) =>
   useInfiniteQuery(ownedMaterialsQuery(params));
 /** The dashboard recents: newest top-level materials of every kind across
  * member workspaces, plus the caller's standalone ones. */
-export const recentMaterialsQuery = () =>
-  ownedMaterialsQuery({
+export const recentMaterialsQuery = () => ({
+  ...ownedMaterialsQuery({
     kinds: ['note', 'quiz', 'flashcards', 'mindmap', 'diagram'],
     locations: ['workspace', 'standalone'],
     scope: 'member',
     sort: 'created',
-  });
+  }),
+  ...persisted,
+});
 
 function invalidateOwnedMaterials(qc: QueryClient) {
   qc.invalidateQueries({ queryKey: qk.ownedMaterialsRoot });
@@ -2158,6 +2183,7 @@ export const useCards = (
 /* ---------------- study progress and review ---------------- */
 export const workspaceStudyQuery = (workspaceId: string) =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<StudySummary>(`/workspaces/${workspaceId}/study`),
     queryKey: qk.study(workspaceId),
   });
@@ -2316,6 +2342,7 @@ export function useFinishReviewSession() {
 /** Learning → Review: suggestions, sessions to continue, every workspace. */
 export const reviewOverviewQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<ReviewOverview>('/review/overview'),
     queryKey: qk.reviewOverview,
   });
@@ -2352,6 +2379,7 @@ export const usePastReviews = (params: PastReviewParams = {}) =>
 /** Learning → Progress: workspaces in progress and finished, the leading one's items. */
 export const learningProgressQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<LearningProgress>('/learning/progress'),
     queryKey: qk.learningProgress,
   });
@@ -2376,6 +2404,7 @@ export function useRateReviewItem(workspaceId?: string | null) {
 /* ---------------- schedule ---------------- */
 export const eventsQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<CalendarEvent[]>('/events'),
     queryKey: qk.events,
   });
@@ -2384,6 +2413,7 @@ export const useEvents = (options?: QueryUiOptions) =>
 
 export const labelsQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<Label[]>('/labels'),
     queryKey: qk.labels,
   });
@@ -2427,6 +2457,7 @@ export function useUpdateEvent() {
 /* ---------------- tasks ---------------- */
 export const tasksQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<Task[]>('/tasks'),
     queryKey: qk.tasks,
   });
@@ -2526,6 +2557,7 @@ export function useDeleteTask() {
 /* ---------------- thinking ---------------- */
 export const canvasesQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<ThinkingCanvas[]>('/thinking'),
     queryKey: qk.thinking,
   });
@@ -2561,6 +2593,7 @@ export function useSaveCanvas(id: string) {
 /* ---------------- explore ---------------- */
 export const exploreWorkspacesQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<PublicWorkspace[]>('/explore/workspaces'),
     queryKey: qk.exploreWorkspaces,
   });
@@ -2568,6 +2601,7 @@ export const useExploreWorkspaces = () => useQuery(exploreWorkspacesQuery());
 
 export const exploreQuizzesQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<PublicQuiz[]>('/explore/quizzes'),
     queryKey: qk.exploreQuizzes,
   });
@@ -2575,6 +2609,7 @@ export const useExploreQuizzes = () => useQuery(exploreQuizzesQuery());
 
 export const exploreFlashcardSetsQuery = () =>
   queryOptions({
+    ...persisted,
     queryFn: () => api.get<PublicFlashcardSet[]>('/explore/flashcards'),
     queryKey: qk.exploreFlashcardSets,
   });

@@ -2,6 +2,7 @@ import { ClerkProvider, Show, useAuth } from '@clerk/react';
 import { useEffect, useRef, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
 import { queryClient } from '@/api/queryClient';
+import { startQueryPersistence } from '@/api/queryPersistence';
 import { signInHref } from '@/features/auth/clerk';
 import { m } from '@/i18n';
 
@@ -22,22 +23,38 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
   );
   const previousIdentity = useRef<string | null | undefined>(undefined);
 
+  // Workspace/material responses contain requester-specific capabilities and
+  // ownership. Never reuse them after sign-in, sign-out, or account changes.
+  // The account's stored cache from its last visit goes in before the route
+  // loaders run; signing out deletes it.
   useEffect(() => {
-    if (!isLoaded) return;
-
-    // Workspace/material responses contain requester-specific capabilities and
-    // ownership. Never reuse them after sign-in, sign-out, or account changes.
+    if (identity === undefined) return;
     if (previousIdentity.current !== identity) {
       queryClient.clear();
       previousIdentity.current = identity;
     }
-    setAuthTokenGetter(isSignedIn ? () => getToken() : null);
-    setReadyIdentity(identity);
+    let cancelled = false;
+    let stop: (() => void) | undefined;
+    void startQueryPersistence(queryClient, identity).then(
+      (stopPersistence) => {
+        if (cancelled) return stopPersistence();
+        stop = stopPersistence;
+        setReadyIdentity(identity);
+      }
+    );
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [identity]);
 
+  useEffect(() => {
+    if (!isLoaded) return;
+    setAuthTokenGetter(isSignedIn ? () => getToken() : null);
     return () => {
       setAuthTokenGetter(null);
     };
-  }, [getToken, identity, isLoaded, isSignedIn]);
+  }, [getToken, isLoaded, isSignedIn]);
 
   // Route loaders must not run until the matching token getter is installed.
   if (!isLoaded || readyIdentity !== identity) {

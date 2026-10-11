@@ -1,4 +1,4 @@
-import { MutationCache, QueryClient } from '@tanstack/react-query';
+import { MutationCache, QueryCache, QueryClient } from '@tanstack/react-query';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
@@ -13,6 +13,7 @@ import {
   isAccountForbiddenError,
   isApiError,
 } from './client';
+import { isPersisted } from './queryPersistence';
 
 declare module '@tanstack/react-query' {
   interface Register {
@@ -74,6 +75,19 @@ export const queryClient = new QueryClient({
       )
         return;
       showErrorToast(error);
+    },
+  }),
+  queryCache: new QueryCache({
+    // A failed refetch keeps its data. For a stored query that data can be
+    // from an earlier visit, so a resource now private or missing drops it
+    // and the page shows that state instead.
+    onError: (error, query) => {
+      if (
+        isMissing(error) &&
+        isPersisted(query) &&
+        query.state.data !== undefined
+      )
+        query.setState({ data: undefined, dataUpdatedAt: 0 });
     },
   }),
 });

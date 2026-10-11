@@ -123,6 +123,37 @@ toasts cannot cover the error.
 Warnings and errors last seven seconds; default and success toasts retain
 Sonner's four-second duration.
 
+## Persisted query cache
+
+A page paints from the signed-in account's last visit while it refetches
+(`src/api/queryPersistence.ts`, 2026-10-11). It is for speed on a page visit,
+not offline use: without a service worker the app itself does not load offline.
+
+- Opt-in per query: a definition spreads `persisted`, whose 7-day `gcTime` keeps
+  a restored query until it is used and marks it for storage. Query `meta` cannot
+  carry the mark, because hooks replace it with `queryMeta(options)`.
+- Stored: `/me`, workspace lists (not searches), a workspace and its chapters,
+  files, materials, conversations and study states, file metadata, the
+  dashboard recents, Thinking, notifications and the unread count, learning
+  progress, the review overview, calendar events, labels, tasks, tags,
+  notification preferences, integrations, models, LLM key last-4s, Explore,
+  and the question bank's syllabus and progress. Infinite lists keep their first
+  page.
+- Never stored: file, note, quiz, card and canvas bodies and chat messages
+  (always fetched live), collaboration tokens, presigned links, review sessions,
+  answer keys (quiz and bank edit views), ingest slots, workspace stats, upload
+  policy, billing, usage, account deletion preflight, searches, members and
+  discussions.
+- One IndexedDB entry (`keyval-store`, key `capy-query-cache`), written at most
+  once a second and at `pagehide`. Its buster is `VITE_RELEASE_SHA` plus the
+  user ID: a new release, another account, or an entry older than 7 days is
+  discarded. Signing out deletes it. Edit drafts live in their own database and
+  are not touched.
+- Restored queries are marked stale, so each refetches on first use regardless
+  of `staleTime`. A stored query whose refetch answers 401 or 404 drops its data,
+  so a workspace the account lost shows the private state, not last visit's copy.
+- MSW development stores nothing: the mock database resets on reload.
+
 ## Boundary tiers
 
 - The root `AppErrorBoundary` protects the router and development probes. It
