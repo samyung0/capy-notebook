@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { Streamdown } from 'streamdown';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -9,8 +10,12 @@ import {
 import { cn } from '@/lib/cn';
 import type { CalloutProps, MdProps, RevealProps, StepProps } from '../schema';
 import { Cites, elements } from './Cite';
+import { chatMath, MathSpan, prepareMath } from './math';
 
-/** Markdown inside a rich answer; the same list styling the plain answer had. */
+const plugins = { math: chatMath };
+
+/** Markdown inside a rich answer; the same list styling the plain answer had,
+ * and `$…$` / `$$…$$` math. */
 export function Prose({
   text,
   className,
@@ -20,6 +25,7 @@ export function Prose({
   className?: string;
   muted?: boolean;
 }) {
+  const source = useMemo(() => prepareMath(text), [text]);
   return (
     <div
       className={cn(
@@ -36,14 +42,16 @@ export function Prose({
               {children}
             </ol>
           ),
+          span: MathSpan,
           ul: ({ children }) => (
             <ul className="ml-4 list-outside list-disc whitespace-normal">
               {children}
             </ul>
           ),
         }}
+        plugins={plugins}
       >
-        {text}
+        {source}
       </Streamdown>
     </div>
   );

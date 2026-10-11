@@ -2830,7 +2830,10 @@ A citation is:
 
 In the browser, `src/features/workspace/chat/LangAnswer.tsx` renders a
 program answer through `@openuidev/react-lang`'s `Renderer` and the
-Capy-owned components in `chat/blocks/` (prose through Streamdown, tabs,
+Capy-owned components in `chat/blocks/` (prose through Streamdown with
+`$…$`/`$$…$$` math drawn by KaTeX, which loads with the first formula; a
+single `$` follows Pandoc's rule so prices stay text, and a formula KaTeX
+cannot read shows its source; tabs,
 steps, accordions, callouts, label/value rows, cards, tables, SVG charts
 themed by `--chart-1..6`, reveals, and Mermaid diagrams through the notes'
 renderer, drawn once their code stops growing while the answer streams). Answers stored before the program format

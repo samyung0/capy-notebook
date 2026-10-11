@@ -47,6 +47,22 @@ export const chatFixtures = [
   },
   {
     content: [
+      'root = Answer([intro, rule, steps, cards, check])',
+      `intro = Md(${JSON.stringify('A loan of $1,200 at 5% a year grows as $A = P(1 + r)^t$, so after 2 years it is worth\n\n$$A = 1200 \\times 1.05^2 = 1323$$\n\nA $5-$10 fee is not part of the formula.')})`,
+      `rule = Callout("info", "Quadratic formula", ${JSON.stringify('The roots of $ax^2 + bx + c = 0$ are $x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}$.')})`,
+      'steps = Steps([s1, s2])',
+      `s1 = Step("Substitute", ${JSON.stringify('With $a = 1$, $b = -3$, $c = 2$: $\\Delta = 9 - 8 = 1$.')})`,
+      `s2 = Step("Solve", ${JSON.stringify('$$x = \\frac{3 \\pm 1}{2} \\in \\{1, 2\\}$$')})`,
+      `cards = Cards([Card("Mean", ${JSON.stringify('$\\bar{x} = \\frac{1}{n}\\sum_{i=1}^{n} x_i$')}), Card("Variance", ${JSON.stringify('$\\sigma^2 = \\frac{1}{n}\\sum (x_i - \\bar{x})^2$')})])`,
+      `check = Reveal("Check the second root", ${JSON.stringify('$2^2 - 3 \\cdot 2 + 2 = 0$, and a $3 coffee is still $3.')})`,
+    ].join('\n'),
+    hint: 'Inline and display math in Md, Callout, Steps, Cards and Reveal, beside dollar prices that stay text.',
+    id: 'chat-openui-math',
+    label: 'OpenUI: math',
+    prompt: 'Explain compound interest and the quadratic formula.',
+  },
+  {
+    content: [
       'root = Answer([intro, tabs, details, hint])',
       'intro = Md("Compare how substances cross the cell membrane.", [1])',
       'tabs = Tabs([passive, active])',
