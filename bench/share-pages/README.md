@@ -80,5 +80,9 @@ hit the cache, and the inlined CSS's size and comparison. Results land in the gi
 profile and state, the HTML report, the full Lighthouse result (`.lhr.json`) and the
 DevTools trace (`.trace.json`, opens in the Performance panel).
 
-Lighthouse budgets are report-only until a developer signs them off from a
-few runs' numbers.
+The medians must stay within `BUDGETS` in the script (signed off 2026-10-11
+from two runs: the worst median with some headroom), or the run fails:
+paint times per profile and edge state, mobile blocking time and LCP and
+the transfer size per page, CLS everywhere, and the uncached render's
+Worker and API time. Blocking time scales with the runner's CPU (GitHub's
+runners differ by about 1.6x), so its budgets come from the slower one.

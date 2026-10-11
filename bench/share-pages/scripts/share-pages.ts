@@ -9,9 +9,10 @@
  *   Set-Cookie or Vary, a second visitor with other cookies, language and
  *   user agent gets the same bytes from Workers Cache (`CF-Cache-Status: HIT`),
  *   and a forged link is not cached.
- * - Lighthouse (report only until budgets are signed off): mobile preset with
- *   simulated throttling. "Cold" runs add a unique query string, which Workers
- *   Cache keys on, so the Worker renders; "warm" runs hit the cached page.
+ * - Lighthouse against BUDGETS (fails the run): desktop with applied and
+ *   mobile with simulated throttling. Uncached runs add a unique query string,
+ *   which Workers Cache keys on, so the Worker renders; cached runs hit the
+ *   cached page.
  *
  * Everything this run creates is deleted at the end, along with leftovers of
  * earlier runs (named with PREFIX).
@@ -418,13 +419,11 @@ async function audit(port: number, url: string, profile: Profile) {
           }[];
         }
       | undefined
-  )?.items.map(
-    (item): Shift => ({
-      score: item.score,
-      selector: item.node?.selector,
-      snippet: item.node?.snippet?.slice(0, 200),
-    })
-  );
+  )?.items.map((item): Shift => ({
+    score: item.score,
+    selector: item.node?.selector,
+    snippet: item.node?.snippet?.slice(0, 200),
+  }));
   const metrics: Metrics = {
     bytes: Object.fromEntries(
       items.map((item) => [item.resourceType, item.transferSize])
@@ -444,7 +443,8 @@ async function audit(port: number, url: string, profile: Profile) {
     (event) =>
       event.method === 'Network.responseReceived' &&
       event.params.type === 'Document'
-  ) as { params: { response: { headers: Record<string, string> } } } | undefined;
+  ) as
+    { params: { response: { headers: Record<string, string> } } } | undefined;
   const header = (wanted: string) =>
     Object.entries(document?.params.response.headers ?? {}).find(
       ([name]) => name.toLowerCase() === wanted
@@ -526,7 +526,151 @@ async function measure(
   };
 }
 
-function summary(results: Awaited<ReturnType<typeof run>>) {
+/** Signed off 2026-10-11 from runs 38121449475 and 38122817338: the worst
+ * median with some headroom. Medians are compared, cached and uncached
+ * alike unless named. Blocking time is set from the slower of the two
+ * runners GitHub handed out (Lighthouse CPU benchmark about 2200 against
+ * 3600), since it scales with the runner's CPU. */
+const BUDGETS = {
+  /** Transfer size of the whole page, desktop cached. */
+  bytesKb: {
+    flashcards: 480,
+    notes: 720,
+    'notes-server-only': 480,
+    quizzes: 520,
+    workspace: 150,
+  },
+  cls: 0.02,
+  desktopCachedPaintMs: 500,
+  desktopUncachedFcpMs: 2000,
+  mobileFcpMs: 2300,
+  mobileLcpMs: {
+    flashcards: 2500,
+    notes: 3000,
+    'notes-server-only': 3000,
+    quizzes: 2500,
+    workspace: 2500,
+  },
+  mobileTbtMs: {
+    flashcards: 250,
+    notes: 450,
+    'notes-server-only': 100,
+    quizzes: 300,
+    workspace: 50,
+  },
+  /** The Worker's Server-Timing on an uncached render. */
+  workerApiMs: 500,
+  workerTotalMs: 800,
+};
+
+/** Every budget a page went over, as readable lines. */
+function budgetFailures(results: Awaited<ReturnType<typeof run>>) {
+  const failures: string[] = [];
+  const check = (
+    label: string,
+    value: number | undefined,
+    limit: number,
+    unit: string
+  ) => {
+    // A missing value (no Server-Timing) is a failure, not a pass.
+    if (value === undefined || Number.isNaN(value))
+      failures.push(`${label}: not measured`);
+    else if (value > limit) {
+      const shown =
+        unit === ''
+          ? value.toFixed(3)
+          : unit === ' KB'
+            ? value.toFixed(1)
+            : Math.round(value);
+      failures.push(`${label}: ${shown}${unit} over ${limit}${unit}`);
+    }
+  };
+  const per = (table: Record<string, number>, kind: string) => {
+    const limit = table[kind];
+    if (limit === undefined) throw new Error(`No budget for ${kind}`);
+    return limit;
+  };
+  for (const page of results.pages) {
+    const kind = page.kind;
+    check(
+      `${kind} bytes`,
+      page.desktop.cached.median.bytes.total / 1024,
+      per(BUDGETS.bytesKb, kind),
+      ' KB'
+    );
+    for (const edge of EDGES) {
+      for (const profile of ['desktop', 'mobile'] as const) {
+        const measured = page[profile][edge];
+        check(
+          `${kind} ${profile} ${edge} CLS`,
+          measured.median.cls,
+          BUDGETS.cls,
+          ''
+        );
+        if (edge === 'uncached') {
+          check(
+            `${kind} ${profile} Worker total`,
+            measured.server.total,
+            BUDGETS.workerTotalMs,
+            ' ms'
+          );
+          check(
+            `${kind} ${profile} API read`,
+            measured.server.api,
+            BUDGETS.workerApiMs,
+            ' ms'
+          );
+        }
+      }
+      const desktop = page.desktop[edge].median;
+      if (edge === 'cached') {
+        check(
+          `${kind} desktop cached FCP`,
+          desktop.fcp,
+          BUDGETS.desktopCachedPaintMs,
+          ' ms'
+        );
+        check(
+          `${kind} desktop cached LCP`,
+          desktop.lcp,
+          BUDGETS.desktopCachedPaintMs,
+          ' ms'
+        );
+      } else
+        check(
+          `${kind} desktop uncached FCP`,
+          desktop.fcp,
+          BUDGETS.desktopUncachedFcpMs,
+          ' ms'
+        );
+      const mobile = page.mobile[edge].median;
+      check(
+        `${kind} mobile ${edge} FCP`,
+        mobile.fcp,
+        BUDGETS.mobileFcpMs,
+        ' ms'
+      );
+      check(
+        `${kind} mobile ${edge} LCP`,
+        mobile.lcp,
+        per(BUDGETS.mobileLcpMs, kind),
+        ' ms'
+      );
+      check(
+        `${kind} mobile ${edge} TBT`,
+        mobile.tbt,
+        per(BUDGETS.mobileTbtMs, kind),
+        ' ms'
+      );
+    }
+  }
+  return failures;
+}
+
+function summary(
+  results: Awaited<ReturnType<typeof run>>,
+  overBudget: string[]
+) {
   const kb = (bytes = 0) => `${(bytes / 1024).toFixed(1)}`;
   const ms = (value: number) => `${Math.round(value)}`;
   const lines = [
@@ -573,7 +717,11 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
       lines.push(
         `- ${page.kind}: ${shift.score.toFixed(3)} \`${shift.selector ?? 'unknown element'}\``
       );
-  lines.push('', '**Inlined CSS** (the page with only it against the full stylesheets)', '');
+  lines.push(
+    '',
+    '**Inlined CSS** (the page with only it against the full stylesheets)',
+    ''
+  );
   for (const page of results.pages)
     lines.push(
       `- ${page.kind}: ${kb(page.styles.subsetBytes)} of ${kb(page.styles.fullBytes)} KB, ${page.styles.checked} computed styles compared${page.styles.differences.length ? ` — **FAILED:** ${page.styles.differences.join('; ')}` : ', no difference'}${page.styles.noise.length ? ` (rendering noise, the full page differs from itself too: ${page.styles.noise.join('; ')})` : ''}`
@@ -585,9 +733,11 @@ function summary(results: Awaited<ReturnType<typeof run>>) {
     );
   if (results.forged.length)
     lines.push(`- **FAILED:** ${results.forged.join('; ')}`);
+  lines.push('', '**Budgets** (`BUDGETS` in the bench script)', '');
   lines.push(
-    '',
-    'Budgets are report-only until signed off; caching and inlined CSS failures fail the run.'
+    ...(overBudget.length
+      ? overBudget.map((failure) => `- **FAILED:** ${failure}`)
+      : ['- every page within budget'])
   );
   return `${lines.join('\n')}\n`;
 }
@@ -653,7 +803,10 @@ async function run(page: Page) {
       lighthouse: (
         JSON.parse(
           await readFile(
-            path.join(directory, '../../../node_modules/lighthouse/package.json'),
+            path.join(
+              directory,
+              '../../../node_modules/lighthouse/package.json'
+            ),
             'utf8'
           )
         ) as { version: string }
@@ -697,7 +850,10 @@ try {
     ...results,
     pages: results.pages.map(({ desktop, mobile, ...item }) => ({
       ...item,
-      desktop: { cached: keep(desktop.cached), uncached: keep(desktop.uncached) },
+      desktop: {
+        cached: keep(desktop.cached),
+        uncached: keep(desktop.uncached),
+      },
       mobile: { cached: keep(mobile.cached), uncached: keep(mobile.uncached) },
     })),
     runs: RUNS,
@@ -706,10 +862,12 @@ try {
     path.join(out, 'share-pages.json'),
     `${JSON.stringify(snapshot, null, 2)}\n`
   );
-  const markdown = summary(results);
+  const overBudget = budgetFailures(results);
+  const markdown = summary(results, overBudget);
   await writeFile(path.join(out, 'summary.md'), markdown);
   console.log(markdown);
   failed =
+    overBudget.length > 0 ||
     results.forged.length > 0 ||
     results.pages.some(
       (item) =>
