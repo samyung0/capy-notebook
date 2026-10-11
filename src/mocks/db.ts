@@ -2093,6 +2093,7 @@ export const publicQuizzes: (Omit<PublicQuiz, 'questions'> & {
   {
     ...seedQuizzes[0],
     author: 'mrslee',
+    canClone: true,
     clones: 540,
     id: 'pub_qz_1',
     isOwner: false,
@@ -2102,6 +2103,7 @@ export const publicQuizzes: (Omit<PublicQuiz, 'questions'> & {
   {
     ...seedQuizzes[2],
     author: 'mathpro',
+    canClone: true,
     clones: 410,
     id: 'pub_qz_2',
     isOwner: false,
@@ -2113,6 +2115,7 @@ export const publicFlashcardSets: PublicFlashcardSet[] = [
   {
     ...seedFlashcardSets[0],
     author: 'mrslee',
+    canClone: true,
     clones: 320,
     id: 'pub_dk_1',
     isOwner: false,
@@ -2122,6 +2125,7 @@ export const publicFlashcardSets: PublicFlashcardSet[] = [
   {
     ...seedFlashcardSets[1],
     author: 'mathpro',
+    canClone: true,
     clones: 205,
     id: 'pub_dk_2',
     isOwner: false,

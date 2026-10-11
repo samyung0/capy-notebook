@@ -3,7 +3,9 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
@@ -291,5 +293,244 @@ func TestItemCloneRefusesWorkspaceLinkViewers(t *testing.T) {
 	}
 	if _, err := s.CloneMaterial(ctx, visitor, note.ID, CloneTarget{Name: "Copy"}); err != nil {
 		t.Fatalf("link editor material clone: %v", err)
+	}
+}
+
+// A file whose export-only publication left its bytes unindexed is marked for
+// reprocessing; its copy keeps the mark, so the scheduler indexes the copy as
+// it does the source.
+func TestFileCloneKeepsTheReprocessMark(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_clone_reprocess")
+	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	sourceTestSeed(t, s, owner, file.ID)
+	// What applyExportTx leaves behind.
+	for _, q := range []string{
+		`UPDATE files SET ever_parsed_successfully=true, parse_mode='fast', indexed=false, content_hash=NULL WHERE id=$1`,
+		`UPDATE source_documents SET reprocess_at=now()-interval '1 minute' WHERE file_id=$1`,
+	} {
+		if _, err := s.pool.Exec(ctx, q, file.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	target, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clone, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "lesson.docx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var due bool
+	if err := s.pool.QueryRow(ctx, `SELECT COALESCE(reprocess_at<=now(),false) FROM source_documents WHERE file_id=$1`,
+		clone.ID).Scan(&due); err != nil {
+		t.Fatal(err)
+	}
+	if !due || clone.Indexed {
+		t.Fatalf("clone reprocess due=%v indexed=%v, want due and unindexed", due, clone.Indexed)
+	}
+}
+
+// A note's index travels with its copy only while it is current: a note
+// edited since its index was built starts dirty in a single and in a
+// workspace clone, so the scheduler indexes the copy's own text.
+func TestNoteCloneLeavesAStaleIndexBehind(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_note_clone_index")
+	source, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	note, err := s.CreateMaterial(ctx, Material{
+		CreatedBy: owner, WorkspaceID: source.ID, WorkspaceName: source.Name, Kind: "note",
+		Title: "Lecture", Content: materialTestContent(t, "body"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	contentID := uid("rgc")
+	for _, statement := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO rag_contents(id,workspace_id,content_hash,status) VALUES($1,$2,'note-hash','ready')`, []any{contentID, source.ID}},
+		{`INSERT INTO rag_material_contents(material_id,workspace_id,content_id) VALUES($1,$2,$3)`, []any{note.ID, source.ID, contentID}},
+		{`UPDATE materials SET index_dirty_at=NULL, index_job_id=NULL, index_error=NULL WHERE id=$1`, []any{note.ID}},
+	} {
+		if _, err := s.pool.Exec(ctx, statement.sql, statement.args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	index := func(materialID string) (content string, dirty bool) {
+		t.Helper()
+		if err := s.pool.QueryRow(ctx, `SELECT COALESCE((SELECT content_id FROM rag_material_contents WHERE material_id=m.id),''),
+				m.index_dirty_at IS NOT NULL FROM materials m WHERE m.id=$1`, materialID).Scan(&content, &dirty); err != nil {
+			t.Fatal(err)
+		}
+		return content, dirty
+	}
+
+	current, err := s.CloneMaterial(ctx, owner, note.ID, CloneTarget{WorkspaceID: source.ID, Name: "Current"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content, dirty := index(current.ID); content != contentID || dirty {
+		t.Fatalf("current index: copy has %q dirty=%v, want the shared %s", content, dirty, contentID)
+	}
+
+	// Edited within the scheduler's idle window: the index still holds the old text.
+	if _, err := s.pool.Exec(ctx, `UPDATE materials SET index_dirty_at=now() WHERE id=$1`, note.ID); err != nil {
+		t.Fatal(err)
+	}
+	stale, err := s.CloneMaterial(ctx, owner, note.ID, CloneTarget{WorkspaceID: source.ID, Name: "Stale"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if content, dirty := index(stale.ID); content != "" || !dirty {
+		t.Fatalf("stale index: copy has %q dirty=%v, want none and dirty", content, dirty)
+	}
+	copied, err := s.CloneWorkspace(ctx, owner, source.ID, WorkspaceCreate{Name: "Copy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var copiedNote string
+	if err := s.pool.QueryRow(ctx, `SELECT id FROM materials WHERE workspace_id=$1 AND title='Lecture'`,
+		copied.ID).Scan(&copiedNote); err != nil {
+		t.Fatal(err)
+	}
+	if content, dirty := index(copiedNote); content != "" || !dirty {
+		t.Fatalf("workspace clone of a stale index: %q dirty=%v, want none and dirty", content, dirty)
+	}
+}
+
+// A file cloned into a workspace that embeds in another space is processed
+// again like an upload (Epo 2026-10-12): the cloner's credits are reserved
+// and an exhausted cloner is refused; a processed store-only Office file is
+// parsed as its source was; the copy's bytes stay charged while it is pending.
+func TestFileClonePinMismatchQueuesIngest(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_clone_pin_owner")
+	targetOwner := newBlobTestUser(t, s, "u_clone_pin_target")
+	source, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	itemCloneIndex(t, s, source.ID, file.ID, "pin-hash")
+	// A store-only upload its owner processed later keeps parse_mode 'none'.
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET parse_mode='none', ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.CreateWorkspace(ctx, targetOwner, WorkspaceCreate{Name: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemCloneMember(t, s, target.ID, owner, "editor")
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET embedding_model_version=embedding_model_version+1 WHERE id=$1`, target.ID); err != nil {
+		t.Fatal(err)
+	}
+	used := userUsedBytes(t, s, targetOwner)
+
+	clone, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "lesson.docx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clone.Status != "pending" || clone.Indexed {
+		t.Fatalf("clone status=%s indexed=%v, want pending and unindexed", clone.Status, clone.Indexed)
+	}
+	var mode, actor, reservation string
+	if err := s.pool.QueryRow(ctx, `SELECT payload->>'parseMode', payload->>'actorUserId', payload->>'reservationId'
+		FROM jobs WHERE payload->>'fileId'=$1`, clone.ID).Scan(&mode, &actor, &reservation); err != nil {
+		t.Fatal(err)
+	}
+	if mode != "fast" || actor != owner || reservation == "" {
+		t.Fatalf("ingest job mode=%s actor=%s reservation=%q, want fast, the cloner, a reservation", mode, actor, reservation)
+	}
+	if got := userUsedBytes(t, s, targetOwner); got != used+file.SizeBytes {
+		t.Fatalf("payer used %d, want %d (the pending copy charged)", got, used+file.SizeBytes)
+	}
+
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros) VALUES ($1, $2)
+		ON CONFLICT (user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros`,
+		owner, mustPlanLimits(t, s, PlanFree).CreditMicros); err != nil {
+		t.Fatal(err)
+	}
+	var exhausted *CreditsExhaustedError
+	if _, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "again.docx"}); !errors.As(err, &exhausted) {
+		t.Fatalf("clone without credits = %v, want CreditsExhaustedError", err)
+	}
+}
+
+// A clone honours the per-file cap of the plan that pays for it, as an upload
+// does (Epo 2026-10-12): the file clone and the workspace clone are refused.
+func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_clone_cap")
+	source, file := sourceTestFile(t, s, owner, "big.pdf", "pdf")
+	limit := mustPlanLimits(t, s, PlanFree).SourceFileBytes
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, limit+1); err != nil {
+		t.Fatal(err)
+	}
+	target, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tooLarge *FileTooLargeError
+	if _, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "big.pdf"}); !errors.As(err, &tooLarge) || tooLarge.LimitBytes != limit {
+		t.Fatalf("file clone = %v, want FileTooLargeError at %d", err, limit)
+	}
+	if _, err := s.CloneWorkspace(ctx, owner, source.ID, WorkspaceCreate{Name: "Copy"}); !errors.As(err, &tooLarge) {
+		t.Fatalf("workspace clone = %v, want FileTooLargeError", err)
+	}
+}
+
+// Concurrent clones into one workspace (repeatable read) stay under its file
+// cap and share one new chapter: both charge the payer's storage row, so the
+// later one fails to serialize and retries on a snapshot holding the first.
+func TestConcurrentFileClonesKeepTheCapAndOneChapter(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_clone_race")
+	_, file := sourceTestFile(t, s, owner, "race.pdf", "pdf")
+	race := func(workspaceID string) []error {
+		t.Helper()
+		errs := make([]error, 2)
+		var wg sync.WaitGroup
+		for i := range errs {
+			wg.Go(func() {
+				_, _, errs[i] = s.CloneFile(ctx, owner, file.ID, CloneTarget{
+					WorkspaceID: workspaceID, ChapterName: "Race", Name: fmt.Sprintf("race %d.pdf", i),
+				})
+			})
+		}
+		wg.Wait()
+		return errs
+	}
+
+	full, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Full"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seedWorkspaceFiles(t, s, full.ID, owner, mustPlanLimits(t, s, PlanFree).FilesPerWorkspace-1)
+	errs := race(full.ID)
+	var limit *FileLimitExceededError
+	if (errs[0] == nil) == (errs[1] == nil) || !(errors.As(errs[0], &limit) || errors.As(errs[1], &limit)) {
+		t.Fatalf("clones at the cap = %v, want one copy and one file-limit refusal", errs)
+	}
+
+	roomy, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Roomy"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if errs := race(roomy.ID); errs[0] != nil || errs[1] != nil {
+		t.Fatalf("clones with room = %v", errs)
+	}
+	var chapters int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM chapters WHERE workspace_id=$1 AND name='Race'`,
+		roomy.ID).Scan(&chapters); err != nil {
+		t.Fatal(err)
+	}
+	if chapters != 1 {
+		t.Fatalf("chapters named Race = %d, want 1", chapters)
 	}
 }

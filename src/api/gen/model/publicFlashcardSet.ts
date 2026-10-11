@@ -10,6 +10,7 @@ import type { UserColor } from './userColor.ts';
 
 export interface PublicFlashcardSet {
   author: string;
+  canClone: boolean;
   canEdit: boolean;
   canEditContent: boolean;
   cardCount: number;

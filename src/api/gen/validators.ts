@@ -1302,6 +1302,7 @@ export const UpdateEventResponse = zod.object({
  */
 export const ExploreFlashcardSetsResponseItem = zod.object({
   "author": zod.string(),
+  "canClone": zod.boolean(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "cardCount": zod.int(),
@@ -1371,6 +1372,7 @@ export const ExploreFlashcardSetsResponse = zod.array(ExploreFlashcardSetsRespon
  */
 export const ExploreQuizzesResponseItem = zod.object({
   "author": zod.string(),
+  "canClone": zod.boolean(),
   "canEdit": zod.boolean(),
   "canEditContent": zod.boolean(),
   "chapters": zod.array(zod.string()),

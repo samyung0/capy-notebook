@@ -70,6 +70,16 @@ func (e *FileLimitExceededError) Code() string {
 	return "files_limit_exceeded"
 }
 
+// FileTooLargeError refuses a file past the per-file cap (plan
+// SourceFileBytes) of the account that pays for it, as an upload is refused.
+type FileTooLargeError struct {
+	LimitBytes int64
+}
+
+func (e *FileTooLargeError) Error() string {
+	return fmt.Sprintf("file larger than the plan's %d-byte per-file cap", e.LimitBytes)
+}
+
 type StorageUsage struct {
 	UserID        string   `json:"userId"`
 	UsedBytes     int64    `json:"storageUsedBytes"`

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -270,6 +271,20 @@ func mapHTTPError(err error) error {
 					"filesLimit":     fileLimit.Limit,
 					"workspaceId":    fileLimit.WorkspaceID,
 				},
+			}},
+		}
+	}
+	// A clone past the payer's per-file cap: the upload's refusal, with a code
+	// and the cap for the clone dialog.
+	var tooLarge *store.FileTooLargeError
+	if errors.As(err, &tooLarge) {
+		return &huma.ErrorModel{
+			Status: http.StatusBadRequest,
+			Title:  http.StatusText(http.StatusBadRequest),
+			Detail: fmt.Sprintf("uploads support files up to %d MB", tooLarge.LimitBytes>>20),
+			Errors: []*huma.ErrorDetail{{
+				Message: "file_too_large",
+				Value:   map[string]any{"maxBytes": tooLarge.LimitBytes},
 			}},
 		}
 	}

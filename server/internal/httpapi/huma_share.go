@@ -184,7 +184,7 @@ func (a *api) cloneMaterial(ctx context.Context, in *cloneMaterialInput) (*mater
 /* ------------------------------------------------------------------ explore */
 
 func (a *api) exploreFlashcardSets(ctx context.Context, _ *struct{}) (*publicFlashcardSetsOutput, error) {
-	res, err := a.s.ListPublicFlashcardSets(ctx)
+	res, err := a.s.ListPublicFlashcardSets(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
@@ -360,15 +361,32 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context, userID string) ([]Publ
 	return out, rows.Err()
 }
 
-func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
+// CanCloneFrom is who may copy what sits in a workspace, on roles already
+// read (assertCloneSourceTx): members of any role and effective editors.
+func CanCloneFrom(member, effective WorkspaceRole) bool {
+	return member != "" || RoleCanEdit(effective)
+}
+
+// exploreCloneCols reads, after a materials row m joined to its workspace w
+// and the caller's ($1) membership me, whether the caller may clone it: a
+// standalone public item is open to every reader (exploreCanClone).
+const exploreCloneCols = memberRoleCol + `, COALESCE(w.privacy,'private'), COALESCE(w.share_role,'viewer')`
+
+func exploreCanClone(workspaceID string, member WorkspaceRole, privacy Privacy, shareRole ShareRole) bool {
+	return workspaceID == "" || CanCloneFrom(member, EffectiveRole(member, privacy, shareRole))
+}
+
+// ListPublicQuizzes lists Explore quizzes with whether userID may clone each.
+func (s *Store) ListPublicQuizzes(ctx context.Context, userID string) ([]PublicQuiz, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.provenance,
-			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
+		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
-		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
+		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -379,7 +397,11 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 		var author string
 		var clones int
 		var provenance []byte
-		if err := rows.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &provenance, &author, &clones); err != nil {
+		var member WorkspaceRole
+		var privacy Privacy
+		var shareRole ShareRole
+		if err := rows.Scan(&mt.ID, &mt.WorkspaceID, &mt.WorkspaceName, &mt.Kind, &mt.Title, &mt.Content, &mt.ChapterID, &mt.ScopeChapters, &mt.ScopeFileNames, &mt.Privacy, &mt.Color, &mt.CreatedAt, &provenance, &author, &clones,
+			&member, &privacy, &shareRole); err != nil {
 			return nil, err
 		}
 		if mt.Provenance, err = decodeProvenance(provenance); err != nil {
@@ -389,20 +411,24 @@ func (s *Store) ListPublicQuizzes(ctx context.Context) ([]PublicQuiz, error) {
 		if err != nil {
 			continue // skip unparseable content instead of failing the page
 		}
-		out = append(out, PublicQuiz{Quiz: q, Author: author, Clones: clones})
+		canClone := exploreCanClone(mt.WorkspaceID, member, privacy, shareRole)
+		out = append(out, PublicQuiz{Quiz: q, Author: author, Clones: clones, CanClone: canClone})
 	}
 	return out, rows.Err()
 }
 
-func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardSet, error) {
+// ListPublicFlashcardSets lists Explore flashcards with whether userID may
+// clone each.
+func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID string) ([]PublicFlashcardSet, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+flashcardSetCols+`,
-			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0)
+			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
 		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
+		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
 		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
-		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`)
+		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -410,11 +436,15 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context) ([]PublicFlashcardS
 	out := []PublicFlashcardSet{}
 	for rows.Next() {
 		var item PublicFlashcardSet
-		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones)
+		var member WorkspaceRole
+		var privacy Privacy
+		var shareRole ShareRole
+		set, err := scanFlashcardSetRow(rows, &item.Author, &item.Clones, &member, &privacy, &shareRole)
 		if err != nil {
 			return nil, err
 		}
 		item.FlashcardSet = set
+		item.CanClone = exploreCanClone(set.WorkspaceID, member, privacy, shareRole)
 		out = append(out, item)
 	}
 	return out, rows.Err()
@@ -569,8 +599,10 @@ func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any)
 
 // insertCloneFileTx copies one snapshot file into workspaceID as newID: its
 // published bytes, published captions and saved edit state, which reopens at
-// epoch 1 on the same base (job, refresh and notice columns start empty).
-// Its thumbnail is copied under the new id once the transaction commits.
+// epoch 1 on the same base (job, refresh and notice columns start empty; the
+// reprocess mark travels, so a copy of bytes an export-only publication left
+// unindexed is indexed like its source). Its thumbnail is copied under the new
+// id once the transaction commits.
 func insertCloneFileTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -597,10 +629,12 @@ func insertCloneFileTx(
 		if _, err := tx.Exec(ctx, `INSERT INTO source_documents
 			(user_id, file_id, format, epoch, checkpoint, indexed_checkpoint, base_revision, base_blob_path,
 			 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
-			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal)
+			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal,
+			 reprocess_at)
 			SELECT $3, $2, format, 1, checkpoint, indexed_checkpoint, $4, base_blob_path,
 			 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
-			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal
+			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal,
+			 reprocess_at
 			FROM source_documents WHERE file_id=$1`, f.id, newID, actorID, f.revision); err != nil {
 			return nil, err
 		}
@@ -1059,6 +1093,12 @@ func (s *Store) cloneWorkspaceOnce(
 			Kind:        "workspace",
 		}
 	}
+	// The cloner's plan caps each file as it caps an upload (Epo 2026-10-12).
+	for _, file := range snapshot.files {
+		if file.sizeBytes > limits.SourceFileBytes {
+			return Workspace{}, nil, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
+		}
+	}
 	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {
 		return Workspace{}, nil, err
 	}
@@ -1246,6 +1286,30 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, dstID string, fi
 	indexed := map[string]bool{}
 	oldFiles, newFiles := unzipIDs(fileMap)
 	oldMaterials, newMaterials := unzipIDs(materialMap)
+	// A note's index travels only while it is current: an edit since it was
+	// built (dirty), a job rebuilding it or a failed one leave it behind the
+	// note's text, so its copy is indexed afresh instead.
+	if len(oldMaterials) > 0 {
+		current := map[string]string{}
+		rows, err := tx.Query(ctx, `SELECT id FROM materials WHERE id = ANY($1::text[])
+			AND index_dirty_at IS NULL AND index_job_id IS NULL AND index_error IS NULL`, oldMaterials)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			current[id] = materialMap[id]
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		oldMaterials, newMaterials = unzipIDs(current)
+	}
 	if len(oldFiles) == 0 && len(oldMaterials) == 0 {
 		return indexed, nil
 	}
@@ -1348,6 +1412,10 @@ func copyRetrievalContents(ctx context.Context, tx pgx.Tx, dstID string, pin mod
 	if err != nil {
 		return err
 	}
+	// rag_contents is unique per workspace and content hash: an ingest that
+	// added this content to the target after the snapshot conflicts here. That
+	// is a serialization failure (PostgreSQL reports it as one under
+	// serializable), so the clone retries on a snapshot that holds the content.
 	if _, err := tx.Exec(ctx, `
 		WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 		INSERT INTO rag_contents (id, workspace_id, content_hash, status,
@@ -1358,7 +1426,9 @@ func copyRetrievalContents(ctx context.Context, tx pgx.Tx, dstID string, pin mod
 		       rc.source_sha256, rc.pipeline_identity
 		FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id
 		WHERE rc.status='ready'`,
-		oldContents, newContents, dstID); err != nil {
+		oldContents, newContents, dstID); isUniqueViolation(err) {
+		return &pgconn.PgError{Code: "40001", Message: "clone index raced an ingest of the same content"}
+	} else if err != nil {
 		return err
 	}
 	// Dest chunk ids are derived from the new content id + donor chunk id so
@@ -1463,7 +1533,10 @@ func (s *Store) lockCloneTargetTx(
 		Scan(&dest.workspaceName); err != nil {
 		return cloneDestination{}, err
 	}
-	rows, err := tx.Query(ctx, `SELECT user_id FROM workspace_members WHERE workspace_id=$1`, target.WorkspaceID)
+	// The editor check above read membership from the snapshot, which may
+	// predate the workspace lock: locking the rows raises a serialization
+	// failure (and a retry) when a removal or role change committed since.
+	rows, err := tx.Query(ctx, `SELECT user_id FROM workspace_members WHERE workspace_id=$1 FOR SHARE`, target.WorkspaceID)
 	if err != nil {
 		return cloneDestination{}, err
 	}
@@ -1489,7 +1562,7 @@ func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID str
 	if effective == "" {
 		return ErrNotFound
 	}
-	if member == "" && !RoleCanEdit(effective) {
+	if !CanCloneFrom(member, effective) {
 		return ErrForbidden
 	}
 	return nil
@@ -1538,12 +1611,12 @@ func (s *Store) cloneFileOnce(ctx context.Context, userID, fileID string, target
 	} else if err != nil {
 		return File{}, nil, err
 	}
+	if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
+		return File{}, nil, err
+	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
 	if err != nil {
 		return File{}, nil, sourceOwnerHidden(err, sourceOwnerID)
-	}
-	if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
-		return File{}, nil, err
 	}
 	files, err := snapshotCloneFilesTx(ctx, tx, `f.id=$1`, fileID)
 	if err != nil {
@@ -1558,6 +1631,18 @@ func (s *Store) cloneFileOnce(ctx context.Context, userID, fileID string, target
 	}
 	if err := s.gateWorkspaceFilesTx(ctx, tx, dest.workspaceID, 1); err != nil {
 		return File{}, nil, err
+	}
+	// The payer's plan caps one file as it caps an upload (Epo 2026-10-12).
+	tier, err := s.effectivePlanTierForUser(ctx, tx, dest.payerID)
+	if err != nil {
+		return File{}, nil, err
+	}
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return File{}, nil, err
+	}
+	if f.sizeBytes > limits.SourceFileBytes {
+		return File{}, nil, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
 	}
 	if err := s.gateStorageTx(ctx, tx, dest.payerID, f.sizeBytes+f.sourceBytes); err != nil {
 		return File{}, nil, err
@@ -1592,11 +1677,24 @@ func (s *Store) cloneFileOnce(ctx context.Context, userID, fileID string, target
 
 // queueCloneIngestTx processes a copied file again, as an upload is, when its
 // target embeds in another space than the source and holds no copy of the
-// content (or holds one still processing). The actor pays the re-embedding;
-// the pipeline's donor path reuses the parse where it can.
+// content (or holds one still processing). The actor pays the re-embedding
+// and is refused without credits (Epo 2026-10-12); the pipeline's donor path
+// reuses the parse where it can. The copy's bytes stay charged while it is
+// pending (files are charged whatever their status).
 func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, workspaceID, fileID string, f workspaceCloneFile) error {
-	plan, err := sourceupload.BuildProcessingPlan(f.name, f.kind, f.parseMode)
-	if err != nil || plan.Route == sourceupload.RouteStoreOnly || f.blobPath == nil {
+	// A processed store-only upload keeps parse_mode 'none' (see reprocessTx),
+	// so its copy is parsed the way the source was.
+	mode := f.parseMode
+	if mode == sourceupload.ParseModeNone && f.everParsed {
+		mode = sourceupload.ParseModeFast
+	}
+	plan, err := sourceupload.BuildProcessingPlan(f.name, f.kind, mode)
+	if err != nil {
+		return err
+	}
+	if plan.Route == sourceupload.RouteStoreOnly || f.blobPath == nil {
+		// Nothing to process: the copy is stored, not indexed.
+		_, err = tx.Exec(ctx, `UPDATE files SET indexed=false WHERE id=$1`, fileID)
 		return err
 	}
 	reservation, err := s.beginIngestSpendTx(ctx, tx, actorID, workspaceID)
@@ -1612,7 +1710,7 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 	}
 	payload, err := s.ingestJobPayload(ctx, tx, actorID, map[string]any{
 		"fileId": fileID, "workspaceId": workspaceID, "blobPath": *f.blobPath, "kind": f.kind,
-		"parser": parser, "parseMode": f.parseMode, "processingPlan": plan,
+		"parser": parser, "parseMode": mode, "processingPlan": plan,
 		"sourceETag": etag, "sourceRevision": f.revision, "reservationId": reservation,
 	})
 	if err != nil {
@@ -1660,30 +1758,13 @@ func (s *Store) cloneMaterialOnce(
 		return Material{}, err
 	}
 	defer tx.Rollback(ctx)
-	var sourceWorkspaceID *string
-	var sourceOwnerID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id
-		FROM materials WHERE id=$1 AND trashed_at IS NULL`, matID).
-		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
-		return Material{}, ErrNotFound
-	} else if err != nil {
-		return Material{}, err
-	}
-	// Account lifecycle is the only source-side serialization. The material and
-	// its workspace remain unlocked so accepted collaboration stores can finish.
-	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
-	if err != nil {
-		return Material{}, sourceOwnerHidden(err, sourceOwnerID)
-	}
 	src, err := scanMaterial(tx.QueryRow(ctx, `SELECT `+materialCols+`
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, matID))
+	if isNoRows(err) {
+		return Material{}, ErrNotFound
+	}
 	if err != nil {
 		return Material{}, err
-	}
-	if src.OwnerUserID != sourceOwnerID ||
-		(sourceWorkspaceID == nil) != (src.WorkspaceID == "") ||
-		(sourceWorkspaceID != nil && src.WorkspaceID != *sourceWorkspaceID) {
-		return Material{}, ErrCloneSourceChanged
 	}
 	// An embedded row is copied only with its note.
 	if src.ParentMaterialID != "" {
@@ -1696,6 +1777,12 @@ func (s *Store) cloneMaterialOnce(
 		if err := assertCloneSourceTx(ctx, tx, userID, src.WorkspaceID); err != nil {
 			return Material{}, err
 		}
+	}
+	// Account lifecycle is the only source-side serialization. The material and
+	// its workspace remain unlocked so accepted collaboration stores can finish.
+	dest, err := s.lockCloneTargetTx(ctx, tx, src.OwnerUserID, userID, target)
+	if err != nil {
+		return Material{}, sourceOwnerHidden(err, src.OwnerUserID)
 	}
 
 	// A note brings its embedded rows along; their references are rewritten

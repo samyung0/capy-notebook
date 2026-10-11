@@ -3606,6 +3606,8 @@ components:
       properties:
         author:
           type: string
+        canClone:
+          type: boolean
         canEdit:
           type: boolean
         canEditContent:
@@ -3642,6 +3644,7 @@ components:
       required:
         - author
         - clones
+        - canClone
         - revision
         - id
         - name
@@ -3659,6 +3662,8 @@ components:
       properties:
         author:
           type: string
+        canClone:
+          type: boolean
         canEdit:
           type: boolean
         canEditContent:
@@ -3702,6 +3707,7 @@ components:
       required:
         - author
         - clones
+        - canClone
         - revision
         - id
         - name

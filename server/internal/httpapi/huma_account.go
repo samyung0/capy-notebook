@@ -278,7 +278,7 @@ func (a *api) exploreWorkspaces(ctx context.Context, _ *struct{}) (*publicWorksp
 }
 
 func (a *api) exploreQuizzes(ctx context.Context, _ *struct{}) (*publicQuizzesOutput, error) {
-	res, err := a.s.ListPublicQuizzes(ctx)
+	res, err := a.s.ListPublicQuizzes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}

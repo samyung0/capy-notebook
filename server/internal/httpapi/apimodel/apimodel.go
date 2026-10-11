@@ -355,7 +355,7 @@ func FromWorkspaceAccess(
 	out.Capabilities.CanEdit = out.Capabilities.CanEdit && !actorReadOnly &&
 		(owner.State == "" || owner.CanEdit())
 	out.Capabilities.CanEditContent = contentEditable(out.Capabilities.CanEdit, owner)
-	out.CanClone = (member != "" || store.RoleCanEdit(effective)) && !actorReadOnly
+	out.CanClone = store.CanCloneFrom(member, effective) && !actorReadOnly
 	if member == "" {
 		out.Role = nil
 	} else {
@@ -487,13 +487,16 @@ type PublicQuiz struct {
 	Quiz
 	Author string `json:"author"`
 	Clones int    `json:"clones"`
+	// CanClone: the caller may copy it, a member of its workspace or an
+	// effective editor (any reader of a standalone one).
+	CanClone bool `json:"canClone"`
 }
 
 // FromPublicQuizzes lists quizzes for browsing, so questions are answer-free.
 func FromPublicQuizzes(qs []store.PublicQuiz) []PublicQuiz {
 	out := make([]PublicQuiz, len(qs))
 	for i, q := range qs {
-		pq := PublicQuiz{Quiz: FromQuiz(q.Quiz), Author: q.Author, Clones: q.Clones}
+		pq := PublicQuiz{Quiz: FromQuiz(q.Quiz), Author: q.Author, Clones: q.Clones, CanClone: q.CanClone}
 		pq.Questions = questions.LearnerViews(pq.Questions)
 		pq.IsOwner = false
 		pq.CanEdit, pq.CanEditContent = false, false
@@ -505,14 +508,15 @@ func FromPublicQuizzes(qs []store.PublicQuiz) []PublicQuiz {
 // PublicFlashcardSet is a flashcard flashcardSet shared on Explore.
 type PublicFlashcardSet struct {
 	store.FlashcardSet
-	Author string `json:"author"`
-	Clones int    `json:"clones"`
+	Author   string `json:"author"`
+	Clones   int    `json:"clones"`
+	CanClone bool   `json:"canClone"` // as PublicQuiz.CanClone
 }
 
 func FromPublicFlashcardSets(ds []store.PublicFlashcardSet) []PublicFlashcardSet {
 	out := make([]PublicFlashcardSet, len(ds))
 	for i, d := range ds {
-		out[i] = PublicFlashcardSet{FlashcardSet: d.FlashcardSet, Author: d.Author, Clones: d.Clones}
+		out[i] = PublicFlashcardSet{FlashcardSet: d.FlashcardSet, Author: d.Author, Clones: d.Clones, CanClone: d.CanClone}
 	}
 	return out
 }

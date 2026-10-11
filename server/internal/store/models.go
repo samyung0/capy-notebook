@@ -595,12 +595,15 @@ type PublicQuiz struct {
 	Quiz
 	Author string `json:"author"`
 	Clones int    `json:"clones"`
+	// CanClone: the caller may copy it (CanCloneFrom; a standalone item, anyone).
+	CanClone bool `json:"canClone"`
 }
 
 type PublicFlashcardSet struct {
 	FlashcardSet
-	Author string `json:"author"`
-	Clones int    `json:"clones"`
+	Author   string `json:"author"`
+	Clones   int    `json:"clones"`
+	CanClone bool   `json:"canClone"` // as PublicQuiz.CanClone
 }
 
 // FileChange is one source file in the Indexing tab's file changes list.
