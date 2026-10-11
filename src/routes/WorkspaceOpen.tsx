@@ -1,10 +1,10 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
+import { usePanelRef } from 'react-resizable-panels';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
   useAddChapter,
   useChapters,
-  useCloneWorkspace,
   useFiles,
   useUpdateChapter,
   useWorkspace,
@@ -33,7 +33,6 @@ import {
 } from '@/components/ui/Resizable';
 import { Tabs } from '@/components/ui/Tabs';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { userToast } from '@/components/ui/userToast';
 import { officeFormatOf } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
@@ -52,6 +51,7 @@ import {
 } from '@/features/workspace/AddSourceDialog';
 import { isWorkspaceReadOnly } from '@/features/workspace/access';
 import { ChatPanel } from '@/features/workspace/ChatPanel';
+import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import { FilesPanel } from '@/features/workspace/FilesPanel';
 import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { PanelTabRow, type TabAction } from '@/features/workspace/PanelTabRow';
@@ -59,8 +59,6 @@ import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
-import { trackItemCloned } from '@/lib/analytics';
-import { toastCloneError } from '@/lib/authToasts';
 import { isBoolean, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
@@ -71,6 +69,52 @@ const TAB_ICON: Record<PanelTab, IconName> = {
   study: 'bookOpenCheck',
 };
 /** Three columns is a per-browser preference, not per workspace. */
+
+// The rail is 32% of the group from 1380px up (~438px at a 1400px window).
+// Narrower, it takes three quarters of the lost width so the viewer keeps
+// its room: ~337px at a 1260px window. 320px keeps the tab row whole.
+const RAIL_SHARE = 0.32;
+const RAIL_FULL_AT = 1380;
+function railSize(groupWidth: number) {
+  if (groupWidth >= RAIL_FULL_AT) return `${RAIL_SHARE * 100}%`;
+  return `${RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth)}px`;
+}
+
+/** The right rail. In two columns it refits whenever the group's width
+ * changes, which also drops a width the user dragged. */
+function RailPanel({
+  fitToWidth,
+  children,
+}: {
+  fitToWidth: boolean;
+  children: ReactNode;
+}) {
+  const panelRef = usePanelRef();
+  const [element, setElement] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    const group = element?.parentElement;
+    if (!(fitToWidth && group)) return;
+    // The first callback lands after the group has registered its panels.
+    const observer = new ResizeObserver(([entry]) => {
+      panelRef.current?.resize(railSize(entry.contentRect.width));
+    });
+    observer.observe(group);
+    return () => observer.disconnect();
+  }, [element, fitToWidth, panelRef]);
+  return (
+    <ResizablePanel
+      className="overflow-visible!"
+      defaultSize="32%"
+      elementRef={setElement}
+      id="rail"
+      maxSize="50%"
+      minSize="320px"
+      panelRef={panelRef}
+    >
+      {children}
+    </ResizablePanel>
+  );
+}
 
 export default function WorkspaceOpen() {
   const params = useParams({ strict: false });
@@ -92,11 +136,10 @@ export default function WorkspaceOpen() {
   const canClone = !!ws?.canClone;
   const { mutateAsync: addChapter } = useAddChapter(workspaceId);
   const { mutateAsync: updateChapter } = useUpdateChapter(workspaceId);
-  const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
-    useCloneWorkspace({ errorToast: false });
+  const [cloneOpen, setCloneOpen] = useState(false);
 
-  // Breakpoints: one column below lg, the pinned file tree only from xl up.
-  const lg = useMediaQuery('(min-width: 1024px)');
+  // Breakpoints: one column below 1260px, the pinned file tree only from xl up.
+  const lg = useMediaQuery('(min-width: 1260px)');
   const xl = useMediaQuery('(min-width: 1280px)');
   const [pinned, setPinned] = useLocalPref(
     PREF_KEYS.filesPinned,
@@ -277,12 +320,24 @@ export default function WorkspaceOpen() {
       {...(layout === 'three' ? {} : addProps)}
     />
   );
+  // The workspace switcher is the first row of the file tree and scrolls
+  // with it.
+  const picker = (
+    <div className="-mx-2.5 mt-3 mb-1 flex flex-col">
+      <WorkspacePicker
+        onClone={readOnly && canClone ? () => setCloneOpen(true) : undefined}
+        onOpenSettings={rowProps.onOpenSettings}
+        workspace={ws}
+      />
+    </div>
+  );
+
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
       {...addProps}
       beforeReplace={confirmViewerReplacement}
-      contentClassName={layout === 'three' ? undefined : 'pt-2'}
       generating={generating}
+      header={picker}
       onNavigate={() => {
         setCitationTarget(null);
         setToolsOpen(false);
@@ -347,55 +402,25 @@ export default function WorkspaceOpen() {
           color="purple"
           item={openItem}
           leading={
-            <>
-              <div className="flex items-center gap-0">
+            <div className="flex items-center gap-0">
+              <ToolbarButton
+                label={m.workspace_back_to()}
+                onClick={() => navigate({ to: '/workspaces' })}
+              >
+                <Icon name="navigationBack" />
+              </ToolbarButton>
+              {xl && (
                 <ToolbarButton
-                  label={m.workspace_back_to()}
-                  onClick={() => navigate({ to: '/workspaces' })}
-                >
-                  <Icon name="navigationBack" />
-                </ToolbarButton>
-                {xl && (
-                  <ToolbarButton
-                    aria-pressed={pinned}
-                    label={
-                      pinned
-                        ? m.workspace_unpin_files()
-                        : m.workspace_pin_files()
-                    }
-                    onClick={togglePinned}
-                  >
-                    <Icon name="panelLeft" />
-                  </ToolbarButton>
-                )}
-              </div>
-              {lg && (
-                <WorkspacePicker
-                  cloning={cloneWorkspaceIsPending}
-                  onClone={
-                    readOnly && canClone
-                      ? () =>
-                          cloneWorkspace(workspaceId, {
-                            onError: (err) => toastCloneError(err, 'workspace'),
-                            onSuccess: ({ workspace }) => {
-                              trackItemCloned('workspace');
-                              userToast({
-                                title: m.workspace_cloned(),
-                                variant: 'success',
-                              });
-                              navigate({
-                                params: { workspaceId: workspace.id },
-                                to: '/workspaces/$workspaceId',
-                              });
-                            },
-                          })
-                      : undefined
+                  aria-pressed={pinned}
+                  label={
+                    pinned ? m.workspace_unpin_files() : m.workspace_pin_files()
                   }
-                  onOpenSettings={rowProps.onOpenSettings}
-                  workspace={ws}
-                />
+                  onClick={togglePinned}
+                >
+                  <Icon name="panelLeft" />
+                </ToolbarButton>
               )}
-            </>
+            </div>
           }
           onDeleted={() => setOpenItem(null)}
           onFileViewerDirtyChange={setOfficeEditDirty}
@@ -439,10 +464,10 @@ export default function WorkspaceOpen() {
             <>
               <ResizablePanel
                 className="overflow-visible!"
-                defaultSize="270px"
+                defaultSize="300px"
                 id="files"
                 maxSize="420px"
-                minSize="230px"
+                minSize="300px"
               >
                 <Panel className="w-full" sectionClassName="h-full gap-0">
                   {filesPanel((actions) => (
@@ -517,16 +542,7 @@ export default function WorkspaceOpen() {
           {layout !== 'one' && (
             <>
               <ResizableHandle withHandle />
-              <ResizablePanel
-                className="overflow-visible!"
-                // Relative so the rail grows on wide screens; ~410px at 1280px.
-                defaultSize="32%"
-                id="rail"
-                maxSize="50%"
-                minSize="300px"
-              >
-                {railColumn}
-              </ResizablePanel>
+              <RailPanel fitToWidth={layout === 'two'}>{railColumn}</RailPanel>
             </>
           )}
         </ResizablePanelGroup>
@@ -554,6 +570,13 @@ export default function WorkspaceOpen() {
         open={settingsOpen}
         workspace={ws}
       />
+      {canClone && (
+        <CloneWorkspaceDialog
+          open={cloneOpen}
+          setOpen={setCloneOpen}
+          workspace={ws}
+        />
+      )}
       {chapterForm && (
         <NameFormDialog
           defaultName={chapterForm.mode === 'rename' ? chapterForm.name : ''}

@@ -541,7 +541,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if _, err := s.WorkspaceAccess(ctx, memberID, workspace.ID); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("pending deletion member access error=%v, want not found", err)
 	}
-	if _, err := s.CloneWorkspace(ctx, clonerID, workspace.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.CloneWorkspace(ctx, clonerID, workspace.ID, WorkspaceCreate{Name: "Clone"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("pending deletion clone error=%v, want not found", err)
 	}
 	if _, err := s.WorkspaceAccess(ctx, clonerID, linkWorkspace.ID); !errors.Is(err, ErrNotFound) {
@@ -579,13 +579,13 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if _, err := s.AcceptWorkspaceInvite(ctx, inviteID, inviteeID); err != nil {
 		t.Fatalf("invite acceptance was not restored: %v", err)
 	}
-	if _, err := s.CloneWorkspace(ctx, clonerID, workspace.ID); err != nil {
+	if _, err := s.CloneWorkspace(ctx, clonerID, workspace.ID, WorkspaceCreate{Name: "Clone"}); err != nil {
 		t.Fatalf("public clone was not restored: %v", err)
 	}
 	if _, err := s.WorkspaceAccess(ctx, clonerID, linkWorkspace.ID); err != nil {
 		t.Fatalf("link access was not restored: %v", err)
 	}
-	if _, err := s.CloneWorkspace(ctx, clonerID, linkWorkspace.ID); err != nil {
+	if _, err := s.CloneWorkspace(ctx, clonerID, linkWorkspace.ID, WorkspaceCreate{Name: "Clone"}); err != nil {
 		t.Fatalf("link clone was not restored: %v", err)
 	}
 }
@@ -882,7 +882,7 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 			t.Fatal("deletion-pending workspace remained in Explore")
 		}
 	}
-	if _, err := s.CloneWorkspace(ctx, viewerID, workspace.ID); !errors.Is(err, ErrNotFound) {
+	if _, err := s.CloneWorkspace(ctx, viewerID, workspace.ID, WorkspaceCreate{Name: "Clone"}); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("clone error=%v, want not found", err)
 	}
 	if _, err := s.AcceptWorkspaceInvite(ctx, inviteID, viewerID); !errors.Is(err, ErrNotFound) {

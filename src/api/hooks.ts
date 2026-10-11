@@ -505,6 +505,13 @@ export function useEventStream(wsId: string) {
       let clean = false;
       try {
         await readEventStream(wsId, handle, controller.signal, () => {
+          // The backoff grew, so this is the way back from a fault (a redeploy,
+          // a dropped network): retry the reads that failed meanwhile too.
+          if (delay > 1000)
+            void qc.refetchQueries({
+              predicate: (query) => query.state.status === 'error',
+              type: 'active',
+            });
           delay = 1000;
           setStatus('connected');
           reconcile();
@@ -2619,13 +2626,14 @@ export const useExploreFlashcardSets = () =>
 /* ---------------- sharing & cloning ---------------- */
 
 /** Deep-copy a shared workspace (chapters, files, materials and — via the
- * pipeline — the parsed knowledge graph) into the caller's account. */
+ * pipeline — the parsed knowledge graph) into the caller's account, under the
+ * name, description, icon, tags and cover in `body`. */
 export function useCloneWorkspace(options?: MutationUiOptions) {
   const qc = useQueryClient();
   return useMutation({
     meta: mutationMeta(options),
-    mutationFn: (id: string) =>
-      api.post<CloneWorkspaceResult>(`/workspaces/${id}/clone`),
+    mutationFn: ({ id, body }: { id: string; body: CreateWorkspaceReq }) =>
+      api.post<CloneWorkspaceResult>(`/workspaces/${id}/clone`, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['workspaces'] });
       invalidateOwnedMaterials(qc);

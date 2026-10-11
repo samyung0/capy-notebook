@@ -6043,6 +6043,44 @@ export const CloneWorkspaceParams = zod.object({
   "id": zod.string()
 })
 
+export const cloneWorkspaceBodyCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const cloneWorkspaceBodyCoverLineMax = 40;
+
+export const cloneWorkspaceBodyCoverSeedMax = 16;
+
+
+export const cloneWorkspaceBodyCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
+export const cloneWorkspaceBodyDescriptionMax = 500;
+
+
+
+export const cloneWorkspaceBodyIconIdRegExp = new RegExp('^$|^((sprouts|notionists)-(0[1-9]|1[0-2])|critters-(0[1-9]|1[0-6])|avataaars-(0[1-9]|1[0-9]|2[0-4])|waves-(0[1-9]|1[01]))$');
+export const cloneWorkspaceBodyNameMax = 80;
+
+export const cloneWorkspaceBodyTagsItemValueMax = 35;
+
+export const cloneWorkspaceBodyTagsMax = 5;
+
+
+
+export const CloneWorkspaceBody = zod.object({
+  "cover": zod.object({
+  "color": zod.string().regex(cloneWorkspaceBodyCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(cloneWorkspaceBodyCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(cloneWorkspaceBodyCoverSeedMax).regex(cloneWorkspaceBodyCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art'),
+  "description": zod.string().max(cloneWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description'),
+  "iconId": zod.string().min(1).regex(cloneWorkspaceBodyIconIdRegExp).optional(),
+  "name": zod.string().min(1).max(cloneWorkspaceBodyNameMax).describe('Workspace name'),
+  "tags": zod.array(zod.object({
+  "id": zod.string().optional(),
+  "value": zod.string().min(1).max(cloneWorkspaceBodyTagsItemValueMax)
+})).max(cloneWorkspaceBodyTagsMax).nullish().describe('Tags; at most 5; reuse existing by id or create new by value')
+})
+
 export const cloneWorkspaceResponseWorkspaceCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
 export const cloneWorkspaceResponseWorkspaceCoverLineMax = 40;
 

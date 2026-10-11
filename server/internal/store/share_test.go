@@ -89,7 +89,7 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 		_, _, cloneErr := s.cloneWorkspaceOnce(ctx, pausingCloneStarter{
 			starter: s.pool, reached: reached, proceed: proceed,
 			pauseOn: "FROM blobs",
-		}, targetID, source.ID)
+		}, targetID, source.ID, WorkspaceCreate{Name: "Clone"})
 		result <- cloneErr
 	}()
 	<-reached
@@ -529,7 +529,7 @@ func TestConcurrentWorkspaceClonesBothComplete(t *testing.T) {
 	errs := make(chan error, len(targets))
 	for _, targetID := range targets {
 		go func() {
-			_, cloneErr := s.CloneWorkspace(ctx, targetID, source.ID)
+			_, cloneErr := s.CloneWorkspace(ctx, targetID, source.ID, WorkspaceCreate{Name: "Clone"})
 			errs <- cloneErr
 		}()
 	}
@@ -586,7 +586,7 @@ func TestWorkspaceCloneDoesNotWaitForSourceRow(t *testing.T) {
 
 	cloneCtx, cloneCancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cloneCancel()
-	if _, err := s.CloneWorkspace(cloneCtx, targetID, source.ID); err != nil {
+	if _, err := s.CloneWorkspace(cloneCtx, targetID, source.ID, WorkspaceCreate{Name: "Clone"}); err != nil {
 		t.Fatalf("clone waited for source workspace row: %v", err)
 	}
 }
@@ -628,7 +628,7 @@ func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
 		t.Fatalf("material clone workspace=%q privacy=%q",
 			materialClone.WorkspaceID, materialClone.Privacy)
 	}
-	workspaceClone, err := s.CloneWorkspace(ctx, targetID, workspace.ID)
+	workspaceClone, err := s.CloneWorkspace(ctx, targetID, workspace.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatalf("workspace clone from suspended shared owner: %v", err)
 	}
@@ -873,7 +873,7 @@ func TestCloneCarriesProvenanceThroughBothPaths(t *testing.T) {
 		t.Fatalf("material clone provenance = %+v", materialClone.Provenance)
 	}
 
-	workspaceClone, err := s.CloneWorkspace(ctx, targetID, workspace.ID)
+	workspaceClone, err := s.CloneWorkspace(ctx, targetID, workspace.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

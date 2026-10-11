@@ -298,7 +298,7 @@ func TestCloneInheritsSourceEmbeddingPin(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clone, err := s.CloneWorkspace(ctx, userID, src.ID)
+	clone, err := s.CloneWorkspace(ctx, userID, src.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -209,8 +209,8 @@ every materials listing, Explore, search and the workspace quiz count.
 
 Clone opens the dashboard with `?clone=<kind>:<id>` (`src/lib/cloneLink.ts`); the app's sign-in check sends a
 signed-out visitor through sign-in and back with the query. The dashboard asks first (`CloneLinkDialog`), shows a
-refused clone's reason in the dialog (a link viewer cloning a workspace gets the non-disclosing 404 copy, a full
-plan the storage message), and opens the copy. The ⋮ is the same for every visitor and could read auth client
+refused clone's reason in the dialog (a link viewer cloning a workspace sees that only members and editors may
+clone it, a full plan the storage message), and opens the copy. A workspace is asked through the clone form below. The ⋮ is the same for every visitor and could read auth client
 side for future items, since a dropdown cannot shift the layout.
 
 Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
@@ -561,6 +561,12 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 - Cloning a readable standalone quiz, flashcards, or material creates a new
   owner-controlled copy charged to the signed-in cloner. Cloning a workspace
   additionally requires membership of any role or an effective editor grant.
+- Every workspace Clone (card menu, Explore, settings, the workspace picker, the
+  public page link) opens `CloneWorkspaceDialog`: the create form prefilled with
+  the source's icon, cover, description, tags and name (an owner's copy suffixed
+  "(copy)"). `POST /api/workspaces/{id}/clone` takes the create body and the copy
+  uses those values; tags travel by value, since their ids are the source
+  owner's.
 - Clone source content is one repeatable-read SQL snapshot. Clones never lock a
   source workspace/material or wait for Yjs persistence/projection; a stale SQL
   projection is an explicitly accepted result. Clone counters live on separate

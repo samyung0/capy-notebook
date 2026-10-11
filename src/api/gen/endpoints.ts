@@ -7855,14 +7855,15 @@ export const getCloneWorkspaceUrl = (id: string,) => {
 /**
  * @summary Clone a shared workspace
  */
-export const cloneWorkspace = async (id: string, options?: RequestInit): Promise<cloneWorkspaceResponse> => {
+export const cloneWorkspace = async (id: string,
+    createWorkspaceReq: NonReadonly<CreateWorkspaceReq>, options?: RequestInit): Promise<cloneWorkspaceResponse> => {
 
   const res = await fetch(getCloneWorkspaceUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(createWorkspaceReq)
   }
 )
 

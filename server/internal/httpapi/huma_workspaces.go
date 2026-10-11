@@ -117,11 +117,7 @@ func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*w
 	res, err := a.s.CreateWorkspace(
 		ctx,
 		userID(ctx),
-		store.WorkspaceCreate{
-			Name: string(in.Body.Name), Tags: apimodel.ToTagRefs(in.Body.Tags),
-			IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
-			Cover: in.Body.Cover,
-		},
+		in.Body.ToWorkspaceCreate(),
 	)
 	if err != nil {
 		return nil, hErr(err)

@@ -51,7 +51,8 @@ export function WorkspaceFormDialog({
       Pick<Workspace, 'chapterCount' | 'cover' | 'fileCount' | 'id' | 'privacy'>
     >;
   onSubmit: (values: WorkspaceFormValues) => Promise<Workspace | void>;
-  mode: 'create' | 'edit';
+  /** clone creates like create, from a form prefilled with the source. */
+  mode: 'create' | 'clone' | 'edit';
   embedded?: boolean;
 }) {
   const {
@@ -60,6 +61,7 @@ export function WorkspaceFormDialog({
     control,
     reset,
     setFocus,
+    trigger,
   } = useForm<WorkspaceFormValues>({
     defaultValues: workspace,
     mode: 'onChange',
@@ -87,15 +89,18 @@ export function WorkspaceFormDialog({
                 .id
             : undefined),
       });
+      // A prefilled copy can start over a limit (a name with its suffix):
+      // show why Clone is off before the user types.
+      if (mode === 'clone') void trigger();
     }
     wasOpen.current = open;
-  }, [mode, open, reset, workspace]);
+  }, [mode, open, reset, trigger, workspace]);
 
   const submit = handleSubmit(async (values) => {
     try {
       const { cover } = values;
       await onSubmit(
-        mode === 'create' && cover && !cover.seed
+        mode !== 'edit' && cover && !cover.seed
           ? { ...values, cover: { ...cover, seed: draftSeed } }
           : values
       );
@@ -247,17 +252,19 @@ export function WorkspaceFormDialog({
         </Button>
       )}
       <Button
-        disabled={!isDirty || !isValid || isSubmitting}
+        disabled={(mode === 'edit' && !isDirty) || !isValid || isSubmitting}
         size="lg"
         type="submit"
         variant="accent"
       >
         {isSubmitting ? (
           <Spinner />
-        ) : mode === 'create' ? (
-          m.action_create()
         ) : (
-          m.action_save()
+          {
+            clone: m.action_clone(),
+            create: m.action_create(),
+            edit: m.action_save(),
+          }[mode]
         )}
       </Button>
     </>
@@ -285,9 +292,11 @@ export function WorkspaceFormDialog({
       onSubmit={submit}
       open={open}
       title={
-        mode === 'create'
-          ? m.workspace_create_title()
-          : m.workspace_edit_title()
+        {
+          clone: m.action_clone_workspace(),
+          create: m.workspace_create_title(),
+          edit: m.workspace_edit_title(),
+        }[mode]
       }
     >
       {fields}

@@ -10669,6 +10669,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateWorkspaceReq"
+        required: true
       responses:
         "201":
           content:

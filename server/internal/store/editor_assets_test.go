@@ -292,7 +292,7 @@ func TestWorkspaceEditorAssetsFollowTheirMaterial(t *testing.T) {
 			if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='editor' WHERE id=$1`, workspace.ID); err != nil {
 				t.Fatal(err)
 			}
-			clone, err := s.CloneWorkspace(ctx, clonerID, workspace.ID)
+			clone, err := s.CloneWorkspace(ctx, clonerID, workspace.ID, WorkspaceCreate{Name: "Clone"})
 			if err != nil {
 				t.Fatal(err)
 			}

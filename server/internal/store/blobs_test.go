@@ -465,7 +465,7 @@ func TestCloneThenDeleteKeepsTheSurvivingCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clone, err := s.CloneWorkspace(ctx, clonerID, source.ID)
+	clone, err := s.CloneWorkspace(ctx, clonerID, source.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -601,7 +601,7 @@ func TestThumbnailKeyIsACountedReference(t *testing.T) {
 		t.Errorf("replaced key refs = %d queued = %v, want released", got, blobQueued(t, s, first))
 	}
 
-	clone, copies, err := s.CloneWorkspaceThumbnails(ctx, ownerID, source.ID)
+	clone, copies, err := s.CloneWorkspaceThumbnails(ctx, ownerID, source.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

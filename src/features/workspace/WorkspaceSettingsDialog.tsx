@@ -1,7 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import {
-  useCloneWorkspace,
   useDeleteWorkspace,
   useResetWorkspaceStudy,
   useUpdateWorkspace,
@@ -17,10 +16,9 @@ import { InputTitle } from '@/components/ui/Input';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
-import { trackItemCloned } from '@/lib/analytics';
-import { toastCloneError } from '@/lib/authToasts';
 import { describeError } from '@/lib/errors';
 import { canManageWorkspaceSettings } from './access';
+import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
@@ -74,9 +72,7 @@ export function WorkspaceSettingsDialog({
   );
   const navigate = useNavigate();
   const { mutateAsync: update } = useUpdateWorkspace();
-  const { mutate: cloneWorkspace, isPending: cloning } = useCloneWorkspace({
-    errorToast: false,
-  });
+  const [cloneOpen, setCloneOpen] = useState(false);
   const { mutate: deleteWorkspace, isPending: deleting } = useDeleteWorkspace();
   const { mutateAsync: updateSharing, isPending: sharing } =
     useUpdateWorkspaceSharing();
@@ -205,27 +201,19 @@ export function WorkspaceSettingsDialog({
               title={m.action_clone_workspace()}
             >
               <Button
-                disabled={cloning}
                 iconLeft="clone"
-                onClick={() =>
-                  cloneWorkspace(workspace.id, {
-                    onError: (err) => toastCloneError(err, 'workspace'),
-                    onSuccess: ({ workspace: cloned }) => {
-                      trackItemCloned('workspace');
-                      onClose();
-                      navigate({
-                        params: { workspaceId: cloned.id },
-                        to: '/workspaces/$workspaceId',
-                      });
-                    },
-                  })
-                }
+                onClick={() => setCloneOpen(true)}
                 rounded="large"
                 variant="outline"
               >
-                {cloning ? m.action_cloning() : m.action_clone()}
+                {m.action_clone()}
               </Button>
             </SettingRow>
+            <CloneWorkspaceDialog
+              open={cloneOpen}
+              setOpen={setCloneOpen}
+              workspace={workspace}
+            />
           </div>
         )}
         {tab === 'danger' && (

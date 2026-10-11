@@ -192,7 +192,8 @@ test.describe('workspace sharing', () => {
       otherPage.getByRole('button', { name: m.action_clone_workspace() })
     ).toHaveCount(0);
     const linkClone = await otherApi.post(
-      `/api/workspaces/${seed.linkWorkspace.id}/clone`
+      `/api/workspaces/${seed.linkWorkspace.id}/clone`,
+      { data: { name: 'Copy' } }
     );
     expect(linkClone.status()).toBe(404);
 
@@ -207,15 +208,27 @@ test.describe('workspace sharing', () => {
     await viewerPage
       .getByRole('menuitem', { name: m.action_clone_workspace() })
       .click();
+    // The clone form starts from the source and takes the user's edits.
+    const dialog = viewerPage.getByRole('dialog', {
+      name: m.action_clone_workspace(),
+    });
+    const name = dialog.getByPlaceholder(m.workspace_name_placeholder());
+    await expect(name).toHaveValue(seed.privateWorkspace.name);
+    await name.fill('My study copy');
+    await dialog
+      .getByRole('button', { exact: true, name: m.action_clone() })
+      .click();
     const cloneRes = await clonePromise;
     expect(cloneRes.status()).toBe(201);
     const cloned = await cloneRes.json();
     try {
+      expect(cloned.workspace.name).toBe('My study copy');
       expect(cloned.workspace.privacy).toBe('private');
       expect(cloned.workspace.isOwner).toBe(true);
 
       const anonClone = await anonymousApi.post(
-        `/api/workspaces/${seed.linkWorkspace.id}/clone`
+        `/api/workspaces/${seed.linkWorkspace.id}/clone`,
+        { data: { name: 'Copy' } }
       );
       expect(anonClone.status()).toBe(401);
     } finally {

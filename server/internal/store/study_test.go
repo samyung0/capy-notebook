@@ -404,7 +404,7 @@ func TestCloneCopiesNoStudyProgress(t *testing.T) {
 	ctx := context.Background()
 	cards := f.set(t, [2]string{"Golgi", "Ships proteins"})
 	f.rate(t, cards[0], 1)
-	clone, err := f.s.CloneWorkspace(ctx, f.user, f.ws.ID)
+	clone, err := f.s.CloneWorkspace(ctx, f.user, f.ws.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

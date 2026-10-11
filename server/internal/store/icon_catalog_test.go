@@ -163,12 +163,15 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 	if updated.IconID != selected || updated.Cover == nil || *updated.Cover != art {
 		t.Fatalf("icon or cover edit failed: %+v", updated.Cover)
 	}
-	cloned, err := s.CloneWorkspace(ctx, owner, ws.ID)
+	// A clone takes the icon and cover the dialog sends, not the source's.
+	cloneIcon := "waves-02"
+	cloneArt := cover.Cover{Style: "symbols", Color: "#2a78d6", Kind: "math", Seed: "c1"}
+	cloned, err := s.CloneWorkspace(ctx, owner, ws.ID, WorkspaceCreate{Name: "Clone", IconID: &cloneIcon, Cover: &cloneArt})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cloned.IconID != selected || cloned.Cover == nil || *cloned.Cover != art {
-		t.Fatal("clone lost icon or cover")
+	if cloned.Name != "Clone" || cloned.IconID != cloneIcon || cloned.Cover == nil || *cloned.Cover != cloneArt {
+		t.Fatalf("clone ignored its name, icon or cover: %+v", cloned)
 	}
 	cleared, err := s.UpdateWorkspace(ctx, owner, cloned.ID, WorkspacePatch{ClearCover: true})
 	if err != nil || cleared.Cover != nil {

@@ -18,7 +18,8 @@ type UpdateMeReq struct {
 	AvatarIconID *IconID  `json:"avatarIconId,omitempty" doc:"Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection"`
 }
 
-// CreateWorkspaceReq is the body for POST /api/workspaces. New workspaces are
+// CreateWorkspaceReq is the body for POST /api/workspaces and for
+// POST /api/workspaces/{id}/clone, whose copy takes these values. New workspaces are
 // always private; visibility is configured later through the sharing endpoint.
 type CreateWorkspaceReq struct {
 	Description *WorkspaceDescription `json:"description,omitempty" doc:"Optional workspace description"`
@@ -26,6 +27,13 @@ type CreateWorkspaceReq struct {
 	Name        WorkspaceName         `json:"name" minLength:"1" doc:"Workspace name"`
 	Tags        []TagInput            `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
 	Cover       *cover.Cover          `json:"cover,omitempty" doc:"The card's cover art"`
+}
+
+func (r CreateWorkspaceReq) ToWorkspaceCreate() store.WorkspaceCreate {
+	return store.WorkspaceCreate{
+		Name: string(r.Name), Tags: ToTagRefs(r.Tags),
+		IconID: Str(r.IconID), Description: Str(r.Description), Cover: r.Cover,
+	}
 }
 
 // UpdateWorkspaceReq updates general workspace settings only.

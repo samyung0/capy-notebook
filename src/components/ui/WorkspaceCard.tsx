@@ -1,19 +1,14 @@
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { useMemo, useState } from 'react';
-import {
-  useCloneWorkspace,
-  useDeleteWorkspace,
-  useUpdateWorkspaceSharing,
-} from '@/api/hooks';
+import { useDeleteWorkspace, useUpdateWorkspaceSharing } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { Menu } from '@/components/ui/Menu';
 import { canManageWorkspaceSettings } from '@/features/workspace/access';
+import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
-import { trackItemCloned } from '@/lib/analytics';
-import { toastCloneError } from '@/lib/authToasts';
 import { cn } from '@/lib/cn';
 import { type CoverPaint, coverPaint } from '@/lib/coverArt';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -28,9 +23,7 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const [shareOpen, setShareOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const { isPending: cloneIsPending, mutate: cloneWorkspace } =
-    useCloneWorkspace();
-  const navigate = useNavigate();
+  const [cloneOpen, setCloneOpen] = useState(false);
   const paint = useMemo(
     () =>
       workspace.cover
@@ -59,20 +52,9 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
     ...(workspace.canClone
       ? [
           {
-            disabled: cloneIsPending,
             icon: 'clone' as const,
             label: m.action_clone_workspace(),
-            onClick: () =>
-              cloneWorkspace(workspace.id, {
-                onError: (err) => toastCloneError(err, 'workspace'),
-                onSuccess: ({ workspace: cloned }) => {
-                  trackItemCloned('workspace');
-                  navigate({
-                    params: { workspaceId: cloned.id },
-                    to: '/workspaces/$workspaceId',
-                  });
-                },
-              }),
+            onClick: () => setCloneOpen(true),
           },
         ]
       : []),
@@ -115,6 +97,13 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
         <WorkspaceSettingsDialog
           onClose={() => setEditOpen(false)}
           open
+          workspace={workspace}
+        />
+      )}
+      {cloneOpen && (
+        <CloneWorkspaceDialog
+          open
+          setOpen={setCloneOpen}
           workspace={workspace}
         />
       )}

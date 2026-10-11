@@ -8,6 +8,7 @@ import {
 import type {
   Attempt,
   Chapter,
+  CreateWorkspaceReq,
   EditableQuiz,
   FlashcardSet,
   GenerateOptions,
@@ -1487,7 +1488,8 @@ export const handlers = [
     if (i >= 0) db.workspaces.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
-  http.post('/api/workspaces/:id/clone', async ({ params }) => {
+  http.post('/api/workspaces/:id/clone', async ({ params, request }) => {
+    const body = (await request.json()) as CreateWorkspaceReq;
     const source =
       db.workspaces.find((w) => w.id === params.id) ??
       db.publicWorkspaces.find((w) => w.id === params.id);
@@ -1495,13 +1497,17 @@ export const handlers = [
     const newId = uid('ws');
     const workspace: Workspace = {
       ...source,
+      cover: body.cover,
       createdAt: new Date().toISOString(),
+      description: body.description ?? '',
+      iconId: body.iconId ?? source.iconId,
       id: newId,
       isOwner: true,
       lastAccessedAt: new Date().toISOString(),
-      name: `${source.name} (copy)`,
+      name: body.name,
       privacy: 'private',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, newId),
+      tags: resolveTags('workspace', body.tags),
     };
     db.workspaces.unshift(workspace);
 

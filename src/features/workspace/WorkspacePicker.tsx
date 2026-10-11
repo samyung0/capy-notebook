@@ -10,7 +10,6 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/DropdownMenu';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { ButtonTooltip } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -19,12 +18,10 @@ function FooterItem({
   icon,
   label,
   onSelect,
-  disabled,
 }: {
   icon: IconName;
   label: string;
   onSelect: () => void;
-  disabled?: boolean;
 }) {
   return (
     <DropdownMenuItem
@@ -32,7 +29,6 @@ function FooterItem({
         BASE_BUTTON_STYLE,
         'h-7.5 w-full cursor-pointer justify-start gap-1.75 px-2.5 text-fg hover:bg-surface-hover-bg/80 data-[highlighted]:bg-surface-hover-bg/80'
       )}
-      disabled={disabled}
       onSelect={onSelect}
     >
       <Icon name={icon} size={15} />
@@ -42,20 +38,18 @@ function FooterItem({
 }
 
 /**
- * The workspace name in the viewer header: a menu listing the other
- * workspaces, with settings (or clone, for a visitor) fixed at the bottom.
- * This replaces the old header card and its back link.
+ * The gray full-width strip heading the file tree: a menu
+ * listing the other workspaces, with settings (or clone, for a visitor)
+ * fixed at the bottom.
  */
 export function WorkspacePicker({
   workspace,
   onOpenSettings,
   onClone,
-  cloning = false,
 }: {
   workspace: Workspace;
   onOpenSettings?: () => void;
   onClone?: () => void;
-  cloning?: boolean;
 }) {
   const navigate = useNavigate();
   const { data: workspaces } = useWorkspaces(
@@ -67,25 +61,23 @@ export function WorkspacePicker({
     : [workspace, ...(workspaces ?? [])];
   return (
     <DropdownMenu>
-      <ButtonTooltip label={m.workspace_switch()} side="bottom">
-        <DropdownMenuTrigger asChild>
-          <Button
-            className="group/ws-trigger flex h-9 min-w-0 items-center gap-2 px-3"
-            iconRight="chevronDown"
-            iconRightClassName="text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/ws-trigger:rotate-180"
-            variant="gray"
-          >
-            <img
-              alt=""
-              className="size-5 shrink-0 -translate-y-px rounded-md"
-              src={iconUrl(workspace.iconId)}
-            />
-            <span className="t-body min-w-0 truncate font-semibold">
-              {workspace.name}
-            </span>
-          </Button>
-        </DropdownMenuTrigger>
-      </ButtonTooltip>
+      <DropdownMenuTrigger asChild>
+        <Button
+          className="group/ws-trigger flex h-8 w-full min-w-0 items-center justify-start gap-2 rounded-none px-4 hover:bg-page-hover/50 active:scale-100"
+          iconRight="chevronDown"
+          iconRightClassName="text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out) group-data-[state=open]/ws-trigger:rotate-180"
+          variant="gray"
+        >
+          <img
+            alt=""
+            className="size-5 shrink-0 -translate-y-px rounded-md"
+            src={iconUrl(workspace.iconId)}
+          />
+          <span className="t-body min-w-0 truncate text-left font-semibold">
+            {workspace.name}
+          </span>
+        </Button>
+      </DropdownMenuTrigger>
       <DropdownMenuContent align="start" alignOffset={4} className="w-72 p-1.5">
         <div className="max-h-80 overflow-y-auto">
           {list.map((w) => (
@@ -121,9 +113,8 @@ export function WorkspacePicker({
         )}
         {onClone && (
           <FooterItem
-            disabled={cloning}
             icon="clone"
-            label={cloning ? m.action_cloning() : m.action_clone_workspace()}
+            label={m.action_clone_workspace()}
             onSelect={onClone}
           />
         )}

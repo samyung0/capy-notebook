@@ -1013,7 +1013,7 @@ func TestSourceCloneCopiesPublishedSnapshotAndCaptionReferences(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor,change_share,summary_version) VALUES($1,$2,'Photosynthesis.',0.0125,2)`, contentID, ws.ID); err != nil {
 		t.Fatal(err)
 	}
-	clone, err := s.CloneWorkspace(ctx, owner, ws.ID)
+	clone, err := s.CloneWorkspace(ctx, owner, ws.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

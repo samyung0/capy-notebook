@@ -3,11 +3,11 @@ import { useState } from 'react';
 import {
   useCloneFlashcardSet,
   useCloneQuiz,
-  useCloneWorkspace,
   useExploreFlashcardSets,
   useExploreQuizzes,
   useExploreWorkspaces,
 } from '@/api/hooks';
+import type { PublicWorkspace } from '@/api/types';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Badge } from '@/components/ui/Badge';
@@ -16,12 +16,12 @@ import { Card } from '@/components/ui/Card';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
+import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
 import {
   AccountStatusButton,
   useAccountFrozen,
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
-import { trackItemCloned } from '@/lib/analytics';
 import { iconUrl } from '@/lib/icon-catalog';
 import { userColorPair } from '@/lib/userColor';
 
@@ -42,8 +42,7 @@ export default function Explore() {
     fetchStatus: flashcardSetsFetchStatus,
     isLoading: flashcardSetsIsLoading,
   } = useExploreFlashcardSets();
-  const { isPending: cloneWorkspaceIsPending, mutate: cloneWorkspace } =
-    useCloneWorkspace();
+  const [cloneSource, setCloneSource] = useState<PublicWorkspace | null>(null);
   const { isPending: cloneQuizIsPending, mutate: cloneQuiz } = useCloneQuiz();
   const frozen = useAccountFrozen();
   const { isPending: cloneFlashcardSetIsPending, mutate: cloneFlashcardSet } =
@@ -108,19 +107,8 @@ export default function Explore() {
                     {w.canClone && (
                       <Button
                         className="mt-3"
-                        disabled={cloneWorkspaceIsPending}
                         iconLeft="clone"
-                        onClick={() =>
-                          cloneWorkspace(w.id, {
-                            onSuccess: ({ workspace }) => {
-                              trackItemCloned('workspace');
-                              navigate({
-                                params: { workspaceId: workspace.id },
-                                to: '/workspaces/$workspaceId',
-                              });
-                            },
-                          })
-                        }
+                        onClick={() => setCloneSource(w)}
                         size="sm"
                         variant="outline"
                       >
@@ -217,6 +205,13 @@ export default function Explore() {
           </div>
         )}
       </div>
+      {cloneSource && (
+        <CloneWorkspaceDialog
+          open
+          setOpen={(open) => !open && setCloneSource(null)}
+          workspace={cloneSource}
+        />
+      )}
     </PanelWithInvertedRadius>
   );
 }

@@ -21,6 +21,10 @@ into the caller's account; a workspace clone
 copies the retrieval index in the same transaction as the content, so the copy
 is queryable the moment it exists. */
 
+type cloneWorkspaceInput struct {
+	ID   string `path:"id"`
+	Body apimodel.CreateWorkspaceReq
+}
 type cloneWorkspaceOutput struct {
 	Body apimodel.CloneWorkspaceResp
 }
@@ -78,8 +82,13 @@ func (a *api) assertFileEditor(ctx context.Context, fileID string) error {
 
 /* ------------------------------------------------------------------ cloning */
 
-func (a *api) cloneWorkspace(ctx context.Context, in *workspaceIDInput) (*cloneWorkspaceOutput, error) {
-	ws, copies, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID)
+func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*cloneWorkspaceOutput, error) {
+	if in.Body.Cover != nil {
+		if err := in.Body.Cover.Check(); err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+	}
+	ws, copies, err := a.s.CloneWorkspaceThumbnails(ctx, userID(ctx), in.ID, in.Body.ToWorkspaceCreate())
 	if err != nil {
 		return nil, hErr(err)
 	}

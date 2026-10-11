@@ -263,12 +263,12 @@ func TestShareHTTPWritesAndClone(t *testing.T) {
 		})
 	}
 
-	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_link/clone", "", nil)
+	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_link/clone", "", map[string]any{"name": "Clone"})
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("anon clone = %d", rec.Code)
 	}
 
-	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/clone", "u_other", nil)
+	rec = doReq(t, h, http.MethodPost, "/api/workspaces/ws_e2e_private/clone", "u_other", map[string]any{"name": "Clone"})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("private clone by other = %d %s", rec.Code, rec.Body.String())
 	}

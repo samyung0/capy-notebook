@@ -7,10 +7,8 @@ import (
 	"path"
 	"sort"
 	"time"
-	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
-	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 )
@@ -821,9 +819,10 @@ func (s *Store) snapshotWorkspaceForClone(
 // editor asset object paths, and locks their refcount rows through commit. The
 // object survives until its last holder is gone, so deleting either workspace no
 // longer leaks or destroys the other's bytes. The clone lands private regardless
-// of the source's visibility.
-func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string) (Workspace, error) {
-	workspace, _, err := s.CloneWorkspaceThumbnails(ctx, userID, srcID)
+// of the source's visibility. The copy takes its name, description, icon, tags
+// and cover from input, which the clone dialog prefills from the source.
+func (s *Store) CloneWorkspace(ctx context.Context, userID, srcID string, input WorkspaceCreate) (Workspace, error) {
+	workspace, _, err := s.CloneWorkspaceThumbnails(ctx, userID, srcID, input)
 	return workspace, err
 }
 
@@ -840,7 +839,10 @@ type ThumbnailCopy struct {
 
 // CloneWorkspaceThumbnails is CloneWorkspace, also returning the thumbnails
 // the caller copies after the commit.
-func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID string) (Workspace, []ThumbnailCopy, error) {
+func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID string, input WorkspaceCreate) (Workspace, []ThumbnailCopy, error) {
+	if input.IconID != nil && !ValidIconID(*input.IconID) {
+		return Workspace{}, nil, ErrNotFound
+	}
 	// A workspace snapshot owns the hierarchy fence so contained material
 	// deletion cannot race its counter and blob-reference copy.
 	conn, unlock, err := s.lockWorkspaceCloneSource(ctx, srcID, false)
@@ -849,7 +851,7 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 	}
 	defer unlock()
 	for attempt := 0; ; attempt++ {
-		workspace, copies, err := s.cloneWorkspaceOnce(ctx, conn, userID, srcID)
+		workspace, copies, err := s.cloneWorkspaceOnce(ctx, conn, userID, srcID, input)
 		if !isRetryableTransactionError(err) {
 			return workspace, copies, err
 		}
@@ -901,6 +903,7 @@ func (s *Store) cloneWorkspaceOnce(
 	ctx context.Context,
 	starter cloneTxStarter,
 	userID, srcID string,
+	input WorkspaceCreate,
 ) (Workspace, []ThumbnailCopy, error) {
 	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
@@ -977,11 +980,6 @@ func (s *Store) cloneWorkspaceOnce(
 	}
 
 	newID := uid("ws")
-	name := src.Name
-	if isOwner {
-		const suffix = " (copy)"
-		name = fieldlimits.Clamp(name, fieldlimits.WorkspaceName-utf8.RuneCountInString(suffix)) + suffix
-	}
 	// The clone inherits the source's embedding pin instead of taking the current
 	// default. cloneRetrievalIndex copies vectors verbatim rather than
 	// re-embedding, so the copy is already in the source's space; giving the new
@@ -995,23 +993,10 @@ func (s *Store) cloneWorkspaceOnce(
 	).Scan(&srcEmbed.Pin.ProviderSlug, &srcEmbed.Pin.ModelSlug, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
 		return Workspace{}, nil, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO workspaces
-			(id, user_id, name, description, privacy, icon_id, cover,
-			 embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim)
-		VALUES ($1,$2,$3,$8,'private',$9,$10,$4,$5,$6,$7)`,
-		newID, userID, name,
-		srcEmbed.Pin.ProviderSlug, srcEmbed.Pin.ModelSlug, srcEmbed.Pin.Version, srcEmbed.Dim, src.Description, src.IconID, src.Cover); err != nil {
+	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, srcEmbed); err != nil {
 		return Workspace{}, nil, err
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role) VALUES ($1,$2,'owner')`,
-		newID, userID); err != nil {
-		return Workspace{}, nil, err
-	}
-	tagRefs := make([]TagRef, len(src.Tags))
-	for i, tag := range src.Tags {
-		tagRefs[i] = TagRef{Value: tag.Value}
-	}
-	if err := syncEntityTags(ctx, tx, userID, "workspace", newID, tagRefs); err != nil {
+	if err := setWorkspaceAppearanceTx(ctx, tx, newID, input); err != nil {
 		return Workspace{}, nil, err
 	}
 
@@ -1122,7 +1107,7 @@ func (s *Store) cloneWorkspaceOnce(
 					 chapter_id, position, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance,
 					 parent_material_id, preview)
 				VALUES ($1,$2,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$16,$2,$17,$18,$19)`,
-				nid, userID, newID, name, mt.Kind, title, json.RawMessage(content), chapterID,
+				nid, userID, newID, input.Name, mt.Kind, title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
 				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview); err != nil {
 				return Workspace{}, nil, err

@@ -265,7 +265,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	if _, err := s.UpdateMaterial(ctx, wsNote.ID, MaterialPatch{Content: &wsContent, UpdatedBy: ownerID}); err != nil {
 		t.Fatal(err)
 	}
-	wsClone, err := s.CloneWorkspace(ctx, readerID, ws.ID)
+	wsClone, err := s.CloneWorkspace(ctx, readerID, ws.ID, WorkspaceCreate{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

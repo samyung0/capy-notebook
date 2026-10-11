@@ -189,7 +189,7 @@ func TestCloneCopiesThumbnails(t *testing.T) {
 
 	clone := func(user string) string {
 		t.Helper()
-		rec := doReq(t, h, http.MethodPost, "/api/workspaces/"+source.ID+"/clone", user, nil)
+		rec := doReq(t, h, http.MethodPost, "/api/workspaces/"+source.ID+"/clone", user, map[string]any{"name": "Clone"})
 		if rec.Code != http.StatusCreated {
 			t.Fatalf("%s clone = %d %s", user, rec.Code, rec.Body.String())
 		}
