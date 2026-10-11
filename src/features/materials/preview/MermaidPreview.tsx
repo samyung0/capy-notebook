@@ -1,11 +1,12 @@
-import { memo, type ReactNode, useMemo } from 'react';
+import { type ReactNode, useMemo } from 'react';
 import { type MermaidModel, parseMermaidPreview } from './mermaidModel';
 import './livePreview.css';
 
 /** Card drawings of the six supported Mermaid types on the 240×165 preview
  * canvas, in the approved mock's styles. Parsing and layout run once per
  * source in a memo; the viewBox does the scaling. Unsupported or unreadable
- * source draws `fallback` (the kind icon). */
+ * source has no drawing, so the caller shows the kind icon as for any
+ * failed preview. */
 
 const W = 240;
 const H = 165;
@@ -21,18 +22,15 @@ const PALETTE = [
 ].map((name) => `var(--ctp-${name})`);
 const color = (index: number) => PALETTE[index % PALETTE.length];
 
-export const MermaidPreview = memo(function MermaidPreview({
-  source,
-  fallback,
-}: {
-  source: string;
-  fallback: ReactNode;
-}) {
-  const drawing = useMemo(() => {
-    const model = parseMermaidPreview(source);
-    return model && draw(model);
+/** The drawing for `source`, or null when there is none to draw. */
+export function useMermaidDrawing(source: string | undefined): ReactNode {
+  return useMemo(() => {
+    const model = source ? parseMermaidPreview(source) : null;
+    return model ? draw(model) : null;
   }, [source]);
-  if (!drawing) return fallback;
+}
+
+export function MermaidPreview({ drawing }: { drawing: ReactNode }) {
   return (
     <svg
       aria-hidden
@@ -43,7 +41,7 @@ export const MermaidPreview = memo(function MermaidPreview({
       {drawing}
     </svg>
   );
-});
+}
 
 function draw(model: MermaidModel): ReactNode {
   switch (model.type) {

@@ -8,7 +8,10 @@ import {
   TableLive,
   TextLive,
 } from '@/features/materials/preview/LivePreview';
-import { MermaidPreview } from '@/features/materials/preview/MermaidPreview';
+import {
+  MermaidPreview,
+  useMermaidDrawing,
+} from '@/features/materials/preview/MermaidPreview';
 import { cn } from '@/lib/cn';
 
 /** What a row offers its thumbnail: a file's page-1 image or opening text,
@@ -38,6 +41,13 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
   small = false,
 }: Thumbnail & { icon: FileIconName; small?: boolean }) {
   const [failedUrl, setFailedUrl] = useState<string>();
+  // Previews arrive as open JSON. A diagram draws only when its source
+  // parses; one that does not is a failed preview, like a broken image.
+  const mermaid = useMermaidDrawing(
+    preview && 'source' in preview && typeof preview.source === 'string'
+      ? preview.source
+      : undefined
+  );
   const fallback = (
     <div className="absolute inset-0 grid place-items-center">
       <FileIcon className={small ? 'size-5' : 'size-[34px]'} name={icon} />
@@ -91,9 +101,7 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
           );
         break;
       default:
-        // Previews arrive as open JSON; one without its source keeps the icon.
-        if (preview.source)
-          body = <MermaidPreview fallback={fallback} source={preview.source} />;
+        if (mermaid) body = <MermaidPreview drawing={mermaid} />;
     }
   }
   return (
