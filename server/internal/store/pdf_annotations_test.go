@@ -59,3 +59,36 @@ func TestPDFDrawingValidation(t *testing.T) {
 		t.Fatalf("valid unicode text rejected: %v", err)
 	}
 }
+
+// Marks are private to their author, so purge must remove them even on files in
+// a workspace the author does not own (which outlives the purge).
+func TestPurgeUserDeletesPDFAnnotations(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "pdf_purge_owner")
+	member := newBlobTestUser(t, s, "pdf_purge_member")
+	ws, file := sourceTestFile(t, s, owner, "shared.pdf", "pdf")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')`, ws.ID, member); err != nil {
+		t.Fatal(err)
+	}
+	body := PDFAnnotationBody{SourceIdentity: "revision:1", Page: 1, Kind: "highlight", Color: "#d94848", Rects: []PDFRect{{X: 10, Y: 20, Width: 200, Height: 50}}}
+	for _, actor := range []string{owner, member} {
+		if _, err := s.SavePDFAnnotation(ctx, actor, file.ID, "", body); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if _, err := s.RequestAccountDeletion(ctx, member, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, member); err != nil {
+		t.Fatal(err)
+	}
+	var n int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM pdf_annotations WHERE author_id=$1`, member).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("purged user's marks = %d %v", n, err)
+	}
+	if rows, err := s.ListPDFAnnotations(ctx, owner, file.ID); err != nil || len(rows) != 1 {
+		t.Fatalf("owner's marks = %+v %v", rows, err)
+	}
+}

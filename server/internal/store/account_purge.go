@@ -226,6 +226,11 @@ func (s *Store) PurgeUser(ctx context.Context, userID string) error {
 	if _, err := tx.Exec(ctx, `DELETE FROM attempts WHERE user_id=$1`, userID); err != nil {
 		return err
 	}
+	// Private marks on files in other people's workspaces outlive the files'
+	// cascade, and the tombstone row never fires the author FK cascade.
+	if _, err := tx.Exec(ctx, `DELETE FROM pdf_annotations WHERE author_id=$1`, userID); err != nil {
+		return err
+	}
 	for _, table := range []string{"review_sessions", "study_progress", "workspace_study", "review_states", "review_log", "bank_progress", "edit_incidents"} {
 		if _, err := tx.Exec(ctx, `DELETE FROM `+table+` WHERE user_id=$1`, userID); err != nil {
 			return err

@@ -1328,7 +1328,8 @@ transfer use the collaboration eviction/outbox and processing fences.
 
 Private PDF annotations belong to one actor and exact source identity. Reading
 and mutation require current file access, and one actor cannot read or modify
-another actor's marks. Clones and downloads do not include them.
+another actor's marks. Clones and downloads do not include them, and
+`PurgeUser` deletes the actor's marks at account purge.
 
 Image-caption reuse checks current containing files. Private workspace reuse
 stays within that workspace; link/public workspaces permit global reuse.
