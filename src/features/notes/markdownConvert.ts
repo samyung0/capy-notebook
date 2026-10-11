@@ -15,11 +15,14 @@ import { importMarkdownValue } from './markdownImport';
 
 let editor: SlateEditor | undefined;
 
-export function markdownToDocument(source: string): MaterialDocument {
+export function markdownToDocument(
+  source: string,
+  options?: { plain?: boolean }
+): MaterialDocument {
   editor ??= createSlateEditor({
     plugins: [...StaticMaterialKit, noteMarkdownPlugin],
   });
-  return importMarkdownValue(editor, source);
+  return importMarkdownValue(editor, source, options);
 }
 
 /** A quiz or flashcard set to create under the note, in document order. */
@@ -63,8 +66,10 @@ function draft(kind: MaterialRefKind, body: string, n: number): EmbeddedDraft {
 }
 
 /** Agent markdown: the document, and a draft for each quiz or flashcards
- * fence in depth-first document order. A fence that does not parse throws,
- * so the agent can fix it, where a paste would keep it pending. */
+ * fence in depth-first document order. Read as plain Markdown, without MDX,
+ * so html-embed snippets and prose keep every character the agent wrote. A
+ * fence that does not parse throws, so the agent can fix it, where a paste
+ * would keep it pending. */
 export function convertAgentMarkdown(source: string): {
   document: MaterialDocument;
   embedded: EmbeddedDraft[];
@@ -75,7 +80,7 @@ export function convertAgentMarkdown(source: string): {
     throw new Error(
       `A note holds at most ${HTML_EMBED_MAX_COUNT} html-embed fences, not ${embeds}.`
     );
-  const document = markdownToDocument(source);
+  const document = markdownToDocument(source, { plain: true });
   const embedded: EmbeddedDraft[] = [];
   const walk = (node: MaterialNode) => {
     if ('text' in node) return;

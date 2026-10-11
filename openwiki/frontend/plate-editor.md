@@ -428,8 +428,11 @@ and display equations use MathLive in both viewing and editing, including questi
 shaped like chart and graph (a nested one is lifted by the plugin's
 normalizer). The agent writes it as an ` ```html-embed ` fence with YAML
 `caption` and `html` and no fallback (`blocks/shared.ts`, `markdown.ts`); the
-collaboration service's converter builds the same node. A fence without html,
-with html over 64 KB, or an eleventh fence is refused by name. Go
+collaboration service's converter builds the same node, reading the agent's
+note as plain Markdown so the snippet keeps every character (the MDX pass a
+paste goes through rewrites HTML inside fences; see `markdownImport.ts`). A
+fence that is not YAML, has no html, has html over 64 KB, or is the eleventh
+is refused by name. Go
 `materialdoc`, the collaboration validator and the browser's
 `isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes) and a document at 10
 such blocks, and refuse any other field. Retrieval skips the block like

@@ -81,12 +81,19 @@ export function customBlockNode(
 /** YAML `caption` and `html`; no fallback. Throws on a fence the block cannot
  * hold, so the agent's converter names the problem. */
 function htmlEmbedFenceNode(code: string): HtmlEmbedElement {
-  const data = (YAML.parse(code) ?? {}) as {
-    caption?: unknown;
-    html?: unknown;
-  };
+  let data: { caption?: unknown; html?: unknown };
+  try {
+    data = YAML.parse(code) ?? {};
+  } catch (error) {
+    throw new Error(
+      `An html-embed fence is not YAML: ${(error as Error).message.split('\n')[0]}`,
+      { cause: error }
+    );
+  }
   if (typeof data.html !== 'string' || !data.html.trim())
-    throw new Error('An html-embed fence needs html.');
+    throw new Error(
+      'An html-embed fence needs html: `html: |` with the snippet indented under it.'
+    );
   if (data.caption !== undefined && typeof data.caption !== 'string')
     throw new Error('An html-embed caption must be text.');
   const bytes = htmlBytes(data.html);

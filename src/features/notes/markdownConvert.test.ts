@@ -68,6 +68,31 @@ describe('markdownToDocument', () => {
     ).toThrow('at most 10 html-embed fences');
   });
 
+  // Agent notes are read without MDX: its pass rewrote `class`/`for` and
+  // script text inside fences, and a parse error in prose (`{,}`) cut the
+  // note at the snippet's first `<`, leaving the fence without html.
+  it('keeps agent html and prose exactly as written', () => {
+    const html =
+      '<label for="n" class="row">N</label>\n<input id="n" type="range">\n<!-- note -->\n<script>for(var i=0;i<3;i++){var b=i*2}</script>\n';
+    const { document } = convertAgentMarkdown(
+      [
+        'Aid was $\\$19{,}940$ for the set {2, 3}.',
+        fence('html-embed', `html: |\n${html.replace(/^/gm, '  ').trimEnd()}`),
+        'After the block.',
+      ].join('\n\n')
+    );
+    expect(document.value.map((node) => node.type)).toEqual([
+      'p',
+      'html_embed',
+      'p',
+    ]);
+    expect(JSON.stringify(document.value[0])).toContain('for the set {2, 3}.');
+    expect(document.value[1].html).toBe(html);
+    expect(() =>
+      convertAgentMarkdown(fence('html-embed', 'caption: a: b\nhtml: x'))
+    ).toThrow('An html-embed fence is not YAML');
+  });
+
   it('returns a draft per quiz or flashcards fence and refuses a broken one', () => {
     const { embedded } = convertAgentMarkdown(
       [
