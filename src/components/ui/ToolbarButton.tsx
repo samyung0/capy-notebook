@@ -1,4 +1,4 @@
-import { Slot } from 'radix-ui';
+import { Slot } from '@radix-ui/react-slot';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE, buttonVariants } from './Button';
 import { Icon } from './Icon';
@@ -24,7 +24,7 @@ export function ToolbarButton({
   tooltipSide?: 'top' | 'bottom';
   variant?: 'danger-light';
 }) {
-  const Component = asChild ? Slot.Root : 'button';
+  const Component = asChild ? Slot : 'button';
 
   return (
     <ButtonTooltip label={label} shortcut={shortcut} side={tooltipSide}>

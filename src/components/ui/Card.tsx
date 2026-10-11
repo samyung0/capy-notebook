@@ -1,5 +1,5 @@
+import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
 import type { ElementType } from 'react';
 import { cn } from '@/lib/cn';
 
@@ -55,7 +55,7 @@ export function Card({
   asChild,
   ...rest
 }: CardProps) {
-  const Tag = (asChild ? Slot.Root : 'div') as ElementType;
+  const Tag = (asChild ? Slot : 'div') as ElementType;
   return (
     <Tag
       className={cn(

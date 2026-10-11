@@ -19,10 +19,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { userToast } from '@/components/ui/userToast';
 import { StudyBody } from '@/features/flashcards/StudyBody';
-import {
-  blockHomeCrumb,
-  blockKindCrumb,
-} from '@/features/quizzes/QuizPageHeader';
+import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/crumbs';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cardCountBucket, flashcardsStudySource, track } from '@/lib/analytics';

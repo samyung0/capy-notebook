@@ -1,6 +1,10 @@
 import './lib/openuiDevtools';
 import { QueryClientProvider } from '@tanstack/react-query';
-import { RouterContextProvider, RouterProvider } from '@tanstack/react-router';
+import {
+  Link,
+  RouterContextProvider,
+  RouterProvider,
+} from '@tanstack/react-router';
 import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
@@ -16,6 +20,7 @@ import { ThemeProvider } from './theme/ThemeProvider';
 import './styles/tailwind.css';
 import 'streamdown/styles.css';
 import { TooltipProvider } from './components/ui/Tooltip';
+import { CrumbLinkContext } from './features/quizzes/QuizPageHeader';
 import { SourceTransferPanel } from './features/workspace/SourceTransferPanel';
 
 // Before the first render, so a crash during mount is still reported.
@@ -58,7 +63,9 @@ enableMocks().finally(() => {
           <QueryClientProvider client={queryClient}>
             <AppErrorBoundary variant="page">
               <TooltipProvider>
-                <RouterProvider context={{ queryClient }} router={router} />
+                <CrumbLinkContext.Provider value={Link}>
+                  <RouterProvider context={{ queryClient }} router={router} />
+                </CrumbLinkContext.Provider>
 
                 {MockScenarioPanel && (
                   <Suspense fallback={null}>

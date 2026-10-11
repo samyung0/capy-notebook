@@ -15,7 +15,8 @@ import { MaterialAttributionFooter } from '@/features/materials/MaterialAttribut
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
-import { PublicEmbed, PublicEmbedsContext } from './PublicEmbed';
+import { PublicEmbed } from './PublicEmbed';
+import { PublicEmbedsContext } from './publicEmbeds';
 
 /** A node's text, as search snippets and the repeated-title check read it. */
 export const plainText = (node: unknown): string =>
