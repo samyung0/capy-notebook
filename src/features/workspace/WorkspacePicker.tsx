@@ -66,7 +66,7 @@ export function WorkspacePicker({
     ? workspaces
     : [workspace, ...(workspaces ?? [])];
   return (
-    <DropdownMenu modal={false}>
+    <DropdownMenu>
       <ButtonTooltip label={m.workspace_switch()} side="bottom">
         <DropdownMenuTrigger asChild>
           <Button
@@ -86,7 +86,7 @@ export function WorkspacePicker({
           </Button>
         </DropdownMenuTrigger>
       </ButtonTooltip>
-      <DropdownMenuContent align="start" className="w-72 p-1.5">
+      <DropdownMenuContent align="start" alignOffset={4} className="w-72 p-1.5">
         <div className="max-h-80 overflow-y-auto">
           {list.map((w) => (
             <DropdownMenuItem
