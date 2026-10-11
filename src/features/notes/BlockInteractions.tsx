@@ -99,11 +99,13 @@ export function firstLineMiddle(
   const block = editor.api.toDOMNode(element);
   if (!block) return null;
   const containerTop = container.getBoundingClientRect().top;
-  // List wrappers add their own spacing inside the Plate element.
-  const listLine = element.listStyleType
-    ? block.querySelector('[data-slate-leaf]')?.getClientRects()[0]
-    : undefined;
-  if (listLine) return listLine.top - containerTop + listLine.height / 2;
+  // List items and paragraphs center on their first text line, past list
+  // wrappers and paragraph padding.
+  const textLine =
+    element.listStyleType || isType(editor, element, KEYS.p)
+      ? block.querySelector('[data-slate-leaf]')?.getClientRects()[0]
+      : undefined;
+  if (textLine) return textLine.top - containerTop + textLine.height / 2;
   // Headings wrap and vary in size; other blocks use a fixed first-line middle.
   const middle = isType(editor, element, KEYS.heading)
     ? Number.parseFloat(window.getComputedStyle(block).lineHeight) / 2

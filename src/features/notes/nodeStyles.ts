@@ -37,13 +37,15 @@ function pxFontSize(value: unknown) {
   return match ? Number(match[1]) : null;
 }
 
-export const PARAGRAPH_CLASS = 'py-1.5 px-0 leading-relaxed text-fg';
+/** List items are paragraphs too; they keep the tighter list rhythm. */
+export const PARAGRAPH_CLASS =
+  'py-2 px-0 leading-relaxed text-fg [&[data-slate-list-style-type]]:py-1.5';
 export const BLOCKQUOTE_CLASS =
   'my-2 border-l-2 border-line pl-4 text-fg-secondary italic';
 export const HR_CLASS =
   'h-0.5 rounded-sm border-none bg-divider bg-clip-content';
 export const CODE_BLOCK_CLASS =
-  'group/code relative overflow-auto rounded-button my-1 bg-surface-hover-bg px-4 pt-6 pb-4 sm:p-6 sm:pr-4 text-sm [tab-size:2] print:break font-mono text-fg';
+  'group/code relative overflow-auto rounded-button my-2 bg-surface-hover-bg px-4 pt-6 pb-4 sm:p-6 sm:pr-4 text-sm [tab-size:2] print:break font-mono text-fg';
 /** Lines grow with their text so the block's right padding survives scrolling. */
 export const CODE_LINE_CLASS = 'w-max min-w-full';
 export const LINK_CLASS = 'text-link underline underline-offset-2';
@@ -80,7 +82,8 @@ export const MENTION_CLASS = 'font-bold text-tint-accent-1-fg';
 /** Larger @, nudged up so its bottom meets the text baseline. */
 export const MENTION_AT_CLASS = 'relative -top-px mr-0.5 text-[1.12em]';
 
-export const EQUATION_BLOCK_CLASS = 'overflow-auto rounded-sm p-1 text-center';
+export const EQUATION_BLOCK_CLASS =
+  'my-1 overflow-auto rounded-sm p-1 text-center';
 
 /* leaf marks */
 export const CODE_MARK_CLASS =

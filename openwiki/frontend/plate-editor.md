@@ -150,8 +150,8 @@ including the drag-handle gutter inside its paint containment. Without that
 space, handles exist but are clipped and cannot receive pointer input.
 Heading handles use the computed line height to center on the first line,
 sharing one positioning rule across H1–H6 and wrapped headings.
-List handles measure the first rendered text line to account for internal
-numbered/todo wrappers. Todo checkboxes use the CSS line height to center on
+List and paragraph handles measure the first rendered text line to account
+for internal numbered/todo wrappers and paragraph padding. Todo checkboxes use the CSS line height to center on
 the first line, including wrapped rows. Todo rows use only Plate's indent;
 the checkbox sits 24px before the text in both editable and static renderers,
 so empty slash-command hints share the text position without overlapping it.
@@ -1087,7 +1087,10 @@ classes still win.
 margins; below `sm` 36px height, 4px padding and 20px dividers with 4px
 margins. The file header drops from 56px to 48px below `sm` with tighter gaps,
 and the workspace bottom bar (`PageFloatingBar`) uses 44px buttons with 18px
-icons there.
+icons there. Plate keeps its sticky placement and scrolls enabled groups horizontally with
+the shared tabs scroll fade, while settings stay pinned and group preferences
+still control visibility. PDF keeps its centered annotation tools, page count,
+zoom controls and horizontal scrolling on narrow screens.
 
 Note text sizes above 16px shrink on narrow screens through the `note-fs`
 utility: a size keeps 16px plus half its excess at 360px and grows linearly to
@@ -1095,10 +1098,9 @@ its full size at 768px; 16px and below render as written. Headings set their
 size as `--note-fs`, and `FONT_SIZE_NODE_PROPS` renders px font-size marks the
 same way in the editor and static views (other units render as written). The
 font-size control reads a heading's authored size, not the rendered one.
-Callout, code block, table cell and column padding also tighten below `sm`. Plate keeps its sticky placement and scrolls enabled groups horizontally with
-the shared tabs scroll fade, while settings stay pinned and group preferences
-still control visibility. PDF keeps its centered annotation tools, page count,
-zoom controls and horizontal scrolling on narrow screens.
+Callout, code block, table cell and column padding also tighten below `sm`.
+Paragraphs are 8px top and bottom (16px apart) while list items keep 6px;
+code blocks have 8px margins and block equations 4px.
 
 Tabs and both toolbar scroll containers share `useHorizontalWheelScroll`.
 Vertical mouse-wheel input scrolls overflowing controls horizontally without
