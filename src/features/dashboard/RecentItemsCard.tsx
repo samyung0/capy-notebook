@@ -22,6 +22,7 @@ import {
 } from '@/features/workspace/contentActionTarget';
 import { getLocale, m } from '@/i18n';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { PREF_KEYS } from '@/lib/localPrefs';
 import { mergeRecentItems, type RecentItem } from './recentItems';
 
 /** The row's one hint line: when it was last added or edited. Materials
@@ -99,7 +100,7 @@ function recentLink(item: RecentItem) {
 /** Newest files and materials across the caller's member workspaces plus
  * their standalone materials. Renders once all three lists have loaded. */
 export function RecentItemsCard() {
-  const [view, setView] = useListView('capy.recents.view', 'list');
+  const [view, setView] = useListView(PREF_KEYS.recentsView);
   const meta = { errorBoundary: false as const };
   const {
     data: files,

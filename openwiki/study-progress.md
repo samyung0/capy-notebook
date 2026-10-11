@@ -239,8 +239,9 @@ line says quiz results are still kept. Top to bottom:
   with at least one lapse, least retained first, at most 20, on the shared
   card in its compact size with the set's name under it. A card flips and
   takes the four ratings, posted like any rating; the round is a snapshot of
-  the list and restarts from the refreshed list when it runs out, so a card
-  rated Good drops down.
+  the list, and once every card in it is rated the section hides until the
+  workspace is opened again; the next round reads the refreshed list, where
+  a card rated Good has dropped down.
 - **Done** per chapter ("4 of 5", unfiled as Others), counting tracked
   (not removed) items. A finished chapter shows the green check, a started
   one a solid circle and an unstarted one a dashed circle.

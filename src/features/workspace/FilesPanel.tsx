@@ -33,6 +33,7 @@ import {
 import type { GenerateMode } from '@/features/workspace/GenerateForm';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
 import type { AddSourceMode } from './AddSourceDialog';
 import { addSourceMenuItems } from './addSourceMenuItems';
 import type { TabAction } from './PanelTabRow';
@@ -53,6 +54,11 @@ const GENERATING_MATERIAL: Record<
 
 // Native drag-and-drop: rows expose their content type and id. Drops on a
 // content row insert before/after that row; chapter and tree backgrounds append.
+const isChapterMap = (value: unknown): value is Record<string, boolean> =>
+  typeof value === 'object' &&
+  value !== null &&
+  Object.values(value).every((open) => typeof open === 'boolean');
+
 const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
 
 /** The chapter tree with its files and materials. Lives in the right panel's
@@ -97,7 +103,12 @@ export function FilesPanel({
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: reorderContent } = useReorderContent(workspaceId);
 
-  const [openChapters, setOpenChapters] = useState<Record<string, boolean>>({});
+  // Chapters start open; the ones this viewer closed stay closed per workspace.
+  const [openChapters, setOpenChapters] = useLocalPref(
+    PREF_KEYS.openChapters(workspaceId),
+    {},
+    isChapterMap
+  );
   const [dragging, setDragging] = useState(false);
   // Drop-target line while dragging workspace content.
   const [dropTarget, setDropTarget] = useState<string | null>(null);
@@ -147,8 +158,7 @@ export function FilesPanel({
       .filter((item) => item.id !== dragged.id || item.type !== dragged.type);
     items.splice(Math.max(0, Math.min(targetIndex, items.length)), 0, dragged);
     reorderContent({ chapterId, items });
-    if (chapterId)
-      setOpenChapters((state) => ({ ...state, [chapterId]: true }));
+    if (chapterId) setOpenChapters({ ...openChapters, [chapterId]: true });
   }
   function onItemDrop(chapterId: string | null, e: React.DragEvent) {
     if (readOnly || !hasDraggedContent(e)) return;
@@ -467,10 +477,10 @@ export function FilesPanel({
                         aria-expanded={expanded}
                         className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 text-left"
                         onClick={() =>
-                          setOpenChapters((s) => ({
-                            ...s,
+                          setOpenChapters({
+                            ...openChapters,
                             [ch.id]: !expanded,
-                          }))
+                          })
                         }
                         type="button"
                       >

@@ -60,6 +60,7 @@ import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsD
 import { m } from '@/i18n';
 import { trackItemCloned } from '@/lib/analytics';
 import { toastCloneError } from '@/lib/authToasts';
+import { isBoolean, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 type PanelTab = 'study' | 'files' | 'chat';
@@ -69,7 +70,6 @@ const TAB_ICON: Record<PanelTab, IconName> = {
   study: 'bookOpenCheck',
 };
 /** Three columns is a per-browser preference, not per workspace. */
-const PIN_KEY = 'capy.workspace.filesPinned';
 
 export default function WorkspaceOpen() {
   const params = useParams({ strict: false });
@@ -93,19 +93,18 @@ export default function WorkspaceOpen() {
   // Breakpoints: one column below lg, the pinned file tree only from xl up.
   const lg = useMediaQuery('(min-width: 1024px)');
   const xl = useMediaQuery('(min-width: 1280px)');
-  const [pinned, setPinned] = useState(
-    () => localStorage.getItem(PIN_KEY) === '1'
+  const [pinned, setPinned] = useLocalPref(
+    PREF_KEYS.filesPinned,
+    false,
+    isBoolean
   );
   const layout = lg ? (xl && pinned ? 'three' : 'two') : 'one';
   function togglePinned() {
-    const next = !pinned;
-    localStorage.setItem(PIN_KEY, next ? '1' : '0');
-    setPinned(next);
+    setPinned(!pinned);
   }
 
   const searchedOpenItem = openItemFromSearch(search);
-  // Files when nothing is open, Chat when the URL already points at an item.
-  const [tab, setTab] = useState<PanelTab>(searchedOpenItem ? 'chat' : 'files');
+  const [tab, setTab] = useState<PanelTab>('files');
   const [toolsOpen, setToolsOpen] = useState(false);
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;

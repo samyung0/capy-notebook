@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/Popover';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useLocalPref } from '@/lib/localPrefs';
 
 /** The sort menu, filter popover and view toggle shared by the list pages
  * (Workspaces, Create, Files). State lives in the page; this only renders. */
@@ -35,28 +36,12 @@ export interface FilterSection {
 
 export type ListView = 'grid' | 'list';
 
+const isListView = (value: unknown): value is ListView =>
+  value === 'grid' || value === 'list';
+
 /** The page's grid or list choice, remembered per viewer under `key`. */
-export function useListView(
-  key: string,
-  fallback: ListView
-): [ListView, (view: ListView) => void] {
-  const [view, setView] = useState<ListView>(() => {
-    try {
-      const saved = localStorage.getItem(key);
-      return saved === 'grid' || saved === 'list' ? saved : fallback;
-    } catch {
-      return fallback;
-    }
-  });
-  function changeView(next: ListView) {
-    setView(next);
-    try {
-      localStorage.setItem(key, next);
-    } catch {
-      // per-viewer convenience only
-    }
-  }
-  return [view, changeView];
+export function useListView(key: string): [ListView, (view: ListView) => void] {
+  return useLocalPref<ListView>(key, 'grid', isListView);
 }
 
 export function ListToolbar<V extends string>({

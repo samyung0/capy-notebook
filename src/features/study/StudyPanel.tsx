@@ -19,7 +19,7 @@ import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import type { OpenItem } from '@/features/materials/openItem';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import { StepNav } from '@/features/study/StepNav';
-import { currentStep, useSteps } from '@/features/study/steps';
+import { useSteps } from '@/features/study/steps';
 import '@/features/study/railMap/railMap.css';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
@@ -358,7 +358,9 @@ function ReviewLink({
 
 /** One missed flashcard at a time; a rating is recorded like any review
  * rating, so a card rated Good drops down the list on the next refresh. Next
- * skips a card to the end of the round; Previous shows a rated one read only. */
+ * skips a card to the end of the round; Previous shows a rated one read only.
+ * Once every card of the round is rated the section is gone until the
+ * workspace opens again. */
 function QuickReview({
   items,
   workspaceId,
@@ -368,7 +370,7 @@ function QuickReview({
 }) {
   // The list as it was when this round began: ratings refresh the summary,
   // and the round should not reshuffle under the learner.
-  const [round, setRound] = useState(items);
+  const [round] = useState(items);
   const keyOf = (it: ReviewItem) => `${it.materialId}/${it.itemId}`;
   const steps = useSteps<SrsRating>(round.map(keyOf));
   const stack = useCardStack();
@@ -391,11 +393,8 @@ function QuickReview({
       })
     );
     stack.move(reviewCard(card));
-    // A finished round starts over on the list as it is now.
-    if (!currentStep(steps.answer(rating))) {
-      setRound(items);
-      steps.reset(items.map(keyOf));
-    }
+    // A finished round hides the section until the workspace opens again.
+    steps.answer(rating);
   }
 
   return (
