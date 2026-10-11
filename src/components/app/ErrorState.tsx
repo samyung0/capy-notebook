@@ -1,5 +1,7 @@
 import type { ReactNode } from 'react';
+import { ErrorAction } from '@/components/ui/Button';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
 export function ErrorState({
@@ -66,6 +68,31 @@ export function ErrorState({
       {action && (
         <div className={variant === 'page' ? 'mt-4' : 'mt-3'}>{action}</div>
       )}
+    </div>
+  );
+}
+
+/** A failed read in a small area (a side card, a popover list): one line and
+ * Retry, where the panel's icon tile would not fit. */
+export function InlineErrorState({
+  className,
+  message,
+  onRetry,
+}: {
+  className?: string;
+  message: ReactNode;
+  onRetry: () => void;
+}) {
+  return (
+    <div
+      className={cn('flex flex-col items-center gap-1 text-center', className)}
+      data-error-surface="inline"
+      role="alert"
+    >
+      <p className="text-fg-muted">{message}</p>
+      <ErrorAction iconLeftClassName="me-1" onClick={onRetry} size="sm">
+        {m.error_action_retry()}
+      </ErrorAction>
     </div>
   );
 }
