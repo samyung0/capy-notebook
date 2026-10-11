@@ -294,13 +294,17 @@ export function WorkspaceFormDialog({
     <SimpleDialog
       footer={footer}
       formClassName="workspace-form"
-      onClose={() => setOpen(false)}
+      // While pending the dialog stays, so a refusal still shows in its form.
+      onClose={() => {
+        if (!isSubmitting) setOpen(false);
+      }}
       onOpenAutoFocus={(event) => {
         event.preventDefault();
         setFocus('name');
       }}
       onSubmit={submit}
       open={open}
+      showCloseButton={!isSubmitting}
       title={
         {
           clone: m.action_clone_workspace(),

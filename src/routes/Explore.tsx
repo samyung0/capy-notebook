@@ -136,24 +136,26 @@ export default function Explore() {
                 <div className="mt-2">
                   <Badge size="sm">{q.questions.length} questions</Badge>
                 </div>
-                <Button
-                  className="mt-3"
-                  disabled={frozen}
-                  iconLeft="plus"
-                  onClick={() =>
-                    setCloneItem({
-                      id: q.id,
-                      kind: 'quiz',
-                      name: q.name,
-                      type: 'material',
-                      workspaceId: q.workspaceId,
-                    })
-                  }
-                  size="sm"
-                  variant="outline"
-                >
-                  Clone quiz
-                </Button>
+                {q.canClone && (
+                  <Button
+                    className="mt-3"
+                    disabled={frozen}
+                    iconLeft="plus"
+                    onClick={() =>
+                      setCloneItem({
+                        id: q.id,
+                        kind: 'quiz',
+                        name: q.name,
+                        type: 'material',
+                        workspaceId: q.workspaceId,
+                      })
+                    }
+                    size="sm"
+                    variant="outline"
+                  >
+                    {m.action_clone_quiz()}
+                  </Button>
+                )}
               </Card>
             ))}
           </div>
@@ -178,24 +180,26 @@ export default function Explore() {
                 <div className="mt-2">
                   <Badge size="sm">{flashcardSet.cardCount} cards</Badge>
                 </div>
-                <Button
-                  className="mt-3"
-                  disabled={frozen}
-                  iconLeft="plus"
-                  onClick={() =>
-                    setCloneItem({
-                      id: flashcardSet.id,
-                      kind: 'flashcards',
-                      name: flashcardSet.name,
-                      type: 'material',
-                      workspaceId: flashcardSet.workspaceId,
-                    })
-                  }
-                  size="sm"
-                  variant="outline"
-                >
-                  {m.action_clone_flashcards()}
-                </Button>
+                {flashcardSet.canClone && (
+                  <Button
+                    className="mt-3"
+                    disabled={frozen}
+                    iconLeft="plus"
+                    onClick={() =>
+                      setCloneItem({
+                        id: flashcardSet.id,
+                        kind: 'flashcards',
+                        name: flashcardSet.name,
+                        type: 'material',
+                        workspaceId: flashcardSet.workspaceId,
+                      })
+                    }
+                    size="sm"
+                    variant="outline"
+                  >
+                    {m.action_clone_flashcards()}
+                  </Button>
+                )}
               </Card>
             ))}
           </div>

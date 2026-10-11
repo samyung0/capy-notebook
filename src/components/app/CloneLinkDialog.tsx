@@ -43,7 +43,8 @@ export function CloneLinkDialog() {
 }
 
 /** Loads the quiz, flashcards or note to prefill its clone form; a reader who
- * cannot read it sees why instead. */
+ * cannot read it, or may not copy it (a link viewer of its workspace, or an
+ * item embedded in a note), sees why instead. */
 function ItemCloneLink({
   id,
   kind,
@@ -56,7 +57,17 @@ function ItemCloneLink({
   onClose: () => void;
 }) {
   const { data: material, error } = useMaterial(id, { errorBoundary: false });
-  if (material) {
+  // In a workspace only its members and editors clone (canClone).
+  const { data: workspace, error: workspaceError } = useWorkspace(
+    material?.workspaceId ?? '',
+    { errorBoundary: false }
+  );
+  const refusal = material?.parentMaterialId
+    ? m.clone_embedded_not_allowed()
+    : workspace && !workspace.canClone
+      ? m.clone_item_not_allowed()
+      : null;
+  if (material && !refusal && (!material.workspaceId || workspace)) {
     return (
       <CloneItemDialog
         item={{
@@ -73,10 +84,13 @@ function ItemCloneLink({
       />
     );
   }
-  if (!error) return null;
+  const failed = error ?? workspaceError;
+  if (!(refusal || failed)) return null;
   return (
     <SimpleDialog onClose={onClose} open title={cloneLabel(kind)}>
-      <WarningBanner message={errorCopy(error, m.source_try_again())} />
+      <WarningBanner
+        message={refusal ?? errorCopy(failed, m.source_try_again())}
+      />
     </SimpleDialog>
   );
 }

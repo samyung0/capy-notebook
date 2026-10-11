@@ -63,8 +63,21 @@ export function copyName(name: string, keepExtension = false) {
 /** A refused clone as its dialog shows it. */
 export function cloneErrorMessage(error: unknown) {
   if (isStorageQuotaError(error)) {
+    // The numbers come only for the account charged: without them the
+    // destination's owner pays, and it is their storage that is full.
+    if (!error.body?.ownerUserId) return m.clone_owner_quota_body();
     trackQuotaBlocked(error, 'clone');
     return m.clone_quota_body();
+  }
+  // Past the payer's per-file plan cap, as an upload is refused.
+  if (
+    isApiError(error) &&
+    error.code === 'file_too_large' &&
+    typeof error.body?.maxBytes === 'number'
+  ) {
+    return m.source_files_too_large({
+      mb: Math.round(error.body.maxBytes / 1024 / 1024),
+    });
   }
   return errorCopy(error, m.source_try_again());
 }
@@ -240,9 +253,14 @@ export function CloneItemDialog({
           </Button>
         </>
       }
-      onClose={onClose}
+      // While pending the dialog stays: the request ends in the copy or in
+      // its refusal shown here (the success path closes it itself).
+      onClose={() => {
+        if (!isSubmitting) onClose();
+      }}
       onSubmit={submit}
       open
+      showCloseButton={!isSubmitting}
       title={cloneTitle(item)}
       width={560}
     >
