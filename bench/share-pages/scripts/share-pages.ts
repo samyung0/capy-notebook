@@ -450,8 +450,9 @@ async function audit(port: number, url: string, profile: Profile) {
       ([name]) => name.toLowerCase() === wanted
     )?.[1];
   // The Worker's own timing (workers/site/handler.ts): `api` and `total` ms.
+  // DevTools joins repeated headers with newlines, and Cloudflare adds its own.
   const server = Object.fromEntries(
-    (header('server-timing') ?? '').split(',').flatMap((entry) => {
+    (header('server-timing') ?? '').split(/[,\n]/).flatMap((entry) => {
       const [name, duration] = entry.trim().split(';dur=');
       return duration ? [[name, Number(duration)]] : [];
     })
