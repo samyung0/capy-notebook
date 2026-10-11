@@ -160,6 +160,14 @@
       ]
     },
     {
+      "name": "Diagram",
+      "props": [
+        "title",
+        "code",
+        "passages"
+      ]
+    },
+    {
       "name": "AskUser",
       "props": [
         "question",

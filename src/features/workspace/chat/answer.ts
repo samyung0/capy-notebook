@@ -7,7 +7,7 @@ import {
   tokenize,
   walkAST,
 } from '@openuidev/lang-core';
-import type { ChartProps, ScatterProps } from './schema';
+import type { ChartProps, DiagramProps, ScatterProps } from './schema';
 
 const STATEMENT_HEAD = /^\s*[A-Za-z_]\w*\s*=/;
 const ROOT_HEAD = /^[ \t]*root\s*=\s*Answer\s*\(/m;
@@ -174,6 +174,13 @@ export function inspectAnswer(result: ParseResult | null) {
         !validScatterData(value.props as unknown as ScatterProps))
     ) {
       invalidData = true;
+      return;
+    }
+    if (value.typeName === 'Diagram') {
+      const { title, code } = value.props as unknown as DiagramProps;
+      if (typeof title === 'string' && title.trim()) lines.push(title);
+      if (typeof code === 'string' && code.trim())
+        lines.push(['```mermaid', code.trim(), '```'].join('\n'));
       return;
     }
     for (const [name, prop] of Object.entries(value.props)) {

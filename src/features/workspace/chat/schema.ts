@@ -58,6 +58,11 @@ export const pointProps = z.object({
   y: z.number(),
   label: z.string().optional(),
 });
+export const diagramProps = z.object({
+  title: z.string(),
+  code: z.string(),
+  passages,
+});
 export const askUserProps = z.object({
   question: z.string(),
   choices: z.array(z.string()),
@@ -73,6 +78,7 @@ export type CardProps = z.infer<typeof cardProps>;
 export type RowProps = z.infer<typeof rowProps>;
 export type SeriesProps = z.infer<typeof seriesProps>;
 export type PointProps = z.infer<typeof pointProps>;
+export type DiagramProps = z.infer<typeof diagramProps>;
 export type AskUserProps = z.infer<typeof askUserProps>;
 
 /** Props of the container components, whose children arrive as element nodes. */
@@ -144,6 +150,7 @@ export type Renderers = Record<
   | 'Series'
   | 'ScatterChart'
   | 'Point'
+  | 'Diagram'
   | 'AskUser',
   AnyRenderer
 >;
@@ -152,7 +159,7 @@ export function buildLibrary(render: Renderers) {
   const Md = defineComponent({
     component: render.Md,
     description:
-      'A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). No Mermaid or other diagram code: chat shows it as raw text. passages: the shown passage numbers that ground it.',
+      'A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). Diagrams go in Diagram, never in Md. passages: the shown passage numbers that ground it.',
     name: 'Md',
     props: mdProps,
   });
@@ -276,6 +283,13 @@ export function buildLibrary(render: Renderers) {
       illustrative: z.boolean().optional(),
     }),
   });
+  const Diagram = defineComponent({
+    component: render.Diagram,
+    description:
+      'A Mermaid diagram of a process, cycle, pathway, hierarchy or decision. code is Mermaid source with lines separated by \\n: flowchart TD, sequenceDiagram, stateDiagram-v2, mindmap or timeline. Chat is narrow: top-down, at most about 12 nodes with short labels, no styling, classDef or HTML.',
+    name: 'Diagram',
+    props: diagramProps,
+  });
   const AskUser = defineComponent({
     component: render.AskUser,
     description:
@@ -295,6 +309,7 @@ export function buildLibrary(render: Renderers) {
     Table.ref,
     Chart.ref,
     ScatterChart.ref,
+    Diagram.ref,
   ] as const;
   const AccordionItem = defineComponent({
     component: render.AccordionItem,
@@ -376,11 +391,13 @@ export function buildLibrary(render: Renderers) {
           'Series',
           'ScatterChart',
           'Point',
+          'Diagram',
         ],
         name: 'Data',
         notes: [
           '- Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.',
           '- Chart values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.',
+          '- Diagram: only for structure or flow the prose cannot show; the text next to it says what to notice.',
         ],
       },
       {
@@ -414,6 +431,7 @@ export function buildLibrary(render: Renderers) {
       Series,
       ScatterChart,
       Point,
+      Diagram,
       AskUser,
     ],
     root: 'Answer',

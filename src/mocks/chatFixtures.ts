@@ -133,6 +133,19 @@ export const chatFixtures = [
   },
   {
     content: [
+      'root = Answer([intro, diagram, after])',
+      'intro = Md("A neuron fires when its membrane voltage crosses a threshold; the rest of the spike then runs by itself.", [1])',
+      'diagram = Diagram("One action potential", "flowchart TD\\nA[Resting at -70 mV] --> B{Stimulus reaches -55 mV?}\\nB -- no --> A\\nB -- yes --> C[Na+ channels open, Na+ rushes in]\\nC --> D[Peak near +30 mV]\\nD --> E[K+ channels open, K+ leaves]\\nE --> F[Undershoot below rest]\\nF --> A", [1])',
+      'after = Md("Notice the loop back to rest: the channels reset before the next spike can fire.")',
+    ].join('\n'),
+    hint: 'Mermaid flowchart with a decision node, a loop and a cited source.',
+    id: 'chat-openui-diagram',
+    label: 'OpenUI: diagram',
+    passages: [1],
+    prompt: 'Show how a neuron fires as a diagram.',
+  },
+  {
+    content: [
       'root = Answer([intro, q1, q2, q3])',
       'intro = Md("I need a few details before building your revision plan.")',
       'q1 = AskUser("Which subject is the plan for?", ["Biology", "Chemistry", "Mathematics"])',

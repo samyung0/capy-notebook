@@ -2832,7 +2832,8 @@ In the browser, `src/features/workspace/chat/LangAnswer.tsx` renders a
 program answer through `@openuidev/react-lang`'s `Renderer` and the
 Capy-owned components in `chat/blocks/` (prose through Streamdown, tabs,
 steps, accordions, callouts, tags, label/value rows, cards, tables, SVG charts
-themed by `--chart-1..6`, reveals). Answers stored before the program format
+themed by `--chart-1..6`, reveals, and Mermaid diagrams through the notes'
+renderer, drawn once their code stops growing while the answer streams). Answers stored before the program format
 still render as Markdown. Inline `[k]` markers come from the message's
 citation list by `n`; tables and charts put their sources under the block.
 The prompt reserves `AskUser` for required user input and excludes simple follow-up questions.

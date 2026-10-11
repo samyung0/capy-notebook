@@ -4,6 +4,7 @@ import { createParser } from '@openuidev/lang-core';
 import { ignoreEmptyExtras } from './answer';
 import { AskUser } from './blocks/AskUser';
 import { Chart, ScatterChart } from './blocks/ChatChart';
+import { Diagram } from './blocks/ChatDiagram';
 import { ChatTable } from './blocks/ChatTable';
 import { Accordion, Cards, ChatTabs, Facts, Tags } from './blocks/layout';
 import { Callout, Md, Reveal, Steps } from './blocks/text';
@@ -22,6 +23,7 @@ export const chatLibrary = buildLibrary({
   Card: leaf,
   Cards,
   Chart,
+  Diagram,
   Fact: leaf,
   Facts,
   Md,

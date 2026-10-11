@@ -32,6 +32,7 @@ const stubs = Object.fromEntries(
     'Series',
     'ScatterChart',
     'Point',
+    'Diagram',
     'AskUser',
   ].map((name) => [name, stub])
 ) as unknown as Renderers;

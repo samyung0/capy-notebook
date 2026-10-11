@@ -106,6 +106,17 @@ describe('local answer recovery', () => {
     ).toBe(true);
   });
 
+  it('projects a diagram as a mermaid fence', () => {
+    const result = parseAnswer(
+      'root = Answer([Diagram("Cycle", "flowchart TD\\nA --> B", [3])])'
+    );
+    expect(inspectAnswer(result)).toEqual({
+      gap: false,
+      invalidCharts: new Set(),
+      text: 'Cycle\n\n```mermaid\nflowchart TD\nA --> B\n```',
+    });
+  });
+
   it('keeps a fence paired when prose surrounds the program', () => {
     const { prefix, program: source } = splitAnswer(
       'Here.\n```openui-lang\nroot = Answer([Md("Recovered.", [2])])\n```\nHope that helps.'
