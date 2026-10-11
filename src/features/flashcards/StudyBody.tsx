@@ -4,8 +4,12 @@ import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import type { FlashcardContent } from '@/features/materials/blocks';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
-import { type Frame, NoFrame } from '@/features/quizzes/AttemptBody';
-import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
+import {
+  type Crumb,
+  type Frame,
+  NoFrame,
+  QuizPageHeader,
+} from '@/features/quizzes/QuizPageHeader';
 import { StepNav } from '@/features/study/StepNav';
 import { currentStep, useSteps } from '@/features/study/steps';
 import { m } from '@/i18n';

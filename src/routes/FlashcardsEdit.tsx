@@ -17,7 +17,10 @@ import {
   flashcardsElementToCards,
 } from '@/features/materials/document';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
-import { blockHomeCrumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
+import {
+  blockHomeCrumb,
+  QuizPageHeader,
+} from '@/features/quizzes/QuizPageHeader';
 import { m } from '@/i18n';
 
 /** `/flashcards/$flashcardSetId/edit`: the card grid on its own page, where a

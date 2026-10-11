@@ -103,7 +103,7 @@ import {
 } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
-import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError } from '@/lib/errors';

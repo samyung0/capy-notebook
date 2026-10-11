@@ -15,11 +15,8 @@ import { Skeleton } from '@/components/ui/feedback';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import type { Answer } from '@/features/quizzes/grade';
-import {
-  QuizPageHeader,
-  QuizQuestionList,
-  QuizScore,
-} from '@/features/quizzes/QuizPage';
+import { QuizQuestionList, QuizScore } from '@/features/quizzes/QuizPage';
+import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { getLocale, m } from '@/i18n';
 
 export default function AttemptResult() {

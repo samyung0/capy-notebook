@@ -30,7 +30,10 @@ import { Tabs } from '@/components/ui/Tabs';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { QuizForm } from '@/features/quizzes/QuizForm';
-import { blockHomeCrumb, QuizPageHeader } from '@/features/quizzes/QuizPage';
+import {
+  blockHomeCrumb,
+  QuizPageHeader,
+} from '@/features/quizzes/QuizPageHeader';
 import { usePickedImages } from '@/features/quizzes/usePickedImages';
 import { m } from '@/i18n';
 import { textLength } from '@/lib/textLength';

@@ -14,7 +14,10 @@ import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
-import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/QuizPage';
+import {
+  blockHomeCrumb,
+  blockKindCrumb,
+} from '@/features/quizzes/QuizPageHeader';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { toastCloneError } from '@/lib/authToasts';

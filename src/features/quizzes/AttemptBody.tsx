@@ -17,13 +17,13 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import type { Answer } from './grade';
 import { isAnswered } from './QuestionRunner';
+import { QuizQuestionList, QuizScore, quizMeta } from './QuizPage';
 import {
   type Crumb,
+  type Frame,
+  NoFrame,
   QuizPageHeader,
-  QuizQuestionList,
-  QuizScore,
-  quizMeta,
-} from './QuizPage';
+} from './QuizPageHeader';
 
 /* Taking a quiz, shared by the app page and the public /share page. It knows
    no router or session: callers pass the frame, the top bar and how to grade. */
@@ -32,12 +32,6 @@ type Answers = Record<string, Answer>;
 const EmbeddedBody = ({ children }: { children: ReactNode }) => (
   <div>{children}</div>
 );
-/** The panel around the page; its header stays put while the body scrolls. */
-export type Frame = (props: {
-  children: ReactNode;
-  header?: ReactNode;
-}) => ReactNode;
-export const NoFrame: Frame = ({ children }) => children;
 /** An attempt graded on the server: its questions with their keys and each
  * part's award, and the marks over the quiz's total. */
 export type Graded = { questions: Question[]; awarded: number; max: number };

@@ -14,7 +14,7 @@ import {
 import { MaterialAttributionFooter } from '@/features/materials/MaterialAttributionFooter';
 import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
-import { QuizPageHeader } from '@/features/quizzes/QuizPage';
+import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { PublicEmbed, PublicEmbedsContext } from './PublicEmbed';
 
 /** A node's text, as search snippets and the repeated-title check read it. */
