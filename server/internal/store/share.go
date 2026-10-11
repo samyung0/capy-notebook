@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"path"
+	"slices"
 	"sort"
 	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
 /* -------------------------------------------------------------- access checks
@@ -518,6 +520,103 @@ type workspaceCloneFile struct {
 	provenance                  []byte
 	thumbnailKey                *string
 	preview                     []byte
+	revision                    int64
+	// The saved edit state (source_documents), when the file has one: its
+	// base blob is locked like the published one and its bytes are charged.
+	sourceBasePath *string
+	sourceBytes    int64
+}
+
+// snapshotCloneFilesTx reads the ready files a clone copies, filtered by
+// where ($1). indexed counts only an index that is ready.
+func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any) ([]workspaceCloneFile, error) {
+	rows, err := tx.Query(ctx,
+		`SELECT f.id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.status,
+			(f.indexed AND EXISTS (
+				SELECT 1 FROM rag_file_contents fc
+				JOIN rag_contents rc ON rc.id=fc.content_id
+				WHERE fc.file_id=f.id AND rc.status='ready'
+			)),
+			f.parser, f.blob_path, f.source_etag,
+			f.content_hash, f.source_sha256, f.parse_mode, f.ever_parsed_successfully,
+			f.index_limit, f.provenance, f.thumbnail_key, f.preview, f.revision,
+			d.base_blob_path, COALESCE(d.storage_bytes, 0)
+		 FROM files f LEFT JOIN source_documents d ON d.file_id=f.id
+		 WHERE f.status='ready' AND f.trashed_at IS NULL AND `+where,
+		arg,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var files []workspaceCloneFile
+	for rows.Next() {
+		var file workspaceCloneFile
+		if err := rows.Scan(
+			&file.id, &file.chapterID, &file.position, &file.name, &file.kind,
+			&file.sizeBytes, &file.status, &file.indexed, &file.parser,
+			&file.blobPath, &file.sourceETag, &file.contentHash, &file.sourceSHA256,
+			&file.parseMode, &file.everParsed, &file.indexLimit, &file.provenance,
+			&file.thumbnailKey, &file.preview, &file.revision,
+			&file.sourceBasePath, &file.sourceBytes,
+		); err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	return files, rows.Err()
+}
+
+// insertCloneFileTx copies one snapshot file into workspaceID as newID: its
+// published bytes, published captions and saved edit state, which reopens at
+// epoch 1 on the same base (job, refresh and notice columns start empty).
+// Its thumbnail is copied under the new id once the transaction commits.
+func insertCloneFileTx(
+	ctx context.Context,
+	tx pgx.Tx,
+	f workspaceCloneFile,
+	newID, workspaceID, actorID string,
+	chapterID *string,
+	name string,
+	position int64,
+) (*ThumbnailCopy, error) {
+	// files.user_id is the workspace owner (trigger); attribution travels with
+	// the copy, as it does for materials.
+	if _, err := tx.Exec(ctx, `INSERT INTO files
+		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
+		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision)
+		VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,now(),$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
+		newID, workspaceID, actorID, chapterID, position, name, f.kind, f.sizeBytes, f.status, f.indexed, f.parser, f.blobPath,
+		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision); err != nil {
+		return nil, err
+	}
+	// Saved edits travel (Epo 2026-10-11). base_revision equals the copied
+	// files.revision, as CheckSourceAccess requires. Migration 0075 (delta
+	// saves) adds update rows a clone must copy too.
+	if f.sourceBasePath != nil {
+		if _, err := tx.Exec(ctx, `INSERT INTO source_documents
+			(user_id, file_id, format, epoch, checkpoint, indexed_checkpoint, base_revision, base_blob_path,
+			 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
+			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal)
+			SELECT $3, $2, format, 1, checkpoint, indexed_checkpoint, $4, base_blob_path,
+			 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
+			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal
+			FROM source_documents WHERE file_id=$1`, f.id, newID, actorID, f.revision); err != nil {
+			return nil, err
+		}
+	}
+	if err := cloneImageCaptionAssociations(ctx, tx, f.id, newID); err != nil {
+		return nil, err
+	}
+	// A key's path names a file of the row's own workspace, so the clone gets
+	// a copy under its own file id.
+	if f.thumbnailKey == nil {
+		return nil, nil
+	}
+	return &ThumbnailCopy{
+		FileID: newID, From: *f.thumbnailKey,
+		To: "thumbs/" + newID + "/" + path.Base(*f.thumbnailKey),
+	}, nil
 }
 
 type workspaceCloneAsset struct {
@@ -539,6 +638,25 @@ type workspaceCloneMaterial struct {
 	preview   json.RawMessage
 	sizeBytes int64
 	cardIDs   []string
+	// The copy indexes to the same text, so it may share the source's index.
+	indexKept bool
+}
+
+// sameIndexText reports whether a note's copy indexes to the source's text,
+// so the copy can take the source's index instead of being indexed again.
+func sameIndexText(before, after string) (bool, error) {
+	a, err := materialdoc.ExtractIndexText(before)
+	if err != nil {
+		return false, err
+	}
+	b, err := materialdoc.ExtractIndexText(after)
+	return a == b, err
+}
+
+// cloneMentions applies the mention rule (Epo 2026-10-11): a mention of a
+// user outside the copy's destination becomes plain "@Name" text.
+func cloneMentions(content string, members map[string]bool) (string, error) {
+	return materialdoc.PlainMentions(content, func(userID string) bool { return members[userID] })
 }
 
 type workspaceCloneSnapshot struct {
@@ -589,25 +707,36 @@ func lockCloneBlobPathsTx(
 	return nil
 }
 
-// workspaceCloneBlobPaths lists the paths the clone will reference. Thumbnail
-// keys are not among them: a clone copies those objects after it commits.
-func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot) []string {
-	paths := make([]string, 0, len(snapshot.files)+len(snapshot.assets))
-	for _, file := range snapshot.files {
+// cloneFileBlobPaths lists the paths copies of files will reference.
+// Thumbnail keys are not among them: a clone copies those objects after it
+// commits.
+func cloneFileBlobPaths(files []workspaceCloneFile) []string {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
 		if file.blobPath != nil {
 			paths = append(paths, *file.blobPath)
 		}
+		if file.sourceBasePath != nil {
+			paths = append(paths, *file.sourceBasePath)
+		}
 	}
+	return paths
+}
+
+func workspaceCloneBlobPaths(snapshot workspaceCloneSnapshot) []string {
+	paths := cloneFileBlobPaths(snapshot.files)
 	for _, asset := range snapshot.assets {
 		paths = append(paths, asset.objectPath)
 	}
 	return paths
 }
 
+// snapshotWorkspaceForClone reads and rewrites everything a workspace clone
+// copies. The new workspace has only actorID, so other mentions turn plain.
 func (s *Store) snapshotWorkspaceForClone(
 	ctx context.Context,
 	tx pgx.Tx,
-	workspaceID string,
+	workspaceID, actorID string,
 ) (workspaceCloneSnapshot, error) {
 	var snapshot workspaceCloneSnapshot
 	rows, err := tx.Query(ctx,
@@ -673,58 +802,13 @@ func (s *Store) snapshotWorkspaceForClone(
 	}
 	rows.Close()
 
-	rows, err = tx.Query(ctx,
-		`SELECT id, chapter_id, position, name, kind, size_bytes, status,
-			(indexed AND EXISTS (
-				SELECT 1 FROM rag_file_contents fc
-				JOIN rag_contents rc ON rc.id=fc.content_id
-				WHERE fc.file_id=files.id AND rc.status='ready'
-			)),
-			parser, blob_path, source_etag,
-			content_hash, source_sha256, parse_mode, ever_parsed_successfully,
-			index_limit, provenance, thumbnail_key, preview
-		 FROM files
-		 WHERE workspace_id=$1 AND status='ready' AND trashed_at IS NULL
-		 ORDER BY added_at`,
-		workspaceID,
-	)
-	if err != nil {
+	if snapshot.files, err = snapshotCloneFilesTx(ctx, tx,
+		`f.workspace_id=$1 ORDER BY f.added_at`, workspaceID); err != nil {
 		return workspaceCloneSnapshot{}, err
 	}
-	for rows.Next() {
-		var file workspaceCloneFile
-		if err := rows.Scan(
-			&file.id,
-			&file.chapterID,
-			&file.position,
-			&file.name,
-			&file.kind,
-			&file.sizeBytes,
-			&file.status,
-			&file.indexed,
-			&file.parser,
-			&file.blobPath,
-			&file.sourceETag,
-			&file.contentHash,
-			&file.sourceSHA256,
-			&file.parseMode,
-			&file.everParsed,
-			&file.indexLimit,
-			&file.provenance,
-			&file.thumbnailKey,
-			&file.preview,
-		); err != nil {
-			rows.Close()
-			return workspaceCloneSnapshot{}, err
-		}
-		snapshot.bytes += file.sizeBytes
-		snapshot.files = append(snapshot.files, file)
+	for _, file := range snapshot.files {
+		snapshot.bytes += file.sizeBytes + file.sourceBytes
 	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return workspaceCloneSnapshot{}, err
-	}
-	rows.Close()
 
 	assetIDs := make(map[string]string, len(snapshot.assets))
 	for _, asset := range snapshot.assets {
@@ -785,6 +869,18 @@ func (s *Store) snapshotWorkspaceForClone(
 		)
 		if err != nil {
 			return workspaceCloneSnapshot{}, err
+		}
+		if materialSnapshot.content, err = cloneMentions(
+			materialSnapshot.content, map[string]bool{actorID: true},
+		); err != nil {
+			return workspaceCloneSnapshot{}, err
+		}
+		if materialSnapshot.material.Kind == "note" {
+			if materialSnapshot.indexKept, err = sameIndexText(
+				materialSnapshot.material.Content, materialSnapshot.content,
+			); err != nil {
+				return workspaceCloneSnapshot{}, err
+			}
 		}
 		materialSnapshot.metrics, err = materialdoc.Metrics(materialSnapshot.content)
 		if err != nil {
@@ -933,20 +1029,8 @@ func (s *Store) cloneWorkspaceOnce(
 		}
 		return Workspace{}, nil, err
 	}
-	isOwner := src.OwnerUserID == userID
-	if !isOwner {
-		// Members of any role and share-role editors may copy the workspace;
-		// a link/public viewer may read it but not clone it.
-		member, effective, err := workspaceRoles(ctx, tx, userID, srcID)
-		if err != nil {
-			return Workspace{}, nil, err
-		}
-		if effective == "" {
-			return Workspace{}, nil, ErrNotFound
-		}
-		if member == "" && !RoleCanEdit(effective) {
-			return Workspace{}, nil, ErrForbidden
-		}
+	if err := assertCloneSourceTx(ctx, tx, userID, srcID); err != nil {
+		return Workspace{}, nil, err
 	}
 	limits, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1)
 	if err != nil {
@@ -956,7 +1040,7 @@ func (s *Store) cloneWorkspaceOnce(
 	// history-retention limit before we select any source revisions. Otherwise a
 	// concurrent downgrade could prune old history and the clone could restore
 	// the larger pre-downgrade snapshot afterward.
-	snapshot, err := s.snapshotWorkspaceForClone(ctx, tx, srcID)
+	snapshot, err := s.snapshotWorkspaceForClone(ctx, tx, srcID, userID)
 	if err != nil {
 		return Workspace{}, nil, err
 	}
@@ -1014,45 +1098,24 @@ func (s *Store) cloneWorkspaceOnce(
 	}
 
 	// Files. Parse-zip and caption object keys are owned by artifact_cache and
-	// are not copied; native Office viewers use the source and saved checkpoint.
+	// are not copied.
 	fileMap := map[string]string{}
 	var thumbnailCopies []ThumbnailCopy
-	{
-		for _, f := range snapshot.files {
-			nid := uid("f")
-			fileMap[f.id] = nid
-			// A key's path names a file of the row's own workspace, so the
-			// clone gets a copy under its own file id once this commits.
-			var thumbnailKey *string
-			if f.thumbnailKey != nil {
-				thumbnailCopies = append(thumbnailCopies, ThumbnailCopy{
-					FileID: nid, From: *f.thumbnailKey,
-					To: "thumbs/" + nid + "/" + path.Base(*f.thumbnailKey),
-				})
-			}
-			var chapterID *string
-			if f.chapterID != nil {
-				if mapped, ok := chapterMap[*f.chapterID]; ok {
-					chapterID = &mapped
-				}
-			}
-			// Attribution travels with the copy, as it does for materials.
-			if _, err := tx.Exec(ctx, `INSERT INTO files
-				(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
-				 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance,
-				 thumbnail_key, preview)
-				VALUES ($1,$2,$3,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)`,
-				nid, newID, userID, chapterID, f.position, f.name, f.kind, f.sizeBytes, time.Now().UTC(), f.status, f.indexed, f.parser, f.blobPath,
-				f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance,
-				thumbnailKey, f.preview); err != nil {
-				return Workspace{}, nil, err
+	for _, f := range snapshot.files {
+		nid := uid("f")
+		fileMap[f.id] = nid
+		var chapterID *string
+		if f.chapterID != nil {
+			if mapped, ok := chapterMap[*f.chapterID]; ok {
+				chapterID = &mapped
 			}
 		}
-	}
-
-	for oldID, newID := range fileMap {
-		if err := cloneImageCaptionAssociations(ctx, tx, oldID, newID); err != nil {
+		thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, newID, userID, chapterID, f.name, f.position)
+		if err != nil {
 			return Workspace{}, nil, err
+		}
+		if thumbnail != nil {
+			thumbnailCopies = append(thumbnailCopies, *thumbnail)
 		}
 	}
 
@@ -1137,9 +1200,16 @@ func (s *Store) cloneWorkspaceOnce(
 		}
 	}
 
-	// The index follows files and notes; a note the source had not indexed yet
-	// starts dirty so the scheduler builds its index in the clone.
-	if err := cloneRetrievalIndex(ctx, tx, srcID, newID, srcEmbed.Pin, fileMap, snapshot.materialIDs); err != nil {
+	// The index follows files and notes; a note the source had not indexed yet,
+	// or whose copy reads differently (mentions turned plain), starts dirty so
+	// the scheduler builds its index in the clone.
+	indexedMaterials := map[string]string{}
+	for _, materialSnapshot := range snapshot.materials {
+		if materialSnapshot.indexKept {
+			indexedMaterials[materialSnapshot.material.ID] = materialSnapshot.newID
+		}
+	}
+	if _, err := cloneRetrievalIndex(ctx, tx, srcID, newID, fileMap, indexedMaterials); err != nil {
 		return Workspace{}, nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE materials m SET index_dirty_at=now()
@@ -1160,51 +1230,120 @@ func (s *Store) cloneWorkspaceOnce(
 	return workspace, thumbnailCopies, err
 }
 
-// cloneRetrievalIndex copies a workspace's chunks and file summaries into
-// the clone, inside the same transaction as the content it describes. Copying the vectors is pure SQL where re-ingesting would mean
-// paying for the parse and the embeddings again.
+// cloneRetrievalIndex gives copied files and notes the source's ready index,
+// inside the same transaction as the content it describes. Content the target
+// workspace already holds (always, for a copy into the source's own
+// workspace) is shared, as duplicate files share one index; other content is
+// copied, chunks, vectors and summaries, when both workspaces embed in the
+// same space: pure SQL where re-ingesting would mean paying for the parse and
+// the embeddings again. It returns the copies that got an index; the caller
+// handles the rest (a target held content still processing, or another pin).
 //
 // The source pin names the vector table on both sides of the copy. An empty
 // workspace has no vectors, so the table is resolved only once there is
 // content; a fixture pin that is not in the allowlist can still clone.
-//
-// Canonical content receives fresh ids because it is workspace-scoped, while
-// duplicate logical files in the clone keep sharing one copied index.
-func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pin models.Pin, fileMap, materialMap map[string]string) error {
+func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, dstID string, fileMap, materialMap map[string]string) (map[string]bool, error) {
+	indexed := map[string]bool{}
 	oldFiles, newFiles := unzipIDs(fileMap)
 	oldMaterials, newMaterials := unzipIDs(materialMap)
 	if len(oldFiles) == 0 && len(oldMaterials) == 0 {
-		return nil
+		return indexed, nil
 	}
-	// Files and notes alias the same canonical content rows; copy each ready
-	// row once and re-point both alias tables at the copies.
+	var pin models.Pin
+	var samePin bool
+	if err := tx.QueryRow(ctx, `SELECT a.embedding_provider_slug, a.embedding_model_slug, a.embedding_model_version,
+			(a.embedding_provider_slug, a.embedding_model_slug, a.embedding_model_version, a.embedding_dim)
+			IS NOT DISTINCT FROM (b.embedding_provider_slug, b.embedding_model_slug, b.embedding_model_version, b.embedding_dim)
+		FROM workspaces a, workspaces b WHERE a.id=$1 AND b.id=$2`, srcID, dstID).
+		Scan(&pin.ProviderSlug, &pin.ModelSlug, &pin.Version, &samePin); err != nil {
+		return nil, err
+	}
+	// Files and notes alias canonical content rows (old id -> the target's).
 	contentMap := map[string]string{}
+	copies := map[string]string{}
 	rows, err := tx.Query(ctx, `
-		SELECT rc.id FROM rag_contents rc
+		SELECT rc.id, dst.id, dst.status FROM rag_contents rc
+		LEFT JOIN rag_contents dst ON dst.workspace_id=$4 AND dst.content_hash=rc.content_hash
 		WHERE rc.workspace_id=$3 AND rc.status='ready' AND (
 			rc.id IN (SELECT content_id FROM rag_file_contents WHERE file_id = ANY($1::text[]))
 			OR rc.id IN (SELECT content_id FROM rag_material_contents WHERE material_id = ANY($2::text[])))`,
-		oldFiles, oldMaterials, srcID)
+		oldFiles, oldMaterials, srcID, dstID)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for rows.Next() {
 		var oldContentID string
-		if err := rows.Scan(&oldContentID); err != nil {
+		var held, heldStatus *string
+		if err := rows.Scan(&oldContentID, &held, &heldStatus); err != nil {
 			rows.Close()
-			return err
+			return nil, err
 		}
-		contentMap[oldContentID] = uid("rgc")
+		switch {
+		case held != nil && *heldStatus == "ready":
+			contentMap[oldContentID] = *held
+		case held == nil && samePin:
+			contentMap[oldContentID] = uid("rgc")
+			copies[oldContentID] = contentMap[oldContentID]
+		}
 	}
 	if err := rows.Err(); err != nil {
 		rows.Close()
-		return err
+		return nil, err
 	}
 	rows.Close()
 	if len(contentMap) == 0 {
-		return nil
+		return indexed, nil
+	}
+	if err := copyRetrievalContents(ctx, tx, dstID, pin, copies); err != nil {
+		return nil, err
 	}
 	oldContents, newContents := unzipIDs(contentMap)
+	for _, alias := range []struct {
+		table, holder string
+		old, fresh    []string
+	}{
+		{"rag_file_contents", "file_id", oldFiles, newFiles},
+		{"rag_material_contents", "material_id", oldMaterials, newMaterials},
+	} {
+		if len(alias.old) == 0 {
+			continue
+		}
+		rows, err := tx.Query(ctx, `
+			WITH hmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
+			     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
+			INSERT INTO `+alias.table+` (`+alias.holder+`, workspace_id, content_id)
+			SELECT h.new_id, $5, c.new_id
+			FROM `+alias.table+` src
+			JOIN hmap h ON h.old_id = src.`+alias.holder+`
+			JOIN cmap c ON c.old_id = src.content_id
+			RETURNING `+alias.holder,
+			alias.old, alias.fresh, oldContents, newContents, dstID)
+		if err != nil {
+			return nil, err
+		}
+		for rows.Next() {
+			var id string
+			if err := rows.Scan(&id); err != nil {
+				rows.Close()
+				return nil, err
+			}
+			indexed[id] = true
+		}
+		rows.Close()
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	return indexed, nil
+}
+
+// copyRetrievalContents copies ready content rows (old id -> new id) with
+// their chunks, vectors and summaries into dstID.
+func copyRetrievalContents(ctx context.Context, tx pgx.Tx, dstID string, pin models.Pin, copies map[string]string) error {
+	if len(copies) == 0 {
+		return nil
+	}
+	oldContents, newContents := unzipIDs(copies)
 	vectors, err := vectorTable(pin)
 	if err != nil {
 		return err
@@ -1219,41 +1358,16 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 		       rc.source_sha256, rc.pipeline_identity
 		FROM rag_contents rc JOIN cmap c ON c.old_id = rc.id
 		WHERE rc.status='ready'`,
-		oldContents, newContents, newID); err != nil {
+		oldContents, newContents, dstID); err != nil {
 		return err
 	}
-	if len(oldFiles) > 0 {
-		if _, err := tx.Exec(ctx, `
-			WITH fmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
-			     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
-			INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
-			SELECT f.new_id, $5, c.new_id
-			FROM rag_file_contents fc
-			JOIN fmap f ON f.old_id = fc.file_id
-			JOIN cmap c ON c.old_id = fc.content_id`,
-			oldFiles, newFiles, oldContents, newContents, newID); err != nil {
-			return err
-		}
-	}
-	if len(oldMaterials) > 0 {
-		if _, err := tx.Exec(ctx, `
-			WITH mmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[])),
-			     cmap(old_id, new_id) AS (SELECT * FROM unnest($3::text[], $4::text[]))
-			INSERT INTO rag_material_contents (material_id, workspace_id, content_id)
-			SELECT m.new_id, $5, c.new_id
-			FROM rag_material_contents mc
-			JOIN mmap m ON m.old_id = mc.material_id
-			JOIN cmap c ON c.old_id = mc.content_id`,
-			oldMaterials, newMaterials, oldContents, newContents, newID); err != nil {
-			return err
-		}
-	}
-	// Mirrors copy_content_from_donor in pipeline/pipeline/retrieval/store.py:
-	// dest chunk ids are derived from dest workspace id + donor chunk id so
+	// Dest chunk ids are derived from the new content id + donor chunk id so
 	// the vector copy can recompute them and pair each embedding with its
-	// passage. newID is freshly minted, so the derivation is still unique
-	// across clones of the same source.
-	const newChunkID = `'rc_' || substr(md5($3 || c.id), 1, 12)`
+	// passage; the content id is fresh, so they are unique however often one
+	// source is copied. (copy_content_from_donor in
+	// pipeline/pipeline/retrieval/store.py salts with the dest workspace, which
+	// holds one content row per content hash.)
+	const newChunkID = `'rc_' || substr(md5(m.new_id || c.id), 1, 12)`
 	if _, err := tx.Exec(ctx, `
 	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 	INSERT INTO rag_chunks
@@ -1265,7 +1379,7 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 	       c.token_count, c.page_start, c.page_end, c.regions, c.lang, c.search,
 	       c.confidence, c.confidence_reasons
 	FROM rag_chunks c JOIN cmap m ON m.old_id = c.content_id`,
-		oldContents, newContents, newID); err != nil {
+		oldContents, newContents, dstID); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `
@@ -1275,19 +1389,17 @@ func cloneRetrievalIndex(ctx context.Context, tx pgx.Tx, srcID, newID string, pi
 	FROM rag_chunks c
 	JOIN cmap m ON m.old_id = c.content_id
 	JOIN `+vectors+` v ON v.chunk_id = c.id`,
-		oldContents, newContents, newID); err != nil {
+		oldContents, newContents, dstID); err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `
+	_, err = tx.Exec(ctx, `
 	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 	INSERT INTO rag_content_summaries
 		(content_id, workspace_id, fingerprint, descriptor, change_share, summary_version, updated_at)
 	SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.change_share, s.summary_version, s.updated_at
 	FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
-		oldContents, newContents, newID); err != nil {
-		return err
-	}
-	return nil
+		oldContents, newContents, dstID)
+	return err
 }
 
 func unzipIDs(m map[string]string) (old, fresh []string) {
@@ -1300,28 +1412,234 @@ func unzipIDs(m map[string]string) (old, fresh []string) {
 	return old, fresh
 }
 
-// CloneMaterial copies one shared material into the user's standalone library.
-// Flashcards get fresh card ids + reset SRS stats. The clone lands private.
-// Comment threads are intentionally not copied.
-func (s *Store) CloneMaterial(ctx context.Context, userID, matID string) (Material, error) {
-	return s.CloneMaterialKind(ctx, userID, matID, "")
+// CloneTarget is where a single file or material copy lands and what it is
+// called: a workspace the actor edits, optionally filed in one of its
+// chapters (ChapterID) or a chapter by name created when missing
+// (ChapterName), or no workspace for a standalone material.
+type CloneTarget struct {
+	WorkspaceID string
+	ChapterID   *string
+	ChapterName string
+	Name        string
 }
 
-// CloneMaterialKind applies a typed endpoint's kind before any copy or clone
-// counter side effect. An empty kind is the generic material clone route.
-func (s *Store) CloneMaterialKind(
+// cloneDestination is a CloneTarget admitted inside the clone's transaction.
+type cloneDestination struct {
+	workspaceID, workspaceName string
+	payerID                    string // the copy's bytes are charged here
+	chapterID                  *string
+	members                    map[string]bool // mentions that stay live
+}
+
+// lockCloneTargetTx admits a copy's destination in the order every workspace
+// write takes, workspace row then accounts: the target workspace's owner pays
+// and the actor must be its editor (a frozen owner or actor is refused); with
+// no workspace the actor pays. The source owner's account is locked with them.
+func (s *Store) lockCloneTargetTx(
 	ctx context.Context,
-	userID, matID, expectedKind string,
-) (Material, error) {
+	tx pgx.Tx,
+	sourceOwnerID, actorID string,
+	target CloneTarget,
+) (cloneDestination, error) {
+	if target.WorkspaceID == "" {
+		return cloneDestination{payerID: actorID}, lockCloneAccountsTx(ctx, tx, sourceOwnerID, actorID)
+	}
+	ownerID, err := s.storageOwnerTx(ctx, tx, target.WorkspaceID)
+	if err != nil {
+		return cloneDestination{}, err
+	}
+	if err := lockCloneAccountsTx(ctx, tx, sourceOwnerID, actorID, ownerID); err != nil {
+		return cloneDestination{}, err
+	}
+	// The rows are already held; this adds the editor and frozen checks.
+	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, target.WorkspaceID, actorID); err != nil {
+		return cloneDestination{}, err
+	}
+	dest := cloneDestination{workspaceID: target.WorkspaceID, payerID: ownerID, members: map[string]bool{ownerID: true}}
+	if dest.chapterID, err = resolveUploadChapterID(ctx, tx, target.WorkspaceID, target.ChapterID, target.ChapterName); err != nil {
+		return cloneDestination{}, err
+	}
+	if err := tx.QueryRow(ctx, `SELECT name FROM workspaces WHERE id=$1`, target.WorkspaceID).
+		Scan(&dest.workspaceName); err != nil {
+		return cloneDestination{}, err
+	}
+	rows, err := tx.Query(ctx, `SELECT user_id FROM workspace_members WHERE workspace_id=$1`, target.WorkspaceID)
+	if err != nil {
+		return cloneDestination{}, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var member string
+		if err := rows.Scan(&member); err != nil {
+			return cloneDestination{}, err
+		}
+		dest.members[member] = true
+	}
+	return dest, rows.Err()
+}
+
+// assertCloneSourceTx is who may copy what sits in a workspace (Epo
+// 2026-10-11): members of any role and effective editors, the workspace
+// clone's rule. A link or public viewer reads it but does not copy it.
+func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID string) error {
+	member, effective, err := workspaceRoles(ctx, tx, userID, workspaceID)
+	if err != nil {
+		return err
+	}
+	if effective == "" {
+		return ErrNotFound
+	}
+	if member == "" && !RoleCanEdit(effective) {
+		return ErrForbidden
+	}
+	return nil
+}
+
+// sourceOwnerHidden maps a locked source owner to not found: a deleted or
+// deleting owner's content is gone for everyone else.
+func sourceOwnerHidden(err error, sourceOwnerID string) error {
+	var locked *AccountLockedError
+	if errors.As(err, &locked) && locked.UserID == sourceOwnerID {
+		return ErrNotFound
+	}
+	return err
+}
+
+// CloneFile copies one ready file into a workspace the actor edits (files
+// live in workspaces only): its published bytes (blob shared, reference
+// counted), saved edit state, captions, provenance and index, plus the
+// thumbnail the caller copies after the commit. The target owner pays.
+func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
+	for attempt := 0; ; attempt++ {
+		file, copies, err := s.cloneFileOnce(ctx, userID, fileID, target)
+		if !isRetryableTransactionError(err) {
+			return file, copies, err
+		}
+		if err := waitCloneRetry(ctx, attempt); err != nil {
+			return File{}, nil, err
+		}
+	}
+}
+
+func (s *Store) cloneFileOnce(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
+	// Repeatable read: one consistent snapshot of the file, its saved state
+	// and its index, without waiting on collaboration.
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	if err != nil {
+		return File{}, nil, err
+	}
+	defer tx.Rollback(ctx)
+	var sourceWorkspaceID, sourceOwnerID string
+	if err := tx.QueryRow(ctx, `SELECT f.workspace_id, w.user_id FROM files f
+		JOIN workspaces w ON w.id=f.workspace_id
+		WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).
+		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
+		return File{}, nil, ErrNotFound
+	} else if err != nil {
+		return File{}, nil, err
+	}
+	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
+	if err != nil {
+		return File{}, nil, sourceOwnerHidden(err, sourceOwnerID)
+	}
+	if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
+		return File{}, nil, err
+	}
+	files, err := snapshotCloneFilesTx(ctx, tx, `f.id=$1`, fileID)
+	if err != nil {
+		return File{}, nil, err
+	}
+	if len(files) == 0 {
+		return File{}, nil, ErrNotFound
+	}
+	f := files[0]
+	if err := lockCloneBlobPathsTx(ctx, tx, cloneFileBlobPaths(files)); err != nil {
+		return File{}, nil, err
+	}
+	if err := s.gateWorkspaceFilesTx(ctx, tx, dest.workspaceID, 1); err != nil {
+		return File{}, nil, err
+	}
+	if err := s.gateStorageTx(ctx, tx, dest.payerID, f.sizeBytes+f.sourceBytes); err != nil {
+		return File{}, nil, err
+	}
+	nid := uid("f")
+	thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, dest.workspaceID, userID, dest.chapterID,
+		target.Name, time.Now().UnixMicro())
+	if err != nil {
+		return File{}, nil, err
+	}
+	if f.indexed {
+		indexed, err := cloneRetrievalIndex(ctx, tx, sourceWorkspaceID, dest.workspaceID, map[string]string{f.id: nid}, nil)
+		if err != nil {
+			return File{}, nil, err
+		}
+		if !indexed[nid] {
+			if err := s.queueCloneIngestTx(ctx, tx, userID, dest.workspaceID, nid, f); err != nil {
+				return File{}, nil, err
+			}
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return File{}, nil, err
+	}
+	var copies []ThumbnailCopy
+	if thumbnail != nil {
+		copies = append(copies, *thumbnail)
+	}
+	file, err := s.GetFile(ctx, nid)
+	return file, copies, err
+}
+
+// queueCloneIngestTx processes a copied file again, as an upload is, when its
+// target embeds in another space than the source and holds no copy of the
+// content (or holds one still processing). The actor pays the re-embedding;
+// the pipeline's donor path reuses the parse where it can.
+func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, workspaceID, fileID string, f workspaceCloneFile) error {
+	plan, err := sourceupload.BuildProcessingPlan(f.name, f.kind, f.parseMode)
+	if err != nil || plan.Route == sourceupload.RouteStoreOnly || f.blobPath == nil {
+		return err
+	}
+	reservation, err := s.beginIngestSpendTx(ctx, tx, actorID, workspaceID)
+	if err != nil {
+		return err
+	}
+	var parser, etag string
+	if f.parser != nil {
+		parser = *f.parser
+	}
+	if f.sourceETag != nil {
+		etag = *f.sourceETag
+	}
+	payload, err := s.ingestJobPayload(ctx, tx, actorID, map[string]any{
+		"fileId": fileID, "workspaceId": workspaceID, "blobPath": *f.blobPath, "kind": f.kind,
+		"parser": parser, "parseMode": f.parseMode, "processingPlan": plan,
+		"sourceETag": etag, "sourceRevision": f.revision, "reservationId": reservation,
+	})
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,$2,$3)`,
+		uid("job"), initialPipelineJobType(plan), payload); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `UPDATE files SET status='pending', indexed=false WHERE id=$1`, fileID)
+	return err
+}
+
+// CloneMaterial copies one material into a workspace the actor edits (and
+// one of its chapters) or, with no workspace, into a private standalone copy.
+// A note brings its embedded rows along under fresh ids; flashcards get fresh
+// card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
+// state and study progress are not copied. The target owner pays (the actor,
+// standalone).
+func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target CloneTarget) (Material, error) {
 	conn, unlock, err := s.lockMaterialCloneSource(ctx, matID, false)
 	if err != nil {
 		return Material{}, err
 	}
 	defer unlock()
 	for attempt := 0; ; attempt++ {
-		material, err := s.cloneMaterialKindOnce(
-			ctx, conn, userID, matID, expectedKind,
-		)
+		material, err := s.cloneMaterialOnce(ctx, conn, userID, matID, target)
 		if !isRetryableTransactionError(err) {
 			return material, err
 		}
@@ -1331,10 +1649,11 @@ func (s *Store) CloneMaterialKind(
 	}
 }
 
-func (s *Store) cloneMaterialKindOnce(
+func (s *Store) cloneMaterialOnce(
 	ctx context.Context,
 	starter cloneTxStarter,
-	userID, matID, expectedKind string,
+	userID, matID string,
+	target CloneTarget,
 ) (Material, error) {
 	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
@@ -1351,13 +1670,10 @@ func (s *Store) cloneMaterialKindOnce(
 		return Material{}, err
 	}
 	// Account lifecycle is the only source-side serialization. The material and
-	// workspace remain unlocked so accepted collaboration stores can finish.
-	if err := lockCloneAccountsTx(ctx, tx, sourceOwnerID, userID); err != nil {
-		var locked *AccountLockedError
-		if errors.As(err, &locked) && locked.UserID == sourceOwnerID {
-			return Material{}, ErrNotFound
-		}
-		return Material{}, err
+	// its workspace remain unlocked so accepted collaboration stores can finish.
+	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
+	if err != nil {
+		return Material{}, sourceOwnerHidden(err, sourceOwnerID)
 	}
 	src, err := scanMaterial(tx.QueryRow(ctx, `SELECT `+materialCols+`
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, matID))
@@ -1369,11 +1685,17 @@ func (s *Store) cloneMaterialKindOnce(
 		(sourceWorkspaceID != nil && src.WorkspaceID != *sourceWorkspaceID) {
 		return Material{}, ErrCloneSourceChanged
 	}
+	// An embedded row is copied only with its note.
+	if src.ParentMaterialID != "" {
+		return Material{}, ErrNotFound
+	}
 	if _, err := materialEffectiveAccess(ctx, tx, userID, matID); err != nil {
 		return Material{}, err
 	}
-	if expectedKind != "" && string(src.Kind) != expectedKind {
-		return Material{}, ErrNotFound
+	if src.WorkspaceID != "" {
+		if err := assertCloneSourceTx(ctx, tx, userID, src.WorkspaceID); err != nil {
+			return Material{}, err
+		}
 	}
 
 	// A note brings its embedded rows along; their references are rewritten
@@ -1418,16 +1740,21 @@ func (s *Store) cloneMaterialKindOnce(
 		return Material{}, err
 	}
 
-	content := src.Content
-	var cardIDs []string
-	cardIDMap := map[string]string{}
-	if src.Kind == "flashcards" {
-		if content, cardIDs, err = rewriteCardIDsWithMap(src.Content, cardIDMap); err != nil {
-			return Material{}, err
+	// rewrite applies every clone rewrite but the note's references.
+	rewrite := func(m Material) (content string, cardIDs []string, err error) {
+		content = m.Content
+		if m.Kind == "flashcards" {
+			if content, cardIDs, err = rewriteCardIDsWithMap(content, map[string]string{}); err != nil {
+				return "", nil, err
+			}
 		}
+		if content, err = materialdoc.RewriteClonedEditorAssetIDs(content, assetIDMap); err != nil {
+			return "", nil, err
+		}
+		content, err = cloneMentions(content, dest.members)
+		return content, cardIDs, err
 	}
-	nid := uid("mat")
-	type embeddedClone struct {
+	type materialClone struct {
 		src     Material
 		newID   string
 		content string
@@ -1435,124 +1762,134 @@ func (s *Store) cloneMaterialKindOnce(
 		preview json.RawMessage
 		cardIDs []string
 	}
-	embeddedIDs := map[string]string{}
-	clones := make([]embeddedClone, 0, len(embedded))
-	var embeddedBytes int64
-	for _, child := range embedded {
-		clone := embeddedClone{src: child, newID: uid("mat"), content: child.Content}
-		embeddedIDs[child.ID] = clone.newID
-		if child.Kind == "flashcards" {
-			if clone.content, clone.cardIDs, err = rewriteCardIDsWithMap(child.Content, map[string]string{}); err != nil {
-				return Material{}, err
-			}
-		}
-		if clone.content, err = materialdoc.RewriteClonedEditorAssetIDs(clone.content, assetIDMap); err != nil {
-			return Material{}, err
-		}
+	measure := func(clone *materialClone) (int64, error) {
+		var err error
 		if clone.metrics, err = materialdoc.Metrics(clone.content); err != nil {
-			return Material{}, err
+			return 0, err
 		}
 		if err := clone.metrics.LimitError(); err != nil {
+			return 0, err
+		}
+		if clone.preview, err = materialdoc.Preview(string(clone.src.Kind), clone.content); err != nil {
+			return 0, err
+		}
+		return storageJSONSizeTx(ctx, tx, clone.content)
+	}
+	embeddedIDs := map[string]string{}
+	clones := make([]materialClone, 0, len(embedded)+1)
+	bytes := assetBytes
+	for _, child := range embedded {
+		clone := materialClone{src: child, newID: uid("mat")}
+		embeddedIDs[child.ID] = clone.newID
+		if clone.content, clone.cardIDs, err = rewrite(child); err != nil {
 			return Material{}, err
 		}
-		if clone.preview, err = materialdoc.Preview(string(child.Kind), clone.content); err != nil {
-			return Material{}, err
-		}
-		size, err := storageJSONSizeTx(ctx, tx, clone.content)
+		size, err := measure(&clone)
 		if err != nil {
 			return Material{}, err
 		}
-		embeddedBytes += size
+		bytes += size
 		clones = append(clones, clone)
 	}
-	content, err = materialdoc.RewriteClonedEditorAssetIDs(content, assetIDMap)
-	if err != nil {
+	root := materialClone{src: src, newID: uid("mat")}
+	if root.content, root.cardIDs, err = rewrite(src); err != nil {
 		return Material{}, err
 	}
-	content, err = materialdoc.RewriteMaterialRefIDs(content, embeddedIDs)
-	if err != nil {
-		return Material{}, err
-	}
-	metrics, err := materialdoc.Metrics(content)
-	if err != nil {
-		return Material{}, err
-	}
-	if err := metrics.LimitError(); err != nil {
-		return Material{}, err
-	}
-	preview, err := materialdoc.Preview(string(src.Kind), content)
-	if err != nil {
-		return Material{}, err
-	}
-
-	storedSize, err := storageJSONSizeTx(ctx, tx, content)
-	if err != nil {
-		return Material{}, err
-	}
-	if err := s.gateStorageTx(ctx, tx, userID, storedSize+embeddedBytes+assetBytes); err != nil {
-		return Material{}, err
-	}
-
-	// Attribution travels with the copy; see the workspace clone above.
-	var provenance []byte
-	if src.Provenance != nil {
-		if provenance, err = json.Marshal(src.Provenance); err != nil {
+	if src.Kind == "note" {
+		if root.content, err = materialdoc.RewriteMaterialRefIDs(root.content, embeddedIDs); err != nil {
 			return Material{}, err
 		}
 	}
-	if _, err := tx.Exec(ctx, `INSERT INTO materials
-		(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-		 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by, provenance, preview)
-		VALUES ($1,$2,$2,NULL,'',$3,$4,$5,$6,'{}','private',$7,$8,$9,$10,$11,$2,$12,$13)`,
-		nid, userID, src.Kind, src.Title, json.RawMessage(content), src.ScopeChapters,
-		src.Color, metrics.NodeCount, metrics.MaxDepth, src.UpdatedAt, src.Revision,
-		provenance, preview); err != nil {
+	size, err := measure(&root)
+	if err != nil {
 		return Material{}, err
 	}
-	for _, clone := range clones {
-		// An embed's own credits travel with it, like the note's.
-		var childProvenance []byte
+	bytes += size
+	if err := s.gateStorageTx(ctx, tx, dest.payerID, bytes); err != nil {
+		return Material{}, err
+	}
+
+	// Scope names chapters and files of the source's workspace: kept only in it.
+	scopeChapters, scopeFileNames := []string{}, []string{}
+	if dest.workspaceID != "" && dest.workspaceID == src.WorkspaceID {
+		scopeChapters, scopeFileNames = src.ScopeChapters, src.ScopeFileNames
+	}
+	insert := func(clone materialClone, title string, chapterID, parentID *string, scopeChapters, scopeFileNames []string) error {
+		// Attribution travels with the copy: dropping it would strip the
+		// source books' licence credit.
+		var provenance []byte
 		if clone.src.Provenance != nil {
-			if childProvenance, err = json.Marshal(clone.src.Provenance); err != nil {
-				return Material{}, err
+			var err error
+			if provenance, err = json.Marshal(clone.src.Provenance); err != nil {
+				return err
 			}
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO materials
 			(id, created_by, owner_user_id, workspace_id, workspace_name, kind, title, content,
-			 scope_chapters, scope_file_names, privacy, color, node_count, max_depth, updated_at, revision, updated_by,
+			 chapter_id, scope_chapters, scope_file_names, privacy, color, node_count, max_depth, revision, updated_by,
 			 parent_material_id, provenance, preview)
-			VALUES ($1,$2,$2,NULL,'',$3,$4,$5,'{}','{}','private',$6,$7,$8,$9,$10,$2,$11,$12,$13)`,
-			clone.newID, userID, clone.src.Kind, embeddedName(), json.RawMessage(clone.content),
-			clone.src.Color, clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.UpdatedAt,
-			clone.src.Revision, nid, childProvenance, clone.preview); err != nil {
-			return Material{}, err
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'private',$12,$13,$14,$15,$2,$16,$17,$18)`,
+			clone.newID, userID, dest.payerID, nullStr(dest.workspaceID), dest.workspaceName, clone.src.Kind,
+			title, json.RawMessage(clone.content), chapterID, scopeChapters, scopeFileNames, clone.src.Color,
+			clone.metrics.NodeCount, clone.metrics.MaxDepth, clone.src.Revision, parentID, provenance,
+			clone.preview); err != nil {
+			if isUniqueViolation(err) {
+				return ErrTitleTaken
+			}
+			return err
 		}
 		for _, cid := range clone.cardIDs {
 			if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
 				cid, clone.newID); err != nil {
-				return Material{}, err
+				return err
 			}
+		}
+		return nil
+	}
+	if err := insert(root, target.Name, dest.chapterID, nil, scopeChapters, scopeFileNames); err != nil {
+		return Material{}, err
+	}
+	for _, clone := range clones {
+		// An embed's own credits travel with it, like the note's.
+		if err := insert(clone, embeddedName(), nil, &root.newID, []string{}, []string{}); err != nil {
+			return Material{}, err
 		}
 	}
 	for _, asset := range assets {
-		home := nid
+		home := root.newID
 		if asset.materialID != src.ID {
 			home = embeddedIDs[asset.materialID]
 		}
 		if _, err := tx.Exec(ctx, `INSERT INTO editor_assets
 			(id, workspace_id, material_id, user_id, created_by, name, purpose,
 			 object_path, content_type, size_bytes, status, etag, created_at, completed_at)
-			VALUES ($1,NULL,$2,$3,$3,$4,$5,$6,$7,$8,'ready',$9,$10,$11)`,
-			asset.newID, home, userID, asset.name, asset.purpose, asset.objectPath,
+			VALUES ($1,$2,$3,$4,$4,$5,$6,$7,$8,$9,'ready',$10,$11,$12)`,
+			asset.newID, nullStr(dest.workspaceID), home, userID, asset.name, asset.purpose, asset.objectPath,
 			asset.contentType, asset.sizeBytes, asset.etag, asset.createdAt,
 			asset.completedAt); err != nil {
 			return Material{}, err
 		}
 	}
-	for _, cid := range cardIDs {
-		if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
-			cid, nid); err != nil {
-			return Material{}, err
+	// A workspace note shares the source's index when it reads the same,
+	// otherwise it starts dirty and the scheduler indexes it.
+	if src.Kind == "note" && dest.workspaceID != "" {
+		indexed := map[string]bool{}
+		if src.WorkspaceID != "" {
+			same, err := sameIndexText(src.Content, root.content)
+			if err != nil {
+				return Material{}, err
+			}
+			if same {
+				if indexed, err = cloneRetrievalIndex(ctx, tx, src.WorkspaceID, dest.workspaceID,
+					nil, map[string]string{src.ID: root.newID}); err != nil {
+					return Material{}, err
+				}
+			}
+		}
+		if !indexed[root.newID] {
+			if _, err := tx.Exec(ctx, `UPDATE materials SET index_dirty_at=now() WHERE id=$1`, root.newID); err != nil {
+				return Material{}, err
+			}
 		}
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO material_clone_counts (material_id, clone_count)
@@ -1563,20 +1900,25 @@ func (s *Store) cloneMaterialKindOnce(
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err
 	}
-	return s.GetMaterial(ctx, nid)
+	return s.GetMaterial(ctx, root.newID)
 }
 
-// lockCloneAccountsTx follows the normal ordered account lock
-// discipline, but suspension of a different source owner does not hide content
+// lockCloneAccountsTx follows the normal ordered account lock discipline over
+// the source owner, the actor and the accounts that pay for the copy, but
+// suspension of a source owner who neither acts nor pays does not hide content
 // that was already shared. The cloning actor must still have an active session.
 func lockCloneAccountsTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	sourceOwnerID, actorUserID string,
+	payerIDs ...string,
 ) error {
+	strict := append([]string{actorUserID}, payerIDs...)
 	ids := []string{sourceOwnerID}
-	if actorUserID != sourceOwnerID {
-		ids = append(ids, actorUserID)
+	for _, id := range strict {
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
 	}
 	rows, err := tx.Query(ctx, `SELECT id, deleted_at, deletion_requested_at,
 			suspended_at, suspended_reason
@@ -1606,7 +1948,7 @@ func lockCloneAccountsTx(
 			state = AccountSuspended
 		}
 		if state == AccountActive ||
-			(state == AccountSuspended && id == sourceOwnerID && id != actorUserID) {
+			(state == AccountSuspended && !slices.Contains(strict, id)) {
 			continue
 		}
 		locked := &AccountLockedError{UserID: id, State: state}

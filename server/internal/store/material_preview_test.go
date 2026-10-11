@@ -64,7 +64,7 @@ func TestMaterialWritersStorePreview(t *testing.T) {
 	if len(page.Items) != 1 || string(page.Items[0].Preview) == "" {
 		t.Fatalf("material list = %+v, want the stored preview", page.Items)
 	}
-	clone, err := s.CloneMaterial(ctx, ownerID, material.ID)
+	clone, err := s.CloneMaterial(ctx, ownerID, material.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

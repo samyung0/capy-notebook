@@ -363,7 +363,7 @@ func TestStandaloneNoteCloneKeepsImagesWithTheirMaterial(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	clone, err := s.CloneMaterial(ctx, ownerID, note.ID)
+	clone, err := s.CloneMaterial(ctx, ownerID, note.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

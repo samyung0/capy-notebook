@@ -759,6 +759,15 @@ func TestNoteKeepsStudyBlocksAsReferences(t *testing.T) {
 	if len(refs) != 1 || refs[0].MaterialID != "mat_clone" {
 		t.Fatalf("rewritten refs = %#v", refs)
 	}
+	// A reference to a material the clone did not copy is dropped.
+	dropped, err := RewriteMaterialRefIDs(withRef, map[string]string{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refs, err = ExtractMaterialRefs(dropped); err != nil || len(refs) != 0 ||
+		!strings.Contains(dropped, "intro") {
+		t.Fatalf("unmapped reference kept: %v %s", err, dropped)
+	}
 	pending, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{
 		{"type": RefType, "id": "r", "materialId": "", "pending": "questions: []", "refKind": "quiz", "children": []any{textLeaf("")}},
 	}})
@@ -783,6 +792,21 @@ func TestNoteKeepsStudyBlocksAsReferences(t *testing.T) {
 		if err := ValidateKind(string(raw), "note"); !errors.Is(err, ErrInvalid) {
 			t.Fatalf("expected %v to be rejected, got %v", broken, err)
 		}
+	}
+}
+
+func TestPlainMentionsKeepsOnlyLiveUsers(t *testing.T) {
+	raw := `{"schemaVersion":1,"value":[
+		{"type":"p","id":"b1","children":[{"text":"Ask "},{"type":"mention","key":"u_member","value":"Ana","children":[{"text":""}]},{"text":" and "},{"type":"mention","key":"u_gone","value":"Bo","children":[{"text":""}]}]},
+		{"type":"callout","id":"b2","children":[{"type":"p","children":[{"type":"mention","key":"u_gone","value":"Bo","children":[{"text":""}]}]}]}
+	]}`
+	out, err := PlainMentions(raw, func(id string) bool { return id == "u_member" })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "u_gone") || strings.Count(out, `"text":"@Bo"`) != 2 ||
+		!strings.Contains(out, `"key":"u_member"`) {
+		t.Fatalf("mentions = %s", out)
 	}
 }
 

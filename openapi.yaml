@@ -925,6 +925,61 @@ components:
         - fileName
         - snippet
       type: object
+    CloneFileReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CloneFileReq.json
+          format: uri
+          readOnly: true
+          type: string
+        chapterId:
+          description: A chapter of the workspace; exclusive with chapterName
+          type: string
+        chapterName:
+          description: A chapter of this name (any case), created when missing
+          maxLength: 60
+          type: string
+        name:
+          description: The copy's name
+          maxLength: 120
+          minLength: 1
+          type: string
+        workspaceId:
+          minLength: 1
+          type: string
+      required:
+        - workspaceId
+        - name
+      type: object
+    CloneMaterialReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/CloneMaterialReq.json
+          format: uri
+          readOnly: true
+          type: string
+        chapterId:
+          description: A chapter of the workspace; exclusive with chapterName
+          type: string
+        chapterName:
+          description: A chapter of this name (any case), created when missing
+          maxLength: 60
+          type: string
+        title:
+          description: The copy's title, unique in its workspace
+          maxLength: 120
+          minLength: 1
+          type: string
+        workspaceId:
+          description: Omitted for a standalone copy
+          type: string
+      required:
+        - title
+      type: object
     CloneWorkspaceResp:
       additionalProperties: false
       properties:
@@ -7913,6 +7968,37 @@ paths:
       summary: Update an authored PDF annotation
       tags:
         - Source collaboration
+  /api/files/{id}/clone:
+    post:
+      operationId: cloneFile
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloneFileReq"
+        required: true
+      responses:
+        "201":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/File"
+          description: Created
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Clone a file into a workspace
+      tags:
+        - Sharing
   /api/files/{id}/collaboration-token:
     post:
       operationId: createSourceCollaborationToken
@@ -8173,31 +8259,6 @@ paths:
       summary: List cards
       tags:
         - Flashcards
-  /api/flashcards/{id}/clone:
-    post:
-      operationId: cloneFlashcardSet
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FlashcardSet"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Clone shared flashcards
-      tags:
-        - Sharing
   /api/flashcards/{id}/content:
     patch:
       operationId: updateFlashcardContent
@@ -8636,6 +8697,12 @@ paths:
           required: true
           schema:
             type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CloneMaterialReq"
+        required: true
       responses:
         "201":
           content:
@@ -8649,7 +8716,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Clone a shared material
+      summary: Clone a material into a workspace or standalone
       tags:
         - Sharing
   /api/materials/{id}/collaboration-token:
@@ -9652,31 +9719,6 @@ paths:
       summary: Grade and record a quiz attempt
       tags:
         - Quizzes
-  /api/quizzes/{id}/clone:
-    post:
-      operationId: cloneQuiz
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      responses:
-        "201":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quiz"
-          description: Created
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Clone a shared quiz
-      tags:
-        - Sharing
   /api/quizzes/{id}/content:
     patch:
       operationId: updateQuizContent

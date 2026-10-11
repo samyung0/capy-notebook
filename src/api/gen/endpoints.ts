@@ -36,6 +36,8 @@ import type {
   CheckReviewItemReq,
   CheckSourceAccessParams,
   ClaimSourceRefreshParams,
+  CloneFileReq,
+  CloneMaterialReq,
   CloneWorkspaceResp,
   CollaborationTokenResponse,
   Comment,
@@ -2635,6 +2637,57 @@ export const updatePDFAnnotation = async (id: string,
 
 
 
+export type cloneFileResponse201 = {
+  data: File
+  status: 201
+}
+
+export type cloneFileResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 201>
+}
+
+export type cloneFileResponseSuccess = (cloneFileResponse201) & {
+  headers: Headers;
+};
+export type cloneFileResponseError = (cloneFileResponseDefault) & {
+  headers: Headers;
+};
+
+export type cloneFileResponse = (cloneFileResponseSuccess | cloneFileResponseError)
+
+export const getCloneFileUrl = (id: string,) => {
+
+
+
+
+  return `/api/files/${id}/clone`
+}
+
+/**
+ * @summary Clone a file into a workspace
+ */
+export const cloneFile = async (id: string,
+    cloneFileReq: NonReadonly<CloneFileReq>, options?: RequestInit): Promise<cloneFileResponse> => {
+
+  const res = await fetch(getCloneFileUrl(id),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cloneFileReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cloneFileResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as cloneFileResponse
+}
+
+
+
 export type createSourceCollaborationTokenResponse201 = {
   data: SourceCollaborationToken
   status: 201
@@ -3142,56 +3195,6 @@ export const listCards = async (id: string, options?: RequestInit): Promise<list
 
   const data: listCardsResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as listCardsResponse
-}
-
-
-
-export type cloneFlashcardSetResponse201 = {
-  data: FlashcardSet
-  status: 201
-}
-
-export type cloneFlashcardSetResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type cloneFlashcardSetResponseSuccess = (cloneFlashcardSetResponse201) & {
-  headers: Headers;
-};
-export type cloneFlashcardSetResponseError = (cloneFlashcardSetResponseDefault) & {
-  headers: Headers;
-};
-
-export type cloneFlashcardSetResponse = (cloneFlashcardSetResponseSuccess | cloneFlashcardSetResponseError)
-
-export const getCloneFlashcardSetUrl = (id: string,) => {
-
-
-
-
-  return `/api/flashcards/${id}/clone`
-}
-
-/**
- * @summary Clone shared flashcards
- */
-export const cloneFlashcardSet = async (id: string, options?: RequestInit): Promise<cloneFlashcardSetResponse> => {
-
-  const res = await fetch(getCloneFlashcardSetUrl(id),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: cloneFlashcardSetResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as cloneFlashcardSetResponse
 }
 
 
@@ -3994,16 +3997,17 @@ export const getCloneMaterialUrl = (id: string,) => {
 }
 
 /**
- * @summary Clone a shared material
+ * @summary Clone a material into a workspace or standalone
  */
-export const cloneMaterial = async (id: string, options?: RequestInit): Promise<cloneMaterialResponse> => {
+export const cloneMaterial = async (id: string,
+    cloneMaterialReq: NonReadonly<CloneMaterialReq>, options?: RequestInit): Promise<cloneMaterialResponse> => {
 
   const res = await fetch(getCloneMaterialUrl(id),
   {
     ...options,
-    method: 'POST'
-
-
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(cloneMaterialReq)
   }
 )
 
@@ -6000,56 +6004,6 @@ export const createAttempt = async (id: string,
 
   const data: createAttemptResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createAttemptResponse
-}
-
-
-
-export type cloneQuizResponse201 = {
-  data: Quiz
-  status: 201
-}
-
-export type cloneQuizResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 201>
-}
-
-export type cloneQuizResponseSuccess = (cloneQuizResponse201) & {
-  headers: Headers;
-};
-export type cloneQuizResponseError = (cloneQuizResponseDefault) & {
-  headers: Headers;
-};
-
-export type cloneQuizResponse = (cloneQuizResponseSuccess | cloneQuizResponseError)
-
-export const getCloneQuizUrl = (id: string,) => {
-
-
-
-
-  return `/api/quizzes/${id}/clone`
-}
-
-/**
- * @summary Clone a shared quiz
- */
-export const cloneQuiz = async (id: string, options?: RequestInit): Promise<cloneQuizResponse> => {
-
-  const res = await fetch(getCloneQuizUrl(id),
-  {
-    ...options,
-    method: 'POST'
-
-
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: cloneQuizResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as cloneQuizResponse
 }
 
 

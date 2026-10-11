@@ -59,6 +59,8 @@ export * from './checkReviewItemReqAnswers.ts';
 export * from './checkSourceAccessParams.ts';
 export * from './citation.ts';
 export * from './claimSourceRefreshParams.ts';
+export * from './cloneFileReq.ts';
+export * from './cloneMaterialReq.ts';
 export * from './cloneWorkspaceResp.ts';
 export * from './cognitiveLevel.ts';
 export * from './collaborationTokenResponse.ts';

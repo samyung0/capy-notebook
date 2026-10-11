@@ -280,8 +280,8 @@ func TestShareHTTPWritesAndClone(t *testing.T) {
 		body               any
 		status             int
 	}{
-		{http.MethodPost, "/api/quizzes/qz_e2e_link/clone", "", nil, http.StatusUnauthorized},
-		{http.MethodPost, "/api/flashcards/dk_e2e_link/clone", "", nil, http.StatusUnauthorized},
+		{http.MethodPost, "/api/materials/qz_e2e_link/clone", "", map[string]any{"title": "Clone"}, http.StatusUnauthorized},
+		{http.MethodPost, "/api/files/f_e2e_link/clone", "", map[string]any{"workspaceId": "ws_e2e_private", "name": "Clone"}, http.StatusUnauthorized},
 		{http.MethodPatch, "/api/flashcards/dk_e2e_link/metadata", "", map[string]any{"name": "Hacked"}, http.StatusUnauthorized},
 		{http.MethodPatch, "/api/flashcards/dk_e2e_link/metadata", "u_other", map[string]any{"name": "Hacked"}, http.StatusNotFound},
 	} {
@@ -291,7 +291,7 @@ func TestShareHTTPWritesAndClone(t *testing.T) {
 		}
 	}
 
-	rec = doReq(t, h, http.MethodPost, "/api/quizzes/qz_e2e_link/clone", "u_other", nil)
+	rec = doReq(t, h, http.MethodPost, "/api/materials/qz_e2e_link/clone", "u_other", map[string]any{"title": "Clone"})
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("link quiz clone = %d %s", rec.Code, rec.Body.String())
 	}

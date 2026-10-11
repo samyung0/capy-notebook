@@ -18,6 +18,25 @@ type UpdateMeReq struct {
 	AvatarIconID *IconID  `json:"avatarIconId,omitempty" doc:"Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection"`
 }
 
+// CloneFileReq is the body for POST /api/files/{id}/clone: a file is copied
+// into a workspace the caller edits, optionally into one of its chapters or a
+// chapter by name (created when missing).
+type CloneFileReq struct {
+	WorkspaceID string      `json:"workspaceId" minLength:"1"`
+	ChapterID   string      `json:"chapterId,omitempty" doc:"A chapter of the workspace; exclusive with chapterName"`
+	ChapterName ChapterName `json:"chapterName,omitempty" doc:"A chapter of this name (any case), created when missing"`
+	Name        FileName    `json:"name" minLength:"1" doc:"The copy's name"`
+}
+
+// CloneMaterialReq is the body for POST /api/materials/{id}/clone: like
+// CloneFileReq, but without a workspace the copy is a private standalone item.
+type CloneMaterialReq struct {
+	WorkspaceID string        `json:"workspaceId,omitempty" doc:"Omitted for a standalone copy"`
+	ChapterID   string        `json:"chapterId,omitempty" doc:"A chapter of the workspace; exclusive with chapterName"`
+	ChapterName ChapterName   `json:"chapterName,omitempty" doc:"A chapter of this name (any case), created when missing"`
+	Title       MaterialTitle `json:"title" minLength:"1" doc:"The copy's title, unique in its workspace"`
+}
+
 // CreateWorkspaceReq is the body for POST /api/workspaces and for
 // POST /api/workspaces/{id}/clone, whose copy takes these values. New workspaces are
 // always private; visibility is configured later through the sharing endpoint.

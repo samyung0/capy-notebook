@@ -462,23 +462,59 @@ func materialRefs(nodes []map[string]any) []MaterialRef {
 	return refs
 }
 
-// RewriteMaterialRefIDs points every reference whose material id is in ids at
-// the mapped id, for clones. Unmapped references are left as they are.
+// RewriteMaterialRefIDs points every reference at its mapped id, for clones,
+// and drops a reference whose material was not copied (trashed or foreign),
+// so a copy never points at the source's rows. A pending reference (no row
+// yet) is kept.
 func RewriteMaterialRefIDs(raw string, ids map[string]string) (string, error) {
-	if len(ids) == 0 {
-		return raw, nil
-	}
 	doc, err := Parse(raw)
 	if err != nil {
 		return "", err
 	}
+	kept := make([]map[string]any, 0, len(doc.Value))
 	for _, node := range doc.Value {
-		if node["type"] != RefType {
-			continue
-		}
-		if materialID, _ := node["materialId"].(string); ids[materialID] != "" {
+		if materialID, _ := node["materialId"].(string); node["type"] == RefType && materialID != "" {
+			if ids[materialID] == "" {
+				continue
+			}
 			node["materialId"] = ids[materialID]
 		}
+		kept = append(kept, node)
+	}
+	if len(kept) == 0 {
+		kept = Empty().Value
+	}
+	doc.Value = kept
+	return Marshal(doc)
+}
+
+// PlainMentions turns every mention of a user live does not keep into the
+// plain text "@Name", for a copy whose readers that user is not among.
+func PlainMentions(raw string, live func(userID string) bool) (string, error) {
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	var walk func(node map[string]any)
+	walk = func(node map[string]any) {
+		rawChildren, _ := node["children"].([]any)
+		for i, rawChild := range rawChildren {
+			child, ok := rawChild.(map[string]any)
+			if !ok {
+				continue
+			}
+			if child["type"] == "mention" {
+				if userID, _ := child["key"].(string); !live(userID) {
+					name, _ := child["value"].(string)
+					rawChildren[i] = textLeaf("@" + name)
+				}
+				continue
+			}
+			walk(child)
+		}
+	}
+	for _, node := range doc.Value {
+		walk(node)
 	}
 	return Marshal(doc)
 }

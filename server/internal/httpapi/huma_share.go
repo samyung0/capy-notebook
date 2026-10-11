@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -15,11 +16,12 @@ import (
 
 Read access follows the privacy model in store/share.go: owners get full
 access, link/public resources are readable by any signed-in user; standalone
-materials are clonable by any reader, while a workspace clone additionally
-requires membership or an effective editor grant. Clone endpoints deep-copy
-into the caller's account; a workspace clone
-copies the retrieval index in the same transaction as the content, so the copy
-is queryable the moment it exists. */
+materials are clonable by any reader, while a workspace, or a file or material
+inside one, additionally requires membership or an effective editor grant.
+A workspace clone lands in the caller's account; a file or material lands in a
+workspace the caller edits (a material also standalone). Clones copy the
+retrieval index in the same transaction as the content, so the copy is
+queryable the moment it exists. */
 
 type cloneWorkspaceInput struct {
 	ID   string `path:"id"`
@@ -28,6 +30,14 @@ type cloneWorkspaceInput struct {
 type cloneWorkspaceOutput struct {
 	Body apimodel.CloneWorkspaceResp
 }
+type cloneFileInput struct {
+	ID   string `path:"id"`
+	Body apimodel.CloneFileReq
+}
+type cloneMaterialInput struct {
+	ID   string `path:"id"`
+	Body apimodel.CloneMaterialReq
+}
 type publicFlashcardSetsOutput struct {
 	Body []apimodel.PublicFlashcardSet `nullable:"false"`
 }
@@ -35,9 +45,8 @@ type publicFlashcardSetsOutput struct {
 func (a *api) registerShare(api huma.API) {
 	const tag = "Sharing"
 	reg(api, http.MethodPost, "/api/workspaces/{id}/clone", "cloneWorkspace", tag, "Clone a shared workspace", http.StatusCreated, a.cloneWorkspace)
-	reg(api, http.MethodPost, "/api/quizzes/{id}/clone", "cloneQuiz", tag, "Clone a shared quiz", http.StatusCreated, a.cloneQuiz)
-	reg(api, http.MethodPost, "/api/flashcards/{id}/clone", "cloneFlashcardSet", tag, "Clone shared flashcards", http.StatusCreated, a.cloneFlashcardSet)
-	reg(api, http.MethodPost, "/api/materials/{id}/clone", "cloneMaterial", tag, "Clone a shared material", http.StatusCreated, a.cloneMaterial)
+	reg(api, http.MethodPost, "/api/files/{id}/clone", "cloneFile", tag, "Clone a file into a workspace", http.StatusCreated, a.cloneFile)
+	reg(api, http.MethodPost, "/api/materials/{id}/clone", "cloneMaterial", tag, "Clone a material into a workspace or standalone", http.StatusCreated, a.cloneMaterial)
 	reg(api, http.MethodGet, "/api/explore/flashcards", "exploreFlashcardSets", "Explore", "Public flashcards", http.StatusOK, a.exploreFlashcardSets)
 }
 
@@ -120,40 +129,56 @@ func (a *api) copyCloneThumbnails(ctx context.Context, copies []store.ThumbnailC
 	}
 }
 
-func (a *api) cloneQuiz(ctx context.Context, in *quizIDInput) (*quizOutput, error) {
-	mt, err := a.s.CloneMaterialKind(ctx, userID(ctx), in.ID, "quiz")
-	if err != nil {
-		return nil, hErr(err)
+// cloneTarget validates where a single-item copy lands; name is the copy's.
+func cloneTarget(workspaceID, chapterID, chapterName, name string) (store.CloneTarget, error) {
+	target := store.CloneTarget{
+		WorkspaceID: workspaceID,
+		ChapterName: strings.TrimSpace(chapterName),
+		Name:        strings.TrimSpace(name),
 	}
-	q, err := a.s.GetQuiz(ctx, mt.ID)
-	if err != nil {
-		return nil, hErr(err)
+	switch {
+	case target.Name == "":
+		return target, huma.Error422UnprocessableEntity("the copy needs a name")
+	case chapterID != "" && target.ChapterName != "":
+		return target, huma.Error422UnprocessableEntity("give at most one of chapterId or chapterName")
+	case workspaceID == "" && (chapterID != "" || target.ChapterName != ""):
+		return target, huma.Error422UnprocessableEntity("a chapter goes with workspaceId")
 	}
-	q.IsOwner = true
-	q.CanEdit, q.CanEditContent = true, true
-	return &quizOutput{Body: apimodel.FromQuiz(q)}, nil
+	if chapterID != "" {
+		target.ChapterID = &chapterID
+	}
+	return target, nil
 }
 
-func (a *api) cloneFlashcardSet(ctx context.Context, in *flashcardSetIDInput) (*flashcardSetOutput, error) {
-	mt, err := a.s.CloneMaterialKind(ctx, userID(ctx), in.ID, "flashcards")
+func (a *api) cloneFile(ctx context.Context, in *cloneFileInput) (*fileOutput, error) {
+	b := in.Body
+	target, err := cloneTarget(b.WorkspaceID, b.ChapterID, string(b.ChapterName), string(b.Name))
+	if err != nil {
+		return nil, err
+	}
+	file, copies, err := a.s.CloneFile(ctx, userID(ctx), in.ID, target)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	d, err := a.s.GetFlashcardSet(ctx, mt.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	d.IsOwner = true
-	d.CanEdit, d.CanEditContent = true, true
-	return &flashcardSetOutput{Body: d}, nil
+	a.copyCloneThumbnails(ctx, copies)
+	return &fileOutput{Body: file}, nil
 }
 
-func (a *api) cloneMaterial(ctx context.Context, in *materialIDInput) (*materialOutput, error) {
-	mt, err := a.s.CloneMaterial(ctx, userID(ctx), in.ID)
+func (a *api) cloneMaterial(ctx context.Context, in *cloneMaterialInput) (*materialOutput, error) {
+	b := in.Body
+	target, err := cloneTarget(b.WorkspaceID, b.ChapterID, string(b.ChapterName), string(b.Title))
+	if err != nil {
+		return nil, err
+	}
+	mt, err := a.s.CloneMaterial(ctx, userID(ctx), in.ID, target)
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return a.materialResponse(ctx, mt, store.RoleOwner, false, false)
+	role, err := a.s.MaterialEffectiveRole(ctx, userID(ctx), mt.ID)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return a.materialResponse(ctx, mt, role, false, false)
 }
 
 /* ------------------------------------------------------------------ explore */

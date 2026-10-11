@@ -387,7 +387,7 @@ func TestConcurrentMaterialClonesBothComplete(t *testing.T) {
 	errs := make(chan error, len(targets))
 	for _, targetID := range targets {
 		go func() {
-			_, cloneErr := s.CloneMaterial(ctx, targetID, source.ID)
+			_, cloneErr := s.CloneMaterial(ctx, targetID, source.ID, CloneTarget{Name: "Clone"})
 			errs <- cloneErr
 		}()
 	}
@@ -434,7 +434,7 @@ func TestMaterialCloneDoesNotWaitForSourceRow(t *testing.T) {
 
 	cloneCtx, cloneCancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cloneCancel()
-	if _, err := s.CloneMaterial(cloneCtx, targetID, source.ID); err != nil {
+	if _, err := s.CloneMaterial(cloneCtx, targetID, source.ID, CloneTarget{Name: "Clone"}); err != nil {
 		t.Fatalf("clone waited for source material row: %v", err)
 	}
 }
@@ -480,7 +480,7 @@ func TestCloneSourceWaitersDoNotExhaustPool(t *testing.T) {
 	errs := make(chan error, waiterCount)
 	for range waiterCount {
 		go func() {
-			_, cloneErr := s.CloneMaterial(ctx, targetID, source.ID)
+			_, cloneErr := s.CloneMaterial(ctx, targetID, source.ID, CloneTarget{Name: "Clone"})
 			errs <- cloneErr
 		}()
 	}
@@ -620,7 +620,7 @@ func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	materialClone, err := s.CloneMaterial(ctx, targetID, source.ID)
+	materialClone, err := s.CloneMaterial(ctx, targetID, source.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatalf("material clone from suspended shared owner: %v", err)
 	}
@@ -717,7 +717,7 @@ func TestCloneMaterialRewritesFlashcardIDs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cloned, err := s.CloneMaterial(ctx, targetUserID, source.ID)
+	cloned, err := s.CloneMaterial(ctx, targetUserID, source.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +787,7 @@ func TestCloneMaterialUsesProjectionAndRehomesReferencedAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	cloned, err := s.CloneMaterial(ctx, targetUserID, source.ID)
+	cloned, err := s.CloneMaterial(ctx, targetUserID, source.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -863,7 +863,7 @@ func TestCloneCarriesProvenanceThroughBothPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	materialClone, err := s.CloneMaterial(ctx, targetID, source.ID)
+	materialClone, err := s.CloneMaterial(ctx, targetID, source.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}

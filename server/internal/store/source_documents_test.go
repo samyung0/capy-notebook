@@ -993,7 +993,7 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	}
 }
 
-func TestSourceCloneCopiesPublishedSnapshotAndCaptionReferences(t *testing.T) {
+func TestSourceCloneCopiesSavedEditsAndCaptionReferences(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "source_clone_owner")
@@ -1028,12 +1028,15 @@ func TestSourceCloneCopiesPublishedSnapshotAndCaptionReferences(t *testing.T) {
 	if clonedBlob != originalBlob {
 		t.Fatal("clone did not use published bytes")
 	}
-	var docs, captions, refs int
-	if err = s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM source_documents WHERE file_id=$1),(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT ref_count FROM blobs WHERE object_path='captions/shared-caption')`, clonedFile).Scan(&docs, &captions, &refs); err != nil {
+	// Saved edits travel with the copy (Epo 2026-10-11): a new room at epoch 1
+	// on the same base, its revision matching the copied file's.
+	var state string
+	var epoch, captions, refs int
+	if err = s.pool.QueryRow(ctx, `SELECT convert_from(d.state,'UTF8'),d.epoch,(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT ref_count FROM blobs WHERE object_path='captions/shared-caption') FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.base_revision=f.revision`, clonedFile).Scan(&state, &epoch, &captions, &refs); err != nil {
 		t.Fatal(err)
 	}
-	if docs != 0 || captions != 1 || refs != 2 {
-		t.Fatalf("clone copied live history or lost captions: docs=%d captions=%d refs=%d", docs, captions, refs)
+	if state != "unpublished-state" || epoch != 1 || captions != 1 || refs != 2 {
+		t.Fatalf("clone lost saved edits or captions: state=%q epoch=%d captions=%d refs=%d", state, epoch, captions, refs)
 	}
 	var descriptor string
 	var share float64

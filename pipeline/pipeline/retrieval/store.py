@@ -550,9 +550,11 @@ async def abandon_content(content_id: str) -> None:
         )
 
 
-# Dest chunk ids are `'rc_' || substr(md5(dest_workspace_id || donor_chunk_id), 1, 12)`,
-# matching CloneWorkspace in server/internal/store/share.go so the vector copy
-# can recompute them and pair each embedding with its passage.
+# Dest chunk ids are `'rc_' || substr(md5(dest_workspace_id || donor_chunk_id), 1, 12)`
+# so the vector copy can recompute them and pair each embedding with its
+# passage. A workspace holds one content row per content hash, so the pair is
+# unique. Go's clones (copyRetrievalContents in server/internal/store/share.go)
+# salt with the new content id, unique on its own.
 _NEW_CHUNK_ID_SQL = "'rc_' || substr(md5(%s || c.id), 1, 12)"
 
 
