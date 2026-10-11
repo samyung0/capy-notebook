@@ -9,7 +9,10 @@ import { CardBack, CardFront } from './CardView';
 
 /* The card on its stack, shared by flashcard study (study page, shared page,
    note embed), the review session and Quick review. Compact is the note
-   embed's and Quick review's shorter card. */
+   embed's shorter card; panel is Quick review's, narrower still so it sits
+   clear of the study panel's sides. */
+
+export type CardStackSize = 'large' | 'compact' | 'panel';
 
 type Leaving = { card: FlashcardContent; flipped: boolean };
 
@@ -42,21 +45,28 @@ export type CardStackState = ReturnType<typeof useCardStack>;
 
 export function CardStack({
   card,
-  compact,
   onRate,
   rated,
+  size,
   stack,
 }: {
   card: FlashcardContent;
-  compact?: boolean;
   onRate: (rating: SrsRating) => void;
   /** A card shown again after it was rated: its ratings are read only. */
   rated?: SrsRating;
+  size: CardStackSize;
   stack: CardStackState;
 }) {
   const { flipped, leaving, setFlipped, setLeaving, turn } = stack;
+  const compact = size !== 'large';
   return (
-    <div className={cn('relative', compact ? 'pt-5' : 'pt-6')}>
+    <div
+      className={cn(
+        'relative',
+        compact ? 'pt-5' : 'pt-6',
+        size === 'panel' && 'mx-auto w-full max-w-[420px]'
+      )}
+    >
       <div
         className={cn(
           'absolute top-0 rounded-card-lg bg-solid-accent-1/20',
@@ -77,12 +87,12 @@ export function CardStack({
               ? 'motion-safe:motion-card-swipe-in'
               : 'motion-safe:motion-card-rise')
         )}
-        compact={compact}
         flipped={flipped}
         key={turn.n}
         onFlip={() => setFlipped((f) => !f)}
         onRate={onRate}
         rated={rated}
+        size={size}
       />
       {leaving && (
         <StudyCard
@@ -92,11 +102,11 @@ export function CardStack({
             'motion-safe:motion-card-swipe-out pointer-events-none absolute inset-x-0 motion-reduce:hidden [&_button]:[animation:none]',
             compact ? 'top-5' : 'top-6'
           )}
-          compact={compact}
           flipped={leaving.flipped}
           inert
           key={`leaving-${turn.n}`}
           onAnimationEnd={() => setLeaving(null)}
+          size={size}
         />
       )}
     </div>
@@ -109,17 +119,16 @@ export function CardStack({
 function StudyCard({
   card,
   className,
-  compact,
   flipped,
   inert,
   onAnimationEnd,
   onFlip,
   onRate,
   rated,
+  size,
 }: {
   card: FlashcardContent;
   className?: string;
-  compact?: boolean;
   flipped: boolean;
   rated?: SrsRating;
   /** The copy swiping away: shown only, never focused or clicked. */
@@ -127,7 +136,9 @@ function StudyCard({
   onAnimationEnd?: () => void;
   onFlip?: () => void;
   onRate?: (rating: SrsRating) => void;
+  size: CardStackSize;
 }) {
+  const compact = size !== 'large';
   // Flips since this card mounted; the face before the latest one leaves.
   const [flip, setFlip] = useState({ flipped, n: 0 });
   const [leaving, setLeaving] = useState<boolean | null>(null);
@@ -149,7 +160,9 @@ function StudyCard({
       aria-hidden={inert}
       className={cn(
         'relative flex w-full flex-col overflow-hidden rounded-card-lg border border-line bg-surface shadow-card',
-        compact ? 'h-[clamp(220px,30vh,260px)]' : 'h-[clamp(300px,48vh,400px)]',
+        size === 'large' && 'h-[clamp(300px,48vh,400px)]',
+        size === 'compact' && 'h-[clamp(220px,30vh,260px)]',
+        size === 'panel' && 'h-[clamp(190px,26vh,220px)]',
         className
       )}
       inert={inert}
@@ -187,7 +200,11 @@ function StudyCard({
       </button>
       {flipped && (
         <div className={cn(compact ? 'px-3 pb-3' : 'px-4 pb-4')}>
-          <RatingTiles chosen={rated} onRate={(rating) => onRate?.(rating)} />
+          <RatingTiles
+            chosen={rated}
+            dense={size === 'panel'}
+            onRate={(rating) => onRate?.(rating)}
+          />
         </div>
       )}
       {leaving !== null && (
@@ -215,7 +232,7 @@ function StudyCard({
             <div
               className={cn('invisible', compact ? 'px-3 pb-3' : 'px-4 pb-4')}
             >
-              <RatingTiles onRate={() => undefined} />
+              <RatingTiles dense={size === 'panel'} onRate={() => undefined} />
             </div>
           )}
         </div>

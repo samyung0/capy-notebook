@@ -12,15 +12,18 @@ const TILE: Record<SrsRating, string> = {
 
 /** A flashcard's four ratings as tinted text buttons, rising in one after
  * another as the back shows. `chosen` shows a rating already given: that
- * tile is ringed and every tile is disabled, so nothing is rated twice. */
+ * tile is ringed and every tile is disabled, so nothing is rated twice.
+ * `dense` is Quick review's shorter tiles. */
 export function RatingTiles({
   onRate,
   disabled,
   chosen,
+  dense,
 }: {
   onRate: (rating: SrsRating) => void;
   disabled?: boolean;
   chosen?: SrsRating;
+  dense?: boolean;
 }) {
   return (
     <div className="grid grid-cols-4 gap-2">
@@ -28,7 +31,8 @@ export function RatingTiles({
         <button
           aria-pressed={chosen ? rating === chosen : undefined}
           className={cn(
-            'motion-safe:motion-card-tile-in rounded-input py-2.5 font-semibold text-sm transition-[filter] hover:brightness-95 focus-visible:ring-2 focus-visible:ring-action disabled:opacity-50',
+            'motion-safe:motion-card-tile-in rounded-input font-semibold text-sm transition-[filter] hover:brightness-95 focus-visible:ring-2 focus-visible:ring-action disabled:opacity-50',
+            dense ? 'py-1.5' : 'py-2.5',
             TILE[rating],
             rating === chosen &&
               'ring-2 ring-current ring-inset disabled:opacity-100'

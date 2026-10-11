@@ -364,7 +364,7 @@ export function MaterialsTab({
                 disabled={frozen}
                 iconLeft="plus"
                 size="sm"
-                variant="ghost-hover"
+                variant="accent"
               >
                 {m.files_new_block()}
               </Button>

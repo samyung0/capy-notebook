@@ -1,7 +1,6 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
-import { api } from '@/api/client';
 import {
   invalidateStudy,
   useFinishReviewSession,
@@ -12,8 +11,6 @@ import {
   useWorkspaceReview,
 } from '@/api/hooks';
 import type {
-  CheckReviewItemReq,
-  GradedQuestion,
   ReviewAnswer,
   ReviewItem,
   ReviewSessionRef,
@@ -28,7 +25,7 @@ import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
-import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
+import { CheckedQuestion, QuestionItem } from '@/features/study/ReviewQuestion';
 import {
   type ReviewRecord,
   ReviewSummary,
@@ -315,10 +312,15 @@ function Session({
                     ? SRS_RATINGS[shown.record.rating - 1]
                     : undefined
                 }
+                size="large"
                 stack={stack}
               />
             ) : shown.record?.question || !liveItem ? (
-              <CheckedQuestion item={item} record={shown.record ?? {}} />
+              <CheckedQuestion
+                answers={shown.record?.answers ?? {}}
+                question={shown.record?.question}
+                title={item.materialTitle}
+              />
             ) : (
               <QuestionItem
                 item={liveItem}
@@ -389,83 +391,5 @@ function Session({
         )}
       </div>
     </PanelWithInvertedRadius>
-  );
-}
-
-/** A question already checked in this session: its result, read only. */
-function CheckedQuestion({
-  item,
-  record,
-}: {
-  item: ReviewItem | ReviewAnswer;
-  record: ItemRecord;
-}) {
-  const question = record.question;
-  return (
-    <>
-      {question && (
-        <QuestionRunner
-          answers={record.answers ?? {}}
-          disabled
-          question={question}
-          review
-        />
-      )}
-      <span className="t-meta text-fg-muted">
-        {m.review_from({ title: item.materialTitle })}
-      </span>
-    </>
-  );
-}
-
-/** A question answered the quiz page's way. Check sends the answers; the
- * server grades them, records the rating and returns the question's key. */
-function QuestionItem({
-  item,
-  onChecked,
-  session,
-}: {
-  item: ReviewItem;
-  onChecked: (graded: GradedQuestion, answers: Answers) => void;
-  session: ReviewSessionRef;
-}) {
-  const [answers, setAnswers] = useState<Answers>({});
-  const { isPending: grading, mutate: check } = useMutation({
-    meta: { errorToast: false },
-    mutationFn: () =>
-      api.post<GradedQuestion>('/review/check', {
-        answers,
-        itemId: item.itemId,
-        materialId: item.materialId,
-        session,
-      } satisfies CheckReviewItemReq),
-    onError: () =>
-      userToast({
-        id: 'review-grade-failed',
-        title: m.review_grade_failed(),
-        variant: 'error',
-      }),
-    onSuccess: (graded) => onChecked(graded, answers),
-  });
-
-  return (
-    <>
-      <QuestionRunner
-        answers={answers}
-        disabled={grading}
-        onChange={(partId, value) =>
-          setAnswers((a) => ({ ...a, [partId]: value }))
-        }
-        question={item.question!}
-      />
-      <div className="flex items-center justify-between gap-3">
-        <span className="t-meta text-fg-muted">
-          {m.review_from({ title: item.materialTitle })}
-        </span>
-        <Button disabled={grading} onClick={() => check()} rounded="large">
-          {m.review_check()}
-        </Button>
-      </div>
-    </>
   );
 }

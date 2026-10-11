@@ -59,6 +59,9 @@ for (const [card, lapses] of [
 rated.set('qz_1/q4', { at: Date.now() - 7_200_000, lapses: 1 });
 // Calculus started yesterday; World History is finished on first read (below).
 items('ws_calc').set('f_6', { kind: 'file', state: 'done' });
+// A twice-missed ordering question, so Calculus's Quick review is a question.
+items('ws_calc').set('qz_3', { kind: 'material', state: 'started' });
+rated.set('qz_3/q29', { at: Date.now() - 86_400_000, lapses: 2 });
 studiedAt.set('ws_bio', Date.now() - 3_600_000);
 studiedAt.set('ws_calc', Date.now() - 86_400_000);
 studiedAt.set('ws_hist', Date.now() - 3 * 86_400_000);
@@ -314,6 +317,17 @@ function pool(wsId: string): ReviewItem[] {
     .map(({ rank: _, ...item }) => item);
 }
 
+/** The server ranks by suggestion score among fading items; the mock has no
+ * recall, so the most-missed item leads: a question alone, else up to four
+ * cards. */
+function quickReview(all: ReviewItem[]): ReviewItem[] {
+  const missed = all.filter(
+    (it) => (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
+  );
+  if (missed[0]?.kind === 'question') return [missed[0]];
+  return missed.filter((it) => it.kind === 'card').slice(0, 4);
+}
+
 function summary(wsId: string): StudySummary {
   const all = pool(wsId);
   const ws = db.workspaces.find((w) => w.id === wsId);
@@ -323,11 +337,7 @@ function summary(wsId: string): StudySummary {
       ...(it.kind === 'file' ? { fileId: id } : { materialId: id }),
       state: it.state,
     })),
-    quickReview: all.filter(
-      (it) =>
-        it.kind === 'card' &&
-        (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
-    ),
+    quickReview: quickReview(all),
     recentAttempts: db.attempts
       .filter((a) => a.workspaceName === ws?.name)
       .slice(0, 5)

@@ -32,9 +32,8 @@ type StudySummary struct {
 	RecentAttempts []Attempt   `json:"recentAttempts" nullable:"false"`
 	// Reviewable counts the rated questions and cards a review session draws on.
 	Reviewable int `json:"reviewable"`
-	// QuickReview is the Study tab's cards to revisit: flashcards of the sets in
-	// progress missed at least once, the one most likely forgotten first, so a
-	// card rated Good drops down.
+	// QuickReview is the Study tab's short practice (quickReview): one
+	// question, or up to quickReviewCards flashcards.
 	QuickReview []ReviewItem `json:"quickReview" nullable:"false"`
 	// Suggestion is the workspace's strongest suggested review, for the
 	// refresh row; nil when nothing is worth reviewing.
@@ -55,7 +54,8 @@ type ReviewItem struct {
 	Question map[string]any         `json:"question,omitempty"`
 }
 
-const quickReviewSize = 20
+// quickReviewCards caps a flashcard quick review; a question stands alone.
+const quickReviewCards = 4
 
 // studyItem is a reviewable item read from a material's document.
 type studyItem struct {
@@ -270,22 +270,57 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
+	prefs, err := s.StudyPreferencesOf(ctx, userID)
+	if err != nil {
+		return out, err
+	}
 	pool, err := s.reviewPool(ctx, userID, wsID, now)
 	if err != nil {
 		return out, err
 	}
 	out.Reviewable = len(pool)
-	for _, it := range pool {
-		if it.Kind == "card" && it.lapses > 0 && len(out.QuickReview) < quickReviewSize {
-			out.QuickReview = append(out.QuickReview, it.ReviewItem)
-		}
+	if len(pool) == 0 {
+		return out, nil
 	}
-	if out.Enabled && out.Reviewable > 0 {
-		if out.Suggestion, err = s.workspaceSuggestion(ctx, userID, wsID, now); err != nil {
+	history, err := s.reviewHistory(ctx, userID, pool)
+	if err != nil {
+		return out, err
+	}
+	items := scoreItems(pool, history, reviewPrefsOf(prefs))
+	out.QuickReview = quickReview(items)
+	if out.Enabled {
+		if out.Suggestion, err = s.workspaceSuggestion(ctx, wsID, items, history); err != nil {
 			return out, err
 		}
 	}
 	return out, nil
+}
+
+// quickReview ranks the items a suggested review would (scoreItems, so the
+// focus and item preferences apply) among those probably fading
+// (suggestedRecall). A question on top is shown alone; a card on top brings
+// the next highest cards, up to quickReviewCards.
+func quickReview(items []scored) []ReviewItem {
+	var due []scored
+	for _, it := range items {
+		if it.r <= suggestedRecall {
+			due = append(due, it)
+		}
+	}
+	sort.SliceStable(due, func(i, j int) bool { return due[i].score() > due[j].score() })
+	out := []ReviewItem{}
+	if len(due) == 0 {
+		return out
+	}
+	if due[0].Kind == "question" {
+		return append(out, due[0].ReviewItem)
+	}
+	for _, it := range due {
+		if it.Kind == "card" && len(out) < quickReviewCards {
+			out = append(out, it.ReviewItem)
+		}
+	}
+	return out
 }
 
 // questionText is the first text block of the stem or the first part.

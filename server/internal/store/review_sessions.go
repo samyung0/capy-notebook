@@ -842,16 +842,8 @@ func (s *Store) nameChapters(ctx context.Context, list []ReviewSuggestion) error
 }
 
 // workspaceSuggestion is the Study tab's: the workspace's strongest
-// suggestion, nil when none passes.
-func (s *Store) workspaceSuggestion(ctx context.Context, userID, wsID string, now time.Time) (*ReviewSuggestion, error) {
-	prefsRaw, err := s.StudyPreferencesOf(ctx, userID)
-	if err != nil {
-		return nil, err
-	}
-	items, history, err := s.scoredWorkspace(ctx, userID, wsID, reviewPrefsOf(prefsRaw), now)
-	if err != nil {
-		return nil, err
-	}
+// suggestion among its scored items, nil when none passes.
+func (s *Store) workspaceSuggestion(ctx context.Context, wsID string, items []scored, history map[string][]review.Rating) (*ReviewSuggestion, error) {
 	// The learner is in the workspace now, so its interest is full.
 	list := groupSuggestions(items, history, 1)
 	if len(list) == 0 {

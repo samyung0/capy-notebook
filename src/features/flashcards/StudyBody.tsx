@@ -129,9 +129,9 @@ export function StudyBody({
                 </p>
                 <CardStack
                   card={card}
-                  compact={embedded}
                   onRate={rate}
                   rated={shown.record}
+                  size={embedded ? 'compact' : 'large'}
                   stack={stack}
                 />
               </div>

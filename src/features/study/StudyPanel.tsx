@@ -1,6 +1,8 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type CSSProperties, type ReactNode, useState } from 'react';
 import {
+  invalidateStudy,
   useChapters,
   useFiles,
   useMaterials,
@@ -10,6 +12,7 @@ import {
   useWorkspaceStudy,
 } from '@/api/hooks';
 import type { ReviewItem, ReviewSuggestion } from '@/api/types';
+import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -18,8 +21,11 @@ import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import type { OpenItem } from '@/features/materials/openItem';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
+import type { Question } from '@/features/questions/types';
+import type { Answers } from '@/features/quizzes/grade';
+import { CheckedQuestion, QuestionItem } from '@/features/study/ReviewQuestion';
 import { StepNav } from '@/features/study/StepNav';
-import { useSteps } from '@/features/study/steps';
+import { answerStep, currentStep, useSteps } from '@/features/study/steps';
 import '@/features/study/railMap/railMap.css';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import type { TabAction } from '@/features/workspace/PanelTabRow';
@@ -32,6 +38,7 @@ import { cn } from '@/lib/cn';
 import { coverInk } from '@/lib/coverInk';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { SRS_RATINGS, type SrsRating } from '@/lib/srs';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import { reviewCard } from './ratings';
 import { groupName, REVIEW_MODE, reviewReason } from './reviewText';
 
@@ -240,12 +247,11 @@ export function StudyPanel({
                     </div>
                   </Section>
                 )}
-                {study.quickReview.length > 0 && (
-                  <QuickReview
-                    items={study.quickReview}
-                    workspaceId={workspaceId}
-                  />
-                )}
+                {/* Stays mounted through refreshes; hides itself. */}
+                <QuickReview
+                  items={study.quickReview}
+                  workspaceId={workspaceId}
+                />
                 {chapterRows.length > 0 && (
                   <Section title={m.study_done()}>
                     {chapterRows.map((ch) => (
@@ -356,11 +362,14 @@ function ReviewLink({
   );
 }
 
-/** One missed flashcard at a time; a rating is recorded like any review
- * rating, so a card rated Good drops down the list on the next refresh. Next
- * skips a card to the end of the round; Previous shows a rated one read only.
- * Once every card of the round is rated the section is gone until the
- * workspace opens again. */
+type QuickPhase = 'open' | 'leaving' | 'gone';
+
+/** The Study tab's short practice: one question, or up to four flashcards
+ * (the server picks them as a suggested review would). Ratings and checks
+ * are recorded like any review. The round is the list as it was when it
+ * began, kept while ratings refresh the summary (rated items leave it); once
+ * the last item is done the section dissolves into smoke and stays gone
+ * until the workspace opens again. */
 function QuickReview({
   items,
   workspaceId,
@@ -368,15 +377,104 @@ function QuickReview({
   items: ReviewItem[];
   workspaceId: string;
 }) {
-  // The list as it was when this round began: ratings refresh the summary,
-  // and the round should not reshuffle under the learner.
-  const [round] = useState(items);
+  const [round, setRound] = useState(items);
+  const [phase, setPhase] = useState<QuickPhase>('open');
+  const reduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
+  // A round can only start once there is something to practise.
+  if (round.length === 0 && items.length > 0 && phase === 'open')
+    setRound(items);
+  if (round.length === 0 || phase === 'gone') return null;
+  // Reduced motion runs no animation, so there is no end to wait for.
+  const finish = () => setPhase(reduceMotion ? 'gone' : 'leaving');
+  const leaving = phase === 'leaving';
+
+  return (
+    <div
+      className={cn(leaving ? 'motion-smoke-collapse' : 'grid grid-rows-[1fr]')}
+      onTransitionEnd={(e) => {
+        if (e.target === e.currentTarget) setPhase('gone');
+      }}
+    >
+      <div
+        className={cn('min-h-0', leaving && 'motion-smoke-out')}
+        inert={leaving}
+      >
+        {round[0].kind === 'question' ? (
+          <QuickQuestion
+            item={round[0]}
+            onDone={finish}
+            workspaceId={workspaceId}
+          />
+        ) : (
+          <QuickCards items={round} onDone={finish} workspaceId={workspaceId} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** A question answered in place; Done ends the round once it is checked. */
+function QuickQuestion({
+  item,
+  onDone,
+  workspaceId,
+}: {
+  item: ReviewItem;
+  onDone: () => void;
+  workspaceId: string;
+}) {
+  const qc = useQueryClient();
+  const [checked, setChecked] = useState<{
+    answers: Answers;
+    question: Question;
+  }>();
+  return (
+    <Section title={m.study_quick_review()}>
+      <div className="flex flex-col gap-3 px-1.5 pt-1">
+        {checked ? (
+          <CheckedQuestion
+            action={
+              <Button onClick={onDone} rounded="large" variant="outline">
+                {m.study_quick_finish()}
+              </Button>
+            }
+            answers={checked.answers}
+            question={checked.question}
+            title={item.materialTitle}
+          />
+        ) : (
+          <QuestionItem
+            item={item}
+            onChecked={(graded, answers) => {
+              setChecked({ answers, question: graded.question });
+              void invalidateStudy(qc, workspaceId);
+            }}
+          />
+        )}
+      </div>
+    </Section>
+  );
+}
+
+/** One card at a time. Next skips a card to the end of the round; Previous
+ * shows a rated one read only. The last rating keeps its card in place to
+ * dissolve with the section. */
+function QuickCards({
+  items,
+  onDone,
+  workspaceId,
+}: {
+  items: ReviewItem[];
+  onDone: () => void;
+  workspaceId: string;
+}) {
   const keyOf = (it: ReviewItem) => `${it.materialId}/${it.itemId}`;
-  const steps = useSteps<SrsRating>(round.map(keyOf));
+  const steps = useSteps<SrsRating>(items.map(keyOf));
+  const [lastRating, setLastRating] = useState<SrsRating>();
   const stack = useCardStack();
   const { mutateAsync: rateItem } = useRateReviewItem(workspaceId);
   const shown = steps.current;
-  const card = shown && round.find((it) => keyOf(it) === shown.key);
+  const card = shown && items.find((it) => keyOf(it) === shown.key);
   if (!card) return null;
 
   function rate(rating: SrsRating) {
@@ -392,8 +490,12 @@ function QuickReview({
         variant: 'error',
       })
     );
+    if (!currentStep(answerStep(steps.steps, rating))) {
+      setLastRating(rating);
+      onDone();
+      return;
+    }
     stack.move(reviewCard(card));
-    // A finished round hides the section until the workspace opens again.
     steps.answer(rating);
   }
 
@@ -402,8 +504,8 @@ function QuickReview({
       aside={
         <span className="t-meta px-1.5 text-fg-muted">
           {m.study_quick_position({
-            current: round.indexOf(card) + 1,
-            total: round.length,
+            current: items.indexOf(card) + 1,
+            total: items.length,
           })}
         </span>
       }
@@ -412,9 +514,9 @@ function QuickReview({
       <div className="flex flex-col gap-2 px-1.5 pt-1">
         <CardStack
           card={reviewCard(card)}
-          compact
           onRate={rate}
-          rated={shown.record}
+          rated={shown.record ?? lastRating}
+          size="panel"
           stack={stack}
         />
         <p className="t-meta text-center text-fg-muted">{card.materialTitle}</p>

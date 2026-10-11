@@ -209,10 +209,18 @@ func TestWorkspaceReviewSelection(t *testing.T) {
 	if len(mixed.Items) != 1 || mixed.Items[0].ItemID != kept[0].ID {
 		t.Fatalf("mixed review = %+v", mixed)
 	}
-	// A missed card enters Quick review with both faces; the Study tab and
-	// Learning count the same pool.
+	// A missed card enters Quick review with both faces once it fades (a
+	// moment after the miss it is still recalled); the Study tab and Learning
+	// count the same pool.
 	f.rate(t, kept[0], 1)
-	summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now())
+	fresh, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(fresh.QuickReview) != 0 {
+		t.Fatalf("quick review right after the miss = %+v", fresh.QuickReview)
+	}
+	summary, err := f.s.StudySummary(ctx, f.user, f.ws.ID, time.Now().Add(72*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}

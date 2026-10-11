@@ -61,7 +61,7 @@ with no workspace assumptions:
   and `EnableShortTerm` off, so there are no same-day learning steps;
 - `Rate(prev, rating, now)` returns the next state (`prev` nil for a first
   rating). A first rating of Again also sets `lapses` to 1, because go-fsrs
-  counts lapses only on items it has seen and Quick review keys on lapses;
+  counts lapses only on items it has seen;
 - `Retrievability(state, now)` is go-fsrs' forgetting curve over elapsed
   fractional days and stability.
 
@@ -235,13 +235,21 @@ line says quiz results are still kept. Top to bottom:
   items does not move it; the workspace cover's colour, see below) and Review
   as an underlined link, which opens the suggestion, or the whole workspace's
   review without one.
-- **Quick review**: one card at a time from `quickReview`, the pool's cards
-  with at least one lapse, least retained first, at most 20, on the shared
-  card in its compact size with the set's name under it. A card flips and
-  takes the four ratings, posted like any rating; the round is a snapshot of
-  the list, and once every card in it is rated the section hides until the
-  workspace is opened again; the next round reads the refreshed list, where
-  a card rated Good has dropped down.
+- **Quick review**: `quickReview` (`quickReview` in `study.go`) ranks the
+  pool's items as a suggested review does (`scoreItems`, so the focus and
+  item preferences apply) among those at or below `suggestedRecall`, so an
+  item just answered waits until it fades. A question on top is shown alone;
+  a card on top brings the next highest cards, at most four. A card shows on
+  the shared card in its compact size with the set's name under it, flips
+  and takes the four ratings; a question renders with `QuestionRunner`
+  (`src/features/study/ReviewQuestion.tsx`, shared with review sessions),
+  Check grades it through `POST /api/review/check` without a session, and
+  Done follows the graded result. The round is a snapshot kept while
+  ratings refresh the summary (rated items leave the list); once its last
+  item is done the section leaves with the smoky dissolve
+  (`motion-smoke-out`: rise 8px, swell to 1.04, blur 8px, fade over 500ms,
+  then the row closes over 350ms; reduced motion removes it at once) and
+  stays gone until the workspace is opened again.
 - **Done** per chapter ("4 of 5", unfiled as Others), counting tracked
   (not removed) items. A finished chapter shows the green check, a started
   one a solid circle and an unstarted one a dashed circle.
