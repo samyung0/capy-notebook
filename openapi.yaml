@@ -1453,6 +1453,9 @@ components:
           format: uri
           readOnly: true
           type: string
+        cover:
+          $ref: "#/components/schemas/Cover"
+          description: The card's cover art
         description:
           description: Optional workspace description
           maxLength: 500

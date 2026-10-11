@@ -4,11 +4,14 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { Cover } from './cover.ts';
 import type { TagInput } from './tagInput.ts';
 
 export interface CreateWorkspaceReq {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  /** The card's cover art */
+  cover?: Cover;
   /**
      * Optional workspace description
      * @maxLength 500

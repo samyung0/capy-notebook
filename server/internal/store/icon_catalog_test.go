@@ -174,6 +174,10 @@ func TestWorkspaceIconPersistsAndClonesWithMemberPermissions(t *testing.T) {
 	if err != nil || cleared.Cover != nil {
 		t.Fatalf("cover not cleared: %+v %v", cleared.Cover, err)
 	}
+	created, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Covered", Cover: &art})
+	if err != nil || created.Cover == nil || *created.Cover != art {
+		t.Fatalf("create lost cover: %+v %v", created.Cover, err)
+	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public' WHERE id=$1`, ws.ID); err != nil {
 		t.Fatal(err)
 	}

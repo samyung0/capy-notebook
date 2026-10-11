@@ -25,6 +25,7 @@ type CreateWorkspaceReq struct {
 	IconID      *IconID               `json:"iconId,omitempty" minLength:"1"`
 	Name        WorkspaceName         `json:"name" minLength:"1" doc:"Workspace name"`
 	Tags        []TagInput            `json:"tags,omitempty" maxItems:"5" doc:"Tags; at most 5; reuse existing by id or create new by value"`
+	Cover       *cover.Cover          `json:"cover,omitempty" doc:"The card's cover art"`
 }
 
 // UpdateWorkspaceReq updates general workspace settings only.

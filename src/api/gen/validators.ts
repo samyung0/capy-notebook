@@ -5718,6 +5718,13 @@ export const ListWorkspacesResponse = zod.array(ListWorkspacesResponseItem)
 /**
  * @summary Create a workspace
  */
+export const createWorkspaceBodyCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
+export const createWorkspaceBodyCoverLineMax = 40;
+
+export const createWorkspaceBodyCoverSeedMax = 16;
+
+
+export const createWorkspaceBodyCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 export const createWorkspaceBodyDescriptionMax = 500;
 
 
@@ -5732,6 +5739,14 @@ export const createWorkspaceBodyTagsMax = 5;
 
 
 export const CreateWorkspaceBody = zod.object({
+  "cover": zod.object({
+  "color": zod.string().regex(createWorkspaceBodyCoverColorRegExp),
+  "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
+  "line": zod.string().max(createWorkspaceBodyCoverLineMax).optional().describe('A paper cover\'s handwritten line'),
+  "pattern": zod.string().optional().describe('The GeoPattern generator of a geo cover, or the Hero Patterns pattern of a hero cover'),
+  "seed": zod.string().max(createWorkspaceBodyCoverSeedMax).regex(createWorkspaceBodyCoverSeedRegExp).optional().describe('Varies the generated art (Shuffle); empty uses the owner\'s id'),
+  "style": zod.enum(['symbols', 'doodles', 'shelf', 'paper', 'type', 'geo', 'hero'])
+}).optional().describe('The card\'s cover art'),
   "description": zod.string().max(createWorkspaceBodyDescriptionMax).optional().describe('Optional workspace description'),
   "iconId": zod.string().min(1).regex(createWorkspaceBodyIconIdRegExp).optional(),
   "name": zod.string().min(1).max(createWorkspaceBodyNameMax).describe('Workspace name'),

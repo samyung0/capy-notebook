@@ -39,6 +39,7 @@ type WorkspaceCreate struct {
 	Tags        []TagRef
 	Description *string
 	IconID      *string
+	Cover       *cover.Cover
 }
 type ChapterPatch struct {
 	Name  *string `json:"name"`
@@ -377,9 +378,9 @@ func (s *Store) CreateWorkspace(ctx context.Context, userID string, input Worksp
 	if err := s.insertWorkspaceTx(ctx, tx, id, userID, input.Name, input.Tags, embed); err != nil {
 		return Workspace{}, err
 	}
-	if input.IconID != nil || input.Description != nil {
-		if _, err := tx.Exec(ctx, `UPDATE workspaces SET icon_id=COALESCE($2,icon_id), description=COALESCE($3,description) WHERE id=$1`,
-			id, input.IconID, input.Description); err != nil {
+	if input.IconID != nil || input.Description != nil || input.Cover != nil {
+		if _, err := tx.Exec(ctx, `UPDATE workspaces SET icon_id=COALESCE($2,icon_id), description=COALESCE($3,description), cover=COALESCE($4::jsonb,cover) WHERE id=$1`,
+			id, input.IconID, input.Description, input.Cover); err != nil {
 			return Workspace{}, err
 		}
 	}

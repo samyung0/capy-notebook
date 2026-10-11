@@ -120,7 +120,7 @@ function withStyle(
   };
 }
 
-const randomSeed = () => Math.random().toString(36).slice(2, 10);
+export const randomSeed = () => Math.random().toString(36).slice(2, 10);
 
 /** A small strip of one cover option. */
 function CoverTile({

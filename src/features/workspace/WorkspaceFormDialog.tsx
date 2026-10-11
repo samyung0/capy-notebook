@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import {
   CreateWorkspaceBody,
@@ -22,13 +22,14 @@ import { m } from '@/i18n';
 import { iconStyles, iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
 import { CoverField } from './CoverField';
+import { randomSeed } from './CoverPicker';
 
 const workspaceIcons = iconStyles.find(
   (style) => style.id === 'waves'
 )!.avatars;
 
-/** Editing adds the card cover; null is None. Creating has no cover. */
-export type WorkspaceFormValues = CreateWorkspaceReq & {
+/** The card cover; null is None. */
+export type WorkspaceFormValues = Omit<CreateWorkspaceReq, 'cover'> & {
   cover?: CoverConfig | null;
 };
 const WorkspaceFormBody = CreateWorkspaceBody.extend({
@@ -69,12 +70,16 @@ export function WorkspaceFormDialog({
     control,
     name: ['name', 'iconId', 'tags'],
   });
+  // A new workspace has no id to seed its cover art yet, so the preview uses a
+  // random seed that the created cover keeps.
+  const [draftSeed] = useState(randomSeed);
+  const ownerId = workspace.id ?? draftSeed;
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
       reset({
         ...workspace,
-        cover: mode === 'edit' ? (workspace.cover ?? null) : undefined,
+        cover: workspace.cover ?? null,
         iconId:
           workspace.iconId ??
           (mode === 'create'
@@ -88,7 +93,12 @@ export function WorkspaceFormDialog({
 
   const submit = handleSubmit(async (values) => {
     try {
-      await onSubmit(values);
+      const { cover } = values;
+      await onSubmit(
+        mode === 'create' && cover && !cover.seed
+          ? { ...values, cover: { ...cover, seed: draftSeed } }
+          : values
+      );
       setOpen(false);
     } catch {
       // Preserve the draft; the global mutation handler reports the failure.
@@ -122,31 +132,29 @@ export function WorkspaceFormDialog({
           </div>
         )}
       />
-      {mode === 'edit' && workspace.id && (
-        <Controller
-          control={control}
-          name="cover"
-          render={({ field }) => (
-            <div className="flex flex-col gap-1.5">
-              <InputTitle>{m.cover_label()}</InputTitle>
-              <CoverField
-                card={{
-                  chapterCount: workspace.chapterCount ?? 0,
-                  fileCount: workspace.fileCount ?? 0,
-                  iconId: iconId ?? workspace.iconId ?? '',
-                  name: name || workspace.name,
-                  privacy: workspace.privacy ?? 'private',
-                  tags: tags ?? [],
-                }}
-                disabled={isSubmitting}
-                onChange={field.onChange}
-                ownerId={workspace.id ?? ''}
-                value={field.value ?? null}
-              />
-            </div>
-          )}
-        />
-      )}
+      <Controller
+        control={control}
+        name="cover"
+        render={({ field }) => (
+          <div className="flex flex-col gap-1.5">
+            <InputTitle>{m.cover_label()}</InputTitle>
+            <CoverField
+              card={{
+                chapterCount: workspace.chapterCount ?? 0,
+                fileCount: workspace.fileCount ?? 0,
+                iconId: iconId ?? workspace.iconId ?? '',
+                name: name || workspace.name,
+                privacy: workspace.privacy ?? 'private',
+                tags: tags ?? [],
+              }}
+              disabled={isSubmitting}
+              onChange={field.onChange}
+              ownerId={ownerId}
+              value={field.value ?? null}
+            />
+          </div>
+        )}
+      />
       <Controller
         control={control}
         name="name"

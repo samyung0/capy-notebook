@@ -109,12 +109,18 @@ func (a *api) getWorkspace(ctx context.Context, in *workspaceIDInput) (*workspac
 }
 
 func (a *api) createWorkspace(ctx context.Context, in *createWorkspaceInput) (*workspaceOutput, error) {
+	if in.Body.Cover != nil {
+		if err := in.Body.Cover.Check(); err != nil {
+			return nil, huma.Error422UnprocessableEntity(err.Error())
+		}
+	}
 	res, err := a.s.CreateWorkspace(
 		ctx,
 		userID(ctx),
 		store.WorkspaceCreate{
 			Name: string(in.Body.Name), Tags: apimodel.ToTagRefs(in.Body.Tags),
 			IconID: apimodel.Str(in.Body.IconID), Description: apimodel.Str(in.Body.Description),
+			Cover: in.Body.Cover,
 		},
 	)
 	if err != nil {
