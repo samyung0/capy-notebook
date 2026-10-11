@@ -2966,7 +2966,8 @@ the note in view mode. The agent's `list_sources` keeps notes as title, id
 and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows; a cloned note without an
-index, or whose index text the clone changed (a mention turned plain text),
+index, whose index is not current (dirty, a job rebuilding it, or a failed
+one), or whose index text the clone changed (a mention turned plain text),
 starts dirty.
 
 ## Clone and teardown
@@ -2985,10 +2986,19 @@ content the destination workspace already holds under that `content_hash`
 per workspace and hash) is aliased; otherwise the content, chunks, vectors and
 summary are copied when both workspaces have the same embedding pin. When the
 pins differ (or the destination's row for that hash is still processing) a
-file is queued for ingest like an upload, paid by the cloner, and the pipeline's
-donor path reuses what it can; a note is marked dirty for the scheduler, as is
-a note whose copy reads differently (mentions turned plain). A standalone
-material has no index.
+file is queued for ingest like an upload: the cloner pays and is refused
+without credits (`llm_credits_exhausted`) or past the concurrent ingest-job
+limit, the dialog showing either message; a processed store-only Office file
+(`parse_mode='none'`, parsed since) is parsed in fast mode like
+`reprocessTx`, and a file with nothing to process is copied unindexed. The
+pipeline's donor path reuses what it can. A note shares its index only while
+it is current (no `index_dirty_at`, `index_job_id` or `index_error`);
+otherwise, or when its copy reads differently (mentions turned plain), it is
+marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
+of bytes an export-only publication left unindexed is reprocessed like its
+source. A pipeline ingest that adds the same content to the destination after
+the snapshot conflicts on `rag_contents` and the clone retries as a
+serialization failure. A standalone material has no index.
 
 That transaction uses one repeatable-read source snapshot. Only ready source
 files are copied; pending, processing, and failed rows are omitted. Ready editor

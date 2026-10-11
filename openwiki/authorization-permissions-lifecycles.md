@@ -213,7 +213,9 @@ signed-out visitor through sign-in and back with the query. The dashboard loads 
 (`CloneLinkDialog`: a workspace through the clone form below, a quiz, flashcards or note through `CloneItemDialog`,
 whose standalone source defaults to No workspace), shows a refused clone's reason in the dialog (a link viewer
 cloning a workspace sees that only members and editors may clone it, a full plan the storage message), and opens
-the copy. The ⋮ is the same for every visitor and could read auth client
+the copy. An item is checked before its form opens: an embedded quiz or flashcards, or an item in a workspace whose
+`canClone` is false (a link or public viewer), shows why it cannot be copied instead of a form ending in "not
+found". The ⋮ is the same for every visitor and could read auth client
 side for future items, since a dropdown cannot shift the layout.
 
 Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
@@ -269,9 +271,11 @@ Important boundaries:
   and share-role editors can. Workspaces are large and cloning is kept rare;
   sources remain downloadable one file at a time. Workspace responses, Explore
   rows included, carry `canClone` computed server-side from the caller's
-  effective grant; the client offers the workspace action in the workspace
-  card menu, the settings General tab, and Explore, and Clone on file and
-  material rows, only when it is true. A viewer member's otherwise empty row
+  effective grant (`CanCloneFrom`); the client offers the workspace action in
+  the workspace card menu, the settings General tab, and Explore, and Clone on
+  file and material rows, only when it is true. Explore's quiz and flashcard
+  rows carry their own `canClone` (true for a standalone public item, else the
+  caller's grant on its workspace) and show Clone only when it is true. A viewer member's otherwise empty row
   menu then holds Clone alone.
 - The share URL is the permanent `ws_` identifier so bookmarks and search
   listings keep working. Revoking access means setting privacy to `private`;
@@ -577,16 +581,22 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   chapterName?, title}`; an embedded row is never cloned on its own (404). The
   destination is admitted like any workspace write (workspace row, then the
   source owner's, actor's and payer's accounts in ID order): the cloner must
-  edit it and neither they nor its owner may be frozen. A copy in a workspace
-  belongs to that workspace's owner, who pays for it; `created_by` is the
-  cloner. A standalone copy is the cloner's and private.
+  edit it and neither they nor its owner may be frozen. The source access check
+  runs first; the destination's member rows are read `FOR SHARE`, so a removal
+  or demotion that committed after the clone's snapshot makes it retry instead
+  of landing. A copy in a workspace belongs to that workspace's owner, who pays
+  for it (and whose plan's per-file cap applies to a file, as for an upload);
+  `created_by` is the cloner. A standalone copy is the cloner's and private.
 - The dialog prefills `Name (copy)` (before a file's extension) while the
   destination is the source's own workspace and the plain name elsewhere,
   until the user types one. A material title is unique per workspace, so a
   taken one answers 409 `title_taken`, shown under the name field; file names
-  are not unique. Clone spins and the dialog stays open while pending; any
-  other refusal shows in the dialog (`FormAlert`), not as a toast. The
-  workspace clone dialog shows its refusals the same way.
+  are not unique. Clone spins and the dialog stays open while pending (Escape,
+  an outside click and the hidden close button do nothing then); any other
+  refusal shows in the dialog (`FormAlert`), not as a toast: a storage refusal
+  names the destination owner's storage when the owner pays, a file past the
+  payer's cap the upload's size message, an exhausted cloner the credits
+  message. The workspace clone dialog behaves the same way.
 - A copied note keeps a mention live only for a member (or the owner) of its
   destination; any other mention becomes plain `@Name` text, as does every
   mention in a standalone copy and in a workspace clone (whose only member is

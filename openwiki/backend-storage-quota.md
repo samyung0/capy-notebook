@@ -381,7 +381,9 @@ material + ready editor-asset payload against the **cloner's** quota, copy ready
 with new logical IDs (rewriting embedded references; each asset names the
 clone of its material, and a trashed material's assets are left out), and reuse physical blob
 paths under reference counting. Only `ready` source files are copied; pending,
-processing, and failed files are omitted. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
+processing, and failed files are omitted. A file past the cloner's per-file
+plan cap (`plan_limits.source_file_max_bytes`, the upload cap) refuses the
+whole clone (`file_too_large`), like its other limits. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
 document instead of retaining an unrenderable source id. The material's
 current content and cloned logical assets are the storage-accounted payload.
@@ -399,7 +401,11 @@ workspace's owner (the triggers derive `files.user_id`,
 from it), or the cloner for a standalone copy; the quota gate runs on the payer
 with the copy's bytes (a file's size plus its saved edit state; a material's
 content, its embedded rows and its copied assets), and a file copy also passes
-the destination's file-count gate. A material clone copies only ready editor
+the destination's file-count gate and the payer's per-file plan cap, as an
+upload into that workspace does (`FileTooLargeError`, 400 `file_too_large`
+with `maxBytes`; the dialog shows the upload's size message). A copy queued
+for ingest on an embedding-pin mismatch stays `pending` and charged: file
+bytes are charged whatever the file's status. A material clone copies only ready editor
 assets referenced by the current SQL projection, gives each asset a fresh
 logical ID owned by the copy of the material whose content uses it (a note's
 embedded quiz keeps its own images), and rewrites the document. Physical object
