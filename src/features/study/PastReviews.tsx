@@ -127,8 +127,12 @@ export function PastReviews() {
               <BillingTable
                 columns={[
                   { id: 'date', label: m.quiz_col_date() },
-                  { id: 'workspace', label: m.quiz_col_workspace() },
-                  { id: 'chapter', label: m.past_col_chapter() },
+                  {
+                    clamp: true,
+                    id: 'workspace',
+                    label: m.quiz_col_workspace(),
+                  },
+                  { clamp: true, id: 'chapter', label: m.past_col_chapter() },
                   { id: 'quiz', label: m.past_col_quiz() },
                   { id: 'cards', label: m.past_col_cards() },
                   { align: 'right', id: 'menu', label: '' },
@@ -140,14 +144,16 @@ export function PastReviews() {
                     date: formatDate(r.startedAt),
                     menu: <AgainMenu onAgain={() => again(r)} />,
                     quiz: <ScoreText score={r.quiz} />,
-                    workspace: <WorkspaceCell review={r} />,
+                    workspace: (
+                      <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
+                    ),
                   },
                   key: r.id,
                 }))}
               />
             </div>
             <div className="hidden overflow-hidden rounded-card border border-line xl:block">
-              <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
+              <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(10rem,1.6fr)_minmax(10rem,1.6fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(8.5rem,1fr)_40px] bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
                 <div>{m.quiz_col_date()}</div>
                 <div>{m.quiz_col_workspace()}</div>
                 <div>{m.past_col_chapter()}</div>
@@ -197,12 +203,14 @@ function Row({
     r.answered < r.total &&
     m.past_stopped({ answered: r.answered, total: r.total });
   return (
-    <div className="grid grid-cols-[7rem_minmax(0,1fr)_minmax(0,1.1fr)_6rem_6rem_5rem_8.5rem_40px] items-center border-divider border-t pr-2 pl-4 text-sm">
+    <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(10rem,1.6fr)_minmax(10rem,1.6fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(8.5rem,1fr)_40px] items-center border-divider border-t pr-2 pl-4 text-sm">
       <p className="whitespace-nowrap py-3 pr-4">{formatDate(r.startedAt)}</p>
       <div className="py-3 pr-4">
-        <WorkspaceCell review={r} />
+        <WorkspaceCell iconId={r.iconId} name={r.workspaceName} />
       </div>
-      <p className="truncate py-3 pr-4">{groupName(r.group, r.chapterName)}</p>
+      <p className="wrap-break-word line-clamp-2 py-3 pr-4">
+        {groupName(r.group, r.chapterName)}
+      </p>
       <p className="whitespace-nowrap py-3 pr-4">
         <ScoreText score={r.quiz} />
       </p>
@@ -228,17 +236,27 @@ const formatDate = (iso: string) =>
     new Date(iso)
   );
 
-function WorkspaceCell({ review: r }: { review: PastReview }) {
+/** A workspace's icon and name, wrapping to two lines. Learning's tables
+ * share it; an attempt whose quiz is gone has no icon. */
+export function WorkspaceCell({
+  iconId,
+  name,
+}: {
+  iconId?: string;
+  name: string;
+}) {
   return (
     <div className="flex min-w-0 items-center gap-2.5">
-      <img
-        alt=""
-        className="size-4 shrink-0 rounded-[4px]"
-        height={16}
-        src={iconUrl(r.iconId)}
-        width={16}
-      />
-      <span className="truncate">{r.workspaceName}</span>
+      {iconId && (
+        <img
+          alt=""
+          className="size-4 shrink-0 rounded-[4px]"
+          height={16}
+          src={iconUrl(iconId)}
+          width={16}
+        />
+      )}
+      <span className="wrap-break-word line-clamp-2">{name}</span>
     </div>
   );
 }

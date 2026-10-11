@@ -362,6 +362,8 @@ components:
         correct:
           format: double
           type: number
+        iconId:
+          type: string
         id:
           type: string
         materialId:
@@ -414,6 +416,8 @@ components:
         correct:
           format: double
           type: number
+        iconId:
+          type: string
         id:
           type: string
         materialId:

@@ -63,7 +63,7 @@ export function ItemCard({
     return (
       <div
         className={cn(
-          'relative flex flex-col gap-1 border-divider border-t px-4 py-2.5 hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
+          'relative flex flex-col gap-1 border-divider border-t px-4 py-2.5 text-sm hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
           selected && 'bg-surface-hover-bg'
         )}
       >
@@ -72,15 +72,15 @@ export function ItemCard({
           {selection && <FileSelectionMark selected={selected} />}
           <FileIcon className="size-4 -translate-y-px" name={icon} />
           <Title
-            className="truncate font-bold focus-visible:after:ring-inset"
+            className="truncate focus-visible:after:ring-inset"
             link={selection ? undefined : link}
           >
             {title}
           </Title>
         </div>
-        <p className="t-meta truncate text-fg-secondary">{workspace}</p>
-        <p className="t-meta text-fg-muted">{details}</p>
-        <p className="t-meta text-fg-muted">{meta}</p>
+        <p className="truncate">{workspace}</p>
+        <p>{details}</p>
+        <p>{meta}</p>
         <div className="relative z-10 -my-2 flex justify-self-end">
           {!selection && actions}
         </div>

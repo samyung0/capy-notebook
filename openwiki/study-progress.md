@@ -367,12 +367,17 @@ N of M" under Status. Scores are plain "x / y" text. Below xl the Files table
 gives way to Billing's plain table (`BillingTable`, no border, scrolls
 sideways) without Time and Status, its toolbar nudged half a step left to
 line up with the plain table's text. Thirty rows a page. Both table tabs put
-their toolbar right under the tabs, as Files does.
+their toolbar right under the tabs, as Files does. Workspace, chapter and quiz
+names show the workspace icon beside the name (`WorkspaceCell`) and wrap to
+two lines before the ellipsis; their columns are somewhat wider than the
+number columns, and every column shares the leftover width.
 
 ### All results tab
 
 `src/features/study/AllResults.tsx`: quiz attempts (Quiz, Workspace, Score,
-Date, ⋮ with Check result and Redo), the same table switch below md.
+Date, ⋮ with Check result and Redo), the same table switch below md. A
+click anywhere on a row opens Check result. Attempts carry the workspace's
+`iconId` (left out once the quiz is deleted).
 `GET /api/attempts?sort=&dir=&workspaceId=&offset=&limit=` (`ListAttempts`)
 sorts (date, score as correct / total), filters by the quiz's current
 workspace and pages in SQL, thirty a page behind Load more; each attempt

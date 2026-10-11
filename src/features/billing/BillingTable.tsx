@@ -5,6 +5,8 @@ import { cn } from '@/lib/cn';
 
 export interface BillingColumn {
   align?: 'right';
+  /** Long names: wrap to at most two lines in a bounded width. */
+  clamp?: boolean;
   id: string;
   label: string;
   muted?: boolean;
@@ -18,7 +20,12 @@ export function BillingTable({
   rows,
 }: {
   columns: BillingColumn[];
-  rows: { key: string; cells: Record<string, ReactNode> }[];
+  rows: {
+    key: string;
+    cells: Record<string, ReactNode>;
+    /** E.g. `relative` for a cell link stretched over the row. */
+    className?: string;
+  }[];
 }) {
   return (
     <div className="overflow-x-auto">
@@ -40,17 +47,27 @@ export function BillingTable({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr className="border-divider border-b" key={row.key}>
+            <tr
+              className={cn('border-divider border-b', row.className)}
+              key={row.key}
+            >
               {columns.map((c) => (
                 <td
                   className={cn(
                     'whitespace-nowrap py-3 pr-4',
                     c.align === 'right' && 'pr-0 text-right',
-                    c.muted && 'text-fg-muted'
+                    c.muted && 'text-fg-muted',
+                    c.clamp && 'min-w-36 max-w-56 whitespace-normal'
                   )}
                   key={c.id}
                 >
-                  {row.cells[c.id]}
+                  {c.clamp ? (
+                    <div className="wrap-break-word line-clamp-2">
+                      {row.cells[c.id]}
+                    </div>
+                  ) : (
+                    row.cells[c.id]
+                  )}
                 </td>
               ))}
             </tr>

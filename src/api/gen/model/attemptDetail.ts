@@ -13,6 +13,7 @@ export interface AttemptDetail {
   answers: AttemptDetailAnswers;
   chapters: string[];
   correct: number;
+  iconId?: string;
   id: string;
   /** @nullable */
   materialId: string | null;
