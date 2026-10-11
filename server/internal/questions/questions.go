@@ -353,7 +353,85 @@ func blocks(value any, policy Policy) error {
 	return nil
 }
 
-// ValidateBlock is shared by questions and standalone note chart/graph embeds.
+// validatePlot checks a plot: one to four curves of [x, y] points, optional
+// reference lines {axis x|y, value, label?} and labelled points {x, y, label}.
+func validatePlot(b map[string]any) error {
+	if err := keys(b, "type title xTitle yTitle series", "unit lines marks"); err != nil {
+		return err
+	}
+	for _, key := range []string{"title", "xTitle", "yTitle"} {
+		if !str(b[key], fieldlimits.QuestionMetadata, false) {
+			return fail("invalid plot label")
+		}
+	}
+	if !optionalString(b, "unit", fieldlimits.QuestionMetadata) {
+		return fail("invalid plot unit")
+	}
+	series, ok := array(b["series"], 1, fieldlimits.QuestionPlotSeries)
+	if !ok {
+		return fail("invalid plot series")
+	}
+	for _, raw := range series {
+		s, err := obj(raw)
+		if err != nil {
+			return err
+		}
+		if err := keys(s, "name points", ""); err != nil {
+			return err
+		}
+		points, ok := array(s["points"], 2, fieldlimits.QuestionPlotPoints)
+		if !str(s["name"], fieldlimits.QuestionMetadata, false) || !ok {
+			return fail("invalid plot curve")
+		}
+		for _, point := range points {
+			if _, ok := tuple(point, 2); !ok {
+				return fail("invalid plot point")
+			}
+		}
+	}
+	if raw, ok := b["lines"]; ok {
+		lines, ok := array(raw, 0, fieldlimits.QuestionPlotMarks)
+		if !ok {
+			return fail("invalid plot lines")
+		}
+		for _, raw := range lines {
+			line, err := obj(raw)
+			if err != nil {
+				return err
+			}
+			if err := keys(line, "axis value", "label"); err != nil {
+				return err
+			}
+			if _, ok := num(line["value"]); !ok || !enum(line["axis"], "x y") || !optionalString(line, "label", fieldlimits.QuestionMetadata) {
+				return fail("invalid plot line")
+			}
+		}
+	}
+	if raw, ok := b["marks"]; ok {
+		marks, ok := array(raw, 0, fieldlimits.QuestionPlotMarks)
+		if !ok {
+			return fail("invalid plot marks")
+		}
+		for _, raw := range marks {
+			mark, err := obj(raw)
+			if err != nil {
+				return err
+			}
+			if err := keys(mark, "x y label", ""); err != nil {
+				return err
+			}
+			_, xOK := num(mark["x"])
+			_, yOK := num(mark["y"])
+			if !xOK || !yOK || !str(mark["label"], fieldlimits.QuestionMetadata, false) {
+				return fail("invalid plot mark")
+			}
+		}
+	}
+	return nil
+}
+
+// ValidateBlock is shared by questions and standalone note chart, plot and
+// graph embeds.
 func ValidateBlock(b map[string]any, policy Policy) error {
 	switch b["type"] {
 	case "text":
@@ -438,6 +516,10 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			if !positive {
 				return fail("chart requires a positive total")
 			}
+		}
+	case "plot":
+		if err := validatePlot(b); err != nil {
+			return err
 		}
 	case "image":
 		if err := keys(b, "type image width height description", "attribution"); err != nil {
@@ -1178,6 +1260,36 @@ func blocksText(blocks []any) string {
 				}
 				name, _ := s["name"].(string)
 				lines = append(lines, name+": "+strings.Join(pairs, ", "))
+			}
+			out = append(out, strings.Join(lines, "\n"))
+		case "plot":
+			title := str("title")
+			if unit := str("unit"); unit != "" {
+				title += " (" + unit + ")"
+			}
+			lines := []string{title, str("yTitle") + " against " + str("xTitle")}
+			series, _ := b["series"].([]any)
+			for _, raw := range series {
+				s, _ := raw.(map[string]any)
+				points, _ := s["points"].([]any)
+				pairs := make([]string, len(points))
+				for i, p := range points {
+					xy, _ := tuple(p, 2)
+					if len(xy) == 2 {
+						pairs[i] = "(" + strconv.FormatFloat(xy[0], 'f', -1, 64) + ", " + strconv.FormatFloat(xy[1], 'f', -1, 64) + ")"
+					}
+				}
+				name, _ := s["name"].(string)
+				lines = append(lines, name+": "+strings.Join(pairs, " "))
+			}
+			for _, key := range []string{"lines", "marks"} {
+				items, _ := b[key].([]any)
+				for _, raw := range items {
+					item, _ := raw.(map[string]any)
+					if label, _ := item["label"].(string); label != "" {
+						lines = append(lines, label)
+					}
+				}
 			}
 			out = append(out, strings.Join(lines, "\n"))
 		}

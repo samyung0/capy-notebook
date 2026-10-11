@@ -418,8 +418,15 @@ one-string source and the last Save wins; per-keystroke editing is planned in
 same full-screen viewer images use, titled with the material; a diagram that
 has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 
-Chart and graph nodes store their question block under `block`, an optional
-`width`, and a single empty text child; graphs export their SVG before saving. Inline
+Chart, plot and graph nodes store their question block under `block`, an optional
+`width`, and a single empty text child; graphs export their SVG before saving.
+Their Markdown fences (` ```chart `, ` ```plot `, ` ```graph `) hold that block's
+JSON (`customBlockNode` in `blocks/shared.ts`, checked by the shared question block
+schema, so a refused block fails the agent's write); the agent's note format
+(`noteMarkdownDescription`) documents the chart and plot fences. A plot (see
+[question-bank](../question-bank.md#editing-and-assets)) has no editor: its hover
+toolbar has Copy and Delete but no Edit, and exports draw it like a chart with its
+points as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
 ## Interactive HTML blocks

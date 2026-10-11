@@ -51,10 +51,10 @@ export interface QuizElement extends MaterialElement {
 }
 
 export interface QuestionFigureElement extends MaterialElement {
-  block: Extract<QuestionBlock, { type: 'chart' | 'graph' }>;
+  block: Extract<QuestionBlock, { type: 'chart' | 'plot' | 'graph' }>;
   children: [MaterialText];
   id: string;
-  type: 'chart' | 'graph';
+  type: 'chart' | 'plot' | 'graph';
   /** Percentage of the block, set by the resize handles. */
   width?: string;
 }
@@ -146,6 +146,7 @@ const MATERIAL_REF_KINDS = new Set<string>(['quiz', 'flashcards']);
 
 const CUSTOM_TYPES = new Set([
   'chart',
+  'plot',
   'graph',
   'quiz_prompt',
   'quiz_option',
@@ -174,6 +175,7 @@ const RESIZABLE_TYPES = new Set([
   'diagram',
   'mindmap',
   'chart',
+  'plot',
   'graph',
 ]);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
@@ -210,6 +212,7 @@ function hasId(value: MaterialElement): boolean {
 function validateCustomElement(element: MaterialElement): boolean {
   switch (element.type) {
     case 'chart':
+    case 'plot':
     case 'graph': {
       if (
         !hasId(element) ||

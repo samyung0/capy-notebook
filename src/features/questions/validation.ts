@@ -274,6 +274,36 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         });
     }),
   z.strictObject({
+    lines: z
+      .array(
+        z.strictObject({
+          axis: z.enum(['x', 'y']),
+          label: meta.optional(),
+          value: finite,
+        })
+      )
+      .max(limits.QUESTION_PLOT_MARKS_MAX)
+      .optional(),
+    marks: z
+      .array(z.strictObject({ label: meta, x: finite, y: finite }))
+      .max(limits.QUESTION_PLOT_MARKS_MAX)
+      .optional(),
+    series: z
+      .array(
+        z.strictObject({
+          name: meta,
+          points: z.array(coords).min(2).max(limits.QUESTION_PLOT_POINTS_MAX),
+        })
+      )
+      .min(1)
+      .max(limits.QUESTION_PLOT_SERIES_MAX),
+    title: meta,
+    type: z.literal('plot'),
+    unit: meta.optional(),
+    xTitle: meta,
+    yTitle: meta,
+  }),
+  z.strictObject({
     image: z.union([
       z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
       z.strictObject({ assetId: identifier }),

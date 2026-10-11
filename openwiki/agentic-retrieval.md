@@ -2007,7 +2007,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
    `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`,
-   `ScatterChart`, `Diagram`, `Interactive`, `AskUser` and their items). The catalog lives in
+   `ScatterChart`, `Plot`, `Diagram`, `Interactive`, `AskUser` and their
+   items). The catalog lives in
    `src/features/workspace/chat/schema.ts`; `pnpm gen:openui` renders it into
    the prompt text `prompts/openui_lang.txt` (appended to the chat system
    prompt, about 2,000 tokens) and the spec `generated/openui_library.json`
@@ -2835,7 +2836,10 @@ Capy-owned components in `chat/blocks/` (prose through Streamdown with
 single `$` follows Pandoc's rule so prices stay text, and a formula KaTeX
 cannot read shows its source; tabs,
 steps, accordions, callouts, label/value rows, cards, tables, SVG charts
-themed by `--chart-1..6`, reveals, and Mermaid diagrams through the notes'
+themed by `--chart-1..6`, plots (`Plot` with `Curve`, `RefLine` and `Point`
+marks, mapped onto the shared `plot` question block and drawn by `PlotChart`;
+numbers the block schema refuses withhold the plot like a damaged chart, and the
+text projection keeps its points and labels), reveals, and Mermaid diagrams through the notes'
 renderer, drawn once their code stops growing while the answer streams, and
 interactives in the notes' sandboxed html-embed frame (`HtmlEmbed`, the same
 64 KB cap and theme variables), mounted once their html has stopped changing

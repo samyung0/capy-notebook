@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { CategoryChart } from '@/components/charts/CategoryChart';
+import { PlotChart } from '@/components/charts/PlotChart';
 import { Icon } from '@/components/ui/Icon';
 import { useResolvedAsset } from '@/features/materials/MediaAssetView';
 import { m } from '@/i18n';
@@ -36,6 +37,8 @@ export function QuestionBlockView({ block }: { block: QuestionBlock }) {
       );
     case 'chart':
       return <CategoryChart data={block} />;
+    case 'plot':
+      return <PlotChart data={block} />;
     case 'table':
       return (
         <div className="overflow-x-auto">

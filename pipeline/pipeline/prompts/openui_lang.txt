@@ -16,8 +16,8 @@ Final answer format: a response that calls no tools is the final answer and must
 Arguments marked with ? are optional. Sub-components can be inline or referenced; prefer references for better streaming.
 
 ### Prose
-Answer(children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | ScatterChart | Diagram | Interactive | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
-Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). Diagrams go in Diagram, never in Md. passages: the shown passage numbers that ground it.
+Answer(children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | ScatterChart | Plot | Diagram | Interactive | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
+Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Diagrams go in Diagram, never in Md. passages: the shown passage numbers that ground it.
 Callout(kind: "info" | "tip" | "warning" | "success" | "danger", title: string, text: string, passages?: number[]) — A highlighted note: a definition, tip, misconception, warning or takeaway. text is Markdown.
 Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown the reader opens on demand: a hint, a solution, extra detail.
 - Md is the default. A short question gets one or two Md blocks and nothing else.
@@ -25,11 +25,11 @@ Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown 
 
 ### Structure
 Tabs(items: Tab[]) — Two to six tabs for related concepts, perspectives or examples. Never nest Tabs inside Tabs.
-Tab(label: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | ScatterChart | Diagram | Interactive | Accordion)[]) — One tab: a short label and its content.
+Tab(label: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | ScatterChart | Plot | Diagram | Interactive | Accordion)[]) — One tab: a short label and its content.
 Steps(items: Step[]) — A numbered sequence: a process, a derivation, a worked solution.
 Step(title: string, text: string, passages?: number[]) — One numbered step: a short title and Markdown text.
 Accordion(items: AccordionItem[]) — Collapsible sections for optional depth. Never nest an Accordion inside an Accordion.
-AccordionItem(title: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | ScatterChart | Diagram | Interactive)[]) — One collapsible section.
+AccordionItem(title: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | ScatterChart | Plot | Diagram | Interactive)[]) — One collapsible section.
 Facts(items: Fact[]) — A compact list of label/value rows.
 Fact(label: string, value: string) — One label/value row.
 Cards(items: Card[]) — A grid of two to six Card items.
@@ -43,12 +43,15 @@ Row(cells: string[], passages?: number[]) — One table row; cells are plain tex
 Chart(kind: "bar" | "hbar" | "line" | "area" | "pie" | "stacked", title: string, labels: string[], series: Series[], passages?: number[], unit?: string, illustrative?: boolean) — A chart over labelled categories: bar, hbar (horizontal), line, area, pie or stacked (one bar split into parts). unit names the values (e.g. "USD", "%"). Cite passages for sourced values, or write null and set illustrative=true for made-up example numbers.
 Series(name: string, values: number[]) — One data series; values align with the chart labels (pie and stacked take exactly one series).
 ScatterChart(title: string, points: Point[], xLabel: string, yLabel: string, passages?: number[], unit?: string, illustrative?: boolean) — A scatter plot of numeric x/y points. Same unit, illustrative and passages rules as Chart.
-Point(x: number, y: number, label?: string) — One scatter point with an optional label.
+Point(x: number, y: number, label?: string) — One point with an optional label: a scatter point or a Plot mark.
+Plot(title: string, series: Curve[], xLabel: string, yLabel: string, passages?: number[], illustrative?: boolean, lines?: RefLine[], marks?: Point[]) — Curves of a quantity along a numeric axis: a membrane potential over time, a titration curve, rate against temperature. xLabel and yLabel name the axes with units; lines are reference lines, marks are Points labelled on the curve. Same passages and illustrative rules as Chart: a typical shape from general knowledge is illustrative.
+Curve(name: string, points: number[][]) — One to four per Plot: a name and [x, y] points in x order, at most 60, e.g. Curve("Vm", [[0, -70], [1, -55], [1.5, 30]]).
+RefLine(axis: "x" | "y", value: number, label?: string) — A dashed line at x = value or y = value with a short label, e.g. a threshold.
 Diagram(title: string, code: string, passages?: number[]) — A Mermaid diagram of a process, cycle, pathway, hierarchy or decision. code is Mermaid source with lines separated by \n: flowchart TD, sequenceDiagram, stateDiagram-v2, mindmap or timeline. Chat is narrow: top-down, at most about 12 nodes with short labels, no styling, classDef or HTML.
-Interactive(title: string, html: string, passages?: number[]) — An interactive HTML widget, only where moving something teaches more than a still picture (a slider that reshapes a curve, a draggable model). html is one self-contained snippet under 64 KB: inline CSS and script, no network or external URLs, colours only from the variables --bg, --fg, --muted, --accent and --border, height fitting its content with no vh or vw units.
+Interactive(title: string, html: string, passages?: number[]) — An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. html: one self-contained snippet under 64 KB, inline CSS and script, no network or external URLs, colours only from --bg, --fg, --muted, --accent and --border, height fitting its content, no vh or vw.
 - Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.
-- Chart values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.
-- Diagram: only for structure or flow the prose cannot show; the text next to it says what to notice.
+- Chart compares labelled categories; Plot shows a quantity changing along a numeric axis; Diagram shows structure or flow; Interactive only where moving something teaches more than a still picture. The text next to a figure says what to notice.
+- Chart and Plot values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.
 
 ### Questions
 AskUser(question: string, choices: string[]) — A question the user answers before you continue (shown in a question panel, answered in their next message). choices: two to five short options, or [] for a free-text answer.

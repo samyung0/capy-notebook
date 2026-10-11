@@ -138,7 +138,7 @@ are optional. Levels are optional metadata and the unenforced timer was removed.
 
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
-IDs are unique within the material. Note chart/graph voids store their validated
+IDs are unique within the material. Note chart/plot/graph voids store their validated
 block under `block`; their Markdown fences round-trip that JSON. Old question
 nodes and old question JSON are rejected, without a compatibility converter.
 
@@ -166,7 +166,17 @@ in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
 (counterclockwise from the first point around a centre) and polygons (3–12
 points); sectors and polygons can be shaded. A segment's `ticks` (1–3) draws
 JSXGraph hatch marks, so equal sides carry the same count. Question charts sit
-at about a graph's width with a centred title and never show a values table. User quizzes and notes keep validated
+at about a graph's width with a centred title and never show a values table.
+A `plot` block holds labelled curves over numeric axes: `title`, `xTitle`,
+`yTitle`, optional `unit`, 1–4 `series` of `{name, points: [[x, y], …]}` (2–60
+finite points, drawn as straight segments in x order), and optional `lines`
+(`{axis: x|y, value, label?}`, dashed reference lines) and `marks`
+(`{x, y, label}`), at most 8 of each (`QUESTION_PLOT_*` in fieldlimits).
+`PlotChart` (beside `CategoryChart`, same frame, theme variables and ticks) draws
+it in quizzes, notes and chat. It has no editor: the question dialog shows a plot
+and can remove it, but the add menu does not offer one. Go and the browser
+validate it; the collaboration validator does not know it yet, so plot cases are
+not in the shared fixtures. Grading text lists its curves' points and labels. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed

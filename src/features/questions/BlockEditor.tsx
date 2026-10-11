@@ -348,6 +348,8 @@ export function BlockEditor({
     );
   if (block.type === 'chart')
     return <ChartEditor block={block} onChange={onChange} />;
+  // Plots come from the agent and chat; the dialog shows them and can remove them.
+  if (block.type === 'plot') return <QuestionBlockView block={block} />;
   if (block.type === 'graph')
     return <GraphEditor onChange={onChange} value={block} />;
   if (block.type === 'image')

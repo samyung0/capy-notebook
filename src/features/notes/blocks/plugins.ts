@@ -111,6 +111,7 @@ export const customBlockPlugins = [
   ...(
     [
       ['chart', VisualBlockElement],
+      ['plot', VisualBlockElement],
       ['graph', VisualBlockElement],
       ['html_embed', HtmlEmbedElement],
     ] as const

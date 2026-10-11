@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exampleQuestion } from './questionFixtures';
 import {
   type QuestionPolicy,
+  questionBlockSchema,
   validateQuestion,
   validateQuestions,
 } from './validation';
@@ -34,6 +35,53 @@ describe('shared Go, collaboration and browser question fixtures', () => {
     const two = exampleQuestion('two');
     two.parts[0].id = one.parts[0].id;
     expect(() => validateQuestions([one, two])).toThrow('Part IDs');
+  });
+});
+
+// Plot bounds mirror TestPlotBlockBoundsAndGradingText in Go; they join the
+// shared fixtures once the collaboration validator knows plots.
+describe('plot blocks', () => {
+  const two = [0, 1];
+  const plot = (patch: object = {}) => ({
+    lines: [{ axis: 'y', label: 'threshold', value: -55 }],
+    marks: [{ label: 'Na+ in', x: 1, y: 0 }],
+    series: [
+      {
+        name: 'Vm',
+        points: [
+          [0, -70],
+          [1.5, 30.5],
+        ],
+      },
+    ],
+    title: 'Action potential',
+    type: 'plot',
+    xTitle: 'Time (ms)',
+    yTitle: 'Vm (mV)',
+    ...patch,
+  });
+  const curve = (...points: unknown[]) => ({ name: 'c', points });
+  it('accepts a plot with curves, reference lines and labelled points', () => {
+    expect(questionBlockSchema.safeParse(plot()).success).toBe(true);
+  });
+  it.each([
+    [
+      'five curves',
+      { series: Array.from({ length: 5 }, () => curve(two, two)) },
+    ],
+    ['one point', { series: [curve(two)] }],
+    ['three numbers', { series: [curve(two, [1, 2, 3])] }],
+    ['text coordinate', { series: [curve(two, ['1', 2])] }],
+    [
+      'infinite coordinate',
+      { series: [curve(two, [1, Number.POSITIVE_INFINITY])] },
+    ],
+    ['line axis', { lines: [{ axis: 'z', value: 1 }] }],
+    ['unlabelled mark', { marks: [{ x: 1, y: 2 }] }],
+    ['missing y title', { yTitle: undefined }],
+    ['unknown property', { kind: 'line' }],
+  ])('refuses %s', (_, patch) => {
+    expect(questionBlockSchema.safeParse(plot(patch)).success).toBe(false);
   });
 });
 

@@ -24,6 +24,19 @@ export type ChartBlock = {
   yTitle?: string;
   gridlines?: 'normal' | 'fine';
 };
+/** Labelled curves over numeric axes: each series is [x, y] points drawn as
+ * straight segments in x order, with optional dashed reference lines and
+ * labelled points. */
+export type PlotBlock = {
+  type: 'plot';
+  title: string;
+  xTitle: string;
+  yTitle: string;
+  unit?: string;
+  series: { name: string; points: [number, number][] }[];
+  lines?: { axis: 'x' | 'y'; value: number; label?: string }[];
+  marks?: { x: number; y: number; label: string }[];
+};
 export type GraphElement =
   | {
       type: 'functiongraph';
@@ -132,6 +145,7 @@ export type ImageBlock = {
 export type QuestionBlock =
   | TextBlock
   | ChartBlock
+  | PlotBlock
   | GraphBlock
   | TableBlock
   | ImageBlock;

@@ -1637,6 +1637,7 @@
   "question_ui_table": "Table",
   "question_ui_image": "Image",
   "question_ui_part": "Part",
+  "question_ui_plot": "Plot",
   "question_ui_worked_solution": "Worked solution",
   "question_ui_answer": "Answer",
   "question_ui_marking_scheme": "Marking scheme",

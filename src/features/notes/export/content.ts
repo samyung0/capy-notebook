@@ -56,6 +56,7 @@ export function questionBlocks(blocks: QuestionBlock[]): MaterialValue {
       case 'text':
         return [paragraph((block.label ? `${block.label} ` : '') + block.text)];
       case 'chart':
+      case 'plot':
       case 'graph':
         return [element(block.type, [{ text: '' }], { block })];
       case 'image':

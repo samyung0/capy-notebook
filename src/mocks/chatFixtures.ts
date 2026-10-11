@@ -148,6 +148,24 @@ export const chatFixtures = [
   },
   {
     content: [
+      'root = Answer([intro, plot, after])',
+      'intro = Md("Once the membrane reaches threshold, voltage-gated channels open in turn and the spike runs by itself.", [1])',
+      'plot = Plot("An action potential", [vm], "Time (ms)", "Membrane potential (mV)", null, true, [threshold], [na, k, under])',
+      'vm = Curve("Membrane potential", [[0, -70], [0.5, -70], [0.8, -62], [1, -55], [1.2, -20], [1.5, 30], [1.8, 0], [2.2, -50], [2.6, -80], [3.2, -75], [4, -70], [5, -70]])',
+      'threshold = RefLine("y", -55, "threshold −55 mV")',
+      'na = Point(1.2, -20, "Na⁺ floods in")',
+      'k = Point(2, -25, "K⁺ flows out")',
+      'under = Point(2.6, -80, "undershoot")',
+      'after = Md("Notice the dashed line: below −55 mV nothing happens; once it is crossed, the whole spike follows.")',
+    ].join('\n'),
+    hint: 'An illustrative voltage trace with a dashed threshold line, labelled points and the values table.',
+    id: 'chat-openui-plot',
+    label: 'OpenUI: plot',
+    passages: [1],
+    prompt: 'Plot an action potential and label what happens.',
+  },
+  {
+    content: [
       'root = Answer([intro, diagram, after])',
       'intro = Md("A neuron fires when its membrane voltage crosses a threshold; the rest of the spike then runs by itself.", [1])',
       'diagram = Diagram("One action potential", "flowchart TD\\nA[Resting at -70 mV] --> B{Stimulus reaches -55 mV?}\\nB -- no --> A\\nB -- yes --> C[Na+ channels open, Na+ rushes in]\\nC --> D[Peak near +30 mV]\\nD --> E[K+ channels open, K+ leaves]\\nE --> F[Undershoot below rest]\\nF --> A", [1])',

@@ -4,6 +4,7 @@ import {
   CategoryChart,
   type ChartFrameProps,
 } from '@/components/charts/CategoryChart';
+import { PlotChart } from '@/components/charts/PlotChart';
 import type { ExportImage, Figure } from './render';
 
 const chartColors = [
@@ -116,10 +117,15 @@ export async function renderExportFigure(figure: Figure): Promise<ExportImage> {
     return rasterMarkup(figure.html, css, true);
   }
   if (figure.type === 'chart') {
-    const css = `:root{${chartColors.map((color, i) => `--chart-${i + 1}:${color}`).join(';')}} svg{width:100%;height:auto;min-width:0!important} svg text{font-family:Arial;font-size:10px;fill:#555} .stroke-line{stroke:#aaa}.stroke-divider{stroke:#ddd}.stroke-surface{stroke:white}`;
+    const css = `:root{${chartColors.map((color, i) => `--chart-${i + 1}:${color}`).join(';')}} svg{width:100%;height:auto;min-width:0!important} svg text{font-family:Arial;font-size:10px;fill:#555} .stroke-line{stroke:#aaa}.stroke-divider{stroke:#ddd}.stroke-surface{stroke:white}.stroke-fg-muted{stroke:#888}.fill-fg{fill:#111}`;
     return rasterMarkup(
       renderToStaticMarkup(
-        createElement(CategoryChart, { data: figure.block, frame: ChartFrame })
+        figure.block.type === 'plot'
+          ? createElement(PlotChart, { data: figure.block, frame: ChartFrame })
+          : createElement(CategoryChart, {
+              data: figure.block,
+              frame: ChartFrame,
+            })
       ),
       css
     );

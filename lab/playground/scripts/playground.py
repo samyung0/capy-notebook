@@ -755,6 +755,15 @@ async def check_note(markdown: str) -> str:
     for n, match in enumerate(FENCE.finditer(markdown), 1):
         lang, body = match.group(1), match.group(2)
         where = f"fence {n} ({lang})"
+        if lang in ("chart", "plot"):
+            # One question block as JSON; the app's schema checks the rest.
+            try:
+                block = json.loads(body)
+            except json.JSONDecodeError as err:
+                return f"{where} is not JSON: {err.msg}"
+            if not isinstance(block, dict) or block.get("type") != lang:
+                return f'{where} must be a JSON object with "type": "{lang}"'
+            continue
         if lang not in ("quiz", "flashcards", "html-embed"):
             if lang == "mermaid" and not body.strip():
                 return f"{where} is empty"

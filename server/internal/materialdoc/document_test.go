@@ -78,7 +78,11 @@ func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
 	stem := fixture.Question["stem"].([]any)
 	graph := map[string]any{"type": "graph", "id": "graph1", "block": stem[1], "children": []any{textLeaf("")}}
 	chart := map[string]any{"type": "chart", "id": "chart1", "block": stem[2], "children": []any{textLeaf("")}}
-	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{graph, chart}}
+	plot := map[string]any{"type": "plot", "id": "plot1", "children": []any{textLeaf("")}, "block": map[string]any{
+		"type": "plot", "title": "Trace", "xTitle": "t", "yTitle": "V",
+		"series": []any{map[string]any{"name": "V", "points": []any{[]any{0, -70}, []any{1, 30}}}},
+	}}
+	doc := Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{graph, chart, plot}}
 	encoded, err := Marshal(doc)
 	if err != nil {
 		t.Fatal(err)
@@ -87,7 +91,7 @@ func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
 		t.Fatal(err)
 	}
 	text, err := ExtractIndexText(encoded)
-	if err != nil || text != "A graph\n\nData" {
+	if err != nil || text != "A graph\n\nData\n\nTrace" {
 		t.Fatalf("index = %q, error = %v", text, err)
 	}
 	doc.Value = []map[string]any{{"type": "callout", "id": "container", "children": []any{graph}}}

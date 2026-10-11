@@ -1637,6 +1637,7 @@
   "question_ui_table": "表格",
   "question_ui_image": "图片",
   "question_ui_part": "小题",
+  "question_ui_plot": "曲线图",
   "question_ui_worked_solution": "解题过程",
   "question_ui_answer": "答案",
   "question_ui_marking_scheme": "评分标准",

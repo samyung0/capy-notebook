@@ -57,6 +57,15 @@ export const pointProps = z.object({
   y: z.number(),
   label: z.string().optional(),
 });
+export const curveProps = z.object({
+  name: z.string(),
+  points: z.array(z.array(z.number())),
+});
+export const refLineProps = z.object({
+  axis: z.enum(['x', 'y']),
+  value: z.number(),
+  label: z.string().optional(),
+});
 export const diagramProps = z.object({
   title: z.string(),
   code: z.string(),
@@ -81,6 +90,8 @@ export type CardProps = z.infer<typeof cardProps>;
 export type RowProps = z.infer<typeof rowProps>;
 export type SeriesProps = z.infer<typeof seriesProps>;
 export type PointProps = z.infer<typeof pointProps>;
+export type CurveProps = z.infer<typeof curveProps>;
+export type RefLineProps = z.infer<typeof refLineProps>;
 export type DiagramProps = z.infer<typeof diagramProps>;
 export type InteractiveProps = z.infer<typeof interactiveProps>;
 export type AskUserProps = z.infer<typeof askUserProps>;
@@ -118,6 +129,16 @@ export interface ChartProps {
   title: string;
   unit?: string;
 }
+export interface PlotProps {
+  illustrative?: boolean;
+  lines?: unknown[] | null;
+  marks?: unknown[] | null;
+  passages?: number[];
+  series: unknown[];
+  title: string;
+  xLabel: string;
+  yLabel: string;
+}
 export interface ScatterProps {
   illustrative?: boolean;
   passages?: number[];
@@ -153,6 +174,9 @@ export type Renderers = Record<
   | 'Series'
   | 'ScatterChart'
   | 'Point'
+  | 'Plot'
+  | 'Curve'
+  | 'RefLine'
   | 'Diagram'
   | 'Interactive'
   | 'AskUser',
@@ -163,7 +187,7 @@ export function buildLibrary(render: Renderers) {
   const Md = defineComponent({
     component: render.Md,
     description:
-      'A paragraph or short section of Markdown prose (headings, lists, code fences, $math$). Diagrams go in Diagram, never in Md. passages: the shown passage numbers that ground it.',
+      'A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Diagrams go in Diagram, never in Md. passages: the shown passage numbers that ground it.',
     name: 'Md',
     props: mdProps,
   });
@@ -262,7 +286,8 @@ export function buildLibrary(render: Renderers) {
   });
   const Point = defineComponent({
     component: render.Point,
-    description: 'One scatter point with an optional label.',
+    description:
+      'One point with an optional label: a scatter point or a Plot mark.',
     name: 'Point',
     props: pointProps,
   });
@@ -281,6 +306,36 @@ export function buildLibrary(render: Renderers) {
       illustrative: z.boolean().optional(),
     }),
   });
+  const Curve = defineComponent({
+    component: render.Curve,
+    description:
+      'One to four per Plot: a name and [x, y] points in x order, at most 60, e.g. Curve("Vm", [[0, -70], [1, -55], [1.5, 30]]).',
+    name: 'Curve',
+    props: curveProps,
+  });
+  const RefLine = defineComponent({
+    component: render.RefLine,
+    description:
+      'A dashed line at x = value or y = value with a short label, e.g. a threshold.',
+    name: 'RefLine',
+    props: refLineProps,
+  });
+  const Plot = defineComponent({
+    component: render.Plot,
+    description:
+      'Curves of a quantity along a numeric axis: a membrane potential over time, a titration curve, rate against temperature. xLabel and yLabel name the axes with units; lines are reference lines, marks are Points labelled on the curve. Same passages and illustrative rules as Chart: a typical shape from general knowledge is illustrative.',
+    name: 'Plot',
+    props: z.object({
+      title: z.string(),
+      series: z.array(Curve.ref),
+      xLabel: z.string(),
+      yLabel: z.string(),
+      passages,
+      illustrative: z.boolean().optional(),
+      lines: z.array(RefLine.ref).optional(),
+      marks: z.array(Point.ref).optional(),
+    }),
+  });
   const Diagram = defineComponent({
     component: render.Diagram,
     description:
@@ -291,7 +346,7 @@ export function buildLibrary(render: Renderers) {
   const Interactive = defineComponent({
     component: render.Interactive,
     description:
-      'An interactive HTML widget, only where moving something teaches more than a still picture (a slider that reshapes a curve, a draggable model). html is one self-contained snippet under 64 KB: inline CSS and script, no network or external URLs, colours only from the variables --bg, --fg, --muted, --accent and --border, height fitting its content with no vh or vw units.',
+      'An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. html: one self-contained snippet under 64 KB, inline CSS and script, no network or external URLs, colours only from --bg, --fg, --muted, --accent and --border, height fitting its content, no vh or vw.',
     name: 'Interactive',
     props: interactiveProps,
   });
@@ -313,6 +368,7 @@ export function buildLibrary(render: Renderers) {
     Table.ref,
     Chart.ref,
     ScatterChart.ref,
+    Plot.ref,
     Diagram.ref,
     Interactive.ref,
   ] as const;
@@ -396,14 +452,17 @@ export function buildLibrary(render: Renderers) {
           'Series',
           'ScatterChart',
           'Point',
+          'Plot',
+          'Curve',
+          'RefLine',
           'Diagram',
           'Interactive',
         ],
         name: 'Data',
         notes: [
           '- Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.',
-          '- Chart values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.',
-          '- Diagram: only for structure or flow the prose cannot show; the text next to it says what to notice.',
+          '- Chart compares labelled categories; Plot shows a quantity changing along a numeric axis; Diagram shows structure or flow; Interactive only where moving something teaches more than a still picture. The text next to a figure says what to notice.',
+          '- Chart and Plot values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.',
         ],
       },
       {
@@ -436,6 +495,9 @@ export function buildLibrary(render: Renderers) {
       Series,
       ScatterChart,
       Point,
+      Plot,
+      Curve,
+      RefLine,
       Diagram,
       Interactive,
       AskUser,

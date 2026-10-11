@@ -378,7 +378,7 @@ func (s *Store) Page(ctx context.Context, topic, answerType string, offset, limi
 func scanBlocks(v any, row *Row) {
 	switch v := v.(type) {
 	case map[string]any:
-		if v["type"] == "image" || v["type"] == "graph" || v["type"] == "chart" {
+		if v["type"] == "image" || v["type"] == "graph" || v["type"] == "chart" || v["type"] == "plot" {
 			row.HasFigure = true
 		}
 		if v["type"] == "table" {

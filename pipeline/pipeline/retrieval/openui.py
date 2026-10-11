@@ -307,7 +307,12 @@ def _refs_in(value: Any) -> Iterator[Ref]:
 
 # Enum-valued arguments are presentation, not content; an interactive's html
 # is code, summarized by its title.
-_SKIPPED_PROPS = {"Callout": "kind", "Chart": "kind", "Interactive": "html"}
+_SKIPPED_PROPS = {
+    "Callout": "kind",
+    "Chart": "kind",
+    "RefLine": "axis",
+    "Interactive": "html",
+}
 
 
 def to_text(program: Program) -> str:
@@ -333,8 +338,8 @@ def to_text(program: Program) -> str:
                 lines.append(arg.strip())
             elif (
                 index < len(names)
-                and call.name == "Point"
-                and names[index] in ("x", "y")
+                and call.name in ("Point", "RefLine")
+                and names[index] in ("x", "y", "value")
                 and isinstance(arg, (int, float))
                 and not isinstance(arg, bool)
             ):
@@ -347,6 +352,11 @@ def to_text(program: Program) -> str:
                 and all(
                     isinstance(n, (int, float)) and not isinstance(n, bool) for n in arg
                 )
+            ) or (
+                call.name == "Curve"
+                and index < len(names)
+                and names[index] == "points"
+                and isinstance(arg, list)
             ):
                 lines.append(json.dumps(arg, ensure_ascii=False))
             elif isinstance(arg, list) and arg and all(isinstance(x, str) for x in arg):

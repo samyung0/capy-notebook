@@ -21,34 +21,39 @@ const (
 	ConversationTitle    = 60
 	ChatMessage          = 5_000
 	// Comment bounds the plain text of one note comment (its paragraphs joined).
-	Comment                = 3_000
-	LLMAPIKey              = 512
-	EventTitle             = 60
-	EventLocation          = 100
-	TaskTitle              = 80
-	LabelName              = 35
-	TagValue               = 35
-	Email                  = 254
-	UserName               = 60
-	PDFAnnotationText      = 2_000
-	QuestionCount          = 200
-	QuestionID             = 128
-	QuestionParts          = 26
-	QuestionBlocks         = 40
-	QuestionText           = 12_000
-	QuestionMetadata       = 1_000
-	QuestionAnswers        = 100
-	QuestionMarkscheme     = 20
-	QuestionMarkItem       = 1_000
-	QuestionMarks          = 20
-	QuestionUnit           = 100
-	QuestionTableRows      = 30
-	QuestionTableColumns   = 10
-	QuestionChartLabels    = 50
-	QuestionChartSeries    = 8
-	QuestionGraphElements  = 60
-	QuestionGraphTerm      = 200
-	QuestionGraphPolygon   = 12
+	Comment               = 3_000
+	LLMAPIKey             = 512
+	EventTitle            = 60
+	EventLocation         = 100
+	TaskTitle             = 80
+	LabelName             = 35
+	TagValue              = 35
+	Email                 = 254
+	UserName              = 60
+	PDFAnnotationText     = 2_000
+	QuestionCount         = 200
+	QuestionID            = 128
+	QuestionParts         = 26
+	QuestionBlocks        = 40
+	QuestionText          = 12_000
+	QuestionMetadata      = 1_000
+	QuestionAnswers       = 100
+	QuestionMarkscheme    = 20
+	QuestionMarkItem      = 1_000
+	QuestionMarks         = 20
+	QuestionUnit          = 100
+	QuestionTableRows     = 30
+	QuestionTableColumns  = 10
+	QuestionChartLabels   = 50
+	QuestionChartSeries   = 8
+	QuestionGraphElements = 60
+	QuestionGraphTerm     = 200
+	QuestionGraphPolygon  = 12
+	// A plot block: curves of [x, y] points, and reference lines and
+	// labelled points, each list at most QuestionPlotMarks long.
+	QuestionPlotSeries     = 4
+	QuestionPlotPoints     = 60
+	QuestionPlotMarks      = 8
 	QuestionSVGBytes       = 256 << 10
 	QuestionImageDimension = 10_000
 	QuestionAssetURL       = 4_096
@@ -84,6 +89,9 @@ var QuestionBounds = map[string]int{
 	"QUESTION_GRAPH_ELEMENTS_MAX":  QuestionGraphElements,
 	"QUESTION_GRAPH_TERM_MAX":      QuestionGraphTerm,
 	"QUESTION_GRAPH_POLYGON_MAX":   QuestionGraphPolygon,
+	"QUESTION_PLOT_SERIES_MAX":     QuestionPlotSeries,
+	"QUESTION_PLOT_POINTS_MAX":     QuestionPlotPoints,
+	"QUESTION_PLOT_MARKS_MAX":      QuestionPlotMarks,
 	"QUESTION_SVG_BYTES_MAX":       QuestionSVGBytes,
 	"QUESTION_IMAGE_DIMENSION_MAX": QuestionImageDimension,
 	"QUESTION_ASSET_URL_MAX":       QuestionAssetURL,

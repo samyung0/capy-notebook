@@ -165,6 +165,47 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 	}
 }
 
+func TestPlotBlockBoundsAndGradingText(t *testing.T) {
+	plot := func(edit func(map[string]any)) map[string]any {
+		b := map[string]any{
+			"type": "plot", "title": "Action potential", "xTitle": "Time (ms)", "yTitle": "Vm (mV)",
+			"series": []any{map[string]any{"name": "Vm", "points": []any{[]any{0, -70}, []any{1.5, 30.5}}}},
+			"lines":  []any{map[string]any{"axis": "y", "value": -55, "label": "threshold"}},
+			"marks":  []any{map[string]any{"x": 1, "y": 0, "label": "Na+ in"}},
+		}
+		if edit != nil {
+			edit(b)
+		}
+		return b
+	}
+	if err := ValidateBlock(plot(nil), Policy{}); err != nil {
+		t.Fatalf("valid plot refused: %v", err)
+	}
+	curve := func(points ...any) map[string]any { return map[string]any{"name": "c", "points": points} }
+	two := []any{0, 1}
+	for name, edit := range map[string]func(map[string]any){
+		"five curves": func(b map[string]any) {
+			b["series"] = []any{curve(two, two), curve(two, two), curve(two, two), curve(two, two), curve(two, two)}
+		},
+		"one point":        func(b map[string]any) { b["series"] = []any{curve(two)} },
+		"three numbers":    func(b map[string]any) { b["series"] = []any{curve(two, []any{1, 2, 3})} },
+		"text coordinate":  func(b map[string]any) { b["series"] = []any{curve(two, []any{"1", 2})} },
+		"line axis":        func(b map[string]any) { b["lines"] = []any{map[string]any{"axis": "z", "value": 1}} },
+		"unlabelled mark":  func(b map[string]any) { b["marks"] = []any{map[string]any{"x": 1, "y": 2}} },
+		"missing y title":  func(b map[string]any) { delete(b, "yTitle") },
+		"unknown property": func(b map[string]any) { b["kind"] = "line" },
+	} {
+		if err := ValidateBlock(plot(edit), Policy{}); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	got := GradingText(map[string]any{"stem": []any{plot(nil)}, "parts": []any{map[string]any{}}}, 0)
+	want := "Action potential\nVm (mV) against Time (ms)\nVm: (0, -70) (1.5, 30.5)\nthreshold\nNa+ in\n\nPart to grade: "
+	if got != want {
+		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
+	}
+}
+
 // A question copied from the bank keeps linking its figures, and only there.
 func TestQuizQuestionsLinkFiguresOnlyUnderTheBank(t *testing.T) {
 	question := func(url string) map[string]any {
