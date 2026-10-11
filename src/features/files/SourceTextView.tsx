@@ -159,10 +159,6 @@ export function SourceTextView({
             setMode('edit');
           } else return done();
         }}
-        onSave={() => {
-          void source.save().catch(() => {});
-        }}
-        saveDisabled={source.handoff || source.replaced}
       />
       <SourceBanners
         actions={[

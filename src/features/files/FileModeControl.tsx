@@ -1,4 +1,3 @@
-import { Toggle } from 'radix-ui';
 import {
   useCallback,
   useContext,
@@ -9,10 +8,7 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import { useIsMounted } from 'usehooks-ts';
-import { Button } from '@/components/ui/Button';
-import { Icon } from '@/components/ui/Icon';
-import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { m } from '@/i18n';
+import { MaterialModeToggle } from '@/features/materials/MaterialModeToggle';
 import {
   FileHeaderTarget,
   type FileMode,
@@ -49,15 +45,11 @@ export function FileModeControl({
   canEdit,
   disabled,
   onChange,
-  onSave,
-  saveDisabled,
 }: {
   mode: 'view' | 'edit';
   canEdit: boolean;
   disabled?: boolean;
   onChange: (mode: FileMode) => void | Promise<boolean>;
-  onSave?: () => void;
-  saveDisabled?: boolean;
 }) {
   const target = useContext(FileHeaderTarget);
   const context = useContext(FileModeContext);
@@ -72,40 +64,14 @@ export function FileModeControl({
       if (isMounted() && accepted === false) context.onChange(mode);
     });
   }, [context, canEdit, disabled, mode, onChange, isMounted]);
-  const controls = (
-    <div className="flex items-center gap-2">
-      {mode === 'edit' && onSave && (
-        <Button
-          disabled={saveDisabled}
-          onClick={onSave}
-          size="sm"
-          variant="ghost-hover"
-        >
-          {m.action_save()}
-        </Button>
-      )}
-      {canEdit && (
-        <Toggle.Root
-          asChild
-          disabled={disabled}
-          onPressedChange={(pressed) => {
-            void onChange(pressed ? 'edit' : 'view');
-          }}
-          pressed={mode === 'edit'}
-        >
-          {/* Names the mode it switches to; pressed still means editing. */}
-          <ToolbarButton
-            aria-label={m.material_mode()}
-            disabled={disabled}
-            label={
-              mode === 'edit' ? m.material_mode_view() : m.material_mode_edit()
-            }
-          >
-            <Icon name={mode === 'edit' ? 'view' : 'pencil'} />
-          </ToolbarButton>
-        </Toggle.Root>
-      )}
-    </div>
-  );
+  const controls = canEdit ? (
+    <MaterialModeToggle
+      disabled={disabled}
+      mode={mode}
+      onChange={(next) => {
+        void onChange(next);
+      }}
+    />
+  ) : null;
   return target ? createPortal(controls, target) : controls;
 }

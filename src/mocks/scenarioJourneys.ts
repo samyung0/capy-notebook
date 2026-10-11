@@ -77,10 +77,19 @@ export async function runJourney(
   const sourceOpen = async (fileId = scenarioText, office = false) => {
     await go(`${scenarioPath}?file=${fileId}`);
     await editMode();
-    // A text source is ready with its Save button; an Office editor once its
+    // A text source is ready with its editor; an Office editor once its
     // Edit menu arrives (with the replica, as the old Save button did).
     if (office) await ui.button('Edit', '[role="menubar"] [role="menuitem"]');
-    else await ui.button(m.action_save());
+    else await ui.element(`textarea[aria-label="${m.source_edit_raw()}"]`);
+  };
+  // Ctrl+S in the text editor: an explicit save, persisted at once.
+  const textSave = async () => {
+    const input = await ui.element<HTMLTextAreaElement>(
+      `textarea[aria-label="${m.source_edit_raw()}"]`
+    );
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', { bubbles: true, ctrlKey: true, key: 's' })
+    );
   };
   const textEdit = async (marker = scenarioMarker) => {
     const input = await ui.element<HTMLTextAreaElement>(
@@ -155,7 +164,7 @@ export async function runJourney(
     );
     refuseNextSourceSave(scenarioText);
     await textEdit();
-    await ui.click(m.action_save());
+    await textSave();
     // Refused for good: the unsaved edits stay on screen read-only under the
     // recovery strip.
     await ui.element('[role="alert"]');
@@ -178,7 +187,7 @@ export async function runJourney(
       await ui.element('[role="alert"]');
       return;
     }
-    await ui.click(m.action_save());
+    await textSave();
     await saveFailedStatus();
     return;
   }
@@ -275,7 +284,7 @@ export async function runJourney(
     );
     // A saved edit, which is not published: View shows it all the same.
     await textEdit(scenarioSavedMarker);
-    await ui.click(m.action_save());
+    await textSave();
     await ui.wait(
       () => savedText(scenarioText).includes(scenarioSavedMarker),
       'saved source edit'

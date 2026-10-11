@@ -22,9 +22,11 @@ formats may be uploaded within the plan byte limit, but remain store-only.
 Create cards open `/materials/:id` and Files cards open `/files/:id` through SPA router Links, as do dashboard recent rows and workspace file/material rows. Each item remembers its own View/Edit mode in localStorage (`capy.document.mode.<kind>.<id>`); an explicit URL mode wins, followed by the saved mode, then View.
 Both routes use the workspace's `CenterContent` header and renderers, with
 the app sidebar and a back icon. They omit workspace navigation and Move to
-chapter. `FileModeControl` portals file View/Edit (and, for text files, Save)
-controls into that shared header while each runtime retains its save and
-collaboration lifecycle. DOCX, XLSX and PPTX use the two-row Office header
+chapter. `FileModeControl` portals the file View/Edit toggle (the note's
+`MaterialModeToggle`, labelled from lg) into that shared header while each
+runtime retains its save and collaboration lifecycle. Text files have no Save
+button: the room saves edits after a second idle, and Ctrl+S or leaving Edit
+saves at once. DOCX, XLSX and PPTX use the two-row Office header
 described under [Browser loading model](#browser-loading-model).
 New standalone notes request Edit explicitly; dedicated quiz/study actions retain their existing behavior.
 

@@ -6,9 +6,11 @@ import { MATERIALMODE_ICON } from './materialIconMappings';
 import type { MaterialMode } from './modePolicy';
 
 export function MaterialModeToggle({
+  disabled,
   mode,
   onChange,
 }: {
+  disabled?: boolean;
   mode: MaterialMode;
   onChange: (mode: MaterialMode) => void;
 }) {
@@ -19,12 +21,14 @@ export function MaterialModeToggle({
   return (
     <Toggle.Root
       asChild
+      disabled={disabled}
       onPressedChange={(pressed) => onChange(pressed ? 'edit' : 'view')}
       pressed={mode === 'edit'}
     >
       <ToolbarButton
         aria-label={m.material_mode()}
         className="lg:w-auto lg:gap-1.5 lg:px-2"
+        disabled={disabled}
         label={label}
       >
         <Icon className="lg:-translate-y-px" name={MATERIALMODE_ICON[next]} />

@@ -191,9 +191,7 @@ test('text: browser edit automatically publishes durable UTF-8 source', async ({
     expect(editor).toBeVisible({ timeout: 30_000 })
   );
   await editor.fill(edited);
-  await run.owner.page
-    .getByRole('button', { exact: true, name: m.action_save() })
-    .click();
+  await editor.press('Control+s');
   const saved = await savedFacts(run, fileId, ['CEDAR-42', marker]);
   assert.equal(saved.text, edited);
   await run.poll(

@@ -63,9 +63,7 @@ test('one click fails a real source save and retry preserves the mounted editor'
     .click();
   await expect(page).toHaveURL(currentURL);
   await expect(input).toHaveValue(new RegExp(marker));
-  await page
-    .getByRole('button', { exact: true, name: m.action_save() })
-    .click();
+  await input.press('Control+s');
   await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
     'data-save-state',
     'saved'
