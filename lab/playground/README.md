@@ -103,7 +103,9 @@ one, since it reads `materials/<id>.json`, which every write updates.
   (`MaterialPreview`) with the app's styles and theme, so headings, math,
   mermaid, tables, callouts and interactive blocks look as they do in the app.
   A note the app would refuse says why at the top, and so does a mermaid
-  diagram that does not parse.
+  diagram that does not parse. A library figure the note places
+  (`![caption](figure:<id>)`) shows from the crop the turn rendered,
+  `local/runs/<id>/assets/<figure id>.jpg`, with its caption and credit.
 - **Quiz and flashcards fences**: the app files each as its own material behind
   a link card; the preview draws the questions and cards in place instead, in
   the note renderer's question view (answer key, marking scheme and worked
