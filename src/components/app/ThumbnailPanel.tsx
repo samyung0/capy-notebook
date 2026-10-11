@@ -29,7 +29,7 @@ export interface Thumbnail {
  * their brightness. */
 const PAGE_KINDS: FileKind[] = ['pdf', 'doc', 'slides', 'sheet'];
 
-/** The card's 16:11 thumbnail, or the 44px tile of a recents row. Falls back
+/** The card's 16:11 thumbnail, or the 40px tile of a recents row (a shorter 16:10 card when `dense`). Falls back
  * to the kind icon when there is nothing to draw or the image fails (a recents
  * row then shows the bare icon); a failed image is not retried. */
 export const ThumbnailPanel = memo(function ThumbnailPanel({
@@ -39,7 +39,8 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
   preview,
   pill,
   small = false,
-}: Thumbnail & { icon: FileIconName; small?: boolean }) {
+  dense = false,
+}: Thumbnail & { icon: FileIconName; small?: boolean; dense?: boolean }) {
   const [failedUrl, setFailedUrl] = useState<string>();
   // Previews arrive as open JSON. A diagram draws only when its source
   // parses; one that does not is a failed preview, like a broken image.
@@ -110,8 +111,11 @@ export const ThumbnailPanel = memo(function ThumbnailPanel({
       className={cn(
         'relative shrink-0 overflow-hidden',
         small
-          ? 'pv-small size-11 rounded-[9px]'
-          : '@container aspect-[16/11] rounded-[13px] bg-(--surface-canvas)',
+          ? 'pv-small size-10 rounded-[9px]'
+          : cn(
+              '@container rounded-[13px] bg-(--surface-canvas)',
+              dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
+            ),
         // A recents row's bare kind icon sits without the tile.
         small && body && 'border border-divider bg-(--surface-canvas)'
       )}

@@ -5,6 +5,7 @@ import {
   recentMaterialsQuery,
   useWorkspaces,
 } from '@/api/hooks';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { ItemCard, ItemSkeletonGrid } from '@/components/app/ItemCard';
 import { ListViewToggle, useListView } from '@/components/app/ListToolbar';
 import { PanelHeader } from '@/components/app/layout';
@@ -105,17 +106,23 @@ export function RecentItemsCard() {
   const {
     data: files,
     fetchStatus: filesFetchStatus,
+    isError: filesFailed,
     isLoading: filesLoading,
+    refetch: refetchFiles,
   } = useInfiniteQuery({ ...recentFilesQuery(), meta });
   const {
     data: materials,
     fetchStatus: materialsFetchStatus,
+    isError: materialsFailed,
     isLoading: materialsLoading,
+    refetch: refetchMaterials,
   } = useInfiniteQuery({ ...recentMaterialsQuery(), meta });
   const {
     data: workspaces,
     fetchStatus: workspacesFetchStatus,
+    isError: workspacesFailed,
     isLoading: workspacesLoading,
+    refetch: refetchWorkspaces,
   } = useWorkspaces({ sort: 'accessed' }, { errorBoundary: false });
 
   const items = mergeRecentItems(
@@ -129,6 +136,14 @@ export function RecentItemsCard() {
     workspacesFetchStatus,
   ].includes('paused');
   const isLoading = filesLoading || materialsLoading || workspacesLoading;
+  // A list without data would drop its rows silently; a failed refresh keeps
+  // the cached list, so only a missing one counts.
+  const failed = [
+    [files, filesFailed, refetchFiles],
+    [materials, materialsFailed, refetchMaterials],
+    [workspaces, workspacesFailed, refetchWorkspaces],
+  ] as const;
+  const missing = failed.filter(([data, isError]) => !data && isError);
 
   return (
     <div className="flex min-h-full shrink-0 flex-col gap-3">
@@ -141,21 +156,31 @@ export function RecentItemsCard() {
       ) : isLoading ? (
         view === 'grid' ? (
           <ItemSkeletonGrid
-            className="px-2 sm:grid-cols-2 sm:gap-2.5"
+            className="px-2 sm:grid-cols-2 sm:gap-2"
             count={6}
+            dense
           />
         ) : (
-          <SkeletonList className="px-3" count={8} rowHeight={60} />
+          <SkeletonList className="px-3" count={8} rowHeight={52} />
         )
+      ) : missing.length ? (
+        <InlineErrorState
+          className="px-1 pt-2 pb-4"
+          message={m.dashboard_recent_error()}
+          onRetry={() => {
+            for (const [, , refetch] of missing) void refetch();
+          }}
+        />
       ) : items.length === 0 ? (
         <p className="px-1 pt-2 pb-4 text-center text-fg-muted">
           {m.dashboard_recent_empty()}
         </p>
       ) : view === 'grid' ? (
-        <div className="grid grid-cols-2 gap-2.5 px-2">
+        <div className="grid grid-cols-2 gap-2 px-2">
           {items.map((item) => (
             <ItemCard
               actions={<RecentActions display="menu" item={item} />}
+              dense
               icon={recentIcon(item)}
               key={`${item.kind}-${item.id}`}
               link={{ ...recentLink(item), preload: 'intent' }}
@@ -167,14 +192,14 @@ export function RecentItemsCard() {
           ))}
         </div>
       ) : (
-        <div className="flex -translate-x-0.5 flex-col gap-1 px-2">
+        <div className="flex -translate-x-0.5 flex-col gap-0.5 px-2">
           {items.map((item) => (
             <div
               className="group relative flex items-center justify-between rounded-button hover:bg-surface-hover-bg"
               key={`${item.kind}-${item.id}`}
             >
               <Link
-                className="flex min-w-0 flex-1 items-center gap-3 rounded-button px-1.5 py-2"
+                className="flex min-w-0 flex-1 items-center gap-3 rounded-button px-1.5 py-1.5"
                 preload="intent"
                 {...recentLink(item)}
               >

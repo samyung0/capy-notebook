@@ -34,6 +34,7 @@ export function ItemCard({
   actions,
   selection,
   thumbnail,
+  dense = false,
 }: {
   view: ListView;
   icon: FileIconName;
@@ -47,6 +48,9 @@ export function ItemCard({
   meta: string;
   /** Grid view only. */
   thumbnail?: Thumbnail;
+  /** Grid view only: the dashboard's narrow column, with one-line titles
+   * and a shorter thumbnail. */
+  dense?: boolean;
   link?: LinkProps;
   actions?: ReactNode;
   selection?: ItemSelection;
@@ -107,14 +111,21 @@ export function ItemCard({
       interactive={!!link || !!selection}
     >
       {overlay}
-      <ThumbnailPanel icon={icon} {...thumbnail} />
+      <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
       <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:pt-2.5 pt-2 @min-[200px]:pr-[34px] pr-[30px] @min-[200px]:pb-2 pb-1.5 @min-[200px]:pl-2.5 pl-2">
         <FileIcon
-          className="@min-[200px]:mt-0 mt-0.5 size-4 self-start @min-[200px]:self-center"
+          className={cn(
+            'size-4',
+            !dense &&
+              '@min-[200px]:mt-0 mt-0.5 self-start @min-[200px]:self-center'
+          )}
           name={icon}
         />
         <Title
-          className="wrap-anywhere @min-[200px]:line-clamp-1 line-clamp-2 font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card"
+          className={cn(
+            'wrap-anywhere font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card',
+            dense ? 'line-clamp-1' : '@min-[200px]:line-clamp-1 line-clamp-2'
+          )}
           link={selection ? undefined : link}
         >
           {title}
@@ -200,13 +211,15 @@ function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
 
 /** Loading cards the size of card A, so the grid does not shift when rows
  * arrive. The title bar takes two lines below 200px wide, as titles wrap
- * there. */
+ * there, except on `dense` cards. */
 export function ItemSkeletonGrid({
   count,
   className,
+  dense = false,
 }: {
   count: number;
   className?: string;
+  dense?: boolean;
 }) {
   return (
     <ItemGrid aria-label={m.a11y_loading()} className={className} role="status">
@@ -215,10 +228,26 @@ export function ItemSkeletonGrid({
           className="@container rounded-card border border-line bg-surface p-1.5"
           key={i}
         >
-          <Skeleton className="aspect-[16/11] rounded-[13px]" />
+          <Skeleton
+            className={cn(
+              'rounded-[13px]',
+              dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
+            )}
+          />
           <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:pt-2.5 pt-2 @min-[200px]:pr-[34px] pr-[30px] @min-[200px]:pb-2 pb-1.5 @min-[200px]:pl-2.5 pl-2">
-            <Skeleton className="@min-[200px]:mt-0 mt-0.5 size-4 self-start @min-[200px]:self-center" />
-            <Skeleton className="@min-[200px]:h-[1lh] h-[2lh] @min-[200px]:text-[14.5px] text-[13.5px] leading-tight" />
+            <Skeleton
+              className={cn(
+                'size-4',
+                !dense &&
+                  '@min-[200px]:mt-0 mt-0.5 self-start @min-[200px]:self-center'
+              )}
+            />
+            <Skeleton
+              className={cn(
+                '@min-[200px]:text-[14.5px] text-[13.5px] leading-tight',
+                dense ? 'h-[1lh]' : '@min-[200px]:h-[1lh] h-[2lh]'
+              )}
+            />
             <Skeleton className="col-start-2 h-[1lh] w-2/3 text-xs" />
           </div>
         </div>

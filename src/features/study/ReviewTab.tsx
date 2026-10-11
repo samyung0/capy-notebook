@@ -41,6 +41,7 @@ export function ReviewTab() {
           <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
             <h2 className="t-card-title">{m.review_worth()}</h2>
             <UnderlineLink
+              noArrow
               onClick={() =>
                 navigate({ search: { tab: 'study' }, to: '/settings' })
               }
