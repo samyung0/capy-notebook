@@ -74,7 +74,7 @@ export function FilesPanel({
   beforeReplace,
   onRenameChapter,
   renderTabRow,
-  contentClassName,
+  header,
   onAddSource,
   onAddChapter,
 }: {
@@ -88,7 +88,8 @@ export function FilesPanel({
   beforeReplace: () => boolean;
   onRenameChapter: (chapter: Chapter) => void;
   renderTabRow: (actions: TabAction[]) => ReactNode;
-  contentClassName?: string;
+  /** The tree's first row, scrolling with it, e.g. the workspace switcher. */
+  header?: ReactNode;
   onAddSource?: (mode: AddSourceMode) => void;
   onAddChapter?: () => void;
 }) {
@@ -430,11 +431,11 @@ export function FilesPanel({
           'scroll-fade-y min-h-0 flex-1 overflow-auto px-2.5 pb-(--scroll-fade-bottom-padding) [--scroll-fade-bottom-padding:--spacing(2)]',
           !readOnly &&
             onAddSource &&
-            '[--scroll-fade-bottom-padding:--spacing(20)]',
-          contentClassName
+            '[--scroll-fade-bottom-padding:--spacing(20)]'
         )}
         data-workspace-file-tree
       >
+        {header}
         {!chapters && (
           <SkeletonList className="px-1.5 py-2" count={5} rowHeight={36} />
         )}
