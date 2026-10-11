@@ -5,6 +5,7 @@ import { ignoreEmptyExtras } from './answer';
 import { AskUser } from './blocks/AskUser';
 import { Chart, ScatterChart } from './blocks/ChatChart';
 import { Diagram } from './blocks/ChatDiagram';
+import { Interactive } from './blocks/ChatInteractive';
 import { ChatTable } from './blocks/ChatTable';
 import { Accordion, Cards, ChatTabs, Facts } from './blocks/layout';
 import { Callout, Md, Reveal, Steps } from './blocks/text';
@@ -26,6 +27,7 @@ export const chatLibrary = buildLibrary({
   Diagram,
   Fact: leaf,
   Facts,
+  Interactive,
   Md,
   Point: leaf,
   Reveal,

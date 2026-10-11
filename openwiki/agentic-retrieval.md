@@ -2007,7 +2007,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
    `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`,
-   `ScatterChart`, `Diagram`, `AskUser` and their items). The catalog lives in
+   `ScatterChart`, `Diagram`, `Interactive`, `AskUser` and their items). The catalog lives in
    `src/features/workspace/chat/schema.ts`; `pnpm gen:openui` renders it into
    the prompt text `prompts/openui_lang.txt` (appended to the chat system
    prompt, about 2,000 tokens) and the spec `generated/openui_library.json`
@@ -2836,7 +2836,11 @@ single `$` follows Pandoc's rule so prices stay text, and a formula KaTeX
 cannot read shows its source; tabs,
 steps, accordions, callouts, label/value rows, cards, tables, SVG charts
 themed by `--chart-1..6`, reveals, and Mermaid diagrams through the notes'
-renderer, drawn once their code stops growing while the answer streams). Answers stored before the program format
+renderer, drawn once their code stops growing while the answer streams, and
+interactives in the notes' sandboxed html-embed frame (`HtmlEmbed`, the same
+64 KB cap and theme variables), mounted once their html has stopped changing
+for a second while the answer streams; their text projection keeps the title
+and drops the html, here and in the Python summary text). Answers stored before the program format
 still render as Markdown. Inline `[k]` markers come from the message's
 citation list by `n`; tables and charts put their sources under the block.
 The prompt reserves `AskUser` for required user input and excludes simple follow-up questions.

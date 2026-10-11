@@ -62,6 +62,11 @@ export const diagramProps = z.object({
   code: z.string(),
   passages,
 });
+export const interactiveProps = z.object({
+  title: z.string(),
+  html: z.string(),
+  passages,
+});
 export const askUserProps = z.object({
   question: z.string(),
   choices: z.array(z.string()),
@@ -77,6 +82,7 @@ export type RowProps = z.infer<typeof rowProps>;
 export type SeriesProps = z.infer<typeof seriesProps>;
 export type PointProps = z.infer<typeof pointProps>;
 export type DiagramProps = z.infer<typeof diagramProps>;
+export type InteractiveProps = z.infer<typeof interactiveProps>;
 export type AskUserProps = z.infer<typeof askUserProps>;
 
 /** Props of the container components, whose children arrive as element nodes. */
@@ -148,6 +154,7 @@ export type Renderers = Record<
   | 'ScatterChart'
   | 'Point'
   | 'Diagram'
+  | 'Interactive'
   | 'AskUser',
   AnyRenderer
 >;
@@ -281,6 +288,13 @@ export function buildLibrary(render: Renderers) {
     name: 'Diagram',
     props: diagramProps,
   });
+  const Interactive = defineComponent({
+    component: render.Interactive,
+    description:
+      'An interactive HTML widget, only where moving something teaches more than a still picture (a slider that reshapes a curve, a draggable model). html is one self-contained snippet under 64 KB: inline CSS and script, no network or external URLs, colours only from the variables --bg, --fg, --muted, --accent and --border, height fitting its content with no vh or vw units.',
+    name: 'Interactive',
+    props: interactiveProps,
+  });
   const AskUser = defineComponent({
     component: render.AskUser,
     description:
@@ -300,6 +314,7 @@ export function buildLibrary(render: Renderers) {
     Chart.ref,
     ScatterChart.ref,
     Diagram.ref,
+    Interactive.ref,
   ] as const;
   const AccordionItem = defineComponent({
     component: render.AccordionItem,
@@ -382,6 +397,7 @@ export function buildLibrary(render: Renderers) {
           'ScatterChart',
           'Point',
           'Diagram',
+          'Interactive',
         ],
         name: 'Data',
         notes: [
@@ -421,6 +437,7 @@ export function buildLibrary(render: Renderers) {
       ScatterChart,
       Point,
       Diagram,
+      Interactive,
       AskUser,
     ],
     root: 'Answer',

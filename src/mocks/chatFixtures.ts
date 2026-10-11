@@ -161,6 +161,25 @@ export const chatFixtures = [
   },
   {
     content: [
+      'root = Answer([intro, widget, after])',
+      'intro = Md("Enzymes speed up as they warm, until heat starts to unfold them.", [1])',
+      `widget = Interactive("Enzyme activity and temperature", ${JSON.stringify(
+        [
+          '<style>.w{display:grid;gap:8px}.track{height:14px;border-radius:7px;background:color-mix(in srgb,var(--muted) 25%,transparent)}.bar{height:100%;border-radius:7px;background:var(--accent)}small{color:var(--muted)}</style>',
+          '<div class="w"><label>Temperature: <b id="t"></b> °C</label><input id="r" type="range" min="0" max="70" value="37"><div class="track"><div id="b" class="bar"></div></div><small>Activity, relative to the best temperature</small></div>',
+          "<script>const r=document.getElementById('r'),b=document.getElementById('b'),t=document.getElementById('t');function draw(){const x=+r.value;const a=x<=37?x/37:Math.max(0,1-(x-37)/15);t.textContent=x;b.style.width=a*100+'%';}r.oninput=draw;draw();</script>",
+        ].join('\n')
+      )}, [1])`,
+      'after = Md("Drag past 40 °C: activity falls fast because the active site loses its shape.")',
+    ].join('\n'),
+    hint: 'A sandboxed html-embed frame with a slider, its caption and a cited source.',
+    id: 'chat-openui-interactive',
+    label: 'OpenUI: interactive',
+    passages: [1],
+    prompt: 'Let me play with how temperature changes enzyme activity.',
+  },
+  {
+    content: [
       'root = Answer([intro, q1, q2, q3])',
       'intro = Md("I need a few details before building your revision plan.")',
       'q1 = AskUser("Which subject is the plan for?", ["Biology", "Chemistry", "Mathematics"])',

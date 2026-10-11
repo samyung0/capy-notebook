@@ -150,3 +150,10 @@ def test_chart_measurements_survive_the_checkpoint_projection():
     assert "[250, 200]" in text and "before · after" in text
     assert "x: 10" in text and "y: 12" in text
     assert "[9]" not in text
+
+
+def test_interactive_projects_its_title_without_the_html():
+    text = openui.text_of(
+        'root = Answer([Interactive("Slide the pH", "<input type=range>", [2])])'
+    )
+    assert text == "Slide the pH"

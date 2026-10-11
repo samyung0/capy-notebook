@@ -162,6 +162,14 @@
       ]
     },
     {
+      "name": "Interactive",
+      "props": [
+        "title",
+        "html",
+        "passages"
+      ]
+    },
+    {
       "name": "AskUser",
       "props": [
         "question",

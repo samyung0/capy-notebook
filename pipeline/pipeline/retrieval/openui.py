@@ -305,8 +305,9 @@ def _refs_in(value: Any) -> Iterator[Ref]:
             yield from _refs_in(item)
 
 
-# Enum-valued arguments are presentation, not content.
-_KIND_PROPS = {"Callout": "kind", "Chart": "kind"}
+# Enum-valued arguments are presentation, not content; an interactive's html
+# is code, summarized by its title.
+_SKIPPED_PROPS = {"Callout": "kind", "Chart": "kind", "Interactive": "html"}
 
 
 def to_text(program: Program) -> str:
@@ -325,7 +326,7 @@ def to_text(program: Program) -> str:
     for call in walk(program):
         names = COMPONENTS.get(call.name, [])
         for index, arg in enumerate(call.args):
-            if index < len(names) and names[index] == _KIND_PROPS.get(call.name):
+            if index < len(names) and names[index] == _SKIPPED_PROPS.get(call.name):
                 continue
             arg = resolve(arg)
             if isinstance(arg, str) and arg.strip():

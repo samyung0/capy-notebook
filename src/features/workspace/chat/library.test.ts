@@ -117,6 +117,17 @@ describe('local answer recovery', () => {
     });
   });
 
+  it('projects an interactive as its title, without the html', () => {
+    const result = parseAnswer(
+      'root = Answer([Interactive("Slide the pH", "<input type=\\"range\\">", [2])])'
+    );
+    expect(inspectAnswer(result)).toEqual({
+      gap: false,
+      invalidCharts: new Set(),
+      text: 'Slide the pH',
+    });
+  });
+
   it('keeps a fence paired when prose surrounds the program', () => {
     const { prefix, program: source } = splitAnswer(
       'Here.\n```openui-lang\nroot = Answer([Md("Recovered.", [2])])\n```\nHope that helps.'

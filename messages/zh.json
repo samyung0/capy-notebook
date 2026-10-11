@@ -623,6 +623,7 @@
   "chat_chart_values": "数值",
   "chat_chart_illustrative": "示意数值",
   "chat_chart_unsourced": "数值未引用来源",
+  "chat_interactive_pending": "正在加载互动内容…",
   "chat_answer_incomplete": "这条回答的其余部分无法显示。",
   "chat_question_asked": "曾提问：",
   "chat_question_bar": "Capy 有 {count} 个问题",

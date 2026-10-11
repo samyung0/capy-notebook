@@ -780,7 +780,9 @@ function drawOpenUI(tree) {
       .map(([key, v]) =>
         ['title', 'label', 'value', 'kind', 'question'].includes(key) && typeof v === 'string'
           ? `<div><b>${esc(v)}</b></div>`
-          : `<div>${draw(v, depth + 1)}</div>`
+          : key === 'html' && typeof v === 'string'
+            ? `<div class="muted">html, ${v.length} characters</div>`
+            : `<div>${draw(v, depth + 1)}</div>`
       )
       .join('');
     return name === 'Answer'

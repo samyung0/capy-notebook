@@ -7,7 +7,12 @@ import {
   tokenize,
   walkAST,
 } from '@openuidev/lang-core';
-import type { ChartProps, DiagramProps, ScatterProps } from './schema';
+import type {
+  ChartProps,
+  DiagramProps,
+  InteractiveProps,
+  ScatterProps,
+} from './schema';
 
 const STATEMENT_HEAD = /^\s*[A-Za-z_]\w*\s*=/;
 const ROOT_HEAD = /^[ \t]*root\s*=\s*Answer\s*\(/m;
@@ -181,6 +186,11 @@ export function inspectAnswer(result: ParseResult | null) {
       if (typeof title === 'string' && title.trim()) lines.push(title);
       if (typeof code === 'string' && code.trim())
         lines.push(['```mermaid', code.trim(), '```'].join('\n'));
+      return;
+    }
+    if (value.typeName === 'Interactive') {
+      const { title } = value.props as unknown as InteractiveProps;
+      if (typeof title === 'string' && title.trim()) lines.push(title);
       return;
     }
     for (const [name, prop] of Object.entries(value.props)) {

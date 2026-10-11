@@ -623,6 +623,7 @@
   "chat_chart_values": "Values",
   "chat_chart_illustrative": "Illustrative values",
   "chat_chart_unsourced": "Values not cited",
+  "chat_interactive_pending": "Loading the interactive…",
   "chat_answer_incomplete": "The rest of this answer could not be displayed.",
   "chat_question_asked": "Asked:",
   "chat_question_bar": "{count} questions from Capy",
