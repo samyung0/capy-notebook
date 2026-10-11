@@ -111,6 +111,15 @@
   }
 }
 
+/* The content's half of the nudge: Radix keeps a modal menu's scroll lock until
+   this exit animation ends, so it stops at the peak once the content is clipped
+   away; the surface plays the full settle. */
+@keyframes menu-morph-content-close {
+  to {
+    translate: 5px 5px;
+  }
+}
+
 @utility motion-menu-morph {
   width: 44px;
   height: 44px;
@@ -185,8 +194,7 @@
   &[data-state="closed"] {
     clip-path: inset(calc(100% - 44px) 0 0 calc(100% - 44px) round 44px);
     transition: clip-path 250ms cubic-bezier(0.22, 1, 0.36, 1);
-    animation: menu-morph-close-anticipation 700ms
-      cubic-bezier(0.22, 1, 0.36, 1);
+    animation: menu-morph-content-close 245ms cubic-bezier(0.22, 1, 0.36, 1);
 
     & > [data-slot="menu-items"] {
       opacity: 0;
