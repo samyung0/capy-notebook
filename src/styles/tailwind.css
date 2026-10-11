@@ -494,7 +494,8 @@ math-field {
 }
 
 :root {
-  --tag-dropdown-height: calc(var(--spacing) * 56);
+  /* Five 36px tag rows plus the list's p-1. */
+  --tag-dropdown-height: calc(var(--spacing) * 47);
   /* ToolbarButton size and icon: compact on phones. */
   --toolbar-button: 28px;
   --toolbar-icon: 14px;
