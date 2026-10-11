@@ -34,12 +34,15 @@ function resetKeysChanged(
   return previous.some((value, index) => !Object.is(value, next[index]));
 }
 
-/** Retry from a boundary: every failed query starts over, including ones whose
- * component has not mounted yet (a route loader's prefetch), which would
- * otherwise rethrow their cached error without fetching. */
+/** Retry from a boundary: every query that failed without data starts over,
+ * including ones whose component has not mounted yet (a route loader's
+ * prefetch), which would otherwise rethrow their cached error without
+ * fetching. A failed refresh keeps its data: resetting it would drop the
+ * stale view, and only queries without data throw to a boundary. */
 function resetFailedQueries(queryClient: QueryClient) {
   void queryClient.resetQueries({
-    predicate: (query) => query.state.status === 'error',
+    predicate: ({ state }) =>
+      state.status === 'error' && state.data === undefined,
   });
 }
 

@@ -238,9 +238,10 @@ A query that throws to `AppErrorBoundary` or `RouteErrorComponent` loses its
 observer, so neither `refetchOnReconnect` nor the event stream's reconnect
 refetch reaches it. Both boundaries therefore retry by themselves when
 `onlineManager` comes back online. Retry, manual or on reconnect, resets every
-query in error, not only the thrown one: a route loader's failed prefetch has no
-observer yet, and its component would otherwise rethrow the cached error
-without fetching once it mounts.
+query that failed without data, not only the thrown one: a route loader's failed
+prefetch has no observer yet, and its component would otherwise rethrow the
+cached error without fetching once it mounts. A query whose refresh failed keeps
+its data and is left alone, so the stale view stays on screen.
 
 ## Streaming failures
 
