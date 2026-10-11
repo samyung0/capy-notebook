@@ -31,9 +31,10 @@ thumbs/{file id}/{sha256 of the WebP}.webp
 - A key names its file, and a file id leads to the file's workspace (a link
   workspace's id is its share link), so the file id in a key's path is always
   a file of the same workspace as the row holding it:
-  - A workspace clone never shares a key, the owner's own clone included (a
-    link workspace cloned into a public one would show the source ids). The
-    clone leaves `thumbnail_key` empty, and after it commits the gateway copies
+  - A clone never shares a key: a workspace clone (the owner's own included; a
+    link workspace cloned into a public one would show the source ids) or a
+    single file clone (`POST /api/files/{id}/clone`, into the same workspace or
+    another). The clone leaves `thumbnail_key` empty, and after it commits the gateway copies
     the object inside the bucket (`blob.Copy`, S3 CopyObject) to
     `thumbs/{clone file id}/{same hash}.webp` and records it
     (`SetCloneThumbnail`; a file gone or captured meanwhile takes nothing and

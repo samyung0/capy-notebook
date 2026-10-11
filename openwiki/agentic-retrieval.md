@@ -2437,8 +2437,9 @@ build, and the knowledge library is one more source while the switch is on.
   Explore forms and the public workspace material document — with
   `getPublicWorkspaceSummary` the one exception. Every path that copies a row
   into another workspace or library carries it: the workspace clone, for its
-  files as well as its materials, and the standalone material clone the share
-  and typed-material routes use. Nothing else copies a file or material row.
+  files as well as its materials, and the single file and material clones
+  (`/api/files/{id}/clone`, `/api/materials/{id}/clone`). Nothing else copies a
+  file or material row.
   Its marshalled bytes are counted by the storage gate at material creation
   only — never on an `edit_document` merge and never on a clone — and are never
   charged: `materials.size_bytes` stays the content JSON, so the record is
@@ -2910,7 +2911,8 @@ the note in view mode. The agent's `list_sources` keeps notes as title, id
 and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows; a cloned note without an
-index starts dirty.
+index, or whose index text the clone changed (a mention turned plain text),
+starts dirty.
 
 ## Clone and teardown
 
@@ -2921,6 +2923,18 @@ aliases of one content item inside the clone. There is no best-effort follow-up
 call and no `ragCloned` flag — either the clone includes the index or the
 transaction rolls back.
 
+A single file or note clone (`CloneFile`, `CloneMaterial`) gives the copy the
+source's ready index the same way (`cloneRetrievalIndex`), per destination:
+content the destination workspace already holds under that `content_hash`
+(always, for a copy into the source's own workspace; `rag_contents` is unique
+per workspace and hash) is aliased; otherwise the content, chunks, vectors and
+summary are copied when both workspaces have the same embedding pin. When the
+pins differ (or the destination's row for that hash is still processing) a
+file is queued for ingest like an upload, paid by the cloner, and the pipeline's
+donor path reuses what it can; a note is marked dirty for the scheduler, as is
+a note whose copy reads differently (mentions turned plain). A standalone
+material has no index.
+
 That transaction uses one repeatable-read source snapshot. Only ready source
 files are copied; pending, processing, and failed rows are omitted. Ready editor
 assets are copied with new logical ids, and material nodes that reference any
@@ -2930,8 +2944,11 @@ not copied.
 
 The clone inherits the source's embedding pin rather than taking the current
 default, because the vectors are copied rather than recomputed. New chunk ids
-are derived from `md5(newWorkspaceID || oldChunkID)` rather than `random()`, so
-the vector copy can recompute each id and pair it with its passage.
+are derived from `md5(newContentID || oldChunkID)` rather than `random()`, so
+the vector copy can recompute each id and pair it with its passage; the content
+id is fresh, so ids stay unique however often one source is copied (the
+pipeline's donor copy salts with the destination workspace, which holds one
+content row per hash).
 
 Teardown is the foreign key. Workspace delete first releases every open
 provider session scoped to that workspace and returns its reserved credits,
@@ -3027,7 +3044,9 @@ Temporary handoff failures return 503 and keep the completed candidate.
 Durable job publication receipts survive lost
 HTTP acknowledgments and allow credit settlement after a crash. Stale or failed
 candidates release their own references; delayed source deletion covers a still
-valid candidate PUT URL. Clones use the last published snapshot.
+valid candidate PUT URL. Clones copy the last published snapshot and index,
+and carry the saved edits as the copy's own `source_documents` row
+([office-files.md](frontend/office-files.md)).
 
 `retrieval/pending.py` captures all scoped durable changes once per answer,
 including sources with no index or search hit. Complete exact changes form a

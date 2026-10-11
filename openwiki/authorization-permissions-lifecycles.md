@@ -45,6 +45,7 @@ validation instead of being remapped.
 | Member roster (`userId`, `name`, `avatarUrl`, `role`; never email)                          | Yes   | Yes           | No                 | Yes           | No                 | No           |
 | Mention directory (`userId`, `name`, `avatarUrl`)                                           | Yes   | Yes           | Yes                | No            | No                 | No           |
 | Clone the workspace                                                                         | Yes   | Yes           | Yes                | Yes           | No                 | No           |
+| Clone one of its files or materials (into a workspace the cloner edits, or a material standalone) | Yes | Yes         | Yes                | Yes           | No                 | No           |
 | Clone a standalone link/public quiz, flashcards, or material                                | Yes   | —             | —                  | —             | Yes                | No           |
 | Take a standalone link/public quiz or study its flashcards through the signed link           | Yes   | —             | —                  | —             | Yes                | Yes, kept in the browser |
 | Record own study progress and review ratings ([study-progress.md](study-progress.md))        | Yes   | Yes           | Yes                | Yes           | Yes                | No           |
@@ -208,9 +209,11 @@ every materials listing, Explore, search and the workspace quiz count.
 #### Clone from a public page
 
 Clone opens the dashboard with `?clone=<kind>:<id>` (`src/lib/cloneLink.ts`); the app's sign-in check sends a
-signed-out visitor through sign-in and back with the query. The dashboard asks first (`CloneLinkDialog`), shows a
-refused clone's reason in the dialog (a link viewer cloning a workspace sees that only members and editors may
-clone it, a full plan the storage message), and opens the copy. A workspace is asked through the clone form below. The ⋮ is the same for every visitor and could read auth client
+signed-out visitor through sign-in and back with the query. The dashboard loads the item into its clone form
+(`CloneLinkDialog`: a workspace through the clone form below, a quiz, flashcards or note through `CloneItemDialog`,
+whose standalone source defaults to No workspace), shows a refused clone's reason in the dialog (a link viewer
+cloning a workspace sees that only members and editors may clone it, a full plan the storage message), and opens
+the copy. The ⋮ is the same for every visitor and could read auth client
 side for future items, since a dropdown cannot shift the layout.
 
 Visitors' attempts and flashcard reviews live only in that browser's IndexedDB
@@ -261,13 +264,15 @@ Important boundaries:
   signed-in account.
 - A share role never lowers a membership. An editor member keeps editing on a
   view-only link.
-- A link/public viewer reads and chats but cannot clone the workspace; members
-  of any role and share-role editors can. Workspaces are large and cloning is
-  kept rare; sources remain downloadable one file at a time. Workspace
-  responses, Explore rows included, carry `canClone` computed server-side
-  from the caller's effective grant; the client offers the action in the
-  workspace card menu, the settings General tab, and Explore only when it is
-  true.
+- A link/public viewer reads and chats but cannot clone the workspace, nor
+  any file or material in it one by one (Epo 2026-10-11); members of any role
+  and share-role editors can. Workspaces are large and cloning is kept rare;
+  sources remain downloadable one file at a time. Workspace responses, Explore
+  rows included, carry `canClone` computed server-side from the caller's
+  effective grant; the client offers the workspace action in the workspace
+  card menu, the settings General tab, and Explore, and Clone on file and
+  material rows, only when it is true. A viewer member's otherwise empty row
+  menu then holds Clone alone.
 - The share URL is the permanent `ws_` identifier so bookmarks and search
   listings keep working. Revoking access means setting privacy to `private`;
   re-enabling link sharing re-arms the same URL.
@@ -558,9 +563,36 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   payer's quota answers "" with `storageRefused`, and only that writer is told.
   A copy is a created row, so one whose block never lands goes at the note's
   next save after its first minute.
-- Cloning a readable standalone quiz, flashcards, or material creates a new
-  owner-controlled copy charged to the signed-in cloner. Cloning a workspace
-  additionally requires membership of any role or an effective editor grant.
+- Cloning a readable standalone quiz, flashcards, or material is open to every
+  signed-in reader. A file or material inside a workspace, and the workspace
+  itself, additionally require membership of any role or an effective editor
+  grant (`assertCloneSourceTx` in `store/share.go`); refusals answer 404.
+- One file or material clones through `CloneItemDialog` (file and material row
+  menus in the workspace, Files and Blocks lists, quiz and flashcard pages,
+  Explore, the public page link): a destination workspace the cloner edits
+  plus a chapter (existing, none, or new by name), or for a material "No
+  workspace"; and the copy's name. `POST /api/files/{id}/clone` takes
+  `{workspaceId, chapterId?, chapterName?, name}` (files live in workspaces
+  only), `POST /api/materials/{id}/clone` takes `{workspaceId?, chapterId?,
+  chapterName?, title}`; an embedded row is never cloned on its own (404). The
+  destination is admitted like any workspace write (workspace row, then the
+  source owner's, actor's and payer's accounts in ID order): the cloner must
+  edit it and neither they nor its owner may be frozen. A copy in a workspace
+  belongs to that workspace's owner, who pays for it; `created_by` is the
+  cloner. A standalone copy is the cloner's and private.
+- The dialog prefills `Name (copy)` (before a file's extension) while the
+  destination is the source's own workspace and the plain name elsewhere,
+  until the user types one. A material title is unique per workspace, so a
+  taken one answers 409 `title_taken`, shown under the name field; file names
+  are not unique. Clone spins and the dialog stays open while pending; any
+  other refusal shows in the dialog (`FormAlert`), not as a toast. The
+  workspace clone dialog shows its refusals the same way.
+- A copied note keeps a mention live only for a member (or the owner) of its
+  destination; any other mention becomes plain `@Name` text, as does every
+  mention in a standalone copy and in a workspace clone (whose only member is
+  the cloner). Scope chapters and file names are kept only in the source's own
+  workspace. References to embedded rows point at their fresh copies; one whose
+  row was not copied is dropped.
 - Every workspace Clone (card menu, Explore, settings, the workspace picker, the
   public page link) opens `CloneWorkspaceDialog`: the create form prefilled with
   the source's icon, cover, description, tags and name (an owner's copy suffixed
@@ -568,13 +600,15 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   uses those values; tags travel by value, since their ids are the source
   owner's.
 - Clone source content is one repeatable-read SQL snapshot. Clones never lock a
-  source workspace/material or wait for Yjs persistence/projection; a stale SQL
-  projection is an explicitly accepted result. Clone counters live on separate
+  source workspace/material as a source (a copy into the source's own workspace
+  takes its row as the destination, like any write) or wait for Yjs
+  persistence/projection; a stale SQL projection is an explicitly accepted
+  result. A transaction that loses a race retries. Clone counters live on separate
   rows, while source-owner and target account locks are acquired in canonical ID
   order.
-- A single-material clone is always standalone and private. Referenced ready
-  media is rehomed under fresh asset IDs owned by that clone; it never retains
-  authorization-bearing asset IDs from the source workspace.
+- Referenced ready media of a cloned material is rehomed under fresh asset IDs
+  owned by the copy (in its destination workspace, or standalone); it never
+  retains authorization-bearing asset IDs from the source workspace.
 - Suspension blocks the suspended actor's own API access, but it does not hide
   content they already shared from another active user's clone. Material and
   workspace clones apply that rule consistently; deletion pending and deletion
@@ -582,7 +616,7 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 
 Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L74),
 [flashcard guards](../server/internal/httpapi/huma_flashcards.go#L60), and
-[clone handlers](../server/internal/httpapi/huma_share.go#L81).
+[clone handlers](../server/internal/httpapi/huma_share.go).
 
 ### Study progress
 

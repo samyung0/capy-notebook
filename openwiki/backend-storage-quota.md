@@ -364,8 +364,8 @@ the answer says `storageRefused`; restores still land. One transaction locks
 the target scope, share-locks the source rows, locks their blob paths in order
 and gates the quota (`AdoptEditorAssets`).
 
-Workspace clones snapshot the source, gate the total file + material + ready
-editor-asset payload against the **cloner's** quota, copy ready asset rows
+Workspace clones snapshot the source, gate the total file + saved edit state +
+material + ready editor-asset payload against the **cloner's** quota, copy ready asset rows
 with new logical IDs (rewriting embedded references; each asset names the
 clone of its material, and a trashed material's assets are left out), and reuse physical blob
 paths under reference counting. Only `ready` source files are copied; pending,
@@ -373,18 +373,29 @@ processing, and failed files are omitted. Material nodes (and quiz image blocks;
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
 document instead of retaining an unrenderable source id. The material's
 current content and cloned logical assets are the storage-accounted payload.
-Before writing cloned rows, the transaction locks every copied source,
-and ready editor-asset blob refcount in stable path order. The
+Before writing cloned rows, the transaction locks every copied source and
+saved-edit base (`source_documents.base_blob_path`, a counted reference of its
+own), and ready editor-asset blob refcount in stable path order. The
 last source reference therefore cannot queue and reap a physical object until
 the clone commits. A path deleted after the repeatable-read snapshot causes a
 transaction retry instead of a clone that points at missing bytes.
 
-A single-material clone is always a new **private standalone** material. It
-copies only ready editor assets referenced by the current SQL projection, gives
-each asset a fresh logical ID owned by the copy of the material whose content
-uses it (a note's embedded quiz keeps its own images), rewrites the document, and
-charges the asset bytes to the cloner. Physical object paths remain shared through blob
-refcounting. Source workspace asset IDs never survive in standalone content.
+A single file or material clone lands in a workspace the cloner edits (a
+material also standalone, private). The **payer** is the destination
+workspace's owner (the triggers derive `files.user_id`,
+`source_documents.user_id`, `materials.owner_user_id` and `editor_assets.user_id`
+from it), or the cloner for a standalone copy; the quota gate runs on the payer
+with the copy's bytes (a file's size plus its saved edit state; a material's
+content, its embedded rows and its copied assets), and a file copy also passes
+the destination's file-count gate. A material clone copies only ready editor
+assets referenced by the current SQL projection, gives each asset a fresh
+logical ID owned by the copy of the material whose content uses it (a note's
+embedded quiz keeps its own images), and rewrites the document. Physical object
+paths remain shared through blob refcounting. Source workspace asset IDs never
+survive in the copy. A cloned file's saved edits travel as a new
+`source_documents` row (epoch 1, same base, state and pending effects) whose
+generated `storage_bytes` charges the payer like the source's charged its
+owner.
 Contended clones poll the per-source advisory hierarchy without retaining a
 pool connection while they wait, then take the repeatable-read snapshot once
 the locks are held; a clone burst therefore cannot starve unrelated database

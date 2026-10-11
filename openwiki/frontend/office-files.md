@@ -2076,8 +2076,15 @@ Opened in view mode without a session, the preview reads the saved state from
 the viewer's session (see "Viewing shows the last saved state" above).
 
 The published file remains readable and cloneable while a candidate is being
-exported or processed. Clones copy its published source/index and caption
-associations, without pending edits or jobs. Deleting a source fences its old
+exported or processed. Clones (a workspace clone, or one file through
+`POST /api/files/{id}/clone`) carry the saved edits (Epo 2026-10-11): the
+published source, index and caption associations, plus a new
+`source_documents` row on the copy at epoch 1 with the same base blob (a
+counted reference), state, seed, pending effects, net tokens, checkpoints and
+rebuild capture, and `base_revision` equal to the copy's `files.revision`. Job,
+refresh and notice columns start empty and no refresh candidate is copied, so
+edits saved since the last publication publish through the copy's own normal
+refresh. Unsaved state still in a room is not copied. Deleting a source fences its old
 room and cancels dependent work. Candidate sources live
 in B2; job-local downloads are temporary. Source base bytes are cached in the
 collaboration process by SHA within a bounded 128 MiB cache, their seeds and
