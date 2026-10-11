@@ -154,7 +154,7 @@ export const chatFixtures = [
       'vm = Curve("Membrane potential", [[0, -70], [0.5, -70], [0.8, -62], [1, -55], [1.2, -20], [1.5, 30], [1.8, 0], [2.2, -50], [2.6, -80], [3.2, -75], [4, -70], [5, -70]])',
       'threshold = RefLine("y", -55, "threshold −55 mV")',
       'na = Point(1.2, -20, "Na⁺ floods in")',
-      'k = Point(2, -25, "K⁺ flows out")',
+      'k = Point(2.2, -50, "K⁺ flows out")',
       'under = Point(2.6, -80, "undershoot")',
       'after = Md("Notice the dashed line: below −55 mV nothing happens; once it is crossed, the whole spike follows.")',
     ].join('\n'),

@@ -175,8 +175,10 @@ finite points, drawn as straight segments in x order), and optional `lines`
 `PlotChart` (beside `CategoryChart`, same frame, theme variables and ticks) draws
 it in quizzes, notes and chat. It has no editor: the question dialog shows a plot
 and can remove it, but the add menu does not offer one. Go and the browser
-validate it; the collaboration validator does not know it yet, so plot cases are
-not in the shared fixtures. Grading text lists its curves' points and labels. User quizzes and notes keep validated
+validate it; the collaboration validator does not know it yet (it refuses a live
+quiz question holding a plot and passes a note's `plot` node unchecked, as it
+does any node type it does not know), so plot cases are not in the shared
+fixtures. Grading text lists its curves' points and labels. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed

@@ -18,8 +18,11 @@ const LEFT = 40;
 const RIGHT = W - 10;
 const TOP = 16;
 const BOTTOM = H - 26;
+/** A surface-coloured outline keeps a label readable where it crosses a line. */
+const HALO = { paintOrder: 'stroke', strokeWidth: 3 } as const;
 
-/** Clean ticks (steps of 1, 2 or 5 times a power of ten) spanning [lo, hi]. */
+/** About five clean ticks (steps of 1, 2 or 5 times a power of ten) spanning
+ * [lo, hi]. */
 function axis(values: number[]) {
   let lo = Math.min(...values);
   let hi = Math.max(...values);
@@ -28,7 +31,7 @@ function axis(values: number[]) {
     lo -= pad;
     hi += pad;
   }
-  const raw = (hi - lo) / 4;
+  const raw = (hi - lo) / 5;
   const power = 10 ** Math.floor(Math.log10(raw));
   const step = [1, 2, 5, 10].map((k) => k * power).find((k) => k >= raw) ?? raw;
   const min = Math.floor(lo / step) * step;
@@ -152,7 +155,8 @@ export function PlotChart({
               />
               {line.label ? (
                 <text
-                  className="fill-fg-secondary text-[9px]"
+                  className="fill-fg-secondary stroke-surface text-[9px]"
+                  style={HALO}
                   textAnchor={horizontal || nearRight ? 'end' : 'start'}
                   x={horizontal ? RIGHT - 2 : at + (nearRight ? -3 : 3)}
                   y={horizontal ? at - 3 : TOP + 8}
@@ -192,7 +196,8 @@ export function PlotChart({
                 <title>{`${mark.label}: ${format(mark.x)}, ${format(mark.y)}`}</title>
               </circle>
               <text
-                className="fill-fg text-[9px]"
+                className="fill-fg stroke-surface text-[9px]"
+                style={HALO}
                 textAnchor={flip ? 'end' : 'start'}
                 x={px + (flip ? -6 : 6)}
                 y={py < TOP + 10 ? py + 12 : py - 6}
