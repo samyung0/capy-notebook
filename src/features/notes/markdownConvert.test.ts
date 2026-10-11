@@ -87,4 +87,30 @@ describe('markdownToDocument', () => {
       convertAgentMarkdown(fence('flashcards', 'cards:\n  - {front: A}'))
     ).toThrow('fence 1 (flashcards) needs cards');
   });
+
+  it('keeps a library figure as its reference and turns other images into links', () => {
+    const { document } = convertAgentMarkdown(
+      [
+        '![Figure 16.10: The action potential (CC BY 4.0)](figure:fig_ab_12_v3)',
+        '![a cell](https://example.com/cell.png)',
+      ].join('\n\n')
+    );
+    const [figure, other] = document.value;
+    expect(figure).toMatchObject({
+      assetId: 'figure:fig_ab_12_v3',
+      caption: [{ text: 'Figure 16.10: The action potential (CC BY 4.0)' }],
+      type: 'img',
+    });
+    expect(figure).not.toHaveProperty('url');
+    expect(other).toMatchObject({
+      children: [
+        {
+          children: [{ text: 'a cell' }],
+          type: 'a',
+          url: 'https://example.com/cell.png',
+        },
+      ],
+      type: 'p',
+    });
+  });
 });

@@ -347,6 +347,18 @@ still-valid upload URL cannot overwrite a ready object. If creating the
 durable DB row fails after a source object was written, handlers delete the
 orphan object.
 
+A library figure the chat agent places in a note is stored by the gateway as
+the same kind of asset (`server/internal/httpapi/agent_figures.go`,
+[agentic-retrieval.md](agentic-retrieval.md)): the retrieval service sends the
+rendered JPEG with the write, Go checks it against the payer's plan image cap,
+writes the object and inserts a `ready` row named for the note in one
+transaction that gates its bytes with `gateStorageTx` (the note's creating
+transaction, or one before an edit's blocks are sent). The bytes are known
+before the transaction, so there is no reservation; an object whose row was
+never inserted is deleted by the handler, and a refused edit's unreferenced
+figures are trashed at once. From then on the 60-second rule, pruning, trash
+and clones treat it like an upload.
+
 An image another note's or quiz's id brings into a material (a paste, undo,
 cut and paste, replayed draft, AI edit) is made the material's own by the
 collaboration service's children pass, through

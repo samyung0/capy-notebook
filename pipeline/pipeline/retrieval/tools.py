@@ -19,6 +19,7 @@ import hashlib
 import io
 import json
 import logging
+import re
 import tempfile
 import time
 from collections.abc import Awaitable, Callable
@@ -1404,7 +1405,11 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
         return _refused("create_material is missing its tool-call id.")
-    prepared = await ledger_write(ctx, "create_material", args)
+    content = str(args.get("content") or "")
+    figures = await note_figures(ctx, [content] if kind == "note" else [])
+    if isinstance(figures, ToolResult):
+        return figures
+    prepared = await ledger_write(ctx, "create_material", figures.credited(args))
     if isinstance(prepared, ToolResult):
         return prepared
     books, todo = prepared
@@ -1417,6 +1422,9 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         return _refused(
             "The requested scope has no indexed content.", code="unavailable_target"
         )
+    images = await figures.render()
+    if isinstance(images, ToolResult):
+        return images
     op_id = operation_id(ctx.assistant_message_id, call_id)
     payload = {
         "workspaceId": ctx.workspace_id,
@@ -1429,7 +1437,7 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         "title": str(args.get("title") or "").strip()[:MATERIAL_TITLE_MAX].strip(),
         "cards": args.get("cards") or [],
         "questions": args.get("questions") or [],
-        "content": args.get("content") or "",
+        "content": figures.markdown[0] if figures.markdown else content,
         "fileIds": resolved.file_ids,
         "chapterIds": resolved.chapter_ids,
         "chapterId": str(args.get("chapter_id") or ""),
@@ -1437,14 +1445,160 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     if books:
         # Go validates the shape and computes the material's own licence.
         payload["provenance"] = {"books": books}
+    if images:
+        payload["figures"] = _figure_images(images)
 
     await ctx.pending_sources.validate()
     result = await _post_operation(
-        "/api/internal/materials", payload, op_id, ctx, failure=f"create the {kind}"
+        "/api/internal/materials",
+        payload,
+        op_id,
+        ctx,
+        failure=f"create the {kind}",
+        # Go stores each figure in the bucket before the note.
+        timeout=60 if images else 10,
     )
     if result.effects:
         ctx.ledger.complete(todo)
-    return result
+    return figures.noted(result)
+
+
+# ------------------------------------------------------------ note figures
+
+# A library figure placed in note markdown. The note stores the rendered
+# figure as its own image (Go agent_figures.go); the import keeps the
+# reference until then (src/features/notes/markdownConvert.ts).
+FIGURE_IMAGE = re.compile(
+    r"!\[((?:[^\]\\]|\\.)*)\]\(\s*<?figure:([\w-]+)>?(?:\s+\"[^\"]*\")?\s*\)"
+)
+# Any other image, which the import turns into a link to its URL.
+OTHER_IMAGE = re.compile(r"!\[(?:[^\]\\]|\\.)*\]\(\s*<?(?!figure:)[^)\s]")
+
+
+@dataclass
+class NoteFigures:
+    """The library figures one note write places, as ``![caption](figure:<id>)``.
+
+    ``markdown`` is the write's markdown with each figure's caption carrying
+    its printed credit, ``excerpt_ids`` an excerpt this turn read that lists
+    each figure, credited like the write's own excerpt_ids, and ``links`` the
+    images with other URLs, which the import turns into links.
+    """
+
+    markdown: list[str]
+    figures: dict[str, library.Figure] = field(default_factory=dict)
+    excerpt_ids: list[str] = field(default_factory=list)
+    links: int = 0
+
+    def credited(self, args: dict[str, Any]) -> dict[str, Any]:
+        """The write's arguments with the figures' excerpts among its sources."""
+        if not self.excerpt_ids:
+            return args
+        named = [str(e) for e in (args.get("excerpt_ids") or [])]
+        return {**args, "excerpt_ids": list(dict.fromkeys([*named, *self.excerpt_ids]))}
+
+    async def render(self) -> dict[str, bytes] | ToolResult:
+        """Each figure's box on its page as a JPEG, as capture_knowledge_page
+        renders it: deterministic, so a retried write sends the same bytes."""
+        images: dict[str, bytes] = {}
+        for figure in self.figures.values():
+            try:
+                images[figure.id], _, _ = await capture.render_knowledge(
+                    figure.object_key,
+                    figure.bytes,
+                    figure.page,
+                    figure.bbox,
+                    cfg.capture_max_edge,
+                )
+            except capture.CaptureUnavailable as exc:
+                return _refused(f"figure {figure.id}: {exc}", code=exc.code)
+            except ValueError as exc:
+                return _refused(f"figure {figure.id}: {exc}")
+        return images
+
+    def noted(self, result: ToolResult) -> ToolResult:
+        if self.links and result.effects:
+            result.text_parts.append(
+                f"{self.links} image(s) with a web URL became links: a note shows "
+                "only library figures, as ![caption](figure:<figure id>)."
+            )
+        return result
+
+
+def _figure_caption(alt: str, figure: library.Figure) -> str:
+    """The caption the note shows: the model's text, else the printed label,
+    then the printed credit, escaped for the image's alt text."""
+    text = " ".join(re.sub(r"\\(.)", r"\1", alt).split()) or " ".join(
+        figure.label.split()
+    )
+    credit = " ".join(figure.credit.split())
+    if credit and credit not in text:
+        text = f"{text} ({credit})" if text else credit
+    return re.sub(r"([\\\[\]])", r"\\\1", text)
+
+
+async def note_figures(
+    ctx: ToolContext, markdown: list[str]
+) -> NoteFigures | ToolResult:
+    """Check the library figures a note write places and credit them, or refuse.
+
+    A figure must be one the library shows (not decorative, excluded or on a
+    withheld page) and listed by an excerpt this turn read, the rule
+    excerpt_ids follow. Shared with the playground's local writes.
+    """
+    links = sum(len(OTHER_IMAGE.findall(text)) for text in markdown)
+    refs = list(
+        dict.fromkeys(
+            m.group(2) for text in markdown for m in FIGURE_IMAGE.finditer(text)
+        )
+    )
+    if not refs:
+        return NoteFigures(markdown=markdown, links=links)
+    if not ctx.library:
+        return _refused(
+            f"figure:{refs[0]} names a library figure, and the library is not a "
+            "source this turn."
+        )
+    found = await library.figures(refs)
+    read = ctx.ledger.read_ids()
+    problems, excerpts = [], []
+    for ref in refs:
+        figure = found.get(ref)
+        if figure is None:
+            problems.append(f"{ref} is not a library figure")
+        elif figure.decorative or figure.excluded:
+            problems.append(f"{ref} is not shown by the library")
+        elif figure.withheld:
+            problems.append(f"{ref} is on a page the library withholds")
+        elif not figure.excerpt_ids:
+            problems.append(f"{ref} is listed by no excerpt")
+        elif not (used := [e for e in figure.excerpt_ids if e in read]):
+            problems.append(
+                f"{ref} is listed by excerpt {', '.join(figure.excerpt_ids)}, which "
+                "this turn has not read: read_knowledge it first"
+            )
+        else:
+            excerpts.append(used[0])
+    if problems:
+        return _refused("Not applied: figure " + "; ".join(problems) + ".")
+
+    def caption(match: re.Match[str]) -> str:
+        figure = found[match.group(2)]
+        return f"![{_figure_caption(match.group(1), figure)}](figure:{figure.id})"
+
+    return NoteFigures(
+        markdown=[FIGURE_IMAGE.sub(caption, text) for text in markdown],
+        figures={ref: found[ref] for ref in refs},
+        excerpt_ids=list(dict.fromkeys(excerpts)),
+        links=links,
+    )
+
+
+def _figure_images(images: dict[str, bytes]) -> list[dict[str, str]]:
+    return [
+        {"id": ref, "image": base64.b64encode(image).decode()}
+        for ref, image in images.items()
+    ]
 
 
 # ------------------------------------------------------------ material writes
@@ -2091,12 +2245,29 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
+    commands = list(args.get("commands") or [])
+    # Note markdown may place library figures; a source file takes none.
+    placing = [
+        i
+        for i, c in enumerate(commands)
+        if kind == "material" and c.get("type") in ("insert_markdown", "replace_block")
+    ]
+    figures = await note_figures(
+        ctx, [str(commands[i].get("markdown") or "") for i in placing]
+    )
+    if isinstance(figures, ToolResult):
+        return figures
     prepared = await ledger_write(
-        ctx, "edit_document", args, material=kind == "material"
+        ctx, "edit_document", figures.credited(args), material=kind == "material"
     )
     if isinstance(prepared, ToolResult):
         return prepared
     books, todo = prepared
+    images = await figures.render()
+    if isinstance(images, ToolResult):
+        return images
+    for i, markdown in zip(placing, figures.markdown, strict=True):
+        commands[i] = {**commands[i], "markdown": markdown}
     if kind == "source_file":
         refused = await _refuse_note_as_file(ctx, rid)
         if refused is not None:
@@ -2106,7 +2277,6 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             return resolved
         # Detect unrelated publications first; the acknowledged edit re-baselines after.
         await ctx.pending_sources.validate()
-    commands = list(args.get("commands") or [])
     payload = {
         **_chat_context(ctx, call_id),
         "target": {"kind": kind, "id": rid},
@@ -2115,12 +2285,15 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if books:
         # Go merges these books into the target's existing provenance by id.
         payload["provenance"] = {"books": books}
+    if images:
+        payload["figures"] = _figure_images(images)
     result = await _post_operation(
         "/api/internal/documents/edit",
         payload,
         operation_id(ctx.assistant_message_id, call_id),
         ctx,
         failure="edit the document",
+        timeout=60 if images else 10,
         explain=lambda details: _missed_target(details, ctx.seen_blocks.get(rid, {})),
     )
     if result.effects:
@@ -2132,7 +2305,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         else:
             ctx.ledger.complete(todo)
             _saw_edit(ctx.seen_blocks.get(rid, {}), commands)
-    return result
+    return figures.noted(result)
 
 
 async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
