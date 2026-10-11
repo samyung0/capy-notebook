@@ -437,6 +437,15 @@ The prod file runs `/migrate` once per deploy, starts the API with
    docker exec $(docker ps -qf name=collaboration) sh -c 'grep "open files" /proc/1/limits'
    ```
 
+   Each WebSocket has an 8 KiB read buffer (`READ_BUFFER` in `http.rs`;
+   tungstenite's default is 128 KiB). An idle connection costs about 30 KiB
+   in all, measured on a local stack with 2,000 idle connections; Node used
+   27 KB per connection in the production run. A connection also keeps a
+   write buffer as large as the largest message it was sent, so a viewer of a
+   2 MB note holds about 2 MB until it disconnects. When peers leave, the
+   process keeps the small allocations they freed and reuses them for later
+   joins, so RSS stays near its peak instead of falling back.
+
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
    WASM toolchain and `uv sync` come from the layer cache until their lockfile
