@@ -5,6 +5,7 @@ import { WarningBanner } from '@/components/banners/WarningBanner';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { CloneWorkspaceDialog } from '@/features/workspace/CloneWorkspaceDialog';
+import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { type CloneKind, cloneLabel, parseCloneTarget } from '@/lib/cloneLink';
 import { errorCopy } from '@/lib/errors';
@@ -20,6 +21,9 @@ export function CloneLinkDialog() {
   // The dialog closes itself when the path changes; opening the copy must not
   // send the user back to the dashboard.
   const leaving = useRef(false);
+  // A frozen account copies nothing; its canClone reads false everywhere, so
+  // say why before the item-specific checks blame the workspace.
+  const frozen = useAccountFrozen();
   if (!target) return null;
 
   const close = () => {
@@ -27,6 +31,13 @@ export function CloneLinkDialog() {
     void navigate({ replace: true, search: {}, to: '/' });
   };
 
+  if (frozen) {
+    return (
+      <SimpleDialog onClose={close} open title={cloneLabel(target.kind)}>
+        <WarningBanner message={m.account_banner_frozen_body()} />
+      </SimpleDialog>
+    );
+  }
   if (target.kind === 'workspace') {
     return (
       <WorkspaceCloneLink id={target.id} leaving={leaving} onClose={close} />

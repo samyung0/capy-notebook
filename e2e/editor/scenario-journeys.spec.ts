@@ -23,6 +23,17 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test("a public page's Clone link tells a non-member why they cannot copy", async ({
+  page,
+}) => {
+  await page.goto('/?clone=workspace:pub_ws_2');
+  await expect(
+    page
+      .getByRole('dialog', { name: m.action_clone_workspace() })
+      .getByText(m.clone_workspace_not_allowed())
+  ).toBeVisible({ timeout: 30_000 });
+});
+
 test('one click fails a real source save and retry preserves the mounted editor', async ({
   page,
 }) => {
@@ -577,6 +588,14 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
     await expect(
       page.getByRole('dialog', { name: m.account_banner_frozen_title() })
     ).toBeVisible();
+
+    // A public page's Clone link names the frozen account, not the workspace.
+    await page.goto('/?clone=workspace:ws_bio');
+    await expect(
+      page
+        .getByRole('dialog', { name: m.action_clone_workspace() })
+        .getByText(m.account_banner_frozen_body())
+    ).toBeVisible({ timeout: 30_000 });
 
     // The invitation page speaks about the recipient's own frozen account.
     await launch(page, 'invite-frozen');

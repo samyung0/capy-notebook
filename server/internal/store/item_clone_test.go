@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -465,21 +466,45 @@ func TestFileClonePinMismatchQueuesIngest(t *testing.T) {
 func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	owner := newBlobTestUser(t, s, "u_clone_cap")
-	source, file := sourceTestFile(t, s, owner, "big.pdf", "pdf")
 	limit := mustPlanLimits(t, s, PlanFree).SourceFileBytes
-	if _, err := s.pool.Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, limit+1); err != nil {
+	bigFile := func(owner string) (Workspace, File) {
+		t.Helper()
+		source, file := sourceTestFile(t, s, owner, "big.pdf", "pdf")
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET size_bytes=$2 WHERE id=$1`, file.ID, limit+1); err != nil {
+			t.Fatal(err)
+		}
+		return source, file
+	}
+
+	// A Pro editor copies into a Free owner's workspace: the owner pays, so
+	// the Free cap applies although the cloner's plan would take the file.
+	cloner := newBlobTestUser(t, s, "u_clone_cap_pro")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, cloner); err != nil {
 		t.Fatal(err)
 	}
-	target, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Target"})
+	_, file := bigFile(cloner)
+	freeOwner := newBlobTestUser(t, s, "u_clone_cap_free")
+	freeSpace, err := s.CreateWorkspace(ctx, freeOwner, WorkspaceCreate{Name: "Free target"})
 	if err != nil {
 		t.Fatal(err)
 	}
+	itemCloneMember(t, s, freeSpace.ID, cloner, "editor")
 	var tooLarge *FileTooLargeError
-	if _, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "big.pdf"}); !errors.As(err, &tooLarge) || tooLarge.LimitBytes != limit {
-		t.Fatalf("file clone = %v, want FileTooLargeError at %d", err, limit)
+	if _, _, err := s.CloneFile(ctx, cloner, file.ID, CloneTarget{WorkspaceID: freeSpace.ID, Name: "big.pdf"}); !errors.As(err, &tooLarge) || tooLarge.LimitBytes != limit {
+		t.Fatalf("clone into a Free owner's workspace = %v, want FileTooLargeError at %d", err, limit)
 	}
-	if _, err := s.CloneWorkspace(ctx, owner, source.ID, WorkspaceCreate{Name: "Copy"}); !errors.As(err, &tooLarge) {
+	proSpace, err := s.CreateWorkspace(ctx, cloner, WorkspaceCreate{Name: "Pro target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CloneFile(ctx, cloner, file.ID, CloneTarget{WorkspaceID: proSpace.ID, Name: "big.pdf"}); err != nil {
+		t.Fatalf("clone into the Pro cloner's own workspace: %v", err)
+	}
+
+	// A workspace clone is the cloner's to pay, and is refused as a whole.
+	freeCloner := newBlobTestUser(t, s, "u_clone_cap")
+	source, _ := bigFile(freeCloner)
+	if _, err := s.CloneWorkspace(ctx, freeCloner, source.ID, WorkspaceCreate{Name: "Copy"}); !errors.As(err, &tooLarge) {
 		t.Fatalf("workspace clone = %v, want FileTooLargeError", err)
 	}
 }
@@ -533,4 +558,57 @@ func TestConcurrentFileClonesKeepTheCapAndOneChapter(t *testing.T) {
 	if chapters != 1 {
 		t.Fatalf("chapters named Race = %d, want 1", chapters)
 	}
+}
+
+// Explore offers Clone by the clone rule: in a public workspace only its
+// members and effective editors; a standalone public item to every reader.
+func TestExploreCanCloneFollowsTheCloneRule(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_explore_clone_owner")
+	member := newBlobTestUser(t, s, "u_explore_clone_member")
+	stranger := newBlobTestUser(t, s, "u_explore_clone_stranger")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Public"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='public', share_role='viewer' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	itemCloneMember(t, s, ws.ID, member, "viewer")
+	inWorkspace, err := s.CreateQuiz(ctx, Quiz{UserID: owner, Name: "In workspace", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Questions: json.RawMessage(`[]`), Privacy: PrivacyPrivate})
+	if err != nil {
+		t.Fatal(err)
+	}
+	standalone, err := s.CreateQuiz(ctx, Quiz{UserID: owner, Name: "Standalone", Questions: json.RawMessage(`[]`), Privacy: PrivacyPublic})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canClone := func(userID string) map[string]bool {
+		t.Helper()
+		quizzes, err := s.ListPublicQuizzes(ctx, userID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]bool{}
+		for _, q := range quizzes {
+			out[q.ID] = q.CanClone
+		}
+		return out
+	}
+	check := func(label, userID string, wantInWorkspace bool) {
+		t.Helper()
+		got := canClone(userID)
+		if got[inWorkspace.ID] != wantInWorkspace || !got[standalone.ID] {
+			t.Fatalf("%s: in workspace %v (want %v), standalone %v (want true)",
+				label, got[inWorkspace.ID], wantInWorkspace, got[standalone.ID])
+		}
+	}
+	check("member", member, true)
+	check("public viewer", stranger, false)
+	// A public editor share role carries content authority, so Clone shows.
+	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET share_role='editor' WHERE id=$1`, ws.ID); err != nil {
+		t.Fatal(err)
+	}
+	check("public editor", stranger, true)
 }
