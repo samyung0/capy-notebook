@@ -965,6 +965,70 @@ test.describe('DOCX on a phone', () => {
     expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
   });
 
+  // The page at the top of Edit's pane, while the caret stays on page 1.
+  for (const level of ['fitted', '100%'] as const) {
+    test(`Edit keeps the page at the top across a rotation, ${level}, leaving the caret`, async ({
+      page,
+    }) => {
+      test.setTimeout(300_000);
+      await resize(page, 390);
+      const frame = await open(page);
+      await editMode(page);
+      if (level === '100%') {
+        await officeMenu(page, 'docx', 'View').click();
+        await page.getByRole('menuitem', { name: 'Zoom' }).click();
+        await page
+          .getByRole('menuitemcheckbox', { exact: true, name: '100%' })
+          .dispatchEvent('click');
+        await expect.poll(() => pageWidth(frame)).toBe(816);
+      } else await fitted(frame);
+      const pane = frame.locator('.docx-editor__scroll-container');
+      const topPage = () =>
+        pane.evaluate((node) => {
+          const box = node.getBoundingClientRect();
+          return [
+            ...node.querySelectorAll<HTMLElement>('canvas[data-page-index]'),
+          ].find(
+            (canvas) => canvas.getBoundingClientRect().bottom > box.top + 1
+          )?.dataset.pageIndex;
+        });
+      // The caret on page 1, then the reader scrolls to page 6.
+      const first = await frame
+        .locator('canvas[data-page-index="0"]')
+        .boundingBox();
+      if (!first) throw new Error('Missing page 1');
+      await page.mouse.click(first.x + 40, first.y + 40);
+      await pane.evaluate((node) => {
+        const sixth = node.querySelector<HTMLElement>(
+          'canvas[data-page-index="5"]'
+        );
+        if (!sixth) throw new Error('Missing page 6');
+        node.scrollTop +=
+          sixth.getBoundingClientRect().top -
+          node.getBoundingClientRect().top +
+          40;
+      });
+      await page.waitForTimeout(500);
+      expect(await topPage()).toBe('5');
+      await resize(page, 844, 390);
+      if (level === 'fitted') await fitted(frame);
+      await page.waitForTimeout(2000);
+      expect(await topPage()).toBe('5');
+      await resize(page, 390);
+      if (level === 'fitted') await fitted(frame);
+      await page.waitForTimeout(2000);
+      expect(await topPage()).toBe('5');
+      // A re-fit alone, with no faces left to load: the zoom change itself.
+      await resize(page, 430);
+      if (level === 'fitted') await fitted(frame);
+      await page.waitForTimeout(2000);
+      expect(await topPage()).toBe('5');
+      // The caret stayed on page 1: typing lands there and scrolls to it.
+      await page.keyboard.type('Q');
+      await expect.poll(topPage).toBe('0');
+    });
+  }
+
   test('md and up opens a DOCX at 100% in View and Edit', async ({ page }) => {
     test.setTimeout(300_000);
     await resize(page, 768, 1024);

@@ -918,6 +918,14 @@ pinch (Ctrl+wheel) still zooms the browser page. The editor's minimum layout
 width scales with the zoom, so a fitted page leaves no sideways scroll and a
 page zoomed past the pane scrolls from its left edge in Edit as in View.
 
+Edit keeps the line at the pane's top across a zoom change (a re-fit, View ›
+Zoom; a pinch then keeps the point between the fingers instead), restoring the
+editor's viewport anchor as View's browser scroll anchoring does. A web-font
+load lays out again as a peer's update does: the viewport stays and the caret
+is not scrolled to. A rotation loads faces for the wider toolbar, and before
+this that relayout counted as a local edit, so Edit jumped back to the caret's
+page on every resize at any zoom.
+
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
 `onMenus`): undo/redo, zoom, style, font, size box (no −/+ steps), bold,
