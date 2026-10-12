@@ -83,6 +83,9 @@ test('a note edited offline in a closed tab reaches a co-editor from another pag
   const other = await ownerPage.context().newPage();
   await other.goto('/');
   await expect(other.locator('main')).toBeVisible();
+  // Its drafts worker starts on first use: here, while online (one that
+  // cannot load fails every request for the page load).
+  await storedRows(other, material.id);
 
   await link.down(ownerPage);
   await expect(
