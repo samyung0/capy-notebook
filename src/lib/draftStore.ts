@@ -22,8 +22,11 @@ export type DraftRequest =
   | { op: 'delete'; rows: DraftRef[] }
   /** Every row of a document; answers what was deleted, without the data. */
   | { op: 'deleteDocument'; key: string }
-  | { op: 'mark'; key: string; ids: string[] }
-  | { op: 'keys'; prefix: string }
+  /** Sets `flag` on these rows of a document. */
+  | { op: 'mark'; key: string; ids: string[]; flag: 'refused' | 'reported' }
+  /** Every document of an account with its row ids, read from the index
+   * alone (no row is loaded). */
+  | { op: 'documents'; prefix: string }
   /** A run of one session's update rows, merged into its last row (same id
    * and `seq`), so a long session reads back as a row per run. */
   | { op: 'merge'; rows: DraftRef[] };
@@ -300,30 +303,33 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
       }).then(() => deleted);
     }
     case 'mark': {
+      const { flag } = message;
       const ids = new Set(message.ids);
       return transact(name, 'readwrite', (stores) => {
         eachRow(stores, message.key, (rows) => {
           for (const row of rows)
-            if (ids.has(row.id) && !row.reported)
-              stores.drafts.put({ ...row, reported: true });
+            if (ids.has(row.id) && !row[flag])
+              stores.drafts.put({ ...row, [flag]: true });
         });
       });
     }
-    case 'keys': {
-      const found = new Set<string>();
+    case 'documents': {
+      const found: Record<string, string[]> = {};
       return transact(name, 'readonly', ({ drafts }) => {
         const cursor = drafts
           .index('key')
           .openKeyCursor(
-            IDBKeyRange.bound(message.prefix, `${message.prefix}￿`),
-            'nextunique'
+            IDBKeyRange.bound(message.prefix, `${message.prefix}￿`)
           );
         cursor.onsuccess = () => {
           if (!cursor.result) return;
-          found.add(String(cursor.result.key));
+          const key = String(cursor.result.key);
+          const ids = found[key] ?? [];
+          ids.push(String(cursor.result.primaryKey));
+          found[key] = ids;
           cursor.result.continue();
         };
-      }).then(() => [...found]);
+      }).then(() => found);
     }
     case 'merge':
       return transact(name, 'readwrite', (stores) => {

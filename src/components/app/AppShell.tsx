@@ -5,7 +5,7 @@ import { useEventStream, useMe } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { useFinishToasts } from '@/features/study/finishToasts';
 import { cn } from '@/lib/cn';
-import { sweepDraftsOnce } from '@/lib/editDrafts';
+import { startDraftSweeps } from '@/lib/editDrafts';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { Sidebar } from './Sidebar';
 
@@ -26,11 +26,12 @@ export function AppShell() {
     if (pathname !== '/schedule') scheduleAutoScroll.reset();
   }, [pathname]);
 
-  // Stored edits of documents this account no longer has go, once per load.
+  // Stored edits go to their rooms from any page; those of documents this
+  // account no longer has are deleted.
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
   useEffect(() => {
-    if (actorId) sweepDraftsOnce(actorId, api);
+    if (actorId) startDraftSweeps(actorId, api);
   }, [actorId]);
   useFinishToasts();
 

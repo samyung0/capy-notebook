@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
-import { describe, expect, it, vi } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
+import { ApiError } from '@/api/client';
 import type { DraftMessage, DraftReply } from './draftStore';
 
 // The drafts worker, run in this process: messages are copied as
@@ -122,11 +123,18 @@ describe('the draft store', () => {
     ]);
     const checked: string[] = [];
     post.mockClear();
-    await sweepDrafts('u_sweep', async (kind, id) => {
-      checked.push(`${kind}:${id}`);
-      return id === 'gone' ? 'not_found' : null;
+    // Each document's token, as its editor asks for it; a viewer's is read.
+    await sweepDrafts('u_sweep', {
+      post: async (path) => {
+        checked.push(path);
+        if (path.includes('gone')) throw new ApiError(404, 'Not Found');
+        return { access: 'read', room: ROOM, token: 't', url: 'ws://c' };
+      },
     });
-    expect(checked.sort()).toEqual(['file:gone', 'material:kept']);
+    expect(checked.sort()).toEqual([
+      '/files/gone/collaboration-token',
+      '/materials/kept/collaboration-token',
+    ]);
     expect(await readDrafts('u_sweep:file:gone')).toEqual([]);
     // Rows deleted after a 404 are a discard the browser alone sees.
     expect(post).toHaveBeenCalledExactlyOnceWith('/edit-incidents', {
@@ -1102,5 +1110,267 @@ describe('recording a source session', () => {
       'reopen',
       draftBytes(group)
     );
+  });
+});
+
+/** Web Locks in this process: shared and exclusive modes, `ifAvailable`, and
+ * requests that wait until the lock frees. */
+class Locks {
+  private readonly held = new Map<
+    string,
+    { count: number; exclusive: boolean }
+  >();
+  private readonly waiting: (() => void)[] = [];
+  async request<T>(
+    name: string,
+    { ifAvailable = false, mode = 'exclusive' }: LockOptions,
+    granted: (lock: Lock | null) => T
+  ): Promise<Awaited<T>> {
+    const free = () => {
+      const lock = this.held.get(name);
+      return !lock || (mode === 'shared' && !lock.exclusive);
+    };
+    if (!free()) {
+      if (ifAvailable) return await granted(null);
+      while (!free())
+        await new Promise<void>((resolve) => this.waiting.push(resolve));
+    }
+    const lock = this.held.get(name) ?? {
+      count: 0,
+      exclusive: mode === 'exclusive',
+    };
+    lock.count++;
+    this.held.set(name, lock);
+    try {
+      return await granted({ mode, name });
+    } finally {
+      if (--lock.count === 0) this.held.delete(name);
+      for (const wake of this.waiting.splice(0)) wake();
+    }
+  }
+}
+
+/** The collaboration service's `/drafts`: each request waits for `answer`. */
+const requests: { body: Uint8Array; headers: Headers; url: URL }[] = [];
+const fetchDrafts = vi.fn(
+  async (input: URL | RequestInfo, init?: RequestInit): Promise<Response> => {
+    requests.push({
+      body: new Uint8Array(init?.body as ArrayBuffer),
+      headers: new Headers(init?.headers),
+      url: new URL(String(input)),
+    });
+    return Response.json({ type: 'checkpoint-persisted' });
+  }
+);
+vi.stubGlobal('fetch', fetchDrafts);
+
+function answer(status: number, refusal?: string) {
+  fetchDrafts.mockImplementationOnce(async (input, init) => {
+    requests.push({
+      body: new Uint8Array(init?.body as ArrayBuffer),
+      headers: new Headers(init?.headers),
+      url: new URL(String(input)),
+    });
+    return Response.json({ class: refusal }, { status });
+  });
+}
+
+/** A document's token endpoint, write access in `room`. */
+function tokens(room: string) {
+  return {
+    post: vi.fn(async (_path: string) => ({
+      access: 'write',
+      room,
+      token: 'room-token',
+      url: 'wss://collab.test',
+    })),
+  };
+}
+
+/** Rows a closed tab left: its whole note and one update typed after it. */
+async function leftRows(key: string, lineage = ROOM, base?: string) {
+  const { client } = syncedClient('base');
+  const state = Y.encodeStateAsUpdate(client);
+  let typed: Uint8Array = new Uint8Array();
+  client.once('update', (update: Uint8Array) => {
+    typed = update;
+  });
+  client.getText('content').insert(4, ' typed');
+  const session = crypto.randomUUID();
+  const rows = [
+    draft(`${session}:state`, {
+      base,
+      data: state,
+      key,
+      kind: 'state',
+      lineage,
+      session,
+    }),
+    draft(`${session}:2`, { base, data: typed, key, lineage, seq: 2, session }),
+  ];
+  await putDrafts(rows, base ? new Uint8Array([1]) : undefined);
+  return rows;
+}
+
+describe('the draft sweep sending', () => {
+  const locks = new Locks();
+  beforeAll(() => {
+    Object.defineProperty(navigator, 'locks', {
+      configurable: true,
+      value: locks,
+    });
+  });
+  afterAll(() => {
+    Reflect.deleteProperty(navigator, 'locks');
+  });
+
+  it('sends the current rows with the token and deletes them after the receipt', async () => {
+    const key = 'u_send:material:mat_1';
+    await leftRows(key);
+    const moved = draft('send-old', {
+      key,
+      lineage: 'material:mat_1:schema:0',
+    });
+    const refused = draft('send-no', { key, refused: true });
+    await putDrafts([moved, refused]);
+    requests.length = 0;
+    let release!: () => void;
+    fetchDrafts.mockImplementationOnce(async (input, init) => {
+      requests.push({
+        body: new Uint8Array(init?.body as ArrayBuffer),
+        headers: new Headers(init?.headers),
+        url: new URL(String(input)),
+      });
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return new Response('{}');
+    });
+    const sweep = sweepDrafts('u_send', tokens(ROOM));
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    const [sent] = requests;
+    expect(`${sent.url.origin}${sent.url.pathname}`).toBe(
+      'https://collab.test/drafts'
+    );
+    expect(sent.url.searchParams.get('room')).toBe(ROOM);
+    expect(sent.headers.get('authorization')).toBe('Bearer room-token');
+    // One update holding the closed tab's note and its typing.
+    const doc = new Y.Doc();
+    Y.applyUpdate(doc, sent.body);
+    expect(doc.getText('content').toString()).toBe('base typed');
+    // Nothing goes before the receipt.
+    expect(await readDrafts(key)).toHaveLength(4);
+    release();
+    await sweep;
+    // Another lineage and the refused row wait for the next open.
+    expect((await readDrafts(key)).map((row) => row.id).sort()).toEqual([
+      'send-no',
+      'send-old',
+    ]);
+  });
+
+  it('skips a document an editor has open, and sends it once the editor closed', async () => {
+    const key = 'u_open:material:mat_1';
+    await leftRows(key);
+    const recorder = recordDrafts({
+      doc: new Y.Doc(),
+      ignore: () => false,
+      key,
+      limitBytes: 1024 * 1024,
+      lineage: ROOM,
+    });
+    const api = tokens(ROOM);
+    requests.length = 0;
+    await sweepDrafts('u_open', api);
+    expect(api.post).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(0);
+    await recorder.dispose();
+    await sweepDrafts('u_open', api);
+    expect(requests).toHaveLength(1);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it('keeps the rows when the request fails and sends them at the next trigger', async () => {
+    const key = 'u_offline:material:mat_1';
+    await leftRows(key);
+    requests.length = 0;
+    fetchDrafts.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+    await sweepDrafts('u_offline', tokens(ROOM));
+    expect(await readDrafts(key)).toHaveLength(2);
+    // A server that is busy or failing keeps them too.
+    answer(503, 'unavailable');
+    await sweepDrafts('u_offline', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    expect(await readDrafts(key)).toHaveLength(2);
+    await sweepDrafts('u_offline', tokens(ROOM));
+    expect(requests).toHaveLength(2);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it('marks a refused group refused when it draws on its own and sends it no more', async () => {
+    const key = 'u_refused:material:mat_1';
+    await leftRows(key);
+    // Update rows alone need the room's note: they stay for the editor.
+    const bare = 'u_refused:material:mat_2';
+    const [state, typed] = await leftRows(bare);
+    await deleteDrafts([state]);
+    requests.length = 0;
+    answer(422, 'limit');
+    answer(400, 'malformed');
+    const api = tokens(ROOM);
+    await sweepDrafts('u_refused', api);
+    expect(requests).toHaveLength(2);
+    expect((await readDrafts(key)).every((row) => row.refused)).toBe(true);
+    expect(await readDrafts(bare)).toEqual([typed]);
+    // Settled for this page load: no token, no request.
+    api.post.mockClear();
+    await sweepDrafts('u_refused', api);
+    expect(api.post).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(2);
+  });
+
+  it('sends a file with its base, one request per base', async () => {
+    const key = 'u_file:file:f_1';
+    const room = 'source:f_1:epoch:2';
+    await leftRows(key, `${room}@sha_a`, 'sha_a');
+    await leftRows(key, `${room}@sha_b`, 'sha_b');
+    requests.length = 0;
+    await sweepDrafts('u_file', tokens(room));
+    expect(
+      requests.map((sent) => sent.url.searchParams.get('base')).sort()
+    ).toEqual(['sha_a', 'sha_b']);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it('runs one sweep at a time, whichever trigger starts it', async () => {
+    const first = 'u_once:material:mat_1';
+    const second = 'u_once:material:mat_2';
+    await leftRows(first);
+    await leftRows(second);
+    requests.length = 0;
+    let release!: () => void;
+    fetchDrafts.mockImplementationOnce(async (input, init) => {
+      requests.push({
+        body: new Uint8Array(init?.body as ArrayBuffer),
+        headers: new Headers(init?.headers),
+        url: new URL(String(input)),
+      });
+      await new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      return new Response('{}');
+    });
+    const api = tokens(ROOM);
+    const sweep = sweepDrafts('u_once', api);
+    await vi.waitFor(() => expect(requests).toHaveLength(1));
+    // Coming back online while the first sweep sends its first document:
+    // nothing runs, not even for the document it has not reached.
+    await sweepDrafts('u_once', api);
+    expect(api.post).toHaveBeenCalledTimes(1);
+    release();
+    await sweep;
+    expect(requests).toHaveLength(2);
+    expect(await readDrafts(first)).toEqual([]);
+    expect(await readDrafts(second)).toEqual([]);
   });
 });

@@ -1,6 +1,7 @@
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { isAccountForbiddenError, isApiError } from '@/api/client';
+import type { MaterialCollaborationToken } from '@/api/types';
 import {
   type EditIncidentReporter,
   editIncidentReporter,
@@ -22,8 +23,10 @@ import {
  * Unsaved collaborative edits kept on this device (notes, Office and text
  * sources), so they outlive a lost connection, a reload or a closed tab. A row
  * is one session's (one editor mount's) full Yjs state, one of its local
- * updates, or a merged run of them. Rows are deleted only once a checkpoint
- * receipt covers them: the room's sync alone is not durable.
+ * updates, or a merged run of them. Rows are deleted only once a receipt
+ * covers them (an editor's checkpoint receipt, or the answer to a sweep's
+ * send from a page with no editor open on the document): the room's sync
+ * alone is not durable.
  *
  * `lineage` names the room state the edits grew from: the room name (a note's
  * `material:<id>:schema:<n>`, a source's `source:<id>:epoch:<n>@<baseSHA>`).
@@ -270,40 +273,18 @@ export async function dropLostDrafts(
   if (bytes) report('discard_unsaved', reason, bytes);
 }
 
-/** Marks these rows of a document reported (edit_incidents). */
-export function markDraftsReported(key: string, ids: string[]): Promise<void> {
+function markDrafts(
+  key: string,
+  ids: string[],
+  flag: 'refused' | 'reported'
+): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
-  return call({ ids, key, op: 'mark' });
+  return call({ flag, ids, key, op: 'mark' });
 }
 
-/**
- * Once per app start: delete the stored edits of every document of this
- * account that `gone` says it no longer has (403 `forbidden`, 404
- * `not_found`), and report them. A failed check keeps them.
- */
-export async function sweepDrafts(
-  actorId: string,
-  gone: (
-    kind: 'material' | 'file',
-    id: string
-  ) => Promise<'forbidden' | 'not_found' | null>
-) {
-  const keys = await call<string[]>({ op: 'keys', prefix: `${actorId}:` });
-  for (const key of keys) {
-    const [, kind, id] = key.split(':');
-    if ((kind === 'material' || kind === 'file') && id) {
-      const missing = await gone(kind, id).catch(() => null);
-      if (missing)
-        await dropLostDrafts(
-          key,
-          missing,
-          editIncidentReporter(
-            kind === 'material' ? 'material' : 'source_file',
-            id
-          )
-        );
-    }
-  }
+/** Marks these rows of a document reported (edit_incidents). */
+export function markDraftsReported(key: string, ids: string[]): Promise<void> {
+  return markDrafts(key, ids, 'reported');
 }
 
 /**
@@ -359,15 +340,20 @@ export function reportRecoveryGroup(
   });
 }
 
-/** Apply rows into a document as one update (states first). Updates whose
- * base the document lacks stay pending until the room's sync brings it. */
-export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
-  if (!rows.length) return;
+/** Rows as one update, states first. */
+function mergedDrafts(rows: EditDraft[]) {
   const ordered = [...rows].sort(
     (a, b) =>
       Number(a.kind === 'update') - Number(b.kind === 'update') || a.seq - b.seq
   );
-  Y.applyUpdate(doc, mergeInRuns(ordered.map((row) => row.data)), origin);
+  return mergeInRuns(ordered.map((row) => row.data));
+}
+
+/** Apply rows into a document as one update (states first). Updates whose
+ * base the document lacks stay pending until the room's sync brings it. */
+export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
+  if (!rows.length) return;
+  Y.applyUpdate(doc, mergedDrafts(rows), origin);
 }
 
 /** A recovery group as one document, or null when it cannot be drawn: update
@@ -387,6 +373,30 @@ export function recoveryDocument(
 
 // The whole-state retry's floor while storage keeps failing (2026-10-07).
 const RETRY_MS = 5000;
+
+// Web Locks: a document an editor records (shared: several tabs may edit it),
+// and the one sweep that runs at a time in this browser.
+const documentLock = (key: string) => `capy-drafts:${key}`;
+const SWEEP_LOCK = 'capy-drafts-sweep';
+
+function webLocks(): LockManager | undefined {
+  return typeof navigator === 'undefined' ? undefined : navigator.locks;
+}
+
+/** Holds a document's lock until the returned release (an editor's
+ * session): a sweep skips the documents an editor holds. */
+function holdDocument(key: string): () => void {
+  const locks = webLocks();
+  if (!locks) return () => undefined;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  void locks
+    .request(documentLock(key), { mode: 'shared' }, () => held)
+    .catch(() => undefined);
+  return release;
+}
 
 let persistenceRequested = false;
 /** Ask once per page load for storage the browser will not evict under
@@ -479,6 +489,8 @@ export function recordDrafts({
   let over = false;
   let stopped = false;
   let storageOk = true;
+  // While this session records, a sweep leaves the document alone.
+  const release = keep ? holdDocument(key) : () => undefined;
 
   const row = (
     kind: EditDraft['kind'],
@@ -596,6 +608,7 @@ export function recordDrafts({
 
   const stop = () => {
     stopped = true;
+    release();
     clearTimeout(retry);
     appendFailures.delete(session);
     doc.off('update', onUpdate);
@@ -719,42 +732,209 @@ export type DraftRecorder = ReturnType<typeof recordDrafts>;
 /** Whether the server says this account no longer has the document: a 404,
  * or a 403 that is not about the account itself (suspended, deletion
  * pending), which keeps the drafts. */
-async function documentGone(probe: () => Promise<unknown>) {
+function goneReason(error: unknown) {
+  if (!isApiError(error)) return null;
+  if (error.status === 404) return 'not_found';
+  return error.status === 403 && !isAccountForbiddenError(error)
+    ? 'forbidden'
+    : null;
+}
+
+/** A document's room token, as its editor fetches it. */
+type RoomToken = Pick<
+  MaterialCollaborationToken,
+  'access' | 'room' | 'token' | 'url'
+>;
+
+export interface SweepApi {
+  post: (path: string, body: unknown) => Promise<unknown>;
+}
+
+/**
+ * What sending one group of rows came to:
+ * - `sent`: a store holds it (the answer is the receipt for every row sent);
+ * - `refused`: over a limit or not an update a writer may send;
+ * - `waits`: only the editor can send it (the room lacks its base, or it is
+ *   larger than a sync message), at the file's next open;
+ * - `retry`: the network, the room or the lineage may change by the next
+ *   trigger.
+ */
+type Sent = 'sent' | 'refused' | 'waits' | 'retry';
+
+/** A document's rows its room takes now: not refused, of the token's room,
+ * one group per lineage (an Office file's rows of another base go apart). */
+function sendableGroups(rows: EditDraft[], room: string) {
+  const groups = new Map<string, EditDraft[]>();
+  for (const row of rows) {
+    if (row.refused || row.lineage.split('@')[0] !== room) continue;
+    const group = groups.get(row.lineage) ?? [];
+    group.push(row);
+    groups.set(row.lineage, group);
+  }
+  return [...groups.values()];
+}
+
+// ws: and wss: become http: and https:.
+const WEBSOCKET_SCHEME = /^ws/;
+
+/** POST one group to the collaboration service's `/drafts` (its WebSocket
+ * URL's host), with the editor's token. */
+async function sendGroup(token: RoomToken, group: EditDraft[]): Promise<Sent> {
+  let body: Uint8Array<ArrayBuffer>;
   try {
-    await probe();
-    return null;
+    body = mergedDrafts(group) as Uint8Array<ArrayBuffer>;
   } catch (error) {
-    if (!isApiError(error)) return null;
-    if (error.status === 404) return 'not_found';
-    return error.status === 403 && !isAccountForbiddenError(error)
-      ? 'forbidden'
-      : null;
+    console.warn('Drafts cannot be merged:', error);
+    return 'waits';
+  }
+  const url = new URL('/drafts', token.url.replace(WEBSOCKET_SCHEME, 'http'));
+  url.searchParams.set('room', token.room);
+  const base = group[0]?.base;
+  if (base !== undefined) url.searchParams.set('base', base);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      body,
+      headers: {
+        authorization: `Bearer ${token.token}`,
+        'content-type': 'application/octet-stream',
+      },
+      method: 'POST',
+    });
+  } catch {
+    return 'retry';
+  }
+  if (response.ok) return 'sent';
+  const answer = (await response.json().catch(() => null)) as {
+    class?: string;
+  } | null;
+  switch (answer?.class) {
+    case 'limit':
+    case 'malformed':
+      return 'refused';
+    case 'too_large':
+    case 'unheld':
+      return 'waits';
+    default:
+      return 'retry';
   }
 }
 
-let swept = false;
 /**
- * Once per page load, when idle: delete stored edits of documents this
- * account no longer has. Notes ask for a collaboration token (as the editor
- * would), files for their detail.
+ * One document of a sweep: its drafts go when the account lost it (403, 404,
+ * reported as discarded), else, when `send`, each group of current rows goes
+ * to its room. Rows go only after their receipt. A refused group is marked
+ * refused, to open read-only as the editor's refusals do, when it draws on
+ * its own; one that needs the room's state stays for the next open, where
+ * the editor's own refusal keeps the whole document. Resolves whether the
+ * rows are settled for this page load (nothing left a later trigger could
+ * send).
  */
-export function sweepDraftsOnce(
-  actorId: string,
-  api: {
-    get: (path: string) => Promise<unknown>;
-    post: (path: string, body: unknown) => Promise<unknown>;
+async function sweepDocument(
+  key: string,
+  api: SweepApi,
+  send: boolean
+): Promise<boolean> {
+  const [, kind, id] = key.split(':');
+  if (!((kind === 'material' || kind === 'file') && id)) return true;
+  let token: RoomToken;
+  try {
+    token = (await api.post(
+      `/${kind === 'material' ? 'materials' : 'files'}/${id}/collaboration-token`,
+      {}
+    )) as RoomToken;
+  } catch (error) {
+    const missing = goneReason(error);
+    if (!missing) return false;
+    await dropLostDrafts(
+      key,
+      missing,
+      editIncidentReporter(kind === 'material' ? 'material' : 'source_file', id)
+    );
+    return true;
   }
-) {
-  if (swept) return;
-  swept = true;
-  const run = () =>
-    void sweepDrafts(actorId, (kind, id) =>
-      documentGone(() =>
-        kind === 'material'
-          ? api.post(`/materials/${id}/collaboration-token`, {})
-          : api.get(`/files/${id}`)
-      )
-    ).catch((error) => console.warn('Draft sweep failed:', error));
+  // The MSW mock service has no HTTP endpoint: its drafts wait for the
+  // editor, as before.
+  if (!send || USE_MSW || token.access !== 'write') return true;
+  let settled = true;
+  for (const group of sendableGroups(await readDrafts(key), token.room)) {
+    const sent = await sendGroup(token, group);
+    if (sent === 'sent') await deleteDrafts(group);
+    else if (sent === 'refused' && drawsOnItsOwn(group))
+      await markDrafts(
+        key,
+        group.map((row) => row.id),
+        'refused'
+      );
+    else if (sent === 'retry') settled = false;
+  }
+  return settled;
+}
+
+function drawsOnItsOwn(group: EditDraft[]) {
+  const doc = recoveryDocument(group);
+  doc?.destroy();
+  return !!doc;
+}
+
+// Documents whose rows a sweep settled, by key, as the row ids it saw: they
+// are skipped while those stay the same, for this page load.
+const settledRows = new Map<string, string>();
+
+/**
+ * One sweep of an account's stored drafts. A document an editor has open
+ * (its lock is held) is skipped. Without Web Locks nothing is sent, since a
+ * sweep cannot tell which documents an editor holds; lost documents still
+ * go. When another tab is sweeping, this one does nothing.
+ */
+export async function sweepDrafts(actorId: string, api: SweepApi) {
+  const locks = webLocks();
+  const sweep = async () => {
+    const documents = await call<Record<string, string[]>>({
+      op: 'documents',
+      prefix: `${actorId}:`,
+    });
+    for (const [key, ids] of Object.entries(documents)) {
+      const seen = ids.join(' ');
+      if (settledRows.get(key) === seen) continue;
+      const settled = locks
+        ? await locks.request(
+            documentLock(key),
+            { ifAvailable: true },
+            async (lock) => !!lock && (await sweepDocument(key, api, true))
+          )
+        : await sweepDocument(key, api, false);
+      if (settled) settledRows.set(key, seen);
+    }
+  };
+  if (!locks) return sweep();
+  await locks.request(SWEEP_LOCK, { ifAvailable: true }, (lock) =>
+    lock ? sweep() : undefined
+  );
+}
+
+let sweeping: { actorId: string; api: SweepApi } | null = null;
+
+/**
+ * Sweeps the signed-in account's stored drafts from any open page (Epo
+ * 2026-10-13): once when the page is idle, when the browser comes back
+ * online and when the tab becomes visible. A successful send is silent.
+ */
+export function startDraftSweeps(actorId: string, api: SweepApi) {
+  if (sweeping?.actorId === actorId) return;
+  const first = !sweeping;
+  sweeping = { actorId, api };
+  const run = () => {
+    if (!sweeping) return;
+    void sweepDrafts(sweeping.actorId, sweeping.api).catch((error) =>
+      console.warn('Draft sweep failed:', error)
+    );
+  };
   if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
   else setTimeout(run, 0);
+  if (!first) return;
+  window.addEventListener('online', run);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') run();
+  });
 }
