@@ -10,6 +10,7 @@ mod app;
 mod auth;
 mod children;
 mod config;
+mod drafts;
 mod edits;
 mod eviction;
 mod health;

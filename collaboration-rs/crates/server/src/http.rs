@@ -1,5 +1,6 @@
 //! The HTTP listener: the WebSocket upgrade (origin checked here), health,
-//! metrics and the internal routes (service secret).
+//! metrics, the internal routes (service secret) and the browser's draft
+//! send (`drafts.rs`: origin and room token).
 
 use axum::Router;
 use axum::body::Bytes;
@@ -34,6 +35,11 @@ pub fn router(app: Shared) -> Router {
         .route("/internal/documents/undo", post(document))
         .route("/internal/commands", post(command))
         .route("/internal/markdown/convert", post(markdown))
+        // Reads its own body within a writer's sync cap (`drafts.rs`).
+        .route(
+            "/drafts",
+            post(crate::drafts::send).options(crate::drafts::preflight),
+        )
         .route_layer(axum::middleware::from_fn(request_trace))
         // Internal bodies reach MAX_INTERNAL_BODY; each handler refuses past it.
         .layer(axum::extract::DefaultBodyLimit::max(MAX_INTERNAL_BODY + 1))

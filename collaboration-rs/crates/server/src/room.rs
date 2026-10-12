@@ -18,6 +18,7 @@ use yrs::{Doc, ReadTxn, StateVector, Transact};
 
 use crate::app::{Outbox, RoomHandle, RoomView, Shared, ViewState};
 use crate::auth::{Access, Context, RoomName};
+use crate::drafts::{Class, Refused};
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::markers::{self, Contributor, Markers};
 use crate::note_store::{self, StoreError};
@@ -118,6 +119,46 @@ pub enum RoomCmd {
     PeerReload,
     /// What that read found (dropped when the other room loaded meanwhile).
     PeerStored(notes::limits::Metrics, Vec<items::quiz::ItemsPart>),
+    /// Stored drafts from a browser with no editor open (`drafts.rs`).
+    Draft(Box<Draft>),
+}
+
+/// A draft send: a writer's update without a channel. The reply is the
+/// admission's refusal, or the answer of the store that will hold it.
+pub struct Draft {
+    pub context: Context,
+    pub update: bytes::Bytes,
+    /// The base the drafts grew over (an Office file needs the room's).
+    pub base: Option<String>,
+    pub reply: oneshot::Sender<Result<Durable, Refused>>,
+}
+
+/// Answers once a store holds the admitted update (or with its failure).
+pub type Durable = oneshot::Receiver<Result<(), String>>;
+
+/// What the room decided about a writer's update.
+enum Outcome {
+    /// Applied, or nothing new: acknowledged.
+    Admitted,
+    /// It refers to content the room does not hold (a channel resyncs).
+    Unheld,
+    /// Refused: what a channel hears before it closes, why, and the class a
+    /// draft send answers with.
+    Refused {
+        payloads: Vec<String>,
+        reason: String,
+        class: Class,
+    },
+}
+
+impl Outcome {
+    fn refused(class: Class, reason: impl Into<String>) -> Self {
+        Outcome::Refused {
+            payloads: Vec::new(),
+            reason: reason.into(),
+            class,
+        }
+    }
 }
 
 /// An update that wrote child ids, the writer it is attributed to, and the
@@ -215,6 +256,8 @@ struct Source {
     failing_since: Option<Instant>,
     /// The sources record this room's load made.
     generation: u64,
+    /// The session's base, which an Office file's drafts must have grown over.
+    base_sha256: String,
 }
 
 /// Why a store failed.
@@ -505,6 +548,7 @@ async fn load(
                 paused: false,
                 failing_since: None,
                 generation: loaded.generation,
+                base_sha256: loaded.session.base_source_sha256,
             };
             Ok((doc, Kindly::Source(Box::new(source)), durable))
         }
@@ -565,12 +609,20 @@ async fn run(
                 None,
                 &[("room", &room_name), ("stage", "room_load")],
             );
-            // Refuse every queued join; the next join loads again.
+            // Refuse every queued join and draft; the next one loads again.
             app.rooms.remove_if(&room_name, id, || true);
             rx.close();
             while let Some(command) = rx.recv().await {
-                if let RoomCmd::Join { reply, .. } = command {
-                    let _ = reply.send(Err(error.clone()));
+                match command {
+                    RoomCmd::Join { reply, .. } => {
+                        let _ = reply.send(Err(error.clone()));
+                    }
+                    RoomCmd::Draft(draft) => {
+                        let _ = draft
+                            .reply
+                            .send(Err(Refused::new(Class::Unavailable, error.clone())));
+                    }
+                    _ => {}
                 }
             }
             return;
@@ -925,7 +977,70 @@ impl Room {
                 self.next_child_pass();
             }
             RoomCmd::ChildAnswer { pass, plan, answer } => self.child_answer(*pass, plan, answer),
+            RoomCmd::Draft(draft) => self.draft(*draft).await,
         }
+    }
+
+    /// A draft send: a source room takes none during a publication handoff,
+    /// and an Office file's only when they grew over the room's base (the
+    /// editor's lineage rule); then the writer admission without a channel
+    /// (a read token's draft as a read channel's update), then a store now,
+    /// whose answer the reply carries.
+    async fn draft(&mut self, draft: Draft) {
+        let Draft {
+            context,
+            update,
+            base,
+            reply,
+        } = draft;
+        if let Kindly::Source(source) = &self.kind {
+            // A publication handoff holds every writer read-only.
+            let refused = if self.app.handoff().busy(&self.name) {
+                Some((Class::Unavailable, "a publication is under way"))
+            } else if source.format != sources::SourceFormat::Text
+                && base.as_deref() != Some(source.base_sha256.as_str())
+            {
+                Some((Class::Lineage, "the drafts grew over another base"))
+            } else {
+                None
+            };
+            if let Some((class, message)) = refused {
+                let _ = reply.send(Err(Refused::new(class, message)));
+                return;
+            }
+        }
+        self.app.stats.updates.fetch_add(1, Ordering::Relaxed);
+        let read_only = context.access != Access::Write;
+        let checked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            // Debug builds only: the integration tests' panicking update.
+            #[cfg(debug_assertions)]
+            if update == IT_PANIC_UPDATE {
+                panic!("integration test panic");
+            }
+            self.admit_update(None, &context, read_only, &update)
+        }));
+        let outcome = checked.unwrap_or_else(|_| {
+            self.update_panicked(None, update.len());
+            Outcome::refused(Class::Malformed, "update cannot be checked")
+        });
+        let answer = match outcome {
+            Outcome::Admitted => {
+                let (done, durable) = oneshot::channel();
+                if self.nothing_to_store() {
+                    let _ = done.send(Ok(()));
+                } else {
+                    self.store.waiters.push(done);
+                    self.start_store().await;
+                }
+                Ok(durable)
+            }
+            Outcome::Unheld => Err(Refused::new(
+                Class::Unheld,
+                "the update needs content the room does not hold",
+            )),
+            Outcome::Refused { reason, class, .. } => Err(Refused::new(class, reason)),
+        };
+        let _ = reply.send(answer);
     }
 
     /// Starts the next waiting children pass: the update's child writes as
@@ -1596,20 +1711,23 @@ impl Room {
             self.sync_message(key, payload)
         }));
         if checked.is_err() {
-            self.update_panicked(key, payload.len());
+            self.update_panicked(Some(key), payload.len());
         }
     }
 
     /// A panic in yrs on a crafted message (the Sentry panic hook reported
-    /// it). Before an update went in, only its sender is refused; while it
-    /// went in, the document may hold part of it, so the room is discarded
-    /// as one whose store was refused for good.
-    fn update_panicked(&mut self, key: MemberKey, bytes: usize) {
+    /// it). Before an update went in, only its sender is refused (a channel
+    /// here; a draft send by its caller); while it went in, the document may
+    /// hold part of it, so the room is discarded as one whose store was
+    /// refused for good.
+    fn update_panicked(&mut self, writer: Option<MemberKey>, bytes: usize) {
         if !self.applying {
             if let Kindly::Note(note) = &mut self.kind {
                 note.validator.invalidate();
             }
-            self.refuse(key, &[], "update cannot be checked");
+            if let Some(key) = writer {
+                self.refuse(key, &[], "update cannot be checked");
+            }
             return;
         }
         self.discard_after_panic("update_panicked", bytes);
@@ -1695,31 +1813,49 @@ impl Room {
     }
 
     fn on_update(&mut self, key: MemberKey, bytes: &[u8], step2: bool) {
-        if self.app.evictions.blocks(&self.name, false) {
-            self.refuse(key, &[], "collaboration room is being reset");
-            return;
-        }
         let Some(member) = self.members.get(&key) else {
             return;
         };
-        let context = member.context.clone();
-        let read_only = member.read_only;
+        let (context, read_only) = (member.context.clone(), member.read_only);
+        match self.admit_update(Some(key), &context, read_only, bytes) {
+            Outcome::Admitted => {}
+            Outcome::Unheld => self.resync(key, step2, &context),
+            Outcome::Refused {
+                payloads, reason, ..
+            } => self.refuse(key, &payloads, &reason),
+        }
+    }
+
+    /// A writer's update through every check that reads the room, then the
+    /// apply and the broadcast. `writer` is its channel, or none for a draft
+    /// send: nothing to acknowledge or tell of a children refusal, and every
+    /// editor receives the update.
+    fn admit_update(
+        &mut self,
+        writer: Option<MemberKey>,
+        context: &Context,
+        read_only: bool,
+        bytes: &[u8],
+    ) -> Outcome {
+        if self.app.evictions.blocks(&self.name, false) {
+            return Outcome::refused(Class::Unavailable, "collaboration room is being reset");
+        }
         if context.expires_at <= crate::auth::now_seconds() {
-            self.refuse(key, &[], "collaboration token expired");
-            return;
+            return Outcome::refused(Class::Permission, "collaboration token expired");
         }
         let Ok(update) = ydoc::decode(bytes) else {
-            self.refuse(key, &[], "malformed update");
-            return;
+            return Outcome::refused(Class::Malformed, "malformed update");
         };
         let changes = ydoc::contains_changes(&self.doc.transact(), &update);
         if read_only {
             if changes {
-                self.refuse(key, &[], "read-only connection sent a document update");
-                return;
+                return Outcome::refused(
+                    Class::Permission,
+                    "read-only connection sent a document update",
+                );
             }
-            self.acked(key);
-            return;
+            self.ack(writer);
+            return Outcome::Admitted;
         }
         // A writer that slipped past the maintenance pause: it goes read-only
         // (or to recovery with unsent changes) and its update is refused.
@@ -1732,12 +1868,17 @@ impl Room {
                 "type": "source-editing-paused",
             })
             .to_string();
-            self.refuse(key, &[payload], "Office editing is paused");
-            return;
+            return Outcome::Refused {
+                payloads: vec![payload],
+                reason: "Office editing is paused".into(),
+                class: Class::Unavailable,
+            };
         }
         if markers::check(&self.doc.transact(), &update, self.doc.client_id()).is_err() {
-            self.refuse(key, &[], "client update changed collaboration metadata");
-            return;
+            return Outcome::refused(
+                Class::Malformed,
+                "client update changed collaboration metadata",
+            );
         }
         // Admission and apply run off the runtime's workers while the room
         // waits, unless the update is a small edit of a few structs (REVIEW2
@@ -1777,18 +1918,13 @@ impl Room {
             admit()
         };
         match verdict {
-            Verdict::Unheld => {
-                self.resync(key, step2, &context);
-                return;
-            }
+            Verdict::Unheld => return Outcome::Unheld,
             Verdict::Accept => {}
             Verdict::Source(sources::Refusal::Malformed(message)) => {
-                self.refuse(key, &[], &message);
-                return;
+                return Outcome::refused(Class::Malformed, message);
             }
             Verdict::Source(refusal) => {
-                self.source_update_refused(key, &context, &refusal, bytes.len());
-                return;
+                return self.source_update_refused(writer, context, &refusal, bytes.len());
             }
             Verdict::Limit(code, metrics) => {
                 let payload = self.rejection_payload(code, metrics, None);
@@ -1801,25 +1937,22 @@ impl Room {
                         user_id: Some(context.user_id.clone()),
                     }],
                 );
-                self.refuse(key, &[payload], "invalid material document");
-                return;
+                return Outcome::Refused {
+                    payloads: vec![payload],
+                    reason: "invalid material document".into(),
+                    class: Class::Limit,
+                };
             }
-            Verdict::Refused(error) => {
-                self.refuse(key, &[], &error);
-                return;
-            }
+            Verdict::Refused(error) => return Outcome::refused(Class::Malformed, error),
         }
-        if let Some(member) = self.members.get_mut(&key) {
-            member.unplaced = 0;
-        }
-        self.app.unplaced.placed(&self.name, &context.user_id);
+        self.placed(writer, context);
         if !changes {
-            self.acked(key);
-            return;
+            self.ack(writer);
+            return Outcome::Admitted;
         }
         let mut applied = 0;
         self.applying = true;
-        if let Some(marker) = self.markers.write(&self.doc, &context) {
+        if let Some(marker) = self.markers.write(&self.doc, context) {
             applied += marker.len();
             self.broadcast_update(None, marker);
         }
@@ -1832,18 +1965,20 @@ impl Room {
         let content = match content {
             Ok(content) => content,
             Err(error) => {
-                self.refuse(key, &[], &format!("update cannot be applied: {error}"));
-                return;
+                return Outcome::refused(
+                    Class::Malformed,
+                    format!("update cannot be applied: {error}"),
+                );
             }
         };
         applied += content.len();
         if let Kindly::Source(source) = &mut self.kind {
             source.estimate += applied as u64;
         }
-        self.acked(key);
+        self.ack(writer);
         if !content.is_empty() {
             self.content_changed();
-            self.broadcast_update(Some(key), content);
+            self.broadcast_update(writer, content);
             // A paste, undo or replayed draft that wrote child ids gets a
             // children pass; typing writes none and costs a decode.
             if matches!(&self.kind, Kindly::Note(note) if note.model == crate::model::Model::Note)
@@ -1853,11 +1988,21 @@ impl Room {
                 self.child_passes.push_back(ChildPass {
                     actor: context.user_id.clone(),
                     update: bytes.to_vec(),
-                    notify: Some(key),
+                    notify: writer,
                 });
                 self.next_child_pass();
             }
         }
+        Outcome::Admitted
+    }
+
+    /// The writer's update was placed: its channel's unplaceable count and
+    /// the step 2 incident's once-per-user mark start over.
+    fn placed(&mut self, writer: Option<MemberKey>, context: &Context) {
+        if let Some(member) = writer.and_then(|key| self.members.get_mut(&key)) {
+            member.unplaced = 0;
+        }
+        self.app.unplaced.placed(&self.name, &context.user_id);
     }
 
     /// A source update past the state cap or outside the Office roots: the
@@ -1865,17 +2010,14 @@ impl Room {
     /// and the channel closes.
     fn source_update_refused(
         &mut self,
-        key: MemberKey,
+        writer: Option<MemberKey>,
         context: &Context,
         refusal: &sources::Refusal,
         bytes: usize,
-    ) {
-        if let Some(member) = self.members.get_mut(&key) {
-            member.unplaced = 0;
-        }
-        self.app.unplaced.placed(&self.name, &context.user_id);
+    ) -> Outcome {
+        self.placed(writer, context);
         let Kindly::Source(source) = &self.kind else {
-            return;
+            return Outcome::refused(Class::Malformed, refusal.message());
         };
         let payload = json!({
             "checkpointIds": [],
@@ -1885,11 +2027,15 @@ impl Room {
             "type": "source-checkpoint-failed",
         })
         .to_string();
-        let cause = match refusal {
-            sources::Refusal::StateBytes => {
-                Cause::new(IncidentKind::OverLimit, "source_state_bytes")
-            }
-            _ => Cause::new(IncidentKind::SaveRefused, "office_update"),
+        let (cause, class) = match refusal {
+            sources::Refusal::StateBytes => (
+                Cause::new(IncidentKind::OverLimit, "source_state_bytes"),
+                Class::Limit,
+            ),
+            _ => (
+                Cause::new(IncidentKind::SaveRefused, "office_update"),
+                Class::Malformed,
+            ),
         };
         incidents::record(
             &self.app,
@@ -1900,7 +2046,18 @@ impl Room {
                 user_id: Some(context.user_id.clone()),
             }],
         );
-        self.refuse(key, &[payload], refusal.message());
+        Outcome::Refused {
+            payloads: vec![payload],
+            reason: refusal.message().to_owned(),
+            class,
+        }
+    }
+
+    /// A channel's handled update or step 2, acknowledged in the next flush.
+    fn ack(&mut self, writer: Option<MemberKey>) {
+        if let Some(key) = writer {
+            self.acked(key);
+        }
     }
 
     fn acked(&mut self, key: MemberKey) {

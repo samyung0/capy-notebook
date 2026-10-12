@@ -3056,3 +3056,382 @@ async fn a_viewer_watches_a_note_live_and_its_writes_never_land() {
     );
     assert!(!editor.block_text().contains("forged"));
 }
+
+// ------------------------------------------------------------- draft sends
+
+/// POSTs a browser's stored drafts to `/drafts`, as the sweep in
+/// `src/lib/editDrafts.ts` does: (status, JSON answer).
+async fn send_drafts(
+    port: u16,
+    room: &str,
+    token: Option<&str>,
+    origin: Option<&str>,
+    body: Vec<u8>,
+) -> (u16, serde_json::Value) {
+    let mut request = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{port}/drafts?room={room}"))
+        .header("content-type", "application/octet-stream")
+        .body(body);
+    if let Some(token) = token {
+        request = request.bearer_auth(token);
+    }
+    if let Some(origin) = origin {
+        request = request.header("origin", origin);
+    }
+    let response = request.send().await.expect("draft send");
+    let status = response.status().as_u16();
+    (
+        status,
+        response.json().await.unwrap_or(serde_json::Value::Null),
+    )
+}
+
+/// What a closed tab's drafts hold: the document as `from` holds it, with
+/// `edit` made by a session of its own, merged into one update (the state row
+/// and the updates after it).
+fn drafted(from: &Doc, edit: impl FnOnce(&Doc)) -> Vec<u8> {
+    let doc = Doc::with_options(ydoc::doc_options(0));
+    let state = from
+        .transact()
+        .encode_state_as_update_v1(&StateVector::default());
+    doc.transact_mut()
+        .apply_update(Update::decode_v1(&state).expect("state"))
+        .expect("apply");
+    edit(&doc);
+    doc.transact()
+        .encode_state_as_update_v1(&StateVector::default())
+}
+
+/// Appends `text` to a note's first block.
+fn typed_into_note(text: &str) -> impl FnOnce(&Doc) + '_ {
+    move |doc| {
+        let root = doc.get_or_insert_text("content");
+        let mut txn = doc.transact_mut();
+        let block = root
+            .diff(&txn, yrs::types::text::YChange::identity)
+            .into_iter()
+            .find_map(|chunk| match chunk.insert {
+                yrs::Out::YXmlText(block) => Some(block),
+                _ => None,
+            })
+            .expect("a block");
+        let len = block.len(&txn);
+        block.insert(&mut txn, len, text);
+    }
+}
+
+/// A synced reader of `room`, whose document drafts are made from.
+async fn synced(port: u16, room: &str, user: &str, text: &str) -> Client {
+    let mut client = Client::open(port).await;
+    client.joined(room, &token(room, user, "write")).await;
+    assert!(
+        client.settle(|c| c.block_text() == text).await,
+        "{}",
+        client.block_text()
+    );
+    client
+}
+
+async fn active_rooms(port: u16) -> u64 {
+    let metrics = reqwest::get(format!("http://127.0.0.1:{port}/metrics"))
+        .await
+        .expect("metrics")
+        .text()
+        .await
+        .expect("metrics text");
+    metrics
+        .lines()
+        .find_map(|line| line.strip_prefix("capy_collaboration_active_rooms "))
+        .and_then(|value| value.parse().ok())
+        .expect("active rooms")
+}
+
+#[tokio::test]
+async fn a_draft_send_reaches_the_open_editor_and_answers_once_stored() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let mut editor = synced(server.port, &room, &user, "base").await;
+    let drafts = drafted(&editor.doc, typed_into_note(" offline"));
+    let (status, receipt) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        drafts,
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    assert_eq!(receipt["type"], "checkpoint-persisted");
+    assert_eq!(receipt["room"], room.as_str());
+    // The answer came after the store: the row is there at once.
+    let rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert!(rows >= 1);
+    // The open editor receives it live.
+    assert!(
+        editor.settle(|c| c.block_text() == "base offline").await,
+        "{}",
+        editor.block_text()
+    );
+}
+
+#[tokio::test]
+async fn a_draft_send_loads_an_unloaded_room_which_unloads_after_its_store() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let drafts = {
+        let reader = synced(server.port, &room, &user, "base").await;
+        drafted(&reader.doc, typed_into_note(" sent"))
+    };
+    // The tab's room unloads (nothing to store); the send loads it again.
+    for _ in 0..50 {
+        if active_rooms(server.port).await == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(active_rooms(server.port).await, 0);
+    let (status, receipt) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        drafts,
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    for _ in 0..50 {
+        if active_rooms(server.port).await == 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert_eq!(active_rooms(server.port).await, 0, "the room unloads");
+    // Reopened from storage.
+    synced(server.port, &room, &user, "base sent").await;
+}
+
+/// Refusals a draft send answers with their class; the browser keeps the
+/// rows, refused ones marked for the next open.
+#[tokio::test]
+async fn draft_sends_are_refused_with_their_class() {
+    use yrs::encoding::write::Write;
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let reader = synced(server.port, &room, &user, "base").await;
+    let write = token(&room, &user, "write");
+    let send = |body: Vec<u8>| send_drafts(server.port, &room, Some(&write), Some(ORIGIN), body);
+
+    // Over the content limit: refused at admission, as a socket writer's.
+    let (status, answer) = send(drafted(
+        &reader.doc,
+        typed_into_note(&"x".repeat(2_200_000)),
+    ))
+    .await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (422, Some("limit")),
+        "{answer}"
+    );
+
+    // Needs content the room does not hold (a channel would resync).
+    let mut unplaceable: Vec<u8> = Vec::new();
+    unplaceable.write_var(1u32);
+    unplaceable.write_var(1u32);
+    unplaceable.write_var(999u64);
+    unplaceable.write_var(0u32);
+    unplaceable.write_u8(0x80 | 4);
+    unplaceable.write_var(998u64);
+    unplaceable.write_var(3u32);
+    unplaceable.write_string("x");
+    unplaceable.write_var(0u32);
+    let (status, answer) = send(unplaceable).await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (409, Some("unheld")),
+        "{answer}"
+    );
+
+    // Another lineage: a token for the next schema, and a schema the note
+    // moved past.
+    let next = format!("material:{material}:schema:2");
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&next, &user, "write")),
+        Some(ORIGIN),
+        drafted(&reader.doc, typed_into_note("!")),
+    )
+    .await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (409, Some("lineage")),
+        "{answer}"
+    );
+    drop(reader);
+    db(&env)
+        .await
+        .execute(
+            "UPDATE material_yjs_documents SET room_schema=2 WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("move the lineage");
+    let (status, answer) = send(vec![0, 0]).await;
+    assert_eq!(
+        (status, answer["class"].as_str()),
+        (409, Some("lineage")),
+        "{answer}"
+    );
+}
+
+/// Security regression (drafts-send S1): a draft send writes only with the
+/// editor's write token for a note its user may edit, from an allowed origin.
+#[tokio::test]
+async fn a_draft_send_needs_write_access_to_the_document() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let (stranger, _) = note(&env, "other").await;
+    let room = format!("material:{material}:schema:1");
+    let reader = synced(server.port, &room, &user, "base").await;
+    let drafts = drafted(&reader.doc, typed_into_note(" forged"));
+    let port = server.port;
+    let refused = |token: Option<String>, origin: Option<&'static str>| {
+        let (drafts, room) = (drafts.clone(), room.clone());
+        async move { send_drafts(port, &room, token.as_deref(), origin, drafts).await }
+    };
+    // A read-only token, another user's, none, and a bad signature.
+    for token in [
+        Some(token(&room, &user, "read")),
+        Some(token(&room, &stranger, "write")),
+        None,
+        Some(format!("{}x", token(&room, &user, "write"))),
+    ] {
+        let (status, answer) = refused(token, Some(ORIGIN)).await;
+        assert_eq!(
+            (status, answer["class"].as_str()),
+            (403, Some("permission")),
+            "{answer}"
+        );
+    }
+    // A page of another origin, or none.
+    for origin in [Some("http://elsewhere.test"), None] {
+        let (status, _) = refused(Some(token(&room, &user, "write")), origin).await;
+        assert_eq!(status, 403);
+    }
+    // Nothing reached the note.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+    let rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM material_yjs_updates WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert_eq!(rows, 0);
+}
+
+/// Security regression (drafts-send S2): crafted draft bodies are refused
+/// before anything reaches the room's document: not an update, past a
+/// writer's 4 MiB sync cap, writing the server's contributor markers, or
+/// panicking the decoder, which costs neither the process nor the room.
+#[tokio::test]
+async fn crafted_draft_bodies_are_refused_and_the_room_survives() {
+    use yrs::Map;
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let reader = synced(server.port, &room, &user, "base").await;
+    let write = token(&room, &user, "write");
+    let send = |body: Vec<u8>| send_drafts(server.port, &room, Some(&write), Some(ORIGIN), body);
+    for (body, status, class) in [
+        (b"not an update".to_vec(), 400, "malformed"),
+        // The debug build's stand-in for an update that panics yrs.
+        (b"capy-it-panic".to_vec(), 400, "malformed"),
+        (vec![0u8; 4 * 1024 * 1024 + 1], 413, "too_large"),
+        (
+            drafted(&reader.doc, |doc| {
+                doc.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT).insert(
+                    &mut doc.transact_mut(),
+                    "forged",
+                    "someone else",
+                );
+            }),
+            400,
+            "malformed",
+        ),
+    ] {
+        let (got, answer) = send(body).await;
+        assert_eq!(
+            (got, answer["class"].as_str()),
+            (status, Some(class)),
+            "{answer}"
+        );
+    }
+    // The room still takes a writer's drafts.
+    let (status, answer) = send(drafted(&reader.doc, typed_into_note(" kept"))).await;
+    assert_eq!(status, 200, "{answer}");
+}
+
+#[tokio::test]
+async fn a_text_source_draft_send_applies_and_answers_once_checkpointed() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut editor = Client::open(server.port).await;
+    assert_eq!(editor.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(
+        editor.settle(|c| source_text(c) == "hello").await,
+        "{}",
+        source_text(&editor)
+    );
+    let drafts = drafted(&editor.doc, |doc| {
+        let text = doc.get_or_insert_text("source");
+        let mut txn = doc.transact_mut();
+        let end = text.len(&txn);
+        text.insert(&mut txn, end, " world");
+    });
+    let (status, receipt) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        drafts,
+    )
+    .await;
+    assert_eq!(status, 200, "{receipt}");
+    let rows: i64 = db(&env)
+        .await
+        .query_one(
+            "SELECT count(*) FROM source_document_updates WHERE file_id=$1",
+            &[&file],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert_eq!(rows, 1);
+    assert!(
+        editor.settle(|c| source_text(c) == "hello world").await,
+        "{}",
+        source_text(&editor)
+    );
+}
