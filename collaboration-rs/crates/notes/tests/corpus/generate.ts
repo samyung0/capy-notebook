@@ -2711,7 +2711,10 @@ async function markdownFamily() {
     ],
     ['html embed not yaml', '```html-embed\ncaption: [unclosed\nhtml: x\n```'],
     ['indented code', 'Para\n\n    four spaces\n    more\n\nafter'],
-    ['figure image', '![A leaf cross-section](figure:fig_123)\n\nText ![other](https://x.test/b.png)'],
+    [
+      'figure image',
+      '![A leaf cross-section](figure:fig_123)\n\nText ![other](https://x.test/b.png)',
+    ],
     [
       'deep list',
       Array.from(

@@ -16,6 +16,8 @@
       "!!**/node_modules",
       "!!**/.vscode",
       "!!vendor",
+      // Vendored crates stay byte for byte as published (plus their marked patches).
+      "!!collaboration-rs/third_party",
       "!!**/src/api/gen",
       "!!ops/src/api-gen",
       "!!workers/site/worker-configuration.d.ts",
