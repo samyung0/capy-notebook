@@ -1982,7 +1982,10 @@ grew from (`source:<id>:epoch:<n>@<baseSHA>`; text drafts stay compatible
 across the base hashes of one epoch). The source base is stored once per file
 and SHA beside the rows and removed with the last row that uses it. Reopening
 merges the rows of the current lineage; a receipt removes only the exact rows
-it covers, and another tab's newer row remains. Save, export and handoff first
+it covers, and another tab's newer row remains. Rows of the current epoch also
+go from any open Capy page without the file open, an Office file's only over
+the room's base (see
+[plate-editor.md](plate-editor.md#sending-drafts-without-the-editor-open)). Save, export and handoff first
 commit open spreadsheet inputs and wait for active composition or gestures.
 Pending input counts as unsaved even before it reaches the shared document.
 Draft storage that fails (private mode, a full disk, a draft whose base is
