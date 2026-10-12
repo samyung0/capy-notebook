@@ -54,7 +54,7 @@ export function SkeletonCardGrid({
     <div
       aria-label={m.a11y_loading()}
       className={cn(
-        'grid w-full grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4',
+        'grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4',
         className
       )}
       role="status"
