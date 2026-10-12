@@ -203,12 +203,12 @@ export function ItemList({
   );
 }
 
-/** Card A's grid: two columns on phones, 220px columns from `sm`. */
+/** Card A's grid: two columns on phones, 180px columns from `sm`. */
 function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'grid w-full grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(220px,1fr))] sm:gap-3',
+        'grid w-full grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] sm:gap-3',
         className
       )}
       {...rest}
