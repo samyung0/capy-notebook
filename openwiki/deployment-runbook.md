@@ -431,7 +431,10 @@ The prod file runs `/migrate` once per deploy, starts the API with
    and the server raises its soft limit to the hard one at startup, as Go and
    Node do, logging `open_files_limit`. If the raise fails, the server exits
    instead of serving. Docker's default soft limit of 1024 held it near 1,000
-   connections in the production capacity run. To check:
+   connections in the production capacity run. The line names the soft limit
+   it reached, which is the container's hard limit: a value far below 524288
+   (1024, say) means the compose `ulimits` did not apply, and the server will
+   stop accepting connections near that number. To check:
 
    ```bash
    docker exec $(docker ps -qf name=collaboration) sh -c 'grep "open files" /proc/1/limits'
@@ -440,12 +443,14 @@ The prod file runs `/migrate` once per deploy, starts the API with
    Each WebSocket has an 8 KiB read buffer (`READ_BUFFER` in `http.rs`;
    tungstenite's default is 128 KiB). An idle connection costs about 30 KiB
    in all, measured on a local stack with 2,000 idle connections; Node used
-   27 KB per connection in the production run. A connection's write buffer
-   grows to the message it sends (a viewer joining a 2 MB note is sent the
-   whole note) and is given back once written: the server vendors tungstenite
-   with that one patch (`collaboration-rs/third_party/tungstenite`,
+   27 KB per connection in the production run. A connection's buffers grow to
+   a large frame it sends or receives (a viewer joining a 2 MB note is sent
+   the whole note; a writer may send a large paste, a peer up to the frame
+   cap) and give that room back once the frame is through: the server vendors
+   tungstenite with that patch (`collaboration-rs/third_party/tungstenite`,
    `THIRD-PARTY-NOTICES.md`; upstream keeps the capacity, about 2.3 MiB per
-   viewer of the 2 MB test note, Epo 2026-10-11). When peers leave, the
+   viewer of the 2 MB test note, and a received frame's size per socket, Epo
+   2026-10-11 and 2026-10-12). Each keeps at most 64 KiB. When peers leave, the
    process keeps the small allocations they freed and reuses them for later
    joins, so RSS stays near its peak instead of falling back.
 

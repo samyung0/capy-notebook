@@ -272,9 +272,12 @@ the update's entries when they follow on from the room's current one (each
 written after the one before, as a writer's own sets are) unless the update
 deletes it (REVIEW5 R2b). Entries that do not follow on (a stale or concurrent
 write, writers merged into one update) are read on the room with the update
-applied, off the async workers: such an update is no small edit, so its trial
-copy serves. An update that writes or deletes only keys no element requires
-is not looked at.
+applied, off the async workers: a stale or merged update is no small edit, so
+its trial copy serves, and a crafted small edit takes its own copy, off the
+workers through `heavy`. Every element is checked before a copy is asked
+for, so a refusal anywhere answers first and `heavy` and the admission agree
+(REVIEW5 final S1, S2). An update that writes or deletes only keys no element
+requires is not looked at.
 
 Pasted images take the same asset path (`pastedImages.ts`): clipboard image
 files become upload placeholders, as dropped files do. Plate's placeholder
@@ -1011,9 +1014,12 @@ The writable Y.Doc contract permits only the Plate `content` root and the
 server-owned `__capy_pending_contributors` map. Every client update checks this
 allowlist before application, and load/store paths check it again. Unknown or
 wrong-shaped top-level roots are rejected rather than persisted outside Plate
-content accounting. Contributor markers have three bounded fields only:
-`access`, `nonce`, and `userId`. Loading durable Yjs state validates those
-markers before admitting the room.
+content accounting. Contributor markers have two bounded fields only,
+`access` and `nonce`, and name no user: every reader of the room receives
+them (a link-share viewer included), so a marker's key holds an opaque id the
+room draws for each writer, and only the room maps it back to the user when a
+store records its contributors (Epo 2026-10-12; `markers.rs`). Loading
+durable Yjs state validates those markers before admitting the room.
 
 A rejected update closes only the offending connection, preceded by a
 `document-rejected` stateless message so the client discards its now-forked Y.Doc
