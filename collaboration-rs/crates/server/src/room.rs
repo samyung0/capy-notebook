@@ -2550,6 +2550,15 @@ impl Room {
             .store_failures
             .fetch_add(1, Ordering::Relaxed);
         if error.permanent() {
+            // Why, under the room's name (which holds the material id): a
+            // document the store can never take, such as a pending quiz
+            // reference stored before fences were resolved ahead of insertion
+            // (live-items REVIEW5 R1), is found in the logs by its note.
+            log(
+                Level::Warn,
+                "store refused the document",
+                json!({ "error": error.to_string(), "room": self.name }),
+            );
             self.answer_store_waiters(Err(error.to_string()));
             self.reject_after_store(&error, bytes);
             return;

@@ -578,10 +578,7 @@ const MERMAID: &str = "mermaid";
 
 /// The `type` a held element has, if the room holds it.
 fn held_type<T: ReadTxn>(txn: &T, element: &BranchID) -> Option<String> {
-    let branch = held_branch(txn, element)?;
-    let (_, item) = branch
-        .map_items()
-        .find(|(key, item)| &***key == "type" && !item.is_deleted())?;
+    let item = entry_of(held_branch(txn, element)?, "type").filter(|item| !item.is_deleted())?;
     match item.content() {
         ItemContent::Any(values) => match values.last() {
             Some(Any::String(kind)) => Some(kind.to_string()),
@@ -596,10 +593,9 @@ fn held_source<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming, element: &BranchI
     let Some(branch) = held_branch(txn, element) else {
         return false;
     };
-    branch.map_items().any(|(key, item)| {
+    entry_of(branch, plate::SHARED_TEXT_KEY).is_some_and(|item| {
         let id = item.id();
-        &**key == plate::SHARED_TEXT_KEY
-            && !item.is_deleted()
+        !item.is_deleted()
             && !incoming.deletes(&id.client, id.clock, id.clock + item.len())
             && matches!(item.content(), ItemContent::Type(text) if matches!(text.type_ref(), TypeRef::Text))
     })
@@ -624,6 +620,8 @@ pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize) -> bool {
 /// [Refusal::Content] for an update that leaves an element without a key the
 /// store requires ([required_keys]).
 pub const MISSING_KEY: &str = "an element without a key it requires";
+/// A material reference below the top level, which the store refuses.
+pub const NESTED_REFERENCE: &str = "a material reference below the top level";
 /// The key a markdown fence's body sat under on a reference without its row.
 const PENDING_KEY: &str = "pending";
 
@@ -798,6 +796,15 @@ fn required_keys<T: ReadTxn>(
             let Some(kind) = after("type") else {
                 return Ok(true);
             };
+            // A reference sits at the top level only, as the store requires
+            // (live-items REVIEW5 R2): one this update creates or retypes
+            // below it is refused.
+            if !top
+                && (created || retyped)
+                && matches!(&kind, Some(Any::String(kind)) if &**kind == crate::material::MATERIAL_REF_TYPE)
+            {
+                return Err(Refusal::Content(NESTED_REFERENCE));
+            }
             let own = own_keys(kind.as_ref());
             let mut required = vec!["type"];
             if top {

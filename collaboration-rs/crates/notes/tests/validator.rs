@@ -759,6 +759,70 @@ fn a_reference_carrying_a_fence_body_is_refused_at_admit() {
     assert!(notes::material::assert_canonical(&[pending], "note").is_err());
 }
 
+/// A material reference below the top level is refused when it arrives, as
+/// the store refuses it, so only that writer's update is lost: a blockquote
+/// holding a reference (a pasted quoted fence a writer did not lift) and a
+/// paragraph inside a blockquote retyped to a reference (live-items REVIEW5
+/// R2). A top-level reference still goes in. Fails without the check.
+#[test]
+fn a_nested_reference_is_refused_at_admit() {
+    let room = document(&[
+        json!({ "children": [{ "text": "intro" }], "id": "p1", "type": "p" }),
+        json!({
+            "children": [{ "children": [{ "text": "quoted" }], "type": "p" }],
+            "id": "bq", "type": "blockquote",
+        }),
+    ]);
+    let mut validator = Validator::default();
+    let nothing = room
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    validator.admit_bytes(&room, &nothing).unwrap();
+    let reference = |id: &str| {
+        json!({
+            "children": [{ "text": "" }], "id": id, "materialId": "row_1", "refKind": "quiz",
+            "type": "material_ref",
+        })
+    };
+    let quoted = edit(&room, 4, |peer| {
+        insert_value(
+            peer,
+            &[json!({ "children": [reference("r1")], "id": "bq2", "type": "blockquote" })],
+        );
+    });
+    let retyped = edit(&room, 5, |peer| {
+        let quote = block(peer, 1);
+        let inner = {
+            let _txn = peer.transact();
+            match &plate::insert_delta(quote.as_ref()).unwrap()[0].insert {
+                plate::Insert::Element(branch) => XmlTextRef::from(*branch),
+                plate::Insert::Text(_) => panic!("no paragraph in the quote"),
+            }
+        };
+        let mut txn = peer.transact_mut();
+        inner.insert_attribute(&mut txn, "type", "material_ref");
+        inner.insert_attribute(&mut txn, "materialId", "row_1");
+        inner.insert_attribute(&mut txn, "refKind", "quiz");
+    });
+    for (name, update) in [
+        ("a quoted reference", quoted),
+        ("a retyped quote line", retyped),
+    ] {
+        assert!(
+            matches!(
+                validator.admit_bytes(&room, &update),
+                Err(Refusal::Content(what)) if what == limits::NESTED_REFERENCE
+            ),
+            "{name}"
+        );
+    }
+    let top = edit(&room, 6, |peer| insert_value(peer, &[reference("r2")]));
+    assert_eq!(
+        validator.admit_bytes(&room, &top).unwrap(),
+        Admission::Accepted
+    );
+}
+
 /// Security regression (REVIEW5 R2b: two crafted shapes still took a block's
 /// `type`, and the store then discarded the room). The key check reads the
 /// element's state after the update: a `type` overwritten and the new entry
