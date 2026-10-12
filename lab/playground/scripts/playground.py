@@ -116,6 +116,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "skills": {},
     # null offers what production offers; a list narrows it for an experiment.
     "tools": None,
+    # Experiment switches (production keeps "on" and "named"). ledger_mode
+    # "off": no create_ledger and no todo argument; the turn gets the build
+    # budget after its first successful write, and every successful write is
+    # progress for the stall guard. excerpts "auto": no excerpt_ids argument;
+    # each write credits the excerpts read since the previous write (all read
+    # this turn when none are new).
+    "ledger_mode": "on",
+    "excerpts": "named",
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
         "mode": "pixels",
@@ -184,6 +192,8 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         or any(name not in known for name in out["tools"])
     ):
         raise HTTPException(400, "tools must be null or a list of known tool names")
+    if out["ledger_mode"] not in ("on", "off") or out["excerpts"] not in ("named", "auto"):
+        raise HTTPException(400, 'ledger_mode is "on" or "off"; excerpts is "named" or "auto"')
     return out
 
 
@@ -238,7 +248,7 @@ def effective_prompt(
     library = c["library"] if library is None else library
     if base is None:
         base = chat_prompts.system_prompt(c["locale"])
-    text = base if c["system_prompt"] is None else c["system_prompt"]
+    text = experiment_prompt(c, base) if c["system_prompt"] is None else c["system_prompt"]
     if library and with_library:
         rules = (
             chat_prompts.LIBRARY_RULES
@@ -311,8 +321,12 @@ def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
         for s in production
         if (c["decks"]["offer"] or s["function"]["name"] not in deck.NAMES)
         and (c["tools"] is None or s["function"]["name"] in c["tools"])
+        and (c["ledger_mode"] == "on" or s["function"]["name"] != "create_ledger")
     ]
-    schemas = configured_tools(c, out)
+    dropped = ({"todo"} if c["ledger_mode"] == "off" else set()) | (
+        {"excerpt_ids"} if c["excerpts"] == "auto" else set()
+    )
+    schemas = configured_tools(c, without_args(out, dropped) if dropped else out)
     if not c["decks"]["offer"]:
         line = "\n" + skills.catalog_line(skills.DECK, skills.SKILLS[skills.DECK].when)
         for schema in schemas:
@@ -328,7 +342,7 @@ def skill_texts(c: dict[str, Any], *, library: bool) -> dict[str, str]:
     from pipeline.retrieval import skills
 
     return {
-        name: skill.text(library)
+        name: experiment_skill(c, skill.text(library))
         for name, skill in skills.SKILLS.items()
         if c["decks"]["offer"] or name != skills.DECK
     }
@@ -888,6 +902,105 @@ def starting_ledger(path: str | None):
     return tools.Ledger.from_stored(ledger.get("stored", ledger))
 
 
+def write_ledger():
+    """ledger_mode "off": a ledger with no todos whose progress is the turn's
+    successful writes, so the production loop's stall guard counts writes and
+    the turn takes the build budget once one has landed."""
+    from pipeline.retrieval import tools
+
+    class WriteLedger(tools.Ledger):
+        writes: int = 0
+        # Library reads already credited by an earlier write (excerpts "auto").
+        credited: int = 0
+
+        @property
+        def active(self) -> bool:
+            return self.writes > 0
+
+        def landed(self) -> None:
+            self.writes += 1
+            self.progress += 1
+
+    return WriteLedger()
+
+
+def without_args(schemas: list[dict], names: set[str]) -> list[dict]:
+    """The tool schemas with these argument names removed."""
+    out = copy.deepcopy(schemas)
+    for schema in out:
+        params = schema["function"].get("parameters") or {}
+        props = params.get("properties") or {}
+        for name in names & set(props):
+            del props[name]
+        if "required" in params:
+            params["required"] = [r for r in params["required"] if r not in names]
+    return out
+
+
+NO_LEDGER_BUDGET = (
+    "Until the turn's first successful write it has {planning} responses, the last "
+    "without tools; once a write lands it has {calls} tool calls, and after {stall} "
+    "responses in a row that land no write the next has tools off."
+)
+NO_LEDGER_SKILL = (
+    "Budget:\n- There is no ledger. Once a write lands, the turn has {calls} tool "
+    "calls, and after {stall} responses in a row that land no write, the next has "
+    'tools off; in the turn context, "completing a todo" means landing a write.'
+)
+AUTO_EXCERPTS_LINE = (
+    "- The library excerpts you read are credited on your next write automatically; "
+    "write only what they support."
+)
+
+
+def experiment_prompt(c: dict[str, Any], text: str) -> str:
+    """The system prompt with the budget sentence for ledger_mode "off"."""
+    from pipeline.retrieval import limits
+
+    if c["ledger_mode"] == "on":
+        return text
+    old = (
+        f"Without ledger todos a turn has {limits.PLANNING_RESPONSES} responses, "
+        "the last without tools."
+    )
+    if old not in text:
+        raise RuntimeError("the production budget sentence changed; update experiment_prompt")
+    return text.replace(
+        old,
+        NO_LEDGER_BUDGET.format(
+            planning=limits.PLANNING_RESPONSES,
+            calls=limits.LEDGER_TOOLS_PER_TURN,
+            stall=limits.STALL_RESPONSES,
+        ),
+    )
+
+
+def experiment_skill(c: dict[str, Any], text: str) -> str:
+    """A skill's text without the ledger paragraph (ledger_mode "off") and with
+    excerpt crediting described as automatic (excerpts "auto")."""
+    from pipeline.retrieval import limits
+
+    if c["ledger_mode"] == "off":
+        text = re.sub(
+            r"Ledger and budget:\n(?:- .*\n)+",
+            NO_LEDGER_SKILL.format(
+                calls=limits.LEDGER_TOOLS_PER_TURN, stall=limits.STALL_RESPONSES
+            )
+            + "\n",
+            text,
+        )
+        text = text.replace(" Such an edit takes no todo and no excerpt_ids.", "")
+    if c["excerpts"] == "auto":
+        lines = []
+        for line in text.split("\n"):
+            if "excerpt_ids" not in line:
+                lines.append(line)
+            elif AUTO_EXCERPTS_LINE not in lines:
+                lines.append(AUTO_EXCERPTS_LINE)
+        text = "\n".join(lines)
+    return text
+
+
 def save_knowledge_capture(
     state: dict[str, Any], ctx, call_id: str, run_id: str
 ) -> dict[str, Any]:
@@ -1016,7 +1129,9 @@ class Turn:
             operations=operations_for(c),
             file_ids=c["scope_file_ids"] or None,
             assistant_message_id=self.id,
-            ledger=tools.Ledger.from_stored(self.ledger)
+            ledger=write_ledger()
+            if c["ledger_mode"] == "off"
+            else tools.Ledger.from_stored(self.ledger)
             if self.ledger is not None
             else starting_ledger(c["ledger"]),
             open_resource=dict(c["open_resource"] or {}),
@@ -1057,6 +1172,21 @@ class Turn:
             }
             state["calls"].append(record)
             started = time.perf_counter()
+            auto_credit = (
+                c["excerpts"] == "auto"
+                and ctx_.library
+                and name in agent.WRITE_TOOLS
+                and name != "copy_questions"
+            )
+            if auto_credit:
+                # Credit what was read since the previous write, or everything
+                # read this turn when nothing new was (a second item written
+                # from the same reading); the model names none.
+                fresh = ctx_.ledger.reads[getattr(ctx_.ledger, "credited", 0) :]
+                credit = list(
+                    dict.fromkeys(r.excerpt_id for r in fresh or ctx_.ledger.reads)
+                )
+                args = {**args, "excerpt_ids": credit} if credit else args
             problem = (
                 tools.contract.validate_args(name, record["args"])
                 if name in tools.contract.DEFINITIONS
@@ -1127,6 +1257,11 @@ class Turn:
                 error=result.error,
                 passages=[p.chunk_id for p in result.passages],
             )
+            if name in agent.WRITE_TOOLS and result.outcome == "succeeded":
+                if c["ledger_mode"] == "off":
+                    ctx_.ledger.landed()
+                if auto_credit:
+                    ctx_.ledger.credited = len(ctx_.ledger.reads)
             state["_result_call"][id(result)] = record
             return result
 
@@ -2453,6 +2588,31 @@ def check() -> None:
         )
         assert effective_prompt({**lib, "system_prompt": "mine"}, "x") == "mine\n\nMY RULES"
         assert effective_prompt(lib, "base", with_library=False) == "base"
+        # ledger_mode "off" / excerpts "auto": the budget sentence, the editing
+        # skill and the write schemas lose the ledger and excerpt_ids, and the
+        # write ledger turns building on the first landed write.
+        from pipeline.retrieval import contract
+        from pipeline.retrieval import skills as skills_mod
+
+        off = merged({"ledger_mode": "off", "excerpts": "auto"})
+        prompt = effective_prompt(off, chat.system_prompt("en"), with_library=False)
+        assert "Without ledger todos" not in prompt and "once a write lands" in prompt
+        editing = skill_texts(off, library=True)[skills_mod.EDITING]
+        assert "create_ledger" not in editing and "excerpt_ids" not in editing
+        assert "There is no ledger" in editing and AUTO_EXCERPTS_LINE in editing
+        stripped = without_args(
+            [contract.model_schema("create_material")], {"todo", "excerpt_ids"}
+        )[0]["function"]["parameters"]
+        assert not {"todo", "excerpt_ids"} & set(stripped["properties"])
+        ledger = write_ledger()
+        assert not ledger.active and not ledger.open_todos()
+        ledger.landed()
+        assert ledger.active and ledger.progress == 1
+        try:
+            merged({"ledger_mode": "none"})
+            raise AssertionError("an unknown ledger_mode must be refused")
+        except HTTPException:
+            pass
 
     asyncio.run(check_preview())
     assert (

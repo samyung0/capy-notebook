@@ -155,6 +155,8 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
 | `ledger` | Path to a stored ledger the turn continues: a previous `run.json`, or a bare ledger. `--ledger <path>` sets it for every config that does not carry its own |
 | `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
+| `ledger_mode` | `on` (production) or `off`: no `create_ledger` and no `todo` argument; the turn takes the build budget (160 tool calls, the stall guard) once its first write lands, and every successful write is progress for the stall guard. The budget sentence and the editing skill are rewritten to match. Configs `noledger`, `noledger-auto` |
+| `excerpts` | `named` (production) or `auto`: no `excerpt_ids` argument; each write credits the library excerpts read since the previous write, or all read this turn when none are new. Library lines naming `excerpt_ids` in the skills become one line saying crediting is automatic |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
 | `capture.require_seen_page` | Refuse captures of pages no retrieved passage has shown |
