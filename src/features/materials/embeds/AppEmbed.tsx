@@ -112,7 +112,7 @@ export function AppEmbedEdit({
     <QuizGate materialId={materialId} ownerId={ownerId}>
       {(quiz) => (
         <>
-          <QuizEditor onEmpty={onEmpty} quizId={materialId} />
+          <EmbedQuizEditor onEmpty={onEmpty} quizId={materialId} />
           <SourcesLine className="mt-3" provenance={quiz.provenance} />
         </>
       )}
@@ -223,7 +223,7 @@ function LiveQuizStudy({
 /** A note's quiz in Edit: its live rooms while the block is near the screen
  * (and while edits wait for the server); removing the last question removes
  * the block. Undo and Redo are in the question dialog. */
-function QuizEditor({
+function EmbedQuizEditor({
   quizId,
   onEmpty,
 }: {

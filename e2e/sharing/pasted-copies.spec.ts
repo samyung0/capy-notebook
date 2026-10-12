@@ -128,4 +128,75 @@ test.describe('pasted copies', () => {
       parentMaterialId: source.id,
     });
   });
+
+  // A quiz fence quoted under a blockquote resolves nested; the editor lifts
+  // the reference to the top level before slate-yjs sends it, so the Rust
+  // room's nested-reference refusal (live-items REVIEW5 R2) never meets the
+  // editor's own paste: the writer stays in the room, the quiz shows, and
+  // the stored note holds the reference at the top level, naming its row.
+  test('a quoted quiz fence pastes as a top-level quiz the room takes', async ({
+    materialFactory,
+    ownerApi,
+    ownerPage,
+    seed,
+  }) => {
+    const workspaceId = seed.editableWorkspace.id;
+    const note = await materialFactory.createNote({
+      blockId: 'quoted-fence-body',
+      body: 'Quoted fence target',
+      title: 'E2E Quoted Fence',
+      workspaceId,
+    });
+    const statement = 'A quoted salt marsh floods with the tide.';
+    const fence = JSON.stringify({
+      questions: [
+        {
+          id: 'q_quoted',
+          labels: 'letters',
+          layout: 'paper',
+          parts: [
+            {
+              answer: { correct: true, type: 'boolean' },
+              blocks: [{ text: statement, type: 'text' }],
+              id: 'q_quoted:part:1',
+              marks: 1,
+              solution: [],
+            },
+          ],
+          stem: [],
+        },
+      ],
+    });
+    await openWorkspaceMaterial(ownerPage, workspaceId, note.id);
+    await expectEditorLive(ownerPage);
+    const editor = ownerPage.locator('[contenteditable="true"]').first();
+    const body = editor.getByText('Quoted fence target', { exact: true });
+    const box = (await body.boundingBox())!;
+    await body.click({ position: { x: box.width - 1, y: box.height / 2 } });
+    await ownerPage.keyboard.press('Enter');
+    await paste(editor, {
+      'text/plain': ['> ```quiz', `> ${fence}`, '> ```'].join('\n'),
+    });
+
+    await expect(editor.locator('.slate-material_ref')).toContainText(
+      statement,
+      { timeout: 20_000 }
+    );
+    // Still a writer in the room: a refusal would have ended it.
+    await ownerPage.keyboard.type('after');
+    await expectEditorLive(ownerPage);
+    const stored = async () => {
+      const response = await ownerApi.get(`/api/materials/${note.id}`);
+      if (!response.ok()) return 'unread';
+      const { content } = (await response.json()) as {
+        content: { value: Node[] };
+      };
+      const nested = content.value.some((node) =>
+        node.children?.some((child) => child.type === 'material_ref')
+      );
+      const top = content.value.find((node) => node.type === 'material_ref');
+      return nested ? 'nested' : top?.materialId ? 'top' : 'none';
+    };
+    await expect.poll(stored, { timeout: 30_000 }).toBe('top');
+  });
 });

@@ -301,7 +301,8 @@ func (a *api) getMaterial(ctx context.Context, in *materialIDInput) (*materialOu
 		return nil, hErr(err)
 	}
 	out, err := a.materialResponse(ctx, res, role, readOnly, full)
-	// The workspace reads a quiz to view it; editing loads GET /api/quizzes/{id}/edit.
+	// The workspace reads a quiz to view it, without keys. Editing joins the
+	// quiz's live rooms; only note export reads GET /api/quizzes/{id}/edit.
 	if err == nil && res.Kind == "quiz" {
 		materialdoc.LearnerQuiz(out.Body.Content)
 	}
