@@ -297,3 +297,96 @@ fn diagram_and_mindmap_are_not_node_types() {
         );
     }
 }
+
+/// The plot block (Go's `validatePlot` and fieldlimits' `QUESTION_PLOT_*`;
+/// Node's validator never had it, Epo 2026-10-12): a valid plot goes in as a
+/// block, in a quiz question's stem and as a note's embed; Go's refused
+/// cases are refused, a plot past its limits among them.
+#[test]
+fn a_plot_validates_as_go_validates_it() {
+    let plot = |edit: fn(&mut Value)| {
+        let mut block = json!({
+            "lines": [{ "axis": "y", "label": "threshold", "value": -55 }],
+            "marks": [{ "label": "Na+ in", "x": 1, "y": 0 }],
+            "series": [{ "name": "Vm", "points": [[0, -70], [1.5, 30.5]] }],
+            "title": "Action potential",
+            "type": "plot",
+            "xTitle": "Time (ms)",
+            "yTitle": "Vm (mV)",
+        });
+        edit(&mut block);
+        block
+    };
+    type Edit = fn(&mut Value);
+    let refused: [(&str, Edit); 9] = [
+        ("five curves", |b| {
+            b["series"] = (0..5)
+                .map(|_| json!({ "name": "c", "points": [[0, 1], [0, 1]] }))
+                .collect();
+        }),
+        ("61 points", |b| {
+            b["series"] = json!([{ "name": "c", "points": (0..61).map(|x| json!([x, 0])).collect::<Vec<_>>() }]);
+        }),
+        ("nine marks", |b| {
+            b["marks"] = (0..9)
+                .map(|x| json!({ "label": "m", "x": x, "y": 0 }))
+                .collect();
+        }),
+        ("one point", |b| {
+            b["series"] = json!([{ "name": "c", "points": [[0, 1]] }])
+        }),
+        ("three numbers", |b| {
+            b["series"] = json!([{ "name": "c", "points": [[0, 1], [1, 2, 3]] }])
+        }),
+        ("text coordinate", |b| {
+            b["series"] = json!([{ "name": "c", "points": [[0, 1], ["1", 2]] }])
+        }),
+        ("line axis", |b| {
+            b["lines"] = json!([{ "axis": "z", "value": 1 }])
+        }),
+        ("unlabelled mark", |b| {
+            b["marks"] = json!([{ "x": 1, "y": 2 }])
+        }),
+        ("missing y title", |b| {
+            b.as_object_mut().unwrap().remove("yTitle");
+        }),
+    ];
+    questions::block(&plot(|_| {})).unwrap();
+    questions::block(&plot(|b| {
+        b["series"] =
+            json!([{ "name": "c", "points": (0..60).map(|x| json!([x, x])).collect::<Vec<_>>() }]);
+    }))
+    .unwrap();
+    for (name, edit) in refused {
+        assert!(questions::block(&plot(edit)).is_err(), "{name} accepted");
+    }
+    assert!(questions::block(&plot(|b| b["kind"] = json!("line"))).is_err());
+    let question = |stem: Value| {
+        json!({
+            "id": "q",
+            "labels": "letters",
+            "layout": "paper",
+            "parts": [{
+                "answer": { "correct": true, "type": "boolean" },
+                "blocks": [{ "text": "?", "type": "text" }],
+                "id": "p",
+                "marks": 1,
+                "solution": [],
+            }],
+            "stem": [stem],
+        })
+    };
+    questions::validate_question(&question(plot(|_| {})), &Policy::default()).unwrap();
+    assert!(
+        questions::validate_question(&question(plot(refused[0].1)), &Policy::default()).is_err()
+    );
+    let embed = |block: Value| {
+        material::assert_canonical(
+            &[json!({ "block": block, "children": [{ "text": "" }], "id": "pl1", "type": "plot" })],
+            "note",
+        )
+        .map_err(|error| error.0)
+    };
+    embed(plot(|_| {})).unwrap();
+    assert!(embed(plot(refused[0].1)).is_err());
+}

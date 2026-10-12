@@ -397,7 +397,7 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
     }
     match kind {
         "quiz" => validate_quiz(node),
-        "chart" | "graph" => validate_embed(node, kind, depth),
+        "chart" | "plot" | "graph" => validate_embed(node, kind, depth),
         "quiz_question" => validate_quiz_question(node, policy),
         HTML_EMBED_TYPE => validate_html_embed(node, depth),
         "flashcard_front" | "flashcard_back" | "mermaid_caption" => validate_text_element(node),

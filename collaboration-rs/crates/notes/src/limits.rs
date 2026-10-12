@@ -275,10 +275,11 @@ struct Written {
 
 /// Each type's keys the store requires besides `type` (and `id` at the top
 /// level): `material::assert_canonical`.
-const OWN_KEYS: [(&str, &[&str]); 7] = [
+const OWN_KEYS: [(&str, &[&str]); 8] = [
     ("quiz_question", &["question", "id"]),
     ("mermaid", &["source"]),
     ("chart", &["block"]),
+    ("plot", &["block"]),
     ("graph", &["block"]),
     (crate::material::HTML_EMBED_TYPE, &["html"]),
     (

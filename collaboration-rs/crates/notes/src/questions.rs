@@ -28,6 +28,9 @@ pub const QUESTION_MARKSCHEME_MAX: usize = 20;
 pub const QUESTION_MARKS_MAX: f64 = 20.0;
 pub const QUESTION_MARK_ITEM_MAX: usize = 1000;
 pub const QUESTION_PARTS_MAX: usize = 26;
+pub const QUESTION_PLOT_MARKS_MAX: usize = 8;
+pub const QUESTION_PLOT_POINTS_MAX: usize = 60;
+pub const QUESTION_PLOT_SERIES_MAX: usize = 4;
 pub const QUESTION_SVG_BYTES_MAX: usize = 262_144;
 pub const QUESTION_TABLE_COLUMNS_MAX: usize = 10;
 pub const QUESTION_TABLE_ROWS_MAX: usize = 30;
@@ -631,6 +634,53 @@ pub fn block(value: &Value) -> Result<Block, String> {
             }
             Ok(Block {
                 kind: "chart".into(),
+                text: None,
+                image: None,
+            })
+        }
+        "plot" => {
+            // Go's validatePlot: one to four curves of [x, y] points,
+            // optional reference lines and labelled points.
+            strict(
+                map,
+                what,
+                &["series", "title", "type", "xTitle", "yTitle"],
+                &["lines", "marks", "unit"],
+            )?;
+            for key in ["title", "xTitle", "yTitle"] {
+                meta(&map[key], what)?;
+            }
+            optional(map, "unit", |v| meta(v, what))?;
+            for curve in array(&map["series"], what, 1, QUESTION_PLOT_SERIES_MAX)? {
+                let curve = object(curve, what)?;
+                strict(curve, what, &["name", "points"], &[])?;
+                meta(&curve["name"], what)?;
+                for point in array(&curve["points"], what, 2, QUESTION_PLOT_POINTS_MAX)? {
+                    coords(point, what)?;
+                }
+            }
+            optional(map, "lines", |v| {
+                for line in array(v, what, 0, QUESTION_PLOT_MARKS_MAX)? {
+                    let line = object(line, what)?;
+                    strict(line, what, &["axis", "value"], &["label"])?;
+                    one_of(&line["axis"], what, &["x", "y"])?;
+                    number(&line["value"], what)?;
+                    optional(line, "label", |v| meta(v, what))?;
+                }
+                Ok(())
+            })?;
+            optional(map, "marks", |v| {
+                for mark in array(v, what, 0, QUESTION_PLOT_MARKS_MAX)? {
+                    let mark = object(mark, what)?;
+                    strict(mark, what, &["label", "x", "y"], &[])?;
+                    meta(&mark["label"], what)?;
+                    number(&mark["x"], what)?;
+                    number(&mark["y"], what)?;
+                }
+                Ok(())
+            })?;
+            Ok(Block {
+                kind: "plot".into(),
                 text: None,
                 image: None,
             })
