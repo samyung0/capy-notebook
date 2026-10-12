@@ -21,6 +21,22 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+### Form dialogs keep their errors
+
+A dialog that submits a form (the clone dialogs, `CloneItemDialog` and
+`CloneWorkspaceDialog` through `WorkspaceFormDialog`) reports a refused submit
+inline, not as a toast, so the draft and its context stay on screen:
+
+- The confirm button shows a spinner and the dialog stays open while the
+  request runs; Escape, an outside click and the close button do nothing then.
+- A typed refusal about one field shows under that field (a taken title,
+  `title_taken`).
+- Anything else shows in `FormAlert` (src/components/ui/FormAlert.tsx) at the
+  bottom of the form; `cloneErrorMessage` maps storage, plan-cap, credit and
+  access refusals to their copy.
+- Such a mutation opts out of the global toast (`errorToast: false`), so the
+  failure is reported once.
+
 ## Input length limits
 
 Limits come from the backend (`server/internal/fieldlimits`, generated into
