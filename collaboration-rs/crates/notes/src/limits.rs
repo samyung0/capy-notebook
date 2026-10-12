@@ -612,9 +612,9 @@ fn value_after(
 /// in the update's entries ([value_after]), without a copy. An element whose
 /// entries Yjs's conflict order places is read on `result`, the room with the
 /// update applied; without one the answer is `Ok(true)`, a copy needed
-/// (which [heavy] reports, so it is made off the async workers). Refused
-/// here, so only this writer's update is lost: the store would discard the
-/// room.
+/// (which [heavy] reports, so it is made off the async workers), once every
+/// other element passed: a refusal anywhere answers first. Refused here, so
+/// only this writer's update is lost: the store would discard the room.
 fn required_keys<T: ReadTxn>(
     txn: &T,
     incoming: &ydoc::Incoming,
@@ -639,6 +639,7 @@ fn required_keys<T: ReadTxn>(
         .chain(shape.cleared.keys())
         .chain(shape.created.keys())
         .collect();
+    let mut copy_needed = false;
     for id in touched {
         let (branch, parent, created) = match (id, held_branch(txn, id)) {
             (BranchID::Root(_), _) => continue,
@@ -711,8 +712,12 @@ fn required_keys<T: ReadTxn>(
             Ok(false)
         };
         if check(&resolved)? {
+            // Every other element is still checked, so a refusal wins
+            // whatever order the set walks in: `heavy` and `admit` then
+            // agree (REVIEW5 final S1).
             let Some(result) = &result else {
-                return Ok(true);
+                copy_needed = true;
+                continue;
             };
             let Some(branch) = id.get_branch(result) else {
                 continue;
@@ -723,7 +728,7 @@ fn required_keys<T: ReadTxn>(
             check(&|key: &str| Some(entry_of(branch, key).and_then(live_value)))?;
         }
     }
-    Ok(false)
+    Ok(copy_needed)
 }
 
 /// Media blocks name their file (Epo, 2026-10-10): an `img`, `image`,

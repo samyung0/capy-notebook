@@ -781,6 +781,128 @@ fn a_type_deleted_behind_an_overwrite_or_a_losing_write_is_refused_at_admit() {
     assert_eq!((validator.media_copies, validator.key_copies), (0, 0));
 }
 
+fn varuint(out: &mut Vec<u8>, mut value: u64) {
+    loop {
+        let byte = (value & 0x7f) as u8;
+        value >>= 7;
+        if value == 0 {
+            out.push(byte);
+            break;
+        }
+        out.push(byte | 0x80);
+    }
+}
+
+/// The last unit of block `index`'s current `key` entry.
+fn entry_tail(room: &Doc, index: usize, key: &str) -> yrs::ID {
+    let xml = block(room, index);
+    let branch =
+        yrs::branch::BranchPtr::from(<XmlTextRef as AsRef<yrs::branch::Branch>>::as_ref(&xml));
+    let item = branch.entry_item(key).unwrap();
+    yrs::ID::new(item.id().client, item.id().clock + item.len() - 1)
+}
+
+/// The reviewer's crafted small edit (REVIEW5 final recheck): a fresh client
+/// 9 writes two `type` entries on block 1, both after its current entry (a
+/// conflict only Yjs orders, so the key check needs the result), and, with
+/// `untype`, deletes block 0's `type` entry (a refusal).
+fn conflicting_types(room: &Doc, untype: bool) -> Vec<u8> {
+    let current = entry_tail(room, 1, "type");
+    let mut out = Vec::new();
+    varuint(&mut out, 1); // clients
+    varuint(&mut out, 2); // structs
+    varuint(&mut out, 9); // client
+    varuint(&mut out, 0); // clock
+    for kind in ["h1", "h2"] {
+        out.push(0x88); // an origin, ContentAny
+        varuint(&mut out, current.client.get());
+        varuint(&mut out, current.clock as u64);
+        varuint(&mut out, 1); // one value
+        out.push(119); // a string
+        varuint(&mut out, kind.len() as u64);
+        out.extend_from_slice(kind.as_bytes());
+    }
+    if untype {
+        let doomed = entry_tail(room, 0, "type");
+        varuint(&mut out, 1);
+        varuint(&mut out, doomed.client.get());
+        varuint(&mut out, 1);
+        varuint(&mut out, doomed.clock as u64);
+        varuint(&mut out, 1);
+    } else {
+        varuint(&mut out, 0);
+    }
+    out
+}
+
+fn two_paragraphs() -> Doc {
+    document(&[
+        json!({ "children": [{ "text": "a" }], "id": "p1", "type": "p" }),
+        json!({ "children": [{ "text": "b" }], "id": "p2", "type": "p" }),
+    ])
+}
+
+/// Security regression (REVIEW5 final S2: without `heavy`'s key branch, the
+/// copy for this update ran on an async worker, repeatably, as in M1). A
+/// crafted small edit whose `type` entries conflict is inline by size, yet
+/// its key check reads the result: `heavy` says so, and admit takes the one
+/// copy it needs.
+#[test]
+fn a_small_edit_whose_keys_need_the_result_is_heavy() {
+    let room = two_paragraphs();
+    let update = conflicting_types(&room, false);
+    let decoded = ydoc::decode(&update).unwrap();
+    assert!(update.len() <= 32, "{} bytes", update.len());
+    assert!(ydoc::applies_inline(
+        &room.transact(),
+        &ydoc::Incoming::new(&decoded),
+        update.len()
+    ));
+    assert!(limits::heavy(&room.transact(), &decoded, update.len()));
+    let mut validator = Validator::default();
+    let nothing = room
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    validator.admit_bytes(&room, &nothing).unwrap();
+    assert_eq!(
+        validator.admit_bytes(&room, &update).unwrap(),
+        Admission::Accepted
+    );
+    assert_eq!(validator.key_copies, 1);
+}
+
+/// Security regression (REVIEW5 final S1: the key check stopped at the first
+/// element needing a copy, in the set's random order, so `heavy` could say
+/// inline while `admit` copied the room on the worker before refusing). One
+/// element refused and another needing the result: `heavy` and `admit` agree
+/// on every run, the update is refused inline and no copy is taken.
+#[test]
+fn heavy_and_admit_agree_on_a_refusal_beside_a_needed_copy() {
+    let room = two_paragraphs();
+    let update = conflicting_types(&room, true);
+    let decoded = ydoc::decode(&update).unwrap();
+    assert!(ydoc::applies_inline(
+        &room.transact(),
+        &ydoc::Incoming::new(&decoded),
+        update.len()
+    ));
+    let nothing = room
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    let (mut heavy, mut copies) = (0, 0);
+    for _ in 0..100 {
+        heavy += usize::from(limits::heavy(&room.transact(), &decoded, update.len()));
+        let mut validator = Validator::default();
+        validator.admit_bytes(&room, &nothing).unwrap();
+        assert!(matches!(
+            validator.admit_bytes(&room, &update),
+            Err(Refusal::Content(what)) if what == limits::MISSING_KEY
+        ));
+        copies += validator.key_copies;
+    }
+    assert_eq!((heavy, copies), (0, 0));
+}
+
 /// A writer that already wrote pastes several blocks, an image among them:
 /// the elements it creates sit at clocks the room has not seen, which yrs's
 /// lookup must not be asked for (it indexes past the client's last block and
