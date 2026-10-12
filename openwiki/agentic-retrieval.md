@@ -2593,7 +2593,10 @@ build, and the knowledge library is one more source while the switch is on.
   whose id derives from the tool call (`store.ChatAssetID(message,
   call/figure/<id>)`), filling `name`, `contentType` and `sizeBytes` as an
   upload's node carries them (`materialdoc.ResolveFigureRefs`); a reference
-  the request did not render is refused by name. Each image must be a JPEG
+  the request did not render is refused by name. An edit's figure reaches the
+  collaboration server as that `img` with its asset id and no URL, which an
+  edit may insert (any other media node it refuses), and the children pass
+  after the edit keeps it as the note's own. Each image must be a JPEG
   within the payer's plan image cap (else `quota_rejected`), is written at
   `editor-assets/<asset id>/<blob>.jpg` and becomes a `ready` editor asset of
   the note in a transaction that gates its bytes against the payer's quota:
