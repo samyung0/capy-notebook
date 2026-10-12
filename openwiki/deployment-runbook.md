@@ -450,9 +450,11 @@ The prod file runs `/migrate` once per deploy, starts the API with
    tungstenite with that patch (`collaboration-rs/third_party/tungstenite`,
    `THIRD-PARTY-NOTICES.md`; upstream keeps the capacity, about 2.3 MiB per
    viewer of the 2 MB test note, and a received frame's size per socket, Epo
-   2026-10-11 and 2026-10-12). Each keeps at most 64 KiB. When peers leave, the
-   process keeps the small allocations they freed and reuses them for later
-   joins, so RSS stays near its peak instead of falling back.
+   2026-10-11 and 2026-10-12). A write buffer keeps at most 64 KiB; a read
+   buffer keeps about 72 KiB (a frame of up to 64 KiB plus one 8 KiB read).
+   When peers leave, the process keeps the small allocations they freed and
+   reuses them for later joins, so RSS stays near its peak instead of falling
+   back.
 
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
