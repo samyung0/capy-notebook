@@ -11,9 +11,13 @@ import {
  * top-level block only when its object changes (PlateStatic's memo), redraws
  * one block per remote keystroke. */
 
-/** Deep equality of JSON values, key order aside (the room and the
- * projection write a block's keys in different orders). */
-function same(a: unknown, b: unknown): boolean {
+/** Deep equality of two blocks as JSON, key order aside (the room and the
+ * projection write a block's keys in different orders). Below the block
+ * itself element ids are left out: normalization gives an element without
+ * one a random id, on the painted copy and on every read of the room (a
+ * Mermaid caption, table rows and cells, columns, toggles; REVIEW5 N1), and
+ * nothing renders differently for them. */
+function same(a: unknown, b: unknown, top = true): boolean {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
   if (Array.isArray(a) || Array.isArray(b))
@@ -21,15 +25,18 @@ function same(a: unknown, b: unknown): boolean {
       Array.isArray(a) &&
       Array.isArray(b) &&
       a.length === b.length &&
-      a.every((item, index) => same(item, b[index]))
+      a.every((item, index) => same(item, b[index], false))
     );
-  const keys = Object.keys(a);
+  const keys = (value: object) =>
+    Object.keys(value).filter((key) => top || key !== 'id');
+  const own = keys(a);
   return (
-    keys.length === Object.keys(b).length &&
-    keys.every((key) =>
+    own.length === keys(b).length &&
+    own.every((key) =>
       same(
         (a as Record<string, unknown>)[key],
-        (b as Record<string, unknown>)[key]
+        (b as Record<string, unknown>)[key],
+        false
       )
     )
   );

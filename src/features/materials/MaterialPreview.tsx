@@ -1,5 +1,5 @@
-import { createSlateEditor } from 'platejs';
-import { PlateStatic } from 'platejs/static';
+import { createSlateEditor, type SlateEditor } from 'platejs';
+import { ElementStatic, pipeDecorate } from 'platejs/static';
 import { memo, useMemo } from 'react';
 import type { MaterialKind } from '@/api/types';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
@@ -18,8 +18,8 @@ import { StaticMaterialKit } from './staticPlugins';
  * itself carries no markdown parser. Memoized: a material refetch that brings
  * equal content (structurally shared, so the same object) must not re-render
  * the document. A note's live View passes its parsed `value` instead (the
- * room's, block by block): PlateStatic re-renders a top-level block only when
- * its object changes. */
+ * room's, block by block): a top-level block re-renders only when its object
+ * changes. */
 export const MaterialPreview = memo(function MaterialPreview({
   content,
   isStandalone,
@@ -60,7 +60,7 @@ export const MaterialPreview = memo(function MaterialPreview({
   return (
     <div data-testid="material-preview">
       <MaterialRenderProvider value={renderContext}>
-        <PlateStatic
+        <KeyedStatic
           className={cn(
             'note-editor mx-auto min-h-75 w-full px-5 pt-4 pb-36 text-base outline-none sm:px-10',
             (kind !== 'note' || displayWidth === 'half') && 'md:max-w-3xl',
@@ -73,3 +73,58 @@ export const MaterialPreview = memo(function MaterialPreview({
     </div>
   );
 });
+
+/**
+ * PlateStatic's document root with its top-level blocks keyed by block id
+ * (live-items REVIEW5 M1). PlateStatic keys them by index, so a block added or
+ * removed above a reader handed every block below another block's element:
+ * they re-rendered, embeds remounted (a quiz lost its answers and rejoined its
+ * room, frames reloaded) and the browser's scroll anchoring lost its place.
+ * Keyed by id, a block keeps its element and its DOM wherever it moves, and
+ * one that did not change is not rendered again. No range is computed per
+ * block (REVIEW5 N3): the top level has no decorations to intersect, so only
+ * the decorate plugins (code highlighting) run. The static kit has no plugin
+ * that renders around the document.
+ */
+function KeyedStatic({
+  className,
+  editor,
+  value,
+}: {
+  className: string;
+  editor: SlateEditor;
+  value: MaterialValue;
+}) {
+  editor.children = value;
+  const decorate = pipeDecorate(editor);
+  const seen = new Set<unknown>();
+  return (
+    <div
+      className={cn('slate-editor', className)}
+      data-slate-editor
+      data-slate-node="value"
+    >
+      {value.map((block, index) => {
+        const path = [index];
+        // A repeated or missing id (never written by the editor) keys by place.
+        const key =
+          typeof block.id === 'string' && !seen.has(block.id)
+            ? block.id
+            : `#${index}`;
+        seen.add(block.id);
+        return (
+          <ElementStatic
+            decorate={decorate}
+            decorations={decorate ? decorate([block, path]) : NONE}
+            editor={editor}
+            element={block}
+            key={key}
+            path={path}
+          />
+        );
+      })}
+    </div>
+  );
+}
+
+const NONE: [] = [];

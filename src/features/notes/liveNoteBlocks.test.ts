@@ -56,6 +56,34 @@ it('hands over keeping every painted block the room holds unchanged', () => {
   expect(value[2]).toBe(painted[2]);
 });
 
+it('hands over a block whose children have no ids keeping the painted one', () => {
+  // Normalization gives the caption, rows and cells random ids on both sides
+  // (REVIEW5 N1): the switch must not redraw the diagram or the table.
+  const value = [
+    {
+      children: [{ children: [{ text: 'cap' }], type: 'mermaid_caption' }],
+      id: 'd1',
+      source: 'graph TD',
+      type: 'mermaid',
+    },
+    {
+      children: [
+        {
+          children: [{ children: [{ text: 'cell' }], type: 'td' }],
+          type: 'tr',
+        },
+      ],
+      id: 't1',
+      type: 'table',
+    },
+  ];
+  const { blocks } = setup(value);
+  const painted = normalizeMaterialValue(value as MaterialValue);
+  const handed = blocks.handOver(painted);
+  expect(handed[0]).toBe(painted[0]);
+  expect(handed[1]).toBe(painted[1]);
+});
+
 it('rebuilds only the block a remote keystroke touched', () => {
   const { block, blocks, send } = setup([
     p('a', 'one'),
