@@ -162,13 +162,47 @@ export async function compareStyles(
           styleHashes(b),
         ]);
         checked += expected.length;
-        if (expected.length !== actual.length)
-          differences.push(
-            `${label}: ${expected.length} vs ${actual.length} elements`
-          );
-        for (let i = 0; i < expected.length && differences.length < 20; i++)
-          if (expected[i] !== actual[i])
-            differences.push(`${label} ${await difference(a, b, i)}`);
+        const same = (x: string[], y: string[]) =>
+          x.length === y.length && x.every((hash, i) => hash === y[i]);
+        if (!same(expected, actual)) {
+          // Layout now and then differs between two loads of one page (a
+          // line of a long note wrapped once in four runs), so a mismatch
+          // gets two more fresh loads of each, like the screenshots below.
+          const fulls = [expected];
+          const subsets = [actual];
+          const matches = () =>
+            subsets.some((s) => fulls.some((f) => same(f, s)));
+          for (let retry = 0; retry < 2 && !matches(); retry++)
+            for (const [html, hashes] of [
+              [full, fulls],
+              [subset, subsets],
+            ] as const) {
+              const fresh = await open(
+                browser,
+                url,
+                html,
+                colorScheme,
+                viewport
+              );
+              hashes.push(
+                await styleHashes(fresh).finally(() => fresh.close())
+              );
+            }
+          if (!matches()) {
+            const found: string[] = [];
+            if (expected.length !== actual.length)
+              found.push(
+                `${label}: ${expected.length} vs ${actual.length} elements`
+              );
+            for (let i = 0; i < expected.length && found.length < 20; i++)
+              if (expected[i] !== actual[i])
+                found.push(`${label} ${await difference(a, b, i)}`);
+            // The full page differing from itself makes it noise.
+            if (fulls.every((f) => same(f, expected)))
+              differences.push(...found);
+            else noise.push(...found);
+          }
+        }
         const shot = (page: Page) =>
           page.screenshot({ animations: 'disabled', fullPage: true });
         const [fullShot, subsetShot] = await Promise.all([shot(a), shot(b)]);

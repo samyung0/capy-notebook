@@ -37,10 +37,11 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    those rules and with the full stylesheets instead, page scripts blocked,
    in light and dark, 412 px and 1366 px wide; every element's and
    pseudo-element's computed style and the full-page screenshots must match
-   (`scripts/styles.ts`). When the screenshots differ, both pages are loaded
-   twice more: the inlined page passes if it ever matches a full render; if
-   the full page's own renders vary, the difference is the rasteriser's and
-   is reported as noise (pixel count, place, element); otherwise the run
+   (`scripts/styles.ts`). When the computed styles or the screenshots
+   differ, both pages are loaded twice more: the inlined page passes if it
+   ever matches a full render; if the full page's own renders vary, the
+   difference is the rasteriser's or the layout's and is reported as noise
+   (properties, or pixel count, place and element); otherwise the run
    fails. Both screenshots are saved either way. A page served from before the Worker cut its CSS is
    cut by the bench with the same code, so the check can run before a deploy.
 5. Caching checks (these fail the run): each page answers
