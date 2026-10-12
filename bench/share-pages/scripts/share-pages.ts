@@ -670,7 +670,17 @@ const BUDGETS = {
   },
   cls: 0.02,
   desktopCachedPaintMs: 650,
-  desktopUncachedFcpMs: 2000,
+  /** Warm isolate; tightened from 2000 for every page on 2026-10-12 after
+   * run 38219942945 (warm medians: workspace 479, quizzes 545, flashcards
+   * 524, notes 720, notes-server-only 654, notes-near-limit 1129). */
+  desktopUncachedFcpMs: {
+    flashcards: 1000,
+    notes: 1200,
+    'notes-near-limit': 1500,
+    'notes-server-only': 1200,
+    quizzes: 1000,
+    workspace: 1000,
+  },
   mobileFcpMs: 2300,
   mobileLcpMs: {
     flashcards: 2500,
@@ -770,7 +780,7 @@ function budgetFailures(results: Awaited<ReturnType<typeof run>>) {
         check(
           `${kind} desktop uncached FCP`,
           desktop.fcp,
-          BUDGETS.desktopUncachedFcpMs,
+          per(BUDGETS.desktopUncachedFcpMs, kind),
           ' ms'
         );
       const mobile = page.mobile[edge].median;
