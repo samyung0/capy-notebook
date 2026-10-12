@@ -74,6 +74,7 @@ vi.mock('@/lib/editDrafts', () => ({
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 
 const { ItemRoom } = await import('./itemRoom');
+const { applyDrafts } = await import('@/lib/editDrafts');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -228,6 +229,39 @@ it('ends after a discard eviction, keeping its edits stored', async () => {
   expect(drafts.disposed).toBe(1);
   expect(drafts.refused).toBe(0);
   room.destroy();
+});
+
+// REVIEW5 B1: a first open that fails for want of the network (or the
+// server) shows offline instead of unavailable, and joins once the browser
+// is back online, its stored edits restored into the room; a 404 still ends
+// it for good.
+it('opens offline, then joins with its stored edits once back online', async () => {
+  const page = new EventTarget();
+  vi.stubGlobal('addEventListener', page.addEventListener.bind(page));
+  vi.stubGlobal('removeEventListener', page.removeEventListener.bind(page));
+  const row = { lineage: 'material:q:schema:1' };
+  drafts.rows = [row];
+  tokens.push(new TypeError('Failed to fetch'));
+  const { room } = await started();
+  expect(room.getSnapshot().status).toBe('offline');
+  expect(providers).toHaveLength(0);
+  page.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(providers).toHaveLength(1);
+  expect(providers[0].connects).toBe(1);
+  expect(applyDrafts).toHaveBeenCalledWith(room.doc, [row], expect.anything());
+  expect(room.getSnapshot().recovery).toBeNull();
+  // Back online once is one join: no loop.
+  page.dispatchEvent(new Event('online'));
+  await vi.advanceTimersByTimeAsync(0);
+  expect(providers).toHaveLength(1);
+  room.destroy();
+
+  tokens.push(new ApiError(404, 'Not Found'));
+  const gone = await started();
+  expect(gone.room.getSnapshot().status).toBe('unavailable');
+  gone.room.destroy();
+  vi.unstubAllGlobals();
 });
 
 // REVIEW3 N2: a token request the API refuses (403, 404) ends the room as

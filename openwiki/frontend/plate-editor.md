@@ -1394,7 +1394,12 @@ Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo
 2026-10-04): restored and synced on the next open of the same room, the
 offline banner while the room cannot be reached, a receipt deleting what it
-covers. A quiz's keys document stores under its own key (`<key>:keys`). An
+covers. A first open whose token request fails for want of the network or
+the server (anything but a 403 or 404, which leave the item unavailable)
+shows the paused state and joins once the browser is back online or the tab
+shows again, with no retry loop, its stored edits restored at that join,
+which names their lineage (REVIEW5 B1). A quiz's keys document stores under
+its own key (`<key>:keys`). An
 update the server refuses (or a store refusal for the room) ends the room
 here: its edits become a refused draft, a toast says so, and a fresh room
 opens with the draft read-only for copying until Reload (`QuizRecovery`,

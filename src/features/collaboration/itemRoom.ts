@@ -158,6 +158,8 @@ export class ItemRoom {
   private readonly pending = new Map<string, number>();
   /** The mode of the eviction notice that came before a close. */
   private eviction: string | null = null;
+  /** Stops waiting to start again after a first open that failed. */
+  private waiting: (() => void) | null = null;
 
   constructor(materialId: string, options: ItemRoomOptions = {}) {
     this.materialId = materialId;
@@ -220,8 +222,12 @@ export class ItemRoom {
         this.materialId,
         this.tokenRequest()
       );
-    } catch {
-      this.unavailable();
+    } catch (error) {
+      // Gone or no longer this user's (404, 403): unavailable for good.
+      // Offline or a server error: paused until it can join (REVIEW5 B1).
+      const refusal = roomRefusal('', error);
+      if (refusal === 'notFound' || refusal === 'forbidden') this.unavailable();
+      else this.startLater();
       return;
     }
     if (this.destroyed) return;
@@ -333,6 +339,28 @@ export class ItemRoom {
       url: first.url,
     });
     this.provider.connect();
+  }
+
+  /** A first open that failed for want of the network or the server: the
+   * room shows offline and starts again once the browser is back online or
+   * the tab shows again, as a note's token does, with no retry loop. Stored
+   * edits restore at that join, which names the lineage they belong to. */
+  private startLater() {
+    if (this.destroyed || this.waiting) return;
+    this.set({ status: 'offline' });
+    const page = globalThis.document;
+    const again = () => {
+      if (page?.visibilityState === 'hidden') return;
+      this.waiting?.();
+      void this.start();
+    };
+    globalThis.addEventListener?.('online', again);
+    page?.addEventListener('visibilitychange', again);
+    this.waiting = () => {
+      this.waiting = null;
+      globalThis.removeEventListener?.('online', again);
+      page?.removeEventListener('visibilitychange', again);
+    };
   }
 
   /** Reads this room's stored edits: the ones of its lineage go into the
@@ -542,6 +570,7 @@ export class ItemRoom {
 
   destroy() {
     this.destroyed = true;
+    this.waiting?.();
     this.reconnector.dispose();
     markUnsent(this, false);
     void this.recorder?.dispose();

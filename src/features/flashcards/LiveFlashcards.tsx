@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useMe } from '@/api/hooks';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import { useItemRoom } from '@/features/collaboration/itemRoom';
@@ -71,6 +72,9 @@ export function LiveFlashcards({
         <FlashcardGrid cards={recovered} title={showTitle ? title : ''} />
       </div>
     );
+  // Opened offline (or the server failed): it joins once back.
+  if (snapshot.status === 'offline' && !snapshot.synced)
+    return <QueryPausedState />;
   if (!(room && snapshot.synced))
     return <Skeleton className="h-40 w-full rounded-card" />;
   const grid = <FlashcardGrid cards={cards} title={showTitle ? title : ''} />;

@@ -1,5 +1,6 @@
 import { useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import {
@@ -76,6 +77,9 @@ export function QuizEditor({
         ) : (
           <Skeleton className="h-64 w-full" />
         )
+      ) : rooms.status === 'offline' ? (
+        // Opened offline (or the server failed): it joins once back.
+        <QueryPausedState />
       ) : (
         <Skeleton className="h-64 w-full" />
       )}
