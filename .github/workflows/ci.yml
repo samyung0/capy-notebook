@@ -265,6 +265,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm office:prepare
       - run: pnpm run e2e:install
+      # The live note View spec reads in WebKit too (live-items REVIEW5 M1).
+      - run: pnpm exec playwright install --with-deps webkit
       - run: pnpm run e2e
         env:
           E2E_PREBUILT_IMAGES: "true"

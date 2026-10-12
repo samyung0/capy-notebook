@@ -48,7 +48,7 @@ type ActorFixtures = {
  * editor's lazy chunk and pushed page load past the assertion budget whenever
  * several workers loaded the editor at once.
  */
-async function pageAs(browser: Browser, userId: string) {
+export async function pageAs(browser: Browser, userId: string) {
   const context = await browser.newContext();
   const appOrigin = new URL(process.env.E2E_BASE_URL!).origin;
   const headers = e2eHeaders(userId);

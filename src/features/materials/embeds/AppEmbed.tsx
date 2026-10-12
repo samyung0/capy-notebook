@@ -56,17 +56,23 @@ export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
   );
 }
 
+/** A set in a note's View: its room joins while the block is near the
+ * screen, as in Edit (REVIEW5 S5). */
 function LiveSetStudy({ material }: { material: Material }) {
-  const cards = useLiveSetCards(material.id, setCards(material));
+  const box = useRef<HTMLDivElement>(null);
+  const near = useNearScreen(box);
+  const cards = useLiveSetCards(material.id, setCards(material), near);
   return (
-    <StudyBody
-      cards={cards}
-      embedded
-      name=""
-      onRate={() => undefined}
-      provenance={material.provenance}
-      trail={[]}
-    />
+    <div ref={box}>
+      <StudyBody
+        cards={cards}
+        embedded
+        name=""
+        onRate={() => undefined}
+        provenance={material.provenance}
+        trail={[]}
+      />
+    </div>
   );
 }
 
@@ -188,6 +194,8 @@ function QuizView({
   );
 }
 
+/** A quiz in a note's View: its content room joins while the block is near
+ * the screen, as in Edit (REVIEW5 S5). */
 function LiveQuizStudy({
   quiz,
   grade,
@@ -195,16 +203,20 @@ function LiveQuizStudy({
   quiz: NonNullable<ReturnType<typeof useQuiz>['data']>;
   grade: Parameters<typeof AttemptBody>[0]['grade'];
 }) {
-  const questions = useLiveQuizQuestions(quiz.id, quiz.questions);
+  const box = useRef<HTMLDivElement>(null);
+  const near = useNearScreen(box);
+  const questions = useLiveQuizQuestions(quiz.id, quiz.questions, near);
   return (
-    <AttemptBody
-      embedded
-      grade={grade}
-      name=""
-      provenance={quiz.provenance}
-      questions={questions}
-      trail={[]}
-    />
+    <div ref={box}>
+      <AttemptBody
+        embedded
+        grade={grade}
+        name=""
+        provenance={quiz.provenance}
+        questions={questions}
+        trail={[]}
+      />
+    </div>
   );
 }
 

@@ -332,6 +332,7 @@ function MaterialBody({
       materialId={materialId}
       mode={mode}
       onEditorStatusChange={onEditorStatusChange}
+      staticNote={choice === 'readOnly'}
       target={target}
     />
   );
@@ -371,6 +372,7 @@ export function MaterialContent({
   allowExternalAssets,
   forceReadOnly,
   onEditorStatusChange,
+  staticNote = false,
   target,
 }: {
   centerQuiz: boolean;
@@ -379,6 +381,9 @@ export function MaterialContent({
   allowExternalAssets: boolean;
   forceReadOnly: boolean;
   onEditorStatusChange: (status: NoteEditorStatus | null) => void;
+  /** A heavy note opened read-only: View paints the projection and never
+   * joins the room, as the gate promises (REVIEW5 S3). */
+  staticNote?: boolean;
   /** A question or card to bring into view once the material shows. */
   target?: string;
 }) {
@@ -526,7 +531,7 @@ export function MaterialContent({
               />
             ) : (
               <Suspense fallback={<FileLoading />}>
-                {material.kind === 'note' ? (
+                {material.kind === 'note' && !staticNote ? (
                   <LiveNotePreview
                     material={material}
                     Preview={MaterialPreview}
