@@ -50,13 +50,15 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    `CF-Cache-Status: HIT`, and so does `HEAD`; a forged link gets the 404 page,
    `no-store`, and is not served from the cache.
 6. Lighthouse 13, `SHARE_PERF_RUNS` counted runs (5 by default) per page,
-   profile and edge state, in a Chromium separate from the signed-in one. Profiles:
+   profile and edge state (desktop uncached and cached, mobile cached), in a
+   Chromium separate from the signed-in one. Profiles:
    **desktop**, closer to most visitors: 40 ms RTT and 10 Mbps applied to
    the real requests (DevTools throttling), full-speed CPU, so the
    document's real server time is in FCP and LCP; and **mobile**, the worst
    case: a phone on slow 4G with a 4x slower CPU, simulated for steady
-   numbers. Simulation estimates server time per origin, so there an
-   uncached render shows only in TTFB. Edge states:
+   numbers. Simulation estimates server time per origin and leaves it out of
+   FCP and LCP, so mobile is measured cached only: an uncached mobile run
+   added nothing but a second TTFB (dropped 2026-10-12). Edge states:
    - **uncached**: the URL with a unique `?perf=…`. Workers Cache keys on the
      query string and the Worker ignores it, so this is the clean page's full
      cold render (token check, API read, render, CSS cut). An entry cannot be

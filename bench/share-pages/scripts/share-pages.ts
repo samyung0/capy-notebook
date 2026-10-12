@@ -457,8 +457,6 @@ const DESKTOP_APPLIED = {
 };
 const PROFILES = { desktop: DESKTOP_APPLIED, mobile: undefined } as const;
 type Profile = keyof typeof PROFILES;
-const EDGES = ['uncached', 'cached'] as const;
-type Edge = (typeof EDGES)[number];
 
 async function audit(port: number, url: string, profile: Profile) {
   const result = await lighthouse(
@@ -738,71 +736,59 @@ function budgetFailures(results: Awaited<ReturnType<typeof run>>) {
       per(BUDGETS.bytesKb, kind),
       ' KB'
     );
-    for (const edge of EDGES) {
-      for (const profile of ['desktop', 'mobile'] as const) {
-        const measured = page[profile][edge];
-        check(
-          `${kind} ${profile} ${edge} CLS`,
-          measured.median.cls,
-          BUDGETS.cls,
-          ''
-        );
-        if (edge === 'uncached') {
-          check(
-            `${kind} ${profile} Worker total`,
-            measured.server.total,
-            BUDGETS.workerTotalMs,
-            ' ms'
-          );
-          check(
-            `${kind} ${profile} API read`,
-            measured.server.api,
-            BUDGETS.workerApiMs,
-            ' ms'
-          );
-        }
-      }
-      const desktop = page.desktop[edge].median;
-      if (edge === 'cached') {
-        check(
-          `${kind} desktop cached FCP`,
-          desktop.fcp,
-          BUDGETS.desktopCachedPaintMs,
-          ' ms'
-        );
-        check(
-          `${kind} desktop cached LCP`,
-          desktop.lcp,
-          BUDGETS.desktopCachedPaintMs,
-          ' ms'
-        );
-      } else
-        check(
-          `${kind} desktop uncached FCP`,
-          desktop.fcp,
-          per(BUDGETS.desktopUncachedFcpMs, kind),
-          ' ms'
-        );
-      const mobile = page.mobile[edge].median;
+    for (const { edge, measured, profile } of measuredSets(page))
       check(
-        `${kind} mobile ${edge} FCP`,
-        mobile.fcp,
-        BUDGETS.mobileFcpMs,
-        ' ms'
+        `${kind} ${profile} ${edge} CLS`,
+        measured.median.cls,
+        BUDGETS.cls,
+        ''
       );
-      check(
-        `${kind} mobile ${edge} LCP`,
-        mobile.lcp,
-        per(BUDGETS.mobileLcpMs, kind),
-        ' ms'
-      );
-      check(
-        `${kind} mobile ${edge} TBT`,
-        mobile.tbt,
-        per(BUDGETS.mobileTbtMs, kind),
-        ' ms'
-      );
-    }
+    const uncached = page.desktop.uncached;
+    check(
+      `${kind} Worker total`,
+      uncached.server.total,
+      BUDGETS.workerTotalMs,
+      ' ms'
+    );
+    check(
+      `${kind} API read`,
+      uncached.server.api,
+      BUDGETS.workerApiMs,
+      ' ms'
+    );
+    check(
+      `${kind} desktop uncached FCP`,
+      uncached.median.fcp,
+      per(BUDGETS.desktopUncachedFcpMs, kind),
+      ' ms'
+    );
+    const cached = page.desktop.cached.median;
+    check(
+      `${kind} desktop cached FCP`,
+      cached.fcp,
+      BUDGETS.desktopCachedPaintMs,
+      ' ms'
+    );
+    check(
+      `${kind} desktop cached LCP`,
+      cached.lcp,
+      BUDGETS.desktopCachedPaintMs,
+      ' ms'
+    );
+    const mobile = page.mobile.cached.median;
+    check(`${kind} mobile FCP`, mobile.fcp, BUDGETS.mobileFcpMs, ' ms');
+    check(
+      `${kind} mobile LCP`,
+      mobile.lcp,
+      per(BUDGETS.mobileLcpMs, kind),
+      ' ms'
+    );
+    check(
+      `${kind} mobile TBT`,
+      mobile.tbt,
+      per(BUDGETS.mobileTbtMs, kind),
+      ' ms'
+    );
   }
   return failures;
 }
@@ -827,7 +813,7 @@ function summary(
     ],
     [
       'mobile',
-      'Mobile, simulated worst case (slow 4G, 4x slower CPU): server time shows only in TTFB',
+      'Mobile, simulated worst case (slow 4G, 4x slower CPU), cached only: simulation leaves server time out of the paint times, so an uncached run would only repeat TTFB',
     ],
   ] as const) {
     lines.push(
@@ -845,8 +831,9 @@ function summary(
     ) =>
       `| ${kind} | ${label} | ${ms(m.ttfb)} | ${server ? `${ms(server.total)} (${ms(server.api)})` : '—'} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`;
     for (const page of results.pages)
-      for (const edge of EDGES) {
-        const measured = page[profile][edge];
+      for (const { edge, measured } of measuredSets(page).filter(
+        (set) => set.profile === profile
+      )) {
         // A run the edge answered against the plan is called out.
         const expected = edge === 'cached' ? 'HIT' : 'MISS';
         const statuses = measured.attempts
@@ -956,27 +943,27 @@ async function run(page: Page) {
     const pages = [];
     for (const [index, item] of shared.entries()) {
       const url = `${appUrl}${item.path}`;
-      const profiles = {} as Record<
-        Profile,
-        Record<Edge, Awaited<ReturnType<typeof measure>>>
-      >;
-      for (const profile of ['desktop', 'mobile'] as const)
-        profiles[profile] = {
-          // A unique query string is its own Workers Cache entry: a render.
-          uncached: await measure(
-            LIGHTHOUSE_PORT,
-            (i) => `${url}?perf=${id}-${profile}-${i}`,
-            profile,
-            false
-          ),
-          cached: await measure(LIGHTHOUSE_PORT, () => url, profile, true),
-        };
       pages.push({
         breakdown: breakdowns[index],
         cache: caches[index],
         kind: item.kind,
         styles: styles[index],
-        ...profiles,
+        desktop: {
+          // A unique query string is its own Workers Cache entry: a render.
+          uncached: await measure(
+            LIGHTHOUSE_PORT,
+            (i) => `${url}?perf=${id}-${i}`,
+            'desktop',
+            false
+          ),
+          cached: await measure(LIGHTHOUSE_PORT, () => url, 'desktop', true),
+        },
+        // Cached only: simulated throttling leaves server time out of FCP
+        // and LCP, so an uncached mobile run measured nothing desktop's
+        // doesn't, apart from TTFB.
+        mobile: {
+          cached: await measure(LIGHTHOUSE_PORT, () => url, 'mobile', true),
+        },
       });
     }
     return {
@@ -1001,6 +988,19 @@ async function run(page: Page) {
   }
 }
 
+type Measured = Awaited<ReturnType<typeof run>>['pages'][number];
+
+/** What a page is measured as: desktop uncached and cached, mobile cached. */
+const measuredSets = ({
+  desktop,
+  mobile,
+}: Pick<Measured, 'desktop' | 'mobile'>) =>
+  [
+    { edge: 'uncached', measured: desktop.uncached, profile: 'desktop' },
+    { edge: 'cached', measured: desktop.cached, profile: 'desktop' },
+    { edge: 'cached', measured: mobile.cached, profile: 'mobile' },
+  ] as const;
+
 const browser = await chromium.launch();
 const page = await browser.newPage({ baseURL: appUrl });
 let failed = false;
@@ -1012,14 +1012,12 @@ try {
   // Lighthouse result and its DevTools trace (load it in the Performance
   // panel).
   for (const item of results.pages)
-    for (const profile of ['desktop', 'mobile'] as const)
-      for (const edge of EDGES) {
-        const measured = item[profile][edge];
-        const name = path.join(out, `${item.kind}-${profile}-${edge}`);
-        await writeFile(`${name}.report.html`, measured.report);
-        await writeFile(`${name}.lhr.json`, JSON.stringify(measured.lhr));
-        await writeFile(`${name}.trace.json`, JSON.stringify(measured.trace));
-      }
+    for (const { edge, measured, profile } of measuredSets(item)) {
+      const name = path.join(out, `${item.kind}-${profile}-${edge}`);
+      await writeFile(`${name}.report.html`, measured.report);
+      await writeFile(`${name}.lhr.json`, JSON.stringify(measured.lhr));
+      await writeFile(`${name}.trace.json`, JSON.stringify(measured.trace));
+    }
   const keep = (measured: Awaited<ReturnType<typeof measure>>) => ({
     attempts: measured.attempts,
     cold: measured.cold,
@@ -1037,7 +1035,7 @@ try {
         cached: keep(desktop.cached),
         uncached: keep(desktop.uncached),
       },
-      mobile: { cached: keep(mobile.cached), uncached: keep(mobile.uncached) },
+      mobile: { cached: keep(mobile.cached) },
     })),
     runs: RUNS,
   };
