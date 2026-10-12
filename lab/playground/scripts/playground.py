@@ -785,7 +785,14 @@ async def check_quiz(questions: list[Any]) -> str:
 FENCE = re.compile(r"^```([\w-]*)[^\n]*\n(.*?)^```[ \t]*$", re.M | re.S)
 EMBED_HTML_MAX = 64 * 1024
 EMBEDS_PER_NOTE = 10
-NETWORK = re.compile(r"https?://|\bfetch\(|XMLHttpRequest|WebSocket|EventSource|import\(")
+# The frame's CSP (embed/_headers) loads scripts, stylesheets and fonts from
+# these origins only and allows no fetch; the SVG namespace is a name, never
+# loaded.
+EMBED_ORIGINS = sorted(
+    set(re.findall(r"https://[\w.-]+", (EMBED / "_headers").read_text(encoding="utf-8")))
+)
+ORIGIN = re.compile(r"https?://[\w.-]+")
+NETWORK = re.compile(r"\bfetch\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon")
 
 
 async def check_note(markdown: str) -> str:
@@ -839,6 +846,13 @@ async def check_note(markdown: str) -> str:
                 return f"{where} needs html"
             if len(html.encode()) > EMBED_HTML_MAX:
                 return f"{where}: html is {len(html.encode())} bytes, over {EMBED_HTML_MAX}"
+            outside = [
+                origin
+                for origin in ORIGIN.findall(html)
+                if origin not in EMBED_ORIGINS and origin != "http://www.w3.org"
+            ]
+            if outside:
+                return f"{where}: html may load only from {', '.join(EMBED_ORIGINS)} ({outside[0]})"
             if NETWORK.search(html):
                 return f"{where}: html must not reach the network ({NETWORK.search(html).group(0)})"
     return ""
@@ -2238,11 +2252,25 @@ def check() -> None:
     note = "```flashcards\ncards:\n- front: a\n  back: b\n```\n"
     embed = "```html-embed\ncaption: t\nhtml: |\n  <p>x</p>\n```\n"
     assert asyncio.run(check_note("text\n" + note + embed + "```mermaid\nflowchart\n```\n")) == ""
+    assert EMBED_ORIGINS == [
+        "https://cdn.jsdelivr.net",
+        "https://cdnjs.cloudflare.com",
+        "https://esm.sh",
+        "https://unpkg.com",
+    ]
+    library = (
+        "```html-embed\nhtml: |\n"
+        '  <script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script>\n'
+        "  <script>document.createElementNS('http://www.w3.org/2000/svg', 'g')</script>\n```\n"
+    )
+    assert asyncio.run(check_note(library)) == ""
     for bad, says in (
         ("```flashcards\ncards: []\n```\n", "non-empty cards"),
         ("```flashcards\ncards:\n- front: a\n```\n", "front and a back"),
         ("```html-embed\ncaption: t\n```\n", "needs html"),
-        ("```html-embed\nhtml: <img src='https://x'>\n```\n", "network"),
+        ("```html-embed\nhtml: <img src='https://x'>\n```\n", "may load only from"),
+        ("```html-embed\nhtml: <img src='https://esm.sh.example'>\n```\n", "(https://esm.sh.example)"),
+        ("```html-embed\nhtml: <script>fetch('/x')</script>\n```\n", "network"),
         ("```html-embed\n: [\n```\n", "not YAML"),
     ):
         assert says in asyncio.run(check_note(bad)), bad
@@ -2299,7 +2327,11 @@ def check() -> None:
                 response = await client.get("/api/runs/r1/slides/d1/2.svg")
                 assert response.status_code == 404
             response = await client.get("/embed/")
-            assert "default-src 'none'" in response.headers["content-security-policy"]
+            csp = response.headers["content-security-policy"]
+            assert f"Content-Security-Policy: {csp}\n" in (EMBED / "_headers").read_text(
+                encoding="utf-8"
+            )
+            assert csp.startswith("default-src 'none'")
             for mode in (False, True):
                 c = merged({"library": mode})
                 expected = effective_prompt(c, with_library=False)

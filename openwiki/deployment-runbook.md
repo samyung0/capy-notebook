@@ -894,9 +894,13 @@ A note's interactive HTML block runs its snippet in a sandboxed iframe that
 loads `embed/index.html` from a Cloudflare Pages project. `pages.dev` is a
 public suffix, so the frame is a site of its own: the browser gives it its own
 process, and a runaway snippet cannot freeze the app's tab. `embed/_headers`
-sends the CSP (no requests at all; only inline script and style, `data:` and
-`blob:` images, `data:` fonts), `nosniff`, `no-referrer` and
-`X-DNS-Prefetch-Control: off`. It sets no `frame-ancestors`: the same file
+sends the CSP (inline script and style, scripts, stylesheets and fonts from
+`https://cdnjs.cloudflare.com`, `https://cdn.jsdelivr.net`, `https://esm.sh`
+and `https://unpkg.com`, `data:` and `blob:` images, `data:` fonts, no worker
+and no other request; SECURITY.md path 11 has the residual risk), `nosniff`,
+`no-referrer` and `X-DNS-Prefetch-Control: off`. Every place that serves the
+frame reads this one file: Pages, `vite-embed.ts` and the playground's
+`/embed/`. It sets no `frame-ancestors`: the same file
 serves both environments and every per-deployment URL, and the frame holds
 nothing another site could take.
 

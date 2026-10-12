@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; font-src data:
+  Content-Security-Policy: default-src 'none'; script-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://unpkg.com; style-src 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://unpkg.com; font-src data: https://cdnjs.cloudflare.com https://cdn.jsdelivr.net https://esm.sh https://unpkg.com; img-src data: blob:; worker-src 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-DNS-Prefetch-Control: off

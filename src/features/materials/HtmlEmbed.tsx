@@ -1,7 +1,8 @@
 /* Interactive HTML block (`html_embed`). The snippet runs only inside a frame
  * sandboxed to `allow-scripts`, loaded from VITE_EMBED_ORIGIN: a separate site,
  * so the snippet gets its own process, no access to the app and, by the
- * wrapper's CSP (embed/_headers), no network. Protocol with embed/index.html:
+ * wrapper's CSP (embed/_headers), no request but scripts, stylesheets and
+ * fonts from four public CDNs. Protocol with embed/index.html:
  * on load the host posts {type: 'render', html, theme, font} once, `font`
  * being the app's Fustat bytes (the frame cannot fetch them); the frame posts
  * back only {type: 'resize', height}. A frame navigated away (to a page

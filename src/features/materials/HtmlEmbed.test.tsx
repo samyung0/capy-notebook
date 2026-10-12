@@ -26,25 +26,36 @@ describe('interactive block frame', () => {
     expect(markup).not.toContain('snippet');
   });
 
-  // Security regression (interactive block decisions 2026-10-01/05/07: no
-  // network from the frame): the wrapper's own headers block every request.
-  it('serves its wrapper under a CSP that allows no request', () => {
+  // Security regression (human plate-editor 2026-10-11 CDN allowlist): the
+  // wrapper's headers, which Pages, vite-embed.ts and the playground all
+  // serve, let scripts, stylesheets and fonts come from the four CDNs and
+  // nothing else, with no fetch, frame, worker or other request.
+  it('serves its wrapper under a CSP that allows only the four CDNs', () => {
     const headers = readFileSync(
       new URL('../../../embed/_headers', import.meta.url),
       'utf8'
     );
     const policy = headers.match(CSP_LINE)?.[1];
-    const directives = new Map(
+    const directives = Object.fromEntries(
       (policy ?? '').split(';').map((directive) => {
         const [name = '', ...sources] = directive.trim().split(SPACES);
-        return [name, sources] as const;
+        return [name, sources.sort()];
       })
     );
-    expect(directives.get('default-src')).toEqual(["'none'"]);
-    const allowed = new Set(["'none'", "'unsafe-inline'", 'data:', 'blob:']);
-    for (const [name, sources] of directives)
-      for (const source of sources)
-        expect(allowed.has(source), `${name} ${source}`).toBe(true);
+    const cdns = [
+      'https://cdn.jsdelivr.net',
+      'https://cdnjs.cloudflare.com',
+      'https://esm.sh',
+      'https://unpkg.com',
+    ];
+    expect(directives).toEqual({
+      'default-src': ["'none'"],
+      'font-src': ['data:', ...cdns],
+      'img-src': ['blob:', 'data:'],
+      'script-src': ["'unsafe-inline'", ...cdns],
+      'style-src': ["'unsafe-inline'", ...cdns],
+      'worker-src': ["'none'"],
+    });
   });
 
   it('accepts only a finite resize posted by its own frame, clamped', () => {

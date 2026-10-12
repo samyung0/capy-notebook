@@ -454,9 +454,12 @@ var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	noteFigureFences +
 	"```quiz fences (YAML `questions:` list, each in the quiz question format) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
-	"items; and ```html-embed fences for an interactive (YAML: `caption`, `html: |`), at most 10 " +
-	"per note. The html is one small self-contained snippet under 64 KB: inline CSS and script, " +
-	"no network, no external URLs, no navigating the page, colours only from the provided " +
+	"items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at " +
+	"most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a " +
+	"library may load (script src, stylesheet link or module import) only from " +
+	"https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com " +
+	"at an exact version, and nothing else reaches the network (no other src or href, no " +
+	"fetch, no navigating the page); colours only from the provided " +
 	"variables --bg, --fg, --muted, --accent and --border so it follows the light and dark " +
 	"theme, height fitting its content with no vh or vw units. The frame already gives the " +
 	"body the note's font (--font), text colour, no margin and a transparent background, and " +
