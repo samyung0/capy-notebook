@@ -211,7 +211,10 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
         title: `${PREFIX} ${run} ${title}`,
       }
     );
-    const clone = await api(page, `/api/materials/${note.id}/clone`, 'POST');
+    // No workspaceId: a standalone copy.
+    const clone = await api(page, `/api/materials/${note.id}/clone`, 'POST', {
+      title: `${PREFIX} ${run} ${title}`,
+    });
     await api(page, `/api/materials/${clone.id}/sharing`, 'PATCH', {
       privacy: 'link',
     });
