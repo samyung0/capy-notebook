@@ -165,6 +165,19 @@ def _expected_type(schema: dict[str, Any]) -> str:
     return words
 
 
+def _unknown(path: str, key: str, value: Any, kind: str | None, *, fence: bool) -> str:
+    """A field the shape does not take, with what to do instead. A field sent
+    as null is one the model meant to leave empty."""
+    hint = (
+        "leave out a field that does not apply"
+        if value is None
+        else _hint(key, kind, fence=fence)
+    )
+    return f"{_at(path, [key])}: unknown field, sent {_sent(value)}" + (
+        f"; {hint}" if hint else ""
+    )
+
+
 def _hint(key: str, kind: str | None, *, fence: bool) -> str:
     """Why a field does not belong, and what does."""
     open_one = "an open question" if fence else "add_open_question"
@@ -238,18 +251,17 @@ def _problem(
         ]
     if error.validator == "additionalProperties":
         props = error.schema.get("properties", {})
-        out = []
-        for key in [k for k in value if k not in props]:
-            hint = _hint(key, kind, fence=fence)
-            out.append(
-                f"{_at(path, [key])}: unknown field, sent {_sent(value[key])}"
-                + (f"; {hint}" if hint else "")
-            )
-        return out
+        return [
+            _unknown(path, key, value[key], kind, fence=fence)
+            for key in value
+            if key not in props
+        ]
     if error.validator == "type":
         expected = _expected_type(error.schema)
         if path.endswith(".correct"):
             expected += ", the correct option copied exactly (not its index)"
+        elif value is None:
+            expected += ", or the field left out"
         return [f"{path}: expected {expected}; sent {_sent(value)}"]
     if error.validator in ("minItems", "maxItems"):
         bound = "at least" if error.validator == "minItems" else "at most"
@@ -456,9 +468,7 @@ def check_item(item: Any, index: int, path: str, *, fence: bool) -> Item:
         for e in validator.iter_errors(item)
     )
     problems += [
-        f"{_at(path, [k])}: unknown field, sent {_sent(item[k])}; {_hint(k, kind, fence=fence)}"
-        for k in item
-        if k in foreign
+        _unknown(path, k, item[k], kind, fence=fence) for k in item if k in foreign
     ]
     problems += [f"{_at(path, [k])}: missing; expected {EXPECTED[k]}" for k in missing]
     if fence and "replaces" in item:

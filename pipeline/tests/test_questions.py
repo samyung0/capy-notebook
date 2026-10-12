@@ -190,6 +190,22 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
     ]
 
 
+def test_a_null_field_is_named_as_one_to_leave_out():
+    """GLM fills fields that do not apply with null (a live run sent accepted:
+    null on every multiple-choice question)."""
+    found = questions.check(
+        "add_questions",
+        {"title": "T", "questions": [{**MCQ, "accepted": None, "explanation": None}]},
+    )
+    assert found.items[0].problems == [
+        "questions[0].explanation: expected text, or the field left out; sent null",
+        (
+            "questions[0].accepted: unknown field, sent null; leave out a field that "
+            "does not apply"
+        ),
+    ]
+
+
 def _ctx(monkeypatch) -> ToolContext:
     monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
     ctx = ToolContext(

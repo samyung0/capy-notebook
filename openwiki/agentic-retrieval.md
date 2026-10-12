@@ -2819,7 +2819,8 @@ Go's validator stays the backstop. Every problem of a call is named at once,
 as `path: expected …; sent …` (`questions[2].correct: expected one of the
 options, copied exactly: "In", "Out"; sent "in"`), with targeted hints for
 the usual mistakes (a markscheme or marks on a simple question, `fixedUnit`,
-`solution`, an index for `correct`, a unit with text answers), and a
+`solution`, an index for `correct`, a unit with text answers, a field that
+does not apply sent as null), and a
 structural mistake (a field missing, unknown or of the wrong type) adds the
 shape to copy. `add_questions` saves its valid questions and names the
 others for resending, with the quiz id and the `after_question_id` that keeps
