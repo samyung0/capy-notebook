@@ -55,6 +55,17 @@ func TestViewersGetReadOnlyCollaborationTokens(t *testing.T) {
 				t.Fatalf("%s on %s: access %q (%v), want %q", c.user, material, token.Access, err, c.access)
 			}
 		}
+		// A View asks for a read channel even for its owner or an editor
+		// (live-items REVIEW5 N2).
+		for _, user := range []string{"u_owner", "u_editor"} {
+			rec := doReq(t, h, http.MethodPost, "/api/materials/"+material+"/collaboration-token", user, map[string]any{"access": "read"})
+			var token struct {
+				Access string `json:"access"`
+			}
+			if rec.Code != http.StatusCreated || json.Unmarshal(rec.Body.Bytes(), &token) != nil || token.Access != "read" {
+				t.Fatalf("%s asking to read %s = %d body=%s, want a read token", user, material, rec.Code, rec.Body.String())
+			}
+		}
 	}
 }
 

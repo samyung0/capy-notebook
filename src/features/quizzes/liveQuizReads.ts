@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { whileVisible } from '@/features/collaboration/whileVisible';
 import type { LearnerQuestion } from '@/features/questions/types';
 
 /**
@@ -20,13 +21,17 @@ export function useLiveQuizQuestions(
   const [generation, setGeneration] = useState(0);
   useEffect(() => {
     if (!enabled) return;
-    return readLive(quizId, setLive, () => setGeneration((value) => value + 1));
+    // Left while the tab is hidden (REVIEW5 N5).
+    return whileVisible(() =>
+      readLive(quizId, setLive, () => setGeneration((value) => value + 1))
+    );
   }, [quizId, enabled, generation]);
   return live ?? stored;
 }
 
-/** Joins the quiz's content room as a reader (never its keys) and hands
- * every state of its questions to `onQuestions`; returns the leave. */
+/** Joins the quiz's content room on a read channel (never its keys; REVIEW5
+ * N2) and hands every state of its questions to `onQuestions`; returns the
+ * leave. */
 export function readLive(
   quizId: string,
   onQuestions: (questions: LearnerQuestion[]) => void,
@@ -39,7 +44,7 @@ export function readLive(
     import('./liveQuiz'),
   ]).then(([{ ItemRoom }, { readLearnerQuestions }]) => {
     if (cancelled) return;
-    const room = new ItemRoom(quizId, { onReplace });
+    const room = new ItemRoom(quizId, { onReplace, read: true });
     const update = () => {
       if (room.getSnapshot().synced)
         onQuestions(readLearnerQuestions(room.doc, room.lists));

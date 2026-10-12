@@ -2074,19 +2074,21 @@ export const handlers = [
       const material = db.materials.find((item) => item.id === params.id);
       if (!material) return new HttpResponse(null, { status: 404 });
       const body = (await request.json().catch(() => null)) as {
+        access?: string;
         document?: string;
       } | null;
       const keys = body?.document === 'keys';
+      const write = material.capabilities.canEdit && body?.access !== 'read';
       if (keys && material.kind !== 'quiz')
         return new HttpResponse(null, { status: 404 });
       // A quiz's keys go to editors who can write only (Epo 2026-10-10).
-      if (keys && !material.capabilities.canEdit)
-        return new HttpResponse(null, { status: 403 });
+      if (keys && !write) return new HttpResponse(null, { status: 403 });
       const room = mockMaterialRoom(material.id);
-      // Viewers get read channels (Epo 2026-10-10, D1).
+      // Viewers get read channels (Epo 2026-10-10, D1), as does anyone who
+      // asks for one (REVIEW5 N2).
       return HttpResponse.json(
         {
-          access: material.capabilities.canEdit ? 'write' : 'read',
+          access: write ? 'write' : 'read',
           expiresAt: Math.floor(Date.now() / 1000) + 5 * 60,
           room: keys ? `keys:${room.slice('material:'.length)}` : room,
           token: 'mock-collaboration-token',

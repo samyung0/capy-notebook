@@ -4,10 +4,12 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { MaterialCollaborationTokenBodyAccess } from './materialCollaborationTokenBodyAccess.ts';
 import type { MaterialCollaborationTokenBodyDocument } from './materialCollaborationTokenBodyDocument.ts';
 
 export interface MaterialCollaborationTokenBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  access?: MaterialCollaborationTokenBodyAccess;
   document?: MaterialCollaborationTokenBodyDocument;
 }

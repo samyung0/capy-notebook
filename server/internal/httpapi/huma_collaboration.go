@@ -53,9 +53,13 @@ type collaborationTokenInput struct {
 }
 
 // MaterialCollaborationTokenBody names the document: a quiz's keys document
-// goes to editors who can write only (live-items, Epo 2026-10-10).
+// goes to editors who can write only (live-items, Epo 2026-10-10). Access
+// "read" asks for a read channel whatever the user may do: a View or a study
+// page never writes, and the server then refuses anything it sends
+// (live-items REVIEW5 N2).
 type MaterialCollaborationTokenBody struct {
 	Document string `json:"document,omitempty" enum:"content,keys"`
+	Access   string `json:"access,omitempty" enum:"read"`
 }
 
 type materialCollaborationTokenInput struct {
@@ -277,7 +281,7 @@ func (a *api) createMaterialCollaborationToken(
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if !owner.CanEdit() || !actor.CanEdit() || full {
+	if !owner.CanEdit() || !actor.CanEdit() || full || (in.Body != nil && in.Body.Access == "read") {
 		access = "read"
 	}
 	me, _ := a.s.Me(ctx, uid)

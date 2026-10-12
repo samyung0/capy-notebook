@@ -117,6 +117,9 @@ export interface ItemRoomOptions {
   drafts?: { actorId: string };
   /** The room ended for good here (refused, moved): mount a fresh one. */
   onReplace?: () => void;
+  /** A reader (a View, a study page): asks for a read channel even when the
+   * user may write (REVIEW5 N2), so the server refuses anything it sends. */
+  read?: boolean;
 }
 
 export class ItemRoom {
@@ -196,6 +199,13 @@ export class ItemRoom {
     return this.unsynced > 0 ? 'syncing' : 'synced';
   }
 
+  private tokenRequest() {
+    return {
+      access: this.options.read ? ('read' as const) : undefined,
+      document: this.options.document,
+    };
+  }
+
   private draftKey() {
     const { drafts, document } = this.options;
     if (!drafts) return null;
@@ -208,7 +218,7 @@ export class ItemRoom {
     try {
       first = await getMaterialCollaborationToken(
         this.materialId,
-        this.options.document
+        this.tokenRequest()
       );
     } catch {
       this.unavailable();
@@ -249,7 +259,11 @@ export class ItemRoom {
           return;
         }
         if (reason === 'read-only connection sent a document update') {
+          // Its document held changes the room no longer does (the room lost
+          // its last unstored window, in a crash): a fresh document joins,
+          // since a read channel has nothing of its own to keep (REVIEW5 S1).
           this.readOnly();
+          this.moved();
           return;
         }
         if (reason === EVICTED) {
@@ -299,7 +313,7 @@ export class ItemRoom {
         try {
           fresh = await getMaterialCollaborationToken(
             this.materialId,
-            this.options.document
+            this.tokenRequest()
           );
         } catch (error) {
           this.tokenError = error;

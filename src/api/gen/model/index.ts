@@ -184,6 +184,7 @@ export * from './materialChildBlock.ts';
 export * from './materialChildrenInputBody.ts';
 export * from './materialChildrenOutputBody.ts';
 export * from './materialCollaborationTokenBody.ts';
+export * from './materialCollaborationTokenBodyAccess.ts';
 export * from './materialCollaborationTokenBodyDocument.ts';
 export * from './materialEmbedCredits.ts';
 export * from './materialIndexOutputBody.ts';

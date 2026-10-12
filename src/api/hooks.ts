@@ -1947,14 +1947,15 @@ export function useDeleteMaterialDiscussion(materialId: string) {
 }
 
 /** A room token; `keys` asks for a quiz's keys document (editors who can
- * write only, live-items). */
+ * write only, live-items), `read` for a read channel whatever the user may do
+ * (a View or a study page, which never write: REVIEW5 N2). */
 export const getMaterialCollaborationToken = (
   materialId: string,
-  document?: 'keys'
+  { access, document }: { access?: 'read'; document?: 'keys' } = {}
 ) =>
   api.post<MaterialCollaborationToken>(
     `/materials/${materialId}/collaboration-token`,
-    document ? { document } : undefined
+    document || access ? { access, document } : undefined
   );
 
 export function useMaterialCollaborationToken(

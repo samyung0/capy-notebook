@@ -2778,6 +2778,10 @@ components:
           format: uri
           readOnly: true
           type: string
+        access:
+          enum:
+            - read
+          type: string
         document:
           enum:
             - content

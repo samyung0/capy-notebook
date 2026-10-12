@@ -3219,6 +3219,7 @@ export const CreateMaterialCollaborationTokenParams = zod.object({
 })
 
 export const CreateMaterialCollaborationTokenBody = zod.object({
+  "access": zod.enum(['read']).optional(),
   "document": zod.enum(['content', 'keys']).optional()
 })
 
