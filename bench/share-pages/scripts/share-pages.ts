@@ -535,8 +535,13 @@ async function audit(port: number, url: string, profile: Profile) {
       return duration ? [[name, Number(duration)]] : [];
     })
   ) as { api?: number; total?: number };
+  // Whether a new isolate rendered the page (workers/site/index.ts).
+  const isolate = header('server-timing')?.match(
+    /isolate;desc="(new|reused)"/
+  )?.[1] as 'new' | 'reused' | undefined;
   return {
     edge: header('cf-cache-status') ?? 'none',
+    isolate,
     lhr: result.lhr,
     metrics,
     report: result.report as string,
@@ -550,21 +555,10 @@ async function audit(port: number, url: string, profile: Profile) {
 const median = (values: number[]) =>
   [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
-/** Runs Lighthouse RUNS times and keeps the median of each metric, plus the
- * run whose LCP is the median. */
-async function measure(
-  port: number,
-  url: (index: number) => string,
-  profile: Profile,
-  warm: boolean
-) {
-  const runs: Awaited<ReturnType<typeof audit>>[] = [];
-  for (let index = 0; index < RUNS; index++) {
-    // A cached run asks right after a request that fills the edge, since the
-    // five-minute entry may have lapsed while earlier pages were measured.
-    if (warm) await (await fetch(url(index))).body?.cancel();
-    runs.push(await audit(port, url(index), profile));
-  }
+type Run = Awaited<ReturnType<typeof audit>>;
+
+/** The median of each metric, plus the run whose LCP is the median. */
+function medians(runs: Run[]) {
   const pick = (get: (m: Metrics) => number) =>
     median(runs.map(({ metrics }) => get(metrics)));
   const middle = runs.find(
@@ -586,19 +580,67 @@ async function measure(
       tbt: pick((m) => m.tbt),
       ttfb: pick((m) => m.ttfb),
     } satisfies Metrics,
-    /** Each run's CF-Cache-Status for its document. */
-    edges: runs.map(({ edge }) => edge),
+    middle,
     /** Median Server-Timing of the runs: on a miss, this run's render; on a
      * hit, the render that filled the cache. */
     server: {
-      // Missing when the release predates the header.
       api: median(runs.flatMap(({ server }) => server.api ?? [])),
       total: median(runs.flatMap(({ server }) => server.total ?? [])),
     },
     servers: runs.map(({ server }) => server),
+    runs: runs.map(({ metrics }) => metrics),
+  };
+}
+
+/** Uncached runs stop here even short of RUNS warm ones. About half land on
+ * a new isolate, so RUNS warm runs take about twice RUNS; four times leaves
+ * well under a 1% chance of falling short. */
+const MAX_UNCACHED_RUNS = RUNS * 4;
+
+/** Runs Lighthouse until RUNS runs count and keeps their medians. An
+ * uncached run counts only when a warm isolate rendered the page: a new one
+ * adds a few hundred ms of cold start to about half the runs at random,
+ * which moved the median by that much from run to run. Those runs are kept
+ * apart as `cold`, reported but not budgeted. */
+async function measure(
+  port: number,
+  url: (index: number) => string,
+  profile: Profile,
+  cached: boolean
+) {
+  const runs: Run[] = [];
+  const cold: Run[] = [];
+  /** Every run in order: its document's CF-Cache-Status and, uncached,
+   * whether a new isolate rendered it. */
+  const attempts: { edge: string; isolate?: 'new' | 'reused' }[] = [];
+  for (let index = 0; runs.length < RUNS; index++) {
+    if (!cached && index === MAX_UNCACHED_RUNS) break;
+    // A cached run asks right after a request that fills the edge, since the
+    // five-minute entry may have lapsed while earlier pages were measured.
+    if (cached) await (await fetch(url(index))).body?.cancel();
+    const result = await audit(port, url(index), profile);
+    attempts.push({ edge: result.edge, isolate: result.isolate });
+    if (!cached && !result.isolate)
+      throw new Error(`${url(index)}: no isolate in Server-Timing`);
+    (cached || result.isolate === 'reused' ? runs : cold).push(result);
+  }
+  if (!runs.length)
+    throw new Error(
+      `${url(0)}: no warm isolate in ${MAX_UNCACHED_RUNS} uncached runs`
+    );
+  const { middle, ...counted } = medians(runs);
+  const coldMedians = cold.length ? medians(cold) : undefined;
+  return {
+    ...counted,
+    attempts,
+    cold: coldMedians && {
+      median: coldMedians.median,
+      runs: coldMedians.runs,
+      server: coldMedians.server,
+      servers: coldMedians.servers,
+    },
     lhr: middle.lhr,
     report: middle.report,
-    runs: runs.map(({ metrics }) => metrics),
     shifts: middle.shifts,
     trace: middle.trace,
   };
@@ -606,8 +648,10 @@ async function measure(
 
 /** Signed off 2026-10-11 from runs 38121449475 and 38122817338: the worst
  * median with some headroom; cached desktop paint and the near-limit
- * note's blocking time raised after run 38144545133. Medians are compared, cached and uncached
- * alike unless named. Blocking time is set from the slower of the two
+ * note's blocking time raised after run 38144545133. Medians are compared,
+ * cached and uncached alike unless named; uncached medians are of
+ * warm-isolate runs only since 2026-10-12 (the budgets were set from medians
+ * that mixed in cold ones). Blocking time is set from the slower of the two
  * runners GitHub handed out (Lighthouse CPU benchmark about 2200 against
  * 3600), since it scales with the runner's CPU. */
 const BUDGETS = {
@@ -759,9 +803,9 @@ function summary(
   const lines = [
     '### Shared pages on UAT',
     '',
-    `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse} · ${results.chromium} · median of ${RUNS}`,
+    `Release \`${results.release ?? 'unknown'}\` · Lighthouse ${results.lighthouse} · ${results.chromium} · median of ${RUNS} (uncached: warm isolates, up to ${MAX_UNCACHED_RUNS} runs)`,
     '',
-    "Uncached: a unique query string, so the Worker renders the page. Cached: the clean URL, requested just before. Edge is each run's own CF-Cache-Status. TTFB is the document's server response time; Worker is the Worker's own Server-Timing for an uncached render, the time until the page was built with the API read in brackets (CPU time never shows in a Worker's clock, so the render itself is the rest of TTFB). Every run is a first visit: the browser's cache is empty.",
+    "Uncached: a unique query string, so the Worker renders the page. Cached: the clean URL, requested just before. Edge is each run's own CF-Cache-Status. TTFB is the document's server response time; Worker is the Worker's own Server-Timing for an uncached render, the time until the page was built with the API read in brackets (CPU time never shows in a Worker's clock, so the render itself is the rest of TTFB). Every run is a first visit: the browser's cache is empty. Uncached medians and budgets count only runs a warm Worker isolate rendered; the runs a new isolate rendered (its cold start, a few hundred ms) are the *new isolate* row, not budgeted.",
   ];
   for (const [profile, label] of [
     [
@@ -780,18 +824,43 @@ function summary(
       '| Page | Edge | TTFB ms | Worker ms (API) | FCP ms | LCP ms | CLS | TBT ms | Total KB | Document KB | Script KB | Requests | Score |',
       '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |'
     );
+    const row = (
+      kind: string,
+      label: string,
+      m: Metrics,
+      server: { api: number; total: number } | undefined
+    ) =>
+      `| ${kind} | ${label} | ${ms(m.ttfb)} | ${server ? `${ms(server.total)} (${ms(server.api)})` : '—'} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`;
     for (const page of results.pages)
       for (const edge of EDGES) {
         const measured = page[profile][edge];
-        const m = measured.median;
         // A run the edge answered against the plan is called out.
         const expected = edge === 'cached' ? 'HIT' : 'MISS';
-        const statuses = measured.edges
-          .map((status) => (status === expected ? status : `**${status}**`))
+        const statuses = measured.attempts
+          .map(({ edge: status }) =>
+            status === expected ? status : `**${status}**`
+          )
           .join(' ');
+        const uncached = edge === 'uncached';
         lines.push(
-          `| ${page.kind} | ${edge} (${statuses}) | ${ms(m.ttfb)} | ${edge === 'uncached' ? `${ms(measured.server.total)} (${ms(measured.server.api)})` : '—'} | ${ms(m.fcp)} | ${ms(m.lcp)} | ${m.cls.toFixed(3)} | ${ms(m.tbt)} | ${kb(m.bytes.total)} | ${kb(m.bytes.document)} | ${kb(m.bytes.script)} | ${m.requests} | ${Math.round(m.score * 100)} |`
+          row(
+            page.kind,
+            uncached
+              ? `uncached, warm isolate (${measured.runs.length} of ${measured.attempts.length}: ${statuses})`
+              : `cached (${statuses})`,
+            measured.median,
+            uncached ? measured.server : undefined
+          )
         );
+        if (measured.cold)
+          lines.push(
+            row(
+              page.kind,
+              `uncached, new isolate (${measured.cold.runs.length})`,
+              measured.cold.median,
+              measured.cold.server
+            )
+          );
       }
   }
   lines.push('', '**Layout shifts** (mobile, cached, the median-LCP run)', '');
@@ -939,7 +1008,8 @@ try {
         await writeFile(`${name}.trace.json`, JSON.stringify(measured.trace));
       }
   const keep = (measured: Awaited<ReturnType<typeof measure>>) => ({
-    edges: measured.edges,
+    attempts: measured.attempts,
+    cold: measured.cold,
     median: measured.median,
     runs: measured.runs,
     server: measured.server,

@@ -49,8 +49,8 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    cookies, language and user agent gets the same bytes with
    `CF-Cache-Status: HIT`, and so does `HEAD`; a forged link gets the 404 page,
    `no-store`, and is not served from the cache.
-6. Lighthouse 13, `SHARE_PERF_RUNS` times (5 by default) per page, profile
-   and edge state, in a Chromium separate from the signed-in one. Profiles:
+6. Lighthouse 13, `SHARE_PERF_RUNS` counted runs (5 by default) per page,
+   profile and edge state, in a Chromium separate from the signed-in one. Profiles:
    **desktop**, closer to most visitors: 40 ms RTT and 10 Mbps applied to
    the real requests (DevTools throttling), full-speed CPU, so the
    document's real server time is in FCP and LCP; and **mobile**, the worst
@@ -67,11 +67,20 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
      five-minute entry is fresh.
    Each run records its own document's `CF-Cache-Status`; the summary marks a
    run the edge answered against the plan. Every run is a first visit
-   (Lighthouse empties the browser cache). A cold Worker isolate is not
-   forced: the measured render runs in a warm isolate, as most do.
+   (Lighthouse empties the browser cache).
+
+   An uncached run counts only when a warm Worker isolate rendered it
+   (`Server-Timing: isolate;desc="reused"`, from `workers/site/index.ts`).
+   UAT's traffic is low enough that about half of all requests land on a
+   new isolate, whose cold start adds a few hundred ms at random; with
+   them in, a five-run median moved by about half a second between runs
+   (2026-10-12). Uncached runs go on until `SHARE_PERF_RUNS` warm ones, up
+   to four times that many; the cold ones are reported on their own row and
+   in the JSON (`cold`), not budgeted.
 7. Deletes what it created.
 
-Reported per page, profile and edge state (the median of the runs): the
+Reported per page, profile and edge state (the median of the counted runs,
+and for uncached the new-isolate runs apart): the
 document's TTFB, the Worker's own `Server-Timing` for an uncached render
 (`api`, the API read, and `total`, until the page was built; a Worker's clock
 moves only on I/O, so CPU work such as rendering is the rest of TTFB and shows

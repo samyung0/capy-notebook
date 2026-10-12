@@ -272,9 +272,10 @@ jobs:
     runs-on: ubuntu-24.04
     environment: uat
     # Six pages (one a near-limit 2 MB note), two Lighthouse profiles,
-    # uncached and cached, five runs each, plus the inlined CSS comparison
-    # and the TTFB breakdown: about 35 to 45 minutes.
-    timeout-minutes: 60
+    # uncached and cached, five counted runs each (uncached needs about ten,
+    # since only warm-isolate runs count), plus the inlined CSS comparison
+    # and the TTFB breakdown: about 70 minutes.
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
