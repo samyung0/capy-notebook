@@ -104,7 +104,7 @@ EXPECTED = {
     "markscheme": 'a list of {"text", "marks"} items whose marks add up to marks',
     "model_answer": "a full-marks answer",
     "text": "what earns the marks",
-    "quiz_id": "the quiz's id",
+    "quiz_id": "the id of the quiz to add to (add_questions' result gives a new quiz's id)",
     "question_id": "the question's id",
     "media": "a chart, plot or graph block",
 }
@@ -183,6 +183,8 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
         )
     if key == "type":
         return "the fields say the kind; drop type"
+    if key in ("title", "chapter_id"):
+        return "a new quiz starts with add_questions; add the open question to it by quiz_id"
     if key == "replaces":
         return "a quiz fence writes new questions; rewrite one with add_open_question"
     if kind == "open":
@@ -561,6 +563,7 @@ class Check:
 
 
 def _target_problems(args: dict[str, Any]) -> list[str]:
+    """add_questions writes to one quiz: an existing one or a new one."""
     quiz_id, title = args.get("quiz_id"), args.get("title")
     problems = []
     if bool(quiz_id) == bool(title):
@@ -569,12 +572,15 @@ def _target_problems(args: dict[str, Any]) -> list[str]:
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title "
             f"to create one; sent {sent}"
         )
-    elif title and "after_question_id" in args:
+    if "after_question_id" in args and not quiz_id:
         problems.append(
             "after_question_id: places questions in an existing quiz; it goes with quiz_id"
         )
-    elif quiz_id and "chapter_id" in args:
-        problems.append("chapter_id: files a new quiz; it goes with title")
+    if "chapter_id" in args and not title:
+        problems.append(
+            "chapter_id: files a new quiz, so it goes with title; adding to a quiz "
+            "takes quiz_id alone"
+        )
     return problems
 
 
@@ -599,6 +605,7 @@ def check(name: str, args: dict[str, Any]) -> Check:
                     f"{item.path}.replaces: a new quiz has no question to replace"
                 )
             result.items.append(item)
+        result.call += _target_problems(args)
     else:
         result.call = _schema_problems(_OPEN_TOOL, args, "", "open", fence=False)
         result.call += _semantic("open", args, "")
@@ -606,7 +613,6 @@ def check(name: str, args: dict[str, Any]) -> Check:
             e.validator in STRUCTURAL for e in _OPEN_TOOL.iter_errors(args)
         )
         result.items.append(Item(0, "", "open", args, structural=structural))
-    result.call += _target_problems(args)
     return result
 
 

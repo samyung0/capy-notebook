@@ -718,7 +718,7 @@
         "additionalProperties": false,
         "properties": {
           "after_question_id": {
-            "description": "With quiz_id: add after this question, not at the end.",
+            "description": "Add after this question, not at the end.",
             "minLength": 1,
             "type": "string"
           },
@@ -787,7 +787,7 @@
             "type": "array"
           },
           "quiz_id": {
-            "description": "The quiz to add to, a note's quiz too.",
+            "description": "The quiz to add to, a note's quiz too; add_questions' result gives a new quiz's id.",
             "minLength": 1,
             "type": "string"
           },
@@ -821,17 +821,12 @@
     {
       "name": "add_open_question",
       "version": 1,
-      "description": "Add one open question, answered in writing and graded against its markscheme, to a quiz (quiz_id) or as a new quiz (title). The markscheme items' marks add up to marks. Example: {\"quiz_id\": \"mat_1\", \"question\": \"Explain why a red blood cell bursts in pure water.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling, so the membrane ruptures\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}",
+      "description": "Add one open question, answered in writing and graded against its markscheme, to a quiz; a new quiz starts with add_questions. The markscheme items' marks add up to marks. Example: {\"quiz_id\": \"mat_1\", \"question\": \"Explain why a red blood cell bursts in pure water.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling, so the membrane ruptures\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "after_question_id": {
-            "description": "With quiz_id: add after this question, not at the end.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "chapter_id": {
-            "description": "With title: the new quiz's chapter.",
+            "description": "Add after this question, not at the end.",
             "minLength": 1,
             "type": "string"
           },
@@ -893,17 +888,12 @@
             "type": "string"
           },
           "quiz_id": {
-            "description": "The quiz to add to, a note's quiz too.",
+            "description": "The quiz to add to, a note's quiz too; add_questions' result gives a new quiz's id.",
             "minLength": 1,
             "type": "string"
           },
           "replaces": {
             "description": "A question of the quiz to rewrite in place instead (its media is dropped).",
-            "minLength": 1,
-            "type": "string"
-          },
-          "title": {
-            "description": "Instead of quiz_id: create a quiz with this title.",
             "minLength": 1,
             "type": "string"
           },
@@ -914,6 +904,7 @@
           }
         },
         "required": [
+          "quiz_id",
           "question",
           "marks",
           "markscheme",

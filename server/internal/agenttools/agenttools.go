@@ -484,13 +484,11 @@ func textList(desc string, min int) map[string]any {
 	return map[string]any{"type": "array", "minItems": min, "items": textField(""), "description": desc}
 }
 
-// quizTarget adds where a question tool writes to its properties: a quiz by
-// id, at an optional place, or a new quiz it creates.
-func quizTarget(props map[string]any) map[string]any {
-	props["quiz_id"] = str("The quiz to add to, a note's quiz too.")
-	props["title"] = str("Instead of quiz_id: create a quiz with this title.")
-	props["chapter_id"] = str("With title: the new quiz's chapter.")
-	props["after_question_id"] = str("With quiz_id: add after this question, not at the end.")
+// quizPlace adds where a question tool writes to its properties: a quiz by id
+// (a note's quiz too), at the end or after a question.
+func quizPlace(props map[string]any) map[string]any {
+	props["quiz_id"] = str("The quiz to add to, a note's quiz too; add_questions' result gives a new quiz's id.")
+	props["after_question_id"] = str("Add after this question, not at the end.")
 	props["excerpt_ids"] = idList("Library excerpts the questions were written from.", 0, 32)
 	props["todo"] = todoSchema()
 	return props
@@ -845,7 +843,9 @@ func Definitions() []Definition {
 				`"Out of the cell"], "correct": "Into the cell", "explanation": "From the higher water ` +
 				`potential outside."}, {"question": "What percentage of NaCl is normal saline?", ` +
 				`"accepted": ["0.9"], "unit": "%"}]}`,
-			InputSchema: obj(quizTarget(map[string]any{
+			InputSchema: obj(quizPlace(map[string]any{
+				"title":      str("Instead of quiz_id: create a quiz with this title."),
+				"chapter_id": str("With title: the new quiz's chapter."),
 				"questions": map[string]any{
 					"type": "array", "minItems": 1, "maxItems": 20, "items": simpleQuestionSchema(),
 				},
@@ -858,13 +858,13 @@ func Definitions() []Definition {
 			Name:      "add_open_question",
 			Retention: RetainFull,
 			Description: "Add one open question, answered in writing and graded against its markscheme, " +
-				"to a quiz (quiz_id) or as a new quiz (title). The markscheme items' marks add up to " +
+				"to a quiz; a new quiz starts with add_questions. The markscheme items' marks add up to " +
 				`marks. Example: {"quiz_id": "mat_1", "question": "Explain why a red blood cell bursts ` +
 				`in pure water.", "marks": 2, "markscheme": [{"text": "Water enters by osmosis", "marks": ` +
 				`1}, {"text": "No cell wall resists the swelling, so the membrane ruptures", "marks": 1}], ` +
 				`"model_answer": "Water enters by osmosis and, with no cell wall to resist it, the ` +
 				`membrane ruptures."}`,
-			InputSchema: obj(quizTarget(map[string]any{
+			InputSchema: obj(quizPlace(map[string]any{
 				"question": textField(""),
 				"marks":    map[string]any{"type": "integer", "minimum": 1, "maximum": fieldlimits.QuestionMarks},
 				"markscheme": map[string]any{
@@ -881,7 +881,7 @@ func Definitions() []Definition {
 				"hints":       textList("Optional nudges the learner may open.", 0),
 				"explanation": textField("Optional: the worked solution, shown after grading."),
 				"replaces":    replacesSchema(),
-			}), "question", "marks", "markscheme", "model_answer"),
+			}), "quiz_id", "question", "marks", "markscheme", "model_answer"),
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpMaterialCreate},

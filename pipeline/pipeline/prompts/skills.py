@@ -54,7 +54,7 @@ What to build:
 
 Note format (create_material content, edit_document insert_markdown and replace_block): {note}
 
-Quizzes: add_questions writes multiple-choice and short-answer questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_open_question writes one written-answer question with a markscheme; add_question_media puts a chart, plot or graph under a question's text; edit_document remove_question removes one. Results list the question ids these tools take. Each question call is a write, so while ledger todos are open it names one: plan a todo for each call a quiz needs (its simple questions, each open question, any media).
+Quizzes: add_questions writes multiple-choice and short-answer questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_open_question adds one written-answer question with a markscheme to a quiz by quiz_id; add_question_media puts a chart, plot or graph under a question's text; edit_document remove_question removes one. Results list the question ids these tools take. Each question call is a write, so while ledger todos are open it names one: plan a todo for each call a quiz needs (its simple questions, each open question, any media).
 
 Flashcards: cards, a list of {{front, back}}.
 

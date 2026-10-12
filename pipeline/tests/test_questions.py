@@ -165,12 +165,28 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
         "model_answer: missing; expected a full-marks answer",
         "markscheme: expected item marks adding up to marks (3); sent items adding up to 2",
     ]
-    both = questions.check("add_open_question", {**OPEN, "quiz_id": "m", "title": "T"})
-    assert both.call == [
+    created = questions.check("add_open_question", {**OPEN, "title": "T"})
+    assert created.call == [
+        (
+            'title: unknown field, sent "T"; a new quiz starts with add_questions; add '
+            "the open question to it by quiz_id"
+        ),
+        (
+            "quiz_id: missing; expected the id of the quiz to add to (add_questions' "
+            "result gives a new quiz's id)"
+        ),
+    ]
+    # Every place problem at once, not the first of them.
+    placed = questions.check("add_questions", {"questions": [MCQ], "chapter_id": "ch"})
+    assert placed.call == [
         (
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
-            "create one; sent both"
-        )
+            "create one; sent neither"
+        ),
+        (
+            "chapter_id: files a new quiz, so it goes with title; adding to a quiz takes "
+            "quiz_id alone"
+        ),
     ]
 
 
