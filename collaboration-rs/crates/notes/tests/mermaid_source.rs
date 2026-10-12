@@ -357,3 +357,33 @@ fn a_new_block_needs_its_source_and_a_text_is_one() {
         other => panic!("{other:?}"),
     }
 }
+
+/// Security regression (rust-core REVIEW5 R2b's Mermaid case, live-items
+/// REVIEW5 S4): removing a held block's source text is refused at admit, so
+/// only that writer's update is lost (the store's check would refuse it and
+/// discard every writer's unsaved work in the room), while another attribute
+/// of the block still goes in. Fails if the key checks read a held source
+/// text as no value.
+#[test]
+fn removing_a_held_source_text_is_refused() {
+    let room = room(&[paragraph("text"), mermaid(SOURCE)]);
+    let _ = source(&room, 1);
+    let mut validator = validator(&room);
+    let themed = edit(&room, 11, |peer| {
+        let element = block(peer, 1);
+        let mut txn = peer.transact_mut();
+        element.insert_attribute(&mut txn, "theme", "linear-dark");
+    });
+    let (result, _) = admit(&mut validator, &room, &themed);
+    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+    let removed = edit(&room, 12, |peer| {
+        let element = block(peer, 1);
+        let mut txn = peer.transact_mut();
+        element.remove_attribute(&mut txn, &"source");
+    });
+    let (result, _) = admit(&mut validator, &room, &removed);
+    match result {
+        Err(Refusal::Content(reason)) => assert_eq!(reason, notes::limits::MISSING_KEY),
+        other => panic!("a held source's removal was not refused: {other:?}"),
+    }
+}
