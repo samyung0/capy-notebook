@@ -315,7 +315,7 @@ async def test_a_note_shows_a_figure_it_read_with_the_printed_credit(
     assert "1 image(s) with a web URL became links" in result.text()
 
 
-async def test_figures_the_library_does_not_show_refuse_the_write(
+async def test_figures_the_library_does_not_show_or_box_refuse_the_write(
     library_db, monkeypatch
 ):
     ctx, rendered, sent = _figure_writes(monkeypatch)
@@ -346,6 +346,10 @@ async def test_figures_the_library_does_not_show_refuse_the_write(
             "UPDATE library_books SET withheld_pages = '{7}'",
             "is on a page the library withholds",
         ),
+        (
+            "UPDATE library_figures SET bbox = '{0,0,1000,1000}'",
+            "has no box of its own",
+        ),
     ):
         figure(change)
         result = await tools._edit_document(edit, ctx)
@@ -354,6 +358,7 @@ async def test_figures_the_library_does_not_show_refuse_the_write(
             "UPDATE library_figures SET excluded = false, decorative = false",
             "UPDATE library_excerpts SET figure_ids = '{fig_1}' WHERE id = 'e_intro'",
             "UPDATE library_books SET withheld_pages = '{}'",
+            "UPDATE library_figures SET bbox = '{0,0,10,10}'",
         )
     assert not rendered and not sent
 

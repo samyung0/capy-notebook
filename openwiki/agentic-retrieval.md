@@ -2571,7 +2571,10 @@ build, and the knowledge library is one more source while the switch is on.
   `figure_ids` list each) and refuses the write, naming every bad id, for an
   unknown, decorative or excluded figure, one on a page in the book's
   `withheld_pages` (the per-work withheld switch reaches the reader only
-  there), one no excerpt lists, or one none of whose excerpts this turn read
+  there), one whose record is the whole page (`[0, 0, 1000, 1000]`: the
+  builder found its caption but not its drawing, 13,442 of the 102,724 shown
+  figures in 117 of 174 books on 2026-10-13; nothing is rendered, the model is
+  told to place another figure or describe it), one no excerpt lists, or one none of whose excerpts this turn read
   (`read_knowledge` it first; the same read set excerpt_ids use). An accepted
   figure's read excerpt joins the write's `excerpt_ids`, so its book enters
   the provenance (and the note footer) exactly as a named excerpt does, and

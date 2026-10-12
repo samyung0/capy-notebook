@@ -1543,7 +1543,8 @@ async def note_figures(
     """Check the library figures a note write places and credit them, or refuse.
 
     A figure must be one the library shows (not decorative, excluded or on a
-    withheld page) and listed by an excerpt this turn read, the rule
+    withheld page), boxed apart from its page, and listed by an excerpt this
+    turn read, the rule
     excerpt_ids follow. Shared with the playground's local writes.
     """
     links = sum(len(OTHER_IMAGE.findall(text)) for text in markdown)
@@ -1570,6 +1571,13 @@ async def note_figures(
             problems.append(f"{ref} is not shown by the library")
         elif figure.withheld:
             problems.append(f"{ref} is on a page the library withholds")
+        elif figure.bbox == deck.WHOLE_PAGE:
+            # The builder found the caption but not the drawing: the record is
+            # the whole printed page, text and all.
+            problems.append(
+                f"{ref} has no box of its own (its record is all of page "
+                f"{figure.page}); place another figure or describe it in words"
+            )
         elif not figure.excerpt_ids:
             problems.append(f"{ref} is listed by no excerpt")
         elif not (used := [e for e in figure.excerpt_ids if e in read]):
