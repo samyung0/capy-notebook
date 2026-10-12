@@ -92,6 +92,9 @@ function OfficeRuntime() {
   const [mode, setMode] = useState<OfficeMode>('view');
   const [dark, setDark] = useState(false);
   const [narrow, setNarrow] = useState(false);
+  // Below md: a DOCX opens fitted to the pane, and a pinch zooms it.
+  const [compact, setCompact] = useState(false);
+  const compactRef = useRef(false);
   const [locale, setLocaleState] = useState<OfficeLocale>('en');
   const menuSourceRef = useRef<OfficeMenuSource | null>(null);
   const rendererRef = useRef<OfficeRenderer | null>(null);
@@ -324,6 +327,8 @@ function OfficeRuntime() {
           THEMES.some((theme) => theme.value === message.theme && theme.isDark)
         );
         setNarrow(message.narrow);
+        compactRef.current = message.compact;
+        setCompact(message.compact);
         // Below lg, for CSS that keeps clear of Capy's floating tools button.
         document.documentElement.toggleAttribute('data-narrow', message.narrow);
         return;
@@ -358,7 +363,11 @@ function OfficeRuntime() {
             ? new Uint8Array(message.collaboration.initialUpdate)
             : undefined,
           revision: message.revision,
-          zoom: message.zoom,
+          zoom:
+            message.zoom ??
+            (message.format === 'docx' && compactRef.current
+              ? 'fit'
+              : undefined),
         });
         post({ mode: nextMode, revision: message.revision, type: 'mode' });
         return;
@@ -555,7 +564,7 @@ function OfficeRuntime() {
       </div>
     );
 
-  // DOCX and XLSX zoom by a number only; PPTX may also fit.
+  // XLSX zooms by a number only; DOCX and PPTX may also fit.
   const zoom = typeof file.zoom === 'number' ? file.zoom : undefined;
 
   // Ctrl/Cmd+S and the editors' own Save; a paused editor saves nothing, as
@@ -633,7 +642,8 @@ function OfficeRuntime() {
               bytes={file.bytes}
               collaboration={collaboration}
               colorMode={dark ? 'dark' : 'light'}
-              initialZoom={zoom}
+              compact={compact}
+              initialZoom={file.zoom}
               locale={locale}
               narrow={narrow}
               onAnalysis={reportAnalysis}
@@ -694,7 +704,8 @@ function OfficeRuntime() {
           <DocxViewer
             bytes={file.bytes}
             citation={citation}
-            initialZoom={zoom}
+            compact={compact}
+            initialZoom={file.zoom}
             locale={locale}
             onAnalysis={reportAnalysis}
             onError={reportError}

@@ -64,8 +64,9 @@ describe('office host protocol', () => {
     ).toBe(true);
   });
 
-  it("accepts only Capy's own styles, themes and locales, with the narrow flag", () => {
+  it("accepts only Capy's own styles, themes and locales, with the narrow and compact flags", () => {
     const message = {
+      compact: false,
       locale: 'zh',
       narrow: false,
       style: 'classroom',
@@ -78,6 +79,7 @@ describe('office host protocol', () => {
     expect(isOfficeHostMessage({ ...message, theme: 'dark' })).toBe(false);
     expect(isOfficeHostMessage({ ...message, style: undefined })).toBe(false);
     expect(isOfficeHostMessage({ ...message, narrow: undefined })).toBe(false);
+    expect(isOfficeHostMessage({ ...message, compact: undefined })).toBe(false);
     expect(isOfficeHostMessage({ ...message, locale: 'zh-CN' })).toBe(false);
   });
 

@@ -884,8 +884,8 @@ too.
 Zoom is kept while a file stays open and carried across View and Edit in all
 three formats, with nothing stored (as decided 2026-10-06). Every viewer and
 editor reports its zoom as it opens and when it changes (protocol `zoom`
-{zoom}: 1 = 100%, or PPTX's `'fit'`; the protocol takes 25–400%, the widest
-any editor takes), from the toolbar's control or View ›
+{zoom}: 1 = 100%, or `'fit'` for PPTX and DOCX; the protocol takes 25–400%,
+the widest any editor takes), from the toolbar's control or View ›
 Zoom; the host keeps the last one in memory (`useOfficeRuntime`'s `zoomRef`)
 and the next frame's `load` carries it (`zoom`), whether that frame is the
 other mode or the same one after a runtime reload. The runtime hands it to the
@@ -893,8 +893,30 @@ viewer or editor as its starting level: `DocxViewer`, `XlsxViewer` and
 `PptxViewer`, and the fork editors' `initialZoom`; the DOCX editor reports its
 zoom in its menu model (`DocxMenuModel.zoom`), XLSX and PPTX in their command
 state. Closing the file, opening another one or reloading the page starts at
-the format's default (100%, PPTX fitted to the window); the scroll position is
-not carried.
+the format's default (100%, PPTX fitted to the window, DOCX fitted to the pane
+below md); the scroll position is not carried.
+
+Below md (768 px, the viewport, sent as `set-appearance`'s `compact`) a DOCX
+opens fitted: the runtime's `load` turns a missing `zoom` into `'fit'`, and
+`DocxDisplayListViewer` and `DocxEditor` (`initialZoom: 'fit'`) scale the
+widest page and the page column's 24 px padding each side to the scroll
+pane's client width, at most 100% (`fitZoom` in docx-react's `pageZoom.ts`),
+following the pane through resizes and rotation. A picked level ends the fit
+until the file is reopened: View › Zoom, the toolbar's zoom, a pinch, or the
+ref's `setZoom`. While fitted the editor's menu model and the viewer report
+`'fit'`, so View and Edit hand the fit to each other; afterwards they report the
+level. md and up open at 100% as before; a phone in landscape (844 px) is md.
+Below md a two-finger pinch over the pages zooms the document instead of the
+browser page (`pinchZoom`, `usePinchZoom`): the pane takes `touch-action:
+pan-x pan-y`, the pages preview the scale as a transform about the fingers, and
+the release commits the level (whole percent, 25–200%) with the page point that
+was between the fingers kept under them. The listeners are passive, so a
+one-finger scroll never waits on them. Before this the frame had no pinch
+handling and set no `touch-action`, so a pinch zoomed all of Capy's page
+(header and menus included) and left the document's zoom alone. A trackpad
+pinch (Ctrl+wheel) still zooms the browser page. The editor's minimum layout
+width scales with the zoom, so a fitted page leaves no sideways scroll and a
+page zoomed past the pane scrolls from its left edge in Edit as in View.
 
 In edit mode the DOCX editor shows one toolbar row under the header, in Google
 Docs' order (`singleRowToolbar` with the menus in the host, `DocxEditor`'s
@@ -1150,7 +1172,7 @@ and take relative colour syntax (`from var(--token) h s l`); on Chrome and Edge
 that reads them (menus, dropdowns, buttons, tooltips, focus rings) Capy's
 tokens directly, repeating the compiled selectors so the `dark:` ones keep
 their weight. The host sends `set-appearance` (`style`, `theme`,
-`narrow` below lg, `locale`) before `load`, on every change and again after
+`narrow` below lg, `compact` below md, `locale`) before `load`, on every change and again after
 every runtime boot; the runtime sets `data-style`/`data-theme` and `lang` on
 its root, sets its own locale, passes `colorMode` and the editor's zh-CN
 strings for `zh` to `DocxEditor`, and hides the narrow controls. The host

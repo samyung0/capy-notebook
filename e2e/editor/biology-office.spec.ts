@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, test } from '@playwright/test';
+import { expect, type FrameLocator, type Page, test } from '@playwright/test';
 import { strFromU8, strToU8, unzipSync, zipSync } from 'fflate';
 import { officeEditMenu, officeMenu, saveOffice } from '../helpers/office';
 import { m } from '../i18n';
@@ -835,6 +835,212 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   });
 }
 
+test.describe('DOCX on a phone', () => {
+  // Touch, so a pinch reaches the runtime frame as touches.
+  test.use({
+    hasTouch: true,
+    isMobile: true,
+    viewport: { height: 740, width: 360 },
+  });
+
+  const open = async (page: Page) => {
+    await page.goto('/workspaces/ws_bio?file=bio-office-docx');
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    await expect(frame.locator('canvas').first()).toBeVisible({
+      timeout: 120_000,
+    });
+    return frame;
+  };
+  // The first page's width and its scroll pane's (the viewer's or editor's).
+  const widths = (frame: FrameLocator) =>
+    frame
+      .locator('[data-page-index="0"]')
+      .first()
+      .evaluate((node) => {
+        const pane = node.closest<HTMLElement>(
+          '.docx-runtime-viewer, .docx-editor__scroll-container'
+        );
+        if (!pane) throw new Error('Missing DOCX scroll pane');
+        return {
+          page: (node as HTMLElement).offsetWidth,
+          pane: pane.clientWidth,
+        };
+      });
+  const pageWidth = async (frame: FrameLocator) => (await widths(frame)).page;
+  // The 816 px page and the column's 24 px padding each side fill the pane.
+  const fitted = async (frame: FrameLocator) => {
+    await expect
+      .poll(async () => {
+        const { page, pane } = await widths(frame);
+        return Math.abs(page - Math.min(816, pane - 48));
+      })
+      .toBeLessThanOrEqual(1);
+    return pageWidth(frame);
+  };
+  const resize = (page: Page, width: number, height = 740) =>
+    page.setViewportSize({ height, width });
+  const editMode = async (page: Page) => {
+    await page.getByRole('button', { name: m.material_mode() }).click();
+    await expect(officeEditMenu(page, 'docx')).toBeVisible({
+      timeout: 120_000,
+    });
+  };
+  const pinchFrame = async (page: Page, scaleFactor: number) => {
+    const box = await page
+      .locator('iframe[src*="office-runtime"]')
+      .boundingBox();
+    if (!box) throw new Error('Missing Office runtime');
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Input.synthesizePinchGesture', {
+      gestureSourceType: 'touch',
+      scaleFactor,
+      x: box.x + box.width / 2,
+      y: box.y + box.height / 2,
+    });
+    await cdp.detach();
+  };
+
+  test('a DOCX opens fitted and re-fits on resize in View and Edit until View › Zoom picks a level', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const frame = await open(page);
+    const narrow = await fitted(frame);
+    expect(narrow).toBeLessThan(816);
+    await resize(page, 390);
+    expect(await fitted(frame)).toBeGreaterThan(narrow);
+    // Landscape, then a desktop width: still fitted, at most 100%.
+    await resize(page, 844, 390);
+    expect(await fitted(frame)).toBeGreaterThan(narrow);
+    await resize(page, 1280, 800);
+    expect(await fitted(frame)).toBe(816);
+    await resize(page, 390);
+    await fitted(frame);
+
+    // The fit carries into Edit and keeps following the pane there.
+    await editMode(page);
+    await fitted(frame);
+    await resize(page, 360);
+    await fitted(frame);
+
+    await officeMenu(page, 'docx', 'View').click();
+    await page.getByRole('menuitem', { name: 'Zoom' }).click();
+    // At 360 px the submenu opens over its parent menu, which takes the
+    // pointer while it settles.
+    await page
+      .getByRole('menuitemcheckbox', { exact: true, name: '100%' })
+      .dispatchEvent('click');
+    await expect.poll(() => pageWidth(frame)).toBe(816);
+    await resize(page, 390);
+    await page.waitForTimeout(1000);
+    expect(await pageWidth(frame)).toBe(816);
+    // The picked level carries back to View.
+    await page.getByRole('button', { name: m.material_mode() }).click();
+    await expect(frame.locator('.docx-runtime-viewer')).toBeVisible({
+      timeout: 120_000,
+    });
+    await expect.poll(() => pageWidth(frame)).toBe(816);
+  });
+
+  test('a pinch zooms the document, not the page, and ends the re-fit', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const frame = await open(page);
+    const narrow = await fitted(frame);
+    await pinchFrame(page, 2);
+    await expect.poll(() => pageWidth(frame)).toBeGreaterThan(narrow * 1.5);
+    const pinched = await pageWidth(frame);
+    // Capy's page keeps its scale: the header and menus stay their size.
+    expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+    await resize(page, 390);
+    await page.waitForTimeout(1000);
+    expect(await pageWidth(frame)).toBe(pinched);
+
+    // In Edit too, from the carried level.
+    await editMode(page);
+    await expect.poll(() => pageWidth(frame)).toBe(pinched);
+    await pinchFrame(page, 0.5);
+    await expect.poll(() => pageWidth(frame)).toBeLessThan(pinched * 0.75);
+    expect(await page.evaluate(() => window.visualViewport?.scale)).toBe(1);
+  });
+
+  test('md and up opens a DOCX at 100% in View and Edit', async ({ page }) => {
+    test.setTimeout(300_000);
+    await resize(page, 768, 1024);
+    const frame = await open(page);
+    expect(await pageWidth(frame)).toBe(816);
+    await editMode(page);
+    await expect.poll(() => pageWidth(frame)).toBe(816);
+  });
+
+  test('at the fitted, fractional zoom a click places the caret, a drag selects and a double click takes the word', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    await page
+      .context()
+      .grantPermissions(['clipboard-read', 'clipboard-write']);
+    const frame = await open(page);
+    await editMode(page);
+    expect(await fitted(frame)).toBeLessThan(816 * 0.4);
+    const run = (text: string) =>
+      frame
+        .locator(
+          '.layout-page-mirror:not(.layout-page-mirror-text) .layout-run-text'
+        )
+        .filter({ hasText: new RegExp(`^${text}$`) })
+        .first();
+    const box = async (text: string) => {
+      const found = await run(text).boundingBox();
+      if (!found) throw new Error(`Missing run ${text}`);
+      return found;
+    };
+    const clipboard = () => page.evaluate(() => navigator.clipboard.readText());
+    const copy = async () => {
+      await page.evaluate(() => navigator.clipboard.writeText(''));
+      await page.keyboard.press('ControlOrMeta+c');
+    };
+
+    // Drag across the title's three paragraphs.
+    const from = await box('2');
+    const to = await box('書');
+    await page.mouse.move(from.x + 0.5, from.y + from.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(to.x + to.width - 0.5, to.y + to.height / 2, {
+      steps: 8,
+    });
+    await page.mouse.up();
+    await copy();
+    await expect
+      .poll(clipboard)
+      .toBe('2022 至 2023 年度\n香港大學工程學院 \n交流學習團活動計劃書');
+
+    // The canvas above the mirror takes the pointer.
+    const three = await box('3');
+    await page.mouse.dblclick(
+      three.x + three.width / 2,
+      three.y + three.height / 2
+    );
+    await copy();
+    await expect.poll(clipboard).toBe('2023');
+
+    // A click in the right half of 團 puts the caret after it.
+    const tuan = await box('團');
+    await page.mouse.click(
+      tuan.x + tuan.width * 0.75,
+      tuan.y + tuan.height / 2
+    );
+    await page.keyboard.type('Z');
+    const ji = await box('計');
+    await page.mouse.click(ji.x + ji.width / 2, ji.y + ji.height / 2, {
+      clickCount: 3,
+    });
+    await copy();
+    await expect.poll(clipboard).toBe('交流學習團Z活動計劃書');
+  });
+});
+
 test('XLSX cell edit ends when focus moves into Capy, not on a window switch', async ({
   page,
 }) => {
@@ -1036,7 +1242,7 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
         {
           citation: { quote: 'UAT_RUN_MARKER' },
           type: 'set-citation',
-          version: 8,
+          version: 9,
         },
         new URL(iframe.src).origin
       );
@@ -1196,7 +1402,7 @@ for (const [format, text] of [
         );
         if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
         iframe.contentWindow.postMessage(
-          { id, type: 'menu-command', version: 8 },
+          { id, type: 'menu-command', version: 9 },
           new URL(iframe.src).origin
         );
       },
@@ -1362,7 +1568,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
         );
         if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
         iframe.contentWindow.postMessage(
-          { canEdit, type: 'set-capabilities', version: 8 },
+          { canEdit, type: 'set-capabilities', version: 9 },
           new URL(iframe.src).origin
         );
       }, canEdit);
@@ -1550,7 +1756,7 @@ test('a view-only XLSX viewer still selects and copies a cell after canEdit:fals
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 8 },
+      { canEdit: false, type: 'set-capabilities', version: 9 },
       new URL(iframe.src).origin
     );
   });
@@ -1766,7 +1972,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 8 },
+      { canEdit: false, type: 'set-capabilities', version: 9 },
       new URL(iframe.src).origin
     );
   });
@@ -1883,7 +2089,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 8 },
+      { canEdit: false, type: 'set-capabilities', version: 9 },
       new URL(iframe.src).origin
     );
   });

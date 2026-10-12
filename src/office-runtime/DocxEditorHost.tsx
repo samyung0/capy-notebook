@@ -12,6 +12,7 @@ import { DOCUMENT_COLORS } from '@/components/ui/ColorPicker';
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { docxIcons } from './docxIcons';
 import { docxStrings, editorMenus } from './docxMenus';
@@ -39,6 +40,7 @@ export function DocxEditorHost({
   bytes,
   collaboration,
   colorMode,
+  compact,
   initialZoom,
   locale,
   narrow,
@@ -57,8 +59,10 @@ export function DocxEditorHost({
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
   colorMode: 'light' | 'dark';
-  /** 1 = 100%, the level the file was last shown at. */
-  initialZoom?: number;
+  /** Below md: a pinch zooms the document. */
+  compact: boolean;
+  /** 1 = 100%, or 'fit' to the pane: where the file was last shown. */
+  initialZoom?: OfficeZoom;
   locale: OfficeLocale;
   /** Below lg: no zoom (as the PDF toolbar), font picker or size box. */
   narrow: boolean;
@@ -72,7 +76,7 @@ export function DocxEditorHost({
   onPendingChange: (pending: boolean) => void;
   onSave: () => void;
   onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
-  onZoomChange: (zoom: number) => void;
+  onZoomChange: (zoom: OfficeZoom) => void;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -162,6 +166,7 @@ export function DocxEditorHost({
           onSave();
         }}
         onShowRulerChange={setRulerShown}
+        pinchZoom={compact}
         readOnly={readOnly}
         ref={editorRef}
         showFileOpen={false}

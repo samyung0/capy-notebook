@@ -13,6 +13,7 @@ import type {
   OfficeCitation,
   OfficeLocale,
   OfficeRenderedPage,
+  OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { CITATION_FILL, docxCitation } from './citations';
 import { docxT, downloadMenu, printItem } from './docxMenus';
@@ -37,6 +38,7 @@ type WorkerResponse =
 export function DocxViewer({
   bytes,
   citation,
+  compact,
   initialZoom = 1,
   locale,
   onAnalysis,
@@ -47,20 +49,27 @@ export function DocxViewer({
 }: {
   bytes: Uint8Array;
   citation: OfficeCitation | null;
-  /** 1 = 100%, the level the file was last shown at. */
-  initialZoom?: number;
+  /** Below md: a pinch zooms the pages. */
+  compact: boolean;
+  /** 1 = 100%, or 'fit' to the pane: where the file was last shown. */
+  initialZoom?: OfficeZoom;
   locale: OfficeLocale;
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
   onRenderer: (renderer: OfficeRenderer | null) => void;
-  onZoomChange: (zoom: number) => void;
+  onZoomChange: (zoom: OfficeZoom) => void;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [displayList, setDisplayList] = useState<DisplayList | null>(null);
-  // In percent, as the menu lists it.
-  const [zoom, setZoom] = useState(() => Math.round(initialZoom * 100));
-  useEffect(() => onZoomChange(zoom / 100), [onZoomChange, zoom]);
+  // In percent, as the menu lists it, or 'fit' until a level is picked.
+  const [zoom, setZoom] = useState<number | 'fit'>(() =>
+    initialZoom === 'fit' ? 'fit' : Math.round(initialZoom * 100)
+  );
+  useEffect(
+    () => onZoomChange(zoom === 'fit' ? 'fit' : zoom / 100),
+    [onZoomChange, zoom]
+  );
 
   // View mode offers what works here: Download and Print, and the zoom.
   useEffect(() => {
@@ -220,7 +229,12 @@ export function DocxViewer({
 
   return displayList ? (
     <div className="docx-runtime-viewer" ref={hostRef}>
-      <DocxDisplayListViewer displayList={displayList} zoom={zoom / 100} />
+      <DocxDisplayListViewer
+        displayList={displayList}
+        onZoomChange={(level) => setZoom(Math.round(level * 100))}
+        pinchZoom={compact}
+        zoom={zoom === 'fit' ? 'fit' : zoom / 100}
+      />
     </div>
   ) : null;
 }

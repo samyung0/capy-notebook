@@ -97,6 +97,7 @@ export function useOfficeRuntime({
   const config = useRef(getOfficeRuntimeConfig()).current;
   const { style, theme } = useTheme();
   const narrow = !useMediaQuery('(min-width: 1024px)');
+  const compact = !useMediaQuery('(min-width: 768px)');
   const [mode, setMode] = useFileMode(canEdit, initialMode);
   const [joined, setJoined] = useState(mode === 'edit');
   const [frameGeneration, setFrameGeneration] = useState(0);
@@ -209,6 +210,7 @@ export function useOfficeRuntime({
   useEffect(() => {
     if (frameLoaded)
       post({
+        compact,
         locale: getLocale() === 'zh' ? 'zh' : 'en',
         narrow,
         style,
@@ -216,7 +218,7 @@ export function useOfficeRuntime({
         type: 'set-appearance',
         version: OFFICE_PROTOCOL_VERSION,
       });
-  }, [frameBoot, frameLoaded, narrow, post, style, theme]);
+  }, [compact, frameBoot, frameLoaded, narrow, post, style, theme]);
   useEffect(() => {
     if (frameLoaded)
       post({
