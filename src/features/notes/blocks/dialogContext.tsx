@@ -170,6 +170,12 @@ export function NoteBlockDialogsProvider({
   );
 }
 
+/** The mounted note editor's dialogs, for editor transforms outside React
+ * (a paste's pending references, pendingRefs.ts). */
+export function noteBlockDialogs(): NoteBlockDialogsApi | null {
+  return mountedDialogsApi;
+}
+
 function useResolvedDialogs(): NoteBlockDialogsApi | null {
   return useContext(Ctx) ?? mountedDialogsApi;
 }

@@ -58,7 +58,6 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { QuestionView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { uid } from '@/lib/id';
 import { useOptionalEditorRuntime } from '../EditorRuntime';
 import {
   FLASHCARD_BACK_CLASS,
@@ -78,11 +77,6 @@ import { mermaidSourceText, setMermaidCaption } from './mermaidBlock';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
-
-/** Identifies this browser session's claim on a pending reference. */
-const CLIENT_ID = uid('client');
-/** Long enough for a concurrent claim to merge back before creating a row. */
-const CLAIM_SETTLE_MS = 400;
 
 function StudyBlockRoot({
   props,
@@ -369,51 +363,7 @@ export function MaterialRefElement(props: PlateElementProps) {
   const readOnly = useReadOnly();
   const owner = useOptionalEditorRuntime()?.materialId;
   const dialogs = useOptionalNoteBlockDialogs();
-  const element = props.element as unknown as MaterialRefNode;
-  const { materialId, refKind, pending } = element;
-  const resolving = useRef(false);
-
-  // A fence imported as markdown lands here without a row. Every client with
-  // the note open sees it, so the node is claimed in the shared document
-  // first and only the client whose claim survives the merge creates the row;
-  // a failed creation drops the block.
-  useEffect(() => {
-    if (materialId || !pending || readOnly || !dialogs || resolving.current)
-      return;
-    if (element.resolvingBy && element.resolvingBy !== CLIENT_ID) return;
-    resolving.current = true;
-    const at = () => editor.api.findPath(props.element);
-    const claim = at();
-    if (!claim) return;
-    editor.tf.setNodes({ resolvingBy: CLIENT_ID }, { at: claim });
-    const timer = setTimeout(() => {
-      const path = at();
-      const current = path && (editor.api.node(path)?.[0] as MaterialRefNode);
-      if (!current || current.resolvingBy !== CLIENT_ID) return;
-      dialogs.createEmbedded(refKind, pending).then(
-        (material) => {
-          const target = at();
-          if (!target) return;
-          editor.tf.setNodes({ materialId: material.id }, { at: target });
-          editor.tf.unsetNodes(['pending', 'resolvingBy'], { at: target });
-        },
-        () => {
-          const target = at();
-          if (target) editor.tf.removeNodes({ at: target });
-        }
-      );
-    }, CLAIM_SETTLE_MS);
-    return () => clearTimeout(timer);
-  }, [
-    dialogs,
-    editor,
-    element.resolvingBy,
-    materialId,
-    pending,
-    props.element,
-    readOnly,
-    refKind,
-  ]);
+  const { materialId, refKind } = props.element as unknown as MaterialRefNode;
 
   const canEdit = !readOnly && !!dialogs;
   return (

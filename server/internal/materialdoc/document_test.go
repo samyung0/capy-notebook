@@ -791,8 +791,13 @@ func TestNoteKeepsStudyBlocksAsReferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateKind(pending, "note"); err != nil {
-		t.Fatalf("a pending reference is valid until the editor resolves it: %v", err)
+	// Converted agent markdown parses with one (Go resolves it before
+	// storing), but a stored note never holds one (live-items REVIEW5).
+	if _, err := Parse(pending); err != nil {
+		t.Fatalf("a converted pending reference parses: %v", err)
+	}
+	if err := ValidateKind(pending, "note"); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a stored note holds a pending reference: %v", err)
 	}
 	if refs, err := ExtractMaterialRefs(pending); err != nil || len(refs) != 0 {
 		t.Fatalf("pending references carry no material: %v %v", refs, err)
@@ -982,6 +987,8 @@ func TestResizableBlocksTakeOnlyTheResizeWidth(t *testing.T) {
 // a note stores. The collaboration validator and the UAT note journey read the
 // same file, so a renamed or newly strict field fails here before a saved note
 // stops loading (an unreadable note made GET /api/public/notes/{token} a 500).
+// Its quiz and flashcards blocks are imported fences, as the journey imports
+// them: a note stores them once they name their rows.
 func TestEveryBlockNoteFixtureIsValid(t *testing.T) {
 	raw, err := os.ReadFile("testdata/every-block-note.json")
 	if err != nil {
@@ -990,7 +997,11 @@ func TestEveryBlockNoteFixtureIsValid(t *testing.T) {
 	if _, err := Parse(string(raw)); err != nil {
 		t.Fatal(err)
 	}
-	if err := ValidateKind(string(raw), "note"); err != nil {
+	stored, err := ResolvePendingRefs(string(raw), []string{"mat_quiz", "mat_cards"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateKind(stored, "note"); err != nil {
 		t.Fatal(err)
 	}
 	metrics, err := Metrics(string(raw))

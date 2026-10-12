@@ -432,6 +432,11 @@ fn plain_content<T: ReadTxn>(
             (Place::Sequence(parent), _) if is_source(parent) => {
                 Some("content other than text in a Mermaid source")
             }
+            // An imported fence's body holds the answer keys: a reference
+            // names its row instead (live-items REVIEW5).
+            (Place::Entry(key, _), _) if &**key == PENDING_KEY => {
+                Some("an imported fence body on a material reference")
+            }
             (Place::Entry(..), ItemContent::Any(values)) if values.iter().all(plain) => None,
             (Place::Entry(key, Some(parent)), ItemContent::Type(branch))
                 if &**key == plate::SHARED_TEXT_KEY
@@ -619,6 +624,8 @@ pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize) -> bool {
 /// [Refusal::Content] for an update that leaves an element without a key the
 /// store requires ([required_keys]).
 pub const MISSING_KEY: &str = "an element without a key it requires";
+/// The key a markdown fence's body sat under on a reference without its row.
+const PENDING_KEY: &str = "pending";
 
 /// The room's branch `id`, or none when the room does not hold it (an element
 /// the update creates). yrs's lookup indexes past a client's last block for a
@@ -732,10 +739,10 @@ fn required_keys<T: ReadTxn>(
     use yrs::Transact;
     fn holds(key: &str, value: Option<&Any>) -> bool {
         match (key, value) {
-            ("type" | "id", Some(Any::String(value))) => {
+            ("type" | "id" | "materialId", Some(Any::String(value))) => {
                 !crate::questions::js_trim(value).is_empty()
             }
-            ("type" | "id", _) => false,
+            ("type" | "id" | "materialId", _) => false,
             (_, value) => value.is_some_and(|value| !matches!(value, Any::Null | Any::Undefined)),
         }
     }

@@ -135,6 +135,7 @@ import {
   VoidBlockPastePlugin,
   VscodeMarkdownPastePlugin,
 } from './pastePlugins';
+import { pendingRefsPlugin } from './pendingRefs';
 import { remoteCursorDecorationPlugin } from './RemoteCursors';
 import { remoteNormalizationPlugin } from './remoteNormalization';
 import { SlashInputElement } from './SlashInput';
@@ -640,6 +641,9 @@ export function buildPlugins(options: BuildPluginsOptions): AnyPlugin[] {
     remoteNormalizationPlugin,
     remoteCursorDecorationPlugin,
     ...MaterialKit,
+    // Before the pasted images' override, which wraps it and so replaces a
+    // fragment's URL images first.
+    pendingRefsPlugin,
     pastedImagesPlugin(options.allowExternalAssets),
     ...buildCollaborationPlugins(options),
     ...SlashKit,

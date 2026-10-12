@@ -44,6 +44,7 @@ import {
   upsertLinkAtSelection,
 } from '@/features/notes/linkEditor';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
+import { resolveImported } from '@/features/notes/pendingRefs';
 import { AlignMenu } from '@/features/notes/toolbar/ToolbarAlignMenu';
 import { ToolbarAllBlocksMenu } from '@/features/notes/toolbar/ToolbarAllBlocksMenu';
 import { BlockTypeMenu } from '@/features/notes/toolbar/ToolbarBlockTypeMenu';
@@ -151,7 +152,8 @@ export function NoteToolbar({ className }: { className?: string }) {
                 await file.text(),
                 allowExternalAssets
               );
-      place.insert(document.value);
+      // Its quiz and flashcards fences become rows first (pendingRefs.ts).
+      place.insert(await resolveImported(document.value));
     } finally {
       place.release();
     }

@@ -707,6 +707,58 @@ fn an_element_left_without_a_required_key_is_refused_at_admit() {
     ));
 }
 
+/// Security regression (live-items REVIEW5, pending references): an imported
+/// quiz fence's body holds its answer keys, and a note's room reaches every
+/// reader. A new reference carrying one, one set on a held reference and a
+/// new reference without its material id are refused at admit, as the store's
+/// check refuses them. Fails if the admit lets any in.
+#[test]
+fn a_reference_carrying_a_fence_body_is_refused_at_admit() {
+    let room = document(&[
+        json!({ "children": [{ "text": "intro" }], "id": "p1", "type": "p" }),
+        json!({ "children": [{ "text": "" }], "id": "q1", "materialId": "m1", "refKind": "quiz", "type": "material_ref" }),
+    ]);
+    let mut validator = Validator::default();
+    let nothing = room
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    validator.admit_bytes(&room, &nothing).unwrap();
+    let pending = json!({
+        "children": [{ "text": "" }], "id": "f1", "materialId": "", "pending": "answer: KEY",
+        "refKind": "quiz", "type": "material_ref",
+    });
+    let inserting = |node: Value| edit(&room, 4, |peer| insert_value(peer, &[node]));
+    let refused = [
+        (
+            "a new reference with a fence body",
+            inserting(pending.clone()),
+        ),
+        (
+            "a fence body on a held reference",
+            edit(&room, 3, |peer| {
+                block(peer, 1).insert_attribute(&mut peer.transact_mut(), "pending", "answer: KEY");
+            }),
+        ),
+        (
+            "a new reference without its material id",
+            inserting(json!({
+                "children": [{ "text": "" }], "id": "f2", "materialId": "", "refKind": "quiz",
+                "type": "material_ref",
+            })),
+        ),
+    ];
+    for (name, update) in refused {
+        assert!(
+            matches!(
+                validator.admit_bytes(&room, &update),
+                Err(Refusal::Content(_))
+            ),
+            "{name}"
+        );
+    }
+    assert!(notes::material::assert_canonical(&[pending], "note").is_err());
+}
+
 /// Security regression (REVIEW5 R2b: two crafted shapes still took a block's
 /// `type`, and the store then discarded the room). The key check reads the
 /// element's state after the update: a `type` overwritten and the new entry

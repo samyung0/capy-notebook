@@ -393,7 +393,9 @@ type MaterialRef struct {
 
 // validateNoteReferences enforces the note contract: study blocks live in
 // their own material rows, so inline quiz/flashcards nodes are rejected and a
-// reference is only valid as a top-level block.
+// reference is only valid as a top-level block that names its row. A stored
+// note never holds a pending reference: its fence body holds the answer keys,
+// and a note reaches every reader (live-items REVIEW5).
 func validateNoteReferences(nodes []map[string]any) error {
 	for _, inline := range []string{"quiz", "flashcards"} {
 		if find(nodes, inline) != nil {
@@ -401,6 +403,9 @@ func validateNoteReferences(nodes []map[string]any) error {
 		}
 	}
 	for index, node := range nodes {
+		if isPendingRef(node) {
+			return fmt.Errorf("%w: value[%d]: a quiz or flashcards block must name its material; a fence becomes one before the note stores it", ErrInvalid, index)
+		}
 		for _, child := range children(node) {
 			if find([]map[string]any{child}, RefType) != nil {
 				return fmt.Errorf("%w: value[%d]: material reference must be a top-level block", ErrInvalid, index)
@@ -408,6 +413,48 @@ func validateNoteReferences(nodes []map[string]any) error {
 		}
 	}
 	return nil
+}
+
+// isPendingRef reports a reference that still carries an imported fence body
+// ("pending", no material yet).
+func isPendingRef(node map[string]any) bool {
+	if node["type"] != RefType {
+		return false
+	}
+	_, pending := node["pending"]
+	materialID, _ := node["materialId"].(string)
+	return pending || strings.TrimSpace(materialID) == ""
+}
+
+// DropPendingRefs turns each pending reference into an empty paragraph with
+// its id and reports whether there was one. Writes refuse them now, but a
+// note stored before fences were resolved ahead of insertion may hold one,
+// whose body holds the quiz's answer keys (live-items REVIEW5): a reader who
+// cannot edit the note never gets it, and a clone never carries it.
+func DropPendingRefs(doc *Envelope) bool {
+	dropped := false
+	for i, node := range doc.Value {
+		if isPendingRef(node) {
+			doc.Value[i] = map[string]any{"type": "p", "id": node["id"], "children": []any{textLeaf("")}}
+			dropped = true
+		}
+	}
+	return dropped
+}
+
+// WithoutPendingRefs is DropPendingRefs on a stored document.
+func WithoutPendingRefs(raw string) (string, error) {
+	if !strings.Contains(raw, `"pending"`) {
+		return raw, nil
+	}
+	doc, err := Parse(raw)
+	if err != nil {
+		return "", err
+	}
+	if !DropPendingRefs(&doc) {
+		return raw, nil
+	}
+	return Marshal(doc)
 }
 
 func validateMaterialRef(node map[string]any) error {
@@ -1312,12 +1359,15 @@ func editorAssetIDs(nodes []map[string]any) []string {
 // removes media nodes, quiz images and card images whose source asset was not
 // copied (and a question whose part loses all content; a card keeps its text). A clone never carries pending or
 // failed asset rows, so preserving those references would create a document
-// that can never render successfully.
+// that can never render successfully. Nor does it carry a pending quiz or
+// flashcards reference (DropPendingRefs): its fence body holds the answer
+// keys, which the cloner may not read.
 func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, error) {
 	doc, err := Parse(raw)
 	if err != nil {
 		return "", err
 	}
+	DropPendingRefs(&doc)
 	var rewrite func(map[string]any) (map[string]any, bool)
 	rewrite = func(node map[string]any) (map[string]any, bool) {
 		if q, ok := node["question"].(map[string]any); ok && node["type"] == "quiz_question" && !questions.RewriteAssetIDs(q, idMap) {

@@ -24,7 +24,8 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// A case the Rust store refuses where the Node server accepted (or refused
 /// for another reason), by the rules it took from Go and the browser at the
 /// cutover: Go's card limits and image shape, media naming their asset
-/// (Epo, 2026-10-10), and `diagram`/`mindmap` no longer node types.
+/// (Epo, 2026-10-10), `diagram`/`mindmap` no longer node types, and a
+/// reference never keeping an imported fence body (live-items REVIEW5).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -34,9 +35,20 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
                 .as_array()
                 .is_some_and(|children| children.iter().any(|child| has_type(child, kinds)))
     }
+    fn has_fence(node: &Value) -> bool {
+        (node["type"] == "material_ref" && node.get("pending").is_some())
+            || node["children"]
+                .as_array()
+                .is_some_and(|children| children.iter().any(has_fence))
+    }
     let Err(message) = ours else { return false };
     let message = message.trim_start_matches("invalid material document: ");
-    message.starts_with("a flashcard front holds at most")
+    message.ends_with("material reference carries an imported fence body")
+        || (message.ends_with("materialId is required")
+            && value
+                .as_array()
+                .is_some_and(|nodes| nodes.iter().any(has_fence)))
+        || message.starts_with("a flashcard front holds at most")
         || message.starts_with("a flashcard back holds at most")
         || message == "flashcard image must be {assetId}"
         || message.ends_with("requires an assetId")
@@ -171,7 +183,9 @@ fn resizable_blocks_take_only_the_widths_the_handles_write() {
 }
 
 /// The every-block note shared with Go (TestEveryBlockNoteFixtureIsValid)
-/// and the UAT note journey: every node type a note stores is accepted.
+/// and the UAT note journey: every node type a note stores is accepted. Its
+/// quiz and flashcards blocks are imported fences, which a note holds only
+/// once they name their rows.
 #[test]
 fn the_every_block_note_is_valid() {
     let path = format!(
@@ -179,7 +193,17 @@ fn the_every_block_note_is_valid() {
         env!("CARGO_MANIFEST_DIR")
     );
     let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
-    material::assert_canonical(fixture["value"].as_array().unwrap(), "note").unwrap();
+    let mut value = fixture["value"].as_array().unwrap().clone();
+    for node in &mut value {
+        if let Some(fence) = node
+            .as_object_mut()
+            .filter(|node| node.contains_key("pending"))
+        {
+            fence.remove("pending");
+            fence.insert("materialId".into(), json!("row"));
+        }
+    }
+    material::assert_canonical(&value, "note").unwrap();
 }
 
 fn card(front: &str, back: &str, image: Option<Value>) -> Value {

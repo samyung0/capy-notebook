@@ -58,10 +58,14 @@ impl Model {
         }
     }
 
-    /// The document seeded from `materials.content`'s value.
+    /// The document seeded from `materials.content`'s value (a note without
+    /// a reference's imported fence body: `notes::material::without_pending_refs`).
     pub fn state_from_value(self, value: &[Value]) -> Vec<u8> {
         match self {
-            Model::Note => notes::slate_yjs::state_from_value(value, 0),
+            Model::Note => match notes::material::without_pending_refs(value) {
+                Some(value) => notes::slate_yjs::state_from_value(&value, 0),
+                None => notes::slate_yjs::state_from_value(value, 0),
+            },
             Model::Item(kind) => kind.state_from_value(value, 0),
         }
     }
@@ -141,5 +145,43 @@ impl RoomValidator {
             RoomValidator::Item(validator) => validator.bound,
             RoomValidator::Note(validator) => validator.bound,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use serde_json::json;
+    use yrs::Transact;
+
+    use super::Model;
+
+    /// Security regression (live-items REVIEW5): a note stored with a
+    /// reference still carrying an imported fence body (the quiz's answer
+    /// keys) seeds its room, which every reader joins, with an empty
+    /// paragraph of the same id in its place. Fails if the seed keeps it.
+    #[test]
+    fn a_note_seeds_without_a_pending_fence_body() {
+        let value = [
+            json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] }),
+            json!({
+                "type": "material_ref", "id": "fence", "materialId": "", "refKind": "quiz",
+                "pending": "answer: SECRET", "children": [{ "text": "" }],
+            }),
+        ];
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(
+            &doc,
+            &Model::Note.state_from_value(&value),
+            &[] as &[Vec<u8>],
+        )
+        .unwrap();
+        let seeded = Model::Note.value(&doc.transact()).unwrap();
+        assert_eq!(seeded[0]["id"], "body");
+        assert_eq!(
+            seeded[1],
+            json!({ "type": "p", "id": "fence", "children": [{ "text": "" }] })
+        );
     }
 }

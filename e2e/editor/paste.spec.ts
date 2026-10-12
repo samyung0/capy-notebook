@@ -122,6 +122,58 @@ test.describe('paste', () => {
     ).toBeVisible();
   });
 
+  // A quiz fence's body holds its answer key, and a note reaches every
+  // reader: the fence becomes a quiz first, and only a block naming it
+  // enters the note (live-items REVIEW5).
+  test('makes a pasted markdown quiz fence a quiz before it enters the note', async ({
+    page,
+  }) => {
+    const created: string[] = [];
+    page.on('request', (request) => {
+      if (
+        request.method() === 'POST' &&
+        /^\/api\/materials\/[^/]+\/embedded$/.test(
+          new URL(request.url()).pathname
+        )
+      )
+        created.push(request.postData() ?? '');
+    });
+    const statement = 'A pasted salt marsh floods with the tide.';
+    const fence = JSON.stringify({
+      questions: [
+        {
+          id: 'q_pasted',
+          labels: 'letters',
+          layout: 'paper',
+          parts: [
+            {
+              answer: { correct: true, type: 'boolean' },
+              blocks: [{ text: statement, type: 'text' }],
+              id: 'q_pasted:part:1',
+              marks: 1,
+              solution: [],
+            },
+          ],
+          stem: [],
+        },
+      ],
+    });
+    const editor = await openEmptyLine(page);
+
+    await paste(editor, {
+      'text/plain': ['Before the quiz', '', '```quiz', fence, '```'].join('\n'),
+    });
+
+    await expect(
+      editor.locator('.slate-material_ref').getByText(statement)
+    ).toBeVisible();
+    await expect(
+      editor.locator('.slate-p', { hasText: /^Before the quiz$/ })
+    ).toBeVisible();
+    expect(created).toHaveLength(1);
+    expect(created[0]).toContain(statement);
+  });
+
   test("makes a quiz block pasted from another note this note's copy", async ({
     page,
   }) => {

@@ -116,16 +116,17 @@ export function htmlBytes(html: string): number {
 export type MaterialRefKind = 'quiz' | 'flashcards';
 
 /** A note's void reference to an embedded quiz or flashcard set. The material
- * row holds the content. `pending` carries a fence body that has not been
- * turned into a row yet (markdown import); it resolves in the editor. */
+ * row holds the content. `pending` carries a markdown fence body not turned
+ * into a row yet: imported markdown before the editor creates its rows
+ * (pendingRefs.ts) and a markdown file's preview. It never enters a note's
+ * document, which every reader gets: the body holds the answer keys
+ * (live-items REVIEW5). */
 export interface MaterialRefElement extends MaterialElement {
   children: [MaterialText];
   id: string;
   materialId: string;
   pending?: string;
   refKind: MaterialRefKind;
-  /** The client creating the row for a pending reference. */
-  resolvingBy?: string;
   type: 'material_ref';
 }
 
