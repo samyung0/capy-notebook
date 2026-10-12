@@ -15,6 +15,13 @@ rules, badges and formulas set as pictures arrive as images
 - Repeat: the same rendered picture on REPEAT_PAGES or more pages (licence
   badges, logos, icons, chapter bars). Kept as ``discarded`` page furniture,
   unless it is a glyph-sized formula among different words each time.
+
+``add_vector_figures`` adds the figures ODL never sees: veraPDF makes chunks of
+placed images only, so a diagram drawn with paths reached the index as its loose
+labels. A cluster of drawing paths large and busy enough, sparse in text and
+clear of image and table blocks becomes an ``image`` block. Text blocks inside it,
+and short ones beside it, become its ``figure_labels``: indexed on the figure's
+line, never body text or headings.
 """
 
 from __future__ import annotations
@@ -221,6 +228,171 @@ def classify(
         elif repeated(index):
             block = {**block, "type": "discarded"}
         out.append(block)
+    return out
+
+
+# A figure is at least this share of the page and this many path segments.
+VECTOR_MIN_AREA = 0.03
+VECTOR_MIN_SEGMENTS = 12
+# Paths this close (points) belong to one figure.
+VECTOR_GAP = 8.0
+# Word area over figure area above this is a text box or a table, not a figure.
+VECTOR_MAX_TEXT = 0.25
+# A short text block this close (points) to a figure is its axis or callout label.
+VECTOR_LABEL_REACH = 30.0
+VECTOR_LABEL_WORDS = 6
+# Text blocks inside a cluster of only straight axis-aligned strokes: a grid.
+VECTOR_GRID_TEXTS = 6
+
+
+def _axis_aligned(item: tuple) -> bool:
+    if item[0] == "re":
+        return True
+    if item[0] == "l":
+        (x0, y0), (x1, y1) = item[1], item[2]
+        return abs(x0 - x1) < 0.5 or abs(y0 - y1) < 0.5
+    return False
+
+
+def _figure_clusters(page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
+    """Drawing clusters with their segment counts and how many of those are
+    axis-aligned lines or boxes. Page-wide rules and frames, hairline specks
+    and white fills are left out first."""
+    width, height = page.rect.width, page.rect.height
+    clusters: list[list] = []  # [rect, segments, axis-aligned segments]
+    for path in page.get_cdrawings():
+        x0, y0, x1, y1 = path["rect"]
+        w, h = x1 - x0, y1 - y0
+        if (w < 0.5 and h < 0.5) or (w >= 0.9 * width and h >= 0.9 * height):
+            continue
+        if (h <= 1.5 and w >= 0.3 * width) or (w <= 1.5 and h >= 0.3 * height):
+            continue
+        if path.get("fill") == (1.0, 1.0, 1.0) and not path.get("color"):
+            continue
+        # A straight line's rect has no area, and pymupdf skips empty rects in
+        # unions and intersections: give it a hairline's thickness.
+        rect = pymupdf.Rect(x0, y0, max(x1, x0 + 0.5), max(y1, y0 + 0.5))
+        grown = rect + (-VECTOR_GAP, -VECTOR_GAP, VECTOR_GAP, VECTOR_GAP)
+        hits = [c for c in clusters if c[0].intersects(grown)]
+        items = path.get("items") or ()
+        merged = [rect, len(items) or 1, sum(map(_axis_aligned, items))]
+        for cluster in hits:
+            merged[0] |= cluster[0]
+            merged[1] += cluster[1]
+            merged[2] += cluster[2]
+            clusters.remove(cluster)
+        clusters.append(merged)
+    # One more pass: merging can make clusters overlap that did not before.
+    changed = True
+    while changed:
+        changed = False
+        for a in clusters:
+            for b in clusters:
+                if a is not b and a[0].intersects(b[0]):
+                    a[0] |= b[0]
+                    a[1] += b[1]
+                    a[2] += b[2]
+                    clusters.remove(b)
+                    changed = True
+                    break
+            if changed:
+                break
+    return [tuple(cluster) for cluster in clusters]
+
+
+def add_vector_figures(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+    by_page: dict[int, list[int]] = defaultdict(list)
+    for index, block in enumerate(blocks):
+        if len(block.get("bbox") or []) == 4:
+            by_page[block["page_idx"]].append(index)
+    inserts: dict[int, dict] = {}  # block index -> figure placed before it
+    labels: set[int] = set()  # text blocks folded into a figure
+    tail: dict[int, list[dict]] = defaultdict(list)  # page -> figures after its blocks
+    for page in document:
+        if page.rotation:
+            continue
+        indices = by_page.get(page.number, [])
+        taken = [
+            _rect(blocks[i], page)
+            for i in indices
+            if blocks[i].get("type") in ("image", "table", "equation")
+        ]
+        words = None
+        area = page.rect.width * page.rect.height
+        for rect, segments, aligned in _figure_clusters(page):
+            if (
+                segments < VECTOR_MIN_SEGMENTS
+                or rect.width * rect.height < VECTOR_MIN_AREA * area
+            ):
+                continue
+            if any(abs(rect & t) > 0.5 * min(abs(rect), abs(t)) for t in taken):
+                continue
+            if words is None:
+                words = [pymupdf.Rect(w[:4]) for w in page.get_text("words")]
+            text = sum(abs(w & rect) for w in words)
+            if text > VECTOR_MAX_TEXT * abs(rect):
+                continue
+            w, h = page.rect.width / 1000, page.rect.height / 1000
+            figure = {
+                "type": "image",
+                "bbox": [rect.x0 / w, rect.y0 / h, rect.x1 / w, rect.y1 / h],
+                "page_idx": page.number,
+                "_source_role": "vector-figure",
+            }
+            drawing = pymupdf.Rect(rect)
+            reach = rect + (
+                -VECTOR_LABEL_REACH,
+                -VECTOR_LABEL_REACH,
+                VECTOR_LABEL_REACH,
+                VECTOR_LABEL_REACH,
+            )
+            inside = []
+            for i in indices:
+                if blocks[i].get("type") not in ("text", "title") or i in labels:
+                    continue
+                box, text = _rect(blocks[i], page), str(blocks[i].get("text", ""))
+                # Short text beside the drawing is an axis or callout label;
+                # a formula set beside it ("Gain = dV/dV") stays in the body.
+                # Against the drawing itself, not the box labels have grown,
+                # so absorbing one label never pulls in the text past it.
+                if abs(box & drawing) >= 0.8 * abs(box) or (
+                    box in reach
+                    and len(text.split()) <= VECTOR_LABEL_WORDS
+                    and "=" not in text
+                ):
+                    inside.append(i)
+                    rect |= box
+            # Ruled rows of text: a table ODL did not recognise, not a figure.
+            if aligned >= 0.9 * segments and len(inside) >= VECTOR_GRID_TEXTS:
+                continue
+            figure["bbox"] = [rect.x0 / w, rect.y0 / h, rect.x1 / w, rect.y1 / h]
+            figure["figure_labels"] = [
+                t for i in inside if (t := str(blocks[i].get("text", "")).strip())
+            ]
+            labels.update(inside)
+            following = [
+                i
+                for i in indices
+                if _rect(blocks[i], page).y0 >= rect.y0 and i not in labels
+            ]
+            anchor = min(inside or following, default=None)
+            if anchor is None or anchor in inserts:
+                tail[page.number].append(figure)
+                continue
+            inserts[anchor] = figure
+    if not inserts and not tail:
+        return blocks
+    out: list[dict] = []
+    last_on_page = {page: max(indices) for page, indices in by_page.items()}
+    for index, block in enumerate(blocks):
+        if index in inserts:
+            out.append(inserts[index])
+        if index not in labels:
+            out.append(block)
+        if index == last_on_page.get(block.get("page_idx")):
+            out.extend(tail.pop(block["page_idx"], []))
+    for figures in tail.values():  # pages without any block
+        out.extend(figures)
     return out
 
 

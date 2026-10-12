@@ -89,6 +89,7 @@ export const authScenarios = [
 
 export const mockScenarioOptions = [
   { id: 'none', label: 'None (reset)' },
+  { id: 'new-account', label: 'New account: every list empty' },
   ...chatFixtureOptions,
   { id: 'checkout-free', label: 'Checkout: free account + failure' },
   {
@@ -176,6 +177,7 @@ export const LAST_SCENARIO = 'capy.scenario.last';
 /** The local file the Upload details dialog preview starts with. */
 export const scenarioUploadName = 'Scenario upload.txt';
 export const permanentScenarios: readonly string[] = [
+  'new-account',
   'file-list-forbidden',
   'account-locked',
   'workspace-401',
@@ -203,6 +205,26 @@ export const permanentScenarios: readonly string[] = [
   'workspace-owner-grace',
   'workspace-owner-frozen',
 ];
+
+/** Every list a new account sees, empty, so each page shows its empty state. */
+const NEW_ACCOUNT_LISTS = {
+  '/api/attempts': { items: [], more: false },
+  '/api/bank/progress': { topics: [] },
+  '/api/events': [],
+  '/api/files': { items: [] },
+  '/api/learning/progress': { active: [], finished: [] },
+  '/api/materials': { items: [] },
+  '/api/notifications': { items: [] },
+  '/api/notifications/unread-count': { count: 0 },
+  '/api/review/overview': { suggestions: [], unfinished: [], workspaces: [] },
+  '/api/review/sessions': { items: [], more: false },
+  '/api/search': [],
+  '/api/tags': [],
+  '/api/tasks': [],
+  '/api/thinking': [],
+  '/api/trash': { items: [] },
+  '/api/workspaces': [],
+};
 
 export function humaCodedError(
   code: 'account_over_quota' | 'account_suspended' | 'storage_quota_exceeded',
@@ -255,6 +277,10 @@ export function getMockScenarioHandlers(
       ),
     ];
   switch (scenario) {
+    case 'new-account':
+      return Object.entries(NEW_ACCOUNT_LISTS).map(([path, body]) =>
+        http.get(path, () => HttpResponse.json(body))
+      );
     case 'none':
     case 'offline':
     case 'connection-reconnecting':

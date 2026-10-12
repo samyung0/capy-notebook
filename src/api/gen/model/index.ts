@@ -275,6 +275,7 @@ export * from './saveCanvasReq.ts';
 export * from './searchKind.ts';
 export * from './searchParams.ts';
 export * from './searchResult.ts';
+export * from './searchResultPreview.ts';
 export * from './sessionItem.ts';
 export * from './sessionScore.ts';
 export * from './setModelPrefsReq.ts';

@@ -144,14 +144,30 @@ nodes and old question JSON are rejected, without a compatibility converter.
 
 ## Editing and assets
 
-The quiz edit page uses Settings' tabs, header padding and content padding.
-Questions holds the question editor; General holds the quiz name. Both share
-the draft and Save action, styled as the Account tab's right-aligned accent
-button; an invalid name returns to General so its error is visible.
-The tab body contains positioned descendants within its scroll area so the
-outer page and header stay in place while scrolling through long quizzes.
+A quiz is edited where it is open, like a flashcard set: the material
+page's Edit mode (`CenterContent.tsx`) renders `QuizEditor`, which loads the
+answer key, stages changes until Save (Reset drops them) and keeps the page.
+Files' Edit and New quiz open `/materials/{id}?mode=edit`; there is no
+standalone quiz edit page, and renaming goes through the item's Rename. A
+note's quiz embed uses the same editor with each change saved at once.
 
-`QuestionDialog` is shared by the bank and quiz edit page. It reuses
+`QuestionDialog` is shared by the bank and the quiz editor. Its outline
+column (min 15rem, nudged 4px left to line up with the dialog title) keeps
+part rows in a narrow label column, leaves stem rows flush, clamps labels to
+two lines and overlays each row's ⋮ on hover over the file panel's faded
+backing instead of reserving width. Rows are not highlighted: a click brings
+the block or part answer into view in the body with `scrollIntoViewWithMotion`,
+the bank and editor TOC's motion, and focuses it. Body blocks and part answers
+(`QuestionRunner`'s `frameAnswer`) select on click and show the note editor's
+portaled `FloatingBlockToolbar` (Edit, move, duplicate or remove), which never
+shifts layout and flips above a block cut off at the bottom; Enter edits. From `md` the dialog is a fixed
+88dvh and each column scrolls on its own; phones show sticky Outline and Body
+tabs, and a row click switches to Body first.
+Its title names the question ("Edit question 10"). Menus (add block, question
+settings, row and graph element actions) are the note toolbar's popovers
+(`ToolbarPopoverContent`, `ToolbarPopoverGroup`, `MenuItem` over
+`ToolbarPopoverItem`), and block editors use `FieldInput` and `SelectField`,
+the compact underline style of the answer options. It reuses
 `ToolbarGroup`, `ToolbarButton` and `SimpleDialog`; block editors replace the
 dialog body and keep Remove beside Save. English and Chinese labels use
 Paraglide. MathLive renders formulas in both viewing and editing, including
@@ -542,7 +558,10 @@ it takes the space between the name and the count. Learning's Progress rows
 and the Study tab use the same trail.
 Finished: a divider list with the date of the last answer and a
 Summary link to the topic's summary page. With none, or in Edit mode, it keeps
-Choose a topic; phones list the topics in the page under it. Continue exists
+Choose a topic (in View mode instead `PlaceholderTrailMap`: 24 stops, nothing
+answered, no tag, numbers, tooltips or clicks, a wooden notice board
+(`MapBoard`) past the first stop saying how to start, then Suggested topics:
+the first topic with questions in each exam, at most four, each with Start); phones list the topics in the page under it. Continue exists
 only on the landing (Epo, 2026-10-06); there is no review session.
 
 The summary (`/qb/$topicId/summary`, `TopicSummary`, inside the /qb page) has

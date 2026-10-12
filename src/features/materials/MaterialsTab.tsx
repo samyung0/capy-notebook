@@ -19,6 +19,7 @@ import type {
   MaterialListSort,
 } from '@/api/types';
 import { ItemList, ItemSkeletonGrid } from '@/components/app/ItemCard';
+import { ListEnd } from '@/components/app/ListEnd';
 import {
   type FilterSection,
   ListToolbar,
@@ -118,6 +119,7 @@ export function MaterialsTab({
     fetchNextPage,
     fetchStatus,
     hasNextPage,
+    isFetchNextPageError,
     isFetchingNextPage,
     isLoading,
   } = useOwnedMaterials(params);
@@ -196,8 +198,9 @@ export function MaterialsTab({
           {
             onSuccess: (quiz) =>
               navigate({
-                params: { quizId: quiz.id },
-                to: '/quizzes/$quizId/edit',
+                params: { materialId: quiz.id },
+                search: { mode: 'edit' },
+                to: '/materials/$materialId',
               }),
           }
         ),
@@ -257,10 +260,7 @@ export function MaterialsTab({
           icon: 'settings',
           label: m.action_edit(),
           onClick: () =>
-            navigate({
-              params: { quizId: item.id },
-              to: '/quizzes/$quizId/edit',
-            }),
+            navigate({ ...materialLink(item), search: { mode: 'edit' } }),
         }
       );
     } else if (item.kind === 'flashcards') {
@@ -316,11 +316,11 @@ export function MaterialsTab({
             items={newMenu}
             trigger={
               <Button
-                className="px-1.5"
+                className="px-1.5 font-bold text-link"
                 disabled={frozen}
                 iconLeft="plus"
                 size="sm"
-                variant="accent"
+                variant="ghost-hover"
               >
                 {m.files_new_block()}
               </Button>
@@ -354,7 +354,11 @@ export function MaterialsTab({
             <SkeletonCardGrid cardHeight={150} count={16} />
           )
         ) : items.length === 0 ? (
-          <p className="py-10 text-center text-fg-muted">{m.create_empty()}</p>
+          <p className="py-10 text-center text-fg-muted">
+            {kinds.length || workspaceIds.length || location
+              ? m.create_empty()
+              : m.create_none()}
+          </p>
         ) : (
           <div className="flex flex-col gap-3" ref={revealRef}>
             <ItemList
@@ -379,17 +383,12 @@ export function MaterialsTab({
                 />
               ))}
             </ItemList>
-            {hasNextPage && (
-              <Button
-                className="self-center"
-                disabled={isFetchingNextPage}
-                onClick={() => fetchNextPage()}
-                size="sm"
-                variant="ghost-hover"
-              >
-                {m.list_load_more()}
-              </Button>
-            )}
+            <ListEnd
+              fetchNextPage={fetchNextPage}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              isFetchNextPageError={isFetchNextPageError}
+            />
           </div>
         )}
       </div>

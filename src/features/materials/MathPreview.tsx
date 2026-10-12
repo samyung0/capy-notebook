@@ -79,11 +79,11 @@ export function MathPreview({
         '[&_math-field::part(container)]:min-h-0 [&_math-field::part(container)]:p-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden',
         // A display formula wider than its column scrolls sideways in this
         // box, which takes the wheel and touch since the field is inert, and
-        // fades at the edge that hides more of it; `relative` keeps
-        // MathLive's absolutely positioned screen reader node inside it, so
-        // the page never widens.
+        // fades at the edge that hides more of it (so it shows no scrollbar);
+        // `relative` keeps MathLive's absolutely positioned screen reader node
+        // inside it, so the page never widens.
         displayMode &&
-          'scroll-fade-x relative block overflow-x-auto overflow-y-hidden'
+          'scroll-fade-x relative block overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden'
       )}
       data-math-preview=""
       ref={host}

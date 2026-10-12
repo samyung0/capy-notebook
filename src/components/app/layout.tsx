@@ -1,4 +1,10 @@
-import { createContext, type ReactNode, useContext } from 'react';
+import {
+  createContext,
+  type ReactNode,
+  type RefObject,
+  useContext,
+  useRef,
+} from 'react';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
 import { TopInsetBar } from './TopInsetBar';
@@ -6,6 +12,11 @@ import { TopInsetBar } from './TopInsetBar';
 /** Set inside PanelWithInvertedRadius, which already shows the top bar above
  * the panel below lg; the header then keeps its own copy for lg and up. */
 const TopBarAbovePanel = createContext(false);
+
+/** The scrolling body of the page panel, the root that ListEnd watches. */
+export const PanelScrollRoot = createContext<
+  RefObject<HTMLDivElement | null> | undefined
+>(undefined);
 
 /**
  * Large page panel with the top bar in a notch at its top-right from lg.
@@ -31,6 +42,7 @@ export function PanelWithInvertedRadius({
   /** Shown above the panel below lg; pass null for none. */
   topBar?: ReactNode;
 }) {
+  const scrollRef = useRef<HTMLDivElement>(null);
   return (
     <div
       className={cn(
@@ -60,8 +72,13 @@ export function PanelWithInvertedRadius({
           <div className="relative flex h-full flex-col gap-2">
             <TopBarAbovePanel.Provider value={Boolean(topBar)}>
               {header && <div className="shrink-0">{header}</div>}
-              <div className="flex min-h-0 flex-1 flex-col items-stretch gap-2 overflow-auto p-0">
-                {children}
+              <div
+                className="flex min-h-0 flex-1 flex-col items-stretch gap-2 overflow-auto p-0"
+                ref={scrollRef}
+              >
+                <PanelScrollRoot.Provider value={scrollRef}>
+                  {children}
+                </PanelScrollRoot.Provider>
               </div>
             </TopBarAbovePanel.Provider>
           </div>

@@ -319,7 +319,7 @@ WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
 animated GIFs refused). The quiz and flashcard editors shrink at pick time and hold the image in
 the browser under a local id, previewed from an object URL, until Save
 uploads the referenced ones and swaps in their asset ids
-(`src/routes/QuizEdit.tsx`, `src/features/flashcards/FlashcardsEditor.tsx`; a
+(`src/features/quizzes/QuizEditor.tsx`, `src/features/flashcards/FlashcardsEditor.tsx`; a
 card's image is `image: {assetId}` on its `flashcard` node); a picked image the user abandons never reaches
 storage, and a failed upload fails the save. Bank figures have a flat 4 MiB
 cap ([question-bank.md](question-bank.md)). Every material content

@@ -69,7 +69,7 @@ export function MaterialCard({
 }) {
   return (
     <ItemCard
-      actions={<Menu items={menu} />}
+      actions={<Menu items={menu} triggerIcon="moreHorizontal" />}
       details={materialListDetails(item)}
       icon={materialIconName(item.kind)}
       link={link}

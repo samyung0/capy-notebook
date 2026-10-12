@@ -1,0 +1,90 @@
+{
+ "seed": 20261012,
+ "fresh_pool": 154,
+ "books": [
+  {
+   "stratum": "math",
+   "id": "lessons-in-industrial-instrumentation",
+   "title": "Lessons In Industrial Instrumentation",
+   "subject": "industrial-systems-engineering",
+   "sha256": "22256a8f4e25cbc973bcbd0764e98450b391f55268a0fafcf41a417c2e0d9724",
+   "pages": 3311,
+   "bytes": 103240098,
+   "license": "CC BY 4.0",
+   "window": [
+    37,
+    48
+   ]
+  },
+  {
+   "stratum": "math",
+   "id": "a-brief-introduction-to-engineering-computation-with-matlab",
+   "title": "A Brief Introduction to Engineering Computation with MATLAB",
+   "subject": "introductory-engineering",
+   "sha256": "73a7bdfff522fdc6b25e1b21b7cc1b21beb6a874a5bfa0f97b8b2a69b4c98232",
+   "pages": 157,
+   "bytes": 15067882,
+   "license": "CC BY-SA 4.0",
+   "window": [
+    21,
+    32
+   ]
+  },
+  {
+   "stratum": "math",
+   "id": "advanced-waterworks-mathematics",
+   "title": "Advanced Waterworks Mathematics",
+   "subject": "applied-mathematics",
+   "sha256": "c20f6470a0e109563f5eebc9f69335c4b6a31f2e3cd45f93a3727dbb462d5e31",
+   "pages": 384,
+   "bytes": 10474637,
+   "license": "CC BY 4.0",
+   "window": [
+    293,
+    304
+   ]
+  },
+  {
+   "stratum": "tables_figures",
+   "id": "marine-ecology-notes-2nd-edition",
+   "title": "Marine Ecology Notes - 2nd Edition",
+   "subject": "oceanography",
+   "sha256": "b7218477ac3804c603f2b8a832436608ca3e1aae39410ed7fab6ee609e5ac113",
+   "pages": 192,
+   "bytes": 8044791,
+   "license": "CC BY-SA",
+   "window": [
+    26,
+    37
+   ]
+  },
+  {
+   "stratum": "tables_figures",
+   "id": "the-crystal-ball-instruction-manual-version-1-2-volume-one-i",
+   "title": "The Crystal Ball Instruction Manual - version 1.2 Volume One: Introduction to Data Science",
+   "subject": "data-science",
+   "sha256": "7493eecbb43edbebe101c78c8ef59af0c9621bd315dad086721c414f4989f15c",
+   "pages": 314,
+   "bytes": 26375971,
+   "license": "CC BY-SA 4.0",
+   "window": [
+    120,
+    131
+   ]
+  },
+  {
+   "stratum": "prose",
+   "id": "introduction-to-basic-legal-citation",
+   "title": "Introduction to Basic Legal Citation",
+   "subject": "writing-composition",
+   "sha256": "01097e4d022fb91536bedd596778690c4fb94f51f6ec892f9969e3160790db81",
+   "pages": 277,
+   "bytes": 1623990,
+   "license": "CC BY-SA",
+   "window": [
+    21,
+    32
+   ]
+  }
+ ]
+}

@@ -9,7 +9,9 @@
 - two-byte bfranges crossing a last-byte block (mPDF's <0000> <FFFF>) are split
   into the per-block ranges the spec allows, since veraPDF reads them strictly;
 - TeX Type1 fonts with no ToUnicode (pdfTeX or dvips without glyphtounicode)
-  get one from their built-in encoding array and a checked TeX glyph list.
+  get one from their built-in encoding array and a checked TeX glyph list;
+- Symbol fonts whose ToUnicode points at private use (Word's SymbolMT maps ×
+  to U+F0B4, π to U+F070) get the Symbol encoding's Unicode values.
 
 The input PDF bytes are never changed in place."""
 
@@ -131,6 +133,7 @@ def repair_fonts(data: bytes) -> tuple[bytes, int]:
             + repair_named_glyphs(doc)
             + split_wide_ranges(doc)
             + map_tex_fonts(doc)
+            + map_symbol_fonts(doc)
         )
         if not repaired:
             return data, 0
@@ -339,6 +342,60 @@ def map_tex_fonts(doc: pymupdf.Document) -> int:
     return mapped
 
 
+# Symbol's bracket, brace and integral pieces: pypdf leaves them in Apple's
+# private use area.
+_SYMBOL_PIECES = dict(
+    zip(
+        [*range(0xE6, 0xF0), *range(0xF3, 0xFF)],
+        "⎛⎜⎝⎡⎢⎣⎧⎨⎩⎪⌠⎮⌡⎞⎟⎠⎤⎥⎦⎫⎬⎭",
+        strict=True,
+    )
+)
+_SYMBOL_FONT = re.compile(r"(?:[A-Z]{6}\+)?Symbol(?:MT)?(?:,\w+)?")
+
+
+def symbol_values(mapping: dict[int, str]) -> dict[int, str]:
+    """The entries of a Symbol font's ToUnicode that point at U+F020..U+F0FF,
+    with the Symbol encoding's value for that byte instead."""
+    from pypdf._codecs.symbol import _symbol_encoding
+
+    fixed = {}
+    for code, value in mapping.items():
+        if len(value) != 1 or not 0xF020 <= ord(value) <= 0xF0FF:
+            continue
+        byte = ord(value) - 0xF000
+        want = _SYMBOL_PIECES.get(byte) or _symbol_encoding[byte]
+        if want and not 0xE000 <= ord(want) <= 0xF8FF:
+            fixed[code] = want
+    return fixed
+
+
+def map_symbol_fonts(doc: pymupdf.Document) -> int:
+    """Rewrite Symbol fonts' private-use ToUnicode entries. A map with array
+    destinations is left alone: ``_read_cmap`` does not read them, and the
+    rewrite would drop them. Returns the fonts."""
+    mapped = 0
+    for xref in _font_xrefs(doc):
+        kind, target = doc.xref_get_key(xref, "ToUnicode")
+        if kind != "xref" or not _SYMBOL_FONT.fullmatch(
+            doc.xref_get_key(xref, "BaseFont")[1][1:]
+        ):
+            continue
+        cmap = doc.xref_stream(int(target.split()[0])).decode("latin1")
+        if re.search(r"beginbfrange[^e]*\[", cmap):
+            continue
+        mapping = _read_cmap(cmap)
+        fixed = symbol_values(mapping)
+        if not fixed:
+            continue
+        wide = doc.xref_get_key(xref, "Subtype")[1] == "/Type0"
+        _set_to_unicode(
+            doc, xref, {**mapping, **fixed}, "SymbolUnicode", 2 if wide else 1
+        )
+        mapped += 1
+    return mapped
+
+
 def _contradicts(have: str, want: str) -> bool:
     if len(have) != 1 or unicodedata.normalize("NFKC", have) == (
         unicodedata.normalize("NFKC", want)
@@ -411,18 +468,20 @@ def repair_named_glyphs(doc: pymupdf.Document) -> int:
 
 
 def _set_to_unicode(
-    doc: pymupdf.Document, font: int, mapping: dict[int, str], name: str
+    doc: pymupdf.Document, font: int, mapping: dict[int, str], name: str, width: int = 1
 ) -> None:
-    """Point a simple font at a new one-byte ToUnicode CMap."""
+    """Point a font at a new ToUnicode CMap with ``width``-byte codes (two for
+    an Identity-H Type0 font)."""
+    digits = 2 * width
     pairs = [
-        f"<{code:02X}> <{value.encode('utf-16-be').hex().upper()}>"
+        f"<{code:0{digits}X}> <{value.encode('utf-16-be').hex().upper()}>"
         for code, value in sorted(mapping.items())
     ]
     stream = (
         "/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n"
         f"/CIDSystemInfo << /Registry (Capy) /Ordering ({name}) /Supplement 0 >> def\n"
         f"/CMapName /Capy{name} def /CMapType 2 def\n"
-        "1 begincodespacerange <00> <FF> endcodespacerange\n"
+        f"1 begincodespacerange <{'00' * width}> <{'FF' * width}> endcodespacerange\n"
         + "".join(
             f"{len(pairs[i : i + 100])} beginbfchar\n"
             + "\n".join(pairs[i : i + 100])

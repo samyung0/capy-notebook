@@ -2,23 +2,13 @@ import { Collapsible } from 'radix-ui';
 import { useEffect, useRef, useState } from 'react';
 import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/DropdownMenu';
 import { Icon } from '@/components/ui/Icon';
-import { Input } from '@/components/ui/Input';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/Popover';
+import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { ToolbarPopoverContent } from '@/components/ui/ToolbarPopover';
 import { m } from '@/i18n';
 import { textLength } from '@/lib/textLength';
-import { Field, SelectField } from './editorFields';
+import { Field, FieldInput, MenuItem, SelectField } from './editorFields';
 import { createGraphBoard, GraphError } from './graph';
 import type { GraphBlock, GraphElement } from './types';
 
@@ -196,19 +186,16 @@ export function GraphEditor({
                 <Icon name="plus" />
               </ToolbarButton>
             </PopoverTrigger>
-            <PopoverContent>
+            <ToolbarPopoverContent align="end" className="w-44">
               {graphTypes.map((type) => (
-                <Button
+                <MenuItem
                   disabled={points.length < (pointsNeeded[type] ?? 0)}
                   key={type}
+                  label={graphLabels[type]()}
                   onClick={() => add(type)}
-                  type="button"
-                  variant="ghost"
-                >
-                  {graphLabels[type]()}
-                </Button>
+                />
               ))}
-            </PopoverContent>
+            </ToolbarPopoverContent>
           </Popover>
         </div>
         {value.elements.map((element) => (
@@ -225,7 +212,7 @@ export function GraphEditor({
                   }}
                   label={m.question_ui_function_f_x()}
                 >
-                  <Input
+                  <FieldInput
                     onChange={(event) =>
                       update(element.id, {
                         ...element,
@@ -256,7 +243,7 @@ export function GraphEditor({
                         : m.question_ui_label()
                     }
                   >
-                    <Input
+                    <FieldInput
                       onChange={(event) =>
                         update(
                           element.id,
@@ -275,7 +262,7 @@ export function GraphEditor({
                   <div className="grid grid-cols-2 gap-2">
                     {(['x', 'y'] as const).map((axis, i) => (
                       <Field key={axis} label={axis}>
-                        <Input
+                        <FieldInput
                           onChange={(event) =>
                             update(element.id, {
                               ...element,
@@ -361,7 +348,7 @@ export function GraphEditor({
                     }}
                     label={m.question_ui_label()}
                   >
-                    <Input
+                    <FieldInput
                       onChange={(event) =>
                         update(element.id, {
                           ...element,
@@ -482,7 +469,7 @@ export function GraphEditor({
                     value={element.center}
                   />
                   <Field label={m.question_ui_radius()}>
-                    <Input
+                    <FieldInput
                       onChange={(event) =>
                         update(element.id, {
                           ...element,
@@ -498,67 +485,69 @@ export function GraphEditor({
                 </div>
               )}
             </div>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
+            <Popover>
+              <PopoverTrigger asChild>
                 <ToolbarButton label={m.question_ui_element_actions()}>
                   <Icon name="moreVertical" />
                 </ToolbarButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent>
-                <DropdownMenuItem
-                  onSelect={() =>
+              </PopoverTrigger>
+              <ToolbarPopoverContent align="end" className="w-52">
+                <MenuItem
+                  label={
+                    element.hidden ? m.question_ui_show() : m.question_ui_hide()
+                  }
+                  onClick={() =>
                     update(element.id, { ...element, hidden: !element.hidden })
                   }
-                >
-                  {element.hidden ? m.question_ui_show() : m.question_ui_hide()}
-                </DropdownMenuItem>
+                />
                 {element.type !== 'point' &&
                 element.type !== 'text' &&
                 element.type !== 'angle' ? (
-                  <DropdownMenuItem
-                    onSelect={() =>
+                  <MenuItem
+                    label={
+                      element.dash
+                        ? m.question_ui_solid_line()
+                        : m.question_ui_dashed_line()
+                    }
+                    onClick={() =>
                       update(element.id, { ...element, dash: !element.dash })
                     }
-                  >
-                    {element.dash
-                      ? m.question_ui_solid_line()
-                      : m.question_ui_dashed_line()}
-                  </DropdownMenuItem>
+                  />
                 ) : null}
                 {element.type === 'segment' && (element.ticks ?? 0) < 3 && (
-                  <DropdownMenuItem
-                    onSelect={() =>
+                  <MenuItem
+                    label={m.question_ui_add_equal_length_mark()}
+                    onClick={() =>
                       update(element.id, {
                         ...element,
                         ticks: (element.ticks ?? 0) + 1,
                       })
                     }
-                  >
-                    {m.question_ui_add_equal_length_mark()}
-                  </DropdownMenuItem>
+                  />
                 )}
                 {element.type === 'segment' && (element.ticks ?? 0) > 0 && (
-                  <DropdownMenuItem
-                    onSelect={() =>
+                  <MenuItem
+                    label={m.question_ui_remove_equal_length_marks()}
+                    onClick={() =>
                       update(element.id, { ...element, ticks: undefined })
                     }
-                  >
-                    {m.question_ui_remove_equal_length_marks()}
-                  </DropdownMenuItem>
+                  />
                 )}
                 {(element.type === 'sector' || element.type === 'polygon') && (
-                  <DropdownMenuItem
-                    onSelect={() =>
+                  <MenuItem
+                    label={
+                      element.shade
+                        ? m.question_ui_remove_shading()
+                        : m.question_ui_shade()
+                    }
+                    onClick={() =>
                       update(element.id, { ...element, shade: !element.shade })
                     }
-                  >
-                    {element.shade
-                      ? m.question_ui_remove_shading()
-                      : m.question_ui_shade()}
-                  </DropdownMenuItem>
+                  />
                 )}
-                <DropdownMenuItem
-                  onSelect={() =>
+                <MenuItem
+                  label={m.question_ui_delete()}
+                  onClick={() =>
                     onChange({
                       ...value,
                       // Drop everything built on a deleted point.
@@ -572,11 +561,9 @@ export function GraphEditor({
                       ),
                     })
                   }
-                >
-                  {m.question_ui_delete()}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                />
+              </ToolbarPopoverContent>
+            </Popover>
           </div>
         ))}
         <Collapsible.Root>
@@ -599,7 +586,7 @@ export function GraphEditor({
                 m.question_ui_y_minimum(),
               ].map((label, i) => (
                 <Field key={label} label={label}>
-                  <Input
+                  <FieldInput
                     onChange={(event) => {
                       const bbox = [
                         ...value.board.bbox,
@@ -652,7 +639,7 @@ export function GraphEditor({
               }}
               label={m.question_ui_description()}
             >
-              <Input
+              <FieldInput
                 onChange={(event) =>
                   onChange({ ...value, description: event.target.value })
                 }

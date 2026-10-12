@@ -306,6 +306,23 @@ def test_packing_is_bounded_by_estimated_tokens_not_characters():
     assert len(latin) == len(cjk)
 
 
+def test_drawn_figure_labels_are_indexed_on_the_figure_line():
+    """Parser v13 folds a vector figure's axis and callout labels into it."""
+    chunks = chunk_content_list(
+        [
+            {"type": "text", "text": "The flow rate falls over time.", "page_idx": 0},
+            {
+                "type": "image",
+                "figure_labels": ["Propane mass (m)", "Time (t)"],
+                "page_idx": 0,
+                "bbox": [100, 200, 900, 600],
+            },
+        ]
+    )
+    text = "\n".join(c.text for c in chunks)
+    assert "[Figure] Propane mass (m) Time (t)" in text
+
+
 def test_chart_blocks_are_indexed_like_images():
     """A ``chart`` is a picture block under a different label.
 

@@ -2,6 +2,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { useAttempts, useWorkspaces } from '@/api/hooks';
 import type { Attempt, AttemptSort } from '@/api/types';
+import { ListEnd } from '@/components/app/ListEnd';
 import {
   ListToolbar,
   type SortOption,
@@ -9,7 +10,6 @@ import {
 } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
-import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
@@ -34,6 +34,7 @@ export function AllResults() {
     fetchNextPage,
     fetchStatus,
     hasNextPage,
+    isFetchNextPageError,
     isFetchingNextPage,
     isLoading,
   } = useAttempts(params);
@@ -183,17 +184,12 @@ export function AllResults() {
                 </div>
               ))}
             </div>
-            {hasNextPage && (
-              <Button
-                className="self-center"
-                disabled={isFetchingNextPage}
-                onClick={() => fetchNextPage()}
-                size="sm"
-                variant="ghost-hover"
-              >
-                {m.list_load_more()}
-              </Button>
-            )}
+            <ListEnd
+              fetchNextPage={fetchNextPage}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              isFetchNextPageError={isFetchNextPageError}
+            />
           </div>
         )}
       </div>

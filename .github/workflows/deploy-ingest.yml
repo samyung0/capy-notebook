@@ -63,8 +63,18 @@ jobs:
           }
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
-  ingest:
+  # A production parser release must pass the parser budget first; UAT
+  # releases skip it so a parser change can be tried there.
+  parser_budget:
     needs: resolve_revision
+    if: inputs.environment_name == 'production'
+    uses: ./.github/workflows/parser-budget.yml
+    with:
+      revision: ${{ needs.resolve_revision.outputs.revision }}
+
+  ingest:
+    needs: [resolve_revision, parser_budget]
+    if: ${{ !cancelled() && needs.resolve_revision.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.parser_budget.result) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     environment: ${{ inputs.environment_name }}

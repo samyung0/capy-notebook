@@ -1,9 +1,21 @@
 [
   {
     "name": "no embeds: the note's own record as stored",
-    "own": {"books": [{"id": "own", "title": "Own", "authors": [], "license": "CC BY-SA 4.0", "excerptIds": ["e1"], "version": 1}], "license": "CC BY-SA 4.0"},
+    "own": {
+      "books": [
+        {
+          "id": "own",
+          "title": "Own",
+          "authors": [],
+          "license": "CC BY-SA 4.0",
+          "excerptIds": ["e1"],
+          "version": 1
+        }
+      ],
+      "license": "CC BY-SA 4.0"
+    },
     "embeds": [],
-    "want": {"books": ["own"], "web": [], "license": "CC BY-SA 4.0"}
+    "want": { "books": ["own"], "web": [], "license": "CC BY-SA 4.0" }
   },
   {
     "name": "nothing anywhere",
@@ -13,59 +25,292 @@
   },
   {
     "name": "a plain note embedding a ShareAlike quiz reads ShareAlike, the note's own first",
-    "own": {"books": [{"id": "own", "title": "Own", "authors": [], "license": "CC BY 4.0", "excerptIds": ["e1"], "version": 1}]},
-    "embeds": [{"books": [{"id": "quiz", "title": "Quiz", "authors": [], "license": "CC BY-SA 4.0", "excerptIds": ["e2"], "version": 2}], "license": "CC BY-SA 4.0"}],
-    "want": {"books": ["own", "quiz"], "web": [], "license": "CC BY-SA 4.0"}
+    "own": {
+      "books": [
+        {
+          "id": "own",
+          "title": "Own",
+          "authors": [],
+          "license": "CC BY 4.0",
+          "excerptIds": ["e1"],
+          "version": 1
+        }
+      ]
+    },
+    "embeds": [
+      {
+        "books": [
+          {
+            "id": "quiz",
+            "title": "Quiz",
+            "authors": [],
+            "license": "CC BY-SA 4.0",
+            "excerptIds": ["e2"],
+            "version": 2
+          }
+        ],
+        "license": "CC BY-SA 4.0"
+      }
+    ],
+    "want": { "books": ["own", "quiz"], "web": [], "license": "CC BY-SA 4.0" }
   },
   {
     "name": "a book and a page once each, in embed order",
-    "own": {"books": [{"id": "own", "title": "Own", "authors": [], "license": "CC BY 4.0", "excerptIds": ["e1"], "version": 1}]},
+    "own": {
+      "books": [
+        {
+          "id": "own",
+          "title": "Own",
+          "authors": [],
+          "license": "CC BY 4.0",
+          "excerptIds": ["e1"],
+          "version": 1
+        }
+      ]
+    },
     "embeds": [
-      {"books": [{"id": "b", "title": "B", "authors": [], "license": "CC BY 4.0", "excerptIds": ["e2"], "version": 1}, {"id": "own", "title": "Own again", "authors": [], "license": "CC BY 4.0", "excerptIds": ["e3"], "version": 2}], "web": [{"url": "https://example.org/a", "title": "A", "authors": [], "license": "CC BY 4.0", "retrievedAt": "2026-10-10"}]},
-      {"books": [{"id": "b", "title": "B", "authors": [], "license": "CC BY 4.0", "excerptIds": ["e4"], "version": 1}], "web": [{"url": "https://example.org/a", "title": "A", "authors": [], "license": "CC BY 4.0", "retrievedAt": "2026-10-10"}, {"url": "https://example.org/b", "title": "B page", "authors": [], "license": "CC0 1.0", "retrievedAt": "2026-10-10"}]}
+      {
+        "books": [
+          {
+            "id": "b",
+            "title": "B",
+            "authors": [],
+            "license": "CC BY 4.0",
+            "excerptIds": ["e2"],
+            "version": 1
+          },
+          {
+            "id": "own",
+            "title": "Own again",
+            "authors": [],
+            "license": "CC BY 4.0",
+            "excerptIds": ["e3"],
+            "version": 2
+          }
+        ],
+        "web": [
+          {
+            "url": "https://example.org/a",
+            "title": "A",
+            "authors": [],
+            "license": "CC BY 4.0",
+            "retrievedAt": "2026-10-10"
+          }
+        ]
+      },
+      {
+        "books": [
+          {
+            "id": "b",
+            "title": "B",
+            "authors": [],
+            "license": "CC BY 4.0",
+            "excerptIds": ["e4"],
+            "version": 1
+          }
+        ],
+        "web": [
+          {
+            "url": "https://example.org/a",
+            "title": "A",
+            "authors": [],
+            "license": "CC BY 4.0",
+            "retrievedAt": "2026-10-10"
+          },
+          {
+            "url": "https://example.org/b",
+            "title": "B page",
+            "authors": [],
+            "license": "CC0 1.0",
+            "retrievedAt": "2026-10-10"
+          }
+        ]
+      }
     ],
-    "want": {"books": ["own", "b"], "web": ["https://example.org/a", "https://example.org/b"], "license": ""}
+    "want": {
+      "books": ["own", "b"],
+      "web": ["https://example.org/a", "https://example.org/b"],
+      "license": ""
+    }
   },
   {
     "name": "copied bank questions' sources count, in question id order",
     "own": null,
-    "embeds": [{"books": [], "questions": {
-      "q2": {"books": [], "web": [{"url": "https://example.org/q2", "title": "Q2", "authors": [], "license": "CC BY 4.0", "retrievedAt": "2026-10-10"}]},
-      "q1": {"books": [], "web": [{"url": "https://example.org/q1", "title": "Q1", "authors": [], "license": "CC BY-SA 4.0", "retrievedAt": "2026-10-10"}], "license": "CC BY-SA 4.0"}
-    }}],
-    "want": {"books": [], "web": ["https://example.org/q1", "https://example.org/q2"], "license": "CC BY-SA 4.0"}
+    "embeds": [
+      {
+        "books": [],
+        "questions": {
+          "q2": {
+            "books": [],
+            "web": [
+              {
+                "url": "https://example.org/q2",
+                "title": "Q2",
+                "authors": [],
+                "license": "CC BY 4.0",
+                "retrievedAt": "2026-10-10"
+              }
+            ]
+          },
+          "q1": {
+            "books": [],
+            "web": [
+              {
+                "url": "https://example.org/q1",
+                "title": "Q1",
+                "authors": [],
+                "license": "CC BY-SA 4.0",
+                "retrievedAt": "2026-10-10"
+              }
+            ],
+            "license": "CC BY-SA 4.0"
+          }
+        }
+      }
+    ],
+    "want": {
+      "books": [],
+      "web": ["https://example.org/q1", "https://example.org/q2"],
+      "license": "CC BY-SA 4.0"
+    }
   },
   {
     "name": "an embed credited only through a question without sources adds nothing",
     "own": null,
-    "embeds": [{"books": [], "questions": {"q1": {"books": []}}}],
+    "embeds": [{ "books": [], "questions": { "q1": { "books": [] } } }],
     "want": null
   },
   {
     "name": "the newest version of one family, written as its source wrote it",
-    "own": {"books": [{"id": "old", "title": "Old", "authors": [], "license": "cc-by-sa-3.0", "excerptIds": ["e1"], "version": 1}], "license": "cc-by-sa-3.0"},
-    "embeds": [{"books": [{"id": "new", "title": "New", "authors": [], "license": "CC BY-SA 4.0", "excerptIds": ["e2"], "version": 1}], "license": "CC BY-SA 4.0"}],
-    "want": {"books": ["old", "new"], "web": [], "license": "CC BY-SA 4.0"}
+    "own": {
+      "books": [
+        {
+          "id": "old",
+          "title": "Old",
+          "authors": [],
+          "license": "cc-by-sa-3.0",
+          "excerptIds": ["e1"],
+          "version": 1
+        }
+      ],
+      "license": "cc-by-sa-3.0"
+    },
+    "embeds": [
+      {
+        "books": [
+          {
+            "id": "new",
+            "title": "New",
+            "authors": [],
+            "license": "CC BY-SA 4.0",
+            "excerptIds": ["e2"],
+            "version": 1
+          }
+        ],
+        "license": "CC BY-SA 4.0"
+      }
+    ],
+    "want": { "books": ["old", "new"], "web": [], "license": "CC BY-SA 4.0" }
   },
   {
     "name": "a tie keeps the first source's wording",
-    "own": {"books": [{"id": "x", "title": "X", "authors": [], "license": "CC-BY-SA-4.0", "excerptIds": ["e1"], "version": 1}], "license": "CC-BY-SA-4.0"},
-    "embeds": [{"books": [{"id": "y", "title": "Y", "authors": [], "license": "CC BY-SA 4.0", "excerptIds": ["e2"], "version": 1}], "license": "CC BY-SA 4.0"}],
-    "want": {"books": ["x", "y"], "web": [], "license": "CC-BY-SA-4.0"}
+    "own": {
+      "books": [
+        {
+          "id": "x",
+          "title": "X",
+          "authors": [],
+          "license": "CC-BY-SA-4.0",
+          "excerptIds": ["e1"],
+          "version": 1
+        }
+      ],
+      "license": "CC-BY-SA-4.0"
+    },
+    "embeds": [
+      {
+        "books": [
+          {
+            "id": "y",
+            "title": "Y",
+            "authors": [],
+            "license": "CC BY-SA 4.0",
+            "excerptIds": ["e2"],
+            "version": 1
+          }
+        ],
+        "license": "CC BY-SA 4.0"
+      }
+    ],
+    "want": { "books": ["x", "y"], "web": [], "license": "CC-BY-SA-4.0" }
   },
   {
     "name": "two copyleft families have no licence line",
-    "own": {"books": [{"id": "sa", "title": "SA", "authors": [], "license": "CC BY-SA 4.0", "excerptIds": ["e1"], "version": 1}], "license": "CC BY-SA 4.0"},
-    "embeds": [{"books": [{"id": "ncsa", "title": "NC", "authors": [], "license": "CC BY-NC-SA 4.0", "excerptIds": ["e2"], "version": 1}], "license": "CC BY-NC-SA 4.0"}],
-    "want": {"books": ["sa", "ncsa"], "web": [], "license": ""}
+    "own": {
+      "books": [
+        {
+          "id": "sa",
+          "title": "SA",
+          "authors": [],
+          "license": "CC BY-SA 4.0",
+          "excerptIds": ["e1"],
+          "version": 1
+        }
+      ],
+      "license": "CC BY-SA 4.0"
+    },
+    "embeds": [
+      {
+        "books": [
+          {
+            "id": "ncsa",
+            "title": "NC",
+            "authors": [],
+            "license": "CC BY-NC-SA 4.0",
+            "excerptIds": ["e2"],
+            "version": 1
+          }
+        ],
+        "license": "CC BY-NC-SA 4.0"
+      }
+    ],
+    "want": { "books": ["sa", "ncsa"], "web": [], "license": "" }
   },
   {
     "name": "the GNU and database families by name",
     "own": null,
     "embeds": [
-      {"books": [{"id": "g", "title": "G", "authors": [], "license": "GNU Free Documentation License 1.3", "excerptIds": ["e1"], "version": 1}], "license": "GNU Free Documentation License 1.3"},
-      {"books": [{"id": "g2", "title": "G2", "authors": [], "license": "GFDL 1.2", "excerptIds": ["e2"], "version": 1}], "license": "GFDL 1.2"}
+      {
+        "books": [
+          {
+            "id": "g",
+            "title": "G",
+            "authors": [],
+            "license": "GNU Free Documentation License 1.3",
+            "excerptIds": ["e1"],
+            "version": 1
+          }
+        ],
+        "license": "GNU Free Documentation License 1.3"
+      },
+      {
+        "books": [
+          {
+            "id": "g2",
+            "title": "G2",
+            "authors": [],
+            "license": "GFDL 1.2",
+            "excerptIds": ["e2"],
+            "version": 1
+          }
+        ],
+        "license": "GFDL 1.2"
+      }
     ],
-    "want": {"books": ["g", "g2"], "web": [], "license": "GNU Free Documentation License 1.3"}
+    "want": {
+      "books": ["g", "g2"],
+      "web": [],
+      "license": "GNU Free Documentation License 1.3"
+    }
   }
 ]

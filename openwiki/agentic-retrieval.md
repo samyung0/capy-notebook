@@ -307,7 +307,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v12` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v13` plus the release SHA.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -552,6 +552,54 @@ real figures pass the tests), and music notation and score excerpts are not
 caught by the six tests, so they can lose their figure records. Stencil-mask
 rewriting and ODL's `--content-safety-off tiny` are not in v7 to v12; the
 tiny-text filter stays on.
+
+Parser v13 (2026-10-12; evidence in
+`bench/parsers/reports/2026-10-12-v12-vs-mineru-unseen-books.md`, timed by the
+parser budget in `bench/parsers/scripts/budget.py`) adds six native repairs;
+the chunker stays at v12:
+
+- **Symbol fonts** (`fonts.map_symbol_fonts`, before Java). A font named
+  Symbol or SymbolMT whose `ToUnicode` sends codes to U+F020–U+F0FF (Word's
+  export: × at U+F0B4, π at U+F070) gets the Symbol encoding's values, with
+  the bracket, brace and integral pieces as their Unicode pieces. Simple and
+  Identity-H fonts both; a map with array destinations is left alone.
+  Wingdings bullets are not Symbol and keep their private-use code points.
+- **Calculation lines** (`levels.demote_fragments`). A heading holding a
+  relation followed by a number (`=`, `≈`, `≠`, `≤`, `≥`) and at least two
+  numbers is body text (`_source_role: calculation`): Word's worked solutions
+  promoted lines such as `Pipe Volume = 0.785 × D² H = 7,418.3 ft³` into every
+  later chunk's section path. A lone Greek or mathematical letter is a formula
+  fragment, no longer an index letter.
+- **Vector figures** (`pictures.add_vector_figures`, after picture triage).
+  veraPDF chunks placed images only, so a diagram drawn with paths reached the
+  index as loose labels. Drawing paths within 8 pt of each other form a
+  cluster (page-wide rules, frames and white fills excluded). A cluster of at
+  least 3% of the page and 12 path segments, with words covering at most 25%
+  of it and clear of image, table and equation blocks, becomes an `image`
+  block with `_source_role: vector-figure`. Text blocks inside it, and short
+  ones (at most six words, no `=`) within 30 pt, become its `figure_labels`
+  and leave the body: never body text or headings. A cluster of only
+  axis-aligned lines and boxes holding six or more text blocks is a ruled
+  table ODL missed and stays as it was. The chunker indexes a picture's
+  caption, footnote and labels on its `[Figure]` line (only v13 blocks carry
+  labels, and the parser identity is in every chunk fingerprint, so the
+  chunker version stays v12); capture renders the page.
+- **Depth levels** (`outline_levels.depth_levels`, after negation
+  composition, the last stage that reads or removes headings). ODL's `heading
+  level` is a document-wide style rank and `relevel` changes a level only
+  where the outline contradicts it, so unplaced headings kept ranks up to 68
+  (Lessons in Industrial Instrumentation). Each heading's level becomes its
+  depth in the chunker's stack; banner boundaries and book-title headings pop
+  without pushing, as in the chunker. Section paths are unchanged by
+  construction; a heading without text loses its level.
+- **Label-only bookmarks** (`outline_levels._match`). An outline entry whose
+  title is only a label ("UNIT 3") matches by its whole title; Waterworks'
+  units 3 to 14 had sat under "UNIT 2: GEOMETRIC SHAPES".
+- **Front-matter running heads** (`headings._wide_only`). A wide-band banner
+  group under five pages or a tenth of the book stays a banner when a group
+  that passes shares its top or bottom and height: Lessons' Roman "viii
+  CONTENTS" heads on the body's running-head line. Measured on 10 books, it
+  changes only those front-matter chunks (63 of 5,449).
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre

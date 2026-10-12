@@ -11,6 +11,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
+import { boardSpot, MapBoard } from '@/features/questions/trailMap/MapBoard';
 import {
   n,
   type Pt,
@@ -56,6 +57,7 @@ export interface RailMapItem {
  * ones half filled, the line solid up to the next item and the map faint a
  * few items further on. Each stop opens its item (mouse only: Continue is the
  * keyboard path). Only pieces near the visible stretch are rendered.
+ * Without `onOpen` it is scenery only: no tag, numbers, tooltips or clickable stops.
  */
 export function RailMap({
   workspaceId,
@@ -63,13 +65,16 @@ export function RailMap({
   items,
   color,
   onOpen,
+  board,
 }: {
   workspaceId: string;
   chapters: string[];
   items: RailMapItem[];
   /** The workspace cover's colour; the theme's link colour without one. */
   color?: string;
-  onOpen: (itemId: string) => void;
+  onOpen?: (itemId: string) => void;
+  /** A station notice board just past the first stop (the caller leaves room before the next station); the empty map's hint. */
+  board?: { title: string; text: string };
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [minWidth, setMinWidth] = useState(0);
@@ -159,7 +164,10 @@ export function RailMap({
   return (
     <div
       aria-hidden
-      className="scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 lg:-mx-10 xl:-mx-16 [&::-webkit-scrollbar]:hidden"
+      className={cn(
+        'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 lg:-mx-10 xl:-mx-16 [&::-webkit-scrollbar]:hidden',
+        board && '@container'
+      )}
       ref={scrollRef}
     >
       <div
@@ -206,14 +214,16 @@ export function RailMap({
                   {i !== nextIndex && (
                     <Stop at={map.stops[i]} state={items[i].state} />
                   )}
-                  <text
-                    className="tm-num"
-                    textAnchor="middle"
-                    x={n(map.stops[i][0])}
-                    y={n(map.stops[i][1] + 21)}
-                  >
-                    {i + 1}
-                  </text>
+                  {onOpen && (
+                    <text
+                      className="tm-num"
+                      textAnchor="middle"
+                      x={n(map.stops[i][0])}
+                      y={n(map.stops[i][1] + 21)}
+                    >
+                      {i + 1}
+                    </text>
+                  )}
                 </g>
               ))}
             </g>
@@ -228,37 +238,84 @@ export function RailMap({
           <circle className="tm-you-ring" cx={next[0]} cy={next[1]} r={11} />
           <Stop at={next} state={items[nextIndex].state} />
         </svg>
-        <span
-          className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
-          style={{
-            left: next[0] * SCALE,
-            top: (next[1] - TOP - lift) * SCALE,
-          }}
-        >
-          {tag}
-        </span>
-        {visible.map((i) => (
-          <Tooltip key={i}>
-            <TooltipTrigger
-              aria-label={items[i].title}
-              className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
-              onClick={() => onOpen(items[i].id)}
-              style={{
-                left: map.stops[i][0] * SCALE,
-                top: (map.stops[i][1] - TOP) * SCALE,
-              }}
-              tabIndex={-1}
-            />
-            {/* The next stop already carries its tag. */}
-            {i !== nextIndex && (
-              <TooltipContent>{items[i].title}</TooltipContent>
-            )}
-          </Tooltip>
-        ))}
+        {board && (
+          <MapBoard
+            {...boardSpot(map.trail, map.stops[0][0] + 12, SCALE, TOP)}
+            text={board.text}
+            title={board.title}
+            tone="station"
+          />
+        )}
+        {onOpen && (
+          <span
+            className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
+            style={{
+              left: next[0] * SCALE,
+              top: (next[1] - TOP - lift) * SCALE,
+            }}
+          >
+            {tag}
+          </span>
+        )}
+        {onOpen &&
+          visible.map((i) => (
+            <Tooltip key={i}>
+              <TooltipTrigger
+                aria-label={items[i].title}
+                className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
+                onClick={() => onOpen(items[i].id)}
+                style={{
+                  left: map.stops[i][0] * SCALE,
+                  top: (map.stops[i][1] - TOP) * SCALE,
+                }}
+                tabIndex={-1}
+              />
+              {/* The next stop already carries its tag. */}
+              {i !== nextIndex && (
+                <TooltipContent>{items[i].title}</TooltipContent>
+              )}
+            </Tooltip>
+          ))}
       </div>
     </div>
   );
 }
+
+/** Learning's empty Progress: unnamed stations with two to six stops each
+ * (five or six at the first, under the notice board),
+ * drawn afresh on every visit, nothing studied. */
+export function PlaceholderRailMap() {
+  const [items] = useState(() =>
+    PLACEHOLDER_CHAPTERS.flatMap((_, chapter) =>
+      Array.from(
+        // The first chapter holds the board above its stops, before the next station.
+        {
+          length: chapter
+            ? 2 + Math.floor(Math.random() * 5)
+            : 5 + Math.floor(Math.random() * 2),
+        },
+        (_, i): RailMapItem => ({
+          chapter,
+          id: `${chapter}-${i}`,
+          state: undefined,
+          title: '',
+        })
+      )
+    )
+  );
+  return (
+    <RailMap
+      board={{
+        text: m.learning_no_progress(),
+        title: m.learning_empty_title(),
+      }}
+      chapters={PLACEHOLDER_CHAPTERS}
+      items={items}
+      workspaceId="placeholder"
+    />
+  );
+}
+const PLACEHOLDER_CHAPTERS = ['', '', '', ''];
 
 /** Done filled, started half filled, untouched hollow. */
 function Stop({ at: [x, y], state }: { at: Pt; state: RailMapItem['state'] }) {

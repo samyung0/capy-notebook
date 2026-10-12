@@ -146,6 +146,7 @@ paraglide is used for internationalization. use paraglide functions to support i
 - Always let larger screens override smaller screen styles, phones are usually less powerful and need to run longer if it needs to pplay more styles
 - Never use `tabular-nums`
 - Use buttons with borders when its an action which stays on the same page, for links/spa links use buttons/links with underline and potentially a navigationForward icon
+- Smallest support device screen is `360px` in width
 
 ## Final Remarks
 

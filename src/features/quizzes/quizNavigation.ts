@@ -21,12 +21,3 @@ export function parseQuizEditSearch(search: Record<string, unknown>): {
   }
   return { returnTo: `${url.pathname}${url.search}${url.hash}` };
 }
-
-export function quizEditSearch(href: string, preview = false) {
-  const search = parseQuizEditSearch({ returnTo: href });
-  if (!preview || !search.returnTo) return search;
-  const url = new URL(search.returnTo, 'https://capy.invalid');
-  // Returning to a quiz's saved Edit mode would open its editor again.
-  url.searchParams.set('mode', 'view');
-  return { returnTo: `${url.pathname}${url.search}${url.hash}` };
-}

@@ -28,7 +28,11 @@ export const journeyOptions = [
   ...editorScenarios,
 ];
 
+/** The panel lists this group first, above the workspace fixtures. */
+export const EMPTY_STATES_GROUP = 'Empty states';
+
 export function journeyGroup(id: string) {
+  if (id === 'new-account') return EMPTY_STATES_GROUP;
   if (id.startsWith('auth-') || id.startsWith('onboarding-'))
     return 'Authentication';
   if (

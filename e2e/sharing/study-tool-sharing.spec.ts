@@ -76,10 +76,13 @@ test('New quiz opens an editable draft', async ({ ownerApi, ownerPage }) => {
   expect(response.status()).toBe(201);
   const quiz = await response.json();
   try {
-    await expect(ownerPage).toHaveURL(`/quizzes/${quiz.id}/edit`);
+    await expect(ownerPage).toHaveURL(`/materials/${quiz.id}?mode=edit`);
     await expect(
-      ownerPage.getByRole('button', { exact: true, name: m.action_save() })
-    ).toBeEnabled();
+      ownerPage.getByRole('button', {
+        exact: true,
+        name: m.quiz_add_question(),
+      })
+    ).toBeVisible();
   } finally {
     expect((await ownerApi.delete(`/api/quizzes/${quiz.id}`)).status()).toBe(
       204

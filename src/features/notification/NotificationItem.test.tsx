@@ -25,6 +25,14 @@ const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
     kind: 'system',
   },
   { data: { code: 'over_quota_started' }, kind: 'system' },
+  {
+    data: { code: 'over_quota_t7', graceEndsAt: '2026-10-20T00:00:00Z' },
+    kind: 'system',
+  },
+  {
+    data: { code: 'over_quota_t3', graceEndsAt: '2026-10-20T00:00:00Z' },
+    kind: 'system',
+  },
   { data: { code: 'over_quota_frozen' }, kind: 'system' },
   { data: { code: 'account_deletion_requested' }, kind: 'system' },
   { data: { code: 'account_deletion_cancelled' }, kind: 'system' },

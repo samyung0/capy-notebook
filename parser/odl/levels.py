@@ -8,8 +8,8 @@ removed banner's ``_heading_boundary_level``, and set ``_source_role`` and
 ``_chapter_label``. Only native text headings are touched, and a heading the PDF
 outline lists on its page is never demoted.
 
-- ``demote_fragments``: formula fragments, run-in labels, numbered callout
-  series, page footers and bare numbers become body text; a bare number or
+- ``demote_fragments``: formula fragments, calculation lines, run-in labels,
+  numbered callout series, page footers and bare numbers become body text; a bare number or
   chapter label set above its title becomes that title's label.
 - ``demote_contents_lines``: headings on printed contents pages become body text.
 - ``backbone_levels``: a book without a usable, unbroken outline is re-levelled
@@ -115,12 +115,13 @@ _SINGLE_LETTER = re.compile(r"^[^\W\d_]$")  # an index or dictionary section ("A
 def _formula_fragment(text: str) -> bool:
     """No ordinary word, and a maths symbol, letter or private-use glyph, no
     letter at all, or only tokens of one or two characters. A dotted section
-    number ("10.1.1 di 'at, in'") and a single letter are titles."""
+    number ("10.1.1 di 'at, in'") and a single non-mathematical letter are
+    titles."""
     if (
         not text
         or _plain_word(text)
         or _SECTION_NUMBER.match(text)
-        or _SINGLE_LETTER.match(text)
+        or (_SINGLE_LETTER.match(text) and not _math_letter(text))
     ):
         return False
     tokens = text.split()
@@ -132,6 +133,16 @@ def _formula_fragment(text: str) -> bool:
         )
         or (len(tokens) >= 2 and all(len(t) <= 2 for t in tokens))
     )
+
+
+# A relation followed by a number ("Area = 0.785 × D² = 1,766 ft²"): a worked
+# calculation, which a title never is, whatever words surround it.
+_RELATION_NUMBER = re.compile(r"[=≈≠≤≥]\s*[-−(]?\s*[$€£]?\d")
+_NUMBER = re.compile(r"\d[\d,.]*")
+
+
+def _calculation(text: str) -> bool:
+    return bool(_RELATION_NUMBER.search(text)) and len(_NUMBER.findall(text)) >= 2
 
 
 _LABEL_WORDS = (
@@ -205,8 +216,8 @@ def _callout_series(blocks: list[dict]) -> set[int]:
 
 
 def demote_fragments(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
-    """Demote headings that are formula fragments, run-in labels, numbered
-    callouts, page footers or bare numbers. A bare number or chapter label set
+    """Demote headings that are formula fragments, calculation lines, run-in
+    labels, numbered callouts, page footers or bare numbers. A bare number or chapter label set
     above its title becomes the title's ``_chapter_label`` and is discarded."""
     out = [dict(b) for b in blocks]
     series = _callout_series(out)
@@ -231,6 +242,8 @@ def demote_fragments(blocks: list[dict], document: pymupdf.Document) -> list[dic
             _demote(b, "callout-series")
         elif _formula_fragment(text):
             _demote(b, "formula-fragment")
+        elif _calculation(text):
+            _demote(b, "calculation")
         elif _RUN_IN_LABEL.match(text) or _BARE_LABEL.match(text):
             _demote(b, "run-in-label")
     return out

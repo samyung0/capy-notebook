@@ -430,7 +430,8 @@ def _folio_families(
 def _wide_only(blocks: list[dict], found: list[int]) -> set[int]:
     """Banners found only through the wide band stay when their group (folio
     kind, page offset, top or bottom, height in hundredths) covers five pages
-    and a tenth of the book, under either folio reading (``_family_banners``)."""
+    and a tenth of the book, or shares its top or bottom and height with such a
+    group, under either folio reading (``_family_banners``)."""
     pages = len(
         {b.get("page_idx") for b in blocks if isinstance(b.get("page_idx"), int)}
     )
@@ -446,9 +447,11 @@ def _wide_only(blocks: list[dict], found: list[int]) -> set[int]:
             box, page = blocks[index]["bbox"], blocks[index]["page_idx"]
             keys[index] = (kind, number - page, box[1] < 500, round(box[1] / 10))
             groups[keys[index]].add(page)
-        kept |= {
-            i for i, key in keys.items() if len(groups[key]) >= max(5, 0.1 * pages)
-        }
+        long = {key for key, seen in groups.items() if len(seen) >= max(5, 0.1 * pages)}
+        # A shorter group on the line of a long one (front matter's Roman heads
+        # where the body's run) is the same running head.
+        lines = {key[2:] for key in long}
+        kept |= {i for i, key in keys.items() if key in long or key[2:] in lines}
     return kept
 
 

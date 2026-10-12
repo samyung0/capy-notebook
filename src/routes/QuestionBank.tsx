@@ -95,7 +95,11 @@ import {
   statusLabels,
 } from '@/features/questions/QuestionListRow';
 import { TopicSummary } from '@/features/questions/TopicSummary';
-import { MiniTrail, TrailMap } from '@/features/questions/trailMap/TrailMap';
+import {
+  MiniTrail,
+  PlaceholderTrailMap,
+  TrailMap,
+} from '@/features/questions/trailMap/TrailMap';
 import {
   type LearnerQuestion,
   QUESTION_TYPES,
@@ -111,6 +115,7 @@ import { holdPosition, scrollSettled } from '@/lib/scrollAnchor';
 import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { useDebounced } from '@/lib/useDebounced';
 import { useMediaQuery } from '@/lib/useMediaQuery';
+import { useNear } from '@/lib/useNear';
 
 const QuestionDialog = lazy(() =>
   import('@/features/questions/QuestionDialog').then((module) => ({
@@ -535,6 +540,7 @@ export default function QuestionBank() {
       <BankLanding
         exams={syllabus.exams}
         onOpen={openProgress}
+        onStart={topic}
         view={mode === 'view'}
       />
     );
@@ -1147,29 +1153,6 @@ function CheckableQuestion({
       </div>
     </>
   );
-}
-
-/** Whether the element is within the root (default the viewport) grown by
- * `margin`; an ancestor scroller still clips it. The observer reports a frame
- * late, so a new `key` (content moved the element) reads false until then. */
-function useNear(
-  ref: RefObject<Element | null>,
-  margin: string,
-  root?: RefObject<Element | null>,
-  key?: unknown
-) {
-  const [seen, setSeen] = useState({ key, near: false });
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const observer = new IntersectionObserver(
-      ([entry]) => setSeen({ key, near: entry.isIntersecting }),
-      { root: root?.current, rootMargin: margin }
-    );
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [ref, margin, root, key]);
-  return seen.key === key && seen.near;
 }
 
 // Both panels load pages; a second call joins the request in flight.
@@ -1793,17 +1776,20 @@ function ReviewBar({
  * /qb with no topic open: in View mode, the topics the learner has answered in.
  * Started topics: the latest as a progress map with Continue, the rest as
  * rows with a small trail. Finished topics: a divider list with Summary (the
- * topic's top). Without any, Choose a topic as before; phones pick topics in
+ * topic's top). Without any, a placeholder map with its notice board and
+ * suggested topics (Choose a topic in Edit mode); phones pick topics in
  * the page.
  */
 function BankLanding({
   exams,
   view,
   onOpen,
+  onStart,
 }: {
   exams: BankExam[];
   view: boolean;
   onOpen: (topicId: string, next: string | null) => void;
+  onStart: (topicId: string) => void;
 }) {
   const { data, isPending } = useQuery({
     ...bankProgressQuery(),
@@ -1858,10 +1844,69 @@ function BankLanding({
   return (
     <div className="flex flex-col gap-8">
       {progress}
-      {!progress && (
+      {!progress && view && data && (
+        <>
+          <PlaceholderTrailMap />
+          <SuggestedTopics exams={exams} onStart={onStart} />
+        </>
+      )}
+      {!progress && !(view && data) && (
         <p className="text-fg-muted">{m.question_ui_choose_a_topic()}</p>
       )}
     </div>
+  );
+}
+
+/** The first topic with questions in each exam, at most four, for a learner
+ * who has answered nothing yet. */
+function SuggestedTopics({
+  exams,
+  onStart,
+}: {
+  exams: BankExam[];
+  onStart: (topicId: string) => void;
+}) {
+  const suggested = exams
+    .flatMap((exam) => {
+      for (const subject of exam.subjects) {
+        const topic = subject.topics.find((item) => item.total > 0);
+        if (topic) return [{ exam, subject, topic }];
+      }
+      return [];
+    })
+    .slice(0, 4);
+  if (!suggested.length) return null;
+  return (
+    <section>
+      <h3 className="mb-1 font-bold text-fg-muted text-sm">
+        {m.question_ui_suggested_topics()}
+      </h3>
+      {suggested.map(({ exam, subject, topic }) => {
+        const path = topicPath(exam, subject, topic);
+        const count =
+          topic.total === 1
+            ? m.question_ui_one_question()
+            : m.question_ui_question_count({ count: topic.total });
+        return (
+          <div
+            className="flex items-center justify-between gap-4 border-divider border-t py-3 last:border-b"
+            key={topic.id}
+          >
+            <div className="min-w-0">
+              <div className="truncate font-semibold text-fg">
+                {path.at(-1)}
+              </div>
+              <div className="truncate text-fg-muted text-xs">
+                {[...path.slice(0, -1), count].join(' · ')}
+              </div>
+            </div>
+            <UnderlineLink onClick={() => onStart(topic.id)}>
+              {m.common_start()}
+            </UnderlineLink>
+          </div>
+        );
+      })}
+    </section>
   );
 }
 

@@ -12,6 +12,36 @@ The production decision records are:
   versionable raw results, machine specifications, artifact inventory, and
   supplemental measurements for the August 31 run.
 
+## Parser budget
+
+`scripts/budget.py` is the performance gate a parser revision passes before it
+ships. The fixtures in `fixtures/budget/budget.json` stay inside the upload
+limits read from `deploy/ingest-host.env.example` (1,400 pages, 500 text-less
+pages, 900 s per document) and the 30 MiB Pro source cap, and cover a scan, a
+mixed deck, prose with deep headings, worked calculations, technical drawings,
+a 610-page figure textbook, a 1,016-page notation-dense book, the exact page
+cap, a 120-page scan and the three Office formats. The library books in
+`fixtures/budget/` are CC-licensed (see `ATTRIBUTION.md`).
+
+```bash
+python bench/parsers/scripts/budget.py prepare --out OUT          # needs pymupdf
+python bench/parsers/scripts/budget.py run --out OUT --inprocess   # parser venv
+python bench/parsers/scripts/budget.py compare BASE_OUT CANDIDATE_OUT
+```
+
+CI (the `Parser budget` workflow: pushes to `main` that touch the parser or the
+budget, dispatch, and Deploy ingest before every production release) builds
+the parser image of the revision, starts it with the ingest host's limits and
+sends each fixture through the production artifact route, sampling the
+container's cgroup. `check --machine ci-ubuntu-24.04` fails on a crash, a page
+count or OCR count off its fixture, empty output, an OOM kill, an execution past
+the document deadline, or a budget breach. Budgets live in `budget.json` under
+the machine name and come from `propose` over three green CI runs (slowest plus
+25%), signed off by a developer; until then only the invariants are checked.
+Local in-process numbers vary by 15 to 30% between runs on a laptop and are
+for comparing two revisions run alternately, not for the budgets
+([v13 report](reports/2026-10-12-parser-v13-budget.md)).
+
 ## Heading-role replay
 
 `replay_heading_roles.py` replays the working-tree `correct_roles` and

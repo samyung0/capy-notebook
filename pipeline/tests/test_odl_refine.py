@@ -549,6 +549,12 @@ def test_tex_fonts_without_to_unicode_map_their_builtin_encoding() -> None:
     assert fonts.repair_fonts(other) == (other, 0)
 
 
+def test_symbol_fonts_trade_private_use_for_the_symbol_encoding() -> None:
+    # Word's SymbolMT: × at U+F0B4, π at U+F070, a paren piece at U+F0E6.
+    mapping = {1: "\uf0b4", 2: "\uf070", 3: "\uf0e6", 4: "a", 5: "×"}
+    assert fonts.symbol_values(mapping) == {1: "×", 2: "π", 3: "⎛"}
+
+
 def test_furniture_keys_skip_texts_repeated_mostly_inside_the_page() -> None:
     def block(text: str, page: int, box: list[float]) -> dict:
         return {"type": "text", "text": text, "page_idx": page, "bbox": box}
@@ -681,6 +687,78 @@ def test_picture_triage_drops_slivers_and_discards_repeats(tmp_path: Path) -> No
         *icons,
         figure,
     ]
+
+
+def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    # A chart: axes and a 20-segment curve, labelled inside and below.
+    page.draw_line((100, 100), (100, 300))
+    page.draw_line((100, 300), (400, 300))
+    points = [(100 + 15 * i, 300 - 180 * (i % 5) / 4) for i in range(21)]
+    page.draw_polyline(points)
+    page.insert_text((200, 150), "Peak")
+    page.insert_text((230, 320), "Time (t)")
+    # A ruled 6 x 2 grid of text: a table ODL did not recognise.
+    for row in range(7):
+        page.draw_line((100, 450 + 40 * row), (400, 450 + 40 * row))
+    for x in (100, 250, 400):
+        page.draw_line((x, 450), (x, 690))
+    cells = []
+    for row in range(6):
+        for col in range(2):
+            x, y = 110 + 150 * col, 470 + 40 * row
+            page.insert_text((x, y), f"cell {row}{col}")
+            cells.append(
+                {
+                    "type": "text",
+                    "text": f"cell {row}{col}",
+                    "page_idx": 0,
+                    "bbox": _grid((x, y - 10, x + 60, y + 2)),
+                }
+            )
+    intro = {
+        "type": "text",
+        "text": "The chart below.",
+        "page_idx": 0,
+        "bbox": _grid((100, 60, 400, 80)),
+    }
+    peak = {
+        "type": "title",
+        "text": "Peak",
+        "text_level": 2,
+        "page_idx": 0,
+        "bbox": _grid((200, 140, 230, 152)),
+    }
+    axis = {
+        "type": "text",
+        "text": "Time (t)",
+        "page_idx": 0,
+        "bbox": _grid((230, 310, 280, 322)),
+    }
+    # A formula beside the chart is not one of its labels.
+    gain = {
+        "type": "text",
+        "text": "Gain = 4.3",
+        "page_idx": 0,
+        "bbox": _grid((300, 330, 360, 342)),
+    }
+    blocks = [intro, peak, axis, gain, *cells]
+    result = pictures.add_vector_figures(blocks, document)
+    figure = result[1]
+    assert result[0] == intro and figure["type"] == "image"
+    assert figure["_source_role"] == "vector-figure"
+    x0, y0, x1, y1 = figure["bbox"]
+    assert (
+        x0 < 100 / 0.6 + 1
+        and y0 < 100 / 0.8 + 1
+        and x1 > 400 / 0.6 - 1
+        and y1 > 322 / 0.8 - 1
+    )
+    # Its labels are its own text, not body text or headings; the formula
+    # stays in the body and the grid is untouched.
+    assert figure["figure_labels"] == ["Peak", "Time (t)"]
+    assert result[2:] == [gain, *cells]
 
 
 # Formula pictures: 10 pt Helvetica lines are 13.8 pt tall on a 600 x 800 page.

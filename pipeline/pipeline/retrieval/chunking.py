@@ -58,7 +58,7 @@ CHUNKER_VERSION = "v12"
 
 # Picture blocks arrive under two labels: ``image`` for photos and diagrams,
 # ``chart`` for plots the layout model recognises as data graphics. Same shape,
-# different caption key. Only their native caption and footnote text is
+# different caption key. Only their native caption, footnote and label text is
 # indexed; the figure itself is reached at question time through capture_page.
 _IMAGE_TYPES = frozenset({"image", "chart"})
 
@@ -569,8 +569,8 @@ def chunk_content_list(
     Block types follow the parser bundle schema: ``text`` with ``text_level`` on
     headings), ``table``, ``equation``, the picture types in
     :data:`_IMAGE_TYPES`, the prose types in :data:`_BODY_TEXT_TYPES`, and
-    :data:`_LIST_TYPES`. Pictures contribute their caption and footnote
-    text; a bare one adds nothing to retrieval and is skipped, as is the page furniture in :data:`_FURNITURE_TYPES`.
+    :data:`_LIST_TYPES`. Pictures contribute their caption, footnote and
+    label text; a bare one adds nothing to retrieval and is skipped, as is the page furniture in :data:`_FURNITURE_TYPES`.
 
     Anything else is counted and logged rather than silently discarded. Parsers
     add block types between versions, and a type this function does not know
@@ -657,7 +657,9 @@ def chunk_content_list(
                 _as_list(item.get("image_footnote"))
                 + _as_list(item.get("chart_footnote"))
             )
-            text = "\n".join(p for p in (caption, footnote) if p)
+            # A drawn figure's own words (axis and callout labels, parser v13).
+            labels = " ".join(_as_list(item.get("figure_labels")))
+            text = "\n".join(p for p in (caption, footnote, labels) if p)
             if text:
                 pending.append(_Block(f"[Figure] {text}", None, page_no, bbox))
         elif kind not in _FURNITURE_TYPES:

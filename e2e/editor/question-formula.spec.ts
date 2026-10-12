@@ -84,10 +84,13 @@ test('question formula accepts physical digits and retains them after commit', a
     .getByRole('button', { exact: true, name: m.question_ui_edit_question() })
     .press('Enter');
   const dialog = page.getByRole('dialog');
+  // The outline row brings the block into view and focuses it; Enter edits.
   await dialog
     .getByRole('button', { name: /^A rectangle has area/ })
     .and(dialog.locator('button:not([aria-haspopup])'))
     .click();
+  await expect(dialog.locator('[data-row-key]:focus')).toHaveCount(1);
+  await page.keyboard.press('Enter');
   const editor = dialog.getByRole('textbox', {
     name: m.question_ui_text_and_formulas(),
   });
@@ -149,7 +152,7 @@ test('a wide display formula scrolls in its own box with an edge fade, a fitting
   page,
 }) => {
   await page.setViewportSize({ height: 844, width: 390 });
-  await page.goto('/quizzes/qz_1/edit');
+  await page.goto('/materials/qz_1?mode=edit');
   // The first question's reaction equation is wider than a 390 px column.
   const formula = page
     .locator('[data-question-id]')

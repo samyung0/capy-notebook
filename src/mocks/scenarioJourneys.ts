@@ -574,6 +574,10 @@ export async function runJourney(
     return;
   }
   switch (id) {
+    case 'new-account':
+      fail();
+      await go('/');
+      return 'Every list is empty, as for a new account, until Reset. Open any page to see its empty state.';
     case 'source-session':
     case 'source-token':
       fail();
@@ -945,7 +949,7 @@ export async function runJourney(
         ? 'The application currently shows its generic validation error for this response.'
         : undefined;
     case 'quiz-save':
-      await go(`/quizzes/${scenarioQuiz}/edit`);
+      await go(`/materials/${scenarioQuiz}?mode=edit`);
       await ui.fill(
         `input[placeholder="${m.quiz_prompt_placeholder()}"]`,
         'Edited scenario question?'

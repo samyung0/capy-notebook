@@ -15,7 +15,7 @@ import type { Chapter, UserColor } from '@/api/types';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { HoverActions } from '@/components/ui/HoverActions';
-import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { Menu, type MenuItem, type MenuProps } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
 import { formatFileSize } from '@/features/files/fileUtils';
 import { MoveToChapterDialog } from '@/features/workspace/MoveToChapterDialog';
@@ -35,6 +35,7 @@ export function ContentActions({
   hoverClassName,
   leadingItems = [],
   menuTrigger,
+  menuTriggerIcon,
   hoverIconContainerClassName,
   onDeleted,
   onMove,
@@ -56,6 +57,7 @@ export function ContentActions({
   hoverClassName?: string;
   leadingItems?: MenuItem[];
   menuTrigger?: ReactNode;
+  menuTriggerIcon?: MenuProps['triggerIcon'];
   hoverIconContainerClassName?: string;
   onDeleted?: () => void;
   onMove?: (chapterId: string | null) => void;
@@ -166,7 +168,13 @@ export function ContentActions({
           items={items}
         />
       )}
-      {display === 'menu' && <Menu items={items} trigger={menuTrigger} />}
+      {display === 'menu' && (
+        <Menu
+          items={items}
+          trigger={menuTrigger}
+          triggerIcon={menuTriggerIcon}
+        />
+      )}
 
       {content && (
         <>

@@ -1,12 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
-import {
-  useMaterial,
-  useQuiz,
-  useQuizEdit,
-  useSubmitAttempt,
-  useUpdateQuizContent,
-} from '@/api/hooks';
-import type { Material, Question } from '@/api/types';
+import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
+import type { Material } from '@/api/types';
 import { FlashcardsEditor } from '@/features/flashcards/FlashcardsEditor';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import {
@@ -14,10 +7,8 @@ import {
   flashcardsElementToCards,
 } from '@/features/materials/document';
 import { SourcesLine } from '@/features/materials/MaterialAttributionFooter';
-import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
-import { QuizForm } from '@/features/quizzes/QuizForm';
-import { usePickedImages } from '@/features/quizzes/usePickedImages';
+import { QuizEditor } from '@/features/quizzes/QuizEditor';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
@@ -76,7 +67,12 @@ export function AppEmbedEdit({
     <QuizGate materialId={materialId} ownerId={ownerId}>
       {(quiz) => (
         <>
-          <QuizEditor onEmpty={onEmpty} quizId={materialId} />
+          <QuizEditor
+            onEmpty={onEmpty}
+            quizId={materialId}
+            saveEachChange
+            title=""
+          />
           <SourcesLine className="mt-3" provenance={quiz.provenance} />
         </>
       )}
@@ -167,63 +163,5 @@ function QuizView({
         />
       )}
     </QuizGate>
-  );
-}
-
-/** The quiz editor's question list, each change saved at once with the
- * revision the last save returned; removing the last question removes the
- * block instead. */
-function QuizEditor({
-  quizId,
-  onEmpty,
-}: {
-  quizId: string;
-  onEmpty: () => void;
-}) {
-  const { data: quiz } = useQuizEdit(quizId);
-  const { mutateAsync: updateContent } = useUpdateQuizContent();
-  const [questions, setQuestions] = useState<Question[] | null>(null);
-  const revision = useRef<number | null>(null);
-  const saving = useRef(Promise.resolve());
-  const { pick, previewUrl, uploadPicked } = usePickedImages(
-    quizId,
-    setQuestions
-  );
-  useEffect(() => {
-    if (!quiz || revision.current !== null) return;
-    setQuestions(structuredClone(quiz.questions));
-    revision.current = quiz.revision;
-  }, [quiz]);
-
-  async function persist(next: Question[]) {
-    if (revision.current === null) return;
-    try {
-      const saved = await updateContent({
-        expectedRevision: revision.current,
-        id: quizId,
-        questions: await uploadPicked(next),
-      });
-      revision.current = saved.revision;
-    } catch {
-      // The global mutation handler shows the normalized failure.
-    }
-  }
-  function change(next: Question[]) {
-    if (next.length === 0) return onEmpty();
-    setQuestions(next);
-    // One save at a time, each with the revision the previous one returned.
-    saving.current = saving.current.then(() => persist(next));
-  }
-
-  if (!questions) return <EmbedLoading />;
-  return (
-    <AssetUrlContext.Provider value={previewUrl}>
-      <QuizForm
-        name=""
-        onQuestionsChange={change}
-        questions={questions}
-        uploadAsset={pick}
-      />
-    </AssetUrlContext.Provider>
   );
 }

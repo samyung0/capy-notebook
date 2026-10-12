@@ -276,8 +276,12 @@ export type TrashItem = Omit<GenTrashItem, 'preview'> & {
  * bytes; `previewUrl` is a presence marker for PDF sources. */
 export type ViewableFile = SourceFile & { url: string };
 
-/** `color` is a client-side tint derived from the owning workspace/label/flashcardSet. */
-export type SearchResult = GenSearchResult & { color?: UserColor };
+/** `color` is a client-side tint derived from the owning workspace/label/flashcardSet.
+ * File rows carry the File thumbnail fields, flashcard rows a MaterialPreview. */
+export type SearchResult = Omit<GenSearchResult, 'preview'> & {
+  color?: UserColor;
+  preview?: FileTextPreview | MaterialPreview;
+};
 
 /** GET /quizzes/{id}: the quiz to view or take, answer-free (the wire keeps
  * questions opaque). */

@@ -1,0 +1,94 @@
+# Parser performance budget: the parser image of a revision, one document at a
+# time through the production artifact route with the ingest host's limits,
+# over the fixtures in bench/parsers/fixtures/budget (bench/parsers/README.md,
+# "Parser budget"). Runs on pushes that change the parser or the budget, on
+# dispatch, and from Deploy ingest before a production release.
+name: Parser budget
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - parser/**
+      - bench/parsers/fixtures/budget/**
+      - bench/parsers/scripts/budget.py
+      - bench/parsers/scripts/stress_parser.py
+      - deploy/ingest-host.env.example
+      - .github/workflows/parser-budget.yml
+  workflow_dispatch:
+    inputs:
+      revision:
+        description: Full SHA; blank measures the selected branch
+        required: false
+        type: string
+  workflow_call:
+    inputs:
+      revision:
+        description: Full Git SHA to measure
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  parser:
+    runs-on: ubuntu-24.04
+    # Image build about 8 minutes, fixtures about 15.
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    env:
+      REVISION: ${{ inputs.revision || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      # `runner.temp` is not available in job-level env.
+      - run: echo "OUT=$RUNNER_TEMP/parser-budget" >> "$GITHUB_ENV"
+      - name: Build the parser image
+        run: docker build -f parser/Dockerfile --build-arg RELEASE_SHA="$REVISION" -t capy-parser-budget .
+      - name: Prepare fixtures
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet pymupdf==1.28.2
+          "$RUNNER_TEMP/venv/bin/python" bench/parsers/scripts/budget.py prepare --out "$OUT"
+      - name: Start the parser
+        run: |
+          # The ingest host's parse limits, from the same example file the
+          # deploy uses; only the spool and the token are local.
+          grep -E '^CAPY_PARSE(R)?_' deploy/ingest-host.env.example > "$RUNNER_TEMP/parser.env"
+          echo "CAPY_PARSE_SHARED_DIR=/var/lib/capy-parse" >> "$RUNNER_TEMP/parser.env"
+          echo "PARSER_TOKEN=budget-$GITHUB_RUN_ID" >> "$RUNNER_TEMP/parser.env"
+          docker volume create capy-parser-budget-spool
+          docker run --rm -v capy-parser-budget-spool:/var/lib/capy-parse alpine:3.20 sh -c \
+            'mkdir -p /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine && chown -R 10001:10001 /var/lib/capy-parse && chmod 2770 /var/lib/capy-parse /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine'
+          docker run -d --name capy-parser-budget --init -p 127.0.0.1:18090:8090 \
+            --memory 12g --memory-swap 12g --cpus 4 --pids-limit 512 \
+            --env-file "$RUNNER_TEMP/parser.env" \
+            -v capy-parser-budget-spool:/var/lib/capy-parse capy-parser-budget
+      - name: Run the parser budget
+        run: |
+          # Root: the spool volume and the container's cgroup belong to root.
+          sudo PARSER_TOKEN="budget-$GITHUB_RUN_ID" "$RUNNER_TEMP/venv/bin/python" \
+            bench/parsers/scripts/budget.py run --out "$OUT" \
+            --service http://127.0.0.1:18090 --container capy-parser-budget
+      - name: Check budgets
+        run: |
+          "$RUNNER_TEMP/venv/bin/python" bench/parsers/scripts/budget.py check \
+            --out "$OUT" --machine ci-ubuntu-24.04 | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Collect parser logs
+        if: always()
+        run: docker logs capy-parser-budget > "$OUT/parser.log" 2>&1 || true
+      - name: Upload parser budget results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          if-no-files-found: ignore
+          name: parser-budget
+          path: |
+            ${{ env.OUT }}/results.jsonl
+            ${{ env.OUT }}/fixtures.json
+            ${{ env.OUT }}/samples.csv
+            ${{ env.OUT }}/parser.log
+          retention-days: 90

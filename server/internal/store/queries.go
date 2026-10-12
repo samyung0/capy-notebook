@@ -103,18 +103,19 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name, f.kind FROM files f
+	rows, err = s.pool.Query(ctx, `SELECT f.id, f.name, f.workspace_id, w.name, f.kind, COALESCE(f.thumbnail_key, ''), f.preview FROM files f
 		JOIN workspaces w ON w.id=f.workspace_id WHERE w.user_id=$2 AND f.trashed_at IS NULL AND lower(f.name) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
-		var id, name, wsID, wsName string
+		var id, name, wsID, wsName, thumbKey string
 		var fileKind FileKind
-		if err := rows.Scan(&id, &name, &wsID, &wsName, &fileKind); err != nil {
+		var preview MaterialPreview
+		if err := rows.Scan(&id, &name, &wsID, &wsName, &fileKind, &thumbKey, &preview); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: "/workspaces/" + wsID + "?file=" + id})
+		out = append(out, SearchResult{ID: id, Kind: "file", FileKind: fileKind, Title: name, Subtitle: wsName, Href: "/workspaces/" + wsID + "?file=" + id, ThumbnailKey: thumbKey, Preview: preview})
 	}
 	rows.Close()
 
@@ -131,7 +132,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	rows.Close()
 
-	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name, m.preview
 		FROM materials m
 		JOIN users owner ON owner.id=m.owner_user_id
 		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
@@ -143,10 +144,11 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 	}
 	for rows.Next() {
 		var id, name, wsName string
-		if err := rows.Scan(&id, &name, &wsName); err != nil {
+		var preview MaterialPreview
+		if err := rows.Scan(&id, &name, &wsName, &preview); err != nil {
 			return nil, err
 		}
-		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: "/flashcards/" + id})
+		out = append(out, SearchResult{ID: id, Kind: "flashcards", Title: name, Subtitle: wsName, Href: "/flashcards/" + id, Preview: preview})
 	}
 	rows.Close()
 

@@ -5,6 +5,8 @@ import {
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { boardSpot, MapBoard } from './MapBoard';
 import {
   buildTrailMap,
   MAP_HEIGHT,
@@ -31,6 +33,7 @@ const AHEAD = 6;
  * stop opens its question (mouse only: Continue is the keyboard path).
  * Only pieces near the visible stretch are rendered; the stretch is tracked in
  * whole question-widths, so scrolling re-renders once per question passed.
+ * Without `onOpen` it is scenery only: no tag, numbers, tooltips or clickable stops.
  */
 export function TrailMap({
   topicId,
@@ -39,13 +42,16 @@ export function TrailMap({
   lastAnsweredPosition,
   nextQuestionId,
   onOpen,
+  board,
 }: {
   topicId: string;
   questionIds: string[];
   answeredPositions: number[];
   lastAnsweredPosition: number;
   nextQuestionId: string;
-  onOpen: (questionId: string) => void;
+  onOpen?: (questionId: string) => void;
+  /** A notice board just past the first stop; the empty map's hint. */
+  board?: { title: string; text: string };
 }) {
   const total = questionIds.length;
   const nextPosition = questionIds.indexOf(nextQuestionId) + 1;
@@ -115,7 +121,10 @@ export function TrailMap({
   return (
     <div
       aria-hidden
-      className="scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 [&::-webkit-scrollbar]:hidden"
+      className={cn(
+        'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 [&::-webkit-scrollbar]:hidden',
+        board && '@container'
+      )}
       ref={scrollRef}
     >
       <div className="relative" style={{ width }}>
@@ -161,14 +170,16 @@ export function TrailMap({
                     cy={n(map.stops[i][1])}
                     r={6}
                   />
-                  <text
-                    className="tm-num"
-                    textAnchor="middle"
-                    x={n(map.stops[i][0])}
-                    y={n(map.stops[i][1] + 21)}
-                  >
-                    {i + 1}
-                  </text>
+                  {onOpen && (
+                    <text
+                      className="tm-num"
+                      textAnchor="middle"
+                      x={n(map.stops[i][0])}
+                      y={n(map.stops[i][1] + 21)}
+                    >
+                      {i + 1}
+                    </text>
+                  )}
                 </g>
               ))}
               <g dangerouslySetInnerHTML={{ __html: layers[key].over }} />
@@ -185,40 +196,69 @@ export function TrailMap({
           {/* Not answered yet, so hollow like the stops ahead. */}
           <circle className="tm-stop" cx={next[0]} cy={next[1]} r={6} />
         </svg>
-        <span
-          className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
-          style={{ left: next[0] * SCALE, top: (next[1] - TOP) * SCALE - 42 }}
-        >
-          {m.question_ui_map_next({ position: nextPosition })}
-        </span>
-        {visible.map((i) => {
-          const label = m.question_ui_map_stop({ position: i + 1 });
-          const button = (
-            <TooltipTrigger
-              aria-label={label}
-              className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
-              onClick={() => onOpen(questionIds[i])}
-              style={{
-                left: map.stops[i][0] * SCALE,
-                top: (map.stops[i][1] - TOP) * SCALE,
-              }}
-              tabIndex={-1}
-            />
-          );
-          // The next stop already carries its tag.
-          return (
-            <Tooltip key={i}>
-              {button}
-              {i + 1 !== nextPosition && (
-                <TooltipContent>{label}</TooltipContent>
-              )}
-            </Tooltip>
-          );
-        })}
+        {board && (
+          <MapBoard
+            {...boardSpot(map.trail, map.stops[1][0] + 8, SCALE, TOP)}
+            text={board.text}
+            title={board.title}
+            tone="wood"
+          />
+        )}
+        {onOpen && (
+          <span
+            className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
+            style={{ left: next[0] * SCALE, top: (next[1] - TOP) * SCALE - 42 }}
+          >
+            {m.question_ui_map_next({ position: nextPosition })}
+          </span>
+        )}
+        {onOpen &&
+          visible.map((i) => {
+            const label = m.question_ui_map_stop({ position: i + 1 });
+            const button = (
+              <TooltipTrigger
+                aria-label={label}
+                className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
+                onClick={() => onOpen(questionIds[i])}
+                style={{
+                  left: map.stops[i][0] * SCALE,
+                  top: (map.stops[i][1] - TOP) * SCALE,
+                }}
+                tabIndex={-1}
+              />
+            );
+            // The next stop already carries its tag.
+            return (
+              <Tooltip key={i}>
+                {button}
+                {i + 1 !== nextPosition && (
+                  <TooltipContent>{label}</TooltipContent>
+                )}
+              </Tooltip>
+            );
+          })}
       </div>
     </div>
   );
 }
+
+/** The question bank's empty Progress: a short seeded walk, nothing answered. */
+export function PlaceholderTrailMap() {
+  return (
+    <TrailMap
+      answeredPositions={[]}
+      board={{
+        text: m.question_ui_empty_body(),
+        title: m.question_ui_empty_title(),
+      }}
+      lastAnsweredPosition={0}
+      nextQuestionId="1"
+      questionIds={PLACEHOLDER_STOPS}
+      topicId="placeholder"
+    />
+  );
+}
+const PLACEHOLDER_STOPS = Array.from({ length: 24 }, (_, i) => `${i + 1}`);
 
 /** The walked footpath: faint edges either side and the dashed line, drawn under both layers. */
 function trailArt(topicId: string, trail: Pt[]) {

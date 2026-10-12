@@ -583,6 +583,12 @@ type SearchResult struct {
 	Title    string     `json:"title"`
 	Subtitle string     `json:"subtitle,omitempty"`
 	Href     string     `json:"href"`
+	// ThumbnailKey is a file's page-1 WebP; the handler signs it into
+	// ThumbnailURL.
+	ThumbnailKey string  `json:"-"`
+	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of a file's page-1 thumbnail"`
+	// Preview is a flashcard set's list-card preview, or {text} for a text file.
+	Preview MaterialPreview `json:"preview,omitempty" doc:"A flashcard set's list-card preview, or {text} for a text file; see openwiki/thumbnails.md"`
 }
 
 type PublicWorkspace struct {

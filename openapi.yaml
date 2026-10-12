@@ -4489,7 +4489,14 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/SearchKind"
+        preview:
+          additionalProperties: true
+          description: A flashcard set's list-card preview, or {text} for a text file; see openwiki/thumbnails.md
+          type: object
         subtitle:
+          type: string
+        thumbnailUrl:
+          description: Hour-stable presigned GET of a file's page-1 thumbnail
           type: string
         title:
           type: string

@@ -12,6 +12,7 @@ import { worker } from '@/mocks/browser';
 import { dialogFiles } from '@/mocks/dialogFiles';
 import { errorMaterials } from '@/mocks/errorMaterials';
 import {
+  EMPTY_STATES_GROUP,
   type JourneyId,
   journeyGroup,
   journeyOptions,
@@ -240,6 +241,27 @@ export default function MockScenarioPanel() {
     );
   };
 
+  const groupFieldset = (group: string) => (
+    <fieldset className="grid gap-1 border-line border-t pt-2" key={group}>
+      <legend className="px-1 font-semibold">{group}</legend>
+      {journeyOptions
+        .filter(({ id }) => journeyGroup(id) === group)
+        .map(({ id, label }) => (
+          <button
+            className="min-h-8 rounded-button border border-line px-2 text-left disabled:opacity-50"
+            data-scenario={id}
+            disabled={!!journeyUnavailable(id)}
+            key={id}
+            onClick={() => launch(id)}
+            title={journeyUnavailable(id)}
+            type="button"
+          >
+            {label}
+          </button>
+        ))}
+    </fieldset>
+  );
+
   return createPortal(
     <>
       {dialog && (
@@ -292,6 +314,7 @@ export default function MockScenarioPanel() {
               Reset
             </button>
           </div>
+          {groupFieldset(EMPTY_STATES_GROUP)}
           <fieldset className="grid gap-1 border-line border-t pt-2">
             <legend className="px-1 font-semibold">
               Workspace files and materials
@@ -316,29 +339,9 @@ export default function MockScenarioPanel() {
               </button>
             ))}
           </fieldset>
-          {groups.map((group) => (
-            <fieldset
-              className="grid gap-1 border-line border-t pt-2"
-              key={group}
-            >
-              <legend className="px-1 font-semibold">{group}</legend>
-              {journeyOptions
-                .filter(({ id }) => journeyGroup(id) === group)
-                .map(({ id, label }) => (
-                  <button
-                    className="min-h-8 rounded-button border border-line px-2 text-left disabled:opacity-50"
-                    data-scenario={id}
-                    disabled={!!journeyUnavailable(id)}
-                    key={id}
-                    onClick={() => launch(id)}
-                    title={journeyUnavailable(id)}
-                    type="button"
-                  >
-                    {label}
-                  </button>
-                ))}
-            </fieldset>
-          ))}
+          {groups
+            .filter((group) => group !== EMPTY_STATES_GROUP)
+            .map(groupFieldset)}
           <fieldset className="grid gap-1 border-line border-t pt-2">
             <legend className="px-1 font-semibold">Product dialogs</legend>
             {mockDialogOptions.map(({ id, label }) => (

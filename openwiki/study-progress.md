@@ -388,7 +388,7 @@ click anywhere on a row opens Check result. Attempts carry the workspace's
 `iconId` (left out once the quiz is deleted).
 `GET /api/attempts?sort=&dir=&workspaceId=&offset=&limit=` (`ListAttempts`)
 sorts (date, score as correct / total), filters by the quiz's current
-workspace and pages in SQL, thirty a page behind Load more; each attempt
+workspace and pages in SQL, thirty a page loaded on scroll; each attempt
 carries that `workspaceId`, null once the quiz is deleted, so a workspace
 filter leaves those out. The filter lists the user's workspaces as Files
 does. Sort and filter live in the URL (`parseResultsSearch`; the route picks
@@ -418,6 +418,16 @@ the Study tab's sort, so the map and Continue always agree.
   workspace on its Study tab.
 - **Finished**: rows with icon, name, "Finished <when>", "total of total" and
   Open.
+
+With nothing in either list the tab shows only `PlaceholderRailMap`: four
+unnamed stations (five or six stops at the first, two to six at the others,
+drawn afresh per visit), nothing studied, no tag, numbers, tooltips or clicks,
+and a blue station notice board (`MapBoard`, shared with the bank) just past
+the first stop saying what the map will show. Under it, `RecordProgress`
+(How we record progress) draws the three things that record progress (mark a
+file as read, take a quiz, study flashcards) as small stickers in the map's ink,
+then a Create a workspace link to /workspaces, like the dashboard's empty state. On a narrow map the board
+is pulled left (container query units) so it ends inside the opening view.
 
 ### The railway map
 

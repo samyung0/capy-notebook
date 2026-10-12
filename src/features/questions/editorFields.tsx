@@ -8,7 +8,13 @@ import {
 import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import { CharCount, type CountLimit, Input } from '@/components/ui/Input';
+import {
+  CharCount,
+  type CountLimit,
+  Input,
+  type InputProps,
+} from '@/components/ui/Input';
+import { PopoverClose } from '@/components/ui/Popover';
 import {
   Select,
   SelectContent,
@@ -17,10 +23,34 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { ToolbarPopoverItem } from '@/components/ui/ToolbarPopover';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import type { MarkItem, QuestionAnswer, QuestionType } from './types';
 import { QUESTION_TYPES } from './types';
+
+/** Question editor inputs: the compact underline the answer options use. */
+export function FieldInput({ wrapperClassName, ...props }: InputProps) {
+  return (
+    <Input
+      variant="underline"
+      wrapperClassName={cn('h-9 w-full min-w-0 px-0.5', wrapperClassName)}
+      {...props}
+    />
+  );
+}
+
+/** A row in a question editor's popover menu, closing it when chosen. */
+export function MenuItem(
+  props: React.ComponentProps<typeof ToolbarPopoverItem>
+) {
+  return (
+    <PopoverClose asChild>
+      <ToolbarPopoverItem {...props} />
+    </PopoverClose>
+  );
+}
 
 export function Field({
   label,
@@ -33,7 +63,7 @@ export function Field({
 }) {
   const id = useId();
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-0.5">
       <div className="flex items-center gap-1">
         <label className="t-label" htmlFor={id}>
           {label}
@@ -59,12 +89,17 @@ export function SelectField({
 }) {
   const id = useId();
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
+    <div className="flex min-w-0 flex-col gap-0.5">
       <label className="t-label" htmlFor={id}>
         {label}
       </label>
       <Select onValueChange={onChange} value={value}>
-        <SelectTrigger aria-label={label} id={id}>
+        <SelectTrigger
+          aria-label={label}
+          className="h-9 bg-transparent px-0.5"
+          id={id}
+          variant="underline"
+        >
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -94,7 +129,7 @@ export function StringList({
       <p className="t-label">{label}</p>
       {values.map((value, index) => (
         <div className="flex items-center gap-2" key={index}>
-          <Input
+          <FieldInput
             aria-label={m.question_ui_numbered_item({
               label,
               number: index + 1,
@@ -154,7 +189,7 @@ export function MarkschemeList({
       <p className="t-label">{label}</p>
       {items.map((item, index) => (
         <div className="flex items-center gap-2" key={index}>
-          <Input
+          <FieldInput
             aria-label={m.question_ui_numbered_item({
               label,
               number: index + 1,
@@ -168,7 +203,8 @@ export function MarkschemeList({
           >
             <SelectTrigger
               aria-label={m.question_ui_item_marks({ number: index + 1 })}
-              className="w-20 shrink-0"
+              className="h-9 w-16 shrink-0 bg-transparent px-0.5"
+              variant="underline"
             >
               <SelectValue />
             </SelectTrigger>
@@ -271,7 +307,7 @@ export function AnswerEditor({
                 }
                 type={answer.type === 'mcq' ? 'radio' : 'checkbox'}
               />
-              <Input
+              <FieldInput
                 aria-label={m.question_ui_option_number({ number: i + 1 })}
                 onChange={(event) =>
                   onChange({
@@ -340,7 +376,7 @@ export function AnswerEditor({
           }}
           label={m.question_ui_unit()}
         >
-          <Input
+          <FieldInput
             onChange={(event) =>
               onChange({ ...answer, unit: event.target.value || undefined })
             }
@@ -438,7 +474,7 @@ export function AnswerEditor({
                 }}
                 label={m.question_ui_item_number({ number: i + 1 })}
               >
-                <Input
+                <FieldInput
                   onChange={(event) =>
                     onChange({
                       ...answer,

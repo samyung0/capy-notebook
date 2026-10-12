@@ -80,6 +80,12 @@ workspace page's loaded files rather than adding an observer with a different
 policy. The Files preview dialog handles its detail-query failure inline with
 `FileError` and a manual Retry action.
 
+Paged page lists (Files, Blocks, Trash, Learning's Past reviews and All
+results) end with `ListEnd` (`src/components/app/ListEnd.tsx`): the next page
+loads once the end is within 800px of the page panel's bottom. A page that
+still fails after the default query retries stops loading there, with Load more
+as the manual retry; the rows already loaded stay.
+
 Mutation failures produce an error toast by default. A mutation that renders its
 own inline error, needs domain-specific messaging, or treats cancellation as
 normal must use:
@@ -362,6 +368,11 @@ upload the dialog preview's file and let the mock worker finish it as failed or
 unindexed, so the panel reaches those rows through the real flow; mock ingest
 progress always ends by reading the outcome from the mock server.
 Reload remembers the selected button but does not replay actions.
+**New account: every list empty**, first in the panel under Empty states,
+answers every list a new account sees (workspaces, files, materials, attempts,
+Learning and question bank progress, reviews, notifications, tasks, calendar,
+canvases, trash, tags, search) with an empty result, and stays on across pages
+and reloads until Reset, so each page's empty state can be checked directly.
 Explicit source fixtures retain their checkpoint identities and epochs in
 session storage; their drafts use the real IndexedDB code in the separate
 `capy-edit-drafts-msw-scenarios` database. Ordinary MSW source files continue

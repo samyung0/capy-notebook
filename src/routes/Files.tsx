@@ -19,6 +19,7 @@ import {
   ItemList,
   ItemSkeletonGrid,
 } from '@/components/app/ItemCard';
+import { ListEnd } from '@/components/app/ListEnd';
 import {
   ListToolbar,
   type ListView,
@@ -182,6 +183,7 @@ function ActiveFiles({
     fetchNextPage,
     fetchStatus,
     hasNextPage,
+    isFetchNextPageError,
     isFetchingNextPage,
     isLoading,
   } = useOwnedFiles(params);
@@ -299,7 +301,11 @@ function ActiveFiles({
             <SkeletonCardGrid cardHeight={72} count={6} />
           )
         ) : files.length === 0 ? (
-          <p className="py-10 text-center text-fg-muted">{m.files_empty()}</p>
+          <p className="py-10 text-center text-fg-muted">
+            {kinds.length || workspaceIds.length
+              ? m.files_empty()
+              : m.files_none()}
+          </p>
         ) : (
           <div className="flex flex-col gap-3" ref={revealRef}>
             <ItemList
@@ -324,6 +330,7 @@ function ActiveFiles({
                       chapters={[]}
                       content={toFileActionTarget(file)}
                       display="menu"
+                      menuTriggerIcon="moreHorizontal"
                       renameFieldLabel={m.files_file_name()}
                       renameTitle={m.files_rename()}
                       showMove={false}
@@ -365,17 +372,12 @@ function ActiveFiles({
                 />
               ))}
             </ItemList>
-            {hasNextPage && (
-              <Button
-                className="self-center"
-                disabled={isFetchingNextPage || selection.busy}
-                onClick={() => fetchNextPage()}
-                size="sm"
-                variant="ghost-hover"
-              >
-                {m.list_load_more()}
-              </Button>
-            )}
+            <ListEnd
+              fetchNextPage={fetchNextPage}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              isFetchNextPageError={isFetchNextPageError}
+            />
           </div>
         )}
       </div>
@@ -419,6 +421,7 @@ function TrashTab({
     fetchStatus,
     hasNextPage,
     isError,
+    isFetchNextPageError,
     isFetchingNextPage,
     isLoading,
     refetch,
@@ -588,6 +591,7 @@ function TrashTab({
                             setPurgeRequest({ empty: false, items: [item] }),
                         },
                       ]}
+                      triggerIcon="moreHorizontal"
                     />
                   }
                   details={formatFileSize(item.sizeBytes)}
@@ -620,16 +624,12 @@ function TrashTab({
               ))}
             </ItemList>
           )}
-          {hasNextPage ? (
-            <Button
-              disabled={isFetchingNextPage || selection.busy}
-              onClick={() => fetchNextPage()}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {m.trash_load_more()}
-            </Button>
-          ) : null}
+          <ListEnd
+            fetchNextPage={fetchNextPage}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+          />
           <ConfirmDialog
             body={
               purgeRequest?.empty

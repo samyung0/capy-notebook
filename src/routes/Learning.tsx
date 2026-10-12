@@ -11,8 +11,9 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import { AllResults } from '@/features/study/AllResults';
 import { PastReviews } from '@/features/study/PastReviews';
+import { RecordProgress } from '@/features/study/RecordProgress';
 import { ReviewTab } from '@/features/study/ReviewTab';
-import { RailMap } from '@/features/study/railMap/RailMap';
+import { PlaceholderRailMap, RailMap } from '@/features/study/railMap/RailMap';
 import { inReadingOrder } from '@/features/workspace/workspaceContent';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -32,9 +33,10 @@ function Progress() {
   if (isLoading) return <ProgressSkeleton />;
   if (!data?.active.length && !data?.finished.length)
     return (
-      <p className="py-8 text-center text-fg-muted">
-        {m.learning_no_progress()}
-      </p>
+      <>
+        <PlaceholderRailMap />
+        <RecordProgress />
+      </>
     );
   const openWorkspace = (workspaceId: string) =>
     navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });

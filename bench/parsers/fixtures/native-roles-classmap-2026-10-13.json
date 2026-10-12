@@ -1,0 +1,24 @@
+{
+  "description": "Teacher region classes mapped onto Capy line roles for the native role experiment (bench/parsers/scripts/native_roles). A line takes the class of the smallest region holding >= 50% of its area; 'figure' regions give 'figure_label' lines and 'table' regions 'table_cell' lines. null = no opinion (the line is unlabelled by that teacher).",
+  "v3": {
+    "paragraph_title": "heading", "doc_title": "heading",
+    "text": "body", "abstract": "body", "content": "body", "reference": "body", "reference_content": "body",
+    "aside_text": "body", "vertical_text": "body",
+    "display_formula": "formula", "formula_number": "formula", "inline_formula": null,
+    "image": "figure_label", "chart": "figure_label", "seal": "figure_label",
+    "header": "furniture", "footer": "furniture", "number": "furniture", "header_image": "furniture", "footer_image": "furniture",
+    "figure_title": "caption", "vision_footnote": "caption",
+    "algorithm": "code", "footnote": "footnote", "table": "table_cell"
+  },
+  "egret": {
+    "title": "heading", "section_header": "heading",
+    "text": "body", "key_value_region": "body", "document_index": "body", "form": "body",
+    "list_item": "list", "formula": "formula", "code": "code", "picture": "figure_label", "caption": "caption",
+    "page_header": "furniture", "page_footer": "furniture", "footnote": "footnote", "table": "table_cell",
+    "checkbox_selected": null, "checkbox_unselected": null
+  },
+  "agreement": {
+    "rule": "Both teachers must give the same role. Exceptions, for classes V3 lacks or under-uses: V3 body + Egret list -> list; V3 body/heading + Egret code -> code; V3 body/heading + Egret furniture -> furniture.",
+    "egret_only": {"list": ["body"], "code": ["body", "heading"], "furniture": ["body", "heading"]}
+  }
+}

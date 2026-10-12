@@ -190,6 +190,13 @@ func (a *api) searchAll(ctx context.Context, in *searchInput) (*searchOutput, er
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// Search returns only files of the caller's own workspaces, so each link
+	// follows read access (openwiki/thumbnails.md).
+	for i := range res {
+		if res[i].ThumbnailURL, err = a.thumbnailURL(ctx, res[i].ThumbnailKey); err != nil {
+			return nil, hErr(err)
+		}
+	}
 	return &searchOutput{Body: res}, nil
 }
 

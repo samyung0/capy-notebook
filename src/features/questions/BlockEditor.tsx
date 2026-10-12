@@ -12,7 +12,7 @@ import { cn } from '@/lib/cn';
 import { errorCopy } from '@/lib/errors';
 import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
-import { Field, SelectField } from './editorFields';
+import { Field, FieldInput, SelectField } from './editorFields';
 import { GraphEditor } from './GraphEditor';
 import { QuestionBlockView } from './QuestionView';
 import { TextEditor } from './TextEditor';
@@ -77,7 +77,7 @@ function ChartEditor({
                 }[key]
               }
             >
-              <Input
+              <FieldInput
                 onChange={(event) =>
                   onChange({ ...block, [key]: event.target.value })
                 }
@@ -335,7 +335,7 @@ export function BlockEditor({
               }}
               label={m.question_ui_paragraph_label()}
             >
-              <Input
+              <FieldInput
                 onChange={(event) =>
                   onChange({ ...block, label: event.target.value || undefined })
                 }
@@ -401,7 +401,7 @@ export function BlockEditor({
           }}
           label={m.question_ui_description()}
         >
-          <Input
+          <FieldInput
             onChange={(event) =>
               onChange({ ...block, description: event.target.value })
             }
@@ -415,7 +415,7 @@ export function BlockEditor({
           }}
           label={m.question_ui_attribution()}
         >
-          <Input
+          <FieldInput
             onChange={(event) =>
               onChange({
                 ...block,

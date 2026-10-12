@@ -1,0 +1,75 @@
+{
+  "description": "Parser performance budget fixtures. Every fixture stays inside the upload limits (deploy/ingest-host.env.example and the Pro source-file cap); `prepare` checks that. Paths are relative to this file. Library books: see ATTRIBUTION.md.",
+  "source_cap_bytes": 31457280,
+  "fixtures": [
+    {
+      "id": "paper-2col",
+      "file": "../docs/2604.03051v1.pdf",
+      "traits": "19-page two-column research paper: tables, equations, references"
+    },
+    {
+      "id": "mixed-scan",
+      "file": "../docs/lecture_plus_scan.pdf",
+      "traits": "42-page lecture deck PDF with 2 scanned pages",
+      "expect": { "ocr_pages_min": 2 }
+    },
+    {
+      "id": "newspaper-scan",
+      "file": "../docs/newspaper_scan.pdf",
+      "traits": "2-page newspaper scan, multi-column OCR",
+      "expect": { "ocr_pages_min": 2 }
+    },
+    {
+      "id": "legal-prose",
+      "file": "legal-citation.pdf",
+      "traits": "277-page prose book: deep headings, boxed examples, outline"
+    },
+    {
+      "id": "vector-drawings",
+      "file": "metal-fab-drawings.pdf",
+      "traits": "104-page technical drawings book: vector line art, some image-only pages"
+    },
+    {
+      "id": "math-worked",
+      "file": "waterworks-math.pdf",
+      "traits": "384-page worked calculations: stacked fractions, Symbol-font operators, 9.99 MiB (just under the free cap)"
+    },
+    {
+      "id": "textbook-26mib",
+      "file": "../docs/Biology_for_the_IB_Diploma.pdf",
+      "traits": "610-page figure-heavy textbook, 25.7 MiB (near the Pro cap)"
+    },
+    {
+      "id": "logic-1016p",
+      "file": "open-logic.pdf",
+      "traits": "1,016-page LaTeX-built logic text: dense notation, 18 text-less pages"
+    },
+    {
+      "id": "limit-1400p",
+      "generate": { "concat": ["open-logic.pdf", "waterworks-math.pdf"] },
+      "traits": "exactly the 1,400-page cap: open-logic followed by waterworks-math"
+    },
+    {
+      "id": "scan-120p",
+      "generate": { "raster": "waterworks-math.pdf", "first": 0, "count": 120, "dpi": 150 },
+      "traits": "120 image-only pages (grey JPEG, 150 dpi): the OCR stage",
+      "expect": { "ocr_pages_min": 120 }
+    },
+    {
+      "id": "docx-handbook",
+      "file": "../../../editor/fixtures/office/long-handbook.docx",
+      "traits": "62-page generated DOCX: LibreOffice conversion then PDF parse"
+    },
+    {
+      "id": "xlsx-gradebook",
+      "file": "../../../editor/fixtures/office/large-gradebook.xlsx",
+      "traits": "8 sheets, 224k cells, 48k formulas: LibreOffice conversion"
+    },
+    {
+      "id": "pptx-84-slides",
+      "file": "../docs/jp_llm2.pptx",
+      "traits": "84-slide Japanese deck, 69 pictures, 23 MiB"
+    }
+  ],
+  "budgets": {}
+}

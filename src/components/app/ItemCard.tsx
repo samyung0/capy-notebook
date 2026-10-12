@@ -99,8 +99,9 @@ export function ItemCard({
     );
   }
   // Card A: the thumbnail on top, then the icon and title, then one hint
-  // line. Below 200px wide (phones, the dashboard's two columns) the title
-  // wraps to two lines and the spacing tightens.
+  // line beside the actions, so the title gets the full width. One-line
+  // titles cut mid-word; below 200px wide (phones, the dashboard's two
+  // columns) non-dense titles wrap to two lines and the spacing tightens.
   return (
     <Card
       border="solid"
@@ -112,7 +113,7 @@ export function ItemCard({
     >
       {overlay}
       <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:pt-2.5 pt-2 @min-[200px]:pr-[34px] pr-[30px] @min-[200px]:pb-2 pb-1.5 @min-[200px]:pl-2.5 pl-2">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:px-2.5 px-2 @min-[200px]:pt-2.5 pt-2 @min-[200px]:pb-2 pb-1.5">
         <FileIcon
           className={cn(
             'size-4',
@@ -124,24 +125,30 @@ export function ItemCard({
         <Title
           className={cn(
             'wrap-anywhere font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card',
-            dense ? 'line-clamp-1' : '@min-[200px]:line-clamp-1 line-clamp-2'
+            dense ? 'truncate' : 'line-clamp-2 @min-[200px]:truncate'
           )}
           link={selection ? undefined : link}
         >
           {title}
         </Title>
-        <p className="col-start-2 truncate text-fg-muted text-xs">{meta}</p>
+        {/* The actions sit on the hint line, so they line up with it even
+            when a neighbour's longer title stretches the card. A tighter
+            button whose hover fill feathers out keeps off the title. */}
+        <div className="relative col-start-2 min-w-0">
+          <p className="truncate @min-[200px]:pr-[26px] pr-[22px] text-fg-muted text-xs">
+            {meta}
+          </p>
+          {!selection && actions && (
+            <div className="absolute top-1/2 -right-1 @min-[200px]:-right-0.5 z-10 -translate-y-[calc(50%+1px)] [&_button:hover]:shadow-[0_0_6px_3px_var(--color-surface-hover-bg)] [&_button]:p-1.5">
+              {actions}
+            </div>
+          )}
+        </div>
       </div>
-      {selection ? (
+      {selection && (
         <span className="absolute @min-[200px]:right-3.5 right-2.5 @min-[200px]:bottom-4 bottom-3">
           <FileSelectionMark selected={selected} />
         </span>
-      ) : (
-        actions && (
-          <div className="absolute @min-[200px]:right-1.5 right-0.5 @min-[200px]:bottom-2 bottom-1 z-10">
-            {actions}
-          </div>
-        )
       )}
     </Card>
   );
@@ -234,7 +241,7 @@ export function ItemSkeletonGrid({
               dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
             )}
           />
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:pt-2.5 pt-2 @min-[200px]:pr-[34px] pr-[30px] @min-[200px]:pb-2 pb-1.5 @min-[200px]:pl-2.5 pl-2">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:px-2.5 px-2 @min-[200px]:pt-2.5 pt-2 @min-[200px]:pb-2 pb-1.5">
             <Skeleton
               className={cn(
                 'size-4',
@@ -248,7 +255,7 @@ export function ItemSkeletonGrid({
                 dense ? 'h-[1lh]' : '@min-[200px]:h-[1lh] h-[2lh]'
               )}
             />
-            <Skeleton className="col-start-2 h-[1lh] w-2/3 text-xs" />
+            <Skeleton className="col-start-2 h-[1lh] w-1/2 text-xs" />
           </div>
         </div>
       ))}

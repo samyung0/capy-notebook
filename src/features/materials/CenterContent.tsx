@@ -1,4 +1,4 @@
-import { Navigate, useNavigate, useRouter } from '@tanstack/react-router';
+import { useNavigate } from '@tanstack/react-router';
 import {
   lazy,
   type ReactNode,
@@ -45,8 +45,8 @@ import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
+import { QuizEditor } from '@/features/quizzes/QuizEditor';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
-import { quizEditSearch } from '@/features/quizzes/quizNavigation';
 import {
   OfflineStatus,
   WorkspaceStatusButton,
@@ -377,7 +377,21 @@ export function MaterialContent({
   const MaterialPreview = previewType.current ?? LazyMaterialPreview;
 
   if (material.kind === 'quiz' && activeMode === 'edit') {
-    return <OpenQuizEditor quizId={materialId} />;
+    return (
+      <div className="h-full min-h-0 overflow-auto">
+        <TabContent centered={centerQuiz}>
+          <QuizEditor
+            key={materialId}
+            quizId={materialId}
+            title={material.title}
+          />
+          <SourcesLine
+            className={cn('mt-16 pb-4', overBar && 'pb-20')}
+            provenance={material.provenance}
+          />
+        </TabContent>
+      </div>
+    );
   }
   if (material.kind === 'flashcards') {
     const cards = flashcardsElementToCards(
@@ -597,18 +611,6 @@ function TitleAction({
       {label}
       <Icon className="size-4 -translate-y-px" name="arrowRight" />
     </button>
-  );
-}
-
-function OpenQuizEditor({ quizId }: { quizId: string }) {
-  const router = useRouter();
-  return (
-    <Navigate
-      params={{ quizId }}
-      replace
-      search={quizEditSearch(router.state.location.href, true)}
-      to="/quizzes/$quizId/edit"
-    />
   );
 }
 

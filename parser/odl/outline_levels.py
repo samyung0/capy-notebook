@@ -27,6 +27,7 @@ from collections import Counter, defaultdict
 import pymupdf
 
 from . import levels
+from .furniture import clean_inline
 from .headings import _literal
 from .levels import _heading, _labelled, _text
 
@@ -64,6 +65,11 @@ def _key(text: str) -> str:
         text = stripped
     text = levels._TRAILING_NUMBER.sub("", text)
     return "".join(ch for ch in text.casefold() if ch.isalnum())
+
+
+def _match_key(text: str) -> str:
+    """``_key``, or the whole title when it is only a label ("UNIT 3")."""
+    return _key(text) or _literal(text)
 
 
 def _similar(a: str, b: str) -> bool:
@@ -179,12 +185,12 @@ def _match(blocks: list[dict], entries: list[dict]) -> dict[int, int]:
     def fits(i: int, e: dict, key: str) -> bool:
         if i in heads and _folio_left(_text(blocks[i]), e["title"]):
             return False
-        return _similar(_key(_text(blocks[i])), key) or _similar(
-            _key(_labelled(blocks[i])), key
+        return _similar(_match_key(_text(blocks[i])), key) or _similar(
+            _match_key(_labelled(blocks[i])), key
         )
 
     for j, e in enumerate(entries):
-        key = _key(e["title"])
+        key = _match_key(e["title"])
         if not key:
             continue
         for page in (e["page"] - 1, e["page"], e["page"] - 2):
@@ -203,7 +209,7 @@ def _match(blocks: list[dict], entries: list[dict]) -> dict[int, int]:
                 break
     # An entry listed out of reading order still matches on its own page.
     for j, e in enumerate(entries):
-        key = _key(e["title"])
+        key = _match_key(e["title"])
         if j in matched or not key:
             continue
         hit = next(
@@ -617,3 +623,46 @@ def mark_book_titles(blocks: list[dict], document: pymupdf.Document) -> list[dic
         else b
         for b in blocks
     ]
+
+
+# ------------------------------------------------------------------ depth levels
+
+
+def depth_levels(blocks: list[dict]) -> list[dict]:
+    """Renumber heading levels to their depth in the chunker's heading stack.
+
+    ODL's ``heading level`` ranks a heading's style across the whole document,
+    and the rules above change a level only where the outline or the backbone
+    contradicts it, so unplaced headings keep style ranks (up to 68 in a
+    3,311-page book). This walks the blocks as ``chunking.chunk_content_list``
+    and ``packing.pack_blocks`` do: a heading pops the open headings at or
+    below its level and is pushed; a banner boundary or a book-title heading
+    pops without pushing. Each takes the depth it lands at, so every section
+    path stays the same while levels count the headings actually open. It runs
+    after the last stage that reads or removes headings: a heading removed
+    after it could change a path. A heading without text, which the two walks
+    treat differently and which no path shows, loses its level."""
+    out = list(blocks)
+    stack: list[int] = []  # the open headings' levels, as the chunker holds them
+
+    def place(level: int) -> int:
+        while stack and stack[-1] >= level:
+            stack.pop()
+        return len(stack) + 1
+
+    for i, b in enumerate(blocks):
+        if _boundary(b):
+            depth = place(b["_heading_boundary_level"])
+            out[i] = {**b, "_heading_boundary_level": depth}
+            continue
+        level = b.get("text_level")
+        if b.get("type") != "text" or type(level) is not int or level <= 0:
+            continue
+        if not clean_inline(str(b.get("text") or "")).strip():
+            out[i] = {k: v for k, v in b.items() if k != "text_level"}
+            continue
+        depth = place(level)
+        if b.get("_source_role") != "book-title":
+            stack.append(level)
+        out[i] = {**b, "text_level": depth}
+    return out

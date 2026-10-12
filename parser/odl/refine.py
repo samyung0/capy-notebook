@@ -1,11 +1,12 @@
 """One PDF through OpenDataLoader, the reviewed native repairs and selective OCR.
 
 The stage order is the lab's ``refined`` variant and must not be reshuffled:
-font repair, Java, cell styles, adaptation, picture triage, column order,
-hidden-OCR order, heading context, then table context, footer ancestry, list
-geometry, glyph repairs, exponents, column continuations, split ligatures,
-page numbers, heading levels, source tables, inline formula placeholders,
-negation composition, and finally RapidOCR lines for pages without a text layer.
+font repair, Java, cell styles, adaptation, picture triage, vector figures,
+column order, hidden-OCR order, heading context, then table context, footer
+ancestry, list geometry, glyph repairs, exponents, column continuations, split
+ligatures, page numbers, heading levels, source tables, inline formula
+placeholders, negation composition, and finally RapidOCR lines for pages
+without a text layer.
 """
 
 from __future__ import annotations
@@ -117,6 +118,7 @@ def parse_pdf(
         # Picture triage reads ODL's image files from the work directory; the
         # files themselves never leave it.
         blocks = pictures.classify(blocks, document, native_dir)
+        blocks = pictures.add_vector_figures(blocks, document)
         blocks, reordered = order.repair(blocks)
         blocks = order.move_rotated_labels(blocks, reordered, pdf)
         blocks = order.split_continuations(blocks, reordered, pdf)
@@ -148,6 +150,8 @@ def parse_pdf(
         blocks, _ = tables.recover_tables(blocks, document)
         blocks = pictures.place_inline(blocks, document)
         blocks = fonts.compose_negations(blocks)
+        # Last heading stage: levels become stack depths, paths unchanged.
+        blocks = outline_levels.depth_levels(blocks)
         phases["repairs"] = time.perf_counter() - started
 
         started = time.perf_counter()

@@ -1266,7 +1266,10 @@ those services start.
    and one release owner, so its exit trap settles any pending release the run
    created — either activating the candidate or restoring the previous snapshot
    from the live backend SHA. A run killed before that trap leaves pending
-   behind for `reclaim_pending` to adopt.
+   behind for `reclaim_pending` to adopt. For `production`, the run first
+   calls the **Parser budget** workflow on the same revision (about 25
+   minutes; `bench/parsers/README.md`, "Parser budget") and does not touch
+   the host unless it passes; UAT runs skip it.
 
 The ingest checkout, Compose files, and config renderer stay pinned to the
 backend revision. The SSH release wrapper and remote release script come from

@@ -71,8 +71,10 @@ immutable`; the next hour's URL is a new cache entry.
 
 - Signed in the handler for every row of the owned file list
   (`GET /api/files`), the workspace file list (`GET /api/workspaces/{id}/files`,
-  members and link/public readers alike) and trash rows of kind `source_file`
-  (`GET /api/trash`). Single-file responses carry no link.
+  members and link/public readers alike), trash rows of kind `source_file`
+  (`GET /api/trash`) and file rows of global search (`GET /api/search`, the
+  caller's own workspaces only; search rows also carry a text file's or
+  flashcard set's `preview`). Single-file responses carry no link.
 - The rule is that the link follows the file's read access. Handlers sign only
   rows their access-scoped queries already returned for the caller, so a link
   is never minted for a file the caller cannot read

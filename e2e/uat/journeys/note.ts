@@ -1049,7 +1049,7 @@ export async function quizImageOnSave(run: UatRun, quizId: string) {
   };
   page.on('request', watch);
   try {
-    await page.goto(`${run.env.appUrl}/quizzes/${quizId}/edit`);
+    await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
     await page
       .getByRole('button', { exact: true, name: m.action_edit() })
       .click();
@@ -1222,7 +1222,7 @@ export async function pastedQuizCopies(
 /** Quiz editor: select the image block, delete it, save the question and quiz. */
 async function removeQuizImage(run: UatRun, quizId: string) {
   const page = run.owner.page;
-  await page.goto(`${run.env.appUrl}/quizzes/${quizId}/edit`);
+  await page.goto(`${run.env.appUrl}/materials/${quizId}?mode=edit`);
   await page
     .getByRole('button', { exact: true, name: m.action_edit() })
     .click();
@@ -1232,7 +1232,8 @@ async function removeQuizImage(run: UatRun, quizId: string) {
       name: m.question_ui_select_block({ type: m.question_ui_image() }),
     })
     .click();
-  await dialog
+  // The block toolbar is portaled outside the dialog, like the note editor's.
+  await page
     .getByRole('toolbar', { name: m.question_ui_block_actions() })
     .getByRole('button', { exact: true, name: m.question_ui_delete() })
     .click();

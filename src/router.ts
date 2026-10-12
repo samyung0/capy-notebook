@@ -32,7 +32,6 @@ import {
   notificationPrefsQuery,
   ownedFilesQuery,
   ownedMaterialsQuery,
-  quizEditQuery,
   quizQuery,
   recentFilesQuery,
   recentMaterialsQuery,
@@ -334,15 +333,6 @@ const appRoutes = [
     ({ context: { queryClient: qc }, params }) =>
       qc.prefetchQuery(quizQuery(params.quizId))
   ),
-  createRoute({
-    component: lazyRouteComponent(() => import('@/routes/QuizEdit')),
-    getParentRoute: () => authShellRoute,
-    loader: ({ context: { queryClient: qc }, params }) => {
-      void qc.prefetchQuery(quizEditQuery(params.quizId));
-    },
-    path: '/quizzes/$quizId/edit',
-    validateSearch: parseQuizEditSearch,
-  }),
   page(
     '/quizzes/attempts/$attemptId',
     () => import('@/routes/AttemptResult'),

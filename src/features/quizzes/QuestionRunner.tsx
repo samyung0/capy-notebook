@@ -70,6 +70,7 @@ export function QuestionRunner({
   showAnswerKey = false,
   questionNumber,
   renderBlock,
+  frameAnswer,
 }: {
   /** Controls at the question's top right (QuestionView `actions`). */
   actions?: ReactNode;
@@ -85,6 +86,8 @@ export function QuestionRunner({
   showAnswerKey?: boolean;
   questionNumber?: number;
   renderBlock?: QuestionViewProps['renderBlock'];
+  /** The question dialog: wraps each part's answer controls to select them. */
+  frameAnswer?: (partId: string, answer: ReactNode) => ReactNode;
 }) {
   // A gaps part's text carries its own fields, one per numbered blank.
   const gapBlock: QuestionViewProps['renderBlock'] = (
@@ -112,8 +115,8 @@ export function QuestionRunner({
       <QuestionBlockView block={block} />
     );
   };
-  const answer = (part: QuestionPart | LearnerPart) => (
-    <div className="@container col-[2/-1] min-w-0">
+  const answer = (part: QuestionPart | LearnerPart) => {
+    const runner = (
       <PartRunner
         disabled={disabled}
         key={part.id}
@@ -123,8 +126,13 @@ export function QuestionRunner({
         twoColumns={optionColumns(question)}
         value={answers[part.id] ?? emptyAnswer(part as QuestionPart)}
       />
-    </div>
-  );
+    );
+    return (
+      <div className="@container col-[2/-1] min-w-0">
+        {frameAnswer ? frameAnswer(part.id, runner) : runner}
+      </div>
+    );
+  };
   if (!review)
     return (
       <QuestionView

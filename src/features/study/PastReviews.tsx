@@ -2,6 +2,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useMemo } from 'react';
 import { usePastReviews, useReviewOverview } from '@/api/hooks';
 import type { PastReview, PastReviewSort, SessionScore } from '@/api/types';
+import { ListEnd } from '@/components/app/ListEnd';
 import {
   ListToolbar,
   type SortOption,
@@ -9,7 +10,6 @@ import {
 } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
-import { Button } from '@/components/ui/Button';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { BillingTable } from '@/features/billing/BillingTable';
@@ -46,6 +46,7 @@ export function PastReviews() {
     fetchNextPage,
     fetchStatus,
     hasNextPage,
+    isFetchNextPageError,
     isFetchingNextPage,
     isLoading,
   } = usePastReviews(params);
@@ -169,17 +170,12 @@ export function PastReviews() {
                 <Row key={r.id} onAgain={() => again(r)} review={r} />
               ))}
             </div>
-            {hasNextPage && (
-              <Button
-                className="self-center"
-                disabled={isFetchingNextPage}
-                onClick={() => fetchNextPage()}
-                size="sm"
-                variant="ghost-hover"
-              >
-                {m.list_load_more()}
-              </Button>
-            )}
+            <ListEnd
+              fetchNextPage={fetchNextPage}
+              hasNextPage={hasNextPage}
+              isFetchingNextPage={isFetchingNextPage}
+              isFetchNextPageError={isFetchNextPageError}
+            />
           </div>
         )}
       </div>

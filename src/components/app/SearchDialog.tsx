@@ -5,6 +5,7 @@ import { searchQueryQMax } from '@/api/gen/validators';
 import { useSearch } from '@/api/hooks';
 import type { SearchKind, SearchResult } from '@/api/types';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import {
   Dialog,
@@ -12,7 +13,6 @@ import {
   DialogContent,
   DialogTitle,
 } from '@/components/ui/Dialog';
-import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -64,7 +64,7 @@ export function SearchDialog({
       open={open}
     >
       <DialogContent
-        cardScrollContainerClassName="p-0"
+        cardScrollContainerClassName="p-0 sm:p-0"
         className="top-[12vh] translate-y-0"
         onOpenAutoFocus={(e) => {
           e.preventDefault();
@@ -126,33 +126,40 @@ export function SearchDialog({
                       }}
                       type="button"
                     >
-                      <span
-                        className={cn(
-                          'flex size-8 shrink-0 items-center justify-center rounded-button',
-                          !fileIcon &&
+                      {fileIcon ? (
+                        <ThumbnailPanel
+                          fileKind={r.fileKind}
+                          icon={fileIcon}
+                          preview={r.preview}
+                          small
+                          thumbnailUrl={r.thumbnailUrl}
+                        />
+                      ) : (
+                        <span
+                          className={cn(
+                            'flex size-10 shrink-0 items-center justify-center rounded-button',
                             !workspaceIcon &&
-                            'bg-surface-hover-bg text-fg-secondary'
-                        )}
-                        style={
-                          !fileIcon && !workspaceIcon && c
-                            ? { background: c.bg, color: c.fg }
-                            : undefined
-                        }
-                      >
-                        {workspaceIcon ? (
-                          <img
-                            alt=""
-                            className="size-8 rounded-button"
-                            height={32}
-                            src={iconUrl(workspaceIcon)}
-                            width={32}
-                          />
-                        ) : fileIcon ? (
-                          <FileIcon className="size-5" name={fileIcon} />
-                        ) : (
-                          <Icon name={KIND_ICON[r.kind]} size={16} />
-                        )}
-                      </span>
+                              'bg-surface-hover-bg text-fg-secondary'
+                          )}
+                          style={
+                            !workspaceIcon && c
+                              ? { background: c.bg, color: c.fg }
+                              : undefined
+                          }
+                        >
+                          {workspaceIcon ? (
+                            <img
+                              alt=""
+                              className="size-10 rounded-button"
+                              height={40}
+                              src={iconUrl(workspaceIcon)}
+                              width={40}
+                            />
+                          ) : (
+                            <Icon name={KIND_ICON[r.kind]} size={16} />
+                          )}
+                        </span>
+                      )}
                       <span className="min-w-0 flex-1">
                         <span className="block truncate font-medium text-fg text-sm">
                           {r.title}

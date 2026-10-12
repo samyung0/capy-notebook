@@ -73,12 +73,15 @@ export interface MenuProps extends VariantProps<typeof menuVariants> {
   items: MenuItem[];
   /** Custom trigger. Defaults to the unified thick vertical 3-dot button. */
   trigger?: ReactNode;
+  /** Icon of the default trigger; item cards use the horizontal dots. */
+  triggerIcon?: 'moreVertical' | 'moreHorizontal';
 }
 
 /** Convenience action list with the shared menu's keyboard and focus behavior. */
 export function Menu({
   items,
   trigger,
+  triggerIcon = 'moreVertical',
   align = 'end',
   variant = 'default',
   iconContainerClassName,
@@ -128,7 +131,7 @@ export function Menu({
       {trigger ?? (
         <IconButton
           className={cn('p-2', iconContainerClassName)}
-          icon="moreVertical"
+          icon={triggerIcon}
           label={m.a11y_open_menu()}
           size="md"
           variant="ghost-hover"

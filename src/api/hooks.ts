@@ -120,7 +120,6 @@ import type {
   UpdateMaterialReq,
   UpdateMeReq,
   UpdateQuizContentReq,
-  UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
   UpdateWorkspaceMemberReq,
@@ -2107,14 +2106,6 @@ export function useUpdateQuizContent() {
     onSuccess: (_d, v) => {
       invalidateQuiz(qc, v.id);
     },
-  });
-}
-export function useUpdateQuizMetadata() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...body }: UpdateQuizMetadataReq & { id: string }) =>
-      api.patch<EditableQuiz>(`/quizzes/${id}/metadata`, body),
-    onSuccess: (_d, v) => invalidateQuiz(qc, v.id),
   });
 }
 export function useUpdateQuizSharing() {

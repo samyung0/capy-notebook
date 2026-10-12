@@ -416,3 +416,68 @@ def test_a_title_page_heading_that_roots_the_book_is_the_title():
     with _doc(10) as document:
         roles = [b.get("_source_role") for b in ol.mark_book_titles(blocks, document)]
     assert roles[0] == "book-title" and roles[1] is None
+
+
+def test_label_only_entries_match_their_headings():
+    # Advanced Waterworks Mathematics bookmarks "UNIT 3" to "UNIT 14" with no
+    # title. Unmatched, they stayed below "UNIT 2: GEOMETRIC SHAPES", which the
+    # walk had lifted over the book title.
+    toc = [[1, "UNIT 1: DIMENSIONS", 2], [1, "UNIT 2: SHAPES", 4]]
+    toc += [[1, f"UNIT {n}", 2 * n] for n in range(3, 6)] + [[1, "APPENDIX", 12]]
+    blocks = [_block("WATERWORKS MATHEMATICS", 0, 1), _body(0)]
+    for n, title in enumerate(["UNIT 1: DIMENSIONS", "UNIT 2: SHAPES"], start=1):
+        blocks += [_block(title, 2 * n - 1, 2), _block(f"{n}.1 Part", 2 * n - 1, 4)]
+        blocks.append(_body(2 * n - 1))
+    for n in range(3, 6):
+        blocks += [_block(f"UNIT {n}", 2 * n - 1, 2), _body(2 * n - 1)]
+    blocks += [_block("APPENDIX", 11, 2), _body(11)]
+    with _doc(12, toc) as document:
+        levels = _levels(ol.relevel(blocks, document))
+    assert {levels[f"UNIT {n}"] for n in range(3, 6)} == {levels["UNIT 2: SHAPES"]}
+
+
+# ------------------------------------------------------------------ depth levels
+
+
+def test_depth_levels_count_open_headings_and_keep_every_path():
+    from pipeline.retrieval.chunking import chunk_content_list
+
+    # Lessons in Industrial Instrumentation's ODL style ranks: chapter 5,
+    # section 16, unplaced labels 28 to 48, running heads 39.
+    banner = {
+        "type": "discarded",
+        "_source_role": "running-banner",
+        "_heading_boundary_level": 39,
+        "text": "8 CHAPTER 1. CALCULUS",
+        "page_idx": 3,
+        "bbox": [100, 20, 900, 40],
+    }
+    blocks = [
+        _block("Lessons", 0, 9, _source_role="book-title"),
+        _block("Contents", 1, 5),
+        _block("viii CONTENTS", 1, 39),
+        _body(1),
+        _block("Calculus", 2, 5),
+        _block("1.1 Introduction", 2, 16),
+        _body(2),
+        banner,
+        _block("P", 3, 28),
+        _body(3),
+        _block("Deep label", 3, 48),
+        _body(3, y=400),
+        _block("Shallower label", 3, 30),
+        _body(3, y=500),
+        _block(" ", 3, 12),
+        _block("1.2 Differentiation", 4, 16),
+        _body(4),
+    ]
+    after = ol.depth_levels(blocks)
+    levels = [b.get("text_level") for b in after]
+    assert levels == [1, 1, 2, None, 1, 2, None, None, 3, None, 4, None, 4, None, None, 2, None]  # fmt: skip
+    assert after[7]["_heading_boundary_level"] == 3
+
+    def paths(content):
+        return [c.section_path for c in chunk_content_list(content, furniture=frozenset())]  # fmt: skip
+
+    assert paths(after) == paths(blocks)
+    assert "Calculus › 1.1 Introduction › P › Shallower label" in paths(after)

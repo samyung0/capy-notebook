@@ -1,33 +1,29 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
-import { FloatingToolbar } from '@/components/ui/BlockToolbar';
+import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
-  DropdownMenuTrigger,
-} from '@/components/ui/DropdownMenu';
-import { Icon } from '@/components/ui/Icon';
+import { Icon, type IconName } from '@/components/ui/Icon';
 import {
   Popover,
-  PopoverContent,
+  PopoverAnchor,
   PopoverTrigger,
 } from '@/components/ui/Popover';
+import { Tabs } from '@/components/ui/Tabs';
 import { ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import {
+  ToolbarPopoverContent,
+  ToolbarPopoverGroup,
+} from '@/components/ui/ToolbarPopover';
 import { userToast } from '@/components/ui/userToast';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, errorCopy } from '@/lib/errors';
+import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { BlockEditor, type UploadQuestionAsset } from './BlockEditor';
 import { warnComputationalOpenParts } from './computationCheck';
 import {
@@ -35,6 +31,7 @@ import {
   answerLabels,
   emptyAnswer,
   MarkschemeList,
+  MenuItem,
   markOptions,
   SelectField,
 } from './editorFields';
@@ -59,6 +56,15 @@ const blockLabels = {
   plot: m.question_ui_plot,
   table: m.question_ui_table,
   text: m.question_ui_text,
+};
+const blockIcons: Record<keyof typeof blockLabels, IconName> = {
+  chart: 'chart',
+  graph: 'graph',
+  image: 'image',
+  part: 'listOrdered',
+  plot: 'chart',
+  table: 'table',
+  text: 'text',
 };
 /** Open answers carry a marking scheme worth the part's marks; closed ones drop it. */
 const withAnswer = (
@@ -214,7 +220,32 @@ function QuestionDialogSession({
     setValue('draft', next, { shouldDirty: true });
   const [editing, setEditing] = useState<Editing | null>(null);
   const [selected, setSelected] = useState<Row | null>(null);
-  const [mobileTab, setMobileTab] = useState<'outline' | 'preview'>('outline');
+  const [mobileTab, setMobileTab] = useState('outline');
+  const tabsRef = useRef<HTMLDivElement>(null);
+  // The body column (from md) and the dialog body (phones) clip the toolbar.
+  const [bodyColumn, setBodyColumn] = useState<HTMLDivElement | null>(null);
+  const [dialogBody, setDialogBody] = useState<HTMLDivElement | null>(null);
+  const bodyScrollers = [bodyColumn, dialogBody].filter(
+    (element) => element !== null
+  );
+  // The row an outline click asked to bring into view; `seq` repeats a click.
+  const [reveal, setReveal] = useState<{ row: Row; seq: number } | null>(null);
+  // Runs after the click's render, once the Body tab or the worked solution
+  // holding the target is on screen.
+  useEffect(() => {
+    if (!reveal) return;
+    const { row } = reveal;
+    const element = document.querySelector<HTMLElement>(
+      `[data-row-key="${CSS.escape(rowKey(row))}"]`
+    );
+    if (!element) return;
+    // Room for the block's floating toolbar, below the phone's sticky tabs.
+    scrollIntoViewWithMotion(
+      element,
+      64 + (tabsRef.current?.offsetHeight ?? 0)
+    );
+    element.focus({ preventScroll: true });
+  }, [reveal]);
   const [error, setError] = useState('');
   const [savingBlock, setSavingBlock] = useState(false);
   const [reloading, setReloading] = useState(false);
@@ -465,11 +496,13 @@ function QuestionDialogSession({
         : undefined;
     const expanded =
       item.kind === 'solution' && expandedSolutions.includes(item.partId);
+    // Stem rows sit flush; a part's rows share the column its label sits in.
+    const indented =
+      labelled && (item.kind !== 'block' || !!item.location.partId);
     return (
       <div
         className={cn(
-          'group relative flex min-w-0 items-center gap-1 rounded-button hover:bg-surface-hover-bg',
-          selected && rowKey(selected) === key && 'bg-tint-accent-1',
+          'group relative flex min-w-0 rounded-button hover:bg-surface-hover-bg',
           drop?.key === key &&
             (drop.after
               ? 'after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-action-accent'
@@ -502,35 +535,41 @@ function QuestionDialogSession({
         <button
           aria-expanded={item.kind === 'solution' ? expanded : undefined}
           className={cn(
-            'grid min-w-0 flex-1 px-2 py-1.5 text-left text-sm',
-            labelled ? 'grid-cols-[1.75rem_minmax(0,1fr)]' : 'grid-cols-1'
+            'grid w-full min-w-0 py-1.5 pr-9 pl-2 text-left text-sm md:pr-2',
+            indented ? 'grid-cols-[1.5rem_minmax(0,1fr)]' : 'grid-cols-1'
           )}
           onClick={() => {
-            setSelected(item);
-            if (item.kind === 'block') openBlock(item.location);
-            else if (item.kind === 'part' && part)
-              setEditing({ kind: 'part', part: structuredClone(part) });
-            else if (item.kind === 'solution')
+            if (item.kind === 'solution') {
               setExpandedSolutions((current) =>
                 expanded
                   ? current.filter((id) => id !== item.partId)
                   : [...current, item.partId]
               );
+              return;
+            }
+            // Brings the block (or the part's answer) into view in the body;
+            // its editor opens from there.
+            setSelected(item);
+            setMobileTab('body');
+            setReveal((current) => ({
+              row: item,
+              seq: (current?.seq ?? 0) + 1,
+            }));
           }}
           type="button"
         >
-          {labelled && <strong>{mark}</strong>}
-          <span className="flex min-w-0 items-center gap-1.5">
+          {indented && <strong className="leading-tight">{mark}</strong>}
+          <span className="flex min-w-0 items-start gap-1.5">
             {item.kind === 'solution' && (
               <Icon
-                className="size-3 shrink-0 text-fg-muted"
+                className="mt-0.5 size-3 shrink-0 text-fg-muted"
                 name={expanded ? 'chevronDown' : 'chevronRight'}
               />
             )}
-            <span className="min-w-0 truncate">
+            <span className="line-clamp-2 min-w-0 break-words leading-tight">
               {block?.type === 'text' ? (
                 <TextView
-                  className="whitespace-nowrap [&_span]:inline"
+                  className="whitespace-normal [&>span]:my-0 [&>span]:inline"
                   text={label}
                 />
               ) : (
@@ -540,199 +579,234 @@ function QuestionDialogSession({
           </span>
           {meta && (
             <span
-              className={cn('text-fg-muted text-xs', labelled && 'col-start-2')}
+              className={cn(
+                'mt-0.5 text-fg-muted text-xs',
+                indented && 'col-start-2'
+              )}
             >
               {meta}
             </span>
           )}
         </button>
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <ToolbarButton
-              className="shrink-0 data-[state=open]:opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
-              label={m.question_ui_actions({ label })}
-            >
-              <Icon name="moreVertical" />
-            </ToolbarButton>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent>
+        <Popover>
+          {/* The file panel's hover actions: a faded backing over the text. */}
+          <div className="scroll-fade-x absolute top-0.5 right-0.5 animate-none! bg-overlay pl-3 transition-opacity ease-(--motion-ease-smooth-out) [--scroll-fade-on:1] [--scroll-fade-start:12px] group-hover:bg-surface-hover-bg has-data-[state=open]:opacity-100 md:opacity-0 md:has-focus-visible:opacity-100 md:group-hover:opacity-100">
+            <PopoverTrigger asChild>
+              <ToolbarButton
+                className="hover:bg-transparent"
+                label={m.question_ui_actions({ label })}
+              >
+                <Icon name="moreVertical" />
+              </ToolbarButton>
+            </PopoverTrigger>
+          </div>
+          <ToolbarPopoverContent align="end" className="w-56">
             {part && item.kind === 'part' && (
               <>
-                <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>
-                    {m.question_ui_answer_type()}
-                  </DropdownMenuSubTrigger>
-                  <DropdownMenuSubContent>
-                    {QUESTION_TYPES.map((type) => (
-                      <DropdownMenuItem
-                        key={type}
-                        onSelect={() =>
-                          changePart({ ...part, answer: emptyAnswer(type) })
-                        }
-                      >
-                        {answerLabels[type]()}
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuSubContent>
-                </DropdownMenuSub>
-                <DropdownMenuItem
-                  onSelect={() =>
+                <MenuItem
+                  icon={<Icon name="pencil" />}
+                  label={answerTitle(part)}
+                  onClick={() =>
                     setEditing({ kind: 'part', part: structuredClone(part) })
                   }
-                >
-                  {answerTitle(part)}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
+                />
+                <ToolbarPopoverGroup label={m.question_ui_answer_type()}>
+                  {QUESTION_TYPES.map((type) => (
+                    <MenuItem
+                      icon={<span />}
+                      key={type}
+                      label={answerLabels[type]()}
+                      onClick={() =>
+                        changePart({ ...part, answer: emptyAnswer(type) })
+                      }
+                      selected={part.answer.type === type}
+                    />
+                  ))}
+                </ToolbarPopoverGroup>
+                <hr className="my-1.5 border-divider" />
               </>
             )}
             {item.kind === 'block' && (
-              <DropdownMenuItem onSelect={() => openBlock(item.location)}>
-                {m.question_ui_edit()}
-              </DropdownMenuItem>
+              <MenuItem
+                icon={<Icon name="pencil" />}
+                label={m.question_ui_edit()}
+                onClick={() => openBlock(item.location)}
+              />
             )}
             {item.kind !== 'solution' && (
               <>
-                <DropdownMenuItem onSelect={() => move(item, -1)}>
-                  {m.question_ui_move_up()}
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => move(item, 1)}>
-                  {m.question_ui_move_down()}
-                </DropdownMenuItem>
-                <DropdownMenuItem
+                <MenuItem
+                  icon={<Icon name="arrowUp" />}
+                  label={m.question_ui_move_up()}
+                  onClick={() => move(item, -1)}
+                />
+                <MenuItem
+                  icon={<Icon name="arrowDown" />}
+                  label={m.question_ui_move_down()}
+                  onClick={() => move(item, 1)}
+                />
+                <MenuItem
                   disabled={item.kind === 'part' && draft.parts.length <= 1}
-                  onSelect={() =>
+                  icon={<Icon name="trash" />}
+                  label={
+                    item.kind === 'part'
+                      ? m.question_ui_remove_part()
+                      : m.question_ui_remove_block()
+                  }
+                  onClick={() =>
                     item.kind === 'block'
                       ? removeBlock(item.location)
                       : removePart(item.partId)
                   }
-                >
-                  {item.kind === 'part'
-                    ? m.question_ui_remove_part()
-                    : m.question_ui_remove_block()}
-                </DropdownMenuItem>
+                />
               </>
             )}
             {item.kind === 'solution' && (
-              <DropdownMenuItem
-                onSelect={() => {
+              <MenuItem
+                icon={<Icon name="plus" />}
+                label={m.question_ui_add_block()}
+                onClick={() => {
                   setSelected(item);
                   setAddOpen(true);
                 }}
-              >
-                {m.question_ui_add_block()}
-              </DropdownMenuItem>
+              />
             )}
-          </DropdownMenuContent>
-        </DropdownMenu>
+          </ToolbarPopoverContent>
+        </Popover>
       </div>
     );
   };
+  // A block or part answer in the body: click selects it, Enter edits it, and
+  // the selection shows the note editor's floating block toolbar below it,
+  // portaled so selecting never moves the layout.
+  const selectable = (
+    row: Row,
+    label: string,
+    onEdit: () => void,
+    tools: ReactNode,
+    children: ReactNode
+  ) => {
+    const key = rowKey(row);
+    const active = !!selected && rowKey(selected) === key;
+    return (
+      <Popover modal={false} open={active}>
+        <PopoverAnchor asChild>
+          <div
+            aria-label={label}
+            className={cn(
+              'relative outline-offset-4',
+              active && 'outline-2 outline-action-accent'
+            )}
+            data-row-key={key}
+            onClick={() => setSelected(row)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && event.target === event.currentTarget)
+                onEdit();
+            }}
+            role="button"
+            tabIndex={0}
+          >
+            {children}
+          </div>
+        </PopoverAnchor>
+        <FloatingBlockToolbar
+          aria-label={m.question_ui_block_actions()}
+          // Flips above a block whose bottom is scrolled past, off the footer.
+          avoidCollisions
+          collisionBoundary={bodyScrollers}
+          onEscapeKeyDown={() => setSelected(null)}
+          open={active}
+          role="toolbar"
+        >
+          <ToolbarGroup>
+            <ToolbarButton label={m.question_ui_edit()} onClick={onEdit}>
+              <Icon name="pencil" />
+            </ToolbarButton>
+          </ToolbarGroup>
+          {tools}
+        </FloatingBlockToolbar>
+      </Popover>
+    );
+  };
+  const moveTools = (row: Row) => (
+    <ToolbarGroup>
+      <ToolbarButton
+        label={m.question_ui_move_up()}
+        onClick={() => move(row, -1)}
+      >
+        <Icon name="arrowUp" />
+      </ToolbarButton>
+      <ToolbarButton
+        label={m.question_ui_move_down()}
+        onClick={() => move(row, 1)}
+      >
+        <Icon name="arrowDown" />
+      </ToolbarButton>
+    </ToolbarGroup>
+  );
   const previewBlock = (
     block: QuestionBlock,
     index: number,
     section: BlockSection
   ) => {
     const location = { ...section, index };
-    const active =
-      selected?.kind === 'block' &&
-      rowKey(selected) === rowKey({ kind: 'block', location });
-    return (
-      <div
-        aria-label={m.question_ui_select_block({
-          type: blockLabels[block.type](),
-        })}
-        className={cn(
-          'relative outline-offset-4',
-          active && 'my-12 outline-2 outline-action-accent'
-        )}
-        onClick={() => setSelected({ kind: 'block', location })}
-        onKeyDown={(event) => {
-          if (event.key === 'Enter') openBlock(location);
-        }}
-        role="button"
-        tabIndex={0}
-      >
-        <FloatingToolbar
-          aria-label={m.question_ui_block_actions()}
-          className="scroll-fade-x max-w-full [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          open={active}
-          positionClassName="absolute bottom-full left-0 z-10 mb-3 max-w-full"
-          role="toolbar"
-        >
-          <ToolbarGroup>
-            <ToolbarButton
-              label={m.question_ui_edit()}
-              onClick={(event) => {
-                event.stopPropagation();
-                openBlock(location);
-              }}
-            >
-              <Icon name="pencil" />
-            </ToolbarButton>
-            {block.type === 'image' && (
-              <ToolbarButton
-                label={m.question_ui_replace()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  openBlock(location);
-                }}
-              >
-                <Icon name="image" />
-              </ToolbarButton>
-            )}
-          </ToolbarGroup>
-          <ToolbarGroup>
-            <ToolbarButton
-              label={m.question_ui_move_up()}
-              onClick={(event) => {
-                event.stopPropagation();
-                move({ kind: 'block', location }, -1);
-              }}
-            >
-              <Icon name="arrowUp" />
-            </ToolbarButton>
-            <ToolbarButton
-              label={m.question_ui_move_down()}
-              onClick={(event) => {
-                event.stopPropagation();
-                move({ kind: 'block', location }, 1);
-              }}
-            >
-              <Icon name="arrowDown" />
-            </ToolbarButton>
-            <ToolbarButton
-              label={m.question_ui_duplicate()}
-              onClick={(event) => {
-                event.stopPropagation();
-                const blocks = [...sectionBlocks(draft, location)];
-                blocks.splice(index + 1, 0, structuredClone(block));
-                setDraft(changeBlocks(draft, section, blocks));
-              }}
-            >
-              <Icon name="copy" />
-            </ToolbarButton>
-          </ToolbarGroup>
-          <ToolbarGroup>
-            <ToolbarButton
-              label={m.question_ui_delete()}
-              onClick={(event) => {
-                event.stopPropagation();
-                removeBlock(location);
-              }}
-              variant="danger-light"
-            >
-              <Icon name="trash" />
-            </ToolbarButton>
-          </ToolbarGroup>
-        </FloatingToolbar>
-        <QuestionBlockView block={block} />
-      </div>
+    const row: Row = { kind: 'block', location };
+    return selectable(
+      row,
+      m.question_ui_select_block({ type: blockLabels[block.type]() }),
+      () => openBlock(location),
+      <>
+        {moveTools(row)}
+        <ToolbarGroup>
+          <ToolbarButton
+            label={m.question_ui_duplicate()}
+            onClick={() => {
+              const blocks = [...sectionBlocks(draft, location)];
+              blocks.splice(index + 1, 0, structuredClone(block));
+              setDraft(changeBlocks(draft, section, blocks));
+            }}
+          >
+            <Icon name="copy" />
+          </ToolbarButton>
+          <ToolbarButton
+            label={m.question_ui_delete()}
+            onClick={() => removeBlock(location)}
+            variant="danger-light"
+          >
+            <Icon name="trash" />
+          </ToolbarButton>
+        </ToolbarGroup>
+      </>,
+      <QuestionBlockView block={block} />
     );
   };
+  const previewAnswer = (part: QuestionPart, answer: ReactNode) =>
+    selectable(
+      { kind: 'part', partId: part.id },
+      m.question_ui_select_answer(),
+      () => {
+        setError('');
+        setEditing({ kind: 'part', part: structuredClone(part) });
+      },
+      <>
+        {moveTools({ kind: 'part', partId: part.id })}
+        <ToolbarGroup>
+          <ToolbarButton
+            disabled={draft.parts.length <= 1}
+            label={m.question_ui_remove_part()}
+            onClick={() => removePart(part.id)}
+            variant="danger-light"
+          >
+            <Icon name="trash" />
+          </ToolbarButton>
+        </ToolbarGroup>
+      </>,
+      answer
+    );
   return (
     <SimpleDialog
       cardClassName="min-h-0 rounded-t-card-xl rounded-b-none sm:rounded-card-lg"
-      cardScrollContainerClassName="max-h-[92dvh] overflow-hidden sm:max-h-[88dvh] [&>[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
+      cardScrollContainerClassName="max-h-[92dvh] overflow-hidden sm:max-h-[88dvh] md:h-[88dvh] [&>[data-slot=dialog-title]]:shrink-0 [&>[data-slot=dialog-footer]]:shrink-0"
       className="top-auto bottom-0 left-0 max-h-[92dvh] translate-x-0 translate-y-0 grid-rows-[minmax(0,1fr)_auto] px-0 sm:top-(--dialog-center,50%) sm:bottom-auto sm:left-(--dialog-center,50%) sm:max-h-[88dvh] sm:translate-x-(--dialog-offset,-50%) sm:translate-y-(--dialog-offset,-50%) sm:px-4 [&>.ML\_\_keyboard.is-visible]:h-[var(--_keyboard-height)]! [&>.ML\_\_keyboard]:h-0!"
       footer={
         editing ? (
@@ -797,15 +871,22 @@ function QuestionDialogSession({
       open={open}
       title={
         <div>
-          <span>{m.question_ui_edit_question()}</span>
+          <span>
+            {questionNumber == null
+              ? m.question_ui_edit_question()
+              : m.question_ui_edit_question_number({ number: questionNumber })}
+          </span>
           {context && !editing && (
             <p className="mt-1 font-normal text-fg-muted text-sm">{context}</p>
           )}
         </div>
       }
-      width={920}
+      width={1200}
     >
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain">
+      <div
+        className="min-h-0 min-w-0 flex-1 overflow-y-auto overscroll-contain"
+        ref={setDialogBody}
+      >
         {error && (
           <div className="mb-3 space-y-2 text-sm" role="alert">
             <p className="text-solid-error">{error}</p>
@@ -922,28 +1003,34 @@ function QuestionDialogSession({
             )}
           </div>
         ) : (
-          <div className="grid min-h-72 min-w-0 gap-5 md:grid-cols-[minmax(12rem,0.7fr)_minmax(0,1.7fr)]">
+          <div className="grid min-h-72 min-w-0 gap-x-5 gap-y-4 md:h-full md:min-h-0 md:grid-cols-[minmax(15rem,0.8fr)_minmax(0,2fr)]">
+            <div
+              className="sticky top-0 z-20 bg-overlay md:hidden"
+              ref={tabsRef}
+            >
+              <Tabs
+                onChange={setMobileTab}
+                tabs={[
+                  { label: m.question_ui_outline(), value: 'outline' },
+                  { label: m.question_ui_body(), value: 'body' },
+                ]}
+                value={mobileTab}
+              />
+            </div>
             <div
               className={cn(
-                'min-w-0 space-y-1 md:block md:border-divider md:border-r md:pr-4',
+                'min-w-0 space-y-1 md:block md:min-h-0 md:-translate-x-1 md:overflow-y-auto md:overscroll-contain md:border-divider md:border-r md:pr-4',
                 mobileTab !== 'outline' && 'hidden'
               )}
             >
-              <div className="flex items-center gap-1">
-                <span className="mr-auto px-2 font-semibold">
-                  {questionNumber == null
-                    ? m.question_ui_question()
-                    : m.question_ui_question_number({
-                        number: questionNumber,
-                      })}
-                </span>
+              <div className="flex items-center justify-end">
                 <Popover onOpenChange={setAddOpen} open={addOpen}>
                   <PopoverTrigger asChild>
                     <ToolbarButton label={m.question_ui_add_block_or_part()}>
                       <Icon name="plus" />
                     </ToolbarButton>
                   </PopoverTrigger>
-                  <PopoverContent>
+                  <ToolbarPopoverContent align="end" className="w-44">
                     {(
                       [
                         'text',
@@ -954,62 +1041,54 @@ function QuestionDialogSession({
                         'part',
                       ] as const
                     ).map((type) => (
-                      <Button
+                      <MenuItem
+                        icon={<Icon name={blockIcons[type]} />}
                         key={type}
+                        label={blockLabels[type]()}
                         onClick={() => add(type)}
-                        type="button"
-                        variant="ghost"
-                      >
-                        {blockLabels[type]()}
-                      </Button>
+                      />
                     ))}
-                  </PopoverContent>
+                  </ToolbarPopoverContent>
                 </Popover>
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
+                <Popover>
+                  <PopoverTrigger asChild>
                     <ToolbarButton label={m.question_ui_question_settings()}>
                       <Icon name="moreVertical" />
                     </ToolbarButton>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent>
-                    <div className="space-y-3 p-2">
-                      <SelectField
-                        label={m.question_ui_layout()}
-                        onChange={(layout) =>
-                          setDraft({
-                            ...draft,
-                            layout: layout as Question['layout'],
-                          })
-                        }
-                        options={[
-                          {
-                            label: m.question_ui_exam_paper(),
-                            value: 'paper',
-                          },
-                          {
-                            label: m.question_ui_split_view(),
-                            value: 'split',
-                          },
-                        ]}
-                        value={draft.layout}
-                      />
-                      <SelectField
-                        label={m.question_ui_part_labels()}
-                        onChange={(labels) =>
-                          setDraft({
-                            ...draft,
-                            labels: labels as Question['labels'],
-                          })
-                        }
-                        options={[
-                          { label: '(a), (b)', value: 'letters' },
-                          { label: '1, 2', value: 'numbers' },
-                        ]}
-                        value={draft.labels}
-                      />
-                    </div>
-                  </DropdownMenuContent>
-                </DropdownMenu>
+                  </PopoverTrigger>
+                  <ToolbarPopoverContent align="end" className="w-52">
+                    <ToolbarPopoverGroup label={m.question_ui_layout()}>
+                      {(
+                        [
+                          ['paper', m.question_ui_exam_paper()],
+                          ['split', m.question_ui_split_view()],
+                        ] as const
+                      ).map(([layout, label]) => (
+                        <MenuItem
+                          key={layout}
+                          label={label}
+                          onClick={() => setDraft({ ...draft, layout })}
+                          selected={draft.layout === layout}
+                        />
+                      ))}
+                    </ToolbarPopoverGroup>
+                    <ToolbarPopoverGroup label={m.question_ui_part_labels()}>
+                      {(
+                        [
+                          ['letters', '(a), (b)'],
+                          ['numbers', '1, 2'],
+                        ] as const
+                      ).map(([labels, label]) => (
+                        <MenuItem
+                          key={labels}
+                          label={label}
+                          onClick={() => setDraft({ ...draft, labels })}
+                          selected={draft.labels === labels}
+                        />
+                      ))}
+                    </ToolbarPopoverGroup>
+                  </ToolbarPopoverContent>
+                </Popover>
               </div>
               {draft.stem.map((block, index) =>
                 row(
@@ -1049,15 +1128,7 @@ function QuestionDialogSession({
                     })}
                     {row(
                       { kind: 'solution', partId: part.id },
-                      m.question_ui_worked_solution(),
-                      {
-                        meta:
-                          part.solution.length === 1
-                            ? m.question_ui_one_block()
-                            : m.question_ui_block_count({
-                                count: part.solution.length,
-                              }),
-                      }
+                      m.question_ui_worked_solution()
                     )}
                     {expandedSolutions.includes(part.id) &&
                       part.solution.map((block, index) =>
@@ -1077,35 +1148,21 @@ function QuestionDialogSession({
                   </div>
                 );
               })}
-              {/* Phones show the outline first; the preview is one step in. */}
-              <button
-                className="mt-3 flex w-full items-center justify-between rounded-input border border-line px-3.5 py-3 text-left font-semibold md:hidden"
-                onClick={() => setMobileTab('preview')}
-                type="button"
-              >
-                {m.question_ui_preview_question()}
-                <Icon name="navigationForward" size={16} />
-              </button>
             </div>
             <div
               className={cn(
-                'min-w-0 px-1.5 md:block',
-                mobileTab !== 'preview' && 'hidden'
+                'min-w-0 px-1.5 md:block md:min-h-0 md:overflow-y-auto md:overscroll-contain',
+                mobileTab !== 'body' && 'hidden'
               )}
+              ref={setBodyColumn}
             >
-              <Button
-                className="mb-4 md:hidden"
-                iconLeft="navigationBack"
-                onClick={() => setMobileTab('outline')}
-                size="sm"
-                type="button"
-                variant="ghost-hover"
-              >
-                {m.question_ui_back_to_outline()}
-              </Button>
               <QuestionRunner
                 answers={{}}
                 disabled
+                frameAnswer={(partId, answer) => {
+                  const part = draft.parts.find((item) => item.id === partId);
+                  return part ? previewAnswer(part, answer) : answer;
+                }}
                 question={draft}
                 questionNumber={questionNumber}
                 renderBlock={previewBlock}

@@ -72,6 +72,18 @@ function systemCopy(data: AppNotification['data']) {
         body: m.notification_system_over_quota_body(),
         title: m.notification_system_over_quota_title(),
       };
+    // Sent seven and three days before the freeze; the date stays right
+    // whenever the notification is read.
+    case 'over_quota_t7':
+    case 'over_quota_t3':
+      return {
+        body: m.notification_system_over_quota_reminder_body({
+          date: new Intl.DateTimeFormat(getLocale(), {
+            dateStyle: 'medium',
+          }).format(new Date(dataString(data, 'graceEndsAt'))),
+        }),
+        title: m.notification_system_over_quota_reminder_title(),
+      };
     case 'over_quota_frozen':
       return {
         body: m.notification_system_frozen_body(),

@@ -76,6 +76,7 @@ function RecentActions({
       }
       display={display}
       hoverClassName="mr-1.5"
+      menuTriggerIcon="moreHorizontal"
       readOnly={!item.canEdit}
       showMove={false}
       workspaceId={item.workspaceId}

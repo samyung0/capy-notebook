@@ -826,6 +826,26 @@ def test_running_heads_below_the_margin_band_are_banners_on_five_pages(
             assert result == blocks
 
 
+def test_front_matter_heads_on_the_body_heads_line_are_banners():
+    # Lessons in Industrial Instrumentation: "viii CONTENTS" on a few front
+    # pages, then "6 CHAPTER 1. CALCULUS" on every body page, both at y = 0.124.
+    # Alone the Roman group is under five pages; the body's line proves it.
+    romans = ["i", "ii", "iii", "iv"]
+    with pymupdf.open() as document:
+        blocks = []
+        for number in range(40):
+            page = document.new_page()
+            text = (
+                f"{romans[number]} CONTENTS"
+                if number < 4
+                else f"{number - 3} CHAPTER 1. CALCULUS"
+            )
+            y = 0.124 * page.rect.height + 10
+            blocks.append(_printed_heading(page, text, y, 39, fontsize=10))
+        result = correct_roles(blocks, document)
+        assert all(b["_source_role"] == "running-banner" for b in result)
+
+
 @pytest.mark.parametrize(
     ("text", "pages", "every", "removed"),
     [

@@ -1053,7 +1053,9 @@ export const handlers = [
           href: `/workspaces/${f.workspaceId}?file=${f.id}`,
           id: f.id,
           kind: 'file',
+          preview: f.preview,
           subtitle: ws?.name,
+          thumbnailUrl: f.thumbnailUrl,
           title: f.name,
         });
       }

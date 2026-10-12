@@ -43,10 +43,15 @@ def _block(text, page, level=None, y=100, **extra):
         ("Proposition 8.2.8.", "run-in-label"),
         ("Proof.", "run-in-label"),
         ("Page 31 of 179", "page-footer"),
-        # Titles stay: an index letter, a grammar headword, an ordinary heading.
+        ("π", "formula-fragment"),
+        ("Pipe Volume = 0.785 × (15 ft)2 × 42 ft = 7,418.3 ft3", "calculation"),
+        ("Total Gallons = 128,271.5 gal + 55,488.5 gal = 183,760 gal", "calculation"),
+        # Titles stay: an index letter, a grammar headword, an ordinary heading,
+        # a law stated in symbols.
         ("A", None),
         ("10.1.1 di 'at, in'", None),
         ("Introduction to sets", None),
+        ("Ohm's Law: V = IR", None),
     ],
 )
 def test_formula_fragments_and_run_in_labels_become_body_text(text, role):
