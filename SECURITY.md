@@ -122,8 +122,9 @@ The important boundaries are:
   access, and DNS rebinding.
 - Rendering and export paths do not execute stored script or unsafe URLs. The
   interactive HTML block (`src/features/materials/HtmlEmbed.tsx`, `embed/`) is the one
-  exception: its script runs only in a sandboxed frame on a separate site with
-  no network, and never during export.
+  exception: its script runs only in a sandboxed frame on a separate site whose
+  CSP allows no request but scripts, stylesheets and fonts from four public
+  CDNs, and never during export.
 - Model instructions found in user files or retrieved material never acquire
   tool, authorization, billing, or operator authority.
 
@@ -156,7 +157,29 @@ Review these paths even when broad discovery does not select them:
     CSP and what it leaves open (DNS prefetch, WebRTC), the host's
     `postMessage` handling, that export and the figure rasteriser never run a
     snippet, resource exhaustion in readers' tabs, and deceptive content such
-    as fake sign-in or payment prompts shown to other readers.
+    as fake sign-in or payment prompts shown to other readers. The CSP lets a
+    snippet load scripts, stylesheets and fonts from `https://cdnjs.cloudflare.com`,
+    `https://cdn.jsdelivr.net`, `https://esm.sh` and `https://unpkg.com`
+    (developer decision 2026-10-11, guarded by `HtmlEmbed.test.tsx`) and
+    nothing else: no fetch, XHR, WebSocket, network image, frame, worker or
+    form. The frame holds only the snippet, its theme and font, and what the
+    reader does in it. Accepted residual risk, report only what goes beyond it:
+    - A reader who opens a note whose snippet uses a CDN sends that CDN their
+      IP address, user agent and the time (no referrer), without being asked.
+    - The CDNs serve what anyone publishes to npm (jsDelivr and esm.sh also
+      GitHub, esm.sh also JSR and pkg.pr.new). A malicious or later
+      compromised package, or CDN, runs in the sandbox with an inline
+      script's power, but can change what an existing note runs without an
+      editor; exact versions (the agent guidance asks for them) leave that to
+      the CDN alone, and a person can still write an unpinned URL.
+    - CSP matches hosts, not paths or query strings, so a snippet can put
+      what the reader types into a CDN request URL. Only the CDN sees it,
+      not the snippet's author (public download counts are a slow side
+      channel at most); a snippet navigating its own frame to any URL
+      (the host replaces the frame only after the request) and WebRTC were
+      open before the CDNs and still are. Treat anything that gives the
+      frame more to leak (app cookies or storage, the note's other content,
+      tokens) as a finding.
 
 ## Reportability
 

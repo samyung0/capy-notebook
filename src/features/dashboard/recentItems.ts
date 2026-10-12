@@ -10,6 +10,7 @@ export const RECENT_ITEM_LIMIT = 20;
 
 export type RecentItem =
   | {
+      canClone: boolean;
       canEdit: boolean;
       createdAt: string;
       file: SourceFile;
@@ -20,6 +21,7 @@ export type RecentItem =
       workspaceId: string;
     }
   | {
+      canClone: boolean;
       canEdit: boolean;
       createdAt: string;
       id: string;
@@ -32,7 +34,7 @@ export type RecentItem =
 
 /** Merges the newest files and materials into one list. Each input is a
  * newest-first page of at least `limit` rows, so the merged top `limit` is
- * exact. Workspaces supply edit rights. */
+ * exact. Workspaces supply edit and clone rights. */
 export function mergeRecentItems(
   files: SourceFile[],
   materials: MaterialListItem[],
@@ -43,8 +45,12 @@ export function mergeRecentItems(
   // A standalone material in this list is always the caller's own.
   const canEdit = (workspaceId: string) =>
     !workspaceId || !!workspaceById.get(workspaceId)?.capabilities.canEdit;
+  const canClone = (workspaceId: string) =>
+    !workspaceId || !!workspaceById.get(workspaceId)?.canClone;
   const items: RecentItem[] = [
     ...files.map((file) => ({
+      // Only a processed file copies (the server refuses others).
+      canClone: file.status === 'ready' && canClone(file.workspaceId),
       canEdit: canEdit(file.workspaceId),
       createdAt: file.addedAt,
       file,
@@ -55,6 +61,7 @@ export function mergeRecentItems(
       workspaceId: file.workspaceId,
     })),
     ...materials.map((material) => ({
+      canClone: canClone(material.workspaceId),
       canEdit: canEdit(material.workspaceId),
       createdAt: material.createdAt,
       id: material.id,

@@ -68,6 +68,7 @@ function RecentActions({
 }) {
   return (
     <ContentActions
+      canClone={item.canClone}
       chapters={[]}
       content={
         item.kind === 'file'

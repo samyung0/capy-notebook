@@ -24,7 +24,16 @@ Legend: **Y** works and a test shows it; **P** partial (see notes); **N** missin
 
 ## Fidelity against Office
 
-No benchmark result yet. The fork's Benchmarks workflow (`visual-fidelity.yml`, upstream's real-file corpus) is dispatched on capy-ci at each pin bump; copy its `visual-fidelity` artifact's `section.md` to `bench/parity/fixtures/fidelity.md` and regenerate.
+From the fork's Benchmarks workflow on BetterOffice `1a69c151` (the pin): render similarity and page counts against Office's own renders of upstream's real-file corpus, next to upstream's latest release and LibreOffice (`bench/parity/fixtures/fidelity.md`).
+
+|  | BetterOffice (0.4.3) | BetterOffice (1a69c151) | LibreOffice (26.2.3.2) |
+|---|---|---|---|
+| Exact page counts | 61/63 | 62/63 | 45/63 |
+| Absolute page error | 2 | 1 | 56 |
+| SSIM | 0.8447 | 0.8355 | 0.7749 |
+| Scored/total | 63/63 | 63/63 | 63/63 |
+| Render time (avg) | 265 ms | 250 ms | 770 ms |
+| Parse success | 100.00% | 100.00% | 100.00% |
 
 ## Features
 

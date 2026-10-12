@@ -144,6 +144,9 @@ function useHeader(
   file?: SourceFile;
   icon: FileIconName;
   title?: string;
+  /** Members and editors copy a workspace's items; any reader a standalone
+   * one. An embedded row or an unprocessed file is never offered. */
+  canClone: boolean;
   material?: Material | MaterialRef;
   materialCapabilities?: AccessCapabilities;
   showImageZoom: boolean;
@@ -164,7 +167,8 @@ function useHeader(
     inWorkspace ? workspaceId : '',
     { errorBoundary: false }
   );
-  const { data: workspace } = useWorkspace(inWorkspace ? workspaceId : '', {
+  // Files always sit in a workspace; its canClone gates their Clone too.
+  const { data: workspace } = useWorkspace(standalone ? '' : workspaceId, {
     errorBoundary: false,
   });
   const listed = inWorkspace
@@ -177,6 +181,7 @@ function useHeader(
   });
   if (item.kind === 'file') {
     return {
+      canClone: fileData?.status === 'ready' && !!workspace?.canClone,
       file: fileData,
       icon: fileData ? fileIconName(fileData) : '_file',
       showImageZoom: !!fileData && isImageFile(fileData),
@@ -188,11 +193,22 @@ function useHeader(
     ? workspace?.capabilities
     : materialData?.capabilities;
   if (!mt || !capabilities) {
-    return { icon: '_file', showImageZoom: false, title: mt?.title };
+    return {
+      canClone: false,
+      icon: '_file',
+      showImageZoom: false,
+      title: mt?.title,
+    };
   }
   const kind = 'type' in mt ? mt.type : mt.kind;
   const policy = materialModePolicy(capabilities);
+  const embedded = 'parentMaterialId' in mt && !!mt.parentMaterialId;
   return {
+    canClone:
+      !embedded &&
+      (standalone
+        ? !('workspaceId' in mt && mt.workspaceId)
+        : !!workspace?.canClone),
     defaultMode: policy.defaultMode,
     icon: materialIconName(kind),
     material: mt,
@@ -276,6 +292,7 @@ export function Header({
   workspaceId: string;
 }) {
   const {
+    canClone,
     file,
     icon,
     material,
@@ -345,6 +362,7 @@ export function Header({
       )}
       <ContentActions
         beforeDelete={file ? beforeFileDelete : undefined}
+        canClone={canClone}
         chapters={chapters}
         color={color}
         content={

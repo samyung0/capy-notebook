@@ -1151,7 +1151,13 @@ export const handlers = [
   ),
   http.get('/api/workspaces/:id', async ({ params }) => {
     const ws = db.workspaces.find((w) => w.id === params.id);
-    if (!ws) return new HttpResponse(null, { status: 404 });
+    if (!ws) {
+      // A public workspace reads like the server's, for any signed-in visitor.
+      const shared = db.publicWorkspaces.find((w) => w.id === params.id);
+      return shared
+        ? HttpResponse.json(shared)
+        : new HttpResponse(null, { status: 404 });
+    }
     ws.lastAccessedAt = new Date().toISOString();
     return HttpResponse.json(ws);
   }),

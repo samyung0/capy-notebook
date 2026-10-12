@@ -2,7 +2,7 @@
    collaboration service's converter (markdownConvert.ts), so pasted and agent
    markdown give the same nodes. */
 import { encodeUrlIfNeeded, validateUrl } from '@platejs/link';
-import { MarkdownPlugin } from '@platejs/markdown';
+import { type DeserializeMdOptions, MarkdownPlugin } from '@platejs/markdown';
 import { KEYS, type SlateEditor } from 'platejs';
 import {
   createMaterialDocument,
@@ -13,7 +13,24 @@ import {
 } from '@/features/materials/document';
 
 type MarkdownApi = {
-  markdown: { deserialize: (source: string) => MaterialValue };
+  markdown: {
+    deserialize: (
+      source: string,
+      options?: DeserializeMdOptions
+    ) => MaterialValue;
+  };
+};
+
+/** Plain Markdown: no MDX. Plate's MDX pass rewrites every `<tag …>` in the
+ * text, fenced code included (`class=` becomes `className=`, `i<n;…>` in a
+ * script gets quoted), drops `{…}` from prose, and when the MDX parse fails
+ * keeps only the text before the first `<` intact. Without MDX Plate has no
+ * fallback and would return nothing on an error, so the error is thrown. */
+const PLAIN: DeserializeMdOptions = {
+  onError: (error) => {
+    throw error;
+  },
+  withoutMdx: true,
 };
 
 /** Clears link URLs that fail the link plugin's validation. */
@@ -34,17 +51,24 @@ export function sanitizeLinks(
   );
 }
 
-/** Deserialize with the editor's markdown rules, then sanitize links.
+/** Deserialize with the editor's markdown rules, then sanitize links. `plain`
+ * reads `source` as Markdown without MDX and throws what a fence rule throws;
  * `transform` reshapes the deserialized nodes before the document check. */
 export function importMarkdownValue(
   editor: SlateEditor,
   source: string,
-  transform?: (value: MaterialValue) => MaterialValue
+  {
+    plain = false,
+    transform,
+  }: {
+    plain?: boolean;
+    transform?: (value: MaterialValue) => MaterialValue;
+  } = {}
 ): MaterialDocument {
   const api = (
     editor.getApi as unknown as (plugin: typeof MarkdownPlugin) => MarkdownApi
   )(MarkdownPlugin);
-  const value = api.markdown.deserialize(source);
+  const value = api.markdown.deserialize(source, plain ? PLAIN : undefined);
   return sanitizeLinks(
     editor,
     createMaterialDocument(transform ? transform(value) : value)

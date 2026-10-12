@@ -346,7 +346,7 @@ export function buildLibrary(render: Renderers) {
   const Interactive = defineComponent({
     component: render.Interactive,
     description:
-      'An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. html: one self-contained snippet under 64 KB, inline CSS and script, no network or external URLs, colours only from --bg, --fg, --muted, --accent and --border, height fitting its content, no vh or vw.',
+      'An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. html: one self-contained snippet under 64 KB, inline CSS and script; libraries only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, no other network, colours only from --bg, --fg, --muted, --accent and --border, height fitting its content, no vh or vw.',
     name: 'Interactive',
     props: interactiveProps,
   });
