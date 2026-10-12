@@ -139,7 +139,7 @@ are optional. Levels are optional metadata and the unenforced timer was removed.
 The chat agent does not write this format (Epo 2026-10-13). It writes a
 multiple-choice question with one correct option, a short answer with an
 optional unit, or an open question with marks and a markscheme, and adds a
-chart, plot or graph to a question separately; the retrieval service expands
+chart or plot to a question separately; the retrieval service expands
 each into one paper-layout question with one part, 1 mark for a simple one
 and the explanation as its solution (see
 [agentic-retrieval.md](agentic-retrieval.md), Question tools). Questions it

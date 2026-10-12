@@ -2650,8 +2650,8 @@ build, and the knowledge library is one more source while the switch is on.
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `add_questions` | yes | Multiple-choice (one correct option) and short-answer questions, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `todo` and `excerpt_ids` as `create_material` |
-| `add_open_question` | yes | One open question (`question`, `marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints` and `explanation`) into an existing quiz by `quiz_id` (a new quiz starts with `add_questions`), placed like `add_questions`, with an optional `replaces` |
-| `add_question_media` | yes | A chart, plot or graph block after one question's text (`quiz_id`, `question_id`, `media`); library figures are refused (notes only) |
+| `add_open_question` | yes | One open question (`question`, `marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints` and `explanation`) into a quiz by `quiz_id`, or a new quiz by `title` (optional `chapter_id`), placed like `add_questions`, with an optional `replaces` |
+| `add_question_media` | yes | A chart or plot block after one question's text (`quiz_id`, `question_id`, `media`); library figures are refused (notes only) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
@@ -2799,28 +2799,31 @@ and open (`question`, `marks`, `markscheme` of `{text, marks}` adding up to
 `add_open_question`. A note's ```quiz fence holds a YAML list of all three (read
 with PyYAML's `BaseLoader`, so answers keep their text as written), expanded
 before `create_material` or `edit_document` leaves the pipeline. The pipeline
-fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
+drops fields sent as null before checking them (Epo 2026-10-13: tool leniency)
+and fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
 retried call sends the same payload) with one part `<id>-a`, 1 mark for a
-simple question, layout `paper`, labels `letters`, and the explanation as the
+simple question, multiple-choice options shuffled in an order seeded by the
+question id (the model wrote the answer first in 2 of 4 runs; the order is
+stable on a retry), layout `paper`, labels `letters`, and the explanation as the
 solution, an empty solution without one (only bank parts need one); there are
 no parts, no other answer types and no layout choice. The expanded questions
 go through the unchanged gateway routes: a new quiz through
 `/api/internal/materials` (an empty quiz is refused there, so a quiz is
-created with its first questions), an existing one through
+created with its first questions, by `title` on either question tool), an existing one through
 `/api/internal/documents/edit` as `add_question` commands chained after
 `after_question_id` or the quiz's last question (read with
 `/api/internal/documents/inspect`, since a null anchor inserts at the start)
 and `replace_question` for an item with `replaces`. `add_question_media`
 reads the question the same way, appends the block after the stem or, with
 no stem, after the part's text, and writes it back with `replace_question`;
-its media is checked against the contract's `mediaBlocks`, and a library
+its media (a chart or plot; graphs were dropped on 2026-10-13, no run had
+written one) is checked against the contract's `mediaBlocks`, and a library
 figure is refused (it would need Go to store figure assets for a quiz edit).
 Go's validator stays the backstop. Every problem of a call is named at once,
 as `path: expected …; sent …` (`questions[2].correct: expected one of the
 options, copied exactly: "In", "Out"; sent "in"`), with targeted hints for
 the usual mistakes (a markscheme or marks on a simple question, `fixedUnit`,
-`solution`, an index for `correct`, a unit with text answers, a field that
-does not apply sent as null), and a
+`solution`, an index for `correct`, a unit with text answers), and a
 structural mistake (a field missing, unknown or of the wrong type) adds the
 shape to copy. `add_questions` saves its valid questions and names the
 others for resending, with the quiz id and the `after_question_id` that keeps

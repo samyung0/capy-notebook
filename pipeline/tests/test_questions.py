@@ -78,11 +78,16 @@ def test_the_shapes_expand_into_the_question_format_go_accepts():
     expanded = _expanded()
     assert expanded == json.loads(EXPANDED.read_text(encoding="utf-8"))
     mcq, short, open_ = expanded[:3]
-    assert mcq["parts"][0]["answer"] == {
-        "type": "mcq",
-        "options": ["Sodium", "Potassium", "Chloride"],
-        "correct": [0],
-    }
+    answer = mcq["parts"][0]["answer"]
+    # Options are shuffled by the question id: the same order on a retry, and
+    # the correct index follows the option.
+    assert sorted(answer["options"]) == sorted(MCQ["options"])
+    assert answer["options"][answer["correct"][0]] == "Sodium"
+    assert answer == questions.expand("mcq", MCQ, mcq["id"])["parts"][0]["answer"]
+    assert any(
+        questions.expand("mcq", MCQ, f"q_{n}")["parts"][0]["answer"]["correct"] != [0]
+        for n in range(8)
+    ), "the written first option does not stay first"
     assert mcq["parts"][0]["solution"] == [
         {"type": "text", "text": "Voltage-gated sodium channels open first."}
     ]
@@ -165,16 +170,14 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
         "model_answer: missing; expected a full-marks answer",
         "markscheme: expected item marks adding up to marks (3); sent items adding up to 2",
     ]
-    created = questions.check("add_open_question", {**OPEN, "title": "T"})
-    assert created.call == [
+    # An open question can start a quiz (title) like add_questions.
+    assert questions.check("add_open_question", {**OPEN, "title": "T"}).call == []
+    both = questions.check("add_open_question", {**OPEN, "title": "T", "quiz_id": "q"})
+    assert both.call == [
         (
-            'title: unknown field, sent "T"; a new quiz starts with add_questions; add '
-            "the open question to it by quiz_id"
-        ),
-        (
-            "quiz_id: missing; expected the id of the quiz to add to (add_questions' "
-            "result gives a new quiz's id)"
-        ),
+            "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
+            "create one; sent both"
+        )
     ]
     # Every place problem at once, not the first of them.
     placed = questions.check("add_questions", {"questions": [MCQ], "chapter_id": "ch"})
@@ -190,20 +193,13 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
     ]
 
 
-def test_a_null_field_is_named_as_one_to_leave_out():
+def test_a_null_field_is_left_out():
     """GLM fills fields that do not apply with null (a live run sent accepted:
-    null on every multiple-choice question)."""
-    found = questions.check(
-        "add_questions",
-        {"title": "T", "questions": [{**MCQ, "accepted": None, "explanation": None}]},
-    )
-    assert found.items[0].problems == [
-        "questions[0].explanation: expected text, or the field left out; sent null",
-        (
-            "questions[0].accepted: unknown field, sent null; leave out a field that "
-            "does not apply"
-        ),
-    ]
+    null on every multiple-choice question); the call drops them first."""
+    sent = {"title": "T", "questions": [{**MCQ, "accepted": None, "explanation": None}]}
+    found = questions.check("add_questions", questions.drop_nulls(sent))
+    assert found.call == [] and found.items[0].problems == []
+    assert found.items[0].kind == "mcq"
 
 
 def _ctx(monkeypatch) -> ToolContext:
@@ -363,7 +359,7 @@ async def test_media_goes_after_the_question_text(monkeypatch):
     assert refused.refused
     assert refused.detail.splitlines() == [
         (
-            '- media.type: expected "chart", "plot" or "graph" (library figures go into '
+            '- media.type: expected "chart" or "plot" (library figures go into '
             'notes only); sent "figure"'
         ),
         '- question_id: expected a question id of this quiz (q_1); sent "q_9"',
@@ -386,11 +382,9 @@ def test_a_note_quiz_fence_takes_the_same_shapes():
     assert not found.problems()
     body = json.loads(text.split("```quiz\n")[1].split("\n```")[0])
     mcq, short, open_ = body["questions"]
-    assert mcq["parts"][0]["answer"] == {
-        "type": "mcq",
-        "options": ["Yes", "No"],
-        "correct": [1],
-    }
+    answer = mcq["parts"][0]["answer"]
+    assert sorted(answer["options"]) == ["No", "Yes"]
+    assert answer["options"][answer["correct"][0]] == "No"
     assert short["parts"][0]["answer"]["accepted"] == ["-70.0"]
     assert open_["parts"][0]["marks"] == 1 and open_["id"] == "q_c"
 

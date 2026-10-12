@@ -1,5 +1,5 @@
 {
-  "version": 19,
+  "version": 20,
   "operations": [
     "source.read",
     "material.read",
@@ -821,12 +821,17 @@
     {
       "name": "add_open_question",
       "version": 1,
-      "description": "Add one open question, answered in writing and graded against its markscheme, to a quiz; a new quiz starts with add_questions. The markscheme items' marks add up to marks. Example: {\"quiz_id\": \"mat_1\", \"question\": \"Explain why a red blood cell bursts in pure water.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling, so the membrane ruptures\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}",
+      "description": "Add one open question, answered in writing and graded against its markscheme, to a quiz (quiz_id), or create a quiz with it (title). The markscheme items' marks add up to marks. Example: {\"quiz_id\": \"mat_1\", \"question\": \"Explain why a red blood cell bursts in pure water.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling, so the membrane ruptures\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
           "after_question_id": {
             "description": "Add after this question, not at the end.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "chapter_id": {
+            "description": "With title: the new quiz's chapter.",
             "minLength": 1,
             "type": "string"
           },
@@ -897,6 +902,11 @@
             "minLength": 1,
             "type": "string"
           },
+          "title": {
+            "description": "Instead of quiz_id: create a quiz with this title.",
+            "minLength": 1,
+            "type": "string"
+          },
           "todo": {
             "description": "The open ledger todo this write completes.",
             "minimum": 0,
@@ -904,7 +914,6 @@
           }
         },
         "required": [
-          "quiz_id",
           "question",
           "marks",
           "markscheme",
@@ -926,7 +935,7 @@
     {
       "name": "add_question_media",
       "version": 1,
-      "description": "Add a chart, plot or graph to one quiz question, shown after its text; library figures go into notes only. Example: {\"quiz_id\": \"mat_1\", \"question_id\": \"q_3f9a1c2b7e\", \"media\": {\"type\": \"plot\", \"title\": \"Action potential\", \"xTitle\": \"Time (ms)\", \"yTitle\": \"Membrane potential (mV)\", \"series\": [{\"name\": \"Vm\", \"points\": [[0, -70], [1, 30], [2, -80], [4, -70]]}]}}",
+      "description": "Add a chart or plot to one quiz question, shown after its text; library figures go into notes only. Example: {\"quiz_id\": \"mat_1\", \"question_id\": \"q_3f9a1c2b7e\", \"media\": {\"type\": \"plot\", \"title\": \"Action potential\", \"xTitle\": \"Time (ms)\", \"yTitle\": \"Membrane potential (mV)\", \"series\": [{\"name\": \"Vm\", \"points\": [[0, -70], [1, 30], [2, -80], [4, -70]]}]}}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -941,7 +950,7 @@
           },
           "media": {
             "additionalProperties": true,
-            "description": "A note's chart or plot fence JSON, or a question graph block {type: graph, board {bbox [left, top, right, bottom], axis, grid}, JSXGraph elements, image {svg} drawing it, width, height, description}.",
+            "description": "A note's chart or plot fence JSON.",
             "type": "object"
           },
           "question_id": {
@@ -1713,19 +1722,6 @@
         "title",
         "labels",
         "series"
-      ],
-      "type": "object"
-    },
-    "graph": {
-      "additionalProperties": true,
-      "required": [
-        "type",
-        "board",
-        "elements",
-        "image",
-        "width",
-        "height",
-        "description"
       ],
       "type": "object"
     },

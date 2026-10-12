@@ -61,7 +61,7 @@ import (
 // no quizzes, edit_document loses add_question and replace_question, the
 // question format leaves Formats, MediaBlocks carries the media schemas, and a
 // note's quiz fence takes the small shapes.
-const ContractVersion = 19
+const ContractVersion = 20
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -466,7 +466,7 @@ func todoSchema() map[string]any {
 
 // The agent writes questions in three small shapes (Epo 2026-10-13): a
 // multiple-choice or short-answer question through add_questions, an open one
-// through add_open_question, and a chart, plot or graph under a question
+// through add_open_question, and a chart or plot under a question
 // through add_question_media. The retrieval service checks every argument,
 // naming each problem at once, and expands the shapes into the question format
 // (pipeline/retrieval/questions.py); the quiz validator stays the backstop.
@@ -548,12 +548,6 @@ func mediaBlocks() map[string]any {
 				"x": number, "y": number, "label": label,
 			}, "x", "y", "label")),
 		}, "type", "title", "xTitle", "yTitle", "series"),
-		// A graph's recipe and SVG are left to the validator.
-		"graph": map[string]any{
-			"type":                 "object",
-			"additionalProperties": true,
-			"required":             []string{"type", "board", "elements", "image", "width", "height", "description"},
-		},
 	}
 }
 
@@ -858,7 +852,7 @@ func Definitions() []Definition {
 			Name:      "add_open_question",
 			Retention: RetainFull,
 			Description: "Add one open question, answered in writing and graded against its markscheme, " +
-				"to a quiz; a new quiz starts with add_questions. The markscheme items' marks add up to " +
+				"to a quiz (quiz_id), or create a quiz with it (title). The markscheme items' marks add up to " +
 				`marks. Example: {"quiz_id": "mat_1", "question": "Explain why a red blood cell bursts ` +
 				`in pure water.", "marks": 2, "markscheme": [{"text": "Water enters by osmosis", "marks": ` +
 				`1}, {"text": "No cell wall resists the swelling, so the membrane ruptures", "marks": 1}], ` +
@@ -881,7 +875,9 @@ func Definitions() []Definition {
 				"hints":       textList("Optional nudges the learner may open.", 0),
 				"explanation": textField("Optional: the worked solution, shown after grading."),
 				"replaces":    replacesSchema(),
-			}), "quiz_id", "question", "marks", "markscheme", "model_answer"),
+				"title":       str("Instead of quiz_id: create a quiz with this title."),
+				"chapter_id":  str("With title: the new quiz's chapter."),
+			}), "question", "marks", "markscheme", "model_answer"),
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpMaterialCreate},
@@ -889,7 +885,7 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "add_question_media",
 			Retention: RetainFull,
-			Description: "Add a chart, plot or graph to one quiz question, shown after its text; library " +
+			Description: "Add a chart or plot to one quiz question, shown after its text; library " +
 				`figures go into notes only. Example: {"quiz_id": "mat_1", "question_id": "q_3f9a1c2b7e", ` +
 				`"media": {"type": "plot", "title": "Action potential", "xTitle": "Time (ms)", "yTitle": ` +
 				`"Membrane potential (mV)", "series": [{"name": "Vm", "points": [[0, -70], [1, 30], ` +
@@ -899,9 +895,7 @@ func Definitions() []Definition {
 				"question_id": str(""),
 				"media": map[string]any{
 					"type": "object", "additionalProperties": true,
-					"description": "A note's chart or plot fence JSON, or a question graph block {type: graph, " +
-						"board {bbox [left, top, right, bottom], axis, grid}, JSXGraph elements, image {svg} " +
-						"drawing it, width, height, description}.",
+					"description": "A note's chart or plot fence JSON.",
 				},
 				"excerpt_ids": idList("Library excerpts the media was drawn from.", 0, 32),
 				"todo":        todoSchema(),

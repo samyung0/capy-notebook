@@ -13,8 +13,8 @@
         ],
         "answer": {
           "type": "mcq",
-          "options": ["Sodium", "Potassium", "Chloride"],
-          "correct": [0]
+          "options": ["Potassium", "Sodium", "Chloride"],
+          "correct": [1]
         },
         "marks": 1,
         "solution": [
@@ -114,8 +114,8 @@
         ],
         "answer": {
           "type": "mcq",
-          "options": ["Sodium", "Potassium", "Chloride"],
-          "correct": [0]
+          "options": ["Chloride", "Sodium", "Potassium"],
+          "correct": [1]
         },
         "marks": 1,
         "solution": []

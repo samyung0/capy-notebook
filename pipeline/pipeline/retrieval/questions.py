@@ -12,15 +12,18 @@ shapes:
   model_answer, hints?, explanation?
 
 add_questions takes a list of the first two, add_open_question one open
-question, and add_question_media puts a chart, plot or graph after one
+question, and add_question_media puts a chart or plot after one
 question's text. A note's ```quiz fence holds a YAML list of all three.
 
 Every problem of a call is named at once, with its path, what was expected and
 what was sent; a structural mistake also gets the shape to copy. add_questions
 saves the valid questions of a call and names only the rest.
 
-The server fills the rest: ids, one part per question, 1 mark for a simple
-question, layout paper, labels letters, and the worked solution from the
+Fields sent as null are left out before checking (Epo 2026-10-13: leniency
+the agent need not be told about). The server fills the rest: ids, one part
+per question, 1 mark for a simple question, multiple-choice options in an
+order shuffled by the question id (the model tends to put the answer first),
+layout paper, labels letters, and the worked solution from the
 explanation (empty without one: a quiz part's solution may be empty, only bank
 parts need one). The gateway routes and Go's validator take the expanded
 questions unchanged.
@@ -32,6 +35,7 @@ import copy
 import hashlib
 import itertools
 import json
+import random
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -106,7 +110,7 @@ EXPECTED = {
     "text": "what earns the marks",
     "quiz_id": "the id of the quiz to add to (add_questions' result gives a new quiz's id)",
     "question_id": "the question's id",
-    "media": "a chart, plot or graph block",
+    "media": "a chart or plot block",
 }
 # Fields the server fills: the old question format's.
 SERVER_FILLED = {"id", "stem", "parts", "layout", "labels", "level", "points"}
@@ -191,13 +195,13 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
         return "the server fills it; send only the fields of the shape"
     if key in MEDIA_KEYS:
         return (
-            "add a chart, plot or graph with add_question_media once the question "
+            "add a chart or plot with add_question_media once the question "
             "is added; library figures go into notes only"
         )
     if key == "type":
         return "the fields say the kind; drop type"
     if key in ("title", "chapter_id"):
-        return "a new quiz starts with add_questions; add the open question to it by quiz_id"
+        return "title and chapter_id go on the call, not on a question"
     if key == "replaces":
         return "a quiz fence writes new questions; rewrite one with add_open_question"
     if kind == "open":
@@ -488,9 +492,17 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
         "blocks": [{"type": "text", "text": item["question"]}],
     }
     if kind == "mcq":
-        options = list(item["options"])
-        correct = [o.strip() for o in options].index(item["correct"].strip())
-        part["answer"] = {"type": "mcq", "options": options, "correct": [correct]}
+        written = list(item["options"])
+        answer = [o.strip() for o in written].index(item["correct"].strip())
+        # Seeded by the id, so a retried call writes the same order.
+        order = list(range(len(written)))
+        random.Random(qid).shuffle(order)
+        options = [written[i] for i in order]
+        part["answer"] = {
+            "type": "mcq",
+            "options": options,
+            "correct": [order.index(answer)],
+        }
         part["marks"] = 1
     elif kind == "short":
         part["answer"] = {"type": "short", "accepted": list(item["accepted"])}
@@ -572,8 +584,18 @@ class Check:
         return "\n".join([*(f"- {p}" for p in self.problems()), *shapes])
 
 
+def drop_nulls(value: Any) -> Any:
+    """The value without object fields sent as null, at any depth: a null field
+    is one the model meant to leave out."""
+    if isinstance(value, dict):
+        return {k: drop_nulls(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [drop_nulls(v) for v in value]
+    return value
+
+
 def _target_problems(args: dict[str, Any]) -> list[str]:
-    """add_questions writes to one quiz: an existing one or a new one."""
+    """A question call writes to one quiz: an existing one or a new one."""
     quiz_id, title = args.get("quiz_id"), args.get("title")
     problems = []
     if bool(quiz_id) == bool(title):
@@ -619,6 +641,9 @@ def check(name: str, args: dict[str, Any]) -> Check:
     else:
         result.call = _schema_problems(_OPEN_TOOL, args, "", "open", fence=False)
         result.call += _semantic("open", args, "")
+        result.call += _target_problems(args)
+        if args.get("title") and "replaces" in args:
+            result.call.append("replaces: a new quiz has no question to replace")
         structural = any(
             e.validator in STRUCTURAL for e in _OPEN_TOOL.iter_errors(args)
         )
@@ -746,7 +771,7 @@ def _media_problems(args: dict[str, Any]) -> list[str]:
             else ""
         )
         return problems + [
-            f'media.type: expected "chart", "plot" or "graph"{figure}; sent {_sent(kind)}'
+            f'media.type: expected "chart" or "plot"{figure}; sent {_sent(kind)}'
         ]
     problems += _schema_problems(_MEDIA[kind], media, "media", None, fence=False)
     if kind == "chart":

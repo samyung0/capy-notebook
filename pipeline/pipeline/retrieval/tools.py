@@ -2594,7 +2594,9 @@ async def write_questions(
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
         return _refused(f"{name} needs its tool-call and assistant message ids.")
-    clean = {k: v for k, v in args.items() if not k.startswith("_")}
+    clean = questions.drop_nulls(
+        {k: v for k, v in args.items() if not k.startswith("_")}
+    )
     found = questions.check(name, clean)
     quiz_id = clean.get("quiz_id")
     quiz: list[dict[str, Any]] | None = None
@@ -2639,7 +2641,9 @@ async def write_media(
         return _refused(
             "add_question_media needs its tool-call and assistant message ids."
         )
-    clean = {k: v for k, v in args.items() if not k.startswith("_")}
+    clean = questions.drop_nulls(
+        {k: v for k, v in args.items() if not k.startswith("_")}
+    )
     found = questions.media_check(clean)
     quiz_id, qid = clean.get("quiz_id"), clean.get("question_id")
     question = None
