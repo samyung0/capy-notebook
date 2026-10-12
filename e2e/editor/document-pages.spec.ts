@@ -323,7 +323,8 @@ test('workspace PDF mode survives reload and retains the citation page', async (
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
-  await expect(mode).toHaveText('');
+  // From lg the toggle is labelled with the mode it switches to.
+  await expect(mode).toHaveText(m.material_mode_view());
   await page.reload();
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,

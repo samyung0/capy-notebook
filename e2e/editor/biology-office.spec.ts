@@ -1291,6 +1291,10 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
 
   await test.step('a newly opened editor leaves the focus in the chat box', async () => {
     await page.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+    // The workspace panel opens on Files, also with a file in the URL.
+    await page
+      .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
+      .click();
     await chat.click();
     await page.keyboard.type('hi');
     // Typed before the editor was ready.

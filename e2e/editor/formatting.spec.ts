@@ -16,6 +16,10 @@ test.describe('formatting', () => {
     await editor.getByText(EDITOR_NOTE.firstParagraph, { exact: true }).click();
     await page.keyboard.press('End');
     await page.keyboard.type(' history probe');
+    // The workspace panel opens on Files; the chat box is on the Chat tab.
+    await page
+      .getByRole('tab', { exact: true, name: m.workspace_tab_chat() })
+      .click();
     const outside = page.getByRole('textbox', {
       name: m.chat_placeholder(),
     });
