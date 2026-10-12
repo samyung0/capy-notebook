@@ -35,6 +35,7 @@
   --pptx-divider-margin: 0 var(--toolbar-divider-margin);
   --pptx-group-gap: 0;
   --pptx-button-size: var(--toolbar-button);
+  --pptx-disabled-opacity: var(--toolbar-disabled-opacity);
   --pptx-button-radius: var(--radius-button);
   /* As the DOCX size box. */
   --pptx-input-radius: 6px;

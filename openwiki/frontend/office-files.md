@@ -1232,7 +1232,16 @@ that override the fork's single-row rules in `editor.css`; XLSX's
 `--pptx-divider-*`, `--pptx-group-gap` and `--pptx-button-size` (the Notes
 button too). The DOCX list buttons and colour split buttons follow through
 `--doc-list-*` and `--doc-color-split-*`, the list buttons pressed in
-ToolbarButton's tint. Those fork variables fall back to the fork's own sizes.
+ToolbarButton's tint, and take its 12px radius and full text colour through
+`--doc-toolbar-control-radius` and `--doc-toolbar-control-fg` (the alignment
+button too, by a host rule). Disabled controls fade to ToolbarButton's 0.4
+(`--toolbar-disabled-opacity`): DOCX by a host rule on the row's disabled
+buttons and inputs plus `--doc-toolbar-disabled-opacity` for the list and
+colour buttons, XLSX and PPTX through `--xlsx-disabled-opacity` and
+`--pptx-disabled-opacity`. Below 640px of frame the XLSX name box is 56px wide
+(`--xlsx-name-box-width`, 64px from 640px) and the sheet-tab row 34px (tab
+padding 6/4px, 8/6px from 640px), in both modes. Those fork variables fall
+back to the fork's own values.
 XLSX and PPTX icons shrink with a rule on the 16px icons inside the toolbar
 row, leaving chevrons and the menus' icons alone. The rows keep their edge
 fades as overlays rather than `scroll-fade-x`: the toolbar dropdowns are fixed

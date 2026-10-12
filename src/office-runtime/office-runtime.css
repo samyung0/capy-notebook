@@ -39,8 +39,10 @@
 
 /* The note toolbar's scale (tailwind.css --toolbar-button/--toolbar-icon,
    Toolbar, ToolbarGroup), shared by the DOCX, XLSX and PPTX toolbar rows:
-   compact in a frame under 640px, wider frames override. */
+   compact in a frame under 640px, wider frames override; disabled controls
+   at ToolbarButton's disabled:opacity-40. */
 :root {
+  --toolbar-disabled-opacity: 0.4;
   --toolbar-height: 36px;
   --toolbar-padding: 4px;
   --toolbar-button: 28px;
@@ -153,6 +155,9 @@
   --doc-list-divider-margin: 0 var(--toolbar-divider-margin);
   --doc-color-split-height: var(--toolbar-button);
   --doc-color-split-width: var(--toolbar-button);
+  --doc-toolbar-control-radius: var(--radius-button);
+  --doc-toolbar-control-fg: var(--doc-text);
+  --doc-toolbar-disabled-opacity: var(--toolbar-disabled-opacity);
   --doc-menu-trigger-font-size: 0.875rem;
   --doc-menu-trigger-font-weight: 600;
   --doc-menu-trigger-height: 32px;
@@ -320,7 +325,9 @@
 
 /* docx-react's single-row bar (editor.css) at the toolbar scale: padding,
    end cluster and group dividers as Toolbar and ToolbarGroup. Buttons keep
-   their size in an overflowing row, as ToolbarButton's shrink-0. */
+   their size in an overflowing row, as ToolbarButton's shrink-0, and fade to
+   its disabled opacity (the colour split's group fades itself; menus keep
+   theirs). */
 .oox-root .oox-formatting-bar {
   padding: 0 var(--toolbar-padding);
 }
@@ -338,6 +345,13 @@
 }
 .oox-root .oox-formatting-bar [data-testid="toolbar-alignment"] {
   height: var(--doc-toolbar-button-size);
+  color: var(--doc-text);
+  border-radius: var(--doc-toolbar-radius);
+}
+.oox-root
+  .oox-formatting-bar
+  :is(button, input):disabled:not(.docx-color-picker-split *, .docx-popover *) {
+  opacity: var(--doc-toolbar-disabled-opacity);
 }
 
 html,

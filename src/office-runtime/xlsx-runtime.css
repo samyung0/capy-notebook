@@ -30,6 +30,7 @@
   --xlsx-divider-margin: 0 var(--toolbar-divider-margin);
   --xlsx-group-gap: 0;
   --xlsx-button-size: var(--toolbar-button);
+  --xlsx-disabled-opacity: var(--toolbar-disabled-opacity);
   --xlsx-button-radius: var(--radius-button);
   --xlsx-control-font-size: 0.875rem;
   --xlsx-control-font-weight: 600;
@@ -38,8 +39,16 @@
   --xlsx-tabs-bg: var(--surface-card-bg);
   --xlsx-active-tab-bg: transparent;
   --xlsx-tabs-padding: 0 8px;
-  --xlsx-tab-padding: 8px 12px 6px;
   --xlsx-tab-font-size: 0.875rem;
+  /* Below 640px of frame a narrower name box and a 34px tab row. */
+  --xlsx-name-box-width: 56px;
+  --xlsx-tab-padding: 6px 12px 4px;
+}
+@media (min-width: 640px) {
+  :root {
+    --xlsx-name-box-width: 64px;
+    --xlsx-tab-padding: 8px 12px 6px;
+  }
 }
 
 /* The viewer's read-only formula bar, drawn as the editor's (xlsx-react's
@@ -76,7 +85,7 @@
 
 .xlsx-name-box {
   flex: 0 0 auto;
-  width: 64px;
+  width: var(--xlsx-name-box-width);
   font:
     600 12px ui-monospace,
     SFMono-Regular,
