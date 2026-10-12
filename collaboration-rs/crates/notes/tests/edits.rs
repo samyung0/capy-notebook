@@ -251,6 +251,48 @@ fn a_listing_preview_cut_inside_an_emoji_keeps_it_whole() {
     assert_eq!(preview.encode_utf16().count(), 81);
 }
 
+/// A library figure arrives as an `img` naming the editor asset Go stored for
+/// the note before the edit (`figure:<id>` in agent markdown): an edit may
+/// insert it, at the top level or inside a block. Any other media (a URL
+/// image, an audio or file block, an asset id on a non-image) is still
+/// refused, as Node refused all of it.
+#[test]
+fn an_edit_inserts_a_figure_image_and_no_other_media() {
+    let value = [json!({ "type": "p", "id": "b1", "children": [{ "text": "intro" }] })];
+    let insert = |block: Value| {
+        let doc = common::doc(&notes::slate_yjs::state_from_value(&value, 3), 4);
+        let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+        let result = edit::apply_material_commands(
+            &mut doc.transact_mut(),
+            &root,
+            &[DocumentCommand::InsertBlock {
+                after_block_id: Some("b1".into()),
+                blocks: vec![block],
+            }],
+        );
+        result.map(|_| ()).map_err(|error| match error {
+            EditError::Edit { message, .. } => message,
+            other => other.to_string(),
+        })
+    };
+    let figure = json!({
+        "assetId": "ea_figure", "caption": [{ "text": "A leaf" }],
+        "children": [{ "text": "" }], "id": "f1", "type": "img",
+    });
+    insert(figure.clone()).unwrap();
+    insert(json!({ "children": [figure.clone(), { "text": "" }], "id": "p2", "type": "p" }))
+        .unwrap();
+    let refused = "media nodes cannot be inserted by an edit";
+    for media in [
+        json!({ "children": [{ "text": "" }], "id": "f2", "type": "img", "url": "https://x.test/a.png" }),
+        json!({ "assetId": "", "children": [{ "text": "" }], "id": "f3", "type": "img" }),
+        json!({ "assetId": "ea_1", "children": [{ "text": "" }], "id": "f4", "type": "audio" }),
+        json!({ "assetId": "ea_1", "children": [{ "text": "x" }], "id": "f5", "type": "p" }),
+    ] {
+        assert_eq!(insert(media.clone()), Err(refused.to_owned()), "{media}");
+    }
+}
+
 #[test]
 fn inspect_matches_the_node_server() {
     let corpus = common::load("inspect");

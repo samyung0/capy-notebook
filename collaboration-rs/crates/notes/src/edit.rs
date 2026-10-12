@@ -467,13 +467,35 @@ fn assert_node_shape(node: &Value, what: &str) -> Result<(), EditError> {
     if !node.get("children").is_some_and(Value::is_array) {
         return edit(InvalidInput, format!("{what} requires children"));
     }
-    if has_media(node) {
+    if inserts_media(node) {
         return edit(
             UnsupportedOperation,
             "media nodes cannot be inserted by an edit",
         );
     }
     Ok(())
+}
+
+/// Media an edit may not insert: anything [has_media] finds except an `img`
+/// naming an asset (no URL), which is how a library figure arrives: Go stores
+/// it as the note's own editor asset before the edit's blocks (`figure:<id>`
+/// in agent markdown), and the children pass after the edit keeps, copies or
+/// drops any image as it does for a paste.
+fn inserts_media(node: &Value) -> bool {
+    let named_image = js_string(node.get("type")) == "img"
+        && node
+            .get("assetId")
+            .and_then(Value::as_str)
+            .is_some_and(|id| !id.is_empty())
+        && node.get("url").is_none()
+        && node.get("src").is_none();
+    (!named_image
+        && (MEDIA_TYPES.contains(&js_string(node.get("type")).as_str())
+            || node.get("assetId").is_some()))
+        || node
+            .get("children")
+            .and_then(Value::as_array)
+            .is_some_and(|children| children.iter().any(inserts_media))
 }
 
 /// `Node.string(node)`, which throws on an element without children.
