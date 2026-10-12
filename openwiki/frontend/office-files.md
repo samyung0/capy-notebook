@@ -1234,7 +1234,8 @@ button too). The DOCX list buttons and colour split buttons follow through
 `--doc-list-*` and `--doc-color-split-*`, the list buttons pressed in
 ToolbarButton's tint, and take its 12px radius and full text colour through
 `--doc-toolbar-control-radius` and `--doc-toolbar-control-fg` (the alignment
-button too, by a host rule). Disabled controls fade to ToolbarButton's 0.4
+button too, by a host rule); XLSX's size box and font picker take the same
+radius through `--xlsx-input-radius`. Disabled controls fade to ToolbarButton's 0.4
 (`--toolbar-disabled-opacity`): DOCX by a host rule on the row's disabled
 buttons and inputs plus `--doc-toolbar-disabled-opacity` for the list and
 colour buttons, XLSX and PPTX through `--xlsx-disabled-opacity` and
@@ -1397,14 +1398,17 @@ Below lg the workspace's floating tools button sits at the frame's bottom
 right, 8px above its bottom chrome. The runtime reports that chrome's height
 as `bottom-inset` (protocol v9) whenever it changes: the frame's height minus
 the bottom of the area the document scrolls in (`bottomInset.ts`: the XLSX
-grid, the PPTX slide stage, in both modes), watched with a ResizeObserver, so
-the sheet tabs, a narrow slide strip and the speaker notes box count and a
-slide list in a side column does not; DOCX reports nothing. `useOfficeRuntime`
-passes it to `WorkspaceOpen` through `OfficeInsetContext`, which writes it as
-`--office-inset` on the viewer's box (no re-render while a resize moves it)
-and back to 0 when the file closes. The runtime marks its root `data-narrow`
-below lg, and `--pptx-notes-toggle-right` moves the Notes button left of the
-button's column.
+grid, the PPTX slide stage, in both modes), watched with a ResizeObserver on
+the area and the boxes beside its ancestors (a MutationObserver looks for the
+area only until it is there), so the sheet tabs, a narrow slide strip and the
+speaker notes box count and a slide list in a side column does not; DOCX
+reports nothing. `useOfficeRuntime` passes it, clamped to the frame's height
+so a hostile document cannot push the button off the page, to `WorkspaceOpen`
+through `OfficeInsetContext`, which writes it as `--office-inset` on the
+viewer's box (no re-render while a resize moves it) and back to 0 when the
+file closes. The runtime marks its root `data-narrow` below lg, and
+`--pptx-notes-toggle-right` moves the Notes button left of the button's
+column.
 
 PPTX's header menus follow Google Slides: File (Save, which Capy performs as
 `capy.save`, Download ▸ PowerPoint or PNG of the current slide, Print), Edit
