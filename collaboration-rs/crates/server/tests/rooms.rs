@@ -244,6 +244,8 @@ struct Client {
     ws: WebSocketStream<MaybeTlsStream<TcpStream>>,
     doc: Doc,
     inbox: Vec<Msg>,
+    /// Every binary frame the room sent, as received.
+    received: Vec<u8>,
 }
 
 impl Client {
@@ -261,6 +263,7 @@ impl Client {
             ws,
             doc: Doc::with_options(ydoc::doc_options(0)),
             inbox: Vec::new(),
+            received: Vec::new(),
         }
     }
 
@@ -290,6 +293,7 @@ impl Client {
                 .ok()??
                 .ok()?;
             let Ws::Binary(bytes) = next else { continue };
+            self.received.extend_from_slice(&bytes);
             let mut at = 0;
             let mut found = None;
             while at < bytes.len() {
@@ -331,6 +335,7 @@ impl Client {
             else {
                 return check(self);
             };
+            self.received.extend_from_slice(&bytes);
             let mut at = 0;
             while at < bytes.len() {
                 let _channel = read_var(&bytes, &mut at);
@@ -2101,6 +2106,42 @@ fn awareness_entries(payload: &[u8]) -> Vec<(u64, String)> {
             (client, state)
         })
         .collect()
+}
+
+/// Readers receive the contributor markers, so the markers name no user
+/// (Epo 2026-10-12: a link-share stranger learned editors' internal ids).
+/// Neither a viewer joined while a writer types nor one joined after sees the
+/// user id, or its base64 (the markers' old key), in anything the room sent.
+#[tokio::test]
+async fn a_read_channel_receives_no_user_id() {
+    use base64::Engine;
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "hello").await;
+    let room = format!("material:{material}:schema:1");
+    let mut viewer = Client::open(server.port).await;
+    viewer.joined(&room, &token(&room, &user, "read")).await;
+    let mut writer = Client::open(server.port).await;
+    writer.joined(&room, &token(&room, &user, "write")).await;
+    assert!(viewer.settle(|c| c.block_text() == "hello").await);
+    assert!(writer.settle(|c| c.block_text() == "hello").await);
+    writer.type_text(" world").await;
+    assert!(viewer.settle(|c| c.block_text() == "hello world").await);
+    let mut late = Client::open(server.port).await;
+    late.joined(&room, &token(&room, &user, "read")).await;
+    assert!(late.settle(|c| c.block_text() == "hello world").await);
+    let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(&user);
+    for (name, client) in [("viewer", &viewer), ("late viewer", &late)] {
+        for needle in [user.as_str(), encoded.as_str()] {
+            assert!(
+                !client
+                    .received
+                    .windows(needle.len())
+                    .any(|window| window == needle.as_bytes()),
+                "{name} received {needle}"
+            );
+        }
+    }
 }
 
 /// Security regression (REVIEW5 E2, R1, R1b): a read-only channel cannot show

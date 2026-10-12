@@ -1025,7 +1025,9 @@ impl Room {
     /// `roomIncidents`: one incident per writer with unsaved work in the room,
     /// or one naming nobody.
     fn record_room_incidents(&self, cause: &Cause, bytes: Option<u64>) {
-        let users: BTreeSet<String> = markers::contributors(&self.doc)
+        let users: BTreeSet<String> = self
+            .markers
+            .contributors(&self.doc)
             .unwrap_or_default()
             .into_iter()
             .map(|c| c.user_id)

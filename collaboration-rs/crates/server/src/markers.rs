@@ -1,13 +1,15 @@
 //! Contributor markers (the Node server's `contributors.ts`, DESIGN.md 2):
-//! server-owned entries in `__capy_pending_contributors` naming every writer
+//! server-owned entries in `__capy_pending_contributors`, one for every writer
 //! whose update no committed store holds yet. Written once per writer per
 //! store window: a writer gets a fresh marker only when it has none or a
 //! store snapshot has claimed the one it has.
+//!
+//! Every reader of the room receives them, so they name no user (Epo
+//! 2026-10-12): a marker's key holds an opaque id the room draws for each
+//! writer, and only the room maps it back to the user, at store time.
 
 use std::collections::{HashMap, HashSet};
 
-use base64::Engine;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use yrs::block::{ClientID, UpdateParent};
 use yrs::{Any, Doc, ID, Map, MapRef, Out, ReadTxn, Transact, Update, UpdateBlock};
 
@@ -15,9 +17,16 @@ use crate::auth::Context;
 
 const MAX_KEY_BYTES: usize = 512;
 const MAX_NONCE_BYTES: usize = 128;
-const MAX_USER_ID_BYTES: usize = 255;
 
-/// One marker as a store snapshot reads it.
+/// One marker as the room holds it: no user in it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Marker {
+    pub key: String,
+    pub nonce: String,
+}
+
+/// A marker with the writer the room drew its key for, as a store snapshot
+/// reads it.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Contributor {
     pub key: String,
@@ -31,14 +40,18 @@ pub enum MarkerError {
     Invalid,
     #[error("client update changed collaboration metadata")]
     Changed,
+    /// A live marker whose key the room did not draw (no writer of this
+    /// room's life wrote it).
+    #[error("collaboration contributor marker names no writer of this room")]
+    Unknown,
 }
 
 fn root(doc: &Doc) -> MapRef {
     doc.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT)
 }
 
-/// A marker's value, validated as `contributorValue` does.
-fn contributor(key: &str, value: &Out) -> Result<Contributor, MarkerError> {
+/// A marker's value: `{access: "write", nonce}`.
+fn marker(key: &str, value: &Out) -> Result<Marker, MarkerError> {
     if key.is_empty() || key.len() > MAX_KEY_BYTES {
         return Err(MarkerError::Invalid);
     }
@@ -51,41 +64,32 @@ fn contributor(key: &str, value: &Out) -> Result<Contributor, MarkerError> {
         Some(Any::String(value)) => Some(value.to_string()),
         _ => None,
     };
-    let (Some(access), Some(nonce), Some(user_id)) =
-        (text("access"), text("nonce"), text("userId"))
-    else {
+    let (Some(access), Some(nonce)) = (text("access"), text("nonce")) else {
         return Err(MarkerError::Invalid);
     };
-    if keys != ["access", "nonce", "userId"]
+    if keys != ["access", "nonce"]
         || access != "write"
         || nonce.is_empty()
         || nonce.len() > MAX_NONCE_BYTES
-        || user_id.is_empty()
-        || user_id.len() > MAX_USER_ID_BYTES
     {
         return Err(MarkerError::Invalid);
     }
-    Ok(Contributor {
+    Ok(Marker {
         key: key.to_owned(),
         nonce,
-        user_id,
     })
 }
 
-/// Every live marker, sorted by key (`documentContributors`).
-pub fn contributors(doc: &Doc) -> Result<Vec<Contributor>, MarkerError> {
-    contributors_in(&doc.transact())
-}
-
-/// [contributors] within a transaction the caller holds. Read-only lookups:
-/// yrs transactions are not re-entrant, so nothing here opens another one.
-pub fn contributors_in<T: ReadTxn>(txn: &T) -> Result<Vec<Contributor>, MarkerError> {
+/// Every live marker within a transaction the caller holds, sorted by key
+/// (`documentContributors`). Read-only lookups: yrs transactions are not
+/// re-entrant, so nothing here opens another one.
+pub fn contributors_in<T: ReadTxn>(txn: &T) -> Result<Vec<Marker>, MarkerError> {
     let Some(map) = txn.get_map(ydoc::CONTRIBUTORS_ROOT) else {
         return Ok(Vec::new());
     };
     let mut out = map
         .iter(txn)
-        .map(|(key, value)| contributor(key, &value))
+        .map(|(key, value)| marker(key, &value))
         .collect::<Result<Vec<_>, _>>()?;
     out.sort_by(|a, b| a.key.cmp(&b.key));
     Ok(out)
@@ -174,28 +178,58 @@ pub fn check<T: ReadTxn>(
     Ok(())
 }
 
-/// A room's marker bookkeeping: which live nonces a store snapshot claimed.
+/// A room's marker bookkeeping: which live nonces a store snapshot claimed,
+/// and the writer behind each key it drew.
 #[derive(Debug, Default)]
 pub struct Markers {
     instance_id: String,
     claimed: HashSet<String>,
+    keys: HashMap<String, String>,
+    writers: HashMap<String, String>,
 }
 
 impl Markers {
     pub fn new(instance_id: &str) -> Self {
         Markers {
             instance_id: instance_id.to_owned(),
-            claimed: HashSet::new(),
+            ..Markers::default()
         }
     }
 
-    fn key(&self, context: &Context) -> String {
-        format!(
+    /// The writer's key, drawn once per room: random, so it tells a reader
+    /// nothing about the user.
+    fn key(&mut self, context: &Context) -> String {
+        if let Some(key) = self.keys.get(&context.user_id) {
+            return key.clone();
+        }
+        let key = format!(
             "{}:{}:{}",
             self.instance_id,
             context.access.as_str(),
-            URL_SAFE_NO_PAD.encode(context.user_id.as_bytes())
-        )
+            uuid::Uuid::new_v4().simple()
+        );
+        self.keys.insert(context.user_id.clone(), key.clone());
+        self.writers.insert(key.clone(), context.user_id.clone());
+        key
+    }
+
+    /// Every live marker with its writer, sorted by key.
+    pub fn contributors(&self, doc: &Doc) -> Result<Vec<Contributor>, MarkerError> {
+        contributors_in(&doc.transact())?
+            .into_iter()
+            .map(|marker| {
+                let user_id = self
+                    .writers
+                    .get(&marker.key)
+                    .ok_or(MarkerError::Unknown)?
+                    .clone();
+                Ok(Contributor {
+                    key: marker.key,
+                    nonce: marker.nonce,
+                    user_id,
+                })
+            })
+            .collect()
     }
 
     /// Writes `context`'s marker in its own transaction when the writer has
@@ -220,7 +254,6 @@ impl Markers {
                 "nonce".to_owned(),
                 Any::from(uuid::Uuid::new_v4().to_string()),
             ),
-            ("userId".to_owned(), Any::from(context.user_id.as_str())),
         ]));
         map.insert(&mut txn, key, value);
         Some(ydoc::committed_update(txn))
@@ -228,7 +261,7 @@ impl Markers {
 
     /// A store snapshot takes every live marker: their nonces are claimed.
     pub fn claim(&mut self, doc: &Doc) -> Result<Vec<Contributor>, MarkerError> {
-        let all = contributors(doc)?;
+        let all = self.contributors(doc)?;
         for contributor in &all {
             self.claimed.insert(contributor.nonce.clone());
         }
@@ -319,10 +352,37 @@ mod tests {
         assert!(markers.write(&doc, &writer("u1")).is_none());
         // ...which the snapshot's clear leaves alone.
         assert!(markers.clear(&doc, &snapshot).is_some());
-        let left = contributors(&doc).unwrap();
+        let left = markers.contributors(&doc).unwrap();
         assert_eq!(left.len(), 1);
         assert_eq!(left[0].user_id, "u1");
         assert!(pending(&doc));
+    }
+
+    /// Readers receive the markers, so they name no user (Epo 2026-10-12):
+    /// the room's state holds neither the user id nor its base64 (the key
+    /// the markers had), and only the room maps the key back.
+    #[test]
+    fn markers_name_no_user() {
+        use base64::Engine;
+        let doc = room();
+        let mut markers = Markers::new("inst");
+        let user = "u_markers_secret_7";
+        markers.write(&doc, &writer(user)).unwrap();
+        let state = doc
+            .transact()
+            .encode_state_as_update_v1(&yrs::StateVector::default());
+        let encoded = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(user);
+        for needle in [user, encoded.as_str()] {
+            assert!(
+                !state
+                    .windows(needle.len())
+                    .any(|window| window == needle.as_bytes()),
+                "{needle} in the room's state"
+            );
+        }
+        assert_eq!(markers.claim(&doc).unwrap()[0].user_id, user);
+        // A marker the room did not draw names no writer it knows.
+        assert_eq!(Markers::new("inst").claim(&doc), Err(MarkerError::Unknown));
     }
 
     #[test]
@@ -380,7 +440,9 @@ mod tests {
             }),
             Err(MarkerError::Changed)
         );
-        let key = contributors(&room_doc).unwrap()[0].key.clone();
+        let key = contributors_in(&room_doc.transact()).unwrap()[0]
+            .key
+            .clone();
         assert_eq!(
             check_from(&|c: &Doc| {
                 c.get_or_insert_map(ydoc::CONTRIBUTORS_ROOT)
