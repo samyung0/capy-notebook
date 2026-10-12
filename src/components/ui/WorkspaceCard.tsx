@@ -164,7 +164,7 @@ export function WorkspaceCardFace({
     <Card
       border="solid"
       className={cn(
-        'group relative h-full gap-4 p-4.5 xl:p-5.5',
+        'group relative h-full gap-4 p-4 xl:p-5',
         paint && 'overflow-hidden'
       )}
       interactive={interactive}
@@ -177,17 +177,17 @@ export function WorkspaceCardFace({
         />
       )}
       {/* The icon sits beside the name; counts and tags take their own lines. */}
-      <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3">
+      <div className="relative grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2.5">
         <img
           alt=""
-          className="size-10 rounded-button"
-          height={44}
+          className="size-9 rounded-button"
+          height={36}
           src={iconUrl(workspace.iconId)}
-          width={44}
+          width={36}
         />
         <h3
           className={cn(
-            't-card-title line-clamp-2 pr-8',
+            't-card-title line-clamp-2 pr-7',
             ink === 'dark' && 'text-white',
             ink === 'light' && 'text-[#1d1d1f]'
           )}
