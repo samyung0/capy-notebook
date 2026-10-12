@@ -63,10 +63,13 @@ test('editors edit a quiz together and a learner follows it live', async ({
     .first()
     .click();
   const dialog = ownerPage.getByRole('dialog');
+  // The outline row focuses its section; Enter edits it (main's dialog).
   await dialog
     .getByRole('button', { name: m.question_ui_answer_and_marks() })
     .first()
     .click();
+  await expect(dialog.locator('[data-row-key]:focus')).toHaveCount(1);
+  await ownerPage.keyboard.press('Enter');
   await dialog
     .getByRole('textbox', { name: m.question_ui_option_number({ number: 2 }) })
     .fill('Mitochondrion');

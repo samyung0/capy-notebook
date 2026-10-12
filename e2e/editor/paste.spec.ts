@@ -164,9 +164,11 @@ test.describe('paste', () => {
       'text/plain': ['Before the quiz', '', '```quiz', fence, '```'].join('\n'),
     });
 
-    await expect(
-      editor.locator('.slate-material_ref').getByText(statement)
-    ).toBeVisible();
+    // The block shows its quiz once the row exists and its rooms joined.
+    await expect(editor.locator('.slate-material_ref')).toContainText(
+      statement,
+      { timeout: 20_000 }
+    );
     await expect(
       editor.locator('.slate-p', { hasText: /^Before the quiz$/ })
     ).toBeVisible();
