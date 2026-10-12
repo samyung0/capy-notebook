@@ -95,6 +95,7 @@ import {
   statusLabels,
 } from '@/features/questions/QuestionListRow';
 import { TopicSummary } from '@/features/questions/TopicSummary';
+import { finishKey } from '@/features/questions/trailMap/finish';
 import {
   MiniTrail,
   PlaceholderTrailMap,
@@ -539,6 +540,7 @@ export default function QuestionBank() {
     body = (
       <BankLanding
         exams={syllabus.exams}
+        finishedTopic={search.finished}
         onOpen={openProgress}
         onStart={topic}
         view={mode === 'view'}
@@ -714,8 +716,10 @@ export default function QuestionBank() {
                   </div>
                 }
               />
-              {/* Full panel width: the map and the lists line up with Edit mode. */}
-              <div className="px-4 pt-6 pb-28 sm:px-6 lg:pb-10">{body}</div>
+              {/* Learning's tab padding, full panel width. */}
+              <div className="px-4 pt-5 pb-28 sm:px-6 sm:pt-8 lg:px-10 lg:pb-10 xl:px-16">
+                {body}
+              </div>
             </>
           )}
         </Panel>
@@ -1776,17 +1780,20 @@ function ReviewBar({
  * /qb with no topic open: in View mode, the topics the learner has answered in.
  * Started topics: the latest as a progress map with Continue, the rest as
  * rows with a small trail. Finished topics: a divider list with Summary (the
- * topic's top). Without any, a placeholder map with its notice board and
- * suggested topics (Choose a topic in Edit mode); phones pick topics in
- * the page.
+ * topic's top). The map leads with the finished topic a finish toast's Go
+ * check names, and with the latest finished when none is started. Without
+ * any, a placeholder map with its notice board and suggested topics (Choose a
+ * topic in Edit mode); phones pick topics in the page.
  */
 function BankLanding({
   exams,
+  finishedTopic,
   view,
   onOpen,
   onStart,
 }: {
   exams: BankExam[];
+  finishedTopic?: string;
   view: boolean;
   onOpen: (topicId: string, next: string | null) => void;
   onStart: (topicId: string) => void;
@@ -1801,16 +1808,24 @@ function BankLanding({
     // The server lists the most recently answered first.
     const going = data.topics.filter(isStarted);
     const finished = data.topics.filter((topic) => !topic.nextQuestionId);
+    const lead =
+      finished.find((topic) => topic.topicId === finishedTopic) ??
+      going[0] ??
+      finished[0];
+    const listed = finished.filter((topic) => topic !== lead);
     // Flex, not grid: a grid track would widen to the scrolling map's full width.
     progress = (
       <div className="flex flex-col gap-12">
-        {going.length > 0 && (
-          <ContinueSection exams={exams} onOpen={onOpen} topics={going} />
-        )}
-        {finished.length > 0 && (
+        <ContinueSection
+          exams={exams}
+          lead={lead}
+          onOpen={onOpen}
+          others={going.filter((topic) => topic !== lead)}
+        />
+        {listed.length > 0 && (
           <section>
             <h2 className="t-card-title mb-3">{m.question_ui_finished()}</h2>
-            {finished.map((topic) => (
+            {listed.map((topic) => (
               <div
                 className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-divider border-t py-3 last:border-b sm:grid-cols-[minmax(0,1fr)_4.5rem_auto]"
                 key={topic.topicId}
@@ -1926,26 +1941,35 @@ function progressPath(exams: BankExam[], topic: BankTopicProgress) {
     : [topic.examLabel, topic.subjectLabel, topic.topicLabel];
 }
 
+/** The landing's map: the lead topic with Continue (or Summary once it is
+ * finished, with its finish animation), then the other started topics. */
 function ContinueSection({
   exams,
-  topics: [latest, ...others],
+  lead: latest,
+  others,
   onOpen,
 }: {
   exams: BankExam[];
-  topics: StartedTopic[];
+  lead: BankTopicProgress;
+  others: StartedTopic[];
   onOpen: (topicId: string, next: string | null) => void;
 }) {
   const latestPath = progressPath(exams, latest);
+  const next = latest.nextQuestionId;
   return (
     <section>
-      <h2 className="t-card-title">{m.question_ui_continue()}</h2>
+      <h2 className="t-large-card-title">
+        {next ? m.question_ui_continue() : m.question_ui_topic_finished()}
+      </h2>
       <p className="t-meta mb-1 text-fg-muted">
         {latestPath.slice(0, -1).join(' · ')}
       </p>
       <TrailMap
         answeredPositions={latest.answeredPositions}
+        finishKey={finishKey('topic', latest.topicId, latest.total)}
+        key={latest.topicId}
         lastAnsweredPosition={latest.lastAnsweredPosition}
-        nextQuestionId={latest.nextQuestionId}
+        nextQuestionId={next}
         onOpen={(questionId) => onOpen(latest.topicId, questionId)}
         questionIds={latest.questionIds}
         topicId={latest.topicId}
@@ -1961,38 +1985,38 @@ function ContinueSection({
             })}
           </p>
         </div>
-        <UnderlineLink
-          accent
-          onClick={() => onOpen(latest.topicId, latest.nextQuestionId)}
-        >
-          {m.question_ui_continue_at({
-            position: latest.questionIds.indexOf(latest.nextQuestionId) + 1,
-          })}
+        <UnderlineLink accent onClick={() => onOpen(latest.topicId, next)}>
+          {next
+            ? m.question_ui_continue_at({
+                position: latest.questionIds.indexOf(next) + 1,
+              })
+            : m.question_ui_summary()}
         </UnderlineLink>
       </div>
       {others.length > 0 && (
-        <div className="mt-8">
+        // Rows lay out by the list's width: the side panel narrows it on wide screens.
+        <div className="@container mt-8">
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
             {m.question_ui_other_topics()}
           </h3>
           {others.map((topic) => (
             <div
-              className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3 sm:grid-cols-[minmax(0,1fr)_minmax(150px,240px)_4.5rem_auto]"
+              className="grid @2xl:grid-cols-[minmax(0,1fr)_minmax(150px,240px)_4.5rem_auto] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3"
               key={topic.topicId}
             >
               <TopicName exams={exams} topic={topic} />
-              <div className="col-span-2 row-start-2 max-w-[240px] sm:col-span-1 sm:row-start-auto">
+              <div className="@2xl:col-span-1 col-span-2 @2xl:row-start-auto row-start-2 max-w-[240px]">
                 <MiniTrail
                   answered={topic.answered}
                   topicId={topic.topicId}
                   total={topic.total}
                 />
               </div>
-              <div className="hidden text-right text-fg-secondary text-sm sm:block">
+              <div className="@2xl:block hidden text-right text-fg-secondary text-sm">
                 {m.study_of({ done: topic.answered, total: topic.total })}
               </div>
               <UnderlineLink
-                className="col-start-2 row-start-1 sm:col-start-auto sm:row-start-auto"
+                className="@2xl:col-start-auto col-start-2 @2xl:row-start-auto row-start-1"
                 iconRight={undefined}
                 onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
               >

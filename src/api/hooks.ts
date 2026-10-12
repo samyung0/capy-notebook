@@ -2407,15 +2407,21 @@ export const pastReviewsQuery = (params: PastReviewParams = {}) => ({
 export const usePastReviews = (params: PastReviewParams = {}) =>
   useInfiniteQuery(pastReviewsQuery(params));
 
-/** Learning → Progress: workspaces in progress and finished, the leading one's items. */
-export const learningProgressQuery = () =>
+/** Learning → Progress: workspaces in progress and finished, the leading
+ * one's items; `lead` asks for that listed workspace's map instead. */
+export const learningProgressQuery = (lead?: string) =>
   queryOptions({
     ...persisted,
-    queryFn: () => api.get<LearningProgress>('/learning/progress'),
-    queryKey: qk.learningProgress,
+    queryFn: () =>
+      api.get<LearningProgress>(
+        lead
+          ? `/learning/progress?lead=${encodeURIComponent(lead)}`
+          : '/learning/progress'
+      ),
+    queryKey: lead ? [...qk.learningProgress, lead] : qk.learningProgress,
   });
-export const useLearningProgress = (options?: QueryUiOptions) =>
-  useQuery({ ...learningProgressQuery(), meta: queryMeta(options) });
+export const useLearningProgress = (lead?: string, options?: QueryUiOptions) =>
+  useQuery({ ...learningProgressQuery(lead), meta: queryMeta(options) });
 
 /** Records one rating; the study page toasts a failure once. Each rating
  * refreshes `workspaceId`'s progress, or every workspace's when omitted; a

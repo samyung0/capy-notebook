@@ -124,7 +124,7 @@ workspace; writes need read access plus an account that can sign in
 | `GET /api/review/overview` | Learning's Review tab, below. |
 | `POST /api/review/ratings` | `{materialId, itemId, rating, session?}` for a card; a question is 422 (it is rated by a check). Needs read access to the material, so standalone shared sets can be rated too; an embedded set is 422 (`ErrStudyEmbedded`), its study page sends nothing. |
 | `POST /api/review/check` | `{materialId, itemId, answers, session?}` for a question: grades it on the server (open parts with Jev), rates it from `correct / total` and returns `{correct, total, question}`, the question with its key and awards. A card is 422. |
-| `GET /api/learning/progress` | Learning's Progress tab, below. |
+| `GET /api/learning/progress?lead=` | Learning's Progress tab, below. |
 | `PATCH /api/me/study-progress` | The global default. |
 | `POST /api/quizzes/{id}/attempts` | `{answers}`, graded on the server ([question-bank.md](question-bank.md#answer-keys-and-server-grading)); its side effect is below. |
 | `POST /api/internal/study-progress` | The chat agent's `read_study_progress`, below. |
@@ -405,10 +405,12 @@ Review tab, most recently studied first (`lastStudiedAt`, the latest
 `study_progress.updated_at` that is not `removed`: marking, attempts and
 ratings all write it), skips ones with nothing tracked, and splits them into
 `active` (done below total) and `finished`, at most 10 each. Each carries name,
-icon, cover, done and total. `lead` is the first active workspace's chapters
+icon, cover, done and total. `lead` is the map's workspace with its chapters
 and tracked items (id, file or material, title, chapter, position, created
-time, state), which the browser puts in reading order with `inReadingOrder`,
-the Study tab's sort, so the map and Continue always agree.
+time, state): the `lead` query's workspace when it is listed, else the first
+active, else the first finished. The browser puts the items in reading order
+with `inReadingOrder`, the Study tab's sort, so the map and Continue always
+agree.
 
 - **Continue review**: the heading with an accent "Continue: <item>" link at
   its right (the Study tab's next item: first in reading order not done), the
@@ -418,6 +420,19 @@ the Study tab's sort, so the map and Continue always agree.
   workspace on its Study tab.
 - **Finished**: rows with icon, name, "Finished <when>", "total of total" and
   Open.
+
+The map leads with a finished workspace when the URL's `finished` names it
+(the finish toast's Go check, sent on as `lead`) or nothing is in progress; it
+then heads "Workspace finished" without the Continue link and leaves the
+Finished rows. Finishing a workspace's last tracked item raises a success
+toast, "Workspace finished" with Go check, which opens
+`/learning?tab=progress&finished=<workspace>`; it comes from
+`useFinishToasts`, which compares each refetch of the progress route (every
+study write refetches it) with the one before, as the bank's does. The first
+time a finished workspace leads the tab in a browser, the railway map plays the
+finish animation described in [question-bank.md](question-bank.md) (key
+`workspace:<id>:<tracked count>`), so finishing again after new items
+celebrates again (Epo, 2026-10-13).
 
 With nothing in either list the tab shows only `PlaceholderRailMap`: four
 unnamed stations (five or six stops at the first, two to six at the others,
@@ -443,7 +458,9 @@ workspace with one or two items still fills the panel, the scenery running on
 past the buffer stop. Stops: done filled, started half filled, untouched
 hollow; the next has a ring and a "Next: <item>" tag (raised above a station
 it would cover); faint from six items past the next or last touched item,
-whichever is later. Hover shows the title, a click opens the item.
+whichever is later. Hover shows the title, a click opens the item. Once every
+item is done there is no ring or Next tag: the line is solid to the buffer stop
+and a "Finished" tag rises above the terminus's flag.
 
 Biomes are 260 to 440 map units (about 4 to 7 items), blending over 60:
 city and industry (rows of buildings behind the line and, partly hidden by

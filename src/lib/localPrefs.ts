@@ -12,6 +12,8 @@ import { useState } from 'react';
 export const PREF_KEYS = {
   filesPinned: 'capy.workspace.filesPinned',
   filesView: 'capy.files.view',
+  /** Progress maps whose finish animation has played: `topic:<id>:<count>`, `workspace:<id>:<count>`. */
+  mapFinishPlayed: 'capy.map.finishPlayed',
   openChapters: (workspaceId: string) =>
     `capy.workspace.openChapters.${workspaceId}`,
   recentsView: 'capy.recents.view',

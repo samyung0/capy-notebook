@@ -11,8 +11,14 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/Tooltip';
+import {
+  FinishBurst,
+  FinishMarks,
+  useFinishCelebration,
+} from '@/features/questions/trailMap/finish';
 import { boardSpot, MapBoard } from '@/features/questions/trailMap/MapBoard';
 import {
+  lastOf,
   n,
   type Pt,
   polyD,
@@ -58,6 +64,8 @@ export interface RailMapItem {
  * few items further on. Each stop opens its item (mouse only: Continue is the
  * keyboard path). Only pieces near the visible stretch are rendered.
  * Without `onOpen` it is scenery only: no tag, numbers, tooltips or clickable stops.
+ * Finished (every item done), the line is solid to the buffer stop with a
+ * Finished tag; with `finishKey` it celebrates the first time (finish.tsx).
  */
 export function RailMap({
   workspaceId,
@@ -66,6 +74,7 @@ export function RailMap({
   color,
   onOpen,
   board,
+  finishKey,
 }: {
   workspaceId: string;
   chapters: string[];
@@ -75,7 +84,10 @@ export function RailMap({
   onOpen?: (itemId: string) => void;
   /** A station notice board just past the first stop (the caller leaves room before the next station); the empty map's hint. */
   board?: { title: string; text: string };
+  /** The finish animation's played key, on a finished map that may celebrate. */
+  finishKey?: string;
 }) {
+  const hostRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [minWidth, setMinWidth] = useState(0);
   useLayoutEffect(() => {
@@ -96,17 +108,23 @@ export function RailMap({
     [workspaceId, chapters.join('\n'), layoutKey, minWidth]
   );
 
-  const nextIndex = Math.max(
-    0,
-    items.findIndex((it) => it.state !== 'done')
+  const nextIndex = items.findIndex((it) => it.state !== 'done');
+  const finished = nextIndex < 0;
+  const celebrate = useFinishCelebration(
+    finished ? finishKey : undefined,
+    hostRef
   );
   const lastTouched = items.reduce((last, it, i) => (it.state ? i : last), -1);
-  const next = map.stops[nextIndex];
-  const inkedTo = Math.max(nextIndex, lastTouched) + AHEAD;
+  const last = map.stops[items.length - 1];
+  // Where the solid line ends: the next stop, or the buffer stop once finished.
+  const next = finished ? lastOf(map.trail) : map.stops[nextIndex];
+  const inkedTo = finished
+    ? items.length
+    : Math.max(nextIndex, lastTouched) + AHEAD;
   const reveal =
     inkedTo >= items.length ? map.width : map.stops[inkedTo][0] + STEP / 2;
   const range = useVisibleRange(scrollRef, {
-    focus: next[0],
+    focus: (celebrate ? last : next)[0],
     margin: MARGIN,
     scale: SCALE,
     step: STEP,
@@ -152,131 +170,151 @@ export function RailMap({
 
   const visible = [...layers.ink.stops, ...layers.fog.stops];
   const width = map.width * SCALE;
-  const tag = m.learning_map_next({ title: items[nextIndex].title });
+  const tag = finished
+    ? m.learning_finished()
+    : m.learning_map_next({ title: items[nextIndex].title });
   // Over a station the tag rises above its roof, so the chapter name stays readable.
   const tagHalf = (tag.length * 7 + 18) / SCALE / 2;
-  const lift = map.stations.some(
-    ({ a, b }) => a < next[0] + tagHalf && next[0] - tagHalf < b
-  )
-    ? 84
-    : 46;
+  // Finished, the tag rises over the terminus's flag.
+  const lift = finished
+    ? 118
+    : map.stations.some(
+          ({ a, b }) => a < next[0] + tagHalf && next[0] - tagHalf < b
+        )
+      ? 84
+      : 46;
 
   return (
-    <div
-      aria-hidden
-      className={cn(
-        'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 lg:-mx-10 xl:-mx-16 [&::-webkit-scrollbar]:hidden',
-        board && '@container'
-      )}
-      ref={scrollRef}
-    >
+    <div className="relative" ref={hostRef}>
       <div
-        className={cn('rail-map relative', color && 'rail-colour')}
-        style={{ '--cover-ink': color, width } as CSSProperties}
+        aria-hidden
+        className={cn(
+          'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 lg:-mx-10 xl:-mx-16 [&::-webkit-scrollbar]:hidden',
+          board && '@container'
+        )}
+        data-finish-scroll
+        ref={scrollRef}
       >
-        <svg
-          className="trail-map block"
-          height={(MAP_HEIGHT - TOP) * SCALE}
-          viewBox={`0 ${TOP} ${map.width} ${MAP_HEIGHT - TOP}`}
-          width={width}
+        <div
+          className={cn('rail-map relative', color && 'rail-colour')}
+          style={{ '--cover-ink': color, width } as CSSProperties}
         >
-          <defs dangerouslySetInnerHTML={{ __html: templateDefs() }} />
-          <defs>
-            <clipPath id={`${clip}-ink`}>
-              <rect
-                height={MAP_HEIGHT + 40}
-                width={reveal + 20}
-                x={-20}
-                y={-40}
-              />
-            </clipPath>
-            <clipPath id={`${clip}-fog`}>
-              <rect
-                height={MAP_HEIGHT + 40}
-                width={map.width - reveal + 20}
-                x={reveal}
-                y={-40}
-              />
-            </clipPath>
-          </defs>
-          {(['fog', 'ink'] as const).map((key) => (
-            <g
-              className={key === 'fog' ? 'tm-fog' : undefined}
-              clipPath={`url(#${clip}-${key})`}
-              key={key}
-            >
-              <g dangerouslySetInnerHTML={{ __html: layers[key].under }} />
-              <g dangerouslySetInnerHTML={{ __html: layers[key].over }} />
-              {/* The line and stops go over the scenery, so buildings may come close. */}
-              <path className="tm-trail-rest" d={rest} />
-              {layers[key].stops.map((i) => (
-                <g key={i}>
-                  {i !== nextIndex && (
-                    <Stop at={map.stops[i]} state={items[i].state} />
-                  )}
-                  {onOpen && (
-                    <text
-                      className="tm-num"
-                      textAnchor="middle"
-                      x={n(map.stops[i][0])}
-                      y={n(map.stops[i][1] + 21)}
-                    >
-                      {i + 1}
-                    </text>
-                  )}
-                </g>
-              ))}
-            </g>
-          ))}
-          <path className="tm-trail-done" d={done} />
-          <circle
-            className="tm-stop-done"
-            cx={map.trail[0][0]}
-            cy={map.trail[0][1]}
-            r={5}
-          />
-          <circle className="tm-you-ring" cx={next[0]} cy={next[1]} r={11} />
-          <Stop at={next} state={items[nextIndex].state} />
-        </svg>
-        {board && (
-          <MapBoard
-            {...boardSpot(map.trail, map.stops[0][0] + 12, SCALE, TOP)}
-            text={board.text}
-            title={board.title}
-            tone="station"
-          />
-        )}
-        {onOpen && (
-          <span
-            className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
-            style={{
-              left: next[0] * SCALE,
-              top: (next[1] - TOP - lift) * SCALE,
-            }}
+          <svg
+            className="trail-map block"
+            height={(MAP_HEIGHT - TOP) * SCALE}
+            viewBox={`0 ${TOP} ${map.width} ${MAP_HEIGHT - TOP}`}
+            width={width}
           >
-            {tag}
-          </span>
-        )}
-        {onOpen &&
-          visible.map((i) => (
-            <Tooltip key={i}>
-              <TooltipTrigger
-                aria-label={items[i].title}
-                className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
-                onClick={() => onOpen(items[i].id)}
-                style={{
-                  left: map.stops[i][0] * SCALE,
-                  top: (map.stops[i][1] - TOP) * SCALE,
-                }}
-                tabIndex={-1}
-              />
-              {/* The next stop already carries its tag. */}
-              {i !== nextIndex && (
-                <TooltipContent>{items[i].title}</TooltipContent>
-              )}
-            </Tooltip>
-          ))}
+            <defs dangerouslySetInnerHTML={{ __html: templateDefs() }} />
+            <defs>
+              <clipPath id={`${clip}-ink`}>
+                <rect
+                  height={MAP_HEIGHT + 40}
+                  width={reveal + 20}
+                  x={-20}
+                  y={-40}
+                />
+              </clipPath>
+              <clipPath id={`${clip}-fog`}>
+                <rect
+                  height={MAP_HEIGHT + 40}
+                  width={map.width - reveal + 20}
+                  x={reveal}
+                  y={-40}
+                />
+              </clipPath>
+            </defs>
+            {(['fog', 'ink'] as const).map((key) => (
+              <g
+                className={key === 'fog' ? 'tm-fog' : undefined}
+                clipPath={`url(#${clip}-${key})`}
+                key={key}
+              >
+                <g dangerouslySetInnerHTML={{ __html: layers[key].under }} />
+                <g dangerouslySetInnerHTML={{ __html: layers[key].over }} />
+                {/* The line and stops go over the scenery, so buildings may come close. */}
+                <path className="tm-trail-rest" d={rest} />
+                {layers[key].stops.map((i) => (
+                  <g key={i}>
+                    {i !== nextIndex && (
+                      <Stop at={map.stops[i]} state={items[i].state} />
+                    )}
+                    {onOpen && (
+                      <text
+                        className="tm-num"
+                        textAnchor="middle"
+                        x={n(map.stops[i][0])}
+                        y={n(map.stops[i][1] + 21)}
+                      >
+                        {i + 1}
+                      </text>
+                    )}
+                  </g>
+                ))}
+              </g>
+            ))}
+            <path className="tm-trail-done" d={done} data-finish="line" />
+            <circle
+              className="tm-stop-done"
+              cx={map.trail[0][0]}
+              cy={map.trail[0][1]}
+              r={5}
+            />
+            {!finished && (
+              <>
+                <circle
+                  className="tm-you-ring"
+                  cx={next[0]}
+                  cy={next[1]}
+                  r={11}
+                />
+                <Stop at={next} state={items[nextIndex].state} />
+              </>
+            )}
+            {celebrate && <FinishMarks at={last} />}
+          </svg>
+          {board && (
+            <MapBoard
+              {...boardSpot(map.trail, map.stops[0][0] + 12, SCALE, TOP)}
+              text={board.text}
+              title={board.title}
+              tone="station"
+            />
+          )}
+          {onOpen && (
+            <span
+              className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
+              data-finish={finished ? 'tag' : undefined}
+              style={{
+                left: next[0] * SCALE,
+                top: (next[1] - TOP - lift) * SCALE,
+              }}
+            >
+              {tag}
+            </span>
+          )}
+          {onOpen &&
+            visible.map((i) => (
+              <Tooltip key={i}>
+                <TooltipTrigger
+                  aria-label={items[i].title}
+                  className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
+                  onClick={() => onOpen(items[i].id)}
+                  style={{
+                    left: map.stops[i][0] * SCALE,
+                    top: (map.stops[i][1] - TOP) * SCALE,
+                  }}
+                  tabIndex={-1}
+                />
+                {/* The next stop already carries its tag. */}
+                {i !== nextIndex && (
+                  <TooltipContent>{items[i].title}</TooltipContent>
+                )}
+              </Tooltip>
+            ))}
+        </div>
       </div>
+      {celebrate && <FinishBurst />}
     </div>
   );
 }

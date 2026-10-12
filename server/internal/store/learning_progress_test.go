@@ -50,7 +50,7 @@ func TestLearningProgressListsByLastStudied(t *testing.T) {
 	mark(latest, read, &done, "1 hour")
 	mark(latest, dropped, &removed, "1 hour")
 
-	got, err := f.s.LearningProgress(ctx, f.user)
+	got, err := f.s.LearningProgress(ctx, f.user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,15 +74,36 @@ func TestLearningProgressListsByLastStudied(t *testing.T) {
 		t.Fatalf("lead states = %v", states)
 	}
 
+	// A requested workspace leads the map, finished or not.
+	got, err = f.s.LearningProgress(ctx, f.user, finishedWS.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Lead == nil || got.Lead.WorkspaceID != finishedWS.ID {
+		t.Fatalf("requested lead = %+v", got.Lead)
+	}
+
 	// Progress off leaves a workspace out.
 	if err := f.s.SetWorkspaceStudy(ctx, f.user, latest.ID, false); err != nil {
 		t.Fatal(err)
 	}
-	got, err = f.s.LearningProgress(ctx, f.user)
+	got, err = f.s.LearningProgress(ctx, f.user, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got.Active) != 1 || got.Lead == nil || got.Lead.WorkspaceID != f.ws.ID {
 		t.Fatalf("after progress off = %+v", got)
+	}
+
+	// With nothing in progress the most recently finished leads.
+	if err := f.s.SetWorkspaceStudy(ctx, f.user, f.ws.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	got, err = f.s.LearningProgress(ctx, f.user, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got.Active) != 0 || got.Lead == nil || got.Lead.WorkspaceID != finishedWS.ID {
+		t.Fatalf("only finished = %+v", got)
 	}
 }

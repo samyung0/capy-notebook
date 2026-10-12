@@ -566,7 +566,11 @@ than stretching: on phones it runs the row's full width under the name, wider
 it takes the space between the name and the count. Learning's Progress rows
 and the Study tab use the same trail.
 Finished: a divider list with the date of the last answer and a
-Summary link to the topic's summary page. With none, or in Edit mode, it keeps
+Summary link to the topic's summary page. The map leads with a finished topic
+instead in two cases: the URL's `finished` (set by the finish toast's Go check,
+below) names it, or no topic is started (then the most recently answered
+finished one). It then heads "Topic finished", draws the finished map and links
+Summary, and leaves the Finished list. With none, or in Edit mode, it keeps
 Choose a topic (in View mode instead `PlaceholderTrailMap`: 24 stops, nothing
 answered, no tag, numbers, tooltips or clicks, a wooden notice board
 (`MapBoard`) past the first stop saying how to start, then Suggested topics:
@@ -611,7 +615,27 @@ stops are filled wherever they are drawn. Hovering a stop shows "Q7" (the app To
 clicking opens that question in the page. The map is `aria-hidden` and the
 stop buttons are out of the tab order: the line under the map and the
 Continue link carry the same information and action for keyboard and screen
-reader users, and the topic's question list reaches every question. The generator
+reader users, and the topic's question list reaches every question. A finished
+topic (`nextQuestionId` null) has no ring or Next tag and no faint part: the
+trail is solid to the summit flag and a "Finished" tag sits left of it (above it
+would leave the map's top edge).
+
+Answering a topic's last unanswered question raises a success toast, "Topic
+finished" with Go check, which opens `/qb?finished=<topic>`. The toast comes
+from `useFinishToasts` (`src/features/study/finishToasts.ts`, mounted in
+`AppShell` so the progress route stays observed on every signed-in page): each
+refetch of the route is compared with the one before, and a topic finished now
+but not before toasts (answering any question refetches it). The first time a
+finished topic leads the landing in a browser, the map celebrates
+(`src/features/questions/trailMap/finish.tsx`, shared with Learning's railway
+map): the page scrolls the map into view, the last stop pops filled, the line
+runs on to the flag with a dot at its head, the flag waves while rays and
+confetti fountain up from it in a layer over the map but outside its clipping
+scroller, the done stops ripple back and the Finished tag pops in; reduced
+motion shows the finished map at once. Played keys live in localStorage
+(`capy.map.finishPlayed`, `topic:<id>:<question count>`, the last 200), so a
+topic finished again after new questions celebrates again (Epo, 2026-10-13).
+The generator
 returns pieces with a left and right edge; the view draws only those within
 120 units of the visible stretch, tracked in whole question-widths, and the
 faint and full-ink copies each hold only their side of the cut-off. The scroller hides its scrollbar like `Tabs` and fades an edge only while there is more to scroll that way (`scroll-fade-x`). Colours

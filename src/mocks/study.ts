@@ -213,7 +213,9 @@ const SHOWCASE: ProgressWorkspace[] = [
   },
 ];
 
-function learningProgress() {
+/** As the server: `lead` (a listed workspace) leads the map, else the first
+ * in progress, else the first finished; showcase rows have no items to map. */
+function learningProgress(leadId: string | null) {
   if (!historyFinished) {
     historyFinished = true;
     for (const it of tracked('ws_hist'))
@@ -246,10 +248,14 @@ function learningProgress() {
   );
   rows.sort((a, b) => b.lastStudiedAt.localeCompare(a.lastStudiedAt));
   const active = rows.filter((ws) => ws.done < ws.total).slice(0, 10);
-  const lead = active[0]?.workspaceId;
+  const finished = rows.filter((ws) => ws.done >= ws.total).slice(0, 10);
+  const mapped = [...active, ...finished]
+    .map((ws) => ws.workspaceId)
+    .filter((id) => progress.has(id));
+  const lead = mapped.find((id) => id === leadId) ?? mapped[0];
   return {
     active,
-    finished: rows.filter((ws) => ws.done >= ws.total).slice(0, 10),
+    finished,
     lead: lead && {
       chapters: db.chapters
         .filter((ch) => ch.workspaceId === lead)
@@ -766,8 +772,10 @@ export const studyHandlers = [
       total: list.length,
     });
   }),
-  http.get('/api/learning/progress', () =>
-    HttpResponse.json(learningProgress())
+  http.get('/api/learning/progress', ({ request }) =>
+    HttpResponse.json(
+      learningProgress(new URL(request.url).searchParams.get('lead'))
+    )
   ),
   http.get('/api/review/overview', () => HttpResponse.json(overview())),
   http.get('/api/review/sessions', ({ request }) =>

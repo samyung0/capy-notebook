@@ -8,6 +8,7 @@ import { Skeleton, SkeletonList } from '@/components/ui/feedback';
 import { Tabs } from '@/components/ui/Tabs';
 import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { relativeTime } from '@/features/materials/MaterialListCard';
+import { finishKey } from '@/features/questions/trailMap/finish';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import { AllResults } from '@/features/study/AllResults';
 import { PastReviews } from '@/features/study/PastReviews';
@@ -24,9 +25,11 @@ import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 /** Learning → Progress: the most recently studied workspace as a map with
  * its Continue, the other workspaces in progress as rows with a small trail,
- * then the finished ones. */
-function Progress() {
-  const { data, fetchStatus, isLoading } = useLearningProgress();
+ * then the finished ones. The map leads with the finished workspace a finish
+ * toast's Go check names (`finished`), and with the latest finished when
+ * none is in progress. */
+function Progress({ finished }: { finished?: string }) {
+  const { data, fetchStatus, isLoading } = useLearningProgress(finished);
   const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
   if (fetchStatus === 'paused') return <QueryPausedState />;
@@ -40,10 +43,20 @@ function Progress() {
     );
   const openWorkspace = (workspaceId: string) =>
     navigate({ params: { workspaceId }, to: '/workspaces/$workspaceId' });
-  const [lead, ...others] = data.active;
+  const lead = [...data.active, ...data.finished].find(
+    (ws) => ws.workspaceId === data.lead?.workspaceId
+  );
+  const others = data.active.filter((ws) => ws !== lead);
+  const done = data.finished.filter((ws) => ws !== lead);
   return (
     <div ref={revealRef}>
-      {lead && data.lead && <LeadWorkspace map={data.lead} workspace={lead} />}
+      {lead && data.lead && (
+        <LeadWorkspace
+          key={lead.workspaceId}
+          map={data.lead}
+          workspace={lead}
+        />
+      )}
       {others.length > 0 && (
         <section className={cn(lead && 'mt-8')}>
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
@@ -88,12 +101,12 @@ function Progress() {
           ))}
         </section>
       )}
-      {data.finished.length > 0 && (
-        <section className={cn(data.active.length > 0 && 'mt-8')}>
+      {done.length > 0 && (
+        <section className={cn((lead || others.length > 0) && 'mt-8')}>
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
             {m.learning_finished()}
           </h3>
-          {data.finished.map((ws) => (
+          {done.map((ws) => (
             <div
               className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-divider border-t py-3 sm:grid-cols-[minmax(0,1fr)_4.5rem_auto]"
               key={ws.workspaceId}
@@ -151,7 +164,7 @@ function LeadWorkspace({
   const chapters = [...map.chapters].sort((a, b) => a.order - b.order);
   const items = inReadingOrder(chapters, map.items);
   const chapterIndex = new Map(chapters.map((ch, i) => [ch.id, i]));
-  const next = items.find((it) => it.state !== 'done') ?? items[0];
+  const next = items.find((it) => it.state !== 'done');
   const open = (id: string) => {
     const item = items.find((it) => it.id === id);
     if (!item) return;
@@ -164,14 +177,21 @@ function LeadWorkspace({
   return (
     <section>
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-1">
-        <h2 className="t-large-card-title">{m.learning_continue_review()}</h2>
-        <UnderlineLink accent onClick={() => open(next.id)}>
-          {m.learning_continue_item({ title: next.title })}
-        </UnderlineLink>
+        <h2 className="t-large-card-title">
+          {next
+            ? m.learning_continue_review()
+            : m.learning_workspace_finished()}
+        </h2>
+        {next && (
+          <UnderlineLink accent onClick={() => open(next.id)}>
+            {m.learning_continue_item({ title: next.title })}
+          </UnderlineLink>
+        )}
       </div>
       <RailMap
         chapters={chapters.map((ch) => ch.name)}
         color={coverInk(workspace.cover)}
+        finishKey={finishKey('workspace', workspace.workspaceId, items.length)}
         items={items.map((it) => ({
           chapter: it.chapterId
             ? (chapterIndex.get(it.chapterId) ?? null)
@@ -221,8 +241,9 @@ function WorkspaceName({
 }
 
 export default function Learning() {
-  const { tab = 'progress' } = useSearch({ strict: false }) as {
+  const { tab = 'progress', finished } = useSearch({ strict: false }) as {
     tab?: LearningTab;
+    finished?: string;
   };
   const navigate = useNavigate();
   return (
@@ -254,7 +275,7 @@ export default function Learning() {
         )}
       >
         {tab === 'progress' ? (
-          <Progress />
+          <Progress finished={finished} />
         ) : tab === 'review' ? (
           <ReviewTab />
         ) : tab === 'past' ? (

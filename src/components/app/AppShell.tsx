@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { api } from '@/api/client';
 import { useEventStream, useMe } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
+import { useFinishToasts } from '@/features/study/finishToasts';
 import { cn } from '@/lib/cn';
 import { sweepDraftsOnce } from '@/lib/editDrafts';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
@@ -31,6 +32,7 @@ export function AppShell() {
   useEffect(() => {
     if (actorId) sweepDraftsOnce(actorId, api);
   }, [actorId]);
+  useFinishToasts();
 
   return (
     <div className="t-body relative flex h-dvh overflow-hidden bg-page text-fg">

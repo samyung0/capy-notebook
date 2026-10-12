@@ -2646,6 +2646,10 @@ export const UpdateLabelResponse = zod.object({
 /**
  * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
  */
+export const GetLearningProgressQueryParams = zod.object({
+  "lead": zod.string().optional().describe('A listed workspace whose map to return instead of the most recently studied one')
+})
+
 export const getLearningProgressResponseActiveItemCoverColorRegExp = new RegExp('^#[0-9a-f]{6}$');
 export const getLearningProgressResponseActiveItemCoverLineMax = 40;
 

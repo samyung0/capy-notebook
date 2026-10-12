@@ -16,8 +16,9 @@ import (
 const progressListCap = 10
 
 type LearningProgress struct {
-	// Lead is the most recently studied workspace still in progress, with its
-	// items for the map; nil when nothing is in progress.
+	// Lead is the map's workspace with its items: the requested one when it is
+	// listed, else the most recently studied in progress, else the most
+	// recently finished; nil when both lists are empty.
 	Lead *ProgressMap `json:"lead,omitempty"`
 	// Active starts with the leading workspace.
 	Active   []ProgressWorkspace `json:"active" nullable:"false"`
@@ -64,8 +65,9 @@ type ProgressItem struct {
 
 // LearningProgress lists the workspaces the user tracks progress in and can
 // still read, with progress on, most recently studied first: up to
-// progressListCap in progress and as many finished.
-func (s *Store) LearningProgress(ctx context.Context, userID string) (LearningProgress, error) {
+// progressListCap in progress and as many finished. leadID asks for that
+// workspace's map (a finished one, after its finish toast).
+func (s *Store) LearningProgress(ctx context.Context, userID, leadID string) (LearningProgress, error) {
 	out := LearningProgress{Active: []ProgressWorkspace{}, Finished: []ProgressWorkspace{}}
 	rows, err := s.pool.Query(ctx, `SELECT w.id, w.name, w.icon_id, w.cover,
 			(SELECT count(*) FROM study_progress sp
@@ -130,8 +132,14 @@ func (s *Store) LearningProgress(ctx context.Context, userID string) (LearningPr
 			out.Active = append(out.Active, ws)
 		}
 	}
-	if len(out.Active) > 0 {
-		lead, err := s.progressMap(ctx, userID, out.Active[0].WorkspaceID)
+	leadWS := ""
+	for _, ws := range append(append([]ProgressWorkspace{}, out.Active...), out.Finished...) {
+		if leadWS == "" || ws.WorkspaceID == leadID {
+			leadWS = ws.WorkspaceID
+		}
+	}
+	if leadWS != "" {
+		lead, err := s.progressMap(ctx, userID, leadWS)
 		if err != nil {
 			return out, err
 		}

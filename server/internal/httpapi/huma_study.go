@@ -228,8 +228,12 @@ func sessionAnswer(ref *apimodel.ReviewSessionRef) *store.SessionAnswer {
 	return &store.SessionAnswer{ID: ref.ID, WorkspaceID: ref.WorkspaceID, Info: ref.ReviewSessionInfo, Items: ref.Items}
 }
 
-func (a *api) getLearningProgress(ctx context.Context, _ *struct{}) (*learningProgressOutput, error) {
-	res, err := a.s.LearningProgress(ctx, userID(ctx))
+type learningProgressInput struct {
+	Lead string `query:"lead" doc:"A listed workspace whose map to return instead of the most recently studied one"`
+}
+
+func (a *api) getLearningProgress(ctx context.Context, in *learningProgressInput) (*learningProgressOutput, error) {
+	res, err := a.s.LearningProgress(ctx, userID(ctx), in.Lead)
 	if err != nil {
 		return nil, hErr(err)
 	}

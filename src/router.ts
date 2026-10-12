@@ -172,12 +172,17 @@ const bankRoute = createRoute({
   getParentRoute: () => authShellRoute,
   path: '/qb',
   // `exam` is the exam open in the side panel; without it /qb lists every
-  // exam, and a topic URL opens the topic's own exam.
+  // exam, and a topic URL opens the topic's own exam. `finished` is the topic
+  // a finish toast's Go check leads the landing's map with.
   validateSearch: (
     search: Record<string, unknown>
-  ): { mode?: 'edit'; exam?: string } => ({
+  ): { mode?: 'edit'; exam?: string; finished?: string } => ({
     exam:
       typeof search.exam === 'string' && search.exam ? search.exam : undefined,
+    finished:
+      typeof search.finished === 'string' && search.finished
+        ? search.finished
+        : undefined,
     mode: search.mode === 'edit' ? 'edit' : undefined,
   }),
 });
@@ -298,6 +303,10 @@ const appRoutes = [
         ...(tab.tab === 'results'
           ? parseResultsSearch(search)
           : parsePastReviewsSearch(search)),
+        // The workspace a finish toast's Go check leads Progress's map with.
+        ...(typeof search.finished === 'string' && search.finished
+          ? { finished: search.finished }
+          : {}),
       };
     },
   }),

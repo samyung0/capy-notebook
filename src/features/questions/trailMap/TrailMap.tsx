@@ -6,6 +6,7 @@ import {
 } from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { FinishBurst, FinishMarks, useFinishCelebration } from './finish';
 import { boardSpot, MapBoard } from './MapBoard';
 import {
   buildTrailMap,
@@ -34,6 +35,8 @@ const AHEAD = 6;
  * Only pieces near the visible stretch are rendered; the stretch is tracked in
  * whole question-widths, so scrolling re-renders once per question passed.
  * Without `onOpen` it is scenery only: no tag, numbers, tooltips or clickable stops.
+ * Finished (no next question), the trail is solid to the summit flag with a
+ * Finished tag; with `finishKey` it celebrates the first time (finish.ts).
  */
 export function TrailMap({
   topicId,
@@ -43,34 +46,50 @@ export function TrailMap({
   nextQuestionId,
   onOpen,
   board,
+  finishKey,
 }: {
   topicId: string;
   questionIds: string[];
   answeredPositions: number[];
   lastAnsweredPosition: number;
-  nextQuestionId: string;
+  /** null once every question is answered: the finished map. */
+  nextQuestionId: string | null;
   onOpen?: (questionId: string) => void;
   /** A notice board just past the first stop; the empty map's hint. */
   board?: { title: string; text: string };
+  /** The finish animation's played key, on a finished map that may celebrate. */
+  finishKey?: string;
 }) {
   const total = questionIds.length;
-  const nextPosition = questionIds.indexOf(nextQuestionId) + 1;
+  const finished = nextQuestionId === null;
+  // Finished, the next position is past the last question.
+  const nextPosition = finished
+    ? total + 1
+    : questionIds.indexOf(nextQuestionId) + 1;
   const startLabel = m.question_ui_map_start();
   const map = useMemo(
     () => buildTrailMap(topicId, total, startLabel),
     [topicId, total, startLabel]
   );
   const clip = useId().replace(/:/g, '');
+  const hostRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const next = map.stops[nextPosition - 1];
+  const celebrate = useFinishCelebration(
+    finished ? finishKey : undefined,
+    hostRef
+  );
+  const last = map.stops[total - 1];
+  // Where the solid trail ends: the next stop, or the summit once finished.
+  const next = finished ? lastOf(map.trail) : map.stops[nextPosition - 1];
   // Full ink up to a few questions past the next one or the last attempted
   // one, whichever is later, so going back to an earlier question pulls it back.
   const inkedTo = Math.max(nextPosition, lastAnsweredPosition) + AHEAD;
   const reveal =
     inkedTo >= total ? map.width : map.stops[inkedTo - 1][0] + STEP / 2;
-  // Open on the next question, a third of the way in, then follow scrolling.
+  // Open on the next question (a celebration on the last), a third of the
+  // way in, then follow scrolling.
   const range = useVisibleRange(scrollRef, {
-    focus: next[0],
+    focus: (celebrate ? last : next)[0],
     margin: MARGIN,
     scale: SCALE,
     step: STEP,
@@ -119,125 +138,157 @@ export function TrailMap({
   const width = map.width * SCALE;
 
   return (
-    <div
-      aria-hidden
-      className={cn(
-        'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 [&::-webkit-scrollbar]:hidden',
-        board && '@container'
-      )}
-      ref={scrollRef}
-    >
-      <div className="relative" style={{ width }}>
-        <svg
-          className="trail-map block"
-          height={(MAP_HEIGHT - TOP) * SCALE}
-          viewBox={`0 ${TOP} ${map.width} ${MAP_HEIGHT - TOP}`}
-          width={width}
-        >
-          <defs dangerouslySetInnerHTML={{ __html: templateDefs() }} />
-          <defs>
-            <clipPath id={`${clip}-ink`}>
-              <rect
-                height={MAP_HEIGHT + 80}
-                width={reveal + 20}
-                x={-20}
-                y={-40}
-              />
-            </clipPath>
-            <clipPath id={`${clip}-fog`}>
-              <rect
-                height={MAP_HEIGHT + 80}
-                width={map.width - reveal + 20}
-                x={reveal}
-                y={-40}
-              />
-            </clipPath>
-          </defs>
-          {(['fog', 'ink'] as const).map((key) => (
-            <g
-              className={key === 'fog' ? 'tm-fog' : undefined}
-              clipPath={`url(#${clip}-${key})`}
-              key={key}
-            >
-              <g dangerouslySetInnerHTML={{ __html: layers[key].under }} />
-              {art}
-              {/* Answered stops sit in their layer, so faint ones fade too. */}
-              {layers[key].stops.map((i) => (
-                <g key={i}>
-                  <circle
-                    className={answered.has(i + 1) ? 'tm-stop-done' : 'tm-stop'}
-                    cx={n(map.stops[i][0])}
-                    cy={n(map.stops[i][1])}
-                    r={6}
-                  />
-                  {onOpen && (
-                    <text
-                      className="tm-num"
-                      textAnchor="middle"
-                      x={n(map.stops[i][0])}
-                      y={n(map.stops[i][1] + 21)}
-                    >
-                      {i + 1}
-                    </text>
-                  )}
-                </g>
-              ))}
-              <g dangerouslySetInnerHTML={{ __html: layers[key].over }} />
-            </g>
-          ))}
-          <path className="tm-trail-done" d={done} />
-          <circle
-            className="tm-stop-done"
-            cx={map.trail[0][0]}
-            cy={map.trail[0][1]}
-            r={5}
-          />
-          <circle className="tm-you-ring" cx={next[0]} cy={next[1]} r={11} />
-          {/* Not answered yet, so hollow like the stops ahead. */}
-          <circle className="tm-stop" cx={next[0]} cy={next[1]} r={6} />
-        </svg>
-        {board && (
-          <MapBoard
-            {...boardSpot(map.trail, map.stops[1][0] + 8, SCALE, TOP)}
-            text={board.text}
-            title={board.title}
-            tone="wood"
-          />
+    <div className="relative" ref={hostRef}>
+      <div
+        aria-hidden
+        className={cn(
+          'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 [&::-webkit-scrollbar]:hidden',
+          board && '@container'
         )}
-        {onOpen && (
-          <span
-            className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
-            style={{ left: next[0] * SCALE, top: (next[1] - TOP) * SCALE - 42 }}
+        data-finish-scroll
+        ref={scrollRef}
+      >
+        <div className="relative" style={{ width }}>
+          <svg
+            className="trail-map block"
+            height={(MAP_HEIGHT - TOP) * SCALE}
+            viewBox={`0 ${TOP} ${map.width} ${MAP_HEIGHT - TOP}`}
+            width={width}
           >
-            {m.question_ui_map_next({ position: nextPosition })}
-          </span>
-        )}
-        {onOpen &&
-          visible.map((i) => {
-            const label = m.question_ui_map_stop({ position: i + 1 });
-            const button = (
-              <TooltipTrigger
-                aria-label={label}
-                className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
-                onClick={() => onOpen(questionIds[i])}
-                style={{
-                  left: map.stops[i][0] * SCALE,
-                  top: (map.stops[i][1] - TOP) * SCALE,
-                }}
-                tabIndex={-1}
-              />
-            );
-            // The next stop already carries its tag.
-            return (
-              <Tooltip key={i}>
-                {button}
-                {i + 1 !== nextPosition && (
-                  <TooltipContent>{label}</TooltipContent>
-                )}
-              </Tooltip>
-            );
-          })}
+            <defs dangerouslySetInnerHTML={{ __html: templateDefs() }} />
+            <defs>
+              <clipPath id={`${clip}-ink`}>
+                <rect
+                  height={MAP_HEIGHT + 80}
+                  width={reveal + 20}
+                  x={-20}
+                  y={-40}
+                />
+              </clipPath>
+              <clipPath id={`${clip}-fog`}>
+                <rect
+                  height={MAP_HEIGHT + 80}
+                  width={map.width - reveal + 20}
+                  x={reveal}
+                  y={-40}
+                />
+              </clipPath>
+            </defs>
+            {(['fog', 'ink'] as const).map((key) => (
+              <g
+                className={key === 'fog' ? 'tm-fog' : undefined}
+                clipPath={`url(#${clip}-${key})`}
+                key={key}
+              >
+                <g dangerouslySetInnerHTML={{ __html: layers[key].under }} />
+                {art}
+                {/* Answered stops sit in their layer, so faint ones fade too. */}
+                {layers[key].stops.map((i) => (
+                  <g key={i}>
+                    <circle
+                      className={
+                        answered.has(i + 1) ? 'tm-stop-done' : 'tm-stop'
+                      }
+                      cx={n(map.stops[i][0])}
+                      cy={n(map.stops[i][1])}
+                      r={6}
+                    />
+                    {onOpen && (
+                      <text
+                        className="tm-num"
+                        textAnchor="middle"
+                        x={n(map.stops[i][0])}
+                        y={n(map.stops[i][1] + 21)}
+                      >
+                        {i + 1}
+                      </text>
+                    )}
+                  </g>
+                ))}
+                <g dangerouslySetInnerHTML={{ __html: layers[key].over }} />
+              </g>
+            ))}
+            <path className="tm-trail-done" d={done} data-finish="line" />
+            <circle
+              className="tm-stop-done"
+              cx={map.trail[0][0]}
+              cy={map.trail[0][1]}
+              r={5}
+            />
+            {!finished && (
+              <>
+                <circle
+                  className="tm-you-ring"
+                  cx={next[0]}
+                  cy={next[1]}
+                  r={11}
+                />
+                {/* Not answered yet, so hollow like the stops ahead. */}
+                <circle className="tm-stop" cx={next[0]} cy={next[1]} r={6} />
+              </>
+            )}
+            {celebrate && <FinishMarks at={last} />}
+          </svg>
+          {board && (
+            <MapBoard
+              {...boardSpot(map.trail, map.stops[1][0] + 8, SCALE, TOP)}
+              text={board.text}
+              title={board.title}
+              tone="wood"
+            />
+          )}
+          {onOpen && !finished && (
+            <span
+              className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
+              style={{
+                left: next[0] * SCALE,
+                top: (next[1] - TOP) * SCALE - 42,
+              }}
+            >
+              {m.question_ui_map_next({ position: nextPosition })}
+            </span>
+          )}
+          {/* Beside the summit flag: above it would leave the map. */}
+          {onOpen && finished && (
+            <span
+              className="t-meta absolute -translate-x-full -translate-y-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
+              data-finish="tag"
+              style={{
+                left: next[0] * SCALE - 14,
+                top: Math.max((next[1] - TOP) * SCALE - 14, 20),
+              }}
+            >
+              {m.question_ui_finished()}
+            </span>
+          )}
+          {onOpen &&
+            visible.map((i) => {
+              const label = m.question_ui_map_stop({ position: i + 1 });
+              const button = (
+                <TooltipTrigger
+                  aria-label={label}
+                  className="absolute size-6 -translate-x-1/2 -translate-y-1/2 cursor-pointer rounded-full hover:bg-fg/10"
+                  onClick={() => onOpen(questionIds[i])}
+                  style={{
+                    left: map.stops[i][0] * SCALE,
+                    top: (map.stops[i][1] - TOP) * SCALE,
+                  }}
+                  tabIndex={-1}
+                />
+              );
+              // The next stop already carries its tag.
+              return (
+                <Tooltip key={i}>
+                  {button}
+                  {i + 1 !== nextPosition && (
+                    <TooltipContent>{label}</TooltipContent>
+                  )}
+                </Tooltip>
+              );
+            })}
+        </div>
       </div>
+      {celebrate && <FinishBurst />}
     </div>
   );
 }

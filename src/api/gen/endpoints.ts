@@ -72,6 +72,7 @@ import type {
   FlashcardSet,
   Generate200,
   GenerateReq,
+  GetLearningProgressParams,
   GetSourceSessionParams,
   GetSourceUploadPolicyParams,
   GetWorkspaceReviewParams,
@@ -3722,20 +3723,27 @@ export type getLearningProgressResponseError = (getLearningProgressResponseDefau
 
 export type getLearningProgressResponse = (getLearningProgressResponseSuccess | getLearningProgressResponseError)
 
-export const getGetLearningProgressUrl = () => {
+export const getGetLearningProgressUrl = (params?: GetLearningProgressParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/learning/progress`
+  return stringifiedParams.length > 0 ? `/api/learning/progress?${stringifiedParams}` : `/api/learning/progress`
 }
 
 /**
  * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
  */
-export const getLearningProgress = async ( options?: RequestInit): Promise<getLearningProgressResponse> => {
+export const getLearningProgress = async (params?: GetLearningProgressParams, options?: RequestInit): Promise<getLearningProgressResponse> => {
 
-  const res = await fetch(getGetLearningProgressUrl(),
+  const res = await fetch(getGetLearningProgressUrl(params),
   {
     ...options,
     method: 'GET'

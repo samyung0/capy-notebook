@@ -8520,6 +8520,14 @@ paths:
   /api/learning/progress:
     get:
       operationId: getLearningProgress
+      parameters:
+        - description: A listed workspace whose map to return instead of the most recently studied one
+          explode: false
+          in: query
+          name: lead
+          schema:
+            description: A listed workspace whose map to return instead of the most recently studied one
+            type: string
       responses:
         "200":
           content:
