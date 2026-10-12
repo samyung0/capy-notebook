@@ -459,14 +459,23 @@ and Redo). An agent or API write to an embedded item lands in its rooms, which
 every open editor and reader holds, so nothing refetches: the `embed-changed`
 broadcast of 2026-10-07 is gone (live-items). Go and the collaboration server reject inline `quiz`/`flashcards`
 nodes in a note and references anywhere but the top level. A markdown fence
-imports as a pending reference (`materialId: ''` plus the fence body in
-`pending`); the mounted editor claims it in the shared document
-(`resolvingBy`) and the client whose claim survives the merge creates the
-row; readable Markdown and DOCX exports resolve references into study handouts
-and fail explicitly if a required reference cannot be read. A reference
-belongs to its note through the same children pass as media: a block whose
-`materialId` an update wrote (paste, drop, undo, redo, a replayed draft; a
-pending one is skipped) is answered per block. Every block has its own quiz:
+deserializes as a pending reference (`materialId: ''` plus the fence body in
+`pending`), which never enters a note: the body holds the answer keys and the
+note reaches every reader (live-items REVIEW5). A paste or a toolbar import
+holding fences creates their rows first and then inserts the blocks naming
+them where the paste or import ran (`notes/pendingRefs.ts`, the held place of
+`holdInsertPlace`); a fence whose row cannot be created is left out. The
+collaboration server refuses an update that writes `pending` or leaves a
+reference without its material id, the store check refuses one, Go refuses a
+note write holding one, a room seeded from stored content turns one into an
+empty paragraph with its id, and Go gives one to the note's editors only (a
+viewer's read, a shared page and a clone get the empty paragraph); agent
+markdown resolves its fences into rows before Go stores the note. Readable
+Markdown and DOCX exports resolve references into study handouts and fail
+explicitly if a required reference cannot be read. A reference belongs to its
+note through the same children pass as media: a block whose `materialId` an
+update wrote (paste, drop, undo, redo, a replayed draft) is answered per
+block. Every block has its own quiz:
 a quiz now in several blocks stays with one of them, the first the update did
 not write or else the first in document order, and every other block asks for
 a copy (`planChildren`). The note's own row keeps its id (leaving the trash
@@ -1268,18 +1277,32 @@ live copy.
 A signed-in reader's note View follows the room (Epo 2026-10-10;
 `LiveNotePreview` in `CenterContent.tsx`). The projection paints first; then
 the live-read module (`notes/liveNoteRead.ts`, a lazy chunk no other path
-imports) joins the note room on the tab's socket with the API's token, read
-for a viewer (the server refuses a viewer's write token, closes a read channel
-that writes and sends it no presence). Once the room syncs, its value is
-handed over block by block (`notes/liveNoteBlocks.ts`): a block equal to the
-painted one keeps the painted object, so the switch redraws only what differs,
-and after each remote change only the top-level blocks the events touched are
-read again (normalized as the projection is, comment marks left out; read as the patched slate-yjs reads them, without loading slate, so the chunk adds about 1.4 KB gzipped to a View). The
-static renderer re-renders a top-level block only when its object changes
-(PlateStatic's memo), so a keystroke redraws one block; Mermaid sources come
-through the note document, quizzes and sets through their own content rooms
-(`AppEmbed`), never keys. A room that ends (moved, reset) is joined again; one
-the reader cannot open leaves the painted projection. Public share pages and
+imports) joins the note room on the tab's socket on a read channel, whoever
+the reader is: View asks for one with `{access: 'read'}` on the token request,
+as every reader room does (embeds in View, the quiz attempt and set study
+pages), so the server refuses anything such a channel sends (it closes a read
+channel that writes and sends a viewer no presence). Once the room syncs, its
+value is handed over block by block (`notes/liveNoteBlocks.ts`): a block equal
+to what the View shows keeps its object (element ids below the block are left
+out of the comparison, since normalization gives id-less children random ids),
+so the switch redraws only what differs, and after each remote change only the
+top-level blocks the events touched are read again (normalized as the
+projection is, comment marks left out; read as the patched slate-yjs reads
+them, without loading slate, so the chunk adds about 1.4 KB gzipped to a
+View). `MaterialPreview` renders the top-level blocks keyed by block id
+(PlateStatic keys them by index): a block keeps its element and DOM wherever
+an edit above moves it, so an embedded quiz keeps its answers and its room,
+frames do not reload and the browser's scroll anchoring keeps the reader's
+place, and a block re-renders only when its object changes, so a keystroke
+redraws one block. Mermaid sources come through the note document, quizzes and
+sets through their own content rooms (`AppEmbed`, joined only while the block
+is near the screen, as in Edit), never keys. A room that ends (moved, reset,
+or closed because the reader's sync carried changes the room no longer holds)
+is joined again with a fresh document, handed over from what the View shows;
+one the reader cannot open leaves the View as it is. A tab hidden for 5
+minutes leaves its reader rooms and joins again when it shows
+(`collaboration/whileVisible.ts`). A heavy note opened read-only from the
+warning gate keeps the static View and joins no room. Public share pages and
 signed-out visitors stay fresh-on-open: the share renderer has no room code.
 
 Server-origin content mutations use the collaboration server's command

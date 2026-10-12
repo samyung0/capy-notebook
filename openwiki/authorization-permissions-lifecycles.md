@@ -422,7 +422,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
 - Signed-in viewers get read-only collaboration tokens for content documents
   (never quiz keys): the collaboration server joins them read-only, relays no
   awareness to or from them and sends them no comment relays (Epo 2026-10-10).
-  The app uses them for flashcard sets and quizzes; note View stays static. A
+  The app uses them for note View, flashcard sets and quizzes. Any user may ask
+  for a read token (`{access: 'read'}`), and every reader room does (View, a
+  study or attempt page), so an owner's or editor's reading tab writes nothing
+  the server would take (live-items REVIEW5 N2). A
   quiz's keys document (`{document: 'keys'}`) goes only to editors who can
   write: Go refuses the token otherwise (403), and the collaboration server
   refuses a read token for a keys room. An
