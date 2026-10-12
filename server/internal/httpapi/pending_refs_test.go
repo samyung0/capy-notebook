@@ -76,7 +76,7 @@ func TestPendingReferencesNeverReachReaders(t *testing.T) {
 		t.Fatalf("shared note page = %d, holds the fence body: %s", rec.Code, rec.Body.String())
 	}
 
-	clone, err := st.CloneMaterial(ctx, "u_other", shared.ID)
+	clone, err := st.CloneMaterial(ctx, "u_other", shared.ID, store.CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)
 	}
