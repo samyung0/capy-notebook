@@ -37,8 +37,8 @@
   --pptx-button-size: var(--toolbar-button);
   --pptx-disabled-opacity: var(--toolbar-disabled-opacity);
   --pptx-button-radius: var(--radius-button);
-  /* As the DOCX size box. */
-  --pptx-input-radius: 6px;
+  /* The size box at ToolbarButton's radius, as XLSX's. */
+  --pptx-input-radius: var(--radius-button);
   --pptx-control-font-size: 0.875rem;
   --pptx-control-font-weight: 500;
 }
