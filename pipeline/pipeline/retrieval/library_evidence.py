@@ -129,7 +129,14 @@ class LibraryEvidence:
 
     def wrote(self, name: str, args: dict[str, Any], result: ToolResult) -> None:
         if (
-            name in ("create_material", "edit_document")
+            name
+            in (
+                "create_material",
+                "add_questions",
+                "add_open_question",
+                "add_question_media",
+                "edit_document",
+            )
             and any(
                 effect.get("operation") in ("created", "edited")
                 and (effect.get("resource") or {}).get("kind") == "material"

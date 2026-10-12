@@ -24,7 +24,7 @@ async def test_read_skill_lists_the_skills_and_returns_the_formats():
 
     text = (await tools._read_skill({"name": "workspace_building"}, ctx)).text()
     assert text.startswith("# Skill: workspace_building\n")
-    assert contract.FORMATS["question"] in text and contract.FORMATS["note"] in text
+    assert contract.FORMATS["note"] in text and "add_questions" in text
     editing = (await tools._read_skill({"name": "editing"}, ctx)).text()
     assert "Ledger and budget" in editing and "Pass excerpt_ids" not in editing
     ctx.library = True

@@ -94,7 +94,7 @@ network and no pin.
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `preferences.py` | `chat`, `generate` | The learner's study preferences as build instructions, rendered into the turn context; `/generate`'s count when the request omits it |
-| `skills.py` | `chat` | The skills `read_skill` returns: `editing` (ledger, budget, write precautions) and `workspace_building` (plan, output rules, note and question formats) |
+| `skills.py` | `chat` | The skills `read_skill` returns: `editing` (ledger, budget, write precautions) and `workspace_building` (plan, output rules, note format, which question tool writes what) |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
 Agent tool descriptions come from the shared contract
@@ -2261,15 +2261,15 @@ build, and the knowledge library is one more source while the switch is on.
   one item, build a single item directly), output rules (one main explainer note per chapter, mindmaps, diagrams
   and interactive blocks inside it, quizzes and flashcards standalone in the
   chapter they practise, study preferences, grow a long note by appending
-  sections), the note and question formats with a worked example question
-  (`Formats` in the contract: `noteMarkdownDescription`, `questionJSONDescription`
-  and `questionExample`, which `TestQuestionExampleIsValid` runs through the
-  quiz validator), and with Library on one primary excerpt and question-bank
-  and exercise reuse. A write is refused until the skills it needs are in the
-  request (`skills.REQUIRES`, checked in `tools.run`): `create_ledger` needs
-  `editing`; `create_material` both; `edit_document` `editing`, plus
-  `workspace_building` when a command is `insert_markdown`, `replace_block`,
-  `add_question` or `replace_question`. The refusal carries the missing
+  sections), the note format (`Formats` in the contract:
+  `noteMarkdownDescription`), which question tool writes what (Question
+  tools, below) and that each question call is a write naming an open todo,
+  and with Library on one primary excerpt and question-bank and exercise
+  reuse. A write is refused until the skills it needs are in the request
+  (`skills.REQUIRES`, checked in `tools.run`): `create_ledger` needs
+  `editing`; `create_material` and the three question tools both;
+  `edit_document` `editing`, plus `workspace_building` when a command is
+  `insert_markdown` or `replace_block`. The refusal carries the missing
   skills: a short error (`Not applied: this write needs the … skills, which
   follow and now count as read`, the text the chat stores) and, for the model
   only (`ToolResult.detail`), each skill's text under its `# Skill:` header.
@@ -2368,12 +2368,14 @@ build, and the knowledge library is one more source while the switch is on.
   responses count as stalls. The credit guard remains a separate platform
   billing cutoff; its silent terminal call reports `planning_cap`.
 - **Write guard** (`tools.ledger_write`, shared with the playground). For a
-  **material** target, `create_material` and `edit_document` need `todo` while
-  the ledger has open todos, and refuse an id the ledger does not hold or has
-  already closed (both refusals list the open ids; with none open the refusal
-  suggests replying with the materials made or adding a todo for uncovered
-  work). Without open todos `todo` may be left out, so a single item builds
-  without a ledger. A successful write marks its todo done. Once the turn has
+  **material** target, `create_material`, `edit_document` and the three
+  question tools need `todo` while the ledger has open todos, and refuse an id
+  the ledger does not hold or has already closed (both refusals list the open
+  ids; with none open the refusal suggests replying with the materials made or
+  adding a todo for uncovered work). Without open todos `todo` may be left out,
+  so a single item builds without a ledger. A successful write marks its todo
+  done; an `add_questions` call that left questions out keeps it open until
+  they land. Once the turn has
   read any library excerpt, `excerpt_ids` is required, and each id must have
   been read through `read_knowledge` this turn or be retained as full,
   revalidated text in the request; a material written only from workspace
@@ -2645,8 +2647,11 @@ build, and the knowledge library is one more source while the switch is on.
 | `create_ledger` | conversation ledger | Offered to any turn with `material.create`. String todos add IDs, `{id, todo}` adds or overwrites that ID. Unmentioned todos remain, max ten unfinished. Repeated edits are allowed but only the first changed plan in a turn counts as progress. Retains no source evidence |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
-| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, quizzes and flashcard sets. Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
+| `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record; a material with provenance is grounded in the library and does not require indexed workspace content. `todo` is required while the ledger has open todos and marks the todo this write completes; see Write guard. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration/scripts/build-markdown.mjs` from `src/features/notes/markdownConvert.ts`), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
+| `add_questions` | yes | Multiple-choice (one correct option) and short-answer questions, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `todo` and `excerpt_ids` as `create_material` |
+| `add_open_question` | yes | One open question (`question`, `marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints` and `explanation`) into an existing quiz by `quiz_id` (a new quiz starts with `add_questions`), placed like `add_questions`, with an optional `replaces` |
+| `add_question_media` | yes | A chart, plot or graph block after one question's text (`quiz_id`, `question_id`, `media`); library figures are refused (notes only) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `todo` and `excerpt_ids` rules as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes neither and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
@@ -2742,7 +2747,13 @@ production schema puts the requirement and the 12-chunk `count` back
 (`tools.without_sections`). Version 17 (2026-10-07) renames the
 `html-embed` fence's `title` to `caption`. Version 18 (2026-10-09) adds the
 `replace_block` edit command and makes every expected text match the block as
-`inspect_document` shows it, math included. `cmd/openapi -agent-tools`
+`inspect_document` shows it, math included. Version 19 (2026-10-13) adds the
+question tools (`add_questions`, `add_open_question`, `add_question_media`),
+removes quizzes from `create_material` and `add_question` / `replace_question`
+from the agent's `edit_document`, drops the question format from `formats`,
+adds `mediaBlocks` (the chart, plot and graph schemas media is checked
+against, not shown to the model) and puts the small shapes in quiz fences; Go
+and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -2750,7 +2761,9 @@ An argument refusal names the problem without echoing the argument
 (`contract._problem`): an edit command names its type's fields and the ones
 missing, unknown or invalid (`remove_block takes block_id, expected_text;
 missing block_id; unknown target_id`), an unknown type lists the command
-types, and type and size errors say what is expected. Go
+types, and type and size errors say what is expected. The question tools are
+the exception (`contract.HANDLER_CHECKED`): their handlers check every
+argument themselves and name all problems at once (Question tools, below). Go
 computes the caller's operations from the effective role
 (`source.read, material.read, material.create, document.edit, resource.trash,
 trash.read, trash.restore`) and sends them with the chat request; Python offers
@@ -2775,12 +2788,53 @@ code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 `unavailable_target`, `stale_target`, `quota_rejected`, `lifecycle_rejected`,
 `outcome_unknown`, `limit_reached`, `office_editing_paused`) that the frontend localizes.
 
+**Question tools.** The agent never writes the question format (Epo
+2026-10-13). It writes three small shapes, which `retrieval/questions.py`
+checks and expands: multiple choice (`question`, `options`, `correct`, one
+option copied exactly, optional `explanation`) and short answer (`question`,
+`accepted`, optional `unit`, with which `accepted` holds plain numbers,
+optional `explanation`), told apart by their fields, through `add_questions`;
+and open (`question`, `marks`, `markscheme` of `{text, marks}` adding up to
+`marks`, `model_answer`, optional `hints` and `explanation`) through
+`add_open_question`. A note's ```quiz fence holds a YAML list of all three (read
+with PyYAML's `BaseLoader`, so answers keep their text as written), expanded
+before `create_material` or `edit_document` leaves the pipeline. The pipeline
+fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
+retried call sends the same payload) with one part `<id>-a`, 1 mark for a
+simple question, layout `paper`, labels `letters`, and the explanation as the
+solution, an empty solution without one (only bank parts need one); there are
+no parts, no other answer types and no layout choice. The expanded questions
+go through the unchanged gateway routes: a new quiz through
+`/api/internal/materials` (an empty quiz is refused there, so a quiz is
+created with its first questions), an existing one through
+`/api/internal/documents/edit` as `add_question` commands chained after
+`after_question_id` or the quiz's last question (read with
+`/api/internal/documents/inspect`, since a null anchor inserts at the start)
+and `replace_question` for an item with `replaces`. `add_question_media`
+reads the question the same way, appends the block after the stem or, with
+no stem, after the part's text, and writes it back with `replace_question`;
+its media is checked against the contract's `mediaBlocks`, and a library
+figure is refused (it would need Go to store figure assets for a quiz edit).
+Go's validator stays the backstop. Every problem of a call is named at once,
+as `path: expected …; sent …` (`questions[2].correct: expected one of the
+options, copied exactly: "In", "Out"; sent "in"`), with targeted hints for
+the usual mistakes (a markscheme or marks on a simple question, `fixedUnit`,
+`solution`, an index for `correct`, a unit with text answers, a field that
+does not apply sent as null), and a
+structural mistake (a field missing, unknown or of the wrong type) adds the
+shape to copy. `add_questions` saves its valid questions and names the
+others for resending, with the quiz id and the `after_question_id` that keeps
+their place; its todo stays open until they land. A ledger or figure refusal
+carries the call's question problems too.
+
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,
 `replace_card`, `add_card`, `remove_card`, `replace_question`, `add_question`,
 `remove_question`, `set_mermaid` for Plate materials; `replace_text` for text,
 DOCX and PPTX sources; `set_cell` for XLSX) and applied by the collaboration
-service on an isolated Y.Doc. `insert_markdown` converts its markdown like a
+service on an isolated Y.Doc. The agent's `edit_document` schema offers
+`remove_question` but not `add_question` or `replace_question`, which only the
+question tools send. `insert_markdown` converts its markdown like a
 created note and inserts the resulting blocks, and `replace_block` converts
 the same way and puts the blocks in place of one block; their fences' rows are
 created under the note once every command has converted and before the edit is

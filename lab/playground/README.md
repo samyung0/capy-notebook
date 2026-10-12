@@ -203,11 +203,17 @@ with the provenance `library.provenance` resolved for its `excerpt_ids`, an edit
 appends its commands to that file and merges its own books into the record by
 book id the way Go does, and both return the receipt the gateway would have
 produced. Both go through `tools.ledger_write`, the production write guard (a
-todo while todos are open, excerpts read this turn or retained in full), and a
-quiz goes through `server/cmd/quizcheck`, the app's own quiz validation, so a
-saved quiz is one the app accepts. A note's fences are checked the way the
-editor's import and the interactive block will take them (`check_note`):
-quiz fences through `quizcheck`, flashcards with a front and back, and
+todo while todos are open, excerpts read this turn or retained in full). The
+question tools (`add_questions`, `add_open_question`, `add_question_media`)
+run production's `tools.write_questions` and `tools.write_media` with the
+run's files in place of the gateway: a quiz is created or edited in its
+`materials/<id>.json`, and every quiz they save goes through
+`server/cmd/quizcheck`, the app's own quiz validation, so a saved quiz is one
+the app accepts. Only quizzes the run made can be targeted (a note's quiz
+fence stays in the note here, with no id of its own). A note's quiz fences are
+expanded from the small question shapes by production's `questions.note_fences`,
+then checked the way the editor's import and the interactive block will take
+them (`check_note`): quiz fences through `quizcheck`, flashcards with a front and back, and
 `html-embed` with html (no fallback), under 64 KB, loading only from the CDNs the frame's CSP
 names (`embed/_headers`; the SVG namespace URL is allowed) and with no fetch. There is no gateway to store the ledger in
 either, so `tools.store_ledger` is stubbed and `run.json` holds it. The page

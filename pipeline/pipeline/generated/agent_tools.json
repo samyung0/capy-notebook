@@ -1,5 +1,5 @@
 {
-  "version": 18,
+  "version": 19,
   "operations": [
     "source.read",
     "material.read",
@@ -612,7 +612,7 @@
     {
       "name": "create_material",
       "version": 1,
-      "description": "Create a study material from content you wrote, in the formats the materials skill describes.",
+      "description": "Create a study material from content you wrote, in the formats the materials skill describes. A quiz is made with add_questions.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -656,21 +656,12 @@
           },
           "kind": {
             "enum": [
-              "quiz",
               "flashcards",
               "mindmap",
               "diagram",
               "note"
             ],
             "type": "string"
-          },
-          "questions": {
-            "description": "quiz only: question JSON.",
-            "items": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "type": "array"
           },
           "scope": {
             "additionalProperties": false,
@@ -716,6 +707,272 @@
       ],
       "requiredOperations": [
         "material.create"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "add_questions",
+      "version": 1,
+      "description": "Add multiple-choice questions (one correct option) and short-answer questions, 1 mark each, to a quiz (quiz_id), or create a quiz with them (title). The result lists each question's id. Example: {\"title\": \"Osmosis\", \"questions\": [{\"question\": \"Which way does water move when a red blood cell is put in pure water?\", \"options\": [\"Into the cell\", \"Out of the cell\"], \"correct\": \"Into the cell\", \"explanation\": \"From the higher water potential outside.\"}, {\"question\": \"What percentage of NaCl is normal saline?\", \"accepted\": [\"0.9\"], \"unit\": \"%\"}]}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after_question_id": {
+            "description": "Add after this question, not at the end.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "chapter_id": {
+            "description": "With title: the new quiz's chapter.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "excerpt_ids": {
+            "description": "Library excerpts the questions were written from.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "questions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "accepted": {
+                  "description": "Short answer: the accepted answers.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "correct": {
+                  "description": "Multiple choice: the one correct option, copied exactly.",
+                  "type": "string"
+                },
+                "explanation": {
+                  "description": "Optional: why the answer is right, shown after checking.",
+                  "type": "string"
+                },
+                "options": {
+                  "description": "Multiple choice: the options.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "question": {
+                  "type": "string"
+                },
+                "replaces": {
+                  "description": "A question of the quiz to rewrite in place instead (its media is dropped).",
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "unit": {
+                  "description": "Short answer to a quantity: the unit shown after the box; accepted then holds plain numbers only, like \"9.8\".",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "question"
+              ],
+              "type": "object"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "type": "array"
+          },
+          "quiz_id": {
+            "description": "The quiz to add to, a note's quiz too; add_questions' result gives a new quiz's id.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": {
+            "description": "Instead of quiz_id: create a quiz with this title.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "todo": {
+            "description": "The open ledger todo this write completes.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "questions"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "material.create"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "add_open_question",
+      "version": 1,
+      "description": "Add one open question, answered in writing and graded against its markscheme, to a quiz; a new quiz starts with add_questions. The markscheme items' marks add up to marks. Example: {\"quiz_id\": \"mat_1\", \"question\": \"Explain why a red blood cell bursts in pure water.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling, so the membrane ruptures\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "after_question_id": {
+            "description": "Add after this question, not at the end.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "excerpt_ids": {
+            "description": "Library excerpts the questions were written from.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "explanation": {
+            "description": "Optional: the worked solution, shown after grading.",
+            "type": "string"
+          },
+          "hints": {
+            "description": "Optional nudges the learner may open.",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 0,
+            "type": "array"
+          },
+          "marks": {
+            "maximum": 20,
+            "minimum": 1,
+            "type": "integer"
+          },
+          "markscheme": {
+            "description": "What earns marks.",
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "marks": {
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "text",
+                "marks"
+              ],
+              "type": "object"
+            },
+            "maxItems": 5,
+            "minItems": 1,
+            "type": "array"
+          },
+          "model_answer": {
+            "description": "A full-marks answer.",
+            "maxLength": 5000,
+            "type": "string"
+          },
+          "question": {
+            "type": "string"
+          },
+          "quiz_id": {
+            "description": "The quiz to add to, a note's quiz too; add_questions' result gives a new quiz's id.",
+            "minLength": 1,
+            "type": "string"
+          },
+          "replaces": {
+            "description": "A question of the quiz to rewrite in place instead (its media is dropped).",
+            "minLength": 1,
+            "type": "string"
+          },
+          "todo": {
+            "description": "The open ledger todo this write completes.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "quiz_id",
+          "question",
+          "marks",
+          "markscheme",
+          "model_answer"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "material.create"
+      ],
+      "retention": "full"
+    },
+    {
+      "name": "add_question_media",
+      "version": 1,
+      "description": "Add a chart, plot or graph to one quiz question, shown after its text; library figures go into notes only. Example: {\"quiz_id\": \"mat_1\", \"question_id\": \"q_3f9a1c2b7e\", \"media\": {\"type\": \"plot\", \"title\": \"Action potential\", \"xTitle\": \"Time (ms)\", \"yTitle\": \"Membrane potential (mV)\", \"series\": [{\"name\": \"Vm\", \"points\": [[0, -70], [1, 30], [2, -80], [4, -70]]}]}}",
+      "inputSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "excerpt_ids": {
+            "description": "Library excerpts the media was drawn from.",
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 32,
+            "type": "array"
+          },
+          "media": {
+            "additionalProperties": true,
+            "description": "A note's chart or plot fence JSON, or a question graph block {type: graph, board {bbox [left, top, right, bottom], axis, grid}, JSXGraph elements, image {svg} drawing it, width, height, description}.",
+            "type": "object"
+          },
+          "question_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "quiz_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "todo": {
+            "description": "The open ledger todo this write completes.",
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "quiz_id",
+          "question_id",
+          "media"
+        ],
+        "type": "object"
+      },
+      "mutates": true,
+      "usesEmbedding": false,
+      "concurrency": "mutate",
+      "allowedSlots": [
+        "chat"
+      ],
+      "requiredOperations": [
+        "document.edit"
       ],
       "retention": "full"
     },
@@ -946,7 +1203,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math; no media or PDF edits.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math; no media or PDF edits. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -1156,53 +1413,6 @@
                   "required": [
                     "type",
                     "card_id"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "question": {
-                      "additionalProperties": true,
-                      "description": "Question JSON in the materials skill's format.",
-                      "type": "object"
-                    },
-                    "question_id": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "type": {
-                      "const": "replace_question"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "question_id",
-                    "question"
-                  ],
-                  "type": "object"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "after_question_id": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "question": {
-                      "additionalProperties": true,
-                      "description": "Question JSON in the materials skill's format.",
-                      "type": "object"
-                    },
-                    "type": {
-                      "const": "add_question"
-                    }
-                  },
-                  "required": [
-                    "type",
-                    "question"
                   ],
                   "type": "object"
                 },
@@ -1421,8 +1631,221 @@
     }
   ],
   "formats": {
-    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}], \"unit\"?}; ```plot fences for a quantity along a numeric axis (a membrane potential over time, a titration curve), JSON {\"type\": \"plot\", \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order, at most 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each in the quiz question format) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the note's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram.",
-    "question": "Question JSON: id, stem typed blocks, parts [{id, blocks, answer, marks 1-20, markscheme [{text, marks}] on open parts only, solution blocks}], layout paper|split, labels letters|numbers, optional level. An open part's markscheme item marks add up to its marks; closed parts have no markscheme and explain in solution. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional unit (the fixed unit after the answer box); matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most 7 parts per question and 5 marking items per part; a quiz has at most 100 parts, 20 of them open; open accepted answers under 5000 characters. No legacy prompt/points/rubrics or awarded scores.",
-    "question_example": "{\"id\": \"q1\", \"stem\": [{\"type\": \"text\", \"text\": \"A red blood cell is placed in pure water.\"}], \"parts\": [{\"id\": \"q1a\", \"blocks\": [{\"type\": \"text\", \"text\": \"Which way does water move?\"}], \"answer\": {\"type\": \"mcq\", \"options\": [\"Into the cell\", \"Out of the cell\"], \"correct\": [0]}, \"marks\": 1, \"solution\": [{\"type\": \"text\", \"text\": \"Into the cell, from the higher water potential outside.\"}]}, {\"id\": \"q1b\", \"blocks\": [{\"type\": \"text\", \"text\": \"Explain why the cell may burst.\"}], \"answer\": {\"type\": \"open\", \"accepted\": [\"Water enters by osmosis and, with no cell wall, the membrane ruptures.\"], \"hints\": [\"What resists the swelling in a plant cell?\"]}, \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall, so the membrane ruptures\", \"marks\": 1}], \"solution\": [{\"type\": \"text\", \"text\": \"Water keeps entering by osmosis; an animal cell has no wall to resist the pressure, so it lyses.\"}]}], \"layout\": \"paper\", \"labels\": \"letters\"}"
+    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}], \"unit\"?}; ```plot fences for a quantity along a numeric axis (a membrane potential over time, a titration curve), JSON {\"type\": \"plot\", \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order, at most 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it, or an open question with add_open_question's question, marks, markscheme, model_answer, hints? and explanation?) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the note's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
+  },
+  "mediaBlocks": {
+    "chart": {
+      "additionalProperties": false,
+      "properties": {
+        "gridlines": {
+          "enum": [
+            "normal",
+            "fine"
+          ]
+        },
+        "kind": {
+          "enum": [
+            "bar",
+            "hbar",
+            "line",
+            "area",
+            "pie",
+            "stacked"
+          ]
+        },
+        "labels": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "maxItems": 50,
+          "minItems": 1,
+          "type": "array"
+        },
+        "series": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "values": {
+                "items": {
+                  "type": "number"
+                },
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "values"
+            ],
+            "type": "object"
+          },
+          "maxItems": 8,
+          "minItems": 1,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "type": {
+          "const": "chart"
+        },
+        "unit": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "xTitle": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "yTitle": {
+          "maxLength": 1000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "kind",
+        "title",
+        "labels",
+        "series"
+      ],
+      "type": "object"
+    },
+    "graph": {
+      "additionalProperties": true,
+      "required": [
+        "type",
+        "board",
+        "elements",
+        "image",
+        "width",
+        "height",
+        "description"
+      ],
+      "type": "object"
+    },
+    "plot": {
+      "additionalProperties": false,
+      "properties": {
+        "lines": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "axis": {
+                "enum": [
+                  "x",
+                  "y"
+                ]
+              },
+              "label": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "value": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "axis",
+              "value"
+            ],
+            "type": "object"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "marks": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "x": {
+                "type": "number"
+              },
+              "y": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "x",
+              "y",
+              "label"
+            ],
+            "type": "object"
+          },
+          "maxItems": 8,
+          "minItems": 0,
+          "type": "array"
+        },
+        "series": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              "points": {
+                "items": {
+                  "items": {
+                    "type": "number"
+                  },
+                  "maxItems": 2,
+                  "minItems": 2,
+                  "type": "array"
+                },
+                "maxItems": 60,
+                "minItems": 2,
+                "type": "array"
+              }
+            },
+            "required": [
+              "name",
+              "points"
+            ],
+            "type": "object"
+          },
+          "maxItems": 4,
+          "minItems": 1,
+          "type": "array"
+        },
+        "title": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "type": {
+          "const": "plot"
+        },
+        "unit": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "xTitle": {
+          "maxLength": 1000,
+          "type": "string"
+        },
+        "yTitle": {
+          "maxLength": 1000,
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "title",
+        "xTitle",
+        "yTitle",
+        "series"
+      ],
+      "type": "object"
+    }
   }
 }
