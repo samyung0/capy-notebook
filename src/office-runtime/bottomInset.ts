@@ -29,7 +29,13 @@ export function useBottomInset(
     let area: Element | null = null;
     let last = -1;
     const resize = new ResizeObserver(() => {
-      if (!area) return;
+      // An area the editor replaced is looked for again.
+      if (!area?.isConnected) {
+        resize.disconnect();
+        area = null;
+        look();
+        return;
+      }
       // Unrounded: a notes box can end between pixels.
       const inset = Math.max(
         0,
@@ -39,17 +45,31 @@ export function useBottomInset(
       last = inset;
       report(inset);
     });
-    // The editors mount their area once the file has loaded.
-    const find = () => {
-      const next = documentArea();
-      if (next === area) return;
-      if (area) resize.unobserve(area);
-      area = next;
-      if (area) resize.observe(area);
+    // The area moves only when it, or a box beside one of its ancestors,
+    // changes size: watching them all catches a move without a resize too.
+    const watch = (found: Element) => {
+      area = found;
+      resize.observe(found);
+      for (let box = found.parentElement; box; box = box.parentElement) {
+        for (const child of box.children)
+          if (!child.contains(found)) resize.observe(child);
+        if (box === document.body) break;
+      }
     };
-    const mutations = new MutationObserver(find);
-    mutations.observe(document.body, { childList: true, subtree: true });
-    find();
+    // The editors mount their area once the file has loaded; looking stops
+    // once it is there.
+    const mutations = new MutationObserver(() => {
+      const found = documentArea();
+      if (!found) return;
+      mutations.disconnect();
+      watch(found);
+    });
+    const look = () => {
+      const found = documentArea();
+      if (found) watch(found);
+      else mutations.observe(document.body, { childList: true, subtree: true });
+    };
+    look();
     return () => {
       mutations.disconnect();
       resize.disconnect();

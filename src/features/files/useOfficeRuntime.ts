@@ -518,7 +518,10 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'bottom-inset') {
-        reportInset?.(message.inset);
+        // No taller than the frame: a hostile document cannot push the tools
+        // button off the page.
+        const frame = iframeRef.current;
+        if (frame) reportInset?.(Math.min(message.inset, frame.clientHeight));
         return;
       }
       if (message.type === 'zoom') {

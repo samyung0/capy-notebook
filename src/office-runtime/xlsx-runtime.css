@@ -31,6 +31,7 @@
   --xlsx-group-gap: 0;
   --xlsx-button-size: var(--toolbar-button);
   --xlsx-disabled-opacity: var(--toolbar-disabled-opacity);
+  --xlsx-input-radius: var(--radius-button);
   --xlsx-button-radius: var(--radius-button);
   --xlsx-control-font-size: 0.875rem;
   --xlsx-control-font-weight: 600;

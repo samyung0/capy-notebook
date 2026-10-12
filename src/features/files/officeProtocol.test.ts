@@ -225,6 +225,9 @@ describe('office host protocol', () => {
     expect(inset(83.5)).toBe(true);
     expect(inset(-1)).toBe(false);
     expect(inset(Number.NaN)).toBe(false);
+    expect(inset(Number.POSITIVE_INFINITY)).toBe(false);
+    // Finite but taller than any frame: the host clamps it (useOfficeRuntime).
+    expect(inset(1e9)).toBe(true);
     expect(inset('34')).toBe(false);
   });
 

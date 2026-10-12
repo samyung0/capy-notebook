@@ -401,8 +401,7 @@ export function isOfficeRuntimeMessage(
     if (raw.type === 'render-failed') return typeof raw.id === 'string';
     if (raw.type === 'zoom') return isOfficeZoom(raw.zoom);
     if (raw.type === 'presenting') return typeof raw.presenting === 'boolean';
-    if (raw.type === 'bottom-inset')
-      return isFiniteNumber(raw.inset) && raw.inset >= 0;
+    if (raw.type === 'bottom-inset') return isFiniteNumber(raw.inset);
     if (raw.type === 'open-presenter') return typeof raw.id === 'string';
     if (raw.type === 'exported')
       return typeof raw.id === 'string' && raw.bytes instanceof ArrayBuffer;

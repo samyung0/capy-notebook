@@ -7,6 +7,8 @@ import { m } from '../i18n';
 declare global {
   interface Window {
     officeInputProbe: { hold: boolean; held: (() => void)[]; flushed: boolean };
+    /** The runtime's last `bottom-inset` message, as the host received it. */
+    officeInset?: Record<string, unknown>;
   }
 }
 
@@ -2325,10 +2327,29 @@ test('below lg the tools button sits 8px above the sheet tabs, the slide strip a
       : null;
   };
 
+  await page.addInitScript(() => {
+    window.addEventListener('message', (event) => {
+      if (event.data?.type === 'bottom-inset') window.officeInset = event.data;
+    });
+  });
   await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
   const tabs = frame.getByTestId('xlsx-sheet-tabs');
   await expect(tabs).toBeVisible({ timeout: 60_000 });
   await expect.poll(() => gap(tabs)).toBe(8);
+  // A runtime claiming a huge inset (a hostile document) leaves the button
+  // on the page: the host clamps it to the frame's height.
+  const sent = await page.evaluate(() => window.officeInset);
+  const runtime = page.frames().find((f) => f.url().includes('office-runtime'));
+  expect(sent && runtime).toBeTruthy();
+  const resting = (await tools.boundingBox())?.y ?? 0;
+  await runtime?.evaluate(
+    (message) => window.parent.postMessage({ ...message, inset: 1e9 }, '*'),
+    sent
+  );
+  await expect
+    .poll(async () => (await tools.boundingBox())?.y ?? resting)
+    .toBeLessThan(resting - 100);
+  expect((await tools.boundingBox())?.y).toBeGreaterThanOrEqual(0);
 
   await page.goto('/workspaces/ws_bio?file=bio-office-pptx&mode=edit');
   const strip = frame.getByRole('complementary', { name: 'Slides' });
@@ -2343,4 +2364,29 @@ test('below lg the tools button sits 8px above the sheet tabs, the slide strip a
   await frame.getByTestId('pptx-notes-toggle').click();
   await expect(frame.getByTestId('pptx-notes-textarea')).toHaveCount(0);
   await expect.poll(async () => (await tools.boundingBox())?.y).toBe(closed);
+});
+
+test('Office toolbars take the note toolbar scale: 36px rows and 28px buttons in a phone-width frame, 40px and 32px from 640px', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  for (const [width, row, button, icon] of [
+    [360, 36, 28, 14],
+    [768, 40, 32, 16],
+  ] as const) {
+    await page.setViewportSize({ height: 800, width });
+    await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    const bar = frame.getByTestId('xlsx-formatting-toolbar');
+    await expect(bar).toBeVisible({ timeout: 60_000 });
+    const bold = bar.getByRole('button', { exact: true, name: 'Bold' });
+    const [rowBox, buttonBox, iconBox] = await Promise.all([
+      bar.boundingBox(),
+      bold.boundingBox(),
+      bold.locator('svg').boundingBox(),
+    ]);
+    expect(rowBox?.height).toBe(row);
+    expect([buttonBox?.width, buttonBox?.height]).toEqual([button, button]);
+    expect(iconBox?.width).toBe(icon);
+  }
 });
