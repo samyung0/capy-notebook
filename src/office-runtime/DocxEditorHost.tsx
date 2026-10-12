@@ -59,7 +59,7 @@ export function DocxEditorHost({
   bytes: Uint8Array;
   collaboration: OfficeCollaboration;
   colorMode: 'light' | 'dark';
-  /** Below md: a pinch zooms the document. */
+  /** Below md: a pinch zooms the document; comments open only when asked. */
   compact: boolean;
   /** 1 = 100%, or 'fit' to the pane: where the file was last shown. */
   initialZoom?: OfficeZoom;
@@ -149,6 +149,9 @@ export function DocxEditorHost({
   return (
     <div className="office-editor-host" ref={hostRef}>
       <DocxEditor
+        // Below md the comments column has no room beside the page: it opens
+        // only from View › Show comments or a new comment.
+        autoOpenComments={!compact}
         className="office-editor-host"
         collaboration={collaboration}
         colorMode={colorMode}

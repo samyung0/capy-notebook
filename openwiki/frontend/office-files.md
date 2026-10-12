@@ -901,7 +901,8 @@ opens fitted: the runtime's `load` turns a missing `zoom` into `'fit'`, and
 `DocxDisplayListViewer` and `DocxEditor` (`initialZoom: 'fit'`) scale the
 widest page and the page column's 24 px padding each side to the scroll
 pane's client width, at most 100% (`fitZoom` in docx-react's `pageZoom.ts`),
-following the pane through resizes and rotation. A picked level ends the fit
+following the pane through resizes and rotation; a pane collapsed past that
+padding keeps the last fit. A picked level ends the fit
 until the file is reopened: View › Zoom, the toolbar's zoom, a pinch, or the
 ref's `setZoom`. While fitted the editor's menu model and the viewer report
 `'fit'`, so View and Edit hand the fit to each other; afterwards they report the
@@ -910,7 +911,9 @@ Below md a two-finger pinch over the pages zooms the document instead of the
 browser page (`pinchZoom`, `usePinchZoom`): the pane takes `touch-action:
 pan-x pan-y`, the pages preview the scale as a transform about the fingers, and
 the release commits the level (whole percent, 25–200%) with the page point that
-was between the fingers kept under them. The listeners are passive, so a
+was between the fingers kept under them; a cancelled gesture (the system took
+it) commits nothing and keeps the fit. In View the whole scroll pane, gutters
+included, takes the pinch. The listeners are passive, so a
 one-finger scroll never waits on them. Before this the frame had no pinch
 handling and set no `touch-action`, so a pinch zoomed all of Capy's page
 (header and menus included) and left the document's zoom alone. A trackpad
@@ -918,9 +921,17 @@ pinch (Ctrl+wheel) still zooms the browser page. The editor's minimum layout
 width scales with the zoom, so a fitted page leaves no sideways scroll and a
 page zoomed past the pane scrolls from its left edge in Edit as in View.
 
-Edit keeps the line at the pane's top across a zoom change (a re-fit, View ›
-Zoom; a pinch then keeps the point between the fingers instead), restoring the
-editor's viewport anchor as View's browser scroll anchoring does. A web-font
+Edit keeps the point at the pane's top across a zoom change (a re-fit, View ›
+Zoom; a pinch then keeps the point between the fingers instead), as View's
+browser scroll anchoring does: it rescales the last scroll position seen
+through the pages' heights (`rescaleScrollTop`), so a fling or a scroll just
+before needs no captured anchor. A citation highlight in View sits in percent
+of its page, so it follows every zoom, re-fit and pinch, and its passage is
+centred once the pages present at their level. Below md the comments sidebar
+opens only from View › Show comments or a new comment (`autoOpenComments`): a
+document with comments or tracked changes, its first card or the caret in a
+commented range leave it closed, since a phone has no room beside the page;
+the comment markers stay inside the fitted column. A web-font
 load lays out again as a peer's update does: the viewport stays and the caret
 is not scrolled to. A rotation loads faces for the wider toolbar, and before
 this that relayout counted as a local edit, so Edit jumped back to the caret's

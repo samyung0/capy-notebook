@@ -191,12 +191,30 @@ export function DocxViewer({
     return () => host.removeEventListener(DOCX_PAGES_PRESENTED_EVENT, painted);
   }, [displayList, onAnalysis]);
 
+  // Whether the pages have been presented: a fitted first open settles its
+  // level after the commit that mounts them.
+  const presentedRef = useRef(false);
   useLayoutEffect(() => {
-    if (!displayList) return;
+    presentedRef.current = false;
+    const host = hostRef.current;
+    if (!displayList || !host) return;
+    const presented = () => {
+      presentedRef.current = true;
+    };
+    host.addEventListener(DOCX_PAGES_PRESENTED_EVENT, presented, {
+      once: true,
+    });
+    return () =>
+      host.removeEventListener(DOCX_PAGES_PRESENTED_EVENT, presented);
+  }, [displayList]);
+
+  useLayoutEffect(() => {
+    const viewer = hostRef.current;
+    if (!displayList || !viewer) return;
     const match = docxCitation(displayList, citation);
     const overlays: HTMLDivElement[] = [];
     for (const rect of match?.rects ?? []) {
-      const canvas = hostRef.current?.querySelector<HTMLCanvasElement>(
+      const canvas = viewer.querySelector<HTMLCanvasElement>(
         `canvas[data-page-index="${rect.page}"]`
       );
       const host = canvas?.parentElement;
@@ -205,27 +223,34 @@ export function DocxViewer({
         (page) => page.pageIndex === rect.page
       );
       if (!page) continue;
-      const scale = canvas.getBoundingClientRect().width / page.width;
+      // In percent of the page, so it follows every zoom, re-fit and pinch.
+      const percent = (value: number, of: number) => `${(value / of) * 100}%`;
       const overlay = document.createElement('div');
       overlay.dataset.citationHighlight = 'true';
       overlay.setAttribute('aria-hidden', 'true');
       Object.assign(overlay.style, {
         background: CITATION_FILL,
-        height: `${rect.h * scale}px`,
-        left: `${rect.x * scale}px`,
+        height: percent(rect.h, page.height),
+        left: percent(rect.x, page.width),
         pointerEvents: 'none',
         position: 'absolute',
-        top: `${rect.y * scale}px`,
-        width: `${rect.w * scale}px`,
+        top: percent(rect.y, page.height),
+        width: percent(rect.w, page.width),
       });
       host.append(overlay);
       overlays.push(overlay);
     }
-    overlays[0]?.scrollIntoView({ block: 'center' });
+    const center = () => overlays[0]?.scrollIntoView({ block: 'center' });
+    if (presentedRef.current) center();
+    else
+      viewer.addEventListener(DOCX_PAGES_PRESENTED_EVENT, center, {
+        once: true,
+      });
     return () => {
+      viewer.removeEventListener(DOCX_PAGES_PRESENTED_EVENT, center);
       for (const overlay of overlays) overlay.remove();
     };
-  }, [displayList, citation, zoom]);
+  }, [displayList, citation]);
 
   return displayList ? (
     <div className="docx-runtime-viewer" ref={hostRef}>

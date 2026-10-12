@@ -992,12 +992,10 @@ test.describe('DOCX on a phone', () => {
             (canvas) => canvas.getBoundingClientRect().bottom > box.top + 1
           )?.dataset.pageIndex;
         });
-      // The caret on page 1, then the reader scrolls to page 6.
-      const first = await frame
-        .locator('canvas[data-page-index="0"]')
-        .boundingBox();
-      if (!first) throw new Error('Missing page 1');
-      await page.mouse.click(first.x + 40, first.y + 40);
+      // Edit opens with the caret at the start, on page 1 (the document input
+      // takes the focus back from the menu); the reader scrolls to page 6.
+      await frame.getByLabel('Document input').focus();
+      await expect(frame.getByLabel('Document input')).toBeFocused();
       await pane.evaluate((node) => {
         const sixth = node.querySelector<HTMLElement>(
           'canvas[data-page-index="5"]'
@@ -1028,6 +1026,151 @@ test.describe('DOCX on a phone', () => {
       await expect.poll(topPage).toBe('0');
     });
   }
+
+  // The highlight's place as a fraction of its page's width, the same at any zoom.
+  const highlightOnPage = (frame: FrameLocator) =>
+    frame
+      .locator('[data-citation-highlight]')
+      .first()
+      .evaluate((node) => {
+        const box = node as HTMLElement;
+        const canvas = box.parentElement?.querySelector<HTMLCanvasElement>(
+          'canvas[data-page-index]'
+        );
+        const width = canvas?.getBoundingClientRect().width ?? 0;
+        return [box.offsetLeft, box.offsetTop, box.offsetWidth].map(
+          (value) => value / width
+        );
+      });
+  const closeTo = (actual: number[], expected: number[]) => {
+    expect(actual).toHaveLength(expected.length);
+    for (const [index, value] of actual.entries())
+      expect(Math.abs(value - (expected[index] ?? Number.NaN))).toBeLessThan(
+        0.005
+      );
+  };
+
+  test('a chat citation opens the DOCX fitted with its passage highlighted in view, also after a rotation', async ({
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    const quote = '工程學會亦因此已經三年沒有舉辦交流學習團';
+    // The highlight at 100% (md), the reference.
+    const reference = await page.context().newPage();
+    await reference.setViewportSize({ height: 1024, width: 768 });
+    const referenceFrame = await open(reference);
+    expect(await pageWidth(referenceFrame)).toBe(816);
+    await reference.evaluate((text) => {
+      const iframe = document.querySelector<HTMLIFrameElement>(
+        'iframe[src*="office-runtime"]'
+      );
+      if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
+      iframe.contentWindow.postMessage(
+        { citation: { quote: text }, type: 'set-citation', version: 9 },
+        new URL(iframe.src).origin
+      );
+    }, quote);
+    await expect(
+      referenceFrame.locator('[data-citation-highlight]').first()
+    ).toBeAttached({ timeout: 60_000 });
+    const expected = await highlightOnPage(referenceFrame);
+    await reference.close();
+
+    await page.goto('/workspaces/ws_bio');
+    await page
+      .getByRole('toolbar', { name: m.workspace_tools() })
+      .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
+      .click({ timeout: 60_000 });
+    await page
+      .getByRole('dialog')
+      .getByRole('button', { name: 'More actions' })
+      .click();
+    await page.getByRole('menuitem', { name: m.chat_history() }).click();
+    await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
+    await page.getByTitle(m.chat_source_number({ n: 1 })).click();
+    const frame = page.frameLocator('iframe[src*="office-runtime"]');
+    const highlight = frame.locator('[data-citation-highlight]').first();
+    await expect(highlight).toBeAttached({ timeout: 120_000 });
+    await fitted(frame);
+    // In view in the viewer, with nothing scrolled sideways.
+    const inView = () =>
+      highlight.evaluate((node) => {
+        const viewer = node.closest<HTMLElement>('.docx-runtime-viewer');
+        if (!viewer) throw new Error('Missing viewer');
+        const box = node.getBoundingClientRect();
+        const pane = viewer.getBoundingClientRect();
+        return {
+          sideways: viewer.scrollWidth - viewer.clientWidth,
+          visible: box.top >= pane.top && box.bottom <= pane.bottom,
+        };
+      });
+    await expect.poll(inView).toEqual({ sideways: 0, visible: true });
+    closeTo(await highlightOnPage(frame), expected);
+
+    // A rotation re-fits the page; the highlight stays on its passage.
+    await resize(page, 740, 360);
+    await fitted(frame);
+    closeTo(await highlightOnPage(frame), expected);
+    await resize(page, 360);
+    await fitted(frame);
+    closeTo(await highlightOnPage(frame), expected);
+  });
+
+  test('a DOCX with comments opens fitted below md with its comments sidebar closed and no sideways scroll, and at md with it open', async ({
+    context,
+    page,
+  }) => {
+    test.setTimeout(300_000);
+    // exchange-plan.docx with a comment on its first paragraph, and the room
+    // state seeded from it (scripts/dev/seed-scenario-office.ts).
+    const source = readFileSync(
+      'e2e/fixtures/files/rich-content/exchange-plan-comments.docx'
+    );
+    const state = readFileSync(
+      'src/mocks/fixtures/comments-docx-checkpoint.bin'
+    );
+    await context.route(
+      (url) =>
+        url.pathname.endsWith('/rich-content/exchange-plan.docx') &&
+        !url.search,
+      (route) =>
+        route.fulfill({
+          body: source,
+          contentType:
+            'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        })
+    );
+    await context.route(
+      (url) =>
+        url.pathname.endsWith('/rich-docx-checkpoint.bin') && !url.search,
+      (route) =>
+        route.fulfill({ body: state, contentType: 'application/octet-stream' })
+    );
+    const sidebar = (frame: FrameLocator) =>
+      frame.locator('.docx-unified-sidebar');
+    await resize(page, 390);
+    const frame = await open(page);
+    await editMode(page);
+    await fitted(frame);
+    await page.waitForTimeout(2000);
+    await expect(sidebar(frame)).toHaveCount(0);
+    const pane = frame.locator('.docx-editor__scroll-container');
+    expect(
+      await pane.evaluate((node) => node.scrollWidth - node.clientWidth)
+    ).toBeLessThanOrEqual(1);
+    // At md the editor opens it by itself, as before (one page on the file).
+    await page.close();
+    const desktop = await context.newPage();
+    await desktop.setViewportSize({ height: 900, width: 1280 });
+    // Edit, as the file was left (not toggled back to View).
+    await desktop.goto('/workspaces/ws_bio?file=bio-office-docx&mode=edit');
+    await expect(officeEditMenu(desktop, 'docx')).toBeVisible({
+      timeout: 120_000,
+    });
+    const desktopFrame = desktop.frameLocator('iframe[src*="office-runtime"]');
+    await expect(sidebar(desktopFrame)).toBeVisible({ timeout: 60_000 });
+    await desktop.close();
+  });
 
   test('md and up opens a DOCX at 100% in View and Edit', async ({ page }) => {
     test.setTimeout(300_000);
