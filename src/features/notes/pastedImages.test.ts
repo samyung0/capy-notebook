@@ -1,10 +1,12 @@
 import { LinkPlugin } from '@platejs/link/react';
 import { ImagePlugin, PlaceholderPlugin } from '@platejs/media/react';
+import { createSlateEditor } from 'platejs';
 import { createPlateEditor } from 'platejs/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { StaticMaterialKit } from '@/features/materials/staticPlugins';
 import { importMarkdownDocument } from './documentAdapters';
 import { noteMarkdownPlugin } from './markdown';
-import { markdownToDocument } from './markdownConvert';
+import { importMarkdownValue, urlImageLink } from './markdownImport';
 import {
   pastedImage,
   pastedImagesPlugin,
@@ -41,6 +43,19 @@ function editorWith(allowExternalAssets: boolean) {
 type Editor = ReturnType<typeof editorWith>;
 
 const children = (editor: Editor) => editor.children as unknown as Node[];
+
+/** The browser's markdown import without asset uploads on the note's full
+ * static plugin set (lists included, which the test editor lacks): each URL
+ * image becomes a link. Agent markdown takes its own image rule
+ * (`markdownConvert.ts`). */
+function linkedImport(source: string) {
+  const editor = createSlateEditor({
+    plugins: [...StaticMaterialKit, noteMarkdownPlugin],
+  });
+  return importMarkdownValue(editor, source, {
+    replaceImage: (image) => urlImageLink(editor, image),
+  });
+}
 
 /** Pasted HTML as Plate's image parser leaves it: `<img src>` is a URL-only
  * image node between the paragraphs it sat between. */
@@ -323,7 +338,7 @@ describe('markdown images in the browser', () => {
     }
   );
 
-  it('imports as the agent converter does without asset uploads', () => {
+  it('imports images as links without asset uploads', () => {
     const source = [
       '![Tangent figure](https://cdn.example/tangent.png)',
       '![](https://cdn.example/plain.png)',
@@ -337,7 +352,7 @@ describe('markdown images in the browser', () => {
     const imported = withoutIds(
       importMarkdownDocument(editorWith(false), source, false).value
     );
-    expect(imported).toEqual(withoutIds(markdownToDocument(source).value));
+    expect(imported).toEqual(withoutIds(linkedImport(source).value));
     expect(imported).toEqual([
       {
         children: [
@@ -512,28 +527,26 @@ describe('dropped images in containers', () => {
   it.each([
     ['a quote', '> ![q](javascript:x)', 'blockquote'],
     ['a table cell', '| a |\n|---|\n| ![t](/t.png) |', 'table'],
-  ])('converts %s, as the browser import does', (_, source, type) => {
-    const agent = withoutIds(markdownToDocument(source).value);
-    expect(agent.map((node: { type: string }) => node.type)).toEqual([type]);
-    expect(JSON.stringify(agent)).not.toContain('"img"');
-    expect(JSON.stringify(agent)).toContain('{"text":""}');
+  ])('converts %s', (_, source, type) => {
+    const linked = withoutIds(linkedImport(source).value);
+    expect(linked.map((node: { type: string }) => node.type)).toEqual([type]);
+    expect(JSON.stringify(linked)).not.toContain('"img"');
+    expect(JSON.stringify(linked)).toContain('{"text":""}');
     expect(
       withoutIds(importMarkdownDocument(editorWith(false), source, false).value)
-    ).toEqual(agent);
+    ).toEqual(linked);
   });
 
-  // The test editor has no list plugin; the converter's list items are
+  // The test editor has no list plugin; the static set's list items are
   // indented paragraphs.
   it('keeps a list item that held only a dropped image as an empty item', () => {
-    expect(withoutIds(markdownToDocument('- ![i](diagram.png)').value)).toEqual(
-      [
-        {
-          children: [{ text: '' }],
-          indent: 1,
-          listStyleType: 'disc',
-          type: 'p',
-        },
-      ]
-    );
+    expect(withoutIds(linkedImport('- ![i](diagram.png)').value)).toEqual([
+      {
+        children: [{ text: '' }],
+        indent: 1,
+        listStyleType: 'disc',
+        type: 'p',
+      },
+    ]);
   });
 });
