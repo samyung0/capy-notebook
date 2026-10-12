@@ -61,6 +61,12 @@
           "/summary.html"
         ]
       },
+      // Run the Worker beside the UAT VM (Netcup, Germany). Its one API read
+      // goes through the Cloudflare Tunnel, which costs about three round
+      // trips from a distant Worker (measured from Tokyo 2026-10-12: about
+      // 750 ms unpinned, 95 ms pinned). Cache hits still come from the
+      // nearest edge.
+      "placement": { "region": "aws:eu-central-1" },
       "workers_dev": false,
       "preview_urls": false,
       // Both app hosts point to capy-uat and need separate scriptless /api/* routes.
