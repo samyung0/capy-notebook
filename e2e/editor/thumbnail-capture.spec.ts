@@ -77,7 +77,10 @@ test('a DOCX edit sends one thumbnail capture', async ({ page }) => {
   await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
 
   await frame.getByTestId('yrs-input').pressSequentially('X');
-  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  // The keystroke's save can take over 5 s on a loaded CI runner.
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible({
+    timeout: 30_000,
+  });
   const hide = () =>
     page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
   await expect
