@@ -15,7 +15,7 @@ func TestStrongEmailSecret(t *testing.T) {
 }
 
 func TestLogEmailBackendIsNotAllowedInProduction(t *testing.T) {
-	if _, err := newEmailSender("production", "log", "", "", ""); err == nil {
+	if _, err := newEmailSender("production", "log", "", "", "", ""); err == nil {
 		t.Fatal("production log backend was accepted")
 	}
 }

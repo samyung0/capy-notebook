@@ -50,9 +50,11 @@ type BrowserClerk = {
   setActive(input: { session: string }): Promise<void>;
 };
 
+// The inbox's routing rule matches journeys@ and keeps everything after the
+// first + as a subaddress; Clerk treats the trailing +clerk_test as a test address.
 function uniqueEmail(run: UatRun, label: string) {
   const local = `uat-${run.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)}-${label}-${randomUUID().slice(0, 8)}`;
-  return `${local}+clerk_test@${run.env.actorEmailDomain}`;
+  return `journeys+${local}+clerk_test@${run.env.actorEmailDomain}`;
 }
 
 async function actorContext(env: UatEnvironment, browser: Browser) {

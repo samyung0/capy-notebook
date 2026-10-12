@@ -383,11 +383,15 @@
     },
     "CLOUDFLARE_ACCOUNT_ID": {
       "kind": "variable",
-      "targets": ["workflow"]
+      "targets": ["coolify", "workflow"]
     },
     "CLOUDFLARE_API_TOKEN": {
       "kind": "secret",
       "targets": ["workflow"]
+    },
+    "CLOUDFLARE_EMAIL_TOKEN": {
+      "kind": "secret",
+      "targets": ["coolify"]
     },
     "CLOUDFLARE_TUNNEL_ID": {
       "kind": "variable",
@@ -710,10 +714,6 @@
       "kind": "variable",
       "targets": ["local"]
     },
-    "RESEND_API_KEY": {
-      "kind": "secret",
-      "targets": ["coolify"]
-    },
     "SENTRY_AUTH_TOKEN": {
       "kind": "secret",
       "targets": ["workflow", "build"]
@@ -855,12 +855,7 @@
       "targets": ["quality"],
       "environments": ["uat"]
     },
-    "UAT_RESEND_FROM": {
-      "kind": "variable",
-      "targets": ["quality"],
-      "environments": ["uat"]
-    },
-    "UAT_RESEND_READ_KEY": {
+    "UAT_INBOX_TOKEN": {
       "kind": "secret",
       "targets": ["quality"],
       "environments": ["uat"]

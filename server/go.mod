@@ -18,7 +18,6 @@ require (
 	github.com/jackc/pgx/v5 v5.7.1
 	github.com/open-spaced-repetition/go-fsrs/v3 v3.3.1
 	github.com/redis/go-redis/v9 v9.21.0
-	github.com/resend/resend-go/v3 v3.12.0
 	github.com/stripe/stripe-go/v82 v82.5.1
 	github.com/svix/svix-webhooks v1.96.1
 	golang.org/x/image v0.44.0

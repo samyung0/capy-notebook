@@ -291,7 +291,7 @@ stays on the app Worker.
    from one reviewed revision. API, collaboration, Office and local-development hostnames
    remain unchanged. `APP_URL` changes new invitation/email links and Stripe
    Checkout/portal returns; existing issued links retain their original URLs.
-   Clerk/Stripe webhooks remain on `uat-api`, and Resend mail still uses `uat`.
+   Clerk/Stripe webhooks remain on `uat-api`, and product mail still sends from `uat`.
    This hostname change requires no database or ingest migration.
 6. Run the [activation checks](uat-activation-checklist.md#app-hostname-cutover).
    Keep old browser pages accessible until pending source drafts reach Saved or
@@ -2051,7 +2051,7 @@ never mounts that volume.
 | Ingest host         | shared nonprod project, local queue consumers | same nonprod project, UAT queue consumers; one global `1/1/1` capacity with local | production project and `capy-ingest_parse_spool` |
 | Clerk               | development instance                 | separate Clerk application, Production instance                                             | production application's Production instance    |
 | Stripe              | `Stable Studio Dev` sandbox, `stripe listen` | named UAT sandbox with a registered endpoint                                             | live mode                                       |
-| Product mail        | log backend, no credentials          | Resend `uat.capynotebook.com`, domain-scoped key                                            | Resend on the production domain                 |
+| Product mail        | log backend, no credentials          | Cloudflare Email Service from `uat.capynotebook.com`; journey inbox on `inbox.uat`          | Cloudflare Email Service on the production domain |
 | Users and content   | developer fixtures                   | synthetic accounts and fixtures only                                                        | real users and content                          |
 | Scanner credentials | local only                           | GitHub `uat` environment                                                                    | never supplied to scanners                      |
 
@@ -2303,53 +2303,83 @@ configured, the gateway refuses startup without `STRIPE_SECRET_KEY`. This
 keeps Stripe optional for local deployments without allowing a partially
 configured billing deployment to skip provider-authoritative deletion checks.
 
-### 12.5 Resend: one UAT sending domain
+### 12.5 Mail: Cloudflare Email Service and the UAT journey inbox
 
-Resend has no sandbox. Isolation is per sending domain, and both reputation
-and the suppression list follow the domain, so UAT and production must never
-share one. UAT sends from `uat.capynotebook.com`; production takes
-`capynotebook.com`, or a `mail.` subdomain under it, when it exists.
+Product mail sends through Cloudflare Email Service (beta). Workers Paid
+includes 3,000 emails a month for the whole account, then $0.35 per 1,000.
+Reputation and the suppression list follow the sending domain, so UAT and
+production never share one: UAT sends from `uat.capynotebook.com`; production
+takes `capynotebook.com`, or a `mail.` subdomain under it, when it exists.
 
-Local development needs no Resend credentials. `newEmailSender`
-(`server/cmd/api/email.go`) falls back to the log backend when
-`RESEND_API_KEY` is empty and refuses `resend` outright under `APP_ENV=e2e`,
-so local keeps `EMAIL_BACKEND=log` and leaves the key blank. Setting
-`EMAIL_BACKEND=resend` without a key fails gateway startup rather than
-degrading.
+Local development needs no credentials. `newEmailSender`
+(`server/cmd/api/email.go`) uses the log backend when `CLOUDFLARE_EMAIL_TOKEN`
+is empty and refuses `cloudflare` outright under `APP_ENV=e2e`. Setting
+`EMAIL_BACKEND=cloudflare` without the token or `CLOUDFLARE_ACCOUNT_ID` fails
+gateway startup rather than degrading.
 
-DNS for `uat.capynotebook.com` goes in the `capynotebook.com` Cloudflare zone.
-Cloudflare appends the zone to the name, so enter these exactly as written;
-TXT and MX are never proxied, so there is no orange-cloud decision:
-
-| Type | Name                    | Value                                          | Priority |
-| ---- | ----------------------- | ---------------------------------------------- | -------- |
-| TXT  | `resend._domainkey.uat` | the DKIM `p=…` value from the Resend dashboard | —        |
-| MX   | `send.uat`              | `feedback-smtp.us-east-1.amazonses.com`        | 10       |
-| TXT  | `send.uat`              | `v=spf1 include:amazonses.com ~all`            | —        |
-
-All three resolve and the domain is verified. Set `EMAIL_BACKEND=resend`,
-`RESEND_API_KEY` to the domain-scoped `Capy Notebook UAT (sending)` key,
+**Sending domain.** In Compute → Email Service → Email Sending, onboard
+`uat.capynotebook.com`. Cloudflare writes its own records: MX and SPF on
+`cf-bounce.uat`, DKIM at `cf-bounce._domainkey.uat`, DMARC at `_dmarc.uat`.
+Create an account API token with Email Sending permission, scoped as narrowly
+as the dashboard allows, and set in the GitHub `uat` environment (deploys copy
+them to Coolify): `EMAIL_BACKEND=cloudflare`, `CLOUDFLARE_EMAIL_TOKEN`,
 `EMAIL_FROM=Capy Notebook <notifications@uat.capynotebook.com>`, and a fresh
-32-byte `EMAIL_UNSUBSCRIBE_SECRET` in the UAT Coolify resource. A
-sending-scoped key restricted to this domain cannot send from production's
-domain even if it leaks.
+32-byte `EMAIL_UNSUBSCRIBE_SECRET`. `CLOUDFLARE_ACCOUNT_ID` is the variable
+the deploy workflows already use; the deployment renderer now also passes it
+to Coolify.
 
-Neither `capynotebook.com` nor the UAT subdomain publishes DMARC. Low-volume
-authenticated mail is accepted without it, so this does not block UAT, but
-`_dmarc.uat.capynotebook.com` as `v=DMARC1; p=none;` is worth adding before any
-real volume. Mind the inheritance when production arrives: a subdomain with no
-record of its own falls back to the organizational domain's policy, so
-publishing `p=reject` at `capynotebook.com` starts rejecting UAT's failures too
-unless that record carries an explicit `sp=`.
+Verified 2026-10-13: a send shaped like the gateway's (display-name `From`,
+`reply_to`, both unsubscribe headers) was delivered at once and reached the
+journey inbox in about a second, with DKIM passing for `d=uat.capynotebook.com`
+(selector `cf-bounce`), DMARC passing, and `Reply-To` set from `reply_to`. The
+API's `message_id` is exactly the `Message-ID` header the recipient sees; the
+account journey matches the outbox row to its inbox copy by it.
 
-Resend does have webhooks — `email.sent`, `email.delivered`, `email.bounced`,
-`email.complained`, and the open/click pair. The gateway subscribes to none of
-them and there is no `RESEND_WEBHOOK_SECRET` anywhere in the tree, so no
-endpoint is registered and no cross-environment fan-out exists. Adding bounce
+The send API takes no idempotency key: if the gateway dies between a
+successful send and marking the outbox row sent, the retry delivers a second
+copy. A synchronous permanent bounce or suppressed recipient comes back as an
+error and is retried like any other failure, within the outbox's six attempts.
+`Reply-To` must travel in the API's `reply_to` field; Cloudflare rejects the
+whole request when it appears among custom headers. `List-Unsubscribe` and
+`List-Unsubscribe-Post` are accepted as headers.
+
+Cloudflare publishes `message.delivered`, `message.bounced`,
+`message.complained` and related events per sending domain through Event
+Subscriptions to a Queue. The gateway consumes none of them, so adding bounce
 or complaint handling reopens the same per-environment question Stripe has.
 
-`bounced@resend.dev` and `complained@resend.dev` exercise the failure paths
-without touching a real inbox or the domain's suppression list.
+Onboarding wrote `_dmarc.uat` as `v=DMARC1; p=reject;`, so mail claiming the
+UAT domain without Cloudflare's signature is refused. `capynotebook.com` itself
+publishes no DMARC record yet. When production gets one, remember that
+subdomains without a record of their own (such as `inbox.uat`) inherit it.
+
+**Retiring Resend.** Resend's records stay until the account journey passes on
+Cloudflare: TXT `resend._domainkey.uat`, MX and TXT `send.uat`, and the GitHub
+`uat` entries `RESEND_API_KEY`, `UAT_RESEND_FROM` and `UAT_RESEND_READ_KEY`
+(no longer in `deploy/env-manifest.json`, so deploys ignore them). Delete them
+and revoke the Resend key after that run.
+
+**UAT journey inbox.** Journeys register actors as
+`journeys+uat-<run>-<label>-<id>+clerk_test@inbox.uat.capynotebook.com`
+(`UAT_ACTOR_EMAIL_DOMAIN`). Clerk still treats the double-`+` address as a test
+address with the fixed code. Catch-all rules exist only on a zone apex, so
+Email Routing on the `capynotebook.com` zone has subaddressing on and one rule,
+`journeys@inbox.uat.capynotebook.com` → Worker `capy-notebook-uat-inbox`, which
+every `journeys+…` address matches. Enabling routing on the zone added
+Cloudflare's MX (`route1`–`route3.mx.cloudflare.net`) and SPF at
+`capynotebook.com` and at `inbox.uat`, and the DKIM key `cf2024-1._domainkey`;
+mail to any address without a rule is rejected. Set up 2026-10-13.
+
+The Worker (`workers/uat-inbox`, `wrangler.uat-inbox.jsonc`, deployed for UAT
+by `deploy-environment.yml`) rejects envelope senders outside
+`uat.capynotebook.com`, keeps each message for a day in the KV namespace
+`capy-notebook-uat-inbox`, and serves
+`GET https://uat-inbox.capynotebook.com/messages?to=<address>` to
+`Authorization: Bearer <READ_TOKEN>`. The Worker secret `READ_TOKEN` and the
+GitHub `uat` secret `UAT_INBOX_TOKEN` hold the same value; set the Worker side
+with `wrangler secret put READ_TOKEN --config wrangler.uat-inbox.jsonc`. KV
+reads elsewhere can trail a write by about a minute, which the journey's poll
+absorbs. R2 is not enabled on the account, hence KV.
 
 ### 12.6 Create the authorization fixture
 

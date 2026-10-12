@@ -14,12 +14,12 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
-func newEmailSender(appEnv, backend, apiKey, from, replyTo string) (mail.Sender, error) {
+func newEmailSender(appEnv, backend, accountID, token, from, replyTo string) (mail.Sender, error) {
 	if backend == "" {
-		if apiKey == "" {
+		if token == "" {
 			backend = "log"
 		} else {
-			backend = "resend"
+			backend = "cloudflare"
 		}
 	}
 	switch backend {
@@ -28,11 +28,11 @@ func newEmailSender(appEnv, backend, apiKey, from, replyTo string) (mail.Sender,
 			return nil, errors.New("EMAIL_BACKEND=log is not allowed when APP_ENV=production")
 		}
 		return &mail.LogSender{}, nil
-	case "resend":
+	case "cloudflare":
 		if appEnv == "e2e" {
-			return nil, errors.New("EMAIL_BACKEND=resend is not allowed when APP_ENV=e2e")
+			return nil, errors.New("EMAIL_BACKEND=cloudflare is not allowed when APP_ENV=e2e")
 		}
-		return mail.NewResendSender(apiKey, from, replyTo)
+		return mail.NewCloudflareSender(accountID, token, from, replyTo)
 	default:
 		return nil, fmt.Errorf("unknown EMAIL_BACKEND %q", backend)
 	}
@@ -225,12 +225,11 @@ func sendOutboxEmail(
 	sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	providerID, err := sender.Send(sendCtx, mail.Message{
-		To:             item.ToEmail,
-		Subject:        subject,
-		HTML:           html,
-		Text:           text,
-		Headers:        headers,
-		IdempotencyKey: item.IdempotencyKey,
+		To:      item.ToEmail,
+		Subject: subject,
+		HTML:    html,
+		Text:    text,
+		Headers: headers,
 	})
 	if err != nil {
 		_ = guard.MarkFailed(ctx, err, retryAfterForEmail(err))

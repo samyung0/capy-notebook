@@ -156,8 +156,7 @@ jobs:
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
       STRIPE_PRICE_PRO: ${{ vars.STRIPE_PRICE_PRO }}
       UAT_STRIPE_ACCOUNT_ID: ${{ vars.UAT_STRIPE_ACCOUNT_ID }}
-      UAT_RESEND_READ_KEY: ${{ secrets.UAT_RESEND_READ_KEY }}
-      UAT_RESEND_FROM: ${{ vars.UAT_RESEND_FROM }}
+      UAT_INBOX_TOKEN: ${{ secrets.UAT_INBOX_TOKEN }}
       UAT_SENTRY_TOKEN: ${{ secrets.UAT_SENTRY_TOKEN }}
       UAT_SENTRY_URL: ${{ vars.UAT_SENTRY_URL }}
       UAT_SENTRY_ORG: ${{ vars.UAT_SENTRY_ORG }}

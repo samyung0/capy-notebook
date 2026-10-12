@@ -194,7 +194,7 @@ test('the republication wait fails on any failed refresh and needs a second auto
 });
 
 test('recorded cleanup ownership tolerates clock skew but never an identity mismatch', () => {
-  const email = 'uat-owned+clerk_test@example.test';
+  const email = 'journeys+uat-owned+clerk_test@example.test';
   const manifest: Manifest = {
     appUrl: 'https://app.uat.capynotebook.com',
     bucket: 'capy-uat',
@@ -244,7 +244,7 @@ test('recorded cleanup ownership tolerates clock skew but never an identity mism
 
 test('cleanup requires the original target and exact run-owned registration intent', () => {
   const id = randomUUID();
-  const email = `uat-${id.replaceAll('-', '').slice(0, 20)}-owner-12345678+clerk_test@example.test`;
+  const email = `journeys+uat-${id.replaceAll('-', '').slice(0, 20)}-owner-12345678+clerk_test@example.test`;
   const manifest: Manifest = {
     appUrl: 'https://app.uat.capynotebook.com',
     bucket: 'capy-uat',
@@ -370,7 +370,7 @@ test('artifacts redact authentication credentials but retain exact resource IDs'
 test('failed pre-purge inventory preserves accounts and a resumable failure report', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'uat-cleanup-check-'));
   const id = randomUUID();
-  const email = `uat-${id.replaceAll('-', '').slice(0, 20)}-owner-12345678+clerk_test@example.test`;
+  const email = `journeys+uat-${id.replaceAll('-', '').slice(0, 20)}-owner-12345678+clerk_test@example.test`;
   const revision = 'a'.repeat(40);
   // Exercise the real cleanup orchestrator with a failed verifier process.
   // No application/provider is contacted; every fetch below is intercepted.
@@ -406,8 +406,7 @@ let input='';process.stdin.on('data',chunk=>input+=chunk);process.stdin.on('end'
     UAT_COLLAB_URL: 'wss://uat-collab.capynotebook.com',
     UAT_DATABASE_NAME: 'capy',
     UAT_DATABASE_URL: 'postgres://capy_uat_verifier:fixture@127.0.0.1/capy',
-    UAT_RESEND_FROM: 'fixture@example.test',
-    UAT_RESEND_READ_KEY: 'fixture',
+    UAT_INBOX_TOKEN: 'fixture',
     UAT_SENTRY_ORG: 'fixture',
     UAT_SENTRY_PROJECTS: 'fixture',
     UAT_SENTRY_TOKEN: 'fixture',

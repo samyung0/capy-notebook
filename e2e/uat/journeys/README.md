@@ -10,7 +10,7 @@ verification results and remaining deployment steps.
 
 The browser performs registration, direct uploads, Office/text edits and
 collaboration. Assertions read application APIs, PostgreSQL, exact B2 object
-bytes/versions, Clerk, Stripe, Resend and Sentry. Selecting an editor input or
+bytes/versions, Clerk, Stripe, the UAT inbox and Sentry. Selecting an editor input or
 button is allowed; layout, nesting, toolbar order and screenshots are not
 asserted. The existing authorization suite remains separate.
 
@@ -18,7 +18,7 @@ asserted. The existing authorization suite remains separate.
 
 | Journey | Verified outcome |
 | --- | --- |
-| Account | Real signup with fixed Clerk code, verified identity, processed `user.created`, durable profile, 30-day deletion grace, session revocation, Resend delivery, real Clerk deletion and processed `user.deleted` purge. |
+| Account | Real signup with fixed Clerk code, verified identity, processed `user.created`, durable profile, 30-day deletion grace, session revocation, delivery to the UAT inbox, real Clerk deletion and processed `user.deleted` purge. |
 | Invitation | Signed-out invitation redirects to the app's password sign-in and returns to the original invitation; browser acceptance persists the recipient and viewer membership, then opens the authorized workspace. |
 | Checkout | App-created sandbox customer/session/reservation, expected price and return URLs, session expiration. |
 | Billing | Sandbox subscription, paid renewal using a test clock, webhook-backed plan projection, deletion blocker and cancellation. Hosted payment-form entry is not covered. |
@@ -97,16 +97,15 @@ Configure these GitHub **uat environment** values. Full mappings are in
 | `COLLABORATION_UAT_PUBLICATION_HOLD` | Exactly `true` (UAT only; the deployment renderer refuses it in production). The Office refusal journey needs it to hold its publication. |
 | `UAT_APP_URL`, `UAT_API_URL`, `UAT_COLLAB_URL` | Exactly `https://app.uat.capynotebook.com`, `https://uat-api.capynotebook.com`, `wss://uat-collab.capynotebook.com`. Office is `https://uat-office.capynotebook.com`. |
 | `UAT_CLERK_TEST_MODE` | Exactly `true`, after enabling Clerk test emails/fixed code `424242` on the isolated UAT instance. Keys must resolve to its primary domain and `clerk.uat.capynotebook.com`. |
-| `CLERK_PUBLISHABLE_KEY`, `UAT_ACTOR_EMAIL_DOMAIN` | UAT frontend key and a controlled domain accepting generated `uat-…+clerk_test` mailboxes. Clerk auth uses fixed codes; app Resend mail must actually deliver. |
+| `CLERK_PUBLISHABLE_KEY`, `UAT_ACTOR_EMAIL_DOMAIN` | UAT frontend key and `inbox.uat.capynotebook.com`, whose Email Routing rule hands every generated `journeys+uat-…+clerk_test` address to the UAT inbox Worker. Clerk auth uses fixed codes; app mail must actually arrive there (deployment runbook §12.5). |
 | `UAT_DATABASE_NAME` | Actual dedicated UAT database. Apply `scripts/uat/verifier-role.sql` manually as its owner, with the explicit psql variables described in that file; then set the role password interactively. This is operational setup, not an app migration. A role created before the study journey also needs `GRANT SELECT ON attempts, study_progress, review_states TO capy_uat_verifier;`. |
 | `B2_BUCKET`, `B2_ENDPOINT`, `B2_REGION` | Dedicated bucket whose name contains a separated `uat` component, Backblaze HTTPS endpoint and region. Existing browser CORS and hidden-version lifecycle must be configured. |
 | `UAT_STRIPE_ACCOUNT_ID`, `STRIPE_PRICE_PRO` | Exact sandbox account and active recurring Pro price. Existing UAT Stripe webhook subscription must deliver subscription and invoice events. |
-| `UAT_RESEND_FROM` | Exact provider sender string, including display name if configured. |
 | `UAT_SENTRY_URL`, `UAT_SENTRY_ORG`, `UAT_SENTRY_PROJECTS` | Sentry API origin, organization, comma-separated project slugs covering every UAT service. Services must report environment `uat` and trace/user tags. |
 | `INGEST_HOST`, `INGEST_HOST_USER`, `INGEST_HOST_SSH_PORT` | Existing ingest host, explicit SSH user/port. Read-only inspection checks `/opt/capy-ingest/releases/nonprod` and actual running Docker image labels before/after. |
 
 Required secrets: `CLERK_SECRET_KEY`, `UAT_DATABASE_URL`, `B2_KEY_ID`,
-`B2_APP_KEY`, `STRIPE_SECRET_KEY`, `UAT_RESEND_READ_KEY`, `UAT_SENTRY_TOKEN`,
+`B2_APP_KEY`, `STRIPE_SECRET_KEY`, `UAT_INBOX_TOKEN`, `UAT_SENTRY_TOKEN`,
 `INGEST_HOST_SSH_PRIVATE_KEY`, `INGEST_HOST_KNOWN_HOSTS`.
 
 The database URL must use `capy_uat_verifier`. Remote connections require
@@ -118,9 +117,8 @@ The tunneled URL must use `127.0.0.1:UAT_DB_LOCAL_PORT`. Obtain the SSH host key
 out of band and pin it; the script never accepts an unknown host key.
 
 B2 credentials need bucket/object reads and version listing. The verifier
-has no storage-write operation. Resend delivery reads require a
-**Full access** API key; a sending-only key cannot retrieve emails. UAT uses
-the same authorized key for `RESEND_API_KEY` and `UAT_RESEND_READ_KEY`. Sentry
+has no storage-write operation. `UAT_INBOX_TOKEN` equals the inbox Worker's
+`READ_TOKEN` secret and only reads messages. Sentry
 needs `org:read` for the organization events query, scoped to the listed
 projects. Stripe accepts only `sk_test_` keys and checks the
 account ID before cleanup. Keep keys limited to UAT wherever the provider
@@ -188,8 +186,8 @@ IDs and follow-up actions. Expected retention includes:
   filesystem; use recorded job IDs for operator investigation.
 - Scrubbed account tombstones and pseudonymous billing/usage/webhook/audit
   ledgers under product retention.
-- Resend delivery history and copies in the controlled mailbox, and sandbox
-  Stripe invoice/payment history.
+- Cloudflare Email Service send logs (the UAT inbox drops its copies within
+  a day), and sandbox Stripe invoice/payment history.
 
 Journeys never reach Sentry: a healthy run sends no event. Cleanup queries
 Sentry by the run's exact trace, actor and uploaded-file IDs (collaboration

@@ -39,7 +39,7 @@ export function validateCleanupTarget(
   ) {
     throw new Error('Cleanup configuration must match the recorded UAT run');
   }
-  const prefix = `uat-${manifest.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)}-`;
+  const prefix = `journeys+uat-${manifest.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)}-`;
   for (const resource of manifest.resources.filter(
     (entry) => entry.kind === 'actor-email' || entry.kind === 'actor'
   )) {
@@ -214,7 +214,7 @@ export async function cleanupRun(id: string) {
             [actorIds]
           );
           for (const email of emails)
-            record('resend-email', email.provider_message_id, {
+            record('sent-email', email.provider_message_id, {
               template: email.template,
               userId: email.user_id,
             });
@@ -497,12 +497,12 @@ export async function cleanupRun(id: string) {
     );
   } finally {
     retained.push(
-      ...resources('resend-email').map((resource) => ({
+      ...resources('sent-email').map((resource) => ({
         ...resource,
         action:
-          'Remove recipient mailbox copies manually if desired; provider records follow provider retention.',
+          'No deletion required; the UAT inbox drops its copy within a day.',
         reason:
-          'Delivered synthetic email remains in provider history and the controlled recipient mailbox.',
+          'Delivered synthetic email remains in Cloudflare Email Service logs until their retention ends.',
       }))
     );
     retained.push(

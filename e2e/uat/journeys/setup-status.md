@@ -65,6 +65,14 @@ journeys; the full suite has not passed yet.
   environment. No send was attempted. The sender remains
   `Capy Notebook <notifications@uat.capynotebook.com>`.
 
+- 2026-10-13: product mail moved from Resend to Cloudflare Email Service, and
+  journey mail from the Hostinger catch-all on `stablestudio.org` to the UAT
+  inbox Worker on `inbox.uat.capynotebook.com` (deployment runbook §12.5).
+  `UAT_RESEND_FROM` and `UAT_RESEND_READ_KEY` are replaced by
+  `UAT_INBOX_TOKEN`; `UAT_ACTOR_EMAIL_DOMAIN` becomes
+  `inbox.uat.capynotebook.com`. Clerk accepted the double-`+` actor address
+  with the fixed code in a password-less probe that created no user.
+
 No provider credentials or mailbox configuration remain outstanding from
 this setup. Actual application email delivery and the full lifecycle still
 need the deployed journey run.

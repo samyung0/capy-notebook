@@ -161,6 +161,14 @@ jobs:
           --env "$TARGET_ENVIRONMENT"
           --assets "$RUNNER_TEMP/capy-office-assets"
           --var "PARENT_ORIGINS:$PARENT_ORIGINS"
+      # UAT only: the journey inbox Email Routing hands inbox.uat mail to. Its
+      # READ_TOKEN secret persists across deploys (deployment-runbook §12.5).
+      - name: Deploy the UAT journey inbox
+        if: inputs.environment_name == 'uat'
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: npx --yes wrangler@4.125.0 deploy --config wrangler.uat-inbox.jsonc
       # embed/ is the interactive block frame the SPA build points at
       # (VITE_EMBED_ORIGIN). One Pages project serves both environments: its
       # production branch is `production`, and UAT is the `uat` branch alias.

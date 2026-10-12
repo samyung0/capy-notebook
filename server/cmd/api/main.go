@@ -211,11 +211,12 @@ func main() {
 	defer shutdownSentry()
 
 	emailBackend := env("EMAIL_BACKEND", "")
-	resendAPIKey := env("RESEND_API_KEY", "")
+	cloudflareAccountID := env("CLOUDFLARE_ACCOUNT_ID", "")
+	cloudflareEmailToken := env("CLOUDFLARE_EMAIL_TOKEN", "")
 	emailFrom := env("EMAIL_FROM", "")
 	emailReplyTo := env("EMAIL_REPLY_TO", "")
 	emailUnsubscribeSecret := env("EMAIL_UNSUBSCRIBE_SECRET", "")
-	if (emailBackend == "resend" || (emailBackend == "" && resendAPIKey != "")) &&
+	if (emailBackend == "cloudflare" || (emailBackend == "" && cloudflareEmailToken != "")) &&
 		!strongEmailSecret(emailUnsubscribeSecret) {
 		log.Fatal("EMAIL_UNSUBSCRIBE_SECRET must be at least 32 bytes and contain at least 3 character classes when email delivery is enabled")
 	}
@@ -327,7 +328,7 @@ func main() {
 	}
 	go modelReg.Poll(ctx)
 
-	emailSender, err := newEmailSender(appEnv, emailBackend, resendAPIKey, emailFrom, emailReplyTo)
+	emailSender, err := newEmailSender(appEnv, emailBackend, cloudflareAccountID, cloudflareEmailToken, emailFrom, emailReplyTo)
 	if err != nil {
 		log.Fatalf("email sender: %v", err)
 	}

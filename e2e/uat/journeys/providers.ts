@@ -244,16 +244,23 @@ export async function cleanupStripeTestClock(
   );
 }
 
+// Email Routing hands mail for the actors' inbox domain to the UAT inbox Worker
+// (workers/uat-inbox), which keeps each message for a day.
+const UAT_INBOX = 'https://uat-inbox.capynotebook.com';
+
+const expectedSubjects: Record<string, string> = {
+  'account-deletion-requested':
+    'Your Capy Notebook account deletion is scheduled',
+};
+
 export async function verifyOutboxDelivery(
   run: UatRun,
   userId: string,
   email: string,
   template: string
 ) {
-  if (!run.env.resendReadKey || !run.env.resendFrom)
-    throw new Error('UAT_RESEND_READ_KEY and UAT_RESEND_FROM are required');
   const rows = await run.poll(
-    'email accepted by Resend',
+    'email sent by the gateway',
     () =>
       run.query<{
         id: string;
@@ -272,60 +279,47 @@ export async function verifyOutboxDelivery(
   );
   const row = rows[0];
   expect(row.to_email).toBe(email);
-  if (!row.provider_message_id)
-    throw new Error('Sent outbox has no Resend message ID');
-  const id = row.provider_message_id;
-  await run.record('resend-email', id, {
+  const messageId = row.provider_message_id;
+  if (!messageId) throw new Error('Sent outbox has no provider message ID');
+  await run.record('sent-email', messageId, {
     retention: 'provider history',
     template,
     userId,
   });
-  const delivered = await run.poll(
-    'Resend delivery receipt',
+  // Cloudflare's message ID is the Message-ID header the inbox receives. The
+  // inbox stores mail in KV, whose reads can trail a write by a minute.
+  const messages = await run.poll(
+    'email received by the UAT inbox',
     async () => {
+      const url = new URL('/messages', UAT_INBOX);
+      url.searchParams.set('to', email);
       const { body } = await providerJSON(
-        new URL(`https://api.resend.com/emails/${encodeURIComponent(id)}`),
-        { headers: { Authorization: `Bearer ${run.env.resendReadKey}` } },
-        'Resend'
+        url,
+        { headers: { Authorization: `Bearer ${run.env.inboxToken}` } },
+        'UAT inbox'
       );
-      const record = object(body);
-      if (
-        ['bounced', 'complained', 'failed', 'suppressed'].includes(
-          String(record.last_event)
-        )
-      )
-        throw new Error(
-          `Resend delivery ended with ${String(record.last_event)}`
+      return (Array.isArray(body) ? body : [])
+        .map(object)
+        .filter(
+          (message) => object(message.headers)['message-id'] === messageId
         );
-      return record;
     },
-    (record) =>
-      ['delivered', 'opened', 'clicked'].includes(String(record.last_event)),
-    120_000
+    (values) => values.length > 0,
+    240_000
   );
-  expect(delivered.id).toBe(id);
-  expect(arrayField(delivered, 'to')).toContain(email);
-  expect(delivered.from).toBe(run.env.resendFrom);
-  if (template === 'account-deletion-requested')
-    expect(delivered.subject).toBe(
-      'Your Capy Notebook account deletion is scheduled'
-    );
-  if (
-    typeof delivered.subject !== 'string' ||
-    !delivered.subject ||
-    !(
-      (typeof delivered.html === 'string' && delivered.html) ||
-      (typeof delivered.text === 'string' && delivered.text)
-    )
-  )
-    throw new Error('Resend receipt has no subject or message content');
+  const message = messages[0];
+  expect(message.to).toBe(email.toLowerCase());
+  if (expectedSubjects[template])
+    expect(message.subject).toBe(expectedSubjects[template]);
+  expect(String(message.from)).toMatch(/@uat\.capynotebook\.com$/);
+  if (!(message.subject && (message.html || message.text)))
+    throw new Error('Inbox message has no subject or content');
   await run.attach(`email-${template}`, {
-    lastEvent: delivered.last_event,
     outboxId: row.id,
-    providerMessageId: id,
+    providerMessageId: messageId,
+    receivedAt: message.receivedAt,
     template,
   });
-  return { id, lastEvent: String(delivered.last_event) };
 }
 
 export type SentryScope = {

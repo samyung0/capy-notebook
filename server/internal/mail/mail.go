@@ -3,12 +3,11 @@ package mail
 import "context"
 
 type Message struct {
-	To             string
-	Subject        string
-	HTML           string
-	Text           string
-	Headers        map[string]string
-	IdempotencyKey string
+	To      string
+	Subject string
+	HTML    string
+	Text    string
+	Headers map[string]string
 }
 
 type Sender interface {

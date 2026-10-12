@@ -73,6 +73,7 @@ If the gateway is unhealthy, check these before anything else:
 | --- | --- |
 | Gateway exits at startup, logs a credential that reads like a sentence | Coolify stored a `${VAR:?message}` guard's message as the variable's value. Every unset variable must be stored blank, not left absent. |
 | Gateway exits complaining about the email secret | `EMAIL_UNSUBSCRIBE_SECRET` needs 32+ characters across 3 character classes. Plain hex fails. |
+| Gateway exits with `unknown EMAIL_BACKEND "resend"` or `cloudflare email token is required` | Coolify still has the Resend settings. Set `EMAIL_BACKEND=cloudflare` and `CLOUDFLARE_EMAIL_TOKEN` in GitHub `uat` (deployment runbook §12.5) and redeploy. |
 | Gateway refuses to start with Clerk configured | `CLERK_SECRET_KEY` or `CLERK_WEBHOOK_SECRET` is blank. Both are required unless `AUTH_DISABLED` or `E2E_AUTH` is on. |
 | Variables changed but the container behaves as before | Coolify's compose parse is cached and only refreshes on deploy. Redeploy rather than restart. |
 | A platform model call fails with `model capacity is not configured` | Apply the Ops grants, then enter UAT’s own total and interactive reserve for each active model in Ops. |
@@ -172,6 +173,10 @@ a different Clerk instance than the gateway's secret key.
   clicking is on a dev hostname. That is expected.
 - Provider keys are UAT keys with their own budget. Inference and parse metering
   is in [`observability-metering.md`](observability-metering.md).
+- Product mail leaves through Cloudflare from `uat.capynotebook.com`: a sent
+  `email_outbox` row carries a `<…@uat.capynotebook.com>` provider message ID,
+  and the account journey reads the same `Message-ID` back from the UAT inbox
+  ([deployment runbook §12.5](deployment-runbook.md#125-mail-cloudflare-email-service-and-the-uat-journey-inbox)).
 
 ## 6. Error reporting
 
