@@ -73,7 +73,9 @@ class FirstPage extends Error {
 /**
  * DOCX page 1 as a list-card capture, as ingest renders it: Print's raster of
  * the page (twice its CSS size, on the main thread, where the document's
- * fonts are) drawn down to 200 px wide. Null for a document with no pages.
+ * fonts are) drawn down to 200 px wide. `renderPages` waits for an edit's
+ * layout to land, so null (no page) is never a finished capture: the host
+ * keeps the capture cycle open for it.
  */
 export async function pageThumbnail(
   renderPages: RenderPages

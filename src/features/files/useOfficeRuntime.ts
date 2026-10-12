@@ -38,6 +38,7 @@ import { savedSourceUpdate } from './sourceState';
 import {
   canEncodeWebp,
   createThumbnailCapture,
+  NOT_DRAWN_YET,
   type ThumbnailCapture,
   uploadThumbnail,
 } from './thumbnailCapture';
@@ -656,7 +657,10 @@ export function useOfficeRuntime({
             authHeaders(),
           ]);
           const bytes = rendered.pages[0]?.bytes;
-          return bytes ? { bytes, headers } : null;
+          if (bytes) return { bytes, headers };
+          // A DOCX always has a page: none means its edit's layout had not
+          // landed, which must not end the cycle as an XLSX's other sheet does.
+          return format === 'docx' ? NOT_DRAWN_YET : null;
         },
         upload: (drawn, keepalive) =>
           uploadThumbnail(file.id, drawn, keepalive),
@@ -678,7 +682,7 @@ export function useOfficeRuntime({
       captureRef.current?.dispose();
       captureRef.current = null;
     };
-  }, [file.id, mode, render]);
+  }, [file.id, format, mode, render]);
 
   /** A menu item or header action: Capy's own commands run here. */
   const runMenuCommand = useCallback(

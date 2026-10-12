@@ -27,11 +27,17 @@ export interface DrawnThumbnail {
   headers: Record<string, string>;
 }
 
+/**
+ * A draw that found nothing yet (a DOCX whose edit's layout had not landed):
+ * the cycle stays, so the upload's own draw tries again.
+ */
+export const NOT_DRAWN_YET = 'not-drawn-yet';
+
 export interface ThumbnailCaptureOptions {
   /** The room has every edit and the user may edit now. */
   allowed: () => boolean;
   /** The WebP of the document as the editor holds it now; null for nothing to capture. */
-  draw: () => Promise<DrawnThumbnail | null>;
+  draw: () => Promise<DrawnThumbnail | null | typeof NOT_DRAWN_YET>;
   upload: (drawn: DrawnThumbnail, keepalive: boolean) => Promise<void>;
 }
 
@@ -74,7 +80,7 @@ export function createThumbnailCapture({
   const drawNow = async () => {
     const at = edits;
     const drawn = await draw();
-    if (disposed) return null;
+    if (disposed || drawn === NOT_DRAWN_YET) return null;
     if (drawn && drawn.bytes.byteLength >= MAX_UPLOAD_BYTES)
       throw new Error(`The capture is ${drawn.bytes.byteLength} bytes`);
     // Nothing to capture (an XLSX on another sheet) ends the cycle quietly.

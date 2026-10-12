@@ -222,7 +222,10 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
 - A local edit (the runtime's `update`) starts a cycle. 5 s after the last
   edit Capy asks the runtime for the capture (`render` {kind: 'thumbnail'},
   `rendered` with one WebP page, none when there is nothing to capture) and
-  keeps the bytes. 60 s after the last edit, or 10 minutes after the cycle's
+  keeps the bytes. Nothing to capture ends the cycle quietly (an XLSX on
+  another sheet), except for a DOCX, which always has a page: none there means
+  its edit's layout had not landed, and the cycle stays for the upload's own
+  drawing (`NOT_DRAWN_YET`). 60 s after the last edit, or 10 minutes after the cycle's
   first edit while editing goes on, it uploads them (drawing again first when
   edits came after the drawing). `pagehide`, or the page turning hidden,
   uploads what was drawn with `fetch(…, {keepalive: true})`, sent at once with
@@ -260,8 +263,10 @@ image chunk alone (`imageOnlyWebP`; 464 bytes smaller).
   the capture draws it down to 200 px (`imageSmoothingQuality: 'high'`; the
   default smoothing aliases text badly). `renderPages` draws every page, so the
   capture ends its loop after page 1 (`pageThumbnail`): no later page is
-  rastered. Host only, no fork change: the layout worker, its `relayout`
-  request and frame queue are untouched.
+  rastered. Right after an edit the display list can have no pages until the
+  edit's layout lands; `renderPages` waits for the newest list with pages
+  (fork `usePagedList`), which also keeps Print from printing nothing then.
+  The layout worker, its `relayout` request and frame queue are untouched.
 - PPTX: slide 1 (`layoutSlide(0)` and `paintSlide`, as Print, with its
   pictures decoded once for the drawing), on the main thread, where the
   slide's fonts are.

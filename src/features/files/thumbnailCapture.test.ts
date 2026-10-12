@@ -5,6 +5,7 @@ import {
   DRAW_AFTER_MS,
   type DrawnThumbnail,
   MAX_UPLOAD_BYTES,
+  NOT_DRAWN_YET,
   UPLOAD_AFTER_MS,
   UPLOAD_WITHIN_MS,
   uploadThumbnail,
@@ -23,7 +24,9 @@ const sent = (keepalive: boolean) => [
 
 function setup({
   allowed = true,
-  draw = vi.fn(async (): Promise<DrawnThumbnail | null> => drawn),
+  draw = vi.fn(
+    async (): Promise<DrawnThumbnail | null | typeof NOT_DRAWN_YET> => drawn
+  ),
 } = {}) {
   const upload = vi.fn(
     async (_drawn: DrawnThumbnail, _keepalive: boolean) => {}
@@ -203,6 +206,28 @@ describe('thumbnail capture scheduling', () => {
     capture.leave();
     expect(draw).toHaveBeenCalledTimes(1);
     expect(upload).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
+  });
+
+  it('keeps the cycle when a DOCX draw comes before its layout, and uploads once from the next draw', async () => {
+    const draw = vi
+      .fn(
+        async (): Promise<DrawnThumbnail | null | typeof NOT_DRAWN_YET> => drawn
+      )
+      .mockResolvedValueOnce(NOT_DRAWN_YET);
+    const { capture, upload } = setup({ draw });
+    capture.edited();
+    await vi.advanceTimersByTimeAsync(DRAW_AFTER_MS);
+    expect(draw).toHaveBeenCalledTimes(1);
+    // Nothing was drawn, so leaving has nothing to send yet.
+    capture.leave();
+    expect(upload).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS - DRAW_AFTER_MS);
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(false));
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    capture.leave();
+    expect(upload).toHaveBeenCalledTimes(1);
     expect(console.warn).not.toHaveBeenCalled();
   });
 
