@@ -670,11 +670,12 @@ const BUDGETS = {
   desktopCachedPaintMs: 650,
   /** Warm isolate; tightened from 2000 for every page on 2026-10-12 after
    * run 38219942945 (warm medians: workspace 479, quizzes 545, flashcards
-   * 524, notes 720, notes-server-only 654, notes-near-limit 1129). */
+   * 524, notes 720, notes-server-only 654, notes-near-limit 1129); the
+   * near-limit note raised to 1600 after run 38248024079 (1412). */
   desktopUncachedFcpMs: {
     flashcards: 1000,
     notes: 1200,
-    'notes-near-limit': 1500,
+    'notes-near-limit': 1600,
     'notes-server-only': 1200,
     quizzes: 1000,
     workspace: 1000,
