@@ -51,8 +51,8 @@ test('editors edit a quiz together and a learner follows it live', async ({
   const quizId = ((await created.json()) as { id: string }).id;
 
   await Promise.all([
-    ownerPage.goto(`/quizzes/${quizId}/edit`),
-    editorPage.goto(`/quizzes/${quizId}/edit`),
+    ownerPage.goto(`/materials/${quizId}?mode=edit`),
+    editorPage.goto(`/materials/${quizId}?mode=edit`),
     viewerPage.goto(`/quizzes/${quizId}/attempt`),
   ]);
   for (const page of [ownerPage, editorPage, viewerPage])

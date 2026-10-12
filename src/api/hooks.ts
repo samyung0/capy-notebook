@@ -119,7 +119,6 @@ import type {
   UpdateLabelReq,
   UpdateMaterialReq,
   UpdateMeReq,
-  UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
   UpdateWorkspaceMemberReq,
@@ -2037,8 +2036,6 @@ export const quizEditQuery = (id: string) =>
     queryFn: () => api.get<EditableQuiz>(`/quizzes/${id}/edit`),
     queryKey: [...qk.quiz(id), 'edit'] as const,
   });
-export const useQuizEdit = (id: string) =>
-  useQuery({ ...quizEditQuery(id), refetchOnMount: 'always' });
 
 const ATTEMPTS_PAGE = 30;
 /** Learning → All results: quiz attempts, newest first by default. */
@@ -2105,14 +2102,6 @@ function invalidateQuiz(qc: ReturnType<typeof useQueryClient>, id: string) {
   invalidateAllMaterials(qc);
 }
 
-export function useUpdateQuizMetadata() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, ...body }: UpdateQuizMetadataReq & { id: string }) =>
-      api.patch<EditableQuiz>(`/quizzes/${id}/metadata`, body),
-    onSuccess: (_d, v) => invalidateQuiz(qc, v.id),
-  });
-}
 export function useUpdateQuizSharing() {
   const qc = useQueryClient();
   return useMutation({

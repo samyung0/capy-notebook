@@ -46,8 +46,8 @@ import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
 import type { LearnerQuestion } from '@/features/questions/types';
-import { QuizEditor } from '@/features/quizzes/QuizEditor';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
+import { QuizEditor } from '@/features/quizzes/QuizEditor';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
 import {
   OfflineStatus,
@@ -434,6 +434,7 @@ export function MaterialContent({
         <TabContent centered={centerQuiz}>
           <QuizEditor
             key={materialId}
+            onStatusChange={onEditorStatusChange}
             quizId={materialId}
             title={material.title}
           />

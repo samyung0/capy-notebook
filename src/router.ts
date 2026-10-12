@@ -51,7 +51,6 @@ import {
   parseDocumentModeSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
-import { parseQuizEditSearch } from '@/features/quizzes/quizNavigation';
 import {
   PAST_REVIEW_SORT_DEFAULT,
   PAST_REVIEW_SORTS,

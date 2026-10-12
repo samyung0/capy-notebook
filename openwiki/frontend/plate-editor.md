@@ -1372,9 +1372,10 @@ the live state; there is no Save or Cancel and the dialog closes with its X or
 Esc. Undo spans both documents (`pairedUndo` in
 `src/features/collaboration/undo.ts`: the latest step of either, and steps of
 both made together, such as an answer type change, as one). Inputs stop at
-their caps (`maxLength`; a text editor takes back an edit past its cap). The
-quiz edit page has no Save or Reset: the name saves on blur, the cloud status
-follows the title, Undo, Redo and the View switch sit at the header's right,
+their caps (`maxLength`; a text editor takes back an edit past its cap). A
+quiz edits on its material page (`QuizEditor` in the center pane's Edit) with
+no Save or Reset: the cloud status follows the title in the header, Undo and
+Redo sit beside the View switch, renaming goes through the item's Rename,
 Edit (ghost-hover) and Remove (danger-light) sit at each question's top right
 on desktop (`QuestionView`'s `actions`) and on their own line under it at the
 right on phones, and an
