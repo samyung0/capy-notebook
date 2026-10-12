@@ -637,7 +637,8 @@ export async function sharedNote(
         run.owner,
         `/api/materials/${noteId}/clone`,
         'POST',
-        undefined,
+        // No workspaceId: a standalone copy, the only kind with a link.
+        { title: `UAT ${run.id.slice(0, 16)} shared note` },
         201
       )
     ).id
