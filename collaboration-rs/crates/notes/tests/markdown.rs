@@ -88,61 +88,51 @@ fn markdown_matches_the_node_server() {
     );
 }
 
-/// Images in agent markdown become links showing their alt text (else the
-/// URL), as the browser's import does without asset uploads: notes keep
-/// assets only and the server fetches nothing (Epo, 2026-10-10). A URL that
-/// is not web goes; an image inside a link leaves its alt text there.
+/// Images in agent markdown (notes keep assets only, Epo 2026-10-10): a
+/// library figure, `![caption](figure:<id>)`, stays an image whose assetId
+/// names the figure until Go stores it as the note's own asset (main
+/// 142ca296); any other image becomes a paragraph holding a link, its URL
+/// cleared when it is not a valid link. No image keeps a URL, and the note
+/// is valid.
 #[test]
-fn agent_images_become_links() {
+fn agent_images_keep_figures_and_link_the_rest() {
     let converter = Converter::new(&bundle()).unwrap();
     let source = [
+        "![A leaf](figure:fig_1)",
         "![Tangent figure](https://cdn.example/t.png)",
-        "![](https://cdn.example/plain.png)",
         "![dot](data:image/png;base64,iVBORw0KGgo=) and ![x](javascript:alert(1))",
-        "[![badge](https://ci.example/b.svg)](https://ci.example)",
+        "- ![i](diagram.png)",
+        "> ![q](https://x.test/q.png)",
     ]
     .join("\n\n");
     let converted = converter.convert(&source).unwrap();
     notes::material::assert_canonical(&converted.document.value, "note").unwrap();
     let mut value = serde_json::to_value(&converted.document.value).unwrap();
     strip_ids(&mut value);
-    let link = |text: &str, url: &str| {
+    assert_eq!(
+        value[0],
         serde_json::json!({
-            "children": [
-                { "text": "" },
-                { "children": [{ "text": text }], "type": "a", "url": url },
-                { "text": "" },
-            ],
+            "assetId": "figure:fig_1",
+            "caption": [{ "text": "A leaf" }],
+            "children": [{ "text": "" }],
+            "type": "img",
+        })
+    );
+    assert_eq!(
+        value[1],
+        serde_json::json!({
+            "children": [{
+                "children": [{ "text": "Tangent figure" }],
+                "type": "a",
+                "url": "https://cdn.example/t.png",
+            }],
             "type": "p",
         })
-    };
-    assert_eq!(
-        value,
-        serde_json::json!([
-            link("Tangent figure", "https://cdn.example/t.png"),
-            link("https://cdn.example/plain.png", "https://cdn.example/plain.png"),
-            { "children": [{ "text": " and " }], "type": "p" },
-            {
-                "children": [{ "children": [{ "text": "badge" }], "type": "a", "url": "https://ci.example" }],
-                "type": "p",
-            },
-        ])
     );
-    // An image that goes, alone in a quote, list item or cell, leaves an
-    // empty text there instead of failing the conversion (REVIEW5 S2).
-    for (source, kind) in [
-        ("> ![q](javascript:x)", "blockquote"),
-        ("- ![i](diagram.png)", "p"),
-        ("| a |\n|---|\n| ![t](/t.png) |", "table"),
-    ] {
-        let converted = converter.convert(source).unwrap();
-        notes::material::assert_canonical(&converted.document.value, "note").unwrap();
-        let value = serde_json::to_value(&converted.document.value).unwrap();
-        let text = value.to_string();
-        assert_eq!(value[0]["type"], kind, "{source}: {text}");
-        assert!(!text.contains("\"img\""), "{source}: {text}");
-        assert!(text.contains(r#"{"text":""}"#), "{source}: {text}");
-    }
+    let text = value.to_string();
+    assert_eq!(text.matches(r#""type":"img""#).count(), 1, "{text}");
+    assert!(!text.contains(r#""url":"data:"#), "{text}");
+    assert!(!text.contains(r#""url":"javascript:"#), "{text}");
 }
 
 fn strip_ids(value: &mut Value) {

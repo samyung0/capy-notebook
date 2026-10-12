@@ -3,7 +3,8 @@
 #   generate.sh <checkout> [families]
 # <checkout>: a main checkout from before the Rust cutover removed the Node
 # server (its collaboration/src is the oracle: edits, inspect, children and
-# commands last regenerated on 0dad0d1c, the other families on e2270ccc),
+# commands last regenerated on 0dad0d1c, markdown on 81637908 (agent markdown
+# read without MDX, library figures), the other families on e2270ccc),
 # with node_modules and collaboration/node_modules installed and
 # collaboration/dist/markdown.bundle.mjs built (scripts/build-markdown.mjs).
 # families: comma list, default all.

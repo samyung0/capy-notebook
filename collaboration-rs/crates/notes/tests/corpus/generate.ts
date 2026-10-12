@@ -2702,6 +2702,16 @@ async function markdownFamily() {
       '<Callout type="info">Hello</Callout>\n\n{1 + 1}\n\nimport x from "y"',
     ],
     ['long paragraph', 'word '.repeat(5000)],
+    // Agent markdown is read without MDX (main 7719d357): fence bodies keep
+    // every character, `{}` and `<` stay text, a four-space line is code, a
+    // fence that is not YAML is refused; figures stay assets (142ca296).
+    [
+      'html embed keeps its source',
+      '```html-embed\ncaption: Loop\nhtml: |\n  <label for="n" class="k">n</label>\n  <script>for(var i=0;i<3;i++){var b=i}</script>\n```\n\nProse with {2, 3} and a stray < sign.',
+    ],
+    ['html embed not yaml', '```html-embed\ncaption: [unclosed\nhtml: x\n```'],
+    ['indented code', 'Para\n\n    four spaces\n    more\n\nafter'],
+    ['figure image', '![A leaf cross-section](figure:fig_123)\n\nText ![other](https://x.test/b.png)'],
     [
       'deep list',
       Array.from(
