@@ -27,7 +27,9 @@ import {
   WIDGET_GROUPS,
   type WidgetGroupId,
 } from '@/features/notes/noteEditorPrefs';
+import { currentNoteFont, setNoteFont } from '@/features/notes/noteFont';
 import { m } from '@/i18n';
+import { useTheme } from '@/theme/theme';
 import { ToolbarButton } from './ToolbarButton';
 
 export function EditorSettingsDialog() {
@@ -37,15 +39,26 @@ export function EditorSettingsDialog() {
   const setDisplayWidth = useNoteEditorPrefs((state) => state.setDisplayWidth);
   const mermaidTheme = useNoteEditorPrefs((state) => state.mermaidTheme);
   const setMermaidTheme = useNoteEditorPrefs((state) => state.setMermaidTheme);
+  const { style } = useTheme();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('general');
   const { control, handleSubmit, reset, setValue } = useForm({
-    defaultValues: { displayWidth, enabled, mermaidTheme },
+    defaultValues: {
+      displayWidth,
+      enabled,
+      mermaidTheme,
+      noteFont: currentNoteFont(style),
+    },
   });
 
   const changeOpen = (next: boolean) => {
     if (next) {
-      reset({ displayWidth, enabled, mermaidTheme });
+      reset({
+        displayWidth,
+        enabled,
+        mermaidTheme,
+        noteFont: currentNoteFont(style),
+      });
       setTab('general');
     }
     setOpen(next);
@@ -71,6 +84,9 @@ export function EditorSettingsDialog() {
             setEnabled(draft.enabled);
             setDisplayWidth(draft.displayWidth);
             setMermaidTheme(draft.mermaidTheme);
+            // An unchanged font stays unpicked, so it keeps following the style.
+            if (draft.noteFont !== currentNoteFont(style))
+              setNoteFont(draft.noteFont);
             setOpen(false);
           })}
         >
@@ -116,6 +132,38 @@ export function EditorSettingsDialog() {
                           </SelectItem>
                           <SelectItem value="full">
                             {m.editor_prefs_full_width()}
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                </div>
+                <div className="flex items-center justify-between gap-3">
+                  <label className="min-w-0 font-semibold" htmlFor="note-font">
+                    {m.editor_prefs_note_font()}
+                  </label>
+                  <Controller
+                    control={control}
+                    name="noteFont"
+                    render={({ field }) => (
+                      <Select
+                        onValueChange={field.onChange}
+                        value={field.value}
+                      >
+                        <SelectTrigger
+                          className="w-40 shrink-0 sm:w-44"
+                          id="note-font"
+                          onBlur={field.onBlur}
+                          ref={field.ref}
+                        >
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="fustat">
+                            {m.editor_prefs_font_fustat()}
+                          </SelectItem>
+                          <SelectItem value="system">
+                            {m.editor_prefs_font_system()}
                           </SelectItem>
                         </SelectContent>
                       </Select>

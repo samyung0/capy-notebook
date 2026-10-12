@@ -96,7 +96,7 @@ export function AttemptBody({
       <QuizPageHeader
         actions={headerActions}
         byline={byline}
-        className={topBar ? undefined : 'pt-2 sm:pt-2'}
+        className={topBar ? undefined : 'pt-4 sm:pt-2'}
         meta={quizMeta(questions)}
         onBack={onBack}
         title={name}

@@ -30,6 +30,11 @@
         if (DARKTHEMES.includes(root.dataset.theme)) {
           root.classList.add('dark');
         }
+        // The note font pick (src/features/notes/noteFont.ts).
+        const noteFont = localStorage.getItem('capy.noteFont');
+        if (noteFont === 'fustat' || noteFont === 'system') {
+          root.dataset.noteFont = noteFont;
+        }
       } catch {
         // ignore
       }

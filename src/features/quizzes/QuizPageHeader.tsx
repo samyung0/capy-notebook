@@ -113,11 +113,16 @@ export function QuizPageHeader({
             </nav>
           </div>
         )}
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="t-page-title min-w-0 truncate">{title}</h1>
+        <div className="flow-root">
+          {/* Floated and one title line tall (the title's type sets 1lh): the
+              actions centre on the first line and the rest of the title wraps
+              under them at full width. */}
           {actions && (
-            <div className="flex shrink-0 items-center gap-2">{actions}</div>
+            <div className="t-page-title float-right ml-2 flex h-[1lh] items-center gap-0.5 sm:ml-3 sm:gap-2">
+              {actions}
+            </div>
           )}
+          <h1 className="t-page-title break-words">{title}</h1>
         </div>
         {byline}
         {/* Under a byline the meta belongs to the content below, so it sits

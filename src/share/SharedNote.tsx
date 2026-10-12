@@ -3,6 +3,7 @@ import { anonymousNoteAssetUrl } from '@/api/anonymous';
 import type { AnonymousNote } from '@/api/types';
 import { PublicActionMenu } from '@/components/app/PublicActionMenu';
 import { PublicByline, PublicPage } from '@/components/app/PublicHeader';
+import { IconButton } from '@/components/ui/IconButton';
 import {
   type MaterialDocument,
   type MaterialValue,
@@ -18,6 +19,7 @@ import { MaterialPreview } from '@/features/materials/MaterialPreview';
 import { AssetUrlContext } from '@/features/materials/MediaAssetView';
 import { TocSourceContext } from '@/features/materials/staticNodeComponents';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
+import { m } from '@/i18n';
 import { PublicEmbed } from './PublicEmbed';
 import { PublicEmbedsContext } from './publicEmbeds';
 
@@ -109,6 +111,22 @@ export function NoteBlocks({
   );
 }
 
+/** Swaps the note between Fustat and the system font for this browser;
+ * main.tsx handles the click, so the server renders it for every visitor. */
+function NoteFontButton() {
+  return (
+    <IconButton
+      className="p-1.5 sm:p-2"
+      data-note-font-toggle=""
+      icon="text"
+      label={m.public_note_font()}
+      size="md"
+      type="button"
+      variant="ghost-hover"
+    />
+  );
+}
+
 /** `/share/notes/{token}`, rendered only by the Worker: everyone gets the same
  * edge-cached HTML, and the browser hydrates just its islands (Island.tsx). */
 export function SharedNote({
@@ -119,15 +137,20 @@ export function SharedNote({
   return (
     <PublicPage>
       <QuizPageHeader
-        actions={<PublicActionMenu id={note.id} kind="note" />}
+        actions={
+          <>
+            <NoteFontButton />
+            <PublicActionMenu id={note.id} kind="note" />
+          </>
+        }
         byline={
           <PublicByline author={note.author} updatedAt={note.updatedAt} />
         }
-        className="pt-2 sm:pt-2"
+        className="px-0 pt-4 sm:px-6 sm:pt-2"
         title={note.name}
         trail={[]}
       />
-      <div className="px-4 pt-2 pb-8 sm:px-6 lg:px-10 xl:px-16">
+      <div className="pt-2 pb-8 sm:px-6 lg:px-10 xl:px-16">
         <NoteBlocks document={document} {...props} />
         <MaterialAttributionFooter provenance={note.provenance} />
       </div>

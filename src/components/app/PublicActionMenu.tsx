@@ -19,7 +19,7 @@ export function PublicActionMenu({
   return (
     <>
       <IconButton
-        className="p-2 [anchor-name:--public-actions]"
+        className="p-1.5 [anchor-name:--public-actions] sm:p-2"
         icon="moreVertical"
         label={m.a11y_open_menu()}
         popoverTarget="public-actions"

@@ -108,7 +108,7 @@ export function StudyBody({
             actions={actions}
             byline={byline}
             // Public pages have no label row, so the title sits higher.
-            className={byline ? 'pt-2 sm:pt-2' : undefined}
+            className={byline ? 'pt-4 sm:pt-2' : undefined}
             onBack={onBack}
             title={name}
             topBar={topBar}

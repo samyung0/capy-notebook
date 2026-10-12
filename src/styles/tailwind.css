@@ -510,6 +510,38 @@ math-field {
 }
 
 @layer components {
+  /* Note text (noteFont.ts): Fustat with roomy block gaps, or the system font
+     with the Plate playground's compact ones (nodeStyles.ts reads the gaps).
+     A pick on <html data-note-font> wins; otherwise notion gets the system
+     font. The roomy gaps sit on :root so note blocks outside .note-editor
+     keep them. The Fustat stack repeats classroom.css. */
+  :root {
+    --note-gap: calc(var(--spacing) * 2);
+    --note-p-py: calc(var(--spacing) * 2);
+    --note-li-py: calc(var(--spacing) * 1.5);
+    --note-leading: 1.625;
+  }
+
+  .note-editor {
+    font-family: var(--font-sans);
+  }
+
+  :root[data-style="notion"][data-note-font="fustat"] .note-editor {
+    --font-sans:
+      "Fustat Variable", "Fustat", "Fustat Fallback", system-ui, -apple-system,
+      "Segoe UI", sans-serif;
+  }
+
+  :root[data-note-font="system"] .note-editor,
+  :root[data-style="notion"]:not([data-note-font="fustat"]) .note-editor {
+    --font-sans:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --note-gap: var(--spacing);
+    --note-p-py: var(--spacing);
+    --note-li-py: var(--spacing);
+    --note-leading: 1.5;
+  }
+
   /* Paint-contained chunks must include the drag-handle gutter on the left and
      the comment trigger in the editor's right padding (px-5 sm:px-10). */
   .note-editor [data-slate-chunk] {

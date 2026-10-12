@@ -35,16 +35,31 @@ function PublicThemeButton() {
 
 /** Every visitor gets the same header: it never reads auth, so it cannot shift
  * or flash, and the edge cache stays shared. Signed-in visitors who press Sign
- * in land on the dashboard. */
+ * in land on the dashboard. Phones show only Sign up, whose page links to sign
+ * in, so the header fits 360px. */
 export function PublicNav() {
   return (
     <nav aria-label={m.summary_profile()} className="flex items-center gap-2">
       <PublicThemeButton />
-      <Button asChild size="lg" variant="ghost-hover">
+      <Button
+        asChild
+        className="hidden sm:inline-flex"
+        size="lg"
+        variant="ghost-hover"
+      >
         <a href="/sign-in">{m.action_sign_in()}</a>
       </Button>
-      <Button asChild size="lg">
-        <a href="/sign-up">{m.summary_sign_up()}</a>
+      {/* Phones get the icon alone; the label stays for screen readers. */}
+      <Button
+        asChild
+        className="w-10 min-w-0 rounded-xl px-0 [--button-h:--spacing(10)] sm:w-auto sm:min-w-24 sm:rounded-full sm:px-6.5 sm:[--button-h:--spacing(13)]"
+        size="lg"
+      >
+        <a href="/sign-up">
+          {/* Important: Icon sets an inline display. */}
+          <Icon className="sm:hidden!" name="profile" />
+          <span className="max-sm:sr-only">{m.summary_sign_up()}</span>
+        </a>
       </Button>
     </nav>
   );
@@ -87,9 +102,9 @@ export function PublicByline({
 /** The summary page's card layout for SPA pages signed-out visitors open. */
 export function PublicPage({ children }: { children: ReactNode }) {
   return (
-    <div className="t-body flex h-dvh flex-col bg-page p-2.5 text-fg">
+    <div className="t-body flex h-dvh flex-col bg-page p-1.5 text-fg sm:p-2.5">
       <div className="flex min-h-0 flex-1 flex-col overflow-auto rounded-card-xl bg-surface shadow-card">
-        <header className="flex min-h-[98px] shrink-0 items-center justify-between gap-4 px-4 sm:px-7">
+        <header className="flex min-h-16 shrink-0 items-center justify-between gap-4 px-4 sm:min-h-[98px] sm:px-7">
           <a className="font-extrabold text-base" href="/">
             Capy Notebook
           </a>

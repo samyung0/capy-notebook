@@ -39,19 +39,19 @@ function pxFontSize(value: unknown) {
 
 /** List items are paragraphs too; they keep the tighter list rhythm. */
 export const PARAGRAPH_CLASS =
-  'py-2 px-0 leading-relaxed text-fg [&[data-slate-list-style-type]]:py-1.5';
+  'py-(--note-p-py) px-0 leading-(--note-leading) text-fg [&[data-slate-list-style-type]]:py-(--note-li-py)';
 export const BLOCKQUOTE_CLASS =
-  'my-2 border-l-2 border-line pl-4 text-fg-secondary italic';
+  'my-(--note-gap) border-l-2 border-line pl-4 text-fg-secondary italic';
 export const HR_CLASS =
   'h-0.5 rounded-sm border-none bg-divider bg-clip-content';
 export const CODE_BLOCK_CLASS =
-  'group/code relative overflow-auto rounded-button my-2 bg-surface-hover-bg px-4 pt-6 pb-4 sm:p-6 sm:pr-4 text-sm [tab-size:2] print:break font-mono text-fg';
+  'group/code relative overflow-auto rounded-button my-(--note-gap) bg-surface-hover-bg px-4 pt-6 pb-4 sm:p-6 sm:pr-4 text-sm [tab-size:2] print:break font-mono text-fg';
 /** Lines grow with their text so the block's right padding survives scrolling. */
 export const CODE_LINE_CLASS = 'w-max min-w-full';
 export const LINK_CLASS = 'text-link underline underline-offset-2';
 
-export const UL_CLASS = 'my-2 ml-5 list-disc space-y-1';
-export const OL_CLASS = 'my-2 ml-5 list-decimal space-y-1';
+export const UL_CLASS = 'my-(--note-gap) ml-5 list-disc space-y-1';
+export const OL_CLASS = 'my-(--note-gap) ml-5 list-decimal space-y-1';
 export const LI_CLASS = 'text-fg';
 
 export const TABLE_WRAP_CLASS = 'my-3 overflow-auto';
@@ -62,9 +62,9 @@ export const TH_CLASS =
   'h-12 border border-line bg-surface-hover-bg px-2 py-1.5 text-left font-semibold sm:px-3 sm:py-2';
 
 export const CALLOUT_CLASS =
-  'group/callout relative my-2 flex items-start gap-2 px-3 py-2 leading-relaxed sm:gap-2.5 sm:px-3.5 sm:py-2.5';
+  'group/callout relative my-(--note-gap) flex items-start gap-2 px-3 py-2 leading-(--note-leading) sm:gap-2.5 sm:px-3.5 sm:py-2.5';
 export const COLUMN_GROUP_CLASS =
-  'group/columns relative my-2 flex size-full gap-2 flex-row';
+  'group/columns relative my-(--note-gap) flex size-full gap-2 flex-row';
 export const COLUMN_CLASS =
   'group/column relative min-w-0 shrink rounded-button border border-transparent p-1.5 sm:p-2 w-(--column-width) basis-(--column-width)';
 

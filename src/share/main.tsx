@@ -4,6 +4,7 @@ import {
   YOUTUBE_PLAYER_ALLOW,
   youtubeEmbedUrl,
 } from '@/features/materials/youtubeUrl';
+import { currentNoteFont, setNoteFont } from '@/features/notes/noteFont';
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
 import { overwriteGetLocale } from '@/i18n/paraglide/runtime';
 import { afterPaint } from '@/lib/afterPaint';
@@ -48,6 +49,12 @@ if (state.kind === 'notes') {
     const target = event.target as Element;
     const toc = target.closest<HTMLElement>('[data-toc-order]');
     if (toc) scrollToTocHeading(toc, Number(toc.dataset.tocOrder));
+    if (target.closest('[data-note-font-toggle]'))
+      setNoteFont(
+        currentNoteFont(document.documentElement.dataset.style) === 'system'
+          ? 'fustat'
+          : 'system'
+      );
     // The poster stands in for the player until clicked (YouTubeEmbed.tsx).
     const poster = target.closest<HTMLElement>('[data-youtube-play]');
     if (poster?.dataset.youtubePlay) {

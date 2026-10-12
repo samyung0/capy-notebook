@@ -1182,6 +1182,20 @@ Apply and persist locally in `capy-note-editor-prefs`. Half width retains the
 768px centered reading container; Full width fills the pane. Below `md`, both
 fill the available width. Note previews use the same preference.
 
+General also holds Note font: Fustat with roomy block gaps, or the system font
+with the Plate playground's compact ones (paragraphs 4px padding and 1.5 line
+height, my-1 lists, quotes, code, callouts and columns; headings unchanged).
+Without a pick the style decides: classroom shows Fustat, notion the system
+font. A pick is per browser in `capy.noteFont` (`noteFont.ts`), not the prefs
+blob, so the head scripts in `index.html` and `share.html` set
+`<html data-note-font>` before first paint; `tailwind.css` maps it to
+`--font-sans` and the `--note-*` gap variables on `.note-editor`, which the
+editor, View and shared note pages all render in. Applying an unchanged font
+stores nothing, so the default keeps following the style. Shared note pages
+show the viewer's own choice (visitors without one get classroom, so Fustat)
+and carry a server-rendered Aa button that switches it with plain script
+(`src/share/main.tsx`); the edge-cached HTML stays the same for everyone.
+
 Slate's editable root spans the pane at either size. A stable `as` component
 wraps its children in the width-constrained inner container, leaving margin
 clicks inside the editable root and retaining native keyboard handling and
