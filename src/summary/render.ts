@@ -1,27 +1,27 @@
 import { createElement } from 'react';
 import { renderToString } from 'react-dom/server';
 import { z } from 'zod';
-import type { WorkspaceSummary } from '../../src/api/types';
-import { PublicActionMenu } from '../../src/components/app/PublicActionMenu';
-import { PublicNav } from '../../src/components/app/PublicHeader';
-import { Button } from '../../src/components/ui/Button';
-import { m } from '../../src/i18n';
-// @ts-expect-error generated at build time by the Paraglide Vite plugin
-import { overwriteGetLocale } from '../../src/i18n/paraglide/runtime';
-import { fileIconName } from '../../src/lib/fileIcons';
-import { escapeHTML } from '../../src/lib/html';
-import { iconUrl } from '../../src/lib/icon-catalog';
-import { seoHead } from '../../src/lib/seoHead';
-import { SummaryFailure } from '../../src/summary/SummaryFailure';
+import type { WorkspaceSummary } from '@/api/types';
+import { PublicActionMenu } from '@/components/app/PublicActionMenu';
+import { PublicNav } from '@/components/app/PublicHeader';
+import { Button } from '@/components/ui/Button';
+import { m } from '@/i18n';
+import { fileIconName } from '@/lib/fileIcons';
+import { escapeHTML } from '@/lib/html';
+import { iconUrl } from '@/lib/icon-catalog';
+import { seoHead } from '@/lib/seoHead';
+import { SummaryFailure } from './SummaryFailure';
+
+/* The site Worker's renderer for `/w/{id}` workspace summaries and the error
+   pages (workers/site/handler.ts). It ships inside the share renderer's build
+   (src/share/server.tsx sets the locale), so both share one React and one
+   copy of the app code the Worker loads only when a page renders. */
 
 const file = z.object({
   addedAt: z.iso.datetime({ offset: true }),
   name: z.string(),
   sizeBytes: z.number(),
 });
-// Public pages are English only, and a Worker has no browser to ask.
-overwriteGetLocale(() => 'en');
-
 export const summarySchema = z.object({
   author: z.string(),
   authorAvatarUrl: z.string().optional(),

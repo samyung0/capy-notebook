@@ -11,10 +11,12 @@ import { embedFrame } from './vite-embed';
 import { mathliveFonts } from './vite-mathlive';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
-/** Libraries the share renderer imports but never runs: components load them
- * in effects or on click, after hydration. Its server build gets an empty
- * module instead, keeping the site Worker small. */
-const BROWSER_ONLY = /^(jsxgraph|katex|mathlive|mermaid)$|\/embeds\/AppEmbed$/;
+/** Modules the share renderer imports but never runs: components load them
+ * in effects, on click or behind a context the share page fills itself
+ * (AppEmbed). Its server build gets an empty module instead, keeping the site
+ * Worker small. Matched on the import as written, relative or not. */
+const BROWSER_ONLY =
+  /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
 
 // Every component reads deploy/.env; see deploy/.env.example.

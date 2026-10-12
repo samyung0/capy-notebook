@@ -61,10 +61,6 @@
           "/summary.html"
         ]
       },
-      // Run the Worker beside the UAT VM (Netcup, Germany): every render reads
-      // the API there, and one location keeps its isolates warm. A visitor's
-      // cache hit is still answered by the nearest edge.
-      "placement": { "region": "aws:eu-central-1" },
       "workers_dev": false,
       "preview_urls": false,
       // Both app hosts point to capy-uat and need separate scriptless /api/* routes.

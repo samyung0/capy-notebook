@@ -24,7 +24,14 @@ import { SHARE_STATE_ID, type ShareState } from './state';
    Vite as its own bundle (`vite build --ssr`) so the page components keep
    their browser imports. Quizzes and flashcard sets render the tree the
    browser hydrates (StudyPage); notes render to HTML for good, apart from
-   their islands. */
+   their islands. Workspace summaries and the error pages render from the same
+   bundle, which the Worker imports only when it renders a page. */
+
+export {
+  renderFailure,
+  renderSummary,
+  summarySchema,
+} from '@/summary/render';
 
 /** The API's read for one share link. */
 export type SharePage =

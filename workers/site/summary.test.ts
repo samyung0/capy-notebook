@@ -73,7 +73,8 @@ describe('public workspace SSR', () => {
     );
     expect(sent.redirect).toBe('manual');
     expect(sent.headers.has('Authorization')).toBe(false);
-  });
+    // The first render imports the share renderer bundle.
+  }, 20_000);
   it('escapes text, attributes and JSON-LD without executing source HTML', async () => {
     const attack = '</script><script>alert("x")</script>';
     const response = await handleSiteRequest(

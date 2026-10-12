@@ -1,7 +1,6 @@
 import { verifiedShareID, verifiedShareToken } from '../../src/lib/shareLink';
 import type { ShareKind } from '../../src/share/state';
 import { handlePublicRequest, SHARED_CACHE } from './public';
-import { renderFailure, renderSummary, summarySchema } from './summary';
 import { pageClasses, usedCss } from './usedCss';
 
 type SharePagePieces = ReturnType<
@@ -206,16 +205,18 @@ export async function handleSiteRequest(
         // Keep the existing self-contained error if the asset binding also fails.
       }
     }
-    return new Response(
-      request.method === 'HEAD' ? null : renderFailure(status, template),
-      {
-        headers: headers({
-          'Content-Type': 'text/html; charset=utf-8',
-          'X-Robots-Tag': 'noindex, nofollow',
-        }),
-        status,
-      }
-    );
+    // The renderer loads only when there is a body to render; a HEAD skips it.
+    const body =
+      request.method === 'HEAD'
+        ? null
+        : (await import('capy-share-render')).renderFailure(status, template);
+    return new Response(body, {
+      headers: headers({
+        'Content-Type': 'text/html; charset=utf-8',
+        'X-Robots-Tag': 'noindex, nofollow',
+      }),
+      status,
+    });
   };
   const isSummary = url.pathname.startsWith('/w/');
   if (url.pathname === '/summary' || url.pathname === '/summary.html')
@@ -354,6 +355,7 @@ export async function handleSiteRequest(
       await upstream.body?.cancel();
       return failure(503);
     }
+    const { renderSummary, summarySchema } = await import('capy-share-render');
     const summary = summarySchema.parse(
       JSON.parse(await boundedText(upstream, 512 * 1024))
     );
