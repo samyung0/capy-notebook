@@ -103,8 +103,22 @@ export function FinishBurst() {
 
 const EASE = 'cubic-bezier(.3,.7,.4,1)';
 const SVG = 'http://www.w3.org/2000/svg';
-/** The confetti beside the trail colour, the map's own washes at full strength. */
-const CONFETTI = ['#f0a04b', '#8cc47a', '#5b9bd5', '#ec8fa3', '#f5cf4a'];
+/** Firework colours beside the trail's: the map's own washes at full strength. */
+const FIREWORKS = ['#f0a04b', '#8cc47a', '#5b9bd5', '#ec8fa3', '#f5cf4a'];
+/** Fireworks around the flag (px from its middle), in turn, clear of the
+ * Finished tag beside the bank's flag; no colour takes the trail's. */
+const SHELLS: {
+  delay: number;
+  dx: number;
+  dy: number;
+  r: number;
+  colour?: string;
+}[] = [
+  { delay: 0, dx: -150, dy: -26, r: 24 },
+  { colour: FIREWORKS[0], delay: 260, dx: -225, dy: 4, r: 20 },
+  { colour: FIREWORKS[2], delay: 520, dx: -60, dy: -52, r: 20 },
+  { colour: FIREWORKS[3], delay: 820, dx: 75, dy: -36, r: 18 },
+];
 /** A lead-in, so a page still revealing its content (Learning) shows the pop. */
 const STOP_POP = 650;
 const RUN_AT = 1000;
@@ -222,7 +236,7 @@ function playFinish(host: HTMLElement) {
   };
 }
 
-/** The flag waves, rays and confetti burst from it, the done stops ripple back. */
+/** The flag waves, fireworks open in the sky beside it, the done stops ripple back. */
 function arrival(
   host: HTMLElement,
   svg: SVGSVGElement,
@@ -254,54 +268,77 @@ function arrival(
   const add = (d: string, style: string) => {
     const el = document.createElementNS(SVG, 'path');
     el.setAttribute('d', d);
-    el.setAttribute('style', style);
+    el.setAttribute(
+      'style',
+      `fill:none;stroke-linecap:round;stroke-linejoin:round;${style}`
+    );
     burst.append(el);
     return el;
   };
-  for (let i = 0; i < 10; i++) {
-    const a = (i / 10) * Math.PI * 2 - Math.PI / 2;
-    const [r0, r1] = [15, 25 + (i % 2) * 6];
-    const ray = add(
-      `M${x + Math.cos(a) * r0} ${y + Math.sin(a) * r0}L${x + Math.cos(a) * r1} ${y + Math.sin(a) * r1}`,
-      `fill:none;stroke:${colour};stroke-width:2.2;stroke-linecap:round;transform-origin:${x}px ${y}px`
+  // Shells open in the sky beside the flag (the bank's summit flag sits at
+  // the map's top edge), one after another, each kept inside the map's width.
+  for (const shell of SHELLS) {
+    const tint = shell.colour ?? colour;
+    const bx = Math.min(
+      Math.max(x + shell.dx, shell.r),
+      host.clientWidth - shell.r
     );
-    animate(
-      ray,
-      [
-        { opacity: 0, transform: 'scale(0.4)' },
-        { offset: 0.35, opacity: 1, transform: 'scale(1)' },
-        { opacity: 0, transform: 'scale(1.25)' },
-      ],
-      { duration: 650, easing: EASE }
-    );
-  }
-  // A fountain either side of the flag, falling back.
-  for (let i = 0; i < 30; i++) {
-    const s = 3 + Math.random() * 3;
-    const bit = add(
-      i % 3
-        ? `M${-s} ${-s / 2}h${2 * s}v${s}h${-2 * s}Z`
-        : `M0 ${-s}L${s} ${s}L${-s} ${s}Z`,
-      `fill:${i % 6 ? CONFETTI[i % CONFETTI.length] : colour}`
-    );
-    const angle = -Math.PI / 2 + (Math.random() - 0.5) * 1.6;
-    const speed = 110 + Math.random() * 90;
-    const spin = (Math.random() - 0.5) * 720;
-    const at = (t: number) =>
-      `translate(${x + Math.cos(angle) * speed * t}px, ${y + Math.sin(angle) * speed * t + 190 * t * t}px) rotate(${spin * t}deg)`;
-    animate(
-      bit,
-      [
-        { opacity: 1, transform: at(0) },
-        { offset: 0.65, opacity: 1, transform: at(0.65) },
-        { opacity: 0, transform: at(1) },
-      ],
-      {
-        delay: Math.random() * 120,
-        duration: 1300 + Math.random() * 500,
-        easing: 'linear',
-      }
-    );
+    const by = y + shell.dy;
+    for (let i = 0; i < 11; i++) {
+      const a = (i / 11) * Math.PI * 2 + (Math.random() - 0.5) * 0.24;
+      const [r0, r1] = [
+        shell.r * 0.35,
+        shell.r * (0.85 + Math.random() * 0.25),
+      ];
+      // A ray drawn out from the centre, drooping a little at its tip.
+      const ray = add(
+        `M${bx + Math.cos(a) * r0} ${by + Math.sin(a) * r0}Q${bx + Math.cos(a) * r1 * 0.8} ${by + Math.sin(a) * r1 * 0.8} ${bx + Math.cos(a) * r1} ${by + Math.sin(a) * r1 + 4}`,
+        `stroke:${i % 3 ? tint : FIREWORKS[(i + 1) % FIREWORKS.length]};stroke-width:2`
+      );
+      // Drawn out over the first third, then it falls a little and fades.
+      const dash = `${ray.getTotalLength()}`;
+      animate(
+        ray,
+        [
+          {
+            opacity: 1,
+            strokeDasharray: dash,
+            strokeDashoffset: dash,
+            transform: 'none',
+          },
+          {
+            offset: 0.35,
+            opacity: 1,
+            strokeDasharray: dash,
+            strokeDashoffset: 0,
+          },
+          { offset: 0.5, opacity: 1 },
+          {
+            opacity: 0,
+            strokeDasharray: dash,
+            strokeDashoffset: 0,
+            transform: 'translateY(10px)',
+          },
+        ],
+        { delay: shell.delay, duration: 1100, easing: 'ease-out' }
+      );
+      // A spark past each ray's tip that twinkles as it falls.
+      const spark = add(
+        `M${bx + Math.cos(a) * r1 * 1.25} ${by + Math.sin(a) * r1 * 1.25 + 4}l0 0.1`,
+        `stroke:${tint};stroke-width:3`
+      );
+      animate(
+        spark,
+        [
+          { opacity: 0 },
+          { offset: 0.35, opacity: 1 },
+          { offset: 0.6, opacity: 0.2 },
+          { offset: 0.75, opacity: 1 },
+          { opacity: 0, transform: 'translateY(14px)' },
+        ],
+        { delay: shell.delay + 200, duration: 1100 }
+      );
+    }
   }
 
   const stops = [

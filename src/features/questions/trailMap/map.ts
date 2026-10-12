@@ -886,7 +886,8 @@ class Builder {
         'ink',
         { amp: 0.4, passes: 1 }
       ) +
-      E.flag(px, py, rng);
+      // Planted a little lower with a shorter pole, so the flag clears the map's top edge.
+      E.flag(px, py + 4, rng, 22);
     return { a: bx - 30, b: this.width, svg };
   }
 

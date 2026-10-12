@@ -596,7 +596,9 @@ The map (`src/features/questions/trailMap/`) is generated in the browser from
 the topic id and question count, so a topic looks the same on every visit and
 device and adding questions only extends its end: each part (biome order,
 each landmark, each question-width of scatter, sky, horizon) has its own
-seeded stream. One stop per question, 60 map units apart, then a summit. The
+seeded stream. One stop per question, 60 map units apart, then a summit whose
+flag stands on a short pole planted a little below the peak, so the map's top
+edge does not cut it. The
 map is a run of biomes 4 to 7 questions long (forest, meadow, farm, village,
 lake, river, hills, camp) whose borders blend over 60 units; each scatters
 drawn element templates (placed with `<use>`) by its own mix and has at most
@@ -629,9 +631,11 @@ but not before toasts (answering any question refetches it). The first time a
 finished topic leads the landing in a browser, the map celebrates
 (`src/features/questions/trailMap/finish.tsx`, shared with Learning's railway
 map): the page scrolls the map into view, the last stop pops filled, the line
-runs on to the flag with a dot at its head, the flag waves while rays and
-confetti fountain up from it in a layer over the map but outside its clipping
-scroller, the done stops ripple back and the Finished tag pops in; reduced
+runs on to the flag with a dot at its head, the flag waves while four sketched
+fireworks (drawn-out rays with falling sparks, no rocket trails) open in turn in
+the sky beside it, clear of the Finished tag and kept inside the map's width, in
+a layer over the map but outside its clipping scroller, the done stops ripple
+back and the Finished tag pops in; reduced
 motion shows the finished map at once. Played keys live in localStorage
 (`capy.map.finishPlayed`, `topic:<id>:<question count>`, the last 200), so a
 topic finished again after new questions celebrates again (Epo, 2026-10-13).
