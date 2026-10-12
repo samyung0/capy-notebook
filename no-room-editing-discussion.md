@@ -136,3 +136,28 @@ What is left for hardening after the clock index is updates whose damage depends
 - How the read-only live View channel (2026-10-10) maps onto the forwarder.
 - A fuzzing plan for hardened apply in Yjs (notes) and yrs (Office).
 - Installing as a web app plus `persist()`, and what Safari's 7-day deletion means for drafts.
+
+## Building now: send drafts without the editor open (2026-10-13)
+
+Epo picked this part to build now, on the Rust server (track `drafts-send` in the rust round). Any open Capy page sends the stored drafts of documents no tab has open: on page load (the existing once-per-load sweep), when the browser comes back online, and when a tab becomes visible. The server takes them over HTTP with the editor's write token, runs the same admission as a room writer (loading the room if needed, so open editors see the edits live) and answers once they are stored; only then are the rows deleted. Decisions: no service worker yet; a refused draft stays for recovery as today; a successful send is silent.
+
+## After the Rust port: offline
+
+What the Rust round settled from the list above:
+
+- **Storage is already a log.** Notes and Office/text sources store a base plus append-only update rows (`material_yjs_updates`, `source_document_updates`, migration 0075); a fold merges rows into the base when the room empties or the log grows, and storage is charged for base plus unfolded rows.
+- **The agent edit path survived:** a scratch document from storage plus the live room, an undo record, the update into the room.
+- **Rooms are cheap for notes:** an idle connection costs about 30 KiB (8 KiB read buffer), and patched tungstenite returns both buffers after a large frame (101 viewers of a 2 MB note: 0.28 MiB each, was 2.27). Rooms already load on the first join and unload when idle, which is roughly the "middle ground" above.
+- **Live View already works as a forwarder:** readers use read-only channels on the same socket, hold no document, leave after 5 minutes hidden.
+- **Drafts are one IndexedDB row per update** in a worker (10,000 edits reopen in about 0.1 s).
+
+Items left for an offline round:
+
+- **Offline open (the real "offline-ready" gap).** Today offline editing works only in a tab that was already open. Opening a file offline needs a service worker caching the app shell, the editor chunks and the Office WASM (the DOCX editor alone is about 10 MB), plus local snapshots of recent documents with a size budget and eviction. It also needs a policy for cached copies when access is revoked or the user signs out (shared devices): clear on sign-out, drop on a 403/404 at the next online check, and never show a cached copy of a document the account can no longer open.
+- **Background Sync** (Chromium) once that service worker exists, so drafts send with no Capy tab open.
+- **`navigator.storage.persist()` and installing as a web app.** Safari deletes script storage after 7 days without a visit unless the app is installed: drafts not sent within 7 days are lost there; say so in the UI or prompt to install.
+- **Bind each Yjs clientID to its login session and keep a per-client clock index** next to the log (continuing clocks only). Cheap, and useful as an extra check even with rooms.
+- **BroadcastChannel between tabs** of one browser (a nice-to-have; the room already relays).
+- **Solo no-room: probably not worth it.** For notes an idle solo room now costs its document plus 30 KiB. For Office the cost is the engines, not the room, and a merge still needs an engine for the projection, indexing and the saved file. Browser-built saves don't remove that: other users download the bytes and the ingest parser reads them, so the server would re-check them anyway. A cheaper lever for Office memory is lazy or batched saves (save on download, ingest or idle; merges one at a time).
+- **Full no-room: drop unless measurements demand it.** The placement-cost guard needs the document: the Rust server counts yrs's placement work on a trial copy of the room's document (1,000,000-step budget) and refuses overlapping structs at decode (patched yrs). How expensive an update is to apply depends on what is already in the document (chains, tombstones), so checks on the update alone cannot bound it, and without a room every viewer's browser would carry that risk: a patched Yjs with a work budget and a resync path in every client for good, plus fuzzing that rarely finds slow-placement cases.
+- **Agent writes against offline edits** (the stale-text gap under "Server writes") stay as described: rare and visible, not lost.
