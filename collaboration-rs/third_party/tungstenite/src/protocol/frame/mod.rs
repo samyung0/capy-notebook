@@ -196,7 +196,17 @@ impl FrameCodec {
             if let Some((_, len)) = &self.header {
                 let len = *len as usize;
                 if len <= self.in_buffer.len() {
-                    break self.in_buffer.split_to(len);
+                    let payload = self.in_buffer.split_to(len);
+                    // Patched for Capy: a frame past BUFFER_KEEP took a buffer
+                    // its size, which the bytes left after it would keep (and
+                    // reclaim whole once the payload drops); they move to a
+                    // fresh buffer. Upstream keeps the allocation.
+                    if len > BUFFER_KEEP {
+                        let rest = std::mem::take(&mut self.in_buffer);
+                        self.in_buffer = BytesMut::with_capacity(self.in_buf_max_read.max(rest.len()));
+                        self.in_buffer.extend_from_slice(&rest);
+                    }
+                    break payload;
                 }
             }
 
@@ -288,7 +298,7 @@ impl FrameCodec {
         // Patched for Capy: the room a large frame took is given back once it
         // is written, so an idle socket does not keep a buffer the size of the
         // largest message it was sent. Upstream keeps the capacity.
-        if self.out_buffer.capacity() > OUT_BUFFER_KEEP {
+        if self.out_buffer.capacity() > BUFFER_KEEP {
             self.out_buffer.shrink_to_fit();
         }
 
@@ -300,11 +310,17 @@ impl FrameCodec {
     pub(super) fn out_buffer_capacity(&self) -> usize {
         self.out_buffer.capacity()
     }
+
+    /// Patched for Capy: the read buffer's capacity, for the test that pins
+    /// its release.
+    pub(super) fn in_buffer_capacity(&self) -> usize {
+        self.in_buffer.capacity()
+    }
 }
 
-/// Patched for Capy: the most write-buffer capacity a socket keeps once its
-/// buffer is written.
-const OUT_BUFFER_KEEP: usize = 64 * 1024;
+/// Patched for Capy: the most a socket keeps of a buffer a large frame grew,
+/// written or read.
+const BUFFER_KEEP: usize = 64 * 1024;
 
 #[cfg(test)]
 mod tests {

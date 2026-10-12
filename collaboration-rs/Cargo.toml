@@ -41,12 +41,13 @@ uuid = { version = "1", features = ["v4"] }
 #
 # `third_party/tungstenite` is tungstenite 0.29.0 from crates.io (under axum's
 # WebSocket and tokio-tungstenite) with one patch, marked "Patched for Capy"
-# (Epo 2026-10-11): `FrameCodec::write_out_buffer` gives back a write buffer
-# grown past 64 KiB once it is written, so a socket does not keep a buffer the
-# size of the largest message it was sent (a live View viewer of a 2 MB note
-# held about 2.3 MiB), and `WebSocket::write_buffer_capacity` reads it for
-# `crates/server/tests/write_buffer.rs`, which CI runs. Carry it until upstream
-# releases its write buffer; re-apply it on each tungstenite upgrade.
+# (Epo 2026-10-11 and 2026-10-12): a socket gives back a buffer a frame past
+# 64 KiB grew, written (`write_out_buffer`) or read (`read_frame`), so it does
+# not keep one the size of its largest message (a live View viewer of a 2 MB
+# note held about 2.3 MiB; a peer could pin up to the frame cap), and
+# `WebSocket::write_buffer_capacity`/`read_buffer_capacity` read them for
+# `crates/server/tests/socket_buffers.rs`, which CI runs. Carry it until
+# upstream releases its buffers; re-apply it on each tungstenite upgrade.
 [patch.crates-io]
 yrs = { path = "../vendor/betteroffice/third_party/yrs" }
 tungstenite = { path = "third_party/tungstenite" }

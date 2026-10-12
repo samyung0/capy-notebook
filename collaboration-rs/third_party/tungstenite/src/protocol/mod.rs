@@ -232,6 +232,12 @@ impl<Stream> WebSocket<Stream> {
         self.context.frame.out_buffer_capacity()
     }
 
+    /// Patched for Capy: the read buffer's capacity, for the test that pins
+    /// its release after a large frame.
+    pub fn read_buffer_capacity(&self) -> usize {
+        self.context.frame.in_buffer_capacity()
+    }
+
     /// Check if it is possible to read messages.
     ///
     /// Reading is impossible after receiving `Message::Close`. It is still possible after
