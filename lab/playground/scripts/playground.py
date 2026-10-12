@@ -415,24 +415,30 @@ async def create_material_locally(
     directory and the model gets the receipt the gateway would have returned.
 
     The ledger rules (a todo while todos are open, only excerpts this turn
-    read) are the production helpers, and a quiz goes through the app's own
-    validation (server/cmd/quizcheck), so a saved quiz is one the app accepts."""
-    from pipeline.retrieval import tools
+    read) and the quiz fences' small question shapes are the production
+    helpers, and the expanded fences go through the app's own quiz validation
+    (server/cmd/quizcheck, in check_note)."""
+    from pipeline.retrieval import questions, tools
 
     kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
     content = str(args.get("content") or "")
+    fences = questions.Check(questions.FENCE)
+    if kind == "note":
+        [content], fences = questions.note_fences(
+            [content], lambda _: "content", tools._new_ids(ctx, call_id)
+        )
     figures = await tools.note_figures(ctx, [content] if kind == "note" else [])
     if isinstance(figures, tools.ToolResult):
-        return figures
+        return tools._also(figures, fences)
     args = figures.credited(args)
     prepared = await tools.ledger_write(ctx, "create_material", args)
     if isinstance(prepared, tools.ToolResult):
-        return prepared
+        return tools._also(prepared, fences)
+    if fences.problems():
+        summary, listing = questions.refusal(fences)
+        return tools._refused(summary, detail=listing)
     books, todo = prepared
-    if kind == "quiz":
-        problem = await check_quiz(args.get("questions") or [])
-    else:
-        problem = await check_note(content)
+    problem = await check_note(content)
     if problem:
         return tools._refused(f"create_material: {problem}")
     saved = await save_figures(state, figures)
@@ -445,7 +451,7 @@ async def create_material_locally(
         "title": title,
         "content": figures.markdown[0] if figures.markdown else content,
         "cards": args.get("cards") or [],
-        "questions": args.get("questions") or [],
+        "questions": [],
         "excerpt_ids": [str(e) for e in (args.get("excerpt_ids") or [])],
         "provenance": {"books": books} if books else None,
         "figures": saved,
@@ -491,8 +497,9 @@ async def save_figures(state: dict[str, Any], figures) -> dict[str, Any]:
 
 async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
     """edit_document against a material this run created: the commands are appended
-    to its file and the appended section's provenance merges into the material's."""
-    from pipeline.retrieval import tools
+    to its file, a quiz's removed questions leave it, and the appended
+    section's provenance merges into the material's."""
+    from pipeline.retrieval import questions, tools
 
     target = args.get("target") or {}
     rid = str(target.get("id") or "")
@@ -508,19 +515,27 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
         for i, c in enumerate(commands)
         if c.get("type") in ("insert_markdown", "replace_block")
     ]
-    figures = await tools.note_figures(
-        ctx, [str(commands[i].get("markdown") or "") for i in placing]
+    texts, fences = questions.note_fences(
+        [str(commands[i].get("markdown") or "") for i in placing],
+        lambda n: f"commands[{placing[n]}].markdown",
+        tools._new_ids(ctx, str(args.get("_tool_call_id") or "")),
     )
+    figures = await tools.note_figures(ctx, texts)
     if isinstance(figures, tools.ToolResult):
-        return figures
+        return tools._also(figures, fences)
     args = figures.credited(args)
     prepared = await tools.ledger_write(ctx, "edit_document", args)
     if isinstance(prepared, tools.ToolResult):
-        return prepared
+        return tools._also(prepared, fences)
+    if fences.problems():
+        summary, listing = questions.refusal(fences)
+        return tools._refused(summary, detail=listing)
     books, todo = prepared
-    problem = await check_note(
-        "\n".join(str(c.get("markdown") or "") for c in commands)
-    )
+    problem = await check_note("\n".join(figures.markdown))
+    if record["kind"] == "quiz" and not problem:
+        kept = apply_question_commands(record["questions"], commands)
+        problem = await check_quiz(kept)
+        record["questions"] = kept if not problem else record["questions"]
     if problem:
         return tools._refused(f"edit_document: {problem}")
     saved = await save_figures(state, figures)
@@ -758,6 +773,108 @@ async def copy_locally(
     )
     ctx.ledger.complete(todo)
     return result
+
+
+def apply_question_commands(
+    current: list[dict[str, Any]], commands: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """A quiz's questions after the gateway's question commands, as the
+    collaboration service applies them (null after_question_id is the start)."""
+    out = list(current)
+    for command in commands:
+        kind = command.get("type")
+        if kind == "add_question":
+            after = command.get("after_question_id")
+            ids = [q["id"] for q in out]
+            out.insert(0 if after is None else ids.index(after) + 1, command["question"])
+        elif kind == "replace_question":
+            out = [command["question"] if q["id"] == command["question_id"] else q for q in out]
+        elif kind == "remove_question":
+            out = [q for q in out if q["id"] != command["question_id"]]
+    return out
+
+
+async def questions_locally(
+    name: str, args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
+):
+    """add_questions, add_open_question and add_question_media through the
+    production code (tools.write_questions, tools.write_media) with the run's
+    files standing in for the gateway: a quiz is created or edited as JSON, and
+    every quiz it saves passes the app's quiz validation (quizcheck)."""
+    from pipeline.retrieval import tools
+
+    call_id = str(args.get("_tool_call_id") or "")
+
+    def record_of(quiz_id: str) -> dict[str, Any] | None:
+        return next((m for m in state["materials"] if m["id"] == quiz_id), None)
+
+    def receipt(operation: str, record: dict[str, Any]):
+        return tools._receipt_result(
+            {
+                "outcome": "succeeded",
+                "effect": {
+                    "operation": operation,
+                    "resource": {
+                        "kind": "material",
+                        "id": record["id"],
+                        "title": record["title"],
+                        "materialKind": "quiz",
+                    },
+                },
+            }
+        )
+
+    async def load(quiz_id: str):
+        record = record_of(quiz_id)
+        if record is None or record["kind"] != "quiz":
+            return tools._refused(
+                f"quiz_id: {quiz_id} is not a quiz this run made.", code="unavailable_target"
+            )
+        return record["title"], record["questions"]
+
+    async def create(clean, written, books):
+        problem = await check_quiz(written)
+        if problem:
+            return tools._refused(f"Could not create the quiz: {problem}")
+        record = {
+            "id": material_id(message_id, call_id),
+            "kind": "quiz",
+            "title": str(clean.get("title") or "").strip(),
+            "content": "",
+            "cards": [],
+            "questions": written,
+            "excerpt_ids": [str(e) for e in (clean.get("excerpt_ids") or [])],
+            "provenance": {"books": books} if books else None,
+            "chapter_id": clean.get("chapter_id") or None,
+            "edits": [],
+        }
+        record["size"] = material_size("quiz", record)
+        state["materials"].append(record)
+        write_material(state, record)
+        return receipt("created", record)
+
+    async def edit(quiz_id, commands, books):
+        record = record_of(quiz_id)
+        updated = apply_question_commands(record["questions"], commands)
+        problem = await check_quiz(updated)
+        if problem:
+            return tools._refused(f"Could not edit the quiz: {problem}")
+        record["questions"] = updated
+        record["edits"].extend(commands)
+        record["size"] = material_size("quiz", record)
+        if books:
+            existing = (record["provenance"] or {}).get("books") or []
+            record["provenance"] = {
+                **(record["provenance"] or {}),
+                "books": merge_books(existing, books),
+            }
+        write_material(state, record)
+        return receipt("edited", record)
+
+    quizzes = tools.QuizStore(load, create, edit)
+    if name == "add_question_media":
+        return await tools.write_media(args, ctx, quizzes)
+    return await tools.write_questions(name, args, ctx, quizzes)
 
 
 def without_images(content: Any) -> Any:
@@ -1233,6 +1350,8 @@ class Turn:
                 result = await deck_locally(name, args, ctx_, state, self.id)
             elif name == "copy_questions":
                 result = await copy_locally(args, ctx_, state, self.id)
+            elif name in tools.contract.HANDLER_CHECKED:
+                result = await questions_locally(name, args, ctx_, state, self.id)
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
@@ -2266,6 +2385,82 @@ def check_copy() -> None:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 
 
+def check_questions() -> None:
+    """The question tools through the run's files: a new quiz saving its valid
+    question and naming the other, the fix, an open question and a plot, each
+    saved quiz passing quizcheck; a note's quiz fence expanded the same way."""
+    from tempfile import TemporaryDirectory
+
+    from pipeline.retrieval import tools
+
+    async def write(name: str, args: dict[str, Any], ctx, state, call: str):
+        return await questions_locally(name, {**args, "_tool_call_id": call}, ctx, state, "m1")
+
+    async def flow(run_dir: Path) -> None:
+        ctx = tools.ToolContext(
+            workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS, assistant_message_id="m1"
+        )
+        state = {"materials": [], "captures": [], "run_dir": run_dir}
+        await tools._create_ledger({"todos": ["quiz", "open question"]}, ctx)
+        resting = {"question": "Resting potential?", "accepted": ["-70 mV"], "unit": "mV"}
+        made = await write(
+            "add_questions",
+            {
+                "title": "Neurons",
+                "todo": 0,
+                "questions": [
+                    {"question": "Which ion enters first?", "options": ["Na+", "K+"], "correct": "Na+"},
+                    resting,
+                ],
+            },
+            ctx, state, "c1",
+        )
+        assert made.outcome == "succeeded", made.text()
+        assert "questions[1].accepted[0]: expected a plain number" in made.text(), made.text()
+        quiz = state["materials"][0]
+        assert len(quiz["questions"]) == 1 and not ctx.ledger.todos[0].done
+        fixed = await write(
+            "add_questions",
+            {"quiz_id": quiz["id"], "todo": 0, "questions": [{**resting, "accepted": ["-70"]}]},
+            ctx, state, "c2",
+        )
+        assert not fixed.refused and ctx.ledger.todos[0].done, fixed.text()
+        scheme = [{"text": "Na+ channels open", "marks": 1}, {"text": "Na+ flows in", "marks": 1}]
+        opened = await write(
+            "add_open_question",
+            {
+                "quiz_id": quiz["id"],
+                "todo": 1,
+                "question": "Explain depolarisation.",
+                "marks": 2,
+                "markscheme": scheme,
+                "model_answer": "Voltage-gated Na+ channels open and Na+ flows in.",
+            },
+            ctx, state, "c3",
+        )
+        assert not opened.refused and len(quiz["questions"]) == 3, opened.text()
+        plot = {
+            "type": "plot", "title": "Action potential", "xTitle": "t (ms)", "yTitle": "V (mV)",
+            "series": [{"name": "Vm", "points": [[0, -70], [1, 30], [2, -80]]}],
+        }
+        first = quiz["questions"][0]["id"]
+        drawn = await write(
+            "add_question_media", {"quiz_id": quiz["id"], "question_id": first, "media": plot},
+            ctx, state, "c4",
+        )
+        assert not drawn.refused, drawn.text()
+        assert [b["type"] for b in quiz["questions"][0]["parts"][0]["blocks"]] == ["text", "plot"]
+        # A note's quiz fence takes the same shapes, expanded before it is saved.
+        fence = "```quiz\nquestions:\n  - question: Q?\n    options: [A, B]\n    correct: A\n```\n"
+        note = await create_material_locally(
+            {"kind": "note", "content": "# N\n\n" + fence, "_tool_call_id": "c5"}, ctx, state, "m1"
+        )
+        assert not note.refused and '"correct": [0]' in state["materials"][-1]["content"], note.text()
+
+    with TemporaryDirectory() as tmp:
+        asyncio.run(flow(Path(tmp) / "runs" / "r1"))
+
+
 def check_figures() -> None:
     """A note placing a library figure keeps its render under the run's
     assets/ and records it for the preview; an edit adds its own."""
@@ -2411,6 +2606,7 @@ def check() -> None:
         assert says in asyncio.run(check_note(bad)), bad
     check_decks()
     check_copy()
+    check_questions()
     check_figures()
     # Preview requests must not inherit the monkeypatches of an active turn.
     from tempfile import TemporaryDirectory

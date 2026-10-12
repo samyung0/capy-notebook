@@ -17,6 +17,7 @@ import asyncio
 import base64
 import hashlib
 import io
+import itertools
 import json
 import logging
 import re
@@ -32,7 +33,7 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from . import bank, capture, contract, deck, library, pending, skills, store
+from . import bank, capture, contract, deck, library, pending, questions, skills, store
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
@@ -1406,38 +1407,79 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     if not call_id:
         return _refused("create_material is missing its tool-call id.")
     content = str(args.get("content") or "")
+    fences = questions.Check(questions.FENCE)
+    if kind == "note":
+        [content], fences = questions.note_fences(
+            [content], lambda _: "content", _new_ids(ctx, call_id)
+        )
     figures = await note_figures(ctx, [content] if kind == "note" else [])
     if isinstance(figures, ToolResult):
-        return figures
+        return _also(figures, fences)
     prepared = await ledger_write(ctx, "create_material", figures.credited(args))
     if isinstance(prepared, ToolResult):
-        return prepared
+        return _also(prepared, fences)
+    if fences.problems():
+        summary, listing = questions.refusal(fences)
+        return _refused(summary, detail=listing)
     books, todo = prepared
+    resolved = await _material_scope(ctx, args, books)
+    if isinstance(resolved, ToolResult):
+        return resolved
+    images = await figures.render()
+    if isinstance(images, ToolResult):
+        return images
+    content = figures.markdown[0] if figures.markdown else content
+    result = await _post_material(
+        ctx,
+        call_id,
+        args,
+        resolved,
+        books,
+        {"kind": kind, "cards": args.get("cards") or [], "content": content},
+        images=images,
+    )
+    if result.effects:
+        ctx.ledger.complete(todo)
+    return figures.noted(result)
+
+
+async def _material_scope(
+    ctx: ToolContext, args: dict[str, Any], books: list[dict[str, Any]]
+) -> ResolvedScope | ToolResult:
+    """The scope a new material is written from. A material written from the
+    library is grounded in the library, so it needs no indexed workspace
+    content."""
     resolved = await _resolve_scope(ctx, args.get("scope", _MISSING))
     if isinstance(resolved, ToolResult):
         return resolved
-    # A material written from the library is grounded in the library, so it
-    # does not need indexed workspace content.
     if not resolved.indexed and not books:
         return _refused(
             "The requested scope has no indexed content.", code="unavailable_target"
         )
-    images = await figures.render()
-    if isinstance(images, ToolResult):
-        return images
-    op_id = operation_id(ctx.assistant_message_id, call_id)
+    return resolved
+
+
+async def _post_material(
+    ctx: ToolContext,
+    call_id: str,
+    args: dict[str, Any],
+    resolved: ResolvedScope,
+    books: list[dict[str, Any]],
+    content: dict[str, Any],
+    *,
+    images: dict[str, bytes] | None = None,
+) -> ToolResult:
+    """Create a material through the gateway: its kind and content, with the
+    call's title, chapter, scope and provenance."""
     payload = {
         "workspaceId": ctx.workspace_id,
         "userId": ctx.user_id,
         "assistantMessageId": ctx.assistant_message_id,
         "toolCallId": call_id,
-        "kind": kind,
         # Model output must fit the materials.title column; the API disambiguates
         # duplicates and only reserves room for its own suffix.
         "title": str(args.get("title") or "").strip()[:MATERIAL_TITLE_MAX].strip(),
-        "cards": args.get("cards") or [],
-        "questions": args.get("questions") or [],
-        "content": figures.markdown[0] if figures.markdown else content,
+        **content,
         "fileIds": resolved.file_ids,
         "chapterIds": resolved.chapter_ids,
         "chapterId": str(args.get("chapter_id") or ""),
@@ -1447,20 +1489,33 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         payload["provenance"] = {"books": books}
     if images:
         payload["figures"] = _figure_images(images)
-
     await ctx.pending_sources.validate()
-    result = await _post_operation(
+    return await _post_operation(
         "/api/internal/materials",
         payload,
-        op_id,
+        operation_id(ctx.assistant_message_id, call_id),
         ctx,
-        failure=f"create the {kind}",
+        failure=f"create the {content['kind']}",
         # Go stores each figure in the bucket before the note.
         timeout=60 if images else 10,
     )
-    if result.effects:
-        ctx.ledger.complete(todo)
-    return figures.noted(result)
+
+
+def _new_ids(ctx: ToolContext, call_id: str) -> Callable[[], str]:
+    """The ids of a call's new questions, in order, derived from the call."""
+    counter = itertools.count()
+    return lambda: questions.question_id(
+        ctx.assistant_message_id, call_id, next(counter)
+    )
+
+
+def _also(result: ToolResult, found: questions.Check) -> ToolResult:
+    """A refusal that also names the write's question problems, so the resent
+    write fixes everything at once."""
+    if not found.problems():
+        return result
+    listing = "Also fix these before sending it again:\n" + found.listing()
+    return replace(result, detail="\n\n".join(p for p in (listing, result.detail) if p))
 
 
 # ------------------------------------------------------------ note figures
@@ -2254,22 +2309,29 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
     commands = list(args.get("commands") or [])
-    # Note markdown may place library figures; a source file takes none.
+    # Note markdown may hold quiz fences and place library figures; a source
+    # file takes neither.
     placing = [
         i
         for i, c in enumerate(commands)
         if kind == "material" and c.get("type") in ("insert_markdown", "replace_block")
     ]
-    figures = await note_figures(
-        ctx, [str(commands[i].get("markdown") or "") for i in placing]
+    texts, fences = questions.note_fences(
+        [str(commands[i].get("markdown") or "") for i in placing],
+        lambda n: f"commands[{placing[n]}].markdown",
+        _new_ids(ctx, call_id),
     )
+    figures = await note_figures(ctx, texts)
     if isinstance(figures, ToolResult):
-        return figures
+        return _also(figures, fences)
     prepared = await ledger_write(
         ctx, "edit_document", figures.credited(args), material=kind == "material"
     )
     if isinstance(prepared, ToolResult):
-        return prepared
+        return _also(prepared, fences)
+    if fences.problems():
+        summary, listing = questions.refusal(fences)
+        return _refused(summary, detail=listing)
     books, todo = prepared
     images = await figures.render()
     if isinstance(images, ToolResult):
@@ -2439,6 +2501,196 @@ async def _copy_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if result.effects:
         ctx.ledger.complete(todo)
     return result
+
+
+# --------------------------------------------------------------- questions
+
+
+@dataclass
+class QuizStore:
+    """Where the question tools read and write quizzes: the gateway here, the
+    run's files in the playground (lab/playground/scripts/playground.py)."""
+
+    # A quiz's title and questions by id, or a refusal.
+    load: Callable[[str], Awaitable[tuple[str, list[dict[str, Any]]] | ToolResult]]
+    # Create a quiz from the call's arguments, its questions and its books.
+    create: Callable[
+        [dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]],
+        Awaitable[ToolResult],
+    ]
+    # Edit a quiz by id with edit commands, adding the books to its record.
+    edit: Callable[
+        [str, list[dict[str, Any]], list[dict[str, Any]]], Awaitable[ToolResult]
+    ]
+
+
+def quiz_questions(
+    quiz_id: str, body: dict[str, Any]
+) -> tuple[str, list[dict[str, Any]]] | ToolResult:
+    """A quiz's title and questions from its inspect_document body."""
+    if body.get("materialKind") != "quiz":
+        return _refused(
+            f"quiz_id: {quiz_id} is a {body.get('materialKind') or 'document'}, not a quiz.",
+            code="unavailable_target",
+        )
+    found = [
+        json.loads(child["text"])
+        for block in body.get("blocks") or []
+        for child in block.get("children") or []
+        if child.get("type") == "quiz_question"
+    ]
+    return str(body.get("title") or ""), found
+
+
+def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
+    async def load(quiz_id: str):
+        body = await _gateway_read(
+            "/api/internal/documents/inspect",
+            {
+                "workspaceId": ctx.workspace_id,
+                "userId": ctx.user_id,
+                "target": {"kind": "material", "id": quiz_id},
+                "start": 0,
+                "count": 200,
+            },
+            f"read quiz {quiz_id}",
+        )
+        return body if isinstance(body, ToolResult) else quiz_questions(quiz_id, body)
+
+    async def create(args, written, books):
+        resolved = await _material_scope(ctx, args, books)
+        if isinstance(resolved, ToolResult):
+            return resolved
+        return await _post_material(
+            ctx, call_id, args, resolved, books, {"kind": "quiz", "questions": written}
+        )
+
+    async def edit(quiz_id, commands, books):
+        payload = {
+            **_chat_context(ctx, call_id),
+            "target": {"kind": "material", "id": quiz_id},
+            "commands": commands,
+        }
+        if books:
+            payload["provenance"] = {"books": books}
+        return await _post_operation(
+            "/api/internal/documents/edit",
+            payload,
+            operation_id(ctx.assistant_message_id, call_id),
+            ctx,
+            failure="edit the quiz",
+        )
+
+    return QuizStore(load, create, edit)
+
+
+async def write_questions(
+    name: str, args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
+) -> ToolResult:
+    """add_questions and add_open_question: check every argument at once, save
+    the valid questions in a new quiz or an existing one, and name the ones
+    left out with how to resend them (retrieval/questions.py). The ledger todo
+    completes once every question of the call is saved."""
+    call_id = str(args.get("_tool_call_id") or "")
+    if not call_id or not ctx.assistant_message_id:
+        return _refused(f"{name} needs its tool-call and assistant message ids.")
+    clean = {k: v for k, v in args.items() if not k.startswith("_")}
+    found = questions.check(name, clean)
+    quiz_id = clean.get("quiz_id")
+    quiz: list[dict[str, Any]] | None = None
+    if isinstance(quiz_id, str) and quiz_id and not clean.get("title"):
+        loaded = await quizzes.load(quiz_id)
+        if isinstance(loaded, ToolResult):
+            return _also(loaded, found)
+        quiz = loaded[1]
+        questions.check_ids(found, clean, quiz)
+    prepared = await ledger_write(ctx, name, clean)
+    if isinstance(prepared, ToolResult):
+        return _also(prepared, found)
+    if found.call or not found.valid:
+        summary, listing = questions.refusal(found)
+        return _refused(summary, detail=listing)
+    books, todo = prepared
+    built = questions.build(
+        found, quiz, clean.get("after_question_id"), _new_ids(ctx, call_id)
+    )
+    if quiz is None:
+        result = await quizzes.create(clean, built.questions, books)
+    else:
+        result = await quizzes.edit(str(quiz_id), built.commands, books)
+    if not result.effects:
+        return result
+    if not found.invalid:
+        ctx.ledger.complete(todo)
+    resource = result.effects[0].get("resource") or {}
+    result.text_parts = [
+        questions.result_text(found, built, resource, quiz is None, todo)
+    ]
+    return result
+
+
+async def write_media(
+    args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
+) -> ToolResult:
+    """add_question_media: the chart, plot or graph goes after the question's
+    text, and the question is written back whole (replace_question)."""
+    call_id = str(args.get("_tool_call_id") or "")
+    if not call_id or not ctx.assistant_message_id:
+        return _refused(
+            "add_question_media needs its tool-call and assistant message ids."
+        )
+    clean = {k: v for k, v in args.items() if not k.startswith("_")}
+    found = questions.media_check(clean)
+    quiz_id, qid = clean.get("quiz_id"), clean.get("question_id")
+    question = None
+    if isinstance(quiz_id, str) and isinstance(qid, str):
+        loaded = await quizzes.load(quiz_id)
+        if isinstance(loaded, ToolResult):
+            return _also(loaded, found)
+        question = questions.find(found, loaded[1], qid)
+        if question is not None and not questions.editable(question):
+            return _refused(
+                f"Quiz {quiz_id} is read-only for this user.", code="unavailable_target"
+            )
+    prepared = await ledger_write(ctx, "add_question_media", clean)
+    if isinstance(prepared, ToolResult):
+        return _also(prepared, found)
+    if found.call or question is None:
+        summary, listing = questions.refusal(found)
+        return _refused(summary, detail=listing)
+    books, todo = prepared
+    command = {
+        "type": "replace_question",
+        "question_id": qid,
+        "question": questions.with_media(question, clean["media"]),
+    }
+    result = await quizzes.edit(str(quiz_id), [command], books)
+    if result.effects:
+        ctx.ledger.complete(todo)
+        resource = result.effects[0].get("resource") or {}
+        result.text_parts = [
+            (
+                f"Added the {clean['media']['type']} to question {qid} of quiz "
+                f"'{resource.get('title')}' (id {resource.get('id')}), after its text. "
+                "The user can undo this from the chat result."
+            )
+        ]
+    return result
+
+
+async def _add_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    quizzes = _gateway_quizzes(ctx, str(args.get("_tool_call_id") or ""))
+    return await write_questions("add_questions", args, ctx, quizzes)
+
+
+async def _add_open_question(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    quizzes = _gateway_quizzes(ctx, str(args.get("_tool_call_id") or ""))
+    return await write_questions("add_open_question", args, ctx, quizzes)
+
+
+async def _add_question_media(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
+    quizzes = _gateway_quizzes(ctx, str(args.get("_tool_call_id") or ""))
+    return await write_media(args, ctx, quizzes)
 
 
 # ------------------------------------------------------------------ decks
@@ -2623,6 +2875,9 @@ _register("list_sources", _list_sources)
 _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)
+_register("add_questions", _add_questions)
+_register("add_open_question", _add_open_question)
+_register("add_question_media", _add_question_media)
 _register("resolve_source_change", _resolve_source_change)
 _register("inspect_document", _inspect_document)
 _register("edit_document", _edit_document)

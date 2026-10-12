@@ -58,7 +58,16 @@ from .limits import (
 
 # The material write tools: an errored call is an attempt at progress.
 WRITE_TOOLS = frozenset(
-    {"create_material", "edit_document", "copy_questions", "create_deck", "write_slide"}
+    {
+        "create_material",
+        "add_questions",
+        "add_open_question",
+        "add_question_media",
+        "edit_document",
+        "copy_questions",
+        "create_deck",
+        "write_slide",
+    }
 )
 from .openui import LangRenderer
 from .response_guard import (
@@ -109,6 +118,10 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return detail
     if name == "create_material":
         return str(args.get("kind") or "")
+    if name in ("add_questions", "add_open_question"):
+        return str(args.get("title") or args.get("quiz_id") or "")
+    if name == "add_question_media":
+        return str(args.get("question_id") or "")
     if name == "create_deck":
         return str(args.get("title") or "")
     if name == "write_slide":

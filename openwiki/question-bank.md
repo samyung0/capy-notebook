@@ -136,6 +136,15 @@ service share its JSON fixtures. Bounds originate in
 `pnpm gen:openapi`. Bank parts require worked solutions; user quiz solutions
 are optional. Levels are optional metadata and the unenforced timer was removed.
 
+The chat agent does not write this format (Epo 2026-10-13). It writes a
+multiple-choice question with one correct option, a short answer with an
+optional unit, or an open question with marks and a markscheme, and adds a
+chart, plot or graph to a question separately; the retrieval service expands
+each into one paper-layout question with one part, 1 mark for a simple one
+and the explanation as its solution (see
+[agentic-retrieval.md](agentic-retrieval.md), Question tools). Questions it
+copies from the bank keep every answer type.
+
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
 IDs are unique within the material. Note chart/plot/graph voids store their validated
@@ -261,7 +270,7 @@ request: at most 100 parts per quiz, 7 per question, 5 marking items per part
 and 20 open parts per quiz, and sample answers of at most 5,000 characters;
 learners' open answers have the same 5,000-character cap. The Go, browser and
 collaboration validators share these bounds (`fieldlimits.Quiz*`), and the
-generation prompt and agent tool descriptions state them.
+generation prompt states them.
 
 Attempts retain graded snapshots. Mistakes strip the attempt-only awards.
 Taking, reviewing and every read-only view (quiz preview, quiz editor, bank,

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"github.com/samyung0/capy-notebook/server/internal/questions"
@@ -147,14 +148,50 @@ func TestGeneratedContractIsCurrent(t *testing.T) {
 	}
 }
 
-// The materials skill shows this example as the shape to copy, so it must be a
-// question the quiz validator accepts.
-func TestQuestionExampleIsValid(t *testing.T) {
-	var q map[string]any
-	if err := json.Unmarshal([]byte(questionExample), &q); err != nil {
+// The agent writes questions only through the question tools: create_material
+// makes no quiz, edit_document neither adds nor replaces a question, and the
+// question format is not in the contract.
+func TestQuestionsAreWrittenThroughTheQuestionTools(t *testing.T) {
+	props := Lookup("create_material").InputSchema["properties"].(map[string]any)
+	if _, ok := props["questions"]; ok || slices.Contains(props["kind"].(map[string]any)["enum"].([]string), "quiz") {
+		t.Fatalf("create_material still writes quizzes: %v", props)
+	}
+	commands := Lookup("edit_document").InputSchema["properties"].(map[string]any)["commands"].(map[string]any)
+	for _, v := range commands["items"].(map[string]any)["oneOf"].([]any) {
+		tag := v.(map[string]any)["properties"].(map[string]any)["type"].(map[string]any)["const"]
+		if tag == "add_question" || tag == "replace_question" {
+			t.Fatalf("edit_document still offers %s", tag)
+		}
+	}
+	for _, name := range []string{"add_questions", "add_open_question", "add_question_media"} {
+		if def := Lookup(name); def == nil || !def.Mutates || def.Retention != RetainFull {
+			t.Fatalf("%s = %+v", name, def)
+		}
+	}
+	if formats := Export().Formats; len(formats) != 1 || formats["note"] == "" {
+		t.Fatalf("formats = %v, want the note format only", formats)
+	}
+	for name, schema := range Export().MediaBlocks {
+		assertClosed(t, name, schema.(map[string]any))
+	}
+}
+
+// The questions the retrieval service expands from the three shapes
+// (pipeline/tests/test_questions.py checks it writes exactly these) make a quiz
+// the validator accepts.
+func TestExpandedQuestionsAreValid(t *testing.T) {
+	raw, err := os.ReadFile(filepath.Join("testdata", "expanded_questions.json"))
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := questions.Validate(q, questions.Policy{}); err != nil {
+	var qs []map[string]any
+	if err := json.Unmarshal(raw, &qs); err != nil {
+		t.Fatal(err)
+	}
+	if len(qs) == 0 {
+		t.Fatal("no expanded questions")
+	}
+	if err := questions.ValidateAll(qs, questions.Policy{}); err != nil {
 		t.Fatal(err)
 	}
 }

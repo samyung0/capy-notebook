@@ -1,0 +1,162 @@
+[
+  {
+    "id": "q_aea6419d8d",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_aea6419d8d-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Which ion rushes into the axon during depolarisation?"
+          }
+        ],
+        "answer": {
+          "type": "mcq",
+          "options": ["Sodium", "Potassium", "Chloride"],
+          "correct": [0]
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "text": "Voltage-gated sodium channels open first."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  },
+  {
+    "id": "q_ea27efd8fc",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_ea27efd8fc-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "What is the resting potential?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["-70"],
+          "unit": "mV"
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  },
+  {
+    "id": "q_85240393aa",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_85240393aa-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Explain why the action potential travels one way."
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [
+            "The patch behind is refractory: its sodium channels are inactivated."
+          ],
+          "hints": ["What state are the channels behind in?"]
+        },
+        "marks": 2,
+        "markscheme": [
+          {
+            "text": "The membrane behind is refractory",
+            "marks": 1
+          },
+          {
+            "text": "Sodium channels there cannot reopen yet",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  },
+  {
+    "id": "q_e089ddb5bb",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_e089ddb5bb-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Which ion rushes into the axon during depolarisation?"
+          },
+          {
+            "type": "plot",
+            "title": "Action potential",
+            "xTitle": "Time (ms)",
+            "yTitle": "Membrane potential (mV)",
+            "series": [
+              {
+                "name": "Vm",
+                "points": [[0, -70], [1, 30], [2, -80], [4, -70]]
+              }
+            ]
+          }
+        ],
+        "answer": {
+          "type": "mcq",
+          "options": ["Sodium", "Potassium", "Chloride"],
+          "correct": [0]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  },
+  {
+    "id": "q_6f84e6d6da",
+    "stem": [],
+    "parts": [
+      {
+        "id": "q_6f84e6d6da-a",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Name the ion."
+          },
+          {
+            "type": "chart",
+            "kind": "bar",
+            "title": "Ion concentrations",
+            "labels": ["Na+", "K+"],
+            "series": [
+              {
+                "name": "Outside (mM)",
+                "values": [145, 5]
+              }
+            ]
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["K+"]
+        },
+        "marks": 1,
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+]

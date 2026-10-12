@@ -54,9 +54,7 @@ What to build:
 
 Note format (create_material content, edit_document insert_markdown and replace_block): {note}
 
-Quiz format (create_material questions, edit_document add_question and replace_question): {question}
-An example question with a closed part and an open part; a quiz fence writes the same fields in YAML:
-{question_example}
+Quizzes: add_questions writes multiple-choice and short-answer questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_open_question writes one written-answer question with a markscheme; add_question_media puts a chart, plot or graph under a question's text; edit_document remove_question removes one. Results list the question ids these tools take. Each question call is a write, so while ledger todos are open it names one: plan a todo for each call a quiz needs (its simple questions, each open question, any media).
 
 Flashcards: cards, a list of {{front, back}}.
 
@@ -75,12 +73,9 @@ def editing(*, library: bool) -> str:
 
 
 def workspace_building(formats: dict[str, str], *, library: bool) -> str:
-    text = _BUILDING.format(
-        note=formats["note"],
-        question=formats["question"],
-        question_example=formats["question_example"],
+    return _BUILDING.format(note=formats["note"]) + (
+        _BUILDING_LIBRARY if library else ""
     )
-    return text + (_BUILDING_LIBRARY if library else "")
 
 
 def deck_rules(viewbox: str) -> str:

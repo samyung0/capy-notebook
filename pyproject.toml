@@ -29,6 +29,8 @@ dependencies = [
   # when SENTRY_DSN is unset, which is the normal state in dev and e2e.
   "sentry-sdk[fastapi]>=2.0",
   "jsonschema>=4.26.0",
+  # Note quiz fences are YAML (retrieval/questions.py).
+  "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]

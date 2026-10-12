@@ -52,13 +52,14 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "create_ledger": (EDITING,),
     "copy_questions": (EDITING,),
     "create_material": (EDITING, BUILDING),
+    "add_questions": (EDITING, BUILDING),
+    "add_open_question": (EDITING, BUILDING),
+    "add_question_media": (EDITING, BUILDING),
     "edit_document": (EDITING, BUILDING),
     "create_deck": (EDITING, DECK),
     "write_slide": (EDITING, DECK),
 }
-FORMAT_COMMANDS = frozenset(
-    {"insert_markdown", "replace_block", "add_question", "replace_question"}
-)
+FORMAT_COMMANDS = frozenset({"insert_markdown", "replace_block"})
 
 _HEADER = "# Skill: "
 _HEADER_LINE = re.compile(r"^# Skill: (\S+)$", re.MULTILINE)

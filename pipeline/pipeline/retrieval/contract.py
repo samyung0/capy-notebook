@@ -15,7 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
 
-SUPPORTED_VERSION = 18
+SUPPORTED_VERSION = 19
 
 
 def _load() -> dict[str, Any]:
@@ -39,8 +39,16 @@ OPERATIONS: frozenset[str] = frozenset(CONTRACT["operations"])
 OUTCOMES: frozenset[str] = frozenset(CONTRACT["outcomes"])
 ERROR_CODES: frozenset[str] = frozenset(CONTRACT["errorCodes"])
 DEFINITIONS: dict[str, dict[str, Any]] = {t["name"]: t for t in CONTRACT["tools"]}
-# The note and question formats the materials skill quotes.
+# The note format the materials skill quotes.
 FORMATS: dict[str, str] = CONTRACT["formats"]
+# The chart, plot and graph schemas add_question_media checks media against.
+MEDIA_BLOCKS: dict[str, dict[str, Any]] = CONTRACT["mediaBlocks"]
+# Tools whose handlers check every argument themselves, naming each problem at
+# once with its path, and save the valid questions of a call
+# (retrieval/questions.py).
+HANDLER_CHECKED = frozenset(
+    {"add_questions", "add_open_question", "add_question_media"}
+)
 
 _validators: dict[str, Draft202012Validator] = {}
 for _name, _definition in DEFINITIONS.items():
@@ -60,10 +68,13 @@ def definition(name: str) -> dict[str, Any] | None:
 
 
 def validate_args(name: str, args: dict[str, Any]) -> str | None:
-    """Return the first schema violation as text, or None when valid."""
+    """Return the first schema violation as text, or None when valid or when
+    the tool's handler checks its arguments (HANDLER_CHECKED)."""
     validator = _validators.get(name)
     if validator is None:
         return f"No tool named {name}."
+    if name in HANDLER_CHECKED:
+        return None
     error = next(iter(sorted(validator.iter_errors(args), key=str)), None)
     if error is None:
         return None

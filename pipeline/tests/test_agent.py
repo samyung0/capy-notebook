@@ -660,11 +660,10 @@ async def test_two_materials_may_share_the_same_excerpts(monkeypatch):
         ctx,
     )
     _gateway_receipt(monkeypatch, _created("mat_quiz", "Practice", "quiz"))
-    quiz = await tools._create_material(
+    quiz = await tools._add_questions(
         {
-            "kind": "quiz",
             "title": "Practice",
-            "questions": [{"prompt": "?"}],
+            "questions": [{"question": "Slope?", "accepted": ["2"]}],
             "excerpt_ids": ["e_1", "e_2"],
             "todo": 1,
             "_tool_call_id": "call_2",
@@ -3016,8 +3015,8 @@ async def test_a_turn_starting_from_the_stored_ledger_completes_an_open_todo(
                 "",
                 [
                     _call(
-                        "create_material",
-                        '{"kind":"quiz","title":"Practice","todo":1}',
+                        "add_questions",
+                        '{"title":"Practice","questions":[],"todo":1}',
                         "k1",
                     )
                 ],
@@ -3028,7 +3027,7 @@ async def test_a_turn_starting_from_the_stored_ledger_completes_an_open_todo(
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     async def _run(_name, args, ctx):
-        prepared = await agent.tools.ledger_write(ctx, "create_material", args)
+        prepared = await agent.tools.ledger_write(ctx, "add_questions", args)
         if isinstance(prepared, ToolResult):
             return prepared
         _books, todo = prepared

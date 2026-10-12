@@ -17,19 +17,6 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
-// questionJSONDescription documents the question shape and the user-quiz bounds
-// the validator enforces.
-var questionJSONDescription = fmt.Sprintf("Question JSON: id, stem typed blocks, parts [{id, blocks, answer, marks 1-%d, markscheme [{text, marks}] on open parts only, solution blocks}], layout paper|split, labels letters|numbers, optional level. An open part's markscheme item marks add up to its marks; closed parts have no markscheme and explain in solution. Part ids must be globally unique. Answers: mcq/multi options string[] and correct indices; boolean correct; short accepted string[] and optional unit (the fixed unit after the answer box); matching options string[] and pairs [{left,right option index}]; ordering items string[]; open accepted and hints string[]. Blocks: text, chart, graph, table. At most %d parts per question and %d marking items per part; a quiz has at most %d parts, %d of them open; open accepted answers under %d characters. No legacy prompt/points/rubrics or awarded scores.",
-	fieldlimits.QuestionMarks, fieldlimits.QuizQuestionParts, fieldlimits.QuizMarkscheme, fieldlimits.QuizParts, fieldlimits.QuizOpenParts, fieldlimits.QuizOpenAnswer)
-
-// questionExample is one valid user-quiz question, a closed part and an open
-// one, that the materials skill shows beside the format (checked by
-// TestQuestionExampleIsValid).
-const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red blood cell is placed in pure water."}], "parts": [` +
-	`{"id": "q1a", "blocks": [{"type": "text", "text": "Which way does water move?"}], "answer": {"type": "mcq", "options": ["Into the cell", "Out of the cell"], "correct": [0]}, "marks": 1, "solution": [{"type": "text", "text": "Into the cell, from the higher water potential outside."}]}, ` +
-	`{"id": "q1b", "blocks": [{"type": "text", "text": "Explain why the cell may burst."}], "answer": {"type": "open", "accepted": ["Water enters by osmosis and, with no cell wall, the membrane ruptures."], "hints": ["What resists the swelling in a plant cell?"]}, "marks": 2, "markscheme": [{"text": "Water enters by osmosis", "marks": 1}, {"text": "No cell wall, so the membrane ruptures", "marks": 1}], "solution": [{"type": "text", "text": "Water keeps entering by osmosis; an animal cell has no wall to resist the pressure, so it lyses."}]}` +
-	`], "layout": "paper", "labels": "letters"}`
-
 // ContractVersion changes whenever a tool definition, input schema, operation
 // name or result shape changes incompatibly. Python refuses to start on a
 // version it does not know.
@@ -68,7 +55,13 @@ const questionExample = `{"id": "q1", "stem": [{"type": "text", "text": "A red b
 // v18: edit_document gains replace_block (a note block rewritten from
 // markdown); inspect_document shows math as $tex$, and expected texts match
 // that rendering.
-const ContractVersion = 18
+// v19: the agent writes questions in three small shapes through
+// add_questions, add_open_question and add_question_media, which the
+// retrieval service expands into the question format; create_material makes
+// no quizzes, edit_document loses add_question and replace_question, the
+// question format leaves Formats, MediaBlocks carries the media schemas, and a
+// note's quiz fence takes the small shapes.
+const ContractVersion = 19
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -266,6 +259,9 @@ type Contract struct {
 	// Formats are the content formats the write tools validate, quoted by the
 	// materials skill rather than repeated in every tool description.
 	Formats map[string]string `json:"formats"`
+	// MediaBlocks are the JSON Schemas add_question_media checks its media
+	// against; the model is not shown them.
+	MediaBlocks map[string]any `json:"mediaBlocks"`
 }
 
 func Export() Contract {
@@ -285,10 +281,9 @@ func Export() Contract {
 		},
 		Tools: Definitions(),
 		Formats: map[string]string{
-			"question":         questionJSONDescription,
-			"question_example": questionExample,
-			"note":             noteMarkdownDescription,
+			"note": noteMarkdownDescription,
 		},
+		MediaBlocks: mediaBlocks(),
 	}
 }
 
@@ -418,14 +413,6 @@ func editCommandSchema() map[string]any {
 				"after_card_id": map[string]any{"type": []string{"string", "null"}},
 			}, "front", "back"),
 			variant("remove_card", map[string]any{"card_id": str("")}, "card_id"),
-			variant("replace_question", map[string]any{
-				"question_id": str(""),
-				"question":    map[string]any{"type": "object", "additionalProperties": true, "description": "Question JSON in the materials skill's format."},
-			}, "question_id", "question"),
-			variant("add_question", map[string]any{
-				"question":          map[string]any{"type": "object", "additionalProperties": true, "description": "Question JSON in the materials skill's format."},
-				"after_question_id": map[string]any{"type": []string{"string", "null"}},
-			}, "question"),
 			variant("remove_question", map[string]any{"question_id": str("")}, "question_id"),
 			variant("set_mermaid", map[string]any{
 				"expected_source": text("Current mermaid source."),
@@ -452,7 +439,9 @@ var noteFigureFences = fmt.Sprintf("```chart fences comparing labelled categorie
 var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
 	noteFigureFences +
-	"```quiz fences (YAML `questions:` list, each in the quiz question format) and " +
+	"```quiz fences (YAML `questions:` list, each a question as add_questions takes it, or an " +
+	"open question with add_open_question's question, marks, markscheme, model_answer, hints? " +
+	"and explanation?) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
 	"items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at " +
 	"most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a " +
@@ -472,6 +461,101 @@ func todoSchema() map[string]any {
 		"type":        "integer",
 		"minimum":     0,
 		"description": "The open ledger todo this write completes.",
+	}
+}
+
+// The agent writes questions in three small shapes (Epo 2026-10-13): a
+// multiple-choice or short-answer question through add_questions, an open one
+// through add_open_question, and a chart, plot or graph under a question
+// through add_question_media. The retrieval service checks every argument,
+// naming each problem at once, and expands the shapes into the question format
+// (pipeline/retrieval/questions.py); the quiz validator stays the backstop.
+// The schemas stay lean because the model reads them on every call.
+
+func textField(desc string) map[string]any {
+	s := map[string]any{"type": "string"}
+	if desc != "" {
+		s["description"] = desc
+	}
+	return s
+}
+
+func textList(desc string, min int) map[string]any {
+	return map[string]any{"type": "array", "minItems": min, "items": textField(""), "description": desc}
+}
+
+// quizTarget adds where a question tool writes to its properties: a quiz by
+// id, at an optional place, or a new quiz it creates.
+func quizTarget(props map[string]any) map[string]any {
+	props["quiz_id"] = str("The quiz to add to, a note's quiz too.")
+	props["title"] = str("Instead of quiz_id: create a quiz with this title.")
+	props["chapter_id"] = str("With title: the new quiz's chapter.")
+	props["after_question_id"] = str("With quiz_id: add after this question, not at the end.")
+	props["excerpt_ids"] = idList("Library excerpts the questions were written from.", 0, 32)
+	props["todo"] = todoSchema()
+	return props
+}
+
+func replacesSchema() map[string]any {
+	return str("A question of the quiz to rewrite in place instead (its media is dropped).")
+}
+
+// simpleQuestionSchema is one add_questions item: options and correct make a
+// multiple-choice question, accepted (and unit) a short answer.
+func simpleQuestionSchema() map[string]any {
+	return obj(map[string]any{
+		"question": textField(""),
+		"options":  textList("Multiple choice: the options.", 2),
+		"correct":  textField("Multiple choice: the one correct option, copied exactly."),
+		"accepted": textList("Short answer: the accepted answers.", 1),
+		"unit": textField(`Short answer to a quantity: the unit shown after the box; accepted then ` +
+			`holds plain numbers only, like "9.8".`),
+		"explanation": textField("Optional: why the answer is right, shown after checking."),
+		"replaces":    replacesSchema(),
+	}, "question")
+}
+
+// mediaBlocks are the question blocks add_question_media takes, as JSON Schema
+// for the retrieval service's checks (questions.ValidateBlock is the backstop).
+// They ride in the contract, not in the tool: the model writes chart and plot
+// in the note fence format the materials skill describes.
+func mediaBlocks() map[string]any {
+	label := map[string]any{"type": "string", "maxLength": fieldlimits.QuestionMetadata}
+	number := map[string]any{"type": "number"}
+	list := func(min, max int, items map[string]any) map[string]any {
+		return map[string]any{"type": "array", "minItems": min, "maxItems": max, "items": items}
+	}
+	return map[string]any{
+		"chart": obj(map[string]any{
+			"type":   map[string]any{"const": "chart"},
+			"kind":   map[string]any{"enum": []string{"bar", "hbar", "line", "area", "pie", "stacked"}},
+			"title":  label,
+			"labels": list(1, fieldlimits.QuestionChartLabels, map[string]any{"type": "string", "minLength": 1}),
+			"series": list(1, fieldlimits.QuestionChartSeries, obj(map[string]any{
+				"name": label, "values": map[string]any{"type": "array", "items": number},
+			}, "name", "values")),
+			"unit": label, "xTitle": label, "yTitle": label,
+			"gridlines": map[string]any{"enum": []string{"normal", "fine"}},
+		}, "type", "kind", "title", "labels", "series"),
+		"plot": obj(map[string]any{
+			"type": map[string]any{"const": "plot"}, "title": label, "xTitle": label, "yTitle": label, "unit": label,
+			"series": list(1, fieldlimits.QuestionPlotSeries, obj(map[string]any{
+				"name":   label,
+				"points": list(2, fieldlimits.QuestionPlotPoints, list(2, 2, number)),
+			}, "name", "points")),
+			"lines": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
+				"axis": map[string]any{"enum": []string{"x", "y"}}, "value": number, "label": label,
+			}, "axis", "value")),
+			"marks": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
+				"x": number, "y": number, "label": label,
+			}, "x", "y", "label")),
+		}, "type", "title", "xTitle", "yTitle", "series"),
+		// A graph's recipe and SVG are left to the validator.
+		"graph": map[string]any{
+			"type":                 "object",
+			"additionalProperties": true,
+			"required":             []string{"type", "board", "elements", "image", "width", "height", "description"},
+		},
 	}
 }
 
@@ -723,11 +807,11 @@ func Definitions() []Definition {
 			Name:      "create_material",
 			Retention: RetainFull,
 			Description: "Create a study material from content you wrote, in the formats the " +
-				"materials skill describes.",
+				"materials skill describes. A quiz is made with add_questions.",
 			InputSchema: obj(map[string]any{
 				"kind": map[string]any{
 					"type": "string",
-					"enum": []string{"quiz", "flashcards", "mindmap", "diagram", "note"},
+					"enum": []string{"flashcards", "mindmap", "diagram", "note"},
 				},
 				"title": map[string]any{"type": "string", "maxLength": fieldlimits.MaterialTitle},
 				"cards": map[string]any{
@@ -737,12 +821,6 @@ func Definitions() []Definition {
 						"front": map[string]any{"type": "string"},
 						"back":  map[string]any{"type": "string"},
 					}, "front", "back"),
-				},
-				"questions": map[string]any{
-					"type":        "array",
-					"description": "quiz only: question JSON.",
-					// Deliberately open: Go's materialdoc validates each question.
-					"items": map[string]any{"type": "object", "additionalProperties": true},
 				},
 				"content": map[string]any{
 					"type":        "string",
@@ -756,6 +834,81 @@ func Definitions() []Definition {
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpMaterialCreate},
+		}),
+		chatTool(Definition{
+			Name:      "add_questions",
+			Retention: RetainFull,
+			Description: "Add multiple-choice questions (one correct option) and short-answer questions, " +
+				"1 mark each, to a quiz (quiz_id), or create a quiz with them (title). The result lists " +
+				`each question's id. Example: {"title": "Osmosis", "questions": [{"question": "Which way ` +
+				`does water move when a red blood cell is put in pure water?", "options": ["Into the cell", ` +
+				`"Out of the cell"], "correct": "Into the cell", "explanation": "From the higher water ` +
+				`potential outside."}, {"question": "What percentage of NaCl is normal saline?", ` +
+				`"accepted": ["0.9"], "unit": "%"}]}`,
+			InputSchema: obj(quizTarget(map[string]any{
+				"questions": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": 20, "items": simpleQuestionSchema(),
+				},
+			}), "questions"),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpMaterialCreate},
+		}),
+		chatTool(Definition{
+			Name:      "add_open_question",
+			Retention: RetainFull,
+			Description: "Add one open question, answered in writing and graded against its markscheme, " +
+				"to a quiz (quiz_id) or as a new quiz (title). The markscheme items' marks add up to " +
+				`marks. Example: {"quiz_id": "mat_1", "question": "Explain why a red blood cell bursts ` +
+				`in pure water.", "marks": 2, "markscheme": [{"text": "Water enters by osmosis", "marks": ` +
+				`1}, {"text": "No cell wall resists the swelling, so the membrane ruptures", "marks": 1}], ` +
+				`"model_answer": "Water enters by osmosis and, with no cell wall to resist it, the ` +
+				`membrane ruptures."}`,
+			InputSchema: obj(quizTarget(map[string]any{
+				"question": textField(""),
+				"marks":    map[string]any{"type": "integer", "minimum": 1, "maximum": fieldlimits.QuestionMarks},
+				"markscheme": map[string]any{
+					"type": "array", "minItems": 1, "maxItems": fieldlimits.QuizMarkscheme,
+					"description": "What earns marks.",
+					"items": obj(map[string]any{
+						"text":  textField(""),
+						"marks": map[string]any{"type": "integer", "minimum": 1},
+					}, "text", "marks"),
+				},
+				"model_answer": map[string]any{
+					"type": "string", "maxLength": fieldlimits.QuizOpenAnswer, "description": "A full-marks answer.",
+				},
+				"hints":       textList("Optional nudges the learner may open.", 0),
+				"explanation": textField("Optional: the worked solution, shown after grading."),
+				"replaces":    replacesSchema(),
+			}), "question", "marks", "markscheme", "model_answer"),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpMaterialCreate},
+		}),
+		chatTool(Definition{
+			Name:      "add_question_media",
+			Retention: RetainFull,
+			Description: "Add a chart, plot or graph to one quiz question, shown after its text; library " +
+				`figures go into notes only. Example: {"quiz_id": "mat_1", "question_id": "q_3f9a1c2b7e", ` +
+				`"media": {"type": "plot", "title": "Action potential", "xTitle": "Time (ms)", "yTitle": ` +
+				`"Membrane potential (mV)", "series": [{"name": "Vm", "points": [[0, -70], [1, 30], ` +
+				`[2, -80], [4, -70]]}]}}`,
+			InputSchema: obj(map[string]any{
+				"quiz_id":     str(""),
+				"question_id": str(""),
+				"media": map[string]any{
+					"type": "object", "additionalProperties": true,
+					"description": "A note's chart or plot fence JSON, or a question graph block {type: graph, " +
+						"board {bbox [left, top, right, bottom], axis, grid}, JSXGraph elements, image {svg} " +
+						"drawing it, width, height, description}.",
+				},
+				"excerpt_ids": idList("Library excerpts the media was drawn from.", 0, 32),
+				"todo":        todoSchema(),
+			}, "quiz_id", "question_id", "media"),
+			Mutates:            true,
+			Concurrency:        "mutate",
+			RequiredOperations: []Operation{OpDocumentEdit},
 		}),
 		chatTool(Definition{
 			Name:      "create_deck",
@@ -831,7 +984,8 @@ func Definitions() []Definition {
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly, each with an Undo; replace_block rewrites a note " +
-				"block with formatting or math; no media or PDF edits.",
+				"block with formatting or math; no media or PDF edits. Quiz questions are added and " +
+				"replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{
