@@ -374,9 +374,15 @@ async fn shutdown(app: &app::Shared) {
 #[cfg(all(test, target_os = "linux"))]
 mod tests {
     /// The kernel's own view (`/proc/self/limits`) after the raise: soft
-    /// equals hard (prod Phase B: soft 1024 under a hard 524288).
+    /// equals hard (prod Phase B: soft 1024 under a hard 524288). The soft
+    /// limit is lowered first, as a container starts it, so a raise that does
+    /// nothing fails here even where the runner's soft already equals hard.
     #[test]
     fn the_open_file_limit_is_raised_to_the_hard_limit() {
+        let (_, hard) = rlimit::Resource::NOFILE.get().expect("read");
+        rlimit::Resource::NOFILE
+            .set(hard.min(1024), hard)
+            .expect("lowered");
         let raised = super::raise_open_files().expect("raised");
         let files = rlimit::ProcLimits::read_self()
             .expect("/proc/self/limits")

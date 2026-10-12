@@ -537,10 +537,16 @@ fn cleared_attributes(keys: u32) -> (Doc, Vec<u8>) {
 /// when an element may require it, each lookup counted (`Walk::Entries`):
 /// the update stays inline (`heavy` false) and goes in, and `heavy`'s and
 /// admission's walks stay within [STEPS_PER_BYTE] per byte, none of them on
-/// these keys. A scan per deleted entry, counted as every walk here is,
-/// takes about 500 million steps.
+/// these keys. The checks read an element's entries only through that
+/// counted lookup: `limits.rs` holds no scan of an element's map, which the
+/// steps could not count (the M3 scan took 89 s here in debug).
 #[test]
 fn deleting_every_attribute_of_a_wide_element_stays_inline_and_linear() {
+    let checks = include_str!("../src/limits.rs");
+    assert!(
+        !checks.contains(".map_items("),
+        "limits.rs scans an element's map outside the counted lookup"
+    );
     let (room, update) = cleared_attributes(32_000);
     assert!(update.len() < 32, "{} bytes", update.len());
     let decoded = ydoc::decode(&update).unwrap();

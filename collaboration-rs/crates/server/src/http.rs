@@ -454,4 +454,15 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].tags.get("trace_id"), Some(&trace));
     }
+
+    /// Sockets read through 8 KiB (REVIEW5 final N4): the upgrade sets the
+    /// buffer, so an idle connection costs about the runbook's 30 KiB, not
+    /// tungstenite's default 128 KiB on top.
+    #[test]
+    fn sockets_read_through_an_8_kib_buffer() {
+        assert_eq!(super::READ_BUFFER, 8 * 1024);
+        let source = include_str!("http.rs");
+        let code = &source[..source.find("#[cfg(test)]").unwrap()];
+        assert!(code.contains(".read_buffer_size(READ_BUFFER)"));
+    }
 }
