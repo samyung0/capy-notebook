@@ -37,6 +37,28 @@
     U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
+/* The note toolbar's scale (tailwind.css --toolbar-button/--toolbar-icon,
+   Toolbar, ToolbarGroup), shared by the DOCX, XLSX and PPTX toolbar rows:
+   compact in a frame under 640px, wider frames override. */
+:root {
+  --toolbar-height: 36px;
+  --toolbar-padding: 4px;
+  --toolbar-button: 28px;
+  --toolbar-icon: 14px;
+  --toolbar-divider-height: 20px;
+  --toolbar-divider-margin: 4px;
+}
+@media (min-width: 640px) {
+  :root {
+    --toolbar-height: 40px;
+    --toolbar-padding: 8px;
+    --toolbar-button: 32px;
+    --toolbar-icon: 16px;
+    --toolbar-divider-height: 28px;
+    --toolbar-divider-margin: 6px;
+  }
+}
+
 :root {
   /* Capy's sans for the chrome; documents register their own fonts as
      FontFaces under Office family names (officeFonts.ts). */
@@ -115,12 +137,22 @@
      page frame keep their light values. */
   --doc-caret: #000;
 
-  /* The single-row toolbar as Capy's Toolbar and ToolbarButton. */
+  /* The single-row toolbar as Capy's Toolbar and ToolbarButton, at the
+     toolbar scale below; its list and colour split buttons alike. */
   --doc-toolbar-bg: var(--surface-card-bg);
   --doc-toolbar-border: var(--divider);
-  --doc-toolbar-button-size: 32px;
-  --doc-toolbar-icon-size: 16px;
+  --doc-toolbar-height: var(--toolbar-height);
+  --doc-toolbar-button-size: var(--toolbar-button);
+  --doc-toolbar-icon-size: var(--toolbar-icon);
   --doc-toolbar-radius: var(--radius-button);
+  --doc-list-gap: 0;
+  --doc-list-active-bg: var(--doc-toggle-active-bg);
+  --doc-list-active-fg: var(--doc-toggle-active-fg);
+  --doc-list-divider-color: var(--divider);
+  --doc-list-divider-height: var(--toolbar-divider-height);
+  --doc-list-divider-margin: 0 var(--toolbar-divider-margin);
+  --doc-color-split-height: var(--toolbar-button);
+  --doc-color-split-width: var(--toolbar-button);
   --doc-menu-trigger-font-size: 0.875rem;
   --doc-menu-trigger-font-weight: 600;
   --doc-menu-trigger-height: 32px;
@@ -284,6 +316,28 @@
   background: var(--color-scrollbar);
   border: 0;
   border-radius: 999px;
+}
+
+/* docx-react's single-row bar (editor.css) at the toolbar scale: padding,
+   end cluster and group dividers as Toolbar and ToolbarGroup. Buttons keep
+   their size in an overflowing row, as ToolbarButton's shrink-0. */
+.oox-root .oox-formatting-bar {
+  padding: 0 var(--toolbar-padding);
+}
+.oox-root .oox-formatting-bar__end {
+  padding-left: var(--toolbar-padding);
+}
+.oox-root .oox-formatting-bar__scroll > [role="group"]::after,
+.oox-root .oox-formatting-bar__scroll > [role="menubar"]::after,
+.oox-root .oox-formatting-bar__end > [role="group"]::after {
+  height: var(--toolbar-divider-height);
+  margin: 0 var(--toolbar-divider-margin);
+}
+.oox-root .oox-formatting-bar .oox-toolbar-toggle {
+  flex-shrink: 0;
+}
+.oox-root .oox-formatting-bar [data-testid="toolbar-alignment"] {
+  height: var(--doc-toolbar-button-size);
 }
 
 html,

@@ -1092,8 +1092,9 @@ reads the shared `--office-menu-*` variables (the panel, rows, popover buttons,
 section labels and swatches; see the shared menu style below), the alignment
 popovers stack one icon button per alignment, and the text, fill and border
 colours open the same palette as the note editor's (Default clears the colour,
-Custom color takes any). The formula bar is its own 40px row under the
-toolbar and the sheet tabs sit under the grid. The viewer draws the same formula
+Custom color takes any). The formula bar is its own row under the toolbar,
+as tall as the toolbar row (40px, 36px in a frame under 640px), and the sheet
+tabs sit under the grid. The viewer draws the same formula
 bar, read-only, in the same place: a click selects a cell (widened to its merged
 range, outlined in the editor's Excel green) and shows its address and full
 text, so the two modes differ only by the toolbar row. xlsx-react reads its
@@ -1213,6 +1214,30 @@ sets it from `set-appearance` and Capy's own page from its locale at startup
 Microsoft YaHei on Windows) at the chrome's weights instead of a mix of a
 Japanese face and Hiragino Sans GB's W3/W6 under `lang="en"`.
 
+The three toolbar rows take the note toolbar's scale (`--toolbar-button`,
+`--toolbar-icon`, `Toolbar` and `ToolbarGroup`; see plate-editor.md "Toolbar
+icons"). `office-runtime.css` defines it once as `--toolbar-height`,
+`--toolbar-padding`, `--toolbar-button`, `--toolbar-icon`,
+`--toolbar-divider-height` and `--toolbar-divider-margin`: 36px rows, 4px
+padding, 28px buttons, 14px icons and 20px dividers with 4px margins in a frame
+under 640px, and 40/8/32/16/28/6px from 640px up. The breakpoint is the
+frame's own width, not the page's, so a viewer narrower than 640px at a
+desktop width also gets the compact row. Each runtime reads the scale through
+its own variables: DOCX's `--doc-toolbar-height`, `--doc-toolbar-button-size`
+and `--doc-toolbar-icon-size`, plus padding, end cluster and group divider rules
+that override the fork's single-row rules in `editor.css`; XLSX's
+`--xlsx-toolbar-height` (the formula bar row too, in both modes),
+`--xlsx-toolbar-padding`, `--xlsx-divider-*`, `--xlsx-group-gap` and
+`--xlsx-button-size`; PPTX's `--pptx-toolbar-height`, `--pptx-toolbar-padding`,
+`--pptx-divider-*`, `--pptx-group-gap` and `--pptx-button-size` (the Notes
+button too). The DOCX list buttons and colour split buttons follow through
+`--doc-list-*` and `--doc-color-split-*`, the list buttons pressed in
+ToolbarButton's tint. Those fork variables fall back to the fork's own sizes.
+XLSX and PPTX icons shrink with a rule on the 16px icons inside the toolbar
+row, leaving chevrons and the menus' icons alone. The rows keep their edge
+fades as overlays rather than `scroll-fade-x`: the toolbar dropdowns are fixed
+panels inside the scroll row, and a mask on the row clips them.
+
 Every Office menu, dropdown and picker looks like the note toolbar's popovers
 (`ToolbarPopover.tsx`). The header menus (`OfficeMenuBar.tsx`) restyle Capy's
 dropdown menu with the same classes: a rounded-lg panel with px-1 py-1.5,
@@ -1262,7 +1287,8 @@ Capy's tokens onto pptx-react's `--pptx-*` variables (their fallbacks are the
 fork's own colours); slides keep their own colours. The viewer's strip ends in
 a pager (previous, "Slide x of y", next). View mode has no count row, so the
 strip and the notes start right under the file header; edit mode adds the
-editor's flat 40px toolbar row (`singleRowToolbar`) above the same layout. In
+editor's flat toolbar row (`singleRowToolbar`, 40px, 36px in a frame under
+640px) above the same layout. In
 a frame under 640px (phones) the strip is a row of 96px thumbnails under the
 slide in both modes, the viewer's pager under it.
 

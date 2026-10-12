@@ -27,14 +27,28 @@
   --pptx-success-text: var(--tint-success-fg);
   --pptx-warning-bg: var(--tint-warning-bg);
   --pptx-warning-text: var(--tint-warning-fg);
-  /* The toolbar row as Capy's Toolbar and ToolbarButton. */
-  --pptx-toolbar-height: 40px;
-  --pptx-button-size: 32px;
+  /* The toolbar row as Capy's Toolbar, ToolbarGroup and ToolbarButton, at
+     the toolbar scale (office-runtime.css). */
+  --pptx-toolbar-height: var(--toolbar-height);
+  --pptx-toolbar-padding: 0 var(--toolbar-padding);
+  --pptx-divider-height: var(--toolbar-divider-height);
+  --pptx-divider-margin: 0 var(--toolbar-divider-margin);
+  --pptx-group-gap: 0;
+  --pptx-button-size: var(--toolbar-button);
   --pptx-button-radius: var(--radius-button);
   /* As the DOCX size box. */
   --pptx-input-radius: 6px;
   --pptx-control-font-size: 0.875rem;
   --pptx-control-font-weight: 500;
+}
+
+/* Toolbar icons at the scale (pptxIcons draws 16px); chevrons and menus keep
+   their size. */
+[data-testid="pptx-formatting-toolbar"]
+  button
+  svg[width="16"]:not([role="menu"] *) {
+  width: var(--toolbar-icon);
+  height: var(--toolbar-icon);
 }
 
 .pptx-viewer {

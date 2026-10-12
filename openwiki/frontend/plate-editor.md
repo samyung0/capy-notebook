@@ -1501,7 +1501,9 @@ stroke width of 1.8, including dropdown chevrons and floating toolbar actions.
 (640px) `ToolbarButton` shrinks to 28px with 14px icons through the
 `--toolbar-button` / `--toolbar-icon` variables in `tailwind.css`, so every
 toolbar, floating toolbar and header action follows while a caller's own size
-classes still win.
+classes still win. The Office runtime is its own document, so
+`office-runtime.css` repeats this scale for the DOCX, XLSX and PPTX toolbar
+rows, keyed to the frame's width (office-files.md).
 
 `components/ui/Toolbar` shares the fixed toolbar row and groups: 40px height,
 8px horizontal padding, zero default button gap, and 28px dividers with 6px

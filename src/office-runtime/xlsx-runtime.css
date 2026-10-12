@@ -22,8 +22,14 @@
   --xlsx-input-bg: var(--surface-card-bg);
   --xlsx-focus: var(--action-primary-bg);
   --xlsx-error: var(--tint-error-fg);
-  /* The single row as Capy's Toolbar and ToolbarButton. */
-  --xlsx-button-size: 32px;
+  /* The single row and the formula bar under it as Capy's Toolbar,
+     ToolbarGroup and ToolbarButton, at the toolbar scale (office-runtime.css). */
+  --xlsx-toolbar-height: var(--toolbar-height);
+  --xlsx-toolbar-padding: 0 var(--toolbar-padding);
+  --xlsx-divider-height: var(--toolbar-divider-height);
+  --xlsx-divider-margin: 0 var(--toolbar-divider-margin);
+  --xlsx-group-gap: 0;
+  --xlsx-button-size: var(--toolbar-button);
   --xlsx-button-radius: var(--radius-button);
   --xlsx-control-font-size: 0.875rem;
   --xlsx-control-font-weight: 600;
@@ -43,10 +49,19 @@
   flex: 0 0 auto;
   gap: 4px;
   align-items: center;
-  height: 40px;
-  padding: 0 8px;
+  height: var(--xlsx-toolbar-height);
+  padding: var(--xlsx-toolbar-padding);
   background: var(--xlsx-chrome-bg);
   border-bottom: 1px solid var(--xlsx-divider);
+}
+
+/* Toolbar icons at the scale (xlsxIcons draws 16px); chevrons and menus keep
+   their size. */
+[data-testid="xlsx-formatting-toolbar"]
+  button
+  svg[width="16"]:not([role="menu"] *) {
+  width: var(--toolbar-icon);
+  height: var(--toolbar-icon);
 }
 
 .xlsx-name-box,
