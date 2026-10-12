@@ -74,7 +74,7 @@ func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
 	}
 	var payer, docPayer, state string
 	var baseRevision, revision int64
-	if err := s.pool.QueryRow(ctx, `SELECT f.user_id, d.user_id, convert_from(d.state,'UTF8'), d.base_revision, f.revision
+	if err := s.pool.QueryRow(ctx, `SELECT f.user_id, d.user_id, `+cloneSavedRowsSQL+`, d.base_revision, f.revision
 		FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=$1`, clone.ID).
 		Scan(&payer, &docPayer, &state, &baseRevision, &revision); err != nil {
 		t.Fatal(err)
@@ -113,6 +113,67 @@ func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
 	if err := s.pool.QueryRow(ctx, `SELECT content_id FROM rag_file_contents WHERE file_id=$1`, same.ID).
 		Scan(&contentID); err != nil || contentID != sourceContent {
 		t.Fatalf("same-workspace clone index = %s %v, want shared %s", contentID, err, sourceContent)
+	}
+}
+
+// cloneSavedRowsSQL is a source document's saved rows (alias d) in its
+// epoch, as text in checkpoint order: what a save wrote over the base.
+const cloneSavedRowsSQL = `(SELECT string_agg(convert_from(u.update,'UTF8'), ',' ORDER BY u.checkpoint)
+	FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch)`
+
+// A file's saves since its last fold are rows over the base (migration
+// 0075). A clone copies the current epoch's rows as epoch 1 with their log
+// totals, so it opens on the same document, and its payer is charged the
+// copied storage, as reconciliation recounts it.
+func TestFileCloneCarriesUnfoldedSaves(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_clone_rows_owner")
+	targetOwner := newBlobTestUser(t, s, "u_clone_rows_target")
+	_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "first")
+	doc = sourceTestEdit(t, s, owner, doc, "second")
+	if doc.State != nil || len(doc.StateRows) != 2 {
+		t.Fatalf("source state=%q rows=%d, want two unfolded rows", doc.State, len(doc.StateRows))
+	}
+	target, err := s.CreateWorkspace(ctx, targetOwner, WorkspaceCreate{Name: "Target"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	itemCloneMember(t, s, target.ID, owner, "editor")
+	before := chargeTestCharged(t, s, targetOwner)
+
+	clone, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "Lesson copy.docx"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	copied := sourceTestSeed(t, s, owner, clone.ID)
+	rows := func(doc SourceSession) string {
+		out := make([]string, len(doc.StateRows))
+		for i, row := range doc.StateRows {
+			out[i] = string(row)
+		}
+		return strings.Join(out, ",")
+	}
+	if copied.Epoch != 1 || copied.Checkpoint != doc.Checkpoint || copied.State != nil || rows(copied) != "first,second" {
+		t.Fatalf("clone epoch=%d checkpoint=%d state=%q rows=%q, want epoch 1 at %d with the source's rows",
+			copied.Epoch, copied.Checkpoint, copied.State, rows(copied), doc.Checkpoint)
+	}
+	var sourceBytes, cloneBytes, fileBytes int64
+	var cloneRows int
+	if err := s.pool.QueryRow(ctx, `SELECT
+			(SELECT storage_bytes FROM source_documents WHERE file_id=$1),
+			(SELECT storage_bytes FROM source_documents WHERE file_id=$2),
+			(SELECT log_rows FROM source_documents WHERE file_id=$2),
+			(SELECT size_bytes FROM files WHERE id=$2)`, file.ID, clone.ID).
+		Scan(&sourceBytes, &cloneBytes, &cloneRows, &fileBytes); err != nil {
+		t.Fatal(err)
+	}
+	if sourceBytes <= 0 || cloneBytes != sourceBytes || cloneRows != 2 {
+		t.Fatalf("storage bytes source=%d clone=%d, clone log rows=%d", sourceBytes, cloneBytes, cloneRows)
+	}
+	if charged := chargeTestCharged(t, s, targetOwner) - before; charged != fileBytes+cloneBytes {
+		t.Fatalf("payer charged %d, want the file %d plus its document %d", charged, fileBytes, cloneBytes)
 	}
 }
 

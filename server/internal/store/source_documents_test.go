@@ -1056,7 +1056,7 @@ func TestSourceCloneCopiesSavedEditsAndCaptionReferences(t *testing.T) {
 	// on the same base, its revision matching the copied file's.
 	var state string
 	var epoch, captions, refs int
-	if err = s.pool.QueryRow(ctx, `SELECT convert_from(d.state,'UTF8'),d.epoch,(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT ref_count FROM blobs WHERE object_path='captions/shared-caption') FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.base_revision=f.revision`, clonedFile).Scan(&state, &epoch, &captions, &refs); err != nil {
+	if err = s.pool.QueryRow(ctx, `SELECT `+cloneSavedRowsSQL+`,d.epoch,(SELECT count(*) FROM image_caption_associations WHERE file_id=$1),(SELECT ref_count FROM blobs WHERE object_path='captions/shared-caption') FROM source_documents d JOIN files f ON f.id=d.file_id WHERE d.file_id=$1 AND d.base_revision=f.revision`, clonedFile).Scan(&state, &epoch, &captions, &refs); err != nil {
 		t.Fatal(err)
 	}
 	if state != "unpublished-state" || epoch != 1 || captions != 1 || refs != 2 {

@@ -622,20 +622,31 @@ func insertCloneFileTx(
 		f.sourceETag, f.contentHash, f.sourceSHA256, f.parseMode, f.everParsed, f.indexLimit, f.provenance, f.preview, f.revision); err != nil {
 		return nil, err
 	}
-	// Saved edits travel (Epo 2026-10-11). base_revision equals the copied
-	// files.revision, as CheckSourceAccess requires. Migration 0075 (delta
-	// saves) adds update rows a clone must copy too.
+	// Saved edits travel (Epo 2026-10-11): the base state, the rows saved over
+	// it in the source's current epoch (migration 0075) renumbered to epoch 1,
+	// and the log totals they make up, which storage_bytes charges. One
+	// statement reads them all, so a save in between cannot split them.
+	// base_revision equals the copied files.revision, as CheckSourceAccess
+	// requires.
 	if f.sourceBasePath != nil {
-		if _, err := tx.Exec(ctx, `INSERT INTO source_documents
-			(user_id, file_id, format, epoch, checkpoint, indexed_checkpoint, base_revision, base_blob_path,
-			 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
-			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal,
-			 reprocess_at)
-			SELECT $3, $2, format, 1, checkpoint, indexed_checkpoint, $4, base_blob_path,
-			 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
-			 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal,
-			 reprocess_at
-			FROM source_documents WHERE file_id=$1`, f.id, newID, actorID, f.revision); err != nil {
+		if _, err := tx.Exec(ctx, `WITH src AS (
+				SELECT * FROM source_documents WHERE file_id=$1
+			), doc AS (
+				INSERT INTO source_documents
+				(user_id, file_id, format, epoch, checkpoint, indexed_checkpoint, base_revision, base_blob_path,
+				 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
+				 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal,
+				 reprocess_at, log_bytes, log_rows)
+				SELECT $3, $2, format, 1, checkpoint, indexed_checkpoint, $4, base_blob_path,
+				 base_source_sha256, state, pending_effects, net_tokens, last_edited_at, last_refresh_requested_at,
+				 seed_bytes, state_seed_sha256, rebuild_pending, published_state, published_state_seed_sha256, rebuild_refusal,
+				 reprocess_at, log_bytes, log_rows
+				FROM src
+			)
+			INSERT INTO source_document_updates (file_id, epoch, checkpoint, update)
+			SELECT $2, 1, u.checkpoint, u.update
+			FROM source_document_updates u JOIN src ON u.file_id = src.file_id AND u.epoch = src.epoch`,
+			f.id, newID, actorID, f.revision); err != nil {
 			return nil, err
 		}
 	}
