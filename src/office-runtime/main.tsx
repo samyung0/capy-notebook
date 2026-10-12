@@ -27,6 +27,7 @@ import {
 } from '@/features/files/officeRuntimeConfig';
 import { m, setLocale } from '@/i18n';
 import { THEMES } from '@/theme/theme';
+import { useBottomInset } from './bottomInset';
 import { exportCheckpoint } from './exportCheckpoint';
 import type {
   OfficeExporter,
@@ -122,6 +123,15 @@ function OfficeRuntime() {
     zoomSentRef.current = zoom;
     post({ revision: revisionRef.current, type: 'zoom', zoom });
   }, []);
+  // Capy keeps its floating tools button above the frame's bottom chrome.
+  const reportInset = useCallback((inset: number) => {
+    if (revisionRef.current !== null)
+      post({ inset, revision: revisionRef.current, type: 'bottom-inset' });
+  }, []);
+  useBottomInset(
+    file?.format === 'xlsx' || file?.format === 'pptx',
+    reportInset
+  );
   // When `load` arrived, for the ready timings.
   const loadedAtRef = useRef(0);
   const epochRef = useRef<number | null>(null);

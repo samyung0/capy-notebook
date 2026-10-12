@@ -213,6 +213,21 @@ describe('office host protocol', () => {
     );
   });
 
+  it("accepts the bottom chrome's height, never negative", () => {
+    const inset = (value: unknown) =>
+      isOfficeRuntimeMessage({
+        inset: value,
+        revision: 1,
+        type: 'bottom-inset',
+        version: OFFICE_PROTOCOL_VERSION,
+      });
+    expect(inset(0)).toBe(true);
+    expect(inset(83.5)).toBe(true);
+    expect(inset(-1)).toBe(false);
+    expect(inset(Number.NaN)).toBe(false);
+    expect(inset('34')).toBe(false);
+  });
+
   it('carries a zoom level or fit both ways, for the next frame of an open file', () => {
     const load = {
       bytes: new ArrayBuffer(4),

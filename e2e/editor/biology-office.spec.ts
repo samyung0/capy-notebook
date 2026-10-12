@@ -2305,3 +2305,42 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
     page.getByRole('menuitem', { exact: true, name: 'Table' })
   ).toHaveAttribute('aria-disabled', 'true');
 });
+
+test('below lg the tools button sits 8px above the sheet tabs, the slide strip and the notes box', async ({
+  page,
+}) => {
+  test.setTimeout(180_000);
+  await page.setViewportSize({ height: 780, width: 360 });
+  const tools = page.locator('[data-workspace-tools-menu]');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  // From the button's bottom edge to the top of the chrome in the frame
+  // (boxes are in page pixels, frame contents included).
+  const gap = async (chrome: ReturnType<FrameLocator['locator']>) => {
+    const [button, top] = await Promise.all([
+      tools.boundingBox(),
+      chrome.boundingBox(),
+    ]);
+    return button && top
+      ? Math.round(top.y - (button.y + button.height))
+      : null;
+  };
+
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');
+  const tabs = frame.getByTestId('xlsx-sheet-tabs');
+  await expect(tabs).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => gap(tabs)).toBe(8);
+
+  await page.goto('/workspaces/ws_bio?file=bio-office-pptx&mode=edit');
+  const strip = frame.getByRole('complementary', { name: 'Slides' });
+  await expect(strip).toBeVisible({ timeout: 60_000 });
+  await expect.poll(() => gap(strip)).toBe(8);
+  const closed = (await tools.boundingBox())?.y ?? 0;
+  // The notes box opens under the strip: the button rises with it.
+  await frame.getByTestId('pptx-notes-toggle').click();
+  await expect(frame.getByTestId('pptx-notes-textarea')).toBeVisible();
+  await expect.poll(() => gap(strip)).toBe(8);
+  expect((await tools.boundingBox())?.y ?? 0).toBeLessThan(closed - 40);
+  await frame.getByTestId('pptx-notes-toggle').click();
+  await expect(frame.getByTestId('pptx-notes-textarea')).toHaveCount(0);
+  await expect.poll(async () => (await tools.boundingBox())?.y).toBe(closed);
+});

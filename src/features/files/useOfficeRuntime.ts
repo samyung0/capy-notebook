@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { authHeaders } from '@/api/auth';
 import { api } from '@/api/client';
 import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
+import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
@@ -97,6 +98,7 @@ export function useOfficeRuntime({
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const config = useRef(getOfficeRuntimeConfig()).current;
   const { style, theme } = useTheme();
+  const reportInset = useContext(OfficeInsetContext);
   const narrow = !useMediaQuery('(min-width: 1024px)');
   const compact = !useMediaQuery('(min-width: 768px)');
   const [mode, setMode] = useFileMode(canEdit, initialMode);
@@ -515,6 +517,10 @@ export function useOfficeRuntime({
         setPresenting(message.presenting);
         return;
       }
+      if (message.type === 'bottom-inset') {
+        reportInset?.(message.inset);
+        return;
+      }
       if (message.type === 'zoom') {
         zoomRef.current = message.zoom;
         return;
@@ -614,7 +620,7 @@ export function useOfficeRuntime({
     };
     window.addEventListener('message', receive);
     return () => window.removeEventListener('message', receive);
-  }, [config.origin, post, checkpoint, openPresenter]);
+  }, [config.origin, post, checkpoint, openPresenter, reportInset]);
 
   const downloadDraft = useCallback(async () => {
     saveBlob(new Blob([await request('export')]), file.name);
@@ -815,6 +821,8 @@ export function useOfficeRuntime({
     },
     [canEdit, mode, checkpoint, request, setMode]
   );
+
+  useEffect(() => () => reportInset?.(0), [reportInset]);
 
   useEffect(
     () => () => {

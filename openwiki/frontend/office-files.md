@@ -1393,12 +1393,18 @@ production the runtime is a separate origin inside Capy's page, so browsers
 keep that storage partitioned under Capy's site, and Safari may clear it after
 some days without a visit, after which the notes start hidden again.
 
-Below lg the workspace's floating tools button covers the frame's bottom
-right. The runtime marks its root `data-narrow` then, and
-`--pptx-notes-toggle-right` moves the Notes button left of that column. While
-the notes are open the host lifts the button above the notes box: `PptxView`
-sets `data-office-notes-open` when the runtime's menus tick
-`view.speakerNotes`, and `WorkspaceOpen` moves the button up for it.
+Below lg the workspace's floating tools button sits at the frame's bottom
+right, 8px above its bottom chrome. The runtime reports that chrome's height
+as `bottom-inset` (protocol v9) whenever it changes: the frame's height minus
+the bottom of the area the document scrolls in (`bottomInset.ts`: the XLSX
+grid, the PPTX slide stage, in both modes), watched with a ResizeObserver, so
+the sheet tabs, a narrow slide strip and the speaker notes box count and a
+slide list in a side column does not; DOCX reports nothing. `useOfficeRuntime`
+passes it to `WorkspaceOpen` through `OfficeInsetContext`, which writes it as
+`--office-inset` on the viewer's box (no re-render while a resize moves it)
+and back to 0 when the file closes. The runtime marks its root `data-narrow`
+below lg, and `--pptx-notes-toggle-right` moves the Notes button left of the
+button's column.
 
 PPTX's header menus follow Google Slides: File (Save, which Capy performs as
 `capy.save`, Download ▸ PowerPoint or PNG of the current slide, Print), Edit

@@ -1,5 +1,11 @@
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
-import { type ReactNode, useEffect, useState } from 'react';
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { usePanelRef } from 'react-resizable-panels';
 import { addChapterBodyNameMax } from '@/api/gen/validators';
 import {
@@ -17,7 +23,10 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
-import { FloatingBarContext } from '@/components/ui/floatingBarContext';
+import {
+  FloatingBarContext,
+  OfficeInsetContext,
+} from '@/components/ui/floatingBarContext';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
@@ -161,6 +170,13 @@ export default function WorkspaceOpen() {
   } | null>(null);
   const [officeEditDirty, setOfficeEditDirty] = useState(false);
   const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
+  // The tools button sits 8px above the Office frame's bottom chrome, which
+  // the runtime reports; written to the box's style so the workspace does
+  // not re-render while a resize moves it.
+  const viewerBox = useRef<HTMLDivElement>(null);
+  const setOfficeInset = useCallback((inset: number) => {
+    viewerBox.current?.style.setProperty('--office-inset', `${inset}px`);
+  }, []);
   const openItem =
     searchedOpenItem?.kind === 'file' &&
     citationTarget?.fileId === searchedOpenItem.id
@@ -487,16 +503,21 @@ export default function WorkspaceOpen() {
             id="viewer"
             minSize={layout === 'one' ? undefined : '400px'}
           >
-            <div className="relative h-full">
+            <div
+              className="relative h-full"
+              ref={viewerBox}
+              style={{ '--office-inset': '0px' } as React.CSSProperties}
+            >
               <FloatingBarContext.Provider
                 value={layout === 'one' && !officeOpen}
               >
-                {viewer}
+                <OfficeInsetContext.Provider value={setOfficeInset}>
+                  {viewer}
+                </OfficeInsetContext.Provider>
               </FloatingBarContext.Provider>
               {layout === 'one' && officeOpen && (
                 <div
-                  // Above an open PPTX notes box (PptxView's data-office-notes-open).
-                  className="absolute right-4 bottom-14 z-10 flex [:has([data-office-notes-open])>&]:bottom-28"
+                  className="absolute right-4 bottom-[calc(var(--office-inset)+8px)] z-10 flex"
                   data-workspace-tools-menu
                 >
                   <Menu

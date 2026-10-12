@@ -58,21 +58,8 @@ export default function PptxView({
       <FileError onRetry={runtime.retryView} title={m.files_pptx_failed()} />
     );
   }
-  // The runtime ticks View › Show speaker notes while the notes box is open;
-  // WorkspaceOpen lifts its floating tools button above the box then.
-  const notesOpen = runtime.menus?.menus
-    .find((menu) => menu.id === 'view')
-    ?.items.some(
-      (entry) =>
-        entry.kind === 'item' &&
-        entry.id === 'view.speakerNotes' &&
-        entry.checked
-    );
   return (
-    <div
-      className="flex h-full min-h-[60vh] flex-col"
-      data-office-notes-open={notesOpen || undefined}
-    >
+    <div className="flex h-full min-h-[60vh] flex-col">
       <SourceBanners
         actions={[
           ...(runtime.mode === 'view'

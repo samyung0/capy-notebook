@@ -261,6 +261,17 @@ export type OfficeRuntimeMessage =
       zoom: OfficeZoom;
       revision: number;
     }
+  /**
+   * The height of the frame's bottom chrome (XLSX sheet tabs, a narrow PPTX
+   * slide strip, the speaker notes box), sent when it changes: Capy's floating
+   * tools button sits above it.
+   */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'bottom-inset';
+      inset: number;
+      revision: number;
+    }
   /** A PPTX show started or ended: the frame gets the whole page meanwhile. */
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
@@ -390,6 +401,8 @@ export function isOfficeRuntimeMessage(
     if (raw.type === 'render-failed') return typeof raw.id === 'string';
     if (raw.type === 'zoom') return isOfficeZoom(raw.zoom);
     if (raw.type === 'presenting') return typeof raw.presenting === 'boolean';
+    if (raw.type === 'bottom-inset')
+      return isFiniteNumber(raw.inset) && raw.inset >= 0;
     if (raw.type === 'open-presenter') return typeof raw.id === 'string';
     if (raw.type === 'exported')
       return typeof raw.id === 'string' && raw.bytes instanceof ArrayBuffer;
