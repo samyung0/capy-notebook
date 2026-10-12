@@ -9,13 +9,20 @@
     // The note posts {type: 'render', html, theme, font} once; the snippet
     // then replaces this page, so its inline scripts and load events run as on
     // a normal page, and the frame reports its height as {type: 'resize',
-    // height}. The CSP header in _headers blocks every request, and this page
-    // makes none: `font` carries the note's Fustat bytes, and BASE gives the
-    // snippet the note's look, which its own CSS overrides.
+    // height}. The CSP header in _headers blocks every request but scripts,
+    // stylesheets and fonts from four public CDNs, for the snippet's
+    // libraries; this page makes none: `font` carries the note's Fustat
+    // bytes, and BASE gives the snippet the note's look, which its own CSS
+    // overrides.
+    // A range input's default side margins, or a border on a `width:100%`
+    // figure, made the snippet a few pixels wider than the frame, which then
+    // scrolled sideways.
     const BASE =
       ':root{color-scheme:var(--scheme);accent-color:var(--accent)}' +
       'body{margin:0;font:16px/1.5 var(--font);color:var(--fg);background:transparent}' +
-      'button,input,select,textarea{font:inherit}';
+      'button,input,select,textarea{font:inherit}' +
+      'input[type=range]{margin-inline:0}' +
+      'svg,canvas{box-sizing:border-box}';
     addEventListener('message', function render(event) {
       const data = event.data;
       if (
@@ -47,19 +54,33 @@
       document.write(data.html);
       document.close();
       const html = document.documentElement;
-      const report = () =>
+      // The height without a vertical scrollbar: one that shows while the
+      // frame is too short narrows the snippet and makes it taller, so a
+      // height read then left the frame with a scrollbar and nothing to
+      // scroll. Content wider than the frame keeps its horizontal scrollbar,
+      // and the frame grows by that bar's height.
+      const report = () => {
+        const overflowY = html.style.overflowY;
+        html.style.overflowY = 'hidden';
+        const height = html.getBoundingClientRect().height;
+        html.style.overflowY = overflowY;
         parent.postMessage(
           {
-            height: Math.ceil(html.getBoundingClientRect().height),
+            height: Math.ceil(height + innerHeight - html.clientHeight),
             type: 'resize',
           },
           '*'
         );
+      };
       // Chrome runs no ResizeObserver in an off-screen cross-origin frame, so
       // the height also goes out now, on load and once fonts are ready: a
       // frame further down the note is sized before the reader gets there.
       report();
       addEventListener('load', report);
+      // A scrollbar shown while the frame was short stays once the frame
+      // fits, if the snippet is taller at the narrower width; reporting
+      // again drops it, since the read without it lets the browser start over.
+      addEventListener('resize', report);
       document.fonts.ready.then(report);
       new ResizeObserver(report).observe(html);
     });

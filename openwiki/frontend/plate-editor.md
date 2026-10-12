@@ -435,8 +435,11 @@ and display equations use MathLive in both viewing and editing, including questi
 shaped like chart and graph (a nested one is lifted by the plugin's
 normalizer). The agent writes it as an ` ```html-embed ` fence with YAML
 `caption` and `html` and no fallback (`blocks/shared.ts`, `markdown.ts`); the
-collaboration service's converter builds the same node. A fence without html,
-with html over 64 KB, or an eleventh fence is refused by name. Go
+collaboration service's converter builds the same node, reading the agent's
+note as plain Markdown so the snippet keeps every character (the MDX pass a
+paste goes through rewrites HTML inside fences; see `markdownImport.ts`). A
+fence that is not YAML, has no html, has html over 64 KB, or is the eleventh
+is refused by name. Go
 `materialdoc`, the collaboration validator and the browser's
 `isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes) and a document at 10
 such blocks, and refuse any other field. Retrieval skips the block like
@@ -459,12 +462,20 @@ origin is opaque), where `theme` holds `--bg`, `--fg`, `--muted`, `--accent`,
 `--border` and `--font` (the style's `--font-sans`) read from the app's
 tokens plus `--scheme` (the app's computed `color-scheme`), and `font` is the
 app's cached Fustat latin woff2, which the frame registers with `FontFace`
-because its CSP allows no font request. Before the snippet the wrapper
+because its CSP allows fonts only from the four CDNs below. Before the snippet the wrapper
 applies a base sheet: `color-scheme: var(--scheme)` (a scheme differing from
 the page would paint the frame opaque), `accent-color: var(--accent)`, and a
 body with no margin, `16px/1.5 var(--font)` in `--fg` on a transparent
-background, with form controls inheriting the font; the snippet's own CSS
-overrides it. The agent guidance names the variables and the base. The share
+background, with form controls inheriting the font, range inputs without side
+margins and `svg`/`canvas` in `border-box` (a `width:100%` slider or bordered
+figure otherwise came out 2 to 4 px wider than the frame and scrolled); the snippet's own CSS
+overrides it. The agent guidance names the variables and the base. The
+frame's CSP (`embed/_headers`) lets a snippet load scripts, stylesheets and
+fonts from `https://cdnjs.cloudflare.com`, `https://cdn.jsdelivr.net`,
+`https://esm.sh` and `https://unpkg.com` and make no other request (no
+fetch, network images, frames or workers); the agent guidance names the four
+CDNs and asks for exact versions, and the playground's `check_note` refuses any
+other origin (SECURITY.md path 11). The share
 page hydrates the same `HtmlEmbedView` island without View source (visitors
 read the block, they don't need its source) and
 loads the same Fustat file, so it renders identically. The host accepts only `{type: 'resize', height}`
@@ -473,7 +484,12 @@ a taller snippet scrolls inside the frame. The wrapper reports its height right
 after writing the snippet, on `load` and once fonts are ready, besides a
 `ResizeObserver`: Chrome runs no observers in an off-screen cross-origin frame,
 so without the eager reports a frame further down kept its 240 px default until
-scrolled to. The
+scrolled to. The height is the document's without a vertical scrollbar (read
+with `overflow-y: hidden` for that moment, and again whenever the host resizes
+the frame: a scrollbar shown while the frame was still short narrows the
+snippet, and one that is taller at that width kept the bar with nothing to
+scroll), plus the horizontal scrollbar's height when content wider than the
+frame has one, so wide content scrolls only sideways. The
 wrapper writes the snippet over itself, which fires a second `load`; a later
 `load` means the snippet navigated its frame (to a page without the
 wrapper's CSP), so the frame is replaced by a notice until the snippet
