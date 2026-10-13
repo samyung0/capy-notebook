@@ -67,20 +67,58 @@ function engine() {
   return runtime;
 }
 
+/**
+ * The current epoch's rows saved over `d.state` (delta saves), in order, read
+ * in the statement that reads the state, since a fold moves rows into it
+ * (sourceStateRowsSQL in server/internal/store/source_documents.go).
+ */
+export const SAVED_ROWS = `ARRAY(SELECT encode(u.update,'base64') FROM source_document_updates u
+  WHERE u.file_id=d.file_id AND u.epoch=d.epoch ORDER BY u.checkpoint) AS rows`;
+
 export async function savedState(run: UatRun, fileId: string) {
   const rows = await run.query(
-    `SELECT format,checkpoint,indexed_checkpoint,epoch,base_blob_path,base_source_sha256,
-    encode(state,'base64') AS state,state_seed_sha256,rebuild_pending FROM source_documents WHERE file_id=%s`,
+    `SELECT d.format,d.checkpoint,d.indexed_checkpoint,d.epoch,d.base_blob_path,d.base_source_sha256,
+    encode(d.state,'base64') AS state,${SAVED_ROWS},d.state_seed_sha256,d.rebuild_pending
+    FROM source_documents d WHERE d.file_id=%s`,
     [fileId]
   );
   assert.equal(rows.length, 1, `missing source state for ${fileId}`);
   return rows[0];
 }
 
+/** A source row's saved updates: its state, then its rows; none while
+ * nothing is saved (seed(base)). */
+export function savedUpdates(row: Record<string, unknown>) {
+  assert(Array.isArray(row.rows), 'source row without its saved rows');
+  return [...(row.state === null ? [] : [row.state]), ...row.rows].map(
+    (update) => Buffer.from(string(update), 'base64')
+  );
+}
+
+/**
+ * Applies saved updates in order in one transaction, as the collaboration
+ * server loads a room (`layers` and `replay` in
+ * collaboration-rs/crates/sources/src/store.rs): every item an update refers
+ * to must be in what precedes it. No formatting cleanup, as every server
+ * document (`ydoc::doc_options`).
+ */
+export function replaySaved(updates: Uint8Array[]) {
+  const doc = new Y.Doc({ meta: { formattingCleanup: false } });
+  doc.transact(() => {
+    for (const update of updates) Y.applyUpdate(doc, update);
+  });
+  if (doc.store.pendingStructs || doc.store.pendingDs) {
+    doc.destroy();
+    assert.fail('The saved changes refer to content missing from the seed');
+  }
+  return doc;
+}
+
 export async function savedExport(run: UatRun, fileId: string) {
   const row = await savedState(run, fileId);
   const source = await run.blob(string(row.base_blob_path));
   const base = Buffer.from(source.bodyBase64, 'base64');
+  const saved = savedUpdates(row);
   if (row.base_source_sha256 === '') {
     // Store-only uploads acquire their hash on the first real checkpoint.
     // A poll may read the untouched row while that save is still in flight.
@@ -90,20 +128,18 @@ export async function savedExport(run: UatRun, fileId: string) {
       'Saved checkpoint is missing its source hash'
     );
     assert.equal(
-      row.state,
-      null,
+      saved.length,
+      0,
       'Stored editing state is missing its source hash'
     );
   } else assert.equal(sha256(base), row.base_source_sha256);
-  // A NULL state is seed(base) until the first save: the published source is
+  // Nothing saved is seed(base) until the first save: the published source is
   // the current content (human/frontend/office-files.md, storage record).
-  const state =
-    row.state === null ? null : Buffer.from(string(row.state), 'base64');
   if (row.format === 'text') {
-    if (!state) return { bytes: base, row, text: base.toString() };
-    const doc = new Y.Doc();
+    if (saved.length === 0) return { bytes: base, row, text: base.toString() };
+    // A whole text state, or rows only: a text source's first row holds its seed.
+    const doc = replaySaved(saved);
     try {
-      Y.applyUpdate(doc, state);
       const text = doc.getText('source').toString();
       return { bytes: Buffer.from(text), row, text };
     } finally {
@@ -115,44 +151,39 @@ export async function savedExport(run: UatRun, fileId: string) {
   );
   const native = await engine();
   const seed = await native.seedOffice(row.format, base);
-  const checkpoint: Checkpoint = state
-    ? {
+  let checkpoint = seed;
+  if (saved.length > 0) {
+    // An Office state and its rows are changes over the seed the row names.
+    assert.equal(
+      sha256(seed.state),
+      string(row.state_seed_sha256),
+      'Stored change names another seed'
+    );
+    const doc = replaySaved([seed.state, ...saved]);
+    try {
+      checkpoint = {
         baseSha256: source.sha256,
         format: row.format,
         schemaVersion: 1,
-        state: overSeed(seed.state, state, string(row.state_seed_sha256)),
-      }
-    : seed;
-  const bytes = state
-    ? await native.exportOffice(base, checkpoint, {
-        now: '2026-01-01T00:00:00.000Z',
-        seed: sha256(state),
-      })
-    : base;
+        state: Y.encodeStateAsUpdate(doc),
+      };
+    } finally {
+      doc.destroy();
+    }
+  }
+  const bytes =
+    saved.length > 0
+      ? await native.exportOffice(base, checkpoint, {
+          now: '2026-01-01T00:00:00.000Z',
+          seed: sha256(checkpoint.state),
+        })
+      : base;
   const entries = await native.inspectOffice(base, checkpoint);
   return {
     bytes: Buffer.from(bytes),
     row,
     text: entries.map((entry) => entry.value).join('\n'),
   };
-}
-
-/**
- * A stored Office change applied over seed(base): the seed must be the one it
- * names, and every item the change refers to must be in it.
- */
-function overSeed(seed: Uint8Array, change: Uint8Array, seedSHA256: string) {
-  assert.equal(sha256(seed), seedSHA256, 'Stored change names another seed');
-  // No formatting cleanup, as the room (sourceDocOptions in sourceProvider.ts).
-  const doc = new Y.Doc({ meta: { formattingCleanup: false } });
-  try {
-    Y.applyUpdate(doc, seed);
-    Y.applyUpdate(doc, change);
-    assert(!doc.store.pendingStructs && !doc.store.pendingDs);
-    return Y.encodeStateAsUpdate(doc);
-  } finally {
-    doc.destroy();
-  }
 }
 
 /** SHA-256 of seed(base), which a stored Office change names. */
@@ -170,7 +201,9 @@ export async function storageCharge(run: UatRun) {
  * plus its pending effects and its stored editing state beyond what the file
  * holds: for text, its growth beyond the recorded seed; while a deferred
  * Office publication waits for its rebuild, its growth beyond the published
- * capture (human/backend-storage-quota.md, 2026-10-05 rule).
+ * capture (human/backend-storage-quota.md, 2026-10-05 rule). The stored
+ * editing state is the state plus the current epoch's rows (`state_bytes`,
+ * NULL while nothing is stored).
  */
 export async function officeCharge(
   run: UatRun,
@@ -181,7 +214,9 @@ export async function officeCharge(
     storageCharge(run),
     run.query(
       `SELECT f.size_bytes,d.format,d.checkpoint,d.seed_bytes,d.state_seed_sha256,d.pending_effects,d.net_tokens,
-      octet_length(d.state) AS state_bytes,d.rebuild_pending,
+      NULLIF(COALESCE(octet_length(d.state),0)+(SELECT COALESCE(sum(octet_length(u.update)),0)
+        FROM source_document_updates u WHERE u.file_id=d.file_id AND u.epoch=d.epoch),0) AS state_bytes,
+      d.rebuild_pending,
       COALESCE(octet_length(d.published_state),0) AS published_bytes,
       COALESCE(octet_length(NULLIF(d.pending_effects,'[]'::jsonb)::text),0) AS effects_bytes
       FROM files f JOIN source_documents d ON d.file_id=f.id WHERE f.id=%s`,

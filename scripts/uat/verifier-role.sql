@@ -42,6 +42,7 @@ GRANT SELECT ON TABLE
     public.files,
     public.upload_sessions,
     public.source_documents,
+    public.source_document_updates,
     public.source_refresh_candidates,
     public.editor_assets,
     public.image_caption_associations,
