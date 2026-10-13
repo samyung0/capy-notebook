@@ -261,3 +261,18 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   question media and that the note format describes every kind the agent
   writes in notes. The embeds side of the split is done; what is left is the
   Rust session's live-layer items.
+- **Rust collaboration server and live layer** (2026-10-14, the Rust
+  session's column): the notes and items crates read limits and kind facts
+  from `notes::catalog` (set-equality tests in `notes/tests/catalog.rs` and
+  the items crate). The store refuses unlisted types, and room admission
+  refuses whatever the store would refuse (closed fields, the room's material
+  kind, top-level-only blocks, the 11th HTML embed, value checks). A stored
+  document the store would refuse loads read-only for everyone
+  (`unsupported_block`, strip in the note, mindmap/diagram and quiz editors),
+  with the reason logged once at load. A quiz room goes read-only when either
+  of its documents holds an unknown block. A stored pending reference refuses
+  to load (its fence body holds answer keys). The live TS layer throws instead
+  of dropping unknown blocks. Left: duplicate top-level ids and a few
+  crafted-only shapes are caught at load, not admission (`openwiki/embeds.md`);
+  a test keeping the live editor's element types inside the catalog (embeds
+  side).
