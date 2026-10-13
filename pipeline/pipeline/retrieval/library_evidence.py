@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Any
 from .library import READ_CHUNKS
 
 if TYPE_CHECKING:
-    from .tools import Ledger, ToolContext, ToolResult
+    from .tools import LibraryReads, ToolContext, ToolResult
 
 
 @dataclass(frozen=True)
@@ -71,7 +71,7 @@ class LibraryEvidence:
                     result.outcome == "succeeded"
                     and any(
                         (r.excerpt_id, r.start) == read.key
-                        for r in scratch.ledger.reads
+                        for r in scratch.library_reads.reads
                     )
                     and tools.limit_tool_result(result.text()) == read.text
                 ):
@@ -86,16 +86,18 @@ class LibraryEvidence:
                 out.setdefault(i, []).append(text)
         return out
 
-    def activate(self, messages: list[dict[str, Any]], ledger: Ledger) -> None:
-        """Only exact evidence surviving compaction satisfies the write guard."""
+    def activate(self, messages: list[dict[str, Any]], reads: LibraryReads) -> None:
+        """Only exact evidence surviving compaction satisfies the write guard.
+        A retained excerpt was credited by the write that kept it, so a write
+        naming no excerpts credits it only when nothing new was read."""
         contents = {
             message["content"]
             for message in messages
             if message.get("_kind") == "source_evidence"
         }
-        ledger.reads[:] = [
+        reads.reads[:] = [
             read
-            for read in ledger.reads
+            for read in reads.reads
             if (read.excerpt_id, read.start) not in self.active
             or (read.excerpt_id, read.start) in self.fresh
         ]
@@ -104,7 +106,7 @@ class LibraryEvidence:
         }
         for key, read in self.inherited.items():
             if key in self.active:
-                ledger.note_read(read.excerpt_id, read.start, read.section)
+                reads.note(read.excerpt_id, read.start, read.section, retained=True)
 
     def observe(
         self,
@@ -112,7 +114,7 @@ class LibraryEvidence:
         args: dict[str, Any],
         result: ToolResult,
         shown: str,
-        ledger: Ledger,
+        reads: LibraryReads,
     ) -> None:
         # A section read (book and section, no excerpt_id) is not retained: a
         # later turn reads its excerpts again before writing from them.
@@ -122,29 +124,14 @@ class LibraryEvidence:
             str(args.get("excerpt_id") or "").strip(),
             max(0, int(args.get("start") or 0)),
         )
-        read = next((r for r in ledger.reads if (r.excerpt_id, r.start) == key), None)
+        read = next((r for r in reads.reads if (r.excerpt_id, r.start) == key), None)
         if read is not None:
             count = int(args.get("count") or READ_CHUNKS)
             self.fresh[key] = ExcerptRead(*key, count, read.section, shown)
 
-    def wrote(self, name: str, args: dict[str, Any], result: ToolResult) -> None:
-        if (
-            name
-            in (
-                "create_material",
-                "add_questions",
-                "add_open_question",
-                "add_question_media",
-                "edit_document",
-            )
-            and any(
-                effect.get("operation") in ("created", "edited")
-                and (effect.get("resource") or {}).get("kind") == "material"
-                for effect in result.effects
-            )
-            and result.outcome == "succeeded"
-        ):
-            self.used.update(args.get("excerpt_ids") or [])
+    def wrote(self, excerpt_ids: list[str]) -> None:
+        """A material write landed crediting these excerpts (tools.landed)."""
+        self.used.update(excerpt_ids)
 
     def pack(self) -> list[dict[str, Any]]:
         available = {

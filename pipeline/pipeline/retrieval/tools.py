@@ -80,148 +80,52 @@ class ToolResult:
         return "\n\n".join(part for part in self.text_parts if part)
 
 
-# Open todos a ledger may hold. The gateway refuses a ledger over 64 KiB, and
-# the model pays for every rendered line on every call.
-STORED_TODOS = 10
-
-
 @dataclass
-class LedgerTodo:
-    """One material or section the build promised to produce.
-
-    ``id`` comes from the conversation's own counter and never changes, so the
-    number the model writes down in one message still names this todo in the
-    next one. ``done`` lives for the turn that completes it: a done todo leaves
-    the ledger when it is stored.
-    """
-
-    id: int
-    text: str
-    done: bool = False
-
-
-@dataclass
-class LedgerRead:
+class LibraryRead:
     """One library excerpt this turn read, at one chunk position."""
 
     excerpt_id: str
     start: int
     section: str
-
-
-def _stored_objects(stored: dict[str, Any], key: str) -> list[dict[str, Any]]:
-    """One array of a stored ledger whose entries are objects."""
-    entries = stored.get(key) or []
-    if not isinstance(entries, list):
-        raise TypeError(f"{key} is {type(entries).__name__}, not a list")
-    for entry in entries:
-        if not isinstance(entry, dict):
-            raise TypeError(f"{key} holds a {type(entry).__name__}, not an object")
-    return entries
+    # A write that landed already credited it, or it is retained from the
+    # earlier turn whose write used it: a write naming no excerpts credits the
+    # reads that are not.
+    credited: bool = False
 
 
 @dataclass
-class Ledger:
-    """A conversation's todo list for multi-item builds.
+class LibraryReads:
+    """The library excerpts this turn has read, or still holds in full from an
+    earlier turn's write: what a write may name in excerpt_ids, and what one
+    naming none is credited with."""
 
-    It belongs to the conversation, not the turn: open todos carry across
-    turns through ``conversations.ledger``. A turn loads it, edits todos with
-    ``create_ledger``, marks todos done as writes land, and stores it at turn
-    end. It rides right after the query on every call and is never part of the
-    message history.
-    """
+    reads: list[LibraryRead] = field(default_factory=list)
 
-    todos: list[LedgerTodo] = field(default_factory=list)
-    # The conversation's todo counter: the next id a new todo gets. It is
-    # stored, so an id is never reused after its todo leaves the ledger.
-    next_todo_id: int = 0
-    # This turn only, and never stored: what the model read to write with.
-    reads: list[LedgerRead] = field(default_factory=list)
-    # Only the first changed plan in a turn counts toward the stall guard.
-    written: bool = False
-    # Something this turn changed has to be written back at turn end.
-    dirty: bool = False
-    # Monotonic count of this turn's real progress: its first plan write, then
-    # each completed todo. The stall guard compares it across a response.
-    progress: int = 0
+    def note(
+        self, excerpt_id: str, start: int, section: str, *, retained: bool = False
+    ) -> None:
+        """Record one read. Reading a recorded position again makes it new for
+        the next write; a retained excerpt comes in already credited."""
+        for read in self.reads:
+            if (read.excerpt_id, read.start) == (excerpt_id, start):
+                read.credited = read.credited and retained
+                return
+        self.reads.append(LibraryRead(excerpt_id, start, section, credited=retained))
 
-    @classmethod
-    def from_stored(cls, stored: Any, conversation: str = "") -> Ledger:
-        """The conversation's stored ledger, or an empty one.
-
-        Total: the row is read again on every turn, so a shape this code does
-        not understand would otherwise break the conversation for good. It is
-        logged against the conversation and the turn starts from nothing. A
-        todo id the counter has already handed out would let two todos answer
-        to the same number, so that is malformed too.
-        """
-        if stored is None:
-            return cls()
-        try:
-            if not isinstance(stored, dict):
-                raise TypeError(f"ledger is {type(stored).__name__}, not an object")
-            ledger = cls(
-                next_todo_id=int(stored.get("next_todo_id") or 0),
-                todos=[
-                    LedgerTodo(id=int(todo.get("id")), text=str(todo.get("text") or ""))
-                    for todo in _stored_objects(stored, "todos")
-                ],
-            )
-            if any(todo.id >= ledger.next_todo_id for todo in ledger.todos):
-                raise ValueError("next_todo_id is not past every stored todo id")
-            return ledger
-        except (AttributeError, TypeError, ValueError) as exc:
-            log.error(
-                "stored ledger is malformed (%s); starting this turn from an "
-                "empty ledger. conversation=%s",
-                exc,
-                conversation or "unknown",
-            )
-            return cls()
-
-    def stored(self) -> dict[str, Any]:
-        """The open todos and the counter, as the gateway persists them."""
-        return {
-            "next_todo_id": self.next_todo_id,
-            "todos": [
-                {"id": todo.id, "text": todo.text}
-                for todo in self.todos
-                if not todo.done
-            ][-STORED_TODOS:],
-        }
-
-    @property
-    def active(self) -> bool:
-        """The turn builds on the ledger: it has todos, open or done."""
-        return bool(self.todos)
-
-    def open_todos(self) -> list[int]:
-        """The ids the write tools accept right now."""
-        return [todo.id for todo in self.todos if not todo.done]
-
-    def todo(self, todo_id: int) -> LedgerTodo | None:
-        return next((todo for todo in self.todos if todo.id == todo_id), None)
-
-    def note_read(self, excerpt_id: str, start: int, section: str) -> bool:
-        """Record one read. False when this exact position was already read."""
-        if any(r.excerpt_id == excerpt_id and r.start == start for r in self.reads):
-            return False
-        self.reads.append(
-            LedgerRead(excerpt_id=excerpt_id, start=start, section=section)
-        )
-        return True
-
-    def read_ids(self) -> set[str]:
+    def ids(self) -> set[str]:
         return {read.excerpt_id for read in self.reads}
 
-    def complete(self, todo_id: int | None) -> None:
-        """Mark the todo a successful write completed."""
-        todo = None if todo_id is None else self.todo(todo_id)
-        if todo is None or todo.done:
-            return
-        todo.done = True
-        self.dirty = True
-        self.progress += 1
+    def uncredited(self) -> list[str]:
+        """What a write naming no excerpts is credited with: the excerpts read
+        since the last write that landed, or every one when none are new."""
+        fresh = [read for read in self.reads if not read.credited]
+        return list(dict.fromkeys(read.excerpt_id for read in fresh or self.reads))
+
+    def credit(self) -> None:
+        """A write that took provenance landed: everything read so far is
+        credited, so the next write naming none credits only later reads."""
+        for read in self.reads:
+            read.credited = True
 
 
 @dataclass
@@ -231,9 +135,8 @@ class ToolContext:
     # The Library switch: the knowledge library is a source this turn, so its
     # tools are offered and materials written from it carry its provenance.
     library: bool = False
-    # The conversation's todo list for multi-item builds, loaded from the chat
-    # request at turn start.
-    ledger: Ledger = field(default_factory=Ledger)
+    # The library excerpts this turn read, for the write guard and crediting.
+    library_reads: LibraryReads = field(default_factory=LibraryReads)
     # What the turn message tells the model about the learner: the file or
     # material they have open, and their saved study preferences.
     open_resource: dict[str, Any] = field(default_factory=dict)
@@ -1004,7 +907,7 @@ async def _browse_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
 
 
 def _short_section(section_path: str) -> str:
-    """The last one or two segments of a section path, for a ledger line."""
+    """The last one or two segments of a section path, for a turn context line."""
     parts = [
         part.strip()
         for part in section_path.replace("›", ">").split(">")
@@ -1113,7 +1016,7 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
 
     _, text = _fitting(page, len(read.chunks))
-    ctx.ledger.note_read(
+    ctx.library_reads.note(
         read.excerpt.id, start, _short_section(read.excerpt.section_path)
     )
     return _result(text)
@@ -1211,49 +1114,10 @@ async def _read_section(
     for chunk in read.chunks[:n]:
         firsts.setdefault(chunk["excerpt_id"], chunk)
     for excerpt_id, chunk in firsts.items():
-        ctx.ledger.note_read(
+        ctx.library_reads.note(
             excerpt_id, chunk["chunk_idx"], _short_section(chunk["section_path"])
         )
     return _result(text)
-
-
-async def _create_ledger(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Apply todo edits atomically, preserving work and stable todo IDs."""
-    ledger = ctx.ledger
-    todos = {todo.id: replace(todo) for todo in ledger.todos}
-    next_id = ledger.next_todo_id
-    for item in args.get("todos", []):
-        text = (item if isinstance(item, str) else item["todo"]).strip()
-        if not text:
-            return _refused("Each todo needs non-empty text.")
-        if isinstance(item, str):
-            todos[next_id] = LedgerTodo(id=next_id, text=text)
-            next_id += 1
-        else:
-            todo_id = item["id"]
-            if todo_id not in todos:
-                if todo_id < ledger.next_todo_id:
-                    return _refused(
-                        f"Todo {todo_id} was already used. Add a new todo with a fresh ID or a string."
-                    )
-                todos[todo_id] = LedgerTodo(id=todo_id, text=text)
-                next_id = max(next_id, todo_id + 1)
-            else:
-                todos[todo_id].text = text
-    if sum(not todo.done for todo in todos.values()) > STORED_TODOS:
-        return _refused(
-            f"The ledger can hold at most {STORED_TODOS} unfinished todos; this update changed nothing."
-        )
-    updated = list(todos.values())
-    if updated == ledger.todos:
-        return _result("Ledger unchanged.")
-    ledger.todos, ledger.next_todo_id = updated, next_id
-    # Only the first plan write in a turn counts as progress.
-    if not ledger.written:
-        ledger.progress += 1
-    ledger.written = ledger.dirty = True
-    listing = "\n".join(f"[ ] {t.id}. {t.text}" for t in ledger.todos if not t.done)
-    return _result(f"Ledger updated.\n\nOpen todos:\n{listing or '(none)'}")
 
 
 async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -1415,13 +1279,15 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     figures = await note_figures(ctx, [content] if kind == "note" else [])
     if isinstance(figures, ToolResult):
         return _also(figures, fences)
-    prepared = await ledger_write(ctx, "create_material", figures.credited(args))
+    prepared = await write_sources(
+        ctx, "create_material", args, figures=figures.excerpt_ids
+    )
     if isinstance(prepared, ToolResult):
         return _also(prepared, fences)
     if fences.problems():
         summary, listing = questions.refusal(fences)
         return _refused(summary, detail=listing)
-    books, todo = prepared
+    books, credited = prepared
     resolved = await _material_scope(ctx, args, books)
     if isinstance(resolved, ToolResult):
         return resolved
@@ -1439,7 +1305,7 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
         images=images,
     )
     if result.effects:
-        ctx.ledger.complete(todo)
+        landed(ctx, credited)
     return figures.noted(result)
 
 
@@ -1536,7 +1402,7 @@ class NoteFigures:
 
     ``markdown`` is the write's markdown with each figure's caption carrying
     its printed credit, ``excerpt_ids`` an excerpt this turn read that lists
-    each figure, credited like the write's own excerpt_ids, and ``links`` the
+    each figure, credited with the write (``write_sources``), and ``links`` the
     images with other URLs, which the import turns into links.
     """
 
@@ -1544,13 +1410,6 @@ class NoteFigures:
     figures: dict[str, library.Figure] = field(default_factory=dict)
     excerpt_ids: list[str] = field(default_factory=list)
     links: int = 0
-
-    def credited(self, args: dict[str, Any]) -> dict[str, Any]:
-        """The write's arguments with the figures' excerpts among its sources."""
-        if not self.excerpt_ids:
-            return args
-        named = [str(e) for e in (args.get("excerpt_ids") or [])]
-        return {**args, "excerpt_ids": list(dict.fromkeys([*named, *self.excerpt_ids]))}
 
     async def render(self) -> dict[str, bytes] | ToolResult:
         """Each figure's box on its page as a JPEG, as capture_knowledge_page
@@ -1616,7 +1475,7 @@ async def note_figures(
             "source this turn."
         )
     found = await library.figures(refs)
-    read = ctx.ledger.read_ids()
+    read = ctx.library_reads.ids()
     problems, excerpts = [], []
     for ref in refs:
         figure = found.get(ref)
@@ -1667,94 +1526,61 @@ def _figure_images(images: dict[str, bytes]) -> list[dict[str, str]]:
 # ------------------------------------------------------------ material writes
 
 
-def _next_move(ledger: Ledger) -> str:
-    """Explain how to complete open work or extend the plan."""
-    listing = ", ".join(str(todo_id) for todo_id in ledger.open_todos())
-    if not listing:
-        return (
-            "Every todo on the ledger is done. Finish this turn by replying with "
-            "the list of materials you created, or add a todo if the learner requested "
-            "more work that is not covered yet."
-        )
-    return f"Open todos: {listing}."
-
-
-async def ledger_write(
+async def write_sources(
     ctx: ToolContext,
     tool: str,
     args: dict[str, Any],
     *,
     material: bool = True,
-    excerpts: bool = True,
-) -> tuple[list[dict[str, Any]], int | None] | ToolResult:
-    """Check a material write and resolve its provenance, or refuse it.
+    figures: list[str] | None = None,
+) -> tuple[list[dict[str, Any]], list[str]] | ToolResult:
+    """Check a write's library excerpts and resolve its provenance, or refuse.
 
-    Returns the provenance books (one entry per source book) and the ledger
-    todo this write completes. Shared with the playground's local write stubs,
-    so the rules have one implementation. ``material`` is false for an edit of
-    the user's own source file, which carries no provenance and no todo.
-    ``excerpts`` is false for a write whose content comes from somewhere other
-    than the library (a copied bank question carries the bank's sources), so
-    the excerpt rules do not apply.
+    Returns the provenance books (one entry per source book) and the excerpts
+    they come from. Named excerpts must have been read this turn or be retained
+    in full; a write naming none is credited with the excerpts read since the
+    last write that landed, or every one read when none are new, and a turn
+    with no library reads credits nothing. ``figures`` are the excerpts listing
+    the note figures the write places, credited with it. Shared with the
+    playground's local write stubs, so the rules have one implementation.
+    ``material`` is false for an edit of the user's own source file, which
+    carries no provenance.
     """
     excerpt_ids = [str(e) for e in (args.get("excerpt_ids") or [])]
     if not material:
         # Provenance is what a work was written from; a workspace source file is
-        # the user's own text. Both are refused rather than ignored: a silently
-        # dropped todo would leave the model believing it closed one.
+        # the user's own text.
         if excerpt_ids:
             return _refused(
                 "excerpt_ids belong to a study material written from the "
                 "library; a source file carries no provenance."
             )
-        if args.get("todo") is not None:
-            return _refused(
-                "Editing one of the user's own source files completes no ledger "
-                "todo, so it takes no todo. Call it again without one."
-            )
-        return [], None
-    todo: int | None = None
-    raw_todo = args.get("todo")
-    if raw_todo is not None:
-        todo = int(raw_todo)
-        entry = ctx.ledger.todo(todo)
-        if entry is None:
-            return _refused(
-                f"todo {todo} is not on the ledger. {_next_move(ctx.ledger)}"
-            )
-        if entry.done:
-            return _refused(f"todo {todo} is already done. {_next_move(ctx.ledger)}")
-    read = ctx.ledger.read_ids()
-    # Name every missing field at once: a write resent per field costs a round
-    # trip of the whole content each time.
-    missing = []
-    if raw_todo is None and ctx.ledger.open_todos():
-        missing.append("todo, the id of the ledger todo it completes")
-    if excerpts and read and not excerpt_ids:
-        missing.append(
-            "excerpt_ids naming the library excerpts this content was written from"
-        )
-    if missing:
-        hint = (
-            f" {_next_move(ctx.ledger)}"
-            if raw_todo is None and ctx.ledger.open_todos()
-            else ""
-        )
-        return _refused(f"{tool} needs {'; and '.join(missing)}.{hint}")
+        return [], []
     if excerpt_ids and not ctx.library:
         return _refused(
             "excerpt_ids name library excerpts, and the library is not a source this "
             "turn; workspace passages need none. Call it again without excerpt_ids."
         )
+    read = ctx.library_reads.ids()
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
         return await _carry_excerpts(ctx, unread)
-    if not excerpt_ids:
-        return [], todo
+    named = excerpt_ids or ctx.library_reads.uncredited()
+    credited = list(dict.fromkeys([*named, *(figures or [])]))
+    if not credited:
+        return [], []
     try:
-        return await library.provenance(excerpt_ids), todo
+        return await library.provenance(credited), credited
     except ValueError as exc:
         return _refused(f"{tool}: {exc}")
+
+
+def landed(ctx: ToolContext, excerpt_ids: list[str]) -> None:
+    """A material write landed crediting these excerpts: the next write naming
+    none credits only later reads, and their full text is retained for later
+    turns (library_evidence.py)."""
+    ctx.library_reads.credit()
+    ctx.library_evidence.wrote(excerpt_ids)
 
 
 async def _carry_excerpts(ctx: ToolContext, unread: list[str]) -> ToolResult:
@@ -1775,15 +1601,19 @@ async def _carry_excerpts(ctx: ToolContext, unread: list[str]) -> ToolResult:
         room = TOOL_RESULT_MAX_TOKENS - 200  # the refusal's own lines
         if (
             result.refused
-            or not scratch.ledger.reads
+            or not scratch.library_reads.reads
             or estimate_tokens("\n\n".join([*shown, text])) > room
         ):
             left.append(excerpt_id)
             continue
-        read = scratch.ledger.reads[0]
-        ctx.ledger.note_read(read.excerpt_id, read.start, read.section)
+        read = scratch.library_reads.reads[0]
+        ctx.library_reads.note(read.excerpt_id, read.start, read.section)
         ctx.library_evidence.observe(
-            "read_knowledge", {"excerpt_id": excerpt_id}, result, text, ctx.ledger
+            "read_knowledge",
+            {"excerpt_id": excerpt_id},
+            result,
+            text,
+            ctx.library_reads,
         )
         shown.append(text)
     carried = [e for e in unread if e not in left]
@@ -1802,47 +1632,6 @@ async def _carry_excerpts(ctx: ToolContext, unread: list[str]) -> ToolResult:
             "passages need no excerpt_ids."
         )
     return _refused(" ".join(parts), detail="\n\n".join(shown))
-
-
-async def store_ledger(ctx: ToolContext) -> None:
-    """Write the conversation ledger back through the gateway at turn end.
-
-    The ledger is the conversation's memory of what is still open, so it is
-    stored whenever this turn changed it, including when the turn ended on the
-    stall guard or an error. A failed write loses the turn's ledger changes,
-    not the turn: the materials themselves are already durable.
-    """
-    if not ctx.ledger.dirty:
-        return
-    if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
-        log.warning("ledger not stored: no gateway route for this turn")
-        return
-    payload = {
-        "workspaceId": ctx.workspace_id,
-        "userId": ctx.user_id,
-        "assistantMessageId": ctx.assistant_message_id,
-        "ledger": ctx.ledger.stored(),
-    }
-
-    def _post() -> requests.Response:
-        return requests.post(
-            _material_url("/api/internal/conversations/ledger"),
-            headers=_material_headers(),
-            data=json.dumps(payload),
-            timeout=10,
-        )
-
-    try:
-        resp = await asyncio.to_thread(_post)
-    except requests.RequestException as exc:
-        log.warning("ledger write failed: %s", exc)
-        return
-    if resp.status_code >= 300:
-        log.warning(
-            "ledger write failed: %s %s",
-            resp.status_code,
-            _response_detail(resp),
-        )
 
 
 async def _post_operation(
@@ -2324,15 +2113,19 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     figures = await note_figures(ctx, texts)
     if isinstance(figures, ToolResult):
         return _also(figures, fences)
-    prepared = await ledger_write(
-        ctx, "edit_document", figures.credited(args), material=kind == "material"
+    prepared = await write_sources(
+        ctx,
+        "edit_document",
+        args,
+        material=kind == "material",
+        figures=figures.excerpt_ids,
     )
     if isinstance(prepared, ToolResult):
         return _also(prepared, fences)
     if fences.problems():
         summary, listing = questions.refusal(fences)
         return _refused(summary, detail=listing)
-    books, todo = prepared
+    books, credited = prepared
     images = await figures.render()
     if isinstance(images, ToolResult):
         return images
@@ -2373,7 +2166,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         if kind == "source_file":
             ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
         else:
-            ctx.ledger.complete(todo)
+            landed(ctx, credited)
             _saw_edit(ctx.seen_blocks.get(rid, {}), commands)
     return figures.noted(result)
 
@@ -2476,11 +2269,7 @@ async def _copy_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     if args.get("chapter_id") and quiz_id:
         return _refused("chapter_id files a new quiz; it goes with title.")
-    # Copied questions carry the bank's credits, so no excerpts are asked.
-    prepared = await ledger_write(ctx, "copy_questions", args, excerpts=False)
-    if isinstance(prepared, ToolResult):
-        return prepared
-    _, todo = prepared
+    # Copied questions carry the bank's credits, so they credit no excerpts.
     payload = {
         "workspaceId": ctx.workspace_id,
         "userId": ctx.user_id,
@@ -2491,16 +2280,13 @@ async def _copy_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         "chapterId": str(args.get("chapter_id") or ""),
         "quizId": str(quiz_id or ""),
     }
-    result = await _post_operation(
+    return await _post_operation(
         "/api/internal/bank/copy",
         payload,
         operation_id(ctx.assistant_message_id, call_id),
         ctx,
         failure="copy the questions",
     )
-    if result.effects:
-        ctx.ledger.complete(todo)
-    return result
 
 
 # --------------------------------------------------------------- questions
@@ -2589,8 +2375,7 @@ async def write_questions(
 ) -> ToolResult:
     """add_questions and add_open_question: check every argument at once, save
     the valid questions in a new quiz or an existing one, and name the ones
-    left out with how to resend them (retrieval/questions.py). The ledger todo
-    completes once every question of the call is saved."""
+    left out with how to resend them (retrieval/questions.py)."""
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
         return _refused(f"{name} needs its tool-call and assistant message ids.")
@@ -2606,13 +2391,13 @@ async def write_questions(
             return _also(loaded, found)
         quiz = loaded[1]
         questions.check_ids(found, clean, quiz)
-    prepared = await ledger_write(ctx, name, clean)
+    prepared = await write_sources(ctx, name, clean)
     if isinstance(prepared, ToolResult):
         return _also(prepared, found)
     if found.call or not found.valid:
         summary, listing = questions.refusal(found)
         return _refused(summary, detail=listing)
-    books, todo = prepared
+    books, credited = prepared
     built = questions.build(
         found, quiz, clean.get("after_question_id"), _new_ids(ctx, call_id)
     )
@@ -2622,12 +2407,9 @@ async def write_questions(
         result = await quizzes.edit(str(quiz_id), built.commands, books)
     if not result.effects:
         return result
-    if not found.invalid:
-        ctx.ledger.complete(todo)
+    landed(ctx, credited)
     resource = result.effects[0].get("resource") or {}
-    result.text_parts = [
-        questions.result_text(found, built, resource, quiz is None, todo)
-    ]
+    result.text_parts = [questions.result_text(found, built, resource, quiz is None)]
     return result
 
 
@@ -2656,13 +2438,13 @@ async def write_media(
             return _refused(
                 f"Quiz {quiz_id} is read-only for this user.", code="unavailable_target"
             )
-    prepared = await ledger_write(ctx, "add_question_media", clean)
+    prepared = await write_sources(ctx, "add_question_media", clean)
     if isinstance(prepared, ToolResult):
         return _also(prepared, found)
     if found.call or question is None:
         summary, listing = questions.refusal(found)
         return _refused(summary, detail=listing)
-    books, todo = prepared
+    books, credited = prepared
     command = {
         "type": "replace_question",
         "question_id": qid,
@@ -2670,7 +2452,7 @@ async def write_media(
     }
     result = await quizzes.edit(str(quiz_id), [command], books)
     if result.effects:
-        ctx.ledger.complete(todo)
+        landed(ctx, credited)
         resource = result.effects[0].get("resource") or {}
         result.text_parts = [
             (
@@ -2711,14 +2493,15 @@ async def _create_deck(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(
             "chapter_id is not a chapter of this workspace; the turn context lists them."
         )
-    prepared = await ledger_write(ctx, "create_deck", args)
+    prepared = await write_sources(ctx, "create_deck", args)
     if isinstance(prepared, ToolResult):
         return prepared
-    books, todo = prepared
+    books, _ = prepared
     record = deck.create(args, deck.deck_id(ctx.assistant_message_id, call_id))
     deck.add_books(record, books)
     ctx.decks[record["id"]] = record
-    ctx.ledger.complete(todo)
+    # A deck is a file, so its excerpts are credited but not retained.
+    ctx.library_reads.credit()
     return _result(deck.created_text(record))
 
 
@@ -2740,10 +2523,10 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             "change its text with edit_document replace_text, or make a new deck.",
             code="unavailable_target",
         )
-    prepared = await ledger_write(ctx, "write_slide", args)
+    prepared = await write_sources(ctx, "write_slide", args)
     if isinstance(prepared, ToolResult):
         return prepared
-    books, todo = prepared
+    books, _ = prepared
     problems, figures, excerpts = deck.turn_figures(ctx.captures, ctx.pending_images)
     # A library crop on the slide credits its book, named in excerpt_ids or not.
     cropped = sorted(
@@ -2760,7 +2543,7 @@ async def _write_slide(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if problem:
         return _refused(f"write_slide: {problem}")
     deck.add_books(record, books)
-    ctx.ledger.complete(todo)
+    ctx.library_reads.credit()
     outline = deck.outline_text(record)
     if not deck.complete(record):
         return _result(outline)
@@ -2868,7 +2651,6 @@ _register("search_workspace", _search_workspace)
 _register("search_knowledge", _search_knowledge)
 _register("browse_knowledge", _browse_knowledge)
 _register("read_knowledge", _read_knowledge)
-_register("create_ledger", _create_ledger)
 _register("read_skill", _read_skill)
 _register("read_study_progress", _read_study_progress)
 _register("list_question_bank", _list_question_bank)
@@ -2908,12 +2690,7 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     definition = spec.definition
     if not set(definition["requiredOperations"]) <= ctx.operations:
         return False
-    # The ledger changes in memory and is flushed separately at turn end.
-    if (
-        spec.name != "create_ledger"
-        and definition["mutates"]
-        and not (_gateway_ready() and ctx.user_id)
-    ):
+    if definition["mutates"] and not (_gateway_ready() and ctx.user_id):
         return False
     if spec.name == "read_study_progress":
         return ctx.study_progress

@@ -174,7 +174,7 @@ async def test_without_a_bank_the_tools_are_not_offered(monkeypatch):
     assert ctx.bank_catalog == [] and not names & set(tools.BANK_TOOLS)
 
 
-async def test_copy_questions_asks_the_gateway_and_completes_its_todo(monkeypatch):
+async def test_copy_questions_asks_the_gateway(monkeypatch):
     posted: list[tuple[str, dict]] = []
 
     async def post(path, payload, op_id, ctx, *, failure):
@@ -187,38 +187,26 @@ async def test_copy_questions_asks_the_gateway_and_completes_its_todo(monkeypatc
 
     monkeypatch.setattr(tools, "_post_operation", post)
     ctx = tools.ToolContext(workspace_id="ws", user_id="u", assistant_message_id="m1")
-    await tools._create_ledger({"todos": ["Reading quiz"]}, ctx)
-    ctx.ledger.note_read(
-        "exc_1", 0, "1.1"
-    )  # a library read asks copies for no excerpts
+    ctx.library_reads.note("exc_1", 0, "1.1")
     for args in (
-        {"question_ids": ["q1"], "_tool_call_id": "c0", "todo": 0},
-        {
-            "question_ids": ["q1"],
-            "title": "T",
-            "quiz_id": "x",
-            "_tool_call_id": "c0",
-            "todo": 0,
-        },
+        {"question_ids": ["q1"], "_tool_call_id": "c0"},
+        {"question_ids": ["q1"], "title": "T", "quiz_id": "x", "_tool_call_id": "c0"},
         {
             "question_ids": ["q1"],
             "quiz_id": "x",
             "chapter_id": "c",
             "_tool_call_id": "c0",
-            "todo": 0,
         },
     ):
         assert (await tools._copy_questions(args, ctx)).refused, args
     made = await tools._copy_questions(
-        {
-            "question_ids": ["q1", "q2"],
-            "title": "Reading",
-            "_tool_call_id": "c1",
-            "todo": 0,
-        },
+        {"question_ids": ["q1", "q2"], "title": "Reading", "_tool_call_id": "c1"},
         ctx,
     )
-    assert not made.refused and ctx.ledger.todo(0).done
+    assert not made.refused
+    # A copy credits the bank's sources, not the library read, so the read is
+    # still new for the next write.
+    assert not ctx.library_reads.reads[0].credited
     path, payload = posted[-1]
     assert path == "/api/internal/bank/copy"
     assert payload["questionIds"] == ["q1", "q2"] and payload["quizId"] == ""

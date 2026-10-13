@@ -299,7 +299,7 @@ async def test_a_note_shows_a_figure_it_read_with_the_printed_credit(
     unread = await tools._create_material(note, ctx)
     assert unread.refused and "e_intro" in unread.text() and not sent
 
-    ctx.ledger.note_read("e_intro", 0, "8.1")
+    ctx.library_reads.note("e_intro", 0, "8.1")
     result = await tools._create_material(note, ctx)
     assert not result.refused, result.text()
     body = sent[0]
@@ -319,7 +319,7 @@ async def test_figures_the_library_does_not_show_or_box_refuse_the_write(
     library_db, monkeypatch
 ):
     ctx, rendered, sent = _figure_writes(monkeypatch)
-    ctx.ledger.note_read("e_intro", 0, "8.1")
+    ctx.library_reads.note("e_intro", 0, "8.1")
     edit = {
         "target": {"kind": "material", "id": "mat_1"},
         "commands": [

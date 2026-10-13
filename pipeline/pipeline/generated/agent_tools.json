@@ -1,5 +1,5 @@
 {
-  "version": 21,
+  "version": 22,
   "operations": [
     "source.read",
     "material.read",
@@ -456,11 +456,6 @@
             "maxLength": 120,
             "minLength": 1,
             "type": "string"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
@@ -554,62 +549,6 @@
       "retention": "none"
     },
     {
-      "name": "create_ledger",
-      "version": 1,
-      "description": "Add or edit the conversation's ledger todos, one per item to write: a string adds a todo, {id, todo} rewrites one. Pass only the changes.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "todos": {
-            "items": {
-              "anyOf": [
-                {
-                  "maxLength": 200,
-                  "minLength": 1,
-                  "type": "string"
-                },
-                {
-                  "additionalProperties": false,
-                  "properties": {
-                    "id": {
-                      "minimum": 0,
-                      "type": "integer"
-                    },
-                    "todo": {
-                      "maxLength": 200,
-                      "minLength": 1,
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "id",
-                    "todo"
-                  ],
-                  "type": "object"
-                }
-              ]
-            },
-            "maxItems": 10,
-            "type": "array"
-          }
-        },
-        "required": [
-          "todos"
-        ],
-        "type": "object"
-      },
-      "mutates": true,
-      "usesEmbedding": false,
-      "concurrency": "mutate",
-      "allowedSlots": [
-        "chat"
-      ],
-      "requiredOperations": [
-        "material.create"
-      ],
-      "retention": "none"
-    },
-    {
       "name": "create_material",
       "version": 1,
       "description": "Create a study material from content you wrote, in the formats the materials skill describes. A quiz is made with add_questions.",
@@ -648,7 +587,7 @@
             "type": "string"
           },
           "excerpt_ids": {
-            "description": "Library excerpts it was written from; they become its attribution.",
+            "description": "Library excerpts it was written from; they become its attribution. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -689,11 +628,6 @@
           "title": {
             "maxLength": 120,
             "type": "string"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
@@ -730,7 +664,7 @@
             "type": "string"
           },
           "excerpt_ids": {
-            "description": "Library excerpts the questions were written from.",
+            "description": "Library excerpts the questions were written from. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -797,11 +731,6 @@
             "description": "Instead of quiz_id: create a quiz with this title.",
             "minLength": 1,
             "type": "string"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
@@ -838,7 +767,7 @@
             "type": "string"
           },
           "excerpt_ids": {
-            "description": "Library excerpts the questions were written from.",
+            "description": "Library excerpts the questions were written from. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -908,11 +837,6 @@
             "description": "Instead of quiz_id: create a quiz with this title.",
             "minLength": 1,
             "type": "string"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
@@ -942,7 +866,7 @@
         "additionalProperties": false,
         "properties": {
           "excerpt_ids": {
-            "description": "Library excerpts the media was drawn from.",
+            "description": "Library excerpts the media was drawn from. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -962,11 +886,6 @@
           "quiz_id": {
             "minLength": 1,
             "type": "string"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
@@ -1000,7 +919,7 @@
             "type": "string"
           },
           "excerpt_ids": {
-            "description": "Library excerpts this was written from; they become the deck's Sources slide.",
+            "description": "Library excerpts this was written from; they become the deck's Sources slide. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -1037,11 +956,6 @@
             "maxLength": 120,
             "minLength": 1,
             "type": "string"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
@@ -1073,7 +987,7 @@
             "type": "string"
           },
           "excerpt_ids": {
-            "description": "Library excerpts this was written from; they become the deck's Sources slide.",
+            "description": "Library excerpts this was written from; they become the deck's Sources slide. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -1089,11 +1003,6 @@
             "maxLength": 40000,
             "minLength": 1,
             "type": "string"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [
@@ -1479,7 +1388,7 @@
             "type": "array"
           },
           "excerpt_ids": {
-            "description": "Library excerpts the added content was written from.",
+            "description": "Library excerpts the added content was written from. Optional; omitted, the excerpts read since your last write are credited.",
             "items": {
               "minLength": 1,
               "type": "string"
@@ -1508,11 +1417,6 @@
               "id"
             ],
             "type": "object"
-          },
-          "todo": {
-            "description": "The open ledger todo this write completes.",
-            "minimum": 0,
-            "type": "integer"
           }
         },
         "required": [

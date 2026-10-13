@@ -258,7 +258,7 @@ async def _fold_turn(
     ).strip()
     # Earlier turn contexts are stale snapshots; the next call sends a current one.
     groups = _exchanges(
-        [m for m in turn if m.get("_kind") not in ("turn_note", "ledger")]
+        [m for m in turn if m.get("_kind") not in ("turn_note", "turn_context")]
     )
     fold = [m for group in groups[:-TURN_KEEP_EXCHANGES] for m in group]
     keep = [m for group in groups[-TURN_KEEP_EXCHANGES:] for m in group]

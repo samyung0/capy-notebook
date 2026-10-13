@@ -142,8 +142,6 @@ async def test_deck_tools_need_ppt_master_and_the_deck_skill(monkeypatch):
 async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(decks):
     ctx, exports, posts = decks
     rid = await _outline(ctx, slides=1)
-    ctx.ledger.todos = [tools.LedgerTodo(id=0, text="slide 1")]
-    ctx.ledger.next_todo_id = 1
 
     spilled = await tools.run(
         "write_slide",
@@ -151,7 +149,6 @@ async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(d
             "deck_id": rid,
             "slide": 1,
             "svg": _slide("<text>SPILL</text>"),
-            "todo": 0,
             "_tool_call_id": "c_1",
         },
         ctx,
@@ -160,7 +157,7 @@ async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(d
     assert "refused by the checker" in spilled.text()
     assert "text exceeds the module bounds" in spilled.text()
     assert ctx.decks[rid]["deck"]["slides"][0]["svg"] is None
-    assert ctx.ledger.open_todos() == [0] and not exports and not posts
+    assert not exports and not posts
 
 
 async def test_the_deck_is_exported_and_stored_once_every_slide_is_written(decks):

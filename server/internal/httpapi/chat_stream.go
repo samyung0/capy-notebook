@@ -458,10 +458,6 @@ func (a *api) relayChat(
 		"openResource":       turn.openResource,
 		"studyProgress":      turn.studyProgress,
 		"studyPreferences":   turn.studyPreferences,
-		"conversationId":     conv.ID,
-		// The build ledger lives outside the message list; null until a turn
-		// has written one back through /api/internal/conversations/ledger.
-		"ledger": conv.Ledger,
 	}
 	if prompt.Checkpoint != nil {
 		body["checkpoint"] = prompt.Checkpoint

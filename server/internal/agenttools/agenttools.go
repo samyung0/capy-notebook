@@ -63,7 +63,10 @@ import (
 // note's quiz fence takes the small shapes.
 // v21: card fronts and backs carry their stored caps (4,000 and 2,000
 // characters) in create_material and edit_document's card commands.
-const ContractVersion = 21
+// v22: the build ledger is gone (Epo 2026-10-13): no create_ledger and no todo
+// on the write tools; excerpt_ids is optional, and a write naming none credits
+// the excerpts read since the last write.
+const ContractVersion = 22
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -466,15 +469,6 @@ var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"form controls the accent colour, so style only what differs. Use an interactive only where " +
 	"moving something teaches more than a diagram."
 
-// todoSchema is the ledger todo a write completes.
-func todoSchema() map[string]any {
-	return map[string]any{
-		"type":        "integer",
-		"minimum":     0,
-		"description": "The open ledger todo this write completes.",
-	}
-}
-
 // The agent writes questions in three small shapes (Epo 2026-10-13): a
 // multiple-choice or short-answer question through add_questions, an open one
 // through add_open_question, and a chart or plot under a question
@@ -500,8 +494,7 @@ func textList(desc string, min int) map[string]any {
 func quizPlace(props map[string]any) map[string]any {
 	props["quiz_id"] = str("The quiz to add to, a note's quiz too; add_questions' result gives a new quiz's id.")
 	props["after_question_id"] = str("Add after this question, not at the end.")
-	props["excerpt_ids"] = idList("Library excerpts the questions were written from.", 0, 32)
-	props["todo"] = todoSchema()
+	props["excerpt_ids"] = excerptIDs("Library excerpts the questions were written from.")
 	return props
 }
 
@@ -569,10 +562,17 @@ const (
 	deckMaxSlideSVG = 40_000
 )
 
+// excerptIDs is excerpt_ids on a write tool. It is optional: a write naming
+// none is credited with the excerpts read since the last write, or all read
+// this turn when none are new (pipeline retrieval/tools.py write_sources).
+func excerptIDs(desc string) map[string]any {
+	return idList(desc+" Optional; omitted, the excerpts read since your last write are credited.", 0, 32)
+}
+
 // deckExcerpts is excerpt_ids on the deck tools: their books are credited on
 // the deck's Sources slide.
 func deckExcerpts() map[string]any {
-	return idList("Library excerpts this was written from; they become the deck's Sources slide.", 0, 32)
+	return excerptIDs("Library excerpts this was written from; they become the deck's Sources slide.")
 }
 
 // bboxSchema is the optional zoom region of the page-capture tools.
@@ -755,7 +755,6 @@ func Definitions() []Definition {
 				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle},
 				"chapter_id": str("The chapter to file a new quiz in."),
 				"quiz_id":    str("A quiz in this workspace to append to."),
-				"todo":       todoSchema(),
 			}, "question_ids"),
 			Mutates:            true,
 			Concurrency:        "mutate",
@@ -786,27 +785,6 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpMaterialCreate},
 		}),
 		chatTool(Definition{
-			Name:      "create_ledger",
-			Retention: RetainNone,
-			Description: "Add or edit the conversation's ledger todos, one per item to write: a " +
-				"string adds a todo, {id, todo} rewrites one. Pass only the changes.",
-			InputSchema: obj(map[string]any{
-				"todos": map[string]any{
-					"type": "array", "maxItems": 10,
-					"items": map[string]any{"anyOf": []any{
-						map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
-						obj(map[string]any{
-							"id":   map[string]any{"type": "integer", "minimum": 0},
-							"todo": map[string]any{"type": "string", "minLength": 1, "maxLength": 200},
-						}, "id", "todo"),
-					}},
-				},
-			}, "todos"),
-			Mutates:            true,
-			Concurrency:        "mutate",
-			RequiredOperations: []Operation{OpMaterialCreate},
-		}),
-		chatTool(Definition{
 			Name:      "create_material",
 			Retention: RetainFull,
 			Description: "Create a study material from content you wrote, in the formats the " +
@@ -831,8 +809,7 @@ func Definitions() []Definition {
 				},
 				"scope":       scopeSchema(),
 				"chapter_id":  str("The chapter to file it in; omit to leave it unfiled."),
-				"excerpt_ids": idList("Library excerpts it was written from; they become its attribution.", 0, 32),
-				"todo":        todoSchema(),
+				"excerpt_ids": excerptIDs("Library excerpts it was written from; they become its attribution."),
 			}, "kind"),
 			Mutates:            true,
 			Concurrency:        "mutate",
@@ -908,8 +885,7 @@ func Definitions() []Definition {
 					"type": "object", "additionalProperties": true,
 					"description": "A note's chart or plot fence JSON.",
 				},
-				"excerpt_ids": idList("Library excerpts the media was drawn from.", 0, 32),
-				"todo":        todoSchema(),
+				"excerpt_ids": excerptIDs("Library excerpts the media was drawn from."),
 			}, "quiz_id", "question_id", "media"),
 			Mutates:            true,
 			Concurrency:        "mutate",
@@ -933,7 +909,6 @@ func Definitions() []Definition {
 				},
 				"chapter_id":  str("The chapter to file the deck in; omit to leave it unfiled."),
 				"excerpt_ids": deckExcerpts(),
-				"todo":        todoSchema(),
 			}, "title", "slides"),
 			Mutates:            true,
 			Concurrency:        "mutate",
@@ -949,7 +924,6 @@ func Definitions() []Definition {
 				"slide":       map[string]any{"type": "integer", "minimum": 1},
 				"svg":         map[string]any{"type": "string", "minLength": 1, "maxLength": deckMaxSlideSVG},
 				"excerpt_ids": deckExcerpts(),
-				"todo":        todoSchema(),
 			}, "deck_id", "slide", "svg"),
 			Mutates:            true,
 			Concurrency:        "mutate",
@@ -999,8 +973,7 @@ func Definitions() []Definition {
 					"maxItems": 20,
 					"items":    editCommandSchema(),
 				},
-				"excerpt_ids": idList("Library excerpts the added content was written from.", 0, 32),
-				"todo":        todoSchema(),
+				"excerpt_ids": excerptIDs("Library excerpts the added content was written from."),
 			}, "target", "commands"),
 			Mutates:            true,
 			Concurrency:        "mutate",

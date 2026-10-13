@@ -82,12 +82,10 @@ and materials are read-only; materials created in the current run are editable.
 Runs land in `local/runs/<id>/run.json` with the effective config,
 the exact system prompt and offered tool schemas, every tool call with the text the model saw, every
 provider call with token counts, captured images, citations and the answer.
-A run also records the ledger twice: the turn as the model saw it
-(`next_todo_id`, `todos` with the id the turn context showed and their done
-state, plus the turn's own `progress` and `reads`), and under `stored` exactly
-what the gateway would have persisted, the newest 10 open todos.
-It records the incoming `ledger_in`, stall events and every material with its provenance books too;
-the materials themselves are written as
+A run also records the turn's library reads (`library_reads`), the
+stall events (each tools-off call once a write has landed, with the writes
+landed so far) and every material with its provenance books and the excerpt
+ids it credited; the materials themselves are written as
 `local/runs/<id>/materials/<id>.json`.
 `local/` is git-ignored; `configs/` is committed so config changes are reviewable.
 
@@ -153,10 +151,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `open_resource` | What the learner has open, `{"id", "kind", "title"}` or `null`; the turn context names it |
 | `study_preferences` | The learner's saved preferences; missing fields take the defaults in `pipeline/prompts/preferences.py` |
 | `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
-| `ledger` | Path to a stored ledger the turn continues: a previous `run.json`, or a bare ledger. `--ledger <path>` sets it for every config that does not carry its own |
 | `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
-| `ledger_mode` | `on` (production) or `off`: no `create_ledger` and no `todo` argument; the turn takes the build budget (160 tool calls, the stall guard) once its first write lands, and every successful write is progress for the stall guard. The budget sentence and the editing skill are rewritten to match. Configs `noledger`, `noledger-auto` |
-| `excerpts` | `named` (production) or `auto`: no `excerpt_ids` argument; each write credits the library excerpts read since the previous write, or all read this turn when none are new. Library lines naming `excerpt_ids` in the skills become one line saying crediting is automatic |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
 | `capture.require_seen_page` | Refuse captures of pages no retrieved passage has shown |
@@ -191,19 +186,19 @@ instructions are skills the model reads with `read_skill` (`editing`,
 skill's text is in the request. Without the library the writes offer no
 `excerpt_ids`.
 
-A turn without ledger todos gets 8 responses, the last with tools off. Once the
-ledger has todos, 160 tool calls per turn and the stall guard govern it: five
-responses without completing a todo turn tools off, and the turn reports
-`stall` (or `tool_cap` when the call cap ended it). The page shows the ledger's
-todos with their state and the turn's reads beside the runs list.
+Until its first successful write a turn gets 12 responses, the last with
+tools off. Once a write lands, 160 tool calls per turn and the stall guard
+govern it: five responses in a row without a successful write turn tools off,
+and the turn reports `stall` (or `tool_cap` when the call cap ended it).
 
 There is no gateway, so `create_material` and `edit_document` are handled in
 process: a created material is written to `materials/<id>.json` under the run
 with the provenance `library.provenance` resolved for its `excerpt_ids`, an edit
 appends its commands to that file and merges its own books into the record by
 book id the way Go does, and both return the receipt the gateway would have
-produced. Both go through `tools.ledger_write`, the production write guard (a
-todo while todos are open, excerpts read this turn or retained in full). The
+produced. Both go through `tools.write_sources`, the production write guard
+(named excerpts read this turn or retained in full; with none named, the
+excerpts read since the last write, or all read this turn when none are new). The
 question tools (`add_questions`, `add_open_question`, `add_question_media`)
 run production's `tools.write_questions` and `tools.write_media` with the
 run's files in place of the gateway: a quiz is created or edited in its
@@ -215,16 +210,7 @@ expanded from the small question shapes by production's `questions.note_fences`,
 then checked the way the editor's import and the interactive block will take
 them (`check_note`): quiz fences through `quizcheck`, flashcards with a front and back, and
 `html-embed` with html (no fallback), under 64 KB, loading only from the CDNs the frame's CSP
-names (`embed/_headers`; the SVG namespace URL is allowed) and with no fetch. There is no gateway to store the ledger in
-either, so `tools.store_ledger` is stubbed and `run.json` holds it. The page
-carries the stored ledger into the next turn automatically. `--ledger` can also
-seed a conversation from a saved run, starting from its `stored` ledger the way
-the gateway hands one back: done todos gone, open todos under their existing ids.
-
-`create_ledger` accepts strings to add new todos and `{"id": 0, "todo":
-"Replacement text"}` to add or overwrite a todo by ID. Completed IDs are not
-reused, unmentioned todos stay unchanged, and only the first changed plan in a
-turn counts as progress. At most ten todos may be open.
+names (`embed/_headers`; the SVG namespace URL is allowed) and with no fetch.
 
 The bank tools (`list_question_bank`, `read_question`, `copy_questions`) run
 their production code; the gateway routes they call are answered by
@@ -267,7 +253,7 @@ model text as `answer_raw` and any repair output as `repair_raw`.
 
 ## Context, compaction and checkpoints
 
-Every model call's line also shows its output: the provider's total and reasoning tokens, and the visible part by where it went (the answer text and each tool call's arguments, estimated from their text); `done` sums them for the turn, and `run.json` keeps it per call as `output_split`. Each call's line also opens its turn context (open file and its chapter, the workspace chapters, preferences, todos), kept per call in `run.json` as `turn_context`. Its **full context** button opens the whole request as sent to the provider, every message in order with its role and kind plus the tool schemas and `tool_choice` (images replaced by placeholders); the playground writes each request to `requests/<call>.json` in the run directory, served at `/api/runs/<run>/requests/<call>.json`. A finished answer is drawn below it crudely (`/api/openui` parses the OpenUI Lang; Markdown answers get headings, emphasis, lists and tables). Every model call emits a `context` line: the provider-reported input tokens
+Every model call's line also shows its output: the provider's total and reasoning tokens, and the visible part by where it went (the answer text and each tool call's arguments, estimated from their text); `done` sums them for the turn, and `run.json` keeps it per call as `output_split`. Each call's line also opens its turn context (open file and its chapter, the workspace chapters, preferences, library reads, budget left), kept per call in `run.json` as `turn_context`. Its **full context** button opens the whole request as sent to the provider, every message in order with its role and kind plus the tool schemas and `tool_choice` (images replaced by placeholders); the playground writes each request to `requests/<call>.json` in the run directory, served at `/api/runs/<run>/requests/<call>.json`. A finished answer is drawn below it crudely (`/api/openui` parses the OpenUI Lang; Markdown answers get headings, emphasis, lists and tables). Every model call emits a `context` line: the provider-reported input tokens
 (and cached reads), the production estimator's total against the limit the
 compactor enforces, and a breakdown by part: system prompt, tool schemas,
 memory (folded checkpoint), prior history, the query, this turn's assistant
@@ -291,8 +277,8 @@ tokens for about 360), so a very small forced limit ends in
 built for long histories.
 
 Follow-ups send the user/assistant history, each completed answer's
-`toolEvidence`, the checkpoint and the stored ledger. Library turns retain `toolEvidence.libraryExcerpts`: exact bounded read results
-for excerpt IDs used in successful material creation or editing. Unused reads
+`toolEvidence` and the checkpoint. Library turns retain `toolEvidence.libraryExcerpts`: exact bounded read results
+for excerpt IDs credited by successful material creation or editing, named or not. Unused reads
 and refused writes add no retained evidence. Paginated reads keep the pages the
 model actually received; repeated use replays each page only once.
 
@@ -301,10 +287,10 @@ matches. The full text enters normal history and counts as already read for
 material writes while it remains in the model request. Compaction can remove
 that permission: an ID or summary alone requires a new `read_knowledge` call.
 The application and playground use the same retention, revalidation and write
-guards. Source text is stored in private message evidence; it is not part of
-the ledger. New successful writes retain their used excerpt reads. Opening a saved run
-restores its prior history and current exchange, retained evidence, checkpoint
-and ledger without changing the selected config. Clear conversation resets
+guards. Source text is stored in private message evidence. New successful
+writes retain their credited excerpt reads. Opening a saved run
+restores its prior history and current exchange, retained evidence and
+checkpoint without changing the selected config. Clear conversation resets
 this state. A page reload starts a new conversation; open a saved run to resume.
 
 ## Extraction confidence
@@ -374,7 +360,7 @@ judged against the saved runs.
 | Request | Set | A good run |
 |---|---|---|
 | Help me study. | | Asks what to study and proposes a default before building |
-| Build me a study set for the whole document: an explainer and practice for each chapter. | | Proposes chapters, then builds them on the ledger |
+| Build me a study set for the whole document: an explainer and practice for each chapter. | | Proposes chapters, then builds them |
 | Explain the file I have open, briefly. | Open a file | Builds one explainer directly |
 | What is the main argument of the document, and where is it stated? | | Answers with citations and builds nothing |
 | Make me a quiz on the first chapter. | Library off | Uses the workspace only |
@@ -429,8 +415,8 @@ $env:CAPY_LIBRARY_SECTION_TOOLS = "1"; $env:CAPY_LIBRARY_REQUIRE_TAGS = "0"; $en
 
 `run_requests.py` posts every frozen request (refused if
 `requests.json` no longer matches the protocol's hash) to the arm's
-`/api/turn`, the confirmation of a generic flow with the first turn's history,
-checkpoint and stored ledger, and repeats each dev-split request once. It
+`/api/turn`, the confirmation of a generic flow with the first turn's history
+and checkpoint, and repeats each dev-split request once. It
 writes `bench/rag/reports/local/2026-10-intake-eval/<arm>/<id>[-r2].json`:
 run ids, answers, materials, write outcomes and the protocol's counters (tool
 calls, input and cached tokens, wall time, captures, excerpts and sections

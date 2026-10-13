@@ -2,7 +2,7 @@
 
 It carries what the model must see on every call but must not compact away:
 the file the learner has open, the workspace's chapters, their study
-preferences, the ledger's todos and the library excerpts read this message.
+preferences, the library excerpts read this message and the budget left.
 The loop rebuilds it before each request and sends it last, leaving earlier
 copies where they were sent so each request extends the previous one; it never
 reaches the stored conversation.
@@ -19,7 +19,7 @@ HEADER = "Turn context (current at this step; a later one replaces it):"
 
 FINAL_NOTICE = (
     "\nTools are off for this response. Answer now: the materials made so far "
-    "and what each covers, which todos are still open, and what the learner can "
+    "and what each covers, what is left of the request, and what the learner can "
     "ask next to continue."
 )
 
@@ -58,19 +58,10 @@ def message(
         "\nStudy preferences:",
     ]
     lines.extend(f"- {line}" for line in preferences.lines(ctx.study_preferences))
-    ledger = ctx.ledger
-    if ledger.todos:
-        # Finished todos leave the ledger when it is stored, but an id belongs
-        # to its todo for the life of the conversation.
-        lines.append("\nLedger todos — pass an id as todo; ids never change:")
-        lines.extend(
-            f"[{'x' if todo.done else ' '}] {todo.id}. {todo.text}"
-            for todo in ledger.todos
-        )
     # One line per excerpt: a second page of the same excerpt is the same input,
     # and the model pays for every line on every call.
     sections: dict[str, str] = {}
-    for read in ledger.reads:
+    for read in ctx.library_reads.reads:
         sections.setdefault(read.excerpt_id, read.section)
     if sections:
         lines.append("\nLibrary excerpts read for this message:")
@@ -79,4 +70,4 @@ def message(
         lines.append(FINAL_NOTICE)
     elif allowance:
         lines.append(allowance)
-    return {"role": "user", "content": "\n".join(lines), "_kind": "ledger"}
+    return {"role": "user", "content": "\n".join(lines), "_kind": "turn_context"}

@@ -149,66 +149,6 @@ func TestConversationPromptLoadsEveryMessageAfterCheckpoint(t *testing.T) {
 	}
 }
 
-// The ledger write carries its own fence. The pipeline writes it from a
-// finally block, so an aborted turn's write can arrive once the next turn's
-// assistant row exists; the write itself refuses it, rather than a check the
-// caller performs separately and the next turn's row can commit behind.
-func TestSetConversationLedgerRefusesAnOlderTurn(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	reg, err := models.New(ctx, s.Pool())
-	if err != nil {
-		t.Fatal(err)
-	}
-	s.SetModelRegistry(reg)
-	userID := newCreditsTestUser(t, s)
-	ws, err := s.CreateWorkspace(ctx, userID, WorkspaceCreate{Name: "Curate fence", Tags: nil})
-	if err != nil {
-		t.Fatal(err)
-	}
-	conv, err := s.CreateConversation(ctx, userID, ws.ID, "ledger")
-	if err != nil {
-		t.Fatal(err)
-	}
-	older, newer := uid("m"), uid("m")
-	if _, err := s.pool.Exec(ctx,
-		`INSERT INTO messages (id, conversation_id, role, status) VALUES ($1,$2,'assistant','streaming')`,
-		older, conv.ID); err != nil {
-		t.Fatal(err)
-	}
-	if err := s.SetConversationLedger(ctx, conv.ID, older, json.RawMessage(`{"requests":["first"]}`)); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.pool.Exec(ctx,
-		`INSERT INTO messages (id, conversation_id, role, status, created_at)
-		   VALUES ($1,$2,'assistant','streaming', now() + interval '1 second')`,
-		newer, conv.ID); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := s.SetConversationLedger(ctx, conv.ID, older,
-		json.RawMessage(`{"requests":["stale"]}`)); !errors.Is(err, ErrStaleTurn) {
-		t.Fatalf("late write from the older turn: %v", err)
-	}
-	stored, err := s.GetConversation(ctx, userID, conv.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var ledger struct {
-		Requests []string `json:"requests"`
-	}
-	if err := json.Unmarshal(stored.Ledger, &ledger); err != nil {
-		t.Fatalf("stored ledger %q: %v", stored.Ledger, err)
-	}
-	if len(ledger.Requests) != 1 || ledger.Requests[0] != "first" {
-		t.Fatalf("stored ledger = %s", stored.Ledger)
-	}
-	if err := s.SetConversationLedger(ctx, conv.ID, newer,
-		json.RawMessage(`{"requests":["second"]}`)); err != nil {
-		t.Fatalf("newest turn: %v", err)
-	}
-}
-
 func TestIngestJobPayloadPinsActorAndModels(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

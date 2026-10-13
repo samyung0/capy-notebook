@@ -474,14 +474,13 @@ async def test_read_knowledge_pages_in_chunk_units_and_records_the_read(monkeypa
     assert "(chunk 42) Residuals" in result.text()
     assert "chunks 40-44 of this excerpt, from 42" in result.text()
     assert "(next start = 43)" in result.text(), "next start is the last chunk plus one"
-    assert [(r.excerpt_id, r.start) for r in ctx.ledger.reads] == [("e_1", 42)]
-    assert ctx.ledger.reads[0].section == "8.1 Line fitting"
+    assert [(r.excerpt_id, r.start) for r in ctx.library_reads.reads] == [("e_1", 42)]
+    assert ctx.library_reads.reads[0].section == "8.1 Line fitting"
 
     # A repeat of the same position returns the text and adds nothing.
     again = await tools._read_knowledge({"excerpt_id": "e_1", "start": 42}, ctx)
     assert "(chunk 42) Residuals" in again.text()
-    assert len(ctx.ledger.reads) == 1
-    assert ctx.ledger.progress == 0, "reading is never progress"
+    assert len(ctx.library_reads.reads) == 1
 
 
 async def test_a_page_the_output_limit_cuts_continues_at_the_first_unshown_chunk(
@@ -639,17 +638,17 @@ async def test_a_section_read_counts_every_excerpt_it_shows_as_read(monkeypatch)
     )
     assert "- f_30: Figure 3.1" in text and "f_40" not in text, "figures on its pages"
     assert text.endswith("Excerpts on this page: x1, x2, x3\n\n(end of section)")
-    assert [(r.excerpt_id, r.start) for r in ctx.ledger.reads] == [
+    assert [(r.excerpt_id, r.start) for r in ctx.library_reads.reads] == [
         ("x1", 10),
         ("x2", 12),
         ("x3", 13),
     ]
-    assert await tools.ledger_write(
+    assert await tools.write_sources(
         ctx, "create_material", {"excerpt_ids": ["x1", "x3"]}
-    ) == ([], None)
+    ) == ([], ["x1", "x3"])
 
 
-# --------------------------------------------------------------- the ledger
+# ------------------------------------------------------------ write sources
 
 
 def _library_ctx() -> ToolContext:
@@ -662,122 +661,42 @@ def _library_ctx() -> ToolContext:
     )
 
 
-async def test_create_ledger_upserts_atomically_and_counts_the_first_plan():
+async def test_a_write_credits_named_excerpts_or_the_reads_since_the_last_write(
+    monkeypatch,
+):
+    """Named excerpts are credited as named. A write naming none credits what
+    was read since the last write that landed, or everything read when nothing
+    is new; with no reads it credits nothing and asks for nothing."""
+
+    async def provenance(ids):
+        return [{"id": "book", "excerptIds": list(ids)}]
+
+    monkeypatch.setattr(tools.library, "provenance", provenance)
     ctx = _library_ctx()
+    reads = ctx.library_reads
 
-    first = await tools._create_ledger({"todos": ["Plan cell biology", "Quiz"]}, ctx)
-    assert "[ ] 0. Plan cell biology" in first.text() and ctx.ledger.progress == 1
-    ctx.ledger.complete(1)
-    assert ctx.ledger.progress == 2
+    assert await tools.write_sources(ctx, "create_material", {}) == ([], [])
 
-    await tools._create_ledger({"todos": [{"id": 0, "todo": "Write a guide"}]}, ctx)
-    assert ctx.ledger.todo(0).text == "Write a guide" and ctx.ledger.todo(1).done
-    assert ctx.ledger.progress == 2, "replanning does not buy stall responses"
-    unchanged = await tools._create_ledger(
-        {"todos": [{"id": 0, "todo": "Write a guide"}]}, ctx
-    )
-    assert unchanged.text() == "Ledger unchanged."
+    reads.note("e_1", 0, "8.1")
+    reads.note("e_2", 0, "8.2")
+    named = await tools.write_sources(ctx, "create_material", {"excerpt_ids": ["e_2"]})
+    assert named == ([{"id": "book", "excerptIds": ["e_2"]}], ["e_2"])
+    _, credited = await tools.write_sources(ctx, "create_material", {})
+    assert credited == ["e_1", "e_2"]
+    tools.landed(ctx, credited)
 
-    await tools._create_ledger({"todos": [f"Section {i}" for i in range(9)]}, ctx)
-    assert len(ctx.ledger.open_todos()) == 10
-    before = ctx.ledger.stored()
-    for args in (
-        {"todos": ["Eleventh todo"]},
-        {"todos": [{"id": 999, "todo": "Eleventh ID"}]},
-        {"todos": [{"id": 0, "todo": " "}]},
-    ):
-        assert (await tools._create_ledger(args, ctx)).refused
-        assert ctx.ledger.stored() == before
-    assert ctx.ledger.next_todo_id == 11, "completed todo ids are never reused"
+    reads.note("e_3", 0, "8.3")
+    _, credited = await tools.write_sources(ctx, "add_questions", {})
+    assert credited == ["e_3"], "only what was read since the last write"
+    tools.landed(ctx, credited)
 
-
-async def test_a_later_turn_continues_the_stored_ledger():
-    """A new turn sees what is still open; its create_ledger adds to it. Done
-    todos drop when stored, and open ones keep their ids."""
-    first = _library_ctx()
-    await tools._create_ledger({"todos": ["note", "quiz"]}, first)
-    first.ledger.complete(0)
-    stored = first.ledger.stored()
-    assert stored == {"next_todo_id": 2, "todos": [{"id": 1, "text": "quiz"}]}
-
-    ctx = _library_ctx()
-    ctx.ledger = tools.Ledger.from_stored(stored)
-    added = await tools._create_ledger({"todos": ["flashcards"]}, ctx)
-    assert "[ ] 2. flashcards" in added.text(), "ids continue the conversation"
-    reused = await tools._create_ledger({"todos": [{"id": 0, "todo": "again"}]}, ctx)
-    assert reused.refused and "already used" in reused.text()
-    assert await tools.ledger_write(ctx, "create_material", {"todo": 1}) == ([], 1)
-    assert "reads" not in ctx.ledger.stored(), "reads are this turn's only"
-
-
-def test_the_stored_ledger_keeps_the_newest_open_todos_only():
-    ledger = tools.Ledger(
-        todos=[tools.LedgerTodo(id=i, text=f"todo {i}") for i in range(30)],
-        next_todo_id=30,
-    )
-
-    out = ledger.stored()
-
-    assert [t["id"] for t in out["todos"]] == list(range(20, 30))
-    assert out["next_todo_id"] == 30, "the counter does not follow the drop"
-
-
-def test_a_malformed_stored_ledger_is_logged_and_the_turn_starts_empty(caplog):
-    """The row is read again on every turn, so a shape this code cannot parse
-    starts the turn from nothing instead of breaking the conversation."""
-    malformed = (
-        {"todos": ["note"]},
-        {"todos": {"a": 1}},
-        {"todos": [{"text": "note"}]},
-        {"next_todo_id": 1, "todos": [{"id": 1, "text": "note"}]},
-        "a ledger",
-    )
-
-    for stored in malformed:
-        assert not tools.Ledger.from_stored(stored, "conv_1").todos
-
-    assert caplog.text.count("stored ledger is malformed") == len(malformed)
-    assert "conversation=conv_1" in caplog.text
-    assert not tools.Ledger.from_stored(None).todos, "no ledger is not an error"
-
-
-async def test_writes_need_a_todo_while_todos_are_open_and_excerpts_once_read():
-    ctx = _library_ctx()
-
-    # A single item builds without a ledger.
-    assert await tools.ledger_write(ctx, "create_material", {}) == ([], None)
-
-    await tools._create_ledger({"todos": ["one", "two"]}, ctx)
-    no_todo = await tools.ledger_write(ctx, "create_material", {})
-    assert isinstance(no_todo, tools.ToolResult)
-    assert "needs todo" in no_todo.text() and "Open todos: 0, 1" in no_todo.text()
-
-    unknown_id = await tools.ledger_write(ctx, "create_material", {"todo": 2})
-    assert isinstance(unknown_id, tools.ToolResult)
-    assert "not on the ledger" in unknown_id.text()
-
-    ctx.ledger.complete(0)
-    done = await tools.ledger_write(ctx, "create_material", {"todo": 0})
-    assert isinstance(done, tools.ToolResult)
-    assert "already done" in done.text() and "Open todos: 1" in done.text()
-
-    ctx.ledger.note_read("e_1", 0, "8.1")
-    missing = await tools.ledger_write(ctx, "create_material", {"todo": 1})
-    assert isinstance(missing, tools.ToolResult) and "needs excerpt_ids" in (
-        missing.text()
-    )
-    # Copied bank questions carry the bank's sources, so excerpts are not asked.
-    assert await tools.ledger_write(
-        ctx, "create_material", {"todo": 1}, excerpts=False
-    ) == ([], 1)
-    both = await tools.ledger_write(ctx, "edit_document", {})
-    assert isinstance(both, tools.ToolResult)
-    assert "needs todo" in both.text() and "and excerpt_ids" in both.text()
-
-    ctx.ledger.complete(1)
-    finished = await tools.ledger_write(ctx, "create_material", {"todo": 1})
-    assert isinstance(finished, tools.ToolResult)
-    assert "Every todo on the ledger is done" in finished.text()
+    _, credited = await tools.write_sources(ctx, "add_questions", {})
+    assert credited == ["e_1", "e_2", "e_3"], "nothing new: everything read"
+    # Reading an excerpt again makes it new for the next write.
+    reads.note("e_1", 0, "8.1")
+    assert (await tools.write_sources(ctx, "create_material", {}))[1] == ["e_1"]
+    # What a write credited is retained for later turns, named or not.
+    assert ctx.library_evidence.used == {"e_1", "e_2", "e_3"}
 
 
 async def test_without_the_library_writes_offer_and_take_no_excerpt_ids(monkeypatch):
@@ -786,37 +705,31 @@ async def test_without_the_library_writes_offer_and_take_no_excerpt_ids(monkeypa
     ctx = ToolContext(workspace_id="ws", user_id="u_1", operations=_EDITOR)
     for schema in tools.schemas_for(ctx):
         assert "excerpt_ids" not in schema["function"]["parameters"]["properties"]
-    refused = await tools.ledger_write(
+    refused = await tools.write_sources(
         ctx, "create_material", {"excerpt_ids": ["attention#1"]}
     )
     assert isinstance(refused, tools.ToolResult)
     assert "library is not a source this turn" in refused.text()
 
 
-async def test_an_edit_of_a_source_file_carries_no_ledger_rules():
-    """The user's own file is not written from the library, so it takes no
-    todo, no excerpts and no provenance."""
+async def test_an_edit_of_a_source_file_carries_no_provenance():
+    """The user's own file is not written from the library, so it credits no
+    excerpts and takes none."""
     ctx = _library_ctx()
-    ctx.ledger.note_read("e_1", 0, "8.1")
+    ctx.library_reads.note("e_1", 0, "8.1")
 
-    assert await tools.ledger_write(ctx, "edit_document", {}, material=False) == (
+    assert await tools.write_sources(ctx, "edit_document", {}, material=False) == (
         [],
-        None,
+        [],
     )
-    refused = await tools.ledger_write(
+    refused = await tools.write_sources(
         ctx, "edit_document", {"excerpt_ids": ["e_1"]}, material=False
     )
     assert isinstance(refused, tools.ToolResult)
     assert "carries no provenance" in refused.text()
-    # Ignoring the todo would leave the model believing it closed one.
-    with_todo = await tools.ledger_write(
-        ctx, "edit_document", {"todo": 0}, material=False
-    )
-    assert isinstance(with_todo, tools.ToolResult)
-    assert "completes no ledger todo" in with_todo.text()
 
 
-def test_turn_context_renders_open_file_preferences_todos_and_reads():
+def test_turn_context_renders_open_file_preferences_and_reads():
     from pipeline.retrieval import turn_context
 
     ctx = _library_ctx()
@@ -827,27 +740,22 @@ def test_turn_context_renders_open_file_preferences_todos_and_reads():
         "quizLength": 5,
         "mainFormat": "deck",
     }
-    ctx.ledger.todos = [
-        tools.LedgerTodo(id=0, text="note", done=True),
-        tools.LedgerTodo(id=1, text="quiz"),
-    ]
-    ctx.ledger.note_read("e_1", 0, "Ch 8 > 8.1 Line fitting")
-    ctx.ledger.note_read("e_1", 12, "Ch 8 > 8.1 Line fitting")
+    ctx.library_reads.note("e_1", 0, "Ch 8 > 8.1 Line fitting")
+    ctx.library_reads.note("e_1", 12, "Ch 8 > 8.1 Line fitting")
 
     rendered = turn_context.message(ctx)
     body = rendered["content"]
 
-    assert rendered["_kind"] == "ledger"
+    assert rendered["_kind"] == "turn_context"
     assert "Open: Cells.pdf (file f_1)." in body
     assert "key points first" in body, "brief explainer"
     assert "a deck for every chapter" in body
     assert "a quiz of 5 questions and 15 flashcards" in body
-    assert "[x] 0. note" in body and "[ ] 1. quiz" in body
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
     empty = turn_context.message(_library_ctx())["content"]
-    assert "Open: nothing." in empty and "Ledger todos" not in empty
+    assert "Open: nothing." in empty and "Library excerpts" not in empty
     assert "a quiz of 8 questions" in empty, "default preferences"
     assert "brief leans deck, detailed leans note" in empty, "auto main format"
 
@@ -1571,11 +1479,11 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
         assert "propose the plan" not in prompt, "workspace_building holds it"
-        assert "ledger todos a turn has 160" not in prompt, "editing holds it"
         assert (
-            f"Without ledger todos a turn has {limits.PLANNING_RESPONSES} responses"
-            in prompt
+            f"Until its first successful write a turn has "
+            f"{limits.PLANNING_RESPONSES} responses" in prompt
         )
+        assert f"after it, {limits.BUILD_TOOLS_PER_TURN} tool calls" in prompt
 
 
 def test_study_progress_is_offered_only_when_progress_is_on():

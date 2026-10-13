@@ -327,10 +327,6 @@ img.capture {
     <div id="log"></div>
   </div>
   <div class="col">
-    <b>Progress ledger</b>
-    <div class="card" id="ledger">
-      <span class="muted">no ledger yet</span>
-    </div>
     <b>Materials</b>
     <div class="card" id="materials"><span class="muted">none yet</span></div>
     <b>Runs</b>
@@ -371,7 +367,6 @@ const $ = (id) => document.getElementById(id);
 let state = null,
   history = [],
   checkpoint = null,
-  ledger = null,
   nextId = 1,
   log = $('log'),
   active = null;
@@ -620,7 +615,6 @@ $('clear').onclick = () => {
   active = null;
   history = [];
   checkpoint = null;
-  ledger = null;
   log.innerHTML = '';
   resetPanels();
   $('status').textContent = 'idle';
@@ -629,7 +623,6 @@ function resetPanels() {
   if ($('materialDialog').open) $('materialDialog').close();
   for (const id of Object.keys(materials)) delete materials[id];
   renderMaterials();
-  $('ledger').innerHTML = `<span class="muted">no ledger yet</span>`;
 }
 $('json').onchange = () => {
   try {
@@ -824,19 +817,6 @@ const esc = (s) =>
   );
 const tools = {};
 const materials = {};
-function renderLedger(l) {
-  const todos = (l.todos || [])
-    .map(
-      (t) =>
-        `<div class="cite">${t.done ? '☑' : '☐'} ${t.id}. ${esc(t.text)}</div>`
-    )
-    .join('');
-  const reads = (l.reads || []).length
-    ? `<details><summary class="muted">${l.reads.length} reads this turn</summary>${l.reads.map((r) => `<div class="cite muted">${esc(r.excerpt_id)} from ${r.start} · ${esc(r.section)}</div>`).join('')}</details>`
-    : '';
-  $('ledger').innerHTML =
-    todos + reads || `<span class="muted">no ledger yet</span>`;
-}
 function renderMaterials() {
   $('materials').innerHTML =
     Object.values(materials)
@@ -1002,11 +982,6 @@ function render(ev, runId) {
     );
     return;
   }
-  if (ev.type === 'ledger') {
-    ledger = ev.stored;
-    renderLedger(ev);
-    return;
-  }
   if (ev.type === 'material') {
     materials[ev.id] = ev;
     renderMaterials();
@@ -1015,7 +990,7 @@ function render(ev, runId) {
   if (ev.type === 'stall') {
     card(
       'stat',
-      `<b>stall guard</b> call ${ev.call} runs with tools off · ${ev.todos_done}/${ev.todos} todos done`
+      `<b>stall guard</b> call ${ev.call} runs with tools off · ${ev.writes} writes landed`
     );
     return;
   }
@@ -1148,7 +1123,6 @@ $('run').onclick = async () => {
         checkpoint,
         config: currentConfig(),
         history,
-        ledger,
         question,
       }),
       headers: { 'content-type': 'application/json' },
@@ -1199,7 +1173,6 @@ $('runs').onclick = async (e) => {
   log.innerHTML = '';
   history = run.history || [];
   checkpoint = run.checkpoint_in || null;
-  ledger = run.ledger?.stored || null;
   nextId =
     1 + Math.max(0, ...history.map((m) => Number(/^m(\d+)$/.exec(m.id)?.[1]) || 0));
   history.push({ content: run.question, id: 'm' + nextId++, role: 'user' });
@@ -1211,7 +1184,7 @@ $('runs').onclick = async (e) => {
   renderMaterials();
   if (run.answer) card('answer', esc(run.answer));
   $('status').textContent =
-    `Conversation restored: ${history.length} messages${checkpoint ? ' · checkpoint' : ''}${ledger ? ' · ledger' : ''}`;
+    `Conversation restored: ${history.length} messages${checkpoint ? ' · checkpoint' : ''}`;
 };
 loadState();
 </script>

@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -15,15 +14,11 @@ import (
 // Conversation is a workspace-scoped chat thread. Grounding for its messages
 // runs against WorkspaceID's chunks in the retrieval store.
 type Conversation struct {
-	ID          string `json:"id"`
-	WorkspaceID string `json:"workspaceId"`
-	Title       string `json:"title"`
-	// Ledger is the build todo ledger, opaque JSON owned by the retrieval
-	// service. It is prompt state, not browser state, so it is never serialized
-	// with the conversation.
-	Ledger    json.RawMessage `json:"-"`
-	CreatedAt time.Time       `json:"createdAt"`
-	UpdatedAt time.Time       `json:"updatedAt"`
+	ID          string    `json:"id"`
+	WorkspaceID string    `json:"workspaceId"`
+	Title       string    `json:"title"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 // Message is one turn in a conversation. Status tracks the streaming lifecycle
@@ -228,9 +223,9 @@ func (s *Store) CreateConversation(ctx context.Context, userID, wsID, title stri
 func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Conversation, error) {
 	var c Conversation
 	err := s.pool.QueryRow(ctx,
-		`SELECT id, workspace_id, COALESCE(title,''), ledger, created_at, updated_at
+		`SELECT id, workspace_id, COALESCE(title,''), created_at, updated_at
 		   FROM conversations WHERE id=$1 AND user_id=$2`, convID, userID).
-		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.Ledger, &c.CreatedAt, &c.UpdatedAt)
+		Scan(&c.ID, &c.WorkspaceID, &c.Title, &c.CreatedAt, &c.UpdatedAt)
 	if isNoRows(err) {
 		return Conversation{}, ErrNotFound
 	}
@@ -241,35 +236,6 @@ func (s *Store) GetConversation(ctx context.Context, userID, convID string) (Con
 		return Conversation{}, err
 	}
 	return c, nil
-}
-
-// ErrStaleTurn is a ledger write whose assistant message is no longer
-// the conversation's newest, so it carries a snapshot older than the row.
-var ErrStaleTurn = errors.New("a newer turn has started in this conversation")
-
-// SetConversationLedger stores the build todo ledger the retrieval
-// service wrote at turn end. The JSON is opaque here: the pipeline owns its
-// shape and this row is only handed back on the next turn.
-//
-// The pipeline writes from a finally block, so an aborted turn's write can
-// arrive after the next turn started, carrying the older snapshot. The fence is
-// part of the UPDATE - assistantMsgID must still be the newest assistant row
-// when the row is written - because a separate read leaves a window in which
-// the next turn's row commits between the check and the write. Zero rows is
-// ErrStaleTurn: the caller has already resolved the conversation, so a row that
-// disappeared meanwhile is the same refusal to a fire-and-forget writer.
-func (s *Store) SetConversationLedger(ctx context.Context, convID, assistantMsgID string, ledger json.RawMessage) error {
-	tag, err := s.pool.Exec(ctx,
-		`UPDATE conversations SET ledger=$3 WHERE id=$1
-		   AND $2=(SELECT id FROM messages WHERE conversation_id=$1 AND role='assistant'
-		            ORDER BY created_at DESC, id DESC LIMIT 1)`, convID, assistantMsgID, ledger)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return ErrStaleTurn
-	}
-	return nil
 }
 
 // lockWorkspaceChatTx is the chat counterpart of lockWorkspaceEditorMutationTx:

@@ -204,15 +204,12 @@ def test_a_null_field_is_left_out():
 
 def _ctx(monkeypatch) -> ToolContext:
     monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
-    ctx = ToolContext(
+    return ToolContext(
         workspace_id="ws",
         user_id="u",
         assistant_message_id="m_1",
         operations=frozenset({"material.create", "document.edit"}),
     )
-    ctx.ledger.todos = [tools.LedgerTodo(id=0, text="quiz")]
-    ctx.ledger.next_todo_id = 1
-    return ctx
 
 
 def _store(quiz: list[dict], written: list) -> QuizStore:
@@ -254,14 +251,12 @@ def _store(quiz: list[dict], written: list) -> QuizStore:
 
 async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkeypatch):
     """The valid questions land after the quiz's last question, in order; the
-    left-out one is named for resending in its place, and the todo stays open
-    until it lands."""
+    left-out one is named for resending in its place."""
     ctx = _ctx(monkeypatch)
     written: list = []
     store = _store([{"id": "q_old", "stem": [], "parts": []}], written)
     args = {
         "quiz_id": "mat_q",
-        "todo": 0,
         "questions": [MCQ, {**SHORT, "accepted": ["minus seventy"]}, SHORT],
         "_tool_call_id": "call_1",
     }
@@ -284,8 +279,6 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
         "- questions[1].accepted[0]: expected a plain number because unit is set"
         in text
     )
-    assert "Todo 0 stays open until they are added." in text
-    assert not ctx.ledger.todos[0].done
 
     # Nothing valid: nothing is written and every problem comes back at once.
     refused = await tools.write_questions(
@@ -302,21 +295,20 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
     assert "- questions[0].options: expected at least 2 items; sent 1" in refused.text()
 
 
-async def test_a_new_quiz_takes_its_first_questions_and_completes_the_todo(monkeypatch):
+async def test_a_new_quiz_takes_its_first_questions(monkeypatch):
     ctx = _ctx(monkeypatch)
     written: list = []
     result = await tools.write_questions(
         "add_questions",
         {
             "title": "Neurons",
-            "todo": 0,
             "questions": [MCQ, SHORT],
             "_tool_call_id": "c",
         },
         ctx,
         _store([], written),
     )
-    assert result.outcome == "succeeded" and ctx.ledger.todos[0].done
+    assert result.outcome == "succeeded"
     [(kind, made)] = written
     assert kind == "create" and [q["parts"][0]["answer"]["type"] for q in made] == [
         "mcq",
@@ -329,7 +321,6 @@ async def test_a_new_quiz_takes_its_first_questions_and_completes_the_todo(monke
 
 async def test_media_goes_after_the_question_text(monkeypatch):
     ctx = _ctx(monkeypatch)
-    ctx.ledger.todos = []
     written: list = []
     quiz = [questions.expand("mcq", MCQ, "q_1")]
     store = _store(quiz, written)
@@ -411,17 +402,22 @@ def test_a_note_quiz_fence_takes_the_same_shapes():
 
 
 async def test_a_refused_write_also_names_its_question_problems(monkeypatch):
-    """A ledger refusal carries the call's question problems too, so one resend
-    fixes both."""
+    """An excerpt refusal carries the call's question problems too, so one
+    resend fixes both."""
     ctx = _ctx(monkeypatch)
     result = await tools.write_questions(
         "add_questions",
-        {"title": "T", "questions": [{**MCQ, "correct": "x"}], "_tool_call_id": "c"},
+        {
+            "title": "T",
+            "questions": [{**MCQ, "correct": "x"}],
+            "excerpt_ids": ["e_1"],
+            "_tool_call_id": "c",
+        },
         ctx,
         _store([], []),
     )
     assert isinstance(result, ToolResult) and result.refused
-    assert result.error.startswith("add_questions needs todo")
+    assert result.error.startswith("excerpt_ids name library excerpts")
     assert (
         "Also fix these before sending it again:\n- questions[0].correct"
         in result.detail

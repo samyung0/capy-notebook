@@ -13,7 +13,9 @@ from typing import Any
 
 from ..retrieval import openui
 from ..retrieval.limits import (
+    BUILD_TOOLS_PER_TURN,
     PLANNING_RESPONSES,
+    STALL_RESPONSES,
     TOOLS_PER_RESPONSE,
 )
 from .locale import response_language_rule
@@ -37,7 +39,7 @@ Answer or build:
 - While a build request is vague, ask until you know the scope. Reuse what the learner already said, and offer a default they can accept rather than an open question.
 - Before writing to the workspace, read the skills for the work with read_skill.
 
-Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Without ledger todos a turn has {PLANNING_RESPONSES} responses, the last without tools."""
+Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, {BUILD_TOOLS_PER_TURN} tool calls, and tools go off after {STALL_RESPONSES} responses in a row without a successful write."""
 
 LIBRARY_RULES = """Library (a source this turn):
 - The shared library holds verified open textbooks. One excerpt is one section of one book.

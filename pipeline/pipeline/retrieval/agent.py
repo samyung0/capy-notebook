@@ -39,7 +39,7 @@ from . import (
 )
 from .chunking import estimate_tokens
 from .limits import (
-    LEDGER_TOOLS_PER_TURN,
+    BUILD_TOOLS_PER_TURN,
     MAX_CONCURRENT,
     PLANNING_RESPONSES,
     STALL_RESPONSES,
@@ -56,7 +56,9 @@ from .limits import (
     TurnBudget,
 )
 
-# The material write tools: an errored call is an attempt at progress.
+# The write tools. The turn's first successful one starts the build budget,
+# each successful one is stall-guard progress, and an errored one is an
+# attempt at progress.
 WRITE_TOOLS = frozenset(
     {
         "create_material",
@@ -99,8 +101,6 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return str(args.get("topic") or "")
     if name == "read_knowledge":
         return str(args.get("excerpt_id") or "")
-    if name == "create_ledger":
-        return f"{len(args.get('todos') or [])} todos"
     if name == "read_skill":
         return str(args.get("name") or "")
     if name == "capture_knowledge_page":
@@ -233,8 +233,7 @@ async def run_agent(
     """The turn, plus the one piece of it that outlives the turn.
 
     However the loop ends — the answer, the stall guard, a failure, a lost
-    client — the turn's ledger changes go back to the conversation, and its
-    deck working directory goes away.
+    client — its deck working directory goes away.
     """
     try:
         async for event in _run_turn(
@@ -248,7 +247,6 @@ async def run_agent(
         ):
             yield event
     finally:
-        await tools.store_ledger(ctx)
         if ctx.deck_dir:
             shutil.rmtree(ctx.deck_dir, ignore_errors=True)
 
@@ -364,38 +362,38 @@ async def _run_turn(
         state and state.credits_exhausted and state.terminal_call_allowed
     )
     step = 0
-    # A turn with ledger todos has no planning ceiling; the stall guard is what
-    # ends one whose responses stop completing todos, and it is its own stop
+    # Once a write lands the turn has no planning ceiling; the stall guard is
+    # what ends one whose responses stop landing writes, and it is its own stop
     # reason.
+    writes = 0
     stalled = 0
     stall_stop = False
     tool_stop = False
     # Errored writes earn the guard extra responses (limits.WRITE_ERROR_GRACE).
     write_errors = 0
 
-    while ctx.ledger.active or step < planning_cap or terminal_pending:
+    while writes or step < planning_cap or terminal_pending:
         if _client_gone(client):
             budget.stop_reason = STOP_CLIENT_GONE
             return
         terminal_call = terminal_pending
         terminal_pending = False
-        building = ctx.ledger.active
+        building = writes > 0
         stall_limit = STALL_RESPONSES + WRITE_ERROR_GRACE * min(
             write_errors, WRITE_ERROR_GRACE_MAX
         )
         if building:
-            tool_stop = budget.tool_calls_turn >= LEDGER_TOOLS_PER_TURN
+            tool_stop = budget.tool_calls_turn >= BUILD_TOOLS_PER_TURN
             tools_off = terminal_call or tool_stop or stalled >= stall_limit
             if tools_off and not terminal_call and not tool_stop:
                 stall_stop = True
                 log.warning(
-                    "stall guard: %d responses completed no todo "
-                    "(limit %d after %d errored writes); %d of %d ledger todos done",
+                    "stall guard: %d responses landed no write "
+                    "(limit %d after %d errored writes); %d writes landed",
                     stalled,
                     stall_limit,
                     write_errors,
-                    sum(1 for todo in ctx.ledger.todos if todo.done),
-                    len(ctx.ledger.todos),
+                    writes,
                 )
         else:
             tools_off = terminal_call or step == planning_cap - 1
@@ -420,28 +418,31 @@ async def _run_turn(
             # if a turn ever fails on that margin.
             image_tokens = capture.image_tokens(ctx.captures, messages)
             if ctx.library:
-                ctx.library_evidence.activate(messages, ctx.ledger)
+                ctx.library_evidence.activate(messages, ctx.library_reads)
             allowance = ""
             if building and not tools_off:
                 allowance = (
-                    f"\nResponses remaining without completing a todo: {stall_limit - stalled}. "
+                    f"\nResponses remaining without a successful write: {stall_limit - stalled}. "
                     "Batch needed reads and page captures, then write from the evidence "
                     "already read. Searching does not reset this allowance. "
-                    f"Tool calls remaining this turn: {LEDGER_TOOLS_PER_TURN - budget.tool_calls_turn}."
+                    f"Tool calls remaining this turn: {BUILD_TOOLS_PER_TURN - budget.tool_calls_turn}."
                 )
             elif not tools_off:
                 # The model cannot see the cap otherwise and reads until it is
                 # gone; a refused write then has no response left to redo it.
                 allowance = (
                     f"\nResponses remaining this turn, this one included: {planning_cap - step}; "
-                    "the last has tools off. Write before then, or create a ledger "
-                    "for work that needs more responses."
+                    "the last has tools off. Write before then: a successful write "
+                    "lifts this limit."
                 )
-            ledger_message = turn_context.message(
-                ctx, final=tools_off, allowance=allowance
+            context_tokens = estimate_tokens(
+                str(
+                    turn_context.message(ctx, final=tools_off, allowance=allowance)[
+                        "content"
+                    ]
+                )
             )
-            ledger_tokens = estimate_tokens(str(ledger_message["content"]))
-            outside = image_tokens + ledger_tokens
+            outside = image_tokens + context_tokens
             pending_message, pending_reserve, omitted = pending.reserve(
                 messages, ctx.pending_sources, spec, active_schemas, extra=outside
             )
@@ -481,7 +482,7 @@ async def _run_turn(
                 return
             if ctx.library:
                 # Compacted IDs/summaries cannot stand in for retained full reads.
-                ctx.library_evidence.activate(messages, ctx.ledger)
+                ctx.library_evidence.activate(messages, ctx.library_reads)
             ctx.skills_read = skills.retained(messages)
             _append_turn_context(
                 messages,
@@ -653,8 +654,9 @@ async def _run_turn(
         text = assembled.text.strip()
         state = accounting.current()
         exhausted = bool(state and state.credits_exhausted)
-        # A tools-off call ends the turn: a ledger turn has no planning
-        # ceiling, so a call the model emits anyway must not start another round.
+        # A tools-off call ends the turn: once a write has landed there is no
+        # planning ceiling, so a call the model emits anyway must not start
+        # another round.
         if terminal_call or tools_off:
             calls = []
         if calls:
@@ -708,12 +710,14 @@ async def _run_turn(
             if assembled.output_items:
                 assistant["output_items"] = assembled.output_items
             messages.append(assistant)
-            # Progress is the ledger's first creation or a completed todo;
-            # nothing else in a response counts against the stall guard.
-            progress_before = ctx.ledger.progress
+            # Progress is a write that landed; nothing else in a response
+            # counts against the stall guard.
+            writes_before = writes
             write_calls = {c.id for c in calls if c.name in WRITE_TOOLS}
             try:
-                async for event in _run_tools(calls, ctx, budget, messages):
+                async for event in _run_tools(
+                    calls, ctx, budget, messages, building=building
+                ):
                     if event.get("type") == "_tool_message":
                         continue
                     if event.get("type") == "activity":
@@ -722,9 +726,11 @@ async def _run_turn(
                     if (
                         event.get("type") == "tool_end"
                         and event.get("callId") in write_calls
-                        and event.get("outcome") != "succeeded"
                     ):
-                        write_errors += 1
+                        if event.get("outcome") == "succeeded":
+                            writes += 1
+                        else:
+                            write_errors += 1
                     yield event
             except pending.SourceChanged as exc:
                 yield _with_usage(events.error(str(exc), exc.code))
@@ -734,7 +740,7 @@ async def _run_turn(
                 yield _client_error(exc)
                 budget.stop_reason = STOP_TURN_FAILED
                 return
-            stalled = 0 if ctx.ledger.progress > progress_before else stalled + 1
+            stalled = 0 if writes > writes_before else stalled + 1
             if exhausted and state and state.terminal_call_allowed:
                 terminal_pending = True
             continue
@@ -790,8 +796,8 @@ async def _run_turn(
                 events.error("The model returned an empty answer.", "invalid_answer")
             )
             return
-        # No text and no tool calls. In a ledger turn that is one wasted
-        # response, not the end of the turn: it completes no todo, so it counts
+        # No text and no tool calls. Once a write has landed that is one wasted
+        # response, not the end of the turn: it lands no write, so it counts
         # against the stall guard and the loop asks again. Once tools are
         # already off there is nothing left to ask for. Only the stall guard
         # reports itself: a silent terminal call is a billing cutoff.
@@ -808,7 +814,7 @@ async def _run_turn(
         break
 
     if not budget.stop_reason:
-        # Only a turn without ledger todos leaves the loop at its ceiling.
+        # Only a turn with no write landed leaves the loop at its ceiling.
         budget.stop_reason = STOP_PLANNING_CAP
 
     await _record_searches(ctx, cited_order)
@@ -837,7 +843,7 @@ def _append_turn_context(
     or changed in place would leave every later step uncached. A context not
     yet followed by a step is replaced.
     """
-    if messages and messages[-1].get("_kind") == "ledger":
+    if messages and messages[-1].get("_kind") == "turn_context":
         messages[-1] = message
     else:
         messages.append(message)
@@ -922,6 +928,8 @@ async def _run_tools(
     ctx: ToolContext,
     budget: TurnBudget,
     messages: list[dict[str, Any]],
+    *,
+    building: bool = False,
 ) -> AsyncIterator[dict[str, Any]]:
     accepted: list[tuple[ToolCall, dict[str, Any], str]] = []
     results: list[tuple[ToolCall, ToolResult]] = []
@@ -933,7 +941,7 @@ async def _run_tools(
             budget,
             len(accepted),
             search_used=any(name == "search_workspace" for _, _, name in accepted),
-            building=ctx.ledger.active,
+            building=building,
         )
         if limit_text:
             result = tools._refused(limit_text, code="limit_reached")
@@ -1008,8 +1016,9 @@ async def _run_tools(
         text = tools.limit_tool_result(tools.render_result(result, numbered))
         if ctx.library:
             args = _parse_args(call.arguments)
-            ctx.library_evidence.observe(call.name, args, result, text, ctx.ledger)
-            ctx.library_evidence.wrote(call.name, args, result)
+            ctx.library_evidence.observe(
+                call.name, args, result, text, ctx.library_reads
+            )
         definition = tools.contract.definition(call.name)
         if definition and definition["retention"] in ("full", "cited_passages"):
             ctx.evidence_passage_ids.update(p.chunk_id for p in result.passages)
@@ -1044,10 +1053,10 @@ def _limit_for(
             f"This response already used its {TOOLS_PER_RESPONSE} tool-call limit. "
             "Continue in the next step."
         )
-    # Without a ledger the response ceiling bounds the turn.
-    if building and budget.tool_calls_turn >= LEDGER_TOOLS_PER_TURN:
+    # Before the first write lands the response ceiling bounds the turn.
+    if building and budget.tool_calls_turn >= BUILD_TOOLS_PER_TURN:
         return (
-            f"This turn already used its {LEDGER_TOOLS_PER_TURN} tool-call limit. "
+            f"This turn already used its {BUILD_TOOLS_PER_TURN} tool-call limit. "
             "Report the materials created and any remaining work."
         )
     return None

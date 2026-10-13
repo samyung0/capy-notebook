@@ -7,9 +7,6 @@ edited in the browser and saved under configs/. Read tools only; the search
 telemetry write is disabled. Every turn is recorded under local/runs/.
 
   uv run --with pymupdf==1.28.2 python lab/playground/scripts/playground.py --target lab
-
-`--ledger local/runs/<id>/run.json` starts turns from that run's stored ledger,
-which is how a follow-up turn on the same conversation is tested.
 """
 
 from __future__ import annotations
@@ -89,10 +86,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # decks: offer the deck tools (production's, run locally here: deck.py);
     # the main explainer format is study_preferences.mainFormat.
     "decks": {"offer": True},
-    # ledger: path to a stored ledger (a previous run.json, or its `ledger`) the
-    # turn continues, the way the gateway hands one back on a follow-up turn.
-    # --ledger sets it for every config that does not carry its own.
-    "ledger": None,
     # transport: send this pin to another OpenAI-compatible endpoint instead of the
     # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "RELACE_API_KEY",
     # "wire_model": "z-ai/glm-5.3-flash", "body": "zai"}. body picks the request builder.
@@ -116,14 +109,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "skills": {},
     # null offers what production offers; a list narrows it for an experiment.
     "tools": None,
-    # Experiment switches (production keeps "on" and "named"). ledger_mode
-    # "off": no create_ledger and no todo argument; the turn gets the build
-    # budget after its first successful write, and every successful write is
-    # progress for the stall guard. excerpts "auto": no excerpt_ids argument;
-    # each write credits the excerpts read since the previous write (all read
-    # this turn when none are new).
-    "ledger_mode": "on",
-    "excerpts": "named",
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
         "mode": "pixels",
@@ -192,8 +177,6 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         or any(name not in known for name in out["tools"])
     ):
         raise HTTPException(400, "tools must be null or a list of known tool names")
-    if out["ledger_mode"] not in ("on", "off") or out["excerpts"] not in ("named", "auto"):
-        raise HTTPException(400, 'ledger_mode is "on" or "off"; excerpts is "named" or "auto"')
     return out
 
 
@@ -248,7 +231,7 @@ def effective_prompt(
     library = c["library"] if library is None else library
     if base is None:
         base = chat_prompts.system_prompt(c["locale"])
-    text = experiment_prompt(c, base) if c["system_prompt"] is None else c["system_prompt"]
+    text = base if c["system_prompt"] is None else c["system_prompt"]
     if library and with_library:
         rules = (
             chat_prompts.LIBRARY_RULES
@@ -321,12 +304,8 @@ def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
         for s in production
         if (c["decks"]["offer"] or s["function"]["name"] not in deck.NAMES)
         and (c["tools"] is None or s["function"]["name"] in c["tools"])
-        and (c["ledger_mode"] == "on" or s["function"]["name"] != "create_ledger")
     ]
-    dropped = ({"todo"} if c["ledger_mode"] == "off" else set()) | (
-        {"excerpt_ids"} if c["excerpts"] == "auto" else set()
-    )
-    schemas = configured_tools(c, without_args(out, dropped) if dropped else out)
+    schemas = configured_tools(c, out)
     if not c["decks"]["offer"]:
         line = "\n" + skills.catalog_line(skills.DECK, skills.SKILLS[skills.DECK].when)
         for schema in schemas:
@@ -342,7 +321,7 @@ def skill_texts(c: dict[str, Any], *, library: bool) -> dict[str, str]:
     from pipeline.retrieval import skills
 
     return {
-        name: experiment_skill(c, skill.text(library))
+        name: skill.text(library)
         for name, skill in skills.SKILLS.items()
         if c["decks"]["offer"] or name != skills.DECK
     }
@@ -414,8 +393,8 @@ async def create_material_locally(
     """create_material without a gateway: the material lands as JSON under the run
     directory and the model gets the receipt the gateway would have returned.
 
-    The ledger rules (a todo while todos are open, only excerpts this turn
-    read) and the quiz fences' small question shapes are the production
+    The excerpt rules (named excerpts this turn read, or the reads since the
+    last write) and the quiz fences' small question shapes are the production
     helpers, and the expanded fences go through the app's own quiz validation
     (server/cmd/quizcheck, in check_note)."""
     from pipeline.retrieval import questions, tools
@@ -430,14 +409,15 @@ async def create_material_locally(
     figures = await tools.note_figures(ctx, [content] if kind == "note" else [])
     if isinstance(figures, tools.ToolResult):
         return tools._also(figures, fences)
-    args = figures.credited(args)
-    prepared = await tools.ledger_write(ctx, "create_material", args)
+    prepared = await tools.write_sources(
+        ctx, "create_material", args, figures=figures.excerpt_ids
+    )
     if isinstance(prepared, tools.ToolResult):
         return tools._also(prepared, fences)
     if fences.problems():
         summary, listing = questions.refusal(fences)
         return tools._refused(summary, detail=listing)
-    books, todo = prepared
+    books, credited = prepared
     problem = await check_note(content)
     if problem:
         return tools._refused(f"create_material: {problem}")
@@ -452,7 +432,7 @@ async def create_material_locally(
         "content": figures.markdown[0] if figures.markdown else content,
         "cards": args.get("cards") or [],
         "questions": [],
-        "excerpt_ids": [str(e) for e in (args.get("excerpt_ids") or [])],
+        "excerpt_ids": credited,
         "provenance": {"books": books} if books else None,
         "figures": saved,
         "chapter_id": args.get("chapter_id") or None,
@@ -475,7 +455,7 @@ async def create_material_locally(
             },
         }
     )
-    ctx.ledger.complete(todo)
+    tools.landed(ctx, credited)
     return figures.noted(result)
 
 
@@ -523,14 +503,15 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
     figures = await tools.note_figures(ctx, texts)
     if isinstance(figures, tools.ToolResult):
         return tools._also(figures, fences)
-    args = figures.credited(args)
-    prepared = await tools.ledger_write(ctx, "edit_document", args)
+    prepared = await tools.write_sources(
+        ctx, "edit_document", args, figures=figures.excerpt_ids
+    )
     if isinstance(prepared, tools.ToolResult):
         return tools._also(prepared, fences)
     if fences.problems():
         summary, listing = questions.refusal(fences)
         return tools._refused(summary, detail=listing)
-    books, todo = prepared
+    books, credited = prepared
     problem = await check_note("\n".join(figures.markdown))
     if record["kind"] == "quiz" and not problem:
         kept = apply_question_commands(record["questions"], commands)
@@ -554,9 +535,7 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
         if part
     )
     record["size"] = material_size(record["kind"], record)
-    record["excerpt_ids"] = sorted(
-        {*record["excerpt_ids"], *(str(e) for e in (args.get("excerpt_ids") or []))}
-    )
+    record["excerpt_ids"] = sorted({*record["excerpt_ids"], *credited})
     if books:
         existing = (record["provenance"] or {}).get("books") or []
         record["provenance"] = {"books": merge_books(existing, books)}
@@ -575,7 +554,7 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
             },
         }
     )
-    ctx.ledger.complete(todo)
+    tools.landed(ctx, credited)
     return figures.noted(result)
 
 
@@ -598,13 +577,13 @@ async def deck_locally(
             return tools._refused(
                 "chapter_id is not a chapter of this workspace; the turn context lists them."
             )
-        prepared = await tools.ledger_write(ctx, "create_deck", clean)
+        prepared = await tools.write_sources(ctx, "create_deck", clean)
         if isinstance(prepared, tools.ToolResult):
             return prepared
-        books, todo = prepared
+        books, credited = prepared
         rid = production_deck.deck_id(message_id, str(args.get("_tool_call_id") or ""))
         record = deck.create(clean, rid)
-        record["excerpt_ids"] = [str(e) for e in clean.get("excerpt_ids") or []]
+        record["excerpt_ids"] = credited
         state["materials"].append(record)
         operation = "created"
         outline = deck.created_text(record)
@@ -626,10 +605,10 @@ async def deck_locally(
                 "change its text with edit_document replace_text, or make a new deck.",
                 code="unavailable_target",
             )
-        prepared = await tools.ledger_write(ctx, "write_slide", clean)
+        prepared = await tools.write_sources(ctx, "write_slide", clean)
         if isinstance(prepared, tools.ToolResult):
             return prepared
-        books, todo = prepared
+        books, credited = prepared
         # The model knows a capture by its page; a later capture of the same
         # page wins. A whole page is refused: a slide shrinks it unreadable.
         captures, figures, excerpts = {}, {}, {}
@@ -655,9 +634,7 @@ async def deck_locally(
         problem = await asyncio.to_thread(deck.write, record, clean, captures, figures, project)
         if problem:
             return tools._refused(f"write_slide: {problem}")
-        record["excerpt_ids"] = sorted(
-            {*record["excerpt_ids"], *(str(e) for e in clean.get("excerpt_ids") or [])}
-        )
+        record["excerpt_ids"] = sorted({*record["excerpt_ids"], *credited})
         operation = "edited"
         outline = deck.outline_text(record)
     production_deck.add_books(record, books)
@@ -687,7 +664,8 @@ async def deck_locally(
             },
         }
     )
-    ctx.ledger.complete(todo)
+    # A deck is a file: its excerpts are credited, not retained (production).
+    ctx.library_reads.credit()
     result.text_parts = [outline]
     return result
 
@@ -725,10 +703,6 @@ async def copy_locally(
             return tools._refused(
                 "quiz_id is not a quiz in this workspace", code="unavailable_target"
             )
-    prepared = await tools.ledger_write(ctx, "copy_questions", clean, excerpts=False)
-    if isinstance(prepared, tools.ToolResult):
-        return prepared
-    _, todo = prepared
     questions = [row["question"] for row in rows]
     credits = {row["id"]: row["sources"] for row in rows if row.get("sources")}
     if record is None:
@@ -757,7 +731,7 @@ async def copy_locally(
         operation = "edited"
     record["size"] = material_size("quiz", record)
     write_material(state, record)
-    result = tools._receipt_result(
+    return tools._receipt_result(
         {
             "outcome": "succeeded",
             "effect": {
@@ -771,8 +745,6 @@ async def copy_locally(
             },
         }
     )
-    ctx.ledger.complete(todo)
-    return result
 
 
 def apply_question_commands(
@@ -989,135 +961,6 @@ async def check_note(markdown: str) -> str:
     return ""
 
 
-def ledger_state(ledger) -> dict[str, Any]:
-    """The ledger two ways. The top level is the turn as the model sees it: every
-    todo with the id the turn context shows, plus this turn's reads and progress.
-    `stored` is what the gateway would persist at turn end, the newest 10 open
-    todos; `--ledger` and the config's `ledger` field read it, so a follow-up
-    turn starts where a real one would."""
-    return {
-        "next_todo_id": ledger.next_todo_id,
-        "todos": [{"id": t.id, "text": t.text, "done": t.done} for t in ledger.todos],
-        "progress": ledger.progress,
-        "reads": [
-            {"excerpt_id": r.excerpt_id, "start": r.start, "section": r.section}
-            for r in ledger.reads
-        ],
-        "stored": ledger.stored(),
-    }
-
-
-def starting_ledger(path: str | None):
-    """The ledger a run starts from: a previous run.json, or a bare stored
-    ledger. Without one the conversation starts with an empty ledger."""
-    from pipeline.retrieval import tools
-
-    if not path:
-        return tools.Ledger()
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
-    ledger = raw.get("ledger", raw)
-    return tools.Ledger.from_stored(ledger.get("stored", ledger))
-
-
-def write_ledger():
-    """ledger_mode "off": a ledger with no todos whose progress is the turn's
-    successful writes, so the production loop's stall guard counts writes and
-    the turn takes the build budget once one has landed."""
-    from pipeline.retrieval import tools
-
-    class WriteLedger(tools.Ledger):
-        writes: int = 0
-        # Library reads already credited by an earlier write (excerpts "auto").
-        credited: int = 0
-
-        @property
-        def active(self) -> bool:
-            return self.writes > 0
-
-        def landed(self) -> None:
-            self.writes += 1
-            self.progress += 1
-
-    return WriteLedger()
-
-
-def without_args(schemas: list[dict], names: set[str]) -> list[dict]:
-    """The tool schemas with these argument names removed."""
-    out = copy.deepcopy(schemas)
-    for schema in out:
-        params = schema["function"].get("parameters") or {}
-        props = params.get("properties") or {}
-        for name in names & set(props):
-            del props[name]
-        if "required" in params:
-            params["required"] = [r for r in params["required"] if r not in names]
-    return out
-
-
-NO_LEDGER_BUDGET = (
-    "Until the turn's first successful write it has {planning} responses, the last "
-    "without tools; once a write lands it has {calls} tool calls, and after {stall} "
-    "responses in a row that land no write the next has tools off."
-)
-NO_LEDGER_SKILL = (
-    "Budget:\n- There is no ledger. Once a write lands, the turn has {calls} tool "
-    "calls, and after {stall} responses in a row that land no write, the next has "
-    'tools off; in the turn context, "completing a todo" means landing a write.'
-)
-AUTO_EXCERPTS_LINE = (
-    "- The library excerpts you read are credited on your next write automatically; "
-    "write only what they support."
-)
-
-
-def experiment_prompt(c: dict[str, Any], text: str) -> str:
-    """The system prompt with the budget sentence for ledger_mode "off"."""
-    from pipeline.retrieval import limits
-
-    if c["ledger_mode"] == "on":
-        return text
-    old = (
-        f"Without ledger todos a turn has {limits.PLANNING_RESPONSES} responses, "
-        "the last without tools."
-    )
-    if old not in text:
-        raise RuntimeError("the production budget sentence changed; update experiment_prompt")
-    return text.replace(
-        old,
-        NO_LEDGER_BUDGET.format(
-            planning=limits.PLANNING_RESPONSES,
-            calls=limits.LEDGER_TOOLS_PER_TURN,
-            stall=limits.STALL_RESPONSES,
-        ),
-    )
-
-
-def experiment_skill(c: dict[str, Any], text: str) -> str:
-    """A skill's text without the ledger paragraph (ledger_mode "off") and with
-    excerpt crediting described as automatic (excerpts "auto")."""
-    from pipeline.retrieval import limits
-
-    if c["ledger_mode"] == "off":
-        text = re.sub(
-            r"Ledger and budget:\n(?:- .*\n)+",
-            NO_LEDGER_SKILL.format(
-                calls=limits.LEDGER_TOOLS_PER_TURN, stall=limits.STALL_RESPONSES
-            )
-            + "\n",
-            text,
-        )
-        text = text.replace(" Such an edit takes no todo and no excerpt_ids.", "")
-    if c["excerpts"] == "auto":
-        lines = []
-        for line in text.split("\n"):
-            if "excerpt_ids" not in line:
-                lines.append(line)
-            elif AUTO_EXCERPTS_LINE not in lines:
-                lines.append(AUTO_EXCERPTS_LINE)
-        text = "\n".join(lines)
-    return text
-
-
 def save_knowledge_capture(
     state: dict[str, Any], ctx, call_id: str, run_id: str
 ) -> dict[str, Any]:
@@ -1176,7 +1019,6 @@ class Turn:
         history: list[dict[str, Any]],
         resolver: PdfResolver,
         checkpoint: dict[str, Any] | None = None,
-        ledger: dict[str, Any] | None = None,
     ):
         self.config, self.question, self.history, self.resolver = (
             config,
@@ -1185,7 +1027,6 @@ class Turn:
             resolver,
         )
         self.checkpoint = checkpoint
-        self.ledger = ledger
         self.id = time.strftime("%Y%m%d-%H%M%S-") + uuid.uuid4().hex[:6]
         self.run_dir = RUNS / self.id
         self.state: dict[str, Any] = {
@@ -1198,7 +1039,6 @@ class Turn:
             "_result_call": {},
             "compactions": [],
             "materials": [],
-            "ledger": {},
             "stall_events": [],
         }
 
@@ -1246,11 +1086,6 @@ class Turn:
             operations=operations_for(c),
             file_ids=c["scope_file_ids"] or None,
             assistant_message_id=self.id,
-            ledger=write_ledger()
-            if c["ledger_mode"] == "off"
-            else tools.Ledger.from_stored(self.ledger)
-            if self.ledger is not None
-            else starting_ledger(c["ledger"]),
             open_resource=dict(c["open_resource"] or {}),
             study_preferences=dict(c["study_preferences"] or {}),
             study_progress=bool(c["study_progress"]),
@@ -1259,7 +1094,6 @@ class Turn:
             "system_prompt": chat_prompts.system_prompt,
             "schemas_for": tools.schemas_for,
             "run": tools.run,
-            "store_ledger": tools.store_ledger,
             "mutates": tools.mutates,
             "render": tools.render_result,
             "stream": models.stream_agent_response,
@@ -1289,21 +1123,6 @@ class Turn:
             }
             state["calls"].append(record)
             started = time.perf_counter()
-            auto_credit = (
-                c["excerpts"] == "auto"
-                and ctx_.library
-                and name in agent.WRITE_TOOLS
-                and name != "copy_questions"
-            )
-            if auto_credit:
-                # Credit what was read since the previous write, or everything
-                # read this turn when nothing new was (a second item written
-                # from the same reading); the model names none.
-                fresh = ctx_.ledger.reads[getattr(ctx_.ledger, "credited", 0) :]
-                credit = list(
-                    dict.fromkeys(r.excerpt_id for r in fresh or ctx_.ledger.reads)
-                )
-                args = {**args, "excerpt_ids": credit} if credit else args
             problem = (
                 tools.contract.validate_args(name, record["args"])
                 if name in tools.contract.DEFINITIONS
@@ -1376,18 +1195,8 @@ class Turn:
                 error=result.error,
                 passages=[p.chunk_id for p in result.passages],
             )
-            if name in agent.WRITE_TOOLS and result.outcome == "succeeded":
-                if c["ledger_mode"] == "off":
-                    ctx_.ledger.landed()
-                if auto_credit:
-                    ctx_.ledger.credited = len(ctx_.ledger.reads)
             state["_result_call"][id(result)] = record
             return result
-
-        async def store_ledger(ctx_):
-            """There is no gateway to store the ledger in: run.json is where a
-            follow-up run reads it back from (`--ledger`)."""
-            state["ledger"] = ledger_state(ctx_.ledger)
 
         def mutates(name):
             return False if name == capture.NAME else saved["mutates"](name)
@@ -1597,22 +1406,17 @@ class Turn:
                 ),
                 encoding="utf-8",
             )
-            if ctx.ledger.active:
-                state["ledger"] = ledger_state(ctx.ledger)
-                state["extra"].append(
-                    {"type": "ledger", "call": call, **state["ledger"]}
-                )
-                if tools_off(kw):
-                    # With ledger todos tools go off only on the stall guard, the
-                    # tool cap or the terminal call after credits run out.
-                    stall = {
-                        "call": call,
-                        "progress": ctx.ledger.progress,
-                        "todos_done": sum(1 for t in ctx.ledger.todos if t.done),
-                        "todos": len(ctx.ledger.todos),
-                    }
-                    state["stall_events"].append(stall)
-                    state["extra"].append({"type": "stall", **stall})
+            writes = sum(
+                1
+                for c_ in state["calls"]
+                if c_["name"] in agent.WRITE_TOOLS and c_.get("outcome") == "succeeded"
+            )
+            if writes and tools_off(kw):
+                # Once a write lands tools go off only on the stall guard, the
+                # tool cap or the terminal call after credits run out.
+                stall = {"call": call, "writes": writes}
+                state["stall_events"].append(stall)
+                state["extra"].append({"type": "stall", **stall})
             try:
                 assembled = await saved["stream"](request, **kw)
             except Exception as exc:
@@ -1648,9 +1452,13 @@ class Turn:
                 )
             state["provider_calls"][-1]["output_split"] = written
             # The turn context this call carried: open file, chapters,
-            # preferences, todos. It is last in the request.
+            # preferences, library reads. It is last in the request.
             turn_context = next(
-                (str(m.get("content")) for m in reversed(request) if m.get("_kind") == "ledger"),
+                (
+                    str(m.get("content"))
+                    for m in reversed(request)
+                    if m.get("_kind") == "turn_context"
+                ),
                 "",
             )
             state["provider_calls"][-1]["turn_context"] = turn_context
@@ -1689,11 +1497,7 @@ class Turn:
             return base
 
         chat_prompts.system_prompt = system_prompt
-        tools.schemas_for, tools.run, tools.store_ledger = (
-            schemas_for,
-            run,
-            store_ledger,
-        )
+        tools.schemas_for, tools.run = schemas_for, run
         tools.mutates, tools.render_result, models.stream_agent_response = (
             mutates,
             render_result,
@@ -1853,11 +1657,7 @@ class Turn:
             yield event
         finally:
             chat_prompts.system_prompt = saved["system_prompt"]
-            tools.schemas_for, tools.run, tools.store_ledger = (
-                saved["schemas_for"],
-                saved["run"],
-                saved["store_ledger"],
-            )
+            tools.schemas_for, tools.run = saved["schemas_for"], saved["run"]
             tools.mutates, tools.render_result, models.stream_agent_response = (
                 saved["mutates"],
                 saved["render"],
@@ -1907,12 +1707,14 @@ class Turn:
             "captures": state["captures"],
             "compactions": state["compactions"],
             "checkpoint_in": self.checkpoint,
-            "ledger_in": self.ledger,
             "events": recorded,
             # What the loop read and wrote. Materials carry their own
             # provenance books, which is the attribution a real material keeps.
             "library": library,
-            "ledger": ledger_state(ctx.ledger),
+            "library_reads": [
+                {"excerpt_id": r.excerpt_id, "start": r.start, "section": r.section}
+                for r in ctx.library_reads.reads
+            ],
             "stall_events": state["stall_events"],
             "materials": state["materials"],
         }
@@ -2150,7 +1952,6 @@ def build_app(target: str):
                     body.get("history") or [],
                     resolver,
                     body.get("checkpoint"),
-                    body.get("ledger"),
                 )
                 async for event in run.events():
                     yield "data: " + json.dumps(event, ensure_ascii=False) + "\n\n"
@@ -2265,7 +2066,7 @@ def build_app(target: str):
 
 
 def check_decks() -> None:
-    """Outline, slide checks, figures, export and the ledger rules, through the
+    """Outline, slide checks, figures and export, through the
     local handler. Runs ppt-master's checker and exporter (cloned on first use)."""
     from tempfile import TemporaryDirectory
 
@@ -2332,10 +2133,6 @@ def check_decks() -> None:
         # The exported PPTX is the document from now on.
         again = await deck_locally("write_slide", {"deck_id": rid, "slide": 1, "svg": slide()}, ctx, state, "m1")
         assert again.refused and "now the document" in again.text(), again.text()
-        # With todos open, a deck write names one, like any material write.
-        await tools._create_ledger({"todos": ["deck", "quiz"]}, ctx)
-        needs = await deck_locally("create_deck", {**outline, "_tool_call_id": "c2"}, ctx, state, "m1")
-        assert needs.refused and "needs todo" in needs.text()
         bad_args = await deck_locally("create_deck", {"title": "x", "slides": []}, ctx, state, "m1")
         assert bad_args.refused and "arguments invalid" in bad_args.text()
 
@@ -2359,7 +2156,7 @@ def check_copy() -> None:
 
     async def flow(run_dir: Path) -> None:
         ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS)
-        ctx.ledger.note_read("exc_1", 0, "1.1")  # a library read does not ask copies for excerpts
+        ctx.library_reads.note("exc_1", 0, "1.1")  # a library read does not ask copies for excerpts
         state = {"materials": [], "captures": [], "run_dir": run_dir}
         for args, says in (
             ({"question_ids": ["q1"]}, "exactly one destination"),
@@ -2377,9 +2174,6 @@ def check_copy() -> None:
         assert set(quiz["provenance"]["questions"]) == {"q1", "q2"}
         more = await copy_locally({"question_ids": ["q3"], "quiz_id": quiz["id"]}, ctx, state, "m1")
         assert not more.refused and len(quiz["questions"]) == 3 and "q3" in quiz["provenance"]["questions"]
-        await tools._create_ledger({"todos": ["quiz"]}, ctx)
-        needs = await copy_locally({"question_ids": ["q5"], "title": "T2"}, ctx, state, "m1")
-        assert needs.refused and "needs todo" in needs.text()
 
     with TemporaryDirectory() as tmp, patch.object(bank_local, "read", new=read):
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
@@ -2401,13 +2195,11 @@ def check_questions() -> None:
             workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS, assistant_message_id="m1"
         )
         state = {"materials": [], "captures": [], "run_dir": run_dir}
-        await tools._create_ledger({"todos": ["quiz", "open question"]}, ctx)
         resting = {"question": "Resting potential?", "accepted": ["-70 mV"], "unit": "mV"}
         made = await write(
             "add_questions",
             {
                 "title": "Neurons",
-                "todo": 0,
                 "questions": [
                     {"question": "Which ion enters first?", "options": ["Na+", "K+"], "correct": "Na+"},
                     resting,
@@ -2418,19 +2210,18 @@ def check_questions() -> None:
         assert made.outcome == "succeeded", made.text()
         assert "questions[1].accepted[0]: expected a plain number" in made.text(), made.text()
         quiz = state["materials"][0]
-        assert len(quiz["questions"]) == 1 and not ctx.ledger.todos[0].done
+        assert len(quiz["questions"]) == 1
         fixed = await write(
             "add_questions",
-            {"quiz_id": quiz["id"], "todo": 0, "questions": [{**resting, "accepted": ["-70"]}]},
+            {"quiz_id": quiz["id"], "questions": [{**resting, "accepted": ["-70"]}]},
             ctx, state, "c2",
         )
-        assert not fixed.refused and ctx.ledger.todos[0].done, fixed.text()
+        assert not fixed.refused, fixed.text()
         scheme = [{"text": "Na+ channels open", "marks": 1}, {"text": "Na+ flows in", "marks": 1}]
         opened = await write(
             "add_open_question",
             {
                 "quiz_id": quiz["id"],
-                "todo": 1,
                 "question": "Explain depolarisation.",
                 "marks": 2,
                 "markscheme": scheme,
@@ -2487,7 +2278,7 @@ def check_figures() -> None:
 
     async def flow(run_dir: Path) -> None:
         ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS, library=True)
-        ctx.ledger.note_read("exc_1", 0, "1.1")
+        ctx.library_reads.note("exc_1", 0, "1.1")
         state = {"materials": [], "captures": [], "run_dir": run_dir}
         made = await create_material_locally(
             {"kind": "note", "content": "# A\n\n![](figure:fig_1)", "_tool_call_id": "c1"}, ctx, state, "m1"
@@ -2676,10 +2467,6 @@ def check() -> None:
                 assert response.json()["prompt"] == expected
                 names = [s["function"]["name"] for s in response.json()["tools"]]
                 assert names.count("capture_page") == 1
-            stored = {
-                "next_todo_id": 2,
-                "todos": [{"id": 1, "text": "Make a quiz"}],
-            }
             history = [
                 {
                     "id": "m2",
@@ -2700,31 +2487,18 @@ def check() -> None:
                 assert names.count("capture_page") == 1
                 listed = await tools.run("list_sources", {}, kw["ctx"])
                 assert listed.text_parts == ["Local workspace sources"]
-                assert kw["ctx"].ledger.stored() == stored
-                assert not kw["ctx"].ledger.reads
+                assert not kw["ctx"].library_reads.reads
                 assert kw["history"] == history
                 assert kw["checkpoint"] == checkpoint
                 replayed = await evidence.history_turns(kw["history"], kw["ctx"])
                 assert "Created note mat_1" in replayed[-1]["content"]
-                assert tools.mutates("create_ledger")
-                # As if the turn had read the editing skill, which the ledger needs.
-                kw["ctx"].skills_read = {"editing"}
-                updated = await tools.run(
-                    "create_ledger",
-                    {
-                        "todos": [{"id": 1, "todo": "Advanced quiz"}],
-                        "_tool_call_id": "revise",
-                    },
-                    kw["ctx"],
-                )
-                assert updated.outcome == "succeeded"
                 yield {"type": "done", "answer": "Continued."}
 
             c = merged(
                 {
                     "target": "local",
                     "library": True,
-                    "tools": ["create_ledger", "capture_page", "list_sources"],
+                    "tools": ["capture_page", "list_sources"],
                     "model": {"adhoc": {"provider_name": "test"}},
                 }
             )
@@ -2747,17 +2521,13 @@ def check() -> None:
                         "question": "Continue",
                         "history": history,
                         "checkpoint": checkpoint,
-                        "ledger": stored,
                     },
                 )
                 assert response.status_code == 200
                 assert '"answer": "Continued."' in response.text
                 saved = json.loads(next(Path(directory).glob("*/run.json")).read_text())
-                assert saved["ledger_in"] == stored
-                assert saved["ledger"]["stored"] == {
-                    **stored,
-                    "todos": [{"id": 1, "text": "Advanced quiz"}],
-                }
+                assert saved["checkpoint_in"] == checkpoint
+                assert saved["library_reads"] == []
         bare = merged(
             {
                 "library": False,
@@ -2784,31 +2554,6 @@ def check() -> None:
         )
         assert effective_prompt({**lib, "system_prompt": "mine"}, "x") == "mine\n\nMY RULES"
         assert effective_prompt(lib, "base", with_library=False) == "base"
-        # ledger_mode "off" / excerpts "auto": the budget sentence, the editing
-        # skill and the write schemas lose the ledger and excerpt_ids, and the
-        # write ledger turns building on the first landed write.
-        from pipeline.retrieval import contract
-        from pipeline.retrieval import skills as skills_mod
-
-        off = merged({"ledger_mode": "off", "excerpts": "auto"})
-        prompt = effective_prompt(off, chat.system_prompt("en"), with_library=False)
-        assert "Without ledger todos" not in prompt and "once a write lands" in prompt
-        editing = skill_texts(off, library=True)[skills_mod.EDITING]
-        assert "create_ledger" not in editing and "excerpt_ids" not in editing
-        assert "There is no ledger" in editing and AUTO_EXCERPTS_LINE in editing
-        stripped = without_args(
-            [contract.model_schema("create_material")], {"todo", "excerpt_ids"}
-        )[0]["function"]["parameters"]
-        assert not {"todo", "excerpt_ids"} & set(stripped["properties"])
-        ledger = write_ledger()
-        assert not ledger.active and not ledger.open_todos()
-        ledger.landed()
-        assert ledger.active and ledger.progress == 1
-        try:
-            merged({"ledger_mode": "none"})
-            raise AssertionError("an unknown ledger_mode must be refused")
-        except HTTPException:
-            pass
 
     asyncio.run(check_preview())
     assert (
@@ -2826,7 +2571,6 @@ def check() -> None:
         assert c["answer"]["citations"] in ("as_is", "renumber", "structured"), path
         assert c["capture"]["citation"] in ("page", "new"), path
         assert isinstance(c["library"], bool), path
-        assert c["ledger"] is None or isinstance(c["ledger"], str), path
     print("playground checks passed")
 
 
@@ -2835,17 +2579,10 @@ def main() -> None:
     parser.add_argument("--target", choices=sorted(TARGETS), default="lab")
     parser.add_argument("--port", type=int, default=int(os.environ.get("PORT", 8765)))
     parser.add_argument("--check", action="store_true")
-    parser.add_argument(
-        "--ledger",
-        help="start turns from this stored ledger (a previous run.json), "
-        "for configs that do not set `ledger` themselves",
-    )
     args = parser.parse_args()
     if args.check:
         check()
         return
-    if args.ledger:
-        DEFAULT_CONFIG["ledger"] = args.ledger
     dsn = prepare_environment(args.target)
     sys.path.insert(0, str(REPO / "pipeline"))
     import uvicorn

@@ -545,12 +545,6 @@ def _library_ctx(monkeypatch) -> ToolContext:
     return ctx
 
 
-def _plan(ctx: ToolContext, todos: list[str]) -> None:
-    """A ledger with these open todos, numbered from 0, as a stored one loads."""
-    ctx.ledger.todos = [tools.LedgerTodo(id=i, text=t) for i, t in enumerate(todos)]
-    ctx.ledger.next_todo_id = len(todos)
-
-
 def _book(*excerpt_ids: str) -> dict:
     return {
         "id": "ahss",
@@ -611,8 +605,7 @@ async def test_a_library_material_sends_provenance_and_needs_no_indexed_scope(
 
     monkeypatch.setattr(tools.library, "provenance", _provenance)
     sent = _gateway_receipt(monkeypatch, _created("mat_abc", "Regression"))
-    _plan(ctx, ["a note on line fitting"])
-    ctx.ledger.note_read("e_1", 0, "8.1")
+    ctx.library_reads.note("e_1", 0, "8.1")
 
     result = await tools._create_material(
         {
@@ -620,7 +613,6 @@ async def test_a_library_material_sends_provenance_and_needs_no_indexed_scope(
             "title": "Regression",
             "content": "body",
             "excerpt_ids": ["e_1"],
-            "todo": 0,
             "_tool_call_id": "call_1",
         },
         ctx,
@@ -628,8 +620,7 @@ async def test_a_library_material_sends_provenance_and_needs_no_indexed_scope(
 
     assert not result.refused
     assert sent[0]["provenance"] == {"books": books}
-    assert ctx.ledger.todos[0].done
-    assert ctx.ledger.progress == 1, "one completed todo"
+    assert ctx.library_reads.reads[0].credited
 
 
 async def test_two_materials_may_share_the_same_excerpts(monkeypatch):
@@ -644,9 +635,8 @@ async def test_two_materials_may_share_the_same_excerpts(monkeypatch):
 
     monkeypatch.setattr(tools.library, "provenance", _provenance)
     sent = _gateway_receipt(monkeypatch, _created("mat_note", "Regression"))
-    _plan(ctx, ["note", "quiz"])
-    ctx.ledger.note_read("e_1", 0, "8.1")
-    ctx.ledger.note_read("e_2", 0, "8.2")
+    ctx.library_reads.note("e_1", 0, "8.1")
+    ctx.library_reads.note("e_2", 0, "8.2")
 
     note = await tools._create_material(
         {
@@ -654,7 +644,6 @@ async def test_two_materials_may_share_the_same_excerpts(monkeypatch):
             "title": "Regression",
             "content": "body",
             "excerpt_ids": ["e_1", "e_2"],
-            "todo": 0,
             "_tool_call_id": "call_1",
         },
         ctx,
@@ -665,7 +654,6 @@ async def test_two_materials_may_share_the_same_excerpts(monkeypatch):
             "title": "Practice",
             "questions": [{"question": "Slope?", "accepted": ["2"]}],
             "excerpt_ids": ["e_1", "e_2"],
-            "todo": 1,
             "_tool_call_id": "call_2",
         },
         ctx,
@@ -674,10 +662,9 @@ async def test_two_materials_may_share_the_same_excerpts(monkeypatch):
     assert not note.refused and not quiz.refused
     assert asked == [["e_1", "e_2"], ["e_1", "e_2"]]
     assert sent[0]["provenance"]["books"][0]["excerptIds"] == ["e_1", "e_2"]
-    assert [t.done for t in ctx.ledger.todos] == [True, True]
 
 
-async def test_a_library_edit_sends_provenance_and_marks_its_todo(monkeypatch):
+async def test_a_library_edit_sends_provenance(monkeypatch):
     """Growing a note section by section: the appended section's excerpts join
     the material's attribution, and Go merges them by book id."""
     ctx = _library_ctx(monkeypatch)
@@ -694,8 +681,7 @@ async def test_a_library_edit_sends_provenance_and_marks_its_todo(monkeypatch):
             "resource": {"kind": "material", "id": "mat_note", "title": "Regression"},
         },
     )
-    _plan(ctx, ["intro section", "residuals section"])
-    ctx.ledger.note_read("e_2", 0, "8.2")
+    ctx.library_reads.note("e_2", 0, "8.2")
 
     result = await tools._edit_document(
         {
@@ -707,21 +693,20 @@ async def test_a_library_edit_sends_provenance_and_marks_its_todo(monkeypatch):
                     "markdown": "Residuals",
                 }
             ],
-            "excerpt_ids": ["e_2"],
-            "todo": 1,
             "_tool_call_id": "call_9",
         },
         ctx,
     )
 
     assert not result.refused
-    assert sent[0]["provenance"]["books"][0]["excerptIds"] == ["e_2"]
-    assert ctx.ledger.todos[1].done and not ctx.ledger.todos[0].done
+    assert sent[0]["provenance"]["books"][0]["excerptIds"] == ["e_2"], (
+        "naming none credits the reads since the last write"
+    )
 
 
-async def test_an_edit_of_a_source_file_carries_no_ledger_rules(monkeypatch):
-    """The learner's own file is not written from the library: the edit needs
-    no todo and no excerpt ids, and Go is sent no provenance for it."""
+async def test_an_edit_of_a_source_file_carries_no_provenance(monkeypatch):
+    """The learner's own file is not written from the library: the edit takes
+    no excerpt ids, credits no reads, and Go is sent no provenance for it."""
     ctx = _library_ctx(monkeypatch)
     sent = _gateway_receipt(
         monkeypatch,
@@ -736,8 +721,7 @@ async def test_an_edit_of_a_source_file_carries_no_ledger_rules(monkeypatch):
         return tools.pending.PendingSources()
 
     monkeypatch.setattr(tools.pending, "load", _load)
-    _plan(ctx, ["a note on regression"])
-    ctx.ledger.note_read("e_1", 0, "8.1")
+    ctx.library_reads.note("e_1", 0, "8.1")
 
     result = await tools._edit_document(
         {
@@ -750,7 +734,7 @@ async def test_an_edit_of_a_source_file_carries_no_ledger_rules(monkeypatch):
 
     assert not result.refused, result.text()
     assert "provenance" not in sent[0]
-    assert not ctx.ledger.todos[0].done, "a source edit completes no todo"
+    assert not ctx.library_reads.reads[0].credited, "a source edit credits no read"
 
 
 async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
@@ -858,7 +842,7 @@ async def test_the_last_planning_round_turns_tools_off(monkeypatch):
     assert seen[0]["tools_off"]
 
 
-async def test_a_turn_without_a_ledger_counts_its_responses_down(monkeypatch):
+async def test_a_turn_before_its_first_write_counts_its_responses_down(monkeypatch):
     stream, seen = _script_stream(
         [
             _assembled("", [_call("list_sources")]),
@@ -874,7 +858,7 @@ async def test_a_turn_without_a_ledger_counts_its_responses_down(monkeypatch):
     monkeypatch.setattr(agent.tools, "run", _run)
     await _collect("q", ToolContext(workspace_id="ws_1"))
     contexts = [
-        [m["content"] for m in call["messages"] if m.get("_kind") == "ledger"][-1]
+        [m["content"] for m in call["messages"] if m.get("_kind") == "turn_context"][-1]
         for call in seen
     ]
     assert "Responses remaining this turn, this one included: 2;" in contexts[0]
@@ -2258,7 +2242,7 @@ async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
     texts = {"e_1": "excerpt e_1 full text", "e_2": "long " * 12_000}
 
     async def _read(args, scratch):
-        scratch.ledger.note_read(args["excerpt_id"], 0, "8.1")
+        scratch.library_reads.note(args["excerpt_id"], 0, "8.1")
         return ToolResult(text_parts=[texts[args["excerpt_id"]]])
 
     async def _provenance(excerpt_ids):
@@ -2267,7 +2251,7 @@ async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
     monkeypatch.setattr(tools, "_read_knowledge", _read)
     monkeypatch.setattr(tools.library, "provenance", _provenance)
     args = {"kind": "note", "content": "x", "excerpt_ids": ["e_1", "e_2"]}
-    refused = await tools.ledger_write(ctx, "create_material", args)
+    refused = await tools.write_sources(ctx, "create_material", args)
     assert isinstance(refused, ToolResult) and refused.refused
     assert refused.error.startswith("Not applied: excerpts ['e_1'] had not been read")
     assert (
@@ -2275,14 +2259,11 @@ async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
         in refused.error
     )
     assert refused.text().endswith("\n\nexcerpt e_1 full text")
-    assert ctx.ledger.read_ids() == {"e_1"}
+    assert ctx.library_reads.ids() == {"e_1"}
     assert ctx.library_evidence.fresh[("e_1", 0)].text == "excerpt e_1 full text"
-    assert await tools.ledger_write(
+    assert await tools.write_sources(
         ctx, "create_material", {**args, "excerpt_ids": ["e_1"]}
-    ) == (
-        [_book("e_1")],
-        None,
-    )
+    ) == ([_book("e_1")], ["e_1"])
 
 
 def test_an_edit_receipt_says_where_a_relocated_insert_landed():
@@ -2708,16 +2689,16 @@ async def test_a_retained_read_replays_with_its_own_count(monkeypatch):
 
     async def read(args, ctx):
         calls.append(dict(args))
-        ctx.ledger.note_read(args["excerpt_id"], args.get("start", 0), "8.1")
+        ctx.library_reads.note(args["excerpt_id"], args.get("start", 0), "8.1")
         return tools._result(f"{args.get('count')} chunks")
 
     monkeypatch.setattr(tools, "_read_knowledge", read)
     first = LibraryEvidence()
-    ledger = tools.Ledger()
-    ledger.note_read("e_1", 0, "8.1")
+    reads = tools.LibraryReads()
+    reads.note("e_1", 0, "8.1")
     args = {"excerpt_id": "e_1", "count": 4}
-    first.observe("read_knowledge", args, tools._result("4 chunks"), "4 chunks", ledger)
-    first.used.add("e_1")
+    first.observe("read_knowledge", args, tools._result("4 chunks"), "4 chunks", reads)
+    first.wrote(["e_1"])
     packed = first.pack()
     assert packed == [
         {
@@ -2738,26 +2719,16 @@ async def test_a_retained_read_replays_with_its_own_count(monkeypatch):
     assert ("e_1", 0) in later.inherited and "4 chunks" in parts[0][0]
 
 
-async def test_turn_context_comes_last_and_tracks_the_todos(monkeypatch, library_on):
+async def test_turn_context_comes_last_and_tracks_the_reads(monkeypatch, library_on):
     stream, seen = _script_stream(
         [
-            _assembled(
-                "",
-                [
-                    _call(
-                        "create_ledger",
-                        '{"todos":["a note","a quiz"]}',
-                        "k0",
-                    )
-                ],
-            ),
             _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k1")]),
             _assembled(
                 "",
                 [
                     _call(
                         "create_material",
-                        '{"kind":"note","title":"Regression","excerpt_ids":["e_1"],"todo":0}',
+                        '{"kind":"note","title":"Regression"}',
                         "k2",
                     )
                 ],
@@ -2768,41 +2739,36 @@ async def test_turn_context_comes_last_and_tracks_the_todos(monkeypatch, library
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     async def _run(name, args, ctx):
-        if name == "create_ledger":
-            return await agent.tools._create_ledger(args, ctx)
         if name == "read_knowledge":
-            ctx.ledger.note_read("e_1", 0, "8.1 Line fitting")
+            ctx.library_reads.note("e_1", 0, "8.1 Line fitting")
             return ToolResult(text_parts=["excerpt text"])
-        ctx.ledger.complete(0)
         return ToolResult(text_parts=["Created note."])
 
     monkeypatch.setattr(agent.tools, "run", _run)
     ctx = _build_ctx()
     events = await _collect("teach me regression", ctx, model=_build_model())
 
-    def _ledger(messages):
-        return [m for m in messages if m.get("_kind") == "ledger"][-1]
+    def _context(messages):
+        return [m for m in messages if m.get("_kind") == "turn_context"][-1]
 
     first = _script_messages(seen, 0)
-    assert "Open: nothing." in _ledger(first)["content"]
-    assert "Ledger todos" not in _ledger(first)["content"]
+    assert "Open: nothing." in _context(first)["content"]
+    assert "Library excerpts" not in _context(first)["content"]
     # Sent last and left in place: every request extends the one before it, so
     # the provider's cache covers all but the newest step.
     for before, after in itertools.pairwise(seen):
-        assert after["messages"][-1] is _ledger(after["messages"])
+        assert after["messages"][-1] is _context(after["messages"])
         assert [m["content"] for m in after["messages"][: len(before["messages"])]] == [
             m["content"] for m in before["messages"]
         ]
 
-    second = _ledger(_script_messages(seen, 1))["content"]
-    assert "[ ] 0. a note" in second and "[ ] 1. a quiz" in second
-
-    third = _ledger(_script_messages(seen, 2))["content"]
-    assert "- e_1 8.1 Line fitting" in third
-
-    fourth = _ledger(_script_messages(seen, 3))["content"]
-    assert "[x] 0. a note" in fourth
-    # The ledger never becomes conversation history.
+    second = _context(_script_messages(seen, 1))["content"]
+    assert "- e_1 8.1 Line fitting" in second
+    assert "Responses remaining this turn" in second
+    # The write landed: the build budget replaces the planning countdown.
+    third = _context(_script_messages(seen, 2))["content"]
+    assert "Responses remaining without a successful write: 5." in third
+    # The turn context never becomes conversation history.
     assert events[-1]["answer"].startswith("I built one note")
 
 
@@ -2810,68 +2776,86 @@ def _script_messages(seen: list[dict], index: int) -> list[dict]:
     return seen[index]["messages"]
 
 
-async def test_a_ledger_turn_has_no_response_ceiling_while_todos_complete(
+def _writing(call_id: str = "w", title: str = "x") -> AssembledResponse:
+    return _assembled(
+        "",
+        [
+            _call(
+                "create_material", json.dumps({"kind": "note", "title": title}), call_id
+            )
+        ],
+    )
+
+
+async def _land(_name, _args, _ctx) -> ToolResult:
+    """Every call succeeds: a write lands, a read reads."""
+    return ToolResult(text_parts=["done"])
+
+
+async def test_a_building_turn_has_no_response_ceiling_while_writes_land(
     monkeypatch, library_on
 ):
-    """Twenty responses, a todo finished every third one: nothing stops it.
-
-    The old ceiling was 8 planning responses; a set of materials needs more.
-    """
+    """Twenty responses, a write landing every third one: nothing stops it,
+    though a turn with no write has 12."""
     reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e"}', "k")])
-    writing = _assembled(
-        "", [_call("create_material", '{"kind":"note","todo":0}', "w")]
+    stream, seen = _script_stream(
+        [reading, reading, _writing()] * 6 + [reading, _assembled("Done.")]
     )
-    script = [reading, reading, writing] * 6 + [reading, _assembled("Done.")]
-    total = len(script)
-    stream, seen = _script_stream(script)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    written = 0
+    monkeypatch.setattr(agent.tools, "run", _land)
 
-    async def _run(name, _args, ctx):
-        nonlocal written
-        if name == "read_knowledge":
-            ctx.ledger.note_read(f"e_{len(ctx.ledger.reads)}", 0, "8.1")
-            return ToolResult(text_parts=["excerpt"])
-        ctx.ledger.complete(written)
-        written += 1
-        return ToolResult(text_parts=["Created note."])
+    events = await _collect("teach me regression", _build_ctx(), model=_build_model())
 
-    ctx = _build_ctx()
-    _plan(ctx, [f"section {i}" for i in range(6)])
-    monkeypatch.setattr(agent.tools, "run", _run)
-    events = await _collect("teach me regression", ctx, model=_build_model())
-
-    assert (len(seen), total) == (20, 20), "no planning ceiling with ledger todos"
+    assert len(seen) == 20, "no planning ceiling once a write lands"
     assert not any(call["tools_off"] for call in seen), "the guard never fired"
     assert events[-1]["answer"] == "Done."
+
+
+async def test_the_planning_cap_holds_until_the_first_write_lands(
+    monkeypatch, library_on
+):
+    """Reads alone never lift the planning cap: the last response has tools
+    off, and a refused write does not lift it either."""
+    monkeypatch.setattr(agent.cfg, "agent_max_steps", 4)
+    reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e"}', "k")])
+    refused = _writing("bad", "refused")
+    stream, seen = _script_stream([reading, refused, reading, _assembled("Read only.")])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+
+    async def _run(_name, args, _ctx):
+        if args.get("title") == "refused":
+            return ToolResult(text_parts=["no"], refused=True)
+        return ToolResult(text_parts=["done"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("teach me regression", _build_ctx(), model=_build_model())
+
+    assert [call["tools_off"] for call in seen] == [False, False, False, True]
+    assert events[-1]["telemetry"]["stopReason"] == "answer"
 
 
 async def test_stall_guard_turns_tools_off_after_five_barren_responses(
     monkeypatch, library_on, caplog
 ):
+    """Once a write has landed, five responses in a row without another one
+    turn the tools off."""
     reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
     stream, seen = _script_stream(
-        [reading] * 5 + [_assembled("The library has nothing usable.")]
+        [_writing()] + [reading] * 5 + [_assembled("The library has nothing more.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _land)
 
-    async def _run(_name, _args, ctx):
-        # The same excerpt at the same position: a read the ledger already has.
-        ctx.ledger.note_read("e_1", 0, "8.1")
-        return ToolResult(text_parts=["excerpt"])
+    events = await _collect("teach me regression", _build_ctx(), model=_build_model())
 
-    monkeypatch.setattr(agent.tools, "run", _run)
-    ctx = _build_ctx()
-    _plan(ctx, ["one"])
-    events = await _collect("teach me regression", ctx, model=_build_model())
-
-    assert [call["tools_off"] for call in seen] == [False] * 5 + [True]
+    assert [call["tools_off"] for call in seen] == [False] * 6 + [True]
     # The tools stay in the request so its prefix still hits the cache.
     assert seen[-1]["tools"] == seen[0]["tools"] and seen[-1]["tool_choice"] == "none"
-    assert events[-1]["answer"] == "The library has nothing usable."
+    assert events[-1]["answer"] == "The library has nothing more."
     # The guard, not a planning ceiling, is what ended this turn.
     assert events[-1]["telemetry"]["stopReason"] == "stall"
-    assert "0 of 1 ledger todos done" in caplog.text
+    assert "5 responses landed no write" in caplog.text
+    assert "1 writes landed" in caplog.text
 
 
 async def test_errored_writes_extend_the_stall_guard_twice_at_most(
@@ -2879,69 +2863,67 @@ async def test_errored_writes_extend_the_stall_guard_twice_at_most(
 ):
     """A refused create_material is an attempt at progress: each of the first
     two grants two more responses, so the guard fires after nine, not five."""
-    writing = _assembled(
-        "", [_call("create_material", '{"kind":"note","title":"x","todo":0}', "w")]
-    )
     reading = _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")])
-    # Three refused writes plus reads: only two of the writes count, so the
-    # threshold is 5 + 2 + 2 = 9 barren responses before tools go off.
+    refused = _writing("bad", "refused")
+    # A landed write, then three refused writes plus reads: only two of the
+    # refusals count, so the threshold is 5 + 2 + 2 = 9 barren responses.
     stream, seen = _script_stream(
-        [writing, writing, writing] + [reading] * 6 + [_assembled("Nothing written.")]
+        [_writing()]
+        + [refused] * 3
+        + [reading] * 6
+        + [_assembled("Nothing more written.")]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
-    async def _run(name, _args, ctx):
-        if name == "create_material":
+    async def _run(name, args, _ctx):
+        if args.get("title") == "refused":
             return ToolResult(text_parts=["read e_1 first"], refused=True)
-        ctx.ledger.note_read("e_1", 0, "8.1")
-        return ToolResult(text_parts=["excerpt"])
+        return ToolResult(text_parts=["done"])
 
     monkeypatch.setattr(agent.tools, "run", _run)
-    ctx = _build_ctx()
-    _plan(ctx, ["one"])
-    events = await _collect("teach me regression", ctx, model=_build_model())
+    events = await _collect("teach me regression", _build_ctx(), model=_build_model())
 
-    assert [call["tools_off"] for call in seen] == [False] * 9 + [True]
+    assert [call["tools_off"] for call in seen] == [False] * 10 + [True]
     assert events[-1]["telemetry"]["stopReason"] == "stall"
     assert "limit 9 after 3 errored writes" in caplog.text
 
 
-async def test_an_empty_ledger_response_stalls_but_does_not_end_the_turn(
+async def test_an_empty_response_after_a_write_stalls_but_does_not_end_the_turn(
     monkeypatch, library_on
 ):
     """No text and no tool calls is one wasted response, not the end of the
-    turn: a ledger turn has no planning ceiling for it to run into."""
-    stream, seen = _script_stream([_assembled(""), _assembled("I built one note.")])
+    turn: once a write lands there is no planning ceiling to run into."""
+    stream, seen = _script_stream(
+        [_writing(), _assembled(""), _assembled("I built one note.")]
+    )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    ctx = _build_ctx()
-    _plan(ctx, ["one"])
+    monkeypatch.setattr(agent.tools, "run", _land)
 
-    events = await _collect("teach me regression", ctx, model=_build_model())
+    events = await _collect("teach me regression", _build_ctx(), model=_build_model())
 
-    assert len(seen) == 2, "the empty response did not end the turn"
-    assert [call["tools_off"] for call in seen] == [False, False]
+    assert len(seen) == 3, "the empty response did not end the turn"
+    assert [call["tools_off"] for call in seen] == [False, False, False]
     assert events[-1]["answer"] == "I built one note."
     assert events[-1]["telemetry"]["stopReason"] == "answer"
 
 
-async def test_six_empty_ledger_responses_end_the_turn_on_the_stall_guard(
+async def test_six_empty_responses_after_a_write_end_the_turn_on_the_stall_guard(
     monkeypatch, library_on
 ):
     """Counting them is the whole bound on a turn whose payer has no credit
     cutoff: five empties turn the tools off, the sixth ends the turn."""
-    stream, seen = _script_stream([_assembled("")] * 6)
+    stream, seen = _script_stream([_writing()] + [_assembled("")] * 6)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    ctx = _build_ctx()
-    _plan(ctx, ["one"])
+    monkeypatch.setattr(agent.tools, "run", _land)
 
-    events = await _collect("teach me regression", ctx, model=_build_model())
+    events = await _collect("teach me regression", _build_ctx(), model=_build_model())
 
-    assert [call["tools_off"] for call in seen] == [False] * 5 + [True]
+    assert [call["tools_off"] for call in seen] == [False] * 6 + [True]
     assert not events[-1]["answer"]
     assert events[-1]["telemetry"]["stopReason"] == "stall"
 
 
-async def test_a_silent_terminal_call_in_a_ledger_turn_reports_the_credit_cutoff(
+async def test_a_silent_terminal_call_after_a_write_reports_the_credit_cutoff(
     monkeypatch, library_on, caplog
 ):
     """Credits run out mid-turn, so the terminal call runs with tools off and
@@ -2949,193 +2931,25 @@ async def test_a_silent_terminal_call_in_a_ledger_turn_reports_the_credit_cutoff
     counting stall stops sizes STALL_RESPONSES rather than the credit guard."""
     state = accounting.RequestAccounting(session_id="cr_1")
     token = accounting._accounting.set(state)
-    stream, seen = _script_stream(
-        [
-            _assembled("", [_call("read_knowledge", '{"excerpt_id":"e_1"}', "k")]),
-            _assembled(""),
-        ]
-    )
+    stream, seen = _script_stream([_writing(), _assembled("")])
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
-    async def _run(_name, _args, ctx):
+    async def _run(_name, _args, _ctx):
         state.credits_exhausted = True
         state.terminal_call_allowed = True
-        ctx.ledger.note_read("e_1", 0, "8.1")
-        return ToolResult(text_parts=["excerpt"])
+        return ToolResult(text_parts=["Created note."])
 
     monkeypatch.setattr(agent.tools, "run", _run)
-    ctx = _build_ctx()
-    _plan(ctx, ["one"])
     try:
-        events = await _collect("teach me regression", ctx, model=_build_model())
+        events = await _collect(
+            "teach me regression", _build_ctx(), model=_build_model()
+        )
     finally:
         accounting._accounting.reset(token)
 
     assert [call["tools_off"] for call in seen] == [False, True]
     assert "stall guard" not in caplog.text, "the guard never fired"
     assert events[-1]["telemetry"]["stopReason"] == "planning_cap"
-
-
-async def test_repeated_ledger_edits_do_not_reset_the_stall_guard(
-    monkeypatch, library_on
-):
-    planning = _assembled(
-        "",
-        [_call("create_ledger", '{"todos":[{"id":0,"todo":"one"}]}', "k")],
-    )
-    stream, seen = _script_stream([planning] * 6 + [_assembled("Nothing written.")])
-    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    outcomes: list[str] = []
-
-    async def _run(_name, args, ctx):
-        result = await agent.tools._create_ledger(args, ctx)
-        outcomes.append(result.outcome)
-        return result
-
-    monkeypatch.setattr(agent.tools, "run", _run)
-    ctx = _build_ctx()
-    events = await _collect("teach me regression", ctx, model=_build_model())
-
-    # The first changed plan counts; repeated upserts do not.
-    assert outcomes == ["succeeded"] * 6
-    assert len(ctx.ledger.todos) == 1 and ctx.ledger.progress == 1
-    assert [call["tools_off"] for call in seen] == [False] * 6 + [True]
-    assert events[-1]["answer"] == "Nothing written."
-    assert events[-1]["telemetry"]["stopReason"] == "stall"
-
-
-async def test_a_turn_starting_from_the_stored_ledger_completes_an_open_todo(
-    monkeypatch, library_on
-):
-    """The ledger belongs to the conversation: a later turn sees what is still
-    open and writes against it without planning again."""
-    stream, seen = _script_stream(
-        [
-            _assembled(
-                "",
-                [
-                    _call(
-                        "add_questions",
-                        '{"title":"Practice","questions":[],"todo":1}',
-                        "k1",
-                    )
-                ],
-            ),
-            _assembled("I added the quiz."),
-        ]
-    )
-    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-
-    async def _run(_name, args, ctx):
-        prepared = await agent.tools.ledger_write(ctx, "add_questions", args)
-        if isinstance(prepared, ToolResult):
-            return prepared
-        _books, todo = prepared
-        ctx.ledger.complete(todo)
-        return ToolResult(text_parts=["Created quiz."])
-
-    monkeypatch.setattr(agent.tools, "run", _run)
-    stored = {
-        "next_todo_id": 2,
-        # The note's todo was done when the last turn stored the ledger, so it
-        # is gone; the quiz keeps the id it was given then.
-        "todos": [{"id": 1, "text": "a quiz"}],
-    }
-    ctx = _build_ctx(ledger=agent.tools.Ledger.from_stored(stored))
-    events = await _collect("now the quiz please", ctx, model=_build_model())
-
-    first = next(m for m in seen[0]["messages"] if m.get("_kind") == "ledger")
-    assert "[ ] 1. a quiz" in first["content"]
-    assert ctx.ledger.todos[0].done
-    assert ctx.ledger.next_todo_id == 2, "no new plan was needed"
-    assert events[-1]["answer"] == "I added the quiz."
-
-
-def _recorded_posts(monkeypatch) -> list[tuple[str, dict]]:
-    posted: list[tuple[str, dict]] = []
-
-    class _Resp:
-        status_code = 204
-
-        def json(self):
-            return {}
-
-    def _post(url, **kwargs):
-        posted.append((url, json.loads(kwargs["data"])))
-        return _Resp()
-
-    monkeypatch.setattr(tools.requests, "post", _post)
-    return posted
-
-
-async def test_a_ledger_turn_stores_its_ledger_at_turn_end(monkeypatch, library_on):
-    """What the turn changed goes back to the conversation through the gateway."""
-    stream, _seen = _script_stream(
-        [
-            _assembled(
-                "",
-                [
-                    _call(
-                        "create_ledger",
-                        '{"todos":["a note"]}',
-                        "k0",
-                    )
-                ],
-            ),
-            _assembled("I built one note."),
-        ]
-    )
-    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-
-    async def _run(_name, args, ctx):
-        result = await agent.tools._create_ledger(args, ctx)
-        ctx.ledger.complete(0)
-        return result
-
-    monkeypatch.setattr(agent.tools, "run", _run)
-    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
-    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
-    posted = _recorded_posts(monkeypatch)
-
-    await _collect("teach me regression", _build_ctx(), model=_build_model())
-
-    assert [url for url, _ in posted] == ["http://gw/api/internal/conversations/ledger"]
-    assert posted[0][1] == {
-        "workspaceId": "ws_1",
-        "userId": "u1",
-        "assistantMessageId": "m_1",
-        # The one todo is done, so it drops. The counter stays, so its id is
-        # never handed out again.
-        "ledger": {"next_todo_id": 1, "todos": []},
-    }
-
-
-async def test_a_failed_ledger_write_does_not_fail_the_turn(
-    monkeypatch, library_on, caplog
-):
-    stream, _seen = _script_stream(
-        [
-            _assembled("", [_call("create_ledger", '{"todos":["one"]}', "k0")]),
-            _assembled("I built one note."),
-        ]
-    )
-    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-
-    async def _run(_name, args, ctx):
-        return await agent.tools._create_ledger(args, ctx)
-
-    monkeypatch.setattr(agent.tools, "run", _run)
-    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
-    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
-
-    def _post(*_args, **_kwargs):
-        raise tools.requests.ConnectionError("gateway is down")
-
-    monkeypatch.setattr(tools.requests, "post", _post)
-    events = await _collect("teach me regression", _build_ctx(), model=_build_model())
-
-    assert events[-1]["answer"] == "I built one note."
-    assert "ledger write failed" in caplog.text
 
 
 async def test_a_response_allows_four_tool_calls(monkeypatch, library_on):
@@ -3148,7 +2962,7 @@ async def test_a_response_allows_four_tool_calls(monkeypatch, library_on):
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
 
     async def _run(_name, args, ctx):
-        ctx.ledger.note_read(str(args["excerpt_id"]), 0, "8.1")
+        ctx.library_reads.note(str(args["excerpt_id"]), 0, "8.1")
         return ToolResult(text_parts=["excerpt"])
 
     monkeypatch.setattr(agent.tools, "run", _run)
@@ -3170,7 +2984,7 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         key = args["excerpt_id"], args.get("start", 0)
         if key not in source:
             return tools._refused("Unavailable")
-        ctx.ledger.note_read(*key, "Section")
+        ctx.library_reads.note(*key, "Section")
         return tools._result(source[key])
 
     original_run = tools.run
@@ -3178,18 +2992,16 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
     async def run(name, args, ctx):
         if name == "read_knowledge":
             return await read(args, ctx)
-        if name == "create_ledger":
-            return await tools._create_ledger(args, ctx)
         if name in ("create_material", "edit_document"):
-            checked = await tools.ledger_write(ctx, name, args)
+            checked = await tools.write_sources(ctx, name, args)
             if isinstance(checked, ToolResult):
                 return checked
-            _, todo = checked
+            _, credited = checked
             effect = {
                 "operation": "created" if name == "create_material" else "edited",
                 "resource": {"kind": "material", "id": "mat_1", "title": "Study"},
             }
-            ctx.ledger.complete(todo)
+            tools.landed(ctx, credited)
             return ToolResult(text_parts=["Saved"], effects=[effect])
         return await original_run(name, args, ctx)
 
@@ -3198,7 +3010,6 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
     monkeypatch.setattr(tools.library, "provenance", AsyncMock(return_value=[]))
     stream, seen = _script_stream(
         [
-            _assembled(calls=[_call("create_ledger", '{"todos":["Note"]}')]),
             _assembled(
                 calls=[
                     _call(
@@ -3213,7 +3024,7 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
                 calls=[
                     _call(
                         "create_material",
-                        '{"kind":"note","title":"Study","content":"First page","excerpt_ids":["a"],"todo":0}',
+                        '{"kind":"note","title":"Study","content":"First page","excerpt_ids":["a"]}',
                     )
                 ]
             ),
@@ -3221,8 +3032,7 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         ]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    first_ctx = _build_ctx()
-    first = await _collect("Make a note", first_ctx, model=_build_model())
+    first = await _collect("Make a note", _build_ctx(), model=_build_model())
     packed = first[-1]["toolEvidence"]["libraryExcerpts"]
     assert [(p["excerpt_id"], p["start"], p["text"]) for p in packed] == [
         ("a", 0, "First page"),
@@ -3254,15 +3064,12 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         monkeypatch.setattr(agent.compact, "compact_messages", fold)
     stream, seen = _script_stream(
         [
-            _assembled(calls=[_call("create_ledger", '{"todos":["Extend"]}')]),
-            _assembled(
-                calls=[_call("edit_document", '{"excerpt_ids":["a"],"todo":1}', "edit")]
-            ),
+            _assembled(calls=[_call("edit_document", '{"excerpt_ids":["a"]}', "edit")]),
             _assembled("Finished."),
         ]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-    ctx = _build_ctx(ledger=tools.Ledger.from_stored(first_ctx.ledger.stored()))
+    ctx = _build_ctx()
     second = [
         e
         async for e in agent.run_agent(
@@ -3281,10 +3088,10 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         if m.get("_kind") == "source_evidence" and "full text below" in m["content"]
     ]
     assert len(replay) == (2 if followup == "reuse" else 0)
-    ledger = next(
-        m["content"] for m in seen[0]["messages"] if m.get("_kind") == "ledger"
+    context = next(
+        m["content"] for m in seen[0]["messages"] if m.get("_kind") == "turn_context"
     )
-    assert ("- a Section" in ledger) == (followup == "reuse")
+    assert ("- a Section" in context) == (followup == "reuse")
     assert bool(second[-1]["toolEvidence"]["libraryExcerpts"]) == (followup == "reuse")
     ordinary = await agent.evidence.history_turns(
         history, ToolContext(workspace_id="ws_1")
@@ -3292,14 +3099,37 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
     assert not any("First page" in m["content"] for m in ordinary)
 
 
+async def test_a_retained_excerpt_is_credited_only_when_nothing_new_was_read(
+    monkeypatch, library_on
+):
+    """An excerpt retained from an earlier turn's write was credited there: a
+    write naming none credits this turn's new reads, or the retained one when
+    nothing new was read."""
+    from pipeline.retrieval.library_evidence import ExcerptRead
+
+    ctx = _build_ctx()
+    ctx.library_evidence.inherited[("a", 0)] = ExcerptRead("a", 0, 12, "S", "A text")
+    replayed = [
+        {
+            "_kind": "source_evidence",
+            "content": ctx.library_evidence.inherited[("a", 0)].replay(),
+        }
+    ]
+    ctx.library_evidence.activate(replayed, ctx.library_reads)
+    assert ctx.library_reads.uncredited() == ["a"], "nothing new: the retained one"
+    ctx.library_reads.note("b", 0, "S")
+    assert ctx.library_reads.uncredited() == ["b"]
+
+
 @pytest.mark.parametrize("terminal_text", ["Created all requested materials.", ""])
-async def test_the_ledger_tool_cap_runs_one_terminal_response(
+async def test_the_build_tool_cap_runs_one_terminal_response(
     monkeypatch, library_on, terminal_text
 ):
     # Exercise the boundary without paying for 160 actual tool calls.
-    monkeypatch.setattr(agent, "LEDGER_TOOLS_PER_TURN", 3)
+    monkeypatch.setattr(agent, "BUILD_TOOLS_PER_TURN", 4)
     stream, seen = _script_stream(
         [
+            _writing(),
             _assembled(
                 calls=[
                     _call("read_knowledge", '{"excerpt_id":"a"}', str(i))
@@ -3310,25 +3140,21 @@ async def test_the_ledger_tool_cap_runs_one_terminal_response(
         ]
     )
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-
-    async def read(*args):
-        return ToolResult(text_parts=["Source"])
-
-    monkeypatch.setattr(tools, "run", read)
-    ctx = _build_ctx()
-    _plan(ctx, ["Study"])  # the turn cap governs ledger turns only
-    events = await _collect("Study", ctx, model=_build_model())
+    monkeypatch.setattr(tools, "run", _land)
+    events = await _collect("Study", _build_ctx(), model=_build_model())
     assert [e["outcome"] for e in events if e["type"] == "tool_end"].count(
         "refused"
     ) == 1
     assert seen[-1]["tools_off"]
     assert (
         agent.turn_context.FINAL_NOTICE
-        in [m["content"] for m in seen[-1]["messages"] if m.get("_kind") == "ledger"][
-            -1
-        ]
+        in [
+            m["content"]
+            for m in seen[-1]["messages"]
+            if m.get("_kind") == "turn_context"
+        ][-1]
     )
-    assert events[-1]["telemetry"]["toolCallsTurn"] == 3
+    assert events[-1]["telemetry"]["toolCallsTurn"] == 4
     assert events[-1]["telemetry"]["stopReason"] == "tool_cap"
 
 

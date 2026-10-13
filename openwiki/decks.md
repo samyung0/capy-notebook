@@ -38,25 +38,27 @@ that may upload), with the gateway configured and ppt-master installed
 then. Both tools mutate, so a response that calls one runs serially.
 
 1. **Skill.** `read_skill("deck")` returns the method (outline first, one slide
-   per call, one ledger todo per slide), the slide rules
+   per call), the slide rules
    (`prompts/skills.py` `deck_rules`) and the style with its reference slides
    (`prompts/deck_styles/editorial/`: `style.md`, `examples/*.svg`). Both deck
    tools are refused until `editing` and `deck` are in the request
    (`skills.REQUIRES`).
-2. **`create_deck {title, slides[{title, brief}], chapter_id?, excerpt_ids?, todo?}`.**
+2. **`create_deck {title, slides[{title, brief}], chapter_id?, excerpt_ids?}`.**
    1 to 30 slides. The outline lives on the turn (`ToolContext.decks`, id
    `deck_` + sha256(message, call)[:12]); nothing is stored. `chapter_id` must
-   be one of the turn's chapters. The ledger rules are a material write's
-   (`tools.ledger_write`): `todo` while todos are open, `excerpt_ids` once the
-   turn has read library excerpts.
-3. **`write_slide {deck_id, slide, svg, excerpt_ids?, todo?}`.** At most 40,000
+   be one of the turn's chapters. Its `excerpt_ids` follow a material
+   write's rule (`tools.write_sources`): named excerpts must have been read,
+   and omitted ones are the excerpts read since the last write, so each slide
+   credits what was read for it. A deck write credits the reads but does not
+   retain them for later turns.
+3. **`write_slide {deck_id, slide, svg, excerpt_ids?}`.** At most 40,000
    characters of SVG. Our checks first: the XML parses, the root is `<svg>`
    with `viewBox="0 0 1280 720"` and `lang`, and every `<image>` is
    `../images/p<page>.jpg` for a page captured this turn with a bbox (a whole
    page or an uncaptured page is refused). Then ppt-master's checker runs on
    the slide alone in a temporary project, and up to six of its errors come
    back as the refusal. A passing slide is kept (writing it again replaces it)
-   and completes its todo.
+   and counts as a landed write for the stall guard.
 4. **Export.** Once every slide is written, a Sources slide is added from the
    style's `sources.svg` when the deck credits library books (one line per
    book: title, authors, edition, licence), the final check and the exporter
@@ -123,7 +125,7 @@ with Cambria's metrics. `replace_text` works on agent-made decks (checked
 editable paragraphs; edit, export, reopen and Undo). Each SVG `<text>` line is
 its own shape, so a sentence wrapped over lines is several targets and a longer
 replacement does not reflow into the next line's box. An edit of the deck is a
-source-file edit: no todo, no `excerpt_ids`, and its provenance is unchanged.
+source-file edit: no `excerpt_ids`, and its provenance is unchanged.
 
 ## Main format preference
 

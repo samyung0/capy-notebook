@@ -830,7 +830,6 @@ def result_text(
     built: Built,
     resource: dict[str, Any],
     created: bool,
-    todo: int | None,
 ) -> str:
     """What a question call wrote, with each question's id, and what it left
     out with how to resend it."""
@@ -850,8 +849,6 @@ def result_text(
             f"\nNot added: fix only these and send them again with quiz_id {rid}{place}:"
         )
         lines.append(check_.listing())
-        if todo is not None:
-            lines.append(f"Todo {todo} stays open until they are added.")
     elif not created:
         lines.append("The user can undo this from the chat result.")
     return "\n".join(lines)

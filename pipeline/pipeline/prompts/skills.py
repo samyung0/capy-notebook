@@ -5,12 +5,7 @@ call. ``retrieval/skills.py`` offers them; Epo tunes this text in the playground
 
 from __future__ import annotations
 
-from ..retrieval.limits import (
-    LEDGER_TOOLS_PER_TURN,
-    STALL_RESPONSES,
-    WRITE_ERROR_GRACE,
-    WRITE_ERROR_GRACE_MAX,
-)
+from ..retrieval.limits import WRITE_ERROR_GRACE, WRITE_ERROR_GRACE_MAX
 
 EDITING_WHEN = (
     "read before any write: creating materials, adding to them, or editing a file"
@@ -23,9 +18,8 @@ DECK_WHEN = "read before making a slide deck (create_deck, write_slide)"
 
 _EDITING = f"""How to write to the workspace: create materials, add to them and edit files.
 
-Ledger and budget:
-- Building more than one item, put one todo per item on the ledger with create_ledger (a string adds a todo, {{id, todo}} rewrites one; pass only the changes) and pass its id as todo with each write; the write completes it. Completed ids are not reused, and at most 10 todos may be open.
-- With ledger todos a turn has {LEDGER_TOOLS_PER_TURN} tool calls, and after {STALL_RESPONSES} responses in a row that complete no todo, the next has tools off. The first plan and each completed todo count as progress; each of the first {WRITE_ERROR_GRACE_MAX} errored writes grants {WRITE_ERROR_GRACE} more responses.
+Budget:
+- Once a write lands, each successful write is progress and the turn context counts the responses left without one; each of the first {WRITE_ERROR_GRACE_MAX} errored writes grants {WRITE_ERROR_GRACE} more.
 
 Precautions:
 - Ground every write in passages or excerpts you have read, and leave out what they do not support.
@@ -33,10 +27,10 @@ Precautions:
 - Inspect a document before editing it; never take edit positions from search results or from tool results retained from earlier turns. Each edit command names its target and the exact text or value it expects, as inspect_document shows it, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; media and PDF edits are not supported.
 - In a note, change plain wording with replace_text. Rewrite a block that has formatting or math ($…$ in inspect_document) with replace_block, writing the whole block as note markdown (a heading keeps its #).
 - Keep changes other people made to a document unless the learner asks otherwise.
-- Edit the learner's own source files only when asked. Such an edit takes no todo and no excerpt_ids."""
+- Edit the learner's own source files only when asked. Such an edit takes no excerpt_ids."""
 
 _EDITING_LIBRARY = """
-- Pass excerpt_ids for every library excerpt a write uses; they become its attribution. Each must have been read with read_knowledge this turn or have its full text still in context; a search card, todo or summary alone is not a read."""
+- excerpt_ids are a write's attribution: name the library excerpts it uses, each read with read_knowledge this turn or with its full text still in context (a search card or summary is not a read). Omitted, the write credits the excerpts read since your last write, or all read this turn when none are new."""
 
 _BUILDING = """How to build new study materials: notes, quizzes, flashcards, mindmaps and diagrams.
 
@@ -54,7 +48,7 @@ What to build:
 
 Note format (create_material content, edit_document insert_markdown and replace_block): {note}
 
-Quizzes: add_questions writes multiple-choice and short-answer questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_open_question adds one written-answer question with a markscheme to a quiz by quiz_id; add_question_media puts a chart, plot or graph under a question's text; edit_document remove_question removes one. Results list the question ids these tools take. Each question call is a write, so while ledger todos are open it names one: plan a todo for each call a quiz needs (its simple questions, each open question, any media).
+Quizzes: add_questions writes multiple-choice and short-answer questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_open_question adds one written-answer question with a markscheme to a quiz by quiz_id; add_question_media puts a chart, plot or graph under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
 
 Flashcards: cards, a list of {{front, back}}.
 
@@ -97,9 +91,7 @@ def deck(rules: str, style: str, style_text: str) -> str:
         "- Outline with create_deck: one title and brief per slide, in order, one slide per idea, "
         "8 to 20 per chapter, opening with a cover. A brief says the slide's audience move (what "
         "the student knows before and after), how its points relate, and the content with its source.\n"
-        "- Then write the slides one per write_slide call, each from what you just read for it. "
-        "Each write_slide completes the ledger todo it names, so keep one open todo per slide still "
-        "to write. Pass excerpt_ids for library content and todo while todos are open.\n"
+        "- Then write the slides one per write_slide call, each from what you just read for it.\n"
         "- A slide the checker refuses comes back with its errors: fix those and send the whole "
         "slide again. Once every slide is written the deck is exported and stored in the workspace "
         "as a PPTX file.\n\n"

@@ -170,18 +170,12 @@ assert.equal(pending.length, requestsBeforeSaved);
 assert.equal(element('json').value, beforeSave);
 assert.equal(element('prompt').value, 'System draft while saving');
 
-// Completed turns forward the production evidence and only the stored ledger.
+// Completed turns forward the production evidence.
 const evidence = {
   tools: [{ name: 'create_material', text: 'Created note mat_1' }], passages: [],
   libraryExcerpts: [{ excerpt_id: 'exc_1', start: 0, section: 'Cells', text: 'Exact text read for this note.' }],
 };
-const storedLedger = {
-  requests: ['Study cells'], next_todo_id: 2,
-  todos: [{ id: 1, text: 'Make a quiz' }],
-  materials: [{ id: 'mat_1', kind: 'note', title: 'Cells', size: '100 tokens', todo: 0 }],
-};
 const render = (event) => vm.runInContext(`render(${JSON.stringify(event)})`, context);
-render({ type: 'ledger', stored: storedLedger, reads: [{ excerpt_id: 'exc_1' }] });
 render({ type: 'done', answer: 'Created the note.', toolEvidence: evidence });
 const submit = () => {
   element('question').value = 'Continue';
@@ -193,8 +187,6 @@ const submit = () => {
 };
 let turn = submit();
 assert.deepEqual(turn.body.history.at(-1).toolEvidence, evidence);
-assert.deepEqual(turn.body.ledger, storedLedger);
-assert.equal(turn.body.ledger.reads, undefined);
 await turn.finished;
 
 // Opening a saved run restores its whole conversation without changing config.
@@ -203,7 +195,6 @@ const savedRun = {
   config: {}, question: 'Study cells', answer: 'Created the note.',
   history: [{ id: 'm1', role: 'user', content: 'Hello' }, { id: 'm2', role: 'assistant', content: 'What subject?' }],
   checkpoint_in: runCheckpoint,
-  ledger: { stored: storedLedger },
   materials: [{ id: 'mat_1', kind: 'note', title: 'Cells', content: '# Cells\n<script>source text</script>', size: '100 tokens' }],
   events: [{ type: 'done', answer: 'Created the note.', toolEvidence: evidence }],
 };
@@ -241,7 +232,6 @@ assert.deepEqual(turn.body.history.map((m) => m.content), ['Hello', 'What subjec
 assert.equal(new Set(turn.body.history.map((m) => m.id)).size, 4);
 assert.deepEqual(turn.body.history.at(-1).toolEvidence, evidence);
 assert.deepEqual(turn.body.checkpoint, runCheckpoint);
-assert.deepEqual(turn.body.ledger, storedLedger);
 await turn.finished;
 
 // Compaction trims only the folded prefix, and Clear removes conversation state.
@@ -257,6 +247,5 @@ assert.match(element('materials').innerHTML, /none yet/);
 turn = submit();
 assert.deepEqual(turn.body.history, []);
 assert.equal(turn.body.checkpoint, null);
-assert.equal(turn.body.ledger, null);
 await turn.finished;
 console.log('playground UI checks passed');

@@ -7,8 +7,8 @@ One playground process serves one arm, its flags and library database set in
 its environment (lab/playground/README.md, "Intake comparison"); the driver
 reads that library once per request to name the sections cited. Each request
 posts its turns to ``POST /api/turn`` one at a time; the confirmation turn of a
-generic flow carries the first turn's history, checkpoint and stored ledger,
-as the playground page sends them. Every dev-split request runs twice.
+generic flow carries the first turn's history and checkpoint, as the
+playground page sends them. Every dev-split request runs twice.
 
 Output, one file per request run:
 bench/rag/reports/local/2026-10-intake-eval/<arm>/<request-id>[-r2].json with
@@ -126,7 +126,7 @@ def counters(
     """The protocol's counters over every turn of one request; ``paths`` maps
     the cited excerpt ids to (book id, section path)."""
     calls = [c for run in runs for c in run["calls"]]
-    reads = [r for run in runs for r in run["ledger"]["reads"]]
+    reads = [r for run in runs for r in run["library_reads"]]
     materials = [m for run in runs for m in run["materials"]]
     cited = cited_excerpts(runs)
     copied = sum(
@@ -185,7 +185,7 @@ def run_request(
     url: str, library_url: str, config: dict[str, Any], request: dict[str, Any]
 ) -> dict[str, Any]:
     history: list[dict[str, Any]] = []
-    checkpoint, ledger, next_id = None, None, 1
+    checkpoint, next_id = None, 1
     turns, runs = [], []
     for question in request["turns"]:
         events = post_turn(
@@ -195,7 +195,6 @@ def run_request(
                 "question": question,
                 "history": history,
                 "checkpoint": checkpoint,
-                "ledger": ledger,
             },
         )
         history.append({"content": question, "id": f"m{next_id}", "role": "user"})
@@ -237,7 +236,6 @@ def run_request(
         run = get_run(url, run_id) if run_id else None
         if run is not None:
             runs.append(run)
-            ledger = run["ledger"]["stored"]
         turns.append(
             {
                 "question": question,
@@ -252,7 +250,6 @@ def run_request(
                     for c in (run["calls"] if run else [])
                     if c["name"] in WRITES
                 ],
-                "todos": run["ledger"]["todos"] if run else [],
             }
         )
         if error is not None or done is None:

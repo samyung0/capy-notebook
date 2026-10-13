@@ -16,16 +16,16 @@ from ..config import cfg
 TOOLS_PER_RESPONSE = 4
 MAX_CONCURRENT = 4
 
-# A turn without ledger todos (an answer or a single-item build) gets this many
-# responses, the last with tools off; the turn context counts them down. A turn
-# that needs more room creates a ledger. CAPY_AGENT_MAX_STEPS can only lower
-# it; the prompt states this value.
+# Until its first successful write (an answer, or a build still reading) a turn
+# gets this many responses, the last with tools off; the turn context counts
+# them down. CAPY_AGENT_MAX_STEPS can only lower it; the prompt states this
+# value.
 PLANNING_RESPONSES = min(cfg.agent_max_steps, 12)
 
-# Once the turn's ledger has todos there is no response ceiling: the tool cap
-# bounds productive turns, and the stall guard ends one whose responses stop
-# completing todos.
-LEDGER_TOOLS_PER_TURN = 160
+# Once a write has landed there is no response ceiling: the tool cap bounds
+# productive turns, and the stall guard ends one whose responses stop landing
+# writes (agent.WRITE_TOOLS).
+BUILD_TOOLS_PER_TURN = 160
 STALL_RESPONSES = 5
 # A write that errors is an attempt at progress: each of the first two errored
 # writes in a turn (agent.WRITE_TOOLS) grants the stall guard two more
@@ -36,7 +36,7 @@ WRITE_ERROR_GRACE_MAX = 2
 STOP_ANSWER = "answer"
 STOP_PLANNING_CAP = "planning_cap"
 STOP_TOOL_CAP = "tool_cap"
-# Ledger turns only: the stall guard ran the last response with tools off,
+# Build budget only: the stall guard ran the last response with tools off,
 # whether or not that response answered. The credit guard's terminal call is
 # not this: a silent one reports planning_cap, so operators sizing
 # STALL_RESPONSES do not read billing cutoffs as stalls.
