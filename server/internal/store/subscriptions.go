@@ -2,7 +2,9 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -158,10 +160,57 @@ func (s *Store) upsertAttributedSubscription(
 		}
 		return tx.Commit(ctx)
 	}
+	if err := enqueueSubscriptionEmailTx(ctx, tx, sub); err != nil {
+		return err
+	}
 	if err := s.deriveUserPlanTx(ctx, tx, sub.UserID); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// enqueueSubscriptionEmailTx sends "Pro started" once per subscription and
+// "Pro cancelled" once per period end that cancel-at-period-end points at. The
+// idempotency keys absorb Stripe's redeliveries and the monthly renewals.
+func enqueueSubscriptionEmailTx(ctx context.Context, tx pgx.Tx, sub Subscription) error {
+	if sub.PlanTier != PlanPro || !subscriptionEntitles(sub.Status) || sub.CurrentPeriodEnd == nil {
+		return nil
+	}
+	template := "subscription-started"
+	key := template + ":" + sub.StripeSubscriptionID
+	if sub.CancelAtPeriodEnd {
+		template = "subscription-cancelled"
+		key = fmt.Sprintf("%s:%s:%d", template, sub.StripeSubscriptionID, sub.CurrentPeriodEnd.Unix())
+	}
+	var email *string
+	var locale string
+	var usedBytes int64
+	if err := tx.QueryRow(ctx, `SELECT u.email, u.locale, COALESCE(st.used_bytes, 0)
+		FROM users u LEFT JOIN user_storage st ON st.user_id=u.id
+		WHERE u.id=$1`, sub.UserID).Scan(&email, &locale, &usedBytes); err != nil {
+		return err
+	}
+	payload, err := json.Marshal(map[string]any{
+		"periodEnd":        sub.CurrentPeriodEnd.UTC().Format(time.RFC3339),
+		"storageUsedBytes": usedBytes,
+	})
+	if err != nil {
+		return err
+	}
+	toEmail := ""
+	if email != nil {
+		toEmail = *email
+	}
+	_, err = EnqueueEmailTx(ctx, tx, EmailOutboxParams{
+		UserID:         sub.UserID,
+		ToEmail:        toEmail,
+		Template:       template,
+		Locale:         locale,
+		Payload:        payload,
+		IdempotencyKey: key,
+		Category:       "billing",
+	})
+	return err
 }
 
 // upsertSubscriptionTx writes the row and reports whether it won the ordering

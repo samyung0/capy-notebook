@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "subject": "Welcome to Capy Notebook",
+  "preview": "Three steps to your first study session.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "Welcome to Capy Notebook"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Capy Notebook turns your own files into a place to study. Here's how to get started:"
+          }
+        ]
+      },
+      {
+        "type": "orderedList",
+        "content": [
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Open your workspace",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": ", or create one for each course or topic."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Add your files",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": ": PDFs, slides, documents or your own notes."
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Study with them",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": ": ask questions and get answers that cite your files, practise with quizzes, and review what you missed."
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#f3f0fb",
+          "borderColor": "#e2dbf6",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "You're on the Free plan",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Storage: "
+              },
+              {
+                "type": "text",
+                "text": "100 MB",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "AI credits: "
+              },
+              {
+                "type": "text",
+                "text": "1,000 a month",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Workspaces you own: "
+              },
+              {
+                "type": "text",
+                "text": "up to 10",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Open Capy Notebook",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "You got this email because you created a Capy Notebook account."
+          }
+        ]
+      }
+    ]
+  }
+}

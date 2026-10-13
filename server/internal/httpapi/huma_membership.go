@@ -123,17 +123,23 @@ func (a *api) createWorkspaceInvite(ctx context.Context, in *createWorkspaceInvi
 }
 
 func (a *api) acceptWorkspaceInvite(ctx context.Context, in *acceptWorkspaceInviteInput) (*workspaceMemberOutput, error) {
-	member, notificationID, err := a.s.AcceptWorkspaceInviteWithResult(ctx, in.Token, userID(ctx))
+	accepted, err := a.s.AcceptWorkspaceInviteWithResult(ctx, in.Token, userID(ctx))
 	if err != nil {
 		return nil, collaborationError(err)
 	}
-	if notificationID != "" {
+	if accepted.RemovedNotificationID != "" {
 		a.publishNotificationEvent(ctx, userID(ctx), notificationEvent{
 			Type: "removed",
-			IDs:  []string{notificationID},
+			IDs:  []string{accepted.RemovedNotificationID},
 		})
 	}
-	return &workspaceMemberOutput{Body: member}, nil
+	if n := accepted.InviterNotification; n != nil {
+		a.publishNotificationEvent(ctx, n.UserID, notificationEvent{
+			Type:         "created",
+			Notification: n,
+		})
+	}
+	return &workspaceMemberOutput{Body: accepted.Member}, nil
 }
 
 func (a *api) updateWorkspaceMember(ctx context.Context, in *updateWorkspaceMemberInput) (*Empty, error) {

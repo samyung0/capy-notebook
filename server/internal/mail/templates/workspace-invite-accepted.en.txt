@@ -1,0 +1,14 @@
+{{.MemberName}} JOINED {{.WorkspaceName}}
+
+{{.MemberName}} accepted your invitation to {{.WorkspaceName}}.
+
+Member: {{.MemberName}}
+Access: {{.Access}}
+
+Open workspace {{.OpenURL}}
+
+----------------------------------------
+
+You got this email because you invited {{.MemberName}} to {{.WorkspaceName}}.
+
+Stop workspace invitation emails {{.UnsubscribeURL}}

@@ -2349,6 +2349,23 @@ is empty and refuses `cloudflare` outright under `APP_ENV=e2e`. Setting
 `EMAIL_BACKEND=cloudflare` without the token or `CLOUDFLARE_ACCOUNT_ID` fails
 gateway startup rather than degrading.
 
+**What sends.** Templates are Maily sources in `emails/templates/`
+(`pnpm email:dev` edits them, `pnpm email:build` regenerates the Go copies the
+API embeds); `emailTemplateData` in `server/cmd/api/email.go` formats each
+outbox payload for the recipient's locale. Clerk sends its own sign-up and
+password-reset codes with its unchanged templates, so they cost this quota
+nothing; share and comment mentions are in-app only.
+
+| Template | Sent when | Opt-out |
+| --- | --- | --- |
+| `welcome` | the starter workspace is provisioned, once per account | none |
+| `workspace-invite`, `workspace-invite-accepted` | an owner invites someone; the invitee accepts (to the owner) | workspace invitations |
+| `subscription-started` | a Pro subscription first entitles, once per subscription | billing |
+| `subscription-cancelled` | cancel-at-period-end turns on, once per period end | billing |
+| `subscription-over-quota`, `subscription-frozen` | the over-quota sweep: lapse, T-7 and T-3, then freeze | billing |
+| `account-deletion-requested`, `account-deletion-cancelled` | deletion is requested or support restores the account | none |
+| `office-maintenance` | `office-maintenance announce` without `--reminder`, recent Office editors only | none |
+
 **Sending domain.** In Compute → Email Service → Email Sending, onboard
 `uat.capynotebook.com`. Cloudflare writes its own records: MX and SPF on
 `cf-bounce.uat`, DKIM at `cf-bounce._domainkey.uat`, DMARC at `_dmarc.uat`.
@@ -2779,7 +2796,7 @@ run against the environment's database:
 
 | Command | Effect |
 | --- | --- |
-| `announce --at <RFC 3339> --hours <n> [--reminder]` | Tells every active account (not suspended, deleted or pending deletion) that Office editing pauses at that time for about that long: an in-app `system` notification (`office_maintenance`, shown in the reader's time zone) and, without `--reminder`, the `office-maintenance` email, a service notice sent whatever the email preferences (time in UTC). Rerunning for the same start skips accounts already told. Prints the notifications and emails written. |
+| `announce --at <RFC 3339> --hours <n> [--reminder]` | Tells every active account (not suspended, deleted or pending deletion) that Office editing pauses at that time for about that long: an in-app `system` notification (`office_maintenance`, shown in the reader's time zone) and, without `--reminder`, the `office-maintenance` email to owners and editors of a workspace with a docx/xlsx/pptx edited in the last 30 days, a service notice sent whatever the email preferences (time in UTC). Rerunning for the same start skips accounts already told. Prints the notifications and emails written. |
 | `drain [--limit N]` | Runs while editing is live, before the window: requests a system-paid republish (`paid_by='system'`, whatever auto-process says) for each Office source with unpublished edits, oldest first. Its publication is deferred like any refresh, so open editors keep working and move onto the new version when the room empties; only a system publication while the pause is on hands editors off at once. Files that can only publish export-only, and trashed rebuilds, wait for `publish-all`. |
 | `pause` | Inserts the `office_editing_pause` row. The gateway answers `423 office_editing_paused` to Office edit sessions (`source-session` for editing, `collaboration-token`, after authorization) and to seeding, and agent edits and their Undo refuse with the tool code `office_editing_paused`, also where they commit. Within about 15 seconds (5 to notice, up to 10 for the flush) every collaboration instance runs the handoff flush on each loaded Office room, persists it once and closes its writers with `source-editing-paused`; a saved editor keeps its view read-only under the maintenance banner, one with unsaved changes goes to recovery. A room that loads later is flushed on a later tick, a room mid-publication after its handoff. Authentication refuses new writers with the reason `office-editing-paused`, a paused room refuses updates from any writer that slipped through, and a client refused on reconnect goes to the same banner or recovery. Viewing and text sources keep working. |
 | `publish-all [--limit N]` | Requests a publication for every Office source with unpublished edits (at most N, oldest first, with `--limit`) (checkpoint ahead of the indexed one, or pending effects), clearing a stale `refresh_error`. Files of active and blocked owners republish with the system payer (`paid_by='system'`), skipping the credit, storage and owner-state checks. Files never parsed successfully (store-only uploads and failed first parses, so maintenance never runs a first parse), trashed files, files of suspended or deletion-pending owners, and files whose system republish of the same checkpoint already failed publish export-only. A file with a refresh in flight is left for the next run. A trashed file waiting for its rebuild onto a deferred publication, with nothing saved since, is rebuilt here (`rebuild`), since the collaboration service skips trashed files. Prints one line per file and the number refused. |

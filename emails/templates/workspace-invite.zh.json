@@ -1,45 +1,145 @@
 {
   "schemaVersion": 1,
-  "subject": "邀请你加入 Capy Notebook 工作区 {{.WorkspaceName}}",
-  "preview": "你有一个新的 Capy Notebook 工作区邀请。",
+  "subject": "{{.InviterName}} 邀请你加入 Capy Notebook 工作区 {{.WorkspaceName}}",
+  "preview": "加入工作区，一起学习其中的文件。",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
-          }
-        ]
-      },
-      {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "你有一个工作区邀请" }]
-      },
-      {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "你好，" }]
-      },
-      {
-        "type": "paragraph",
-        "content": [
-          { "type": "text", "text": "你已受邀加入 Capy Notebook 工作区 " },
+            "text": "加入 Capy Notebook 工作区 "
+          },
           {
             "type": "variable",
             "attrs": {
               "id": "WorkspaceName",
-              "label": "工作区名称",
+              "label": "Workspace name",
               "required": true
             }
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "InviterName",
+              "label": "Inviter name",
+              "required": true
+            },
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
           },
-          { "type": "text", "text": "。" }
+          {
+            "type": "text",
+            "text": " 邀请你加入 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "Workspace name",
+              "required": true
+            },
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "text": " 工作区。"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#f3f0fb",
+          "borderColor": "#e2dbf6",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "工作区："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "WorkspaceName",
+                  "label": "Workspace name",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "权限："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "Access",
+                  "label": "Access",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "邀请人："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "InviterName",
+                  "label": "Inviter name",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
         ]
       },
       {
@@ -56,12 +156,15 @@
       {
         "type": "paragraph",
         "content": [
-          { "type": "text", "text": "如果按钮无法使用，请打开此链接：" },
+          {
+            "type": "text",
+            "text": "按钮无法使用？请打开此链接："
+          },
           {
             "type": "variable",
             "attrs": {
               "id": "InviteURL",
-              "label": "邀请链接",
+              "label": "Invite URL",
               "required": true
             },
             "marks": [
@@ -78,13 +181,27 @@
           }
         ]
       },
-      { "type": "horizontalRule" },
+      {
+        "type": "horizontalRule"
+      },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为有人邀请你加入 Capy Notebook 工作区。"
+            "text": "你收到这封邮件是因为 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "InviterName",
+              "label": "Inviter name",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 邀请你加入 Capy Notebook 工作区。如果你没有预料到这封邀请，可以忽略此邮件。"
           }
         ]
       },
@@ -93,6 +210,7 @@
         "content": [
           {
             "type": "text",
+            "text": "不再接收工作区邀请邮件",
             "marks": [
               {
                 "type": "link",
@@ -103,8 +221,7 @@
                   "rel": "noopener noreferrer nofollow"
                 }
               }
-            ],
-            "text": "管理产品邮件偏好"
+            ]
           }
         ]
       }

@@ -1,16 +1,9 @@
-Capy Notebook
+YOUR ACCOUNT IS ACTIVE AGAIN
 
+Support cancelled the deletion of your Capy Notebook account. Nothing was deleted, and you can sign in and pick up where you left off.
 
-ACCOUNT REACTIVATED
-
-Hello,
-
-Support cancelled your Capy Notebook account deletion request. Your account is active again.
-
-Open Settings {{.OpenURL}}
+Open Capy Notebook {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because support cancelled your Capy Notebook account deletion request.
-
-Manage product email preferences {{.UnsubscribeURL}}
+You got this email because support restored your Capy Notebook account.

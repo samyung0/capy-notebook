@@ -352,7 +352,11 @@ Sources: [role resolution and access rules](../server/internal/store/share.go#L1
   deletion. A message already queued may still send; its link is the authority.
   A live account without a nonblank email still receives the in-app invite
   notification, but no email-outbox row is created. Role changes and removals
-  are in-app notifications only; they never email.
+  are in-app notifications only; they never email. An acceptance tells the
+  owner who sent the invite (a `system` notification coded
+  `workspace_invite_accepted` plus the `workspace-invite-accepted` email under
+  the invitation opt-out); after an ownership transfer the old owner is not
+  told.
   Invite acceptance joins the workspace owner lifecycle, so a missing,
   frozen, suspended, deletion-pending, deleted, expired, revoked, or
   otherwise invalid invite uses the same non-disclosing unavailable-workspace

@@ -1,16 +1,19 @@
-Capy Notebook
+YOUR FILES ARE OVER THE FREE STORAGE LIMIT
 
+Your Pro plan has ended, and your files use more than the {{.StorageLimit}} the Free plan includes. Nothing has been deleted.
 
-STORAGE OVER FREE LIMIT
+Storage used: {{.StorageUsed}}
+Free plan limit: {{.StorageLimit}}
+Free up space by: {{.GraceEndsAt}}
 
-Hello,
-
-Your subscription has lapsed and your storage is over the free plan limit. You have a buffer period to free up space. No content has been deleted yet.
+Until then you can read, download, organize and delete your files, but uploads and edits are paused in the workspaces you pay for. If you're still over the limit on {{.GraceEndsAt}}, your account becomes read-only.
 
 Manage subscription {{.OpenURL}}
 
+Prefer to stay on Free? Delete files you no longer need until you're under {{.StorageLimit}}.
+
 ----------------------------------------
 
-You received this message because your Capy Notebook subscription and storage limits changed.
+You got this email because your Capy Notebook Pro plan ended.
 
-Manage product email preferences {{.UnsubscribeURL}}
+Stop billing emails {{.UnsubscribeURL}}

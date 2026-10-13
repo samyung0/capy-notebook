@@ -7,14 +7,16 @@ import (
 
 func TestRenderWorkspaceInvite(t *testing.T) {
 	subject, html, text, err := Render("workspace-invite", "en", map[string]string{
+		"Access":         "Can edit",
 		"InviteURL":      "https://example.test/invite",
+		"InviterName":    "Alex Chen",
 		"UnsubscribeURL": "https://example.test/unsubscribe",
 		"WorkspaceName":  "Biology",
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(subject, "Biology") {
+	if subject != "Alex Chen invited you to Biology on Capy Notebook" {
 		t.Fatalf("subject = %q", subject)
 	}
 	for _, content := range []string{html, text} {
@@ -36,14 +38,16 @@ func TestRenderOfficeMaintenance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(html+text, "{{.") || !strings.Contains(text, "from 13 Oct 2026, 02:00 UTC for about 4 hours") {
+	if strings.Contains(html+text, "{{.") || !strings.Contains(text, "Starts: 13 Oct 2026, 02:00 UTC\nLasts: about 4 hours") {
 		t.Fatalf("office maintenance text = %q", text)
 	}
 }
 
 func TestRenderUsesLocalizedCopy(t *testing.T) {
 	subject, html, _, err := Render("workspace-invite", "zh", map[string]string{
+		"Access":         "可编辑",
 		"InviteURL":      "https://example.test/invite",
+		"InviterName":    "Alex Chen",
 		"UnsubscribeURL": "https://example.test/unsubscribe",
 		"WorkspaceName":  "生物",
 	})
@@ -55,7 +59,7 @@ func TestRenderUsesLocalizedCopy(t *testing.T) {
 	}
 	// The unsubscribe label is baked in at build time rather than passed as
 	// template data, so a missing translation would surface here.
-	if !strings.Contains(html, "管理产品邮件偏好") {
+	if !strings.Contains(html, "不再接收工作区邀请邮件") {
 		t.Fatal("localized unsubscribe label missing from HTML")
 	}
 }

@@ -49,8 +49,9 @@ plan makes startup fail.
 
 The frontend intentionally has no plan-catalog endpoint. Product copy uses the
 explicit snapshot in `src/features/billing/planLimits.ts`; changing a displayed
-limit requires updating that file and the affected Paraglide translations along
-with the SQL seed. APIs may still return a requester's effective current value,
+limit requires updating that file, the affected Paraglide translations and the
+`welcome`, `subscription-started` and `subscription-cancelled` email templates
+along with the SQL seed. APIs may still return a requester's effective current value,
 such as workspace `filesLimit`, upload-policy `maxBytes`, and billing counters.
 
 Subscription projection remains owned by the Stripe lifecycle code. Request

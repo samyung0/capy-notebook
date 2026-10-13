@@ -385,6 +385,14 @@ func TestStarterWorkspaceProvisioningIsDurableAndOneTime(t *testing.T) {
 	if workspaces != 0 {
 		t.Fatalf("deleted starter workspace was recreated: count=%d", workspaces)
 	}
+	var welcomes int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_outbox
+		WHERE user_id=$1 AND template='welcome'`, userID).Scan(&welcomes); err != nil {
+		t.Fatal(err)
+	}
+	if welcomes != 1 {
+		t.Fatalf("welcome emails = %d, want one per account", welcomes)
+	}
 }
 
 func TestStarterWorkspaceDoesNotRaceOrdinaryCreation(t *testing.T) {

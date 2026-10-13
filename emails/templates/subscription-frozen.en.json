@@ -1,38 +1,246 @@
 {
   "schemaVersion": 1,
-  "subject": "Your Capy Notebook account is frozen",
-  "preview": "Your account is read-only until you free space or resubscribe.",
+  "subject": "Your Capy Notebook account is read-only",
+  "preview": "Free up space or resubscribe to edit again.",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
+            "text": "Your account is read-only"
           }
         ]
       },
       {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "Account frozen" }]
-      },
-      {
         "type": "paragraph",
-        "content": [{ "type": "text", "text": "Hello," }]
+        "content": [
+          {
+            "type": "text",
+            "text": "Your storage buffer ended on "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "GraceEndsAt",
+              "label": "Buffer ends",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": ", and your files still use more than the Free plan's "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": ". Your account stays read-only until you're back under the limit."
+          }
+        ]
       },
       {
         "type": "paragraph",
         "content": [
           {
             "type": "text",
-            "text": "Your storage buffer has expired and your account is read-only. Viewing, downloading and deleting still work. Free up space or resubscribe to edit again."
+            "text": "Still works",
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "bulletList",
+        "content": [
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Viewing and downloading files"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Deleting files to free up space"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Workspace chat, quizzes and reviews"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Billing and account settings"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Paused",
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "bulletList",
+        "content": [
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Uploading and creating files"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Editing notes, files and comments"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "Members' edits in workspaces you pay for"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#f6f6f3",
+          "borderColor": "#e8e8e3",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Storage used: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageUsed",
+                  "label": "Storage used",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Free plan limit: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageLimit",
+                  "label": "Storage limit",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -47,13 +255,36 @@
           "borderRadius": "smooth"
         }
       },
-      { "type": "horizontalRule" },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Or delete files until you're under "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": ". Nothing is deleted for you."
+          }
+        ]
+      },
+      {
+        "type": "horizontalRule"
+      },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "text": "You received this message because your Capy Notebook account was frozen after the storage buffer expired."
+            "text": "You got this email because the storage buffer on your Capy Notebook account ended."
           }
         ]
       },
@@ -62,6 +293,7 @@
         "content": [
           {
             "type": "text",
+            "text": "Stop billing emails",
             "marks": [
               {
                 "type": "link",
@@ -72,8 +304,7 @@
                   "rel": "noopener noreferrer nofollow"
                 }
               }
-            ],
-            "text": "Manage product email preferences"
+            ]
           }
         ]
       }

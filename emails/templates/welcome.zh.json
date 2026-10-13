@@ -1,0 +1,206 @@
+{
+  "schemaVersion": 1,
+  "subject": "欢迎使用 Capy Notebook",
+  "preview": "三步开始你的第一次学习。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "欢迎使用 Capy Notebook"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Capy Notebook 把你自己的文件变成学习空间。从这里开始："
+          }
+        ]
+      },
+      {
+        "type": "orderedList",
+        "content": [
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "打开你的工作区",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": "，或为每门课程、每个主题各建一个。"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "添加文件",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": "：PDF、幻灯片、文档或你自己的笔记。"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "用它们学习",
+                    "marks": [
+                      {
+                        "type": "bold"
+                      }
+                    ]
+                  },
+                  {
+                    "type": "text",
+                    "text": "：提问并获得引用你文件的回答，用测验练习，并复习答错的内容。"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#f3f0fb",
+          "borderColor": "#e2dbf6",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "你正在使用免费计划",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "存储空间："
+              },
+              {
+                "type": "text",
+                "text": "100 MB",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "AI 额度："
+              },
+              {
+                "type": "text",
+                "text": "每月 1,000",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "可拥有工作区："
+              },
+              {
+                "type": "text",
+                "text": "最多 10 个",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "打开 Capy Notebook",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为你创建了 Capy Notebook 账户。"
+          }
+        ]
+      }
+    ]
+  }
+}

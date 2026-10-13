@@ -481,9 +481,11 @@ func (s *Store) upgradeExportTx(ctx context.Context, tx pgx.Tx, jobID, actor, ws
 // AnnounceOfficeMaintenance tells every active account (not suspended, deleted
 // or pending deletion) that Office editing pauses at startsAt for about hours:
 // an in-app notification, plus an email when withEmail (the week-ahead notice;
-// the day-before reminder is in-app only). The email is a service notice, sent
-// whatever the email preferences. Rerunning for the same start skips accounts
-// already told. Returns the notifications and emails written.
+// the day-before reminder is in-app only). To save mail quota the email goes
+// only to owners and editors of a workspace with an Office file edited in the
+// last 30 days. It is a service notice, sent whatever the email preferences.
+// Rerunning for the same start skips accounts already told. Returns the
+// notifications and emails written.
 func (s *Store) AnnounceOfficeMaintenance(ctx context.Context, startsAt time.Time, hours int, withEmail bool) (int64, int64, error) {
 	data, err := json.Marshal(map[string]any{
 		"code":     "office_maintenance",
@@ -518,6 +520,13 @@ func (s *Store) AnnounceOfficeMaintenance(ctx context.Context, startsAt time.Tim
 				'office-maintenance', u.locale, $1::jsonb, 'office-maintenance:'||($1::jsonb->>'startsAt')||':'||u.id
 			FROM users u
 			WHERE `+active+` AND btrim(COALESCE(u.email,''))<>''
+				AND EXISTS (
+					SELECT 1 FROM workspace_members m
+					JOIN files f ON f.workspace_id=m.workspace_id
+					JOIN source_documents d ON d.file_id=f.id
+					WHERE m.user_id=u.id AND m.role IN ('owner','editor')
+						AND d.format IN ('docx','xlsx','pptx')
+						AND d.last_edited_at > now() - interval '30 days')
 			ON CONFLICT (idempotency_key) DO NOTHING`, data)
 		if err != nil {
 			return 0, 0, err

@@ -1,0 +1,19 @@
+WELCOME TO PRO
+
+Thanks for subscribing. Your Pro plan is active now, and these limits apply to your account:
+
+Storage: 1 GB (was 100 MB)
+AI credits: 20,000 a month (was 1,000)
+Workspaces you own: up to 50
+Largest file: 30 MB
+Renews on: {{.RenewsOn}}
+
+You can see invoices and change or cancel your plan any time in Billing.
+
+Manage subscription {{.OpenURL}}
+
+----------------------------------------
+
+You got this email because you subscribed to Capy Notebook Pro.
+
+Stop billing emails {{.UnsubscribeURL}}

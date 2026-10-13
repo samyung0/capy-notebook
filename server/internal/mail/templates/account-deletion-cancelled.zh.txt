@@ -1,16 +1,9 @@
-Capy Notebook
+你的账户已恢复
 
+支持已取消删除你的 Capy Notebook 账户。没有任何内容被删除，你可以登录并从上次停下的地方继续。
 
-账户已重新激活
-
-你好，
-
-支持已取消你的 Capy Notebook 账户删除请求，账户已重新激活。
-
-打开设置 {{.OpenURL}}
+打开 Capy Notebook {{.OpenURL}}
 
 ----------------------------------------
 
-你收到这封邮件是因为支持取消了你的 Capy Notebook 账户删除请求。
-
-管理产品邮件偏好 {{.UnsubscribeURL}}
+你收到这封邮件是因为支持恢复了你的 Capy Notebook 账户。

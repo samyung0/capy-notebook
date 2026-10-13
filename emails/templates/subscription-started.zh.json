@@ -1,0 +1,193 @@
+{
+  "schemaVersion": 1,
+  "subject": "你已升级到 Capy Notebook Pro",
+  "preview": "你的 Pro 计划已生效，以下是变化。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "欢迎升级到 Pro"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "感谢订阅。你的 Pro 计划现已生效，账户将适用以下额度："
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#effae6",
+          "borderColor": "#d5eec1",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "存储空间："
+              },
+              {
+                "type": "text",
+                "text": "1 GB",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "（原 100 MB）"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "AI 额度："
+              },
+              {
+                "type": "text",
+                "text": "每月 20,000",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": "（原 1,000）"
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "可拥有工作区："
+              },
+              {
+                "type": "text",
+                "text": "最多 50 个",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "单个文件上限："
+              },
+              {
+                "type": "text",
+                "text": "30 MB",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "续订日期："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "RenewsOn",
+                  "label": "Renews on",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "你可以随时在“账单”中查看发票、更改或取消计划。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "管理订阅",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为你订阅了 Capy Notebook Pro。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "不再接收账单邮件",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

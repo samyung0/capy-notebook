@@ -120,6 +120,8 @@
   "notification_system_deletion_requested_body": "Your account and all of its data will be permanently deleted after the grace period. If this was a mistake, contact support before then.",
   "notification_system_deletion_cancelled_title": "Account reactivated",
   "notification_system_deletion_cancelled_body": "Support cancelled your account deletion request. Your account is active again.",
+  "notification_system_invite_accepted_title": "Invitation accepted",
+  "notification_system_invite_accepted_body": "{memberName} joined {workspaceName}.",
   "notification_system_office_maintenance_title": "Scheduled Office upgrade",
   "notification_system_office_maintenance_body": "Word, PowerPoint and Excel files can't be edited from {time} for about {hours} hours. Viewing still works.",
   "notification_workspace_invite_title": "Workspace invitation",

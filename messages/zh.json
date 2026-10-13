@@ -116,6 +116,8 @@
   "notification_system_deletion_requested_body": "宽限期结束后，你的账户及其所有数据将被永久删除。如需取消，请在此之前联系支持。",
   "notification_system_deletion_cancelled_title": "账户已重新激活",
   "notification_system_deletion_cancelled_body": "支持已取消你的账户删除请求，账户已重新激活。",
+  "notification_system_invite_accepted_title": "邀请已接受",
+  "notification_system_invite_accepted_body": "{memberName} 已加入 {workspaceName}。",
   "notification_system_office_maintenance_title": "Office 计划升级",
   "notification_system_office_maintenance_body": "从 {time} 起约 {hours} 小时内无法编辑 Word、PowerPoint 和 Excel 文件，仍可查看。",
   "notification_workspace_invite_title": "工作区邀请",

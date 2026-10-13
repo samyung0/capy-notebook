@@ -1,0 +1,14 @@
+{{.MemberName}} 已加入 {{.WorkspaceName}}
+
+{{.MemberName}} 已接受你加入 {{.WorkspaceName}} 的邀请。
+
+成员：{{.MemberName}}
+权限：{{.Access}}
+
+打开工作区 {{.OpenURL}}
+
+----------------------------------------
+
+你收到这封邮件是因为你邀请了 {{.MemberName}} 加入 {{.WorkspaceName}}。
+
+不再接收工作区邀请邮件 {{.UnsubscribeURL}}
