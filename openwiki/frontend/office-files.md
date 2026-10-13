@@ -301,7 +301,12 @@ changed, over the fingerprinted source that every open requires:
   package, resolved at lowering; an inserted image keeps its data URL until the
   next publication rebases it into a reference. Charts and drawings the model
   cannot draw (`w:pict`, `w:object`, `mc:AlternateContent`) travel as raw XML
-  and export unchanged until edited. A comment range covers the same content
+  and export unchanged until edited, as do SmartArt frames (drawn from their
+  diagram parts) and phonetic guides (`w:ruby`, shown as their base text, one
+  unit the caret steps over). Lists the bullet and number buttons make write
+  the two `w:num` ids after the source's, and the export adds their
+  definitions to numbering.xml, creating it when missing (Epo 2026-10-13).
+  A comment range covers the same content
   from one publication to the next within the story it opened in: the seed
   gives each unit inside a range to every comment open there (another
   comment's reference mark only when the range goes on past it), and the
