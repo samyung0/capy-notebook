@@ -127,10 +127,14 @@ func TestThumbnailStaleFollowsTheLastSavedChange(t *testing.T) {
 	}
 	save()
 	stale(true, "no capture, a saved change")
+	// A capture claimed now, `after` the last saved change.
 	captured := func(after time.Duration) {
 		t.Helper()
-		if _, err := s.pool.Exec(ctx, `UPDATE files f SET thumbnail_captured_at = d.last_edited_at + make_interval(secs => $2)
-			FROM source_documents d WHERE d.file_id = f.id AND f.id = $1`, file.ID, after.Seconds()); err != nil {
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET thumbnail_captured_at = now() WHERE id = $1`, file.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at = now() - make_interval(secs => $2)
+			WHERE file_id = $1`, file.ID, after.Seconds()); err != nil {
 			t.Fatal(err)
 		}
 	}

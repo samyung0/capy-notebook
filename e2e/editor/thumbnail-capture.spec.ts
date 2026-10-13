@@ -165,14 +165,15 @@ test('opening a stale card for editing uploads it once', async ({ page }) => {
     if (request.method() === 'POST' && request.url().endsWith('/thumbnail'))
       captures.push(new URL(request.url()).pathname);
   });
-  await page.addInitScript(() =>
-    sessionStorage.setItem('capy.mock.thumbnailStale.bio-office-pptx', 'true')
-  );
   await page.goto('/workspaces/ws_bio?file=bio-office-pptx');
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   await expect(frame.locator('canvas').first()).toBeVisible({
     timeout: 60_000,
   });
+  // Set once (not as an init script, which every runtime frame would run).
+  await page.evaluate(() =>
+    sessionStorage.setItem('capy.mock.thumbnailStale.bio-office-pptx', 'true')
+  );
   const mode = page.getByRole('button', { name: m.material_mode() });
   const editor = officeEditMenu(page, 'pptx');
   await mode.click();
