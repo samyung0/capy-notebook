@@ -35,6 +35,18 @@ type Receipt = {
 };
 type Target = { id: string; kind: 'material' | 'source_file' };
 
+/** The notes, diagrams and files a test made, trashed after it so other
+ * specs on the same stack see the owner's account as seeded. */
+const made: string[] = [];
+test.afterEach(async ({ ownerApi }) => {
+  for (const path of made.splice(0)) {
+    const response = await ownerApi.delete(path);
+    expect([204, 404], `${path}: ${response.status()}`).toContain(
+      response.status()
+    );
+  }
+});
+
 /** One tool call to an internal agent route, as the owner's chat turn. */
 function call(api: APIRequestContext, path: string, body: object) {
   return api.post(path, {
@@ -67,7 +79,9 @@ async function createNote(
     title: `Agent note ${randomUUID()}`,
   });
   expect(receipt.outcome, JSON.stringify(receipt)).toBe('succeeded');
-  return receipt.effect!.resource.id;
+  const id = receipt.effect!.resource.id;
+  made.push(`/api/materials/${id}`);
+  return id;
 }
 
 async function edit(
@@ -427,6 +441,7 @@ test.describe('agent writes to notes', () => {
     );
     expect(response.status(), await response.text()).toBe(201);
     const { id } = (await response.json()) as { id: string };
+    made.push(`/api/materials/${id}`);
     const pages = [ownerPage, editorPage];
     await openNote(pages, id);
     const before = await projection(ownerApi, id);
@@ -574,6 +589,7 @@ test.describe('agent writes to notes', () => {
     );
     expect(response.status(), await response.text()).toBe(201);
     const { id } = (await response.json()) as { id: string };
+    made.push(`/api/materials/${id}`);
     const pages = [ownerPage, editorPage];
     await openNote(pages, id);
     const before = await projection(ownerApi, id);
@@ -890,6 +906,7 @@ test.describe('agent writes to notes', () => {
     );
     expect(response.status(), await response.text()).toBe(201);
     const { id } = (await response.json()) as { id: string };
+    made.push(`/api/materials/${id}`);
     const pages = [ownerPage, editorPage];
     await openNote(pages, id);
     const target = { id, kind: 'material' as const };
@@ -971,6 +988,7 @@ test.describe('agent writes to notes', () => {
     );
     expect(receipt.outcome, JSON.stringify(receipt)).toBe('succeeded');
     const id = receipt.effect!.resource.id;
+    made.push(`/api/materials/${id}`);
     const pages = [ownerPage, editorPage];
     await openNote(pages, id);
     for (const page of pages)
@@ -1045,7 +1063,9 @@ async function uploadOffice(api: APIRequestContext, format: OfficeFormat) {
     `/api/workspaces/${workspaceId}/sources/uploads/${upload.uploadId}/complete`
   );
   expect(completed.status(), await completed.text()).toBe(201);
-  return ((await completed.json()) as { id: string }).id;
+  const { id } = (await completed.json()) as { id: string };
+  made.push(`/api/files/${id}`);
+  return id;
 }
 
 async function openOffice(page: Page, fileId: string, format: OfficeFormat) {
