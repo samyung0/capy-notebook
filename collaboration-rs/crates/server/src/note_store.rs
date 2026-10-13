@@ -116,7 +116,7 @@ pub(crate) async fn bootstrap(
 ) -> Result<(), StoreError> {
     let rows = tx
         .query(
-            "SELECT content, kind FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE",
+            "SELECT content, kind, trash_restores FROM materials WHERE id=$1 AND trashed_at IS NULL FOR UPDATE",
             &[&material_id],
         )
         .await?;
@@ -124,6 +124,13 @@ pub(crate) async fn bootstrap(
         // A trashed material keeps its content but nothing may open it.
         return Err(StoreError::Other("material not found".into()));
     };
+    // A material without a Yjs row lives at schema 1 + trash_restores
+    // (store.MaterialRoom). A token for an older room (minted before a trash
+    // and restore, or before the cutover reset raised the floor) must not seed
+    // a second lineage under that name (cutover-reset REVIEW1 L1).
+    if schema < 1 + i64::from(row.get::<_, i32>("trash_restores")) {
+        return Err(StoreError::Other("stale collaboration room schema".into()));
+    }
     let content: Value = row.get("content");
     let kind: String = row.get("kind");
     let value = envelope_value(&content)?;

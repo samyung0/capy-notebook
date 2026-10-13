@@ -563,6 +563,47 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
     assert_eq!(reason, "permission-denied");
 }
 
+/// Security regression (cutover-reset REVIEW1 L1): a material without a Yjs
+/// row lives at room schema 1 + trash_restores. A token naming an older room
+/// (minted before a trash and restore, or before the cutover reset raised the
+/// floor) is refused without seeding a row; the floor's room opens.
+#[tokio::test]
+async fn a_token_below_the_room_floor_seeds_no_lineage() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "floor").await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE materials SET trash_restores=1 WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("floor");
+    let old = format!("material:{material}:schema:1");
+    let mut stale = Client::open(server.port).await;
+    stale.join(&old, &token(&old, &user, "write")).await;
+    let reason = text_payload(&stale.until(2).await.expect("refused"));
+    assert_eq!(reason, "permission-denied");
+    let rows: i64 = client
+        .query_one(
+            "SELECT count(*) FROM material_yjs_documents WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("rows")
+        .get(0);
+    assert_eq!(rows, 0, "the old room seeded a row");
+
+    let room = format!("material:{material}:schema:2");
+    let mut current = Client::open(server.port).await;
+    assert_eq!(
+        current.joined(&room, &token(&room, &user, "write")).await,
+        1
+    );
+    assert!(current.settle(|c| c.block_text() == "floor").await);
+}
+
 #[tokio::test]
 async fn a_read_only_channel_that_writes_is_closed() {
     let Some(env) = env() else { return };

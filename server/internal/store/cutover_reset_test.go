@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -12,11 +13,13 @@ import (
 )
 
 // Migration 0080, the Rust cutover reset: it refuses while a source (Office
-// or text) is unpublished, Office editing is not paused or a note's
-// projection lags; otherwise every source drops its state and rows under a new
-// epoch, every note drops its Yjs rows and moves its room past the old one,
-// pending references leave the projection, live items stay, and the storage
-// recount equals what the triggers booked. Each run rolls back.
+// or text) has unpublished edits or effects, a refresh in flight or a rebuild
+// pending, while Office editing is not paused or while a note's projection
+// lags (trashed or not); otherwise every source drops its state and rows under
+// a new epoch, every note, mindmap and diagram drops its Yjs rows and moves its
+// room past the old one, pending references become empty paragraphs in place,
+// live items stay, and the storage recount equals what the triggers booked.
+// Each run rolls back.
 func TestCutoverResetMigration(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -30,6 +33,7 @@ func TestCutoverResetMigration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	mindmap, diagram := uid("mat"), uid("mat")
 	quiz, err := s.CreateMaterial(ctx, Material{CreatedBy: owner, Kind: "quiz", Title: "Live quiz",
 		Content: quizProjection(t, 1, 1, 10, "a").Raw, Privacy: PrivacyPrivate})
 	if err != nil {
@@ -39,12 +43,17 @@ func TestCutoverResetMigration(t *testing.T) {
 		// A note stored before fences were resolved: its pending reference
 		// holds the quiz's answer keys.
 		`UPDATE materials SET content='{"schemaVersion":1,"value":[{"type":"p","id":"b1","children":[{"text":"kept"}]},` +
-			`{"type":"material_ref","id":"r1","refKind":"quiz","pending":"answer: SECRET","children":[{"text":""}]}]}' WHERE id='` + note.ID + `'`,
+			`{"type":"material_ref","id":"r1","refKind":"quiz","pending":"answer: SECRET","children":[{"text":""}]},` +
+			`{"type":"p","id":"b2","children":[{"text":"after"}]}]}' WHERE id='` + note.ID + `'`,
 		`INSERT INTO material_yjs_documents (material_id,room_schema,state,stored_version,projected_version,log_bytes,log_rows)
 			VALUES ('` + note.ID + `',2,'\x0000',3,3,2,1)`,
 		`INSERT INTO material_yjs_updates (material_id,seq,update) VALUES ('` + note.ID + `',3,'\x0102')`,
 		`INSERT INTO material_yjs_documents (material_id,state,stored_version,projected_version) VALUES ('` + quiz.ID + `','\x00',1,1)`,
 		`INSERT INTO material_yjs_keys (material_id,state) VALUES ('` + quiz.ID + `','\x00')`,
+		// Mindmaps and diagrams are Plate rooms too.
+		`INSERT INTO materials (id,created_by,kind,title) VALUES ('` + mindmap + `','` + owner + `','mindmap','Map'),('` + diagram + `','` + owner + `','diagram','Flow')`,
+		`INSERT INTO material_yjs_documents (material_id,room_schema,state,stored_version,projected_version) VALUES
+			('` + mindmap + `',3,'\x00',2,2),('` + diagram + `',1,'\x00',1,1)`,
 		// AI edit Undo on the note and on the text source, charged to owner.
 		`INSERT INTO agent_operations (id,kind,request_hash,actor_user_id,outcome) VALUES
 			('op_` + note.ID + `','edit_document','h','` + owner + `','succeeded'),('op_` + text + `','edit_document','h','` + owner + `','succeeded')`,
@@ -93,6 +102,11 @@ func TestCutoverResetMigration(t *testing.T) {
 	publishedText := `UPDATE source_documents SET indexed_checkpoint=checkpoint,pending_effects='[]' WHERE file_id='` + text + `'`
 	paused := `INSERT INTO office_editing_pause DEFAULT VALUES ON CONFLICT DO NOTHING`
 	lagging := `UPDATE material_yjs_documents SET stored_version=4 WHERE material_id='` + note.ID + `'`
+	trashed := `UPDATE materials SET trashed_at=now(),trash_episode_id='ep_cutover',purge_after=now()+interval '30 days' WHERE id='` + note.ID + `'`
+	officeEffects := `UPDATE source_documents SET pending_effects='[{"type":"text","before":"a","after":"b"}]' WHERE file_id='` + office + `'`
+	job := `INSERT INTO jobs (id,type,status) VALUES ('job_` + office + `','source_refresh','running')`
+	refreshing := `UPDATE source_documents SET running_job_id='job_` + office + `' WHERE file_id='` + office + `'`
+	rebuilding := `UPDATE source_documents SET rebuild_pending=true WHERE file_id='` + office + `'`
 	for _, refusal := range []struct {
 		steps []string
 		want  string
@@ -101,7 +115,12 @@ func TestCutoverResetMigration(t *testing.T) {
 		// publish-all never publishes a text source: the guard covers it.
 		{[]string{publishedOffice, paused}, "unpublished edits"},
 		{[]string{publishedOffice, publishedText}, "not paused"},
+		{[]string{publishedOffice, publishedText, paused, officeEffects}, "unpublished edits"},
+		{[]string{publishedOffice, publishedText, paused, job, refreshing}, "unpublished edits"},
+		{[]string{publishedOffice, publishedText, paused, rebuilding}, "unpublished edits"},
 		{[]string{publishedOffice, publishedText, paused, lagging}, "projection is behind"},
+		// A trashed material never projects: it still refuses.
+		{[]string{publishedOffice, publishedText, paused, lagging, trashed}, "projection is behind"},
 	} {
 		if _, err = run(refusal.steps...); err == nil || !strings.Contains(err.Error(), refusal.want) {
 			t.Fatalf("reset after %v: %v, want %q", refusal.steps, err, refusal.want)
@@ -140,11 +159,33 @@ func TestCutoverResetMigration(t *testing.T) {
 	if yjsRows != 0 || logRows != 0 || room != 3 || !released {
 		t.Fatalf("note: yjs rows=%d log rows=%d room schema=%d undo released=%v", yjsRows, logRows, room, released)
 	}
-	if strings.Contains(content, "pending") || !strings.Contains(content, "kept") || revision != revisionBefore+1 {
+	if strings.Contains(content, "pending") || revision != revisionBefore+1 {
 		t.Fatalf("note projection after the reset (revision %d): %s", revision, content)
+	}
+	// The reference became an empty paragraph with its id, in its place.
+	doc, err := materialdoc.Parse(content)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var blocks []string
+	for _, node := range doc.Value {
+		blocks = append(blocks, fmt.Sprintf("%v:%v:%v", node["id"], node["type"], node["children"]))
+	}
+	if got := strings.Join(blocks, " "); got != "b1:p:[map[text:kept]] r1:p:[map[text:]] b2:p:[map[text:after]]" {
+		t.Fatalf("note blocks after the reset: %s", got)
 	}
 	if err = materialdoc.ValidateKind(content, "note"); err != nil {
 		t.Fatalf("the note cannot seed a room: %v", err)
+	}
+	for material, want := range map[string]int64{mindmap: 4, diagram: 2} {
+		if err = tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM material_yjs_documents WHERE material_id=m.id) * 1000
+			+ COALESCE((SELECT room_schema FROM material_yjs_documents WHERE material_id=m.id), 1 + m.trash_restores)
+			FROM materials m WHERE m.id=$1`, material).Scan(&room); err != nil {
+			t.Fatal(err)
+		}
+		if room != want {
+			t.Fatalf("%s: rows*1000 + room schema = %d, want no row and room %d", material, room, want)
+		}
 	}
 	var liveRows int64
 	if err = tx.QueryRow(ctx, `SELECT (SELECT count(*) FROM material_yjs_documents WHERE material_id=$1)
