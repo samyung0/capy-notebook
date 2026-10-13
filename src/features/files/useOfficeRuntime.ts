@@ -468,6 +468,8 @@ export function useOfficeRuntime({
     const epoch = source.session.epoch;
     const send = (update: Uint8Array, origin: unknown) => {
       if (origin === SOURCE_IFRAME_ORIGIN) return;
+      // Not this editor's own edit: a capture drawn before it is stale.
+      captureRef.current?.remote();
       const bytes = update.slice().buffer;
       post({ bytes, epoch, type: 'update', version: OFFICE_PROTOCOL_VERSION }, [
         bytes,
@@ -674,13 +676,22 @@ export function useOfficeRuntime({
     [post]
   );
 
+  // Once the editor holds the document, a card older than it (Go's
+  // `thumbnailStale`) is captured, once per open.
+  const opened = replicaReady ? !!source.session?.thumbnailStale : null;
+  const openedRef = useRef(opened);
+  openedRef.current = opened;
+  useEffect(() => {
+    if (opened !== null) captureRef.current?.opened(opened);
+  }, [opened]);
+
   // Browsers that cannot encode WebP (Safari) capture nothing.
   useEffect(() => {
     if (mode !== 'edit') return;
     let cancelled = false;
     void canEncodeWebp().then((supported) => {
       if (!supported || cancelled) return;
-      captureRef.current = createThumbnailCapture({
+      const capture = createThumbnailCapture({
         allowed: () => captureAllowed.current(),
         draw: async () => {
           const [rendered, headers] = await Promise.all([
@@ -696,6 +707,8 @@ export function useOfficeRuntime({
         upload: (drawn, keepalive) =>
           uploadThumbnail(file.id, drawn, keepalive),
       });
+      captureRef.current = capture;
+      if (openedRef.current !== null) capture.opened(openedRef.current);
     });
     const leave = () => captureRef.current?.leave();
     const hidden = () => {

@@ -1,9 +1,10 @@
 /**
  * Browser captures of edited Office files for the list cards
  * (openwiki/thumbnails.md, Browser captures). The runtime draws the WebP in its idle
- * time, never on the keystroke or save path; Capy uploads it to Go. Failures
- * are logged once and never retried: the card keeps its old image until the
- * next capture.
+ * time, never on the keystroke or save path; Capy uploads it to Go. An editor
+ * opening a file whose card is older than its saved document captures it too.
+ * Failures are logged once and never retried: the card keeps its old image
+ * until the next capture.
  */
 import { authHeaders } from '@/api/auth';
 import { API_BASE } from '@/api/client';
@@ -47,9 +48,23 @@ export interface ThumbnailCapture {
   edited: () => void;
   /** The page is hiding or going away: upload what was drawn already. */
   leave: () => void;
+  /**
+   * The editor holds the document. When the file's card is older than its
+   * saved document (Go's `thumbnailStale`: an agent's edit, an Undo, edits
+   * whose browser closed before capturing), capture it now, as after an
+   * edit. Only the first call of an open counts.
+   */
+  opened: (stale: boolean) => void;
+  /**
+   * An update from elsewhere (another editor, the agent, an Undo) reached the
+   * document: a capture drawn before it is dropped, so the next upload draws
+   * again. It starts no capture.
+   */
+  remote: () => void;
 }
 
-type Ready = DrawnThumbnail & { edits: number };
+/** A drawn capture, with the local edits and remote updates it covers. */
+type Ready = DrawnThumbnail & { edits: number; remotes: number };
 
 export function createThumbnailCapture({
   allowed,
@@ -59,6 +74,9 @@ export function createThumbnailCapture({
   // Local edits seen, and how many the last capture covered (or gave up on).
   let edits = 0;
   let captured = 0;
+  // Remote updates seen: a capture drawn before the latest one is stale.
+  let remotes = 0;
+  let openedSeen = false;
   let ready: Ready | null = null;
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -79,13 +97,16 @@ export function createThumbnailCapture({
   };
   const drawNow = async () => {
     const at = edits;
+    const seen = remotes;
     const drawn = await draw();
-    if (disposed || drawn === NOT_DRAWN_YET) return null;
+    // An update from elsewhere during the draw: the drawing may predate it,
+    // and the cycle stays for the next upload's draw.
+    if (disposed || drawn === NOT_DRAWN_YET || seen !== remotes) return null;
     if (drawn && drawn.bytes.byteLength >= MAX_UPLOAD_BYTES)
       throw new Error(`The capture is ${drawn.bytes.byteLength} bytes`);
     // Nothing to capture (an XLSX on another sheet) ends the cycle quietly.
     if (!drawn) captured = at;
-    ready = drawn ? { ...drawn, edits: at } : null;
+    ready = drawn ? { ...drawn, edits: at, remotes: seen } : null;
     return ready;
   };
   const send = (blob: Ready, keepalive: boolean) => {
@@ -96,10 +117,11 @@ export function createThumbnailCapture({
     deadline = undefined;
     void upload(blob, keepalive).catch((error: unknown) => {
       // The edits are not captured: the next upload (a pending idle one,
-      // the next edit's or leaving) sends them. Nothing is retried here.
+      // the next edit's or leaving) sends them, drawn again when an update
+      // from elsewhere came after this drawing. Nothing is retried here.
       if (captured === blob.edits) {
         captured = before;
-        ready ??= blob;
+        if (blob.remotes === remotes) ready ??= blob;
       }
       log(error);
     });
@@ -116,28 +138,43 @@ export function createThumbnailCapture({
     }
   };
 
+  const edited = () => {
+    if (disposed) return;
+    edits++;
+    clearTimeout(drawTimer);
+    clearTimeout(idleTimer);
+    drawTimer = setTimeout(() => {
+      if (edits !== captured) drawNow().catch(fail);
+    }, DRAW_AFTER_MS);
+    idleTimer = setTimeout(() => void capture(), UPLOAD_AFTER_MS);
+    deadline ??= setTimeout(() => {
+      deadline = undefined;
+      void capture();
+    }, UPLOAD_WITHIN_MS);
+  };
+
   return {
     dispose: () => {
       disposed = true;
       ready = null;
       for (const timer of [drawTimer, idleTimer, deadline]) clearTimeout(timer);
     },
-    edited: () => {
-      if (disposed) return;
-      edits++;
-      clearTimeout(drawTimer);
-      clearTimeout(idleTimer);
-      drawTimer = setTimeout(() => {
-        if (edits !== captured) drawNow().catch(fail);
-      }, DRAW_AFTER_MS);
-      idleTimer = setTimeout(() => void capture(), UPLOAD_AFTER_MS);
-      deadline ??= setTimeout(() => {
-        deadline = undefined;
-        void capture();
-      }, UPLOAD_WITHIN_MS);
-    },
+    edited,
     leave: () => {
       if (ready && edits !== captured && allowed()) send(ready, true);
+    },
+    opened: (stale) => {
+      if (disposed || openedSeen) return;
+      openedSeen = true;
+      if (!stale) return;
+      // One change to capture: uploaded now when the editor may, else by the
+      // cycle's idle upload or leaving, as an edit's would be.
+      edited();
+      void capture();
+    },
+    remote: () => {
+      remotes++;
+      ready = null;
     },
   };
 }

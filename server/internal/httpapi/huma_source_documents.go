@@ -158,6 +158,9 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 		if session.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, session.OwnerID); err != nil {
 			return nil, hErr(err)
 		}
+		if session.ThumbnailStale, err = a.s.ThumbnailStale(ctx, in.ID); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	return a.sourceSessionResponse(ctx, session)
 }

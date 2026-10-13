@@ -188,7 +188,8 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 
 // Office inserts shrink images to the plan cap of the workspace owner, who
 // pays for the file, whatever the editor's own plan: only the editor read
-// carries it.
+// carries it. The editor read also says when the file's card is older than
+// its saved document.
 func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 	ctx := context.Background()
 	st := openAccessTestStoreForPreview(t)
@@ -239,5 +240,17 @@ func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
 	}
 	if body := session(""); !strings.Contains(body, `"imageMaxBytes":5242880`) {
 		t.Fatalf("editor of a Pro owner's file: %s", body)
+	}
+	if body := session(""); strings.Contains(body, "thumbnailStale") {
+		t.Fatalf("a file without saved changes reads stale: %s", body)
+	}
+	if _, err := st.Pool().Exec(ctx, `UPDATE source_documents SET state_seed_sha256=repeat('a',64), log_rows=1 WHERE file_id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if body := session(""); !strings.Contains(body, `"thumbnailStale":true`) {
+		t.Fatalf("a saved change over ingest's card: %s", body)
+	}
+	if body := session("?view=true"); strings.Contains(body, "thumbnailStale") {
+		t.Fatalf("view read carries the stale card: %s", body)
 	}
 }

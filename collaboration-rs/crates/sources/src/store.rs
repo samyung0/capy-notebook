@@ -834,6 +834,7 @@ impl Sources {
                 base_source_sha256: seed_report.0,
                 seed_bytes: seed_report.1,
                 operation: None,
+                preview: text.as_ref().map(|text| text.preview.clone()),
             };
             let result: Result<CheckpointSaved, SourceError> = self
                 .gateway

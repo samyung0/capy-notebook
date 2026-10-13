@@ -2161,6 +2161,7 @@ export const GetSourceSessionResponse = zod.object({
   "state": zod.string().nullable(),
   "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
+  "thumbnailStale": zod.boolean().optional(),
   "workspaceId": zod.string()
 })
 
@@ -7324,6 +7325,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "undoOf": zod.string().optional()
 }).optional(),
   "pendingEffects": zod.unknown(),
+  "preview": zod.string().optional(),
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
   "stateSeedSHA256": zod.string().optional(),
   "update": zod.string()

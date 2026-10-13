@@ -35,5 +35,6 @@ export interface SourceSession {
   stateRows?: string[] | null;
   /** @nullable */
   stateSeedSHA256: string | null;
+  thumbnailStale?: boolean;
   workspaceId: string;
 }

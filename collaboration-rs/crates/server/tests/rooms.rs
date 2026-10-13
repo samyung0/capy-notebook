@@ -1298,6 +1298,15 @@ async fn gateway_post(
     )
     .await
     .expect("checkpoint");
+    // A text save's list-card text, as Go writes it.
+    if let Some(preview) = body["preview"].as_str() {
+        txn.execute(
+            "UPDATE files SET preview=jsonb_build_object('text',$2::text) WHERE id=$1",
+            &[&id, &preview],
+        )
+        .await
+        .expect("preview");
+    }
     txn.commit().await.expect("commit");
     axum::Json(serde_json::json!({ "checkpoint": next })).into_response()
 }
@@ -1443,6 +1452,14 @@ async fn a_clean_source_room_answers_a_checkpoint_request_after_a_reload() {
         .await
         .expect("the edit's receipt");
     assert_eq!(saved["checkpoint"], 1);
+    // The save carried the file's list-card text.
+    let preview: Option<serde_json::Value> = db(&env)
+        .await
+        .query_one("SELECT preview FROM files WHERE id=$1", &[&file])
+        .await
+        .expect("file")
+        .get(0);
+    assert_eq!(preview, Some(serde_json::json!({ "text": "hello world" })));
     drop(a);
     tokio::time::sleep(Duration::from_millis(1500)).await;
 

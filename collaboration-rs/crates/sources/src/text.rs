@@ -81,11 +81,13 @@ impl TextWindow {
     }
 }
 
-/// A text save's effects and the window the next save starts from.
+/// A text save's effects, the window the next save starts from, and the
+/// opening text the file's list card shows (Go writes it to `files.preview`).
 #[derive(Clone, Debug, PartialEq)]
 pub struct TextSave {
     pub effects: Vec<NetEffect>,
     pub window: Option<TextWindow>,
+    pub preview: String,
 }
 
 /// The text's effects and window against `baseline`, read whole (the load,
@@ -94,7 +96,73 @@ pub fn full_text_effects(text: &str, baseline: &[u16]) -> TextSave {
     let current = utf16(text);
     let effects = text_effects(baseline, &current);
     let window = TextWindow::of(&effects, current.len());
-    TextSave { effects, window }
+    let mut preview = Preview::default();
+    preview.push(text);
+    TextSave {
+        effects,
+        window,
+        preview: preview.text,
+    }
+}
+
+/// How many characters of a text source its list card shows.
+pub const PREVIEW_CHARS: usize = 600;
+
+/// A text source's opening characters read as ingest reads them
+/// (pipeline/ingest/thumbnail.py `_store_text_preview`, a UTF-8-sig
+/// text-mode read): a leading BOM dropped, `\r\n` and `\r` read as `\n`,
+/// [`PREVIEW_CHARS`] characters, then NUL removed (jsonb holds none). The
+/// same text gives ingest's preview and a save's.
+#[derive(Default)]
+struct Preview {
+    text: String,
+    read: usize,
+    started: bool,
+    after_cr: bool,
+}
+
+impl Preview {
+    /// Reads the next part of the text; false once the preview is full.
+    fn push(&mut self, part: &str) -> bool {
+        for character in part.chars() {
+            if self.read == PREVIEW_CHARS {
+                return false;
+            }
+            let first = !std::mem::replace(&mut self.started, true);
+            let after_cr = std::mem::replace(&mut self.after_cr, character == '\r');
+            match character {
+                '\u{feff}' if first => {}
+                '\n' if after_cr => {}
+                '\r' => self.read('\n'),
+                character => self.read(character),
+            }
+        }
+        self.read < PREVIEW_CHARS
+    }
+
+    fn read(&mut self, character: char) {
+        self.read += 1;
+        if character != '\0' {
+            self.text.push(character);
+        }
+    }
+}
+
+/// The preview of a room's text, reading its items from the start only as
+/// far as the preview needs: O(preview), not O(text).
+fn text_preview(branch: BranchPtr) -> String {
+    let mut preview = Preview::default();
+    let mut next = branch.start();
+    while let Some(item) = next {
+        if let ItemContent::String(text) = item.content()
+            && !item.is_deleted()
+            && !preview.push(text.as_str())
+        {
+            break;
+        }
+        next = item.right();
+    }
+    preview.text
 }
 
 /// The UTF-16 span of the items a change touched, and the text's length,
@@ -238,10 +306,12 @@ pub fn text_effects_from_change<T: ReadTxn>(
             None => (previous.prefix, end),
         });
     }
+    let preview = text_preview(branch);
     let Some((lo, hi)) = window else {
         return TextSave {
             effects: Vec::new(),
             window: None,
+            preview,
         };
     };
     let lo = lo.min(len);
@@ -259,7 +329,11 @@ pub fn text_effects_from_change<T: ReadTxn>(
     };
     let effects = text_effects_with(baseline, len, at, lo, len - hi);
     let window = TextWindow::of(&effects, len);
-    TextSave { effects, window }
+    TextSave {
+        effects,
+        window,
+        preview,
+    }
 }
 
 #[cfg(test)]
@@ -323,9 +397,10 @@ mod tests {
             .unwrap();
     }
 
-    // The save's text effects from the change equal the whole-text ones, over
-    // random edits by two writers, saves in between and edits that undo
-    // earlier ones (the effect shrinks back).
+    // The save's text effects and preview from the change equal the
+    // whole-text ones, over random edits by two writers, saves in between and
+    // edits that undo earlier ones (the effect shrinks back); one base is
+    // longer than the preview, with a line break on its cut.
     #[test]
     fn effects_from_the_change_equal_the_whole_text_comparison() {
         for seed in 1..=200u64 {
@@ -335,7 +410,8 @@ mod tests {
                 "",
                 "😀 a\r\nb 漢字",
                 "line\n".repeat(50).as_str(),
-            ][rng.below(4)]
+                format!("\u{feff}{}\r\n{}", "x".repeat(597), "ab\r\n".repeat(20)).as_str(),
+            ][rng.below(5)]
             .to_owned();
             let baseline = utf16(&base);
             let seed_state = text_seed(base.as_bytes()).unwrap();
@@ -371,5 +447,28 @@ mod tests {
                 durable = txn.state_vector();
             }
         }
+    }
+
+    fn preview(text: &str) -> String {
+        full_text_effects(text, &[]).preview
+    }
+
+    // The values a UTF-8-sig text-mode read of 600 characters with NUL
+    // removed gives in Python (ingest's `_store_text_preview`), checked there.
+    #[test]
+    fn the_preview_reads_the_text_as_ingest_does() {
+        assert_eq!(preview("\u{feff}a\r\nb\rc\0d"), "a\nb\ncd");
+        assert_eq!(preview("\r\r\n\n"), "\n\n\n");
+        assert_eq!(preview("a\u{feff}"), "a\u{feff}");
+        assert_eq!(preview("\u{feff}\u{feff}b"), "\u{feff}b");
+        assert_eq!(preview(&format!("{}q", "\0".repeat(10))), "q");
+        let cut = preview(&format!("{}\r\ny", "x".repeat(599)));
+        assert_eq!(cut, format!("{}\n", "x".repeat(599)));
+        assert_eq!(
+            preview(&format!("{}\r\n", "x".repeat(600))),
+            "x".repeat(600)
+        );
+        assert_eq!(preview(&"é😀".repeat(400)).chars().count(), PREVIEW_CHARS);
+        assert_eq!(preview(""), "");
     }
 }

@@ -387,18 +387,20 @@ impl Sources {
                 None,
             ));
         }
-        let effects = match office(session.format) {
-            Some(_) => {
+        let (effects, preview) = match office(session.format) {
+            Some(_) => (
                 self.office_effects(&session, &base, &sha, &whole, &name)
-                    .await?
-            }
+                    .await?,
+                None,
+            ),
             None => {
                 let txn = doc.transact();
                 let text = txn
                     .get_text(TEXT_ROOT)
                     .map(|text| text.get_string(&txn))
                     .unwrap_or_default();
-                full_text_effects(&text, &utf16(text_of(&base)?)).effects
+                let save = full_text_effects(&text, &utf16(text_of(&base)?));
+                (save.effects, Some(save.preview))
             }
         };
         let (row, after) = {
@@ -433,6 +435,7 @@ impl Sources {
             seed_bytes: (seeded && office(session.format).is_none())
                 .then_some(seed.state.len() as u64),
             operation: Some(operation),
+            preview,
         };
         let saved: CheckpointSaved = self
             .gateway()

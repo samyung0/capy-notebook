@@ -61,6 +61,16 @@ routes change in step. A collaboration service ahead of its gateway can, for
 example, misread the gateway's `epoch-reset` answer and keep a discarded room
 refused until the gateway catches up.
 
+Where the two must be split (a manual rollout, a partial rollback), the
+gateway goes first or with the collaboration service, never after it. A text
+checkpoint now carries `preview` (2026-10-13, `thumbnails.md`): a gateway
+older than that refuses the field with a 422 (`SourceCheckpoint` allows no
+other properties), the collaboration service reads a 422 as a permanent
+refusal, and every open text room resets and sends its editors to recovery
+until the gateway is updated. The other order is safe: an older
+collaboration service sends no `preview`, which a newer gateway does not
+require.
+
 ---
 
 ## 1. DNS & hostnames
