@@ -32,7 +32,12 @@ export type DraftRequest =
    * when one of them is gone or was rewritten since. */
   | { op: 'draws'; rows: DraftRef[] }
   /** Sets `flag` on these rows of a document. */
-  | { op: 'mark'; key: string; ids: string[]; flag: 'refused' | 'reported' }
+  | {
+      op: 'mark';
+      key: string;
+      ids: string[];
+      flag: 'held' | 'refused' | 'reported';
+    }
   /** Every document of an account with its row ids, read from the index
    * alone (no row is loaded). */
   | { op: 'documents'; prefix: string }

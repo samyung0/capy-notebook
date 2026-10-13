@@ -37,6 +37,10 @@ export interface EditDraft {
   /** A source's base (`bases` store), which recovery opens the edits over. */
   base?: string;
   data: Uint8Array;
+  /** A sweep left it for the editor's next open: the service could not take
+   * it (it needs the room's state, it is larger than a sync message, or it
+   * is of another lineage or Office base), so no sweep sends it again. */
+  held?: true;
   /** `${session}:state`, or `${session}:${seq}` for an update (or a run
    * ending at `seq`). */
   id: string;
@@ -276,7 +280,7 @@ export async function dropLostDrafts(
 function markDrafts(
   key: string,
   ids: string[],
-  flag: 'refused' | 'reported'
+  flag: 'held' | 'refused' | 'reported'
 ): Promise<void> {
   if (!(stored(key) && ids.length)) return Promise.resolve();
   return call({ flag, ids, key, op: 'mark' });
@@ -787,13 +791,12 @@ function roomToken(
 type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry';
 
 /** A document's rows its room takes now: not refused, not left for the
- * editor (`reported`), of the token's room, one group per lineage (an Office
+ * editor (`held`), of the token's room, one group per lineage (an Office
  * file's rows of another base go apart). */
 function sendableGroups(rows: DraftInfo[], room: string) {
   const groups = new Map<string, DraftRef[]>();
   for (const row of rows) {
-    if (row.refused || row.reported || row.lineage.split('@')[0] !== room)
-      continue;
+    if (row.refused || row.held || row.lineage.split('@')[0] !== room) continue;
     const group = groups.get(row.lineage) ?? [];
     group.push({ id: row.id, key: row.key, seq: row.seq });
     groups.set(row.lineage, group);
@@ -859,8 +862,9 @@ async function sendGroup(
 const WEBSOCKET_SCHEME = /^ws/;
 
 interface SweepOptions {
-  /** The page load's first sweep: drafts of documents the account lost go
-   * (once per page load, human/frontend/error-handling.md 2026-10-04). */
+  /** The page load's first sweep (the default): drafts of documents the
+   * account lost go (once per page load, human/frontend/error-handling.md
+   * 2026-10-04), and it reads every document, settled or not. */
   cleanup?: boolean;
   /** False once the page signed in as someone else: the sweep stops. */
   current?: () => boolean;
@@ -872,8 +876,9 @@ interface SweepOptions {
  * room, and rows go only after their receipt. A refused group is marked
  * refused, to open read-only as the editor's refusals do, when it draws on
  * its own; one that needs the room's state, and a group only the editor can
- * send, are marked `reported`: left for the editor's next open, not sent or
- * reported again. Resolves whether the rows are settled for this page load.
+ * send, are marked `held`: left for the editor's next open, never sent
+ * again (a recovery of them is reported as any other). Resolves whether the
+ * rows are settled for this page load.
  */
 async function sweepDocument(
   key: string,
@@ -890,9 +895,11 @@ async function sweepDocument(
     token = await roomToken(api, kind, id, false);
   } catch (error) {
     const missing = goneReason(error);
-    // A failed lookup goes again at the next trigger, and a lost document's
-    // drafts wait for the load sweep, which deletes them.
-    if (!(missing && cleanup && current())) return false;
+    // A failed lookup goes again at the next trigger; a lost document's
+    // drafts wait for the load sweep, which deletes them (and reads every
+    // document, settled or not).
+    if (!missing) return false;
+    if (!(cleanup && current())) return true;
     await dropLostDrafts(
       key,
       missing,
@@ -923,7 +930,7 @@ async function sweepDocument(
       await markDrafts(
         key,
         group.refs.map((row) => row.id),
-        draws ? 'refused' : 'reported'
+        draws ? 'refused' : 'held'
       );
     } else if (sent === 'retry') settled = false;
   }
@@ -945,7 +952,7 @@ export async function sweepDrafts(
   api: SweepApi,
   options: SweepOptions = {}
 ) {
-  const { current = () => true } = options;
+  const { cleanup = true, current = () => true } = options;
   const locks = webLocks();
   const sweep = async () => {
     const documents = await call<Record<string, string[]>>({
@@ -955,15 +962,16 @@ export async function sweepDrafts(
     for (const [key, ids] of Object.entries(documents)) {
       if (!current()) return;
       const seen = ids.join(' ');
-      if (settledRows.get(key) === seen) continue;
+      if (!cleanup && settledRows.get(key) === seen) continue;
       const settled = locks
         ? await locks.request(
             documentLock(key),
             { ifAvailable: true },
             async (lock) =>
-              !!lock && (await sweepDocument(key, api, true, options))
+              !!lock &&
+              (await sweepDocument(key, api, true, { cleanup, current }))
           )
-        : await sweepDocument(key, api, false, options);
+        : await sweepDocument(key, api, false, { cleanup, current });
       if (settled) settledRows.set(key, seen);
     }
   };

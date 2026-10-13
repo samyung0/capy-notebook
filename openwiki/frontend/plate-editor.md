@@ -941,13 +941,15 @@ nothing is sent, and the mock service (MSW) has no endpoint to send to. A
 sweep stops when the page signs in as someone else.
 
 For each other document of the signed-in account the sweep asks the token
-endpoint the editor uses. A 403 or 404 deletes the rows (above) in the load
-sweep only, once per page load; a read token sends nothing. A quiz's keys
+endpoint the editor uses (a file's `POST /files/<id>/collaboration-token`
+too). A 403 or 404 deletes the rows (above) in the load sweep only, once per
+page load; a later sweep that meets one leaves it for the next load. A read
+token sends nothing. A quiz's keys
 (stored as `<actor>:material:<id>:keys`) follow the quiz's own token, then
 go with the keys token (`{ document: 'keys' }`, room `keys:<id>:schema:<n>`);
 flashcard sets and a quiz's content go as notes do. With a write token the
 sweep takes the rows of the token's room that are neither refused nor
-`reported`, one group per lineage (an Office file's rows of another base
+`held` (left for the editor, below), one group per lineage (an Office file's rows of another base
 apart). The drafts worker merges each group (`merged`: the page's main
 thread pays about 4 ms for a 20 MB Office state, against 160-192 ms with a
 132-158 ms task when it merged there), and the page POSTs it to the
@@ -981,21 +983,26 @@ detail with the room and counts it by class
   `malformed` (400, not an update a writer may send): the group is marked
   `refused` and opens read-only at the next open, as the editor's own
   refusals do, when it draws on its own (the worker's `draws`); otherwise it
-  is marked `reported`, left for the editor's next open, where the room
+  is marked `held`, left for the editor's next open, where the room
   refuses it again and the editor keeps the whole document as its refused
   row; neither is sent again, so the room records the over-limit incident
   once per open, not per page load;
 - `unheld` (409, the room lacks the update's base), `too_large` (413) and
   `lineage` (409, a token for another room, a schema or epoch that moved on,
-  another Office base): marked `reported`, left for the editor;
+  another Office base): marked `held`, left for the editor;
 - `permission` (403), `unavailable` (503) and any other answer: kept, and
   not sent again until the next page load;
 - no answer (offline) or rows that changed meanwhile: kept for the next
   trigger.
 
-A document whose rows a sweep settled is skipped for the rest of the page
+`held` is the sweep's own mark: a held group that enters recovery at the
+next open (its file moved on) is still reported as another epoch's draft,
+which only the recovery's own `reported` mark stops, and rows a recovery
+marked `reported` go again once they are current (an epoch kept). A
+document whose rows a sweep settled is skipped by later sweeps of the page
 load while its row ids stay the same (the `documents` request reads them
-from the index without loading a row).
+from the index without loading a row); the load sweep reads every
+document.
 
 ## Document limits and rejection
 

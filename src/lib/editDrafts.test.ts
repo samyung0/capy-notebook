@@ -1311,11 +1311,11 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(key)).toHaveLength(2);
     // Back online: sent again, and the service is busy.
     answer(503, 'unavailable');
-    await sweepDrafts('u_offline', tokens(ROOM));
+    await sweepDrafts('u_offline', tokens(ROOM), { cleanup: false });
     expect(requests).toHaveLength(1);
     expect(await readDrafts(key)).toHaveLength(2);
     // Later triggers of this page load send nothing (no merge, no upload).
-    await sweepDrafts('u_offline', tokens(ROOM));
+    await sweepDrafts('u_offline', tokens(ROOM), { cleanup: false });
     expect(requests).toHaveLength(1);
     const later = await nextPageLoad();
     await later.sweepDrafts('u_offline', tokens(ROOM));
@@ -1337,7 +1337,7 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_refused', api);
     expect(requests).toHaveLength(2);
     expect((await readDrafts(key)).every((row) => row.refused)).toBe(true);
-    expect(await readDrafts(bare)).toEqual([{ ...typed, reported: true }]);
+    expect(await readDrafts(bare)).toEqual([{ ...typed, held: true }]);
     // A later page load sends neither (and the room records no second
     // incident); the editor's next open takes both.
     const later = await nextPageLoad();
@@ -1371,7 +1371,7 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_waits', tokens(ROOM));
     expect(requests).toHaveLength(3);
     for (const key of [...keys, big])
-      expect((await readDrafts(key)).every((row) => row.reported)).toBe(true);
+      expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
     const later = await nextPageLoad();
     await later.sweepDrafts('u_waits', tokens(ROOM));
     expect(requests).toHaveLength(3);
@@ -1424,6 +1424,44 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(file)).toEqual([]);
   });
 
+  it('still reports a group it left for the editor when the group enters recovery', async () => {
+    const key = 'u_held:file:f_1';
+    const lineage = 'source:f_1:epoch:1@sha_a';
+    await leftRows(key, lineage, 'sha_a');
+    requests.length = 0;
+    answer(409, 'lineage');
+    await sweepDrafts('u_held', tokens('source:f_1:epoch:1'));
+    expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
+    // The file moved on: the next open shows the group as another epoch's
+    // draft, and it is reported (human/frontend/office-files.md 2026-10-05).
+    const group = draftGroups(
+      await readDrafts(key),
+      'source:f_1:epoch:2@sha_b',
+      sameSourceLineage('docx')
+    ).recovery;
+    expect(group).toHaveLength(2);
+    const report = vi.fn();
+    reportRecoveryGroup(group, report);
+    expect(report).toHaveBeenCalledExactlyOnceWith(
+      'other_epoch_draft',
+      'reopen',
+      draftBytes(group)
+    );
+  });
+
+  it('sends rows a kept epoch left reported once they are current again', async () => {
+    const key = 'u_kept:material:mat_1';
+    const rows = await leftRows(key);
+    await markDraftsReported(
+      key,
+      rows.map((row) => row.id)
+    );
+    requests.length = 0;
+    await sweepDrafts('u_kept', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    expect(await readDrafts(key)).toEqual([]);
+  });
+
   it('deletes the drafts of a document the account lost in the load sweep alone', async () => {
     const key = 'u_lost:material:mat_1';
     await leftRows(key);
@@ -1434,6 +1472,10 @@ describe('the draft sweep sending', () => {
     };
     await sweepDrafts('u_lost', api, { cleanup: false });
     expect(await readDrafts(key)).toHaveLength(2);
+    // Settled for this page load's later triggers: no token asked again.
+    await sweepDrafts('u_lost', api, { cleanup: false });
+    expect(api.post).toHaveBeenCalledTimes(1);
+    // The load sweep reads every document, settled or not.
     await sweepDrafts('u_lost', api, { cleanup: true });
     expect(await readDrafts(key)).toEqual([]);
   });
