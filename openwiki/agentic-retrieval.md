@@ -1150,9 +1150,10 @@ would renumber them. Figure changes on a repaired book go through
 publishes them to `library_figures.label`, `description`, `credit` and
 `decorative`. Decorative figures add nothing to the search text; excluded
 figures keep their note there. `read_knowledge` lists the excerpt's figures
-after its text, leaving out decorative and excluded ones, so a model can pick
-one before capturing its page; the `figures:` ids that read, search and browse
-print leave the same figures out. In the intake cleanup, `intake.py
+after its text, leaving out decorative and excluded ones and those boxed as
+the whole page (`deck.WHOLE_PAGE`, which a note write refuses), so a model can
+pick one before capturing its page; the `figures:` ids that read, search and
+browse print leave the same figures out. In the intake cleanup, `intake.py
 figure-notes` applies a book's `figures.json` after `exclude-figures`, then
 rebuilds every chunk's search text (chunk text, excerpts and `content_hash`
 unchanged), so a figure-only cleanup republishes correct search text. It backs
@@ -2640,7 +2641,8 @@ build, and the knowledge library is one more source while the switch is on.
   there), one whose record is the whole page (`[0, 0, 1000, 1000]`: the
   builder found its caption but not its drawing, 13,442 of the 102,724 shown
   figures in 117 of 174 books on 2026-10-13; nothing is rendered, the model is
-  told to place another figure or describe it), one no excerpt lists, or one none of whose excerpts this turn read
+  told to place another figure or describe it; the figure lists the read
+  tools print leave these out, so the refusal is a backstop), one no excerpt lists, or one none of whose excerpts this turn read
   (`read_knowledge` it first; the same read set excerpt_ids use). An accepted
   figure's read excerpt joins the excerpts the write credits, so its book enters
   the provenance (and the note footer) exactly as a named excerpt does, and
@@ -2869,8 +2871,8 @@ and open (`question`, `marks`, `markscheme` of `{text, marks}` adding up to
 `add_open_question`. A note's ```quiz fence holds a YAML list of all three (read
 with PyYAML's `BaseLoader`, so answers keep their text as written), expanded
 before `create_material` or `edit_document` leaves the pipeline. The pipeline
-drops fields sent as null before checking them (Epo 2026-10-13: tool leniency)
-and fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
+drops blank fields before checking them (agent write leniency, below) and
+fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
 retried call sends the same payload) with one part `<id>-a`, 1 mark for a
 simple question, multiple-choice options shuffled in an order seeded by the
 question id (the model wrote the answer first in 2 of 4 runs; the order is
@@ -2899,6 +2901,37 @@ shape to copy. `add_questions` saves its valid questions and names the
 others for resending, with the quiz id and the `after_question_id` that keeps
 their place. An excerpt or figure refusal carries the call's question
 problems too.
+
+**Agent write leniency** (Epo 2026-10-13, after the 2026-10-13 ledger runs'
+45 refused writes). The pipeline repairs an agent write's payload only where
+it can mean one thing and keeps refusing everything else with the same
+messages; the editor, paste and the collaboration server's converter stay
+strict, and the schemas the model sees do not change. Blank means absent:
+`tools.run` drops a property sent as null, blank text, `"null"`, `[]` or `{}`
+where the tool's `inputSchema` does not require it (`contract.drop_blanks`,
+walking properties, array items and an edit command's variant by its type;
+the handler gets the cleaned arguments), so `replace_text`'s required empty
+`text` still deletes. The question tools and a note's quiz fences drop blanks
+per question (`questions.drop_blanks`, `drop_question_blanks`) except the fields the
+question's kind needs, so `accepted: []` on a short answer keeps its message
+while it vanishes from a multiple-choice question. A short answer's accepted
+answer written with its unit (`"5%"` with unit `%`) keeps the number, and a
+`chapter_id` beside `quiz_id` is ignored with a result line (`quiz_id` with
+`title` stays refused: it may mean a new quiz). In note markdown
+(`questions.note_fences`, for `create_material` and `insert_markdown` /
+`replace_block`), a ```` ```chart ```` or ```` ```plot ```` body that is not
+JSON is read as YAML, a missing `type` becomes the fence's name, a chart
+kind sent as a chart fence's `type` moves to `kind`, and the body goes on as
+compact JSON; a ```` ```flashcards ```` body is pre-parsed like a quiz fence
+(cards with a front and a back each, re-emitted as JSON, other card fields
+kept); a quiz or flashcards body that fails to parse is read once more after
+three repairs (a trailing comma after `]` or `}`, a backslash before a letter
+in double quotes doubled for LaTeX, a plain text value or options/accepted
+item holding `": "` or `" #"` quoted), and when that fails too the original
+error is reported as before. Each format repair adds one line to the success
+result naming the fence and the slip, so the model stops repeating it; a body
+that cannot be repaired stays as written for the converter's error. The
+playground's write stubs run the same code.
 
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,

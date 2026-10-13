@@ -19,7 +19,9 @@ Every problem of a call is named at once, with its path, what was expected and
 what was sent; a structural mistake also gets the shape to copy. add_questions
 saves the valid questions of a call and names only the rest.
 
-Fields sent as null are left out before checking (Epo 2026-10-13: leniency
+Blank fields (null, blank text, "null", [] or {}) are left out before
+checking unless the question's kind needs them, and an accepted answer written
+with its unit ("5%" with unit "%") keeps the number (Epo 2026-10-13: leniency
 the agent need not be told about). The server fills the rest: ids, one part
 per question, 1 mark for a simple question, multiple-choice options in an
 order shuffled by the question id (the model tends to put the answer first),
@@ -31,12 +33,13 @@ questions unchanged.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
-import itertools
 import json
 import random
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -480,8 +483,28 @@ def check_item(item: Any, index: int, path: str, *, fence: bool) -> Item:
             f"{path}.replaces: a quiz fence writes new questions; rewrite one with "
             "add_questions or add_open_question"
         )
+    if kind == "short":
+        item = _without_unit(item)
     problems += _semantic(kind, item, path)
     return Item(index, path, kind, item, problems, structural)
+
+
+def _without_unit(item: dict[str, Any]) -> dict[str, Any]:
+    """A short answer's accepted answers written as the number followed by its
+    unit ("5%" with unit "%") keep the number; repeats are dropped."""
+    unit, accepted = item.get("unit"), item.get("accepted")
+    if not isinstance(unit, str) or not unit.strip() or not isinstance(accepted, list):
+        return item
+    unit = unit.strip()
+    out: list[Any] = []
+    for answer in accepted:
+        if isinstance(answer, str):
+            number = answer.strip().removesuffix(unit).rstrip()
+            if number != answer.strip() and _quantity(number):
+                answer = number
+        if answer not in out:
+            out.append(answer)
+    return {**item, "accepted": out}
 
 
 def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
@@ -555,6 +578,9 @@ class Check:
     name: str
     call: list[str] = field(default_factory=list)
     items: list[Item] = field(default_factory=list)
+    # What the pipeline repaired or ignored, one line each for the success
+    # result, so the model stops repeating the slip.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def valid(self) -> list[Item]:
@@ -584,14 +610,37 @@ class Check:
         return "\n".join([*(f"- {p}" for p in self.problems()), *shapes])
 
 
-def drop_nulls(value: Any) -> Any:
-    """The value without object fields sent as null, at any depth: a null field
-    is one the model meant to leave out."""
-    if isinstance(value, dict):
-        return {k: drop_nulls(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [drop_nulls(v) for v in value]
-    return value
+def drop_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """A question call without its blank fields (contract.blank): the call's
+    unless its tool requires them, each question's unless its kind needs them,
+    and media's unless its block requires them."""
+    if name == "add_open_question":
+        return contract.drop_blanks(_schema(name), args)
+    required = _schema(name).get("required", ())
+    clean = {k: v for k, v in args.items() if k in required or not contract.blank(v)}
+    if isinstance(clean.get("questions"), list):
+        clean["questions"] = [
+            drop_question_blanks(q, fence=False) for q in clean["questions"]
+        ]
+    media = clean.get("media")
+    if isinstance(media, dict):
+        block = contract.MEDIA_BLOCKS.get(str(media.get("type")), {})
+        clean["media"] = contract.drop_blanks(block, media)
+    return clean
+
+
+def drop_question_blanks(item: Any, *, fence: bool) -> Any:
+    """A question without its blank fields, except the question and the fields
+    its kind needs (the kind read from the fields that are not blank), so a
+    blank answer still gets its own message."""
+    if not isinstance(item, dict):
+        return item
+    filled = {k: v for k, v in item.items() if not contract.blank(v)}
+    kind = kind_of(filled, fence=fence) or kind_of(item, fence=fence)
+    keep = {"question", *(NEEDS[kind] if kind else ())}
+    if kind == "open":
+        keep.update(_OPEN.schema["required"])
+    return {k: v for k, v in item.items() if k in keep or not contract.blank(v)}
 
 
 def _target_problems(args: dict[str, Any]) -> list[str]:
@@ -608,7 +657,7 @@ def _target_problems(args: dict[str, Any]) -> list[str]:
         problems.append(
             "after_question_id: places questions in an existing quiz; it goes with quiz_id"
         )
-    if "chapter_id" in args and not title:
+    if "chapter_id" in args and not title and not quiz_id:
         problems.append(
             "chapter_id: files a new quiz, so it goes with title; adding to a quiz "
             "takes quiz_id alone"
@@ -648,6 +697,9 @@ def check(name: str, args: dict[str, Any]) -> Check:
             e.validator in STRUCTURAL for e in _OPEN_TOOL.iter_errors(args)
         )
         result.items.append(Item(0, "", "open", args, structural=structural))
+    quiz_id = args.get("quiz_id")
+    if quiz_id and "chapter_id" in args and not args.get("title"):
+        result.notes.append(f"chapter_id ignored: quiz {quiz_id} keeps its chapter.")
     return result
 
 
@@ -851,6 +903,7 @@ def result_text(
         lines.append(check_.listing())
     elif not created:
         lines.append("The user can undo this from the chat result.")
+    lines.extend(check_.notes)
     return "\n".join(lines)
 
 
@@ -868,10 +921,13 @@ def refusal(check_: Check) -> tuple[str, str]:
 
 # ---------------------------------------------------------------- note fences
 
-QUIZ_FENCE = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})quiz[ \t]*\n(?P<body>.*?)^(?P=indent)(?P=fence)[ \t]*$",
+NOTE_FENCE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<lang>[\w-]+)[ \t]*\n"
+    r"(?P<body>.*?)^(?P=indent)(?P=fence)[ \t]*$",
     re.MULTILINE | re.DOTALL,
 )
+# A chart fence whose type names a chart kind means that kind.
+_CHART_KINDS = contract.MEDIA_BLOCKS["chart"]["properties"]["kind"]["enum"]
 
 
 def _whole_numbers(value: Any) -> Any:
@@ -894,35 +950,54 @@ def note_fences(
     texts: list[str], where: Callable[[int], str], new_id: Callable[[], str]
 ) -> tuple[list[str], Check]:
     """A note write's markdown texts with each ```quiz fence's questions
-    expanded into the question format, and every problem in them. ``where``
-    names the i-th text in a problem's path."""
+    expanded into the question format, each ```flashcards, ```chart and
+    ```plot fence's body repaired where it can mean one thing and re-emitted
+    as JSON, and every problem in them. ``where`` names the i-th text in a
+    problem's path. Agent writes only: the editor, paste and the converter
+    stay strict (Epo 2026-10-13)."""
     found = Check(FENCE)
     out = []
     for n, markdown in enumerate(texts):
-        label, fences = where(n), itertools.count(1)
-        out.append(
-            QUIZ_FENCE.sub(
-                lambda m, label=label, fences=fences: _fence(
-                    m, f"{label} quiz fence {next(fences)}", found, new_id
-                ),
-                markdown,
-            )
-        )
+        label, counts = where(n), Counter[str]()
+
+        def repaired(
+            match: re.Match[str], label: str = label, counts: Counter[str] = counts
+        ) -> str:
+            lang = match["lang"]
+            counts[lang] += 1
+            at = f"{label} {lang} fence {counts[lang]}"
+            if lang == "quiz":
+                return _fence(match, at, found, new_id)
+            if lang == "flashcards":
+                body = _cards(_body(match), at, found)
+            elif lang in contract.MEDIA_BLOCKS:
+                body = _media(lang, _body(match), at, found)
+            else:
+                return match[0]
+            return match[0] if body is None else _emit(match, body)
+
+        out.append(NOTE_FENCE.sub(repaired, markdown))
     return out, found
+
+
+def _body(match: re.Match[str]) -> str:
+    indent = match["indent"]
+    return "".join(
+        line.removeprefix(indent) for line in match["body"].splitlines(keepends=True)
+    )
+
+
+def _emit(match: re.Match[str], body: str) -> str:
+    indent, fence = match["indent"], match["fence"]
+    return f"{indent}{fence}{match['lang']}\n{indent}{body}\n{indent}{fence}"
 
 
 def _fence(
     match: re.Match[str], at: str, found: Check, new_id: Callable[[], str]
 ) -> str:
     """One quiz fence expanded, or left as written with its problems noted."""
-    indent = match["indent"]
-    body = "".join(
-        line.removeprefix(indent) for line in match["body"].splitlines(keepends=True)
-    )
     try:
-        # BaseLoader keeps every scalar as written (no Yes/No booleans, no 0.50
-        # turned into 0.5) and builds no objects.
-        data = yaml.load(body, Loader=yaml.BaseLoader)
+        data, fixed = _yaml(_body(match))
     except yaml.YAMLError as exc:
         found.call.append(f"{at}: expected YAML; {str(exc).splitlines()[0]}")
         return match[0]
@@ -933,13 +1008,162 @@ def _fence(
         )
         return match[0]
     checked = [
-        check_item(_whole_numbers(v), i, f"{at} questions[{i}]", fence=True)
+        check_item(
+            _whole_numbers(drop_question_blanks(v, fence=True)),
+            i,
+            f"{at} questions[{i}]",
+            fence=True,
+        )
         for i, v in enumerate(items)
     ]
     found.items.extend(checked)
     if any(item.problems for item in checked):
         return match[0]
+    if fixed:
+        found.notes.append(_repair_note(at, fixed))
     questions = [expand(i.kind or "open", i.value, new_id()) for i in checked]
-    payload = json.dumps({"questions": questions}, ensure_ascii=False)
-    fence = match["fence"]
-    return f"{indent}{fence}quiz\n{indent}{payload}\n{indent}{fence}"
+    return _emit(match, json.dumps({"questions": questions}, ensure_ascii=False))
+
+
+def _cards(body: str, at: str, found: Check) -> str | None:
+    """A flashcards fence's body as JSON (which the converter's YAML reader
+    takes) once it holds cards with a front and a back each, other card fields
+    kept as sent; None leaves the fence as written for the converter to name
+    its problem."""
+    try:
+        data, fixed = _yaml(body)
+    except yaml.YAMLError:
+        return None
+    cards = data.get("cards") if isinstance(data, dict) else None
+    if (
+        not isinstance(cards, list)
+        or not cards
+        or not all(
+            isinstance(card, dict)
+            and all(
+                isinstance(card.get(k), str) and card[k].strip()
+                for k in ("front", "back")
+            )
+            for card in cards
+        )
+    ):
+        return None
+    if fixed:
+        found.notes.append(_repair_note(at, fixed))
+    return json.dumps(data, ensure_ascii=False)
+
+
+def _media(lang: str, body: str, at: str, found: Check) -> str | None:
+    """A chart or plot fence's body as compact JSON: read as YAML when it is
+    not JSON, its type set to the fence's name when missing, and a chart kind
+    sent as a chart fence's type moved to kind. None leaves the fence as
+    written for the converter to name its problem."""
+    fixed = []
+    try:
+        data = json.loads(body)
+    except ValueError:
+        try:
+            data = yaml.safe_load(body)
+        except yaml.YAMLError:
+            return None
+        fixed.append(f"read it from YAML; a {lang} fence is JSON")
+    if not isinstance(data, dict):
+        return None
+    if "type" not in data:
+        data = {"type": lang, **data}
+        fixed.append(f'added "type": "{lang}"')
+    elif lang == "chart" and data["type"] in _CHART_KINDS and "kind" not in data:
+        fixed.append(f'"type": "{data["type"]}" is a chart kind, so it went to kind')
+        data = {**data, "type": "chart", "kind": data["type"]}
+    if fixed:
+        found.notes.append(f"Repaired {at}: {'; '.join(fixed)}.")
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
+# Repairs tried on a quiz or flashcards fence only after it fails to parse,
+# with what the model should write instead.
+_REPAIRS = {
+    "trailing commas": "a YAML line ends without a comma",
+    "values holding ': ' or ' #' quoted": 'quote a YAML value holding ": " or " #"',
+    "LaTeX backslashes": "in YAML double quotes write \\\\ for a backslash",
+}
+_TRAILING_COMMA = re.compile(r"([\]}])[ \t]*,[ \t]*$", re.MULTILINE)
+# A single-line value after a text key; a list item.
+_TEXT_VALUE = re.compile(
+    r"^(?P<lead>[ \t]*(?:-[ \t]+)?(?:question|explanation|correct|model_answer"
+    r"|text|front|back):[ \t]+)(?P<value>\S.*?)[ \t]*$"
+)
+_LIST_KEY = re.compile(r"^(?P<lead>[ \t]*(?:-[ \t]+)?)(?:options|accepted):[ \t]*$")
+_LIST_ITEM = re.compile(r"^(?P<lead>(?P<dash>[ \t]*)-[ \t]+)(?P<value>\S.*?)[ \t]*$")
+_DOUBLE_QUOTED = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+_ESCAPE = re.compile(r"\\(.)")
+
+
+def _yaml(body: str) -> tuple[Any, list[str]]:
+    """A quiz or flashcards fence's body read with BaseLoader, which keeps
+    every scalar as written (no Yes/No booleans, no 0.50 turned into 0.5) and
+    builds no objects. When that fails, it is read once more after the repairs
+    that change it, named in the result; when that fails too, the first error
+    is raised."""
+    try:
+        return yaml.load(body, Loader=yaml.BaseLoader), []
+    except yaml.YAMLError:
+        text, fixed = _repair_yaml(body)
+        if fixed:
+            with contextlib.suppress(yaml.YAMLError):
+                return yaml.load(text, Loader=yaml.BaseLoader), fixed
+        raise
+
+
+def _repair_yaml(body: str) -> tuple[str, list[str]]:
+    """The body with trailing commas after a closing ] or } removed, a plain
+    value holding ": " or " #" after a text key or as an options/accepted item
+    quoted, and a backslash before a letter in double quotes doubled (LaTeX);
+    with the names of the repairs that changed it."""
+    fixed = []
+    text = _TRAILING_COMMA.sub(r"\1", body)
+    if text != body:
+        fixed.append("trailing commas")
+    lines, under = [], None  # under: the column of an options/accepted key
+    for line in text.split("\n"):
+        item = _LIST_ITEM.match(line)
+        if under is not None and item and len(item["dash"]) >= under:
+            line = _quoted(item)
+        else:
+            key = _LIST_KEY.match(line)
+            if key:
+                under = len(key["lead"])
+            elif line.strip():
+                under = None
+            value = _TEXT_VALUE.match(line)
+            line = _quoted(value) if value else line
+        lines.append(line)
+    quoted = "\n".join(lines)
+    if quoted != text:
+        fixed.append("values holding ': ' or ' #' quoted")
+    escaped = _DOUBLE_QUOTED.sub(
+        lambda q: _ESCAPE.sub(
+            lambda e: "\\\\" + e[1] if e[1].isascii() and e[1].isalpha() else e[0],
+            q[0],
+        ),
+        quoted,
+    )
+    if escaped != quoted:
+        fixed.append("LaTeX backslashes")
+    return escaped, fixed
+
+
+def _quoted(match: re.Match[str]) -> str:
+    """A plain value holding ": " or " #" in double quotes; any other as is."""
+    value = match["value"]
+    if value[0] in "\"'|>[{" or (": " not in value and " #" not in value):
+        return match.string
+    return match["lead"] + json.dumps(value, ensure_ascii=False)
+
+
+def _repair_note(at: str, fixed: list[str]) -> str:
+    return (
+        f"Repaired {at} ({', '.join(fixed)}); "
+        + "; ".join(_REPAIRS[f] for f in fixed)
+        + "."
+    )

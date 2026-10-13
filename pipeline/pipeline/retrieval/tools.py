@@ -1306,7 +1306,7 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     )
     if result.effects:
         landed(ctx, credited)
-    return figures.noted(result)
+    return with_repairs(figures.noted(result), fences)
 
 
 async def _material_scope(
@@ -1382,6 +1382,14 @@ def _also(result: ToolResult, found: questions.Check) -> ToolResult:
         return result
     listing = "Also fix these before sending it again:\n" + found.listing()
     return replace(result, detail="\n\n".join(p for p in (listing, result.detail) if p))
+
+
+def with_repairs(result: ToolResult, found: questions.Check) -> ToolResult:
+    """A landed note write names the fence slips the pipeline repaired, one
+    line each, so the model stops repeating them."""
+    if found.notes and result.effects:
+        result.text_parts.extend(found.notes)
+    return result
 
 
 # ------------------------------------------------------------ note figures
@@ -2168,7 +2176,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         else:
             landed(ctx, credited)
             _saw_edit(ctx.seen_blocks.get(rid, {}), commands)
-    return figures.noted(result)
+    return with_repairs(figures.noted(result), fences)
 
 
 async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -2379,8 +2387,8 @@ async def write_questions(
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
         return _refused(f"{name} needs its tool-call and assistant message ids.")
-    clean = questions.drop_nulls(
-        {k: v for k, v in args.items() if not k.startswith("_")}
+    clean = questions.drop_blanks(
+        name, {k: v for k, v in args.items() if not k.startswith("_")}
     )
     found = questions.check(name, clean)
     quiz_id = clean.get("quiz_id")
@@ -2423,8 +2431,8 @@ async def write_media(
         return _refused(
             "add_question_media needs its tool-call and assistant message ids."
         )
-    clean = questions.drop_nulls(
-        {k: v for k, v in args.items() if not k.startswith("_")}
+    clean = questions.drop_blanks(
+        "add_question_media", {k: v for k, v in args.items() if not k.startswith("_")}
     )
     found = questions.media_check(clean)
     quiz_id, qid = clean.get("quiz_id"), clean.get("question_id")
@@ -2821,6 +2829,20 @@ def mutates(name: str) -> bool:
     return bool(spec and spec.mutates)
 
 
+def without_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """The call with its blank optional arguments left out (contract.drop_blanks;
+    Epo 2026-10-13: blank means absent). The question tools leave out blanks
+    per question kind in their handlers (questions.drop_blanks)."""
+    definition = contract.definition(name)
+    if definition is None or name in contract.HANDLER_CHECKED:
+        return args
+    own = {k: v for k, v in args.items() if not k.startswith("_")}
+    return {
+        **contract.drop_blanks(definition["inputSchema"], own),
+        **{k: v for k, v in args.items() if k.startswith("_")},
+    }
+
+
 async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     spec = REGISTRY.get(name)
     if spec is None:
@@ -2831,6 +2853,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(
             f"{name} is unavailable for this user.", code="lifecycle_rejected"
         )
+    args = without_blanks(name, args)
     problem = contract.validate_args(
         name, {k: v for k, v in args.items() if not k.startswith("_")}
     )

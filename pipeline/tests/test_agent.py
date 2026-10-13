@@ -2306,6 +2306,55 @@ def test_argument_errors_name_the_fields_without_echoing_the_command():
     )
 
 
+async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch):
+    """Blank means absent (null, "", "null", [] or {}) where the schema does
+    not require the property, into an edit command's variant; a required one
+    is kept as sent, so replace_text's empty text still deletes. Seen in the
+    2026-10-13 runs: target_id null, create_material scope []."""
+    edit = {
+        "target": {"kind": "material", "id": "mat_1"},
+        "commands": [
+            {
+                "type": "replace_text",
+                "target_id": None,
+                "expected_text": "a",
+                "text": "",
+            },
+            {"type": "insert_markdown", "after_block_id": None, "markdown": "x"},
+        ],
+        "excerpt_ids": [],
+        "_tool_call_id": "c1",
+    }
+    assert tools.without_blanks("edit_document", edit) == {
+        "target": {"kind": "material", "id": "mat_1"},
+        "commands": [
+            {"type": "replace_text", "expected_text": "a", "text": ""},
+            {"type": "insert_markdown", "after_block_id": None, "markdown": "x"},
+        ],
+        "_tool_call_id": "c1",
+    }
+    assert tools.without_blanks(
+        "create_material", {"kind": "note", "scope": [], "title": "null", "cards": {}}
+    ) == {"kind": "note"}
+
+    # Dispatch hands the handler the cleaned arguments.
+    seen = {}
+
+    async def handler(args, _ctx):
+        seen.update(args)
+        return tools._result("ok")
+
+    monkeypatch.setitem(
+        tools.REGISTRY, "search_workspace", tools.ToolSpec("search_workspace", handler)
+    )
+    result = await tools.run(
+        "search_workspace",
+        {"query": "q", "file_ids": [], "_tool_call_id": "c1"},
+        _owner_ctx(),
+    )
+    assert not result.refused and seen == {"query": "q", "_tool_call_id": "c1"}
+
+
 # ------------------------------------------------------------ program answers
 
 

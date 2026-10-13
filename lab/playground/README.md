@@ -204,9 +204,13 @@ run production's `tools.write_questions` and `tools.write_media` with the
 run's files in place of the gateway: a quiz is created or edited in its
 `materials/<id>.json`, and every quiz they save goes through
 `server/cmd/quizcheck`, the app's own quiz validation, so a saved quiz is one
-the app accepts. Only quizzes the run made can be targeted (a note's quiz
-fence stays in the note here, with no id of its own). A note's quiz fences are
+the app accepts. Only quizzes the conversation made can be targeted: a quiz
+an earlier turn saved is found by id under `local/runs/*/materials/` and its
+latest copy joins the run (a note's quiz fence stays in the note here, with no
+id of its own). Arguments go through production's blank-means-absent cleaning
+(`tools.without_blanks`) before the stubs see them. A note's quiz fences are
 expanded from the small question shapes by production's `questions.note_fences`,
+which also repairs chart, plot, quiz and flashcards fences as production does,
 then checked the way the editor's import and the interactive block will take
 them (`check_note`): quiz fences through `quizcheck`, flashcards with a front and back, and
 `html-embed` with html (no fallback), under 64 KB, loading only from the CDNs the frame's CSP

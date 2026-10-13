@@ -456,7 +456,7 @@ async def create_material_locally(
         }
     )
     tools.landed(ctx, credited)
-    return figures.noted(result)
+    return tools.with_repairs(figures.noted(result), fences)
 
 
 async def save_figures(state: dict[str, Any], figures) -> dict[str, Any]:
@@ -476,17 +476,17 @@ async def save_figures(state: dict[str, Any], figures) -> dict[str, Any]:
 
 
 async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
-    """edit_document against a material this run created: the commands are appended
+    """edit_document against a material this conversation created: the commands are appended
     to its file, a quiz's removed questions leave it, and the appended
     section's provenance merges into the material's."""
     from pipeline.retrieval import questions, tools
 
     target = args.get("target") or {}
     rid = str(target.get("id") or "")
-    record = next((m for m in state["materials"] if m["id"] == rid), None)
+    record = run_material(state, rid)
     if record is None or target.get("kind") != "material":
         return tools._refused(
-            f"edit_document: {rid} is not a material this run created.",
+            f"edit_document: {rid} is not a material this conversation created.",
             code="unavailable_target",
         )
     commands = list(args.get("commands") or [])
@@ -555,7 +555,7 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
         }
     )
     tools.landed(ctx, credited)
-    return figures.noted(result)
+    return tools.with_repairs(figures.noted(result), fences)
 
 
 async def deck_locally(
@@ -674,7 +674,7 @@ async def copy_locally(
     args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
 ):
     """copy_questions as the gateway runs it: bank questions copied unchanged
-    into a new quiz or one this run made, each credited under its id with its
+    into a new quiz or one this conversation made, each credited under its id with its
     bank sources (Go resolves those into book and web credits)."""
     from pipeline.retrieval import tools
 
@@ -696,10 +696,8 @@ async def copy_locally(
         )
     record = None
     if quiz_id:
-        record = next(
-            (m for m in state["materials"] if m["id"] == quiz_id and m["kind"] == "quiz"), None
-        )
-        if record is None:
+        record = run_material(state, str(quiz_id))
+        if record is None or record["kind"] != "quiz":
             return tools._refused(
                 "quiz_id is not a quiz in this workspace", code="unavailable_target"
             )
@@ -778,7 +776,7 @@ async def questions_locally(
     call_id = str(args.get("_tool_call_id") or "")
 
     def record_of(quiz_id: str) -> dict[str, Any] | None:
-        return next((m for m in state["materials"] if m["id"] == quiz_id), None)
+        return run_material(state, quiz_id)
 
     def receipt(operation: str, record: dict[str, Any]):
         return tools._receipt_result(
@@ -800,7 +798,8 @@ async def questions_locally(
         record = record_of(quiz_id)
         if record is None or record["kind"] != "quiz":
             return tools._refused(
-                f"quiz_id: {quiz_id} is not a quiz this run made.", code="unavailable_target"
+                f"quiz_id: {quiz_id} is not a quiz this conversation made.",
+                code="unavailable_target",
             )
         return record["title"], record["questions"]
 
@@ -995,6 +994,20 @@ def save_knowledge_capture(
     return {"type": "capture", **record, "url": f"/api/runs/{run_id}/captures/{n}.jpg"}
 
 
+def run_material(state: dict[str, Any], rid: str) -> dict[str, Any] | None:
+    """A material this run wrote, else the latest copy an earlier turn saved
+    (``materials/<id>.json`` under an earlier run, ids being unique), which
+    joins this run as the workspace would keep it in production."""
+    record = next((m for m in state["materials"] if m["id"] == rid), None)
+    if record is None and re.fullmatch(r"[\w-]+", rid):
+        saved = sorted(state["run_dir"].parent.glob(f"*/materials/{rid}.json"))
+        if saved:
+            record = json.loads(saved[-1].read_text(encoding="utf-8"))
+            state["materials"].append(record)
+            write_material(state, record)
+    return record
+
+
 def write_material(state: dict[str, Any], record: dict[str, Any]) -> None:
     path = state["run_dir"] / "materials" / f"{record['id']}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1115,6 +1128,8 @@ class Turn:
             return schemas
 
         async def run(name, args, ctx_):
+            # Blank means absent, as production's dispatch (tools.run) has it.
+            args = tools.without_blanks(name, args)
             record = {
                 "sequence": len(state["calls"]),
                 "name": name,
@@ -2195,7 +2210,7 @@ def check_questions() -> None:
             workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS, assistant_message_id="m1"
         )
         state = {"materials": [], "captures": [], "run_dir": run_dir}
-        resting = {"question": "Resting potential?", "accepted": ["-70 mV"], "unit": "mV"}
+        resting = {"question": "Resting potential?", "accepted": ["about -70"], "unit": "mV"}
         made = await write(
             "add_questions",
             {
@@ -2213,7 +2228,7 @@ def check_questions() -> None:
         assert len(quiz["questions"]) == 1
         fixed = await write(
             "add_questions",
-            {"quiz_id": quiz["id"], "questions": [{**resting, "accepted": ["-70"]}]},
+            {"quiz_id": quiz["id"], "questions": [{**resting, "accepted": ["-70 mV"]}]},
             ctx, state, "c2",
         )
         assert not fixed.refused, fixed.text()
@@ -2241,12 +2256,19 @@ def check_questions() -> None:
         )
         assert not drawn.refused, drawn.text()
         assert [b["type"] for b in quiz["questions"][0]["parts"][0]["blocks"]] == ["text", "plot"]
-        # A note's quiz fence takes the same shapes, expanded before it is saved.
-        fence = "```quiz\nquestions:\n  - question: Q?\n    options: [A, B]\n    correct: A\n```\n"
+        # A note's quiz fence takes the same shapes, expanded before it is saved;
+        # a YAML slip is repaired and named.
+        fence = "```quiz\nquestions:\n  - question: Q?\n    options: [A, B],\n    correct: A\n```\n"
         note = await create_material_locally(
             {"kind": "note", "content": "# N\n\n" + fence, "_tool_call_id": "c5"}, ctx, state, "m1"
         )
         assert not note.refused and '"correct": [0]' in state["materials"][-1]["content"], note.text()
+        assert "Repaired content quiz fence 1 (trailing commas)" in note.text(), note.text()
+        # A later turn of the conversation adds to the quiz an earlier one made.
+        later = {"materials": [], "captures": [], "run_dir": run_dir.parent / "r2"}
+        growth = {"question": "Growth?", "accepted": ["5%"], "unit": "%"}
+        more = await write("add_questions", {"quiz_id": quiz["id"], "questions": [growth]}, ctx, later, "c6")
+        assert not more.refused and len(later["materials"][0]["questions"]) == 4, more.text()
 
     with TemporaryDirectory() as tmp:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))

@@ -67,6 +67,46 @@ def definition(name: str) -> dict[str, Any] | None:
     return DEFINITIONS.get(name)
 
 
+def blank(value: Any) -> bool:
+    """A value the model sent for nothing: null, blank text, the text "null",
+    an empty list or an empty object."""
+    if isinstance(value, str):
+        return not value.strip() or value.strip().lower() == "null"
+    return value is None or value == [] or value == {}
+
+
+def drop_blanks(schema: dict[str, Any], value: Any) -> Any:
+    """``value`` without the blank properties ``schema`` does not require, at
+    any depth the schema describes (properties, array items, and an edit
+    command's variant by its type). Blank means absent (Epo 2026-10-13); a
+    required property is kept as sent, so its own check still names it."""
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        return [drop_blanks(schema["items"], v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    if "oneOf" in schema:
+        variant = next(
+            (
+                v
+                for v in schema["oneOf"]
+                if v.get("properties", {}).get("type", {}).get("const")
+                == value.get("type")
+            ),
+            None,
+        )
+        if variant is None:
+            return value
+        schema = variant
+    if "properties" not in schema:
+        return value
+    required = set(schema.get("required", ()))
+    return {
+        k: drop_blanks(schema["properties"].get(k, {}), v)
+        for k, v in value.items()
+        if k in required or not blank(v)
+    }
+
+
 def validate_args(name: str, args: dict[str, Any]) -> str | None:
     """Return the first schema violation as text, or None when valid or when
     the tool's handler checks its arguments (HANDLER_CHECKED)."""
