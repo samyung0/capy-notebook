@@ -265,28 +265,6 @@ export const EMBED_CATALOG = {
       ]
     },
     {
-      "type": "footnoteReference",
-      "void": true,
-      "inline": true,
-      "materials": [
-        "note",
-        "quiz",
-        "flashcards",
-        "mindmap",
-        "diagram"
-      ]
-    },
-    {
-      "type": "footnoteDefinition",
-      "materials": [
-        "note",
-        "quiz",
-        "flashcards",
-        "mindmap",
-        "diagram"
-      ]
-    },
-    {
       "type": "img",
       "void": true,
       "required": [

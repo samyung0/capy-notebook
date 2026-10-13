@@ -674,6 +674,16 @@ at the selection does; otherwise it goes after the last of those lines and
 deletes nothing, so text typed into them while the file was read stays. It
 takes the caret only if the caret has not moved.
 
+Every markdown import (a paste of text, the toolbar's Import, an agent's note)
+runs the same rules (`noteMarkdownPlugin`, `markdown.ts`). Footnotes become
+text, as no block draws them (Epo 2026-10-14): a reference `[^1]` is its label
+in superscript where it stood, and a definition `[^1]: …` its paragraphs, the
+first led by the same superscript label. A ```` ```flashcards ```` fence carries
+fronts and backs only: a card `image` in one names another document's asset,
+which nothing can upload, so it is dropped, as an image without an asset of
+this document becomes an upload or a link everywhere else. Card images travel
+by copying the set's block, which copies the set with its images.
+
 ## Readable note exports
 
 `documentAdapters.ts` snapshots the live editor, resolves quiz/card projections

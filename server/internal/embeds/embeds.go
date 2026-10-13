@@ -276,10 +276,6 @@ func Elements() []Element {
 		inline("mention", true),
 		inline("mention_input", true),
 		inline("slash_input", true),
-		// Markdown footnotes, as the editor's markdown import reads them. The
-		// editor has no footnote block yet: a reference draws nothing.
-		inline("footnoteReference", true),
-		plain("footnoteDefinition"),
 		media("img", true), media("audio", false), media("file", false),
 		video,
 		void("placeholder"),

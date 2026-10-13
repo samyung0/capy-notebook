@@ -23,10 +23,9 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
 
 - **`elements`**: every element type a stored document or a room may hold,
   including Plate's transient ones (a media `placeholder` while it uploads,
-  `mention_input` and `slash_input` while typing) and the markdown import's
-  footnotes (`footnoteReference`, `footnoteDefinition`; no block renders them
-  yet, so the read-only kit and the editor register only their flags,
-  `footnotePlugins.ts`). For each: `void`,
+  `mention_input` and `slash_input` while typing). Markdown footnotes are not
+  elements: the import turns them into text (see the note imports section of
+  `frontend/plate-editor.md`). For each: `void`,
   `inline`, `topLevel` (only a top-level block), `required` keys besides
   `type` and `children`, `fields` (the closed key set, when there is one),
   `forbidden` keys, `sharedText` keys (held as a Y.Text so typing merges;
