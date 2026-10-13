@@ -1017,7 +1017,7 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
         "{}",
         client.block_text()
     );
-    // The inspect view reads the stored rows.
+    // The inspect view reads the stored rows and the live room.
     let inspect = serde_json::json!({
         "actorUserId": user,
         "room": room,
@@ -1026,6 +1026,82 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
     let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
     assert_eq!(status, 200, "{view}");
     assert_eq!(view["blocks"][0]["text"], "replaced", "{view}");
+}
+
+/// Nothing stores while a test runs: typing stays in the live room.
+const UNSAVED: [(&str, &str); 4] = [
+    ("COLLABORATION_DEBOUNCE_MS", "60000"),
+    ("COLLABORATION_MAX_DEBOUNCE_MS", "60000"),
+    ("COLLABORATION_SOURCE_DEBOUNCE_MS", "60000"),
+    ("COLLABORATION_SOURCE_MAX_DEBOUNCE_MS", "60000"),
+];
+
+/// The agent's read sees what the editors see (Epo 2026-10-13): a writer's
+/// unsaved typing is in the inspect view, the live room merged into the
+/// stored rows as an edit reads them. A replica holding no room (a second
+/// server process) reads the stored document alone. Fails with the merge
+/// removed from `inspect_material`.
+#[tokio::test]
+async fn an_agent_read_of_a_note_shows_unsaved_typing_and_the_stored_note_without_a_room() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &UNSAVED).await;
+    let other = start_configured(&env, env.api.as_deref(), &UNSAVED).await;
+    let (user, material) = note(&env, "hello world").await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == "hello world").await);
+    client.type_text(" live").await;
+    client.until(6).await.expect("ack");
+
+    let inspect = serde_json::json!({
+        "actorUserId": user,
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["blocks"][0]["text"], "hello world live", "{view}");
+    let (status, view) = internal(other.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["blocks"][0]["text"], "hello world", "{view}");
+}
+
+/// The same for a source: the inspect view of a text source holds a
+/// writer's unsaved typing; a replica with no room reads the stored text.
+/// Fails with the merge removed from `Sources::inspect`.
+#[tokio::test]
+async fn an_agent_read_of_a_source_shows_unsaved_typing_and_the_stored_text_without_a_room() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_configured(&env, Some(&gateway.url), &UNSAVED).await;
+    let other = start_configured(&env, Some(&gateway.url), &UNSAVED).await;
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut a = Client::open(server.port).await;
+    assert_eq!(a.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(a.settle(|c| source_text(c) == "hello").await);
+    let before = a.doc.transact().state_vector();
+    {
+        let text = a.doc.get_or_insert_text("source");
+        let mut txn = a.doc.transact_mut();
+        let end = text.len(&txn);
+        text.insert(&mut txn, end, " live");
+    }
+    let update = a.doc.transact().encode_state_as_update_v1(&before);
+    a.send(5, &sync(2, &update)).await;
+    a.until(6).await.expect("ack");
+
+    let inspect = serde_json::json!({
+        "actorUserId": user,
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["text"], "hello live", "{view}");
+    let (status, view) = internal(other.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["text"], "hello", "{view}");
 }
 
 // ------------------------------------------------------------ source rooms

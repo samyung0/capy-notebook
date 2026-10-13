@@ -3005,9 +3005,12 @@ edit may not remove or replace a block holding media, but the Undo of an
 edit that inserted a library figure removes it again
 (`undo_material_commands`); its asset follows the removed-block trash
 rule.
-`inspect_document` reads the stored state only, not a live room's
-unsaved typing (an edit merges the room, so a target typed in meanwhile
-refuses with its current text). A material
+`inspect_document` reads what the editors see (Epo 2026-10-13): the
+stored state with this replica's live room merged in, a quiz's keys room
+too, as an edit reads it (`inspect_material` in
+`collaboration-rs/crates/server/src/edits.rs`, `Sources::inspect` for text
+and the Office entries); with no room loaded it reads the stored state and
+loads nothing more. A material
 inverse plus guards above 256 KB refuses the edit as `quota_rejected`. Office
 edits run in the collaboration server's Office engine processes (the fork's
 `office-service`: inspect, apply commands, locate targets), which return the

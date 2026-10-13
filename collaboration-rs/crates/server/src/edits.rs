@@ -246,13 +246,14 @@ fn material_room(request: &DocumentRequest) -> Result<(String, String, i64), Doc
     }
 }
 
-/// `inspectMaterialDocument`: the durable document's blocks (no room, no
-/// bootstrap write).
+/// `inspectMaterialDocument`: the blocks as the editors see them now, the
+/// stored document with this replica's live rooms merged in (unsaved
+/// typing), as an edit reads it; no room load, no bootstrap write.
 pub async fn inspect_material(
     app: &Shared,
     request: &DocumentRequest,
 ) -> Result<Value, DocumentError> {
-    let (_, material_id, schema) = material_room(request)?;
+    let (room, material_id, schema) = material_room(request)?;
     let mut client = app
         .db
         .get()
@@ -271,12 +272,13 @@ pub async fn inspect_material(
             &[&material_id],
         )
         .await?;
+    let stored = !found.is_empty();
     let mut kind = found
         .first()
         .map(|row| row.get::<_, String>("kind"))
         .unwrap_or_default();
     let mut keys: Option<(Vec<u8>, Vec<Vec<u8>>)> = None;
-    let (base, rows) = match found.first() {
+    let (base, mut rows) = match found.first() {
         Some(row) => {
             if i64::from(row.get::<_, i32>("room_schema")) != schema {
                 return Err(DocumentError::edit(
@@ -325,6 +327,16 @@ pub async fn inspect_material(
         }
     };
     tx.commit().await?;
+    // A live room's state replays after the rows. A room stores its document
+    // when it loads, so only a stored one can have a room; with none loaded,
+    // this reads nothing more.
+    if stored {
+        rows.extend(live_state(app, &room).await);
+        if let Some((_, key_rows)) = &mut keys {
+            let keys_room = format!("keys:{material_id}:schema:{schema}");
+            key_rows.extend(live_state(app, &keys_room).await);
+        }
+    }
     let blocks = tokio::task::spawn_blocking(move || -> Result<Value, DocumentError> {
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &base, &rows)
@@ -1213,9 +1225,12 @@ pub async fn source_request(
     undo: Option<Undo>,
 ) -> Result<Value, DocumentError> {
     if inspect {
+        let rooms = app.clone();
         let inspection = app
             .sources
-            .inspect(&request.target.id, &request.actor_user_id)
+            .inspect(&request.target.id, &request.actor_user_id, move |room| {
+                Box::pin(async move { live_state(&rooms, &room).await })
+            })
             .await?;
         return Ok(serde_json::to_value(inspection).unwrap_or(Value::Null));
     }

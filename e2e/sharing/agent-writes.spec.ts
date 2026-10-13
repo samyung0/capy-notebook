@@ -876,7 +876,7 @@ test.describe('agent writes to notes', () => {
     expect(await projection(ownerApi, id)).toEqual(note);
   });
 
-  test("an edit beside a collaborator's unsaved typing keeps both; Undo keeps typing elsewhere and refuses once its block changed", async ({
+  test("the agent reads a collaborator's unsaved typing; an edit beside it keeps both; Undo keeps typing elsewhere and refuses once its block changed", async ({
     anonymousApi,
     editorPage,
     ownerApi,
@@ -915,9 +915,18 @@ test.describe('agent writes to notes', () => {
         await expect(page.getByText(text, { exact: true })).toBeVisible();
     };
 
-    // The owner's keystrokes are in the room, not yet stored, when the
-    // agent's edit merges the room's state with the stored one.
+    // The owner's keystrokes are in the room, not yet stored (a note room
+    // stores 2 s after the last one): the agent's read merges the room as
+    // its edit does, so it reads what the editors see (Epo 2026-10-13).
     await typeAtEnd(ownerPage, 'Owner types here.', ' Typed live.');
+    await shows('Owner types here. Typed live.');
+    expect((await blocks(anonymousApi, id)).map((block) => block.text)).toEqual(
+      [
+        'Owner types here. Typed live.',
+        'The agent rewrites this sentence.',
+        'Collaborator types here.',
+      ]
+    );
     const operation = await edit(anonymousApi, target, [
       {
         expected_text: 'rewrites this',
@@ -1138,12 +1147,16 @@ test.describe('agent writes to Office sources', () => {
               type: 'replace_text',
             }
       );
-      // DOCX: a collaborator's line, in the room and not yet saved when the
-      // edit merges the room's state, which the edit and its Undo keep.
-      // Inspect reads saved state only, so its reads leave the line out.
+      // DOCX: a collaborator's line, in the room and not yet saved (a source
+      // room stores 5 s after the last change), which the agent's read shows
+      // (it merges the room, Epo 2026-10-13) and the edit and its Undo keep.
       const typed = 'Collaborator line typed live.';
-      const saved = (list: Entry[]) =>
-        list.filter((entry) => entry.value !== typed);
+      const read = async () => {
+        const now = await entries(anonymousApi, fileId);
+        if (format === 'docx')
+          expect(now.map((entry) => entry.value)).toContain(typed);
+        return now.filter((entry) => entry.value !== typed);
+      };
       if (format === 'docx') {
         const input = frames[1].getByRole('textbox', {
           name: 'Document input',
@@ -1155,6 +1168,7 @@ test.describe('agent writes to Office sources', () => {
         await expect(shownText(frames[0], format, typed).first()).toBeAttached({
           timeout: 30_000,
         });
+        expect(await read()).toEqual(before);
       }
       const slides =
         format === 'pptx' ? await Promise.all(frames.map(slidePixels)) : [];
@@ -1170,7 +1184,7 @@ test.describe('agent writes to Office sources', () => {
         { id: fileId, kind: 'source_file' },
         commands
       );
-      const after = saved(await entries(anonymousApi, fileId));
+      const after = await read();
       expect(after.find((entry) => entry.id === one.id)?.value).toBe(
         changed[0]
       );
@@ -1192,7 +1206,7 @@ test.describe('agent writes to Office sources', () => {
       }
 
       await undo(ownerApi, operation);
-      expect(saved(await entries(anonymousApi, fileId))).toEqual(before);
+      expect(await read()).toEqual(before);
       for (const [i, frame] of frames.entries()) {
         if (format === 'pptx') await showsSlide(i).toBe(true);
         else
@@ -1200,19 +1214,9 @@ test.describe('agent writes to Office sources', () => {
             timeout: 30_000,
           });
       }
-      if (format === 'docx') {
+      if (format === 'docx')
         for (const frame of frames)
           await expect(shownText(frame, format, typed).first()).toBeAttached();
-        // Once saved, the line is the only difference from the upload.
-        await expect
-          .poll(
-            async () =>
-              (await entries(anonymousApi, fileId)).map((entry) => entry.value),
-            { timeout: 60_000 }
-          )
-          .toContain(typed);
-        expect(saved(await entries(anonymousApi, fileId))).toEqual(before);
-      }
     });
   }
 });
