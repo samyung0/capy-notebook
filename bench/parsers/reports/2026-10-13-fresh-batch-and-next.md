@@ -468,6 +468,91 @@ was HEAD's parser (v13); the candidate was the working tree (v14).
     the set stays blind.
 - **This set is spent.**
 
+## Update: blind holdout gate on general PDFs, v13 → v14
+
+The third gate, run after v14 was committed. Both earlier sets leaned on
+textbooks, so this one has none: 31 new public PDFs (1,442 pages).
+- 6 papers and reports, 4 financial or statistical documents
+- 3 datasheets and guides, 2 legal documents
+- 3 forms and form instructions, 2 slide decks
+- a newsletter, a menu, minutes, an exam paper, a CV template and an invoice
+  template
+- 2 scans
+- 7 non-English documents
+
+They come from 12 producers. The set has no poster, magazine, contract
+template or real Excel export (those downloads failed). 30 documents and 86
+pages were graded.
+
+| Element | n | v13 | v14 | Win/tie/loss | Difference [95% CI] |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Formulas | 47 | 0.35 | 0.38 | 3/44/0 | +0.03 [+0.00, +0.05] |
+| Tables | 46 | 0.61 | 0.61 | 0/46/0 | +0.00 |
+| Figures | 41 | 0.77 | 0.79 | 3/37/1 | +0.02 [−0.03, +0.12] |
+| Headings | 178 | 0.49 | 0.58 | 19/158/1 | +0.10 [+0.02, +0.18] |
+| Section paths | 86 | 0.40 | 0.47 | 10/74/2 | +0.06 [+0.01, +0.14] |
+| Text | 86 | 0.65 | 0.69 | 9/76/1 | +0.05 [+0.00, +0.10] |
+
+- **False tables:** 36 → 5.
+- **False headings:** 31 → 39. Most of the rise is one layout-heavy
+  Japanese pamphlet, where heading recall promotes callout and diagram text;
+  three other documents add a few.
+- **Documents:** 10 better, 19 the same, 1 worse. The worse one is a fillable
+  tax form: a worksheet heading is merged into a garbled line, so the page
+  falls under the wrong section.
+- **Crashes:** v13 1 (the same bad-xref font repair), v14 0.
+- **Time, v14/v13 on the busy Mac:** total 1.14, median 1.11, max 3.11. CI
+  shows the same direction in the repair phase; see the budget note below.
+- **Verdict:** passes. The two regressions (recall on callout-heavy layouts
+  and the form heading) are left undiagnosed, so the set stays blind. A fix
+  gets its own new set.
+
+## Update: v14 budget runs, memory held after a parse
+
+The three CI runs for the budgets (38373923950, 38374340206, 38374345259)
+passed the v13 budgets. Against v13's CI run:
+- **Faster:** the textbook took 226 s and now takes 117 s.
+- **More memory, kept after a large document:**
+
+  | Fixture | v13 | v14 |
+  | --- | ---: | ---: |
+  | logic-1016p | 2.35 GiB | 2.97 GiB |
+  | limit-1400p | 2.47 GiB | 3.15 GiB |
+  | scan-120p | 2.39 GiB | 3.48 GiB |
+
+  The small office fixtures that run after the scan each held +0.9 to
+  +1.0 GiB, so the persistent parse child keeps the memory once the scan is
+  done.
+
+Two causes, both fixed with byte-identical output on every PDF fixture:
+- **MuPDF's store** kept every image `pictures._image_digests` decoded, up
+  to its 256 MiB limit, after the document closed. The store is now emptied
+  after each decode (`_drop_decoded`) and after each document and OCR page
+  (`app._release_memory`). scan-120p now peaks at 70 MiB in that stage.
+- **`scripts.py`'s caches** held whole block texts, which kept the
+  allocator's arenas from being released. The stage now clears them.
+
+In-process, back to back, on the Mac, memory left in the child after a
+document went from 583 → 209 MiB after limit-1400p (v13 150) and from
+553 → 164 MiB after the next small document (v13 104). The budgets are
+proposed from three CI runs with this fix.
+
+**Not fixed: the repair phase on books past the page-cache budget.**
+limit-1400p's repairs went from 13 s (v13) to 49 s in CI. The 100k-span
+cache fills within the first ~190 pages, so the four new stages each
+extract the other ~1,200 pages again:
+
+| Stage | Time |
+| --- | ---: |
+| `scripts` | 17.6 s |
+| `layout_headings` | 9.5 s |
+| `joins` | 6.3 s |
+| `list_headings` | 4.9 s |
+
+Of that, 21 s is extraction. Two ways to win it back:
+- a larger `SPAN_BUDGET`, about 1 MiB per thousand spans per worker;
+- one shared page loop for joins, list headings and heading recall.
+
 ## 4. Next steps, in order
 
 1. ~~Running header and footer furniture~~: done, see the update above.

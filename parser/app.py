@@ -349,8 +349,13 @@ def _admission_pages(data: bytes) -> tuple[int, int]:
 def _release_memory() -> None:
     """Hand the heap a finished unit of work freed back to the kernel.
 
-    glibc keeps freed arenas (about 0.8 GiB after a large document) otherwise.
+    glibc keeps freed arenas (about 0.8 GiB after a large document) otherwise,
+    and MuPDF's store keeps decoded images and fonts (up to 256 MiB) of
+    documents already closed.
     """
+    import pymupdf
+
+    pymupdf.TOOLS.store_shrink(100)
     gc.collect()
     try:
         ctypes.CDLL("libc.so.6").malloc_trim(0)

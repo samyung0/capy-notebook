@@ -1134,6 +1134,10 @@ def restore_structure(blocks: list[dict], document: pymupdf.Document) -> list[di
         edited, dropped = _restore_page(blocks, indexes, page, page_index)
         replaced.update(dropped)
         _commit(revised, edited, replaced)
+    # The caches hold whole block texts and their index tuples; kept past this
+    # stage they pin the allocator's arenas in the persistent parse child.
+    for cache in (_norm_char, _compact, _charset):
+        cache.cache_clear()
     if not replaced:
         return revised
     out = []
