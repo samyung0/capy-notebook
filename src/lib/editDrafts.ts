@@ -9,13 +9,13 @@ import {
   storageFailureReason,
 } from '@/lib/editIncidents';
 import {
-  type DeletedDraft,
+  type DraftInfo,
   type DraftMessage,
   type DraftRef,
   type DraftReply,
   type DraftRequest,
   MERGE_RUN,
-  mergeInRuns,
+  mergedRows,
   type StorageError,
 } from './draftStore';
 
@@ -250,10 +250,10 @@ export function deleteDrafts(rows: DraftRef[]): Promise<void> {
  * default). */
 export async function deleteDocumentDrafts(
   key: string,
-  counted: (row: DeletedDraft) => boolean = () => true
+  counted: (row: DraftInfo) => boolean = () => true
 ): Promise<number> {
   if (!stored(key)) return 0;
-  const deleted = await call<DeletedDraft[]>({ key, op: 'deleteDocument' });
+  const deleted = await call<DraftInfo[]>({ key, op: 'deleteDocument' });
   return deleted.reduce((sum, row) => sum + (counted(row) ? row.bytes : 0), 0);
 }
 
@@ -267,7 +267,7 @@ export async function dropLostDrafts(
   report: EditIncidentReporter,
   /** Rows to count; the rest are deleted unreported (another report has
    * them). */
-  counted?: (row: DeletedDraft) => boolean
+  counted?: (row: DraftInfo) => boolean
 ) {
   const bytes = await deleteDocumentDrafts(key, counted);
   if (bytes) report('discard_unsaved', reason, bytes);
@@ -340,20 +340,11 @@ export function reportRecoveryGroup(
   });
 }
 
-/** Rows as one update, states first. */
-function mergedDrafts(rows: EditDraft[]) {
-  const ordered = [...rows].sort(
-    (a, b) =>
-      Number(a.kind === 'update') - Number(b.kind === 'update') || a.seq - b.seq
-  );
-  return mergeInRuns(ordered.map((row) => row.data));
-}
-
 /** Apply rows into a document as one update (states first). Updates whose
  * base the document lacks stay pending until the room's sync brings it. */
 export function applyDrafts(doc: Y.Doc, rows: EditDraft[], origin: unknown) {
   if (!rows.length) return;
-  Y.applyUpdate(doc, mergedDrafts(rows), origin);
+  Y.applyUpdate(doc, mergedRows(rows), origin);
 }
 
 /** A recovery group as one document, or null when it cannot be drawn: update
@@ -750,57 +741,100 @@ export interface SweepApi {
   post: (path: string, body: unknown) => Promise<unknown>;
 }
 
+/** The collaboration service's cap on a note room's sync message
+ * (`NOTE_MAX_SYNC_BYTES`, Epo b80da056): a larger draft waits for the
+ * editor, which sends only what the room lacks. */
+const NOTE_SYNC_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * The document a stored key names: `${actor}:material:${id}` (a note, a
+ * flashcard set, a quiz's content), `${actor}:material:${id}:keys` (a quiz's
+ * keys, live-items) or `${actor}:file:${id}`.
+ */
+function documentOf(
+  key: string
+): { id: string; keys: boolean; kind: 'material' | 'file' } | null {
+  const [, kind, id, part] = key.split(':');
+  if ((kind !== 'material' && kind !== 'file') || !id) return null;
+  if (part !== undefined && !(kind === 'material' && part === 'keys'))
+    return null;
+  return { id, keys: part === 'keys', kind };
+}
+
+function roomToken(
+  api: SweepApi,
+  kind: 'material' | 'file',
+  id: string,
+  keys: boolean
+) {
+  return api.post(
+    `/${kind === 'material' ? 'materials' : 'files'}/${id}/collaboration-token`,
+    keys ? { document: 'keys' } : {}
+  ) as Promise<RoomToken>;
+}
+
 /**
  * What sending one group of rows came to:
  * - `sent`: a store holds it (the answer is the receipt for every row sent);
  * - `refused`: over a limit or not an update a writer may send;
- * - `waits`: only the editor can send it (the room lacks its base, or it is
- *   larger than a sync message), at the file's next open;
- * - `retry`: the network, the room or the lineage may change by the next
+ * - `waits`: only the editor can send it (larger than a sync message, a base
+ *   the room lacks, another lineage or Office base), at the file's next open;
+ * - `later`: the service answered something else (busy, failing, lost
+ *   access): tried again at the next page load;
+ * - `retry`: no answer (offline) or the rows changed: tried at the next
  *   trigger.
  */
-type Sent = 'sent' | 'refused' | 'waits' | 'retry';
+type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry';
 
-/** A document's rows its room takes now: not refused, of the token's room,
- * one group per lineage (an Office file's rows of another base go apart). */
-function sendableGroups(rows: EditDraft[], room: string) {
-  const groups = new Map<string, EditDraft[]>();
+/** A document's rows its room takes now: not refused, not left for the
+ * editor (`reported`), of the token's room, one group per lineage (an Office
+ * file's rows of another base go apart). */
+function sendableGroups(rows: DraftInfo[], room: string) {
+  const groups = new Map<string, DraftRef[]>();
   for (const row of rows) {
-    if (row.refused || row.lineage.split('@')[0] !== room) continue;
+    if (row.refused || row.reported || row.lineage.split('@')[0] !== room)
+      continue;
     const group = groups.get(row.lineage) ?? [];
-    group.push(row);
+    group.push({ id: row.id, key: row.key, seq: row.seq });
     groups.set(row.lineage, group);
   }
-  return [...groups.values()];
+  return [...groups.entries()].map(([lineage, refs]) => ({
+    base: rows.find((row) => row.lineage === lineage)?.base,
+    refs,
+  }));
 }
 
-// ws: and wss: become http: and https:.
-const WEBSOCKET_SCHEME = /^ws/;
-
 /** POST one group to the collaboration service's `/drafts` (its WebSocket
- * URL's host), with the editor's token. */
-async function sendGroup(token: RoomToken, group: EditDraft[]): Promise<Sent> {
-  let body: Uint8Array<ArrayBuffer>;
+ * URL's host) with the editor's token, merged in the drafts worker. */
+async function sendGroup(
+  token: RoomToken,
+  group: { base?: string; refs: DraftRef[] },
+  note: boolean
+): Promise<Sent> {
+  let body: Uint8Array<ArrayBuffer> | null;
   try {
-    body = mergedDrafts(group) as Uint8Array<ArrayBuffer>;
+    body = await call<Uint8Array<ArrayBuffer> | null>({
+      op: 'merged',
+      rows: group.refs,
+    });
   } catch (error) {
     console.warn('Drafts cannot be merged:', error);
     return 'waits';
   }
-  const url = new URL('/drafts', token.url.replace(WEBSOCKET_SCHEME, 'http'));
-  url.searchParams.set('room', token.room);
-  const base = group[0]?.base;
-  if (base !== undefined) url.searchParams.set('base', base);
+  if (!body) return 'retry';
+  if (note && body.byteLength > NOTE_SYNC_MAX_BYTES) return 'waits';
+  const headers: Record<string, string> = {
+    authorization: `Bearer ${token.token}`,
+    'content-type': 'application/octet-stream',
+    'x-capy-room': token.room,
+  };
+  if (group.base !== undefined) headers['x-capy-base'] = group.base;
   let response: Response;
   try {
-    response = await fetch(url, {
-      body,
-      headers: {
-        authorization: `Bearer ${token.token}`,
-        'content-type': 'application/octet-stream',
-      },
-      method: 'POST',
-    });
+    response = await fetch(
+      new URL('/drafts', token.url.replace(WEBSOCKET_SCHEME, 'http')),
+      { body, headers, method: 'POST' }
+    );
   } catch {
     return 'retry';
   }
@@ -812,40 +846,53 @@ async function sendGroup(token: RoomToken, group: EditDraft[]): Promise<Sent> {
     case 'limit':
     case 'malformed':
       return 'refused';
+    case 'lineage':
     case 'too_large':
     case 'unheld':
       return 'waits';
     default:
-      return 'retry';
+      return 'later';
   }
 }
 
+// ws: and wss: become http: and https:.
+const WEBSOCKET_SCHEME = /^ws/;
+
+interface SweepOptions {
+  /** The page load's first sweep: drafts of documents the account lost go
+   * (once per page load, human/frontend/error-handling.md 2026-10-04). */
+  cleanup?: boolean;
+  /** False once the page signed in as someone else: the sweep stops. */
+  current?: () => boolean;
+}
+
 /**
- * One document of a sweep: its drafts go when the account lost it (403, 404,
- * reported as discarded), else, when `send`, each group of current rows goes
- * to its room. Rows go only after their receipt. A refused group is marked
+ * One document of a sweep: its drafts go when the account lost it (the load
+ * sweep only), else, when `send`, each group of current rows goes to its
+ * room, and rows go only after their receipt. A refused group is marked
  * refused, to open read-only as the editor's refusals do, when it draws on
- * its own; one that needs the room's state stays for the next open, where
- * the editor's own refusal keeps the whole document. Resolves whether the
- * rows are settled for this page load (nothing left a later trigger could
- * send).
+ * its own; one that needs the room's state, and a group only the editor can
+ * send, are marked `reported`: left for the editor's next open, not sent or
+ * reported again. Resolves whether the rows are settled for this page load.
  */
 async function sweepDocument(
   key: string,
   api: SweepApi,
-  send: boolean
+  send: boolean,
+  { cleanup = true, current = () => true }: SweepOptions
 ): Promise<boolean> {
-  const [, kind, id] = key.split(':');
-  if (!((kind === 'material' || kind === 'file') && id)) return true;
+  const target = documentOf(key);
+  if (!target) return true;
+  const { id, keys, kind } = target;
+  // A quiz's keys go with the quiz, whose token settles it.
   let token: RoomToken;
   try {
-    token = (await api.post(
-      `/${kind === 'material' ? 'materials' : 'files'}/${id}/collaboration-token`,
-      {}
-    )) as RoomToken;
+    token = await roomToken(api, kind, id, false);
   } catch (error) {
     const missing = goneReason(error);
-    if (!missing) return false;
+    // A failed lookup goes again at the next trigger, and a lost document's
+    // drafts wait for the load sweep, which deletes them.
+    if (!(missing && cleanup && current())) return false;
     await dropLostDrafts(
       key,
       missing,
@@ -856,25 +903,31 @@ async function sweepDocument(
   // The MSW mock service has no HTTP endpoint: its drafts wait for the
   // editor, as before.
   if (!send || USE_MSW || token.access !== 'write') return true;
+  if (keys)
+    try {
+      token = await roomToken(api, kind, id, true);
+    } catch {
+      return true;
+    }
   let settled = true;
-  for (const group of sendableGroups(await readDrafts(key), token.room)) {
-    const sent = await sendGroup(token, group);
-    if (sent === 'sent') await deleteDrafts(group);
-    else if (sent === 'refused' && drawsOnItsOwn(group))
+  const rows = await call<DraftInfo[]>({ key, op: 'rows' });
+  for (const group of sendableGroups(rows, token.room)) {
+    if (!current()) return false;
+    const sent = await sendGroup(token, group, kind === 'material');
+    if (!current()) return false;
+    if (sent === 'sent') await deleteDrafts(group.refs);
+    else if (sent === 'refused' || sent === 'waits') {
+      const draws =
+        sent === 'refused' &&
+        (await call<boolean | null>({ op: 'draws', rows: group.refs }));
       await markDrafts(
         key,
-        group.map((row) => row.id),
-        'refused'
+        group.refs.map((row) => row.id),
+        draws ? 'refused' : 'reported'
       );
-    else if (sent === 'retry') settled = false;
+    } else if (sent === 'retry') settled = false;
   }
   return settled;
-}
-
-function drawsOnItsOwn(group: EditDraft[]) {
-  const doc = recoveryDocument(group);
-  doc?.destroy();
-  return !!doc;
 }
 
 // Documents whose rows a sweep settled, by key, as the row ids it saw: they
@@ -887,7 +940,12 @@ const settledRows = new Map<string, string>();
  * sweep cannot tell which documents an editor holds; lost documents still
  * go. When another tab is sweeping, this one does nothing.
  */
-export async function sweepDrafts(actorId: string, api: SweepApi) {
+export async function sweepDrafts(
+  actorId: string,
+  api: SweepApi,
+  options: SweepOptions = {}
+) {
+  const { current = () => true } = options;
   const locks = webLocks();
   const sweep = async () => {
     const documents = await call<Record<string, string[]>>({
@@ -895,15 +953,17 @@ export async function sweepDrafts(actorId: string, api: SweepApi) {
       prefix: `${actorId}:`,
     });
     for (const [key, ids] of Object.entries(documents)) {
+      if (!current()) return;
       const seen = ids.join(' ');
       if (settledRows.get(key) === seen) continue;
       const settled = locks
         ? await locks.request(
             documentLock(key),
             { ifAvailable: true },
-            async (lock) => !!lock && (await sweepDocument(key, api, true))
+            async (lock) =>
+              !!lock && (await sweepDocument(key, api, true, options))
           )
-        : await sweepDocument(key, api, false);
+        : await sweepDocument(key, api, false, options);
       if (settled) settledRows.set(key, seen);
     }
   };
@@ -917,24 +977,36 @@ let sweeping: { actorId: string; api: SweepApi } | null = null;
 
 /**
  * Sweeps the signed-in account's stored drafts from any open page (Epo
- * 2026-10-13): once when the page is idle, when the browser comes back
- * online and when the tab becomes visible. A successful send is silent.
+ * 2026-10-13): once when the page is idle (the load sweep, which also
+ * deletes drafts of documents the account lost), when the browser comes back
+ * online and when the tab becomes visible. A successful send is silent. The
+ * drafts worker starts now, while the page is online: one that cannot load
+ * fails every request for the page load.
  */
 export function startDraftSweeps(actorId: string, api: SweepApi) {
   if (sweeping?.actorId === actorId) return;
   const first = !sweeping;
   sweeping = { actorId, api };
-  const run = () => {
-    if (!sweeping) return;
-    void sweepDrafts(sweeping.actorId, sweeping.api).catch((error) =>
-      console.warn('Draft sweep failed:', error)
-    );
+  if (first)
+    try {
+      draftWorker();
+    } catch (error) {
+      console.warn('Draft storage failed:', error);
+    }
+  const run = (cleanup: boolean) => {
+    const target = sweeping;
+    if (!target) return;
+    void sweepDrafts(target.actorId, target.api, {
+      cleanup,
+      current: () => sweeping === target,
+    }).catch((error) => console.warn('Draft sweep failed:', error));
   };
-  if (typeof requestIdleCallback === 'function') requestIdleCallback(run);
-  else setTimeout(run, 0);
+  if (typeof requestIdleCallback === 'function')
+    requestIdleCallback(() => run(true));
+  else setTimeout(() => run(true), 0);
   if (!first) return;
-  window.addEventListener('online', run);
+  window.addEventListener('online', () => run(false));
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') run();
+    if (document.visibilityState === 'visible') run(false);
   });
 }

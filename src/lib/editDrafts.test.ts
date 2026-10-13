@@ -1224,16 +1224,14 @@ describe('the draft sweep sending', () => {
     Reflect.deleteProperty(navigator, 'locks');
   });
 
-  it('sends the current rows with the token and deletes them after the receipt', async () => {
-    const key = 'u_send:material:mat_1';
-    await leftRows(key);
-    const moved = draft('send-old', {
-      key,
-      lineage: 'material:mat_1:schema:0',
-    });
-    const refused = draft('send-no', { key, refused: true });
-    await putDrafts([moved, refused]);
-    requests.length = 0;
+  /** The drafts module as a later page load has it (nothing settled yet). */
+  async function nextPageLoad() {
+    vi.resetModules();
+    return import('./editDrafts');
+  }
+
+  /** The next request waits until the returned release. */
+  function held() {
     let release!: () => void;
     fetchDrafts.mockImplementationOnce(async (input, init) => {
       requests.push({
@@ -1246,15 +1244,29 @@ describe('the draft sweep sending', () => {
       });
       return new Response('{}');
     });
+    return () => release();
+  }
+
+  it('sends the current rows with the token and deletes them after the receipt', async () => {
+    const key = 'u_send:material:mat_1';
+    await leftRows(key);
+    const moved = draft('send-old', {
+      key,
+      lineage: 'material:mat_1:schema:0',
+    });
+    const refused = draft('send-no', { key, refused: true });
+    await putDrafts([moved, refused]);
+    requests.length = 0;
+    const release = held();
     const sweep = sweepDrafts('u_send', tokens(ROOM));
     await vi.waitFor(() => expect(requests).toHaveLength(1));
     const [sent] = requests;
-    expect(`${sent.url.origin}${sent.url.pathname}`).toBe(
-      'https://collab.test/drafts'
-    );
-    expect(sent.url.searchParams.get('room')).toBe(ROOM);
+    // One URL for every document: the room travels in a header.
+    expect(String(sent.url)).toBe('https://collab.test/drafts');
+    expect(sent.headers.get('x-capy-room')).toBe(ROOM);
     expect(sent.headers.get('authorization')).toBe('Bearer room-token');
-    // One update holding the closed tab's note and its typing.
+    // One update, merged in the drafts worker, holding the closed tab's note
+    // and its typing.
     const doc = new Y.Doc();
     Y.applyUpdate(doc, sent.body);
     expect(doc.getText('content').toString()).toBe('base typed');
@@ -1290,24 +1302,28 @@ describe('the draft sweep sending', () => {
     expect(await readDrafts(key)).toEqual([]);
   });
 
-  it('keeps the rows when the request fails and sends them at the next trigger', async () => {
+  it('keeps the rows on no answer for the next trigger, and on a busy one for the next page load', async () => {
     const key = 'u_offline:material:mat_1';
     await leftRows(key);
     requests.length = 0;
     fetchDrafts.mockRejectedValueOnce(new TypeError('Failed to fetch'));
     await sweepDrafts('u_offline', tokens(ROOM));
     expect(await readDrafts(key)).toHaveLength(2);
-    // A server that is busy or failing keeps them too.
+    // Back online: sent again, and the service is busy.
     answer(503, 'unavailable');
     await sweepDrafts('u_offline', tokens(ROOM));
     expect(requests).toHaveLength(1);
     expect(await readDrafts(key)).toHaveLength(2);
+    // Later triggers of this page load send nothing (no merge, no upload).
     await sweepDrafts('u_offline', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    const later = await nextPageLoad();
+    await later.sweepDrafts('u_offline', tokens(ROOM));
     expect(requests).toHaveLength(2);
     expect(await readDrafts(key)).toEqual([]);
   });
 
-  it('marks a refused group refused when it draws on its own and sends it no more', async () => {
+  it('marks a refused group refused when it draws on its own, leaves one that does not for the editor, and sends neither again', async () => {
     const key = 'u_refused:material:mat_1';
     await leftRows(key);
     // Update rows alone need the room's note: they stay for the editor.
@@ -1316,30 +1332,131 @@ describe('the draft sweep sending', () => {
     await deleteDrafts([state]);
     requests.length = 0;
     answer(422, 'limit');
-    answer(400, 'malformed');
+    answer(422, 'limit');
     const api = tokens(ROOM);
     await sweepDrafts('u_refused', api);
     expect(requests).toHaveLength(2);
     expect((await readDrafts(key)).every((row) => row.refused)).toBe(true);
-    expect(await readDrafts(bare)).toEqual([typed]);
-    // Settled for this page load: no token, no request.
-    api.post.mockClear();
-    await sweepDrafts('u_refused', api);
-    expect(api.post).not.toHaveBeenCalled();
+    expect(await readDrafts(bare)).toEqual([{ ...typed, reported: true }]);
+    // A later page load sends neither (and the room records no second
+    // incident); the editor's next open takes both.
+    const later = await nextPageLoad();
+    await later.sweepDrafts('u_refused', api);
     expect(requests).toHaveLength(2);
+    expect(
+      later.draftGroups(await readDrafts(bare), ROOM).current
+    ).toHaveLength(1);
   });
 
-  it('sends a file with its base, one request per base', async () => {
-    const key = 'u_file:file:f_1';
-    const room = 'source:f_1:epoch:2';
-    await leftRows(key, `${room}@sha_a`, 'sha_a');
-    await leftRows(key, `${room}@sha_b`, 'sha_b');
+  it('leaves a group only the editor can send for its next open, without sending it again', async () => {
+    const keys = ['too_large', 'unheld', 'lineage'].map(
+      (_, index) => `u_waits:material:mat_${index}`
+    );
+    for (const key of keys) await leftRows(key);
+    // A note's draft past the 4 MiB sync cap is not even uploaded.
+    const big = 'u_waits:material:mat_big';
+    const doc = new Y.Doc();
+    let update: Uint8Array = new Uint8Array();
+    doc.once('update', (bytes: Uint8Array) => {
+      update = bytes;
+    });
+    doc.getText('content').insert(0, 'x'.repeat(4 * 1024 * 1024 + 1));
+    await putDrafts([
+      draft(`big-${crypto.randomUUID()}`, { data: update, key: big }),
+    ]);
     requests.length = 0;
-    await sweepDrafts('u_file', tokens(room));
+    answer(413, 'too_large');
+    answer(409, 'unheld');
+    answer(409, 'lineage');
+    await sweepDrafts('u_waits', tokens(ROOM));
+    expect(requests).toHaveLength(3);
+    for (const key of [...keys, big])
+      expect((await readDrafts(key)).every((row) => row.reported)).toBe(true);
+    const later = await nextPageLoad();
+    await later.sweepDrafts('u_waits', tokens(ROOM));
+    expect(requests).toHaveLength(3);
+  });
+
+  it("sends a quiz's keys with the keys token, and a file's rows one request per base", async () => {
+    const quiz = 'u_items:material:q_1:keys';
+    const keysRoom = 'keys:q_1:schema:1';
+    await leftRows(quiz, keysRoom);
+    const file = 'u_items:file:f_1';
+    const fileRoom = 'source:f_1:epoch:2';
+    await leftRows(file, `${fileRoom}@sha_a`, 'sha_a');
+    await leftRows(file, `${fileRoom}@sha_b`, 'sha_b');
+    const asked: unknown[] = [];
+    const api = {
+      post: vi.fn(async (path: string, body: unknown) => {
+        asked.push([path, body]);
+        return {
+          access: 'write',
+          room: path.startsWith('/files/')
+            ? fileRoom
+            : (body as { document?: string }).document === 'keys'
+              ? keysRoom
+              : 'material:q_1:schema:1',
+          token: 'room-token',
+          url: 'ws://collab.test',
+        };
+      }),
+    };
+    requests.length = 0;
+    await sweepDrafts('u_items', api);
+    // The quiz settles its keys' fate first, then the keys token sends them.
+    expect(asked).toEqual([
+      ['/files/f_1/collaboration-token', {}],
+      ['/materials/q_1/collaboration-token', {}],
+      ['/materials/q_1/collaboration-token', { document: 'keys' }],
+    ]);
+    expect(requests.map((sent) => sent.headers.get('x-capy-room'))).toEqual([
+      fileRoom,
+      fileRoom,
+      keysRoom,
+    ]);
     expect(
-      requests.map((sent) => sent.url.searchParams.get('base')).sort()
+      requests
+        .slice(0, 2)
+        .map((sent) => sent.headers.get('x-capy-base'))
+        .sort()
     ).toEqual(['sha_a', 'sha_b']);
+    expect(await readDrafts(quiz)).toEqual([]);
+    expect(await readDrafts(file)).toEqual([]);
+  });
+
+  it('deletes the drafts of a document the account lost in the load sweep alone', async () => {
+    const key = 'u_lost:material:mat_1';
+    await leftRows(key);
+    const api = {
+      post: vi.fn(async () => {
+        throw new ApiError(404, 'Not Found');
+      }),
+    };
+    await sweepDrafts('u_lost', api, { cleanup: false });
+    expect(await readDrafts(key)).toHaveLength(2);
+    await sweepDrafts('u_lost', api, { cleanup: true });
     expect(await readDrafts(key)).toEqual([]);
+  });
+
+  it('stops when the page signs in as someone else', async () => {
+    const key = 'u_switch:material:mat_1';
+    await leftRows(key);
+    let signedIn = true;
+    const api = {
+      post: vi.fn(async () => {
+        signedIn = false;
+        return {
+          access: 'write',
+          room: ROOM,
+          token: 'room-token',
+          url: 'wss://collab.test',
+        };
+      }),
+    };
+    requests.length = 0;
+    await sweepDrafts('u_switch', api, { current: () => signedIn });
+    expect(requests).toHaveLength(0);
+    expect(await readDrafts(key)).toHaveLength(2);
   });
 
   it('runs one sweep at a time, whichever trigger starts it', async () => {
@@ -1348,18 +1465,7 @@ describe('the draft sweep sending', () => {
     await leftRows(first);
     await leftRows(second);
     requests.length = 0;
-    let release!: () => void;
-    fetchDrafts.mockImplementationOnce(async (input, init) => {
-      requests.push({
-        body: new Uint8Array(init?.body as ArrayBuffer),
-        headers: new Headers(init?.headers),
-        url: new URL(String(input)),
-      });
-      await new Promise<void>((resolve) => {
-        release = resolve;
-      });
-      return new Response('{}');
-    });
+    const release = held();
     const api = tokens(ROOM);
     const sweep = sweepDrafts('u_once', api);
     await vi.waitFor(() => expect(requests).toHaveLength(1));

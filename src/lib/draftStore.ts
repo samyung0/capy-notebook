@@ -22,6 +22,15 @@ export type DraftRequest =
   | { op: 'delete'; rows: DraftRef[] }
   /** Every row of a document; answers what was deleted, without the data. */
   | { op: 'deleteDocument'; key: string }
+  /** Every row of a document, without the data. */
+  | { op: 'rows'; key: string }
+  /** These exact rows as one update (states first), or null when one of
+   * them is gone or was rewritten since: the merge stays off the page's
+   * main thread (a whole Office state takes hundreds of ms). */
+  | { op: 'merged'; rows: DraftRef[] }
+  /** Whether these exact rows draw on their own (no base they lack), or null
+   * when one of them is gone or was rewritten since. */
+  | { op: 'draws'; rows: DraftRef[] }
   /** Sets `flag` on these rows of a document. */
   | { op: 'mark'; key: string; ids: string[]; flag: 'refused' | 'reported' }
   /** Every document of an account with its row ids, read from the index
@@ -45,12 +54,33 @@ export type DraftReply =
   | { id: number; result?: unknown; error?: StorageError }
   | { failed: string; error: StorageError };
 
-export type DeletedDraft = Omit<EditDraft, 'data'> & { bytes: number };
+/** A row without its data, and the bytes the data holds. */
+export type DraftInfo = Omit<EditDraft, 'data'> & { bytes: number };
 
 /** Updates per merge: one `Y.mergeUpdates` over thousands of updates is
  * quadratic (1.7 s for 10k typed updates), runs of 64 merged and then merged
  * again stay linear (70 ms). */
 export const MERGE_RUN = 64;
+
+/** Rows as one update, states first. */
+export function mergedRows(rows: EditDraft[]) {
+  const ordered = [...rows].sort(
+    (a, b) =>
+      Number(a.kind === 'update') - Number(b.kind === 'update') || a.seq - b.seq
+  );
+  return mergeInRuns(ordered.map((row) => row.data));
+}
+
+/** Whether an update draws on its own: nothing it holds waits for a base. */
+export function drawsAlone(update: Uint8Array) {
+  const doc = new Y.Doc();
+  try {
+    Y.applyUpdate(doc, update);
+    return !(doc.store.pendingStructs || doc.store.pendingDs);
+  } finally {
+    doc.destroy();
+  }
+}
 
 export function mergeInRuns(updates: Uint8Array[]): Uint8Array {
   let merged = updates;
@@ -291,7 +321,7 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
         }
       });
     case 'deleteDocument': {
-      const deleted: DeletedDraft[] = [];
+      const deleted: DraftInfo[] = [];
       return transact(name, 'readwrite', (stores) => {
         eachRow(stores, message.key, (rows) => {
           for (const row of rows) {
@@ -301,6 +331,34 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
           }
         });
       }).then(() => deleted);
+    }
+    case 'rows':
+      return transact(name, 'readonly', ({ drafts }) =>
+        drafts.index('key').getAll(message.key)
+      ).then((rows) =>
+        ((rows ?? []) as EditDraft[]).map(
+          ({ data, ...rest }): DraftInfo => ({
+            ...rest,
+            bytes: data.byteLength,
+          })
+        )
+      );
+    case 'merged':
+    case 'draws': {
+      const found: EditDraft[] = [];
+      return transact(name, 'readonly', ({ drafts }) => {
+        for (const ref of message.rows) {
+          const current = drafts.get(ref.id);
+          current.onsuccess = () => {
+            const row = current.result as EditDraft | undefined;
+            if (row?.seq === ref.seq) found.push(row);
+          };
+        }
+      }).then(() => {
+        if (found.length !== message.rows.length) return null;
+        const update = mergedRows(found);
+        return message.op === 'merged' ? update : drawsAlone(update);
+      });
     }
     case 'mark': {
       const { flag } = message;
