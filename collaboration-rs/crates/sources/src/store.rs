@@ -24,7 +24,7 @@ use yrs::{Doc, GetString, ReadTxn, StateVector, Transact, Update};
 use crate::cache::ByteCache;
 use crate::effects::{effect_tokens, trim_effect, utf16};
 use crate::engine::office::calls::On;
-use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
+use crate::engine::{EngineError, EnginePool, FailureKind, Lane, PoolConfig};
 use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate, SourceSession};
 use crate::text::{TEXT_ROOT, TextSave, TextWindow, full_text_effects, text_doc, text_seed};
 use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceFormat, SourceRoom};
@@ -252,6 +252,9 @@ pub struct Sources {
     baselines: Mutex<ByteCache<Arc<Vec<BaselineEntry>>>>,
     rooms: Mutex<HashMap<String, RoomRecord>>,
     generations: std::sync::atomic::AtomicU64,
+    /// One agent-turn thumbnail capture at a time (its state rebuild runs in
+    /// this process).
+    pub(crate) captures: Arc<tokio::sync::Semaphore>,
 }
 
 impl Sources {
@@ -265,6 +268,7 @@ impl Sources {
             seeds: Mutex::new(ByteCache::new(SEED_CACHE_BYTES)),
             baselines: Mutex::new(ByteCache::new(BASELINE_CACHE_BYTES)),
             rooms: Mutex::new(HashMap::new()),
+            captures: Arc::new(tokio::sync::Semaphore::new(1)),
             generations: std::sync::atomic::AtomicU64::new(0),
         }
     }
@@ -306,6 +310,18 @@ impl Sources {
         sha: &str,
         room: Option<&str>,
     ) -> Result<Arc<Seed>, SourceError> {
+        self.seed_on(format, base, sha, room, Lane::Save).await
+    }
+
+    /// [`Self::seed`] made on `lane` when it is not cached.
+    pub(crate) async fn seed_on(
+        &self,
+        format: SourceFormat,
+        base: &[u8],
+        sha: &str,
+        room: Option<&str>,
+        lane: Lane,
+    ) -> Result<Arc<Seed>, SourceError> {
         let key = format!("{format:?}:{sha}");
         if let Some(seed) = lock(&self.seeds).get(&key) {
             return Ok(seed);
@@ -316,12 +332,15 @@ impl Sources {
             })?,
             Some(format) => {
                 self.engines
-                    .seed(On {
-                        format,
-                        base,
-                        base_sha256: sha,
-                        room,
-                    })
+                    .seed_on(
+                        On {
+                            format,
+                            base,
+                            base_sha256: sha,
+                            room,
+                        },
+                        lane,
+                    )
                     .await?
             }
         };
@@ -426,7 +445,21 @@ impl Sources {
         stored: &Stored,
         room: Option<&str>,
     ) -> Result<(Arc<Seed>, Vec<Vec<u8>>), SourceError> {
-        let seed = self.seed(format, base, sha, room).await?;
+        self.layers_on(format, base, sha, stored, room, Lane::Save)
+            .await
+    }
+
+    /// [`Self::layers`] with an uncached seed made on `lane`.
+    pub(crate) async fn layers_on(
+        &self,
+        format: SourceFormat,
+        base: &[u8],
+        sha: &str,
+        stored: &Stored,
+        room: Option<&str>,
+        lane: Lane,
+    ) -> Result<(Arc<Seed>, Vec<Vec<u8>>), SourceError> {
+        let seed = self.seed_on(format, base, sha, room, lane).await?;
         let mut layers = Vec::new();
         if office(format).is_some() {
             if stored.state.is_some() || !stored.rows.is_empty() {

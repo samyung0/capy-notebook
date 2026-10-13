@@ -89,6 +89,10 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 		}
 		return nil, hErr(err)
 	}
+	if inv.ResourceKind == agenttools.KindSourceFile {
+		// The Undo may change page 1 back, as the edit did (Epo 2026-10-13).
+		a.captureUndoThumbnail(ctx, inv)
+	}
 	return &operationOutput{Body: receipt}, nil
 }
 

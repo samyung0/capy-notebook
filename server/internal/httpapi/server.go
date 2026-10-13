@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
 	"github.com/go-chi/chi/v5"
@@ -120,6 +121,9 @@ type api struct {
 	// (treeLive says whether that LISTEN is attached); see fanout.go.
 	broker   *channelBroker
 	treeLive atomic.Bool
+	// thumbnailWait stands in for an agent capture's wait out of a file's
+	// capture interval; tests count waits with it instead of sleeping.
+	thumbnailWait func(context.Context, time.Duration) error
 }
 
 // New builds the full HTTP handler. huma owns every JSON operation (and the

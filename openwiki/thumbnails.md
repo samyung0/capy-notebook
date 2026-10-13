@@ -327,7 +327,8 @@ Sources: [endpoint test](../server/internal/httpapi/thumbnail_capture_test.go),
 An agent's `edit_document` on a DOCX, XLSX or PPTX file redraws the file's
 thumbnail once the response that made it has finished, whether or not anyone
 has the file open (Epo's design, 2026-10-11; the native render, 2026-10-13).
-Only agent writes start one. None of it runs on an edit or a save.
+Only agent writes start one, and the Undo of one from its chat card (Epo
+2026-10-13). None of it runs on an edit or a save.
 
 **Trigger.** After `FinalizeAssistantMessage` (`chat_stream.go`, whatever the
 message's status) Go starts one background run for the response, bounded at
@@ -336,8 +337,24 @@ it. `TurnThumbnails` ([store](../server/internal/store/agent_thumbnails.go))
 reads the message's committed `edit_document` receipts (`agent_operations`,
 outcome `succeeded`, an `edited` effect) with their `agent_edit_inverses`: a
 refused or failed edit commits neither, so it captures nothing. Each live
-Office file is named once, in the order first edited; a file captured in the
-last 60 s is left out.
+Office file is named once, in the order first edited.
+
+**Undo.** A successful Undo of a source edit (`POST
+/api/chat/edit-operations/{id}/undo`, `huma_undo.go`) starts the same run for
+that one file, with the same budget, rule and wait (`UndoThumbnails`). The
+Undo applies the edit's stored inverse, so it changes back exactly the cells
+and stories the edit changed: the edit's inverse and guards, loaded before the
+Undo releases them, are its targets. An Undo replayed from its request id
+starts nothing.
+
+**The interval is waited out, never skipped.** A browser capture claimed
+before the edits were read (`thumbnail_captured_at`, the per-file 60 s
+interval) holds a drawing older than them: the capture waits until that
+interval has passed (at most 60 s, inside the budget; `AgentThumbnail.Ready`,
+from the database clock), then draws the saved state of that moment and
+claims. A claim that beats it was made after the edits were read, so that
+capture is newer and stands. The only wrong outcome, a card older than the
+agent's edit, cannot happen this way.
 
 **Only when page 1 may have changed**, the same rule as the browser's capture:
 
@@ -349,17 +366,22 @@ last 60 s is left out.
 
 Receipts carry no slide or sheet: the stored inverse and guards name them, and
 the first sheet and slide 1 are read from the document at the end of the
-turn, so a sheet or slide moved first meanwhile counts.
+turn, so a sheet or slide moved first meanwhile counts. An edit whose inverse
+an Undo, a rebase after publication, a compaction or a trash already released
+(`undo_status` not `available`: the inverse and guards are `[]`), or one that
+does not parse, names no targets: its file is sent as `unknown`, page 1 counts
+as changed, and the log says so once per file (`agent thumbnail targets
+unread`). The turn's other files are unaffected.
 
 **One hop** ([Go](../server/internal/httpapi/agent_thumbnails.go)):
 
 1. Go asks the collaboration server, `POST /internal/source-thumbnails/capture`
-   (service secret) with `{fileId, sheets, stories}`
+   (service secret) with `{fileId, sheets, stories, unknown}`
    ([`sources::thumbnail`](../collaboration-rs/crates/sources/src/thumbnail.rs)).
    It replays the file's durable state (base and rows: every committed agent
    edit is in it; a browser's last unsaved seconds are not), checks the rule
-   and answers `204` when page 1 is as it was. Otherwise a background engine
-   process draws page 1 as the browser's capture draws it
+   and answers `204` when page 1 is as it was. Otherwise the render lane's
+   engine process draws page 1 as the browser's capture draws it
    ([`render`](../collaboration-rs/crates/sources/src/render.rs), engine call
    `renderThumbnail`) and the route answers the WebP:
    - DOCX: the state is exported as a refresh candidate is, then laid out as
@@ -381,15 +403,37 @@ turn, so a sheet or slide moved first meanwhile counts.
      `TextMeasureFontRegistry`).
    - Encoding: lossy WebP at quality 60 through libwebp, the browser's own
      encoder and quality, its image chunk alone.
-2. Go checks the WebP as it checks a browser capture (`checkThumbnailWebP`)
-   and stores it through the same code (`storeThumbnail`): the current key
-   writes nothing; `ClaimThumbnailCapture` takes the per-file 60 s interval (a
-   browser capture inside it stands); then the B2 put and `SetFileThumbnail`,
-   with the blob reference triggers and the outbox.
+2. Go checks the WebP as it checks a browser capture (`checkThumbnailWebP`;
+   one 64 KiB limit, `store.ThumbnailMaxBytes`, for both) and stores it
+   through the same code (`storeThumbnail`): the current key writes nothing;
+   `ClaimThumbnailCapture` takes the per-file 60 s interval (a claim made
+   meanwhile stands, above); then the B2 put and `SetFileThumbnail`, with the
+   blob reference triggers and the outbox.
 
+**Bounds.** Renders never queue behind agent edits, inspect or exports, nor
+they behind renders:
+
+- The render lane (`Lane::Render` in
+  [the engine pool](../collaboration-rs/crates/sources/src/engine/mod.rs)) is
+  one engine process of its own, so one render at a time server-wide, with
+  its own call timeout (60 s, `RENDER_CALL_TIMEOUT`; past it the process is
+  killed) and memory cap (RLIMIT_DATA 1 GiB on Linux,
+  `RENDER_MEMORY_LIMIT_BYTES`; renders peaked at 287 MB). A seed the cache
+  evicted is made there too, never on the save lane.
+- One capture at a time server-wide (`Sources::captures`, one slot): the state
+  rebuild before the render runs in the server process. A capture whose answer
+  timed out keeps the slot until its work ends (the render's timeout bounds
+  it), so two rebuilds never overlap. The rebuild peaks at about 14 times the
+  state (19 MiB for a 1.4 MB state, 40 ms); at the 100 MB state cap that
+  extrapolates to about 1.4 GB, once.
+- The route gives up after 75 s, its wait for the slot included
+  (`CAPTURE_TIMEOUT`, a 503), and Go's call after 90 s
+  (`sourceThumbnailTimeout`, a client of its own, not the shared 20 s one), so
+  the collaboration server always answers first.
 - The files of a response go one after the other. Nothing retries: a failed
   render or put is logged once (`agent thumbnail capture failed`) and the card
-  keeps its image; a stored capture logs `agent thumbnail captured`.
+  keeps its image; a stored capture logs `agent thumbnail captured`. Without a
+  bucket nothing is drawn (`agent thumbnail capture skipped`, once per run).
 - The capture sets `thumbnail_captured_at`, so later ingests leave the
   thumbnail alone, as after a browser capture
   ([Ingest after a capture](#browser-captures)).
@@ -400,7 +444,8 @@ turn, so a sheet or slide moved first meanwhile counts.
   scaled down, where the worker paints at a quarter with the system font).
   PPTX text in characters the deck's faces lack (Japanese in an Arial run,
   where the browser's canvas falls back to a system font) shows as boxes:
-  pptx-render has no script fallback.
+  pptx-render has no script fallback. Known gap, accepted for landing (Epo
+  2026-10-13); the fallback is a fork follow-up.
 
 Measured on the developer PC (2026-10-13, three runs, median; release build,
 one background engine process, the mock fixtures' saved states):
@@ -424,6 +469,7 @@ and only the files whose page 1 may have changed.
 
 Sources: [store test](../server/internal/store/agent_thumbnails_test.go),
 [capture test](../server/internal/httpapi/agent_thumbnails_test.go),
+[response and Undo tests](../server/internal/httpapi/agent_thumbnails_stream_test.go),
 [rule test](../collaboration-rs/crates/sources/src/thumbnail.rs),
 [render test](../collaboration-rs/crates/sources/src/render.rs),
 [route test](../collaboration-rs/crates/sources/tests/store_db.rs).
@@ -434,7 +480,10 @@ Sources: [store test](../server/internal/store/agent_thumbnails_test.go),
 of its room, not only the next ingest (a workspace with auto-process off kept
 the upload's text). The save path owns it (Epo 2026-10-13): once the file has
 saved edits (a stored state or rows), ingest writes no text preview, and fills
-it only for an untouched upload. The collaboration server reads the opening 600 characters
+it only for an untouched upload. Ingest locks the file row first and checks in
+a statement of its own after it: a save locks that row before it writes its
+state, so an ingest that waited on a first save sees it and leaves the save's
+preview. The collaboration server reads the opening 600 characters
 as ingest reads them (a UTF-8-sig text-mode read: a leading BOM dropped,
 `\r\n` and `\r` read as `\n`, NUL removed; `Preview` in
 [`text.rs`](../collaboration-rs/crates/sources/src/text.rs)), walking the
@@ -445,7 +494,10 @@ one in the checkpoint's transaction only when it changed: an unchanged preview
 costs no statement and raises no tree event; a changed one refetches open
 lists, at most once per save (5 to 30 s apart while someone types). An Office
 save carries none, and a preview of more than 600 characters, with NUL or
-invalid UTF-8 refuses the save.
+invalid UTF-8 refuses the save. Deploy the API before the collaboration
+server, or with it: an older API refuses `preview` (422), which the
+collaboration server reads as permanent
+([runbook](deployment-runbook.md#0-release-flow-and-branch-policy)).
 
 Measured on the developer PC (2026-10-13, interleaved, three runs): the
 preview adds 5-10 µs to a text save's effects from the change (0.01-0.03 ms
@@ -456,5 +508,6 @@ local checkpoint.
 Sources: [store test](../server/internal/store/agent_thumbnails_test.go)
 (`TestTextSavesWriteTheFilePreview`),
 [parity test](../collaboration-rs/crates/sources/src/text.rs),
-[ingest test](../pipeline/tests/test_thumbnail.py)
-(`test_ingest_writes_a_text_preview_only_for_an_untouched_upload`).
+[ingest tests](../pipeline/tests/test_thumbnail.py)
+(`test_ingest_writes_a_text_preview_only_for_an_untouched_upload`,
+`test_an_ingest_waiting_on_a_first_save_keeps_the_saves_preview`).

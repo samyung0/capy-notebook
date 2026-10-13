@@ -1,9 +1,11 @@
 //! The Office engine pool (Epo 2026-10-07): engine calls run in child
 //! processes of the server binary (`capy-collaboration engine`, [`serve`]),
-//! bytes and JSON over pipes ([`frame`]). Two lanes, so exports and agent
-//! work never queue behind saves (#11): `Save` (save effects, seeds for a
-//! load, replica drops) and `Background` (exports, rebases, inspect, agent
-//! commands, locate, assets). Within a lane a room's calls go to one process
+//! bytes and JSON over pipes ([`frame`]). Three lanes, so exports and agent
+//! work never queue behind saves (#11), and thumbnails behind neither:
+//! `Save` (save effects, seeds for a load, replica drops), `Background`
+//! (exports, rebases, inspect, agent commands, locate, assets) and `Render`
+//! (an agent turn's page-1 thumbnails: one process, so one render at a time,
+//! with its own call timeout and memory cap). Within a lane a room's calls go to one process
 //! (its XLSX replica stays warm there); a call without a room goes to the
 //! least busy one. Each process runs one call at a time. A call that runs past
 //! the timeout (120 s, officeRuntime's `CALL_TIMEOUT_MS`) kills its process;
@@ -43,6 +45,12 @@ pub const SLOW_OFFICE_CALL: Duration = Duration::from_secs(2);
 /// The XLSX replica budget (Epo 2026-10-05), split evenly over the save
 /// processes since a room's replica lives in its own process.
 pub const OFFICE_REPLICA_BUDGET_BYTES: u64 = 1024 * 1024 * 1024;
+/// The render lane's call timeout: a page-1 render (whole-document layout or
+/// recalculation) measured at most 2.3 s; past this it is killed, before the
+/// capture route's own timeout and Go's.
+pub const RENDER_CALL_TIMEOUT: Duration = Duration::from_secs(60);
+/// The render process's RLIMIT_DATA on Linux; renders peaked at 287 MB.
+pub const RENDER_MEMORY_LIMIT_BYTES: u64 = 1024 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct PoolConfig {
@@ -62,6 +70,7 @@ pub struct PoolConfig {
 pub enum Lane {
     Save,
     Background,
+    Render,
 }
 
 /// A call that did not answer: officeRuntime.ts `OfficeEngineError`.
@@ -266,6 +275,7 @@ struct LaneHandle {
 pub struct EnginePool {
     save: LaneHandle,
     background: LaneHandle,
+    render: LaneHandle,
 }
 
 impl EnginePool {
@@ -276,6 +286,16 @@ impl EnginePool {
         Self {
             save: LaneHandle::start("save", config.save_processes, budget, &config),
             background: LaneHandle::start("background", config.background_processes, 0, &config),
+            render: LaneHandle::start(
+                "render",
+                1,
+                0,
+                &PoolConfig {
+                    call_timeout: RENDER_CALL_TIMEOUT,
+                    memory_limit_bytes: Some(RENDER_MEMORY_LIMIT_BYTES),
+                    ..config.clone()
+                },
+            ),
         }
     }
 
@@ -283,6 +303,7 @@ impl EnginePool {
         match lane {
             Lane::Save => &self.save,
             Lane::Background => &self.background,
+            Lane::Render => &self.render,
         }
     }
 
@@ -331,6 +352,11 @@ impl EnginePool {
     /// This interval's summary per lane; the next interval starts empty.
     pub fn take_stats(&self) -> (LaneStats, LaneStats) {
         (self.save.take_stats(), self.background.take_stats())
+    }
+
+    /// The render lane's summary of this interval.
+    pub fn take_render_stats(&self) -> LaneStats {
+        self.render.take_stats()
     }
 }
 

@@ -1489,7 +1489,12 @@ def share_file_thumbnail(
 def set_file_text_preview(cur, file_id: str, source_sha256: str, text: str) -> None:
     """The opening text of the bytes the file still holds, for an untouched
     upload only: once the file has saved edits (a stored state or rows), every
-    save writes its preview, and an ingest's would be older."""
+    save writes its preview, and an ingest's would be older.
+
+    A save locks the file row before it writes its state, so the row lock
+    comes first here and the check runs as its own statement after it: it
+    then sees a save that committed while this waited."""
+    cur.execute("SELECT 1 FROM files WHERE id=%s FOR UPDATE", (file_id,))
     cur.execute(
         """UPDATE files SET preview=jsonb_build_object('text', %s::text)
         WHERE id=%s AND source_sha256=%s AND trashed_at IS NULL

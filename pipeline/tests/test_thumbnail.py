@@ -6,6 +6,8 @@ import hashlib
 import io
 import logging
 import secrets
+import threading
+import time
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -514,3 +516,57 @@ def test_ingest_writes_a_text_preview_only_for_an_untouched_upload(workspace):
         for file_id in (untouched, saved, folded)
     }
     assert previews == {untouched: "ingested", saved: "saved", folded: "saved"}
+
+
+@pytest.mark.integration
+def test_an_ingest_waiting_on_a_first_save_keeps_the_saves_preview(workspace):
+    """An ingest that writes while a file's first save holds the file row
+    waits for the save and then sees its state: the save's preview stays."""
+    import psycopg
+
+    sha = "cd" * 32
+    file_id = workspace.add_file("first.md")
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE files SET kind='text', source_sha256=%s WHERE id=%s", (sha, file_id)
+        )
+    # The first save, as SaveSourceCheckpoint orders it: the row lock, the
+    # state, then the preview, committed together.
+    save = psycopg.connect(workspace.dsn)
+    try:
+        save.execute("SELECT 1 FROM files WHERE id=%s FOR UPDATE", (file_id,))
+        save.execute(
+            """INSERT INTO source_documents (file_id, user_id, format, base_revision,
+                 base_blob_path, base_source_sha256, state, log_rows)
+               VALUES (%s, %s, 'text', 1, %s, %s, %s, 0)""",
+            (file_id, workspace.user_id, f"p/{file_id}", sha, b"state"),
+        )
+        save.execute(
+            "UPDATE files SET preview=jsonb_build_object('text', 'first save') WHERE id=%s",
+            (file_id,),
+        )
+
+        def ingest() -> None:
+            with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
+                thumbnail.db.set_file_text_preview(cur, file_id, sha, "ingested")
+                conn.commit()
+
+        worker = threading.Thread(target=ingest)
+        worker.start()
+        # Commit only once the ingest waits on the save's row lock.
+        deadline = time.monotonic() + 30
+        while not workspace.scalar(
+            """SELECT count(*) FROM pg_stat_activity
+                WHERE datname = current_database() AND wait_event_type = 'Lock'"""
+        ):
+            assert time.monotonic() < deadline, "the ingest never waited on the save"
+            time.sleep(0.02)
+        save.commit()
+    finally:
+        save.close()
+    worker.join(30)
+    assert not worker.is_alive()
+    assert (
+        workspace.scalar("SELECT preview->>'text' FROM files WHERE id=%s", (file_id,))
+        == "first save"
+    )

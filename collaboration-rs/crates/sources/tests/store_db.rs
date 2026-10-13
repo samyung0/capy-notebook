@@ -540,7 +540,8 @@ async fn a_text_save_carries_the_files_opening_characters() {
 }
 
 // An agent turn's thumbnail draws the durable document's page 1 only when
-// it may have changed: any DOCX edit, an XLSX edit on the first sheet.
+// it may have changed: any DOCX edit, an XLSX edit on the first sheet, an
+// edit whose targets could not be read.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
 async fn a_turns_thumbnail_draws_only_what_may_show_on_page_one() {
@@ -552,7 +553,7 @@ async fn a_turns_thumbnail_draws_only_what_may_show_on_page_one() {
     let targets = |room: &SourceRoom, sheets: &[&str]| TurnTargets {
         file_id: room.file_id.clone(),
         sheets: sheets.iter().map(|sheet| (*sheet).to_owned()).collect(),
-        stories: Vec::new(),
+        ..TurnTargets::default()
     };
     let webp = |bytes: Option<Vec<u8>>| {
         bytes.is_some_and(|bytes| bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP")
@@ -585,6 +586,12 @@ async fn a_turns_thumbnail_draws_only_what_may_show_on_page_one() {
         let drawn = h.sources.thumbnail_capture(&targets(&grades, sheets)).await;
         assert_eq!(drawn.unwrap(), None);
     }
+    // An edit whose targets Go could not read counts as page 1 changed.
+    let unknown = TurnTargets {
+        unknown: true,
+        ..targets(&grades, &[])
+    };
+    assert!(webp(h.sources.thumbnail_capture(&unknown).await.unwrap()));
 
     let notes = h.file("text", "notes.md", b"text").await;
     let refused = h.sources.thumbnail_capture(&targets(&notes, &[])).await;

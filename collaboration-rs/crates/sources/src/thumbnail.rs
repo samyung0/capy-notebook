@@ -6,11 +6,14 @@
 //! edit or a save.
 
 use std::collections::HashSet;
+use std::sync::Arc;
+use std::time::Duration;
 
 use office_service::Format;
 use serde::Deserialize;
 use yrs::{Any, Array, Map, Out, ReadTxn, StateVector, Transact};
 
+use crate::engine::Lane;
 use crate::engine::office::calls::On;
 use crate::store::{EXPORT_NOW, office, replay};
 use crate::{SourceError, Sources};
@@ -25,7 +28,9 @@ const SHAPES: &str = "pptx:shapes";
 
 /// One file of a finished turn, as Go read its edits' stored inverses and
 /// guards: the XLSX sheets with a `set_cell` inside the captured top-left
-/// area (Go applies the area), the PPTX stories the edits changed.
+/// area (Go applies the area), the PPTX stories the edits changed, and
+/// whether an edit's targets could not be read (an inverse emptied by an
+/// Undo, a rebase or a trash), which counts as page 1 changed.
 #[derive(Clone, Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct TurnTargets {
@@ -34,7 +39,14 @@ pub struct TurnTargets {
     pub sheets: Vec<String>,
     #[serde(default)]
     pub stories: Vec<String>,
+    #[serde(default)]
+    pub unknown: bool,
 }
+
+/// How long one capture may take on the server, its turn for the one
+/// capture slot included: past the render lane's call timeout, short of
+/// Go's client timeout (store/agent_thumbnails.go).
+pub const CAPTURE_TIMEOUT: Duration = Duration::from_secs(75);
 
 /// Whether the turn's edits may have changed page 1: any DOCX edit, an XLSX
 /// one on the first sheet, a PPTX one in a story of slide 1.
@@ -114,9 +126,37 @@ impl Sources {
     /// it) as a list-card WebP when the turn's edits may have changed it, or
     /// `None`. A DOCX is exported first as a refresh candidate is.
     pub async fn thumbnail_capture(
-        &self,
+        self: &Arc<Self>,
         targets: &TurnTargets,
     ) -> Result<Option<Vec<u8>>, SourceError> {
+        let sources = Arc::clone(self);
+        let targets = targets.clone();
+        tokio::time::timeout(CAPTURE_TIMEOUT, async move {
+            let slot = Arc::clone(&sources.captures)
+                .acquire_owned()
+                .await
+                .map_err(|error| SourceError::Other(error.to_string()))?;
+            // A capture whose answer timed out keeps the slot until its work
+            // ends (the render lane's call timeout bounds it), so two state
+            // rebuilds never overlap.
+            tokio::spawn(async move {
+                let _slot = slot;
+                sources.capture_now(&targets).await
+            })
+            .await
+            .map_err(|error| SourceError::Other(format!("thumbnail capture: {error}")))?
+        })
+        .await
+        .unwrap_or_else(|_| {
+            Err(SourceError::request(
+                503,
+                "The thumbnail capture timed out",
+                None,
+            ))
+        })
+    }
+
+    async fn capture_now(&self, targets: &TurnTargets) -> Result<Option<Vec<u8>>, SourceError> {
         let session = self.current(&targets.file_id).await?;
         let format = office(session.format).ok_or_else(|| {
             SourceError::request(422, "Only Office sources take thumbnails", None)
@@ -126,16 +166,18 @@ impl Sources {
         if stored.epoch != session.epoch {
             return Err(SourceError::epoch_changed());
         }
+        // An uncached seed is made on the render lane, never on saves'.
         let (_, layers) = self
-            .layers(session.format, &base, &sha, &stored, None)
+            .layers_on(session.format, &base, &sha, &stored, None, Lane::Render)
             .await?;
-        let (sheets, stories) = (targets.sheets.clone(), targets.stories.clone());
+        let targets = targets.clone();
         let state = tokio::task::spawn_blocking(move || -> Result<_, SourceError> {
             let doc = ydoc::scratch_doc();
             replay(&doc, layers.iter().map(Vec::as_slice))?;
             let txn = doc.transact();
-            Ok(page_one_changed(format, &txn, &sheets, &stories)
-                .then(|| txn.encode_state_as_update_v1(&StateVector::default())))
+            let changed = targets.unknown
+                || page_one_changed(format, &txn, &targets.sheets, &targets.stories);
+            Ok(changed.then(|| txn.encode_state_as_update_v1(&StateVector::default())))
         })
         .await
         .map_err(|error| SourceError::Other(format!("thumbnail state: {error}")))??;
@@ -144,7 +186,7 @@ impl Sources {
         };
         let seed = office_service::sha256_hex(format!(
             "{}:{}:{}",
-            targets.file_id, stored.epoch, stored.checkpoint
+            session.file_id, stored.epoch, stored.checkpoint
         ));
         let on = On {
             format,

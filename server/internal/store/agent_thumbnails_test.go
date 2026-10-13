@@ -7,14 +7,21 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 )
 
 // One finished turn names each Office file it committed edits to once, with
 // what the collaboration server checks for page 1: XLSX sheets of set_cell
-// commands inside A1:H25 only, PPTX stories, nothing for DOCX. A refused edit
+// commands inside A1:H25 only, PPTX stories, nothing for DOCX. An edit whose
+// inverse was released since (Undo, rebase, compaction) names its file as
+// unknown, and the turn's other files still count. A file captured within
+// the interval is named with the time the interval passes. A refused edit
 // commits nothing, so it names nothing; neither do an XLSX file without a
 // cell in the area, a PPTX file without a story, text files, other turns'
-// edits, a file trashed since or one captured within the interval.
+// edits or a file trashed since. An Undo of one edit names that edit's
+// targets.
 func TestTurnThumbnailsNameEachEditedOfficeFileOnce(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -24,25 +31,28 @@ func TestTurnThumbnailsNameEachEditedOfficeFileOnce(t *testing.T) {
 		_, f := sourceTestFile(t, s, owner, name, kind)
 		return f.ID
 	}
-	edit := func(fileID, message, inverse, guards string) error {
+	edit := func(fileID, message, inverse, guards string) (string, error) {
 		t.Helper()
 		doc, err := s.SourceSession(ctx, owner, fileID)
 		if err != nil {
 			t.Fatal(err)
 		}
+		op := uid("op")
 		save := sourceTestSave(doc, owner, "state-"+uid("s"))
 		save.Operation = &SourceCheckpointOperation{
-			Receipt: SourceCheckpointReceipt{ID: uid("op"), ToolVersion: 1, RequestHash: "h", ActorUserID: owner, MessageID: message},
+			Receipt: SourceCheckpointReceipt{ID: op, ToolVersion: 1, RequestHash: "h", ActorUserID: owner, MessageID: message},
 			Inverse: json.RawMessage(inverse), Guards: json.RawMessage(guards),
 		}
 		_, err = s.SaveSourceCheckpoint(ctx, fileID, save)
-		return err
+		return op, err
 	}
-	mustEdit := func(fileID, message, inverse, guards string) {
+	mustEdit := func(fileID, message, inverse, guards string) string {
 		t.Helper()
-		if err := edit(fileID, message, inverse, guards); err != nil {
+		op, err := edit(fileID, message, inverse, guards)
+		if err != nil {
 			t.Fatal(err)
 		}
+		return op
 	}
 	paragraph := `{"commands":[{"type":"replace_text","targetId":"p1","expectedText":"b","text":"a"}]}`
 	story := func(id string) string {
@@ -63,12 +73,12 @@ func TestTurnThumbnailsNameEachEditedOfficeFileOnce(t *testing.T) {
 	mustEdit(plan, turn, paragraph, `[]`)
 	mustEdit(plan, turn, paragraph, `[]`)
 	grades := file("grades.xlsx", "xlsx")
-	mustEdit(grades, turn, cells("s1", "B3", "s1", "I3", "s2", "A26"), `[]`)
+	gradesEdit := mustEdit(grades, turn, cells("s1", "B3", "s1", "I3", "s2", "A26"), `[]`)
 	mustEdit(grades, turn, cells("s3", "H25", "s1", "A1"), `[]`)
 	far := file("far.xlsx", "xlsx")
-	mustEdit(far, turn, cells("s1", "I1", "s1", "A26", "s1", "AA1"), `[]`)
+	farEdit := mustEdit(far, turn, cells("s1", "I1", "s1", "A26", "s1", "AA1"), `[]`)
 	deck := file("deck.pptx", "pptx")
-	mustEdit(deck, turn, paragraph, story("story:a"))
+	deckEdit := mustEdit(deck, turn, paragraph, story("story:a"))
 	mustEdit(deck, turn, paragraph, story("story:b"))
 	mustEdit(deck, turn, paragraph, story("story:a"))
 	bare := file("bare.pptx", "pptx")
@@ -80,6 +90,18 @@ func TestTurnThumbnailsNameEachEditedOfficeFileOnce(t *testing.T) {
 	recent := file("recent.docx", "doc")
 	mustEdit(recent, turn, paragraph, `[]`)
 	if err := s.ClaimThumbnailCapture(ctx, recent); err != nil {
+		t.Fatal(err)
+	}
+	// Released since: an undone XLSX edit and a PPTX edit a rebase let go.
+	undone := file("undone.xlsx", "xlsx")
+	mustEdit(undone, turn, cells("s1", "Z99"), `[]`)
+	if _, err := s.pool.Exec(ctx, `UPDATE agent_edit_inverses SET undo_status='undone', inverse='[]', guards='[]'
+		WHERE resource_id=$1`, undone); err != nil {
+		t.Fatal(err)
+	}
+	rebased := file("rebased.pptx", "pptx")
+	mustEdit(rebased, turn, paragraph, story("story:z"))
+	if err := s.InvalidateEditInverses(ctx, agenttools.KindSourceFile, rebased, "rebased"); err != nil {
 		t.Fatal(err)
 	}
 	trashed := file("trashed.docx", "doc")
@@ -103,17 +125,52 @@ func TestTurnThumbnailsNameEachEditedOfficeFileOnce(t *testing.T) {
 		t.Fatalf("stale edit: %v", err)
 	}
 
+	read := time.Now()
 	got, err := s.TurnThumbnails(ctx, turn)
 	if err != nil {
 		t.Fatal(err)
 	}
+	for i, f := range got {
+		// Only the file captured just now waits, about the interval.
+		if wait := f.Ready.Sub(read); (f.FileID == recent) != (wait > ThumbnailCaptureInterval/2) || wait > ThumbnailCaptureInterval {
+			t.Fatalf("%s is ready in %v", f.FileID, wait)
+		}
+		got[i].Ready = time.Time{}
+	}
+	released := "the edit's inverse was released "
 	want := []AgentThumbnail{
 		{FileID: plan, Format: "docx", Sheets: []string{}, Stories: []string{}},
 		{FileID: grades, Format: "xlsx", Sheets: []string{"s1", "s3"}, Stories: []string{}},
 		{FileID: deck, Format: "pptx", Sheets: []string{}, Stories: []string{"story:a", "story:b"}},
+		{FileID: recent, Format: "docx", Sheets: []string{}, Stories: []string{}},
+		{FileID: undone, Format: "xlsx", Sheets: []string{}, Stories: []string{}, Unknown: true, Why: released + "(undone)"},
+		{FileID: rebased, Format: "pptx", Sheets: []string{}, Stories: []string{}, Unknown: true, Why: released + "(unavailable)"},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("turn thumbnails\n got %+v\nwant %+v", got, want)
+	}
+
+	// An Undo names the undone edit's own targets, read before it releases
+	// them; one outside page 1 names nothing.
+	for _, c := range []struct {
+		op   string
+		want []AgentThumbnail
+	}{
+		{gradesEdit, []AgentThumbnail{{FileID: grades, Format: "xlsx", Sheets: []string{"s1"}, Stories: []string{}}}},
+		{deckEdit, []AgentThumbnail{{FileID: deck, Format: "pptx", Sheets: []string{}, Stories: []string{"story:a"}}}},
+		{farEdit, nil},
+	} {
+		inv, _, err := s.GetEditInverse(ctx, c.op)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := s.UndoThumbnails(ctx, inv)
+		for i := range got {
+			got[i].Ready = time.Time{}
+		}
+		if err != nil || !reflect.DeepEqual(got, c.want) {
+			t.Fatalf("undo of %s: %+v %v, want %+v", c.op, got, err, c.want)
+		}
 	}
 	if got, err := s.TurnThumbnails(ctx, uid("msg")); err != nil || len(got) != 0 {
 		t.Fatalf("a turn without edits: %+v %v", got, err)

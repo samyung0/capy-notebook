@@ -10,6 +10,10 @@ import (
 // captures of one file (openwiki/thumbnails.md, phase 2a).
 const ThumbnailCaptureInterval = 60 * time.Second
 
+// ThumbnailMaxBytes is the most a list-card capture may hold, a browser's
+// or the collaboration server's.
+const ThumbnailMaxBytes = 64 << 10
+
 // ErrThumbnailTooSoon refuses a capture within ThumbnailCaptureInterval of the
 // file's last accepted one.
 var ErrThumbnailTooSoon = errors.New("thumbnail captured too recently")

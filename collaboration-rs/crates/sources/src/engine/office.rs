@@ -189,7 +189,8 @@ pub fn dispatch(request: &Frame) -> Answer {
 
 /// The typed calls the server makes, on the lane each belongs to: saves
 /// (effects, seeds for a load, replica drops) never wait behind background
-/// work (exports, rebases, inspect, agent commands, locate, assets).
+/// work (exports, rebases, inspect, agent commands, locate, assets), and
+/// thumbnail renders run on a lane of their own.
 pub mod calls {
     use office_service::{BaselineEntry, Command, Entry, Format, NetEffect, ObjectRef, Target};
     use serde::de::DeserializeOwned;
@@ -237,8 +238,13 @@ pub mod calls {
     impl EnginePool {
         /// seed(base): the state a NULL row stands for (seedOffice).
         pub async fn seed(&self, on: On<'_>) -> Result<Vec<u8>, EngineError> {
+            self.seed_on(on, Lane::Save).await
+        }
+
+        /// [`Self::seed`] on `lane` (a thumbnail capture seeds on its own).
+        pub async fn seed_on(&self, on: On<'_>, lane: Lane) -> Result<Vec<u8>, EngineError> {
             let request = frame("seedOffice", &args(on), vec![on.base.to_vec()]);
-            blob(&mut self.call(Lane::Save, on.room, request).await?)
+            blob(&mut self.call(lane, on.room, request).await?)
         }
 
         /// officeBaseline of `state`.
@@ -348,7 +354,7 @@ pub mod calls {
                 &request,
                 vec![on.base.to_vec(), state.to_vec()],
             );
-            blob(&mut self.call(Lane::Background, on.room, request).await?)
+            blob(&mut self.call(Lane::Render, on.room, request).await?)
         }
 
         pub async fn inspect(&self, on: On<'_>, state: &[u8]) -> Result<Vec<Entry>, EngineError> {

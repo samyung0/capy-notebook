@@ -13,7 +13,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"golang.org/x/image/webp"
 
-	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -21,7 +20,6 @@ import (
 // human/authorization-permissions-lifecycles.md 2026-10-11): WebP only, small,
 // editors only, written to B2 here with no upload session and no quota.
 const (
-	thumbnailMaxBytes  = 64 << 10
 	thumbnailMaxWidth  = 200
 	thumbnailMaxHeight = 400
 	// As the ingest render stores its thumbnails: a key names its bytes.
@@ -36,7 +34,7 @@ type captureThumbnailInput struct {
 func (a *api) registerThumbnails(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/files/{id}/thumbnail", "captureFileThumbnail", "Content",
 		"Store a browser capture of an edited Office file as its thumbnail", http.StatusNoContent,
-		thumbnailMaxBytes, a.captureFileThumbnail)
+		store.ThumbnailMaxBytes, a.captureFileThumbnail)
 }
 
 // captureFileThumbnail stores the capture at thumbs/{id}/{sha256}.webp and
@@ -68,7 +66,8 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 			Errors: []*huma.ErrorDetail{{Message: "thumbnail_too_soon"}},
 		}
 	case errors.Is(err, errThumbnailStorage):
-		return nil, huma.Error503ServiceUnavailable(err.Error())
+		// The cause, logged once with the 503; the browser reads the plain one.
+		return nil, &handlerError{error: huma.Error503ServiceUnavailable(errThumbnailStorage.Error()), cause: err}
 	case err != nil:
 		return nil, hErr(err)
 	}
@@ -78,35 +77,32 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 // errThumbnailStorage: the bucket is not configured or did not take the put.
 var errThumbnailStorage = errors.New("thumbnail storage is unavailable")
 
-// storeThumbnail writes a checked capture (a browser's or an agent turn's) at
+// storeThumbnail writes a checked capture (a browser's or an agent's) at
 // thumbs/{fileID}/{sha256}.webp and points the file at it: the current key
 // writes nothing, a capture within store.ThumbnailCaptureInterval of the
 // file's last one is store.ErrThumbnailTooSoon, and a put that failed is
-// queued for deletion, since it may still have written the object.
+// queued for deletion, since it may still have written the object. It logs
+// nothing; the caller logs a failure once.
 func (a *api) storeThumbnail(ctx context.Context, fileID, currentKey string, body []byte) error {
 	sum := sha256.Sum256(body)
 	key := "thumbs/" + fileID + "/" + hex.EncodeToString(sum[:]) + ".webp"
 	if key == currentKey {
 		return nil
 	}
-	if err := a.s.ClaimThumbnailCapture(ctx, fileID); err != nil {
-		return err
-	}
 	if a.blob == nil {
 		return errThumbnailStorage
 	}
-	if err := a.blob.PutObjectOnce(ctx, key, body, "image/webp", thumbnailCacheControl); err != nil {
-		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", fileID, "error", err)
-		if err := a.s.EnqueueBlobDeletion(ctx, key); err != nil {
-			obs.Log(ctx).Warn("thumbnail capture not queued for deletion", "file_id", fileID, "key", key, "error", err)
-		}
-		return errThumbnailStorage
-	}
-	if err := a.s.SetFileThumbnail(ctx, fileID, key); err != nil {
-		obs.Log(ctx).Warn("thumbnail capture not recorded", "file_id", fileID, "key", key, "error", err)
+	if err := a.s.ClaimThumbnailCapture(ctx, fileID); err != nil {
 		return err
 	}
-	return nil
+	if err := a.blob.PutObjectOnce(ctx, key, body, "image/webp", thumbnailCacheControl); err != nil {
+		err = fmt.Errorf("%w: put %s: %w", errThumbnailStorage, key, err)
+		if enqueueErr := a.s.EnqueueBlobDeletion(ctx, key); enqueueErr != nil {
+			err = errors.Join(err, fmt.Errorf("queue %s for deletion: %w", key, enqueueErr))
+		}
+		return err
+	}
+	return a.s.SetFileThumbnail(ctx, fileID, key)
 }
 
 // checkThumbnailWebP accepts exactly one RIFF WebP image and nothing else:
