@@ -63,3 +63,32 @@ about a quarter fewer input tokens and has about a third of the refusals, with
 no loss of completeness, which the ledger was not securing anyway. Automatic
 crediting removes the excerpt refusals but over-credits; naming stays more
 precise.
+
+## Follow-up: how precise are the credits?
+
+Every (material, book) pair where the material's write came after a read
+from that book: the library-on no-ledger arm (191 automatic book credits on 65
+materials) against named credits (`excerpt_ids` chosen by the model) from the
+ledger arm and 149 materials in older playground runs (481 credits). A judging
+pass (six agents, 255 pairs, each with the material and the text read from the
+book) labelled a pair `used` only for something specific to that text: its
+worked example, data or numbers, a placed figure, distinctive phrasing.
+Pairs sharing 20 or more distinctive word 4-grams (5 for named credits) were
+counted as used and uncredited pairs sharing none as unused; 15 of each were
+spot-checked and agreed (one came out `topic_only`).
+
+| Credits | Used | Same topic only | Unrelated |
+|---|---|---|---|
+| Automatic (191) | 129 (68%) | 28 | 34 |
+| Named by the model (481) | 456 (95%) | 25 | 0 |
+
+- The model rarely forgets a book: of 160 books it read but did not name, 3
+  were used (3 of 459 used books).
+- 28 of 65 automatically credited materials list a book they did not use; none
+  lists only unused books.
+- A filter keeping a candidate book only when the write shares with its read
+  text at least one word 4-gram, or one number with a decimal point or two or
+  more digits, that no other candidate book's text has: precision 86%, 2 of
+  129 used books dropped, no material left uncredited. Three 4-grams: 93%, 6
+  dropped. Epo took the first (2026-10-13): a missing credit on a CC BY book
+  is the worse error. Named credits stay as named.
