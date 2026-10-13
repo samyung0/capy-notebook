@@ -98,6 +98,10 @@ services:
       SHARE_LINK_SECRET: ${SHARE_LINK_SECRET:?SHARE_LINK_SECRET is required}
       COLLABORATION_URL: ws://127.0.0.1:${E2E_COLLABORATION_PORT:-11234}
       COLLABORATION_INTERNAL_URL: http://collaboration:1234
+      # Mounts the internal agent routes agent-writes.spec.ts calls in place of
+      # the retrieval service; unset (as in the collaboration IT job), they
+      # stay unmounted.
+      PIPELINE_SECRET: ${E2E_PIPELINE_SECRET:-}
       CAPY_PARSE_MAX_PAGES: "1400"
       CAPY_PARSE_OCR_PAGE_CAP: "500"
     ports:

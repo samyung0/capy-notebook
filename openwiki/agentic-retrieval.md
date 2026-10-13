@@ -3000,7 +3000,14 @@ its stable id at Undo time. A gap whose anchor the same call also removed is
 guarded after the nearest surviving block, a node the same call inserted and
 removed needs no guard of its own, and no guard reaches past its neighbours,
 so a deletion two blocks away or a keystroke beside a span keeps the Undo. Undo refuses with `stale_target`
-when its target changed, and stays valid when nearby content changed. A material
+when its target changed, and stays valid when nearby content changed. An
+edit may not remove or replace a block holding media, but the Undo of an
+edit that inserted a library figure removes it again
+(`undo_material_commands`); its asset follows the removed-block trash
+rule.
+`inspect_document` reads the stored state only, not a live room's
+unsaved typing (an edit merges the room, so a target typed in meanwhile
+refuses with its current text). A material
 inverse plus guards above 256 KB refuses the edit as `quota_rejected`. Office
 edits run in the collaboration server's Office engine processes (the fork's
 `office-service`: inspect, apply commands, locate targets), which return the
