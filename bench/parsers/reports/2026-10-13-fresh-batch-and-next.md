@@ -534,8 +534,26 @@ Two causes, both fixed with byte-identical output on every PDF fixture:
 
 In-process, back to back, on the Mac, memory left in the child after a
 document went from 583 → 209 MiB after limit-1400p (v13 150) and from
-553 → 164 MiB after the next small document (v13 104). The budgets are
-proposed from three CI runs with this fix.
+553 → 164 MiB after the next small document (v13 104).
+
+The budgets come from three CI runs with this fix (38403202496,
+38403274864 and 38403279475): the slowest of the three plus 25%. They were
+signed off on 2026-10-13.
+
+| Fixture | v13 | v14 |
+| --- | ---: | ---: |
+| scan-120p | 2.39 GiB | 2.12 GiB |
+| limit-1400p | 2.47 GiB | 2.21 GiB |
+| docx-handbook after the scan | 1.86 GiB | 1.45 GiB |
+
+Time budgets that change:
+- textbook-26mib: 283.7 → 134.2 s
+- pptx-84-slides: 34.2 → 19.7 s
+- logic-1016p: 116.1 → 146.6 s
+- limit-1400p: 145.4 → 168.6 s
+- xlsx-gradebook: 31.0 → 54.7 s
+
+The three slower ones are the repair-phase cost below.
 
 **Not fixed: the repair phase on books past the page-cache budget.**
 limit-1400p's repairs went from 13 s (v13) to 49 s in CI. The 100k-span
