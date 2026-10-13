@@ -209,12 +209,13 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
     Ok(version)
 }
 
+/// A projection's content, with a quiz's editor assets.
+type Projected = (Value, Option<Vec<String>>);
+
 /// The content a material's durable documents project to, with a quiz's
 /// editor assets; none for a quiz holding a block this version cannot read,
 /// which the projection, and so the stored quiz, would drop (Epo 2026-10-13).
-fn projected(
-    durable: &note_store::Durable,
-) -> Result<Option<(Value, Option<Vec<String>>)>, String> {
+fn projected(durable: &note_store::Durable) -> Result<Option<Projected>, String> {
     use yrs::Transact;
     let replay = |base: &[u8], rows: &[Vec<u8>]| -> Result<Doc, String> {
         let doc = ydoc::scratch_doc();
