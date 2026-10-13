@@ -154,3 +154,40 @@ test('an XLSX capture follows only first-sheet edits', async ({ page }) => {
   await page.waitForTimeout(1000);
   expect(captures).toEqual(['/api/files/bio-office-xlsx/thumbnail']);
 });
+
+// Epo 2026-10-14: an editor opening a file whose card is older than its saved
+// document (an agent's edit, an Undo; the mock marks it) uploads page 1 once,
+// with no edit of its own. Once captured, the next open uploads nothing.
+test('opening a stale card for editing uploads it once', async ({ page }) => {
+  test.setTimeout(120_000);
+  const captures: string[] = [];
+  page.on('request', (request) => {
+    if (request.method() === 'POST' && request.url().endsWith('/thumbnail'))
+      captures.push(new URL(request.url()).pathname);
+  });
+  await page.addInitScript(() =>
+    sessionStorage.setItem('capy.mock.thumbnailStale.bio-office-pptx', 'true')
+  );
+  await page.goto('/workspaces/ws_bio?file=bio-office-pptx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const mode = page.getByRole('button', { name: m.material_mode() });
+  const editor = officeEditMenu(page, 'pptx');
+  await mode.click();
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+  await expect.poll(() => captures.length, { timeout: 30_000 }).toBe(1);
+
+  // Nothing sends it again: the page hiding, leaving for View, a fresh open.
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await mode.click();
+  await expect(mode).toHaveAttribute('aria-pressed', 'false');
+  await mode.click();
+  await expect(editor).toBeVisible({ timeout: 30_000 });
+  await expect(page.locator('[data-save-state="saved"]')).toBeVisible();
+  await page.waitForTimeout(8000);
+  await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+  await page.waitForTimeout(1000);
+  expect(captures).toEqual(['/api/files/bio-office-pptx/thumbnail']);
+});

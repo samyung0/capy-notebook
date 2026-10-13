@@ -263,15 +263,21 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
   `thumbnailStale` when the card is older than the saved document
   (`ThumbnailStale`, Epo 2026-10-14): a saved change (`source_documents` with
   a stored state or rows) whose `last_edited_at`, which every checkpoint sets
-  (an editor's save, an agent's edit, an Undo), is newer than
-  `thumbnail_captured_at`, or any saved change while there is no capture yet
-  (the card is ingest's render of the upload). Once the editor's replica holds
-  the document (`collaboration-ready`), such an open counts as one change
-  (`opened`): drawn and uploaded at once when the editor may, else by the
-  cycle's idle upload or leaving, once per open (a frame restart adds
-  nothing). The editor-only rule, the WebP checks and the 60 s interval apply
-  as to any capture, and nothing retries. This covers an agent's edits, an
-  Undo from a chat card and edits whose browser closed before capturing.
+  (an editor's save, an agent's edit, an Undo), is newer than 5 s before
+  `thumbnail_captured_at` (`ThumbnailStaleSlack`: a capture claimed just
+  after a change may have been drawn before an agent's update reached that
+  browser; the slack costs at most one extra capture on a later open), or any
+  saved change while there is no capture yet (the card is ingest's render of
+  the upload). Once the editor's replica holds the document
+  (`collaboration-ready`), such an open counts as one change (`opened`): drawn
+  and uploaded at once when the editor may, else by the cycle's idle upload or
+  leaving, once per open (a frame restart adds nothing). The editor-only rule,
+  the WebP checks and the 60 s interval apply as to any capture, and nothing
+  retries. When several editors open the file, one claim wins; a loser whose
+  cycle holds only the stale open (no local edit) ends it on its `429`
+  instead of sending again at 60 s or on leaving. This covers an agent's
+  edits, an Undo from a chat card and edits whose browser closed before
+  capturing.
 - An upload due while the room is still saving (or editing is paused) waits:
   the 60-second upload stays pending when the 10-minute mark finds the room
   saving.

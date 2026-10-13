@@ -32,17 +32,24 @@ func (s *Store) ThumbnailTarget(ctx context.Context, fileID string) (ThumbnailTa
 	return t, err
 }
 
+// ThumbnailStaleSlack: a capture claimed this soon after the last saved
+// change may have been drawn before that change reached its browser (an
+// agent's update still on its way), so it does not count as newer.
+const ThumbnailStaleSlack = 5 * time.Second
+
 // ThumbnailStale reports whether an Office file's card is older than its
 // saved document: a saved change (a stored state or rows: an editor's, an
-// agent's or an Undo's) newer than the last accepted capture, or any saved
-// change while the card is still ingest's render of the upload (no capture
-// yet). An editor opening the file then captures it (Epo 2026-10-14).
+// agent's or an Undo's) newer than ThumbnailStaleSlack before the last
+// accepted capture, or any saved change while the card is still ingest's
+// render of the upload (no capture yet). An editor opening the file then
+// captures it (Epo 2026-10-14).
 func (s *Store) ThumbnailStale(ctx context.Context, fileID string) (bool, error) {
 	var stale bool
 	err := s.pool.QueryRow(ctx, `SELECT (d.state IS NOT NULL OR d.log_rows > 0)
-		  AND (f.thumbnail_captured_at IS NULL OR d.last_edited_at > f.thumbnail_captured_at)
+		  AND (f.thumbnail_captured_at IS NULL
+		       OR d.last_edited_at > f.thumbnail_captured_at - make_interval(secs => $2))
 		FROM files f JOIN source_documents d ON d.file_id = f.id
-		WHERE f.id=$1`, fileID).Scan(&stale)
+		WHERE f.id=$1`, fileID, ThumbnailStaleSlack.Seconds()).Scan(&stale)
 	if isNoRows(err) {
 		return false, nil
 	}

@@ -21,6 +21,15 @@ export const UPLOAD_WITHIN_MS = 10 * 60_000;
  */
 export const MAX_UPLOAD_BYTES = 65_535;
 
+/** Go refused an upload (`status`: 429 when another capture came first). */
+export class ThumbnailUploadRefused extends Error {
+  readonly status: number;
+  constructor(status: number) {
+    super(`Thumbnail capture refused: ${status}`);
+    this.status = status;
+  }
+}
+
 /** A drawn capture, with the auth headers fetched when it was drawn. */
 export interface DrawnThumbnail {
   bytes: ArrayBuffer;
@@ -77,6 +86,8 @@ export function createThumbnailCapture({
   // Remote updates seen: a capture drawn before the latest one is stale.
   let remotes = 0;
   let openedSeen = false;
+  // The cycle holds only the stale open, no local edit.
+  let openedOnly = false;
   let ready: Ready | null = null;
   let drawTimer: ReturnType<typeof setTimeout> | undefined;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
@@ -119,7 +130,13 @@ export function createThumbnailCapture({
       // The edits are not captured: the next upload (a pending idle one,
       // the next edit's or leaving) sends them, drawn again when an update
       // from elsewhere came after this drawing. Nothing is retried here.
-      if (captured === blob.edits) {
+      // A stale open refused as too soon: another editor just captured the
+      // file, and this one has nothing of its own to add, so the cycle ends.
+      const takenElsewhere =
+        openedOnly &&
+        error instanceof ThumbnailUploadRefused &&
+        error.status === 429;
+      if (captured === blob.edits && !takenElsewhere) {
         captured = before;
         if (blob.remotes === remotes) ready ??= blob;
       }
@@ -138,7 +155,7 @@ export function createThumbnailCapture({
     }
   };
 
-  const edited = () => {
+  const change = () => {
     if (disposed) return;
     edits++;
     clearTimeout(drawTimer);
@@ -159,7 +176,10 @@ export function createThumbnailCapture({
       ready = null;
       for (const timer of [drawTimer, idleTimer, deadline]) clearTimeout(timer);
     },
-    edited,
+    edited: () => {
+      openedOnly = false;
+      change();
+    },
     leave: () => {
       if (ready && edits !== captured && allowed()) send(ready, true);
     },
@@ -169,7 +189,8 @@ export function createThumbnailCapture({
       if (!stale) return;
       // One change to capture: uploaded now when the editor may, else by the
       // cycle's idle upload or leaving, as an edit's would be.
-      edited();
+      openedOnly = edits === captured;
+      change();
       void capture();
     },
     remote: () => {
@@ -213,6 +234,5 @@ export async function uploadThumbnail(
       method: 'POST',
     }
   );
-  if (!response.ok)
-    throw new Error(`Thumbnail capture refused: ${response.status}`);
+  if (!response.ok) throw new ThumbnailUploadRefused(response.status);
 }

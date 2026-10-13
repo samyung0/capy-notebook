@@ -6,6 +6,7 @@ import {
   type DrawnThumbnail,
   MAX_UPLOAD_BYTES,
   NOT_DRAWN_YET,
+  ThumbnailUploadRefused,
   UPLOAD_AFTER_MS,
   UPLOAD_WITHIN_MS,
   uploadThumbnail,
@@ -260,6 +261,24 @@ describe('thumbnail capture scheduling', () => {
     expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(false));
   });
 
+  it('ends a stale open refused as too soon, with nothing of its own to send', async () => {
+    const { capture, upload } = setup();
+    upload.mockRejectedValueOnce(new ThumbnailUploadRefused(429));
+    capture.opened(true);
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    capture.leave();
+    expect(upload).toHaveBeenCalledTimes(1);
+
+    // With a local edit in the cycle, the refused capture still goes again.
+    const edited = setup();
+    edited.upload.mockRejectedValueOnce(new ThumbnailUploadRefused(429));
+    edited.capture.opened(true);
+    edited.capture.edited();
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    edited.capture.leave();
+    expect(edited.upload).toHaveBeenCalledTimes(2);
+  });
+
   it('never sends a drawing an update from elsewhere came after', async () => {
     let drawing = 0;
     const draw = vi.fn(async () => ({
@@ -402,6 +421,8 @@ describe('thumbnail upload', () => {
       'fetch',
       vi.fn(async () => new Response(null, { status: 429 }))
     );
-    await expect(uploadThumbnail('f_1', drawn, false)).rejects.toThrow('429');
+    await expect(uploadThumbnail('f_1', drawn, false)).rejects.toEqual(
+      new ThumbnailUploadRefused(429)
+    );
   });
 });

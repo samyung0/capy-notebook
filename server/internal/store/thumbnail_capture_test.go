@@ -97,8 +97,10 @@ func TestThumbnailCaptureRaisesOneTreeEvent(t *testing.T) {
 }
 
 // An Office file's card is stale once a saved change is newer than its last
-// accepted capture; with no capture yet (ingest's render of the upload), once
-// any change is saved. An open session without a saved change is not.
+// accepted capture, less ThumbnailStaleSlack (a capture claimed just after a
+// change may not hold it); with no capture yet (ingest's render of the
+// upload), once any change is saved. An open session without a saved change
+// is not.
 func TestThumbnailStaleFollowsTheLastSavedChange(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -125,10 +127,17 @@ func TestThumbnailStaleFollowsTheLastSavedChange(t *testing.T) {
 	}
 	save()
 	stale(true, "no capture, a saved change")
-	if err := s.ClaimThumbnailCapture(ctx, file.ID); err != nil {
-		t.Fatal(err)
+	captured := func(after time.Duration) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `UPDATE files f SET thumbnail_captured_at = d.last_edited_at + make_interval(secs => $2)
+			FROM source_documents d WHERE d.file_id = f.id AND f.id = $1`, file.ID, after.Seconds()); err != nil {
+			t.Fatal(err)
+		}
 	}
-	stale(false, "captured after the last change")
+	captured(ThumbnailStaleSlack - time.Second)
+	stale(true, "captured within the slack after the last change")
+	captured(ThumbnailStaleSlack + time.Second)
+	stale(false, "captured past the slack after the last change")
 	save()
 	stale(true, "a change saved after the capture")
 }
