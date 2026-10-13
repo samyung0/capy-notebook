@@ -186,6 +186,7 @@ async fn serve(config: Config) -> Result<(), String> {
         health: Default::default(),
         unplaced: Default::default(),
         projection_failures: Default::default(),
+        projection_refused: Default::default(),
         pubsub: Default::default(),
         next_connection: Default::default(),
         next_channel: Default::default(),

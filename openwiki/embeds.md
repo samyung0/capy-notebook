@@ -84,7 +84,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   can't edit" (`CenterContent`) and a quiz editor shows its questions to
   read under the same strip, an unreadable block drawn as the unsupported
   notice (`liveQuiz.ts`, which never writes over it); readers join as usual,
-  and no projection or service edit rebuilds such a quiz. A stored note
+  and no projection or service edit rebuilds such a quiz (a refused
+  projection is logged once and not retried while the stored version
+  stays). The load logs why a room is read-only, once, with its name
+  (`room loads read-only`, the store's reason). A stored note
   whose reference still carries an imported fence body (`pending`, the
   quiz's answer keys) is not served at
   all: its room refuses to load, as Go's reads refuse it (`Model::stored`). Only `mermaid.source` is shared

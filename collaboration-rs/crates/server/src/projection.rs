@@ -36,6 +36,30 @@ impl Failures {
     }
 }
 
+/// The stored version at which each material's projection is refused for
+/// good (a quiz holding a block this version cannot read, which a projection
+/// would drop): the pending scan skips it until the version moves, and the
+/// refusal is logged once (R2-L2).
+#[derive(Default)]
+pub struct Refused(Mutex<HashMap<String, i64>>);
+
+impl Refused {
+    /// Records the refusal at `version`; whether it is new.
+    #[allow(clippy::unwrap_used)]
+    fn refuse(&self, material: &str, version: i64) -> bool {
+        self.0.lock().unwrap().insert(material.to_owned(), version) != Some(version)
+    }
+
+    /// Whether the projection at `version` was refused.
+    #[allow(clippy::unwrap_used)]
+    fn held(&self, material: &str, version: i64) -> bool {
+        self.0.lock().unwrap().get(material) == Some(&version)
+    }
+}
+
+/// Why a quiz's projection is refused.
+const UNREADABLE_QUIZ: &str = "the quiz holds a block this version cannot read";
+
 /// The Plate envelope of a document, off the room's thread.
 pub async fn content_of(doc: Doc, model: Model) -> Result<Value, String> {
     tokio::task::spawn_blocking(move || {
@@ -155,39 +179,68 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
         return Err("material not found".into());
     };
     let version = durable.version;
-    let (content, asset_ids) =
-        tokio::task::spawn_blocking(move || -> Result<(Value, Option<Vec<String>>), String> {
-            use yrs::Transact;
-            let replay = |base: &[u8], rows: &[Vec<u8>]| -> Result<Doc, String> {
-                let doc = ydoc::scratch_doc();
-                ydoc::replay(&doc, base, rows).map_err(|error| error.to_string())?;
-                Ok(doc)
-            };
-            let doc = replay(&durable.base, &durable.rows)?;
-            let (value, asset_ids) = match &durable.keys {
-                Some((base, rows)) => {
-                    let keys = replay(base, rows)?;
-                    let (content, keys) = (doc.transact(), keys.transact());
-                    // A block this version cannot read would leave the
-                    // projection, and so the stored quiz (Epo 2026-10-13).
-                    if items::quiz::holds_unknown_block(&content)
-                        || items::quiz::holds_unknown_block(&keys)
-                    {
-                        return Err("the quiz holds a block this version cannot read".into());
-                    }
-                    (
-                        items::quiz::value(&content, &keys),
-                        Some(items::quiz::asset_ids(&content, &keys)),
-                    )
-                }
-                None => (Model::of(&durable.kind).value(&doc.transact())?, None),
-            };
-            Ok((json!({ "schemaVersion": 1, "value": value }), asset_ids))
-        })
+    let projected = tokio::task::spawn_blocking(move || projected(&durable))
         .await
         .map_err(|error| error.to_string())??;
+    let Some((content, asset_ids)) = projected else {
+        if app.projection_refused.refuse(material_id, version) {
+            observe::log(
+                observe::Level::Warn,
+                "projection refused",
+                json!({ "materialId": material_id, "reason": UNREADABLE_QUIZ, "version": version }),
+            );
+            if let Err(error) =
+                note_store::record_projection_error(&app.db, material_id, version, UNREADABLE_QUIZ)
+                    .await
+            {
+                observe::capture(
+                    &error.to_string(),
+                    None,
+                    &[
+                        ("materialId", material_id),
+                        ("stage", "projection_record_error"),
+                    ],
+                );
+            }
+        }
+        return Err(UNREADABLE_QUIZ.into());
+    };
     project(app, material_id, version, &content, asset_ids).await?;
     Ok(version)
+}
+
+/// The content a material's durable documents project to, with a quiz's
+/// editor assets; none for a quiz holding a block this version cannot read,
+/// which the projection, and so the stored quiz, would drop (Epo 2026-10-13).
+fn projected(
+    durable: &note_store::Durable,
+) -> Result<Option<(Value, Option<Vec<String>>)>, String> {
+    use yrs::Transact;
+    let replay = |base: &[u8], rows: &[Vec<u8>]| -> Result<Doc, String> {
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, base, rows).map_err(|error| error.to_string())?;
+        Ok(doc)
+    };
+    let doc = replay(&durable.base, &durable.rows)?;
+    let (value, asset_ids) = match &durable.keys {
+        Some((base, rows)) => {
+            let keys = replay(base, rows)?;
+            let (content, keys) = (doc.transact(), keys.transact());
+            if items::quiz::holds_unknown_block(&content) || items::quiz::holds_unknown_block(&keys)
+            {
+                return Ok(None);
+            }
+            (
+                items::quiz::value(&content, &keys),
+                Some(items::quiz::asset_ids(&content, &keys)),
+            )
+        }
+        None => (Model::of(&durable.kind).value(&doc.transact())?, None),
+    };
+    Ok(Some((
+        json!({ "schemaVersion": 1, "value": value }),
+        asset_ids,
+    )))
 }
 
 /// The safety net for projections no room made (a crash before its idle or
@@ -210,7 +263,11 @@ pub async fn run_pending(app: Shared) {
             }
         };
         let loaded: Vec<String> = app.rooms.names();
-        for (material_id, _) in pending {
+        for (material_id, version) in pending {
+            // Refused for good at this version: no retry every 5 s (R2-L2).
+            if app.projection_refused.held(&material_id, version) {
+                continue;
+            }
             let prefixes = [
                 format!("material:{material_id}:"),
                 format!("keys:{material_id}:"),
@@ -240,4 +297,60 @@ pub fn urlencode(value: &str) -> String {
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use serde_json::json;
+
+    use super::{Refused, projected};
+    use crate::note_store::Durable;
+
+    /// A quiz holding a block this version cannot read projects to nothing
+    /// (the projection would drop the block), and its refusal is held per
+    /// stored version: new once, held until the version moves, so the
+    /// pending scan stops retrying it every 5 s and logs it once (R2-L2).
+    /// Fails if the refusal is not held, or the quiz projects.
+    #[test]
+    fn an_unreadable_quiz_projection_is_refused_once_per_version() {
+        let durable = |stem: serde_json::Value| {
+            let value = [json!({ "type": "quiz", "id": "quiz", "children": [{
+                "type": "quiz_question", "id": "q1", "children": [{ "text": "" }],
+                "question": {
+                    "id": "q1", "labels": "letters", "layout": "paper", "stem": stem,
+                    "parts": [{
+                        "id": "q1:part:1", "marks": 1, "solution": [],
+                        "blocks": [{ "type": "text", "text": "True?" }],
+                        "answer": { "type": "boolean", "correct": true },
+                    }],
+                },
+            }] })];
+            let (content, keys) = items::quiz::states_from_value(&value, 0);
+            Durable {
+                version: 3,
+                base: content,
+                rows: Vec::new(),
+                kind: "quiz".into(),
+                keys: Some((keys, Vec::new())),
+            }
+        };
+        assert!(
+            projected(&durable(json!([{ "type": "timeline", "events": [] }])))
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            projected(&durable(json!([{ "type": "text", "text": "Stem" }])))
+                .unwrap()
+                .is_some()
+        );
+        let refused = Refused::default();
+        assert!(!refused.held("q", 3));
+        assert!(refused.refuse("q", 3));
+        assert!(!refused.refuse("q", 3), "logged once per version");
+        assert!(refused.held("q", 3));
+        assert!(!refused.held("q", 4), "a new version projects again");
+    }
 }
