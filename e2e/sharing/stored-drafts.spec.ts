@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type {
   APIRequestContext,
   BrowserContext,
@@ -76,7 +77,13 @@ async function uploadText(
   const reserved = await api.post(
     `/api/workspaces/${workspaceId}/sources/uploads`,
     {
-      data: { contentType: 'text/markdown', name, sizeBytes: bytes.length },
+      data: {
+        batchId: `stored-drafts-${randomUUID()}`,
+        batchTotal: 1,
+        contentType: 'text/markdown',
+        name,
+        sizeBytes: bytes.length,
+      },
     }
   );
   expect(reserved.status(), await reserved.text()).toBe(201);
