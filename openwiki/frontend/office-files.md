@@ -335,9 +335,24 @@ changed, over the fingerprinted source that every open requires:
   fails explicitly when the result does not reproduce the latest workbook. An
   array formula keeps its `t="array"` range only while its anchor cell still
   holds its original content; otherwise it saves as a single-cell formula.
+  A row or column insert or delete also moves note and threaded-comment
+  references, note shapes (VML), picture anchors and protected ranges (whole
+  rows and columns too); a note or thread on a deleted cell goes with it, and
+  a protected range deleted whole is dropped. A note drawing that is not
+  well-formed XML is written back unchanged while its notes move, so Excel
+  may show a moved note's box at its old cell; a comments part that cannot
+  be parsed fails the save.
 - PPTX keeps no parsed package or media in Yjs: both come from the source
   package. Inserted pictures stay binary on their shape until a publication
   writes them into the package. Comments live in `pptx:comments`.
+  Objects the editor does not model (charts, SmartArt, video, audio,
+  equations) keep their markup, parts and relationships on an edited slide.
+  Deleting an animated shape, a video or audio drops, in one linear pass, its
+  time nodes, the triggers it was, what waited on them and orphaned build
+  entries, and `p:timing` once nothing is left. An equation (math in
+  `mc:Choice`, its picture in `mc:Fallback`) moves in both branches and
+  refuses text edits with `EquationTextError`, which the runtime reports as
+  the `equation-text` notice.
 
 A publication rebases the edits saved after its capture onto seed(export) in
 every format (`rebaseOffice` in `vendor/betteroffice/shared/office-checkpoint.ts`),
