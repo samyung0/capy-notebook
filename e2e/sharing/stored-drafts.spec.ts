@@ -65,6 +65,14 @@ async function storedRows(
   );
 }
 
+/** Waits until `page`'s drafts worker answers. The app creates it at start,
+ * but under the Vite dev server its module graph (yjs and its chunks) is
+ * still loading for a moment; a fetch that fails once the context goes
+ * offline fails the worker for the page load, and its sweeps never send. */
+async function workerLoaded(page: Page) {
+  expect(await storedRows(page, 'worker-loaded')).toBe(0);
+}
+
 /** A text source uploaded to `workspaceId` through the API (the e2e
  * stack's memory store serves its bytes under /api/e2e/blobs/). */
 async function uploadText(
@@ -135,6 +143,7 @@ test('a note edited offline in a closed tab reaches a co-editor from another pag
   const other = await ownerPage.context().newPage();
   await other.goto('/');
   await expect(other.locator('main')).toBeVisible();
+  await workerLoaded(other);
 
   await link.down(ownerPage);
   await expect(
@@ -191,6 +200,7 @@ test('a text source edited offline in a closed tab reaches a co-editor from anot
   const other = await ownerPage.context().newPage();
   await other.goto('/');
   await expect(other.locator('main')).toBeVisible();
+  await workerLoaded(other);
 
   await link.down(ownerPage);
   await source(ownerPage).click();
