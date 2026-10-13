@@ -80,7 +80,7 @@ fn projected_source(doc: &Doc) -> String {
 
 /// A validator with its bound in place: an empty update takes the baseline.
 fn validator(room: &Doc) -> Validator {
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     validator.admit_bytes(room, &edit(room, 9, |_| {})).unwrap();
     validator
 }

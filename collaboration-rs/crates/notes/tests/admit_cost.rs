@@ -58,7 +58,7 @@ fn paragraph(doc: &Doc) -> XmlTextRef {
 /// The steps admission's walks take on `update`, with a bound in place, and
 /// whether it was admitted.
 fn admit_steps(room: &Doc, update: &[u8]) -> (Steps, bool) {
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let nothing = ydoc::decode(&since(room, room)).unwrap();
     validator.admit(room, &nothing).unwrap();
     let decoded = ydoc::decode(update).unwrap();
@@ -87,7 +87,7 @@ fn room_bytes(room: &Doc) -> u64 {
 
 /// `admit`'s answer to `update`, as text (`Accepted`, the refusal).
 fn verdict(room: &Doc, update: &[u8]) -> String {
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     match validator.admit(room, &ydoc::decode(update).unwrap()) {
         Ok(admission) => format!("{admission:?}"),
         Err(Refusal::Update(error)) => format!("{error:?}"),
@@ -489,7 +489,7 @@ fn a_costly_update_is_refused_within_the_budget() {
         assert!(update.len() <= 4 << 20, "{} bytes", update.len());
         let decoded = ydoc::decode(&update).unwrap();
         ydoc::steps::take();
-        let answer = Validator::default().admit(&room, &decoded);
+        let answer = Validator::new("note").admit(&room, &decoded);
         let steps = ydoc::steps::take().total();
         let bytes = update.len() as u64 + room_bytes(&room);
         eprintln!(
@@ -554,7 +554,8 @@ fn deleting_every_attribute_of_a_wide_element_stays_inline_and_linear() {
     assert!(!notes::limits::heavy(
         &room.transact(),
         &decoded,
-        update.len()
+        update.len(),
+        "note"
     ));
     let heavy = ydoc::steps::take();
     let (admission, admitted) = admit_steps(&room, &update);

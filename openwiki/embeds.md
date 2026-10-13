@@ -52,17 +52,24 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   element type`), and its messages are Go's ("chart, plot and graph"). Room
   admission (`notes::limits`) refuses, as the update arrives, what that
   store would refuse, so one writer's update is lost instead of the room's
-  unsaved state: a block given a type the catalog does not list for a note,
-  mindmap or diagram (`plate_type`), a key the catalog forbids its element,
-  or an element left without a key it requires (`OWN_KEYS`: the catalog's
-  `required`, less the top-level `id` every block needs and a media block's
-  `assetId`, which the media check reads). A note, mindmap or diagram room
-  whose stored document holds a type the catalog does not list (a newer
-  version wrote it) loads read-only: every writer joins read-only and hears
-  `room-read-only` with `code: unsupported_block`, its updates and drafts
-  are refused (`permission`), and the editor drops to View under a strip
-  saying "This document has a block this version of Capy can't edit"
-  (`CenterContent`); readers join as usual. Only `mermaid.source` is shared
+  unsaved state: a block given a type the catalog does not list for the
+  room's material kind (`may_hold`: a reference goes into a note, not a
+  mindmap or diagram), a key the catalog forbids its element, a key outside
+  a closed element's `fields` (written on a chart, plot, graph or
+  html_embed, or held by a block retyped to one; checked on a copy of the
+  room, as media are), or an element left without a key it requires
+  (`OWN_KEYS`: the catalog's `required`, less the top-level `id` every block
+  needs and a media block's `assetId`, which the media check reads). A room
+  whose stored document holds a block this version cannot read (a type the
+  catalog does not list in a note, mindmap or diagram; a question block kind
+  a quiz room does not admit, in either quiz document) loads read-only:
+  every writer joins read-only and hears `room-read-only` with `code:
+  unsupported_block`, its updates and drafts are refused (`permission`),
+  and a note or diagram editor drops to View under a strip saying "This
+  document has a block this version of Capy can't edit" (`CenterContent`);
+  readers join as usual. A stored note whose reference still carries an
+  imported fence body (`pending`, the quiz's answer keys) is not served at
+  all: its room refuses to load, as Go's reads refuse it (`Model::stored`). Only `mermaid.source` is shared
   text: the server holds it as `plate::SHARED_TEXT_KEY` on
   `SHARED_TEXT_ELEMENT`, the browser as `liveMermaid.ts`'s constants and in
   the `@slate-yjs/core` patch.

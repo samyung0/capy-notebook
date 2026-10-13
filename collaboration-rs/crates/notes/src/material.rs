@@ -375,40 +375,6 @@ fn validate_material_ref(node: &Node) -> Check {
     Ok(())
 }
 
-/// A stored note's value with each reference still carrying an imported fence
-/// body (`pending`, no row yet) as an empty paragraph with its id, as a room
-/// seeds from it: content stored before fences were resolved ahead of
-/// insertion may hold one, whose body holds the answer keys, and a room
-/// reaches every reader (live-items REVIEW5). None when there is none.
-pub fn without_pending_refs(value: &[Value]) -> Option<Vec<Value>> {
-    let pending = |node: &Value| {
-        node.get("type").and_then(Value::as_str) == Some(MATERIAL_REF_TYPE)
-            && (node.get("pending").is_some()
-                || node
-                    .get("materialId")
-                    .and_then(Value::as_str)
-                    .is_none_or(|id| js_trim(id).is_empty()))
-    };
-    if !value.iter().any(pending) {
-        return None;
-    }
-    Some(
-        value
-            .iter()
-            .map(|node| {
-                if !pending(node) {
-                    return node.clone();
-                }
-                serde_json::json!({
-                    "type": "p",
-                    "id": node.get("id").cloned().unwrap_or(Value::Null),
-                    "children": [{ "text": "" }],
-                })
-            })
-            .collect(),
-    )
-}
-
 fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
     if depth > DEPTH_CEILING {
         return fail("document nesting is too deep to decode");

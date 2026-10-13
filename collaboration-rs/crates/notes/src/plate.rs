@@ -408,11 +408,9 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
     }
 }
 
-/// An element type the embed catalog does not list, if the document holds
-/// one: a stored document a newer version wrote. Its room loads read-only
-/// (Epo 2026-10-13). Reads each element's `type` and nothing else, with an
-/// explicit stack.
-pub fn unlisted_type<T: ReadTxn>(txn: &T) -> Option<String> {
+/// Whether `visit` holds for some element of the document (a Y.XmlText),
+/// walked with an explicit stack.
+fn any_element<T: ReadTxn>(txn: &T, mut visit: impl FnMut(BranchPtr) -> bool) -> bool {
     let mut stack: Vec<BranchPtr> = content_root(txn).into_iter().collect();
     while let Some(branch) = stack.pop() {
         let mut next = branch.start();
@@ -424,25 +422,54 @@ pub fn unlisted_type<T: ReadTxn>(txn: &T) -> Option<String> {
             let Some(element) = xml_text(item) else {
                 continue;
             };
-            let kind = element
-                .entry_item("type")
-                .filter(|entry| !entry.is_deleted())
-                .and_then(|entry| match entry.content() {
-                    ItemContent::Any(values) => match values.last() {
-                        Some(Any::String(kind)) => Some(kind.to_string()),
-                        _ => None,
-                    },
-                    _ => None,
-                });
-            if let Some(kind) = kind
-                && crate::catalog::element(&kind).is_none()
-            {
-                return Some(kind);
+            if visit(element) {
+                return true;
             }
             stack.push(element);
         }
     }
-    None
+    false
+}
+
+/// An element's live string attribute `key`.
+fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
+    let entry = element
+        .entry_item(key)
+        .filter(|entry| !entry.is_deleted())?;
+    match entry.content() {
+        ItemContent::Any(values) => match values.last() {
+            Some(Any::String(value)) => Some(value.to_string()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// An element type the embed catalog does not list, if the document holds
+/// one: a stored document a newer version wrote. Its room loads read-only
+/// (Epo 2026-10-13). Reads each element's `type` and nothing else.
+pub fn unlisted_type<T: ReadTxn>(txn: &T) -> Option<String> {
+    let mut found = None;
+    any_element(txn, |element| match string_attribute(element, "type") {
+        Some(kind) if crate::catalog::element(&kind).is_none() => {
+            found = Some(kind);
+            true
+        }
+        _ => false,
+    });
+    found
+}
+
+/// Whether a material reference carries an imported fence body (`pending`,
+/// the quiz's answer keys), which no stored document may hold: its room
+/// refuses to load, so no reader receives it, as Go's reads refuse it.
+pub fn holds_pending_reference<T: ReadTxn>(txn: &T) -> bool {
+    any_element(txn, |element| {
+        string_attribute(element, "type").as_deref() == Some(crate::material::MATERIAL_REF_TYPE)
+            && element
+                .entry_item("pending")
+                .is_some_and(|entry| !entry.is_deleted())
+    })
 }
 
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.

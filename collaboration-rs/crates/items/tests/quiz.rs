@@ -246,6 +246,27 @@ fn every_admitted_block_kind_round_trips() {
     assert_eq!(held, admitted);
     let (content, keys, _, _) = rooms(&questions);
     assert_eq!(projected(&content, &keys), questions);
+    assert!(!quiz::holds_unknown_block(&content.transact()));
+    assert!(!quiz::holds_unknown_block(&keys.transact()));
+}
+
+/// A stored quiz holding a block kind the room does not admit (a newer
+/// version wrote it), in a stem or a solution, is found in the document it
+/// seeds, so the room loads read-only (Epo 2026-10-13) instead of dropping the
+/// block from what it reads. Fails if the check misses either document.
+#[test]
+fn a_seeded_unknown_block_kind_is_found() {
+    let timeline = json!({ "type": "timeline", "events": ["Mitosis"] });
+    let mut in_stem = fixtures()[0].clone();
+    in_stem["stem"] = json!([timeline]);
+    let (content, keys, _, _) = rooms(&[in_stem]);
+    assert!(quiz::holds_unknown_block(&content.transact()));
+    assert!(!quiz::holds_unknown_block(&keys.transact()));
+    let mut in_solution = fixtures()[0].clone();
+    in_solution["parts"][0]["solution"] = json!([timeline]);
+    let (content, keys, _, _) = rooms(&[in_solution]);
+    assert!(!quiz::holds_unknown_block(&content.transact()));
+    assert!(quiz::holds_unknown_block(&keys.transact()));
 }
 
 #[test]

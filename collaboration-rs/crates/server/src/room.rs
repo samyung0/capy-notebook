@@ -227,9 +227,10 @@ struct Note {
     /// A quiz room: the metrics last sent to the other document's room.
     metrics_sent: Option<notes::limits::Metrics>,
     validator: crate::model::RoomValidator,
-    /// The stored document holds a block type the embed catalog does not
-    /// list: it stays readable and no writer edits it until it is fixed (Epo
-    /// 2026-10-13).
+    /// The stored document holds a block this version cannot read (a type
+    /// the embed catalog does not list, a quiz block kind the room does not
+    /// admit: `Model::stored`): it stays readable and no writer edits it
+    /// until it is fixed (Epo 2026-10-13).
     unlisted: bool,
     durable_metrics: Option<notes::limits::Metrics>,
     stored_version: i64,
@@ -471,7 +472,7 @@ async fn load(
                     model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
                     let metrics = model.measure(&txn)?;
-                    let unlisted = model.unlisted_type(&txn).is_some();
+                    let unlisted = model.stored(&txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
                     Ok((doc, durable, metrics, unlisted))
@@ -480,7 +481,7 @@ async fn load(
                 .map_err(|error| error.to_string())??;
             // A quiz's other document as stored: its metrics count with this
             // one's, and the content room's readers get the keys' items.
-            let mut validator = model.validator(metrics);
+            let mut validator = model.validator(&kind, metrics);
             let mut reader = None;
             if model.quiz() {
                 let other = match doc_kind {
@@ -1601,8 +1602,8 @@ impl Room {
         Ok(())
     }
 
-    /// The `room-read-only` notice of a note room holding a block type the
-    /// embed catalog does not list; none for any other room.
+    /// The `room-read-only` notice of a material room holding a block this
+    /// version cannot read; none for any other room.
     fn unsupported(&self) -> Option<String> {
         match &self.kind {
             Kindly::Note(note) if note.unlisted => Some(
@@ -1925,7 +1926,9 @@ impl Room {
         // socket keeps its thread. A note update touching a media block's
         // attributes is checked on a copy of the room (REVIEW5 M1).
         let heavy = match &self.kind {
-            Kindly::Note(_) => notes::limits::heavy(&self.doc.transact(), &update, bytes.len()),
+            Kindly::Note(note) => {
+                notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
+            }
             Kindly::Source(source) => {
                 !ydoc::applies_inline(
                     &self.doc.transact(),

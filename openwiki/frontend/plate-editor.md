@@ -467,9 +467,8 @@ them where the paste or import ran (`notes/pendingRefs.ts`, the held place of
 `holdInsertPlace`); a fence whose row cannot be created is left out. The
 collaboration server refuses an update that writes `pending` or leaves a
 reference without its material id or below the top level, the store check refuses one (logged with the room's name, so with the note), Go refuses a
-note write holding one, a room seeded from stored content turns one into an
-empty paragraph with its id, and Go gives one to the note's editors only (a
-viewer's read, a shared page and a clone get the empty paragraph); agent
+note write holding one, and a stored note holding one is served by
+neither: Go's reads refuse it and its room refuses to load; agent
 markdown resolves its fences into rows before Go stores the note. Readable
 Markdown and DOCX exports resolve references into study handouts and fail
 explicitly if a required reference cannot be read. A reference belongs to its

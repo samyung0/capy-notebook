@@ -255,14 +255,25 @@ fn element_at<T: ReadTxn>(txn: &T, path: &[usize]) -> BranchPtr {
 }
 
 fn admit(room: &Doc, update: &[u8]) -> Result<limits::Admission, Refusal> {
-    Validator::default().admit(room, &Update::decode_v1(update).unwrap())
+    Validator::new("note").admit(room, &Update::decode_v1(update).unwrap())
+}
+
+/// Whether some Plate room (a note, mindmap or diagram) may hold the element.
+fn plate_element(element: &catalog::Element) -> bool {
+    catalog::MATERIAL_KINDS
+        .iter()
+        .any(|kind| !kind.item && element.materials.contains(&kind.kind))
+}
+
+fn refused_as(result: Result<limits::Admission, Refusal>, reason: &str) -> bool {
+    matches!(result, Err(Refusal::Content(what)) if what == reason)
 }
 
 /// Room admission against the catalog, so that what a writer may send is
 /// what the store takes (an update the store refuses would discard the
 /// room's unsaved state for every co-editor): a block type the catalog does
-/// not list for a Plate document is refused, created or retyped (decision
-/// 1); `OWN_KEYS` is the catalog's required keys; and each element of the
+/// not list for a note is refused, created or retyped (decision 1);
+/// `OWN_KEYS` is the catalog's required keys; and each element of the
 /// every-block note losing a required key or gaining a forbidden one is
 /// refused, a nested mermaid's id among them. Fails if any check is
 /// reverted.
@@ -272,7 +283,7 @@ fn admission_follows_the_catalog() {
     let note = &docs["note"];
     let room = room(note);
     let paragraph = note.iter().position(|node| node["type"] == "p").unwrap();
-    let unlisted = |update: &[u8]| matches!(admit(&room, update), Err(Refusal::Content(what)) if what == limits::UNLISTED_TYPE);
+    let unlisted = |update: &[u8]| refused_as(admit(&room, update), limits::UNLISTED_TYPE);
     let names = catalog::ELEMENTS.iter().map(|element| element.name);
     for name in names.chain(["toggle", "image", "diagram"]) {
         let retyped = edit(&room, 2, |peer| {
@@ -281,12 +292,12 @@ fn admission_follows_the_catalog() {
         });
         assert_eq!(
             unlisted(&retyped),
-            !limits::plate_type(name),
+            !limits::may_hold("note", name),
             "a paragraph retyped {name}"
         );
     }
     for name in ["quiz", "quiz_question", "flashcards", "flashcard", "toggle"] {
-        assert!(!limits::plate_type(name), "{name}");
+        assert!(!limits::may_hold("note", name), "{name}");
     }
     let inserted = edit(&room, 3, |peer| {
         let mut txn = peer.transact_mut();
@@ -306,7 +317,7 @@ fn admission_follows_the_catalog() {
         .collect();
     let required: BTreeMap<&str, BTreeSet<&str>> = catalog::ELEMENTS
         .iter()
-        .filter(|element| limits::plate_type(element.name))
+        .filter(|element| plate_element(element))
         .map(|element| {
             // A top-level block's id is required of every top-level block, a
             // media block's asset id by its own check.
@@ -323,7 +334,7 @@ fn admission_follows_the_catalog() {
     let samples = samples(&BTreeMap::from([("note", note.clone())]));
     for element in catalog::ELEMENTS
         .iter()
-        .filter(|e| limits::plate_type(e.name))
+        .filter(|e| limits::may_hold("note", e.name))
     {
         let name = element.name;
         let sample = &samples
@@ -374,6 +385,83 @@ fn admission_follows_the_catalog() {
     assert!(
         matches!(admit(&columns, &unset), Err(Refusal::Content(what)) if what == limits::MISSING_KEY)
     );
+}
+
+/// A closed element (chart, plot, graph, html_embed) carries its fields and
+/// nothing else, as the store requires: a key outside them is refused at
+/// admission whether written on a held one or held by a block retyped to one,
+/// while a field (a chart's width) goes in with no copy of the room. And a
+/// room admits only the types the catalog lists for its material kind: a
+/// reference goes into a note, not into a mindmap or diagram. Fails if
+/// either check is reverted.
+#[test]
+fn admission_follows_closed_fields_and_the_material_kind() {
+    let docs = documents();
+    let note = &docs["note"];
+    let room = room(note);
+    let samples = samples(&BTreeMap::from([("note", note.clone())]));
+    let set = |path: &[usize], key: &'static str, value: &'static str| {
+        edit(&room, 7, |peer| {
+            let block = XmlTextRef::from(element_at(&peer.transact(), path));
+            block.insert_attribute(&mut peer.transact_mut(), key, value);
+        })
+    };
+    let closed: Vec<&catalog::Element> = catalog::ELEMENTS
+        .iter()
+        .filter(|e| e.fields.is_some() && limits::may_hold("note", e.name))
+        .collect();
+    assert!(!closed.is_empty());
+    for element in closed {
+        let path = &samples[element.name].path;
+        for key in ["extra", "indent", "width", "caption", "html", "block"] {
+            if element.fields.is_some_and(|fields| fields.contains(&key)) {
+                continue;
+            }
+            assert!(
+                refused_as(admit(&room, &set(path, key, "x")), limits::UNEXPECTED_KEY),
+                "a {} given {key}",
+                element.name
+            );
+        }
+    }
+    let chart = &samples["chart"].path;
+    let mut validator = Validator::new("note");
+    let resized = set(chart, "width", "50%");
+    assert!(
+        validator
+            .admit(&room, &Update::decode_v1(&resized).unwrap())
+            .is_ok()
+    );
+    assert_eq!(validator.media_copies, 0, "a chart's width takes no copy");
+
+    let block = docs["note"].iter().find(|n| n["type"] == "chart").unwrap()["block"].clone();
+    let indented = self::room(&[
+        json!({ "type": "p", "id": "p", "indent": 1, "block": block, "children": [{ "text": "" }] }),
+    ]);
+    let retyped = edit(&indented, 8, |peer| {
+        let block = XmlTextRef::from(element_at(&peer.transact(), &[0]));
+        block.insert_attribute(&mut peer.transact_mut(), "type", "chart");
+    });
+    assert!(refused_as(
+        admit(&indented, &retyped),
+        limits::UNEXPECTED_KEY
+    ));
+
+    let reference = json!({ "type": "material_ref", "id": "r", "materialId": "m", "refKind": "quiz", "children": [{ "text": "" }] });
+    for kind in ["note", "mindmap", "diagram"] {
+        let map = self::room(&docs["mindmap"]);
+        let inserted = edit(&map, 9, |peer| {
+            let mut txn = peer.transact_mut();
+            let root = plate::content_root(&txn).unwrap();
+            slate_yjs::insert_nodes(&mut txn, root, 1, std::slice::from_ref(&reference));
+        });
+        let answer = Validator::new(kind).admit(&map, &Update::decode_v1(&inserted).unwrap());
+        assert_eq!(
+            refused_as(answer, limits::UNLISTED_TYPE),
+            kind != "note",
+            "a reference in a {kind}"
+        );
+    }
 }
 
 /// The catalog's one shared-text key is the one the projection, the

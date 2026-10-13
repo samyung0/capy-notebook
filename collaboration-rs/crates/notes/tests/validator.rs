@@ -99,7 +99,7 @@ fn replacing(room: &Doc, value: &[Value]) -> Vec<u8> {
 #[test]
 fn refuses_unsupported_roots_also_between_measurements() {
     let room = document(&[paragraph("small")]);
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let hidden = edit(&room, 2, |peer| {
         peer.get_or_insert_text("unmetered")
             .insert(&mut peer.transact_mut(), 0, "hidden growth")
@@ -108,7 +108,7 @@ fn refuses_unsupported_roots_also_between_measurements() {
         matches!(validator.admit_bytes(&room, &hidden), Err(Refusal::Roots(RootError::Unsupported(name))) if name == "unmetered")
     );
     // A fresh room state: the first update measures, the next take the bound.
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     for client in 3..6 {
         let typing = edit(&room, client, |peer| {
             block(peer, 0).insert(&mut peer.transact_mut(), 1, "x")
@@ -154,7 +154,7 @@ fn refuses_growth_past_a_limit_and_keeps_an_over_limit_note_shrinkable() {
         .collect();
     let update = replacing(&room, &oversized);
     assert!(matches!(
-        Validator::default().admit_bytes(&room, &update),
+        Validator::new("note").admit_bytes(&room, &update),
         Err(Refusal::Limit {
             code: LimitCode::DocumentNodesExceeded,
             ..
@@ -170,7 +170,7 @@ fn refuses_growth_past_a_limit_and_keeps_an_over_limit_note_shrinkable() {
         &[json!({ "children": [{ "text": "recovered" }], "id": "r1", "type": "p" })],
     );
     assert_eq!(
-        Validator::default().admit_bytes(&room, &update).unwrap(),
+        Validator::new("note").admit_bytes(&room, &update).unwrap(),
         Admission::Accepted
     );
 
@@ -179,7 +179,7 @@ fn refuses_growth_past_a_limit_and_keeps_an_over_limit_note_shrinkable() {
     for _ in 0..=MAX_DEPTH {
         deep = json!({ "children": [deep], "type": "blockquote" });
     }
-    match Validator::default().admit_bytes(&room, &replacing(&room, &[deep])) {
+    match Validator::new("note").admit_bytes(&room, &replacing(&room, &[deep])) {
         Err(Refusal::Limit {
             code: LimitCode::DocumentDepthExceeded,
             metrics,
@@ -195,7 +195,7 @@ fn refuses_deep_growth_behind_shrinking_content() {
     let room = document(&value);
     let update = replacing(&room, &[nested(301)]);
     assert!(matches!(
-        Validator::default().admit_bytes(&room, &update),
+        Validator::new("note").admit_bytes(&room, &update),
         Err(Refusal::Limit { .. })
     ));
 }
@@ -203,7 +203,7 @@ fn refuses_deep_growth_behind_shrinking_content() {
 #[test]
 fn defers_an_update_the_room_cannot_place_without_copying_it() {
     let room = document(&[paragraph("small")]);
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let client = copy(&room, 2);
     block(&client, 0).insert(&mut client.transact_mut(), 5, " lost"); // never reached the room
     let vector = client.transact().state_vector();
@@ -240,7 +240,7 @@ fn types_near_the_size_limit_with_one_copy_and_measures_after_a_service_edit() {
         })
     };
     let room = near();
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     for client in 2..52 {
         let update = keystroke(&room, client, "x");
         assert_eq!(
@@ -261,7 +261,7 @@ fn types_near_the_size_limit_with_one_copy_and_measures_after_a_service_edit() {
     ));
 
     let room = near();
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let update = keystroke(&room, 2, "x");
     validator.admit_bytes(&room, &update).unwrap();
     apply(&room, &update);
@@ -335,7 +335,7 @@ fn refuses_nesting_past_the_ceiling_on_a_task_stack() {
         let room = document(&[paragraph("hello")]);
         let update = chain(&room, depth);
         let (admitted, measured, projected) = on_task_stack(move || {
-            let admitted = Validator::default().admit_bytes(&room, &update);
+            let admitted = Validator::new("note").admit_bytes(&room, &update);
             apply(&room, &update);
             let measured = limits::measure(&room.transact());
             let state = room
@@ -398,7 +398,7 @@ fn refuses_a_deeply_nested_attribute_value_on_a_task_stack() {
     let shallow = nested_value(100);
     let deep = nested_value(10_000); // about 20 KB
     let (shallow, deep) = on_task_stack(move || {
-        let mut validator = Validator::default();
+        let mut validator = Validator::new("note");
         (
             validator.admit_bytes(&room, &shallow),
             validator.admit_bytes(&room, &deep),
@@ -416,13 +416,13 @@ fn takes_an_update_listing_a_client_without_structs() {
     let room = document(&[paragraph("hello")]);
     // The exact path applies it to a copy of the room.
     assert_eq!(
-        Validator::default()
+        Validator::new("note")
             .admit_bytes(&room, &EMPTY_CLIENT)
             .unwrap(),
         Admission::Accepted
     );
     // The bound path takes it as it is; the room then applies it.
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let typing = edit(&room, 2, |peer| {
         block(peer, 0).insert(&mut peer.transact_mut(), 0, ">")
     });
@@ -461,7 +461,7 @@ fn refuses_content_the_editor_never_writes() {
     let shared = edit(&room, 4, |peer| {
         block(peer, 0).insert_attribute(&mut peer.transact_mut(), "map", MapPrelim::default());
     });
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     for update in [&binary, &buffer, &shared] {
         assert!(
             matches!(
@@ -508,14 +508,14 @@ fn a_media_block_without_its_asset_id_is_refused_at_admit() {
     let room = document(&[paragraph("intro"), media("img", json!({ "assetId": "a1" }))]);
     let refused = |update: &[u8]| {
         matches!(
-            Validator::default().admit_bytes(&room, update),
+            Validator::new("note").admit_bytes(&room, update),
             Err(Refusal::Content(what)) if what == "a media block without its asset id"
         )
     };
     let inserting = |node: Value| edit(&room, 2, |peer| insert_value(peer, &[node]));
     // The legacy `image` is no element the catalog lists (Epo 2026-10-13).
     assert!(matches!(
-        Validator::default().admit_bytes(&room, &inserting(media("image", json!({})))),
+        Validator::new("note").admit_bytes(&room, &inserting(media("image", json!({})))),
         Err(Refusal::Content(what)) if what == limits::UNLISTED_TYPE
     ));
     for kind in notes::material::MEDIA_TYPES {
@@ -542,7 +542,7 @@ fn a_media_block_without_its_asset_id_is_refused_at_admit() {
             "{kind} with a src"
         );
         assert_eq!(
-            Validator::default()
+            Validator::new("note")
                 .admit_bytes(&room, &inserting(media(kind, json!({ "assetId": "a2" }))))
                 .unwrap(),
             Admission::Accepted,
@@ -565,7 +565,7 @@ fn a_media_block_without_its_asset_id_is_refused_at_admit() {
         block(peer, 1).insert_attribute(&mut peer.transact_mut(), "assetId", "a3");
     });
     assert_eq!(
-        Validator::default().admit_bytes(&room, &renamed).unwrap(),
+        Validator::new("note").admit_bytes(&room, &renamed).unwrap(),
         Admission::Accepted,
         "an image's asset replaced"
     );
@@ -595,13 +595,13 @@ fn a_media_key_update_copies_the_room_only_off_the_async_workers() {
     ] {
         let decoded = ydoc::decode(update).unwrap();
         assert_eq!(
-            limits::heavy(&room.transact(), &decoded, update.len()),
+            limits::heavy(&room.transact(), &decoded, update.len(), "note"),
             heavy,
             "{name}"
         );
     }
     // With the room's bound in place, as on the room task.
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let nothing = room
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
@@ -634,7 +634,7 @@ fn an_element_left_without_a_required_key_is_refused_at_admit() {
         json!({ "children": [{ "text": "" }], "id": "q1", "materialId": "m1", "refKind": "quiz", "type": "material_ref" }),
         json!({ "children": [{ "text": "end" }], "id": "p2", "type": "p" }),
     ]);
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let nothing = room
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
@@ -707,7 +707,7 @@ fn an_element_left_without_a_required_key_is_refused_at_admit() {
     );
     // The same on the exact path (no bound yet, as a room's first update).
     assert!(matches!(
-        Validator::default().admit_bytes(&room, &unset(0, "type")),
+        Validator::new("note").admit_bytes(&room, &unset(0, "type")),
         Err(Refusal::Content(what)) if what == limits::MISSING_KEY
     ));
 }
@@ -723,7 +723,7 @@ fn a_reference_carrying_a_fence_body_is_refused_at_admit() {
         json!({ "children": [{ "text": "intro" }], "id": "p1", "type": "p" }),
         json!({ "children": [{ "text": "" }], "id": "q1", "materialId": "m1", "refKind": "quiz", "type": "material_ref" }),
     ]);
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let nothing = room
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
@@ -778,7 +778,7 @@ fn a_nested_reference_is_refused_at_admit() {
             "id": "bq", "type": "blockquote",
         }),
     ]);
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let nothing = room
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
@@ -868,9 +868,10 @@ fn a_type_deleted_behind_an_overwrite_or_a_losing_write_is_refused_at_admit() {
             &room.transact(),
             &ydoc::decode(update).unwrap(),
             update.len(),
+            "note",
         )
     };
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let nothing = room
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
@@ -884,7 +885,7 @@ fn a_type_deleted_behind_an_overwrite_or_a_losing_write_is_refused_at_admit() {
     ] {
         for (path, answer) in [
             ("bound", validator.admit_bytes(&room, update)),
-            ("exact", Validator::default().admit_bytes(&room, update)),
+            ("exact", Validator::new("note").admit_bytes(&room, update)),
         ] {
             assert!(
                 matches!(answer, Err(Refusal::Content(what)) if what == limits::MISSING_KEY),
@@ -979,8 +980,13 @@ fn a_small_edit_whose_keys_need_the_result_is_heavy() {
         &ydoc::Incoming::new(&decoded),
         update.len()
     ));
-    assert!(limits::heavy(&room.transact(), &decoded, update.len()));
-    let mut validator = Validator::default();
+    assert!(limits::heavy(
+        &room.transact(),
+        &decoded,
+        update.len(),
+        "note"
+    ));
+    let mut validator = Validator::new("note");
     let nothing = room
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());
@@ -1012,8 +1018,13 @@ fn heavy_and_admit_agree_on_a_refusal_beside_a_needed_copy() {
         .encode_state_as_update_v1(&room.transact().state_vector());
     let (mut heavy, mut copies) = (0, 0);
     for _ in 0..100 {
-        heavy += usize::from(limits::heavy(&room.transact(), &decoded, update.len()));
-        let mut validator = Validator::default();
+        heavy += usize::from(limits::heavy(
+            &room.transact(),
+            &decoded,
+            update.len(),
+            "note",
+        ));
+        let mut validator = Validator::new("note");
         validator.admit_bytes(&room, &nothing).unwrap();
         assert!(matches!(
             validator.admit_bytes(&room, &update),
@@ -1044,7 +1055,7 @@ fn a_paste_by_a_writer_that_already_wrote_goes_in() {
         .push(json!({ "assetId": "a1", "children": [{ "text": "" }], "id": "i1", "type": "img" }));
     let paste = edit(&room, 2, |peer| insert_value(peer, &blocks));
     assert_eq!(
-        Validator::default().admit_bytes(&room, &paste).unwrap(),
+        Validator::new("note").admit_bytes(&room, &paste).unwrap(),
         Admission::Accepted
     );
 }

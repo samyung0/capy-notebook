@@ -109,7 +109,7 @@ impl Room {
         let previous = notes::limits::measure(&doc.transact()).unwrap();
         Room {
             doc,
-            validator: Validator::default(),
+            validator: Validator::new("note"),
             previous,
             checked: 0,
             same_growth: 0,

@@ -664,6 +664,39 @@ async fn a_note_holding_a_block_this_version_cannot_edit_loads_read_only() {
     assert!(reader.settle(|c| c.block_text() == "kept").await);
 }
 
+/// Security regression (live-items REVIEW5, now failing closed as Go does):
+/// a stored note whose reference still carries an imported fence body (the
+/// quiz's answer keys) is never served. A reader's join is refused and no
+/// frame it receives holds the body. Fails if the room strips nothing and
+/// loads it.
+#[tokio::test]
+async fn a_stored_fence_body_is_never_served() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "kept").await;
+    let content = serde_json::json!({ "schemaVersion": 1, "value": [
+        { "type": "p", "id": "b1", "children": [{ "text": "kept" }] },
+        { "type": "material_ref", "id": "f1", "materialId": "", "refKind": "quiz",
+          "pending": "answer: SECRET-KEY", "children": [{ "text": "" }] },
+    ] });
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET content = $2 WHERE id = $1",
+            &[&material, &content],
+        )
+        .await
+        .expect("content");
+    let room = format!("material:{material}:schema:1");
+    let mut reader = Client::open(server.port).await;
+    reader.join(&room, &token(&room, &user, "read")).await;
+    assert!(reader.until(2).await.is_some(), "the join is refused");
+    assert!(
+        !String::from_utf8_lossy(&reader.received).contains("SECRET-KEY"),
+        "a frame holds the fence body"
+    );
+}
+
 /// Security regression: a writer may not write the contributor markers the
 /// server keeps in the document (who edited is the server's record).
 #[tokio::test]

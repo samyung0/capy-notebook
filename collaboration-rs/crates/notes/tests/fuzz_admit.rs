@@ -251,7 +251,7 @@ fn mutated_updates_never_panic_or_stall() {
             }
         }
         let room = load(&base, 1);
-        let mut validator = Validator::default();
+        let mut validator = Validator::new("note");
         let nothing = ydoc::decode(
             &room
                 .transact()

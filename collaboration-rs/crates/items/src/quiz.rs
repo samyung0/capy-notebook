@@ -257,6 +257,29 @@ fn read_block<T: ReadTxn>(txn: &T, map: &MapRef) -> Option<Value> {
     }
 }
 
+/// Whether a quiz document (content or keys) holds a question block of a
+/// kind the room does not admit ([BLOCK_TYPES]), which [read_block] cannot
+/// read: a stored quiz a newer version wrote. Its rooms load read-only (Epo
+/// 2026-10-13), as a note holding a block the embed catalog does not list.
+pub fn holds_unknown_block<T: ReadTxn>(txn: &T) -> bool {
+    let unknown = |blocks: Option<MapRef>| {
+        ordered(txn, blocks.as_ref()).iter().any(|block| {
+            str_at(txn, &block.map, "type")
+                .is_some_and(|kind| !BLOCK_TYPES.contains(&kind.as_str()))
+        })
+    };
+    let questions = ordered(txn, txn.get_map(QUESTIONS_ROOT).as_ref());
+    let keys = ordered(txn, txn.get_map(KEYS_ROOT).as_ref());
+    questions.iter().any(|question| {
+        unknown(map_at(txn, &question.map, "stem"))
+            || ordered(txn, map_at(txn, &question.map, "parts").as_ref())
+                .iter()
+                .any(|part| unknown(map_at(txn, &part.map, "blocks")))
+    }) || keys
+        .iter()
+        .any(|part| unknown(map_at(txn, &part.map, "solution")))
+}
+
 fn read_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Vec<Value> {
     ordered(txn, map)
         .iter()
