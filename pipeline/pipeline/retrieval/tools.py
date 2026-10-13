@@ -91,6 +91,9 @@ class LibraryRead:
     # earlier turn whose write used it: a write naming no excerpts credits the
     # reads that are not.
     credited: bool = False
+    # The read's result as the model was shown it, which a write naming no
+    # excerpts is matched against (_matching_reads).
+    text: str = ""
 
 
 @dataclass
@@ -102,22 +105,33 @@ class LibraryReads:
     reads: list[LibraryRead] = field(default_factory=list)
 
     def note(
-        self, excerpt_id: str, start: int, section: str, *, retained: bool = False
+        self,
+        excerpt_id: str,
+        start: int,
+        section: str,
+        *,
+        retained: bool = False,
+        text: str = "",
     ) -> None:
-        """Record one read. Reading a recorded position again makes it new for
-        the next write; a retained excerpt comes in already credited."""
+        """Record one read with the text it showed. Reading a recorded position
+        again makes it new for the next write; a retained excerpt comes in
+        already credited."""
         for read in self.reads:
             if (read.excerpt_id, read.start) == (excerpt_id, start):
                 read.credited = read.credited and retained
+                read.text = text or read.text
                 return
-        self.reads.append(LibraryRead(excerpt_id, start, section, credited=retained))
+        self.reads.append(
+            LibraryRead(excerpt_id, start, section, credited=retained, text=text)
+        )
 
     def ids(self) -> set[str]:
         return {read.excerpt_id for read in self.reads}
 
     def uncredited(self) -> list[str]:
-        """What a write naming no excerpts is credited with: the excerpts read
-        since the last write that landed, or every one when none are new."""
+        """What a write naming no excerpts may be credited with: the excerpts
+        read since the last write that landed, or every one when none are new
+        (narrowed by _matching_reads)."""
         fresh = [read for read in self.reads if not read.credited]
         return list(dict.fromkeys(read.excerpt_id for read in fresh or self.reads))
 
@@ -1017,7 +1031,7 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     _, text = _fitting(page, len(read.chunks))
     ctx.library_reads.note(
-        read.excerpt.id, start, _short_section(read.excerpt.section_path)
+        read.excerpt.id, start, _short_section(read.excerpt.section_path), text=text
     )
     return _result(text)
 
@@ -1115,7 +1129,10 @@ async def _read_section(
         firsts.setdefault(chunk["excerpt_id"], chunk)
     for excerpt_id, chunk in firsts.items():
         ctx.library_reads.note(
-            excerpt_id, chunk["chunk_idx"], _short_section(chunk["section_path"])
+            excerpt_id,
+            chunk["chunk_idx"],
+            _short_section(chunk["section_path"]),
+            text=text,
         )
     return _result(text)
 
@@ -1547,8 +1564,9 @@ async def write_sources(
     Returns the provenance books (one entry per source book) and the excerpts
     they come from. Named excerpts must have been read this turn or be retained
     in full; a write naming none is credited with the excerpts read since the
-    last write that landed, or every one read when none are new, and a turn
-    with no library reads credits nothing. ``figures`` are the excerpts listing
+    last write that landed (every one read when none are new) of the books its
+    text matches (_matching_reads), and a turn with no library reads credits
+    nothing. ``figures`` are the excerpts listing
     the note figures the write places, credited with it. Shared with the
     playground's local write stubs, so the rules have one implementation.
     ``material`` is false for an edit of the user's own source file, which
@@ -1573,14 +1591,80 @@ async def write_sources(
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
         return await _carry_excerpts(ctx, unread)
-    named = excerpt_ids or ctx.library_reads.uncredited()
-    credited = list(dict.fromkeys([*named, *(figures or [])]))
-    if not credited:
-        return [], []
     try:
+        named = excerpt_ids or await _matching_reads(ctx, args)
+        credited = list(dict.fromkeys([*named, *(figures or [])]))
+        if not credited:
+            return [], []
         return await library.provenance(credited), credited
     except ValueError as exc:
         return _refused(f"{tool}: {exc}")
+
+
+# What ties a write to a book it read (Epo 2026-10-13, measured on that day's
+# runs): a shared word 4-gram or example number. The head lines of an excerpt
+# read (title, roles, teaches, scope) are the library's, not the book's.
+_WORD = re.compile(r"[a-z0-9][a-z0-9.\-/]*")
+_NUMBER = re.compile(r"(?<![\w.])(\d+\.\d+|\d{2,}(?:,\d{3})*)(?![\w])")
+_READ_HEAD = re.compile(r"^(\[exc_|roles:|teaches:|scope:)")
+
+
+def _marks(text: str) -> set[str]:
+    """A text's word 4-grams and its numbers with a decimal point or two or
+    more digits."""
+    words = _WORD.findall(text.lower())
+    grams = {" ".join(words[i : i + 4]) for i in range(len(words) - 3)}
+    return grams | set(_NUMBER.findall(text))
+
+
+def _strings(value: Any) -> list[str]:
+    """Every string a write sends, internal arguments left out."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [
+            s
+            for k, v in value.items()
+            if not str(k).startswith("_")
+            for s in _strings(v)
+        ]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
+async def _matching_reads(ctx: ToolContext, args: dict[str, Any]) -> list[str]:
+    """What a write naming no excerpts is credited with: of the excerpts read
+    since the last write (LibraryReads.uncredited), those of each book whose
+    read text shares with the write a mark (``_marks``) that no other such
+    book's read text holds; none when no book does (Epo 2026-10-13: only 68%
+    of the books the whole read set credited were used)."""
+    candidates = ctx.library_reads.uncredited()
+    if not candidates:
+        return []
+    books = {
+        book["id"]: book["excerptIds"] for book in await library.provenance(candidates)
+    }
+    marks = {
+        book: _marks(
+            "\n".join(
+                line
+                for read in ctx.library_reads.reads
+                if read.excerpt_id in ids
+                for line in read.text.splitlines()
+                if not _READ_HEAD.match(line)
+            )
+        )
+        for book, ids in books.items()
+    }
+    written = _marks("\n".join(_strings(args)))
+    return [
+        excerpt_id
+        for book, ids in books.items()
+        if (marks[book] - set().union(*(m for b, m in marks.items() if b != book)))
+        & written
+        for excerpt_id in ids
+    ]
 
 
 def landed(ctx: ToolContext, excerpt_ids: list[str]) -> None:
@@ -1615,7 +1699,9 @@ async def _carry_excerpts(ctx: ToolContext, unread: list[str]) -> ToolResult:
             left.append(excerpt_id)
             continue
         read = scratch.library_reads.reads[0]
-        ctx.library_reads.note(read.excerpt_id, read.start, read.section)
+        ctx.library_reads.note(
+            read.excerpt_id, read.start, read.section, text=read.text
+        )
         ctx.library_evidence.observe(
             "read_knowledge",
             {"excerpt_id": excerpt_id},

@@ -198,7 +198,8 @@ appends its commands to that file and merges its own books into the record by
 book id the way Go does, and both return the receipt the gateway would have
 produced. Both go through `tools.write_sources`, the production write guard
 (named excerpts read this turn or retained in full; with none named, the
-excerpts read since the last write, or all read this turn when none are new). The
+excerpts read since the last write, or all read this turn when none are new,
+of the books whose read text the write's text matches). The
 question tools (`add_questions`, `add_open_question`, `add_question_media`)
 run production's `tools.write_questions` and `tools.write_media` with the
 run's files in place of the gateway: a quiz is created or edited in its

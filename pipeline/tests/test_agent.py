@@ -681,7 +681,7 @@ async def test_a_library_edit_sends_provenance(monkeypatch):
             "resource": {"kind": "material", "id": "mat_note", "title": "Regression"},
         },
     )
-    ctx.library_reads.note("e_2", 0, "8.2")
+    ctx.library_reads.note("e_2", 0, "8.2", text="Residuals are observed minus fitted.")
 
     result = await tools._edit_document(
         {
@@ -690,7 +690,7 @@ async def test_a_library_edit_sends_provenance(monkeypatch):
                 {
                     "type": "insert_markdown",
                     "after_block_id": None,
-                    "markdown": "Residuals",
+                    "markdown": "Residuals are observed minus fitted values.",
                 }
             ],
             "_tool_call_id": "call_9",
@@ -702,6 +702,60 @@ async def test_a_library_edit_sends_provenance(monkeypatch):
     assert sent[0]["provenance"]["books"][0]["excerptIds"] == ["e_2"], (
         "naming none credits the reads since the last write"
     )
+
+
+async def test_a_write_naming_no_excerpts_credits_the_books_its_text_matches(
+    monkeypatch,
+):
+    """Of the excerpts read since the last write, a book is credited when its
+    read text shares with the write a word 4-gram, or a number with a decimal
+    point or two digits, that no other read book holds (Epo 2026-10-13); the
+    excerpt head lines do not count, and a write matching no book credits
+    none. Named excerpts are credited as before."""
+    ctx = _library_ctx(monkeypatch)
+    book_of = {"e_stats": "ahss", "e_seeds": "botany"}
+
+    async def _provenance(excerpt_ids):
+        books: dict[str, list[str]] = {}
+        for excerpt_id in excerpt_ids:
+            books.setdefault(book_of[excerpt_id], []).append(excerpt_id)
+        return [{"id": book, "excerptIds": ids} for book, ids in books.items()]
+
+    monkeypatch.setattr(tools.library, "provenance", _provenance)
+    ctx.library_reads.note(
+        "e_stats",
+        0,
+        "8.1",
+        text="[exc_stats] Statistics — 8.1\n(chunk 3) A sample of 40 seeds had a "
+        "mean mass of 2.45 g, and the line of best fit passes the means.",
+    )
+    ctx.library_reads.note(
+        "e_seeds",
+        0,
+        "3.2",
+        text="[exc_seeds] Botany — 3.2\nscope: germination at 75.5 percent\n"
+        "(chunk 7) Seeds need water and warmth; the line of best fit passes "
+        "the means.",
+    )
+
+    async def credited(content: str) -> list[str]:
+        out = await tools.write_sources(
+            ctx, "create_material", {"kind": "note", "content": content}
+        )
+        assert isinstance(out, tuple)
+        return out[1]
+
+    # 40 and 2.45 are the statistics read's alone; 75.5 is only in the other
+    # read's scope line, and the shared 4-grams belong to both.
+    assert await credited(
+        "Of 40 seeds, 75.5 percent germinated; the mean mass was 2.45 g, and the "
+        "line of best fit passes the means."
+    ) == ["e_stats"]
+    assert await credited("Photosynthesis needs light.") == []
+    named = await tools.write_sources(
+        ctx, "create_material", {"kind": "note", "excerpt_ids": ["e_seeds"]}
+    )
+    assert isinstance(named, tuple) and named[1] == ["e_seeds"]
 
 
 async def test_an_edit_of_a_source_file_carries_no_provenance(monkeypatch):

@@ -106,7 +106,13 @@ class LibraryEvidence:
         }
         for key, read in self.inherited.items():
             if key in self.active:
-                reads.note(read.excerpt_id, read.start, read.section, retained=True)
+                reads.note(
+                    read.excerpt_id,
+                    read.start,
+                    read.section,
+                    retained=True,
+                    text=read.text,
+                )
 
     def observe(
         self,

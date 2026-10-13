@@ -2429,10 +2429,20 @@ build, and the knowledge library is one more source while the switch is on.
   tools and the deck tools), `excerpt_ids` is optional. Named excerpts are the
   write's sources: each must have been read through `read_knowledge` this turn
   or be retained as full, revalidated text in the request. A write naming none
-  is credited with the excerpts read since the last write that landed, or with
-  every excerpt read this turn when none are new (a second item written from
-  the same reading); a turn with no library reads credits nothing and needs
-  nothing. An excerpt retained from an earlier turn's write counts as read but
+  draws its candidates from the excerpts read since the last write that
+  landed, or every excerpt read this turn when none are new (a second item
+  written from the same reading), grouped by book, and credits a book's
+  candidates only when the book's read text (the result the model was shown,
+  kept on each `LibraryRead`, the excerpt head lines `[exc_…]`, `roles:`,
+  `teaches:` and `scope:` left out) shares with every string the write sends
+  a word 4-gram (lower-cased `[a-z0-9][a-z0-9.\-/]*` tokens) or a number
+  with a decimal point or two or more digits that no other candidate book's
+  read text holds (`tools._matching_reads`, Epo 2026-10-13: on that day's runs
+  only 68% of the books the whole read set credited were used; this rule kept
+  86% precision and dropped 2 of 129 used books, while named excerpts were 95%
+  used). A write matching no book credits none, and only the credited excerpts
+  are retained for later turns; a turn with no library reads credits nothing
+  and needs nothing. An excerpt retained from an earlier turn's write counts as read but
   enters already credited, so it is credited again only when nothing new was
   read; reading a credited excerpt again makes it new. Note figures add the
   excerpt that lists each figure to whatever the write credits. The reads live
