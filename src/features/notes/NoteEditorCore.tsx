@@ -74,6 +74,7 @@ import {
   type MaterialLimitCode,
   materialLimitMessage,
   parseCollaborationEvent,
+  type ReadOnlyCode,
 } from './collaborationEvents';
 import { type CursorSender, throttleCursorPosition } from './cursorThrottle';
 import {
@@ -474,8 +475,9 @@ export function NoteEditorCore({
    * show), or null once it syncs again. */
   onOffline?: (state: NoteOfflineState | null) => void;
   /** The room turned read-only (a frozen account or an owner at its storage
-   * limit): the caller drops to view, discarding unsaved edits. */
-  onReadOnly?: () => void;
+   * limit; `code`: a block this version cannot edit): the caller drops to
+   * view, discarding unsaved edits. */
+  onReadOnly?: (code?: ReadOnlyCode) => void;
   /** Saves are failing (the server retries them) or unconfirmed past
    * NOTE_SAVE_DELAY_MS while the editor keeps its edits; false once the
    * receipts catch up. */
@@ -620,7 +622,9 @@ export function NoteEditorCore({
   // Set once the editor exists; reports a room that turned read-only once.
   // `refusedConnect`: a (re)connect refused read-only, which only this
   // client sees; the service records the refusals it sends itself.
-  const readOnlyNow = useRef((_refusedConnect?: boolean) => {});
+  const readOnlyNow = useRef(
+    (_refusedConnect?: boolean, _code?: ReadOnlyCode) => {}
+  );
   const projectionStale = useRef(false);
   // The room turned read-only and the unsaved edits were discarded.
   const discarded = useRef(false);
@@ -718,7 +722,7 @@ export function NoteEditorCore({
         event.type === 'room-read-only' &&
         event.room === collaborationToken.room
       ) {
-        readOnlyNow.current();
+        readOnlyNow.current(false, event.code);
         return;
       }
       if (event.type === 'children-ready') {
@@ -1161,7 +1165,7 @@ export function NoteEditorCore({
     reportUnavailable.current = onUnavailable;
     reportOffline.current = onOffline;
     let reported = false;
-    readOnlyNow.current = (refusedConnect = false) => {
+    readOnlyNow.current = (refusedConnect = false, code?: ReadOnlyCode) => {
       if (reported) return;
       reported = true;
       discarded.current = true;
@@ -1170,7 +1174,7 @@ export function NoteEditorCore({
       if (refusedConnect && unsaved?.unsaved)
         reportIncident('discard_unsaved', 'read_only', unsaved.unsavedBytes);
       void recorder.current?.discard();
-      onReadOnly?.();
+      onReadOnly?.(code);
     };
     resendCheckpoints.current = resendPendingCheckpoints;
     saveNow.current = saveImmediately;

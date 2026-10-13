@@ -2,7 +2,9 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { Provenance } from '@/api/types';
+import type { MaterialRefKind } from '@/features/materials/document';
 import { m } from '@/i18n';
 import { AppEmbedEdit, AppEmbedView } from './AppEmbed';
 
@@ -127,5 +129,40 @@ describe('embed credits', () => {
         'Set source book'
       )
     ).toBe(true);
+  });
+});
+
+// Every item kind the embed catalog lists draws as itself in View and Edit;
+// a kind it adds needs a case in AppEmbed and here.
+describe('embed kinds', () => {
+  const books: Record<string, string> = {
+    flashcards: 'Set source book',
+    quiz: 'Quiz source book',
+  };
+  const kinds = EMBED_CATALOG.embeds
+    .filter((embed) => embed.class === 'item')
+    .map((embed) => embed.kind as MaterialRefKind);
+
+  it.each(kinds)('draws a %s as itself', (kind) => {
+    const book = books[kind];
+    expect(book, `how a ${kind} embed draws`).toBeDefined();
+    const others = Object.values(books).filter((other) => other !== book);
+    for (const html of [
+      render(<AppEmbedView materialId={kind} refKind={kind} />),
+      render(
+        <AppEmbedEdit materialId={kind} onEmpty={() => {}} refKind={kind} />
+      ),
+    ]) {
+      expect(credited(html, book)).toBe(true);
+      for (const other of others) expect(html).not.toContain(other);
+    }
+  });
+
+  it('fails loudly on a kind it does not draw', () => {
+    expect(() =>
+      render(
+        <AppEmbedView materialId="x" refKind={'timeline' as MaterialRefKind} />
+      )
+    ).toThrow('timeline');
   });
 });

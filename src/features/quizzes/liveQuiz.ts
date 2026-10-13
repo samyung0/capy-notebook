@@ -90,6 +90,10 @@ const plain = <T>(map: YMap | undefined, key: string) =>
 
 /* --------------------------------------------------------------- reading */
 
+/** A block entry as its question block; none while it is incomplete (no
+ * type yet, a chart without its value). A type it has no reader for throws
+ * instead of dropping the block, which the next save would delete: the room
+ * admits only the kinds this reads (collaboration-rs items quiz.rs). */
 function readBlock(entry: YMap): QuestionBlock | null {
   const type = plain<string>(entry, 'type');
   switch (type) {
@@ -132,8 +136,10 @@ function readBlock(entry: YMap): QuestionBlock | null {
       const value = plain<Record<string, unknown>>(entry, 'value');
       return value ? ({ ...value, type } as QuestionBlock) : null;
     }
-    default:
+    case undefined:
       return null;
+    default:
+      throw new Error(`No reader for the question block type ${type}`);
   }
 }
 
@@ -631,6 +637,11 @@ function writeBlockFields(entry: YMap, block: QuestionBlock) {
       const { type: _type, ...value } = block;
       setPlain(entry, 'value', value);
       return;
+    }
+    default: {
+      const unknown: never = block;
+      const { type } = unknown as { type: string };
+      throw new Error(`No writer for the question block type ${type}`);
     }
   }
 }

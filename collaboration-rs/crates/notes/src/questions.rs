@@ -14,33 +14,18 @@ use std::sync::LazyLock;
 use regex::Regex;
 use serde_json::{Map, Value};
 
-pub const QUESTION_ANSWERS_MAX: usize = 100;
-pub const QUESTION_ASSET_URL_MAX: usize = 4096;
-pub const QUESTION_BLOCKS_MAX: usize = 40;
-pub const QUESTION_CHART_LABELS_MAX: usize = 50;
-pub const QUESTION_CHART_SERIES_MAX: usize = 8;
-pub const QUESTION_GRAPH_ELEMENTS_MAX: usize = 60;
-pub const QUESTION_GRAPH_POLYGON_MAX: usize = 12;
-pub const QUESTION_GRAPH_TERM_MAX: usize = 200;
-pub const QUESTION_ID_MAX: usize = 128;
-pub const QUESTION_IMAGE_DIMENSION_MAX: f64 = 10_000.0;
-pub const QUESTION_MARKSCHEME_MAX: usize = 20;
-pub const QUESTION_MARKS_MAX: f64 = 20.0;
-pub const QUESTION_MARK_ITEM_MAX: usize = 1000;
-pub const QUESTION_PARTS_MAX: usize = 26;
-pub const QUESTION_PLOT_MARKS_MAX: usize = 8;
-pub const QUESTION_PLOT_POINTS_MAX: usize = 60;
-pub const QUESTION_PLOT_SERIES_MAX: usize = 4;
-pub const QUESTION_SVG_BYTES_MAX: usize = 262_144;
-pub const QUESTION_TABLE_COLUMNS_MAX: usize = 10;
-pub const QUESTION_TABLE_ROWS_MAX: usize = 30;
-pub const QUESTION_TEXT_MAX: usize = 12_000;
-pub const QUESTION_UNIT_MAX: usize = 100;
-pub const QUIZ_MARKSCHEME_MAX: usize = 5;
-pub const QUIZ_OPEN_ANSWER_MAX: usize = 5000;
-pub const QUIZ_OPEN_PARTS_MAX: usize = 20;
-pub const QUIZ_PARTS_MAX: usize = 100;
-pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
+// The question bounds every validator shares, from the embed catalog
+// (Go `fieldlimits.QuestionBounds`).
+pub use crate::catalog::{
+    QUESTION_ANSWERS_MAX, QUESTION_ASSET_URL_MAX, QUESTION_BLOCKS_MAX, QUESTION_CHART_LABELS_MAX,
+    QUESTION_CHART_SERIES_MAX, QUESTION_GRAPH_ELEMENTS_MAX, QUESTION_GRAPH_POLYGON_MAX,
+    QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX,
+    QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_MARKS_MAX,
+    QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX, QUESTION_SVG_BYTES_MAX,
+    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_UNIT_MAX,
+    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
+    QUIZ_QUESTION_PARTS_MAX,
+};
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
 /// `process.env.BANK_ASSETS_URL` there (Go's QuizBankAssetsURL).

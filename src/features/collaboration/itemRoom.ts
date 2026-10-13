@@ -5,6 +5,10 @@ import { getMaterialCollaborationToken } from '@/api/hooks';
 import type { SaveBannerState } from '@/components/banners/SaveBanner';
 import { userToast } from '@/components/ui/userToast';
 import {
+  type ReadOnlyCode,
+  readOnlyCode,
+} from '@/features/notes/collaborationEvents';
+import {
   type RoomReconnector,
   roomReconnector,
   roomRefusal,
@@ -69,6 +73,9 @@ export interface ItemRoomSnapshot {
     SaveBannerState,
     'offline' | 'offline-unstored' | 'offline-limit'
   > | null;
+  /** Why the room is read-only for this writer, when it said (a block
+   * this version cannot edit). */
+  readOnlyCode: ReadOnlyCode | null;
   /** Edits that cannot join this room, shown for copying until Reload. */
   recovery: ItemRecovery | null;
   status: ItemRoomStatus;
@@ -134,6 +141,7 @@ export class ItemRoom {
     access: null,
     listsVersion: 0,
     offline: null,
+    readOnlyCode: null,
     recovery: null,
     status: 'connecting',
     synced: false,
@@ -470,7 +478,7 @@ export class ItemRoom {
         this.refused();
         return;
       case 'room-read-only':
-        this.readOnly();
+        this.readOnly(readOnlyCode(event));
         return;
     }
   }
@@ -533,9 +541,10 @@ export class ItemRoom {
   }
 
   /** The room turned read-only (a frozen account, an owner at its limit, a
-   * demotion): unsaved edits are discarded, as a note's are. */
-  private readOnly() {
-    this.set({ access: 'read' });
+   * demotion, a block this version cannot edit): unsaved edits are
+   * discarded, as a note's are. */
+  private readOnly(code?: ReadOnlyCode) {
+    this.set({ access: 'read', readOnlyCode: code ?? null });
     void this.recorder?.discard();
     this.recorder = null;
     this.markUnsent(false);
@@ -622,6 +631,7 @@ const INITIAL: ItemRoomSnapshot = {
   access: null,
   listsVersion: 0,
   offline: null,
+  readOnlyCode: null,
   recovery: null,
   status: 'connecting',
   synced: false,

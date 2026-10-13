@@ -14,8 +14,8 @@ use yrs::types::TypeRef;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, ReadTxn, Update};
 
-use crate::json;
 use crate::plate::{self, Insert, ProjectionError};
+use crate::{catalog, json};
 
 // IMPORTANT: keep in sync with src/lib/const.ts and Go materialdoc.
 pub const MAX_CONTENT_BYTES: u64 = 2 * 1024 * 1024;
@@ -275,10 +275,12 @@ struct Written {
 }
 
 /// Each type's keys the store requires besides `type` (and `id` at the top
-/// level): `material::assert_canonical`.
-const OWN_KEYS: [(&str, &[&str]); 8] = [
-    ("quiz_question", &["question", "id"]),
-    ("mermaid", &["source"]),
+/// level): `material::assert_canonical`, the embed catalog's `required` of
+/// the elements a Plate room holds, less a media block's `assetId`
+/// ([media_assets] checks it).
+pub const OWN_KEYS: [(&str, &[&str]); 7] = [
+    // Not a top-level block only, so its id is its own key.
+    ("mermaid", &["id", "source"]),
     ("chart", &["block"]),
     ("plot", &["block"]),
     ("graph", &["block"]),
@@ -301,10 +303,47 @@ fn own_keys(kind: Option<&Any>) -> &'static [&'static str] {
     }
 }
 
-/// Whether some element may need `key`: an update that writes or deletes
-/// only other keys leaves every required key as it was.
+/// Whether a Plate room (a note, mindmap or diagram) may hold an element of
+/// type `kind`: the embed catalog lists it for a material kind that is not
+/// an item. The store refuses any other (Epo 2026-10-13).
+pub fn plate_type(kind: &str) -> bool {
+    catalog::element(kind).is_some_and(|element| {
+        element
+            .materials
+            .iter()
+            .any(|material| catalog::material_kind(material).is_some_and(|kind| !kind.item))
+    })
+}
+
+/// The keys the catalog forbids on an element of type `kind` (none for a
+/// type it does not list).
+fn forbidden_keys(kind: Option<&Any>) -> &'static [&'static str] {
+    match kind {
+        Some(Any::String(kind)) => catalog::element(kind).map_or(&[], |element| element.forbidden),
+        _ => &[],
+    }
+}
+
+/// Every key the catalog forbids on an element a Plate room holds.
+static FORBIDDEN: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+    let mut keys: Vec<&'static str> = catalog::ELEMENTS
+        .iter()
+        .filter(|element| plate_type(element.name))
+        .flat_map(|element| element.forbidden.iter().copied())
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+});
+
+/// Whether some element may need `key`, or may not carry it: an update that
+/// writes or deletes only other keys leaves every required and forbidden key
+/// as it was.
 fn guarded(key: &str) -> bool {
-    key == "type" || key == "id" || OWN_KEYS.iter().any(|(_, keys)| keys.contains(&key))
+    key == "type"
+        || key == "id"
+        || OWN_KEYS.iter().any(|(_, keys)| keys.contains(&key))
+        || FORBIDDEN.contains(&key)
 }
 
 /// What a note may hold: its texts strings, formats and element texts, every
@@ -494,10 +533,17 @@ fn plain_content<T: ReadTxn>(
                     if crate::material::MEDIA_TYPES.contains(&&**kind))
             };
             if &**key == "type" {
+                // A type the catalog lists for a Plate document, nothing else
+                // (Epo 2026-10-13): the store refuses any other.
+                if let Some(Any::String(kind)) = values.last()
+                    && !plate_type(kind)
+                {
+                    return Err(Refusal::Content(UNLISTED_TYPE));
+                }
                 typed.insert(parent.clone());
                 types.entry(parent.clone()).or_default().push(matches!(
                     values.last(),
-                    Some(Any::String(kind)) if &**kind == MERMAID
+                    Some(Any::String(kind)) if &**kind == plate::SHARED_TEXT_ELEMENT
                 ));
             }
             if matches!(&**key, "assetId" | "url" | "src") || (&**key == "type" && media_type()) {
@@ -516,7 +562,7 @@ fn plain_content<T: ReadTxn>(
         ydoc::steps::step(ydoc::steps::Walk::Content);
         let mermaid = match types.get(element) {
             Some(written) => written.iter().all(|m| *m),
-            None => held_type(txn, element).as_deref() == Some(MERMAID),
+            None => held_type(txn, element).as_deref() == Some(plate::SHARED_TEXT_ELEMENT),
         };
         if !mermaid {
             return Err(Refusal::Content("a Mermaid source outside a mermaid block"));
@@ -574,8 +620,6 @@ fn plain_content<T: ReadTxn>(
     Ok(media)
 }
 
-const MERMAID: &str = "mermaid";
-
 /// The `type` a held element has, if the room holds it.
 fn held_type<T: ReadTxn>(txn: &T, element: &BranchID) -> Option<String> {
     let item = entry_of(held_branch(txn, element)?, "type").filter(|item| !item.is_deleted())?;
@@ -622,6 +666,11 @@ pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize) -> bool {
 pub const MISSING_KEY: &str = "an element without a key it requires";
 /// A material reference below the top level, which the store refuses.
 pub const NESTED_REFERENCE: &str = "a material reference below the top level";
+/// [Refusal::Content] for an element given a key the catalog forbids it.
+pub const FORBIDDEN_KEY: &str = "an element with a key it never carries";
+/// [Refusal::Content] for a block type the catalog does not list for a Plate
+/// document ([plate_type]).
+pub const UNLISTED_TYPE: &str = "a block type the embed catalog does not list";
 /// The key a markdown fence's body sat under on a reference without its row.
 const PENDING_KEY: &str = "pending";
 
@@ -829,6 +878,18 @@ fn required_keys<T: ReadTxn>(
                 let imposed = created || (retyped && (key == "type" || own.contains(&key)));
                 if imposed || holds(key, before(key).as_ref()) {
                     return Err(Refusal::Content(MISSING_KEY));
+                }
+            }
+            // Nor a key the catalog forbids it: one this update writes, or
+            // one a block it creates or retypes holds.
+            for key in forbidden_keys(kind.as_ref()) {
+                let value = match after(key) {
+                    Some(value) => value,
+                    None => return Ok(true),
+                };
+                let wrote = written.is_some_and(|keys| keys.contains_key(*key));
+                if (created || retyped || wrote) && holds(key, value.as_ref()) {
+                    return Err(Refusal::Content(FORBIDDEN_KEY));
                 }
             }
             Ok(false)

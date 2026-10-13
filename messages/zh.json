@@ -267,6 +267,7 @@
   "account_banner_full_body": "你已使用 {used}，共 {limit}。在释放空间或升级之前，文件仅可查看，且无法新增内容；重命名、移动和删除仍可正常使用。",
   "account_frozen_short": "查看、下载和删除仍可使用。释放空间或重新订阅后即可再次编辑。",
   "editor_read_only_strip": "此文件现为只读。查看、下载和删除仍可使用。",
+  "editor_unsupported_block_strip": "此文档包含此版本的 Capy 无法编辑的区块，因此以只读方式打开。",
   "action_details": "详情",
   "account_blocked_suspended_title": "账户已暂停",
   "account_blocked_suspended_body": "此账户已被暂停，无法继续使用。如有疑问请联系支持。",

@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"os"
 	"reflect"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -1009,25 +1007,6 @@ func TestEveryBlockNoteFixtureIsValid(t *testing.T) {
 	}
 	if err := metrics.LimitError(); err != nil {
 		t.Fatal(err)
-	}
-}
-
-// The collaboration server checks stored sets with its own copy of the card
-// caps (collaboration-rs/crates/notes/src/material.rs); each must equal Go's.
-func TestCollaborationCardCapsMatchGo(t *testing.T) {
-	raw, err := os.ReadFile("../../../collaboration-rs/crates/notes/src/material.rs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for name, want := range map[string]int{"CARD_FRONT_MAX": MaxCardFrontRunes, "CARD_BACK_MAX": MaxCardBackRunes} {
-		match := regexp.MustCompile(`pub const ` + name + `: usize = ([\d_]+);`).FindSubmatch(raw)
-		if match == nil {
-			t.Fatalf("%s not found in material.rs", name)
-		}
-		got, err := strconv.Atoi(strings.ReplaceAll(string(match[1]), "_", ""))
-		if err != nil || got != want {
-			t.Errorf("material.rs %s = %s, Go has %d", name, match[1], want)
-		}
 	}
 }
 

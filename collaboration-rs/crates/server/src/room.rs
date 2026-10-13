@@ -39,6 +39,10 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
+/// Why a note room holding a block the embed catalog does not list refuses
+/// every writer (Epo 2026-10-13): the browser shows it for the
+/// `unsupported_block` code.
+pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can't edit";
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -223,6 +227,10 @@ struct Note {
     /// A quiz room: the metrics last sent to the other document's room.
     metrics_sent: Option<notes::limits::Metrics>,
     validator: crate::model::RoomValidator,
+    /// The stored document holds a block type the embed catalog does not
+    /// list: it stays readable and no writer edits it until it is fixed (Epo
+    /// 2026-10-13).
+    unlisted: bool,
     durable_metrics: Option<notes::limits::Metrics>,
     stored_version: i64,
     projected_version: i64,
@@ -444,7 +452,7 @@ async fn load(
                 loaded.projected_version,
                 loaded.log_bytes,
             );
-            let (doc, durable, metrics) =
+            let (doc, durable, metrics, unlisted) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let scratch = ydoc::scratch_doc();
                     ydoc::replay(&scratch, &loaded.base, &loaded.rows)
@@ -463,9 +471,10 @@ async fn load(
                     model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
                     let metrics = model.measure(&txn)?;
+                    let unlisted = model.unlisted_type(&txn).is_some();
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
-                    Ok((doc, durable, metrics))
+                    Ok((doc, durable, metrics, unlisted))
                 })
                 .await
                 .map_err(|error| error.to_string())??;
@@ -494,6 +503,7 @@ async fn load(
                 // the first update takes the growth bound instead of copying
                 // and measuring a near-limit note on the room task (~55 ms).
                 validator,
+                unlisted,
                 model,
                 doc: doc_kind,
                 items_sent: None,
@@ -1535,7 +1545,10 @@ impl Room {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
         }
-        let read_only = context.access == Access::Read;
+        // A writer of a document holding a block this version cannot edit
+        // joins read-only and hears why.
+        let unsupported = context.access == Access::Write && self.unsupported().is_some();
+        let read_only = context.access == Access::Read || unsupported;
         // A writer joining after the maintenance pause ended takes edits again.
         if let Kindly::Source(source) = &mut self.kind
             && !read_only
@@ -1564,6 +1577,9 @@ impl Room {
                 acks: 0,
             },
         );
+        if unsupported && let Some(notice) = self.unsupported() {
+            self.send(key, Kind::Stateless, &protocol::text(&notice));
+        }
         let sv = self.doc.transact().state_vector();
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
@@ -1583,6 +1599,18 @@ impl Room {
             self.send(key, Kind::Stateless, &protocol::text(&message));
         }
         Ok(())
+    }
+
+    /// The `room-read-only` notice of a note room holding a block type the
+    /// embed catalog does not list; none for any other room.
+    fn unsupported(&self) -> Option<String> {
+        match &self.kind {
+            Kindly::Note(note) if note.unlisted => Some(
+                json!({ "code": "unsupported_block", "room": self.name, "type": "room-read-only" })
+                    .to_string(),
+            ),
+            _ => None,
+        }
     }
 
     fn leave(&mut self, key: MemberKey) {
@@ -1856,6 +1884,15 @@ impl Room {
             }
             self.ack(writer);
             return Outcome::Admitted;
+        }
+        // A document holding a block this version cannot edit stays as it is
+        // (a writer whose access came back after it joined, a draft).
+        if changes && let Some(notice) = self.unsupported() {
+            return Outcome::Refused {
+                payloads: vec![notice],
+                reason: UNSUPPORTED_BLOCK.into(),
+                class: Class::Permission,
+            };
         }
         // A writer that slipped past the maintenance pause: it goes read-only
         // (or to recovery with unsent changes) and its update is refused.

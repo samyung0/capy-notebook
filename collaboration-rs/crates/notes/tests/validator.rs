@@ -513,7 +513,12 @@ fn a_media_block_without_its_asset_id_is_refused_at_admit() {
         )
     };
     let inserting = |node: Value| edit(&room, 2, |peer| insert_value(peer, &[node]));
-    for kind in ["img", "image", "audio", "file"] {
+    // The legacy `image` is no element the catalog lists (Epo 2026-10-13).
+    assert!(matches!(
+        Validator::default().admit_bytes(&room, &inserting(media("image", json!({})))),
+        Err(Refusal::Content(what)) if what == limits::UNLISTED_TYPE
+    ));
+    for kind in notes::material::MEDIA_TYPES {
         assert!(
             refused(&inserting(media(kind, json!({})))),
             "{kind} without an asset id"

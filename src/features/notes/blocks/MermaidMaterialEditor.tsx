@@ -44,6 +44,7 @@ import {
   type MermaidTheme,
   mermaidTheme,
 } from '@/features/materials/mermaidThemes';
+import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { registerLiveNote } from '@/features/notes/liveNoteHandover';
 import { MERMAID_CAPTION_CLASS } from '@/features/notes/nodeStyles';
@@ -69,8 +70,9 @@ export default function MermaidMaterialEditor({
   kind: 'mindmap' | 'diagram';
   materialId: string;
   provenance: Provenance | undefined;
-  /** The room turned read-only: the caller drops to View. */
-  onReadOnly: () => void;
+  /** The room turned read-only (`code`: why, when it says): the caller
+   * drops to View. */
+  onReadOnly: (code?: ReadOnlyCode) => void;
   onStatusChange: (status: NoteEditorStatus | null) => void;
   title: string;
 }) {
@@ -88,8 +90,9 @@ export default function MermaidMaterialEditor({
   }, [snapshot.status, snapshot.recovery, onStatusChange]);
   useEffect(() => () => onStatusChange(null), [onStatusChange]);
   useEffect(() => {
-    if (snapshot.access === 'read') onReadOnly();
-  }, [snapshot.access, onReadOnly]);
+    if (snapshot.access === 'read')
+      onReadOnly(snapshot.readOnlyCode ?? undefined);
+  }, [snapshot.access, snapshot.readOnlyCode, onReadOnly]);
   // Edit to View: the live block goes into the cached material first.
   useEffect(() => {
     if (!room) return;

@@ -46,14 +46,25 @@ const setCards = (material: Material) =>
     ) ?? { children: [], id: '', type: 'flashcards' }
   );
 
+/** A reference names one of the embed catalog's item kinds; another fails
+ * loudly instead of drawing as some other kind (AppEmbed.test.tsx). */
+function unknownKind(refKind: never): never {
+  throw new Error(`No embed for the material kind ${String(refKind)}`);
+}
+
 export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
-  return refKind === 'quiz' ? (
-    <QuizView materialId={materialId} ownerId={ownerId} />
-  ) : (
-    <SetGate materialId={materialId} ownerId={ownerId}>
-      {(material) => <LiveSetStudy material={material} />}
-    </SetGate>
-  );
+  switch (refKind) {
+    case 'quiz':
+      return <QuizView materialId={materialId} ownerId={ownerId} />;
+    case 'flashcards':
+      return (
+        <SetGate materialId={materialId} ownerId={ownerId}>
+          {(material) => <LiveSetStudy material={material} />}
+        </SetGate>
+      );
+    default:
+      return unknownKind(refKind);
+  }
 }
 
 /** A set in a note's View: its room joins while the block is near the
@@ -108,25 +119,32 @@ export function AppEmbedEdit({
   /** Removing the last question or card removes the block instead. */
   onEmpty: () => void;
 }) {
-  return refKind === 'quiz' ? (
-    <QuizGate materialId={materialId} ownerId={ownerId}>
-      {(quiz) => (
-        <>
-          <EmbedQuizEditor onEmpty={onEmpty} quizId={materialId} />
-          <SourcesLine className="mt-3" provenance={quiz.provenance} />
-        </>
-      )}
-    </QuizGate>
-  ) : (
-    <SetGate materialId={materialId} ownerId={ownerId}>
-      {(material) => (
-        <>
-          <LiveSetEdit materialId={materialId} onEmpty={onEmpty} />
-          <SourcesLine className="mt-3" provenance={material.provenance} />
-        </>
-      )}
-    </SetGate>
-  );
+  switch (refKind) {
+    case 'quiz':
+      return (
+        <QuizGate materialId={materialId} ownerId={ownerId}>
+          {(quiz) => (
+            <>
+              <EmbedQuizEditor onEmpty={onEmpty} quizId={materialId} />
+              <SourcesLine className="mt-3" provenance={quiz.provenance} />
+            </>
+          )}
+        </QuizGate>
+      );
+    case 'flashcards':
+      return (
+        <SetGate materialId={materialId} ownerId={ownerId}>
+          {(material) => (
+            <>
+              <LiveSetEdit materialId={materialId} onEmpty={onEmpty} />
+              <SourcesLine className="mt-3" provenance={material.provenance} />
+            </>
+          )}
+        </SetGate>
+      );
+    default:
+      return unknownKind(refKind);
+  }
 }
 
 function QuizGate({

@@ -618,6 +618,52 @@ async fn a_read_only_channel_that_writes_is_closed() {
     assert!(String::from_utf8_lossy(&closed).contains("read-only"));
 }
 
+/// Decision 5 (Epo 2026-10-13): a stored note holding a block the embed
+/// catalog does not list stays readable while no writer edits it. A writer
+/// joins read-only and hears why (`room-read-only` with the code the browser
+/// shows), a draft and an update from it are refused, and a reader reads the
+/// note. Fails if the room loads such a note writable.
+#[tokio::test]
+async fn a_note_holding_a_block_this_version_cannot_edit_loads_read_only() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "kept").await;
+    let content = serde_json::json!({ "schemaVersion": 1, "value": [
+        { "type": "p", "id": "b1", "children": [{ "text": "kept" }] },
+        { "type": "toggle", "id": "t1", "children": [{ "text": "Later" }] },
+    ] });
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET content = $2 WHERE id = $1",
+            &[&material, &content],
+        )
+        .await
+        .expect("content");
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &write).await, 0);
+    let (notice, _) = writer.stateless("room-read-only").await;
+    assert_eq!(notice["code"], "unsupported_block", "{notice}");
+    assert!(writer.settle(|c| c.block_text() == "kept").await);
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&write),
+        Some(ORIGIN),
+        drafted(&writer.doc, typed_into_note("!")),
+    )
+    .await;
+    assert_eq!(answer["class"], "permission", "{status} {answer}");
+    writer.type_text("!").await;
+    let closed = writer.until(4).await.expect("closed");
+    assert!(String::from_utf8_lossy(&closed).contains("read-only"));
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "read")).await, 0);
+    assert!(reader.settle(|c| c.block_text() == "kept").await);
+}
+
 /// Security regression: a writer may not write the contributor markers the
 /// server keeps in the document (who edited is the server's record).
 #[tokio::test]

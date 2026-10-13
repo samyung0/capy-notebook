@@ -241,7 +241,8 @@ impl Prelim for ElementPrelim {
     fn integrate(self, txn: &mut TransactionMut, inner_ref: BranchPtr) {
         let text = XmlTextRef::from(inner_ref);
         let mermaid = self.properties.iter().any(|(key, value)| {
-            key == "type" && matches!(value, Any::String(kind) if &**kind == "mermaid")
+            key == "type"
+                && matches!(value, Any::String(kind) if &**kind == plate::SHARED_TEXT_ELEMENT)
         });
         let set = |txn: &mut TransactionMut, properties: Vec<(String, Any)>| {
             for (key, value) in properties {

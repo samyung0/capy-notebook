@@ -30,6 +30,7 @@ import {
   createMaterialDocument,
   createMaterialDocumentWithMetrics,
   flashcardsNode,
+  isKnownElementType,
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
@@ -231,6 +232,19 @@ function materialRoom(name: string, initialValue: MaterialValue): Room {
     room.dirty = false;
   }
   return room;
+}
+
+/** Whether a room's text holds an element of a type the embed catalog does
+ * not list (the collaboration server's `plate::unlisted_type`). */
+function holdsUnlistedType(text: Y.XmlText): boolean {
+  return (text.toDelta() as { insert: unknown }[]).some(({ insert }) => {
+    if (!(insert instanceof Y.XmlText)) return false;
+    const type = insert.getAttribute('type');
+    return (
+      (typeof type === 'string' && !isKnownElementType(type)) ||
+      holdsUnlistedType(insert)
+    );
+  });
 }
 
 /** Source rooms use the sidecar's `source:<fileId>:epoch:<n>` name and hold
@@ -629,6 +643,16 @@ class MockCollaborationProvider implements UnifiedProvider {
     this.isSynced = true;
     this.onConnect?.();
     this.onSyncChange?.(true);
+    // As the collaboration server joins a writer of a document holding a
+    // block this version cannot edit: read-only, saying why (decision 5).
+    if (holdsUnlistedType(room.document.get('content', Y.XmlText)))
+      this.options.onStateless?.({
+        payload: JSON.stringify({
+          code: 'unsupported_block',
+          room: this.options.name,
+          type: 'room-read-only',
+        }),
+      });
   };
 
   disconnect = () => {

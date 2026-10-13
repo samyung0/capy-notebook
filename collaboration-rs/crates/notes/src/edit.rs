@@ -15,6 +15,7 @@ use ydoc::guards::{GuardRun, guards_equal, range_guard};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::{GetString, ReadTxn, Text, TextRef, TransactionMut};
 
+use crate::catalog;
 use crate::material::MATERIAL_REF_TYPE;
 use crate::plate;
 use crate::slate::editor::{Editor, EditorError, Point};
@@ -186,16 +187,12 @@ pub struct EditOutcome {
     pub relocated: Option<Vec<Relocation>>,
 }
 
-const MEDIA_TYPES: [&str; 8] = [
-    "img",
-    "image",
-    "video",
-    "audio",
-    "file",
-    "media_embed",
-    "youtube",
-    "excalidraw",
-];
+/// A media block an agent's edit cannot write: an uploaded file
+/// ([crate::material::MEDIA_TYPES]) or an embedded video (the catalog's
+/// elements that require or forbid `assetId`).
+pub fn media_type(kind: &str) -> bool {
+    kind == "video" || crate::material::MEDIA_TYPES.contains(&kind)
+}
 pub const MAX_TEXT_EDIT_CHARS: usize = 200_000;
 
 fn stable_id(node: &Value) -> String {
@@ -225,7 +222,7 @@ pub(crate) fn js_string(value: Option<&Value>) -> String {
 }
 
 fn has_media(node: &Value) -> bool {
-    MEDIA_TYPES.contains(&js_string(node.get("type")).as_str())
+    media_type(&js_string(node.get("type")))
         || node.get("assetId").is_some()
         || node
             .get("children")
@@ -492,9 +489,7 @@ fn inserts_media(node: &Value) -> bool {
             .is_some_and(|id| !id.is_empty())
         && node.get("url").is_none()
         && node.get("src").is_none();
-    (!named_image
-        && (MEDIA_TYPES.contains(&js_string(node.get("type")).as_str())
-            || node.get("assetId").is_some()))
+    (!named_image && (media_type(&js_string(node.get("type"))) || node.get("assetId").is_some()))
         || node
             .get("children")
             .and_then(Value::as_array)
@@ -1398,7 +1393,8 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                         .collect::<Map<String, Value>>(),
                 )
             };
-            if kind == "chart" || kind == "graph" {
+            // A figure (chart, plot, graph) prints its question block.
+            if catalog::element(&kind).is_some_and(|element| element.required.contains(&"block")) {
                 let printed = block
                     .get("block")
                     .map(crate::json::stringify)

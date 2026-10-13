@@ -283,7 +283,11 @@ reconnect) drops the note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
-stays. Network and other failures keep the source recovery path.
+stays. Network and other failures keep the source recovery path. A note,
+mindmap or diagram whose stored document holds a block the embed catalog
+does not list joins its writers read-only with `code: unsupported_block`,
+and the strip reads "This document has a block this version of Capy can't
+edit, so it opens read-only" (openwiki/embeds.md).
 The frozen copy says the account is read-only, that viewing, downloading and
 deleting still work, and to free up space or resubscribe to edit again. The
 full copy, and the dashboard grace card's, says files are view-only and

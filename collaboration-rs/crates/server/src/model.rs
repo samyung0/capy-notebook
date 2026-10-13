@@ -51,6 +51,16 @@ impl Model {
         }
     }
 
+    /// A stored element type the embed catalog does not list (a document a
+    /// newer version wrote): the room loads read-only (Epo 2026-10-13). An
+    /// item document holds no Plate elements of its own.
+    pub fn unlisted_type<T: ReadTxn>(self, txn: &T) -> Option<String> {
+        match self {
+            Model::Note => notes::plate::unlisted_type(txn),
+            Model::Item(_) => None,
+        }
+    }
+
     pub fn measure<T: ReadTxn>(self, txn: &T) -> Result<Metrics, String> {
         match self {
             Model::Note => notes::limits::measure(txn).map_err(|error| error.to_string()),

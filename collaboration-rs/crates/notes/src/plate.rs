@@ -280,8 +280,11 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
 }
 
 /// The attribute that may hold a text instead of a string: a `mermaid`
-/// block's source (shape A; the admit allows it on `mermaid` alone).
+/// block's source (shape A; the admit allows it on `mermaid` alone). The
+/// embed catalog's only shared-text key (`sharedText`).
 pub const SHARED_TEXT_KEY: &str = "source";
+/// The one element type holding [SHARED_TEXT_KEY] as a text.
+pub const SHARED_TEXT_ELEMENT: &str = "mermaid";
 
 /// The string of a source text: strings only, no formats or embeds.
 pub fn shared_text(branch: &Branch) -> Result<String, ProjectionError> {
@@ -403,6 +406,43 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
         Some(root) => children(&root),
         None => Ok(vec![leaf("", &[])?]),
     }
+}
+
+/// An element type the embed catalog does not list, if the document holds
+/// one: a stored document a newer version wrote. Its room loads read-only
+/// (Epo 2026-10-13). Reads each element's `type` and nothing else, with an
+/// explicit stack.
+pub fn unlisted_type<T: ReadTxn>(txn: &T) -> Option<String> {
+    let mut stack: Vec<BranchPtr> = content_root(txn).into_iter().collect();
+    while let Some(branch) = stack.pop() {
+        let mut next = branch.start();
+        while let Some(item) = next {
+            next = item.right();
+            if item.is_deleted() {
+                continue;
+            }
+            let Some(element) = xml_text(item) else {
+                continue;
+            };
+            let kind = element
+                .entry_item("type")
+                .filter(|entry| !entry.is_deleted())
+                .and_then(|entry| match entry.content() {
+                    ItemContent::Any(values) => match values.last() {
+                        Some(Any::String(kind)) => Some(kind.to_string()),
+                        _ => None,
+                    },
+                    _ => None,
+                });
+            if let Some(kind) = kind
+                && crate::catalog::element(&kind).is_none()
+            {
+                return Some(kind);
+            }
+            stack.push(element);
+        }
+    }
+    None
 }
 
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.

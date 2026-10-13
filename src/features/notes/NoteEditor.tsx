@@ -27,6 +27,7 @@ import { editIncidentReporter } from '@/lib/editIncidents';
 import {
   type MaterialLimitCode,
   materialLimitMessage,
+  type ReadOnlyCode,
 } from './collaborationEvents';
 import {
   EditorRuntimeProvider,
@@ -52,9 +53,9 @@ export function NoteEditor({
   materialId: string;
   allowExternalAssets?: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
-  /** The room turned read-only: the note drops to view mode and its unsaved
-   * edits are discarded. */
-  onReadOnly?: () => void;
+  /** The room turned read-only (`code`: why, when it says): the note drops
+   * to view mode and its unsaved edits are discarded. */
+  onReadOnly?: (code?: ReadOnlyCode) => void;
 }) {
   const {
     data: material,
@@ -118,7 +119,7 @@ function CollaborativeNoteEditor({
   material: Material;
   allowExternalAssets: boolean;
   onEditorStatusChange?: (status: NoteEditorStatus | null) => void;
-  onReadOnly?: () => void;
+  onReadOnly?: (code?: ReadOnlyCode) => void;
 }) {
   const qc = useQueryClient();
   const {
@@ -183,16 +184,19 @@ function CollaborativeNoteEditor({
     },
     [qc, material.id, material.workspaceId]
   );
-  const reportReadOnly = useCallback(() => {
-    // Capabilities and the storage status follow from the refreshed reads.
-    void qc.invalidateQueries({ queryKey: qk.material(material.id) });
-    void qc.invalidateQueries({ queryKey: qk.me });
-    if (material.workspaceId)
-      void qc.invalidateQueries({
-        queryKey: qk.workspace(material.workspaceId),
-      });
-    onReadOnly?.();
-  }, [qc, material.id, material.workspaceId, onReadOnly]);
+  const reportReadOnly = useCallback(
+    (code?: ReadOnlyCode) => {
+      // Capabilities and the storage status follow from the refreshed reads.
+      void qc.invalidateQueries({ queryKey: qk.material(material.id) });
+      void qc.invalidateQueries({ queryKey: qk.me });
+      if (material.workspaceId)
+        void qc.invalidateQueries({
+          queryKey: qk.workspace(material.workspaceId),
+        });
+      onReadOnly?.(code);
+    },
+    [qc, material.id, material.workspaceId, onReadOnly]
+  );
   const role: WorkspaceRole | null =
     material.role ?? (material.isOwner ? 'owner' : null);
   const { data: discussionsData, isPending: discussionsIsPending } =

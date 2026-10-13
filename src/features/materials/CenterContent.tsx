@@ -3,6 +3,7 @@ import {
   lazy,
   type ReactNode,
   Suspense,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -57,6 +58,7 @@ import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { FlashcardGrid } from '@/features/flashcards/FlashcardGrid';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
+import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { handOverLiveNote } from '@/features/notes/liveNoteHandover';
 import { useNoteEditorPrefs } from '@/features/notes/noteEditorPrefs';
@@ -409,9 +411,16 @@ export function MaterialContent({
   } = useMaterial(materialId, {
     errorBoundary: false,
   });
-  // The open room turned read-only (a frozen account or an owner at its storage
-  // limit): view mode under a grey strip; unsaved edits are discarded.
-  const [readOnly, setReadOnly] = useState(false);
+  // The open room turned read-only (a frozen account, an owner at its storage
+  // limit, a block this version cannot edit): view mode under a grey strip
+  // saying why; unsaved edits are discarded.
+  const [readOnly, setReadOnly] = useState<ReadOnlyCode | 'access' | null>(
+    null
+  );
+  const onReadOnly = useCallback(
+    (code?: ReadOnlyCode) => setReadOnly(code ?? 'access'),
+    []
+  );
   const overBar = useContext(FloatingBarContext);
   useEffect(() => {
     if (mode === 'edit') void loadPreview();
@@ -433,6 +442,15 @@ export function MaterialContent({
   const policy = materialModePolicy(material.capabilities);
   const activeMode =
     forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
+  const readOnlyStrip = readOnly && (
+    <FileBanner
+      message={
+        readOnly === 'unsupported_block'
+          ? m.editor_unsupported_block_strip()
+          : m.editor_read_only_strip()
+      }
+    />
+  );
   // Edit to View shows the note at once (NoteEditorCore hands over its live
   // value), so View must not suspend on loading its renderer: Edit loads it,
   // and View then renders it directly. The type is chosen once per mount, at
@@ -500,7 +518,7 @@ export function MaterialContent({
             <MermaidMaterialEditor
               kind={material.kind}
               materialId={materialId}
-              onReadOnly={() => setReadOnly(true)}
+              onReadOnly={onReadOnly}
               onStatusChange={onEditorStatusChange}
               provenance={material.provenance}
               title={material.title}
@@ -515,7 +533,7 @@ export function MaterialContent({
   )
     return (
       <div className="flex h-full min-h-0 flex-col">
-        {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
+        {readOnlyStrip}
         <div className="min-h-0 flex-1 overflow-auto">
           <MermaidMaterialView
             content={material.content}
@@ -532,7 +550,7 @@ export function MaterialContent({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {readOnly && <FileBanner message={m.editor_read_only_strip()} />}
+      {readOnlyStrip}
       <div className="min-h-0 flex-1">
         {activeMode === 'view' && (
           <div className="h-full min-h-0 overflow-auto">
@@ -573,7 +591,7 @@ export function MaterialContent({
                 key={`${materialId}:${activeMode}`}
                 materialId={materialId}
                 onEditorStatusChange={onEditorStatusChange}
-                onReadOnly={() => setReadOnly(true)}
+                onReadOnly={onReadOnly}
               />
             </Suspense>
           </AppErrorBoundary>

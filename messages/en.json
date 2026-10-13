@@ -268,6 +268,7 @@
   "account_banner_full_body": "You've used {used} of {limit}. Files are view-only and nothing new can be added until you free space or upgrade; renaming, moving and deleting still work.",
   "account_frozen_short": "Viewing, downloading and deleting still work. Free space or resubscribe to edit again.",
   "editor_read_only_strip": "This file is read-only now. Viewing, downloading and deleting still work.",
+  "editor_unsupported_block_strip": "This document has a block this version of Capy can't edit, so it opens read-only.",
   "action_details": "Details",
   "account_blocked_suspended_title": "Account suspended",
   "account_blocked_suspended_body": "This account is suspended and cannot be used. Contact support if you think this is a mistake.",

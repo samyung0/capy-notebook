@@ -49,7 +49,9 @@ pub const MAX_ID: usize = 128;
 const ANSWER_TYPES: &[&str] = &[
     "mcq", "multi", "boolean", "short", "matching", "ordering", "open", "gaps",
 ];
-const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph"];
+/// The question block kinds a live quiz holds: the embed catalog's question
+/// blocks (chart, plot, graph) and the plain ones it does not list.
+pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph"];
 /// Whole marks a part or a marking item carries.
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
 
