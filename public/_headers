@@ -1,7 +1,7 @@
-# Vite content-hashes everything under /assets/, so a changed file arrives
-# under a new name and the old name is never reused.
-/assets/*
-  Cache-Control: public, max-age=31536000, immutable
+# /assets/* keeps the Workers Assets default (max-age=0, must-revalidate with
+# an ETag): during a deploy some edge locations answer a new chunk name with
+# the SPA's index.html, and an immutable header would pin that HTML under the
+# chunk's URL for a year (human/deployment-runbook.md, 2026-10-13).
 
 # Avatar and workspace icons keep their names, and their artwork is stable:
 # cached for a year like /assets/*, so a changed icon can stay stale.

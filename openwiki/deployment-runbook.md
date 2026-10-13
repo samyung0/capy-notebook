@@ -128,10 +128,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    Worker subrequests reach the API without the visitor's IP. There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
    request, SPA fallbacks included, is served by the asset layer without an
-   invocation. `public/_headers` marks the content-hashed `/assets/*` bundles
-   `immutable` and the avatar/workspace `/icons/*` `max-age=31536000, immutable` (stable artwork, kept names); the rest
-   keep the Workers Assets default of `public, max-age=0, must-revalidate`
-   with an `ETag`.
+   invocation. `public/_headers` marks the avatar/workspace `/icons/*`
+   `max-age=31536000, immutable` (stable artwork, kept names); everything else,
+   the content-hashed `/assets/*` bundles included, keeps the Workers Assets
+   default of `public, max-age=0, must-revalidate` with an `ETag`. `/assets/*`
+   is not immutable because the SPA fallback answers an unknown asset name
+   with `index.html` (200), and during a deploy some edge locations do that
+   for new chunk names; an immutable header would pin that HTML for a year.
    The Office viewer/editor needs its own cookie-less hostname in production,
    such as `office.capynotebook.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
