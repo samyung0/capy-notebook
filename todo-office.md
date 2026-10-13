@@ -706,3 +706,20 @@ for scale, `mermaid.core` is 150.7 KB before any diagram chunk.
   plan of whoever pays for the file. Shrink to JPEG (opaque) or PNG
   (transparent), never WebP: older Word, PowerPoint, LibreOffice and Google
   Docs imports cannot open WebP inside DOCX/PPTX.
+
+## Queued 2026-10-13 (from the Rust round)
+
+- **Text publishing without the swap** (Epo: later). A text source publishes
+  through the Office path: export to a new file version, re-ingest, then a new
+  epoch over the published file once the room empties. Office needs that (its
+  editing state is a delta over seed(base)); text does not, since its Y.Text is
+  the whole document: publishing could write the current text to the file and
+  reindex, keeping editing in the same epoch. The swap now doubles as history
+  compaction for text, so compaction would need its own idle trigger.
+- **Server-side check on Office image bytes** (Epo: later): the Rust server
+  refuses an Office edit that adds an image over the payer's cap, so the 2/5 MiB
+  cap holds against a modified client (the browser enforces it today).
+- **PPTX Edit gives screen readers no slide text**, unlike the DOCX and XLSX
+  editors (found by the agent-writes e2e, 2026-10-13).
+- **`[@Name](mention:id)` in agent markdown becomes a link with an empty URL**
+  (Go does not check link URLs; the note format offers no mentions).
