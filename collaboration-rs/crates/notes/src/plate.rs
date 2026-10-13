@@ -445,21 +445,6 @@ fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
     }
 }
 
-/// An element type the embed catalog does not list, if the document holds
-/// one: a stored document a newer version wrote. Its room loads read-only
-/// (Epo 2026-10-13). Reads each element's `type` and nothing else.
-pub fn unlisted_type<T: ReadTxn>(txn: &T) -> Option<String> {
-    let mut found = None;
-    any_element(txn, |element| match string_attribute(element, "type") {
-        Some(kind) if crate::catalog::element(&kind).is_none() => {
-            found = Some(kind);
-            true
-        }
-        _ => false,
-    });
-    found
-}
-
 /// Whether a material reference carries an imported fence body (`pending`,
 /// the quiz's answer keys), which no stored document may hold: its room
 /// refuses to load, so no reader receives it, as Go's reads refuse it.

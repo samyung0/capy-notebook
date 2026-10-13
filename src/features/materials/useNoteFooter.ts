@@ -20,13 +20,18 @@ export const EMBED_READ_KEYS: Record<
 
 /** The quizzes and flashcard sets a note's blocks embed, in document order, as
  * one string ("kind:id kind:id"): equal strings mean the same embeds, so a
- * caller can keep one across edits that change nothing of them. */
+ * caller can keep one across edits that change nothing of them. A reference
+ * of a kind this version has no read for (a newer version wrote it; the
+ * note's room is then read-only) has no credits here. */
 export function embedKey(
   value: readonly { type?: unknown; materialId?: unknown; refKind?: unknown }[]
 ) {
   return value
     .flatMap((node) =>
-      node.type === MATERIAL_REF_TYPE && typeof node.materialId === 'string'
+      node.type === MATERIAL_REF_TYPE &&
+      typeof node.materialId === 'string' &&
+      typeof node.refKind === 'string' &&
+      Object.hasOwn(EMBED_READ_KEYS, node.refKind)
         ? [`${node.refKind}:${node.materialId}`]
         : []
     )

@@ -12,6 +12,7 @@ use serde_json::{Map, Value};
 
 use crate::catalog::{
     self, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES, HTML_EMBED_MAX_COUNT,
+    MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
 };
 use crate::questions::{self, Policy, js_trim};
 
@@ -250,24 +251,58 @@ fn validate_diagram(node: &Node) -> Check {
     Ok(())
 }
 
+/// A resizable block's width, exactly what the resize handles write: a whole
+/// percentage from the catalog's `MEDIA_WIDTH_MIN` to `MEDIA_WIDTH_MAX`
+/// (`^(?:[2-9][0-9]|100)%$`, Epo, 2026-10-08).
+pub fn valid_width(width: &str) -> bool {
+    width.strip_suffix('%').is_some_and(|n| {
+        !n.starts_with('0')
+            && n.bytes().all(|b| b.is_ascii_digit())
+            && n.parse::<usize>()
+                .is_ok_and(|n| (MEDIA_WIDTH_MIN..=MEDIA_WIDTH_MAX).contains(&n))
+    })
+}
+
 /// `validateMediaWidth` (plate-2 3a87184d): the one optional `width` of a
-/// resizable block (image, YouTube video, Mermaid, chart, graph), exactly
-/// what the resize handles write, `^(?:[2-9][0-9]|100)%$` (Epo, 2026-10-08).
+/// resizable block (image, YouTube video, Mermaid, chart, graph).
 fn validate_width(node: &Node) -> Check {
     let valid = match node.get("width") {
         None => true,
-        Some(Value::String(width)) => width.strip_suffix('%').is_some_and(|n| {
-            !n.starts_with('0')
-                && n.bytes().all(|b| b.is_ascii_digit())
-                && n.parse::<u32>().is_ok_and(|n| (20..=100).contains(&n))
-        }),
+        Some(Value::String(width)) => valid_width(width),
         Some(_) => false,
     };
     if valid {
         Ok(())
     } else {
-        fail("width must be a whole percentage from 20 to 100")
+        fail(format!(
+            "width must be a whole percentage from {MEDIA_WIDTH_MIN} to {MEDIA_WIDTH_MAX}"
+        ))
     }
+}
+
+/// A YouTube video id: 11 characters of `[A-Za-z0-9_-]`.
+pub fn youtube_id(id: &str) -> bool {
+    id.len() == 11
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// A chart, plot or graph node's `block`: a question block of the node's
+/// type, valid as a question block, a graph drawn from its own SVG.
+pub fn figure_block(kind: &str, block: &Value) -> Check {
+    let typed = block
+        .as_object()
+        .is_some_and(|b| b.get("type").and_then(Value::as_str) == Some(kind));
+    if !typed {
+        return fail("embed block type must match node type");
+    }
+    let parsed = questions::block(block).map_err(ValidationError)?;
+    if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
+        // The TS raises this inside its try and re-wraps the message.
+        return fail("invalid material document: note graphs require inline SVG");
+    }
+    Ok(())
 }
 
 /// "chart, plot and graph": the catalog's figure elements (one question
@@ -292,9 +327,9 @@ fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
     if !empty_leaf(&children(node)) {
         return fail(format!("{} embeds require one empty text leaf", figures()));
     }
-    let block = node.get("block");
+    let block = node.get("block").unwrap_or(&Value::Null);
     let typed = block
-        .and_then(Value::as_object)
+        .as_object()
         .is_some_and(|b| b.get("type").and_then(Value::as_str) == Some(kind));
     if !typed {
         return fail("embed block type must match node type");
@@ -306,12 +341,7 @@ fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
         return fail("unexpected embed field");
     }
     validate_width(node)?;
-    let parsed = questions::block(block.unwrap_or(&Value::Null)).map_err(ValidationError)?;
-    if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
-        // The TS raises this inside its try and re-wraps the message.
-        return fail("invalid material document: note graphs require inline SVG");
-    }
-    Ok(())
+    figure_block(kind, block)
 }
 
 fn validate_html_embed(node: &Node, depth: usize) -> Check {
@@ -470,16 +500,11 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {
                 return fail("video provider must be youtube");
             }
-            let valid = node
+            if !node
                 .get("videoId")
                 .and_then(Value::as_str)
-                .is_some_and(|id| {
-                    id.len() == 11
-                        && id
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-                });
-            if !valid {
+                .is_some_and(youtube_id)
+            {
                 return fail("videoId must be a valid YouTube video ID");
             }
             for key in ["assetId", "url", "src"] {

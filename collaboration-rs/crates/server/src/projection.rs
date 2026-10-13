@@ -168,6 +168,13 @@ pub async fn project_durable(app: &Shared, material_id: &str) -> Result<i64, Str
                 Some((base, rows)) => {
                     let keys = replay(base, rows)?;
                     let (content, keys) = (doc.transact(), keys.transact());
+                    // A block this version cannot read would leave the
+                    // projection, and so the stored quiz (Epo 2026-10-13).
+                    if items::quiz::holds_unknown_block(&content)
+                        || items::quiz::holds_unknown_block(&keys)
+                    {
+                        return Err("the quiz holds a block this version cannot read".into());
+                    }
                     (
                         items::quiz::value(&content, &keys),
                         Some(items::quiz::asset_ids(&content, &keys)),

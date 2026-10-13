@@ -346,13 +346,51 @@ static FORBIDDEN: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::
     keys
 });
 
-/// Whether some element may need `key`, or may not carry it: an update that
-/// writes or deletes only other keys leaves every required and forbidden key
-/// as it was.
+/// The keys whose value the store checks beyond its presence ([value_ok]).
+const VALUE_KEYS: [&str; 8] = [
+    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source",
+];
+
+/// Whether the store takes `value` under `key` on an element of type `kind`
+/// (`material::assert_canonical`): a reference names an item kind, a video
+/// is a YouTube id, a resizable block's width is one the handles write, an
+/// interactive block's html fits and its caption is a string, a figure's
+/// block is a valid question block of its type, a Mermaid source is a string
+/// (or its shared text).
+fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
+    match (kind, key, value) {
+        (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
+            catalog::material_kind(item).is_some_and(|item| item.item)
+        }
+        ("video", "provider", Any::String(provider)) => &**provider == "youtube",
+        ("video", "videoId", Any::String(id)) => crate::material::youtube_id(id),
+        (crate::material::HTML_EMBED_TYPE, "html", Any::String(html)) => {
+            html.len() <= catalog::HTML_EMBED_MAX_BYTES
+        }
+        (crate::material::HTML_EMBED_TYPE, "caption", value) => matches!(value, Any::String(_)),
+        ("chart" | "plot" | "graph", "block", value) => json::any_to_value(value)
+            .is_ok_and(|block| crate::material::figure_block(kind, &block).is_ok()),
+        (plate::SHARED_TEXT_ELEMENT, plate::SHARED_TEXT_KEY, value) => {
+            matches!(value, Any::String(_))
+        }
+        (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
+            matches!(value, Any::String(width) if crate::material::valid_width(width))
+        }
+        (crate::material::MATERIAL_REF_TYPE, "refKind", _)
+        | ("video", "provider" | "videoId", _)
+        | (crate::material::HTML_EMBED_TYPE, "html", _) => false,
+        _ => true,
+    }
+}
+
+/// Whether some element may need `key`, may not carry it, or may not carry
+/// a value of it: an update that writes or deletes only other keys leaves
+/// every required, forbidden and checked key as it was.
 fn guarded(key: &str) -> bool {
     key == "type"
         || key == "id"
         || OWN_KEYS.iter().any(|(_, keys)| keys.contains(&key))
+        || VALUE_KEYS.contains(&key)
         || FORBIDDEN.contains(&key)
 }
 
@@ -628,12 +666,10 @@ fn plain_content<T: ReadTxn>(
             }
         }
     }
-    // A held closed element given a key outside its fields: the update leaves
-    // its type alone (a type it writes was seen above), so the room's says.
+    // A held closed element given a key outside its fields, whatever `type`
+    // the update writes too: a written type may lose Yjs's conflict order,
+    // so the copy decides.
     for (element, keys) in &keyed {
-        if typed.contains(element) {
-            continue;
-        }
         let outside = held_type(txn, element)
             .and_then(|kind| closed_fields(&kind))
             .is_some_and(|fields| keys.iter().any(|key| !fields.contains(&&**key)));
@@ -702,8 +738,13 @@ pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize, material: &str)
 /// [Refusal::Content] for an update that leaves an element without a key the
 /// store requires ([required_keys]).
 pub const MISSING_KEY: &str = "an element without a key it requires";
-/// A material reference below the top level, which the store refuses.
-pub const NESTED_REFERENCE: &str = "a material reference below the top level";
+/// A top-level-only block (a reference, a figure, an interactive block)
+/// below the top level, which the store refuses.
+pub const NESTED_BLOCK: &str = "a top-level block below the top level";
+/// [Refusal::Content] for a value the store refuses ([value_ok]).
+pub const BAD_VALUE: &str = "an element with a value it cannot hold";
+/// [Refusal::Content] for more interactive blocks than a document holds.
+pub const TOO_MANY_EMBEDS: &str = "more interactive blocks than a document holds";
 /// [Refusal::Content] for an element given a key the catalog forbids it.
 pub const FORBIDDEN_KEY: &str = "an element with a key it never carries";
 /// [Refusal::Content] for a block type the catalog does not list for the
@@ -885,14 +926,16 @@ fn required_keys<T: ReadTxn>(
             let Some(kind) = after("type") else {
                 return Ok(true);
             };
-            // A reference sits at the top level only, as the store requires
-            // (live-items REVIEW5 R2): one this update creates or retypes
-            // below it is refused.
+            // A top-level-only block (a reference, a figure, an interactive
+            // block) sits at the top level, as the store requires (live-items
+            // REVIEW5 R2): one this update creates or retypes below it is
+            // refused.
             if !top
                 && (created || retyped)
-                && matches!(&kind, Some(Any::String(kind)) if &**kind == crate::material::MATERIAL_REF_TYPE)
+                && matches!(&kind, Some(Any::String(kind))
+                    if catalog::element(kind).is_some_and(|element| element.top_level))
             {
-                return Err(Refusal::Content(NESTED_REFERENCE));
+                return Err(Refusal::Content(NESTED_BLOCK));
             }
             let own = own_keys(kind.as_ref());
             let mut required = vec!["type"];
@@ -932,6 +975,25 @@ fn required_keys<T: ReadTxn>(
                     return Err(Refusal::Content(FORBIDDEN_KEY));
                 }
             }
+            // Nor a value the store refuses: one this update writes, or one
+            // a block it creates or retypes holds.
+            if let Some(Any::String(name)) = &kind {
+                for key in VALUE_KEYS {
+                    let wrote = written.is_some_and(|keys| keys.contains_key(key));
+                    if !(created || retyped || wrote) {
+                        continue;
+                    }
+                    let value = match after(key) {
+                        Some(value) => value,
+                        None => return Ok(true),
+                    };
+                    if let Some(value) = value.filter(|value| !matches!(value, Any::Undefined))
+                        && !value_ok(name, key, &value)
+                    {
+                        return Err(Refusal::Content(BAD_VALUE));
+                    }
+                }
+            }
             Ok(false)
         };
         if check(&resolved)? {
@@ -963,6 +1025,7 @@ fn required_keys<T: ReadTxn>(
 fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(), Refusal> {
     use yrs::Transact;
     let txn = candidate.transact();
+    let mut embeds_counted = false;
     for id in touched {
         let Some(branch) = id.get_branch(&txn) else {
             continue;
@@ -978,6 +1041,17 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
                 .any(|(key, value)| !matches!(value, Any::Undefined) && !fields.contains(&&**key))
         {
             return Err(Refusal::Content(UNEXPECTED_KEY));
+        }
+        // An interactive block made: the document's top level holds at most
+        // `HTML_EMBED_MAX_COUNT`, counted once on the copy.
+        if !embeds_counted
+            && matches!(attributes.get("type"), Some(Any::String(kind))
+                if &**kind == crate::material::HTML_EMBED_TYPE)
+        {
+            embeds_counted = true;
+            if top_level_embeds(&txn)? > catalog::HTML_EMBED_MAX_COUNT {
+                return Err(Refusal::Content(TOO_MANY_EMBEDS));
+            }
         }
         let media = matches!(attributes.get("type"), Some(Any::String(kind))
             if crate::material::MEDIA_TYPES.contains(&&**kind));
@@ -996,6 +1070,26 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// The interactive blocks at a document's top level.
+fn top_level_embeds<T: ReadTxn>(txn: &T) -> Result<usize, Refusal> {
+    let Some(root) = plate::content_root(txn) else {
+        return Ok(0);
+    };
+    let mut count = 0;
+    for op in plate::insert_delta(&root)? {
+        if let Insert::Element(element) = op.insert {
+            let kind = plate::properties(&element)?
+                .into_iter()
+                .find(|(key, _)| &**key == "type");
+            if matches!(kind, Some((_, Any::String(kind))) if &*kind == crate::material::HTML_EMBED_TYPE)
+            {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
 }
 
 /// The room with `update` applied, on a copy.

@@ -10,6 +10,7 @@ import {
   type QuestionBlock,
   type QuestionPart,
 } from '@/features/questions/types';
+import { m } from '@/i18n';
 import { uid } from '@/lib/id';
 import { keyBetween } from '@/lib/orderKey';
 
@@ -90,11 +91,18 @@ const plain = <T>(map: YMap | undefined, key: string) =>
 
 /* --------------------------------------------------------------- reading */
 
+/** A block entry of a kind this version has no reader for: a newer version
+ * wrote it, and its rooms are read-only (collaboration-rs `Model::stored`,
+ * Epo 2026-10-13). It shows as the unsupported notice and is never written
+ * over ([writeBlocks] refuses a list holding one). */
+const UNREADABLE = Object.freeze({ unreadable: true });
+const unreadable = (
+  read: QuestionBlock | null | typeof UNREADABLE
+): read is typeof UNREADABLE => read === UNREADABLE;
+
 /** A block entry as its question block; none while it is incomplete (no
- * type yet, a chart without its value). A type it has no reader for throws
- * instead of dropping the block, which the next save would delete: the room
- * admits only the kinds this reads (collaboration-rs items quiz.rs). */
-function readBlock(entry: YMap): QuestionBlock | null {
+ * type yet, a chart without its value). */
+function readBlock(entry: YMap): QuestionBlock | null | typeof UNREADABLE {
   const type = plain<string>(entry, 'type');
   switch (type) {
     case 'text': {
@@ -139,12 +147,17 @@ function readBlock(entry: YMap): QuestionBlock | null {
     case undefined:
       return null;
     default:
-      throw new Error(`No reader for the question block type ${type}`);
+      return UNREADABLE;
   }
 }
 
 function readBlocks(map: YMap | undefined): QuestionBlock[] {
-  return ordered(map).flatMap(({ entry }) => readBlock(entry) ?? []);
+  return ordered(map).flatMap(({ entry }): QuestionBlock[] => {
+    const block = readBlock(entry);
+    if (unreadable(block))
+      return [{ text: m.material_unsupported_block(), type: 'text' }];
+    return block ? [block] : [];
+  });
 }
 
 const texts = (map: YMap | undefined) =>
@@ -650,9 +663,15 @@ const blockJson = (block: QuestionBlock) => JSON.stringify(block);
 
 /** Writes a block list with the fewest changes (same rule as `writeList`). */
 function writeBlocks(map: YMap, next: QuestionBlock[]) {
-  const current = ordered(map).map((item) => ({
+  const held = ordered(map).map((item) => ({
     ...item,
-    block: readBlock(item.entry),
+    read: readBlock(item.entry),
+  }));
+  if (held.some(({ read }) => unreadable(read)))
+    throw new Error('A question holds a block this version cannot edit');
+  const current = held.map(({ read, ...item }) => ({
+    ...item,
+    block: unreadable(read) ? null : read,
   }));
   const json = current.map((item) => (item.block ? blockJson(item.block) : ''));
   const wanted = next.map(blockJson);

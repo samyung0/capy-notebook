@@ -227,10 +227,10 @@ struct Note {
     /// A quiz room: the metrics last sent to the other document's room.
     metrics_sent: Option<notes::limits::Metrics>,
     validator: crate::model::RoomValidator,
-    /// The stored document holds a block this version cannot read (a type
-    /// the embed catalog does not list, a quiz block kind the room does not
-    /// admit: `Model::stored`): it stays readable and no writer edits it
-    /// until it is fixed (Epo 2026-10-13).
+    /// The stored document is one the store would refuse, or a quiz either
+    /// of whose documents holds a block kind its rooms do not admit
+    /// (`Model::stored`): it stays readable and no writer edits it until it
+    /// is fixed (Epo 2026-10-13).
     unlisted: bool,
     durable_metrics: Option<notes::limits::Metrics>,
     stored_version: i64,
@@ -453,7 +453,8 @@ async fn load(
                 loaded.projected_version,
                 loaded.log_bytes,
             );
-            let (doc, durable, metrics, unlisted) =
+            let material_kind = kind.clone();
+            let (doc, durable, metrics, mut unlisted) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let scratch = ydoc::scratch_doc();
                     ydoc::replay(&scratch, &loaded.base, &loaded.rows)
@@ -472,7 +473,7 @@ async fn load(
                     model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
                     let metrics = model.measure(&txn)?;
-                    let unlisted = model.stored(&txn)?;
+                    let unlisted = model.stored(&material_kind, &txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
                     Ok((doc, durable, metrics, unlisted))
@@ -480,7 +481,9 @@ async fn load(
                 .await
                 .map_err(|error| error.to_string())??;
             // A quiz's other document as stored: its metrics count with this
-            // one's, and the content room's readers get the keys' items.
+            // one's, the content room's readers get the keys' items, and a
+            // block this version cannot read in either makes both rooms
+            // read-only (a save in one would rebuild the quiz without it).
             let mut validator = model.validator(&kind, metrics);
             let mut reader = None;
             if model.quiz() {
@@ -488,8 +491,10 @@ async fn load(
                     note_store::Doc::Content => note_store::Doc::Keys,
                     note_store::Doc::Keys => note_store::Doc::Content,
                 };
-                let (peer, parts) = peer_state(app, material_id, *schema, other).await?;
+                let (peer, parts, peer_unlisted) =
+                    peer_state(app, material_id, *schema, other).await?;
                 validator.set_peer(peer);
+                unlisted |= peer_unlisted;
                 if doc_kind == note_store::Doc::Content {
                     let mut lists = items::quiz::ReaderLists::default();
                     lists.follow(&parts, &mut random_pick);
@@ -578,7 +583,7 @@ async fn peer_state(
     material_id: &str,
     schema: i64,
     doc: note_store::Doc,
-) -> Result<(notes::limits::Metrics, Vec<items::quiz::ItemsPart>), String> {
+) -> Result<(notes::limits::Metrics, Vec<items::quiz::ItemsPart>, bool), String> {
     let loaded = note_store::load(&app.db, material_id, schema, doc)
         .await
         .map_err(|error| error.to_string())?;
@@ -586,14 +591,17 @@ async fn peer_state(
         let scratch = ydoc::scratch_doc();
         ydoc::replay(&scratch, &loaded.base, &loaded.rows).map_err(|error| error.to_string())?;
         let txn = scratch.transact();
+        let unlisted = items::quiz::holds_unknown_block(&txn);
         Ok(match doc {
             note_store::Doc::Keys => (
                 notes::limits::measure_value(&items::Kind::QuizKeys.document_value(&txn)),
                 items::quiz::item_parts(&txn),
+                unlisted,
             ),
             note_store::Doc::Content => (
                 notes::limits::measure_value(&items::Kind::Quiz.document_value(&txn)),
                 Vec::new(),
+                unlisted,
             ),
         })
     })
@@ -1296,7 +1304,9 @@ impl Room {
         let room = self.name.clone();
         tokio::spawn(async move {
             match peer_state(&app, &material_id, schema, other).await {
-                Ok((metrics, parts)) => {
+                // Admission and service edits refuse a block kind the room does not
+                // admit, so the peer gains none after the load.
+                Ok((metrics, parts, _)) => {
                     let _ = handle.tx.send(RoomCmd::PeerStored(metrics, parts)).await;
                 }
                 Err(error) => {
@@ -1926,9 +1936,16 @@ impl Room {
         // socket keeps its thread. A note update touching a media block's
         // attributes is checked on a copy of the room (REVIEW5 M1).
         let heavy = match &self.kind {
-            Kindly::Note(note) => {
+            // The note scan reads Plate content; an item room's admission
+            // copies only past its own bound.
+            Kindly::Note(note) if note.model == crate::model::Model::Note => {
                 notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
             }
+            Kindly::Note(_) => !ydoc::applies_inline(
+                &self.doc.transact(),
+                &ydoc::Incoming::new(&update),
+                bytes.len(),
+            ),
             Kindly::Source(source) => {
                 !ydoc::applies_inline(
                     &self.doc.transact(),

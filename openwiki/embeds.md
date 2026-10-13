@@ -52,23 +52,41 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   element type`), and its messages are Go's ("chart, plot and graph"). Room
   admission (`notes::limits`) refuses, as the update arrives, what that
   store would refuse, so one writer's update is lost instead of the room's
-  unsaved state: a block given a type the catalog does not list for the
-  room's material kind (`may_hold`: a reference goes into a note, not a
-  mindmap or diagram), a key the catalog forbids its element, a key outside
-  a closed element's `fields` (written on a chart, plot, graph or
-  html_embed, or held by a block retyped to one; checked on a copy of the
-  room, as media are), or an element left without a key it requires
+  unsaved state, except the cases listed after: a block given a type the catalog
+  does not list for the room's material kind (`may_hold`: a reference goes
+  into a note, not a mindmap or diagram), or a top-level-only block (a
+  reference, a figure, an interactive block) below the top level; a key the
+  catalog forbids its element; a key outside a closed element's `fields`
+  (written on a chart, plot, graph or html_embed, or held by a block retyped
+  to one, whatever `type` the update writes beside it, which may lose Yjs's
+  conflict order: checked on a copy of the room, as media are); a value the
+  store refuses (a reference's `refKind`, a video's provider and id, a
+  width, an interactive block's html size and caption, a figure's `block`, a
+  Mermaid source); an eleventh interactive block (counted on the copy when
+  an update makes one); or an element left without a key it requires
   (`OWN_KEYS`: the catalog's `required`, less the top-level `id` every block
-  needs and a media block's `assetId`, which the media check reads). A room
-  whose stored document holds a block this version cannot read (a type the
-  catalog does not list in a note, mindmap or diagram; a question block kind
-  a quiz room does not admit, in either quiz document) loads read-only:
-  every writer joins read-only and hears `room-read-only` with `code:
-  unsupported_block`, its updates and drafts are refused (`permission`),
-  and a note or diagram editor drops to View under a strip saying "This
-  document has a block this version of Capy can't edit" (`CenterContent`);
-  readers join as usual. A stored note whose reference still carries an
-  imported fence body (`pending`, the quiz's answer keys) is not served at
+  needs and a media block's `assetId`, which the media check reads). Not
+  checked yet, each written only by a crafted update and refused at the
+  store: two top-level blocks given one `id` (checking it would read every
+  top-level id per update that makes a block, about 10,000 lookups per Enter
+  in a near-limit note), text inside a void block, a Mermaid block's caption
+  child removed or holding an element, a material kind's required element
+  deleted (a diagram's `mermaid`), and the obsolete `suggestion` and element
+  `text` keys. At load the room runs the store's whole check once, on
+  the background step that measures it: a note, mindmap or diagram the store
+  would refuse (a type the catalog does not list, or not for this kind, a
+  closed element's extra key, a reference without its row, duplicate ids,
+  ...), or a quiz either of whose documents holds a question block kind its
+  rooms do not admit, loads read-only: every writer joins read-only and
+  hears `room-read-only` with `code: unsupported_block`, its updates and
+  drafts are refused (`permission`), a note or diagram editor drops to View
+  under a strip saying "This document has a block this version of Capy
+  can't edit" (`CenterContent`) and a quiz editor shows its questions to
+  read under the same strip, an unreadable block drawn as the unsupported
+  notice (`liveQuiz.ts`, which never writes over it); readers join as usual,
+  and no projection or service edit rebuilds such a quiz. A stored note
+  whose reference still carries an imported fence body (`pending`, the
+  quiz's answer keys) is not served at
   all: its room refuses to load, as Go's reads refuse it (`Model::stored`). Only `mermaid.source` is shared
   text: the server holds it as `plate::SHARED_TEXT_KEY` on
   `SHARED_TEXT_ELEMENT`, the browser as `liveMermaid.ts`'s constants and in

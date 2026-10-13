@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Material } from '@/api/types';
+import { FileBanner } from '@/components/banners/FileBanner';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
@@ -19,6 +20,7 @@ import {
 } from '@/features/quizzes/liveQuizRooms';
 import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
+import { m } from '@/i18n';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
@@ -262,6 +264,15 @@ function EmbedQuizEditor({
         <EmbedUnavailable />
       ) : rooms.recovery ? (
         <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
+      ) : rooms.ready && rooms.access === 'read' ? (
+        // A room read-only for this writer (a block this version cannot
+        // edit, a frozen account) shows the questions to read.
+        <div className="grid gap-4">
+          {rooms.readOnlyCode === 'unsupported_block' && (
+            <FileBanner message={m.editor_unsupported_block_strip()} />
+          )}
+          <QuizQuestionList disabled questions={questions} />
+        </div>
       ) : rooms.ready && rooms.content && rooms.keys ? (
         <div className="grid gap-4">
           {rooms.offline && <SaveBanner state={rooms.offline} />}

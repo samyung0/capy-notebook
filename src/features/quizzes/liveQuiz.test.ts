@@ -6,6 +6,7 @@ import { pairedUndo } from '@/features/collaboration/undo';
 import { LOCAL_EDIT } from '@/features/collaboration/yText';
 import { exampleQuestions } from '@/features/questions/questionFixtures';
 import type { Question, QuestionBlock } from '@/features/questions/types';
+import { m } from '@/i18n';
 import {
   applyReaderMessage,
   itemParts,
@@ -267,9 +268,13 @@ it('writes and reads back every question block the embed catalog lists', () => {
   expect(readQuestions(content, keys)[0].stem).toEqual([...blocks].reverse());
 });
 
-it('fails loudly on a question block type it has no reader for', () => {
+// A block of a kind this version has no reader for (its rooms are read-only,
+// decision 5) shows as the unsupported notice in its place, for editors and
+// learners, and no save writes over it or drops it.
+it('shows a block type it has no reader for as the notice and never writes over it', () => {
   const { content, keys } = quiz();
-  const stem = questionsScope(content).get(questions[0].id)?.get('stem') as
+  const question = questions[0];
+  const stem = questionsScope(content).get(question.id)?.get('stem') as
     | Y.Map<Y.Map<unknown>>
     | undefined;
   expect(stem).toBeInstanceOf(Y.Map);
@@ -277,6 +282,12 @@ it('fails loudly on a question block type it has no reader for', () => {
   stem?.set('b_future', entry);
   entry.set('order', 'a0');
   entry.set('type', 'timeline');
-  expect(() => readQuestions(content, keys)).toThrow('timeline');
-  expect(() => readLearnerQuestions(content)).toThrow('timeline');
+  const notice = { text: m.material_unsupported_block(), type: 'text' };
+  expect(readQuestions(content, keys)[0].stem[0]).toEqual(notice);
+  expect(readLearnerQuestions(content)[0].stem[0]).toEqual(notice);
+  const edited = readQuestions(content, keys)[0];
+  expect(() =>
+    writeQuestion(content, keys, { ...edited, stem: edited.stem.slice(1) })
+  ).toThrow('cannot edit');
+  expect(stem?.get('b_future')?.get('type')).toBe('timeline');
 });

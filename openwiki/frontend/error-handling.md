@@ -284,10 +284,12 @@ reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
 stays. Network and other failures keep the source recovery path. A note,
-mindmap or diagram whose stored document holds a block the embed catalog
-does not list joins its writers read-only with `code: unsupported_block`,
-and the strip reads "This document has a block this version of Capy can't
-edit, so it opens read-only" (openwiki/embeds.md).
+mindmap or diagram whose stored document the store would refuse (a block
+the embed catalog does not list, ...), or a quiz holding a block kind its
+rooms do not admit, joins its writers read-only with `code:
+unsupported_block`, and the strip reads "This document has a block this
+version of Capy can't edit, so it opens read-only" (a quiz editor shows its
+questions to read under it; openwiki/embeds.md).
 The frozen copy says the account is read-only, that viewing, downloading and
 deleting still work, and to free up space or resubscribe to edit again. The
 full copy, and the dashboard grace card's, says files are view-only and

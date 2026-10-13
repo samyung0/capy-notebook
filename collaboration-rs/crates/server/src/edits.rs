@@ -538,6 +538,15 @@ fn compute_quiz(
     {
         return Err(DocumentError::Quota(code.as_str().into()));
     }
+    // A block this version cannot read would leave the rebuilt quiz.
+    if items::quiz::holds_unknown_block(&content.doc.transact())
+        || items::quiz::holds_unknown_block(&keys.doc.transact())
+    {
+        return Err(DocumentError::edit(
+            "unsupported_operation",
+            "this quiz has a block this version can't edit",
+        ));
+    }
     let value = items::quiz::value(&content.doc.transact(), &keys.doc.transact());
     let asset_ids = Some(items::quiz::asset_ids(
         &content.doc.transact(),
@@ -1305,4 +1314,44 @@ pub async fn document(app: &Shared, path: &str, body: &[u8]) -> Result<Value, Do
         return inspect_material(app, &request).await;
     }
     edit_material(app, &request, undo).await
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use serde_json::json;
+
+    use super::{DocumentError, Scratch, compute_quiz};
+
+    /// A server write of a quiz (an agent edit, the save API) whose documents
+    /// hold a block kind its rooms do not admit is refused, so no rebuilt
+    /// quiz drops the block (review M1). Fails if the quiz is rebuilt.
+    #[test]
+    fn a_quiz_holding_an_unknown_block_is_not_rebuilt() {
+        let rebuilt = |stem: serde_json::Value| {
+            let value = [json!({ "type": "quiz", "id": "quiz", "children": [{
+                "type": "quiz_question", "id": "q1", "children": [{ "text": "" }],
+                "question": {
+                    "id": "q1", "labels": "letters", "layout": "paper", "stem": stem,
+                    "parts": [{
+                        "id": "q1:part:1", "marks": 1, "solution": [],
+                        "blocks": [{ "type": "text", "text": "True?" }],
+                        "answer": { "type": "boolean", "correct": true },
+                    }],
+                },
+            }] })];
+            let (content, keys) = items::quiz::states_from_value(&value, 0);
+            let content = Scratch::new(&content, &[], None).unwrap();
+            let keys = Scratch::new(&keys, &[], None).unwrap();
+            compute_quiz(&content, &keys, |_, _| {
+                Ok(notes::edit::EditOutcome::default())
+            })
+        };
+        assert!(matches!(
+            rebuilt(json!([{ "type": "timeline", "events": [] }])),
+            Err(DocumentError::Edit { code, .. }) if code == "unsupported_operation"
+        ));
+        assert!(rebuilt(json!([{ "type": "text", "text": "Stem" }])).is_ok());
+    }
 }

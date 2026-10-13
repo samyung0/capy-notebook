@@ -464,6 +464,135 @@ fn admission_follows_closed_fields_and_the_material_kind() {
     }
 }
 
+/// Two writers race on a held plot's `type`: one sets `plot` again, the
+/// other (from the state before, losing Yjs's order to the higher client)
+/// sets `p` with an extra key. The result is a plot carrying the extra key,
+/// which the store refuses, so admission refuses it on a copy whatever the
+/// losing `type` says (review M3). Fails if a written type skips the check.
+#[test]
+fn a_losing_type_write_cannot_slip_an_extra_key_past_admission() {
+    let docs = documents();
+    let note = &docs["note"];
+    let room = room(note);
+    let plot = samples(&BTreeMap::from([("note", note.clone())]))["plot"]
+        .path
+        .clone();
+    let losing = edit(&room, 10, |peer| {
+        let block = XmlTextRef::from(element_at(&peer.transact(), &plot));
+        let mut txn = peer.transact_mut();
+        block.insert_attribute(&mut txn, "type", "p");
+        block.insert_attribute(&mut txn, "extra", "x");
+    });
+    let winning = edit(&room, 20, |peer| {
+        let block = XmlTextRef::from(element_at(&peer.transact(), &plot));
+        block.insert_attribute(&mut peer.transact_mut(), "type", "plot");
+    });
+    assert!(admit(&room, &winning).is_ok());
+    room.transact_mut()
+        .apply_update(Update::decode_v1(&winning).unwrap())
+        .unwrap();
+    assert!(refused_as(admit(&room, &losing), limits::UNEXPECTED_KEY));
+}
+
+/// What else the store refuses, refused as the update arrives (review M4): a
+/// top-level-only block (a figure, an interactive block) created below the
+/// top level; an eleventh interactive block; and the values the store checks
+/// beyond presence (a reference's kind, a video's provider and id, a width,
+/// an interactive block's html size, a figure's block, a Mermaid source),
+/// while valid ones go in. Fails if any check is reverted.
+#[test]
+fn admission_checks_placement_values_and_the_embed_count() {
+    let docs = documents();
+    let note = &docs["note"];
+    let room = room(note);
+    let samples = samples(&BTreeMap::from([("note", note.clone())]));
+    let insert = |room: &Doc, nodes: Vec<Value>| {
+        edit(room, 11, |peer| {
+            let mut txn = peer.transact_mut();
+            let root = plate::content_root(&txn).unwrap();
+            slate_yjs::insert_nodes(&mut txn, root, 0, &nodes);
+        })
+    };
+    let chart = note.iter().find(|n| n["type"] == "chart").unwrap().clone();
+    let html = note
+        .iter()
+        .find(|n| n["type"] == "html_embed")
+        .unwrap()
+        .clone();
+    for nested in [chart.clone(), html.clone()] {
+        let callout = json!({ "type": "callout", "id": "wrap", "children": [nested] });
+        assert!(
+            refused_as(
+                admit(&room, &insert(&room, vec![callout])),
+                limits::NESTED_BLOCK
+            ),
+            "a nested {}",
+            nested["type"]
+        );
+    }
+
+    let embed = |n: usize| {
+        let mut node = html.clone();
+        node["id"] = json!(format!("h{n}"));
+        node
+    };
+    let nine = self::room(&(0..9).map(embed).collect::<Vec<_>>());
+    let tenth = insert(&nine, vec![embed(9)]);
+    assert!(admit(&nine, &tenth).is_ok());
+    nine.transact_mut()
+        .apply_update(Update::decode_v1(&tenth).unwrap())
+        .unwrap();
+    assert!(refused_as(
+        admit(&nine, &insert(&nine, vec![embed(10)])),
+        limits::TOO_MANY_EMBEDS
+    ));
+
+    let set = |name: &str, key: &'static str, value: yrs::Any| {
+        let path = samples[name].path.clone();
+        edit(&room, 12, move |peer| {
+            let block = XmlTextRef::from(element_at(&peer.transact(), &path));
+            block.insert_attribute(&mut peer.transact_mut(), key, value);
+        })
+    };
+    let text = |value: &str| yrs::Any::String(value.into());
+    let refused = [
+        ("material_ref", "refKind", text("toggle")),
+        ("video", "provider", text("vimeo")),
+        ("video", "videoId", text("short")),
+        ("chart", "width", text("15%")),
+        ("img", "width", text("100")),
+        (
+            "html_embed",
+            "html",
+            text(&"x".repeat(catalog::HTML_EMBED_MAX_BYTES + 1)),
+        ),
+        ("html_embed", "caption", yrs::Any::Number(1.0)),
+        ("chart", "block", text("not a block")),
+        ("mermaid", "source", yrs::Any::Number(1.0)),
+    ];
+    for (name, key, value) in refused {
+        assert!(
+            refused_as(
+                admit(&room, &set(name, key, value.clone())),
+                limits::BAD_VALUE
+            ),
+            "a {name}'s {key} {value:?}"
+        );
+    }
+    let accepted = [
+        ("material_ref", "refKind", text("flashcards")),
+        ("video", "videoId", text("aaaaaaaaaaa")),
+        ("chart", "width", text("100%")),
+        ("html_embed", "caption", text("New caption")),
+    ];
+    for (name, key, value) in accepted {
+        assert!(
+            admit(&room, &set(name, key, value.clone())).is_ok(),
+            "a {name}'s {key} {value:?}"
+        );
+    }
+}
+
 /// The catalog's one shared-text key is the one the projection, the
 /// growth bound, admission and the seed hold as a text, and the seed makes it
 /// a text on that element alone.
@@ -600,20 +729,4 @@ fn figure_messages_are_gos() {
             "Go never says {message:?}"
         );
     }
-}
-
-/// A stored document holding a block nothing lists is found at load, at any
-/// depth, so its room loads read-only (decision 5).
-#[test]
-fn a_block_no_one_lists_is_found_in_a_stored_document() {
-    let docs = documents();
-    assert_eq!(plate::unlisted_type(&room(&docs["note"]).transact()), None);
-    let mut note = docs["note"].clone();
-    note.push(json!({ "type": "callout", "id": "c", "children": [
-        { "type": "toggle", "children": [{ "text": "Later" }] },
-    ] }));
-    assert_eq!(
-        plate::unlisted_type(&room(&note).transact()),
-        Some("toggle".to_owned())
-    );
 }

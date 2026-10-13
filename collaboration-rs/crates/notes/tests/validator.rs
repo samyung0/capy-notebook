@@ -816,7 +816,7 @@ fn a_nested_reference_is_refused_at_admit() {
         assert!(
             matches!(
                 validator.admit_bytes(&room, &update),
-                Err(Refusal::Content(what)) if what == limits::NESTED_REFERENCE
+                Err(Refusal::Content(what)) if what == limits::NESTED_BLOCK
             ),
             "{name}"
         );

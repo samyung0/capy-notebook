@@ -2728,6 +2728,41 @@ fn map_at(doc: &Doc, path: &[&str]) -> Option<yrs::MapRef> {
     Some(map)
 }
 
+/// Decision 5 for quizzes (review M1): a stored quiz whose stem holds a block
+/// kind its rooms do not admit loads both rooms read-only, the keys room
+/// too though its own document holds no such block, so no save rebuilds the
+/// quiz without it. Fails if either room takes a writer.
+#[tokio::test]
+async fn a_quiz_holding_a_block_this_version_cannot_read_loads_both_rooms_read_only() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET content = jsonb_set(content,
+               '{value,0,children,0,question,stem}', '[{\"type\":\"timeline\",\"events\":[]}]')
+             WHERE id = $1",
+            &[&quiz],
+        )
+        .await
+        .expect("content");
+    for room in [
+        format!("keys:{quiz}:schema:1"),
+        format!("material:{quiz}:schema:1"),
+    ] {
+        let mut writer = Client::open(server.port).await;
+        assert_eq!(
+            writer.joined(&room, &token(&room, &owner, "write")).await,
+            0,
+            "{room}"
+        );
+        let (notice, _) = writer.stateless("room-read-only").await;
+        assert_eq!(notice["code"], "unsupported_block", "{room}: {notice}");
+    }
+}
+
 #[tokio::test]
 async fn two_editors_converge_across_a_quizs_content_and_keys() {
     let Some(env) = env() else { return };

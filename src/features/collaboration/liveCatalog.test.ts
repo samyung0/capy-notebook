@@ -75,5 +75,13 @@ describe('embedded items', () => {
     expect(embedKey(value)).toBe(
       items.map((embed) => `${embed.kind}:m_${embed.kind}`).join(' ')
     );
+    // A kind this version has no read for has no credits to read.
+    expect(
+      embedKey([
+        ...value,
+        { ...value[0], materialId: 'm_later', refKind: 'timeline' },
+        { ...value[0], materialId: 'm_proto', refKind: 'constructor' },
+      ])
+    ).toBe(embedKey(value));
   });
 });

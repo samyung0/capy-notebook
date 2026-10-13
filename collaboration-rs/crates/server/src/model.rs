@@ -51,18 +51,23 @@ impl Model {
         }
     }
 
-    /// How the room serves its stored document (Epo 2026-10-13): one holding
-    /// a reference's imported fence body (the quiz's answer keys) is refused,
-    /// as Go's reads refuse it, so no reader receives it; one holding a block
-    /// this version cannot read (a type the embed catalog does not list, a
-    /// quiz block kind the room does not admit) loads read-only (`true`).
-    pub fn stored<T: ReadTxn>(self, txn: &T) -> Result<bool, String> {
+    /// How the room serves its stored document of material kind `kind` (Epo
+    /// 2026-10-13): one holding a reference's imported fence body (the quiz's
+    /// answer keys) is refused, as Go's reads refuse it, so no reader receives
+    /// it; one the store would refuse (a type the embed catalog does not
+    /// list, or not for this kind, a closed element's extra key, a reference
+    /// without its row, ...) or, in this quiz document, a question block kind
+    /// the room does not admit, loads read-only (`true`): every save would
+    /// otherwise be refused and discard the room's edits. One projection and
+    /// one store check per load, never per update.
+    pub fn stored<T: ReadTxn>(self, kind: &str, txn: &T) -> Result<bool, String> {
         match self {
             Model::Note => {
                 if notes::plate::holds_pending_reference(txn) {
                     return Err("a material reference carries an imported fence body".into());
                 }
-                Ok(notes::plate::unlisted_type(txn).is_some())
+                Ok(!notes::plate::value(txn)
+                    .is_ok_and(|value| notes::material::assert_canonical(&value, kind).is_ok()))
             }
             Model::Item(items::Kind::Quiz | items::Kind::QuizKeys) => {
                 Ok(items::quiz::holds_unknown_block(txn))
@@ -174,12 +179,21 @@ mod tests {
 
     use super::Model;
 
+    fn note_stored(kind: &str, value: &[serde_json::Value]) -> Result<bool, String> {
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(
+            &doc,
+            &Model::Note.state_from_value(value),
+            &[] as &[Vec<u8>],
+        )
+        .unwrap();
+        Model::Note.stored(kind, &doc.transact())
+    }
+
     /// Security regression (live-items REVIEW5): a note stored with a
     /// reference still carrying an imported fence body (the quiz's answer
     /// keys) is never served: its room refuses to load, so no reader joins
-    /// it (Go's reads refuse it too). A note holding a block the catalog does
-    /// not list loads read-only; a plain note loads for writers. Fails if the
-    /// room serves the fence body.
+    /// it (Go's reads refuse it too). Fails if the room serves the fence body.
     #[test]
     fn a_stored_fence_body_is_never_served() {
         let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
@@ -187,25 +201,54 @@ mod tests {
             "type": "material_ref", "id": "fence", "materialId": "", "refKind": "quiz",
             "pending": "answer: SECRET", "children": [{ "text": "" }],
         });
-        let future = json!({ "type": "timeline", "id": "later", "children": [{ "text": "" }] });
-        let stored = |value: &[serde_json::Value]| {
-            let doc = ydoc::scratch_doc();
-            ydoc::replay(
-                &doc,
-                &Model::Note.state_from_value(value),
-                &[] as &[Vec<u8>],
-            )
-            .unwrap();
-            Model::Note.stored(&doc.transact())
-        };
-        assert!(stored(&[body.clone(), fence]).is_err());
-        assert_eq!(stored(&[body.clone(), future]), Ok(true));
-        assert_eq!(stored(&[body]), Ok(false));
+        assert!(note_stored("note", &[body.clone(), fence]).is_err());
+        assert_eq!(note_stored("note", &[body]), Ok(false));
     }
 
-    /// A stored quiz holding a block kind its rooms do not admit loads both
-    /// rooms read-only, as a note holding an unlisted block does, instead of
-    /// its projection dropping the block. Fails if a quiz room loads writable.
+    /// A stored Plate document the store would refuse loads read-only
+    /// (decision 5), whatever the reason: a type the catalog does not list, a
+    /// type it lists for another material kind, a closed element's extra key,
+    /// a reference without its row. Fails if any loads writable, where every
+    /// save would be refused and discard the room's edits.
+    #[test]
+    fn a_stored_document_the_store_refuses_loads_read_only() {
+        let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
+        let leaf = json!([{ "text": "" }]);
+        let reference = |id: &str| json!({ "type": "material_ref", "id": "r", "materialId": id, "refKind": "quiz", "children": leaf });
+        let map = json!({ "type": "mermaid", "id": "m", "source": "mindmap", "children": [
+            { "type": "mermaid_caption", "children": [{ "text": "" }] },
+        ] });
+        let read_only = [
+            (
+                "note",
+                json!({ "type": "timeline", "id": "t", "children": leaf }),
+            ),
+            (
+                "note",
+                json!({ "type": "html_embed", "id": "h", "html": "<b>x</b>", "title": "old", "children": leaf }),
+            ),
+            ("note", reference("")),
+            ("mindmap", reference("mat_quiz")),
+        ];
+        for (kind, node) in read_only {
+            let value = if kind == "mindmap" {
+                [map.clone(), node.clone()]
+            } else {
+                [body.clone(), node.clone()]
+            };
+            assert_eq!(note_stored(kind, &value), Ok(true), "{kind}: {node}");
+        }
+        assert_eq!(
+            note_stored("note", &[body.clone(), reference("mat_quiz")]),
+            Ok(false)
+        );
+        assert_eq!(note_stored("mindmap", &[map]), Ok(false));
+    }
+
+    /// A stored quiz holding a block kind its rooms do not admit loads its
+    /// room read-only instead of a save dropping the block; the room of the
+    /// other document learns it from that document at load (`room::load`,
+    /// tested in `tests/rooms.rs`). Fails if the quiz room loads writable.
     #[test]
     fn a_quiz_with_an_unknown_block_kind_loads_read_only() {
         let question = |stem: serde_json::Value| {
@@ -228,7 +271,7 @@ mod tests {
             let doc = ydoc::scratch_doc();
             let (content, _) = items::quiz::states_from_value(&quiz(stem), 0);
             ydoc::replay(&doc, &content, &[] as &[Vec<u8>]).unwrap();
-            Model::Item(items::Kind::Quiz).stored(&doc.transact())
+            Model::Item(items::Kind::Quiz).stored("quiz", &doc.transact())
         };
         assert_eq!(
             stored(json!([{ "type": "timeline", "events": [] }])),
