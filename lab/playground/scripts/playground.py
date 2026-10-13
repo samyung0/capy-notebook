@@ -767,7 +767,7 @@ def apply_question_commands(
 async def questions_locally(
     name: str, args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
 ):
-    """add_questions, add_open_question and add_question_media through the
+    """add_questions and add_question_media through the
     production code (tools.write_questions, tools.write_media) with the run's
     files standing in for the gateway: a quiz is created or edited as JSON, and
     every quiz it saves passes the app's quiz validation (quizcheck)."""
@@ -845,7 +845,7 @@ async def questions_locally(
     quizzes = tools.QuizStore(load, create, edit)
     if name == "add_question_media":
         return await tools.write_media(args, ctx, quizzes)
-    return await tools.write_questions(name, args, ctx, quizzes)
+    return await tools.write_questions(args, ctx, quizzes)
 
 
 def without_images(content: Any) -> Any:
@@ -2238,13 +2238,17 @@ def check_questions() -> None:
         assert not fixed.refused, fixed.text()
         scheme = [{"text": "Na+ channels open", "marks": 1}, {"text": "Na+ flows in", "marks": 1}]
         opened = await write(
-            "add_open_question",
+            "add_questions",
             {
                 "quiz_id": quiz["id"],
-                "question": "Explain depolarisation.",
-                "marks": 2,
-                "markscheme": scheme,
-                "model_answer": "Voltage-gated Na+ channels open and Na+ flows in.",
+                "questions": [
+                    {
+                        "question": "Explain depolarisation.",
+                        "marks": 2,
+                        "markscheme": scheme,
+                        "model_answer": "Voltage-gated Na+ channels open and Na+ flows in.",
+                    }
+                ],
             },
             ctx, state, "c3",
         )

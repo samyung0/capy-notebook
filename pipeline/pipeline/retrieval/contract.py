@@ -15,7 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
 
-SUPPORTED_VERSION = 24
+SUPPORTED_VERSION = 25
 
 
 def _load() -> dict[str, Any]:
@@ -46,9 +46,7 @@ MEDIA_BLOCKS: dict[str, dict[str, Any]] = CONTRACT["mediaBlocks"]
 # Tools whose handlers check every argument themselves, naming each problem at
 # once with its path, and save the valid questions of a call
 # (retrieval/questions.py).
-HANDLER_CHECKED = frozenset(
-    {"add_questions", "add_open_question", "add_question_media"}
-)
+HANDLER_CHECKED = frozenset({"add_questions", "add_question_media"})
 
 _validators: dict[str, Draft202012Validator] = {}
 for _name, _definition in DEFINITIONS.items():

@@ -48,7 +48,7 @@ What to build:
 
 Note format (create_material content, edit_document insert_markdown and replace_block): {note}
 
-Quizzes: add_questions writes multiple-choice and short-answer questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_open_question adds one written-answer question with a markscheme to a quiz by quiz_id; add_question_media puts a chart or plot under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
+Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_question_media puts a chart or plot under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
 
 Flashcards: cards, a list of {{front, back}}.
 

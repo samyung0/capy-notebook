@@ -1,8 +1,9 @@
-"""Agent-written quiz questions (Epo 2026-10-13).
+"""Agent-written quiz questions (Epo 2026-10-13; one tool for every kind
+since 2026-10-14).
 
 The chat agent never writes the question format itself
 (openwiki/question-bank.md, Shared question format). It writes three small
-shapes:
+shapes, the fields telling them apart:
 
 - multiple choice: question, options, correct (one option, copied exactly),
   explanation?
@@ -11,9 +12,9 @@ shapes:
 - open: question, marks, markscheme [{text, marks}] adding up to marks,
   model_answer, hints?, explanation?
 
-add_questions takes a list of the first two, add_open_question one open
-question, and add_question_media puts a chart or plot after one
-question's text. A note's ```quiz fence holds a YAML list of all three.
+add_questions takes a list of them, and add_question_media puts a chart or
+plot after one question's text. A note's ```quiz fence holds a YAML list of
+the same items.
 
 Every problem of a call is named at once, with its path, what was expected and
 what was sent; a structural mistake also gets the shape to copy. add_questions
@@ -55,32 +56,7 @@ def _schema(name: str) -> dict[str, Any]:
 
 
 _ADD = Draft202012Validator(_schema("add_questions"))
-_OPEN_TOOL = Draft202012Validator(_schema("add_open_question"))
 _MEDIA_TOOL = Draft202012Validator(_schema("add_question_media"))
-_SIMPLE = Draft202012Validator(
-    _schema("add_questions")["properties"]["questions"]["items"]
-)
-OPEN_FIELDS = (
-    "question",
-    "marks",
-    "markscheme",
-    "model_answer",
-    "hints",
-    "explanation",
-)
-# An open question in a note's quiz fence: add_open_question's question fields.
-_OPEN = Draft202012Validator(
-    {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            k: _schema("add_open_question")["properties"][k] for k in OPEN_FIELDS
-        },
-        "required": [
-            k for k in _schema("add_open_question")["required"] if k in OPEN_FIELDS
-        ],
-    }
-)
 _MEDIA = {
     kind: Draft202012Validator(schema) for kind, schema in contract.MEDIA_BLOCKS.items()
 }
@@ -89,9 +65,34 @@ _MEDIA = {
 FIELDS = {
     "mcq": {"question", "options", "correct", "explanation", "replaces"},
     "short": {"question", "accepted", "unit", "explanation", "replaces"},
-    "open": {*OPEN_FIELDS, "replaces"},
+    "open": {
+        "question",
+        "marks",
+        "markscheme",
+        "model_answer",
+        "hints",
+        "explanation",
+        "replaces",
+    },
 }
-NEEDS = {"mcq": ("options", "correct"), "short": ("accepted",), "open": ()}
+NEEDS = {
+    "mcq": ("options", "correct"),
+    "short": ("accepted",),
+    "open": ("marks", "markscheme", "model_answer"),
+}
+# Each kind's check: the add_questions item narrowed to the kind's fields, so
+# another kind's field is named as unknown with what to do instead.
+_ITEM = _schema("add_questions")["properties"]["questions"]["items"]
+_KINDS = {
+    kind: Draft202012Validator(
+        {
+            **_ITEM,
+            "properties": {k: v for k, v in _ITEM["properties"].items() if k in fields},
+            "required": ["question", *NEEDS[kind]],
+        }
+    )
+    for kind, fields in FIELDS.items()
+}
 SHAPES = {
     "mcq": 'A multiple-choice question: {"question": "…", "options": ["…", "…"], '
     '"correct": "<one of the options, copied exactly>", "explanation": "…"}',
@@ -187,7 +188,6 @@ def _unknown(path: str, key: str, value: Any, kind: str | None, *, fence: bool) 
 
 def _hint(key: str, kind: str | None, *, fence: bool) -> str:
     """Why a field does not belong, and what does."""
-    open_one = "an open question" if fence else "add_open_question"
     if key in ("fixedUnit", "fixed_unit", "units"):
         return "the field is unit"
     if key == "solution":
@@ -206,11 +206,16 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
     if key in ("title", "chapter_id"):
         return "title and chapter_id go on the call, not on a question"
     if key == "replaces":
-        return "a quiz fence writes new questions; rewrite one with add_open_question"
+        return (
+            "a quiz fence writes new questions; rewrite one with add_questions"
+            if fence
+            else ""
+        )
     if kind == "open":
         if key in ("options", "correct"):
             return (
-                "an open question has no options; multiple choice goes in add_questions"
+                "an open question has no options; multiple choice is its own "
+                "question, worth 1 mark"
             )
         if key == "accepted":
             return "an open question's full-marks answer is model_answer"
@@ -226,15 +231,15 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
     if key == "markscheme":
         return (
             "a multiple-choice or short-answer question has no markscheme; a written "
-            f"answer marked on one is {open_one}"
+            "answer marked on one is an open question"
         )
     if key == "marks":
         return (
             "a multiple-choice or short-answer question is worth 1 mark; a question "
-            f"worth more is {open_one}"
+            "worth more is an open question"
         )
     if key in ("model_answer", "hints"):
-        return f"only an open question has {key} ({open_one})"
+        return f"only an open question has {key}"
     if key in ("accepted", "unit"):
         return "a multiple-choice question names its answer in correct"
     if key in ("options", "correct"):
@@ -400,13 +405,16 @@ def _quantity(value: str) -> bool:
     return not slash or mantissa.strip("+-.0") != ""
 
 
-def kind_of(item: dict[str, Any], *, fence: bool) -> str | None:
-    """The shape an item is written in, from its fields."""
+def kind_of(item: dict[str, Any]) -> str | None:
+    """The shape an item is written in, from its fields: an item with all of
+    an open question's needs is open whatever else it carries."""
+    if all(k in item for k in NEEDS["open"]):
+        return "open"
     if "options" in item or "correct" in item:
         return "mcq"
     if "accepted" in item or "unit" in item:
         return "short"
-    if fence and item.keys() & {"marks", "markscheme", "model_answer", "hints"}:
+    if item.keys() & {"marks", "markscheme", "model_answer", "hints"}:
         return "open"
     return None
 
@@ -440,48 +448,29 @@ def check_item(item: Any, index: int, path: str, *, fence: bool) -> Item:
             [f"{path}: expected a question object; sent {_sent(item)}"],
             True,
         )
-    kind = kind_of(item, fence=fence)
+    kind = kind_of(item)
     if kind is None:
-        kinds = (
-            "a multiple-choice question (options and correct), a short answer "
-            "(accepted) or an open question (marks, markscheme, model_answer)"
-            if fence
-            else "a multiple-choice question (options and correct) or a short "
-            "answer (accepted)"
-        )
         sent = ", ".join(sorted(item)) or "none"
-        problems = [f"{path}: expected {kinds}; sent the fields {sent}"]
+        problems = [
+            (
+                f"{path}: expected a multiple-choice question (options and correct), "
+                "a short answer (accepted) or an open question (marks, markscheme, "
+                f"model_answer); sent the fields {sent}"
+            )
+        ]
         problems += [
             f"{_at(path, [k])}: {hint}"
             for k in item
             if k != "question" and (hint := _hint(k, None, fence=fence))
         ]
         return Item(index, path, None, item, problems, True)
-    validator = _OPEN if kind == "open" else _SIMPLE
-    # Fields of the other simple kind are named once, below, not type-checked.
-    foreign = {
-        k
-        for k in item
-        if k in FIELDS["mcq"] | FIELDS["short"] and k not in FIELDS[kind]
-    }
-
-    def skip(p: list[Any]) -> bool:
-        return bool(p) and p[0] in foreign
-
-    problems = _schema_problems(validator, item, path, kind, fence=fence, skip=skip)
-    missing = [k for k in NEEDS[kind] if k not in item]
-    structural = bool(foreign or missing) or any(
-        e.validator in STRUCTURAL and not skip(list(e.absolute_path))
-        for e in validator.iter_errors(item)
-    )
-    problems += [
-        _unknown(path, k, item[k], kind, fence=fence) for k in item if k in foreign
-    ]
-    problems += [f"{_at(path, [k])}: missing; expected {EXPECTED[k]}" for k in missing]
+    validator = _KINDS[kind]
+    problems = _schema_problems(validator, item, path, kind, fence=fence)
+    structural = any(e.validator in STRUCTURAL for e in validator.iter_errors(item))
     if fence and "replaces" in item:
         problems.append(
             f"{path}.replaces: a quiz fence writes new questions; rewrite one with "
-            "add_questions or add_open_question"
+            "add_questions"
         )
     if kind == "short":
         item = _without_unit(item)
@@ -595,11 +584,10 @@ class Check:
 
     def listing(self) -> str:
         """Every problem, then the shape to copy for each kind written wrong."""
-        unknown = ["mcq", "short", "open"] if self.name == FENCE else ["mcq", "short"]
         kinds: list[str] = []
         for item in self.items:
             if item.structural:
-                for kind in [item.kind] if item.kind else unknown:
+                for kind in [item.kind] if item.kind else SHAPES:
                     if kind not in kinds:
                         kinds.append(kind)
         shapes = [SHAPES[k] for k in kinds]
@@ -614,14 +602,10 @@ def drop_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
     """A question call without its blank fields (contract.blank): the call's
     unless its tool requires them, each question's unless its kind needs them,
     and media's unless its block requires them."""
-    if name == "add_open_question":
-        return contract.drop_blanks(_schema(name), args)
     required = _schema(name).get("required", ())
     clean = {k: v for k, v in args.items() if k in required or not contract.blank(v)}
     if isinstance(clean.get("questions"), list):
-        clean["questions"] = [
-            drop_question_blanks(q, fence=False) for q in clean["questions"]
-        ]
+        clean["questions"] = [drop_question_blanks(q) for q in clean["questions"]]
     media = clean.get("media")
     if isinstance(media, dict):
         block = contract.MEDIA_BLOCKS.get(str(media.get("type")), {})
@@ -629,17 +613,15 @@ def drop_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
     return clean
 
 
-def drop_question_blanks(item: Any, *, fence: bool) -> Any:
+def drop_question_blanks(item: Any) -> Any:
     """A question without its blank fields, except the question and the fields
     its kind needs (the kind read from the fields that are not blank), so a
     blank answer still gets its own message."""
     if not isinstance(item, dict):
         return item
     filled = {k: v for k, v in item.items() if not contract.blank(v)}
-    kind = kind_of(filled, fence=fence) or kind_of(item, fence=fence)
+    kind = kind_of(filled) or kind_of(item)
     keep = {"question", *(NEEDS[kind] if kind else ())}
-    if kind == "open":
-        keep.update(_OPEN.schema["required"])
     return {k: v for k, v in item.items() if k in keep or not contract.blank(v)}
 
 
@@ -665,38 +647,26 @@ def _target_problems(args: dict[str, Any]) -> list[str]:
     return problems
 
 
-def check(name: str, args: dict[str, Any]) -> Check:
-    """Every problem of an add_questions or add_open_question call that needs
-    no quiz to see."""
-    result = Check(name)
-    if name == "add_questions":
-        result.call = _schema_problems(
-            _ADD,
-            args,
-            "",
-            None,
-            fence=False,
-            skip=lambda p: len(p) > 1 and p[0] == "questions",
-        )
-        questions = args.get("questions")
-        for i, value in enumerate(questions if isinstance(questions, list) else []):
-            item = check_item(value, i, f"questions[{i}]", fence=False)
-            if args.get("title") and isinstance(value, dict) and "replaces" in value:
-                item.problems.append(
-                    f"{item.path}.replaces: a new quiz has no question to replace"
-                )
-            result.items.append(item)
-        result.call += _target_problems(args)
-    else:
-        result.call = _schema_problems(_OPEN_TOOL, args, "", "open", fence=False)
-        result.call += _semantic("open", args, "")
-        result.call += _target_problems(args)
-        if args.get("title") and "replaces" in args:
-            result.call.append("replaces: a new quiz has no question to replace")
-        structural = any(
-            e.validator in STRUCTURAL for e in _OPEN_TOOL.iter_errors(args)
-        )
-        result.items.append(Item(0, "", "open", args, structural=structural))
+def check(args: dict[str, Any]) -> Check:
+    """Every problem of an add_questions call that needs no quiz to see."""
+    result = Check("add_questions")
+    result.call = _schema_problems(
+        _ADD,
+        args,
+        "",
+        None,
+        fence=False,
+        skip=lambda p: len(p) > 1 and p[0] == "questions",
+    )
+    questions = args.get("questions")
+    for i, value in enumerate(questions if isinstance(questions, list) else []):
+        item = check_item(value, i, f"questions[{i}]", fence=False)
+        if args.get("title") and isinstance(value, dict) and "replaces" in value:
+            item.problems.append(
+                f"{item.path}.replaces: a new quiz has no question to replace"
+            )
+        result.items.append(item)
+    result.call += _target_problems(args)
     quiz_id = args.get("quiz_id")
     if quiz_id and "chapter_id" in args and not args.get("title"):
         result.notes.append(f"chapter_id ignored: quiz {quiz_id} keeps its chapter.")
@@ -735,15 +705,15 @@ def check_ids(check_: Check, args: dict[str, Any], quiz: list[dict[str, Any]]) -
         replaces = value.get("replaces")
         if not isinstance(replaces, str):
             continue
-        where = f"{item.path}.replaces" if item.path else "replaces"
-        target = check_.call if check_.name == "add_open_question" else item.problems
         if replaces not in ids:
-            target.append(
-                f"{where}: expected a question id of this quiz ({listed}); sent {_sent(replaces)}"
+            item.problems.append(
+                f"{item.path}.replaces: expected a question id of this quiz ({listed}); "
+                f"sent {_sent(replaces)}"
             )
         elif replaces in seen:
-            target.append(
-                f"{where}: {replaces} is already rewritten by an earlier question of this call"
+            item.problems.append(
+                f"{item.path}.replaces: {replaces} is already rewritten by an earlier "
+                "question of this call"
             )
         seen.add(replaces)
 
@@ -1012,7 +982,7 @@ def _fence(
         return match[0]
     checked = [
         check_item(
-            _whole_numbers(drop_question_blanks(v, fence=True)),
+            _whole_numbers(drop_question_blanks(v)),
             i,
             f"{at} questions[{i}]",
             fence=True,

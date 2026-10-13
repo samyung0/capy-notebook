@@ -347,9 +347,8 @@ func Embeds() []Embed {
 			Materials: []string{Quiz},
 			Surfaces:  []string{SurfaceNote, SurfaceMaterial, SurfaceShare, SurfaceExport},
 			Edit: Edit{
-				User: []string{SurfaceNote, SurfaceMaterial},
-				Agent: []string{"create_material", "edit_document", "add_questions",
-					"add_open_question", "add_question_media"},
+				User:  []string{SurfaceNote, SurfaceMaterial},
+				Agent: []string{"create_material", "edit_document", "add_questions", "add_question_media"},
 			},
 		},
 		{

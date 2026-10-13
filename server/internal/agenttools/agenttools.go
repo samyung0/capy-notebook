@@ -72,7 +72,10 @@ import (
 // v24: the embed catalog (server/internal/embeds) names each embed kind once
 // per layer: chat's Diagram and Interactive are Mermaid and HtmlEmbed, and the
 // html-embed rules the note format and chat quote come from the catalog.
-const ContractVersion = 24
+// v25: add_open_question is gone (Epo 2026-10-14): add_questions items take
+// an open question too (marks, markscheme, model_answer, hints?), the item's
+// fields deciding its kind, so a note's quiz fence takes exactly its items.
+const ContractVersion = 25
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -460,18 +463,16 @@ var noteFigureFences = fmt.Sprintf("```chart fences comparing labelled categorie
 var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
 	noteFigureFences +
-	"```quiz fences (YAML `questions:` list, each a question as add_questions takes it, or an " +
-	"open question with add_open_question's question, marks, markscheme, model_answer, hints? " +
-	"and explanation?) and " +
+	"```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
 	"items; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
 	"`html: |`), at most %d per note. ", embeds.HTMLEmbedMaxCount) + embeds.RulesOf("html_embed") +
 	" Use an interactive only where moving something teaches more than a diagram."
 
-// The agent writes questions in three small shapes (Epo 2026-10-13): a
-// multiple-choice or short-answer question through add_questions, an open one
-// through add_open_question, and a chart or plot under a question
-// through add_question_media. The retrieval service checks every argument,
+// The agent writes questions in small shapes (Epo 2026-10-13): multiple-choice,
+// short-answer and open questions through add_questions (one tool since
+// 2026-10-14), and a chart or plot under a question through
+// add_question_media. The retrieval service checks every argument,
 // naming each problem at once, and expands the shapes into the question format
 // (pipeline/retrieval/questions.py); the quiz validator stays the backstop.
 // The schemas stay lean because the model reads them on every call.
@@ -501,17 +502,33 @@ func replacesSchema() map[string]any {
 	return str("A question of the quiz to rewrite in place instead (its media is dropped).")
 }
 
-// simpleQuestionSchema is one add_questions item: options and correct make a
-// multiple-choice question, accepted (and unit) a short answer.
-func simpleQuestionSchema() map[string]any {
+// questionSchema is one add_questions item, its kind decided by its fields:
+// options and correct make a multiple-choice question, accepted (and unit) a
+// short answer, marks, markscheme and model_answer an open one.
+func questionSchema() map[string]any {
 	return obj(map[string]any{
-		"question": textField(""),
+		"question": textField("The question as the learner reads it."),
 		"options":  textList("Multiple choice: the options.", 2),
 		"correct":  textField("Multiple choice: the one correct option, copied exactly."),
 		"accepted": textList("Short answer: the accepted answers.", 1),
 		"unit": textField(`Short answer to a quantity: the unit shown after the box; accepted then ` +
 			`holds plain numbers only, like "9.8".`),
-		"explanation": textField("Optional: why the answer is right, shown after checking."),
+		"marks": map[string]any{
+			"type": "integer", "minimum": 1, "maximum": fieldlimits.QuestionMarks, "description": "Open: its marks.",
+		},
+		"markscheme": map[string]any{
+			"type": "array", "minItems": 1, "maxItems": fieldlimits.QuizMarkscheme,
+			"description": "Open: what earns marks, the items' marks adding up to marks.",
+			"items": obj(map[string]any{
+				"text":  textField(""),
+				"marks": map[string]any{"type": "integer", "minimum": 1},
+			}, "text", "marks"),
+		},
+		"model_answer": map[string]any{
+			"type": "string", "maxLength": fieldlimits.QuizOpenAnswer, "description": "Open: a full-marks answer.",
+		},
+		"hints":       textList("Open, optional: nudges the learner may open.", 0),
+		"explanation": textField("Optional: why the answer is right or the worked solution, shown after checking."),
 		"replaces":    replacesSchema(),
 	}, "question")
 }
@@ -779,54 +796,25 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "add_questions",
 			Retention: RetainFull,
-			Description: "Add multiple-choice questions (one correct option) and short-answer questions, " +
-				"1 mark each, to a quiz (quiz_id), or create a quiz with them (title). The result lists " +
-				`each question's id. Example: {"title": "Osmosis", "questions": [{"question": "Which way ` +
-				`does water move when a red blood cell is put in pure water?", "options": ["Into the cell", ` +
-				`"Out of the cell"], "correct": "Into the cell", "explanation": "From the higher water ` +
-				`potential outside."}, {"question": "What percentage of NaCl is normal saline?", ` +
-				`"accepted": ["0.9"], "unit": "%"}]}`,
+			Description: "Add questions to a quiz (quiz_id), or create a quiz with them (title). A " +
+				"question's fields make its kind: multiple choice (options, one correct) and short answer " +
+				"(accepted) are 1 mark each; an open question, answered in writing, has marks and a " +
+				"markscheme adding up to them, and a model_answer. The result lists each question's id. " +
+				`Example: {"title": "Osmosis", "questions": [{"question": "Which way does water move when ` +
+				`a red blood cell is put in pure water?", "options": ["Into the cell", "Out of the cell"], ` +
+				`"correct": "Into the cell", "explanation": "From the higher water potential outside."}, ` +
+				`{"question": "What percentage of NaCl is normal saline?", "accepted": ["0.9"], "unit": ` +
+				`"%"}, {"question": "Explain why the cell bursts.", "marks": 2, "markscheme": [{"text": ` +
+				`"Water enters by osmosis", "marks": 1}, {"text": "No cell wall resists the swelling", ` +
+				`"marks": 1}], "model_answer": "Water enters by osmosis and, with no cell wall to resist ` +
+				`it, the membrane ruptures."}]}`,
 			InputSchema: obj(quizPlace(map[string]any{
 				"title":      str("Instead of quiz_id: create a quiz with this title."),
 				"chapter_id": str("With title: the new quiz's chapter."),
 				"questions": map[string]any{
-					"type": "array", "minItems": 1, "maxItems": 20, "items": simpleQuestionSchema(),
+					"type": "array", "minItems": 1, "maxItems": 20, "items": questionSchema(),
 				},
 			}), "questions"),
-			Mutates:            true,
-			Concurrency:        "mutate",
-			RequiredOperations: []Operation{OpMaterialCreate},
-		}),
-		chatTool(Definition{
-			Name:      "add_open_question",
-			Retention: RetainFull,
-			Description: "Add one open question, answered in writing and graded against its markscheme, " +
-				"to a quiz (quiz_id), or create a quiz with it (title). The markscheme items' marks add up to " +
-				`marks. Example: {"quiz_id": "mat_1", "question": "Explain why a red blood cell bursts ` +
-				`in pure water.", "marks": 2, "markscheme": [{"text": "Water enters by osmosis", "marks": ` +
-				`1}, {"text": "No cell wall resists the swelling, so the membrane ruptures", "marks": 1}], ` +
-				`"model_answer": "Water enters by osmosis and, with no cell wall to resist it, the ` +
-				`membrane ruptures."}`,
-			InputSchema: obj(quizPlace(map[string]any{
-				"question": textField(""),
-				"marks":    map[string]any{"type": "integer", "minimum": 1, "maximum": fieldlimits.QuestionMarks},
-				"markscheme": map[string]any{
-					"type": "array", "minItems": 1, "maxItems": fieldlimits.QuizMarkscheme,
-					"description": "What earns marks.",
-					"items": obj(map[string]any{
-						"text":  textField(""),
-						"marks": map[string]any{"type": "integer", "minimum": 1},
-					}, "text", "marks"),
-				},
-				"model_answer": map[string]any{
-					"type": "string", "maxLength": fieldlimits.QuizOpenAnswer, "description": "A full-marks answer.",
-				},
-				"hints":       textList("Optional nudges the learner may open.", 0),
-				"explanation": textField("Optional: the worked solution, shown after grading."),
-				"replaces":    replacesSchema(),
-				"title":       str("Instead of quiz_id: create a quiz with this title."),
-				"chapter_id":  str("With title: the new quiz's chapter."),
-			}), "question", "marks", "markscheme", "model_answer"),
 			Mutates:            true,
 			Concurrency:        "mutate",
 			RequiredOperations: []Operation{OpMaterialCreate},

@@ -2495,18 +2495,18 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
 
 
 async def write_questions(
-    name: str, args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
+    args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
 ) -> ToolResult:
-    """add_questions and add_open_question: check every argument at once, save
-    the valid questions in a new quiz or an existing one, and name the ones
-    left out with how to resend them (retrieval/questions.py)."""
+    """add_questions: check every argument at once, save the valid questions
+    in a new quiz or an existing one, and name the ones left out with how to
+    resend them (retrieval/questions.py)."""
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
-        return _refused(f"{name} needs its tool-call and assistant message ids.")
+        return _refused("add_questions needs its tool-call and assistant message ids.")
     clean = questions.drop_blanks(
-        name, {k: v for k, v in args.items() if not k.startswith("_")}
+        "add_questions", {k: v for k, v in args.items() if not k.startswith("_")}
     )
-    found = questions.check(name, clean)
+    found = questions.check(clean)
     quiz_id = clean.get("quiz_id")
     quiz: list[dict[str, Any]] | None = None
     if isinstance(quiz_id, str) and quiz_id and not clean.get("title"):
@@ -2515,7 +2515,7 @@ async def write_questions(
             return _also(loaded, found)
         quiz = loaded[1]
         questions.check_ids(found, clean, quiz)
-    prepared = await write_sources(ctx, name, clean)
+    prepared = await write_sources(ctx, "add_questions", clean)
     if isinstance(prepared, ToolResult):
         return _also(prepared, found)
     if found.call or not found.valid:
@@ -2590,12 +2590,7 @@ async def write_media(
 
 async def _add_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     quizzes = _gateway_quizzes(ctx, str(args.get("_tool_call_id") or ""))
-    return await write_questions("add_questions", args, ctx, quizzes)
-
-
-async def _add_open_question(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    quizzes = _gateway_quizzes(ctx, str(args.get("_tool_call_id") or ""))
-    return await write_questions("add_open_question", args, ctx, quizzes)
+    return await write_questions(args, ctx, quizzes)
 
 
 async def _add_question_media(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -2786,7 +2781,6 @@ _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)
 _register("add_questions", _add_questions)
-_register("add_open_question", _add_open_question)
 _register("add_question_media", _add_question_media)
 _register("resolve_source_change", _resolve_source_change)
 _register("inspect_document", _inspect_document)

@@ -1,6 +1,7 @@
-"""Agent-written questions: the three small shapes, every problem named with
-its path, what was expected and what was sent, add_questions saving its valid
-questions, and a note's quiz fences (retrieval/questions.py)."""
+"""Agent-written questions: the three small shapes in one add_questions call,
+every problem named with its path, what was expected and what was sent,
+add_questions saving its valid questions, and a note's quiz fences
+(retrieval/questions.py)."""
 
 from __future__ import annotations
 
@@ -98,7 +99,6 @@ def test_the_shapes_expand_into_the_question_format_go_accepts():
 
 def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
     found = questions.check(
-        "add_questions",
         {
             "quiz_id": "mat_1",
             "questions": [
@@ -120,7 +120,7 @@ def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
         (
             '- questions[1].markscheme: unknown field, sent [{"text": "a", "marks": 1}]; a '
             "multiple-choice or short-answer question has no markscheme; a written answer "
-            "marked on one is add_open_question"
+            "marked on one is an open question"
         ),
         '- questions[2].fixedUnit: unknown field, sent "mV"; the field is unit',
         (
@@ -142,7 +142,6 @@ def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
 
 def test_the_correct_option_and_an_open_questions_marks_are_checked():
     found = questions.check(
-        "add_questions",
         {"title": "T", "questions": [{**MCQ, "correct": "sodium"}, {"question": "?"}]},
     )
     assert found.items[0].problems == [
@@ -154,25 +153,33 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
     assert found.items[0].structural is False
     assert found.items[1].problems == [
         (
-            "questions[1]: expected a multiple-choice question (options and correct) or a "
-            "short answer (accepted); sent the fields question"
+            "questions[1]: expected a multiple-choice question (options and correct), a "
+            "short answer (accepted) or an open question (marks, markscheme, "
+            "model_answer); sent the fields question"
         )
     ]
+    unsure = {k: v for k, v in OPEN.items() if k != "model_answer"}
     opened = questions.check(
-        "add_open_question",
-        {
-            "quiz_id": "mat_1",
-            **{k: v for k, v in OPEN.items() if k != "model_answer"},
-            "marks": 3,
-        },
+        {"quiz_id": "mat_1", "questions": [{**unsure, "marks": 3}]}
     )
-    assert opened.call == [
-        "model_answer: missing; expected a full-marks answer",
-        "markscheme: expected item marks adding up to marks (3); sent items adding up to 2",
+    assert opened.call == [] and opened.items[0].problems == [
+        "questions[0].model_answer: missing; expected a full-marks answer",
+        (
+            "questions[0].markscheme: expected item marks adding up to marks (3); sent "
+            "items adding up to 2"
+        ),
     ]
-    # An open question can start a quiz (title) like add_questions.
-    assert questions.check("add_open_question", {**OPEN, "title": "T"}).call == []
-    both = questions.check("add_open_question", {**OPEN, "title": "T", "quiz_id": "q"})
+    # An open question carrying options is still open: options is named, and
+    # the open shape is the one to copy.
+    stray = questions.check({"title": "T", "questions": [{**OPEN, "options": ["a"]}]})
+    assert stray.listing().splitlines() == [
+        (
+            '- questions[0].options: unknown field, sent ["a"]; an open question has no '
+            "options; multiple choice is its own question, worth 1 mark"
+        ),
+        questions.SHAPES["open"],
+    ]
+    both = questions.check({"questions": [OPEN], "title": "T", "quiz_id": "q"})
     assert both.call == [
         (
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
@@ -180,7 +187,7 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
         )
     ]
     # Every place problem at once, not the first of them.
-    placed = questions.check("add_questions", {"questions": [MCQ], "chapter_id": "ch"})
+    placed = questions.check({"questions": [MCQ], "chapter_id": "ch"})
     assert placed.call == [
         (
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
@@ -214,7 +221,7 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
         "title": "T",
         "questions": [mcq, {**SHORT, "accepted": []}, {**MCQ, "back": "Sodium"}],
     }
-    found = questions.check("add_questions", clean)
+    found = questions.check(clean)
     assert found.call == [] and [i.kind for i in found.items] == ["mcq", "short", "mcq"]
     assert [i.problems for i in found.items] == [
         [],
@@ -222,11 +229,11 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
         ['questions[2].back: unknown field, sent "Sodium"'],
     ]
     # A quiz fence's question too, and media by its block's schema.
-    assert questions.drop_question_blanks(
-        {**OPEN, "hints": [], "unit": "null"}, fence=True
-    ) == {k: v for k, v in OPEN.items() if k != "hints"}
+    assert questions.drop_question_blanks({**OPEN, "hints": [], "unit": "null"}) == {
+        k: v for k, v in OPEN.items() if k != "hints"
+    }
     # YAML's ~ (null) reads as text in a fence; it is blank too.
-    assert questions.drop_question_blanks({**SHORT, "unit": "~"}, fence=True) == {
+    assert questions.drop_question_blanks({**SHORT, "unit": "~"}) == {
         k: v for k, v in SHORT.items() if k != "unit"
     }
     media = {
@@ -242,7 +249,6 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
 
 def test_an_accepted_answer_written_with_its_unit_keeps_the_number():
     found = questions.check(
-        "add_questions",
         {
             "title": "T",
             "questions": [
@@ -321,7 +327,7 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
         "questions": [MCQ, {**SHORT, "accepted": ["minus seventy"]}, SHORT],
         "_tool_call_id": "call_1",
     }
-    result = await tools.write_questions("add_questions", args, ctx, store)
+    result = await tools.write_questions(args, ctx, store)
 
     assert result.outcome == "succeeded"
     [(kind, commands)] = written
@@ -344,7 +350,6 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
 
     # Nothing valid: nothing is written and every problem comes back at once.
     refused = await tools.write_questions(
-        "add_questions",
         {**args, "questions": [{"question": "?", "options": ["a"], "correct": "b"}]},
         ctx,
         store,
@@ -357,28 +362,59 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
     assert "- questions[0].options: expected at least 2 items; sent 1" in refused.text()
 
 
-async def test_a_new_quiz_takes_its_first_questions(monkeypatch):
+async def test_a_new_quiz_takes_its_first_questions_of_every_kind(monkeypatch):
     ctx = _ctx(monkeypatch)
     written: list = []
+    store = _store([], written)
     result = await tools.write_questions(
-        "add_questions",
-        {
-            "title": "Neurons",
-            "questions": [MCQ, SHORT],
-            "_tool_call_id": "c",
-        },
+        {"title": "Neurons", "questions": [MCQ, SHORT, OPEN], "_tool_call_id": "c"},
         ctx,
-        _store([], written),
+        store,
     )
     assert result.outcome == "succeeded"
     [(kind, made)] = written
     assert kind == "create" and [q["parts"][0]["answer"]["type"] for q in made] == [
         "mcq",
         "short",
+        "open",
     ]
+    assert [q["parts"][0]["marks"] for q in made] == [1, 1, 2]
     assert result.text().startswith(
-        "Created quiz 'Neurons' (id mat_new) with 2 question(s):"
+        "Created quiz 'Neurons' (id mat_new) with 3 question(s):"
     )
+
+    # A quiz may start with open questions only.
+    written.clear()
+    second = {**OPEN, "question": "Why is conduction faster in myelinated axons?"}
+    result = await tools.write_questions(
+        {"title": "Essays", "questions": [OPEN, second], "_tool_call_id": "d"},
+        ctx,
+        store,
+    )
+    assert result.outcome == "succeeded", result.text()
+    [(_, made)] = written
+    assert [q["parts"][0]["answer"]["type"] for q in made] == ["open", "open"]
+
+
+async def test_an_open_question_whose_marks_do_not_add_up_is_left_out(monkeypatch):
+    ctx = _ctx(monkeypatch)
+    written: list = []
+    result = await tools.write_questions(
+        {
+            "quiz_id": "mat_q",
+            "questions": [{**OPEN, "marks": 3}, MCQ],
+            "_tool_call_id": "c",
+        },
+        ctx,
+        _store([{"id": "q_old", "stem": [], "parts": []}], written),
+    )
+    assert result.outcome == "succeeded"
+    [(_, [command])] = written
+    assert command["question"]["parts"][0]["answer"]["type"] == "mcq"
+    assert (
+        "- questions[0].markscheme: expected item marks adding up to marks (3); sent "
+        "items adding up to 2"
+    ) in result.text()
 
 
 async def test_media_goes_after_the_question_text(monkeypatch):
@@ -604,7 +640,6 @@ async def test_a_refused_write_also_names_its_question_problems(monkeypatch):
     resend fixes both."""
     ctx = _ctx(monkeypatch)
     result = await tools.write_questions(
-        "add_questions",
         {
             "title": "T",
             "questions": [{**MCQ, "correct": "x"}],

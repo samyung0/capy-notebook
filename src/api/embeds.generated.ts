@@ -994,7 +994,6 @@ export const EMBED_CATALOG = {
           "create_material",
           "edit_document",
           "add_questions",
-          "add_open_question",
           "add_question_media"
         ]
       }

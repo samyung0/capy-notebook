@@ -52,7 +52,6 @@ REQUIRES: dict[str, tuple[str, ...]] = {
     "copy_questions": (EDITING,),
     "create_material": (EDITING, BUILDING),
     "add_questions": (EDITING, BUILDING),
-    "add_open_question": (EDITING, BUILDING),
     "add_question_media": (EDITING, BUILDING),
     "edit_document": (EDITING, BUILDING),
     "create_deck": (EDITING, DECK),

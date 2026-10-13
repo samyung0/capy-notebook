@@ -1,5 +1,5 @@
 {
-  "version": 24,
+  "version": 25,
   "operations": [
     "source.read",
     "material.read",
@@ -649,7 +649,7 @@
     {
       "name": "add_questions",
       "version": 1,
-      "description": "Add multiple-choice questions (one correct option) and short-answer questions, 1 mark each, to a quiz (quiz_id), or create a quiz with them (title). The result lists each question's id. Example: {\"title\": \"Osmosis\", \"questions\": [{\"question\": \"Which way does water move when a red blood cell is put in pure water?\", \"options\": [\"Into the cell\", \"Out of the cell\"], \"correct\": \"Into the cell\", \"explanation\": \"From the higher water potential outside.\"}, {\"question\": \"What percentage of NaCl is normal saline?\", \"accepted\": [\"0.9\"], \"unit\": \"%\"}]}",
+      "description": "Add questions to a quiz (quiz_id), or create a quiz with them (title). A question's fields make its kind: multiple choice (options, one correct) and short answer (accepted) are 1 mark each; an open question, answered in writing, has marks and a markscheme adding up to them, and a model_answer. The result lists each question's id. Example: {\"title\": \"Osmosis\", \"questions\": [{\"question\": \"Which way does water move when a red blood cell is put in pure water?\", \"options\": [\"Into the cell\", \"Out of the cell\"], \"correct\": \"Into the cell\", \"explanation\": \"From the higher water potential outside.\"}, {\"question\": \"What percentage of NaCl is normal saline?\", \"accepted\": [\"0.9\"], \"unit\": \"%\"}, {\"question\": \"Explain why the cell bursts.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}]}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -689,7 +689,49 @@
                   "type": "string"
                 },
                 "explanation": {
-                  "description": "Optional: why the answer is right, shown after checking.",
+                  "description": "Optional: why the answer is right or the worked solution, shown after checking.",
+                  "type": "string"
+                },
+                "hints": {
+                  "description": "Open, optional: nudges the learner may open.",
+                  "items": {
+                    "type": "string"
+                  },
+                  "minItems": 0,
+                  "type": "array"
+                },
+                "marks": {
+                  "description": "Open: its marks.",
+                  "maximum": 20,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "markscheme": {
+                  "description": "Open: what earns marks, the items' marks adding up to marks.",
+                  "items": {
+                    "additionalProperties": false,
+                    "properties": {
+                      "marks": {
+                        "minimum": 1,
+                        "type": "integer"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "text",
+                      "marks"
+                    ],
+                    "type": "object"
+                  },
+                  "maxItems": 5,
+                  "minItems": 1,
+                  "type": "array"
+                },
+                "model_answer": {
+                  "description": "Open: a full-marks answer.",
+                  "maxLength": 5000,
                   "type": "string"
                 },
                 "options": {
@@ -701,6 +743,7 @@
                   "type": "array"
                 },
                 "question": {
+                  "description": "The question as the learner reads it.",
                   "type": "string"
                 },
                 "replaces": {
@@ -735,115 +778,6 @@
         },
         "required": [
           "questions"
-        ],
-        "type": "object"
-      },
-      "mutates": true,
-      "usesEmbedding": false,
-      "concurrency": "mutate",
-      "allowedSlots": [
-        "chat"
-      ],
-      "requiredOperations": [
-        "material.create"
-      ],
-      "retention": "full"
-    },
-    {
-      "name": "add_open_question",
-      "version": 1,
-      "description": "Add one open question, answered in writing and graded against its markscheme, to a quiz (quiz_id), or create a quiz with it (title). The markscheme items' marks add up to marks. Example: {\"quiz_id\": \"mat_1\", \"question\": \"Explain why a red blood cell bursts in pure water.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling, so the membrane ruptures\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "after_question_id": {
-            "description": "Add after this question, not at the end.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "chapter_id": {
-            "description": "With title: the new quiz's chapter.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "excerpt_ids": {
-            "description": "Library excerpts the questions were written from. Optional; omitted, the excerpts read since your last write are credited.",
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 32,
-            "type": "array"
-          },
-          "explanation": {
-            "description": "Optional: the worked solution, shown after grading.",
-            "type": "string"
-          },
-          "hints": {
-            "description": "Optional nudges the learner may open.",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 0,
-            "type": "array"
-          },
-          "marks": {
-            "maximum": 20,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "markscheme": {
-            "description": "What earns marks.",
-            "items": {
-              "additionalProperties": false,
-              "properties": {
-                "marks": {
-                  "minimum": 1,
-                  "type": "integer"
-                },
-                "text": {
-                  "type": "string"
-                }
-              },
-              "required": [
-                "text",
-                "marks"
-              ],
-              "type": "object"
-            },
-            "maxItems": 5,
-            "minItems": 1,
-            "type": "array"
-          },
-          "model_answer": {
-            "description": "A full-marks answer.",
-            "maxLength": 5000,
-            "type": "string"
-          },
-          "question": {
-            "type": "string"
-          },
-          "quiz_id": {
-            "description": "The quiz to add to, a note's quiz too; add_questions' result gives a new quiz's id.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "replaces": {
-            "description": "A question of the quiz to rewrite in place instead (its media is dropped).",
-            "minLength": 1,
-            "type": "string"
-          },
-          "title": {
-            "description": "Instead of quiz_id: create a quiz with this title.",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "question",
-          "marks",
-          "markscheme",
-          "model_answer"
         ],
         "type": "object"
       },
@@ -1550,7 +1484,7 @@
     }
   ],
   "formats": {
-    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it, or an open question with add_open_question's question, marks, markscheme, model_answer, hints? and explanation?) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
+    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
   },
   "mediaBlocks": {
     "chart": {

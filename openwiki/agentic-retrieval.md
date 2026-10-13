@@ -2735,8 +2735,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard); a material with provenance is grounded in the library and does not require indexed workspace content. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
-| `add_questions` | yes | Multiple-choice (one correct option) and short-answer questions, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
-| `add_open_question` | yes | One open question (`question`, `marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints` and `explanation`) into a quiz by `quiz_id`, or a new quiz by `title` (optional `chapter_id`), placed like `add_questions`, with an optional `replaces` |
+| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart or plot block after one question's text (`quiz_id`, `question_id`, `media`); library figures are refused (notes only) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -2841,7 +2840,9 @@ adds `mediaBlocks` (the chart, plot and graph schemas media is checked
 against, not shown to the model) and puts the small shapes in quiz fences.
 Version 22 (2026-10-13) drops the build ledger: no `create_ledger` and no
 `todo` on any write tool, and `excerpt_ids` says it is optional (Write guard,
-above). Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+above). Version 25 (2026-10-14) removes `add_open_question`: `add_questions`
+items take open questions too, and a quiz fence takes exactly its items. Go
+and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -2879,12 +2880,18 @@ code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 **Question tools.** The agent never writes the question format (Epo
 2026-10-13). It writes three small shapes, which `retrieval/questions.py`
 checks and expands: multiple choice (`question`, `options`, `correct`, one
-option copied exactly, optional `explanation`) and short answer (`question`,
+option copied exactly, optional `explanation`), short answer (`question`,
 `accepted`, optional `unit`, with which `accepted` holds plain numbers,
-optional `explanation`), told apart by their fields, through `add_questions`;
-and open (`question`, `marks`, `markscheme` of `{text, marks}` adding up to
-`marks`, `model_answer`, optional `hints` and `explanation`) through
-`add_open_question`. A note's ```quiz fence holds a YAML list of all three (read
+optional `explanation`) and open (`question`, `marks`, `markscheme` of
+`{text, marks}` adding up to `marks`, `model_answer`, optional `hints` and
+`explanation`), all through `add_questions` and told apart by their fields
+(an item with `marks`, `markscheme` and `model_answer` is open whatever else
+it carries, and the extra field is named). Open questions had their own tool
+until 2026-10-14: GLM fills tool arguments in alphabetical order, so that
+tool's `question` and `quiz_id` came last, after three long text fields, and
+arrived scrambled on 9 of its 41 playground calls (15 refused), while
+`add_questions`' items, objects in one array, were never scrambled in 149. A
+note's ```quiz fence holds a YAML list of the same items (read
 with PyYAML's `BaseLoader`, so answers keep their text as written), expanded
 before `create_material` or `edit_document` leaves the pipeline. The pipeline
 drops blank fields before checking them (agent write leniency, below) and
@@ -2897,7 +2904,7 @@ solution, an empty solution without one (only bank parts need one); there are
 no parts, no other answer types and no layout choice. The expanded questions
 go through the unchanged gateway routes: a new quiz through
 `/api/internal/materials` (an empty quiz is refused there, so a quiz is
-created with its first questions, by `title` on either question tool), an existing one through
+created with its first questions, by `title`), an existing one through
 `/api/internal/documents/edit` as `add_question` commands chained after
 `after_question_id` or the quiz's last question (read with
 `/api/internal/documents/inspect`, since a null anchor inserts at the start)
