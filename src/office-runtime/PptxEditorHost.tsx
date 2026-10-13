@@ -1,3 +1,4 @@
+import { EquationTextError } from '@betteroffice/pptx';
 import { analyzeOpenPresentation } from '@betteroffice/pptx/viewer';
 import {
   type PptxCommandState,
@@ -8,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeNotice,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
@@ -48,6 +50,7 @@ export function PptxEditorHost({
   onAnalysis,
   onError,
   onMenus,
+  onNotice,
   onAskPresenter,
   onPendingChange,
   onPresentingChange,
@@ -71,6 +74,8 @@ export function PptxEditorHost({
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
+  /** A refusal (typing into an equation), shown once by the host. */
+  onNotice: (notice: OfficeNotice) => void;
   /** Asks Capy for Presenter view's notes window, from a click in the show. */
   onAskPresenter: () => void;
   onPendingChange: (pending: boolean) => void;
@@ -234,7 +239,12 @@ export function PptxEditorHost({
         initialZoom={initialZoom}
         notesWindow={presenter.notes}
         onCommandState={setCommandState}
-        onError={onError}
+        // Typing into an equation is refused: a notice, not a failure.
+        onError={(error) =>
+          error instanceof EquationTextError
+            ? onNotice('equation-text')
+            : onError(error)
+        }
         // The deck the editor already holds: no second snapshot from the engine.
         onFirstPaint={(snapshot) =>
           onAnalysis(analyzeOpenPresentation({ snapshot: () => snapshot }))

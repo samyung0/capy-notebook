@@ -286,6 +286,15 @@ describe('office host protocol', () => {
     expect(isOfficeRuntimeMessage(rendered([{ ...page, bytes: 'png' }]))).toBe(
       false
     );
+    // A refusal is a notice, not the runtime's error.
+    const notice = (value: unknown) => ({
+      notice: value,
+      revision: 1,
+      type: 'notice',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    expect(isOfficeRuntimeMessage(notice('equation-text'))).toBe(true);
+    expect(isOfficeRuntimeMessage(notice('anything'))).toBe(false);
     // A failed render is its own reply, not the runtime's error.
     expect(
       isOfficeRuntimeMessage({

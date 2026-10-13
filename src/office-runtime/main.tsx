@@ -18,6 +18,7 @@ import {
   type OfficeHostMessage,
   type OfficeLocale,
   type OfficeMode,
+  type OfficeNotice,
   type OfficeRuntimePayload,
   type OfficeZoom,
 } from '@/features/files/officeProtocol';
@@ -544,6 +545,13 @@ function OfficeRuntime() {
     },
     [runtimeRevision]
   );
+  const reportNotice = useCallback(
+    (notice: OfficeNotice) => {
+      if (runtimeRevision === undefined) return;
+      post({ notice, revision: runtimeRevision, type: 'notice' });
+    },
+    [runtimeRevision]
+  );
   const reportAnalysis = useCallback(
     (analysis: OfficeAnalysis) => {
       if (runtimeRevision === undefined) return;
@@ -701,6 +709,7 @@ function OfficeRuntime() {
               onExporter={reportExporter}
               onFlusher={reportFlusher}
               onMenus={reportMenus}
+              onNotice={reportNotice}
               onPendingChange={reportHostPending}
               onPresentingChange={reportPresenting}
               onRenderer={reportRenderer}

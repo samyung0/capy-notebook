@@ -811,6 +811,7 @@
   "files_office_menu_bar": "Menu bar",
   "files_office_present_options": "More ways to present",
   "files_office_print_failed": "Couldn't print this file. Try again.",
+  "files_office_equation_text": "Equations can only be changed in PowerPoint.",
   "files_office_png_failed": "Couldn't save the image. Try again.",
   "files_office_print_truncated": "Printed the first {count} pages",
   "files_office_spreadsheet_formula_bar": "Formula bar",

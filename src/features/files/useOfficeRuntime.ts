@@ -27,6 +27,7 @@ import {
   type OfficeFormat,
   type OfficeHostMessage,
   type OfficeMode,
+  type OfficeNotice,
   type OfficeRenderedPage,
   type OfficeZoom,
 } from './officeProtocol';
@@ -154,6 +155,8 @@ export function useOfficeRuntime({
   // The zoom the file was last shown at, kept (not stored) while it stays
   // open: the next frame, for View or Edit or after a reload, opens at it.
   const zoomRef = useRef<OfficeZoom | undefined>(undefined);
+  // Notices the current frame already showed.
+  const noticesShown = useRef(new Set<OfficeNotice>());
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
   // The source document the frame was loaded with: a frame still showing an
@@ -499,6 +502,7 @@ export function useOfficeRuntime({
       const message = event.data,
         active = sourceRef.current;
       if (message.type === 'initialized') {
+        noticesShown.current.clear();
         setReplicaReady(false);
         setMenus(null);
         setPresenting(false);
@@ -556,6 +560,13 @@ export function useOfficeRuntime({
         setAnalysis(message.analysis);
         // Edit frames report ready too (for their timings); their errors stay.
         if (modeRef.current === 'view') setError(null);
+        return;
+      }
+      if (message.type === 'notice') {
+        // Once per frame: a refused keystroke would otherwise toast per key.
+        if (noticesShown.current.has(message.notice)) return;
+        noticesShown.current.add(message.notice);
+        userToast({ title: m.files_office_equation_text() });
         return;
       }
       if (message.type === 'error') {

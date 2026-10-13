@@ -157,6 +157,9 @@ export interface OfficeReadyTimings {
   paintMs: number;
 }
 
+/** A refusal the editor reports for the host to show once, not an error. */
+export type OfficeNotice = 'equation-text';
+
 export type OfficeRuntimeMessage =
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'initialized' }
   | {
@@ -228,6 +231,13 @@ export type OfficeRuntimeMessage =
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'error';
       message: string;
+      revision: number;
+    }
+  /** The user tried something the file refuses; the document is unaffected. */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'notice';
+      notice: OfficeNotice;
       revision: number;
     }
   /** The whole menu bar and header actions, re-sent when either changes. */
@@ -399,6 +409,7 @@ export function isOfficeRuntimeMessage(
         raw.pages.every(isRenderedPage)
       );
     if (raw.type === 'render-failed') return typeof raw.id === 'string';
+    if (raw.type === 'notice') return raw.notice === 'equation-text';
     if (raw.type === 'zoom') return isOfficeZoom(raw.zoom);
     if (raw.type === 'presenting') return typeof raw.presenting === 'boolean';
     if (raw.type === 'bottom-inset') return isFiniteNumber(raw.inset);

@@ -811,6 +811,7 @@
   "files_office_menu_bar": "菜单栏",
   "files_office_present_options": "更多放映方式",
   "files_office_print_failed": "无法打印此文件，请重试。",
+  "files_office_equation_text": "公式只能在 PowerPoint 中修改。",
   "files_office_png_failed": "无法保存图片，请重试。",
   "files_office_print_truncated": "已打印前 {count} 页",
   "files_office_spreadsheet_formula_bar": "编辑栏",
