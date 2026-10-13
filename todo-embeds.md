@@ -128,3 +128,94 @@ there is no legacy data (`html-embed` / `html_embed` / `Interactive`,
   `openui.py` keeps its own `_SKIPPED_PROPS`.
 - `lab/playground/configs/explain-teach.json:27` holds a stale copy of the
   building skill (old quiz format, chart `unit`).
+
+## Decisions (Epo, 2026-10-13)
+
+1. **Unknown kinds are refused** by every layer: the store, room admission and
+   every validator refuse a block type the catalog does not list; readers that
+   meet one fail loudly in tests instead of dropping it.
+2. **The HTML embed source stays replace-whole** (the save-style dialog); no
+   live shared text for it. Revisit if co-editing HTML becomes common.
+3. **Names are unified now, one word per kind in each layer's casing.**
+   `mermaid` everywhere (chat's `Diagram` becomes `Mermaid`); `html_embed` /
+   ```` ```html-embed ```` / `HtmlEmbed` (chat's `Interactive` becomes
+   `HtmlEmbed`); chart, plot and graph unchanged; mindmap and diagram stay
+   material kinds (user-facing), both holding one mermaid node. Plate types and
+   fences already follow this rule, so saved notes do not change: the rename is
+   chat's components, the agent text and contract (a version bump; Go and the
+   pipeline deploy together). Done with the catalog, after the drift fixes.
+4. **The catalog is generated from Go** (next to `agenttools`, through
+   `pnpm gen:openapi`), with a generated TS copy and a generated Rust file, so
+   Rust stops hand-copying limits.
+5. **A stored document with a block nothing recognizes stays readable, and
+   editing it is refused**: View renders an "unsupported block" placeholder in
+   its place and the rest as usual; Edit refuses with a clear message until the
+   document is fixed. No compatibility code. After the rename, old UAT chat
+   answers that use `Interactive` or `Diagram` are the documents to watch.
+
+## Feedback from the Rust collaboration session (2026-10-13)
+
+The live layer (Rust server, live items, live View, live Mermaid) holds
+per-kind knowledge that point 3's test list does not name. Both Rust drift
+items above are confirmed (`edit.rs:189` vs `material.rs:24`; plot missing
+from inspect at `edit.rs:1375`). Add these catalog fields and test them:
+
+- **Live (shared-text) fields.** Only `mermaid.source` merges character by
+  character, and that is hard-coded in six places: `notes/src/plate.rs:284`
+  (`SHARED_TEXT_KEY`), `slate_yjs.rs:244`, `limits.rs:500,519`,
+  `bound.rs:331`, `patches/@slate-yjs__core@1.0.2.patch`, `liveMermaid.ts`.
+  Missing one breaks typing subtly.
+- **Required and forbidden keys.** `limits.rs:279` `OWN_KEYS` drives room
+  admission; Go `validateNode` and Rust `material.rs:434` drive the store. If
+  admission and store disagree, an accepted edit is refused at store and
+  co-editors lose unsaved work (fixed twice this round). Forbidden keys too:
+  `pending` on `material_ref` is refused in `limits.rs:626`,
+  `material.rs:344,365`, Go `isPendingRef`, `0080_cutover_reset.sql`,
+  `pendingRefs.ts`. Go's `validateMaterialRef` still accepts `pending` with an
+  empty id (only the note check refuses it); Rust refuses it on any ref.
+- **Placement.** `material_ref` top-level only and only in notes; mindmap and
+  diagram materials need a mermaid block (`material.rs:483-607`); which
+  material kinds are items (`items/src/lib.rs:44` `Kind::of_material`); the
+  `refKind` sets (Rust, Go `refKinds`, TS `useNoteFooter.ts` `embedKey`,
+  `AppEmbed.tsx`).
+- **Asset fields.** Top-level `assetId`, quiz_question and flashcard images,
+  question image blocks: walked by the server's children pass
+  (`server/src/children.rs`), Go's asset prune and clone rewrite
+  (`document.go:1327-1390`), and the two Rust `MEDIA_TYPES`. Untested today.
+- **Question blocks in live quiz rooms.** Rust `items/src/quiz.rs` `BLOCK_TYPES`
+  / `read_block` / `block_shape` and TS `liveQuiz.ts` `readBlock` /
+  `writeBlockFields`. The TS reader drops unknown kinds (`default: null`), the
+  same failure as the plot gap.
+- **Error messages.** Rust says "chart and graph embeds" where Go says "chart,
+  plot and graph". Agents read these: fixtures should compare a stable error
+  code plus the agent-facing text the catalog holds.
+- **Live View** exists only for notes (`CenterContent.tsx:550`); mindmap and
+  diagram Views stay static. Intended for now; the catalog's surfaces field
+  should say so.
+
+Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
+`edit.rs`'s media_embed, youtube, excalidraw, which are not node types); align
+`validateMaterialRef` with Rust on `pending`.
+
+## Work split
+
+- **Rust collaboration session** (runs the Rust round; message it as "Rust
+  harness optimizations and security review"):
+  - consume the generated Rust file in the notes and items crates, replacing
+    the hand-copied limits (`questions.rs:17-43`, `material.rs:21-22`);
+  - Rust set-equality tests against the catalog: `validate_node`, `OWN_KEYS`
+    plus forbidden keys, shared-text keys, one `MEDIA_TYPES`, items
+    `BLOCK_TYPES` / `read_block` / `block_shape`, inspect per kind,
+    `Kind::of_material`, `refKind`, mermaid-required material kinds;
+  - unknown kinds refused in Rust store and room admission, with tests;
+  - the live TS layer against the catalog: `liveQuiz.ts` (no silent default),
+    `liveMermaid.ts` and the slate-yjs patch's shared-text key, `pendingRefs.ts`,
+    `useNoteFooter.ts`, `AppEmbed.tsx`; the live View's unsupported-block
+    placeholder and the room-side edit refusal (decision 5);
+  - Rust drift fixes: plot inspect, one media list, error codes aligned with Go.
+- **Embeds session** (owner of this file): `embeds.json` and its Go generator
+  (TS and Rust outputs), chat/OpenUI and the rename, Go and Python lists and
+  validators, the agent text, `openwiki/embeds.md`, the TS editor and static
+  lists, the drift items outside the live layer.
+- Order: the drift fixes in parallel; the generator first, then each side's
+  tests and the rename against it.
