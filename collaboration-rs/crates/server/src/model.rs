@@ -8,6 +8,11 @@ use notes::limits::Metrics;
 use serde_json::Value;
 use yrs::ReadTxn;
 
+/// Why a quiz room loads read-only: one of its documents holds a question
+/// block kind the room does not admit.
+pub const UNKNOWN_QUIZ_BLOCK: &str =
+    "a quiz document holds a question block kind the room does not admit";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Model {
     Note,
@@ -57,22 +62,26 @@ impl Model {
     /// it; one the store would refuse (a type the embed catalog does not
     /// list, or not for this kind, a closed element's extra key, a reference
     /// without its row, ...) or, in this quiz document, a question block kind
-    /// the room does not admit, loads read-only (`true`): every save would
-    /// otherwise be refused and discard the room's edits. One projection and
-    /// one store check per load, never per update.
-    pub fn stored<T: ReadTxn>(self, kind: &str, txn: &T) -> Result<bool, String> {
+    /// the room does not admit, loads read-only: the reason, which the load
+    /// logs (every save would otherwise be refused and discard the room's
+    /// edits). One projection and one store check per load, never per update.
+    pub fn stored<T: ReadTxn>(self, kind: &str, txn: &T) -> Result<Option<String>, String> {
         match self {
             Model::Note => {
                 if notes::plate::holds_pending_reference(txn) {
                     return Err("a material reference carries an imported fence body".into());
                 }
-                Ok(!notes::plate::value(txn)
-                    .is_ok_and(|value| notes::material::assert_canonical(&value, kind).is_ok()))
+                Ok(match notes::plate::value(txn) {
+                    Ok(value) => notes::material::assert_canonical(&value, kind)
+                        .err()
+                        .map(|error| error.to_string()),
+                    Err(error) => Some(error.to_string()),
+                })
             }
             Model::Item(items::Kind::Quiz | items::Kind::QuizKeys) => {
-                Ok(items::quiz::holds_unknown_block(txn))
+                Ok(items::quiz::holds_unknown_block(txn).then(|| UNKNOWN_QUIZ_BLOCK.to_owned()))
             }
-            Model::Item(items::Kind::Flashcards) => Ok(false),
+            Model::Item(items::Kind::Flashcards) => Ok(None),
         }
     }
 
@@ -179,7 +188,7 @@ mod tests {
 
     use super::Model;
 
-    fn note_stored(kind: &str, value: &[serde_json::Value]) -> Result<bool, String> {
+    fn note_stored(kind: &str, value: &[serde_json::Value]) -> Result<Option<String>, String> {
         let doc = ydoc::scratch_doc();
         ydoc::replay(
             &doc,
@@ -202,14 +211,15 @@ mod tests {
             "pending": "answer: SECRET", "children": [{ "text": "" }],
         });
         assert!(note_stored("note", &[body.clone(), fence]).is_err());
-        assert_eq!(note_stored("note", &[body]), Ok(false));
+        assert_eq!(note_stored("note", &[body]), Ok(None));
     }
 
     /// A stored Plate document the store would refuse loads read-only
     /// (decision 5), whatever the reason: a type the catalog does not list, a
     /// type it lists for another material kind, a closed element's extra key,
-    /// a reference without its row. Fails if any loads writable, where every
-    /// save would be refused and discard the room's edits.
+    /// a reference without its row; and the store's reason comes back for the
+    /// load to log (R2-L1). Fails if any loads writable, where every save
+    /// would be refused and discard the room's edits.
     #[test]
     fn a_stored_document_the_store_refuses_loads_read_only() {
         let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
@@ -222,27 +232,39 @@ mod tests {
             (
                 "note",
                 json!({ "type": "timeline", "id": "t", "children": leaf }),
+                "unknown element type",
             ),
             (
                 "note",
                 json!({ "type": "html_embed", "id": "h", "html": "<b>x</b>", "title": "old", "children": leaf }),
+                "unexpected interactive field title",
             ),
-            ("note", reference("")),
-            ("mindmap", reference("mat_quiz")),
+            ("note", reference(""), "materialId is required"),
+            (
+                "mindmap",
+                reference("mat_quiz"),
+                "a mindmap cannot hold a material_ref block",
+            ),
         ];
-        for (kind, node) in read_only {
+        for (kind, node, reason) in read_only {
             let value = if kind == "mindmap" {
                 [map.clone(), node.clone()]
             } else {
                 [body.clone(), node.clone()]
             };
-            assert_eq!(note_stored(kind, &value), Ok(true), "{kind}: {node}");
+            let stored = note_stored(kind, &value).unwrap();
+            assert!(
+                stored
+                    .as_deref()
+                    .is_some_and(|stored| stored.contains(reason)),
+                "{kind}: {node}: {stored:?}"
+            );
         }
         assert_eq!(
             note_stored("note", &[body.clone(), reference("mat_quiz")]),
-            Ok(false)
+            Ok(None)
         );
-        assert_eq!(note_stored("mindmap", &[map]), Ok(false));
+        assert_eq!(note_stored("mindmap", &[map]), Ok(None));
     }
 
     /// A stored quiz holding a block kind its rooms do not admit loads its
@@ -275,11 +297,11 @@ mod tests {
         };
         assert_eq!(
             stored(json!([{ "type": "timeline", "events": [] }])),
-            Ok(true)
+            Ok(Some(super::UNKNOWN_QUIZ_BLOCK.to_owned()))
         );
         assert_eq!(
             stored(json!([{ "type": "text", "text": "Stem" }])),
-            Ok(false)
+            Ok(None)
         );
     }
 }

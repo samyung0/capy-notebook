@@ -454,7 +454,7 @@ async fn load(
                 loaded.log_bytes,
             );
             let material_kind = kind.clone();
-            let (doc, durable, metrics, mut unlisted) =
+            let (doc, durable, metrics, mut refused) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let scratch = ydoc::scratch_doc();
                     ydoc::replay(&scratch, &loaded.base, &loaded.rows)
@@ -473,10 +473,10 @@ async fn load(
                     model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
                     let metrics = model.measure(&txn)?;
-                    let unlisted = model.stored(&material_kind, &txn)?;
+                    let refused = model.stored(&material_kind, &txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
-                    Ok((doc, durable, metrics, unlisted))
+                    Ok((doc, durable, metrics, refused))
                 })
                 .await
                 .map_err(|error| error.to_string())??;
@@ -494,12 +494,22 @@ async fn load(
                 let (peer, parts, peer_unlisted) =
                     peer_state(app, material_id, *schema, other).await?;
                 validator.set_peer(peer);
-                unlisted |= peer_unlisted;
+                if peer_unlisted && refused.is_none() {
+                    refused = Some(crate::model::UNKNOWN_QUIZ_BLOCK.to_owned());
+                }
                 if doc_kind == note_store::Doc::Content {
                     let mut lists = items::quiz::ReaderLists::default();
                     lists.follow(&parts, &mut random_pick);
                     reader = Some(lists);
                 }
+            }
+            // Operators see which rooms load read-only, and why (R2-L1).
+            if let Some(reason) = &refused {
+                log(
+                    Level::Warn,
+                    "room loads read-only",
+                    json!({ "reason": reason, "room": name.to_string() }),
+                );
             }
             let note = Note {
                 material_id: material_id.clone(),
@@ -509,7 +519,7 @@ async fn load(
                 // the first update takes the growth bound instead of copying
                 // and measuring a near-limit note on the room task (~55 ms).
                 validator,
-                unlisted,
+                unlisted: refused.is_some(),
                 model,
                 doc: doc_kind,
                 items_sent: None,
