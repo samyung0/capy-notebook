@@ -2997,7 +2997,7 @@ Steps on UAT (`docker exec` on the UAT host; find the container names with
    ```
 
    Keep the dump on the UAT host and copy it to the developer machine
-   (`scp -i ~/.ssh/id_ed25519_capy_uat root@159.195.250.206:/root/backups/<file> .`,
+   (`scp -i <your UAT SSH key> root@159.195.250.206:/root/backups/<file> .`,
    outside any repository). It holds UAT accounts' content: delete both copies
    once the step 10 checks pass and UAT has been used normally for a week.
 8. Deploy the release (`deploy-uat`), still paused. `migrate` runs 0073 to
