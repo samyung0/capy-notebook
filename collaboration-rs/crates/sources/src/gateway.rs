@@ -102,6 +102,10 @@ pub struct CheckpointBody {
     pub seed_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub operation: Option<Value>,
+    /// A text source's opening characters, which Go writes to the file's
+    /// `preview` (`TextSave::preview`); none for an Office source.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preview: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

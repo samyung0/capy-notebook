@@ -4755,6 +4755,8 @@ components:
         operation:
           $ref: "#/components/schemas/SourceCheckpointOperation"
         pendingEffects: {}
+        preview:
+          type: string
         seedBytes:
           format: int64
           minimum: 0

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
@@ -86,7 +87,15 @@ type SourceCheckpoint struct {
 	// A direct AI edit or its Undo commits its receipt (and inverse) with the
 	// checkpoint so the saved state and the durable effect cannot diverge.
 	Operation *SourceCheckpointOperation `json:"operation,omitempty"`
+	// A text source's opening characters as saved (openwiki/thumbnails.md),
+	// written to files.preview with the checkpoint. The collaboration server
+	// sends it with every text save; an Office save carries none.
+	Preview *string `json:"preview,omitempty"`
 }
+
+// sourcePreviewChars is the most characters a saved text preview holds, the
+// collaboration server's PREVIEW_CHARS and ingest's TEXT_PREVIEW_CHARS.
+const sourcePreviewChars = 600
 
 // SourceCheckpointOperation is the receipt side of a source edit checkpoint.
 // Inverse and Guards are present for an edit; UndoOf for an Undo.
@@ -401,7 +410,10 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		return out, ErrCheckpointMoved
 	}
 	var revision int64
-	if err = tx.QueryRow(ctx, `SELECT revision FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&revision); err != nil {
+	// The stored preview is read with the lock, so an unchanged one costs no
+	// statement below.
+	var preview *string
+	if err = tx.QueryRow(ctx, `SELECT revision, preview->>'text' FROM files WHERE id=$1 AND trashed_at IS NULL FOR UPDATE`, fileID).Scan(&revision, &preview); err != nil {
 		return out, err
 	}
 	if revision != baseRevision || in.BaseRevision != baseRevision {
@@ -412,6 +424,9 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	// Office sources never carry a seed size.
 	text := format == "text"
 	if (seeded && text) != (in.SeedBytes > 0) || (!seeded && in.BaseSourceSHA256 != "") {
+		return out, ErrInvalidCheckpoint
+	}
+	if in.Preview != nil && (!text || !validSourcePreview(*in.Preview)) {
 		return out, ErrInvalidCheckpoint
 	}
 	if seeded {
@@ -441,6 +456,13 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if err != nil {
 		return out, err
 	}
+	// The list card's text follows every save, not only the next ingest; an
+	// unchanged preview writes nothing (and raises no tree event).
+	if in.Preview != nil && (preview == nil || *preview != *in.Preview) {
+		if _, err = tx.Exec(ctx, `UPDATE files SET preview=jsonb_build_object('text', $2::text) WHERE id=$1`, fileID, *in.Preview); err != nil {
+			return out, err
+		}
+	}
 	if in.Operation != nil {
 		receipt, err := s.commitSourceOperationTx(ctx, tx, fileID, ws, owner, epoch, out.Checkpoint, *in.Operation)
 		if err != nil {
@@ -449,6 +471,13 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		out.Operation = &receipt
 	}
 	return out, tx.Commit(ctx)
+}
+
+// validSourcePreview: at most sourcePreviewChars characters of UTF-8 with no
+// NUL, which jsonb cannot hold.
+func validSourcePreview(preview string) bool {
+	return utf8.ValidString(preview) && utf8.RuneCountInString(preview) <= sourcePreviewChars &&
+		!strings.ContainsRune(preview, 0)
 }
 
 // commitSourceOperationTx records the edit (receipt + inverse) or the Undo

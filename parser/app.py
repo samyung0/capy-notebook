@@ -46,7 +46,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, NoReturn
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
 from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
@@ -244,9 +244,11 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
 
     normalized = normalize_document(document.data, document.name)
     if document.capture is not None:
-        from odl.capture import capture_page
+        from odl import capture
 
-        return capture_page(normalized.data, **document.capture)
+        if document.capture.get("thumbnail"):
+            return {"webp": capture.page_thumbnail_webp(normalized.data)}
+        return capture.capture_page(normalized.data, **document.capture)
     if normalized.preview_pdf is not None:
         from odl.document import pdf_page_count
 
@@ -1547,6 +1549,40 @@ async def office_capture(request: Request) -> JSONResponse:
             )
         )
         return JSONResponse(result)
+    except ParserCapacity as exc:
+        return JSONResponse({"detail": str(exc)}, status_code=429)
+    except Exception as exc:  # noqa: BLE001 - bounded worker diagnostics
+        return _failure_response(exc)
+
+
+@app.post("/page_thumbnail")
+async def page_thumbnail(request: Request) -> Response:
+    """Page 1 of an Office file an agent turn edited, as its list-card WebP
+    (openwiki/thumbnails.md): converted and rendered in a bounded parse child
+    as an upload's parse renders page1.png, without a parse receipt."""
+    if not _authorized(request):
+        return JSONResponse({"detail": "invalid token"}, status_code=401)
+    if runtime.active_jobs >= QUEUE_DEPTH:
+        return JSONResponse(
+            {"detail": "parser document queue is full"}, status_code=429
+        )
+    form = await request.form()
+    upload = form.get("file")
+    if upload is None or not hasattr(upload, "read"):
+        return JSONResponse({"detail": "missing file field"}, status_code=400)
+    name = str(form.get("filename") or "")
+    if Path(name).suffix.lower() not in {".docx", ".xlsx", ".pptx"}:
+        return JSONResponse(
+            {"detail": "a thumbnail requires an Office source"}, status_code=400
+        )
+    data = await upload.read(MAX_SOURCE_BYTES + 1)
+    if len(data) > MAX_SOURCE_BYTES:
+        return JSONResponse({"detail": "source exceeds size limit"}, status_code=413)
+    try:
+        result, _ = await runtime.parse(
+            Document(data, name, capture={"thumbnail": True})
+        )
+        return Response(result["webp"], media_type="image/webp")
     except ParserCapacity as exc:
         return JSONResponse({"detail": str(exc)}, status_code=429)
     except Exception as exc:  # noqa: BLE001 - bounded worker diagnostics

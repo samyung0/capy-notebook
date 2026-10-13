@@ -451,6 +451,8 @@ func main() {
 		PipelineSecret:         pipeSecret,
 		ParseMaxPages:          parseMaxPages,
 		ParseMaxOCRPages:       parseMaxOCRPages,
+		ParserURL:              env("PARSER_URL", ""),
+		ParserToken:            env("PARSER_TOKEN", ""),
 		AllowedOrigins:         envList("CORS_ALLOWED_ORIGINS"),
 		RateLimit:              rateLimitConfig(appEnv),
 		ModelRegistry:          modelReg,
@@ -458,6 +460,9 @@ func main() {
 	}
 	if mailRecorder != nil {
 		cfg.MailRecorder = mailRecorder
+	}
+	if cfg.ParserURL == "" {
+		log.Println("agent-edit thumbnails off: PARSER_URL is unset")
 	}
 
 	srv := &http.Server{

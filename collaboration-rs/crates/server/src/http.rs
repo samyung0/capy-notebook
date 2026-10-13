@@ -30,6 +30,10 @@ pub fn router(app: Shared) -> Router {
             "/internal/source-refresh/publish",
             post(publish_source_refresh),
         )
+        .route(
+            "/internal/source-thumbnails/export",
+            post(export_source_thumbnail),
+        )
         .route("/internal/documents/inspect", post(document))
         .route("/internal/documents/edit", post(document))
         .route("/internal/documents/undo", post(document))
@@ -260,6 +264,41 @@ async fn publish_source_refresh(
     }
     let result = crate::source_rooms::publish(&app, input).await;
     source_answer("source_publish", result)
+}
+
+/// An Office file's bytes for its list-card thumbnail after an agent turn
+/// (`sources::thumbnail`), or 204 when the turn's edits left page 1 alone.
+async fn export_source_thumbnail(
+    State(app): State<Shared>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "Unauthorized" }),
+        );
+    }
+    let input = match json_object(&body, "Invalid thumbnail request") {
+        Ok(input) => input,
+        Err(response) => return *response,
+    };
+    let Ok(targets) = serde_json::from_value::<sources::thumbnail::TurnTargets>(input) else {
+        return json_response(
+            StatusCode::BAD_REQUEST,
+            json!({ "message": "Invalid thumbnail request" }),
+        );
+    };
+    match app.sources.thumbnail_export(&targets).await {
+        Ok(Some(bytes)) => (
+            StatusCode::OK,
+            [(header::CONTENT_TYPE, "application/octet-stream")],
+            bytes,
+        )
+            .into_response(),
+        Ok(None) => StatusCode::NO_CONTENT.into_response(),
+        Err(error) => source_answer("source_thumbnail", Err(error)),
+    }
 }
 
 /// `/internal/documents/{inspect,edit,undo}`: direct AI edits (`edits.rs`).

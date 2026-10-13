@@ -342,6 +342,9 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 		obs.CaptureErr(saveCtx, err, map[string]string{"stage": "chat_finalize"})
 	}
 	charge.settle(saveCtx)
+	// Once per finished response, whatever its status: the edits it committed
+	// may have changed page 1 of Office files.
+	a.captureTurnThumbnails(saveCtx, assistant.ID)
 
 	if ctx.Err() == nil {
 		if streamErr != nil {

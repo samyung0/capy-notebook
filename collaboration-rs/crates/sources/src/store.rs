@@ -36,6 +36,9 @@ const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 /// Checkpoint CAS attempts per save (a moved checkpoint reloads and retries).
 const SAVE_ATTEMPTS: usize = 4;
+/// The clock an export recalculates at, fixed so the bytes depend on the
+/// state alone.
+pub(crate) const EXPORT_NOW: &str = "2000-01-01T00:00:00.000Z";
 
 pub struct SourcesConfig {
     pub api_url: String,
@@ -834,6 +837,7 @@ impl Sources {
                 base_source_sha256: seed_report.0,
                 seed_bytes: seed_report.1,
                 operation: None,
+                preview: text.as_ref().map(|text| text.preview.clone()),
             };
             let result: Result<CheckpointSaved, SourceError> = self
                 .gateway
@@ -1274,7 +1278,7 @@ impl Sources {
                             },
                             &state,
                             &seed,
-                            "2000-01-01T00:00:00.000Z",
+                            EXPORT_NOW,
                         )
                         .await?
                 }

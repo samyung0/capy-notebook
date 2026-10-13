@@ -59,37 +59,54 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 	if err := checkThumbnailWebP(in.RawBody); err != nil {
 		return nil, huma.Error422UnprocessableEntity(err.Error())
 	}
-	sum := sha256.Sum256(in.RawBody)
-	key := "thumbs/" + in.ID + "/" + hex.EncodeToString(sum[:]) + ".webp"
-	if key == target.Key {
-		return &Empty{}, nil
-	}
-	if err := a.s.ClaimThumbnailCapture(ctx, in.ID); errors.Is(err, store.ErrThumbnailTooSoon) {
+	switch err := a.storeThumbnail(ctx, in.ID, target.Key, in.RawBody); {
+	case errors.Is(err, store.ErrThumbnailTooSoon):
 		return nil, &huma.ErrorModel{
 			Status: http.StatusTooManyRequests,
 			Title:  http.StatusText(http.StatusTooManyRequests),
 			Detail: err.Error(),
 			Errors: []*huma.ErrorDetail{{Message: "thumbnail_too_soon"}},
 		}
-	} else if err != nil {
-		return nil, hErr(err)
-	}
-	if a.blob == nil {
-		return nil, huma.Error503ServiceUnavailable("thumbnail storage is not configured")
-	}
-	if err := a.blob.PutObjectOnce(ctx, key, in.RawBody, "image/webp", thumbnailCacheControl); err != nil {
-		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", in.ID, "error", err)
-		// A put that failed may still have written the object.
-		if err := a.s.EnqueueBlobDeletion(ctx, key); err != nil {
-			obs.Log(ctx).Warn("thumbnail capture not queued for deletion", "file_id", in.ID, "key", key, "error", err)
-		}
-		return nil, huma.Error503ServiceUnavailable("thumbnail storage is unavailable")
-	}
-	if err := a.s.SetFileThumbnail(ctx, in.ID, key); err != nil {
-		obs.Log(ctx).Warn("thumbnail capture not recorded", "file_id", in.ID, "key", key, "error", err)
+	case errors.Is(err, errThumbnailStorage):
+		return nil, huma.Error503ServiceUnavailable(err.Error())
+	case err != nil:
 		return nil, hErr(err)
 	}
 	return &Empty{}, nil
+}
+
+// errThumbnailStorage: the bucket is not configured or did not take the put.
+var errThumbnailStorage = errors.New("thumbnail storage is unavailable")
+
+// storeThumbnail writes a checked capture (a browser's or an agent turn's) at
+// thumbs/{fileID}/{sha256}.webp and points the file at it: the current key
+// writes nothing, a capture within store.ThumbnailCaptureInterval of the
+// file's last one is store.ErrThumbnailTooSoon, and a put that failed is
+// queued for deletion, since it may still have written the object.
+func (a *api) storeThumbnail(ctx context.Context, fileID, currentKey string, body []byte) error {
+	sum := sha256.Sum256(body)
+	key := "thumbs/" + fileID + "/" + hex.EncodeToString(sum[:]) + ".webp"
+	if key == currentKey {
+		return nil
+	}
+	if err := a.s.ClaimThumbnailCapture(ctx, fileID); err != nil {
+		return err
+	}
+	if a.blob == nil {
+		return errThumbnailStorage
+	}
+	if err := a.blob.PutObjectOnce(ctx, key, body, "image/webp", thumbnailCacheControl); err != nil {
+		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", fileID, "error", err)
+		if err := a.s.EnqueueBlobDeletion(ctx, key); err != nil {
+			obs.Log(ctx).Warn("thumbnail capture not queued for deletion", "file_id", fileID, "key", key, "error", err)
+		}
+		return errThumbnailStorage
+	}
+	if err := a.s.SetFileThumbnail(ctx, fileID, key); err != nil {
+		obs.Log(ctx).Warn("thumbnail capture not recorded", "file_id", fileID, "key", key, "error", err)
+		return err
+	}
+	return nil
 }
 
 // checkThumbnailWebP accepts exactly one RIFF WebP image and nothing else:

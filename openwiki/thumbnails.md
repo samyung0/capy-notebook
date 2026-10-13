@@ -10,8 +10,10 @@ and `human/backend-storage-quota.md` (2026-10-11).
 
 Ingest renders file thumbnails (phase 1). Edited Office files are captured in
 the browser and posted to Go ([Browser captures](#browser-captures): PPTX and
-XLSX in phase 2a, DOCX in phase 2b). Agent-edit captures come later (see the
-end).
+XLSX in phase 2a, DOCX in phase 2b). An agent's edits are captured by the
+server at the end of its response ([Agent captures](#agent-captures)), and a
+text source's preview follows each save ([Text previews on
+save](#text-previews-on-save)).
 
 ## Storage and lifecycle
 
@@ -102,7 +104,7 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 | ----- | --------- |
 | PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the ingest encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). A bundle without the image (an older parser, a failed render) means no thumbnail |
 | Image (`image_caption`) | Pillow: first frame, EXIF orientation, shrunk to 200 px wide and cut at 400 px before it is converted and flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
-| Text (`raw_text`) and CSV/TSV (`delimited_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters of the source (a text-mode read, never cut mid-character; NUL removed). Cards draw text and code as monospace lines, and a CSV or TSV (kind `sheet`) as a small table: its first 8 rows and 5 columns, the first row the header, tab-separated when the first line has a tab, quoted cells kept whole |
+| Text (`raw_text`) and CSV/TSV (`delimited_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters of the source (a text-mode read, never cut mid-character; NUL removed), written again by every save of the source's room ([Text previews on save](#text-previews-on-save)). Cards draw text and code as monospace lines, and a CSV or TSV (kind `sheet`) as a small table: its first 8 rows and 5 columns, the first row the header, tab-separated when the first line has a tab, quoted cells kept whole |
 | Store-only, audio | none |
 
 - The image is WebP, quality 60, 200 px wide (narrower images are not
@@ -320,16 +322,120 @@ Sources: [endpoint test](../server/internal/httpapi/thumbnail_capture_test.go),
 [runtime test](../src/office-runtime/thumbnail.test.ts),
 [e2e](../e2e/editor/thumbnail-capture.spec.ts).
 
-## Phase 2
+## Agent captures
 
-- Captures after an agent's `edit_document` on Office files: queued
-  2026-10-11 to the Rust harness session, which implements them and checks
-  their cost in its performance round. Epo's design: once per finished agent
-  response (Go's `FinalizeAssistantMessage` has the turn's edited files),
-  only when page 1 may have changed (XLSX a cell in the first sheet's capture
-  area, PPTX slide 1, DOCX always), export the live state and render page 1 on
-  the ingest host, whether or not the file is open in a browser.
-- Text previews after edits in a workspace with auto-process off: the preview
-  is written by ingest, so it waits for the next refresh. Queued with the
-  above: the source checkpoint save carries the opening text and Go writes
-  `files.preview`, as materials do on every write.
+An agent's `edit_document` on a DOCX, XLSX or PPTX file redraws the file's
+thumbnail once the response that made it has finished, whether or not anyone
+has the file open (Epo's design, 2026-10-11). None of it runs on an edit or a
+save.
+
+**Trigger.** After `FinalizeAssistantMessage` (`chat_stream.go`, whatever the
+message's status) Go starts one background run for the response, bounded at
+5 minutes (`agentThumbnailBudget`); the response's `done` does not wait for
+it. `TurnThumbnails` ([store](../server/internal/store/agent_thumbnails.go))
+reads the message's committed `edit_document` receipts (`agent_operations`,
+outcome `succeeded`, an `edited` effect) with their `agent_edit_inverses`: a
+refused or failed edit commits neither, so it captures nothing. Each live
+Office file is named once, in the order first edited; a file captured in the
+last 60 s is left out.
+
+**Only when page 1 may have changed:**
+
+| Format | Counts | Checked |
+| ------ | ------ | ------- |
+| DOCX | every edit | nothing to check |
+| XLSX | a `set_cell` inside A1:H25 (about the browser capture's 800 x 550 sheet px) on the first sheet | Go reads each edit's stored inverse (`sheet`, `cell`) and keeps the sheets of cells inside the area, dropping a file with none; the collaboration server compares them with the first entry of `xlsx:sheet-order` |
+| PPTX | an edit of a text story on slide 1 | Go reads each edit's stored guards (`["pptx:stories", story]`); the collaboration server collects the stories of slide 1's shapes (`pptx:slide-order`, the slide's `shapes`, a group's `children`) |
+
+Receipts carry no slide or sheet: the stored inverse and guards name them, and
+the first sheet and slide 1 are read from the document at the end of the
+turn, so a sheet or slide moved first meanwhile counts.
+
+**The hop** ([Go](../server/internal/httpapi/agent_thumbnails.go)):
+
+1. Go asks the collaboration server, `POST /internal/source-thumbnails/export`
+   (service secret) with `{fileId, sheets, stories}`
+   ([`sources::thumbnail`](../collaboration-rs/crates/sources/src/thumbnail.rs)).
+   It replays the file's durable state (base and rows: every committed agent
+   edit is in it; a browser's last unsaved seconds are not), checks the rule
+   and answers `204` when page 1 is as it was; otherwise it exports the state
+   as a refresh candidate is (`exportOffice` on a background engine process,
+   the fixed clock) and answers the package.
+2. Go posts the package to the parser's `POST /page_thumbnail`, at the host
+   and with the token chat's Office captures use (`PARSER_URL`,
+   `PARSER_TOKEN`). One bounded parse child converts it with LibreOffice and
+   renders page 1 as an upload's parse does (`odl.capture.page_thumbnail`,
+   200 px wide, cut at 400), then encodes the WebP ingest would store from
+   that page (quality 60; byte for byte the same). A full parser queue answers
+   `429`.
+3. Go checks the WebP as it checks a browser capture (`checkThumbnailWebP`)
+   and stores it through the same code (`storeThumbnail`): the current key
+   writes nothing; `ClaimThumbnailCapture` takes the per-file 60 s interval (a
+   browser capture inside it stands); then the B2 put and `SetFileThumbnail`,
+   with the blob reference triggers and the outbox.
+
+- The files of a response go one after the other. Nothing retries: a failed
+  export, render or put is logged once (`agent thumbnail capture failed`) and
+  the card keeps its image; a stored capture logs `agent thumbnail captured`
+  with its export and render times.
+- Without `PARSER_URL` (local development without a parser) agent captures
+  are off, said once at startup.
+- The capture sets `thumbnail_captured_at`, so later ingests leave the
+  thumbnail alone, as after a browser capture
+  ([Ingest after a capture](#browser-captures)).
+
+Measured on the developer PC (2026-10-13, three runs, median; a page-1 edit
+made through the engine, the export in a release engine process, the render
+in the parser image with this code):
+
+| File | Export | Render (LibreOffice + page 1 + WebP) | WebP |
+| ---- | ------ | ------------------------------------ | ---- |
+| `lesson.docx` (37 KB) | 85 ms | 1.5 s | 0.9 KB |
+| `exchange-plan.docx` (64 KB) | 204 ms | 1.8 s | 2.3 KB |
+| `long-handbook.docx` (40 KB, a 1.2 MB state) | 733 ms | 2.4 s | 7.0 KB |
+| `lesson.pptx` (29 KB) | 8 ms | 1.4 s | 1.0 KB |
+| `lecture.pptx` (304 KB) | 36 ms | 2.2 s | 0.4 KB |
+| `jp_llm2.pptx` (23 MB) | 334 ms | 12.6 s | 4.5 KB |
+| `grades.xlsx` (5 KB) | 4 ms | 1.3 s | 0.5 KB |
+| `course-guide.xlsx` (142 KB) | 509 ms | 1.8 s | 7.0 KB |
+| `large-gradebook.xlsx` (1.3 MB) | 4.5 s (every formula recalculated) | 6.5 s | 6.7 KB |
+
+The render is almost all LibreOffice (its start alone about 1.2 s; page 1 and
+the WebP take 3-15 ms; LibreOffice peaks at 255 MB, 695 MB for the 23 MB
+deck), on the ingest host in the parse queue. The collaboration server's
+share is the export on a background engine process plus the page-1 check
+(replaying the durable state: 0-52 ms). A response captures at most one image
+per Office file it edited, and only the files whose page 1 may have changed.
+
+Sources: [store test](../server/internal/store/agent_thumbnails_test.go),
+[capture test](../server/internal/httpapi/agent_thumbnails_test.go),
+[rule test](../collaboration-rs/crates/sources/src/thumbnail.rs),
+[export test](../collaboration-rs/crates/sources/tests/store_db.rs),
+[parser test](../pipeline/tests/test_parser_app.py).
+
+## Text previews on save
+
+`files.preview {text}` of a text, code, CSV or TSV source follows every save
+of its room, not only the next ingest (a workspace with auto-process off kept
+the upload's text). The collaboration server reads the opening 600 characters
+as ingest reads them (a UTF-8-sig text-mode read: a leading BOM dropped,
+`\r\n` and `\r` read as `\n`, NUL removed; `Preview` in
+[`text.rs`](../collaboration-rs/crates/sources/src/text.rs)), walking the
+room's text only as far as the preview needs, and sends them with every text
+checkpoint (`preview`), a direct agent edit's included. `SaveSourceCheckpoint`
+reads the stored preview with the row lock it already takes and writes the new
+one in the checkpoint's transaction only when it changed: an unchanged preview
+costs no statement and raises no tree event; a changed one refetches open
+lists, at most once per save (5 to 30 s apart while someone types). An Office
+save carries none, and a preview of more than 600 characters, with NUL or
+invalid UTF-8 refuses the save.
+
+Measured on the developer PC (2026-10-13, interleaved, three runs): the
+preview adds 5-10 µs to a text save's effects from the change (0.01-0.03 ms
+in all for a 1-30 MiB file); in Go an unchanged preview costs nothing
+measurable and a changed one about 1 ms (the file row rewritten) on a 12-15 ms
+local checkpoint.
+
+Sources: [store test](../server/internal/store/agent_thumbnails_test.go)
+(`TestTextSavesWriteTheFilePreview`),
+[parity test](../collaboration-rs/crates/sources/src/text.rs).

@@ -222,6 +222,18 @@ async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
     )
     .await
     .unwrap();
+    // A text save's preview goes to the file; an Office save has none.
+    if !text && body["preview"].is_string() {
+        return refuse(422, "invalid_checkpoint");
+    }
+    if let Some(preview) = body["preview"].as_str() {
+        txn.execute(
+            "UPDATE files SET preview=jsonb_build_object('text',$2::text) WHERE id=$1",
+            &[&id, &preview],
+        )
+        .await
+        .unwrap();
+    }
     txn.commit().await.unwrap();
     axum::Json(json!({ "checkpoint": next })).into_response()
 }
@@ -491,6 +503,90 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
     let folded = text_doc(102);
     h.sources.load(&room, &h.user, &folded).await.unwrap();
     assert_eq!(text(&folded), "Xhello\nYworld\n");
+}
+
+// Every text save carries the opening characters the file's list card
+// shows, read as ingest reads them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_text_save_carries_the_files_opening_characters() {
+    let h = harness().await;
+    let room = h
+        .file("text", "notes.md", "\u{feff}hello\r\nworld".as_bytes())
+        .await;
+    let preview = || async {
+        let client = h.fake.db.get().await.unwrap();
+        let row = client
+            .query_one("SELECT preview FROM files WHERE id=$1", &[&room.file_id])
+            .await
+            .unwrap();
+        row.get::<_, Option<Value>>(0)
+    };
+    let doc = text_doc(100);
+    h.sources.load(&room, &h.user, &doc).await.unwrap();
+    let mut durable = doc.transact().state_vector();
+    type_into(&doc, 7, 1, "X");
+    save_text(&h, &room, &doc, &mut durable).await.unwrap();
+    assert_eq!(preview().await, Some(json!({ "text": "Xhello\nworld" })));
+    // Past the first 600 characters the preview holds still.
+    type_into(&doc, 8, 14, &"y".repeat(700));
+    save_text(&h, &room, &doc, &mut durable).await.unwrap();
+    let text = preview().await.unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(text.chars().count(), 600);
+    assert!(text.starts_with("Xhello\nworldyyy"));
+}
+
+// An agent turn's thumbnail exports the durable document only when page 1
+// may have changed: any DOCX edit, an XLSX edit on the first sheet.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_turns_thumbnail_exports_only_what_may_show_on_page_one() {
+    use sources::thumbnail::TurnTargets;
+    let h = harness().await;
+    let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
+    let docx = std::fs::read(root.join("e2e/fixtures/files/basic/lesson.docx")).unwrap();
+    let xlsx = std::fs::read(root.join("e2e/fixtures/files/basic/grades.xlsx")).unwrap();
+    let targets = |room: &SourceRoom, sheets: &[&str]| TurnTargets {
+        file_id: room.file_id.clone(),
+        sheets: sheets.iter().map(|sheet| (*sheet).to_owned()).collect(),
+        stories: Vec::new(),
+    };
+    let zip = |bytes: Option<Vec<u8>>| bytes.is_some_and(|bytes| bytes.starts_with(b"PK"));
+
+    let lesson = h.file("docx", "lesson.docx", &docx).await;
+    let exported = h.sources.thumbnail_export(&targets(&lesson, &[])).await;
+    assert!(zip(exported.unwrap()));
+
+    let grades = h.file("xlsx", "grades.xlsx", &xlsx).await;
+    let seed = Doc::new();
+    apply(
+        &seed,
+        &office_service::seed(office_service::Format::Xlsx, &xlsx).unwrap(),
+    );
+    let first = {
+        let txn = seed.transact();
+        let order = txn.get_array("xlsx:sheet-order").unwrap();
+        let Some(yrs::Out::Any(yrs::Any::String(first))) = yrs::Array::get(&order, &txn, 0) else {
+            panic!("the sheet order holds strings")
+        };
+        first.to_string()
+    };
+    let exported = h
+        .sources
+        .thumbnail_export(&targets(&grades, &[&first]))
+        .await;
+    assert!(zip(exported.unwrap()));
+    for sheets in [&["another"][..], &[]] {
+        let exported = h.sources.thumbnail_export(&targets(&grades, sheets)).await;
+        assert_eq!(exported.unwrap(), None);
+    }
+
+    let notes = h.file("text", "notes.md", b"text").await;
+    let refused = h.sources.thumbnail_export(&targets(&notes, &[])).await;
+    assert_eq!(refused.unwrap_err().status(), Some(422));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

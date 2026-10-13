@@ -87,6 +87,12 @@ type Config struct {
 	// and a fast-parse reservation claiming more pages is refused.
 	ParseMaxPages    int
 	ParseMaxOCRPages int
+	// ParserURL and ParserToken reach the ingest host's parser (PARSER_URL,
+	// PARSER_TOKEN, as the retrieval service's Office captures do), which
+	// renders page 1 of an Office file an agent turn edited. An empty URL
+	// leaves those thumbnails off.
+	ParserURL   string
+	ParserToken string
 	// MailRecorder exposes delivered mail to Playwright. Non-nil only under
 	// APP_ENV=e2e.
 	MailRecorder     mail.Recorder

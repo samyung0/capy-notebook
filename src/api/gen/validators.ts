@@ -7324,6 +7324,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "undoOf": zod.string().optional()
 }).optional(),
   "pendingEffects": zod.unknown(),
+  "preview": zod.string().optional(),
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
   "stateSeedSHA256": zod.string().optional(),
   "update": zod.string()

@@ -20,6 +20,7 @@ pub mod schedule;
 pub mod seed_check;
 pub mod store;
 pub mod text;
+pub mod thumbnail;
 
 pub use admit::{Admission, Refusal, admit_update};
 pub use failure::SourceError;
