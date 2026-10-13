@@ -13,6 +13,7 @@ import statistics
 
 import pymupdf
 
+from . import page_text
 from .table_html import table_html
 
 # The lab recovered every table with the integration module's wider value
@@ -30,7 +31,7 @@ SECTION = re.compile(r"^\d+\.\d+(?:\.\d+)*$")
 
 def text_lines(page: pymupdf.Page) -> list[dict]:
     out = []
-    for block in page.get_text("dict", flags=TEXT_FLAGS)["blocks"]:
+    for block in page_text.page_dict(page)["blocks"]:
         for line in block.get("lines", []):
             if abs(line["dir"][0] - 1) > 0.01 or abs(line["dir"][1]) > 0.01:
                 continue

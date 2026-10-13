@@ -30,6 +30,11 @@
       "traits": "104-page technical drawings book: vector line art, some image-only pages"
     },
     {
+      "id": "inline-images",
+      "file": "inline-images.pdf",
+      "traits": "11 pages drawn as thousands of inline images (17,561 on one page): picture triage's per-page matching"
+    },
+    {
       "id": "math-worked",
       "file": "waterworks-math.pdf",
       "traits": "384-page worked calculations: stacked fractions, Symbol-font operators, 9.99 MiB (just under the free cap)"
@@ -71,5 +76,22 @@
       "traits": "84-slide Japanese deck, 69 pictures, 23 MiB"
     }
   ],
-  "budgets": {}
+  "budgets": {
+    "ci-ubuntu-24.04": {
+      "paper-2col": { "execution_s": 6.1, "peak_gib": 0.77 },
+      "mixed-scan": { "execution_s": 18.3, "peak_gib": 1.47 },
+      "newspaper-scan": { "execution_s": 15.9, "peak_gib": 1.5 },
+      "legal-prose": { "execution_s": 24.0, "peak_gib": 1.71 },
+      "vector-drawings": { "execution_s": 41.5, "peak_gib": 1.8 },
+      "math-worked": { "execution_s": 26.2, "peak_gib": 1.59 },
+      "textbook-26mib": { "execution_s": 283.7, "peak_gib": 2.54 },
+      "logic-1016p": { "execution_s": 116.1, "peak_gib": 2.74 },
+      "limit-1400p": { "execution_s": 145.4, "peak_gib": 2.79 },
+      "scan-120p": { "execution_s": 513.6, "peak_gib": 2.61 },
+      "docx-handbook": { "execution_s": 9.1, "peak_gib": 1.88 },
+      "xlsx-gradebook": { "execution_s": 31.0, "peak_gib": 2.39 },
+      "pptx-84-slides": { "execution_s": 34.2, "peak_gib": 2.24 }
+    }
+  },
+  "budgets_note": "ci-ubuntu-24.04: slowest of CI runs 38245827044, 38248125967 and 38248138621 (2026-10-12, parser v13) plus 25%; peak_gib is container anonymous memory. Runner speed varied by about 20% between those runs."
 }

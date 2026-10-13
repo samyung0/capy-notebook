@@ -22,6 +22,13 @@ export interface ItemSelection {
   selected: boolean;
 }
 
+/** Where an item's ⋯ menu opens: a grid card's trigger sits mid-grid, so the
+ * menu runs rightwards from it like the workspace cards'; a list row's sits at
+ * the row's right end. */
+export function itemMenuAlign(view: ListView): 'start' | 'end' {
+  return view === 'grid' ? 'start' : 'end';
+}
+
 export function ItemCard({
   view,
   icon,

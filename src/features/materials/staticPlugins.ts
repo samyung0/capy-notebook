@@ -173,7 +173,7 @@ const StaticListKit: AnyPlugin[] = [
                   : 'Incomplete task',
                 checked: Boolean(element.checked),
                 className:
-                  'absolute -left-6 mt-[calc((1lh-1rem)/2)] -translate-y-px size-4 rounded border-line-strong accent-action-accent [font:inherit]',
+                  'absolute -left-6 mt-[calc((1lh-1rem)/2)] size-4 rounded border-line-strong accent-action-accent [font:inherit]',
                 disabled: true,
                 readOnly: true,
                 type: 'checkbox',
@@ -202,7 +202,8 @@ const StaticListKit: AnyPlugin[] = [
           return createElement(
             'ol',
             {
-              className: 'relative my-1 ml-6 p-0',
+              // No margin: the paragraph's list padding spaces items, as for bullets.
+              className: 'relative m-0 ml-6 p-0',
               start: element.listStart,
               style: {
                 listStyleType: element.listStyleType,

@@ -63,6 +63,9 @@ describe('plot blocks', () => {
   const curve = (...points: unknown[]) => ({ name: 'c', points });
   it('accepts a plot with curves, reference lines and labelled points', () => {
     expect(questionBlockSchema.safeParse(plot()).success).toBe(true);
+    expect(
+      questionBlockSchema.safeParse(plot({ kind: 'scatter' })).success
+    ).toBe(true);
   });
   it.each([
     [
@@ -79,7 +82,8 @@ describe('plot blocks', () => {
     ['line axis', { lines: [{ axis: 'z', value: 1 }] }],
     ['unlabelled mark', { marks: [{ x: 1, y: 2 }] }],
     ['missing y title', { yTitle: undefined }],
-    ['unknown property', { kind: 'line' }],
+    ['unknown kind', { kind: 'bar' }],
+    ['unknown property', { shape: 'line' }],
   ])('refuses %s', (_, patch) => {
     expect(questionBlockSchema.safeParse(plot(patch)).success).toBe(false);
   });

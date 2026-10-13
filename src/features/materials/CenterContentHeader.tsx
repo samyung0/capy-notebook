@@ -47,6 +47,7 @@ import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { useOnlineStatus } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { MaterialModeToggle } from './MaterialModeToggle';
+import { MaterialShareDialog } from './MaterialShareDialog';
 import { type MaterialMode, materialModePolicy } from './modePolicy';
 import type { OpenItem } from './openItem';
 
@@ -320,6 +321,12 @@ export function Header({
   );
   const { menuItems: studyMenu } = useStudyActions(workspaceId);
   const office = !!file && !!officeFormatOf(file);
+  // A standalone material's owner shares it from here as from its card.
+  const shareable =
+    material && 'isOwner' in material && material.isOwner && !readOnly
+      ? material
+      : undefined;
+  const [sharing, setSharing] = useState(false);
   const name = (
     <>
       <FileIcon
@@ -406,6 +413,7 @@ export function Header({
           </ToolbarButton>
         }
         onDeleted={onDeleted}
+        onShare={shareable?.sharePath ? () => setSharing(true) : undefined}
         readOnly={
           readOnly ||
           (materialCapabilities ? !materialCapabilities.canEdit : false)
@@ -414,6 +422,12 @@ export function Header({
         showMove={!standalone}
         workspaceId={workspaceId}
       />
+      {sharing && shareable && (
+        <MaterialShareDialog
+          material={shareable}
+          onClose={() => setSharing(false)}
+        />
+      )}
     </>
   );
   // Office files: the top row carries the file, the second the runtime's menu

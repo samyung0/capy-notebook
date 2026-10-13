@@ -476,7 +476,12 @@ export async function renderExport(
           type: 'table',
         },
       ]);
-      const title = [block.title, block.unit, block.xTitle, block.yTitle]
+      const title = [
+        block.title,
+        block.type === 'plot' && block.unit,
+        block.xTitle,
+        block.yTitle,
+      ]
         .filter(Boolean)
         .join(' · ');
       return (

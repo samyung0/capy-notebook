@@ -34,11 +34,13 @@ export function ContentActions({
   display,
   hoverClassName,
   leadingItems = [],
+  menuAlign,
   menuTrigger,
   menuTriggerIcon,
   hoverIconContainerClassName,
   onDeleted,
   onMove,
+  onShare,
   propertiesClassName = 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm',
   propertyLabelClassName = 'text-fg-muted',
   renameFieldLabel,
@@ -56,11 +58,14 @@ export function ContentActions({
   display: 'hover' | 'menu';
   hoverClassName?: string;
   leadingItems?: MenuItem[];
+  menuAlign?: MenuProps['align'];
   menuTrigger?: ReactNode;
   menuTriggerIcon?: MenuProps['triggerIcon'];
   hoverIconContainerClassName?: string;
   onDeleted?: () => void;
   onMove?: (chapterId: string | null) => void;
+  /** Offers Share after Rename; the caller owns the dialog. */
+  onShare?: () => void;
   propertiesClassName?: string;
   propertyLabelClassName?: string;
   readOnly?: boolean;
@@ -81,8 +86,22 @@ export function ContentActions({
   const [moveOpen, setMoveOpen] = useState(false);
   const [cloneOpen, setCloneOpen] = useState(false);
 
+  // One order on every item menu (cards, rows, the open item's header):
+  // open or view, Rename, Share, Clone, Move, Properties, Delete.
   const items: MenuItem[] = [
     ...leadingItems,
+    ...(!readOnly && content
+      ? [
+          {
+            icon: 'pencil' as const,
+            label: m.action_rename(),
+            onClick: () => setRenameOpen(true),
+          },
+        ]
+      : []),
+    ...(onShare
+      ? [{ icon: 'link' as const, label: m.action_share(), onClick: onShare }]
+      : []),
     ...(canClone && content
       ? [
           {
@@ -94,13 +113,6 @@ export function ContentActions({
       : []),
     ...(!readOnly && content
       ? [
-          {
-            icon: 'write' as const,
-            label: m.action_rename(),
-            onClick: () => {
-              setRenameOpen(true);
-            },
-          },
           ...(showMove
             ? [
                 {
@@ -170,6 +182,7 @@ export function ContentActions({
       )}
       {display === 'menu' && (
         <Menu
+          align={menuAlign}
           items={items}
           trigger={menuTrigger}
           triggerIcon={menuTriggerIcon}

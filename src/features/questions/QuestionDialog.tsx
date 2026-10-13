@@ -633,10 +633,18 @@ function QuestionDialogSession({
           type="button"
         >
           {indented && <strong className="leading-tight">{mark}</strong>}
-          <span className="flex min-w-0 items-start gap-1.5">
+          {/* Rows the app names (not the author) take their own accent. */}
+          <span
+            className={cn(
+              'flex min-w-0 items-start gap-1.5',
+              item.kind === 'part' && 'text-tint-accent-1-fg',
+              item.kind === 'solution' &&
+                '-translate-x-0.5 text-tint-accent-2-fg'
+            )}
+          >
             {item.kind === 'solution' && (
               <Icon
-                className="mt-0.5 size-3 shrink-0 text-fg-muted"
+                className="mt-0.5 size-3 shrink-0"
                 name={expanded ? 'chevronDown' : 'chevronRight'}
               />
             )}
@@ -669,6 +677,7 @@ function QuestionDialogSession({
               <ToolbarButton
                 className="hover:bg-transparent"
                 label={m.question_ui_actions({ label })}
+                tooltip={false}
               >
                 <Icon name="moreVertical" />
               </ToolbarButton>
@@ -768,7 +777,8 @@ function QuestionDialogSession({
           <div
             aria-label={label}
             className={cn(
-              'relative outline-offset-4',
+              // Disabled preview controls would swallow the click.
+              'relative outline-offset-2 [&_:disabled]:pointer-events-none',
               active && 'outline-2 outline-action-accent'
             )}
             data-row-key={key}
@@ -935,7 +945,7 @@ function QuestionDialogSession({
                   : removePart(editing.part.id)
               }
               rounded="large"
-              size="lg"
+              size="md"
               type="button"
               variant="danger-light"
             >
@@ -947,7 +957,7 @@ function QuestionDialogSession({
               disabled={pending}
               onClick={() => void saveInner()}
               rounded="large"
-              size="lg"
+              size="md"
               type="button"
               variant="accent"
             >
@@ -960,7 +970,7 @@ function QuestionDialogSession({
               disabled={pending}
               onClick={onClose}
               rounded="large"
-              size="lg"
+              size="md"
               type="button"
               variant="ghost-hover"
             >
@@ -970,7 +980,7 @@ function QuestionDialogSession({
               disabled={pending}
               onClick={() => void saveQuestion()}
               rounded="large"
-              size="lg"
+              size="md"
               type="button"
               variant="accent"
             >
@@ -1248,7 +1258,7 @@ function QuestionDialogSession({
             </div>
             <div
               className={cn(
-                'min-w-0 px-1.5 md:block md:min-h-0 md:overflow-y-auto md:overscroll-contain',
+                'min-w-0 px-1 pt-1 md:block md:min-h-0 md:overflow-y-auto md:overscroll-contain',
                 mobileTab !== 'body' && 'hidden'
               )}
               ref={setBodyColumn}

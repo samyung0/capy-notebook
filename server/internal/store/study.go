@@ -32,8 +32,8 @@ type StudySummary struct {
 	RecentAttempts []Attempt   `json:"recentAttempts" nullable:"false"`
 	// Reviewable counts the rated questions and cards a review session draws on.
 	Reviewable int `json:"reviewable"`
-	// QuickReview is the Study tab's short practice (quickReview): one
-	// question, or up to quickReviewCards flashcards.
+	// QuickReview is the Study tab's short practice (quickReview): up to
+	// quickReviewCards flashcards; questions are left to review sessions.
 	QuickReview []ReviewItem `json:"quickReview" nullable:"false"`
 	// Suggestion is the workspace's strongest suggested review, for the
 	// refresh row; nil when nothing is worth reviewing.
@@ -54,7 +54,7 @@ type ReviewItem struct {
 	Question map[string]any         `json:"question,omitempty"`
 }
 
-// quickReviewCards caps a flashcard quick review; a question stands alone.
+// quickReviewCards caps a quick review.
 const quickReviewCards = 4
 
 // studyItem is a reviewable item read from a material's document.
@@ -296,29 +296,21 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	return out, nil
 }
 
-// quickReview ranks the items a suggested review would (scoreItems, so the
+// quickReview ranks the cards a suggested review would (scoreItems, so the
 // focus and item preferences apply) among those probably fading
-// (suggestedRecall). A question on top is shown alone; a card on top brings
-// the next highest cards, up to quickReviewCards.
+// (suggestedRecall) and takes the top quickReviewCards. Questions never
+// enter: answering one is not quick and does not fit the Study panel.
 func quickReview(items []scored) []ReviewItem {
 	var due []scored
 	for _, it := range items {
-		if it.r <= suggestedRecall {
+		if it.Kind == "card" && it.r <= suggestedRecall {
 			due = append(due, it)
 		}
 	}
 	sort.SliceStable(due, func(i, j int) bool { return due[i].score() > due[j].score() })
 	out := []ReviewItem{}
-	if len(due) == 0 {
-		return out
-	}
-	if due[0].Kind == "question" {
-		return append(out, due[0].ReviewItem)
-	}
-	for _, it := range due {
-		if it.Kind == "card" && len(out) < quickReviewCards {
-			out = append(out, it.ReviewItem)
-		}
+	for _, it := range due[:min(len(due), quickReviewCards)] {
+		out = append(out, it.ReviewItem)
 	}
 	return out
 }

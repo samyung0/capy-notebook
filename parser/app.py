@@ -50,7 +50,7 @@ from fastapi.responses import JSONResponse
 from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
-PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v13"
+PARSER_IMPLEMENTATION = "odl-2.5.7-refined-rapidocr-v14"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
     r"[0-9a-f]{40}", RELEASE_SHA
@@ -1215,20 +1215,14 @@ def _bundle_bytes(
     """Only what ingest reads: the receipt, blocks, refinement, a repaired PDF
     and the document's page-1 thumbnail (``page1.png``).
 
-    Figures are reached at question time by rendering the source page, so image
-    files and the ODL Markdown stay in the parse work directory.
+    Figures are reached at question time by rendering the source page; ODL
+    writes neither image files nor Markdown.
     """
     content_list = result.get("content_list") or []
     if not isinstance(content_list, list):
         raise TypeError("parser content list is invalid")
     if len(content_list) > MAX_CONTENT_BLOCKS:
         raise ValueError("parser content list contains too many blocks")
-    content_list = [
-        {k: v for k, v in item.items() if k != "img_path"}
-        if isinstance(item, dict)
-        else item
-        for item in content_list
-    ]
     manifest = json.dumps(
         {
             "schema": ARTIFACT_SCHEMA,

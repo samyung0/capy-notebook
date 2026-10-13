@@ -19,12 +19,14 @@ ships. The fixtures in `fixtures/budget/budget.json` stay inside the upload
 limits read from `deploy/ingest-host.env.example` (1,400 pages, 500 text-less
 pages, 900 s per document) and the 30 MiB Pro source cap, and cover a scan, a
 mixed deck, prose with deep headings, worked calculations, technical drawings,
+pages drawn as thousands of inline images,
 a 610-page figure textbook, a 1,016-page notation-dense book, the exact page
 cap, a 120-page scan and the three Office formats. The library books in
 `fixtures/budget/` are CC-licensed (see `ATTRIBUTION.md`).
 
 ```bash
 python bench/parsers/scripts/budget.py prepare --out OUT          # needs pymupdf
+PYTHON=python parser/java/build.sh                                 # parser venv, needs a JDK
 python bench/parsers/scripts/budget.py run --out OUT --inprocess   # parser venv
 python bench/parsers/scripts/budget.py compare BASE_OUT CANDIDATE_OUT
 ```
@@ -35,12 +37,39 @@ the parser image of the revision, starts it with the ingest host's limits and
 sends each fixture through the production artifact route, sampling the
 container's cgroup. `check --machine ci-ubuntu-24.04` fails on a crash, a page
 count or OCR count off its fixture, empty output, an OOM kill, an execution past
-the document deadline, or a budget breach. Budgets live in `budget.json` under
+the document deadline, or a budget breach (memory is the container's peak
+anonymous memory; its cgroup total, which counts page cache, is kept as
+`peak_cgroup_gib`). Budgets live in `budget.json` under
 the machine name and come from `propose` over three green CI runs (slowest plus
 25%), signed off by a developer; until then only the invariants are checked.
 Local in-process numbers vary by 15 to 30% between runs on a laptop and are
 for comparing two revisions run alternately, not for the budgets
 ([v13 report](reports/2026-10-12-parser-v13-budget.md)).
+
+## Holdout gate
+
+`scripts/holdout_gate.py` is the quality gate for a parser version bump,
+next to the budget. A subagent the developer does not read fetches about 30
+PDFs nobody has used before. They must fit the upload limits and cover scans,
+math, tables, slides, non-English text and long books. The subagent parses
+them with the current parser (`git archive` of `parser/`) and the candidate
+(each copy's `parser/java/build.sh` run first, where it exists),
+grades blinded pages with the
+[review rubric](fixtures/v12-mineru-review-rubric.md), and returns only what
+`score` prints:
+
+- per element, the wins, ties and losses with a document-resampled 95%
+  interval;
+- false headings and false tables;
+- documents worse overall;
+- crashes and time ratios;
+- heading totals.
+
+The run directory, `reports/local/holdout-<date>/`, is ignored by git and holds
+the details for a human to audit. A developer who opens it to diagnose a
+failure spends the set, and the next gate fetches a new one. Run it once per
+version bump, not per fix: scores read after every change still fit the
+parser to the set.
 
 ## Heading-role replay
 

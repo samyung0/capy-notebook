@@ -12,7 +12,7 @@ from collections.abc import Callable
 
 import pymupdf
 
-from . import context, geometry, source_grid
+from . import context, geometry, page_text, source_grid
 from .adapter import odl_content_list
 from .source_text import RAW_FLAGS
 from .table_html import table_html
@@ -615,7 +615,7 @@ def mixed_context(page: pymupdf.Page, region, lines: list[dict], table: dict) ->
     paragraphs = []
     unit_spans = []
     unit_label = re.compile(r"^(?:units?|单位|單位)\s*[:：]", re.IGNORECASE)
-    for source in page.get_text("dict", flags=geometry.TEXT_FLAGS)["blocks"]:
+    for source in page_text.page_dict(page)["blocks"]:
         source_lines = source.get("lines", [])
         if not source_lines or any(
             abs(line["dir"][0] - 1) > 0.01 for line in source_lines
@@ -733,28 +733,17 @@ def watermark_blocks(document: pymupdf.Document, blocks: list[dict]) -> list[dic
     signatures: dict[str, set[int]] = {}
     evidence = []
     for page in document:
-        traces = page.get_texttrace()
-        sizes = [
-            s["size"]
-            for s in traces
-            if abs(s["dir"][1]) < 0.01 and s.get("opacity", 1) > 0.5
-        ]
-        if not sizes:
+        facts = page_text.trace_facts(page)
+        ordinary = facts["ordinary_size"]
+        if ordinary is None:
             continue
-        ordinary = statistics.median(sizes)
-        eligible = [
-            s
-            for s in traces
-            if abs(s["dir"][1]) > 0.25
-            and s.get("opacity", 1) <= 0.2
-            and s["size"] > ordinary * 3
-        ]
+        eligible = [s for s in facts["faint_rotated"] if s["size"] > ordinary * 3]
         for s in eligible:
             value = "".join(chr(c[0]) for c in s["chars"]).strip()
             signatures.setdefault(value, set()).add(page.number)
         if not eligible:
             continue
-        for b in page.get_text("dict", flags=geometry.TEXT_FLAGS)["blocks"]:
+        for b in page_text.page_dict(page)["blocks"]:
             for line in b.get("lines", []):
                 if abs(line["dir"][1]) <= 0.25:
                     continue

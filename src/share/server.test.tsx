@@ -117,7 +117,7 @@ describe('renderSharePage', () => {
     // Embeds render on the server too, then hydrate from the state.
     expect(html).toContain('data-island="embed"');
     expect(html).toContain('Mitochondria');
-    // Charts and graphs hydrate for their click-to-preview.
+    // Charts and graphs hydrate for their double-click preview.
     expect(html).toContain('data-island="figure"');
     expect(html).toContain('data-island="html"');
     // Visitors don't get an interactive block's View source.

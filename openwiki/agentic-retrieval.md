@@ -305,7 +305,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v13` plus the release SHA.
+`odl-2.5.7-refined-rapidocr-v14` plus the release SHA.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -551,10 +551,15 @@ caught by the six tests, so they can lose their figure records. Stencil-mask
 rewriting and ODL's `--content-safety-off tiny` are not in v7 to v12; the
 tiny-text filter stays on.
 
-Parser v13 (2026-10-12; evidence in
-`bench/parsers/reports/2026-10-12-v12-vs-mineru-unseen-books.md`, timed by the
-parser budget in `bench/parsers/scripts/budget.py`) adds six native repairs;
-the chunker stays at v12:
+Parsers v13 (2026-10-12; evidence in
+`bench/parsers/reports/2026-10-12-v12-vs-mineru-unseen-books.md`) and v14
+(2026-10-13; evidence in `bench/parsers/reports/2026-10-13-fresh-batch-and-next.md`),
+both timed by the parser budget in `bench/parsers/scripts/budget.py`, add
+fourteen native repairs; the chunker stays at v12. v13 has symbol fonts,
+calculation lines, vector figures, depth levels, label-only bookmarks,
+front-matter and folio-less running heads. v14 adds the figure guards, margin
+runs, list and layout headings, line joins, captions, formula structure and
+empty tables, plus the speed work and the Java entry point:
 
 - **Symbol fonts** (`fonts.map_symbol_fonts`, before Java). A font named
   Symbol or SymbolMT whose `ToUnicode` sends codes to U+F020–U+F0FF (Word's
@@ -576,7 +581,15 @@ the chunker stays at v12:
   of it and clear of image, table and equation blocks, becomes an `image`
   block with `_source_role: vector-figure`. Text blocks inside it, and short
   ones (at most six words, no `=`) within 30 pt, become its `figure_labels`
-  and leave the body: never body text or headings. A cluster of only
+  and leave the body: never body text or headings; a source or note line
+  ("Source:", "Data source:", "Quelle:", "出典：") becomes its `image_footnote`.
+  A cluster holding any other sentence (25 characters ending in . ? ! 。？！),
+  code (two of `{ } ; := >>`) or table rows ODL merged into one block (twelve
+  tokens mixing three words and three amounts) is a callout, a listing's frame
+  or a table and stays text; a chart's tick run ("2000 2001 …") is a label.
+  On 30 unseen documents this cut false figures in a financial statement
+  (14 → 3) and a code-heavy book (252 → 100) while keeping the charts of the
+  agency reports and white papers. A cluster of only
   axis-aligned lines and boxes holding six or more text blocks is a ruled
   table ODL missed and stays as it was. The chunker indexes a picture's
   caption, footnote and labels on its `[Figure]` line (only v13 blocks carry
@@ -590,6 +603,88 @@ the chunker stays at v12:
   depth in the chunker's stack; banner boundaries and book-title headings pop
   without pushing, as in the chunker. Section paths are unchanged by
   construction; a heading without text loses its level.
+- **Margin runs** (`headings._margin_runs`). The folio rules need span
+  evidence and a folio at either end; many running heads and feet have
+  neither (letter-spaced or CJK text, "February 2022 Page 2 of 159",
+  "– 2 – Drucksache", "特殊學校課程指引 1-2", "270CHAPTER 10."). Blocks in the
+  margin band are grouped by side and their text with digits folded; a group is
+  furniture when one of its numbers, at any position, keeps one offset from
+  the page index on three pages, or when it covers a fifth of the document. A
+  top group also needs eight pages and a twentieth of the document, so a
+  page-top "Exercise N" series stays a heading. On 49 documents (30 unseen)
+  it removed 841 heads and feet, all running furniture by inspection
+  (including Marine Ecology's one-sided Tufte heads), and changed no section
+  path except to drop such a head from it.
+- **Headings folded into list items** (`list_headings.split_headings`,
+  before the level stages). ODL reads a numbered section heading ("1.5 Noise
+  models", "5.10 Examine system telemetry data", "（3）社会教育施設…",
+  "Artículo 18. Organización.") as a list item, alone or with its paragraph,
+  so later chunks kept the previous section's path. Source rows inside a list
+  block (a number set apart from its title is one row) that open with
+  section numbering are headings when the number is larger or heavier than
+  the page's body (weight read from the bold flag or the font name: CMBX,
+  -Medium, -DeBold) and most of the row is too, italic included. The list
+  splits into the items before, a heading (`_source_role: list-heading`,
+  level from a sibling with the same numbering, else the dotted depth), and a
+  paragraph after. Not headings: a bare integer ("3 Anaphase I"), a lower-case
+  letter (exercise parts), a question, a title of three or more words ending
+  in a full stop (instructions), a run-in label ("9.4. Corollary. Under…"),
+  contents leaders, more than ten words; a list whose heading is followed by
+  another heading or by short entries only (a contents list, a bold numbered
+  list) stays whole. On 49 documents it split 455 headings in 21 of them
+  (Caltech's 52 sections, the Spanish law's 143 articles) and changed 1,143 of
+  10,512 chunk paths in those documents, by inspection corrections apart from
+  a flow-chart box label.
+- **Formula structure** (`scripts.restore_structure`, after exponents). ODL
+  flattens what the page draws in two dimensions (`ft3`, numerator and
+  denominator run together, interleaved error bars). From the text layer's
+  geometry the stage writes plain linear math: a smaller glyph run raised or
+  lowered against its base glyph is a script (`ft^3`, `H_2O`, `Ca^{2+}`,
+  `0.09^{+0.03}_{−0.04}`); a drawn bar with text centred above and below is a
+  fraction (`(num)/(den)`); a radical stroke meeting a bar is a root; TeX
+  big operators carry their limits. Display rows replace the ODL text holding
+  exactly their glyphs, script words replace their flattened form only when
+  every occurrence on the page agrees; otherwise it abstains. Superscript
+  digits after prose words or punctuation (footnote and citation markers),
+  ordinals and ™ stay untouched. Graded blind on 47 formula pages (269
+  formulas): good 46 → 180, none worse, no prose damaged. Fractions without a
+  drawn bar (Perelman) and formulas set as images still need recognition.
+- **Headings by the document's own styles** (`layout_headings.recall_headings`,
+  after list headings). ODL reads many headings as paragraphs or list items.
+  No model: a style census over up to 300 pages (size, weight from the flag or
+  font name, capitals, colour) finds the body style and line gap; a heading
+  line is in a rarer, larger or heavier style (capitals or colour only with
+  numbering), short and alone on its row, below a gap larger than the body's,
+  and not a running head (exact text in a margin band on three pages, or a
+  number tracking the page), caption, formula, code, bullet, contents entry
+  or label inside a picture or near a drawing without body text after it. A
+  block of such lines becomes a heading (`_source_role: layout-heading`), a
+  mixed block or list splits; blocks an earlier stage gave a role are left
+  alone; levels follow the parser's headings in the same style, numbering
+  depth, or the style's rank. On 12 held-out books with teacher labels,
+  line-level heading F1 0.77 → 0.81 (the trained line model of the same
+  experiment: 0.85); on 72 blind-review pages 0.82 → 0.84 at precision 0.97.
+- **Line joins** (`joins.repair_joins`, before page numbers). ODL joins a
+  block's lines with a space and drops line-end hyphens. Checked against the
+  page's source lines: a CJK line that wraps (it reaches the block's right
+  edge) joins the next CJK line without the space; a short line keeps it (a
+  list of names). A dropped hyphen returns when the document prints the
+  hyphenated form elsewhere more often than the joined one, or, with no such
+  evidence, before a digit or a capital ("mid-1950s") or inside an address
+  ("merriam-webster.com"), unless the first part is camel case (code). On 49
+  documents: 2,484 CJK spaces removed (the Hong Kong guide and the MEXT white
+  paper) and 996 hyphens restored ("long-term" 84 times in the CDC guideline).
+- **Captions and note labels are not headings** (`levels.demote_fragments`).
+  A heading that is a figure or table label with a number ("Figure 4.10:",
+  "Table A-2.", "Abbildung 3:", "Übersicht 2:", "圖 2.1") or a bare "Notes:" /
+  "Sources:" becomes body text (`_source_role: caption`), unless the outline
+  lists it; "Table of Contents", "Tableaux" and "Chart Gallery" stay.
+- **Figure captions** (`pictures.attach_captions`, after inline formulas). ODL
+  attached a caption to none of 5,841 pictures on 49 documents. A paragraph
+  starting with a figure label and number (not "Figure 2.18 illustrates…"),
+  right after the picture in reading order (or right before it), on its page,
+  within 6% of the page height and overlapping it, becomes its
+  `image_caption`, indexed on the picture's `[Figure]` line: 832 pictures.
 - **Label-only bookmarks** (`outline_levels._match`). An outline entry whose
   title is only a label ("UNIT 3") matches by its whole title; Waterworks'
   units 3 to 14 had sat under "UNIT 2: GEOMETRIC SHAPES".
@@ -598,6 +693,36 @@ the chunker stays at v12:
   that passes shares its top or bottom and height: Lessons' Roman "viii
   CONTENTS" heads on the body's running-head line. Measured on 10 books, it
   changes only those front-matter chunks (63 of 5,449).
+- **Folio-less running heads** (`headings._repeated_heads`). The page's first
+  (or last) line in the top (or bottom) fifth, no larger than the page's body
+  text, whose exact text recurs in the same place on three pages, two of them
+  at most two pages apart, in a band where another text does the same or
+  covering a quarter of the book, is a banner: LaTeX's "CHAPTER 8. DERIVATION
+  SYSTEMS" at y = 0.117 with its folio in a separate block. A title whose
+  number rises with the page stays with the folio rules, so "Exercise N" and a
+  label atop three pages stay headings. On 19 books it removed 448 heads in
+  Open Logic (708 of 2,169 chunk paths lose a "› CHAPTER 1. SETS" tail), one
+  "Preface" head elsewhere, and changed no other path.
+ODL runs as a library under `parser/java/CapyMain.java` (built by
+`parser/java/build.sh`, in the image by a JDK build stage; the runtime keeps a
+JRE): the same options and JSON as ODL's CLI, plus `capy-images.json`, the PDF
+object of the image each picture element draws. veraPDF resolves it while
+parsing; picture triage digests each object once instead of replaying every
+page in MuPDF to find its images (18.6 s of the textbook's parse), and replays
+only pages with inline images, where an exact box key (the image's
+placement) answers almost every picture: a 3,311-page manual has pages with
+17,561 inline-image pictures, which an all-pairs overlap search turned into
+hours.
+
+Speed (same output). Inside `parse_pdf`, `page_text.session` keeps each page's
+`get_text("dict")` and words for the nine stages that read them, up to 100,000
+spans (about 90 MiB; pages past it are read again), and keeps only the facts two
+stages need from the text trace. ODL writes JSON only, with no image files
+(above). On the budget fixtures the Python stages are 11–38% faster with the
+cache, and the figure-heavy textbook's whole parse falls from 189 s to 87 s,
+its Java step from 127 s to 8 s. ODL's `--threads` gave identical output and no
+speed, so it stays at 1.
+
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
 tried, for ODL boxes shorter than their glyphs: spans whose horizontal centre
@@ -809,9 +934,12 @@ file directly. That local atomic ZIP is the required parser-to-ingest handoff
 `parsed.pdf` only for repaired native PDF sources, and an optional
 `page1.png`, page 1 of the PDF the parse held, 200 px wide, for the file's
 thumbnail, [thumbnails.md](thumbnails.md)). The bundle carries only what
-ingest reads: no figure image files, no ODL Markdown, and image blocks keep their
-geometry and caption but no `img_path`, since figures are reached at question
-time by rendering the source page (`capture_page`). The worker rejects any
+ingest reads: image blocks keep their geometry and caption but no file, since
+figures are reached at question time by rendering the source page
+(`capture_page`). ODL runs with `--format json --image-output off`: it writes no
+image files or Markdown (decoding and re-encoding every picture was 85% of its
+time on a figure-heavy textbook), and picture triage identifies repeats by
+MuPDF's image digest instead. The worker rejects any
 other entry. Office bundles contain no PDF. The parser freezes page text and visible-heading proofs before
 discarding the temporary conversion, preserving downstream confidence/heading checks.
 
@@ -2007,14 +2135,20 @@ current pending changes applied. Embedded source instructions remain untrusted.
 5. The final answer is an OpenUI Lang program (`retrieval/openui.py`): a
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
-   `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`,
-   `ScatterChart`, `Plot`, `Diagram`, `Interactive`, `AskUser` and their
+   `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`, `Plot`,
+   `Diagram`, `Interactive`, `AskUser` and their
    items). The catalog lives in
    `src/features/workspace/chat/schema.ts`; `pnpm gen:openui` renders it into
    the prompt text `prompts/openui_lang.txt` (appended to the chat system
    prompt, about 2,000 tokens) and the spec `generated/openui_library.json`
    (component names with their positional prop names), and
-   `library.test.ts` fails when either file drifts. Prose-bearing blocks name
+   `library.test.ts` fails when either file drifts. `Chart` and `Plot` are
+   the shared chart and plot question blocks with chat's `passages` and
+   `illustrative` on top: `chartBlock` and `plotBlock` in `chat/answer.ts`
+   check them with the block schema, so chat, notes and quizzes take the same
+   fields and draw them with the same renderers. A plot's `kind` is `line`
+   (curves) or `scatter` (dots); there is no separate scatter chart.
+   Prose-bearing blocks name
    the shown passage numbers in a `passages` argument. The agent streams the
    program through unchanged (`LangRenderer`, minus a code fence the model may
    wrap it in) and re-parses completed statements as they arrive, so the
@@ -2047,7 +2181,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    text projection; failed Markdown rendering stays inside the answer and shows
    the chat error. Narration blocks use the same renderer.
    `messages.content` retains the program; checkpoint summaries receive its text
-   projection including series measurements and scatter x/y coordinates. Prior
+   projection including series measurements and plot points. Prior
    assistant turns replay the program itself. Build turns answer the same way.
    Before the final citation list is persisted, `citation_regions.py` matches each
    cited chunk's complete text uniquely inside its parser regions in the source

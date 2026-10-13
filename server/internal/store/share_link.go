@@ -42,6 +42,12 @@ func SharePath(secret []byte, workspaceID string) string {
 	return "/w/" + ShareToken(secret, workspaceID)
 }
 
+// MaterialSharePath is m's signed share link, empty in a workspace or
+// embedded in a note.
+func (s *Store) MaterialSharePath(m Material) string {
+	return materialSharePath(s.shareLinkSecret, string(m.Kind), m.ID, m.WorkspaceID, m.ParentMaterialID)
+}
+
 // materialSharePath is the signed link of a standalone quiz, flashcard set or
 // note; workspace and embedded materials have no sharing of their own.
 func materialSharePath(secret []byte, kind, id, workspaceID, parentID string) string {

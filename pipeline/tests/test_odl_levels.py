@@ -8,7 +8,9 @@ import pymupdf
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "parser"))
+from odl.layout_headings import recall_headings
 from odl.levels import backbone_levels, demote_contents_lines, demote_fragments
+from odl.list_headings import numbered_heading, split_headings
 
 
 def _doc(pages: int, toc=None) -> pymupdf.Document:
@@ -52,6 +54,19 @@ def _block(text, page, level=None, y=100, **extra):
         ("10.1.1 di 'at, in'", None),
         ("Introduction to sets", None),
         ("Ohm's Law: V = IR", None),
+        # Figure and table captions are body text; titles that only start
+        # with the label word stay.
+        ("Figure 4.10: Effects of gate imperfections", "caption"),
+        ("Abbildung 3: Struktureller Primärsaldo", "caption"),
+        ("Table A-2. Evidence Base for KQs", "caption"),
+        ("Table II", "caption"),
+        ("Übersicht 2: Wesentliche Kennziffern", "caption"),
+        ("Notes:", "caption"),
+        ("Sources:", "caption"),
+        ("圖 2.1 學會學習", "caption"),
+        ("Table of Contents", None),
+        ("Tableaux", None),
+        ("Chart Gallery", None),
     ],
 )
 def test_formula_fragments_and_run_in_labels_become_body_text(text, role):
@@ -246,3 +261,120 @@ def test_chapters_with_a_merged_part_tab_stay_chapters():
     # Each section nests under its own chapter, none under the chapter before.
     sections = [b["text_level"] for b in result if b["text"] == "SECTION IN CAPITALS"]
     assert sections == [5] * 5
+
+
+def _list_page(lines):
+    """One page with (text, size) lines from y = 100, and its list block. A line
+    given as several texts sets them apart on one row."""
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    y = 100
+    for texts, size in lines:
+        x = 60
+        for text in [texts] if isinstance(texts, str) else texts:
+            page.insert_text((x, y), text, fontsize=size)
+            x += pymupdf.get_text_length(text, fontsize=size) + 20
+        y += size + 8
+    box = [60 / 0.6, 85 / 0.8, 560 / 0.6, (y + 5) / 0.8]
+    return document, box
+
+
+def test_a_numbered_heading_folded_into_a_list_item_splits_it():
+    # Caltech: "1.5 Noise models" and its paragraph read as one list item; the
+    # number is set apart from the title on the same row.
+    document, box = _list_page(
+        [
+            ("Body text of the previous section ends here.", 10),
+            ("Another body line keeps the page body style.", 10),
+            (["1.5", "Noise models for quantum computing"], 14),
+            ("In this section we explore noise models.", 10),
+        ]
+    )
+    item = (
+        "Body text of the previous section ends here. Another body line keeps the "
+        "page body style. 1.5 Noise models for quantum computing In this section "
+        "we explore noise models."
+    )
+    blocks = [{"type": "list", "list_items": [item], "page_idx": 0, "bbox": box}]
+    with document:
+        result = split_headings(blocks, document)
+    assert [b["type"] for b in result] == ["list", "text", "text"]
+    assert result[1]["text"] == "1.5 Noise models for quantum computing"
+    assert result[1]["text_level"] == 2 and result[1]["_source_role"] == "list-heading"
+    assert result[2]["text"] == "In this section we explore noise models."
+
+
+def test_a_list_of_numbered_heading_styled_lines_stays_a_list():
+    document, _ = _list_page(
+        [("Body text sets the page body style here.", 10)] * 3
+        + [("1. Gather the materials", 14), ("2. Mix them well", 14), ("3. Bake", 14)]
+    )
+    blocks = [
+        {
+            "type": "text",
+            "text": "Body text sets the page body style here.",
+            "page_idx": 0,
+            "bbox": [100, 110, 900, 160],
+        },
+        {
+            "type": "list",
+            "list_items": ["1. Gather the materials", "2. Mix them well", "3. Bake"],
+            "page_idx": 0,
+            "bbox": [100, 160, 900, 260],
+        },
+    ]
+    with document:
+        assert split_headings(blocks, document) == blocks
+
+
+@pytest.mark.parametrize(
+    ("text", "heading"),
+    [
+        ("1.5 Noise models for quantum computing", True),
+        ("34. Gesundheitsdatennutzungsgesetz (GDNG)", True),
+        ("Artículo 18. Organización.", True),
+        ("（3）社会教育施設等における学習機会の提供", True),
+        ("C. Pharmacotherapy", True),
+        ("IV. The Avant-Garde", True),
+        ("2. How would you have resolved the conflict? Why?", False),
+        ("1. Define healthcare management.", False),
+        ("9.4. Corollary. Under assumptions of the previous corollary", False),
+        ("3 Anaphase I", False),
+        ("0.000 1.00", False),
+        ("76 % des Français ne se sentent pas exposés", False),
+        ("M. Olivier", False),
+        ("a. Explain what is happening in the program", False),
+        ("I. INONDATIONS SURVENUES ............ 19", False),
+    ],
+)
+def test_numbered_heading_titles(text, heading):
+    assert numbered_heading(text) is heading
+
+
+def test_a_bold_heading_odl_read_as_a_paragraph_is_recalled():
+    # The document's body is 10 pt regular; "Water Supply Systems" is 14 pt bold
+    # on its own row with space above, read by ODL as body text.
+    document = pymupdf.open()
+    body = "Body text of the section runs on across the line and fills it out."
+    for _ in range(3):
+        page = document.new_page(width=600, height=800)
+        y = 80
+        for _ in range(12):
+            page.insert_text((60, y), body, fontsize=10)
+            y += 13
+    page = document[1]
+    page.insert_text((60, 260), "Water Supply Systems", fontsize=14, fontname="hebo")
+    page.insert_text((60, 278), body, fontsize=10)
+    blocks = [
+        {
+            "type": "text",
+            "text": "Water Supply Systems",
+            "page_idx": 1,
+            "bbox": [95, 312, 450, 330],
+        },
+        {"type": "text", "text": body, "page_idx": 1, "bbox": [95, 335, 950, 352]},
+    ]
+    with document:
+        result = recall_headings(blocks, document)
+    assert result[0]["text_level"] and result[0]["_source_role"] == "layout-heading"
+    assert result[1] == blocks[1]

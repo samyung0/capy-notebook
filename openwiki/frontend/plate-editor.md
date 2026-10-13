@@ -586,7 +586,8 @@ Their Markdown fences (` ```chart `, ` ```plot `, ` ```graph `) hold that block'
 JSON (`customBlockNode` in `blocks/shared.ts`, checked by the shared question block
 schema, so a refused block fails the agent's write); the agent's note format
 (`noteMarkdownDescription`) documents the chart and plot fences. A plot (see
-[question-bank](../question-bank.md#editing-and-assets)) has no editor: its hover
+[question-bank](../question-bank.md#editing-and-assets)), drawn as curves or, with
+`kind: "scatter"`, as dots, comes only from the agent and has no editor: its hover
 toolbar has Copy and Delete but no Edit, and exports draw it like a chart with its
 points as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
@@ -1376,9 +1377,8 @@ their caps (`maxLength`; a text editor takes back an edit past its cap). A
 quiz edits on its material page (`QuizEditor` in the center pane's Edit) with
 no Save or Reset: the cloud status follows the title in the header, Undo and
 Redo sit beside the View switch, renaming goes through the item's Rename,
-Edit (ghost-hover) and Remove (danger-light) sit at each question's top right
-on desktop (`QuestionView`'s `actions`) and on their own line under it at the
-right on phones, and an
+Edit (ghost-hover) and Remove (danger-light) sit on a row under each question
+at the right, and an
 incomplete question shows a line under it saying what it lacks
 (`incomplete.ts`). Readers (the attempt page, the workspace quiz View, note
 embeds in View) paint the stored questions and then follow the content room

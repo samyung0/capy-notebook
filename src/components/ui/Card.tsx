@@ -64,6 +64,10 @@ export function Card({
         interactive &&
           // transitions.dev Avatar group hover: a direct lift, a bouncy return.
           'cursor-pointer transition-all duration-320 ease-(--motion-ease-bounce-strong) hover:-translate-y-1 hover:shadow-card hover:ease-(--motion-ease-smooth-out) active:scale-[0.98] active:duration-100',
+        // A menu inside the card is not a press on the card, and the open
+        // menu takes the pointer's hover: hold the lift so neither wobbles it.
+        interactive &&
+          'has-[[data-slot=dropdown-menu-trigger][data-state=open]]:-translate-y-1 has-[[data-slot=dropdown-menu-trigger]:active]:scale-100 has-[[data-slot=dropdown-menu-trigger][data-state=open]]:shadow-card',
         (!hoverBackgroundColorChange || !interactive) && 'hover:bg-unset', //todo
         className
       )}

@@ -1,5 +1,5 @@
 import { useMutation } from '@tanstack/react-query';
-import { type ReactNode, useState } from 'react';
+import { useState } from 'react';
 import { api } from '@/api/client';
 import type {
   CheckReviewItemReq,
@@ -14,37 +14,31 @@ import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 
-/* One review question, shared by review sessions and the Study tab's Quick
-   review: answered the quiz page's way, then shown checked, read only. */
+/* One question of a review session: answered the quiz page's way, then shown
+   checked, read only. */
 
-/** A checked question: its result with the key, read only. `action` sits at
- * the row's end (Quick review's Done). */
+/** A checked question: its result with the key, read only. */
 export function CheckedQuestion({
   title,
   answers,
   question,
-  action,
 }: {
   title: string;
   answers: Answers;
   question?: Question;
-  action?: ReactNode;
 }) {
   return (
     <>
       {question && (
         <QuestionRunner answers={answers} disabled question={question} review />
       )}
-      <div className="flex items-center justify-between gap-3">
-        <span className="t-meta text-fg-muted">{m.review_from({ title })}</span>
-        {action}
-      </div>
+      <span className="t-meta text-fg-muted">{m.review_from({ title })}</span>
     </>
   );
 }
 
 /** Check sends the answers; the server grades them, records the rating (in
- * `session` when there is one) and returns the question's key. */
+ * the session) and returns the question's key. */
 export function QuestionItem({
   item,
   onChecked,
@@ -52,7 +46,7 @@ export function QuestionItem({
 }: {
   item: ReviewItem;
   onChecked: (graded: GradedQuestion, answers: Answers) => void;
-  session?: ReviewSessionRef;
+  session: ReviewSessionRef;
 }) {
   const [answers, setAnswers] = useState<Answers>({});
   const { isPending: grading, mutate: check } = useMutation({
@@ -62,7 +56,7 @@ export function QuestionItem({
         answers,
         itemId: item.itemId,
         materialId: item.materialId,
-        ...(session ? { session } : {}),
+        session,
       } satisfies CheckReviewItemReq),
     onError: () =>
       userToast({

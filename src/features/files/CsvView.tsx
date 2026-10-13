@@ -1,13 +1,71 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import {
   CSV_PREVIEW_MAX_COLUMNS,
   CSV_PREVIEW_MAX_ROWS,
-  type CsvPreviewCell,
+  type CsvPreviewColumn,
   type CsvPreviewResult,
 } from './csvPreviewCore';
 import { FileError } from './FileStates';
+
+/** The first column's extra left padding (pl-5 over px-3) on top of the
+ *  measured width, so it truncates at the same point as the others. */
+const FIRST_COLUMN_INSET_PX = 8;
+
+type SortDirection = 'asc' | 'desc';
+interface Sort {
+  column: number;
+  direction: SortDirection;
+}
+
+const collator = new Intl.Collator(undefined, {
+  numeric: true,
+  sensitivity: 'base',
+});
+
+/** Sorts body rows; empty cells stay last in both directions. */
+function sortRows(rows: string[][], sort: Sort, numeric: boolean): string[][] {
+  const sign = sort.direction === 'asc' ? 1 : -1;
+  return [...rows].sort((a, b) => {
+    const x = a[sort.column]?.trim() ?? '';
+    const y = b[sort.column]?.trim() ?? '';
+    if (!(x && y)) return Number(!x) - Number(!y);
+    const order = numeric ? Number(x) - Number(y) : collator.compare(x, y);
+    return order * sign;
+  });
+}
+
+function nextSort(current: Sort | null, column: number): Sort | null {
+  if (current?.column !== column) return { column, direction: 'asc' };
+  return current.direction === 'asc' ? { column, direction: 'desc' } : null;
+}
+
+function SortChevrons({ direction }: { direction: SortDirection | null }) {
+  return (
+    <span aria-hidden className="flex shrink-0 flex-col gap-0.5">
+      <svg
+        className={cn(
+          'h-[4.5px] w-[7px]',
+          direction === 'asc' ? 'fill-fg' : 'fill-placeholder'
+        )}
+        viewBox="0 0 8 5"
+      >
+        <path d="M4 0 8 5H0z" />
+      </svg>
+      <svg
+        className={cn(
+          'h-[4.5px] w-[7px]',
+          direction === 'desc' ? 'fill-fg' : 'fill-placeholder'
+        )}
+        viewBox="0 0 8 5"
+      >
+        <path d="M0 0h8L4 5z" />
+      </svg>
+    </span>
+  );
+}
 
 type WorkerResponse =
   | { result: CsvPreviewResult; type: 'result' }
@@ -23,6 +81,7 @@ export default function CsvView({
 }) {
   const [result, setResult] = useState<CsvPreviewResult | null>(null);
   const [error, setError] = useState(false);
+  const [sort, setSort] = useState<Sort | null>(null);
 
   useEffect(() => {
     const worker = new Worker(new URL('./CsvView.worker.ts', import.meta.url), {
@@ -30,6 +89,7 @@ export default function CsvView({
     });
     setResult(null);
     setError(false);
+    setSort(null);
     worker.addEventListener(
       'message',
       (event: MessageEvent<WorkerResponse>) => {
@@ -43,6 +103,13 @@ export default function CsvView({
       worker.terminate();
     };
   }, [url]);
+
+  const body = useMemo(() => {
+    if (!result) return [];
+    const rows = result.rows.slice(1);
+    if (!sort) return rows;
+    return sortRows(rows, sort, result.columns[sort.column]?.numeric ?? false);
+  }, [result, sort]);
 
   if (error) {
     return (
@@ -60,26 +127,53 @@ export default function CsvView({
     );
   }
 
+  const header = result.rows[0] ?? [];
   return (
     <div className="flex h-full flex-col gap-2">
-      <div className="min-h-0 flex-1 overflow-auto rounded-card border border-line">
-        <table className="w-max min-w-full border-collapse text-sm">
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-max table-fixed border-separate border-spacing-0 text-sm">
+          <colgroup>
+            {result.columns.map((column, index) => (
+              <col
+                key={index}
+                style={{
+                  width:
+                    column.width + (index === 0 ? FIRST_COLUMN_INSET_PX : 0),
+                }}
+              />
+            ))}
+          </colgroup>
+          <thead>
+            <tr>
+              {result.columns.map((column, index) => (
+                <HeaderCell
+                  column={column}
+                  direction={sort?.column === index ? sort.direction : null}
+                  key={index}
+                  label={header[index] ?? ''}
+                  onSort={() => setSort((current) => nextSort(current, index))}
+                />
+              ))}
+            </tr>
+          </thead>
           <tbody>
-            {result.rows.map((row: CsvPreviewCell[], rowIndex) => (
-              <tr
-                className={
-                  rowIndex === 0 ? 'bg-surface-dark font-medium' : undefined
-                }
-                key={rowIndex}
-              >
-                {row.map((cell, columnIndex) => (
-                  <td
-                    className="max-w-90 truncate border border-line px-2.5 py-1.5"
-                    key={columnIndex}
-                  >
-                    {cell == null ? '' : String(cell)}
-                  </td>
-                ))}
+            {body.map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {result.columns.map((column, columnIndex) => {
+                  const text = row[columnIndex] ?? '';
+                  return (
+                    <td
+                      className={cn(
+                        'truncate border-line border-b px-3 py-1.5 first:pl-5 last:border-r',
+                        column.numeric && 'text-right'
+                      )}
+                      key={columnIndex}
+                      title={text}
+                    >
+                      {text}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -94,5 +188,43 @@ export default function CsvView({
         </p>
       )}
     </div>
+  );
+}
+
+function HeaderCell({
+  column,
+  direction,
+  label,
+  onSort,
+}: {
+  column: CsvPreviewColumn;
+  direction: SortDirection | null;
+  label: string;
+  onSort: () => void;
+}) {
+  return (
+    <th
+      aria-sort={
+        direction === 'asc'
+          ? 'ascending'
+          : direction === 'desc'
+            ? 'descending'
+            : 'none'
+      }
+      className="sticky top-0 z-1 border-line bg-page p-0 text-left font-medium first:*:pl-5 last:border-r"
+    >
+      <button
+        className={cn(
+          'flex w-full cursor-pointer items-center gap-1.5 px-3 py-2 focus-visible:outline-2 focus-visible:outline-action focus-visible:-outline-offset-2',
+          column.numeric && 'flex-row-reverse'
+        )}
+        onClick={onSort}
+        title={label}
+        type="button"
+      >
+        <span className="min-w-0 truncate">{label}</span>
+        <SortChevrons direction={direction} />
+      </button>
+    </th>
   );
 }

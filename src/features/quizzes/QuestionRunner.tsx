@@ -61,7 +61,6 @@ export function isAnswered(value: Answer | undefined): boolean {
  * read-only view (quiz preview, quiz editor, question bank, question dialog).
  */
 export function QuestionRunner({
-  actions,
   question,
   answers,
   onChange,
@@ -72,8 +71,6 @@ export function QuestionRunner({
   renderBlock,
   frameAnswer,
 }: {
-  /** Controls at the question's top right (QuestionView `actions`). */
-  actions?: ReactNode;
   /** Learner questions (no answer key) only render without `review`, which
    * shows a question graded on the server: its key and each part's `awarded`. */
   question: Question | LearnerQuestion;
@@ -136,7 +133,6 @@ export function QuestionRunner({
   if (!review)
     return (
       <QuestionView
-        actions={actions}
         question={question}
         questionNumber={questionNumber}
         renderAnswer={answer}
@@ -146,7 +142,6 @@ export function QuestionRunner({
     );
   return (
     <QuestionReview
-      actions={actions}
       question={question as Question}
       questionNumber={questionNumber}
       renderAnswer={answer}

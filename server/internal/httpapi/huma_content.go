@@ -40,6 +40,9 @@ type reorderContentInput struct {
 type filesOutput struct {
 	Body []apimodel.File `nullable:"false"`
 }
+type workspaceRecentOutput struct {
+	Body apimodel.WorkspaceRecent
+}
 type filesListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
@@ -78,6 +81,7 @@ func (a *api) registerContent(api huma.API) {
 
 	reg(api, http.MethodGet, "/api/files", "listOwnedFiles", tag, "List files across the caller's owned or member workspaces", http.StatusOK, a.listOwnedFiles)
 	reg(api, http.MethodGet, "/api/workspaces/{id}/files", "listWorkspaceFiles", tag, "List workspace files", http.StatusOK, a.listWorkspaceFiles)
+	reg(api, http.MethodGet, "/api/workspaces/{id}/recent", "listWorkspaceRecent", tag, "List a workspace's newest files and materials", http.StatusOK, a.listWorkspaceRecent)
 	reg(api, http.MethodGet, "/api/files/{id}", "getFile", tag, "Get a file", http.StatusOK, a.getFile)
 	reg(api, http.MethodGet, "/api/files/{id}/links", "getFileLinks", tag, "Get presigned file reads", http.StatusOK, a.getFileLinks)
 	reg(api, http.MethodPatch, "/api/files/{id}", "updateFile", tag, "Update a file", http.StatusOK, a.updateFile)
@@ -185,6 +189,25 @@ func (a *api) listWorkspaceFiles(ctx context.Context, in *workspaceIDInput) (*fi
 		return nil, hErr(err)
 	}
 	return &filesOutput{Body: res}, nil
+}
+
+// workspaceRecentCount is the empty viewer's 2x2 quick-open grid.
+const workspaceRecentCount = 4
+
+// listWorkspaceRecent serves the empty viewer's grid to every reader of the
+// workspace (members, link and public readers alike), unlike the owned lists.
+func (a *api) listWorkspaceRecent(ctx context.Context, in *workspaceIDInput) (*workspaceRecentOutput, error) {
+	if _, err := a.workspaceRead(ctx, in.ID); err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.ListWorkspaceRecent(ctx, in.ID, workspaceRecentCount)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if err := a.signFileThumbnails(ctx, res.Files); err != nil {
+		return nil, hErr(err)
+	}
+	return &workspaceRecentOutput{Body: res}, nil
 }
 
 // signFileThumbnails gives each row its hour-stable thumbnail link. Callers

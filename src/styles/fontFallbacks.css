@@ -36,9 +36,11 @@
   src:
     local("Arial Bold"), local("Arial-BoldMT"), local("Liberation Sans Bold");
   font-weight: 750 900;
-  size-adjust: 98.1%;
-  ascent-override: 101.94%;
-  descent-override: 42.81%;
+  /* Page titles: matched on titles long enough to wrap (Fustat ran 0.85%
+     wider than the all-titles mean on those, 2026-10-13). */
+  size-adjust: 98.9%;
+  ascent-override: 101.11%;
+  descent-override: 42.47%;
   line-gap-override: 0%;
 }
 

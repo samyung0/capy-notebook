@@ -192,6 +192,7 @@ import type {
   Workspace,
   WorkspaceCollaborator,
   WorkspaceMember,
+  WorkspaceRecent,
   WorkspaceStats,
   WorkspaceSummary
 } from './model';
@@ -8446,6 +8447,56 @@ export const updateWorkspaceMember = async (id: string,
 
   const data: updateWorkspaceMemberResponse['data'] = body ? JSON.parse(body) : undefined
   return { data, status: res.status, headers: res.headers } as updateWorkspaceMemberResponse
+}
+
+
+
+export type listWorkspaceRecentResponse200 = {
+  data: WorkspaceRecent
+  status: 200
+}
+
+export type listWorkspaceRecentResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type listWorkspaceRecentResponseSuccess = (listWorkspaceRecentResponse200) & {
+  headers: Headers;
+};
+export type listWorkspaceRecentResponseError = (listWorkspaceRecentResponseDefault) & {
+  headers: Headers;
+};
+
+export type listWorkspaceRecentResponse = (listWorkspaceRecentResponseSuccess | listWorkspaceRecentResponseError)
+
+export const getListWorkspaceRecentUrl = (id: string,) => {
+
+
+
+
+  return `/api/workspaces/${id}/recent`
+}
+
+/**
+ * @summary List a workspace's newest files and materials
+ */
+export const listWorkspaceRecent = async (id: string, options?: RequestInit): Promise<listWorkspaceRecentResponse> => {
+
+  const res = await fetch(getListWorkspaceRecentUrl(id),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: listWorkspaceRecentResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listWorkspaceRecentResponse
 }
 
 

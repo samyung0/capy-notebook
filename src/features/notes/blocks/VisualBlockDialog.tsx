@@ -65,7 +65,7 @@ export default function VisualBlockDialog({
           <Button
             disabled={isSubmitting}
             onClick={onClose}
-            rounded="large"
+            size="lg"
             type="button"
             variant="ghost-hover"
           >
@@ -73,7 +73,7 @@ export default function VisualBlockDialog({
           </Button>
           <Button
             disabled={isSubmitting}
-            rounded="large"
+            size="lg"
             type="submit"
             variant="accent"
           >
@@ -87,7 +87,7 @@ export default function VisualBlockDialog({
       onSubmit={save}
       open
       title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
-      width={760}
+      width={block.type === 'chart' ? 1040 : 760}
     >
       <fieldset className="min-w-0" disabled={isSubmitting}>
         <Controller

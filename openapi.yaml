@@ -2665,6 +2665,8 @@ components:
           items:
             type: string
           type: array
+        sharePath:
+          type: string
         title:
           type: string
         updatedAt:
@@ -6514,6 +6516,27 @@ components:
         - name
         - role
         - createdAt
+      type: object
+    WorkspaceRecent:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/WorkspaceRecent.json
+          format: uri
+          readOnly: true
+          type: string
+        files:
+          items:
+            $ref: "#/components/schemas/File"
+          type: array
+        materials:
+          items:
+            $ref: "#/components/schemas/MaterialListItem"
+          type: array
+      required:
+        - files
+        - materials
       type: object
     WorkspaceRole:
       enum:
@@ -11109,6 +11132,31 @@ paths:
       summary: Change a workspace member role
       tags:
         - Workspace collaboration
+  /api/workspaces/{id}/recent:
+    get:
+      operationId: listWorkspaceRecent
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceRecent"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: List a workspace's newest files and materials
+      tags:
+        - Content
   /api/workspaces/{id}/review:
     get:
       operationId: getWorkspaceReview

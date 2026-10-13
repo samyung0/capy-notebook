@@ -28,18 +28,14 @@ function SelectGroup({
 function SelectValue({
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Value>) {
-  // min-w-0 lets a long value truncate instead of squeezing the chevron.
-  return (
-    <SelectPrimitive.Value
-      className="min-w-0"
-      data-slot="select-value"
-      {...props}
-    />
-  );
+  // Radix drops className here; SelectTrigger styles it by data-slot.
+  return <SelectPrimitive.Value data-slot="select-value" {...props} />;
 }
 
+// The value span shrinks and truncates so a long value never pushes the
+// chevron out of the trigger.
 const selectTriggerVariants = cva(
-  'group/select-trigger flex w-full items-center justify-between gap-2 bg-field text-left text-fg hover:border-line-strong focus-visible:border-line-strong disabled:cursor-not-allowed disabled:bg-field-disabled disabled:text-fg-muted data-[state=open]:border-line-strong',
+  'group/select-trigger flex w-full items-center justify-between gap-2 bg-field text-left text-fg hover:border-line-strong focus-visible:border-line-strong disabled:cursor-not-allowed disabled:bg-field-disabled disabled:text-fg-muted data-[state=open]:border-line-strong *:data-[slot=select-value]:min-w-0 *:data-[slot=select-value]:truncate',
   {
     defaultVariants: {
       size: 'md',
@@ -103,8 +99,13 @@ function SelectContent({
   children,
   position = 'popper',
   align = 'center',
+  variant,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof SelectPrimitive.Content> & {
+  /** The editor toolbar popover look with compact rows. Pair with
+   * SelectItem size="menu". */
+  variant?: 'menu';
+}) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -113,6 +114,7 @@ function SelectContent({
           'motion-popup data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 relative z-100 max-h-(--radix-select-content-available-height) min-w-36 origin-(--radix-select-content-transform-origin) overflow-y-auto overflow-x-hidden rounded-button border border-overlay-line bg-overlay shadow-pop data-[align-trigger=true]:animate-none',
           position === 'popper' &&
             'data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
+          variant === 'menu' && 'min-w-44 rounded-lg px-1 py-1.5',
           className
         )}
         data-align-trigger={position === 'item-aligned'}
@@ -122,10 +124,7 @@ function SelectContent({
       >
         <SelectScrollUpButton />
         <SelectPrimitive.Viewport
-          className={cn(
-            'data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)',
-            position === 'popper' && ''
-          )}
+          className="data-[position=popper]:h-(--radix-select-trigger-height) data-[position=popper]:w-full data-[position=popper]:min-w-(--radix-select-trigger-width)"
           data-position={position}
         >
           {children}
@@ -158,6 +157,8 @@ const selectItemVariants = cva(
     variants: {
       size: {
         md: 'px-3.25 py-2.5',
+        // Matches ToolbarPopoverItem.
+        menu: 'h-7 rounded-lg py-0 pr-8 pl-2 text-sm leading-(--body-line-height) hover:bg-surface-hover-bg/80 data-highlighted:bg-surface-hover-bg/80',
         sm: 'px-2.5 py-2 text-xs',
       },
     },

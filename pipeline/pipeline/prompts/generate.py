@@ -109,7 +109,7 @@ The application assigns UUID ids to questions and parts; omit their ids.
     + """Block forms:
 - {"type":"text", "text":"plain text with $inline math$ or $$display math$$", "label":"optional paragraph label"}.
 - {"type":"table", "header":true, "rows":[["cell", "cell"]]}.
-- {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "unit", "xTitle", "yTitle", "gridlines":"normal|fine"}.
+- {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "xTitle", "yTitle", "gridlines":"normal|fine"}.
 Do not invent image URLs or SVGs. Use text, tables or charts for generated app quizzes.
 Answer is one of:
 - {"type":"mcq" or "multi", "options":["text option"], "correct":[0]} using zero-based indices; mcq has exactly one correct index.

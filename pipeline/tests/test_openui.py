@@ -14,7 +14,7 @@ tabs = Tabs([t1])
 t1 = Tab("Atomicity", [later])
 cmp = Table(["A", "B"], [r1], [1], "cap")
 r1 = Row(["x", "y"], [5])
-chart = Chart("bar", "Balance", ["before", "after"], [s1], null, "USD", true)
+chart = Chart("bar", "Balance (USD)", ["before", "after"], [s1], null, true)
 s1 = Series("sender", [2, 3])
 ask = AskUser("Which?", ["a", "b"])
 """
@@ -143,18 +143,18 @@ def test_is_lang_shaped():
 
 def test_chart_measurements_survive_the_checkpoint_projection():
     text = openui.text_of(
-        'root = Answer([Chart("bar", "Balance", ["before", "after"], [s], [9], "USD"), '
-        'ScatterChart("Latency", [Point(10, 12, "A")], "Count", "ms")])\n'
+        'root = Answer([Chart("bar", "Balance (USD)", ["before", "after"], [s], [9]), '
+        'Plot("scatter", "Latency", [Curve("A", [[10, 12], [20, 15]])], "Count", "ms")])\n'
         's = Series("Alice", values)\nvalues = [250, 200]'
     )
     assert "[250, 200]" in text and "before · after" in text
-    assert "x: 10" in text and "y: 12" in text
+    assert "[[10, 12], [20, 15]]" in text
     assert "[9]" not in text
 
 
 def test_plot_points_and_reference_lines_survive_the_checkpoint_projection():
     text = openui.text_of(
-        'root = Answer([Plot("AP", [Curve("Vm", [[0, -70], [1.5, 30]])], "t (ms)", '
+        'root = Answer([Plot("line", "AP", [Curve("Vm", [[0, -70], [1.5, 30]])], "t (ms)", '
         '"V (mV)", [2], true, [RefLine("y", -55, "threshold")], [Point(1, 0, "peak")])])'
     )
     assert text.splitlines() == [

@@ -236,15 +236,15 @@ line says quiz results are still kept. Top to bottom:
   as an underlined link, which opens the suggestion, or the whole workspace's
   review without one.
 - **Quick review**: `quickReview` (`quickReview` in `study.go`) ranks the
-  pool's items as a suggested review does (`scoreItems`, so the focus and
-  item preferences apply) among those at or below `suggestedRecall`, so an
-  item just answered waits until it fades. A question on top is shown alone;
-  a card on top brings the next highest cards, at most four. A card shows on
-  the shared card in its compact size with the set's name under it, flips
-  and takes the four ratings; a question renders with `QuestionRunner`
-  (`src/features/study/ReviewQuestion.tsx`, shared with review sessions),
-  Check grades it through `POST /api/review/check` without a session, and
-  Done follows the graded result. The round is a snapshot kept while
+  pool's cards as a suggested review does (`scoreItems`, so the focus and
+  item preferences apply) among those at or below `suggestedRecall`, so a
+  card just rated waits until it fades, and takes the top four. Questions
+  never enter (answering one is not quick and does not fit the panel); they
+  are reviewed in review sessions. A card shows on
+  the shared card in its `panel` size (at most 360px wide, 160 to 190px
+  tall, subtitle-size front text, denser rating tiles; smaller than a note
+  embed's compact card) with the set's name under it, flips
+  and takes the four ratings. The round is a snapshot kept while
   ratings refresh the summary (rated items leave the list); once its last
   item is done the section leaves with the smoky dissolve
   (`motion-smoke-out`: rise 8px, swell to 1.04, blur 8px, fade over 500ms,
@@ -321,7 +321,8 @@ frame (header with back, breadcrumb and title) and never edits cards. The same
 `StudyBody` (`src/features/flashcards/StudyBody.tsx`) serves the page, note
 embeds and the shared page, drawing the card with `CardStack`
 (`src/features/flashcards/CardStack.tsx`, also the review session's and Quick
-review's card; note embeds and Quick review use its shorter compact size):
+review's card; note embeds use its shorter compact size and Quick review the
+smaller panel size):
 "Card 1 of 6" centred above the card, which flips
 on a click (the text swaps in place, old face up and out, new face in from
 below, the ratings rising in one after another) and carries the text rating buttons

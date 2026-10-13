@@ -99,10 +99,8 @@ func TestPickItemsInterleavesAndCuts(t *testing.T) {
 	}
 }
 
-// The label weighs time against history: the same answers read Tricky or
-// Just learned while recent and Fading once mostly forgotten.
-// Quick review takes the top-scored fading item: a question alone, or a card
-// with the next highest cards up to four; recalled items never enter.
+// Quick review takes the top four fading cards; questions and recalled items
+// never enter.
 func TestQuickReviewPick(t *testing.T) {
 	ids := func(items []ReviewItem) (out []string) {
 		for _, it := range items {
@@ -125,7 +123,7 @@ func TestQuickReviewPick(t *testing.T) {
 	}
 	question, _ = item("q", "", 0.05)
 	question.Kind = "question"
-	if got := ids(quickReview(append(items, question))); len(got) != 1 || got[0] != "q" {
+	if got := ids(quickReview(append(items, question))); len(got) != 4 || got[0] != "c1" {
 		t.Fatalf("question on top = %v", got)
 	}
 	recalled, _ := item("fresh", "", 0.95)
@@ -134,6 +132,8 @@ func TestQuickReviewPick(t *testing.T) {
 	}
 }
 
+// The label weighs time against history: the same answers read Tricky or
+// Just learned while recent and Fading once mostly forgotten.
 func TestModeLabels(t *testing.T) {
 	for _, tc := range []struct {
 		r      float64

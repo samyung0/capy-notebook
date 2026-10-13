@@ -1,4 +1,4 @@
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import {
   lazy,
   type ReactNode,
@@ -10,7 +10,12 @@ import {
   useState,
 } from 'react';
 import { isMaterialContentUnreadable } from '@/api/client';
-import { useFile, useMaterial, useMaterials } from '@/api/hooks';
+import {
+  useFile,
+  useMaterial,
+  useMaterials,
+  useWorkspaceRecent,
+} from '@/api/hooks';
 import type {
   Chapter,
   Material,
@@ -19,11 +24,21 @@ import type {
   UserColor,
 } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
+import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
+import { FileIcon } from '@/components/ui/FileIcon';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import {
+  recentIcon,
+  recentThumbnail,
+} from '@/features/dashboard/RecentItemsCard';
+import {
+  mergeRecentItems,
+  type RecentItem,
+} from '@/features/dashboard/recentItems';
 import {
   FileError,
   FileLoading,
@@ -756,13 +771,87 @@ function EmptyCenter({
         <OfflineStatus />
         <WorkspaceStatusButton workspaceId={workspaceId} />
       </div>
-      <div className="grid flex-1 place-items-center p-6">
-        <div className="flex flex-col items-center gap-3">
-          <Icon className="non-scaling-svg size-8" name="files" />
-          <p>{m.material_select()}</p>
-        </div>
+      <div className="grid flex-1 place-items-center p-4 sm:p-6">
+        {workspaceId ? (
+          <RecentInWorkspace workspaceId={workspaceId} />
+        ) : (
+          <PickAFile />
+        )}
       </div>
     </>
+  );
+}
+
+function PickAFile() {
+  return (
+    <div className="flex flex-col items-center gap-3">
+      <Icon className="non-scaling-svg size-8" name="files" />
+      <p>{m.material_select()}</p>
+    </div>
+  );
+}
+
+/** The workspace's four newest files and materials as cards for a quick
+ * open. Blank while loading; an empty workspace, or a failed read, keeps the
+ * plain prompt. */
+function RecentInWorkspace({ workspaceId }: { workspaceId: string }) {
+  const { data, isLoading } = useWorkspaceRecent(workspaceId);
+  if (isLoading) return null;
+  const items = mergeRecentItems(
+    data?.files ?? [],
+    data?.materials ?? [],
+    [],
+    4
+  );
+  if (!items.length) return <PickAFile />;
+  return (
+    // Lifted by half the subtitle row so the grid, not the block, sits centred.
+    <div className="flex w-full max-w-[400px] -translate-y-4 flex-col gap-2.5">
+      <h3 className="t-subtitle px-1">{m.dashboard_recent()}</h3>
+      <div className="grid grid-cols-2 gap-1">
+        {items.map((item) => (
+          <QuickOpenCard
+            item={item}
+            key={`${item.kind}-${item.id}`}
+            workspaceId={workspaceId}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/** A borderless card: the preview, then the kind icon and title. No hint
+ * line or pill, so the grid stays quiet beside the empty viewer. */
+function QuickOpenCard({
+  item,
+  workspaceId,
+}: {
+  item: RecentItem;
+  workspaceId: string;
+}) {
+  const icon = recentIcon(item);
+  return (
+    <Link
+      className="flex min-w-0 flex-col gap-1.5 rounded-[15px] p-1 outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus"
+      params={{ workspaceId }}
+      preload="intent"
+      search={
+        item.kind === 'material' ? { material: item.id } : { file: item.id }
+      }
+      to="/workspaces/$workspaceId"
+    >
+      <ThumbnailPanel
+        dense
+        icon={icon}
+        {...recentThumbnail(item)}
+        pill={undefined}
+      />
+      <span className="flex min-w-0 items-center gap-1.5 px-1 pb-0.5">
+        <FileIcon className="size-3.5 shrink-0" name={icon} />
+        <span className="truncate text-[13px] leading-tight">{item.title}</span>
+      </span>
+    </Link>
   );
 }
 

@@ -1021,12 +1021,11 @@ def test_bundle_rejects_content_beyond_configured_budget(
 
 def test_bundle_carries_only_what_ingest_reads() -> None:
     """The capy-parser-bundle-v5 entries the worker validates and extracts;
-    ``parsed.pdf`` rides along only when font repair changed the bytes. Image
-    files and ODL Markdown never enter the bundle."""
+    ``parsed.pdf`` rides along only when font repair changed the bytes."""
     bundle = parser_app._bundle_bytes(
         {
             "content_list": [
-                {"type": "image", "img_path": "document_images/imageFile1.png"},
+                {"type": "image"},
                 {"type": "text", "text": "body", "page_idx": 0},
             ],
             "_page_evidence": {"page_texts": ["body"], "visible_headings": []},

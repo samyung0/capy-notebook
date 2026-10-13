@@ -3,7 +3,7 @@
 import { createParser } from '@openuidev/lang-core';
 import { ignoreEmptyExtras } from './answer';
 import { AskUser } from './blocks/AskUser';
-import { Chart, Plot, ScatterChart } from './blocks/ChatChart';
+import { Chart, Plot } from './blocks/ChatChart';
 import { Diagram } from './blocks/ChatDiagram';
 import { Interactive } from './blocks/ChatInteractive';
 import { ChatTable } from './blocks/ChatTable';
@@ -35,7 +35,6 @@ export const chatLibrary = buildLibrary({
   RefLine: leaf,
   Reveal,
   Row: leaf,
-  ScatterChart,
   Series: leaf,
   Step: leaf,
   Steps,

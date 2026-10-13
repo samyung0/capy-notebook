@@ -92,7 +92,7 @@ def odl_content_list(document: dict, pages: list[dict]) -> list[dict]:
             embedded_images(node)
             return
         if kind in {"image", "picture"}:
-            block = {**common, "type": "image", "img_path": node.get("source", "")}
+            block = {**common, "type": "image"}
             if node.get("description"):
                 block["image_caption"] = [node["description"]]
             blocks.append(block)

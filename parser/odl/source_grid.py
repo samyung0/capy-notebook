@@ -9,7 +9,7 @@ from collections import Counter
 
 import pymupdf
 
-from . import geometry
+from . import geometry, page_text
 
 
 class AmbiguousGrid(ValueError):
@@ -24,7 +24,7 @@ def cell_styles(page: pymupdf.Page, table: dict) -> list[dict]:
     """Retain only literal emphasis whose complete cell scope is source-supported."""
     spans = [
         s
-        for b in page.get_text("dict", flags=geometry.TEXT_FLAGS)["blocks"]
+        for b in page_text.page_dict(page)["blocks"]
         for line in b.get("lines", [])
         for s in line["spans"]
         if re.search(r"\w", s["text"])
@@ -222,7 +222,7 @@ def recover(page: pymupdf.Page, region, lines: list[dict]) -> dict:
     if len({normal(h) for h in headers}) != len(headers):
         raise AmbiguousGrid("duplicate header paths need parent scope")
     # Explicit italic group labels must follow a full-width separator.
-    raw = page.get_text("dict", flags=geometry.TEXT_FLAGS)
+    raw = page_text.page_dict(page)
     spans = [s for b in raw["blocks"] for l in b.get("lines", []) for s in l["spans"]]
     source_lines = {}
     for block_index, block in enumerate(raw["blocks"]):

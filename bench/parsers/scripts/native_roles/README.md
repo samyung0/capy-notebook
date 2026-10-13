@@ -36,6 +36,7 @@ Run everything from this directory.
 | Grouped CV + final model | `python train.py` | ~3 min (features cached after the first run) |
 | Shipped parser on held-out books | `<parser venv>/bin/python parse_v13.py` | ~2 min per book |
 | Evaluation | `python evaluate.py roles`, `figures`, `latency` | minutes |
+| Rule-based heading recall (`parser/odl/layout_headings.py`), no model: parse with the parser to compare (`PARSER_DIR` picks a frozen copy), then score | `<parser venv>/bin/python eval_layout_headings.py parse [BOOK...]`, then `python eval_layout_headings.py train` (line rule vs training labels), `heldout` (parser vs parser + rule) or `heldout train` (the parsed training books) | parse as above; scoring minutes |
 
 `teacher.py` is resumable; the other steps cache their outputs (`pages/`,
 `features.pkl`) and are deleted to recompute.

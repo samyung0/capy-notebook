@@ -127,26 +127,19 @@ export interface ChartProps {
   passages?: number[];
   series: unknown[];
   title: string;
-  unit?: string;
+  xTitle?: string;
+  yTitle?: string;
 }
 export interface PlotProps {
   illustrative?: boolean;
+  kind: 'line' | 'scatter';
   lines?: unknown[] | null;
   marks?: unknown[] | null;
   passages?: number[];
   series: unknown[];
   title: string;
-  xLabel: string;
-  yLabel: string;
-}
-export interface ScatterProps {
-  illustrative?: boolean;
-  passages?: number[];
-  points: unknown[];
-  title: string;
-  unit?: string;
-  xLabel: string;
-  yLabel: string;
+  xTitle: string;
+  yTitle: string;
 }
 
 // OpenUI's own library type is ComponentRenderer<any>; the renderers are typed
@@ -172,7 +165,6 @@ export type Renderers = Record<
   | 'Row'
   | 'Chart'
   | 'Series'
-  | 'ScatterChart'
   | 'Point'
   | 'Plot'
   | 'Curve'
@@ -272,7 +264,7 @@ export function buildLibrary(render: Renderers) {
   const Chart = defineComponent({
     component: render.Chart,
     description:
-      'A chart over labelled categories: bar, hbar (horizontal), line, area, pie or stacked (one bar split into parts). unit names the values (e.g. "USD", "%"). Cite passages for sourced values, or write null and set illustrative=true for made-up example numbers.',
+      'A chart over labelled categories: bar, hbar (horizontal), line, area, pie or stacked (one bar split into parts). Put the unit in the title, e.g. "Revenue (USD)". xTitle names the categories and yTitle the values; pie and stacked have no axes, so leave both out. Cite passages for sourced values, or write null and set illustrative=true for made-up example numbers.',
     name: 'Chart',
     props: z.object({
       kind: z.enum(chartKinds),
@@ -280,36 +272,22 @@ export function buildLibrary(render: Renderers) {
       labels: z.array(z.string()),
       series: z.array(Series.ref),
       passages,
-      unit: z.string().optional(),
       illustrative: z.boolean().optional(),
+      xTitle: z.string().optional(),
+      yTitle: z.string().optional(),
     }),
   });
   const Point = defineComponent({
     component: render.Point,
     description:
-      'One point with an optional label: a scatter point or a Plot mark.',
+      'One labelled point marked on a Plot, e.g. Point(1.5, 30, "peak").',
     name: 'Point',
     props: pointProps,
-  });
-  const ScatterChart = defineComponent({
-    component: render.ScatterChart,
-    description:
-      'A scatter plot of numeric x/y points. Same unit, illustrative and passages rules as Chart.',
-    name: 'ScatterChart',
-    props: z.object({
-      title: z.string(),
-      points: z.array(Point.ref),
-      xLabel: z.string(),
-      yLabel: z.string(),
-      passages,
-      unit: z.string().optional(),
-      illustrative: z.boolean().optional(),
-    }),
   });
   const Curve = defineComponent({
     component: render.Curve,
     description:
-      'One to four per Plot: a name and [x, y] points in x order, at most 60, e.g. Curve("Vm", [[0, -70], [1, -55], [1.5, 30]]).',
+      'One to four per Plot: a name and two to 60 [x, y] points (in x order for a line), e.g. Curve("Vm", [[0, -70], [1, -55], [1.5, 30]]).',
     name: 'Curve',
     props: curveProps,
   });
@@ -323,13 +301,14 @@ export function buildLibrary(render: Renderers) {
   const Plot = defineComponent({
     component: render.Plot,
     description:
-      'Curves of a quantity along a numeric axis: a membrane potential over time, a titration curve, rate against temperature. xLabel and yLabel name the axes with units; lines are reference lines, marks are Points labelled on the curve. Same passages and illustrative rules as Chart: a typical shape from general knowledge is illustrative.',
+      'Numbers against numbers. kind "line" draws curves of a quantity along a numeric axis: a membrane potential over time, a titration curve, rate against temperature. kind "scatter" draws each point as a dot, e.g. practice minutes against recall score. xTitle and yTitle name the axes with units; lines are reference lines, marks are Points labelled on the plot. Same passages and illustrative rules as Chart: a typical shape from general knowledge is illustrative.',
     name: 'Plot',
     props: z.object({
+      kind: z.enum(['line', 'scatter']),
       title: z.string(),
       series: z.array(Curve.ref),
-      xLabel: z.string(),
-      yLabel: z.string(),
+      xTitle: z.string(),
+      yTitle: z.string(),
       passages,
       illustrative: z.boolean().optional(),
       lines: z.array(RefLine.ref).optional(),
@@ -367,7 +346,6 @@ export function buildLibrary(render: Renderers) {
     Cards.ref,
     Table.ref,
     Chart.ref,
-    ScatterChart.ref,
     Plot.ref,
     Diagram.ref,
     Interactive.ref,
@@ -450,7 +428,6 @@ export function buildLibrary(render: Renderers) {
           'Row',
           'Chart',
           'Series',
-          'ScatterChart',
           'Point',
           'Plot',
           'Curve',
@@ -461,7 +438,7 @@ export function buildLibrary(render: Renderers) {
         name: 'Data',
         notes: [
           '- Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.',
-          '- Chart compares labelled categories; Plot shows a quantity changing along a numeric axis; Diagram shows structure or flow; Interactive only where moving something teaches more than a still picture. The text next to a figure says what to notice.',
+          '- Chart compares labelled categories; Plot shows numbers against numbers (a line, or a scatter of points); Diagram shows structure or flow; Interactive only where moving something teaches more than a still picture. The text next to a figure says what to notice.',
           '- Chart and Plot values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.',
         ],
       },
@@ -493,7 +470,6 @@ export function buildLibrary(render: Renderers) {
       Row,
       Chart,
       Series,
-      ScatterChart,
       Point,
       Plot,
       Curve,

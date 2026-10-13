@@ -1766,6 +1766,19 @@ export const handlers = [
   http.get('/api/workspaces/:id/files', async ({ params }) =>
     HttpResponse.json(db.files.filter((f) => f.workspaceId === params.id))
   ),
+  http.get('/api/workspaces/:id/recent', async ({ params }) =>
+    HttpResponse.json({
+      files: db.files
+        .filter((f) => f.workspaceId === params.id)
+        .sort(sortBy((f) => f.addedAt, false))
+        .slice(0, 4),
+      materials: db.materials
+        .filter((mt) => mt.workspaceId === params.id && !mt.parentMaterialId)
+        .sort(sortBy((mt) => mt.createdAt, false))
+        .slice(0, 4)
+        .map(db.materialListItem),
+    })
+  ),
   http.get('/api/files/:id', async ({ params }) => {
     const f = db.files.find((x) => x.id === params.id);
     return f ? HttpResponse.json(f) : new HttpResponse(null, { status: 404 });
@@ -2065,7 +2078,10 @@ export const handlers = [
     await hydrateEditorState(String(params.id));
     const mt = db.materials.find((x) => x.id === params.id);
     return mt
-      ? HttpResponse.json(db.learnerMaterial(mt))
+      ? HttpResponse.json({
+          ...db.learnerMaterial(mt),
+          sharePath: db.mockSharePath(mt),
+        })
       : new HttpResponse(null, { status: 404 });
   }),
   http.post(

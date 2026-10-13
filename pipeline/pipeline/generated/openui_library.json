@@ -122,8 +122,9 @@
         "labels",
         "series",
         "passages",
-        "unit",
-        "illustrative"
+        "illustrative",
+        "xTitle",
+        "yTitle"
       ]
     },
     {
@@ -131,18 +132,6 @@
       "props": [
         "name",
         "values"
-      ]
-    },
-    {
-      "name": "ScatterChart",
-      "props": [
-        "title",
-        "points",
-        "xLabel",
-        "yLabel",
-        "passages",
-        "unit",
-        "illustrative"
       ]
     },
     {
@@ -156,10 +145,11 @@
     {
       "name": "Plot",
       "props": [
+        "kind",
         "title",
         "series",
-        "xLabel",
-        "yLabel",
+        "xTitle",
+        "yTitle",
         "passages",
         "illustrative",
         "lines",

@@ -8,10 +8,11 @@
 
 [data-style="classroom"] {
   /* "Fustat" is the Office frame's own static faces (office-runtime.css);
-     "Fustat Fallback" is Arial sized to Fustat (fontFallbacks.css). */
+     "Fustat Fallback" is Arial sized to Fustat (fontFallbacks.css);
+     --font-cjk is cjkFont.css. */
   --font-sans:
-    "Fustat Variable", "Fustat", "Fustat Fallback", system-ui, -apple-system,
-    "Segoe UI", sans-serif;
+    "Fustat Variable", "Fustat", "Fustat Fallback", var(--font-cjk), system-ui,
+    -apple-system, "Segoe UI", sans-serif;
 
   --display-font-size: 3.125rem;
   --display-font-weight: 800;
@@ -74,13 +75,15 @@
 
 /* ---------------- classroom · LIGHT ---------------- */
 [data-style="classroom"][data-theme="latte"] {
-  /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #4a3aa7;
-  --chart-2: #eb6834;
-  --chart-3: #1baf7a;
-  --chart-4: #2a78d6;
-  --chart-5: #eda100;
-  --chart-6: #e87ba4;
+  /* Chart series, fixed order: the accent, then the dark themes' Catppuccin
+     hues darkened to 3:1 on white. Neighbours (and 6 -> 1, which pies wrap
+     onto) stay apart under protan/deutan simulation. */
+  --chart-1: var(--action-accent-bg);
+  --chart-2: #ca6816;
+  --chart-3: #269b7e;
+  --chart-4: #3a5f9e;
+  --chart-5: #b58f3c;
+  --chart-6: #cb6186;
   --surface-page: #f7f7f7; /* outer "device" */
   --surface-page-hover: #e6e9ea;
   --surface-canvas: #f4f6f5;
@@ -191,13 +194,15 @@
 
 /* ---------------- classroom · MOCHA (Catppuccin mocha) ---------------- */
 [data-style="classroom"][data-theme="mocha"] {
-  /* Chart series, fixed order (validated for CVD on both surfaces). */
-  --chart-1: #b5a1f8;
-  --chart-2: #fab387;
-  --chart-3: #a6e3a1;
-  --chart-4: #89b4fa;
-  --chart-5: #f9e2af;
-  --chart-6: #f5c2e7;
+  /* Chart series, fixed order: the accent, then the light theme's hues in
+     Catppuccin's lighter register, 3:1 on cards and dialogs. Every pair stays
+     apart under protan/deutan simulation. */
+  --chart-1: var(--action-accent-bg);
+  --chart-2: #ea9344;
+  --chart-3: #6dd3c0;
+  --chart-4: #3c8dda;
+  --chart-5: #f1d589;
+  --chart-6: #d96d92;
 
   /* Slate surfaces, one step darker than Frappe. */
   --surface-page: #0d1219; /* outer "device" */
@@ -327,12 +332,13 @@
 /* ---------------- classroom · FRAPPÉ (lighter Mocha) ---------------- */
 [data-style="classroom"][data-theme="frappe"] {
   /* Violet accent on neutral slate surfaces; other accents from Mocha. */
-  --chart-1: #b5a1f8;
-  --chart-2: #fab387;
-  --chart-3: #a6e3a1;
-  --chart-4: #89b4fa;
-  --chart-5: #f9e2af;
-  --chart-6: #f5c2e7;
+  /* Chart series: same as Mocha. */
+  --chart-1: var(--action-accent-bg);
+  --chart-2: #ea9344;
+  --chart-3: #6dd3c0;
+  --chart-4: #3c8dda;
+  --chart-5: #f1d589;
+  --chart-6: #d96d92;
 
   /* Slate surfaces: dark page, gray-800 cards, lighter heavy cards. */
   --surface-page: #141a23; /* outer "device" */

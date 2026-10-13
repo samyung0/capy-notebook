@@ -180,6 +180,8 @@ export function Menu({
           alignWidthToTrigger && 'w-(--radix-dropdown-menu-trigger-width)',
           className
         )}
+        // A menu pushed off a screen edge stops short of it.
+        collisionPadding={8}
         data-slot="menu"
         data-variant={variant}
         onClick={(e) => e.stopPropagation()}

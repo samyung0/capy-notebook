@@ -266,6 +266,12 @@ export type SourceFile = GenFile & { ingestPct?: number };
 export type MaterialListItem = Omit<GenMaterialListItem, 'preview'> & {
   preview?: MaterialPreview;
 };
+/** GET /workspaces/{id}/recent: the empty viewer's newest files and
+ * materials, open to every reader of the workspace. */
+export interface WorkspaceRecent {
+  files: SourceFile[];
+  materials: MaterialListItem[];
+}
 /** File rows carry the File thumbnail fields, material rows a MaterialPreview. */
 export type TrashItem = Omit<GenTrashItem, 'preview'> & {
   preview?: FileTextPreview | MaterialPreview;

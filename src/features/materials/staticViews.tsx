@@ -118,7 +118,7 @@ export function EmbedSlot({
 }
 
 /** A diagram, rendered in the browser (Mermaid needs a DOM), with its
- * click-to-preview. */
+ * double-click preview. */
 export function MermaidView({
   caption,
   source,
@@ -168,7 +168,7 @@ export function MermaidView({
 /** Unresized charts open at their question-figure width (max-w-md). */
 const CHART_WIDTH = '28rem';
 
-/** A chart, plot or graph with its click-to-preview. The editor adds its
+/** A chart, plot or graph with its double-click preview. The editor adds its
  * toolbar and resize handles. */
 export function FigureView({
   block,

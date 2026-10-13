@@ -914,6 +914,47 @@ def test_sentence_headings_set_in_the_body_style_are_demoted(
             assert result[0]["text_level"] in (1, 11)
 
 
+def test_folio_less_running_heads_below_the_margin_band_become_banners():
+    # Open Logic: "CHAPTER 1. SETS" at y = 0.117 on every other page, its folio a
+    # separate block. "Exercises" atop pages four apart stays a heading.
+    with pymupdf.open() as document:
+        blocks, heads, titles = [], [], []
+        for number in range(12):
+            page = document.new_page()
+            if number % 2:
+                text = "CHAPTER 1. SETS" if number < 6 else "CHAPTER 2. RELATIONS"
+                heads.append(len(blocks))
+                blocks.append(_printed_heading(page, text, 95, 4, fontsize=9))
+            elif number in (2, 6, 10):
+                titles.append(len(blocks))
+                blocks.append(_printed_heading(page, "Exercises", 95, 2, fontsize=9))
+            body = _printed_heading(page, "The body text runs on here.", 300, 0)
+            blocks.append({k: v for k, v in body.items() if k != "text_level"})
+        result = correct_roles(blocks, document)
+    assert all(result[i]["_source_role"] == "running-banner" for i in heads)
+    assert all(result[i] == blocks[i] for i in titles)
+
+
+@pytest.mark.parametrize(
+    ("text", "y", "level"),
+    [
+        ("February 2022 Page {} of 159", 951, None),  # VA/DoD: a mid-text folio
+        ("Drucksache 20/14740 – {} – Deutscher Bundestag", 40, 2),  # a top head
+    ],
+)
+def test_margin_runs_with_a_folio_anywhere_become_banners(text, y, level):
+    blocks = []
+    for page in range(10):
+        block = _line(text.format(page + 1), page, y, level=level, height=15)
+        blocks += [block, _line("The body text runs on here.", page, 500)]
+    with pymupdf.open() as document:
+        for _ in range(10):
+            document.new_page()
+        result = correct_roles(blocks, document)
+    assert all(result[i]["_source_role"] == "running-banner" for i in range(0, 20, 2))
+    assert all(result[i] == blocks[i] for i in range(1, 20, 2))
+
+
 def _line(text, page, y, level=None, height=20):
     block = {
         "type": "text",

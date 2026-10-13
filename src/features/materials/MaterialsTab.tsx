@@ -7,10 +7,7 @@ import {
   useCreateStandaloneNote,
   useDeleteMaterial,
   useOwnedMaterials,
-  useUpdateFlashcardSetSharing,
   useUpdateMaterial,
-  useUpdateMaterialSharing,
-  useUpdateQuizSharing,
   useWorkspaces,
 } from '@/api/hooks';
 import type {
@@ -38,8 +35,8 @@ import {
   MaterialCard,
   materialKindLabel,
 } from '@/features/materials/MaterialListCard';
+import { MaterialShareDialog } from '@/features/materials/MaterialShareDialog';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
-import { ShareDialog } from '@/features/workspace/ShareDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import {
@@ -232,14 +229,6 @@ export function MaterialsTab({
   const { mutate: deleteMaterial } = useDeleteMaterial(
     deleting?.workspaceId ?? ''
   );
-  const { isPending: quizSharingIsPending, mutateAsync: shareQuiz } =
-    useUpdateQuizSharing();
-  const {
-    isPending: flashcardsSharingIsPending,
-    mutateAsync: shareFlashcards,
-  } = useUpdateFlashcardSetSharing();
-  const { isPending: noteSharingIsPending, mutateAsync: shareNote } =
-    useUpdateMaterialSharing();
   const [cloning, setCloning] = useState<MaterialListItem | null>(null);
 
   function menuFor(item: MaterialListItem): MenuItem[] {
@@ -407,25 +396,9 @@ export function MaterialsTab({
         title={m.material_rename()}
       />
       {sharing && (
-        <ShareDialog
-          link={sharing.sharePath ?? `/materials/${sharing.id}`}
+        <MaterialShareDialog
+          material={sharing}
           onClose={() => setSharing(null)}
-          onPrivacyChange={async (privacy) => {
-            const id = sharing.id;
-            if (sharing.kind === 'quiz') await shareQuiz({ id, privacy });
-            else if (sharing.kind === 'flashcards')
-              await shareFlashcards({ id, privacy });
-            else await shareNote({ id, privacy });
-            setSharing({ ...sharing, privacy });
-          }}
-          open
-          privacy={sharing.privacy}
-          saving={
-            quizSharingIsPending ||
-            flashcardsSharingIsPending ||
-            noteSharingIsPending
-          }
-          title={m.flashcards_share_title({ name: sharing.title })}
         />
       )}
       {cloning && (

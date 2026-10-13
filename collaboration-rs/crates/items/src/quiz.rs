@@ -49,7 +49,7 @@ pub const MAX_ID: usize = 128;
 const ANSWER_TYPES: &[&str] = &[
     "mcq", "multi", "boolean", "short", "matching", "ordering", "open", "gaps",
 ];
-const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "graph"];
+const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph"];
 /// Whole marks a part or a marking item carries.
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
 
@@ -243,7 +243,7 @@ fn read_block<T: ReadTxn>(txn: &T, map: &MapRef) -> Option<Value> {
             }
             Some(block)
         }
-        "chart" | "graph" => match any_at(txn, map, "value") {
+        "chart" | "plot" | "graph" => match any_at(txn, map, "value") {
             Some(value @ Any::Map(_)) => {
                 let mut block = any_json(&value);
                 block["type"] = json!(kind);
@@ -1443,10 +1443,10 @@ fn block_shape(
             }
             _ => return refuse("an image that is not {assetId} or {url}"),
         },
-        // A chart or graph is one value, written at its dialog's Done (D8).
+        // A chart, plot or graph is one value, written at its dialog's Done (D8).
         ([], Some("value")) => match one_any(content) {
             Some(Any::Map(_)) => tally.value(content),
-            _ => return refuse("a chart or graph that is not one value"),
+            _ => return refuse("a chart, plot or graph that is not one value"),
         },
         ([], Some("text" | "description")) if is_text(content) => tally.structure(32),
         ([], Some("rows" | "columns" | "cells")) if is_map(content) => tally.structure(8),

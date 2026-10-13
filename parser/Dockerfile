@@ -1,3 +1,17 @@
+# CapyMain (parser/java) compiled against the pinned ODL jar; the runtime image
+# keeps a JRE only.
+FROM python:3.12.14-slim-bookworm@sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579 AS odl-entry
+COPY parser/debian.sources /etc/apt/sources.list.d/debian.sources
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openjdk-17-jdk-headless \
+    && rm -rf /var/lib/apt/lists/*
+COPY parser/requirements.txt /build/requirements.txt
+RUN sed -n '/^opendataloader-pdf==/,/^    # via/p' /build/requirements.txt \
+        | grep -v '# via' > /build/odl.txt \
+    && pip install --no-cache-dir --no-deps --require-hashes -r /build/odl.txt
+COPY parser/java/CapyMain.java parser/java/build.sh /build/java/
+RUN sh /build/java/build.sh /build/capy-odl.jar
+
 FROM python:3.12.14-slim-bookworm@sha256:0f5b26b9518d002b6173fd61daad821fa340635ebfec5bba471013f9ca114579
 
 ENV PYTHONUNBUFFERED=1 \
@@ -27,6 +41,9 @@ RUN apt-get update \
 WORKDIR /app
 COPY parser/requirements.txt ./parser/requirements.txt
 RUN pip install --no-cache-dir --require-hashes -r parser/requirements.txt
+
+COPY --from=odl-entry --chmod=644 /build/capy-odl.jar /opt/capy-odl/capy-odl.jar
+ENV CAPY_ODL_ENTRY_JAR=/opt/capy-odl/capy-odl.jar
 
 # RapidOCR PP-OCRv6 small detector/recogniser and the mobile angle classifier,
 # the exact files the September 2026 lab runs used (rapidocr 3.9.2's own hosts).

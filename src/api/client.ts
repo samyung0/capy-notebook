@@ -358,6 +358,9 @@ export const qk = {
   fileLinks: (id: string, consumer: 'view' | 'preview' = 'view') =>
     ['file-links', id, consumer] as const,
   files: (wsId: string) => ['workspace', wsId, 'files'] as const,
+  /** Under `files`, so a file list invalidation refetches it too. */
+  filesRecent: (wsId: string) =>
+    ['workspace', wsId, 'files', 'recent'] as const,
   flashcardSet: (id: string) => ['flashcardSet', id] as const,
   ingestSlots: ['me', 'ingest-slots'] as const,
   integrations: ['integrations'] as const,

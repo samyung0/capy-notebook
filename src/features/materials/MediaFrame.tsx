@@ -16,7 +16,7 @@ interface Drag {
 
 /**
  * Box around an image or embed. Shows `toolbar` in the top-right corner on
- * hover, with `onOpen` a click-to-preview, and with `onWidthChange` side handles that resize it symmetrically
+ * hover, with `onOpen` a double-click preview, and with `onWidthChange` side handles that resize it symmetrically
  * and report the width as a percentage of the block.
  */
 export function MediaFrame({
@@ -33,7 +33,7 @@ export function MediaFrame({
   children: ReactNode;
   /** Take the full block width when no width is stored (embeds). */
   fill?: boolean;
-  /** Clicking the media itself (not the toolbar or handles) opens a preview. */
+  /** Double-clicking the media itself (not the toolbar or handles) opens a preview. */
   onOpen?: () => void;
   onWidthChange?: (width: string) => void;
   toolbar?: ReactNode;
@@ -116,7 +116,7 @@ export function MediaFrame({
       }}
     >
       {onOpen ? (
-        <div className="cursor-zoom-in" onClick={onOpen}>
+        <div data-media-preview onDoubleClick={onOpen}>
           {children}
         </div>
       ) : (

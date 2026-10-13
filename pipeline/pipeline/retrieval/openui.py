@@ -310,6 +310,7 @@ def _refs_in(value: Any) -> Iterator[Ref]:
 _SKIPPED_PROPS = {
     "Callout": "kind",
     "Chart": "kind",
+    "Plot": "kind",
     "RefLine": "axis",
     "Interactive": "html",
 }

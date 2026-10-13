@@ -1,4 +1,9 @@
-"""Run the OpenDataLoader CLI jar on one PDF with a hard deadline."""
+"""Run OpenDataLoader on one PDF with a hard deadline.
+
+ODL runs as a library under ``parser/java/CapyMain.java`` (built by
+``parser/java/build.sh``; the image sets ``CAPY_ODL_ENTRY_JAR``): the same
+options and JSON as ODL's CLI, plus the facts the JSON leaves out.
+"""
 
 from __future__ import annotations
 
@@ -10,13 +15,14 @@ from importlib import resources
 from pathlib import Path
 
 # The lab configuration: cluster table detection, header and footer blocks kept,
-# images written beside the JSON, one Java worker thread.
+# one Java worker thread (more threads gave the same output and no speed). JSON
+# only and no image files: decoding and re-encoding every picture was 85% of
+# ODL's time on a figure-heavy textbook, and only their digests were used.
 ODL_FLAGS = (
     "--format",
-    "json,markdown",
+    "json",
     "--image-output",
-    "external",
-    "--markdown-with-html",
+    "off",
     "--threads",
     "1",
     "--table-method",
@@ -24,6 +30,10 @@ ODL_FLAGS = (
     "--include-header-footer",
 )
 JVM_MAX_HEAP = os.environ.get("CAPY_PARSER_JVM_MAX_HEAP", "1g")
+ENTRY_JAR = Path(
+    os.environ.get("CAPY_ODL_ENTRY_JAR")
+    or Path(__file__).resolve().parents[1] / "java" / "build" / "capy-odl.jar"
+)
 
 
 class JavaTimeout(RuntimeError):
@@ -51,15 +61,18 @@ def jar_path() -> Path:
 def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
     """Parse ``pdf`` into ``out_dir`` and return the native JSON tree.
 
-    The jar is invoked directly rather than through the package's console
+    The JVM is started directly rather than through the package's console
     script so the heap cap and the deadline are ours.
     """
+    if not ENTRY_JAR.is_file():
+        raise FileNotFoundError(f"{ENTRY_JAR} is missing: run parser/java/build.sh")
     command = [
         "java",
         f"-Xmx{JVM_MAX_HEAP}",
         "-Djava.awt.headless=true",
-        "-jar",
-        str(jar_path()),
+        "-cp",
+        os.pathsep.join([str(jar_path()), str(ENTRY_JAR)]),
+        "capy.odl.CapyMain",
         str(pdf),
         "--output-dir",
         str(out_dir),
@@ -90,3 +103,10 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         )
     native_path = out_dir / f"{pdf.stem}.json"
     return json.loads(native_path.read_text(encoding="utf-8"))
+
+
+def image_objects(out_dir: Path) -> dict[int, int]:
+    """JSON element id -> PDF object number of the image a picture draws
+    (inline images have none), as CapyMain wrote it."""
+    raw = json.loads((out_dir / "capy-images.json").read_text(encoding="utf-8"))
+    return {int(key): value for key, value in raw.items()}

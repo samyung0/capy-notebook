@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pymupdf
 
+from . import page_text
+
 TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 
 
@@ -121,7 +123,7 @@ def move_rotated_labels(blocks: list[dict], pages: set[int], pdf: Path) -> list[
         for page in sorted(pages):
             source = document[page]
             rotated = []
-            for group in source.get_text("dict", flags=TEXT_FLAGS)["blocks"]:
+            for group in page_text.page_dict(source)["blocks"]:
                 for line in group.get("lines", []):
                     if abs(line["dir"][0]) < 0.1:
                         rotated.append(line)
@@ -190,7 +192,7 @@ def split_continuations(blocks: list[dict], pages: set[int], pdf: Path) -> list[
             source = document[page]
             spans = [
                 s
-                for g in source.get_text("dict", flags=TEXT_FLAGS)["blocks"]
+                for g in page_text.page_dict(source)["blocks"]
                 for line in g.get("lines", [])
                 if line["dir"][0] > 0.99
                 for s in line["spans"]

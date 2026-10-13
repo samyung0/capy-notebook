@@ -71,6 +71,26 @@ never touches outside outline contradictions. Two rules are in v13:
   - Text containing `=` beside a figure is no longer taken as a label, which
     fixes the p40 formula.
 
+## Running heads from the native-role experiment (2026-10-13)
+
+The native-role experiment ([report](2026-10-13-native-role-model.md)) found
+v13 missing running furniture on held-out books. Two causes account for most
+of the misses:
+
+- **Open Logic: 15 of v13's 115 missed furniture lines** in the sample.
+  LaTeX running heads at y = 0.117 carry no folio, because the page number is a
+  separate block, and they sit below the 0.1 band that the folio-less rule
+  reads. `_repeated_heads` (agentic-retrieval, parser v13) now handles them.
+  - On 19 books, 448 heads are removed and 708 of Open Logic's 2,169 chunk
+    paths are cleaned.
+  - One other head is removed elsewhere, and no other path changes.
+- **Marine Ecology: 55 missed lines.** Its one-sided Tufte heads have the folio
+  inside the head ("marine ecology notes 8"), so no facing page or bare page
+  number proves the offset. They are left as they are. The folio rules
+  deliberately refuse a top-of-page title whose number rises with the page,
+  to protect "Exercise N" headings. Telling the two apart needs the line role
+  model or a sign-off on a weaker proof.
+
 ## 1. Fixtures
 
 | Id | Pages | Size | What it exercises |

@@ -666,7 +666,10 @@ const BUDGETS = {
     quizzes: 520,
     workspace: 150,
   },
-  cls: 0.02,
+  /** Raised from 0.02 on 2026-10-13: page titles now wrap in full, so a long
+   * one can change its line count when Fustat swaps in (run 38288387195:
+   * near-limit note 0.014 desktop, notes 0.009 mobile from the maths fonts). */
+  cls: 0.025,
   desktopCachedPaintMs: 650,
   /** Warm isolate; tightened from 2000 for every page on 2026-10-12 after
    * run 38219942945 (warm medians: workspace 479, quizzes 545, flashcards

@@ -589,7 +589,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 map,
                 what,
                 &["kind", "labels", "series", "title", "type"],
-                &["gridlines", "unit", "xTitle", "yTitle"],
+                &["gridlines", "xTitle", "yTitle"],
             )?;
             optional(map, "gridlines", |v| {
                 one_of(v, what, &["normal", "fine"]).map(|_| ())
@@ -617,7 +617,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 values_of.push(numbers);
             }
             meta(&map["title"], what)?;
-            for key in ["unit", "xTitle", "yTitle"] {
+            for key in ["xTitle", "yTitle"] {
                 optional(map, key, |v| meta(v, what))?;
             }
             if values_of.iter().any(|v| v.len() != labels.len()) {
@@ -639,14 +639,18 @@ pub fn block(value: &Value) -> Result<Block, String> {
             })
         }
         "plot" => {
-            // Go's validatePlot: one to four curves of [x, y] points,
-            // optional reference lines and labelled points.
+            // Go's validatePlot: one to four series of [x, y] points drawn
+            // as a line or a scatter, optional reference lines and labelled
+            // points.
             strict(
                 map,
                 what,
                 &["series", "title", "type", "xTitle", "yTitle"],
-                &["lines", "marks", "unit"],
+                &["kind", "lines", "marks", "unit"],
             )?;
+            optional(map, "kind", |v| {
+                one_of(v, what, &["line", "scatter"]).map(|_| ())
+            })?;
             for key in ["title", "xTitle", "yTitle"] {
                 meta(&map[key], what)?;
             }

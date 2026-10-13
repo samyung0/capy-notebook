@@ -1,7 +1,7 @@
-"""Image blocks that are not figures, judged before image files enter the bundle.
+"""Image blocks that are not figures.
 
-veraPDF makes an image chunk of every placed image and ODL writes them all, so
-rules, badges and formulas set as pictures arrive as images
+veraPDF makes an image chunk of every placed image, so rules, badges and
+formulas set as pictures arrive as images
 (bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md).
 
 - Sliver: a side under 1 pt, or the short side under 1% of the long side (ODL's
@@ -12,27 +12,29 @@ rules, badges and formulas set as pictures arrive as images
   and passing the six precision tests (``_not_formula``). Retyped ``equation``:
   a display formula's text is PLACEHOLDER, an inline one is spliced into its
   paragraph by ``place_inline`` or else carries PLACEHOLDER itself.
-- Repeat: the same rendered picture on REPEAT_PAGES or more pages (licence
-  badges, logos, icons, chapter bars). Kept as ``discarded`` page furniture,
+- Repeat: the same image (MuPDF's digest of the image the box shows) on
+  REPEAT_PAGES or more pages (licence badges, logos, icons, chapter bars). Kept as ``discarded`` page furniture,
   unless it is a glyph-sized formula among different words each time.
 
 ``add_vector_figures`` adds the figures ODL never sees: veraPDF makes chunks of
 placed images only, so a diagram drawn with paths reached the index as its loose
 labels. A cluster of drawing paths large and busy enough, sparse in text and
 clear of image and table blocks becomes an ``image`` block. Text blocks inside it,
-and short ones beside it, become its ``figure_labels``: indexed on the figure's
-line, never body text or headings.
+and short ones beside it, become its ``figure_labels`` (a source or note line its
+``image_footnote``): indexed on the figure's line, never body text or headings. A
+cluster holding a sentence, code or merged table rows is a callout, a listing's
+frame, a table or a text box and stays text.
 """
 
 from __future__ import annotations
 
-import hashlib
 import re
 import statistics
 from collections import Counter, defaultdict
-from pathlib import Path
 
 import pymupdf
+
+from . import page_text
 
 REPEAT_PAGES = 5
 MIN_SIDE_PT = 1.0
@@ -56,7 +58,7 @@ def _page_facts(page: pymupdf.Page) -> tuple[list, float, float, list] | None:
     median font size, and the page's words; None when the page has no such line
     (no picture there is a formula)."""
     lines, sizes = [], []
-    for block in page.get_text("dict", flags=TEXT_FLAGS)["blocks"]:
+    for block in page_text.page_dict(page)["blocks"]:
         for line in block.get("lines", []):
             text = "".join(s["text"] for s in line["spans"])
             if abs(line["dir"][0] - 1) > 0.01 or not any(c.isalnum() for c in text):
@@ -66,7 +68,7 @@ def _page_facts(page: pymupdf.Page) -> tuple[list, float, float, list] | None:
     if not lines:
         return None
     body = statistics.median(r.height for r, _ in lines)
-    return lines, body, statistics.median(sizes), page.get_text("words")
+    return lines, body, statistics.median(sizes), page_text.page_words(page)
 
 
 def _formula_kind(
@@ -155,21 +157,105 @@ def _words_beside(rect: pymupdf.Rect, words: list) -> tuple[str | None, str | No
     return (left[4] if left else None), (right[4] if right else None)
 
 
+def _image_digests(
+    blocks: list[dict],
+    images: set[int],
+    document: pymupdf.Document,
+    objects: dict[int, int],
+) -> dict[int, str]:
+    """Each picture's image digest. A picture whose image object ODL reported
+    (``objects``, by ``_native_id``) takes the digest of that object, decoded
+    once; the rest (inline images, objects MuPDF cannot decode) are matched
+    by box to MuPDF's list of the page's images (overlap at least half the
+    union), which replays the page. ODL no longer writes image files: decoding
+    and encoding them was 85% of its time on a figure-heavy textbook."""
+    by_object: dict[int, str | None] = {}
+    digests: dict[int, str] = {}
+    by_page: dict[int, list[int]] = defaultdict(list)
+    for index in images:
+        xref = objects.get(blocks[index].get("_native_id"))
+        if xref is not None and xref not in by_object:
+            try:
+                by_object[xref] = pymupdf.Pixmap(document, xref).digest.hex()
+            except (RuntimeError, ValueError):
+                by_object[xref] = None
+        if xref is not None and by_object[xref]:
+            digests[index] = by_object[xref]
+        else:
+            by_page[blocks[index]["page_idx"]].append(index)
+    for number, indexes in sorted(by_page.items()):
+        page = document[number]
+        placed = [
+            (pymupdf.Rect(info["bbox"]), info["digest"].hex())
+            for info in page.get_image_info(hashes=True)
+            if info.get("digest")
+        ]
+        # ODL's box is the image's placement: an exact key (the first image in
+        # page order, as the best share would pick) answers almost every
+        # picture; the rest search the cells they cover.
+        exact: dict[tuple[float, ...], str] = {}
+        grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+        for k, (box, digest) in enumerate(placed):
+            exact.setdefault(_key(box), digest)
+            for cell in _cells(box & page.rect):  # an off-page part overlaps nothing
+                grid[cell].append(k)
+        for index in indexes:
+            rect = _rect(blocks[index], page)
+            if (digest := exact.get(_key(rect))) is not None:
+                digests[index] = digest
+                continue
+
+            def union_share(image: tuple, rect: pymupdf.Rect = rect) -> float:
+                overlap = abs(image[0] & rect)
+                return overlap / max(abs(image[0]) + abs(rect) - overlap, 1e-9)
+
+            cells = _cells(rect & page.rect)
+            near = sorted({k for cell in cells for k in grid.get(cell, ())})
+            # A page-wide background overlaps every picture on it; the share
+            # of the union picks the image the picture is.
+            best = max((placed[k] for k in near), key=union_share, default=None)
+            if best and union_share(best) >= 0.5:
+                digests[index] = best[1]
+    return digests
+
+
+def empty_table(block: dict) -> bool:
+    """A table with no text in any cell and no caption: ODL's cluster method
+    boxes drawn frames (tableaux, answer boxes) as such; half the tables on 49
+    documents were empty."""
+    body = re.sub(r"<[^>]+>", " ", str(block.get("table_body") or ""))
+    return (
+        block.get("type") == "table"
+        and not body.split()
+        and not block.get("table_caption")
+    )
+
+
+def _key(rect: pymupdf.Rect) -> tuple[float, ...]:
+    return tuple(round(v, 1) for v in rect)
+
+
+def _cells(rect: pymupdf.Rect, size: float = 50.0) -> list[tuple[int, int]]:
+    """The size-pt grid cells a box covers (none for an empty box)."""
+    if rect.is_empty:
+        return []
+    xs = range(int(rect.x0 // size), int(rect.x1 // size) + 1)
+    ys = range(int(rect.y0 // size), int(rect.y1 // size) + 1)
+    return [(x, y) for x in xs for y in ys]
+
+
 def classify(
-    blocks: list[dict], document: pymupdf.Document, native_dir: Path
+    blocks: list[dict], document: pymupdf.Document, objects: dict[int, int]
 ) -> list[dict]:
     images = {
         index
         for index, block in enumerate(blocks)
         if block.get("type") == "image" and len(block.get("bbox") or []) == 4
     }
-    digests: dict[int, str] = {}
+    digests = _image_digests(blocks, images, document, objects)
     pages: dict[str, set[int]] = defaultdict(set)
-    for index in images:
-        path = native_dir / str(blocks[index].get("img_path") or "")
-        if path.is_file():
-            digests[index] = hashlib.sha1(path.read_bytes()).hexdigest()
-            pages[digests[index]].add(blocks[index]["page_idx"])
+    for index, digest in digests.items():
+        pages[digest].add(blocks[index]["page_idx"])
     facts: dict[int, tuple | None] = {}
 
     def page_facts(page: pymupdf.Page) -> tuple | None:
@@ -243,6 +329,27 @@ VECTOR_LABEL_REACH = 30.0
 VECTOR_LABEL_WORDS = 6
 # Text blocks inside a cluster of only straight axis-aligned strokes: a grid.
 VECTOR_GRID_TEXTS = 6
+# A figure label is never a sentence: 25 characters ending in . ? ! 。？！
+_SENTENCE = re.compile(r"\S.{23,}[.?!。？！]\s*$")
+# Code in a listing's frame: braces, statement ends, assignments, sends.
+_CODE = re.compile(r"[{};]|:=|>>|\[\s*:\w")
+_AMOUNT = re.compile(r"\(?[$€£¥]?\d[\d,.]*\)?")
+
+
+def _table_row(text: str) -> bool:
+    """Rows of a table ODL merged into one block: twelve tokens mixing three
+    words with three amounts ("Net interest income $ 324 $ 247 ..."). A chart's
+    tick run ("2000 2001 ...", "Jan Mar May ...") has one kind only."""
+    tokens = text.split()
+    words = sum(1 for t in tokens if t.isalpha() and len(t) > 2)
+    return len(tokens) >= 12 and words >= 3 and len(_AMOUNT.findall(text)) >= 3
+
+
+# A chart's source or note line is its footnote, sentence or not.
+_SOURCE = re.compile(
+    r"^\s*(?:(?:data )?sources?|notes?|quelle[n]?|hinweis|fuentes?|notas?|資料來源|资料来源|出典|出所|注)\s*[:：]",
+    re.IGNORECASE,
+)
 
 
 def _axis_aligned(item: tuple) -> bool:
@@ -315,7 +422,8 @@ def add_vector_figures(blocks: list[dict], document: pymupdf.Document) -> list[d
         taken = [
             _rect(blocks[i], page)
             for i in indices
-            if blocks[i].get("type") in ("image", "table", "equation")
+            if blocks[i].get("type") in ("image", "equation")
+            or (blocks[i].get("type") == "table" and not empty_table(blocks[i]))
         ]
         words = None
         area = page.rect.width * page.rect.height
@@ -328,7 +436,7 @@ def add_vector_figures(blocks: list[dict], document: pymupdf.Document) -> list[d
             if any(abs(rect & t) > 0.5 * min(abs(rect), abs(t)) for t in taken):
                 continue
             if words is None:
-                words = [pymupdf.Rect(w[:4]) for w in page.get_text("words")]
+                words = [pymupdf.Rect(w[:4]) for w in page_text.page_words(page)]
             text = sum(abs(w & rect) for w in words)
             if text > VECTOR_MAX_TEXT * abs(rect):
                 continue
@@ -365,10 +473,19 @@ def add_vector_figures(blocks: list[dict], document: pymupdf.Document) -> list[d
             # Ruled rows of text: a table ODL did not recognise, not a figure.
             if aligned >= 0.9 * segments and len(inside) >= VECTOR_GRID_TEXTS:
                 continue
+            # A sentence inside: a shaded callout, a code listing's frame or a
+            # text box, not a figure.
+            texts = [str(blocks[i].get("text", "")).strip() for i in inside]
+            if any(
+                not _SOURCE.match(t)
+                and (_SENTENCE.search(t) or len(_CODE.findall(t)) >= 2 or _table_row(t))
+                for t in texts
+            ):
+                continue
             figure["bbox"] = [rect.x0 / w, rect.y0 / h, rect.x1 / w, rect.y1 / h]
-            figure["figure_labels"] = [
-                t for i in inside if (t := str(blocks[i].get("text", "")).strip())
-            ]
+            figure["figure_labels"] = [t for t in texts if t and not _SOURCE.match(t)]
+            if notes := [t for t in texts if _SOURCE.match(t)]:
+                figure["image_footnote"] = notes
             labels.update(inside)
             following = [
                 i
@@ -426,7 +543,7 @@ def place_inline(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         page = document[number]
         if number not in words:
             words.clear()  # only the current page, as in classify
-            words[number] = page.get_text("words")
+            words[number] = page_text.page_words(page)
         left, right = _words_beside(_rect(picture, page), words[number])
         # Whole words only: the pair never matches inside a longer word.
         pattern = rf"(?<!\S){re.escape(left or '')}(\s*){re.escape(right or '')}(?!\S)"
@@ -450,3 +567,58 @@ def place_inline(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             out.append(block)
             out.extend(after.get(id(block), ()))
     return out
+
+
+# A figure caption: its label and number ("Figure 4.2:", "Fig. 3", "Abbildung 2",
+# "圖 2.1"); the table caption rule is in context.py.
+FIGURE_CAPTION = re.compile(
+    r"^(?:(?:figure|abbildung|figura|chart|graph|exhibit|plate|map|рисунок)\s+"
+    r"|(?:fig|abb|рис)\.\s*)(?:[a-z]?[-.]?\d+[a-z]?(?:[.-]\d+)*|[ivxlc]{1,6})"
+    # Punctuation, a capital or the end follows; "Figure 2.18 illustrates…"
+    # is a sentence about the figure.
+    r"(?=$|[.:：)](?!\d)|\s+(?-i:[^a-z\s]))|^[图圖図]\s*\d",
+    re.IGNORECASE,
+)
+CAPTION_GAP = 60  # of 1000: how far a caption sits from its figure
+
+
+def attach_captions(blocks: list[dict]) -> list[dict]:
+    """Move a "Figure N" paragraph next to a picture into its ``image_caption``.
+
+    ODL attached no caption to any of 5,841 pictures on 49 documents while 782
+    "Figure N" paragraphs sat beside one. The caption is the paragraph right
+    after the picture in reading order (or right before it when nothing
+    follows), on its page, at most CAPTION_GAP below (or above) it and
+    overlapping it horizontally. The chunker indexes it on the picture's line.
+    """
+    taken: set[int] = set()
+    captions: dict[int, str] = {}
+    for index, block in enumerate(blocks):
+        if block.get("type") != "image" or block.get("image_caption"):
+            continue
+        box = block.get("bbox") or []
+        for other, below in ((index + 1, True), (index - 1, False)):
+            if not 0 <= other < len(blocks) or other in taken:
+                continue
+            candidate = blocks[other]
+            bounds = candidate.get("bbox") or []
+            if len(box) != 4 or len(bounds) != 4:
+                continue
+            text = " ".join(str(candidate.get("text") or "").split())
+            gap = bounds[1] - box[3] if below else box[1] - bounds[3]
+            if (
+                candidate.get("type") == "text"
+                and not candidate.get("text_level")
+                and candidate.get("page_idx") == block.get("page_idx")
+                and -5 <= gap <= CAPTION_GAP
+                and min(box[2], bounds[2]) > max(box[0], bounds[0])
+                and FIGURE_CAPTION.match(text)
+            ):
+                captions[index] = text
+                taken.add(other)
+                break
+    return [
+        {**block, "image_caption": [captions[index]]} if index in captions else block
+        for index, block in enumerate(blocks)
+        if index not in taken
+    ]

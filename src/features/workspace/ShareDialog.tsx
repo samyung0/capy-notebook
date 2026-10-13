@@ -328,8 +328,18 @@ export function ShareDialog({
               <ContentSwap contentKey={String(copied)} kind="icon">
                 <Icon name={copied ? 'check' : 'copy'} />
               </ContentSwap>
-              <span className="sr-only sm:not-sr-only">
-                <ContentSwap contentKey={String(copied)}>
+              {/* Both labels sit hidden in the same cell so the button keeps the wider width. */}
+              <span className="sr-only sm:not-sr-only sm:inline-grid">
+                <span aria-hidden className="invisible col-start-1 row-start-1">
+                  {m.action_copy()}
+                </span>
+                <span aria-hidden className="invisible col-start-1 row-start-1">
+                  {m.action_copied()}
+                </span>
+                <ContentSwap
+                  className="col-start-1 row-start-1"
+                  contentKey={String(copied)}
+                >
                   {copied ? m.action_copied() : m.action_copy()}
                 </ContentSwap>
               </span>

@@ -160,10 +160,14 @@ export function EditorSettingsDialog() {
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="fustat">
-                            {m.editor_prefs_font_fustat()}
+                            <span className="font-note-fustat">
+                              {m.editor_prefs_font_fustat()}
+                            </span>
                           </SelectItem>
                           <SelectItem value="system">
-                            {m.editor_prefs_font_system()}
+                            <span className="font-note-system">
+                              {m.editor_prefs_font_system()}
+                            </span>
                           </SelectItem>
                         </SelectContent>
                       </Select>

@@ -18,6 +18,7 @@ import {
   ItemCard,
   ItemList,
   ItemSkeletonGrid,
+  itemMenuAlign,
 } from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
 import {
@@ -330,6 +331,7 @@ function ActiveFiles({
                       chapters={[]}
                       content={toFileActionTarget(file)}
                       display="menu"
+                      menuAlign={itemMenuAlign(view)}
                       menuTriggerIcon="moreHorizontal"
                       renameFieldLabel={m.files_file_name()}
                       renameTitle={m.files_rename()}
@@ -575,6 +577,7 @@ function TrashTab({
                 <ItemCard
                   actions={
                     <Menu
+                      align={itemMenuAlign(view)}
                       items={[
                         {
                           disabled: selection.busy,

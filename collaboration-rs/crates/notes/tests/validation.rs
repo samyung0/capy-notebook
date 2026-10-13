@@ -342,7 +342,7 @@ fn a_plot_validates_as_go_validates_it() {
         block
     };
     type Edit = fn(&mut Value);
-    let refused: [(&str, Edit); 9] = [
+    let refused: [(&str, Edit); 10] = [
         ("five curves", |b| {
             b["series"] = (0..5)
                 .map(|_| json!({ "name": "c", "points": [[0, 1], [0, 1]] }))
@@ -374,8 +374,10 @@ fn a_plot_validates_as_go_validates_it() {
         ("missing y title", |b| {
             b.as_object_mut().unwrap().remove("yTitle");
         }),
+        ("unknown kind", |b| b["kind"] = json!("bar")),
     ];
     questions::block(&plot(|_| {})).unwrap();
+    questions::block(&plot(|b| b["kind"] = json!("scatter"))).unwrap();
     questions::block(&plot(|b| {
         b["series"] =
             json!([{ "name": "c", "points": (0..60).map(|x| json!([x, x])).collect::<Vec<_>>() }]);
@@ -384,7 +386,7 @@ fn a_plot_validates_as_go_validates_it() {
     for (name, edit) in refused {
         assert!(questions::block(&plot(edit)).is_err(), "{name} accepted");
     }
-    assert!(questions::block(&plot(|b| b["kind"] = json!("line"))).is_err());
+    assert!(questions::block(&plot(|b| b["shape"] = json!("line"))).is_err());
     let question = |stem: Value| {
         json!({
             "id": "q",

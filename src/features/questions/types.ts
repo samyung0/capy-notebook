@@ -17,18 +17,18 @@ export type ChartBlock = {
   type: 'chart';
   kind: 'bar' | 'hbar' | 'line' | 'area' | 'pie' | 'stacked';
   title: string;
-  unit?: string;
   labels: string[];
   series: { name: string; values: number[] }[];
   xTitle?: string;
   yTitle?: string;
   gridlines?: 'normal' | 'fine';
 };
-/** Labelled curves over numeric axes: each series is [x, y] points drawn as
- * straight segments in x order, with optional dashed reference lines and
- * labelled points. */
+/** Series of [x, y] points over numeric axes: drawn as straight segments in
+ * x order (`line`, the default) or as dots (`scatter`), with optional dashed
+ * reference lines and labelled points. */
 export type PlotBlock = {
   type: 'plot';
+  kind?: 'line' | 'scatter';
   title: string;
   xTitle: string;
   yTitle: string;

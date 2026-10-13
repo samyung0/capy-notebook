@@ -2416,7 +2416,7 @@ async def write_questions(
 async def write_media(
     args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
 ) -> ToolResult:
-    """add_question_media: the chart, plot or graph goes after the question's
+    """add_question_media: the chart or plot goes after the question's
     text, and the question is written back whole (replace_question)."""
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:

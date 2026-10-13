@@ -1,6 +1,6 @@
 import type { LinkProps } from '@tanstack/react-router';
 import type { MaterialListItem } from '@/api/types';
-import { ItemCard } from '@/components/app/ItemCard';
+import { ItemCard, itemMenuAlign } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { formatFileSize } from '@/features/files/fileUtils';
@@ -69,7 +69,13 @@ export function MaterialCard({
 }) {
   return (
     <ItemCard
-      actions={<Menu items={menu} triggerIcon="moreHorizontal" />}
+      actions={
+        <Menu
+          align={itemMenuAlign(view)}
+          items={menu}
+          triggerIcon="moreHorizontal"
+        />
+      }
       details={materialListDetails(item)}
       icon={materialIconName(item.kind)}
       link={link}

@@ -141,6 +141,14 @@ def run_service(args, fixtures: list[dict], out: Path) -> list[dict]:
     from stress_parser import SCHEMA, Sampler, cgroup_dir, post, spool_dir, wait_healthy
 
     token = os.environ["PARSER_TOKEN"]
+    cpu = next(
+        (
+            line.split(":", 1)[1].strip()
+            for line in Path("/proc/cpuinfo").read_text().splitlines()
+            if line.startswith("model name")
+        ),
+        "unknown",
+    )
     spool = spool_dir(args.container)
     health = wait_healthy(args.service, token)
     cgroup = cgroup_dir(args.container)
@@ -188,12 +196,15 @@ def run_service(args, fixtures: list[dict], out: Path) -> list[dict]:
                 "status": status,
                 "error": None if status == 200 else payload.get("code") or payload.get("detail"),
                 "parser_version": health["parser_version"],
+                "cpu": cpu,
                 "execution_s": round(execution, 2) if execution > 0 else None,
                 "page_count": payload.get("_page_count"),
                 "ocr_pages": payload.get("_ocr_page_count"),
                 "phases": payload.get("_phases"),
-                "peak_gib": window.get("peak_current_gib"),
-                "peak_anon_gib": window.get("peak_anon_gib"),
+                # Anonymous memory is what the parser holds; the cgroup total
+                # also counts reclaimable page cache from reading the fixtures.
+                "peak_gib": window.get("peak_anon_gib"),
+                "peak_cgroup_gib": window.get("peak_current_gib"),
                 "avg_cores": window.get("avg_cores"),
                 "oom_kills": window.get("oom_kills"),
                 **stats,
@@ -337,10 +348,14 @@ def run(args) -> None:
 
 
 def load(directory: Path) -> dict[str, dict]:
-    return {
+    rows = {
         row["id"]: row
         for row in map(json.loads, (directory / "results.jsonl").read_text().splitlines())
     }
+    for row in rows.values():  # runs before 2026-10-12 kept anon under its own key
+        if "peak_anon_gib" in row:
+            row["peak_gib"] = row.pop("peak_anon_gib")
+    return rows
 
 
 def check(args) -> None:

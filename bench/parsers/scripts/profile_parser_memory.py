@@ -55,7 +55,7 @@ from odl import (  # noqa: E402
     tables,
 )
 
-# Every call parse_pdf makes, in its order (hidden.source_facts runs per page
+# Every call parse_pdf makes, in its order (hidden.hidden_text_layer runs per page
 # inside a comprehension and is left in the enclosing time).
 STEPS = [
     (fonts, "repair_fonts"),

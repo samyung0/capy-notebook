@@ -82,14 +82,16 @@ export function QuizForm({
     if (questions.length <= 1 && onEmpty) return onEmpty();
     removeQuestion(content, keys, id);
   };
-  // Edit (ghost-hover) and Remove (danger-light), at each question's top
-  // right on desktop and on their own line at the right on phones (Epo
-  // 2026-10-10).
+  // Edit (ghost-hover) and Remove (danger-light) on a row under each
+  // question, at the right.
   const actions = (item: Question) => (
-    <>
+    <div className="flex justify-end">
       <Button
+        className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
         iconLeft="pencil"
+        iconLeftClassName="size-3.5 sm:size-3.75"
         onClick={() => setEditing({ blank: false, id: item.id })}
+        rounded="large"
         size="sm"
         type="button"
         variant="ghost-hover"
@@ -97,15 +99,18 @@ export function QuizForm({
         {m.action_edit()}
       </Button>
       <Button
+        className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
         iconLeft="trash"
+        iconLeftClassName="size-3.5 sm:size-3.75"
         onClick={() => setRemoving(item.id)}
+        rounded="large"
         size="sm"
         type="button"
         variant="danger-light"
       >
         {m.action_remove()}
       </Button>
-    </>
+    </div>
   );
   const close = () => {
     if (editing?.blank) removeQuestion(content, keys, editing.id);
@@ -116,9 +121,6 @@ export function QuizForm({
       <QuizQuestionList
         disabled
         questions={questions}
-        renderActions={(item) => (
-          <div className="hidden gap-1 md:flex">{actions(item)}</div>
-        )}
         renderAfter={(item) => {
           const incomplete = incompleteLine(item);
           return (
@@ -132,11 +134,7 @@ export function QuizForm({
                   {incomplete}
                 </p>
               )}
-              {/* Phones: Edit and Remove on their own line under the
-                  question, at the right (Epo 2026-10-10). */}
-              <div className="flex justify-end gap-3 md:hidden">
-                {actions(item)}
-              </div>
+              {actions(item)}
             </>
           );
         }}

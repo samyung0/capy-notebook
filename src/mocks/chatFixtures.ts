@@ -129,7 +129,7 @@ export const chatFixtures = [
     content: [
       'root = Answer([intro, chart])',
       'intro = Md("These example measurements are illustrative.")',
-      `chart = Chart("${kind}", "${title}: revision time", ["Biology", "Chemistry", "Mathematics"], [Series("This week", [25, 35, 40])${kind === 'pie' || kind === 'stacked' ? '' : ', Series("Last week", [20, 45, 30])'}], null, "min", true)`,
+      `chart = Chart("${kind}", "${title}: revision time (min)", ["Biology", "Chemistry", "Mathematics"], [Series("This week", [25, 35, 40])${kind === 'pie' || kind === 'stacked' ? '], null, true' : ', Series("Last week", [20, 45, 30])], null, true, "Subject", "Minutes"'})`,
     ].join('\n'),
     hint: 'Illustrative data with labels and units. Resize the chat panel to check fit.',
     id: `chat-openui-${kind}` as const,
@@ -139,9 +139,9 @@ export const chatFixtures = [
   {
     content: [
       'root = Answer([chart])',
-      'chart = ScatterChart("Practice and recall", [Point(5, 40, "Session 1"), Point(10, 55, "Session 2"), Point(15, 70, "Session 3"), Point(20, 65, "Session 4"), Point(25, 85, "Session 5")], "Practice minutes", "Recall score (%)", null, "%", true)',
+      'chart = Plot("scatter", "Practice and recall", [Curve("Sessions", [[5, 40], [10, 55], [15, 70], [20, 65], [25, 85]])], "Practice minutes", "Recall score (%)", null, true, null, [Point(20, 65, "Session 4")])',
     ].join('\n'),
-    hint: 'Labeled scatter points, axis labels, units and illustrative data.',
+    hint: 'A scatter plot with a labelled point, axis titles with units and illustrative data.',
     id: 'chat-openui-scatter',
     label: 'OpenUI: scatter chart',
     prompt: 'Plot practice time against recall score.',
@@ -150,7 +150,7 @@ export const chatFixtures = [
     content: [
       'root = Answer([intro, plot, after])',
       'intro = Md("Once the membrane reaches threshold, voltage-gated channels open in turn and the spike runs by itself.", [1])',
-      'plot = Plot("An action potential", [vm], "Time (ms)", "Membrane potential (mV)", null, true, [threshold], [na, k, under])',
+      'plot = Plot("line", "An action potential", [vm], "Time (ms)", "Membrane potential (mV)", null, true, [threshold], [na, k, under])',
       'vm = Curve("Membrane potential", [[0, -70], [0.5, -70], [0.8, -62], [1, -55], [1.2, -20], [1.5, 30], [1.8, 0], [2.2, -50], [2.6, -80], [3.2, -75], [4, -70], [5, -70]])',
       'threshold = RefLine("y", -55, "threshold −55 mV")',
       'na = Point(1.2, -20, "Na⁺ floods in")',
@@ -229,8 +229,8 @@ export const chatFixtures = [
     content: [
       'root = Answer([intro, good, bad])',
       'intro = Md("The valid chart stays visible. The damaged chart is withheld.")',
-      'good = Chart("bar", "Valid measurements", ["A", "B"], [Series("Score", [10, 20])], null, "points", true)',
-      'bad = Chart("bar", "Mismatched measurements", ["A", "B", "C"], [Series("Score", [10])], null, "points", true)',
+      'good = Chart("bar", "Valid measurements (points)", ["A", "B"], [Series("Score", [10, 20])], null, true)',
+      'bad = Chart("bar", "Mismatched measurements (points)", ["A", "B", "C"], [Series("Score", [10])], null, true)',
     ].join('\n'),
     hint: 'One valid chart and one mismatched series. Shows the local recovery notice.',
     id: 'chat-openui-invalid-chart',

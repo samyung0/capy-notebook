@@ -369,6 +369,158 @@ export const chapters: Chapter[] = [
   },
 ];
 
+/** Wide and long delimited files for the CSV/TSV preview: many columns,
+ * CJK text, a body past the 500-row preview cap and quoting edge cases. */
+const gradebookCsv = (() => {
+  const students = [
+    'Aiko Tan',
+    'Ben Okafor',
+    'Chloe Martin',
+    'Dev Patel',
+    'Elena Rossi',
+    'Farah Haddad',
+    'Gus Lindqvist',
+    'Hana Kim',
+    'Isaac Mensah',
+    'Jia Wen Lim',
+    'Kofi Asante',
+    'Lucia Fernández',
+  ];
+  const comments = [
+    'Steady improvement since the midterm',
+    '',
+    'Missed two labs, caught up in May',
+    'Strong project on enzyme kinetics',
+    '',
+    'Needs to show working in calculations',
+  ];
+  const homework = Array.from({ length: 10 }, (_, i) => `hw${i + 1}`);
+  const header = [
+    'student',
+    'class',
+    ...homework,
+    'quiz1',
+    'quiz2',
+    'quiz3',
+    'midterm',
+    'lab_report',
+    'project',
+    'participation',
+    'attendance_pct',
+    'final_exam',
+    'total',
+    'grade',
+    'teacher_comment',
+  ];
+  const rows = students.map((name, s) => {
+    const scores = homework.map((_, h) =>
+      (s + h) % 7 === 0 ? '' : 5 + ((s * 3 + h * 7) % 6)
+    );
+    const total = 52 + ((s * 17) % 45) + 0.5 * (s % 2);
+    const grade =
+      total >= 85 ? 'A' : total >= 72 ? 'B' : total >= 60 ? 'C' : 'D';
+    return [
+      name,
+      s % 2 ? '10B' : '10A',
+      ...scores,
+      10 + ((s * 5) % 11),
+      12 + ((s * 7) % 9),
+      9 + ((s * 3) % 12),
+      48 + ((s * 13) % 50),
+      12 + ((s * 4) % 14),
+      20 + ((s * 9) % 21),
+      3 + (s % 3),
+      (78 + ((s * 23) % 22) + 0.4).toFixed(1),
+      40 + ((s * 31) % 59),
+      total,
+      grade,
+      comments[s % comments.length],
+    ].join(',');
+  });
+  return `${[header.join(','), ...rows].join('\n')}\n`;
+})();
+
+const greenhouseTsv = (() => {
+  const sides = ['n', 'e', 's', 'w'];
+  const header = [
+    'timestamp',
+    'station_id',
+    ...sides.flatMap((side) => [
+      `temp_c_${side}`,
+      `rh_pct_${side}`,
+      `lux_${side}`,
+    ]),
+    'co2_ppm',
+    'pm2_5',
+    'pm10',
+    'voc_index',
+    'pressure_hpa',
+    'wind_ms',
+    'wind_dir',
+    'rain_mm',
+    'uv_index',
+    'soil_moist_pct',
+    'soil_temp_c',
+    'battery_v',
+    'rssi_dbm',
+    'firmware',
+    'status',
+    'operator_note',
+  ];
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const rows = Array.from({ length: 24 }, (_, i) => {
+    const hour = String(8 + Math.floor(i / 4)).padStart(2, '0');
+    const minute = String((i % 4) * 15).padStart(2, '0');
+    return [
+      `2026-05-14T${hour}:${minute}:00Z`,
+      i % 3 ? 'GH-01' : 'GH-02',
+      ...sides.flatMap((_, k) => [
+        (17 + ((i * 7 + k * 3) % 90) / 10).toFixed(1),
+        40 + ((i * 11 + k * 5) % 45),
+        800 + ((i * 1733 + k * 977) % 41_000),
+      ]),
+      410 + ((i * 37) % 400),
+      (2 + ((i * 13) % 280) / 10).toFixed(1),
+      (5 + ((i * 17) % 400) / 10).toFixed(1),
+      20 + ((i * 29) % 280),
+      (1003 + ((i * 7) % 180) / 10).toFixed(1),
+      (((i * 9) % 60) / 10).toFixed(1),
+      directions[i % directions.length],
+      i % 5 === 3 ? 1.4 : 0,
+      i % 8,
+      18 + ((i * 3) % 28),
+      (12 + ((i * 5) % 70) / 10).toFixed(1),
+      (4.1 - i * 0.025).toFixed(2),
+      -61 - ((i * 7) % 31),
+      '2.4.1',
+      i % 7 === 5 ? 'degraded' : 'ok',
+      i === 6
+        ? 'Door left open during reading'
+        : i === 15
+          ? 'Sensor N recalibrated'
+          : '',
+    ].join('\t');
+  });
+  return `${[header.join('\t'), ...rows].join('\n')}\n`;
+})();
+
+const enzymeAssayCsv = (() => {
+  const enzymes = ['catalase', 'amylase', 'pepsin', 'lipase', 'trypsin'];
+  const rows = Array.from({ length: 600 }, (_, i) => {
+    const temp = 10 + (i % 9) * 5;
+    const ph = (4 + (i % 7) * 0.5).toFixed(1);
+    return [
+      i + 1,
+      enzymes[i % enzymes.length],
+      temp,
+      ph,
+      (0.2 + ((i * 37) % 180) / 100).toFixed(2),
+      i % 11 === 0 ? '' : ((i * 53) % 900) / 10,
+    ].join(',');
+  });
+  return `trial,enzyme,temperature_c,ph,substrate_mm,rate_umol_min\n${rows.join('\n')}\n`;
+})();
+
 /** Biology 101 text sources, one per text format the source editor opens
  * collaboratively (Office formats come from `biologyOfficeFixtures`). */
 const biologyTextSources = [
@@ -391,6 +543,50 @@ ribosome\tbuilds proteins
     id: 'bio-text-tsv',
     kind: 'sheet',
     name: 'Organelle functions.tsv',
+  },
+  {
+    body: gradebookCsv,
+    id: 'bio-text-csv-gradebook',
+    kind: 'sheet',
+    name: 'Class gradebook.csv',
+  },
+  {
+    body: greenhouseTsv,
+    id: 'bio-text-tsv-greenhouse',
+    kind: 'sheet',
+    name: 'Greenhouse sensors.tsv',
+  },
+  {
+    body: `物種,學名,棲息地,數量,備註
+青蛙,Rana catesbeiana,池塘東岸,12,蘆葦附近有卵塊
+蠑螈,Cynops orientalis,池塘,4,
+蒼鷺,Ardea cinerea,岸邊,2,清晨觀察到兩隻在覓食
+蜻蜓幼蟲,Anisoptera,水草區,41,網撈十次
+田螺,Cipangopaludina chinensis,淺水區,9,學生在平台上計數
+`,
+    id: 'bio-text-csv-zh',
+    kind: 'sheet',
+    name: '池塘調查.csv',
+  },
+  {
+    body: enzymeAssayCsv,
+    id: 'bio-text-csv-enzyme',
+    kind: 'sheet',
+    name: 'Enzyme assay (600 rows).csv',
+  },
+  {
+    body: `sample,label,value,change_pct,passed,collected,comment
+1,"Leaf, upper",0.42,-3.5,TRUE,2026-04-02,"Quoted ""fresh"" sample"
+2,Leaf lower,1.07,12,FALSE,2026-04-02,
+3,,0.9,0,TRUE,,Missing label and date
+4,Root tip,-0.15,-100,TRUE,2026-04-03,"Line one
+line two"
+5,Stem,1200,250.25,FALSE,2026-04-04,A very long comment that runs well past the widest column the preview allows so it has to truncate with the full text on hover
+10,Stem,7,8,TRUE,2026-04-05,Sorts after 5 numerically
+`,
+    id: 'bio-text-csv-edge',
+    kind: 'sheet',
+    name: 'Edge cases.csv',
   },
   {
     body: `{

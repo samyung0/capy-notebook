@@ -7,15 +7,16 @@ from itertools import pairwise
 
 import pymupdf
 
+from . import page_text
 
-def source_facts(page: pymupdf.Page) -> dict:
-    spans = page.get_texttrace()
-    count = sum(len(span["chars"]) for span in spans)
-    hidden = sum(
-        len(span["chars"])
-        for span in spans
-        if span["type"] == 3 or span["opacity"] == 0
-    )
+
+def hidden_text_layer(page: pymupdf.Page) -> bool:
+    """A scan under an invisible OCR layer: at least 100 characters, nine in
+    ten of them invisible, and one image covering nine tenths of the page."""
+    facts = page_text.trace_facts(page)
+    count, hidden = facts["characters"], facts["hidden_characters"]
+    if count < 100 or hidden < 0.9 * count:
+        return False
     coverage = max(
         (
             (pymupdf.Rect(image["bbox"]) & page.rect).get_area() / page.rect.get_area()
@@ -23,12 +24,7 @@ def source_facts(page: pymupdf.Page) -> dict:
         ),
         default=0,
     )
-    return {
-        "characters": count,
-        "hidden_characters": hidden,
-        "largest_image_fraction": coverage,
-        "eligible": count >= 100 and hidden >= 0.9 * count and coverage >= 0.9,
-    }
+    return coverage >= 0.9
 
 
 def block_text(block: dict) -> str:

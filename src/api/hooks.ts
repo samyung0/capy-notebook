@@ -133,6 +133,7 @@ import type {
   Workspace,
   WorkspaceCollaborator,
   WorkspaceMember,
+  WorkspaceRecent,
   WorkspaceStats,
 } from './types';
 
@@ -962,6 +963,15 @@ export const useFiles = (wsId: string, options?: QueryUiOptions) =>
     ...filesQuery(wsId),
     meta: queryMeta(options),
     refetchOnWindowFocus: true,
+  });
+
+/** The empty viewer's quick-open grid: the workspace's four newest files and
+ * materials with thumbnails and previews, for members and link readers alike. */
+export const useWorkspaceRecent = (wsId: string) =>
+  useQuery({
+    meta: queryMeta({ errorBoundary: false }),
+    queryFn: () => api.get<WorkspaceRecent>(`/workspaces/${wsId}/recent`),
+    queryKey: qk.filesRecent(wsId),
   });
 
 export const fileQuery = (id: string | null) =>

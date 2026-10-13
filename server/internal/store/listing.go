@@ -330,3 +330,54 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	}
 	return page, nil
 }
+
+// WorkspaceRecent is a workspace's newest files and materials with their
+// thumbnails and previews: the empty viewer's quick-open grid. Each list holds
+// at most the requested count; the client merges and cuts the pair.
+type WorkspaceRecent struct {
+	Files     []File             `json:"files" nullable:"false"`
+	Materials []MaterialListItem `json:"materials" nullable:"false"`
+}
+
+// ListWorkspaceRecent returns the newest live files (by added time) and
+// top-level materials (by created time) of one workspace. Callers check read
+// access first; the rows carry no share links.
+func (s *Store) ListWorkspaceRecent(ctx context.Context, wsID string, limit int) (WorkspaceRecent, error) {
+	out := WorkspaceRecent{Files: []File{}, Materials: []MaterialListItem{}}
+	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+` FROM files f
+		WHERE f.workspace_id=$1 AND f.trashed_at IS NULL
+		ORDER BY f.added_at DESC, f.id LIMIT $2`, wsID, limit)
+	if err != nil {
+		return out, err
+	}
+	for rows.Next() {
+		f, err := scanFile(rows)
+		if err != nil {
+			rows.Close()
+			return out, err
+		}
+		out.Files = append(out.Files, f)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return out, err
+	}
+	rows, err = s.pool.Query(ctx, `SELECT m.id, m.kind, m.title, m.workspace_id, m.workspace_name,
+			m.chapter_id, m.privacy, m.created_at, m.updated_at, m.size_bytes, m.preview
+		FROM materials m
+		WHERE m.workspace_id=$1 AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
+		ORDER BY m.created_at DESC, m.id LIMIT $2`, wsID, limit)
+	if err != nil {
+		return out, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var item MaterialListItem
+		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
+			&item.ChapterID, &item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes, &item.Preview); err != nil {
+			return out, err
+		}
+		out.Materials = append(out.Materials, item)
+	}
+	return out, rows.Err()
+}

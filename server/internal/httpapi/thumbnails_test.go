@@ -118,9 +118,13 @@ func TestListThumbnailsFollowReadAccess(t *testing.T) {
 	}
 
 	// A signed-in stranger reads the link and public workspaces only.
-	get("u_other", "/api/workspaces/ws_e2e_private/files", http.StatusNotFound)
-	want(get("u_other", "/api/workspaces/ws_e2e_link/files", http.StatusOK), link)
-	want(get("u_other", "/api/workspaces/ws_e2e_public/files", http.StatusOK), public)
+	// The empty viewer's recent grid follows the same workspace read rule.
+	for _, list := range []string{"files", "recent"} {
+		get("u_other", "/api/workspaces/ws_e2e_private/"+list, http.StatusNotFound)
+		want(get("u_other", "/api/workspaces/ws_e2e_link/"+list, http.StatusOK), link)
+		want(get("u_other", "/api/workspaces/ws_e2e_public/"+list, http.StatusOK), public)
+	}
+	none(get("u_owner", "/api/workspaces/ws_e2e_private/recent", http.StatusOK), trashed)
 	// Opening a shared workspace adds nothing to the caller's own lists.
 	for _, path := range []string{"/api/files", "/api/files?scope=member", "/api/trash"} {
 		none(get("u_other", path, http.StatusOK), private, link, public, trashed)
@@ -128,6 +132,7 @@ func TestListThumbnailsFollowReadAccess(t *testing.T) {
 
 	// A member viewer reads the private workspace; trash stays the owner's.
 	want(get("u_viewer", "/api/workspaces/ws_e2e_private/files", http.StatusOK), private)
+	want(get("u_viewer", "/api/workspaces/ws_e2e_private/recent", http.StatusOK), private)
 	want(get("u_viewer", "/api/files?scope=member", http.StatusOK), private)
 	none(get("u_viewer", "/api/trash", http.StatusOK), trashed)
 

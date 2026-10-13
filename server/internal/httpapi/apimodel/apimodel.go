@@ -76,6 +76,7 @@ type (
 	FilePage           = store.FilePage
 	MaterialListItem   = store.MaterialListItem
 	MaterialPage       = store.MaterialPage
+	WorkspaceRecent    = store.WorkspaceRecent
 	TrashItem          = store.TrashItem
 	TrashPage          = store.TrashPage
 	OperationReceipt   = store.AgentOperation
@@ -213,6 +214,9 @@ type Material struct {
 	Provenance *store.Provenance `json:"provenance,omitempty"`
 	// ParentMaterialID names the note a quiz or flashcard set is embedded in.
 	ParentMaterialID string `json:"parentMaterialId,omitempty"`
+	// SharePath is a standalone material's signed share link, for its Share
+	// dialog; absent in a workspace or embedded in a note.
+	SharePath string `json:"sharePath,omitempty"`
 	// EmbedCredits is, for a note, the provenance of each of its own live
 	// embedded quizzes and flashcard sets that has credits, by id: the app
 	// computes the note's footer from it and the document's current embeds.

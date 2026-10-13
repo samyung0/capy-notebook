@@ -81,7 +81,9 @@ export function SelectField({
   value,
   options,
   onChange,
+  className,
 }: {
+  className?: string;
   label: string;
   value: string;
   options: readonly { value: string; label: string }[];
@@ -89,7 +91,7 @@ export function SelectField({
 }) {
   const id = useId();
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
+    <div className={cn('flex min-w-0 max-w-full flex-col gap-0.5', className)}>
       <label className="t-label" htmlFor={id}>
         {label}
       </label>
@@ -102,9 +104,9 @@ export function SelectField({
         >
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent align="start" variant="menu">
           {options.map((option) => (
-            <SelectItem key={option.value} value={option.value}>
+            <SelectItem key={option.value} size="menu" value={option.value}>
               {option.label}
             </SelectItem>
           ))}

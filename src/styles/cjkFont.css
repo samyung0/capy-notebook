@@ -1,0 +1,38 @@
+/* Chinese, Japanese and Korean text. The English UI sets <html lang="en">, so
+   with no CJK family in a stack Chrome picks a fallback per character and one
+   word can mix fonts and weights (池塘調查: Hiragino W3 and W6). Every sans
+   stack names --font-cjk right after its Latin fonts: Traditional Chinese
+   first (Epo, 2026-10-13); Simplified, kana and hangul still come from these
+   families or the platform fallback.
+
+   "Capy CJK" keeps CJK close to how heavy it looked next to Fustat before
+   (Epo, 2026-10-13): 500 draws Regular instead of Medium, 600 and bolder
+   draw Semibold (Medium for Noto). Each face declares the one weight it
+   draws: Chrome on macOS renders a local() face at its declared weight, so a
+   weight range would draw whatever weight was asked. Where no local() name
+   matches (Windows, Android), the named families after it draw the asked
+   weight. */
+
+:root {
+  --font-cjk:
+    "Capy CJK", "PingFang TC", "Microsoft JhengHei", "Noto Sans TC",
+    "Noto Sans CJK TC";
+}
+
+@font-face {
+  font-family: "Capy CJK";
+  src: local("PingFangTC-Light"), local("NotoSansCJKtc-Light");
+  font-weight: 300;
+}
+
+@font-face {
+  font-family: "Capy CJK";
+  src: local("PingFangTC-Regular"), local("NotoSansCJKtc-Regular");
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Capy CJK";
+  src: local("PingFangTC-Semibold"), local("NotoSansCJKtc-Medium");
+  font-weight: 600;
+}

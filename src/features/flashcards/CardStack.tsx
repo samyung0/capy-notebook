@@ -9,8 +9,8 @@ import { CardBack, CardFront } from './CardView';
 
 /* The card on its stack, shared by flashcard study (study page, shared page,
    note embed), the review session and Quick review. Compact is the note
-   embed's shorter card; panel is Quick review's, narrower still so it sits
-   clear of the study panel's sides. */
+   embed's shorter card; panel is Quick review's, visibly smaller still (narrower,
+   shorter, smaller front text) so it sits clear of the study panel's sides. */
 
 export type CardStackSize = 'large' | 'compact' | 'panel';
 
@@ -64,7 +64,7 @@ export function CardStack({
       className={cn(
         'relative',
         compact ? 'pt-5' : 'pt-6',
-        size === 'panel' && 'mx-auto w-full max-w-[420px]'
+        size === 'panel' && 'mx-auto w-full max-w-[360px]'
       )}
     >
       <div
@@ -146,14 +146,14 @@ function StudyCard({
     setLeaving(flip.flipped);
     setFlip({ flipped, n: flip.n + 1 });
   }
-  const padding = compact ? 'p-5' : 'p-8';
+  const padding = size === 'large' ? 'p-8' : size === 'compact' ? 'p-5' : 'p-4';
   const face = (back: boolean): ReactNode =>
     back ? (
       <div className={cn(!compact && 'text-lg')}>
         <CardBack card={card} />
       </div>
     ) : (
-      <CardFront card={card} size={compact ? 'compact' : 'large'} />
+      <CardFront card={card} size={size} />
     );
   return (
     <div
@@ -162,7 +162,7 @@ function StudyCard({
         'relative flex w-full flex-col overflow-hidden rounded-card-lg border border-line bg-surface shadow-card',
         size === 'large' && 'h-[clamp(300px,48vh,400px)]',
         size === 'compact' && 'h-[clamp(220px,30vh,260px)]',
-        size === 'panel' && 'h-[clamp(190px,26vh,220px)]',
+        size === 'panel' && 'h-[clamp(160px,22vh,190px)]',
         className
       )}
       inert={inert}
@@ -175,7 +175,9 @@ function StudyCard({
           flipped ? m.flashcards_answer() : m.flashcards_show_answer()
         }
         className={cn(
-          'relative flex min-h-0 w-full flex-1 flex-col items-center justify-center overflow-auto',
+          // Inset ring: the card's overflow clips an outer one to a bar.
+          'relative flex min-h-0 w-full flex-1 flex-col items-center justify-center overflow-auto rounded-t-card-lg focus-visible:ring-inset',
+          !flipped && 'rounded-b-card-lg',
           padding
         )}
         onClick={onFlip}

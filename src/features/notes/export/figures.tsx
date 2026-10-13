@@ -7,13 +7,14 @@ import {
 import { PlotChart } from '@/components/charts/PlotChart';
 import type { ExportImage, Figure } from './render';
 
+// The classroom light theme's --chart-* (classroom.css).
 const chartColors = [
-  '#4a3aa7',
-  '#eb6834',
-  '#1baf7a',
-  '#2a78d6',
-  '#eda100',
-  '#e87ba4',
+  '#8c7bd9',
+  '#ca6816',
+  '#269b7e',
+  '#3a5f9e',
+  '#b58f3c',
+  '#cb6186',
 ];
 function ChartFrame({ children, legend }: ChartFrameProps) {
   return (

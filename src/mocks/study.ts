@@ -59,7 +59,7 @@ for (const [card, lapses] of [
 rated.set('qz_1/q4', { at: Date.now() - 7_200_000, lapses: 1 });
 // Calculus started yesterday; World History is finished on first read (below).
 items('ws_calc').set('f_6', { kind: 'file', state: 'done' });
-// A twice-missed ordering question, so Calculus's Quick review is a question.
+// A twice-missed ordering question: Calculus has a review but no Quick review.
 items('ws_calc').set('qz_3', { kind: 'material', state: 'started' });
 rated.set('qz_3/q29', { at: Date.now() - 86_400_000, lapses: 2 });
 studiedAt.set('ws_bio', Date.now() - 3_600_000);
@@ -323,15 +323,16 @@ function pool(wsId: string): ReviewItem[] {
     .map(({ rank: _, ...item }) => item);
 }
 
-/** The server ranks by suggestion score among fading items; the mock has no
- * recall, so the most-missed item leads: a question alone, else up to four
- * cards. */
+/** The server ranks cards by suggestion score among fading ones; the mock has
+ * no recall, so the most-missed cards lead, up to four. */
 function quickReview(all: ReviewItem[]): ReviewItem[] {
-  const missed = all.filter(
-    (it) => (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
-  );
-  if (missed[0]?.kind === 'question') return [missed[0]];
-  return missed.filter((it) => it.kind === 'card').slice(0, 4);
+  return all
+    .filter(
+      (it) =>
+        it.kind === 'card' &&
+        (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
+    )
+    .slice(0, 4);
 }
 
 function summary(wsId: string): StudySummary {

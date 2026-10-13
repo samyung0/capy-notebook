@@ -5,6 +5,7 @@
    sends (set-appearance). */
 @import "../styles/tokens/themes/classroom.css";
 @import "../styles/tokens/themes/notion.css";
+@import "../styles/cjkFont.css";
 
 /* The classroom style's Fustat, for the chrome weights only (latin, from
    @fontsource/fustat 5.3.0, OFL: fonts/LICENSE). Same-origin: the runtime's

@@ -27,13 +27,18 @@ describe('generated prompt and spec', () => {
     const md = spec.components.find((c) => c.name === 'Md');
     expect(md?.props).toEqual(['text', 'passages']);
     const chart = spec.components.find((c) => c.name === 'Chart');
-    // Optional presentation args come after passages, so an omitted unit
+    // Optional presentation args come after passages, so omitted axis titles
     // cannot swallow the citations.
-    expect(chart?.props.slice(4)).toEqual(['passages', 'unit', 'illustrative']);
+    expect(chart?.props.slice(4)).toEqual([
+      'passages',
+      'illustrative',
+      'xTitle',
+      'yTitle',
+    ]);
     const table = spec.components.find((c) => c.name === 'Table');
     expect(table?.props.slice(2)).toEqual(['passages', 'caption']);
     const plot = spec.components.find((c) => c.name === 'Plot');
-    expect(plot?.props.slice(4)).toEqual([
+    expect(plot?.props.slice(5)).toEqual([
       'passages',
       'illustrative',
       'lines',
@@ -75,12 +80,12 @@ describe('local answer recovery', () => {
 
   it('keeps valid chart numbers in the Markdown projection', () => {
     const result = parseAnswer(
-      'root = Answer([Chart("bar", "Balance", ["before", "after"], [Series("Alice", [250, 200])], [1], "USD")])'
+      'root = Answer([Chart("bar", "Balance (USD)", ["before", "after"], [Series("Alice", [250, 200])], [1])])'
     );
     expect(inspectAnswer(result)).toEqual({
       gap: false,
       invalidCharts: new Set(),
-      text: 'Balance\n\nbefore · after\n\nAlice\n\n250 · 200\n\nUSD',
+      text: 'Balance (USD)\n\nbefore · after\n\nAlice\n\n250 · 200',
     });
   });
 
@@ -128,7 +133,7 @@ describe('local answer recovery', () => {
     for (const curve of ['Curve("Vm", [[0, -70], [1]])', 'Curve("Vm", "x")']) {
       const inspected = inspectAnswer(
         parseAnswer(
-          `root = Answer([Md("Keep this."), Plot("AP", [${curve}], "t", "V", null, true)])`
+          `root = Answer([Md("Keep this."), Plot("line", "AP", [${curve}], "t", "V", null, true)])`
         )
       );
       expect(inspected.gap).toBe(true);
@@ -138,7 +143,7 @@ describe('local answer recovery', () => {
 
   it('projects a plot with its points, reference lines and marks', () => {
     const result = parseAnswer(
-      'root = Answer([Plot("AP", [Curve("Vm", [[0, -70], [1, 30]])], "t", "V", null, true, [RefLine("y", -55, "threshold")], [Point(0.5, 0, "peak")])])'
+      'root = Answer([Plot("line", "AP", [Curve("Vm", [[0, -70], [1, 30]])], "t", "V", null, true, [RefLine("y", -55, "threshold")], [Point(0.5, 0, "peak")])])'
     );
     expect(inspectAnswer(result)).toEqual({
       gap: false,
@@ -221,7 +226,7 @@ describe('questions', () => {
     const result = parser.parse(
       [
         'root = Answer([c])',
-        'c = Chart("bar", "Balance", ["before", "after"], [s], [2, 3], "USD", false)',
+        'c = Chart("bar", "Balance (USD)", ["before", "after"], [s], [2, 3], false)',
         's = Series("sender", [2, 3])',
       ].join('\n')
     );

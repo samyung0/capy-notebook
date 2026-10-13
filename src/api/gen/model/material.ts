@@ -39,6 +39,7 @@ export interface Material {
   role?: WorkspaceRole;
   scopeChapters: string[];
   scopeFileNames: string[];
+  sharePath?: string;
   title: string;
   updatedAt: string;
   workspaceId: string;

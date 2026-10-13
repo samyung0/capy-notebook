@@ -48,7 +48,7 @@ sends a fixture prompt through the real composer.
 
 The fixtures cover prose/code/math and CJK text; tabs, steps, accordions and
 reveals; concept/metric cards, facts, tags and all callout styles; cited tables;
-bar, horizontal bar, line, area, pie, stacked and scatter charts; and a docked
+bar, horizontal bar, line, area, pie and stacked charts and a scatter plot; and a docked
 three-question block with choices and free text. **Slow stream / Stop** exposes
 progressive rendering and cancellation. Reset the scenario for the default overview response. The launcher retires temporary overrides after the resulting response is visible.
 

@@ -128,6 +128,7 @@ func (a *api) materialResponse(
 	if err != nil {
 		return nil, materialContentError(err)
 	}
+	body.SharePath = a.s.MaterialSharePath(material)
 	// A note stored before fences were resolved ahead of insertion may still
 	// hold one, its body the answer keys: only the note's editors get it
 	// (live-items REVIEW5).

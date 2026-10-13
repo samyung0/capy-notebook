@@ -3,10 +3,11 @@
 The stage order is the lab's ``refined`` variant and must not be reshuffled:
 font repair, Java, cell styles, adaptation, picture triage, vector figures,
 column order, hidden-OCR order, heading context, then table context, footer
-ancestry, list geometry, glyph repairs, exponents, column continuations, split
-ligatures, page numbers, heading levels, source tables, inline formula
-placeholders, negation composition, and finally RapidOCR lines for pages
-without a text layer.
+ancestry, list geometry, glyph repairs, exponents, formula structure, column
+continuations, split ligatures, line joins, page numbers, list headings, layout
+headings, heading levels, source tables, inline formula placeholders, figure
+captions, negation composition, and finally RapidOCR lines for pages without a
+text layer.
 """
 
 from __future__ import annotations
@@ -27,12 +28,17 @@ from . import (
     headings,
     hidden,
     java,
+    joins,
+    layout_headings,
     levels,
+    list_headings,
     lists,
     ocr,
     order,
     outline_levels,
+    page_text,
     pictures,
+    scripts,
     source_text,
     styles,
     tables,
@@ -44,7 +50,6 @@ from .adapter import odl_content_list
 class ParseOutput:
     content_list: list[dict]
     # OpenDataLoader's own Markdown, for bench inspection; ingest never reads it.
-    markdown: str
     ocr_pages: list[int]
     page_count: int
     phases: dict[str, float] = field(default_factory=dict)
@@ -107,7 +112,7 @@ def parse_pdf(
         phases["java"] = time.perf_counter() - started
 
     started = time.perf_counter()
-    with pymupdf.open(pdf) as document:
+    with pymupdf.open(pdf) as document, page_text.session(pdf):
         if native.get("number of pages") != len(document):
             raise ValueError("OpenDataLoader page count does not match the PDF")
         native, _ = styles.annotate(document, native)
@@ -115,16 +120,12 @@ def parse_pdf(
             native,
             [{"width": p.rect.width, "height": p.rect.height} for p in document],
         )
-        # Picture triage reads ODL's image files from the work directory; the
-        # files themselves never leave it.
-        blocks = pictures.classify(blocks, document, native_dir)
+        blocks = pictures.classify(blocks, document, java.image_objects(native_dir))
         blocks = pictures.add_vector_figures(blocks, document)
         blocks, reordered = order.repair(blocks)
         blocks = order.move_rotated_labels(blocks, reordered, pdf)
         blocks = order.split_continuations(blocks, reordered, pdf)
-        eligible = {
-            page.number for page in document if hidden.source_facts(page)["eligible"]
-        }
+        eligible = {page.number for page in document if hidden.hidden_text_layer(page)}
         blocks = hidden.recover_hidden_ocr_order(blocks, eligible)
         blocks = headings.rewrite(blocks, headings.source_headings(blocks, pdf))
         blocks = headings.correct_roles(blocks, document)
@@ -137,10 +138,15 @@ def parse_pdf(
         blocks, _ = source_text.repair_text(blocks, pdf, paragraphs=True)
         blocks, _ = lists.repair_lists(blocks, pdf)
         blocks, _ = exponents.restore_exponents(blocks, pdf)
+        blocks = scripts.restore_structure(blocks, document)
         blocks, _ = columns.repair_columns(blocks, pdf)
         # Before furniture is frozen, so a repeated line keeps one text key.
         blocks, _ = source_text.join_split_ligatures(blocks, pdf)
+        blocks = joins.repair_joins(blocks, document)
         blocks = furniture.mark_page_numbers(blocks, document)
+        # Headings ODL folded into list items, before levels are settled.
+        blocks = list_headings.split_headings(blocks, document)
+        blocks = layout_headings.recall_headings(blocks, document)
         # Heading levels once roles, folios and heading text are settled.
         blocks = levels.demote_fragments(blocks, document)
         blocks = levels.demote_contents_lines(blocks, document)
@@ -148,7 +154,10 @@ def parse_pdf(
         blocks = outline_levels.mark_book_titles(blocks, document)
         furniture_texts = furniture.repeated_across_pages(blocks)
         blocks, _ = tables.recover_tables(blocks, document)
+        # Empty tables carry nothing once recovery had its chance to fill them.
+        blocks = [b for b in blocks if not pictures.empty_table(b)]
         blocks = pictures.place_inline(blocks, document)
+        blocks = pictures.attach_captions(blocks)
         blocks = fonts.compose_negations(blocks)
         # Last heading stage: levels become stack depths, paths unchanged.
         blocks = outline_levels.depth_levels(blocks)
@@ -162,13 +171,8 @@ def parse_pdf(
         phases["ocr"] = time.perf_counter() - started
         page_count = len(document)
 
-    markdown_path = native_dir / "document.md"
-    markdown = (
-        markdown_path.read_text(encoding="utf-8") if markdown_path.is_file() else ""
-    )
     return ParseOutput(
         content_list=blocks,
-        markdown=markdown,
         ocr_pages=ocr_pages,
         page_count=page_count,
         phases=phases,

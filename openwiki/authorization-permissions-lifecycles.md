@@ -145,8 +145,10 @@ Sources: [public handler](../server/internal/httpapi/huma_workspace_summary.go),
 
 Standalone quizzes and flashcard sets that are link-shared or public open for
 signed-out visitors at `/share/quizzes/{id}.{signature}` and
-`/share/flashcards/{id}.{signature}`, the `sharePath` their API responses carry.
-The token is the summary's `share:v1:{id}` HMAC. Workspace materials have no
+`/share/flashcards/{id}.{signature}`, the `sharePath` their API responses carry
+(notes at `/share/notes/…`; `GET /api/materials/{id}` carries it too, for the
+owner's Share item in the open material's ⋮ menu, as the Blocks tab cards' list
+rows do). The token is the summary's `share:v1:{id}` HMAC. Workspace materials have no
 sharing of their own (a check constraint keeps their privacy `private`) and
 embedded ones follow a note visitors cannot open, so neither is reachable.
 
@@ -190,7 +192,7 @@ renderer (`MaterialPreview`) to HTML for good, leaving out a first heading that 
 browser loads no renderer: equations are MathLive's static markup (the page links MathLive's static and font
 stylesheets only when the note has math), code is highlighted on the server, a YouTube block is its poster
 until clicked, and the contents block scrolls with plain script. Only islands take React
-(`src/features/materials/Island.tsx`, `src/share/islands.tsx`): images, charts and graphs (click-to-preview),
+(`src/features/materials/Island.tsx`, `src/share/islands.tsx`): images, charts and graphs (double-click preview),
 diagrams (Mermaid draws in the browser), interactive HTML blocks (no View source: its dialog needs the app
 router; `PublicPageContext`) and embedded quizzes and sets, each hydrated from the props the server wrote
 beside it, all at load so nothing changes size mid-scroll; a note without them loads no React. Public pages

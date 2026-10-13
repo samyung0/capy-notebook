@@ -7,7 +7,7 @@ import {
   tokenize,
   walkAST,
 } from '@openuidev/lang-core';
-import type { PlotBlock } from '@/features/questions/types';
+import type { ChartBlock, PlotBlock } from '@/features/questions/types';
 import { questionBlockSchema } from '@/features/questions/validation';
 import type {
   ChartProps,
@@ -15,7 +15,6 @@ import type {
   DiagramProps,
   InteractiveProps,
   PlotProps,
-  ScatterProps,
 } from './schema';
 
 const STATEMENT_HEAD = /^\s*[A-Za-z_]\w*\s*=/;
@@ -100,41 +99,31 @@ export function ignoreEmptyExtras(
   };
 }
 
-export function validChartData(props: ChartProps): boolean {
-  return (
-    Array.isArray(props.labels) &&
-    Array.isArray(props.series) &&
-    props.labels.length > 0 &&
-    props.series.length > 0 &&
-    (!(props.kind === 'pie' || props.kind === 'stacked') ||
-      props.series.length === 1) &&
-    props.series.every(
-      (node) =>
-        isElement(node) &&
-        node.typeName === 'Series' &&
-        Array.isArray(node.props.values) &&
-        node.props.values.length === props.labels.length &&
-        node.props.values.every((value) => Number.isFinite(value))
-    )
-  );
-}
-
-export function validScatterData(props: ScatterProps): boolean {
-  return (
-    Array.isArray(props.points) &&
-    props.points.length > 0 &&
-    props.points.every(
-      (node) =>
-        isElement(node) &&
-        node.typeName === 'Point' &&
-        Number.isFinite(node.props.x) &&
-        Number.isFinite(node.props.y)
-    )
-  );
-}
-
 const nodes = (value: unknown) =>
   Array.isArray(value) ? value.filter(isElement) : [];
+
+/** A Chart's props as the shared chart block, or null when the block schema
+ * (one value per label, one series for pie and stacked, the chart limits)
+ * refuses them. */
+export function chartBlock(props: ChartProps): ChartBlock | null {
+  const series = nodes(props.series);
+  if (
+    !Array.isArray(props.series) ||
+    series.length !== props.series.length ||
+    series.some((node) => node.typeName !== 'Series')
+  )
+    return null;
+  const parsed = questionBlockSchema.safeParse({
+    kind: props.kind,
+    labels: props.labels,
+    series: series.map(({ props: s }) => ({ name: s.name, values: s.values })),
+    title: props.title,
+    type: 'chart',
+    ...(props.xTitle ? { xTitle: props.xTitle } : {}),
+    ...(props.yTitle ? { yTitle: props.yTitle } : {}),
+  });
+  return parsed.success && parsed.data.type === 'chart' ? parsed.data : null;
+}
 
 /** A Plot's props as the shared plot block, or null when the block schema
  * (finite numbers, [x, y] pairs, the plot limits) refuses them. */
@@ -150,14 +139,15 @@ export function plotBlock(props: PlotProps): PlotBlock | null {
     y: mark.y,
   }));
   const parsed = questionBlockSchema.safeParse({
+    kind: props.kind,
     series: nodes(props.series).map(({ props: curve }) => ({
       name: curve.name,
       points: curve.points,
     })),
     title: props.title,
     type: 'plot',
-    xTitle: props.xLabel,
-    yTitle: props.yLabel,
+    xTitle: props.xTitle,
+    yTitle: props.yTitle,
     ...(lines.length ? { lines } : {}),
     ...(marks.length ? { marks } : {}),
   });
@@ -174,15 +164,9 @@ export function inspectAnswer(result: ParseResult | null) {
   const damagedStatements = new Set(
     errors
       .filter((error) =>
-        [
-          'Chart',
-          'Series',
-          'ScatterChart',
-          'Point',
-          'Plot',
-          'Curve',
-          'RefLine',
-        ].includes(error.component)
+        ['Chart', 'Series', 'Point', 'Plot', 'Curve', 'RefLine'].includes(
+          error.component
+        )
       )
       .map((error) => error.statementId)
   );
@@ -207,7 +191,7 @@ export function inspectAnswer(result: ParseResult | null) {
     if (!isElement(value)) return;
     const statement = value.statementId ?? owner;
     if (
-      ['Chart', 'ScatterChart', 'Plot'].includes(value.typeName) &&
+      ['Chart', 'Plot'].includes(value.typeName) &&
       damaged(value, statement)
     ) {
       // Errors identify statements, so charts inline in one damaged statement
@@ -217,9 +201,7 @@ export function inspectAnswer(result: ParseResult | null) {
     }
     if (
       (value.typeName === 'Chart' &&
-        !validChartData(value.props as unknown as ChartProps)) ||
-      (value.typeName === 'ScatterChart' &&
-        !validScatterData(value.props as unknown as ScatterProps)) ||
+        !chartBlock(value.props as unknown as ChartProps)) ||
       (value.typeName === 'Plot' &&
         !plotBlock(value.props as unknown as PlotProps))
     ) {

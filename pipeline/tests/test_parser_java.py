@@ -25,6 +25,8 @@ def test_java_classifies_only_the_demonstrated_reader_failure(
     tmp_path, monkeypatch, output, expected
 ):
     monkeypatch.setattr(java, "jar_path", lambda: tmp_path / "parser.jar")
+    (tmp_path / "capy-odl.jar").write_bytes(b"")
+    monkeypatch.setattr(java, "ENTRY_JAR", tmp_path / "capy-odl.jar")
     monkeypatch.setattr(
         java.subprocess,
         "run",
@@ -56,7 +58,7 @@ def source(monkeypatch):
         )
 
 
-def test_reader_retry_preserves_source_encryption_and_uses_only_retry_assets(
+def test_reader_retry_preserves_source_encryption_in_a_fresh_directory(
     tmp_path, monkeypatch, source
 ):
     clock = [0.0]
@@ -67,9 +69,8 @@ def test_reader_retry_preserves_source_encryption_and_uses_only_retry_assets(
         calls.append((pdf.read_bytes(), out_dir.name, timeout_s))
         if len(calls) == 1:
             clock[0] = 2.0
-            (out_dir / "document.md").write_text("partial failed output")
             raise java.JavaPageTreeError("unknown type of page tree node")
-        (out_dir / "document.md").write_text("successful retry output")
+        (out_dir / "capy-images.json").write_text("{}")
         return {"number of pages": 1, "kids": []}
 
     monkeypatch.setattr(java, "run", run)
@@ -80,7 +81,6 @@ def test_reader_retry_preserves_source_encryption_and_uses_only_retry_assets(
     ]
     assert calls[0][0] == source
     assert result.parsed_pdf == calls[1][0]
-    assert result.markdown == "successful retry output"
     assert "java_structure_retry" in result.phases
     with (
         pymupdf.open(stream=source, filetype="pdf") as original,
@@ -106,6 +106,7 @@ def test_reader_retry_is_bounded_and_leaves_other_outcomes_alone(
     def run(pdf, out_dir, *, timeout_s):
         calls.append(out_dir.name)
         if outcome == "success":
+            (out_dir / "capy-images.json").write_text("{}")
             return {"number of pages": 1, "kids": []}
         if outcome == "other-error":
             raise RuntimeError("unrelated parser failure")

@@ -16,20 +16,22 @@ export function CardFront({
 }: {
   card: FlashcardContent;
   className?: string;
-  size?: 'tile' | 'compact' | 'large';
+  size?: 'tile' | 'panel' | 'compact' | 'large';
 }) {
   return (
     <div
       className={cn(
         'flex flex-col items-center justify-center text-center',
-        size === 'tile' ? 'gap-2' : 'gap-3',
+        size === 'tile' || size === 'panel' ? 'gap-2' : 'gap-3',
         className
       )}
     >
       <p
         className={cn(
           'whitespace-pre-line break-words',
-          size === 'large' ? 't-large-card-title' : 't-card-title'
+          size === 'large' && 't-large-card-title',
+          size === 'panel' && 't-subtitle',
+          (size === 'tile' || size === 'compact') && 't-card-title'
         )}
       >
         {card.front}
@@ -39,6 +41,7 @@ export function CardFront({
           assetId={card.image.assetId}
           className={cn(
             size === 'tile' && 'max-h-[58%]',
+            size === 'panel' && 'h-14',
             size === 'compact' && 'h-20',
             size === 'large' && 'h-30'
           )}

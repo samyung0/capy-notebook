@@ -252,7 +252,6 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         .max(limits.QUESTION_CHART_SERIES_MAX),
       title: meta,
       type: z.literal('chart'),
-      unit: meta.optional(),
       xTitle: meta.optional(),
       yTitle: meta.optional(),
     })
@@ -274,6 +273,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         });
     }),
   z.strictObject({
+    kind: z.enum(['line', 'scatter']).optional(),
     lines: z
       .array(
         z.strictObject({

@@ -610,7 +610,7 @@ async function openAndClose(page: Page, trigger: Locator) {
       )
     )
     .toBe(true);
-  await trigger.click();
+  await trigger.dblclick();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
   await page.keyboard.press('Escape');
@@ -695,8 +695,8 @@ export async function sharedNote(
         { timeout: 60_000 }
       )
       .toBeGreaterThan(0);
-    // Click-to-preview: the image, the diagram (once drawn), chart and graph.
-    const previews = page.locator('[data-island] .cursor-zoom-in');
+    // Double-click preview: the image, the diagram (once drawn), chart and graph.
+    const previews = page.locator('[data-island] [data-media-preview]');
     await expect(previews).toHaveCount(4, { timeout: 60_000 });
     for (let index = 0; index < 4; index++)
       await openAndClose(page, previews.nth(index));

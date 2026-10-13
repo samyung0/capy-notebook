@@ -385,6 +385,7 @@ export * from './userModelSlot.ts';
 export * from './workspace.ts';
 export * from './workspaceCollaborator.ts';
 export * from './workspaceMember.ts';
+export * from './workspaceRecent.ts';
 export * from './workspaceRole.ts';
 export * from './workspaceStats.ts';
 export * from './workspaceSummary.ts';

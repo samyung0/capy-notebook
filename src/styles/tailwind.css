@@ -3,6 +3,7 @@
 @import "@fontsource-variable/fustat";
 @import "@fontsource-variable/jetbrains-mono";
 @import "./fontFallbacks.css";
+@import "./cjkFont.css";
 @import "tailwindcss" source("../");
 @import "./tokens/themes/classroom.css";
 @import "./tokens/themes/notion.css";
@@ -292,6 +293,15 @@
   line-height: var(--subtitle-font-line-height);
 }
 
+/* The Plate settings font picker shows each option in its own font. */
+@utility font-note-fustat {
+  font-family: var(--note-font-fustat);
+}
+@utility font-note-system {
+  font-family: var(--note-font-system);
+  font-weight: 400;
+}
+
 @utility t-body {
   font-size: var(--body-font-size);
   font-weight: var(--body-font-weight);
@@ -516,6 +526,12 @@ math-field {
      font. The roomy gaps sit on :root so note blocks outside .note-editor
      keep them. The Fustat stack repeats classroom.css. */
   :root {
+    --note-font-fustat:
+      "Fustat Variable", "Fustat", "Fustat Fallback", var(--font-cjk),
+      system-ui, -apple-system, "Segoe UI", sans-serif;
+    --note-font-system:
+      ui-sans-serif, system-ui, -apple-system, "Segoe UI", var(--font-cjk),
+      sans-serif;
     --note-gap: calc(var(--spacing) * 2);
     --note-p-py: calc(var(--spacing) * 2);
     --note-li-py: calc(var(--spacing) * 1.5);
@@ -527,15 +543,14 @@ math-field {
   }
 
   :root[data-style="notion"][data-note-font="fustat"] .note-editor {
-    --font-sans:
-      "Fustat Variable", "Fustat", "Fustat Fallback", system-ui, -apple-system,
-      "Segoe UI", sans-serif;
+    --font-sans: var(--note-font-fustat);
   }
 
   :root[data-note-font="system"] .note-editor,
   :root[data-style="notion"]:not([data-note-font="fustat"]) .note-editor {
-    --font-sans:
-      ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-sans: var(--note-font-system);
+    /* classroom's body weight (500) suits Fustat; system text reads at 400. */
+    font-weight: 400;
     --note-gap: var(--spacing);
     --note-p-py: var(--spacing);
     --note-li-py: var(--spacing);

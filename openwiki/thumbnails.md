@@ -1,6 +1,7 @@
 # Thumbnails and list previews
 
-List cards (Files, Create, Trash, the dashboard's recents) show what an item
+List cards (Files, Create, Trash, the dashboard's recents, the empty viewer's
+recent grid) show what an item
 looks like without opening it. A source file gets a small image of page 1, or
 for a text source its opening characters. A material (note, quiz, flashcards,
 mindmap, diagram) gets a live preview drawn in the browser from a small JSON
@@ -71,7 +72,8 @@ immutable`; the next hour's URL is a new cache entry.
 
 - Signed in the handler for every row of the owned file list
   (`GET /api/files`), the workspace file list (`GET /api/workspaces/{id}/files`,
-  members and link/public readers alike), trash rows of kind `source_file`
+  members and link/public readers alike), the workspace recent grid
+  (`GET /api/workspaces/{id}/recent`, the same readers), trash rows of kind `source_file`
   (`GET /api/trash`) and file rows of global search (`GET /api/search`, the
   caller's own workspaces only; search rows also carry a text file's or
   flashcard set's `preview`). Single-file responses carry no link.
@@ -149,7 +151,11 @@ clone drops media it could not copy). `materialdoc.Preview` derives it; it is
 answer-free and about 1 KB at most. `MaterialListItem` and trash rows return it
 as `preview`; the client types the union by hand. The workspace tree's
 `MaterialRef` carries none (nothing there draws it, and the tree refetches
-often). Materials written before migration 0073 get theirs from the one-shot,
+often). The empty viewer's 2x2 grid reads `GET /api/workspaces/{id}/recent`
+instead: the four newest live files (by added time, thumbnails signed) and
+top-level materials (by created time, with `preview`), behind the workspace
+read check, so link and public readers get it too; the client merges the two
+and keeps four. Materials written before migration 0073 get theirs from the one-shot,
 idempotent `previewbackfill` (rows still NULL, in batches, so an interrupted
 run is simply rerun; run by hand, never at startup), or from their next
 content write. The server image carries it:

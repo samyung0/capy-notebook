@@ -157,6 +157,22 @@ _RUN_IN_LABEL = re.compile(
 )
 _BARE_LABEL = re.compile(rf"^(?:{_LABEL_WORDS})[.:]$", re.IGNORECASE)
 _PAGE_FOOTER = re.compile(r"^page\s+\d{1,4}(?:\s+of\s+\d{1,4})?$", re.IGNORECASE)
+# A source or note label alone ("Notes:", "Source:", "Quelle:").
+_NOTE_LABEL = re.compile(
+    r"^(?:(?:data\s+)?sources?|notes?|quelle|quellen|hinweis|fuente|nota|資料來源|出典|注)"
+    r"\s*[:：]?$",
+    re.IGNORECASE,
+)
+# A figure or table caption: its label and number ("Figure 4.10:", "Table A-2.",
+# "Abbildung 3:", "圖 2.1"); "Table of Contents", "Tableaux" and "Chart Gallery"
+# have no number.
+_CAPTION = re.compile(
+    r"^(?:(?:(?:figure|table|chart|graph|exhibit|abbildung|tabelle|übersicht|tableau|"
+    r"tabla|figura|рисунок|таблица)\s+|(?:fig|tab|abb|рис)\.\s*)"
+    r"(?:[a-z]?[-.]?\d+[a-z]?(?:[.-]\d+)*|[ivxlc]{1,6})(?=[\s.:：)]|$)"
+    r"|[表图圖図]\s*\d)",
+    re.IGNORECASE,
+)
 _NUMBER_ONLY = re.compile(r"^(?:\d{1,3}\.?|[IVXLC]{2,6}\.?|[IVXLC]\.)$")
 _CHAPTER_ONLY = re.compile(
     r"^(?:chapter|part|unit|module|lesson|section|book)\s+(?:\d{1,3}|[ivxlc]{1,6}|"
@@ -217,7 +233,8 @@ def _callout_series(blocks: list[dict]) -> set[int]:
 
 def demote_fragments(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     """Demote headings that are formula fragments, calculation lines, run-in
-    labels, numbered callouts, page footers or bare numbers. A bare number or chapter label set
+    labels, figure and table captions, numbered callouts, page footers or bare
+    numbers. A bare number or chapter label set
     above its title becomes the title's ``_chapter_label`` and is discarded."""
     out = [dict(b) for b in blocks]
     series = _callout_series(out)
@@ -246,6 +263,8 @@ def demote_fragments(blocks: list[dict], document: pymupdf.Document) -> list[dic
             _demote(b, "calculation")
         elif _RUN_IN_LABEL.match(text) or _BARE_LABEL.match(text):
             _demote(b, "run-in-label")
+        elif _CAPTION.match(text) or _NOTE_LABEL.match(text):
+            _demote(b, "caption")
     return out
 
 

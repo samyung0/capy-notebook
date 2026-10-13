@@ -174,7 +174,10 @@ portaled `FloatingBlockToolbar` (Edit, move, duplicate or remove), which never
 shifts layout and flips above a block cut off at the bottom; Enter edits. From `md` the dialog is a fixed
 88dvh and each column scrolls on its own; phones show sticky Outline and Body
 tabs, and a row click switches to Body first.
-Its title names the question ("Edit question 10"). Menus (add block, question
+Its title names the question ("Edit question 10"). Rows the app names take
+an accent of their own (Answer rows `tint-accent-1`, Worked solution
+`tint-accent-2`), and the row ⋮ has no tooltip (`ToolbarButton tooltip={false}`),
+since its label repeats the row's text. Menus (add block, question
 settings, row and graph element actions) are the note toolbar's popovers
 (`ToolbarPopoverContent`, `ToolbarPopoverGroup`, `MenuItem` over
 `ToolbarPopoverItem`), and block editors use `FieldInput` and `SelectField`,
@@ -194,9 +197,10 @@ in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
 points); sectors and polygons can be shaded. A segment's `ticks` (1–3) draws
 JSXGraph hatch marks, so equal sides carry the same count. Question charts sit
 at about a graph's width with a centred title and never show a values table.
-A `plot` block holds labelled curves over numeric axes: `title`, `xTitle`,
-`yTitle`, optional `unit`, 1–4 `series` of `{name, points: [[x, y], …]}` (2–60
-finite points, drawn as straight segments in x order), and optional `lines`
+A `plot` block holds numeric series over numeric axes: optional `kind` (`line`,
+the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4
+`series` of `{name, points: [[x, y], …]}` (2–60 finite points, drawn as straight
+segments in x order, or as dots for a scatter), and optional `lines`
 (`{axis: x|y, value, label?}`, dashed reference lines) and `marks`
 (`{x, y, label}`), at most 8 of each (`QUESTION_PLOT_*` in fieldlimits).
 `PlotChart` (beside `CategoryChart`, same frame, theme variables and ticks) draws
@@ -204,9 +208,12 @@ it in quizzes, notes and chat. It has no editor: the question dialog shows a plo
 and can remove it, but the add menu does not offer one. Go and the browser
 validate it, and so does the Rust collaboration server (`questions.rs`,
 `material.rs`: a live quiz question holding a plot and a note's `plot` embed,
-with Go's bounds; Node's validator never knew it, Epo 2026-10-12). Plot cases
-are not in the shared fixtures, which the removed Node server generated, and
-are tested in each validator instead. Grading text lists its curves' points and labels. User quizzes and notes keep validated
+with Go's bounds; Node's validator never knew it, Epo 2026-10-12). A live quiz
+room keeps a plot as one value, as it keeps a chart (`items/src/quiz.rs`,
+`liveQuiz.ts`; before 2026-10-13 the room's reader dropped it, so an agent's
+plot vanished from the projection). A valid plot is in the shared fixtures
+(`plot.json`), so the live quiz round trip and the browser/server parity
+corpus carry one; refused plot cases are tested in each validator. Grading text lists its curves' points and labels. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed

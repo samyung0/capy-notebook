@@ -66,7 +66,9 @@ import (
 // v22: the build ledger is gone (Epo 2026-10-13): no create_ledger and no todo
 // on the write tools; excerpt_ids is optional, and a write naming none credits
 // the excerpts read since the last write.
-const ContractVersion = 22
+// v23: chart media and fences lose unit (it goes in the title); plot media and
+// fences take kind line or scatter.
+const ContractVersion = 23
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -440,10 +442,11 @@ func editCommandSchema() map[string]any {
 // (src/features/questions/validation.ts, questions.ValidateBlock).
 var noteFigureFences = fmt.Sprintf("```chart fences comparing labelled categories, JSON "+
 	`{"type": "chart", "kind": "bar"|"hbar"|"line"|"area"|"pie"|"stacked", "title", "labels": [...], `+
-	`"series": [{"name", "values": one number per label}], "unit"?}; `+
-	"```plot fences for a quantity along a numeric axis (a membrane potential over time, a "+
-	`titration curve), JSON {"type": "plot", "title", "xTitle", "yTitle" (axis names with units), `+
-	`"series": 1 to %d [{"name", "points": [[x, y], ...] in x order, at most %d}], `+
+	`"series": [{"name", "values": one number per label}]} with any unit in the title; `+
+	"```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a "+
+	"membrane potential over time, a titration curve) or a scatter of points, JSON "+
+	`{"type": "plot", "kind"?: "line"|"scatter" (default line), "title", "xTitle", "yTitle" (axis names with units), `+
+	`"series": 1 to %d [{"name", "points": [[x, y], ...] in x order for a line, 2 to %d}], `+
 	`"lines"?: [{"axis": "x"|"y", "value", "label"?}] dashed reference lines, `+
 	`"marks"?: [{"x", "y", "label"}] labelled points}; `,
 	fieldlimits.QuestionPlotSeries, fieldlimits.QuestionPlotPoints)
@@ -536,11 +539,12 @@ func mediaBlocks() map[string]any {
 			"series": list(1, fieldlimits.QuestionChartSeries, obj(map[string]any{
 				"name": label, "values": map[string]any{"type": "array", "items": number},
 			}, "name", "values")),
-			"unit": label, "xTitle": label, "yTitle": label,
+			"xTitle": label, "yTitle": label,
 			"gridlines": map[string]any{"enum": []string{"normal", "fine"}},
 		}, "type", "kind", "title", "labels", "series"),
 		"plot": obj(map[string]any{
-			"type": map[string]any{"const": "plot"}, "title": label, "xTitle": label, "yTitle": label, "unit": label,
+			"type": map[string]any{"const": "plot"}, "kind": map[string]any{"enum": []string{"line", "scatter"}},
+			"title": label, "xTitle": label, "yTitle": label, "unit": label,
 			"series": list(1, fieldlimits.QuestionPlotSeries, obj(map[string]any{
 				"name":   label,
 				"points": list(2, fieldlimits.QuestionPlotPoints, list(2, 2, number)),

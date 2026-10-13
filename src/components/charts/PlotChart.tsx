@@ -43,10 +43,10 @@ function axis(values: number[]) {
 }
 
 /**
- * Labelled curves over numeric x and y axes, in CategoryChart's visual
- * language: 2px series lines in --chart-1..4, dashed reference lines, ringed
- * labelled points, a legend for two or more curves and, in the chat frame,
- * the points as a values table.
+ * Series over numeric x and y axes, in CategoryChart's visual language: 2px
+ * lines (or ringed dots for a scatter) in --chart-1..4, dashed reference
+ * lines, ringed labelled points, a legend for two or more series and, in the
+ * chat frame, the points as a values table.
  */
 export function PlotChart({
   data,
@@ -61,16 +61,27 @@ export function PlotChart({
     ...s,
     points: [...s.points].sort((a, b) => a[0] - b[0]),
   }));
-  const xs = axis([
-    ...series.flatMap((s) => s.points.map((p) => p[0])),
-    ...lines.filter((l) => l.axis === 'x').map((l) => l.value),
-    ...marks.map((mark) => mark.x),
-  ]);
-  const ys = axis([
-    ...series.flatMap((s) => s.points.map((p) => p[1])),
-    ...lines.filter((l) => l.axis === 'y').map((l) => l.value),
-    ...marks.map((mark) => mark.y),
-  ]);
+  // A scatter's outermost dots get 5% room so none sits on an axis.
+  const padded = (values: number[]) => {
+    if (data.kind !== 'scatter') return values;
+    const lo = Math.min(...values);
+    const hi = Math.max(...values);
+    return [...values, lo - (hi - lo) * 0.05, hi + (hi - lo) * 0.05];
+  };
+  const xs = axis(
+    padded([
+      ...series.flatMap((s) => s.points.map((p) => p[0])),
+      ...lines.filter((l) => l.axis === 'x').map((l) => l.value),
+      ...marks.map((mark) => mark.x),
+    ])
+  );
+  const ys = axis(
+    padded([
+      ...series.flatMap((s) => s.points.map((p) => p[1])),
+      ...lines.filter((l) => l.axis === 'y').map((l) => l.value),
+      ...marks.map((mark) => mark.y),
+    ])
+  );
   const x = (value: number) =>
     LEFT + ((value - xs.min) / (xs.max - xs.min)) * (RIGHT - LEFT);
   const y = (value: number) =>
@@ -167,19 +178,37 @@ export function PlotChart({
             </g>
           );
         })}
-        {series.map((s, index) => (
-          <polyline
-            fill="none"
-            key={index}
-            points={s.points.map(([px, py]) => `${x(px)},${y(py)}`).join(' ')}
-            stroke={color(index)}
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth={2}
-          >
-            <title>{s.name}</title>
-          </polyline>
-        ))}
+        {series.map((s, index) =>
+          data.kind === 'scatter' ? (
+            <g key={index}>
+              {s.points.map(([px, py], i) => (
+                <circle
+                  className="stroke-surface"
+                  cx={x(px)}
+                  cy={y(py)}
+                  fill={color(index)}
+                  key={i}
+                  r={4}
+                  strokeWidth={2}
+                >
+                  <title>{`${s.name}: ${format(px)}, ${format(py)}`}</title>
+                </circle>
+              ))}
+            </g>
+          ) : (
+            <polyline
+              fill="none"
+              key={index}
+              points={s.points.map(([px, py]) => `${x(px)},${y(py)}`).join(' ')}
+              stroke={color(index)}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+            >
+              <title>{s.name}</title>
+            </polyline>
+          )
+        )}
         {marks.map((mark, index) => {
           const px = x(mark.x);
           const py = y(mark.y);

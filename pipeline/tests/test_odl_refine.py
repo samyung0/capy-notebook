@@ -28,10 +28,13 @@ from odl import (
     fonts,
     furniture,
     hidden,
+    joins,
     lists,
     ocr,
     order,
+    page_text,
     pictures,
+    scripts,
     source_text,
     tables,
 )
@@ -658,29 +661,52 @@ def test_wide_to_unicode_ranges_split_at_byte_blocks() -> None:
     assert text.count("beginbfrange") == 3
 
 
-def test_picture_triage_drops_slivers_and_discards_repeats(tmp_path: Path) -> None:
+def _place_image(page: pymupdf.Page, rect: tuple, key: int) -> None:
+    """A picture of three black bars (formula-like ink); ``key`` sets one pixel,
+    so equal keys are the same image."""
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 12), False)
+    pixmap.set_rect(pixmap.irect, (255, 255, 255))
+    for y in (3, 6, 9):
+        pixmap.set_rect(pymupdf.IRect(0, y, 40, y + 1), (0, 0, 0))
+    pixmap.set_pixel(0, 0, (key, key, key))
+    page.insert_image(rect, pixmap=pixmap, keep_proportion=False)
+
+
+def test_picture_triage_drops_slivers_and_discards_repeats() -> None:
     document = pymupdf.open()
     for _ in range(6):
         document.new_page(width=600, height=800)
 
-    def image(name: str, data: bytes, page: int, bbox: list[float]) -> dict:
-        (tmp_path / name).write_bytes(data)
-        return {"type": "image", "img_path": name, "page_idx": page, "bbox": bbox}
+    objects: dict[int, int] = {}
 
-    box = [100.0, 100.0, 300.0, 200.0]
-    badges = [image(f"badge{p}.png", b"badge", p, box) for p in range(5)]
-    icons = [image(f"icon{p}.png", b"icon", p, box) for p in range(4)]
-    figure = image("figure.png", b"figure", 5, box)
-    text = {"type": "text", "text": "prose", "page_idx": 0, "bbox": box}
+    def image(name: str, key: int, page: int, rect: tuple) -> dict:
+        # Badges by the image object ODL reports, the rest by the page's images.
+        _place_image(document[page], rect, key)
+        block = {"type": "image", "name": name, "page_idx": page, "bbox": _grid(rect)}
+        if name == "badge":
+            block["_native_id"] = len(objects)
+            objects[len(objects)] = document[page].get_images()[-1][0]
+        return block
+
+    # Same picture on five pages is a repeat; on four it is not.
+    badges = [image("badge", 1, p, (60, 80, 180, 160)) for p in range(5)]
+    icons = [image("icon", 2, p, (300, 80, 420, 160)) for p in range(4)]
+    figure = image("figure", 3, 5, (60, 80, 180, 160))
+    text = {
+        "type": "text",
+        "text": "prose",
+        "page_idx": 0,
+        "bbox": [100, 100, 300, 200],
+    }
     blocks = [
         text,
-        image("rule.png", b"rule", 0, [100.0, 300.0, 500.0, 301.0]),  # 0.8 pt tall
-        image("bar.png", b"bar", 0, [0.0, 400.0, 1000.0, 405.0]),  # 4 x 600 pt
+        image("rule", 4, 0, (60, 240, 300, 240.8)),  # 0.8 pt tall
+        image("bar", 5, 0, (0, 320, 600, 324)),  # 4 x 600 pt
         *badges,
         *icons,
         figure,
     ]
-    result = pictures.classify(blocks, document, tmp_path)
+    result = pictures.classify(blocks, document, objects)
     assert result == [
         text,
         *({**badge, "type": "discarded"} for badge in badges),
@@ -761,6 +787,45 @@ def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
     assert result[2:] == [gain, *cells]
 
 
+@pytest.mark.parametrize(
+    ("inside", "figure"),
+    [
+        ("Source: Federal statistics office.", True),  # a chart's note
+        ("Which changes did your school make to the curriculum?", False),  # callout
+        ("view := ROView new. view addAll: edges; open", False),  # a code frame
+        (
+            "Net interest income: Euro $ 324 $ 247 Total income $ 328 $ 246",
+            False,
+        ),  # rows
+        ("2016 2017 2018 2019 2020 2021 2022 2023 2024 2025 2026 2027", True),  # ticks
+    ],
+)
+def test_vector_clusters_holding_prose_code_or_table_rows_stay_text(
+    inside, figure
+) -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    page.draw_line((100, 100), (100, 300))
+    page.draw_line((100, 300), (400, 300))
+    page.draw_polyline([(100 + 15 * i, 300 - 36 * (i % 5)) for i in range(21)])
+    page.insert_text((110, 290), inside, fontsize=8)
+    block = {
+        "type": "text",
+        "text": inside,
+        "page_idx": 0,
+        "bbox": _grid((110, 282, 390, 292)),
+    }
+    result = pictures.add_vector_figures([block], document)
+    if figure and inside.startswith("Source"):
+        assert (
+            result[0]["image_footnote"] == [inside] and result[0]["figure_labels"] == []
+        )
+    elif figure:
+        assert result[0]["figure_labels"] == [inside]
+    else:
+        assert result == [block]
+
+
 # Formula pictures: 10 pt Helvetica lines are 13.8 pt tall on a 600 x 800 page.
 def _grid(rect: tuple) -> list[float]:
     return [rect[0] / 0.6, rect[1] / 0.8, rect[2] / 0.6, rect[3] / 0.8]
@@ -774,9 +839,8 @@ def _bars(page: pymupdf.Page, rect: tuple, colour=(0, 0, 0)) -> None:
         page.draw_rect((x0, y - 0.5, x1, y + 0.5), color=None, fill=colour)
 
 
-def _picture(tmp_path: Path, name: str, page: int, rect: tuple, data=b"") -> dict:
-    (tmp_path / name).write_bytes(data or name.encode())
-    return {"type": "image", "img_path": name, "page_idx": page, "bbox": _grid(rect)}
+def _picture(name: str, page: int, rect: tuple) -> dict:
+    return {"type": "image", "name": name, "page_idx": page, "bbox": _grid(rect)}
 
 
 INLINE = (130, 90, 168, 102)  # between "be" (ends x 124.5) and "per" on y 89-103
@@ -803,8 +867,8 @@ def test_formula_pictures_pass_the_six_precision_tests(
         page.draw_rect((130, 97, 168, 98), color=None, fill=(0, 0, 0))
     elif case != "blank":
         _bars(page, rect, (1, 0, 0) if case == "colour" else (0, 0, 0))
-    block = _picture(tmp_path, "p.png", 0, rect)
-    [result] = pictures.classify([block], document, tmp_path)
+    block = _picture("p.png", 0, rect)
+    [result] = pictures.classify([block], document, {})
     if case == "formula":
         assert result == {**block, "type": "equation", "text": "", "_picture": "inline"}
     else:
@@ -826,10 +890,10 @@ def test_formula_pictures_skip_tall_lines_and_tall_pictures(tmp_path: Path) -> N
     for rect in (beside_tall_line, tall):
         _bars(page, rect)
     blocks = [
-        _picture(tmp_path, "a.png", 0, beside_tall_line),
-        _picture(tmp_path, "b.png", 0, tall),
+        _picture("a.png", 0, beside_tall_line),
+        _picture("b.png", 0, tall),
     ]
-    assert pictures.classify(blocks, document, tmp_path) == blocks
+    assert pictures.classify(blocks, document, {}) == blocks
 
 
 def test_formula_pictures_are_placed_in_text_or_as_their_own_block(
@@ -852,17 +916,17 @@ def test_formula_pictures_are_placed_in_text_or_as_their_own_block(
     ambiguous = {"type": "text", "text": "So we be per plan, we be per hour."}
     blocks = [
         {**placed, "page_idx": 0, "bbox": _grid((60, 89, 243, 103))},
-        _picture(tmp_path, "inline.png", 0, inline),
-        _picture(tmp_path, "display.png", 0, display),
-        _picture(tmp_path, "cell.png", 0, no_host),
-        _picture(tmp_path, "pair.png", 0, repeated_pair),
+        _picture("inline.png", 0, inline),
+        _picture("display.png", 0, display),
+        _picture("cell.png", 0, no_host),
+        _picture("pair.png", 0, repeated_pair),
         {**ambiguous, "page_idx": 0, "bbox": _grid((60, 389, 240, 403))},
     ]
-    result = pictures.classify(blocks, document, tmp_path)
+    result = pictures.classify(blocks, document, {})
     result = pictures.place_inline(result, document)
     # The unplaced pair carries its own placeholder after its paragraph; the
     # hostless one keeps its place in reading order.
-    assert [(b["type"], b["text"], b.get("img_path")) for b in result] == [
+    assert [(b["type"], b["text"], b.get("name")) for b in result] == [
         ("text", "Let the rate be [formula] per hour today.", None),
         ("equation", "", "inline.png"),
         ("equation", "[formula]", "display.png"),
@@ -888,13 +952,13 @@ def test_formula_pictures_in_list_items_match_whole_words(tmp_path: Path) -> Non
     items = ["Set x to zero now.  Next.", "An atheist view."]
     listed = {"type": "list", "list_items": items, "page_idx": 0}
     blocks = [
-        _picture(tmp_path, "first.png", 0, first),
-        _picture(tmp_path, "second.png", 0, second),
+        _picture("first.png", 0, first),
+        _picture("second.png", 0, second),
         {**listed, "bbox": _grid((60, 89, 170, 117))},
     ]
-    result = pictures.classify(blocks, document, tmp_path)
+    result = pictures.classify(blocks, document, {})
     result = pictures.place_inline(result, document)
-    assert [(b["type"], b.get("text"), b.get("img_path")) for b in result] == [
+    assert [(b["type"], b.get("text"), b.get("name")) for b in result] == [
         ("equation", "", "first.png"),
         ("list", None, None),
         ("equation", "[formula]", "second.png"),
@@ -914,15 +978,15 @@ def test_formula_pictures_skip_rotated_pages(tmp_path: Path) -> None:
     # lands on the line and on ink in that mixed frame must not become a formula.
     x0, y0, x1, y1 = INLINE
     block = {
-        **_picture(tmp_path, "p.png", 0, INLINE),
+        **_picture("p.png", 0, INLINE),
         "bbox": [x0 / 0.8, y0 / 0.6, x1 / 0.8, y1 / 0.6],
     }
-    assert pictures.classify([block], document, tmp_path) == [block]
+    assert pictures.classify([block], document, {}) == [block]
 
 
-def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words(
-    tmp_path: Path,
-) -> None:
+def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words() -> (
+    None
+):
     document = pymupdf.open()
     glyph, badge, tall = (105, 91, 125, 101), (260, 91, 290, 101), (385, 86, 405, 106)
     blocks = []
@@ -934,15 +998,15 @@ def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words(
         page.insert_text((295, 100), "CC BY", fontsize=10)
         page.insert_text((340, 100), f"gamma{p}", fontsize=10)
         page.insert_text((410, 100), f"delta{p}", fontsize=10)
-        for rect in (glyph, badge, tall):
-            _bars(page, rect)
+        for key, rect in enumerate((glyph, badge, tall)):
+            _place_image(page, rect, key)
         blocks += [
-            _picture(tmp_path, f"glyph{p}.png", p, glyph, b"glyph"),
-            _picture(tmp_path, f"badge{p}.png", p, badge, b"badge"),
-            _picture(tmp_path, f"tall{p}.png", p, tall, b"tall"),
+            _picture("glyph", p, glyph),
+            _picture("badge", p, badge),
+            _picture("tall", p, tall),
         ]
-    result = pictures.classify(blocks, document, tmp_path)
-    assert [(b["type"], b["img_path"][:-5]) for b in result] == [
+    result = pictures.classify(blocks, document, {})
+    assert [(b["type"], b["name"]) for b in result] == [
         (kind, name)
         for _ in range(5)
         for kind, name in (
@@ -1046,3 +1110,207 @@ def test_recovered_table_block_carries_spans_and_citation_box() -> None:
     assert block["type"] == "table" and block["_recovery"] == "source-geometry"
     assert "Table 1 Counts" in json.dumps(block["table_caption"])
     assert block["bbox"][1] < 100 / 800 * 1000
+
+
+def test_page_text_reads_each_page_once_within_its_budget(tmp_path, monkeypatch):
+    path = tmp_path / "two.pdf"
+    document = pymupdf.open()
+    for words in ("one two three", "four five six seven"):
+        document.new_page().insert_text((72, 72), words)
+    document.save(path)
+    monkeypatch.setattr(page_text, "SPAN_BUDGET", 1)  # room for the first page
+    with pymupdf.open(path) as document, page_text.session(path):
+        first, second = document[0], document[1]
+        assert page_text.page_dict(first) is page_text.page_dict(first)
+        assert page_text.page_dict(second) is not page_text.page_dict(second)
+        assert page_text.page_dict(second) == second.get_text(
+            "dict", flags=page_text.TEXT_FLAGS
+        )
+    with pymupdf.open(path) as document:  # outside a session nothing is kept
+        assert page_text.page_dict(document[0]) is not page_text.page_dict(document[0])
+
+
+def _joined_page(lines: list[tuple[str, float]], fontname: str = "helv"):
+    """A page with (text, x) lines from y = 100 and one block over them all."""
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    for row, (text, x) in enumerate(lines):
+        page.insert_text((x, 100 + 14 * row), text, fontsize=10, fontname=fontname)
+    return document, [100.0, 100.0, 1000.0, (110 + 14 * len(lines)) / 0.8]
+
+
+def test_wrapped_cjk_lines_join_without_the_space_odl_adds() -> None:
+    # The first line wraps at the block's right edge; the third ends short.
+    document, box = _joined_page(
+        [
+            ("地域住民にとって地域住民にとって", 60),
+            ("身近な学習拠点で", 60),
+            ("主席：", 60),
+        ],
+        fontname="japan",
+    )
+    block = {"type": "text", "page_idx": 0, "bbox": box}
+    text = "地域住民にとって地域住民にとって 身近な学習拠点で 主席："
+    with document:
+        [result] = joins.repair_joins([{**block, "text": text}], document)
+    assert result["text"] == "地域住民にとって地域住民にとって身近な学習拠点で 主席："
+
+
+@pytest.mark.parametrize(
+    ("second", "elsewhere", "expected"),
+    [
+        ("1950s jazz", "", "mid-1950s jazz"),  # a digit follows
+        ("term use", "", "longterm use"),  # a syllable break by default
+        ("term use", "long-term care", "long-term use"),  # the document hyphenates
+        ("Named:do: x", "", "forceNewFileNamed:do: x"),  # camel case is code
+    ],
+)
+def test_line_end_hyphens_odl_dropped_return_on_evidence(
+    second: str, elsewhere: str, expected: str
+) -> None:
+    head = {"1950s": "mid", "term u": "long", "Named": "forceNewFile"}
+    first = next(v for k, v in head.items() if second.startswith(k))
+    document, box = _joined_page([(f"Body text {first}-", 60), (second, 60)])
+    joined = f"Body text {first}{second}"
+    blocks = [{"type": "text", "page_idx": 0, "bbox": box, "text": joined}]
+    if elsewhere:
+        blocks.append(
+            {"type": "text", "page_idx": 0, "bbox": [0, 0, 1, 1], "text": elsewhere}
+        )
+    with document:
+        result = joins.repair_joins(blocks, document)
+    assert result[0]["text"] == f"Body text {expected}"
+
+
+def test_figure_captions_beside_a_picture_move_into_it() -> None:
+    def text(t: str, y0: float) -> dict:
+        return {
+            "type": "text",
+            "text": t,
+            "page_idx": 0,
+            "bbox": [100, y0, 900, y0 + 20],
+        }
+
+    figure = {"type": "image", "page_idx": 0, "bbox": [100, 100, 900, 400]}
+    blocks = [
+        text("Body before.", 60),
+        figure,
+        text("Figure 7.10: Branching (left) and merging (right).", 410),
+        {**figure, "bbox": [100, 500, 900, 700]},
+        text("Figure 2.18 illustrates active transport.", 710),  # a sentence
+        {**figure, "bbox": [100, 750, 900, 850]},
+        text("Fig. 3 Far below it.", 950),  # too far
+    ]
+    result = pictures.attach_captions(blocks)
+    assert [b.get("image_caption") for b in result if b["type"] == "image"] == [
+        ["Figure 7.10: Branching (left) and merging (right)."],
+        None,
+        None,
+    ]
+    assert [b["text"] for b in result if b["type"] == "text"] == [
+        "Body before.",
+        "Figure 2.18 illustrates active transport.",
+        "Fig. 3 Far below it.",
+    ]
+
+
+# Formula structure (scripts.py): synthetic lines as (text, role) pieces, role
+# "" base text, "^" raised, "_" lowered, "^_" stacked; the words that change.
+SCRIPT_CASES = [
+    ([("called a derivative in calculus", ""), ("3", "^"), (".", "")], []),
+    ([("oxidation of diatomic hydrogen.", ""), ("13", "^"), (" Since", "")], []),
+    ([("risk of cancer", ""), ("1,2", "^"), (" in adults", "")], []),
+    ([("patients", ""), ("12–14", "^"), (" were excluded", "")], []),
+    ([("(see Smith)", ""), ("4", "^"), (" for details", "")], []),
+    ([("the 1", ""), ("st", "^"), (" and 2", ""), ("nd", "^"), (" rows", "")], []),
+    ([("Total", ""), ("a", "^"), (" 1,200", "")], []),
+    ([("in 2019", ""), ("7", "^"), (" the rate fell", "")], []),
+    ([("Brand", ""), ("TM", "^"), (" products", "")], []),
+    ([("see [MJS", ""), ("+", "^"), ("00] for", "")], []),
+    ([("an area of 12 m", ""), ("2", "^"), (" of land", "")], ["m^2"]),
+    ([("Volume = 10,597.5 ft", ""), ("3", "^")], ["ft^3"]),
+    ([("= 0.785 × (3 ft)", ""), ("2", "^")], ["ft)^2"]),
+    ([("so that x", ""), ("2", "^"), (" + y = 4", "")], ["x^2"]),
+    ([("the value e", ""), ("−x", "^"), (" decays", "")], ["e^{−x}"]),
+    ([("strain of 1.0 × 10", ""), ("−21", "^")], ["10^{−21}"]),
+    ([("the redshift z = 0.09", ""), ("+0.03|−0.04", "^_")], ["0.09^{+0.03}_{−0.04}"]),
+    ([("dissolved Ca", ""), ("2+", "^"), (" ions", "")], ["Ca^{2+}"]),
+    ([("water is H", ""), ("2", "_"), ("O and", "")], ["H_2O"]),
+    ([("the term x", ""), ("i", "_"), (" here", "")], ["x_i"]),
+    ([("ammonium NH", ""), ("4", "_"), ("+", "^"), (" ions", "")], ["NH_4^+"]),
+]
+
+
+def _script_line(pieces) -> list:
+    """Glyphs for one synthetic line: 10 pt text on baseline 100, 7 pt
+    scripts raised 3.5 pt or lowered 2 pt, 5 pt advances."""
+    line, x, spaced = [], 72.0, False
+
+    def glyph(c, size, base):
+        nonlocal x, spaced
+        w = 0.5 * size
+        g = scripts.Glyph(
+            c, x, base - 0.8 * size, x + w, base + 0.2 * size, size, base, spaced=spaced
+        )
+        x += w
+        spaced = False
+        return g
+
+    for text, role in pieces:
+        if role == "^_":
+            up, down = text.split("|")
+            start = x
+            line += [glyph(c, 7, 96.5) for c in up]
+            x = start
+            line += [glyph(c, 7, 102) for c in down]
+            continue
+        for c in text:
+            if c == " ":
+                x += 3
+                spaced = True
+                continue
+            line.append(
+                glyph(c, 7 if role else 10, {"": 100, "^": 96.5, "_": 102}[role])
+            )
+    return line
+
+
+@pytest.mark.parametrize(("pieces", "expected"), SCRIPT_CASES)
+def test_scripts_rebuild_units_and_variables_but_not_footnote_markers(
+    pieces, expected
+) -> None:
+    words = scripts._linear([], _script_line(pieces), math=None)
+    changed = [
+        scripts._render_word(w) for w in words if any(a.sups or a.subs for a in w)
+    ]
+    assert changed == expected
+
+
+def test_a_raised_unit_exponent_is_restored_in_the_block_text() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    page.insert_text((60, 100), "The tank holds 10,597.5 ft", fontsize=10)
+    x = 60 + pymupdf.get_text_length("The tank holds 10,597.5 ft", fontsize=10)
+    page.insert_text((x, 96.5), "3", fontsize=7)
+    page.insert_text((x + 4, 100), " of water.", fontsize=10)
+    block = {
+        "type": "text",
+        "text": "The tank holds 10,597.5 ft3 of water.",
+        "page_idx": 0,
+        "bbox": [90, 110, 600, 135],
+    }
+    with document:
+        [result] = scripts.restore_structure([block], document)
+    assert result["text"] == "The tank holds 10,597.5 ft^3 of water."
+
+
+def test_empty_tables_are_only_tables_without_any_cell_text_or_caption() -> None:
+    empty = {
+        "type": "table",
+        "table_body": "<table><tr><td></td><td> </td></tr></table>",
+    }
+    assert pictures.empty_table(empty)
+    assert not pictures.empty_table({**empty, "table_caption": ["Table 1"]})
+    assert not pictures.empty_table(
+        {"type": "table", "table_body": "<table><tr><td>0</td></tr></table>"}
+    )

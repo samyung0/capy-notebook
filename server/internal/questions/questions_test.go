@@ -151,7 +151,7 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 		"stem": []any{
 			map[string]any{"type": "text", "label": "Source A", "text": "Prices rose."},
 			map[string]any{"type": "image", "description": "A demand curve"},
-			map[string]any{"type": "chart", "title": "Sales", "unit": "kg", "labels": []any{"Jan", "Feb"},
+			map[string]any{"type": "chart", "title": "Sales (kg)", "labels": []any{"Jan", "Feb"},
 				"series": []any{map[string]any{"name": "Shop", "values": []any{1.5, 2.0}}}},
 		},
 		"parts": []any{
@@ -181,6 +181,9 @@ func TestPlotBlockBoundsAndGradingText(t *testing.T) {
 	if err := ValidateBlock(plot(nil), Policy{}); err != nil {
 		t.Fatalf("valid plot refused: %v", err)
 	}
+	if err := ValidateBlock(plot(func(b map[string]any) { b["kind"] = "scatter" }), Policy{}); err != nil {
+		t.Fatalf("scatter plot refused: %v", err)
+	}
 	curve := func(points ...any) map[string]any { return map[string]any{"name": "c", "points": points} }
 	two := []any{0, 1}
 	for name, edit := range map[string]func(map[string]any){
@@ -193,7 +196,8 @@ func TestPlotBlockBoundsAndGradingText(t *testing.T) {
 		"line axis":        func(b map[string]any) { b["lines"] = []any{map[string]any{"axis": "z", "value": 1}} },
 		"unlabelled mark":  func(b map[string]any) { b["marks"] = []any{map[string]any{"x": 1, "y": 2}} },
 		"missing y title":  func(b map[string]any) { delete(b, "yTitle") },
-		"unknown property": func(b map[string]any) { b["kind"] = "line" },
+		"unknown kind":     func(b map[string]any) { b["kind"] = "bar" },
+		"unknown property": func(b map[string]any) { b["shape"] = "line" },
 	} {
 		if err := ValidateBlock(plot(edit), Policy{}); err == nil {
 			t.Errorf("%s accepted", name)

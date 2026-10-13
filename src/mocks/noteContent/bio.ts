@@ -352,9 +352,8 @@ export const bioNotes: SeedNote[] = [
         kind: 'bar',
         labels: ['Glycolysis', 'Krebs cycle', 'Oxidative phosphorylation'],
         series: [{ name: 'Net ATP', values: [2, 2, 28] }],
-        title: 'ATP yield per glucose by stage',
+        title: 'ATP yield per glucose by stage (ATP)',
         type: 'chart',
-        unit: 'ATP',
         yTitle: 'ATP per glucose',
       }),
 

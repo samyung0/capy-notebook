@@ -38,13 +38,13 @@ function recentHint(item: RecentItem): string {
   );
 }
 
-function recentIcon(item: RecentItem) {
+export function recentIcon(item: RecentItem) {
   return item.kind === 'file'
     ? fileIconName({ kind: item.fileKind, name: item.title })
     : materialIconName(item.type);
 }
 
-function recentThumbnail(item: RecentItem): Thumbnail {
+export function recentThumbnail(item: RecentItem): Thumbnail {
   return item.kind === 'file'
     ? {
         fileKind: item.fileKind,
@@ -77,6 +77,7 @@ function RecentActions({
       }
       display={display}
       hoverClassName="mr-1.5"
+      menuAlign="start"
       menuTriggerIcon="moreHorizontal"
       readOnly={!item.canEdit}
       showMove={false}

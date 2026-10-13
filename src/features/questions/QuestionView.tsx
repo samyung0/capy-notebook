@@ -355,9 +355,6 @@ function Choices({
 }
 
 export interface QuestionViewProps {
-  /** Controls at the question's top right, before its marks (an editor's
-   * Edit and Remove). */
-  actions?: ReactNode;
   question: Question | LearnerQuestion;
   questionNumber?: number;
   /** Returns grid items for the part row; an answer spans `col-[2/-1]`. */
@@ -373,7 +370,6 @@ export interface QuestionViewProps {
 }
 
 export function QuestionView({
-  actions,
   question,
   questionNumber,
   review = false,
@@ -419,22 +415,19 @@ export function QuestionView({
               merged ? { partId: question.parts[0].id } : {}
             )}
         </div>
-        <div className="flex items-baseline justify-end gap-3">
-          {actions}
-          {lone && renderMarks ? (
+        {lone && renderMarks ? (
+          <span className="whitespace-nowrap text-fg-muted text-xs">
+            {renderMarks(question.parts[0])}
+          </span>
+        ) : (
+          showTotalMarks && (
             <span className="whitespace-nowrap text-fg-muted text-xs">
-              {renderMarks(question.parts[0])}
+              {total === 1
+                ? m.question_ui_one_mark()
+                : m.question_ui_marks({ count: total })}
             </span>
-          ) : (
-            showTotalMarks && (
-              <span className="whitespace-nowrap text-fg-muted text-xs">
-                {total === 1
-                  ? m.question_ui_one_mark()
-                  : m.question_ui_marks({ count: total })}
-              </span>
-            )
-          )}
-        </div>
+          )
+        )}
       </header>
       <div
         className={cn(
@@ -537,7 +530,6 @@ export function QuestionView({
 }
 
 export function QuestionReview({
-  actions,
   question,
   renderAnswer,
   renderBlock,
@@ -545,7 +537,6 @@ export function QuestionReview({
 }: Omit<QuestionViewProps, 'question' | 'review'> & { question: Question }) {
   return (
     <QuestionView
-      actions={actions}
       question={question}
       questionNumber={questionNumber}
       renderAnswer={(part) => {

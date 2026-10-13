@@ -1,8 +1,6 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { type CSSProperties, type ReactNode, useState } from 'react';
 import {
-  invalidateStudy,
   useChapters,
   useFiles,
   useMaterials,
@@ -12,7 +10,6 @@ import {
   useWorkspaceStudy,
 } from '@/api/hooks';
 import type { ReviewItem, ReviewSuggestion } from '@/api/types';
-import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
@@ -21,9 +18,6 @@ import { userToast } from '@/components/ui/userToast';
 import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import type { OpenItem } from '@/features/materials/openItem';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
-import type { Question } from '@/features/questions/types';
-import type { Answers } from '@/features/quizzes/grade';
-import { CheckedQuestion, QuestionItem } from '@/features/study/ReviewQuestion';
 import { StepNav } from '@/features/study/StepNav';
 import { answerStep, currentStep, useSteps } from '@/features/study/steps';
 import '@/features/study/railMap/railMap.css';
@@ -306,8 +300,6 @@ export function StudyPanel({
                             correct: a.correct,
                             total: a.total,
                           })}
-                          {' · '}
-                          {new Date(a.takenAt).toLocaleDateString()}
                         </span>
                       </Link>
                     ))}
@@ -364,9 +356,9 @@ function ReviewLink({
 
 type QuickPhase = 'open' | 'leaving' | 'gone';
 
-/** The Study tab's short practice: one question, or up to four flashcards
- * (the server picks them as a suggested review would). Ratings and checks
- * are recorded like any review. The round is the list as it was when it
+/** The Study tab's short practice: up to four flashcards (the server picks
+ * them as a suggested review would; questions are left to review sessions).
+ * Ratings are recorded like any review. The round is the list as it was when it
  * began, kept while ratings refresh the summary (rated items leave it); once
  * the last item is done the section dissolves into smoke and stays gone
  * until the workspace opens again. */
@@ -399,60 +391,9 @@ function QuickReview({
         className={cn('min-h-0', leaving && 'motion-smoke-out')}
         inert={leaving}
       >
-        {round[0].kind === 'question' ? (
-          <QuickQuestion
-            item={round[0]}
-            onDone={finish}
-            workspaceId={workspaceId}
-          />
-        ) : (
-          <QuickCards items={round} onDone={finish} workspaceId={workspaceId} />
-        )}
+        <QuickCards items={round} onDone={finish} workspaceId={workspaceId} />
       </div>
     </div>
-  );
-}
-
-/** A question answered in place; Done ends the round once it is checked. */
-function QuickQuestion({
-  item,
-  onDone,
-  workspaceId,
-}: {
-  item: ReviewItem;
-  onDone: () => void;
-  workspaceId: string;
-}) {
-  const qc = useQueryClient();
-  const [checked, setChecked] = useState<{
-    answers: Answers;
-    question: Question;
-  }>();
-  return (
-    <Section title={m.study_quick_review()}>
-      <div className="flex flex-col gap-3 px-1.5 pt-1">
-        {checked ? (
-          <CheckedQuestion
-            action={
-              <Button onClick={onDone} rounded="large" variant="outline">
-                {m.study_quick_finish()}
-              </Button>
-            }
-            answers={checked.answers}
-            question={checked.question}
-            title={item.materialTitle}
-          />
-        ) : (
-          <QuestionItem
-            item={item}
-            onChecked={(graded, answers) => {
-              setChecked({ answers, question: graded.question });
-              void invalidateStudy(qc, workspaceId);
-            }}
-          />
-        )}
-      </div>
-    </Section>
   );
 }
 

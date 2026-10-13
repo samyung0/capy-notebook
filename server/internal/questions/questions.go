@@ -353,11 +353,15 @@ func blocks(value any, policy Policy) error {
 	return nil
 }
 
-// validatePlot checks a plot: one to four curves of [x, y] points, optional
-// reference lines {axis x|y, value, label?} and labelled points {x, y, label}.
+// validatePlot checks a plot: one to four series of [x, y] points drawn as a
+// line or a scatter (kind), optional reference lines {axis x|y, value,
+// label?} and labelled points {x, y, label}.
 func validatePlot(b map[string]any) error {
-	if err := keys(b, "type title xTitle yTitle series", "unit lines marks"); err != nil {
+	if err := keys(b, "type title xTitle yTitle series", "kind unit lines marks"); err != nil {
 		return err
+	}
+	if k, ok := b["kind"]; ok && !enum(k, "line scatter") {
+		return fail("invalid plot kind")
 	}
 	for _, key := range []string{"title", "xTitle", "yTitle"} {
 		if !str(b[key], fieldlimits.QuestionMetadata, false) {
@@ -464,13 +468,13 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			width = len(cells)
 		}
 	case "chart":
-		if err := keys(b, "type kind title labels series", "unit xTitle yTitle gridlines"); err != nil {
+		if err := keys(b, "type kind title labels series", "xTitle yTitle gridlines"); err != nil {
 			return err
 		}
 		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionMetadata, false) || !stringsArray(b["labels"], 1, fieldlimits.QuestionChartLabels, fieldlimits.QuestionText) {
 			return fail("invalid chart")
 		}
-		for _, key := range []string{"unit", "xTitle", "yTitle"} {
+		for _, key := range []string{"xTitle", "yTitle"} {
 			if !optionalString(b, key, fieldlimits.QuestionMetadata) {
 				return fail("invalid chart label")
 			}
@@ -1243,9 +1247,6 @@ func blocksText(blocks []any) string {
 			out = append(out, strings.Join(lines, "\n"))
 		case "chart":
 			title := str("title")
-			if unit := str("unit"); unit != "" {
-				title += " (" + unit + ")"
-			}
 			labels, _ := b["labels"].([]any)
 			series, _ := b["series"].([]any)
 			lines := []string{title}

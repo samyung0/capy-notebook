@@ -23,6 +23,8 @@ from collections import Counter, defaultdict
 
 import pymupdf
 
+from . import page_text
+
 REPEATED_ON_PAGES = 3
 REPEATABLE_TYPES = frozenset({"text", "header", "page_footnote"})
 
@@ -138,9 +140,7 @@ def mark_page_numbers(blocks: list[dict], document: pymupdf.Document) -> list[di
         if not lines:
             lines.extend(
                 line
-                for group in page.get_text(
-                    "dict", flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
-                )["blocks"]
+                for group in page_text.page_dict(page)["blocks"]
                 for line in group.get("lines", [])
                 if any(s["text"].strip() for s in line["spans"])
             )

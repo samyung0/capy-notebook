@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pymupdf
 
+from . import page_text
 from .furniture import _folio
 from .order import normal, repair_page
 
@@ -86,9 +87,7 @@ def _source_spans(
         if page_index not in pages:
             pages[page_index] = [
                 span
-                for group in page.get_text(
-                    "dict", flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
-                )["blocks"]
+                for group in page_text.page_dict(page)["blocks"]
                 for line in group.get("lines", [])
                 if abs(line["dir"][0] - 1) < 0.01
                 for span in line["spans"]
@@ -427,6 +426,110 @@ def _folio_families(
     return banners
 
 
+def _repeated_heads(
+    blocks: list[dict],
+    evidence: dict[int, list[dict]],
+    outline: set[tuple[int, str]],
+    page_spans: dict[int, list[dict]],
+) -> set[int]:
+    """Folio-less running heads: the page's first (or last) line in the top (or
+    bottom) fifth, no larger than the page's body text, whose exact text recurs
+    in the same place on three pages, two of them at most two pages apart
+    (LaTeX's "CHAPTER 8. DERIVATION SYSTEMS" at y = 0.117, its folio a separate
+    block), in a band where another text does the same or covering a quarter
+    of the book. A section title repeats far apart, never on nearby pages'
+    first line."""
+    edges: dict[int, tuple[float, float]] = {}
+    for block in blocks:
+        box, page = block.get("bbox") or [], block.get("page_idx")
+        if len(box) != 4 or type(page) is not int or block.get("type") == "discarded":
+            continue
+        if _folio_band(box) and _folio(str(block.get("text") or "")):
+            continue  # a bare page number beside the head
+        low, high = edges.get(page, (box[1], box[3]))
+        edges[page] = (min(low, box[1]), max(high, box[3]))
+    groups: dict[tuple, set[int]] = defaultdict(set)
+    members: dict[tuple, list[int]] = defaultdict(list)
+    for index, spans in evidence.items():
+        block = blocks[index]
+        text, box, page = block["text"], block["bbox"], block["page_idx"]
+        if (page, _outline_title(text)) in outline:
+            continue
+        low, high = edges.get(page, (box[1], box[3]))
+        top = box[3] < 200 and box[1] <= low
+        bottom = box[1] > 800 and box[3] >= high
+        if not (top or bottom):
+            continue
+        # The exact text: a title whose number rises with the page is the
+        # folio rules' to prove (Exercise N at page tops stays a heading).
+        title = _literal(text) if any(c.isalpha() for c in text) else ""
+        style = max(spans, key=lambda s: len(s["text"]))
+        body = _main_style(page_spans.get(page, []))
+        if not title or (body and style["size"] > body[1] + 0.5):
+            continue
+        key = (top, round(box[1] / 20), style["font"], round(style["size"]), title)
+        groups[key].add(page)
+        members[key].append(index)
+    book = len({b.get("page_idx") for b in blocks if type(b.get("page_idx")) is int})
+    near = {
+        key
+        for key, pages in groups.items()
+        if len(pages) >= 3 and any(b - a <= 2 for a, b in pairwise(sorted(pages)))
+    }
+    # A band of running heads changes text by chapter; one text alone must
+    # cover a quarter of the book ("Example" atop three pages stays a heading).
+    bands = Counter(key[:4] for key in near)
+    return {
+        index
+        for key in near
+        if bands[key[:4]] >= 2 or len(groups[key]) >= max(5, 0.25 * book)
+        for index in members[key]
+    }
+
+
+def _margin_runs(blocks: list[dict], outline: set[tuple[int, str]]) -> set[int]:
+    """Running heads and feet the folio rules miss, read from block text alone
+    (letter-spaced or CJK heads fail the span evidence the other rules need).
+
+    Blocks in the margin band (``_folio_band``) are grouped by side and their
+    text with digits folded. A group is running furniture when one of its
+    numbers, at any position, keeps one offset from the page index on three
+    pages ("February 2022 Page 2 of 159", "– 2 – Drucksache", "特殊學校課程指引
+    1-2", "270CHAPTER 10."), or when the folded text covers a fifth of the
+    document (a journal's "PRL 116, 061102 (2016) …"). A top group also needs
+    eight pages and a twentieth of the document: a page-top "Exercise N" rises
+    with the page too, over a few pages."""
+    pages = len({b.get("page_idx") for b in blocks if type(b.get("page_idx")) is int})
+    groups: dict[tuple, list[int]] = defaultdict(list)
+    for index, block in enumerate(blocks):
+        box, page = block.get("bbox") or [], block.get("page_idx")
+        text = " ".join(str(block.get("text") or "").split())
+        if (
+            block.get("type") != "text"
+            or len(box) != 4
+            or type(page) is not int
+            or not _folio_band(box)
+            or not any(c.isalpha() for c in text)
+            or (page, _outline_title(text)) in outline
+        ):
+            continue
+        groups[box[3] < 100, re.sub(r"\d+", "#", text.casefold())].append(index)
+    found: set[int] = set()
+    for (top, _), members in groups.items():
+        seen = {blocks[i]["page_idx"] for i in members}
+        if len(seen) < 3 or (top and len(seen) < max(8, 0.05 * pages)):
+            continue
+        offsets: Counter = Counter()
+        for i in members:
+            numbers = re.findall(r"\d+", str(blocks[i]["text"]))
+            for position, number in enumerate(numbers):
+                offsets[position, int(number) - blocks[i]["page_idx"]] += 1
+        tracks = offsets and offsets.most_common(1)[0][1] >= 3
+        if tracks or len(seen) >= 0.2 * pages:
+            found.update(members)
+    return found
+
+
 def _wide_only(blocks: list[dict], found: list[int]) -> set[int]:
     """Banners found only through the wide band stay when their group (folio
     kind, page offset, top or bottom, height in hundredths) covers five pages
@@ -527,6 +630,10 @@ def correct_roles(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     found = family | (_additional_banners(blocks, wide, outline) - heading_roles.keys())
     extra = [i for i in sorted(found) if roles.get(i) != "running-banner"]
     roles.update((index, "running-banner") for index in _wide_only(blocks, extra))
+    repeated = _repeated_heads(blocks, wide, outline, page_spans) - roles.keys()
+    roles.update((index, "running-banner") for index in repeated)
+    runs = _margin_runs(blocks, outline) - roles.keys()
+    roles.update((index, "running-banner") for index in runs)
     result = list(blocks)
     for index, role in roles.items():
         result[index] = {**blocks[index], "_source_role": role}
@@ -825,10 +932,7 @@ def source_headings(blocks: list[dict], pdf: Path) -> dict[int, dict]:
             if page_index not in page_lines:
                 page_lines[page_index] = [
                     line
-                    for group in page.get_text(
-                        "dict",
-                        flags=pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES,
-                    )["blocks"]
+                    for group in page_text.page_dict(page)["blocks"]
                     for line in group.get("lines", [])
                 ]
             rect = pymupdf.Rect(

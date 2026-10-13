@@ -9,7 +9,7 @@ test('a broken diagram marks its line in Edit, and typing fixes it live for View
   await expect(page.getByText(m.mermaid_syntax_error({ line: 2 }))).toBeVisible(
     { timeout: 30_000 }
   );
-  await expect(page.locator('.cursor-zoom-in')).toHaveCount(0);
+  await expect(page.locator('[data-media-preview]')).toHaveCount(0);
 
   await page.goto('/materials/mock-material-diagram?mode=edit');
   const source = page.getByRole('textbox', {
@@ -21,7 +21,7 @@ test('a broken diagram marks its line in Edit, and typing fixes it live for View
   await expect(page.getByText(m.mermaid_syntax_error({ line: 2 }))).toHaveCount(
     0
   );
-  await expect(page.locator('.cursor-zoom-in')).toHaveCount(0);
+  await expect(page.locator('[data-media-preview]')).toHaveCount(0);
   // Live editing (Epo 2026-10-10): no Save or Cancel.
   await expect(
     page.getByRole('button', { exact: true, name: m.action_save() })
@@ -48,6 +48,6 @@ test('a broken diagram marks its line in Edit, and typing fixes it live for View
   await expect(page.getByText(m.mermaid_syntax_error({ line: 2 }))).toHaveCount(
     0
   );
-  await page.locator('.cursor-zoom-in').click();
+  await page.locator('[data-media-preview]').dblclick();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
