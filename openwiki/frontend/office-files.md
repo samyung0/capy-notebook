@@ -986,20 +986,21 @@ the font picker and the size box are hidden. The row scrolls sideways: a
 vertical mouse wheel scrolls it, and an edge with more to scroll fades
 (`data-scroll-start`/`-end`, so it needs no scroll-driven animations). The DOCX
 menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
-added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Page setup,
-Print), Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
+added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Print),
+Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
 ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
-Comment, Watermark, Break ▸, Table of contents, and Update table of contents
+Comment, Break ▸, Table of contents, and Update table of contents
 while the document has one) and Format (Text ▸, Paragraph styles ▸, Align &
 indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table ▸
 and Image options in context, Clear formatting). Placeholders that do nothing
 stay hidden: Line spacing's empty Paragraph spacing heading. Cut, Copy and
 Paste are left out of the menus (a host click cannot reach the frame's
 clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too),
-over body paragraphs only (not tables, headers, footers or notes). Page setup
-and Insert › Watermark change only the open editor's document model, outside
-the Yjs state Capy saves, so neither reaches the saved file or co-editors
-(DOCX parity checklist, `bench/parity/fixtures/docx.tsv`).
+over body paragraphs only (not tables, headers, footers or notes). The fork's
+Page setup and Watermark commands are left out of the menus (Epo 2026-10-13):
+they change only the open editor's document model, outside the Yjs state Capy
+saves, so neither would reach the saved file or co-editors; the ruler's margin
+drags still change the open copy only (DOCX parity checklist).
 
 Format › Table ▸ (Google Docs' place) has Vertical alignment ▸
 Top/Middle/Bottom and Table alignment ▸ Left/Center/Right (radio items ticked
