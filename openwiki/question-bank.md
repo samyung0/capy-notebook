@@ -204,9 +204,12 @@ it in quizzes, notes and chat. It has no editor: the question dialog shows a plo
 and can remove it, but the add menu does not offer one. Go and the browser
 validate it, and so does the Rust collaboration server (`questions.rs`,
 `material.rs`: a live quiz question holding a plot and a note's `plot` embed,
-with Go's bounds; Node's validator never knew it, Epo 2026-10-12). Plot cases
-are not in the shared fixtures, which the removed Node server generated, and
-are tested in each validator instead. Grading text lists its curves' points and labels. User quizzes and notes keep validated
+with Go's bounds; Node's validator never knew it, Epo 2026-10-12). A live quiz
+room keeps a plot as one value, as it keeps a chart (`items/src/quiz.rs`,
+`liveQuiz.ts`; before 2026-10-13 the room's reader dropped it, so an agent's
+plot vanished from the projection). A valid plot is in the shared fixtures
+(`plot.json`), so the live quiz round trip and the browser/server parity
+corpus carry one; refused plot cases are tested in each validator. Grading text lists its curves' points and labels. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed

@@ -44,6 +44,21 @@ const rich: Question = {
           title: 'Sizes',
           type: 'chart',
         },
+        {
+          series: [
+            {
+              name: 'Vm',
+              points: [
+                [0, -70],
+                [1, 30],
+              ],
+            },
+          ],
+          title: 'Potential',
+          type: 'plot',
+          xTitle: 'Time (ms)',
+          yTitle: 'Vm (mV)',
+        },
       ],
       id: 'rich-part',
     },

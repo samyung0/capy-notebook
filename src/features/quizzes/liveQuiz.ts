@@ -1,7 +1,6 @@
 import * as Y from 'yjs';
 import { applyTextChange, LOCAL_EDIT } from '@/features/collaboration/yText';
 import {
-  type GraphBlock,
   gapNumbers,
   type LearnerAnswer,
   type LearnerQuestion,
@@ -128,6 +127,7 @@ function readBlock(entry: YMap): QuestionBlock | null {
       };
     }
     case 'chart':
+    case 'plot':
     case 'graph': {
       const value = plain<Record<string, unknown>>(entry, 'value');
       return value ? ({ ...value, type } as QuestionBlock) : null;
@@ -607,7 +607,7 @@ function writeTable(entry: YMap, rows: string[][]) {
 }
 
 /** A block's fields written in place: texts as the fewest changes, small
- * values only when they differ, a chart or graph as one value (D8). */
+ * values only when they differ, a chart, plot or graph as one value (D8). */
 function writeBlockFields(entry: YMap, block: QuestionBlock) {
   switch (block.type) {
     case 'text':
@@ -626,8 +626,9 @@ function writeBlockFields(entry: YMap, block: QuestionBlock) {
       setPlain(entry, 'attribution', block.attribution);
       return;
     case 'chart':
+    case 'plot':
     case 'graph': {
-      const { type: _type, ...value } = block as GraphBlock;
+      const { type: _type, ...value } = block;
       setPlain(entry, 'value', value);
       return;
     }

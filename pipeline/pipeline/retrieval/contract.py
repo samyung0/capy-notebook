@@ -41,7 +41,7 @@ ERROR_CODES: frozenset[str] = frozenset(CONTRACT["errorCodes"])
 DEFINITIONS: dict[str, dict[str, Any]] = {t["name"]: t for t in CONTRACT["tools"]}
 # The note format the materials skill quotes.
 FORMATS: dict[str, str] = CONTRACT["formats"]
-# The chart, plot and graph schemas add_question_media checks media against.
+# The chart and plot schemas add_question_media checks media against.
 MEDIA_BLOCKS: dict[str, dict[str, Any]] = CONTRACT["mediaBlocks"]
 # Tools whose handlers check every argument themselves, naming each problem at
 # once with its path, and save the valid questions of a call
