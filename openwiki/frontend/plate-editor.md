@@ -905,8 +905,8 @@ document, and the banner goes back to `offline` only once that lands. `navigator
 first row written while offline, except on Firefox, which prompts. Safari
 deletes script storage of a site not visited for 7 days, and private windows
 delete it on close. Rows of a note the account no longer has go on a 404, or a 403
-for the note itself (token, refusal), and in the draft sweep (below), which
-asks each stored document's token endpoint. A 403 about the account itself
+for the note itself (token, refusal), and in the draft load sweep (below),
+once per page load, which asks each stored document's token endpoint. A 403 about the account itself
 (`account_suspended`, `account_deletion_pending`: `isAccountForbiddenError`)
 keeps them, and so does the collaboration service's forbidden reason alone,
 which an account lock gives too; the sweep settles that case
@@ -929,52 +929,73 @@ lineage moves itself (see
 Rows left behind (a room or save error, a closed tab, offline) go to their
 room from any open Capy page, not only when the file opens again (Epo
 2026-10-13). The sweep (`startDraftSweeps` and `sweepDrafts` in
-`editDrafts.ts`) runs when the page is idle after load, when the browser
-comes back online and when the tab becomes visible; there is no service
-worker or Background Sync yet (it comes with opening offline). One sweep runs
-at a time per browser (the Web Lock `capy-drafts-sweep`; a trigger that finds
-it held does nothing), and it skips every document an editor holds: a
-recorder holds `capy-drafts:<key>` (shared) while it records. Without Web
-Locks nothing is sent, and the mock service (MSW) has no endpoint to send to.
+`editDrafts.ts`) runs when the page is idle after load (the load sweep),
+when the browser comes back online and when the tab becomes visible; there
+is no service worker or Background Sync yet (it comes with opening offline).
+The drafts worker starts at app start, while the page is online, since one
+that cannot load fails every request for the page load. One sweep runs at a
+time per browser (the Web Lock `capy-drafts-sweep`; a trigger that finds it
+held does nothing), and it skips every document an editor holds: a recorder
+holds `capy-drafts:<key>` (shared) while it records. Without Web Locks
+nothing is sent, and the mock service (MSW) has no endpoint to send to. A
+sweep stops when the page signs in as someone else.
 
 For each other document of the signed-in account the sweep asks the token
-endpoint the editor uses (a 403 or 404 deletes the rows, above; a read token
-sends nothing). With a write token it merges the rows of the token's room
-that are not refused, one group per lineage (an Office file's rows of another
-base apart), and POSTs each group to the collaboration service's `/drafts`
-on the host of the token's URL: `?room=<room>[&base=<sha>]`,
-`Authorization: Bearer <token>`, the update as the body
-(`collaboration-rs/crates/server/src/drafts.rs`). The service runs a
-channel's JOIN checks (origin, token, access, the room's eviction and pause
-state), refuses a read-only token, checks the note's current schema, reads
-the body within a writer's sync message cap (4 MiB for a note, the frame cap
-for a source), and hands the update to the room, loading it if need be: the
-same writer admission and apply as a channel's update (`admit_update` in
-`room.rs`), so open editors receive it live, then a store at once. It
-answers only after that store, and that answer is the receipt for every row
-the request carried: only then are the rows deleted. A source room takes no
-send during a publication handoff, and an Office file's only over the room's
-base. A successful send is silent: the edits just appear for everyone.
+endpoint the editor uses. A 403 or 404 deletes the rows (above) in the load
+sweep only, once per page load; a read token sends nothing. A quiz's keys
+(stored as `<actor>:material:<id>:keys`) follow the quiz's own token, then
+go with the keys token (`{ document: 'keys' }`, room `keys:<id>:schema:<n>`);
+flashcard sets and a quiz's content go as notes do. With a write token the
+sweep takes the rows of the token's room that are neither refused nor
+`reported`, one group per lineage (an Office file's rows of another base
+apart). The drafts worker merges each group (`merged`: the page's main
+thread pays about 4 ms for a 20 MB Office state, against 160-192 ms with a
+132-158 ms task when it merged there), and the page POSTs it to the
+collaboration service's `/drafts` on the host of the token's URL, the same
+URL for every document (so one preflight, kept 2 h, covers a sweep):
+`Authorization: Bearer <token>`, `X-Capy-Room: <room>`, `X-Capy-Base: <sha>`
+for a source, the update as the body
+(`collaboration-rs/crates/server/src/drafts.rs`). A note group past the
+4 MiB sync cap is not uploaded.
 
-A refusal answers with its class, and nothing is retried in a loop:
+The service runs a channel's JOIN checks (origin, token, access, the room's
+eviction and pause state), refuses a read-only token, checks the note's
+current schema, reads the body within a writer's sync message cap (4 MiB for
+a note, the frame cap for a source), checks the eviction lease and a local
+reset again (the body may have arrived after them), and hands the update to
+the room, loading it if need be: the same writer admission and apply as a
+channel's update (`admit_update` in `room.rs`, a read token's draft as a
+read channel's), so open editors receive it live, then a store at once. A
+source send counts as joining its room meanwhile. It answers only after that
+store, and that answer is the receipt for every row the request carried:
+only then are the rows deleted. A source room takes no send during a
+publication handoff, and an Office file's only over the room's base. A room
+whose load failed answers the failure (one load per send). A successful send
+is silent: the edits just appear for everyone.
+
+A refusal answers its class alone (`{"class": ...}`); the service logs the
+detail with the room and counts it by class
+(`capy_collaboration_draft_refusals_total`). Nothing is retried in a loop:
 
 - `limit` (422, over a content limit or a source's state cap) and
   `malformed` (400, not an update a writer may send): the group is marked
   `refused` and opens read-only at the next open, as the editor's own
-  refusals do, when it draws on its own; update rows that need the room's
-  state stay unmarked for that open, where the room refuses them again and
-  the editor keeps the whole document as its refused row;
-- `unheld` (409, the room lacks the update's base) and `too_large` (413):
-  the rows wait for the editor at the next open;
-- `lineage` (409, a token for another room, a schema or epoch that moved on,
-  another Office base), `permission` (403), `unavailable` (503), any other
-  failure and a network error: the rows stay for the next trigger, where a
-  fresh token settles a moved lineage or lost access as above.
+  refusals do, when it draws on its own (the worker's `draws`); otherwise it
+  is marked `reported`, left for the editor's next open, where the room
+  refuses it again and the editor keeps the whole document as its refused
+  row; neither is sent again, so the room records the over-limit incident
+  once per open, not per page load;
+- `unheld` (409, the room lacks the update's base), `too_large` (413) and
+  `lineage` (409, a token for another room, a schema or epoch that moved on,
+  another Office base): marked `reported`, left for the editor;
+- `permission` (403), `unavailable` (503) and any other answer: kept, and
+  not sent again until the next page load;
+- no answer (offline) or rows that changed meanwhile: kept for the next
+  trigger.
 
-A document whose rows a sweep settled (sent, refused, waiting for the
-editor, nothing current) is skipped for the rest of the page load while its
-row ids stay the same (the `documents` request reads them from the index
-without loading a row).
+A document whose rows a sweep settled is skipped for the rest of the page
+load while its row ids stay the same (the `documents` request reads them
+from the index without loading a row).
 
 ## Document limits and rejection
 
