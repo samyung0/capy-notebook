@@ -709,13 +709,17 @@ async def test_a_write_naming_no_excerpts_credits_the_books_its_text_matches(
 ):
     """Of the excerpts read since the last write, a book is credited when its
     read text shares with the write a word 4-gram, or a number with a decimal
-    point or two digits, that no other read book holds (Epo 2026-10-13); the
-    excerpt head lines do not count, and a write matching no book credits
-    none. Named excerpts are credited as before."""
+    point or two digits, that no other read book holds (Epo 2026-10-13); what
+    the read tools add (head lines, chunk prefixes, links) and a slide's SVG
+    markup do not count, and a write matching no book credits every candidate,
+    as before. Named excerpts are credited as before; provenance is read once
+    per write."""
     ctx = _library_ctx(monkeypatch)
     book_of = {"e_stats": "ahss", "e_seeds": "botany"}
+    asked: list[list[str]] = []
 
     async def _provenance(excerpt_ids):
+        asked.append(list(excerpt_ids))
         books: dict[str, list[str]] = {}
         for excerpt_id in excerpt_ids:
             books.setdefault(book_of[excerpt_id], []).append(excerpt_id)
@@ -726,8 +730,10 @@ async def test_a_write_naming_no_excerpts_credits_the_books_its_text_matches(
         "e_stats",
         0,
         "8.1",
-        text="[exc_stats] Statistics — 8.1\n(chunk 3) A sample of 40 seeds had a "
-        "mean mass of 2.45 g, and the line of best fit passes the means.",
+        text="[exc_stats] Statistics — 8.1\nchunks 3-4 of this excerpt, from 3\n"
+        "(chunk 3) A sample of 40 seeds had a mean mass of 2.45 g, and the line "
+        "of best fit passes the means.\nNext in this book: [exc_more] 8.2 "
+        "(pages 12, 13)",
     )
     ctx.library_reads.note(
         "e_seeds",
@@ -735,23 +741,41 @@ async def test_a_write_naming_no_excerpts_credits_the_books_its_text_matches(
         "3.2",
         text="[exc_seeds] Botany — 3.2\nscope: germination at 75.5 percent\n"
         "(chunk 7) Seeds need water and warmth; the line of best fit passes "
-        "the means.",
+        "the means. Plant 80 seeds per tray.",
     )
 
-    async def credited(content: str) -> list[str]:
-        out = await tools.write_sources(
-            ctx, "create_material", {"kind": "note", "content": content}
-        )
+    async def credited(tool: str, args: dict) -> list[str]:
+        out = await tools.write_sources(ctx, tool, args)
         assert isinstance(out, tuple)
+        assert [e for book in out[0] for e in book["excerptIds"]] == out[1]
         return out[1]
+
+    def note(content: str) -> dict:
+        return {"kind": "note", "content": content}
 
     # 40 and 2.45 are the statistics read's alone; 75.5 is only in the other
     # read's scope line, and the shared 4-grams belong to both.
     assert await credited(
-        "Of 40 seeds, 75.5 percent germinated; the mean mass was 2.45 g, and the "
-        "line of best fit passes the means."
+        "create_material",
+        note(
+            "Of 40 seeds, 75.5 percent germinated; the mean mass was 2.45 g, and "
+            "the line of best fit passes the means."
+        ),
     ) == ["e_stats"]
-    assert await credited("Photosynthesis needs light.") == []
+    # 12 and 13 are only in the statistics read's link line.
+    assert await credited(
+        "create_material", note("Seeds need water and warmth, see pages 12 and 13.")
+    ) == ["e_seeds"]
+    # The slide's 80 is an attribute, not its text.
+    slide = '<svg width="1280"><text x="80" y="40">Mean mass 2.45 g</text></svg>'
+    assert await credited(
+        "write_slide", {"deck_id": "d", "slide": 1, "svg": slide}
+    ) == ["e_stats"]
+    assert await credited("create_material", note("Photosynthesis needs light.")) == [
+        "e_stats",
+        "e_seeds",
+    ], "no book matches: every candidate, as before"
+    assert len(asked) == 4, "one provenance read per write"
     named = await tools.write_sources(
         ctx, "create_material", {"kind": "note", "excerpt_ids": ["e_seeds"]}
     )
@@ -2296,8 +2320,9 @@ async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
     texts = {"e_1": "excerpt e_1 full text", "e_2": "long " * 12_000}
 
     async def _read(args, scratch):
-        scratch.library_reads.note(args["excerpt_id"], 0, "8.1")
-        return ToolResult(text_parts=[texts[args["excerpt_id"]]])
+        text = texts[args["excerpt_id"]]
+        scratch.library_reads.note(args["excerpt_id"], 0, "8.1", text=text)
+        return ToolResult(text_parts=[text])
 
     async def _provenance(excerpt_ids):
         return [_book(*excerpt_ids)]
@@ -2315,6 +2340,8 @@ async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
     assert refused.text().endswith("\n\nexcerpt e_1 full text")
     assert ctx.library_reads.ids() == {"e_1"}
     assert ctx.library_evidence.fresh[("e_1", 0)].text == "excerpt e_1 full text"
+    # The carried read keeps its text for automatic credit.
+    assert ctx.library_reads.reads[0].text == "excerpt e_1 full text"
     assert await tools.write_sources(
         ctx, "create_material", {**args, "excerpt_ids": ["e_1"]}
     ) == ([_book("e_1")], ["e_1"])
@@ -3220,6 +3247,7 @@ async def test_a_retained_excerpt_is_credited_only_when_nothing_new_was_read(
     ]
     ctx.library_evidence.activate(replayed, ctx.library_reads)
     assert ctx.library_reads.uncredited() == ["a"], "nothing new: the retained one"
+    assert ctx.library_reads.reads[0].text == "A text", "kept for automatic credit"
     ctx.library_reads.note("b", 0, "S")
     assert ctx.library_reads.uncredited() == ["b"]
 

@@ -1128,18 +1128,22 @@ class Turn:
             return schemas
 
         async def run(name, args, ctx_):
-            # Blank means absent, as production's dispatch (tools.run) has it.
-            args = tools.without_blanks(name, args)
             record = {
                 "sequence": len(state["calls"]),
                 "name": name,
                 "call_id": args.get("_tool_call_id"),
+                # As the model sent them, for slip analyses.
                 "args": {k: v for k, v in args.items() if not k.startswith("_")},
             }
+            # Blank means absent, as production's dispatch (tools.run) has it.
+            args = tools.without_blanks(name, args)
+            clean = {k: v for k, v in args.items() if not k.startswith("_")}
+            if clean != record["args"]:
+                record["clean_args"] = clean
             state["calls"].append(record)
             started = time.perf_counter()
             problem = (
-                tools.contract.validate_args(name, record["args"])
+                tools.contract.validate_args(name, clean)
                 if name in tools.contract.DEFINITIONS
                 else None
             )
@@ -1164,7 +1168,7 @@ class Turn:
                     )
             elif problem:
                 result = tools._refused(problem)
-            elif needs := skills.missing(name, record["args"], ctx_.skills_read):
+            elif needs := skills.missing(name, clean, ctx_.skills_read):
                 result = tools._refused(
                     skills.refusal(needs),
                     detail=skills.carried(
@@ -1173,9 +1177,9 @@ class Turn:
                     ),
                 )
             elif name == "read_skill" and (
-                text := skill_text(c, record["args"]["name"], library=ctx_.library)
+                text := skill_text(c, clean["name"], library=ctx_.library)
             ) is not None:
-                result = tools._result(skills.render(record["args"]["name"], text))
+                result = tools._result(skills.render(clean["name"], text))
             elif name == "list_sources":
                 result = await list_sources_locally(ctx_, state)
             elif name == "read_study_progress":

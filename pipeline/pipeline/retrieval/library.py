@@ -381,7 +381,8 @@ class ExcerptRead:
     first: int
     last: int
     # The excerpt's figures a model may pick (id, label, description, credit);
-    # decorative and excluded ones are left out.
+    # decorative and excluded ones and those boxed as the whole page are left
+    # out.
     figures: list[dict[str, Any]] = field(default_factory=list)
     # On the excerpt's last page: the excerpts before and after it in the book.
     previous: Excerpt | None = None

@@ -225,6 +225,10 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
     assert questions.drop_question_blanks(
         {**OPEN, "hints": [], "unit": "null"}, fence=True
     ) == {k: v for k, v in OPEN.items() if k != "hints"}
+    # YAML's ~ (null) reads as text in a fence; it is blank too.
+    assert questions.drop_question_blanks({**SHORT, "unit": "~"}, fence=True) == {
+        k: v for k, v in SHORT.items() if k != "unit"
+    }
     media = {
         "quiz_id": "q",
         "question_id": "q1",
@@ -490,8 +494,16 @@ def test_chart_and_plot_fences_are_repaired_where_they_mean_one_thing():
     ]
     text, found = _fenced(f"```chart\n{json.dumps(CHART)}\n```\n")
     assert json.loads(text.split("\n")[1]) == CHART and found.notes == []
-    kept = "```plot\n- 1\n- 2\n```\n"
-    assert _fenced(kept) == (kept, questions.Check(questions.FENCE))
+    # Left as written, for the converter's error: a body that is not a mapping,
+    # one meant as JSON ({) that is not, and YAML whose escapes made control or
+    # separator characters (\a of $\alpha$, \P of $\Phi$).
+    for kept in (
+        "```plot\n- 1\n- 2\n```\n",
+        '```chart\n{"type": "chart", "title": "Decay for $\\alpha = 0.5$"}\n```\n',
+        '```plot\ntitle: "Decay for $\\alpha$"\nseries: []\n```\n',
+        '```plot\ntitle: "$\\Phi$"\nseries: []\n```\n',
+    ):
+        assert _fenced(kept) == (kept, questions.Check(questions.FENCE)), kept
 
 
 def test_quiz_and_flashcards_yaml_is_repaired_only_after_a_parse_failure():
@@ -516,10 +528,10 @@ def test_quiz_and_flashcards_yaml_is_repaired_only_after_a_parse_failure():
     assert part["solution"][0]["text"].endswith("in parallel: 10 ∥ 10 = 5 Ω.")
     assert found.notes == [
         (
-            "Repaired content quiz fence 1 (trailing commas, values holding ': ' or "
-            "' #' quoted, LaTeX backslashes); a YAML line ends without a comma; quote "
-            'a YAML value holding ": " or " #"; in YAML double quotes write \\\\ for '
-            "a backslash."
+            "Repaired content quiz fence 1 (trailing commas, values holding ': ' "
+            "quoted, LaTeX backslashes); a YAML line ends without a comma; quote a "
+            'YAML value holding ": "; in YAML double quotes write \\\\ for a '
+            "backslash."
         )
     ]
 
@@ -539,22 +551,50 @@ def test_quiz_and_flashcards_yaml_is_repaired_only_after_a_parse_failure():
         ]
     }
     assert found.notes[0].startswith(
-        "Repaired content flashcards fence 1 (values holding ': ' or ' #' quoted)"
+        "Repaired content flashcards fence 1 (values holding ': ' quoted)"
     )
+
+    # Once a fence fails, a comment stays a comment, a quoted phrase inside a
+    # plain value keeps its literal backslash, and flow-list items are fixed.
+    repaired = (
+        "```quiz\nquestions:\n"
+        '  - question: Evaluate "$\\sin x$" at 0\n'
+        '    options: ["$\\alpha$", "$\\beta$"],\n'
+        '    correct: "$\\alpha$"\n'
+        "  - question: g?\n    accepted:\n      - 9.8  # rounded\n      - 9.81\n"
+        "```\n"
+    )
+    text, found = _fenced(repaired)
+    assert not found.problems(), found.problems()
+    first, second = json.loads(text.split("\n")[1])["questions"]
+    assert first["parts"][0]["blocks"][0]["text"] == 'Evaluate "$\\sin x$" at 0'
+    assert sorted(first["parts"][0]["answer"]["options"]) == ["$\\alpha$", "$\\beta$"]
+    assert second["parts"][0]["answer"]["accepted"] == ["9.8", "9.81"]
+    # A body that opens as JSON keeps the commas that end its lines.
+    assert questions._repair_yaml('{"a": [1],\n "b": "$\\x$"}\n') == (
+        '{"a": [1],\n "b": "$\\x$"}\n',
+        [],
+    )
+    # A longer fence holding a shorter one is passed over whole: the quiz after
+    # a python fence closed by four backticks is still expanded.
+    longer = "```python\nx = 1\n````\n\n```quiz\nquestions:\n  - question: Q?\n    options: [A, B]\n    correct: A\n```\n"
+    text, found = _fenced(longer)
+    assert '"correct": [' in text and not found.problems()
 
     # Parses as written: a plain value keeps its backslash, nothing is noted.
     plain = "```quiz\nquestions:\n  - question: Is $\\hat{y}$ the fit?\n    options: [Yes, No]\n    correct: Yes\n```\n"
     text, found = _fenced(plain)
     assert '"text": "Is $\\\\hat{y}$ the fit?"' in text and found.notes == []
-    # Still broken: the first error, and the fence as written.
-    for broken in (
-        "```quiz\nquestions: [\n```\n",
-        "```quiz\nquestions: [\n  [a],\n```\n",
-    ):
-        text, found = _fenced(broken)
-        assert text == broken and found.call[0].startswith(
-            "content quiz fence 1: expected YAML; while parsing"
-        ), found.call
+    # Still broken: the first error, not the repaired body's, and the fence as
+    # written. The trailing comma is repaired; the unclosed quote is not.
+    broken = (
+        "```quiz\nquestions:\n  - question: Q?\n    options: [a, b],\n"
+        '    correct: a\n    explanation: "unclosed\n```\n'
+    )
+    text, found = _fenced(broken)
+    assert text == broken and found.call[0].startswith(
+        "content quiz fence 1: expected YAML; while parsing a block mapping"
+    ), found.call
     cards_broken = "```flashcards\ncards:\n  - front: a\n```\n"
     assert _fenced(cards_broken)[0] == cards_broken
 

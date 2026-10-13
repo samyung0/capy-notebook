@@ -2431,18 +2431,24 @@ build, and the knowledge library is one more source while the switch is on.
   or be retained as full, revalidated text in the request. A write naming none
   draws its candidates from the excerpts read since the last write that
   landed, or every excerpt read this turn when none are new (a second item
-  written from the same reading), grouped by book, and credits a book's
-  candidates only when the book's read text (the result the model was shown,
-  kept on each `LibraryRead`, the excerpt head lines `[exc_…]`, `roles:`,
-  `teaches:` and `scope:` left out) shares with every string the write sends
-  a word 4-gram (lower-cased `[a-z0-9][a-z0-9.\-/]*` tokens) or a number
-  with a decimal point or two or more digits that no other candidate book's
-  read text holds (`tools._matching_reads`, Epo 2026-10-13: on that day's runs
-  only 68% of the books the whole read set credited were used; this rule kept
-  86% precision and dropped 2 of 129 used books, while named excerpts were 95%
-  used). A write matching no book credits none, and only the credited excerpts
-  are retained for later turns; a turn with no library reads credits nothing
-  and needs nothing. An excerpt retained from an earlier turn's write counts as read but
+  written from the same reading), grouped by book. When any candidate book's read text (the result
+  the model was shown, kept on each `LibraryRead`, less what the read tools
+  add: the excerpt head lines `[exc_…]`, `roles:`, `teaches:` and `scope:`,
+  chunk ranges and `(chunk N)` prefixes, previous/next and source-context
+  links, `[p. N]` markers, the section-read head and the page tails, and
+  the `Full reviewed notes:` label) shares with every string the write sends
+  (a slide's SVG by its text only) a word 4-gram (lower-cased
+  `[a-z0-9][a-z0-9.\-/]*` tokens) or a number with a decimal point or two or
+  more digits that no other candidate book's read text holds, only the
+  matching books' candidates are credited; when none does, every candidate
+  is, as before (`tools._matching`, Epo 2026-10-13: on that day's runs only
+  68% of the books the whole read set credited were used; this rule kept 86%
+  precision and dropped 2 of 129 used books, while named excerpts were 95%
+  used). So a write that read the library always carries a book, which
+  `_material_scope` relies on to accept a library-only material in a
+  workspace with nothing indexed. Only the credited excerpts are retained for
+  later turns; a turn with no library reads credits nothing and needs
+  nothing. An excerpt retained from an earlier turn's write counts as read but
   enters already credited, so it is credited again only when nothing new was
   read; reading a credited excerpt again makes it new. Note figures add the
   excerpt that lists each figure to whatever the write credits. The reads live
@@ -2917,7 +2923,7 @@ problems too.
 it can mean one thing and keeps refusing everything else with the same
 messages; the editor, paste and the collaboration server's converter stay
 strict, and the schemas the model sees do not change. Blank means absent:
-`tools.run` drops a property sent as null, blank text, `"null"`, `[]` or `{}`
+`tools.run` drops a property sent as null, blank text, `"null"`, `"~"`, `[]` or `{}`
 where the tool's `inputSchema` does not require it (`contract.drop_blanks`,
 walking properties, array items and an edit command's variant by its type;
 the handler gets the cleaned arguments), so `replace_text`'s required empty
@@ -2930,15 +2936,22 @@ answer written with its unit (`"5%"` with unit `%`) keeps the number, and a
 `title` stays refused: it may mean a new quiz). In note markdown
 (`questions.note_fences`, for `create_material` and `insert_markdown` /
 `replace_block`), a ```` ```chart ```` or ```` ```plot ```` body that is not
-JSON is read as YAML, a missing `type` becomes the fence's name, a chart
+JSON and does not open with `{` is read as YAML (unless YAML's escapes made
+control or separator characters of it, as `"$\alpha$"` would; then it stays
+as written), a missing `type` becomes the fence's name, a chart
 kind sent as a chart fence's `type` moves to `kind`, and the body goes on as
 compact JSON; a ```` ```flashcards ```` body is pre-parsed like a quiz fence
 (cards with a front and a back each, re-emitted as JSON, other card fields
 kept); a quiz or flashcards body that fails to parse is read once more after
-three repairs (a trailing comma after `]` or `}`, a backslash before a letter
-in double quotes doubled for LaTeX, a plain text value or options/accepted
-item holding `": "` or `" #"` quoted), and when that fails too the original
-error is reported as before. Each format repair adds one line to the success
+three repairs (a trailing comma after `]` or `}`, except in a body that
+opens as JSON; a backslash before a letter doubled for LaTeX in a
+double-quoted value, one that opens the value after a key or a dash or is
+an item of a flow list there, never a quoted phrase inside a plain scalar; a
+plain text value or options/accepted item holding `": "` quoted, while
+`" #"` is left alone as it starts a comment on a line that parses), and when
+that fails too the original error is reported as before. A fence closes on
+a run of its opening character at least as long as its opening, so a longer
+fence holding a quiz fence is passed over whole. Each format repair adds one line to the success
 result naming the fence and the slip, so the model stops repeating it; a body
 that cannot be repaired stays as written for the converter's error. The
 playground's write stubs run the same code.

@@ -151,6 +151,8 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
             ),
             (CURRENT, "fig_band", 5, 1, False, "", "", "", True),
             (CURRENT, "fig_page", 5, 2, False, "A page.", "Figure 8.4", "", False),
+            (CURRENT, "fig_p1", 1, 0, False, "A line.", "Figure 8.0", "", False),
+            (CURRENT, "fig_p1_page", 1, 1, False, "A page.", "Figure 8.5", "", False),
             (
                 CURRENT,
                 "fig_nc",
@@ -166,7 +168,8 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
         ]:
             conn.execute(insert, params)
         conn.execute(
-            "UPDATE library_figures SET bbox='{0,0,1000,1000}' WHERE id='fig_page'"
+            "UPDATE library_figures SET bbox='{0,0,1000,1000}' "
+            "WHERE id IN ('fig_page', 'fig_p1_page')"
         )
         conn.execute(
             "UPDATE library_excerpts SET figure_ids='{fig_1,fig_2,fig_band,fig_nc,fig_page}' "
@@ -200,6 +203,9 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
         )
     found = await library.search("regression", vector=test_library._unit_vector(0))
     assert found.excerpts[0].figure_ids == ["fig_1", "fig_2"]
+    # A section read lists its pages' figures the same way (8.1 is page 1).
+    section = await library.read_section("ahss", "Ch 8 › 8.1 Fitting")
+    assert [f["id"] for f in section.figures] == ["fig_p1"]
 
 
 async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):

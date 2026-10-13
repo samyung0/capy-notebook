@@ -92,7 +92,7 @@ class LibraryRead:
     # reads that are not.
     credited: bool = False
     # The read's result as the model was shown it, which a write naming no
-    # excerpts is matched against (_matching_reads).
+    # excerpts is matched against (_matching).
     text: str = ""
 
 
@@ -131,7 +131,7 @@ class LibraryReads:
     def uncredited(self) -> list[str]:
         """What a write naming no excerpts may be credited with: the excerpts
         read since the last write that landed, or every one when none are new
-        (narrowed by _matching_reads)."""
+        (narrowed by _matching)."""
         fresh = [read for read in self.reads if not read.credited]
         return list(dict.fromkeys(read.excerpt_id for read in fresh or self.reads))
 
@@ -1564,9 +1564,9 @@ async def write_sources(
     Returns the provenance books (one entry per source book) and the excerpts
     they come from. Named excerpts must have been read this turn or be retained
     in full; a write naming none is credited with the excerpts read since the
-    last write that landed (every one read when none are new) of the books its
-    text matches (_matching_reads), and a turn with no library reads credits
-    nothing. ``figures`` are the excerpts listing
+    last write that landed (every one read when none are new), narrowed to the
+    books its text matches when any does (_matching), and a turn with no
+    library reads credits nothing. ``figures`` are the excerpts listing
     the note figures the write places, credited with it. Shared with the
     playground's local write stubs, so the rules have one implementation.
     ``material`` is false for an edit of the user's own source file, which
@@ -1591,22 +1591,38 @@ async def write_sources(
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
         return await _carry_excerpts(ctx, unread)
+    candidates = [] if excerpt_ids else ctx.library_reads.uncredited()
+    wanted = list(dict.fromkeys([*(excerpt_ids or candidates), *(figures or [])]))
+    if not wanted:
+        return [], []
     try:
-        named = excerpt_ids or await _matching_reads(ctx, args)
-        credited = list(dict.fromkeys([*named, *(figures or [])]))
-        if not credited:
-            return [], []
-        return await library.provenance(credited), credited
+        books = await library.provenance(wanted)
     except ValueError as exc:
         return _refused(f"{tool}: {exc}")
+    if not candidates:
+        return books, wanted
+    kept = {*_matching(ctx, books, candidates, args), *(figures or [])}
+    books = [
+        {**book, "excerptIds": [e for e in book["excerptIds"] if e in kept]}
+        for book in books
+    ]
+    return [b for b in books if b["excerptIds"]], [e for e in wanted if e in kept]
 
 
 # What ties a write to a book it read (Epo 2026-10-13, measured on that day's
-# runs): a shared word 4-gram or example number. The head lines of an excerpt
-# read (title, roles, teaches, scope) are the library's, not the book's.
+# runs): a shared word 4-gram or example number. Lines and prefixes the read
+# tools add (an excerpt's head: title, roles, teaches, scope; chunk ranges,
+# links, page markers, page and run tails) are the library's, not the book's.
 _WORD = re.compile(r"[a-z0-9][a-z0-9.\-/]*")
 _NUMBER = re.compile(r"(?<![\w.])(\d+\.\d+|\d{2,}(?:,\d{3})*)(?![\w])")
-_READ_HEAD = re.compile(r"^(\[exc_|roles:|teaches:|scope:)")
+_READ_LINE = re.compile(
+    r"^(\[exc_|- \[exc_|roles:|teaches:|scope:|chunks \d+-\d+ of this excerpt"
+    r"|(Previous|Next) in this book:|Source context|Excerpts on this page:"
+    r"|\[p\. \d+(-\d+)?\]$|\((next start|page cut|end of)\b|.* \(book \S+, version \d+\), section )"
+)
+_READ_PREFIX = re.compile(r"\(chunk \d+\) |Full reviewed notes: ")
+# A slide's SVG counts by its text: no tags, attributes, styles or scripts.
+_SVG_CODE = re.compile(r"<(style|script)\b.*?</\1>|<[^>]*>", re.DOTALL)
 
 
 def _marks(text: str) -> set[str]:
@@ -1633,38 +1649,52 @@ def _strings(value: Any) -> list[str]:
     return []
 
 
-async def _matching_reads(ctx: ToolContext, args: dict[str, Any]) -> list[str]:
-    """What a write naming no excerpts is credited with: of the excerpts read
-    since the last write (LibraryReads.uncredited), those of each book whose
-    read text shares with the write a mark (``_marks``) that no other such
-    book's read text holds; none when no book does (Epo 2026-10-13: only 68%
-    of the books the whole read set credited were used)."""
-    candidates = ctx.library_reads.uncredited()
-    if not candidates:
-        return []
-    books = {
-        book["id"]: book["excerptIds"] for book in await library.provenance(candidates)
+def _book_text(text: str) -> str:
+    """A read result less the lines and prefixes the read tools add."""
+    return "\n".join(
+        _READ_PREFIX.sub("", line)
+        for line in text.splitlines()
+        if not _READ_LINE.match(line)
+    )
+
+
+def _matching(
+    ctx: ToolContext,
+    books: list[dict[str, Any]],
+    candidates: list[str],
+    args: dict[str, Any],
+) -> list[str]:
+    """What a write naming no excerpts is credited with: of the candidates (the
+    excerpts read since the last write, LibraryReads.uncredited), those of
+    each book whose read text shares with the write a mark (``_marks``) that
+    no other candidate book's read text holds, and every candidate when no
+    book does, so a write is never credited less than before (Epo
+    2026-10-13: only 68% of the books the whole read set credited were
+    used)."""
+    by_book = {
+        book["id"]: [e for e in book["excerptIds"] if e in candidates] for book in books
     }
     marks = {
         book: _marks(
             "\n".join(
-                line
+                _book_text(read.text)
                 for read in ctx.library_reads.reads
                 if read.excerpt_id in ids
-                for line in read.text.splitlines()
-                if not _READ_HEAD.match(line)
             )
         )
-        for book, ids in books.items()
+        for book, ids in by_book.items()
     }
+    if isinstance(args.get("svg"), str):
+        args = {**args, "svg": _SVG_CODE.sub(" ", args["svg"])}
     written = _marks("\n".join(_strings(args)))
-    return [
+    matched = [
         excerpt_id
-        for book, ids in books.items()
+        for book, ids in by_book.items()
         if (marks[book] - set().union(*(m for b, m in marks.items() if b != book)))
         & written
         for excerpt_id in ids
     ]
+    return matched or candidates
 
 
 def landed(ctx: ToolContext, excerpt_ids: list[str]) -> None:

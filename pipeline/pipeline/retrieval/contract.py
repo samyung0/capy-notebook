@@ -68,10 +68,11 @@ def definition(name: str) -> dict[str, Any] | None:
 
 
 def blank(value: Any) -> bool:
-    """A value the model sent for nothing: null, blank text, the text "null",
-    an empty list or an empty object."""
+    """A value the model sent for nothing: null, blank text, the text "null"
+    or "~" (YAML's null, read as text in a fence), an empty list or an empty
+    object."""
     if isinstance(value, str):
-        return not value.strip() or value.strip().lower() == "null"
+        return value.strip().lower() in ("", "null", "~")
     return value is None or value == [] or value == {}
 
 

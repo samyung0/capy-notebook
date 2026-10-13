@@ -666,8 +666,8 @@ async def test_a_write_credits_named_excerpts_or_the_reads_since_the_last_write(
 ):
     """Named excerpts are credited as named. A write naming none credits what
     was read since the last write that landed, or everything read when nothing
-    is new, of the books its text matches (none when it matches no book); with
-    no reads it credits nothing and asks for nothing."""
+    is new, of the books its text matches (all of them when it matches none);
+    with no reads it credits nothing and asks for nothing."""
 
     async def provenance(ids):
         return [{"id": "book", "excerptIds": list(ids)}]
@@ -694,10 +694,8 @@ async def test_a_write_credits_named_excerpts_or_the_reads_since_the_last_write(
 
     _, credited = await tools.write_sources(ctx, "add_questions", write)
     assert credited == ["e_1", "e_2", "e_3"], "nothing new: everything read"
-    assert await tools.write_sources(ctx, "add_questions", {"content": "x"}) == (
-        [],
-        [],
-    ), "a write matching no book credits none"
+    _, credited = await tools.write_sources(ctx, "add_questions", {"content": "x"})
+    assert credited == ["e_1", "e_2", "e_3"], "matching no book: every candidate"
     # Reading an excerpt again makes it new for the next write.
     reads.note("e_1", 0, "8.1")
     assert (await tools.write_sources(ctx, "create_material", write))[1] == ["e_1"]

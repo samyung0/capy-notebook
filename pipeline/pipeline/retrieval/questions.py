@@ -921,9 +921,12 @@ def refusal(check_: Check) -> tuple[str, str]:
 
 # ---------------------------------------------------------------- note fences
 
+# A fenced block with a language; it closes on a run of the opening's
+# character at least as long as the opening's, so a longer fence holding a
+# shorter one is consumed whole.
 NOTE_FENCE = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})(?P<lang>[\w-]+)[ \t]*\n"
-    r"(?P<body>.*?)^(?P=indent)(?P=fence)[ \t]*$",
+    r"^(?P<indent>[ \t]*)(?P<fence>(?P<char>[`~])(?P=char){2,})(?P<lang>[\w-]+)[ \t]*\n"
+    r"(?P<body>.*?)^(?P=indent)(?P=fence)(?P=char)*[ \t]*$",
     re.MULTILINE | re.DOTALL,
 )
 # A chart fence whose type names a chart kind means that kind.
@@ -1055,16 +1058,21 @@ def _cards(body: str, at: str, found: Check) -> str | None:
 
 def _media(lang: str, body: str, at: str, found: Check) -> str | None:
     """A chart or plot fence's body as compact JSON: read as YAML when it is
-    not JSON, its type set to the fence's name when missing, and a chart kind
-    sent as a chart fence's type moved to kind. None leaves the fence as
-    written for the converter to name its problem."""
+    not JSON and does not open as JSON ({), its type set to the fence's name
+    when missing, and a chart kind sent as a chart fence's type moved to kind.
+    None leaves the fence as written for the converter to name its problem,
+    as for YAML whose escapes made control characters ("$\\alpha$")."""
     fixed = []
     try:
         data = json.loads(body)
     except ValueError:
+        if body.lstrip().startswith("{"):
+            return None
         try:
             data = yaml.safe_load(body)
         except yaml.YAMLError:
+            return None
+        if any(_CONTROL.search(text) for text in _texts(data)):
             return None
         fixed.append(f"read it from YAML; a {lang} fence is JSON")
     if not isinstance(data, dict):
@@ -1080,11 +1088,27 @@ def _media(lang: str, body: str, at: str, found: Check) -> str | None:
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
 
 
+# C0 controls other than tab and newline, NEL and the Unicode line and
+# paragraph separators: what YAML escapes such as \a, \N, \L and \P make.
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x85\u2028\u2029]")
+
+
+def _texts(value: Any) -> list[str]:
+    """Every key and string in a parsed body."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [t for k, v in value.items() for t in (str(k), *_texts(v))]
+    if isinstance(value, list):
+        return [t for v in value for t in _texts(v)]
+    return []
+
+
 # Repairs tried on a quiz or flashcards fence only after it fails to parse,
 # with what the model should write instead.
 _REPAIRS = {
     "trailing commas": "a YAML line ends without a comma",
-    "values holding ': ' or ' #' quoted": 'quote a YAML value holding ": " or " #"',
+    "values holding ': ' quoted": 'quote a YAML value holding ": "',
     "LaTeX backslashes": "in YAML double quotes write \\\\ for a backslash",
 }
 _TRAILING_COMMA = re.compile(r"([\]}])[ \t]*,[ \t]*$", re.MULTILINE)
@@ -1095,7 +1119,10 @@ _TEXT_VALUE = re.compile(
 )
 _LIST_KEY = re.compile(r"^(?P<lead>[ \t]*(?:-[ \t]+)?)(?:options|accepted):[ \t]*$")
 _LIST_ITEM = re.compile(r"^(?P<lead>(?P<dash>[ \t]*)-[ \t]+)(?P<value>\S.*?)[ \t]*$")
+# Where a value starts: after a key or a list item's dash.
+_VALUE = re.compile(r"^(?P<lead>[ \t]*(?:-[ \t]+)?(?:[\w-]+:[ \t]+)?)(?P<value>.*)$")
 _DOUBLE_QUOTED = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+_FLOW_PLAIN = re.compile(r"[^,\]]*")
 _ESCAPE = re.compile(r"\\(.)")
 
 
@@ -1116,12 +1143,14 @@ def _yaml(body: str) -> tuple[Any, list[str]]:
 
 
 def _repair_yaml(body: str) -> tuple[str, list[str]]:
-    """The body with trailing commas after a closing ] or } removed, a plain
-    value holding ": " or " #" after a text key or as an options/accepted item
-    quoted, and a backslash before a letter in double quotes doubled (LaTeX);
-    with the names of the repairs that changed it."""
+    """The body with trailing commas after a closing ] or } removed (not in a
+    JSON body, whose commas end lines), a plain value holding ": " after a text
+    key or as an options/accepted item quoted, and a backslash before a letter
+    doubled in a double-quoted value (LaTeX); with the names of the repairs
+    that changed it."""
     fixed = []
-    text = _TRAILING_COMMA.sub(r"\1", body)
+    json_body = body.lstrip().startswith(("{", "["))
+    text = body if json_body else _TRAILING_COMMA.sub(r"\1", body)
     if text != body:
         fixed.append("trailing commas")
     lines, under = [], None  # under: the column of an options/accepted key
@@ -1140,23 +1169,55 @@ def _repair_yaml(body: str) -> tuple[str, list[str]]:
         lines.append(line)
     quoted = "\n".join(lines)
     if quoted != text:
-        fixed.append("values holding ': ' or ' #' quoted")
-    escaped = _DOUBLE_QUOTED.sub(
-        lambda q: _ESCAPE.sub(
-            lambda e: "\\\\" + e[1] if e[1].isascii() and e[1].isalpha() else e[0],
-            q[0],
-        ),
-        quoted,
-    )
+        fixed.append("values holding ': ' quoted")
+    escaped = "\n".join(_escaped(line) for line in quoted.split("\n"))
     if escaped != quoted:
         fixed.append("LaTeX backslashes")
     return escaped, fixed
 
 
+def _escaped(line: str) -> str:
+    """The line with a backslash before a letter doubled in the double-quoted
+    scalars that open its value (after a key or a dash) or are items of a flow
+    list there; a quoted phrase inside a plain or single-quoted scalar is left
+    alone, its backslashes being literal already."""
+    match = _VALUE.match(line)
+    lead, value = match["lead"], match["value"]
+    if not lead.strip():
+        return line
+    spans = []
+    if value.startswith('"'):
+        spans.append(_DOUBLE_QUOTED.match(value))
+    elif value.startswith("["):
+        at = 1
+        while at < len(value):
+            while at < len(value) and value[at] in " \t":
+                at += 1
+            span = _DOUBLE_QUOTED.match(value, at) or _FLOW_PLAIN.match(value, at)
+            if span.re is _DOUBLE_QUOTED:
+                spans.append(span)
+            at = span.end()
+            if at >= len(value) or value[at] != ",":
+                break
+            at += 1
+    out, at = [], 0
+    for span in spans:
+        if span is not None:
+            out += [value[at : span.start()], _ESCAPE.sub(_double, span[0])]
+            at = span.end()
+    return lead + "".join(out) + value[at:]
+
+
+def _double(escape: re.Match[str]) -> str:
+    letter = escape[1]
+    return "\\\\" + letter if letter.isascii() and letter.isalpha() else escape[0]
+
+
 def _quoted(match: re.Match[str]) -> str:
-    """A plain value holding ": " or " #" in double quotes; any other as is."""
+    """A plain value holding ": " in double quotes; any other as is. (" #" is
+    not quoted: on a line that parses it starts a comment.)"""
     value = match["value"]
-    if value[0] in "\"'|>[{" or (": " not in value and " #" not in value):
+    if value[0] in "\"'|>[{" or ": " not in value:
         return match.string
     return match["lead"] + json.dumps(value, ensure_ascii=False)
 
