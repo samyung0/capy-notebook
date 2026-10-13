@@ -32,6 +32,9 @@ test('an unrelated account cannot distinguish the private fixture from a missing
 test('workspace statistics stay with owner and editor members', async ({
   page,
 }) => {
+  // Four sign-ins in one test: each takes Clerk's redirects, so the default
+  // minute is not enough.
+  test.setTimeout(180_000);
   for (const actor of ['owner', 'editor'] as const) {
     await signOut(page);
     await signIn(page, actor);

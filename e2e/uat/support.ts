@@ -37,8 +37,10 @@ const RETRYABLE_ERRORS = [
   'Execution context was destroyed',
   'Cannot read properties of undefined',
   'Clerk session is not available in the app',
-  // A sign-out redirect still in flight aborts a navigation started next to it.
+  // A sign-out redirect still in flight aborts a navigation started next to it,
+  // or Playwright reports the goto as interrupted by that redirect.
   'net::ERR_ABORTED',
+  'is interrupted by another navigation',
 ];
 
 async function retryAcrossNavigation<T>(page: Page, run: () => Promise<T>) {
