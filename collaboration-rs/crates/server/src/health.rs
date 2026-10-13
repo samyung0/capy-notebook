@@ -157,7 +157,16 @@ pub fn metrics(app: &Shared) -> String {
         stats.failed_stores.load(Ordering::Relaxed),
         rss,
         stats.log_bytes.load(Ordering::Relaxed),
-    )
+    ) + &crate::drafts::Class::ALL
+        .iter()
+        .map(|class| {
+            format!(
+                "capy_collaboration_draft_refusals_total{{class=\"{}\"}} {}\n",
+                class.as_str(),
+                stats.draft_refusals[*class as usize].load(Ordering::Relaxed)
+            )
+        })
+        .collect::<String>()
 }
 
 /// Resident set size from /proc (0 where there is none, as on Windows).
