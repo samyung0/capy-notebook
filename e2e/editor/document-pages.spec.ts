@@ -2,16 +2,27 @@ import path from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { m } from '../i18n';
 
-/** Makes f_1 the newest file, so it is on the first Files page and in the
- * dashboard's bounded recent list. Edits the page's MSW database, so it only
- * lasts until a reload. */
-async function makeCellStructureNewest(page: Page) {
-  await page.evaluate(async () => {
-    const path = '/src/mocks/db.ts';
-    const { files } = await import(path);
-    files.find((file: { id: string }) => file.id === 'f_1').addedAt =
-      new Date().toISOString();
-  });
+/** Makes the given files and materials the newest, so they are on the first
+ * Files page and in the dashboard's bounded recent list. Edits the page's MSW
+ * database, so it only lasts until a reload. */
+async function makeNewest(
+  page: Page,
+  ids: { files?: string[]; materials?: string[] }
+) {
+  await page.evaluate(
+    async ({ files: fileIds = [], materials: materialIds = [] }) => {
+      const path = '/src/mocks/db.ts';
+      const { files, materials } = await import(path);
+      const now = new Date().toISOString();
+      for (const id of fileIds)
+        files.find((file: { id: string }) => file.id === id).addedAt = now;
+      for (const id of materialIds)
+        materials.find(
+          (material: { id: string }) => material.id === id
+        ).createdAt = now;
+    },
+    ids
+  );
 }
 
 async function editPdf(page: Page) {
@@ -263,7 +274,7 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
     .toBeCloseTo(bounds.width);
 
   // Reopen through client navigation: MSW keeps marks, while component history resets.
-  await makeCellStructureNewest(page);
+  await makeNewest(page, { files: ['f_1'] });
   await page.getByRole('button', { exact: true, name: m.nav_files() }).click();
   await page.getByRole('link', { name: /Cell structure.pdf/ }).click();
   await expect(
@@ -425,7 +436,7 @@ test('Blocks, Files and recent links use saved modes without reloading the app',
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
-  await makeCellStructureNewest(page);
+  await makeNewest(page, { files: ['f_1'], materials: ['mat_e2e_editor'] });
   await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
   await page.getByRole('link', { name: /Cell structure.pdf/ }).click();
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
