@@ -713,6 +713,7 @@
   "files_preview_unavailable": "无法预览",
   "files_preview_unsupported_body": "暂不支持预览 {ext} 文件。你仍然可以下载原文件。",
   "files_preview_unsupported_body_noext": "暂不支持预览此文件。你仍然可以下载原文件。",
+  "material_unsupported_block": "此版本的 Capy 无法显示这个区块。",
   "files_download_original": "下载 {name}",
   "files_tab_files": "文件",
   "files_tab_blocks": "模块",

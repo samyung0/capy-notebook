@@ -149,6 +149,10 @@ type CatalogElement = (typeof EMBED_CATALOG.elements)[number];
 const ELEMENTS = new Map<string, CatalogElement>(
   EMBED_CATALOG.elements.map((element) => [element.type, element])
 );
+/** Whether the embed catalog lists an element type. */
+export function isKnownElementType(type: string): boolean {
+  return ELEMENTS.has(type);
+}
 const MATERIAL_REF_KINDS = new Set<string>(
   EMBED_CATALOG.materialKinds
     .filter((kind) => 'item' in kind && kind.item)

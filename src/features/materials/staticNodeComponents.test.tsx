@@ -28,6 +28,22 @@ function renderMaterial(
 }
 
 describe('static study-block renderers', () => {
+  it('keeps a block of an unknown type readable with a notice', () => {
+    const html = renderToStaticMarkup(
+      <MaterialPreview
+        content={{
+          schemaVersion: 1,
+          value: [
+            { children: [{ text: 'Before' }], id: 'a', type: 'p' },
+            { children: [{ text: 'Newer' }], id: 'b', type: 'timeline' },
+          ],
+        }}
+      />
+    );
+    expect(html.match(/data-unsupported-block="timeline"/g)).toHaveLength(1);
+    expect(html).toContain('Before');
+  });
+
   it('falls back to a deleted mention author identifier', () => {
     const html = renderMaterial([
       {

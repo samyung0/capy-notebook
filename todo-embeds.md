@@ -241,8 +241,13 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   `server/internal/materialdoc/catalog_test.go`,
   `src/features/notes/embedCatalog.test.ts`. `mention_input` and
   `slash_input` are inline voids (Plate's flags); the read-only kit registers
-  `placeholder` and `slash_input`. Not done yet on this side: the static
-  View's "unsupported block" placeholder, the chat rename with the agent text
-  and contract bump, and the Python lists (after the pipeline session's
+  `placeholder` and `slash_input`.
+- **Unsupported-block notice** (2026-10-13): `UnsupportedBlock.tsx` in the
+  read-only kit draws a muted notice under any element the catalog does not
+  list. `MaterialPreview` renders the static View, share pages and the note's
+  live View, so the Rust session's live-View placeholder item is covered; the
+  room-side edit refusal stays theirs.
+- Not done yet on this side: the chat rename with the agent text and
+  contract bump, and the Python lists (after the pipeline session's
   agent-leniency branch lands, which touches `contract.py`, `tools.py` and
   `questions.py`).

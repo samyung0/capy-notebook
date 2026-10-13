@@ -58,6 +58,7 @@ import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
 import { FONT_SIZE_NODE_PROPS } from '@/features/notes/nodeStyles';
 import { FootnotePlugins } from './footnotePlugins';
+import { UnsupportedBlockNotice } from './UnsupportedBlock';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,6 +139,11 @@ const StaticTransientPlugins = [
   }),
   ...FootnotePlugins,
 ];
+/** A notice under any element the embed catalog does not list. */
+const UnsupportedBlockPlugin = createSlatePlugin({
+  key: 'unsupportedBlock',
+  render: { belowRootNodes: UnsupportedBlockNotice },
+});
 
 /* List rendering parity with the editable surface (see notes/plugins.ts):
    bullet items get list-item display via injected props, task items get a
@@ -272,6 +278,7 @@ export const StaticMaterialKit: AnyPlugin[] = [
   BaseImagePlugin,
   StaticYouTubePlugin,
   ...StaticTransientPlugins,
+  UnsupportedBlockPlugin,
   BaseAudioPlugin,
   BaseFilePlugin,
   BaseCalloutPlugin,

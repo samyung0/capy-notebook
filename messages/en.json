@@ -713,6 +713,7 @@
   "files_preview_unavailable": "Preview not available",
   "files_preview_unsupported_body": "{ext} files can't be previewed yet. You can still download the original file.",
   "files_preview_unsupported_body_noext": "This file can't be previewed yet. You can still download the original file.",
+  "material_unsupported_block": "This block can't be shown in this version of Capy.",
   "files_download_original": "Download {name}",
   "files_tab_files": "Files",
   "files_tab_blocks": "Blocks",

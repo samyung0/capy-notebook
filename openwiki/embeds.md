@@ -34,8 +34,11 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   list), `resizable` (a width of `MEDIA_WIDTH_MIN`–`MEDIA_WIDTH_MAX` %),
   fixed `children`, and the `materials` kinds whose documents may hold it.
   A type the catalog does not list is refused by every write: a stored
-  document holding one stays readable (an "unsupported block" placeholder in
-  its place) and editing it is refused until it is fixed (Epo 2026-10-13).
+  document holding one stays readable and editing it is refused until it is
+  fixed (Epo 2026-10-13). The read-only renderer (`MaterialPreview`, which
+  draws the static View, share pages and a note's live View) shows such a
+  block's text with a muted "can't be shown in this version" line under it
+  (`UnsupportedBlock.tsx`, a `belowRootNodes` plugin in the read-only kit).
   Go refuses one in `ValidateKind`, which every write runs, while `Parse`
   (reads) passes it through; the browser's `createMaterialDocument` (saves,
   markdown import) refuses it while `parseMaterialDocument` reads it. Both
