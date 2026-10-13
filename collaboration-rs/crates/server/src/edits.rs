@@ -578,10 +578,13 @@ fn compute(
         let previous = notes::limits::measure_value(
             &notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?,
         );
-        if let Some(guards) = &guards {
+        // Guards come with an Undo only.
+        let outcome = if let Some(guards) = &guards {
             notes::edit::verify_material_guards(&mut txn, &root, guards)?;
-        }
-        let outcome = notes::edit::apply_material_commands(&mut txn, &root, &commands)?;
+            notes::edit::undo_material_commands(&mut txn, &root, &commands)?
+        } else {
+            notes::edit::apply_material_commands(&mut txn, &root, &commands)?
+        };
         let value = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
         notes::material::assert_canonical(&value, &kind).map_err(|error| unknown(error.0))?;
         let metrics = notes::limits::measure_value(&value);

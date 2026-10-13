@@ -728,12 +728,35 @@ pub fn apply_material_commands(
     root: &TextRef,
     commands: &[DocumentCommand],
 ) -> Result<EditOutcome, EditError> {
+    material_commands(txn, root, commands, false)
+}
+
+/// An Undo's inverse commands (its guards verified first): as an edit, except
+/// that it removes the media blocks its edit inserted, a library figure
+/// (`figure:<id>`) the agent placed, which an edit itself may not remove.
+pub fn undo_material_commands(
+    txn: &mut TransactionMut,
+    root: &TextRef,
+    commands: &[DocumentCommand],
+) -> Result<EditOutcome, EditError> {
+    material_commands(txn, root, commands, true)
+}
+
+fn material_commands(
+    txn: &mut TransactionMut,
+    root: &TextRef,
+    commands: &[DocumentCommand],
+    undo: bool,
+) -> Result<EditOutcome, EditError> {
     if commands.is_empty() {
         return edit(InvalidInput, "no commands");
     }
     let y_root = BranchPtr::from(root.as_ref() as &Branch);
     let mut editor = Editor::open(txn, y_root)?;
-    let mut run = Run::default();
+    let mut run = Run {
+        undo,
+        ..Run::default()
+    };
     run_commands(&mut editor, commands, &mut run)?;
     // Guards describe the committed state. A node a later command removed
     // needs no guard of its own: that removal left a gap guard over it.
@@ -771,12 +794,14 @@ pub fn apply_material_commands(
 /// What a call's commands leave behind: their inverse, the guards to read
 /// once they all ran, the inserts that landed away from a gone anchor, and
 /// the blocks the call removed (by id: the ids that stood before each).
+/// `undo` marks an Undo's inverse.
 #[derive(Default)]
 struct Run {
     inverse: Vec<DocumentCommand>,
     pending: Vec<Pending>,
     relocated: Vec<Relocation>,
     removed: HashMap<String, Vec<String>>,
+    undo: bool,
 }
 
 fn run_commands(
@@ -813,6 +838,7 @@ fn run_command(
         pending,
         relocated,
         removed,
+        undo,
     } = run;
     match command {
         DocumentCommand::ReplaceText {
@@ -930,7 +956,7 @@ fn run_command(
                     current_block(&block, text),
                 );
             }
-            if has_media(&block) {
+            if has_media(&block) && !*undo {
                 return edit(
                     UnsupportedOperation,
                     "blocks holding media cannot be removed by an edit",
