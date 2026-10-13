@@ -305,14 +305,14 @@ def _refs_in(value: Any) -> Iterator[Ref]:
             yield from _refs_in(item)
 
 
-# Enum-valued arguments are presentation, not content; an interactive's html
-# is code, summarized by its title.
+# Enum-valued arguments are presentation, not content; an HTML embed's html is
+# code, summarized by its title.
 _SKIPPED_PROPS = {
     "Callout": "kind",
     "Chart": "kind",
     "Plot": "kind",
     "RefLine": "axis",
-    "Interactive": "html",
+    "HtmlEmbed": "html",
 }
 
 

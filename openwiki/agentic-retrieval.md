@@ -2136,8 +2136,10 @@ current pending changes applied. Embedded source instructions remain untrusted.
    tool-less response is `root = Answer([...])` plus one statement per block
    over the chat component catalog (`Md`, `Callout`, `Tabs`, `Steps`,
    `Accordion`, `Reveal`, `Facts`, `Cards`, `Table`, `Chart`, `Plot`,
-   `Diagram`, `Interactive`, `AskUser` and their
-   items). The catalog lives in
+   `Mermaid`, `HtmlEmbed`, `AskUser` and their
+   items; the embed components carry their kind's name from the embed
+   catalog, `openwiki/embeds.md`, and `HtmlEmbed` quotes the catalog's HTML
+   rules, as the note format does). The catalog lives in
    `src/features/workspace/chat/schema.ts`; `pnpm gen:openui` renders it into
    the prompt text `prompts/openui_lang.txt` (appended to the chat system
    prompt, about 2,000 tokens) and the spec `generated/openui_library.json`

@@ -168,7 +168,7 @@ export const chatFixtures = [
     content: [
       'root = Answer([intro, diagram, after])',
       'intro = Md("A neuron fires when its membrane voltage crosses a threshold; the rest of the spike then runs by itself.", [1])',
-      'diagram = Diagram("One action potential", "flowchart TD\\nA[Resting at -70 mV] --> B{Stimulus reaches -55 mV?}\\nB -- no --> A\\nB -- yes --> C[Na+ channels open, Na+ rushes in]\\nC --> D[Peak near +30 mV]\\nD --> E[K+ channels open, K+ leaves]\\nE --> F[Undershoot below rest]\\nF --> A", [1])',
+      'diagram = Mermaid("One action potential", "flowchart TD\\nA[Resting at -70 mV] --> B{Stimulus reaches -55 mV?}\\nB -- no --> A\\nB -- yes --> C[Na+ channels open, Na+ rushes in]\\nC --> D[Peak near +30 mV]\\nD --> E[K+ channels open, K+ leaves]\\nE --> F[Undershoot below rest]\\nF --> A", [1])',
       'after = Md("Notice the loop back to rest: the channels reset before the next spike can fire.")',
     ].join('\n'),
     hint: 'Mermaid flowchart with a decision node, a loop and a cited source.',
@@ -181,7 +181,7 @@ export const chatFixtures = [
     content: [
       'root = Answer([intro, widget, after])',
       'intro = Md("Enzymes speed up as they warm, until heat starts to unfold them.", [1])',
-      `widget = Interactive("Enzyme activity and temperature", ${JSON.stringify(
+      `widget = HtmlEmbed("Enzyme activity and temperature", ${JSON.stringify(
         [
           '<style>.w{display:grid;gap:8px}.track{height:14px;border-radius:7px;background:color-mix(in srgb,var(--muted) 25%,transparent)}.bar{height:100%;border-radius:7px;background:var(--accent)}small{color:var(--muted)}</style>',
           '<div class="w"><label>Temperature: <b id="t"></b> °C</label><input id="r" type="range" min="0" max="70" value="37"><div class="track"><div id="b" class="bar"></div></div><small>Activity, relative to the best temperature</small></div>',

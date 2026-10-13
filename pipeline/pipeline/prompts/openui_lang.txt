@@ -16,8 +16,8 @@ Final answer format: a response that calls no tools is the final answer and must
 Arguments marked with ? are optional. Sub-components can be inline or referenced; prefer references for better streaming.
 
 ### Prose
-Answer(children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | Diagram | Interactive | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
-Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Diagrams go in Diagram, never in Md. passages: the shown passage numbers that ground it.
+Answer(children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | Mermaid | HtmlEmbed | Accordion | Tabs | AskUser)[]) — The whole reply, top to bottom.
+Md(text: string, passages?: number[]) — A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Diagrams go in Mermaid, never in Md. passages: the shown passage numbers that ground it.
 Callout(kind: "info" | "tip" | "warning" | "success" | "danger", title: string, text: string, passages?: number[]) — A highlighted note: a definition, tip, misconception, warning or takeaway. text is Markdown.
 Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown the reader opens on demand: a hint, a solution, extra detail.
 - Md is the default. A short question gets one or two Md blocks and nothing else.
@@ -25,11 +25,11 @@ Reveal(title: string, text: string, passages?: number[]) — Collapsed Markdown 
 
 ### Structure
 Tabs(items: Tab[]) — Two to six tabs for related concepts, perspectives or examples. Never nest Tabs inside Tabs.
-Tab(label: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | Diagram | Interactive | Accordion)[]) — One tab: a short label and its content.
+Tab(label: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | Mermaid | HtmlEmbed | Accordion)[]) — One tab: a short label and its content.
 Steps(items: Step[]) — A numbered sequence: a process, a derivation, a worked solution.
 Step(title: string, text: string, passages?: number[]) — One numbered step: a short title and Markdown text.
 Accordion(items: AccordionItem[]) — Collapsible sections for optional depth. Never nest an Accordion inside an Accordion.
-AccordionItem(title: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | Diagram | Interactive)[]) — One collapsible section.
+AccordionItem(title: string, children: (Md | Callout | Steps | Reveal | Facts | Cards | Table | Chart | Plot | Mermaid | HtmlEmbed)[]) — One collapsible section.
 Facts(items: Fact[]) — A compact list of label/value rows.
 Fact(label: string, value: string) — One label/value row.
 Cards(items: Card[]) — A grid of two to six Card items.
@@ -46,10 +46,10 @@ Point(x: number, y: number, label?: string) — One labelled point marked on a P
 Plot(kind: "line" | "scatter", title: string, series: Curve[], xTitle: string, yTitle: string, passages?: number[], illustrative?: boolean, lines?: RefLine[], marks?: Point[]) — Numbers against numbers. kind "line" draws curves of a quantity along a numeric axis: a membrane potential over time, a titration curve, rate against temperature. kind "scatter" draws each point as a dot, e.g. practice minutes against recall score. xTitle and yTitle name the axes with units; lines are reference lines, marks are Points labelled on the plot. Same passages and illustrative rules as Chart: a typical shape from general knowledge is illustrative.
 Curve(name: string, points: number[][]) — One to four per Plot: a name and two to 60 [x, y] points (in x order for a line), e.g. Curve("Vm", [[0, -70], [1, -55], [1.5, 30]]).
 RefLine(axis: "x" | "y", value: number, label?: string) — A dashed line at x = value or y = value with a short label, e.g. a threshold.
-Diagram(title: string, code: string, passages?: number[]) — A Mermaid diagram of a process, cycle, pathway, hierarchy or decision. code is Mermaid source with lines separated by \n: flowchart TD, sequenceDiagram, stateDiagram-v2, mindmap or timeline. Chat is narrow: top-down, at most about 12 nodes with short labels, no styling, classDef or HTML.
-Interactive(title: string, html: string, passages?: number[]) — An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. html: one self-contained snippet under 64 KB, inline CSS and script; libraries only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, no other network, colours only from --bg, --fg, --muted, --accent and --border, height fitting its content, no vh or vw.
+Mermaid(title: string, code: string, passages?: number[]) — A Mermaid diagram of a process, cycle, pathway, hierarchy or decision. code is Mermaid source with lines separated by \n: flowchart TD, sequenceDiagram, stateDiagram-v2, mindmap or timeline. Chat is narrow: top-down, at most about 12 nodes with short labels, no styling, classDef or HTML.
+HtmlEmbed(title: string, html: string, passages?: number[]) — An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs.
 - Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.
-- Chart compares labelled categories; Plot shows numbers against numbers (a line, or a scatter of points); Diagram shows structure or flow; Interactive only where moving something teaches more than a still picture. The text next to a figure says what to notice.
+- Chart compares labelled categories; Plot shows numbers against numbers (a line, or a scatter of points); Mermaid shows structure or flow; HtmlEmbed only where moving something teaches more than a still picture. The text next to a figure says what to notice.
 - Chart and Plot values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.
 
 ### Questions

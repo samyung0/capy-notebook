@@ -33,8 +33,8 @@ const stubs = Object.fromEntries(
     'Plot',
     'Curve',
     'RefLine',
-    'Diagram',
-    'Interactive',
+    'Mermaid',
+    'HtmlEmbed',
     'AskUser',
   ].map((name) => [name, stub])
 ) as unknown as Renderers;

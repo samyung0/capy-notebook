@@ -919,7 +919,7 @@ export const EMBED_CATALOG = {
         "lang": "html-embed",
         "body": "yaml"
       },
-      "chat": "Interactive",
+      "chat": "HtmlEmbed",
       "surfaces": [
         "chat",
         "note",
@@ -934,7 +934,8 @@ export const EMBED_CATALOG = {
           "create_material",
           "edit_document"
         ]
-      }
+      },
+      "rules": "The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs."
     },
     {
       "kind": "mermaid",
@@ -944,7 +945,7 @@ export const EMBED_CATALOG = {
         "lang": "mermaid",
         "body": "text"
       },
-      "chat": "Diagram",
+      "chat": "Mermaid",
       "materials": [
         "mindmap",
         "diagram"

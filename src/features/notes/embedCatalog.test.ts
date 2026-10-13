@@ -1,6 +1,7 @@
 /* The browser against the embed catalog (openwiki/embeds.md): the read-only
    plugin kit knows every element type with the catalog's void and inline
-   flags, and every embed's fence converts to its element and back. */
+   flags, chat has each embed's component, and every embed's fence converts
+   to its element and back. */
 import { readFileSync } from 'node:fs';
 import { serializeMd } from '@platejs/markdown';
 import { createSlateEditor } from 'platejs';
@@ -53,6 +54,19 @@ describe('the embed catalog', () => {
       ])
     );
     expect(Object.fromEntries(kit)).toEqual(Object.fromEntries(catalog));
+  });
+
+  it('names chat components the chat library has', () => {
+    const file = new URL(
+      '../../../pipeline/pipeline/generated/openui_library.json',
+      import.meta.url
+    );
+    const library = JSON.parse(readFileSync(file, 'utf8')) as {
+      components: { name: string }[];
+    };
+    const components = library.components.map((c) => c.name);
+    for (const embed of EMBED_CATALOG.embeds)
+      if ('chat' in embed) expect(components).toContain(embed.chat);
   });
 
   it.each(EMBED_CATALOG.embeds.map((embed) => [embed.kind, embed] as const))(

@@ -247,7 +247,13 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   list. `MaterialPreview` renders the static View, share pages and the note's
   live View, so the Rust session's live-View placeholder item is covered; the
   room-side edit refusal stays theirs.
-- Not done yet on this side: the chat rename with the agent text and
-  contract bump, and the Python lists (after the pipeline session's
+- **Chat rename and shared agent text** (2026-10-13, agent contract v24):
+  chat's `Diagram` and `Interactive` are `Mermaid` and `HtmlEmbed`
+  (`ChatMermaid.tsx`, `ChatHtmlEmbed.tsx`, `openui.py`), and the catalog's
+  `rules` holds the HTML embed's rules, quoted by `Formats.note` and the
+  `HtmlEmbed` description. Old UAT chat answers naming `Diagram` or
+  `Interactive` still render, without those blocks: the parser drops an
+  unknown component and marks the answer as having a gap.
+- Not done yet on this side: the Python lists (after the pipeline session's
   agent-leniency branch lands, which touches `contract.py`, `tools.py` and
   `questions.py`).

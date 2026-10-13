@@ -19,6 +19,7 @@ import {
   type PromptOptions,
 } from '@openuidev/react-lang';
 import { z } from 'zod/v4';
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 
 /** Shown passage numbers ([n] in the tool results) grounding a block. */
 const passages = z.array(z.number().int()).optional();
@@ -66,12 +67,12 @@ export const refLineProps = z.object({
   value: z.number(),
   label: z.string().optional(),
 });
-export const diagramProps = z.object({
+export const mermaidProps = z.object({
   title: z.string(),
   code: z.string(),
   passages,
 });
-export const interactiveProps = z.object({
+export const htmlEmbedProps = z.object({
   title: z.string(),
   html: z.string(),
   passages,
@@ -92,8 +93,8 @@ export type SeriesProps = z.infer<typeof seriesProps>;
 export type PointProps = z.infer<typeof pointProps>;
 export type CurveProps = z.infer<typeof curveProps>;
 export type RefLineProps = z.infer<typeof refLineProps>;
-export type DiagramProps = z.infer<typeof diagramProps>;
-export type InteractiveProps = z.infer<typeof interactiveProps>;
+export type MermaidProps = z.infer<typeof mermaidProps>;
+export type HtmlEmbedProps = z.infer<typeof htmlEmbedProps>;
 export type AskUserProps = z.infer<typeof askUserProps>;
 
 /** Props of the container components, whose children arrive as element nodes. */
@@ -169,17 +170,26 @@ export type Renderers = Record<
   | 'Plot'
   | 'Curve'
   | 'RefLine'
-  | 'Diagram'
-  | 'Interactive'
+  | 'Mermaid'
+  | 'HtmlEmbed'
   | 'AskUser',
   AnyRenderer
 >;
+
+/** The HTML embed's rules, which the note format quotes too (the embed
+ * catalog). */
+const htmlEmbedRules = (() => {
+  const embed = EMBED_CATALOG.embeds.find((e) => e.kind === 'html_embed');
+  if (!(embed && 'rules' in embed))
+    throw new Error('The embed catalog has no html_embed rules.');
+  return embed.rules;
+})();
 
 export function buildLibrary(render: Renderers) {
   const Md = defineComponent({
     component: render.Md,
     description:
-      'A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Diagrams go in Diagram, never in Md. passages: the shown passage numbers that ground it.',
+      'A paragraph or short section of Markdown prose (headings, lists, code fences, $inline$ and $$display$$ math). Diagrams go in Mermaid, never in Md. passages: the shown passage numbers that ground it.',
     name: 'Md',
     props: mdProps,
   });
@@ -315,19 +325,18 @@ export function buildLibrary(render: Renderers) {
       marks: z.array(Point.ref).optional(),
     }),
   });
-  const Diagram = defineComponent({
-    component: render.Diagram,
+  const Mermaid = defineComponent({
+    component: render.Mermaid,
     description:
       'A Mermaid diagram of a process, cycle, pathway, hierarchy or decision. code is Mermaid source with lines separated by \\n: flowchart TD, sequenceDiagram, stateDiagram-v2, mindmap or timeline. Chat is narrow: top-down, at most about 12 nodes with short labels, no styling, classDef or HTML.',
-    name: 'Diagram',
-    props: diagramProps,
+    name: 'Mermaid',
+    props: mermaidProps,
   });
-  const Interactive = defineComponent({
-    component: render.Interactive,
-    description:
-      'An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. html: one self-contained snippet under 64 KB, inline CSS and script; libraries only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, no other network, colours only from --bg, --fg, --muted, --accent and --border, height fitting its content, no vh or vw.',
-    name: 'Interactive',
-    props: interactiveProps,
+  const HtmlEmbed = defineComponent({
+    component: render.HtmlEmbed,
+    description: `An HTML widget the reader manipulates, e.g. a slider that reshapes a curve. ${htmlEmbedRules}`,
+    name: 'HtmlEmbed',
+    props: htmlEmbedProps,
   });
   const AskUser = defineComponent({
     component: render.AskUser,
@@ -347,8 +356,8 @@ export function buildLibrary(render: Renderers) {
     Table.ref,
     Chart.ref,
     Plot.ref,
-    Diagram.ref,
-    Interactive.ref,
+    Mermaid.ref,
+    HtmlEmbed.ref,
   ] as const;
   const AccordionItem = defineComponent({
     component: render.AccordionItem,
@@ -432,13 +441,13 @@ export function buildLibrary(render: Renderers) {
           'Plot',
           'Curve',
           'RefLine',
-          'Diagram',
-          'Interactive',
+          'Mermaid',
+          'HtmlEmbed',
         ],
         name: 'Data',
         notes: [
           '- Tables and charts are leaves: no components inside them. Cite their passages on the block, not in cells.',
-          '- Chart compares labelled categories; Plot shows numbers against numbers (a line, or a scatter of points); Diagram shows structure or flow; Interactive only where moving something teaches more than a still picture. The text next to a figure says what to notice.',
+          '- Chart compares labelled categories; Plot shows numbers against numbers (a line, or a scatter of points); Mermaid shows structure or flow; HtmlEmbed only where moving something teaches more than a still picture. The text next to a figure says what to notice.',
           '- Chart and Plot values must come from cited passages or be marked illustrative=true. Never present invented numbers as sourced.',
         ],
       },
@@ -474,8 +483,8 @@ export function buildLibrary(render: Renderers) {
       Plot,
       Curve,
       RefLine,
-      Diagram,
-      Interactive,
+      Mermaid,
+      HtmlEmbed,
       AskUser,
     ],
     root: 'Answer',

@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { HTML_EMBED_MAX_BYTES, htmlBytes } from '@/features/materials/document';
 import { HtmlEmbed } from '@/features/materials/HtmlEmbed';
 import { m } from '@/i18n';
-import type { InteractiveProps } from '../schema';
+import type { HtmlEmbedProps } from '../schema';
 import { CiteFooter } from './Cite';
 
 /** While the answer streams, the frame mounts only once the html has stopped
@@ -11,11 +11,11 @@ import { CiteFooter } from './Cite';
 const SETTLE_MS = 1000;
 
 /** The notes' sandboxed html-embed frame, under the same 64 KB cap. */
-export function Interactive({
+export function ChatHtmlEmbed({
   props,
   statementId,
 }: {
-  props: InteractiveProps;
+  props: HtmlEmbedProps;
   statementId?: string;
 }) {
   const streaming = useIsStreaming();

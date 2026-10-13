@@ -69,7 +69,10 @@ import (
 // the excerpts read since the last write.
 // v23: chart media and fences lose unit (it goes in the title); plot media and
 // fences take kind line or scatter.
-const ContractVersion = 23
+// v24: the embed catalog (server/internal/embeds) names each embed kind once
+// per layer: chat's Diagram and Interactive are Mermaid and HtmlEmbed, and the
+// html-embed rules the note format and chat quote come from the catalog.
+const ContractVersion = 24
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -461,17 +464,9 @@ var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"open question with add_open_question's question, marks, markscheme, model_answer, hints? " +
 	"and explanation?) and " +
 	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
-	"items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at " +
-	"most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a " +
-	"library may load (script src, stylesheet link or module import) only from " +
-	"https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com " +
-	"at an exact version, and nothing else reaches the network (no other src or href, no " +
-	"fetch, no navigating the page); colours only from the provided " +
-	"variables --bg, --fg, --muted, --accent and --border so it follows the light and dark " +
-	"theme, height fitting its content with no vh or vw units. The frame already gives the " +
-	"body the note's font (--font), text colour, no margin and a transparent background, and " +
-	"form controls the accent colour, so style only what differs. Use an interactive only where " +
-	"moving something teaches more than a diagram."
+	"items; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
+	"`html: |`), at most %d per note. ", embeds.HTMLEmbedMaxCount) + embeds.RulesOf("html_embed") +
+	" Use an interactive only where moving something teaches more than a diagram."
 
 // The agent writes questions in three small shapes (Epo 2026-10-13): a
 // multiple-choice or short-answer question through add_questions, an open one

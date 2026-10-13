@@ -2,7 +2,7 @@ import { useIsStreaming } from '@openuidev/react-lang';
 import { Mermaid } from '@/features/materials/Mermaid';
 import { m } from '@/i18n';
 import { useDebounced } from '@/lib/useDebounced';
-import type { DiagramProps } from '../schema';
+import type { MermaidProps } from '../schema';
 import { CiteFooter } from './Cite';
 
 /** While the answer streams, the code is drawn once it stops growing, so a
@@ -11,7 +11,7 @@ const SETTLE_MS = 400;
 
 const ignore = () => undefined;
 
-export function Diagram({ props }: { props: DiagramProps }) {
+export function ChatMermaid({ props }: { props: MermaidProps }) {
   const streaming = useIsStreaming();
   const code = typeof props.code === 'string' ? props.code.trim() : '';
   const settled = useDebounced(code, SETTLE_MS);

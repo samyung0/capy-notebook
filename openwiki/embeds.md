@@ -56,8 +56,8 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   | chart | value | `chart` | ```` ```chart ```` JSON | `Chart` | – |
   | plot | value | `plot` | ```` ```plot ```` JSON | `Plot` | – |
   | graph | value | `graph` | ```` ```graph ```` JSON | – | – |
-  | html_embed | value | `html_embed` | ```` ```html-embed ```` YAML | `Interactive` | – |
-  | mermaid | live_source | `mermaid` | ```` ```mermaid ```` source | `Diagram` | mindmap, diagram |
+  | html_embed | value | `html_embed` | ```` ```html-embed ```` YAML | `HtmlEmbed` | – |
+  | mermaid | live_source | `mermaid` | ```` ```mermaid ```` source | `Mermaid` | mindmap, diagram |
   | quiz | item | `material_ref` | ```` ```quiz ```` YAML | – | quiz |
   | flashcards | item | `material_ref` | ```` ```flashcards ```` YAML | – | flashcards |
 
@@ -68,9 +68,11 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   and quota. Chart, plot and graph are question blocks too
   (`questionBlock`); chart and plot are what `add_question_media` writes
   (`questionMedia`), and their `schema` is the JSON Schema the agent
-  contract's `mediaBlocks` carries. Chat's `Diagram` and `Interactive` become
-  `Mermaid` and `HtmlEmbed` with the rename (one word per kind in each layer's
-  casing).
+  contract's `mediaBlocks` carries. Names are one word per kind in each
+  layer's casing (Epo 2026-10-13; agent contract v24). `rules` is what the
+  agent is told about a kind wherever it writes one: the HTML embed's rules
+  are quoted by the note format (`Formats.note`) and by chat's `HtmlEmbed`
+  description, since both draw it in the same frame.
 - **`materialKinds`**: each kind's required element (`quiz`, `flashcards`,
   `mermaid` for mindmap and diagram, none for a note) and whether it is an
   item (quiz, flashcards).
@@ -89,5 +91,5 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
    `server/internal/materialdoc/catalog_test.go` (Go's validator, over the
    every-block note and a document of each material kind: add a sample of a
    new element there), `src/features/notes/embedCatalog.test.ts` (the
-   read-only plugin kit, and each kind's fence in and out: add a fence body
-   for a new kind), and the collaboration server's tests (todo-embeds.md).
+   read-only plugin kit, chat's component for each kind, and each kind's
+   fence in and out: add a fence body for a new kind), and the collaboration server's tests (todo-embeds.md).

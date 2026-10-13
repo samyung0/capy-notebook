@@ -173,6 +173,6 @@ def test_plot_points_and_reference_lines_survive_the_checkpoint_projection():
 
 def test_interactive_projects_its_title_without_the_html():
     text = openui.text_of(
-        'root = Answer([Interactive("Slide the pH", "<input type=range>", [2])])'
+        'root = Answer([HtmlEmbed("Slide the pH", "<input type=range>", [2])])'
     )
     assert text == "Slide the pH"

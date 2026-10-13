@@ -120,7 +120,7 @@ describe('local answer recovery', () => {
 
   it('projects a diagram as a mermaid fence', () => {
     const result = parseAnswer(
-      'root = Answer([Diagram("Cycle", "flowchart TD\\nA --> B", [3])])'
+      'root = Answer([Mermaid("Cycle", "flowchart TD\\nA --> B", [3])])'
     );
     expect(inspectAnswer(result)).toEqual({
       gap: false,
@@ -164,7 +164,7 @@ describe('local answer recovery', () => {
 
   it('projects an interactive as its title, without the html', () => {
     const result = parseAnswer(
-      'root = Answer([Interactive("Slide the pH", "<input type=\\"range\\">", [2])])'
+      'root = Answer([HtmlEmbed("Slide the pH", "<input type=\\"range\\">", [2])])'
     );
     expect(inspectAnswer(result)).toEqual({
       gap: false,

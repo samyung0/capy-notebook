@@ -11,7 +11,11 @@
 // the catalog does not list is refused everywhere (Epo 2026-10-13).
 package embeds
 
-import "github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+import (
+	"fmt"
+
+	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+)
 
 // Version changes when a layer must change with the catalog.
 const Version = 1
@@ -124,6 +128,10 @@ type Embed struct {
 	// Schema is the JSON Schema of the block the agent writes, when one is
 	// checked before the validators.
 	Schema map[string]any `json:"schema,omitempty"`
+	// Rules are what the agent is told about the kind wherever it writes one:
+	// the note format (agenttools) and the chat component (chat/schema.ts)
+	// quote them.
+	Rules string `json:"rules,omitempty"`
 }
 
 // MaterialKind is one kind of material row.
@@ -321,13 +329,14 @@ func Embeds() []Embed {
 		},
 		{
 			Kind: "html_embed", Class: ClassValue, Element: "html_embed",
-			Fence: Fence{Lang: "html-embed", Body: "yaml"}, Chat: "Interactive",
+			Fence: Fence{Lang: "html-embed", Body: "yaml"}, Chat: "HtmlEmbed",
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceShare, SurfaceExport},
 			Edit:     Edit{User: []string{SurfaceNote}, Agent: writeNote},
+			Rules:    htmlEmbedRules,
 		},
 		{
 			Kind: "mermaid", Class: ClassLiveSource, Element: "mermaid",
-			Fence: Fence{Lang: "mermaid", Body: "text"}, Chat: "Diagram",
+			Fence: Fence{Lang: "mermaid", Body: "text"}, Chat: "Mermaid",
 			Materials: []string{Mindmap, Diagram},
 			Surfaces:  []string{SurfaceChat, SurfaceNote, SurfaceMaterial, SurfaceShare, SurfaceExport},
 			Edit:      Edit{User: []string{SurfaceNote, SurfaceMaterial}, Agent: writeNote},
@@ -351,6 +360,28 @@ func Embeds() []Embed {
 			Edit:      Edit{User: []string{SurfaceNote, SurfaceMaterial}, Agent: writeNote},
 		},
 	}
+}
+
+// htmlEmbedRules are the HTML embed's rules: notes and chat draw it in the
+// same sandboxed frame (src/features/materials/HtmlEmbed.tsx, embed/).
+var htmlEmbedRules = fmt.Sprintf("The html is one small snippet under %d KB: inline CSS and "+
+	"script; a library may load (script src, stylesheet link or module import) only from "+
+	"https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com "+
+	"at an exact version, and nothing else reaches the network (no other src or href, no "+
+	"fetch, no navigating the page); colours only from the provided variables --bg, --fg, "+
+	"--muted, --accent and --border so it follows the light and dark theme, height fitting "+
+	"its content with no vh or vw units. The frame already gives the body the page's font "+
+	"(--font), text colour, no margin and a transparent background, and form controls the "+
+	"accent colour, so style only what differs.", HTMLEmbedMaxBytes>>10)
+
+// RulesOf returns the agent rules of an embed kind.
+func RulesOf(kind string) string {
+	for _, e := range Embeds() {
+		if e.Kind == kind {
+			return e.Rules
+		}
+	}
+	return ""
 }
 
 // MaterialKinds lists the material kinds and what each document must hold.

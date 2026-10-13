@@ -172,7 +172,7 @@
       ]
     },
     {
-      "name": "Diagram",
+      "name": "Mermaid",
       "props": [
         "title",
         "code",
@@ -180,7 +180,7 @@
       ]
     },
     {
-      "name": "Interactive",
+      "name": "HtmlEmbed",
       "props": [
         "title",
         "html",

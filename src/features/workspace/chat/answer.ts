@@ -12,8 +12,8 @@ import { questionBlockSchema } from '@/features/questions/validation';
 import type {
   ChartProps,
   CurveProps,
-  DiagramProps,
-  InteractiveProps,
+  HtmlEmbedProps,
+  MermaidProps,
   PlotProps,
 } from './schema';
 
@@ -208,8 +208,8 @@ export function inspectAnswer(result: ParseResult | null) {
       invalidData = true;
       return;
     }
-    if (value.typeName === 'Diagram') {
-      const { title, code } = value.props as unknown as DiagramProps;
+    if (value.typeName === 'Mermaid') {
+      const { title, code } = value.props as unknown as MermaidProps;
       if (typeof title === 'string' && title.trim()) lines.push(title);
       if (typeof code === 'string' && code.trim())
         lines.push(['```mermaid', code.trim(), '```'].join('\n'));
@@ -222,8 +222,8 @@ export function inspectAnswer(result: ParseResult | null) {
       );
       return;
     }
-    if (value.typeName === 'Interactive') {
-      const { title } = value.props as unknown as InteractiveProps;
+    if (value.typeName === 'HtmlEmbed') {
+      const { title } = value.props as unknown as HtmlEmbedProps;
       if (typeof title === 'string' && title.trim()) lines.push(title);
       return;
     }
