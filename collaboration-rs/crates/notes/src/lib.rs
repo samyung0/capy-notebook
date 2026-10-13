@@ -24,6 +24,9 @@
 //! openwiki/frontend/plate-editor.md.
 
 pub mod bound;
+// Generated from server/internal/embeds by `pnpm gen:openapi`.
+#[rustfmt::skip]
+pub mod catalog;
 pub mod children;
 pub mod commands;
 pub mod edit;

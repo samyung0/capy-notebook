@@ -219,3 +219,17 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   lists, the drift items outside the live layer.
 - Order: the drift fixes in parallel; the generator first, then each side's
   tests and the rename against it.
+
+## Progress
+
+- **Generator landed** (2026-10-13): `server/internal/embeds` writes
+  `pipeline/pipeline/generated/embeds.json`, `src/api/embeds.generated.ts`
+  and `collaboration-rs/crates/notes/src/catalog.rs` (`notes::catalog`,
+  `#[rustfmt::skip]`) through `pnpm gen:openapi -embeds ..`; described in
+  `openwiki/embeds.md`. It lists 43 element types, including Plate's
+  transient `placeholder`, `mention_input` and `slash_input` (room
+  admission must keep accepting them). The legacy `image` media type is not
+  listed: nothing creates it, so dropping it from the media lists is part of
+  enforcing decision 1. The agent contract's `mediaBlocks` now comes from the
+  catalog (byte-identical), and Go's HTML embed limits read it. Chat names
+  stay `Diagram` and `Interactive` until the rename.

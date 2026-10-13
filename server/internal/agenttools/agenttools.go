@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/embeds"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 )
 
@@ -290,7 +291,7 @@ func Export() Contract {
 		Formats: map[string]string{
 			"note": noteMarkdownDescription,
 		},
-		MediaBlocks: mediaBlocks(),
+		MediaBlocks: embeds.MediaSchemas(),
 	}
 }
 
@@ -518,45 +519,6 @@ func simpleQuestionSchema() map[string]any {
 		"explanation": textField("Optional: why the answer is right, shown after checking."),
 		"replaces":    replacesSchema(),
 	}, "question")
-}
-
-// mediaBlocks are the question blocks add_question_media takes, as JSON Schema
-// for the retrieval service's checks (questions.ValidateBlock is the backstop).
-// They ride in the contract, not in the tool: the model writes chart and plot
-// in the note fence format the materials skill describes.
-func mediaBlocks() map[string]any {
-	label := map[string]any{"type": "string", "maxLength": fieldlimits.QuestionMetadata}
-	number := map[string]any{"type": "number"}
-	list := func(min, max int, items map[string]any) map[string]any {
-		return map[string]any{"type": "array", "minItems": min, "maxItems": max, "items": items}
-	}
-	return map[string]any{
-		"chart": obj(map[string]any{
-			"type":   map[string]any{"const": "chart"},
-			"kind":   map[string]any{"enum": []string{"bar", "hbar", "line", "area", "pie", "stacked"}},
-			"title":  label,
-			"labels": list(1, fieldlimits.QuestionChartLabels, map[string]any{"type": "string", "minLength": 1}),
-			"series": list(1, fieldlimits.QuestionChartSeries, obj(map[string]any{
-				"name": label, "values": map[string]any{"type": "array", "items": number},
-			}, "name", "values")),
-			"xTitle": label, "yTitle": label,
-			"gridlines": map[string]any{"enum": []string{"normal", "fine"}},
-		}, "type", "kind", "title", "labels", "series"),
-		"plot": obj(map[string]any{
-			"type": map[string]any{"const": "plot"}, "kind": map[string]any{"enum": []string{"line", "scatter"}},
-			"title": label, "xTitle": label, "yTitle": label, "unit": label,
-			"series": list(1, fieldlimits.QuestionPlotSeries, obj(map[string]any{
-				"name":   label,
-				"points": list(2, fieldlimits.QuestionPlotPoints, list(2, 2, number)),
-			}, "name", "points")),
-			"lines": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
-				"axis": map[string]any{"enum": []string{"x", "y"}}, "value": number, "label": label,
-			}, "axis", "value")),
-			"marks": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
-				"x": number, "y": number, "label": label,
-			}, "x", "y", "label")),
-		}, "type", "title", "xTitle", "yTitle", "series"),
-	}
 }
 
 // A deck holds at most 30 slides of at most 40,000 SVG characters each (the

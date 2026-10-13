@@ -7,6 +7,7 @@ package fieldlimits
 
 import (
 	"path/filepath"
+	"sort"
 	"strings"
 	"unicode/utf8"
 )
@@ -106,6 +107,16 @@ var QuestionBounds = map[string]int{
 	"QUIZ_OPEN_PARTS_MAX":          QuizOpenParts,
 	"QUIZ_MARKSCHEME_MAX":          QuizMarkscheme,
 	"QUIZ_OPEN_ANSWER_MAX":         QuizOpenAnswer,
+}
+
+// QuestionBoundNames lists QuestionBounds' names in order, for generated files.
+func QuestionBoundNames() []string {
+	names := make([]string, 0, len(QuestionBounds))
+	for name := range QuestionBounds {
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // Columns lists every constrained column as "table.column" so the database

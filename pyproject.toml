@@ -65,6 +65,7 @@ include = ["pipeline*"]
 pipeline = [
     "elitellm/providers.json",
     "generated/agent_tools.json",
+    "generated/embeds.json",
     "generated/openui_library.json",
     "prompts/openui_lang.txt",
     "prompts/deck_styles/*/*.md",

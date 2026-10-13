@@ -15,6 +15,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/samyung0/capy-notebook/server/internal/embeds"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
@@ -30,11 +31,10 @@ const (
 	depthCeiling = 1024
 	// HTMLEmbedType is the interactive HTML block: a top-level void holding
 	// one snippet of at most HTMLEmbedMaxBytes, at most HTMLEmbedMaxCount per
-	// document. Keep in sync with collaboration-rs/crates/notes/src/material.rs and
-	// src/features/materials/document.ts.
+	// document (the embed catalog's limits).
 	HTMLEmbedType     = "html_embed"
-	HTMLEmbedMaxBytes = 64 << 10
-	HTMLEmbedMaxCount = 10
+	HTMLEmbedMaxBytes = embeds.HTMLEmbedMaxBytes
+	HTMLEmbedMaxCount = embeds.HTMLEmbedMaxCount
 )
 
 var (
