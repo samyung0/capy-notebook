@@ -11,10 +11,10 @@
      cards: [ ... ]
      ```
 
-   The payload is YAML. JSON is a subset of YAML, so blocks backfilled from the
-   legacy JSON tables parse identically; we re-emit clean YAML on every write.
-   Shared by the read-only Plate renderer and the MSW mock (which derives the
-   typed Quiz/FlashcardSet/Flashcard views the existing UI expects).
+   The payload is YAML (JSON parses too). The fence bodies are read by the
+   note editor's fence import (blocks/dialogContext.tsx) and the MSW mock, which
+   derives the typed quiz and card views the UI expects; writing them is
+   blocks/shared.ts's.
    ============================================================ */
 import YAML from 'yaml';
 import type { Question } from '@/api/types';
@@ -88,18 +88,4 @@ export function parseQuizFenceBody(body: string): QuizBlock {
 /** Parse a raw ```flashcards fence body (used by the Plate renderer). */
 export function parseFlashcardsFenceBody(body: string): FlashcardsBlock {
   return parseFlashcardsYaml(body);
-}
-
-function fenceDoc(lang: string, payload: unknown): string {
-  const body = YAML.stringify(payload); // trailing newline included
-  return `\`\`\`${lang}\n${body}\`\`\`\n`;
-}
-
-export function quizMarkdown(data: QuizBlock): string {
-  const payload: Record<string, unknown> = { questions: data.questions ?? [] };
-  return fenceDoc('quiz', payload);
-}
-
-export function flashcardsMarkdown(cards: FlashcardContent[]): string {
-  return fenceDoc('flashcards', { cards: cards ?? [] });
 }

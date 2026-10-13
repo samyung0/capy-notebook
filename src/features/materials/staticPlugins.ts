@@ -57,6 +57,7 @@ import { common, createLowlight } from 'lowlight';
 import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
 import { FONT_SIZE_NODE_PROPS } from '@/features/notes/nodeStyles';
+import { FootnotePlugins } from './footnotePlugins';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +120,24 @@ const StaticYouTubePlugin = createSlatePlugin({
   key: 'video',
   node: { isElement: true, isVoid: true, type: 'video' },
 });
+/* The editor's transient elements (an upload in progress, a slash command
+   being typed) can sit in a saved document; a read draws nothing for them. */
+const StaticTransientPlugins = [
+  createSlatePlugin({
+    key: 'placeholder',
+    node: { isElement: true, isVoid: true, type: 'placeholder' },
+  }),
+  createSlatePlugin({
+    key: 'slash_input',
+    node: {
+      isElement: true,
+      isInline: true,
+      isVoid: true,
+      type: 'slash_input',
+    },
+  }),
+  ...FootnotePlugins,
+];
 
 /* List rendering parity with the editable surface (see notes/plugins.ts):
    bullet items get list-item display via injected props, task items get a
@@ -252,6 +271,7 @@ export const StaticMaterialKit: AnyPlugin[] = [
   BaseTocPlugin,
   BaseImagePlugin,
   StaticYouTubePlugin,
+  ...StaticTransientPlugins,
   BaseAudioPlugin,
   BaseFilePlugin,
   BaseCalloutPlugin,

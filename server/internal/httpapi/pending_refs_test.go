@@ -11,10 +11,11 @@ import (
 
 // Security regression (live-items REVIEW5, pending references): an imported
 // quiz fence becomes a "pending" reference whose body holds the quiz's answer
-// keys. A note write refuses one. A note stored with one before (written here
-// past the checks) shows it to its editors only: a viewer's read, a link
-// visitor's shared page and a clone get an empty paragraph in its place.
-// Fails if the write check or any of those strips is reverted.
+// keys, until Go resolves it to the row made for it. No document stores one
+// (the embed catalog forbids "pending"): a note write refuses it, and a note
+// planted with one past the checks fails closed, so no read, shared page or
+// clone serves the fence body. Fails if the write check is reverted or a
+// reader serves the body.
 func TestPendingReferencesNeverReachReaders(t *testing.T) {
 	h, st := openInternalHTTP(t)
 	ctx := context.Background()
@@ -49,16 +50,10 @@ func TestPendingReferencesNeverReachReaders(t *testing.T) {
 		_, _ = st.Pool().Exec(context.Background(), `UPDATE materials SET content=$1::jsonb WHERE id='note_e2e_private'`, original)
 	})
 	plant("note_e2e_private")
-	for _, c := range []struct {
-		user  string
-		keeps bool
-	}{{"u_viewer", false}, {"u_owner", true}} {
-		rec := doAsUser(t, h, http.MethodGet, "/api/materials/note_e2e_private", c.user, nil)
-		if rec.Code != http.StatusOK {
-			t.Fatalf("%s read = %d %s", c.user, rec.Code, rec.Body.String())
-		}
-		if got := strings.Contains(rec.Body.String(), secret); got != c.keeps {
-			t.Fatalf("%s read holds the fence body: %v, want %v (%s)", c.user, got, c.keeps, rec.Body.String())
+	for _, user := range []string{"u_viewer", "u_owner"} {
+		rec := doAsUser(t, h, http.MethodGet, "/api/materials/note_e2e_private", user, nil)
+		if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), secret) {
+			t.Fatalf("%s read = %d %s, want a refusal without the fence body", user, rec.Code, rec.Body.String())
 		}
 	}
 
@@ -72,16 +67,12 @@ func TestPendingReferencesNeverReachReaders(t *testing.T) {
 	}
 	plant(shared.ID)
 	rec = doReq(t, h, http.MethodGet, "/api/public/notes/"+store.ShareToken(nil, shared.ID), "", nil)
-	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), secret) {
-		t.Fatalf("shared note page = %d, holds the fence body: %s", rec.Code, rec.Body.String())
+	if rec.Code == http.StatusOK || strings.Contains(rec.Body.String(), secret) {
+		t.Fatalf("shared note page = %d %s, want a refusal without the fence body", rec.Code, rec.Body.String())
 	}
 
-	clone, err := st.CloneMaterial(ctx, "u_other", shared.ID, store.CloneTarget{Name: "Clone"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cleanupMaterial(t, st, clone.ID)
-	if strings.Contains(clone.Content, secret) || !strings.Contains(clone.Content, `"fence"`) {
-		t.Fatalf("clone content = %s, want the fence as an empty paragraph", clone.Content)
+	if clone, err := st.CloneMaterial(ctx, "u_other", shared.ID, store.CloneTarget{Name: "Clone"}); err == nil {
+		cleanupMaterial(t, st, clone.ID)
+		t.Fatalf("a note holding a pending reference was cloned: %s", clone.Content)
 	}
 }

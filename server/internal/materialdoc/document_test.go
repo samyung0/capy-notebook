@@ -737,14 +737,10 @@ func TestNoteKeepsStudyBlocksAsReferences(t *testing.T) {
 		t.Fatalf("note should reject an inline quiz block, got %v", err)
 	}
 	ref := MaterialRefNode("mat_child", "quiz")
-	nested, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{{
+	if _, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{{
 		"type": "callout", "id": "block_1", "children": []any{ref},
-	}}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := ValidateKind(nested, "note"); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("note should reject a nested reference, got %v", err)
+	}}}); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a nested reference should be refused, got %v", err)
 	}
 	withRef, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{
 		ParagraphNode("intro"), ref,
@@ -785,25 +781,27 @@ func TestNoteKeepsStudyBlocksAsReferences(t *testing.T) {
 		!strings.Contains(dropped, "intro") {
 		t.Fatalf("unmapped reference kept: %v %s", err, dropped)
 	}
-	pending, err := Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{
+	// Converted agent markdown holds a pending reference until Go resolves it
+	// to the row made for it; no document holds one (live-items REVIEW5).
+	pending, err := json.Marshal(Envelope{SchemaVersion: 1, Value: []map[string]any{
 		{"type": RefType, "id": "r", "materialId": "", "pending": "questions: []", "refKind": "quiz", "children": []any{textLeaf("")}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Converted agent markdown parses with one (Go resolves it before
-	// storing), but a stored note never holds one (live-items REVIEW5).
-	if _, err := Parse(pending); err != nil {
-		t.Fatalf("a converted pending reference parses: %v", err)
+	if _, err := Parse(string(pending)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a pending reference parses: %v", err)
 	}
-	if err := ValidateKind(pending, "note"); !errors.Is(err, ErrInvalid) {
-		t.Fatalf("a stored note holds a pending reference: %v", err)
+	resolved, err := ResolvePendingRefs(string(pending), []string{"mat_new"})
+	if err != nil {
+		t.Fatal(err)
 	}
-	if refs, err := ExtractMaterialRefs(pending); err != nil || len(refs) != 0 {
-		t.Fatalf("pending references carry no material: %v %v", refs, err)
+	if refs, err := ExtractMaterialRefs(resolved); err != nil || len(refs) != 1 || refs[0].MaterialID != "mat_new" {
+		t.Fatalf("resolved references = %v %v", refs, err)
 	}
 	for _, broken := range []map[string]any{
 		{"type": RefType, "id": "r", "materialId": "", "refKind": "quiz", "children": []any{textLeaf("")}},
+		{"type": RefType, "id": "r", "materialId": "m", "pending": "questions: []", "refKind": "quiz", "children": []any{textLeaf("")}},
 		{"type": RefType, "id": "r", "materialId": "m", "refKind": "note", "children": []any{textLeaf("")}},
 		{"type": RefType, "id": "r", "materialId": "m", "refKind": "quiz", "children": []any{textLeaf("x")}},
 	} {
@@ -994,8 +992,9 @@ func TestEveryBlockNoteFixtureIsValid(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Parse(string(raw)); err != nil {
-		t.Fatal(err)
+	// Unresolved, its fence bodies would reach the store: refused.
+	if _, err := Parse(string(raw)); !errors.Is(err, ErrInvalid) {
+		t.Fatalf("a note holding pending references: %v", err)
 	}
 	stored, err := ResolvePendingRefs(string(raw), []string{"mat_quiz", "mat_cards"})
 	if err != nil {
@@ -1004,7 +1003,7 @@ func TestEveryBlockNoteFixtureIsValid(t *testing.T) {
 	if err := ValidateKind(stored, "note"); err != nil {
 		t.Fatal(err)
 	}
-	metrics, err := Metrics(string(raw))
+	metrics, err := Metrics(stored)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1053,7 +1052,7 @@ func validateNote(nodes ...map[string]any) error {
 // Image, audio and file blocks name their editor asset and carry no URL, as
 // the browser and the collaboration server refuse otherwise.
 func TestMediaBlocksNameTheirAsset(t *testing.T) {
-	for _, typ := range []string{"img", "image", "audio", "file"} {
+	for _, typ := range []string{"img", "audio", "file"} {
 		node := func(extra map[string]any) map[string]any {
 			node := map[string]any{"type": typ, "id": "m", "children": []any{textLeaf("")}}
 			for key, value := range extra {

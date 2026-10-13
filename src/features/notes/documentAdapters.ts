@@ -7,11 +7,11 @@ import {
   assertMaterialDocument,
   createMaterialDocument,
   flashcardsNode,
-  isCustomMaterialElement,
   isMaterialRefElement,
   type MaterialDocument,
   type MaterialNode,
   type MaterialValue,
+  type QuizQuestionElement,
   quizNode,
 } from '@/features/materials/document';
 import { questionAssetIds } from '@/features/questions/types';
@@ -100,8 +100,11 @@ export async function exportNoteDocument(
     nodes.forEach((node) => {
       if ('text' in node) return;
       if (typeof node.assetId === 'string') ids.add(node.assetId);
-      if (isCustomMaterialElement(node) && node.type === 'quiz_question')
-        for (const id of questionAssetIds(node.question)) ids.add(id);
+      if (node.type === 'quiz_question')
+        for (const id of questionAssetIds(
+          (node as QuizQuestionElement).question
+        ))
+          ids.add(id);
       visit(node.children);
     });
   visit(value);

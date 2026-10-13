@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -270,6 +271,18 @@ func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
 // that refused them would turn an over-limit material into a blank page.
 // Inbound request bodies are bounded by the HTTP layer, not here.
 func Parse(raw string) (Envelope, error) {
+	doc, err := decode(raw)
+	if err != nil {
+		return Envelope{}, err
+	}
+	if err := Validate(doc); err != nil {
+		return Envelope{}, err
+	}
+	return doc, nil
+}
+
+// decode reads one envelope without validating it.
+func decode(raw string) (Envelope, error) {
 	if len(raw) == 0 {
 		return Envelope{}, fmt.Errorf("%w: document is empty", ErrInvalid)
 	}
@@ -282,9 +295,6 @@ func Parse(raw string) (Envelope, error) {
 	var trailing any
 	if err := dec.Decode(&trailing); !errors.Is(err, io.EOF) {
 		return Envelope{}, fmt.Errorf("%w: trailing JSON", ErrInvalid)
-	}
-	if err := Validate(doc); err != nil {
-		return Envelope{}, err
 	}
 	return doc, nil
 }
@@ -356,33 +366,73 @@ func validateKind(nodes []map[string]any, kind string) error {
 	if err := validateTopLevelBlockIDs(nodes); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalid, err)
 	}
-	var valid bool
-	switch kind {
-	case "quiz":
-		valid = find(nodes, "quiz") != nil
-	case "flashcards":
-		valid = find(nodes, "flashcards") != nil
-	case "mindmap", "diagram":
-		valid = find(nodes, "mermaid") != nil
-	case "note":
-		return validateNoteReferences(nodes)
-	default:
-		return nil
+	material, ok := materialKinds[kind]
+	if !ok {
+		return fmt.Errorf("%w: unknown material kind %q", ErrInvalid, kind)
 	}
-	if !valid {
+	// Every element is one the embed catalog lists, in a material kind it
+	// lists for it: study blocks live in their own rows, so a note holds a quiz
+	// or a set only through a material_ref, and only a note holds a reference.
+	var misplaced error
+	var walk func(map[string]any)
+	walk = func(node map[string]any) {
+		typ, _ := node["type"].(string)
+		if element, known := elements[typ]; misplaced == nil && typ != "" {
+			if !known {
+				misplaced = fmt.Errorf("%w: unknown element type %q", ErrInvalid, typ)
+			} else if !slices.Contains(element.Materials, kind) {
+				misplaced = fmt.Errorf("%w: a %s cannot hold a %s block", ErrInvalid, kind, typ)
+			}
+		}
+		for _, child := range children(node) {
+			walk(child)
+		}
+	}
+	for _, node := range nodes {
+		walk(node)
+	}
+	if misplaced != nil {
+		return misplaced
+	}
+	if material.Requires != "" && find(nodes, material.Requires) == nil {
 		return fmt.Errorf("%w: %s element is required", ErrInvalid, kind)
-	}
-	if find(nodes, RefType) != nil {
-		return fmt.Errorf("%w: %s cannot contain a material reference", ErrInvalid, kind)
 	}
 	return nil
 }
+
+// elements and materialKinds are the embed catalog by name: an element type
+// it does not list is refused (Epo 2026-10-13).
+var (
+	elements = func() map[string]embeds.Element {
+		out := map[string]embeds.Element{}
+		for _, e := range embeds.Elements() {
+			out[e.Type] = e
+		}
+		return out
+	}()
+	materialKinds = func() map[string]embeds.MaterialKind {
+		out := map[string]embeds.MaterialKind{}
+		for _, k := range embeds.MaterialKinds() {
+			out[k.Kind] = k
+		}
+		return out
+	}()
+)
 
 // RefType is the void node a note stores for an embedded quiz or flashcard
 // set. The referenced material row holds the content.
 const RefType = "material_ref"
 
-var refKinds = set("quiz", "flashcards")
+// refKinds are the item material kinds a note embeds.
+var refKinds = func() map[string]bool {
+	out := map[string]bool{}
+	for _, k := range embeds.MaterialKinds() {
+		if k.Item {
+			out[k.Kind] = true
+		}
+	}
+	return out
+}()
 
 // MaterialRef is one top-level reference node of a note.
 type MaterialRef struct {
@@ -391,86 +441,15 @@ type MaterialRef struct {
 	Kind       string
 }
 
-// validateNoteReferences enforces the note contract: study blocks live in
-// their own material rows, so inline quiz/flashcards nodes are rejected and a
-// reference is only valid as a top-level block that names its row. A stored
-// note never holds a pending reference: its fence body holds the answer keys,
-// and a note reaches every reader (live-items REVIEW5).
-func validateNoteReferences(nodes []map[string]any) error {
-	for _, inline := range []string{"quiz", "flashcards"} {
-		if find(nodes, inline) != nil {
-			return fmt.Errorf("%w: note cannot contain an inline %s block", ErrInvalid, inline)
-		}
-	}
-	for index, node := range nodes {
-		if isPendingRef(node) {
-			return fmt.Errorf("%w: value[%d]: a quiz or flashcards block must name its material; a fence becomes one before the note stores it", ErrInvalid, index)
-		}
-		for _, child := range children(node) {
-			if find([]map[string]any{child}, RefType) != nil {
-				return fmt.Errorf("%w: value[%d]: material reference must be a top-level block", ErrInvalid, index)
-			}
-		}
-	}
-	return nil
-}
-
-// isPendingRef reports a reference that still carries an imported fence body
-// ("pending", no material yet).
-func isPendingRef(node map[string]any) bool {
-	if node["type"] != RefType {
-		return false
-	}
-	_, pending := node["pending"]
-	materialID, _ := node["materialId"].(string)
-	return pending || strings.TrimSpace(materialID) == ""
-}
-
-// DropPendingRefs turns each pending reference into an empty paragraph with
-// its id and reports whether there was one. Writes refuse them now, but a
-// note stored before fences were resolved ahead of insertion may hold one,
-// whose body holds the quiz's answer keys (live-items REVIEW5): a reader who
-// cannot edit the note never gets it, and a clone never carries it.
-func DropPendingRefs(doc *Envelope) bool {
-	dropped := false
-	for i, node := range doc.Value {
-		if isPendingRef(node) {
-			doc.Value[i] = map[string]any{"type": "p", "id": node["id"], "children": []any{textLeaf("")}}
-			dropped = true
-		}
-	}
-	return dropped
-}
-
-// WithoutPendingRefs is DropPendingRefs on a stored document.
-func WithoutPendingRefs(raw string) (string, error) {
-	if !strings.Contains(raw, `"pending"`) {
-		return raw, nil
-	}
-	doc, err := Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	if !DropPendingRefs(&doc) {
-		return raw, nil
-	}
-	return Marshal(doc)
-}
-
 func validateMaterialRef(node map[string]any) error {
 	if err := requireID(node); err != nil {
 		return err
 	}
-	// A fence imported as markdown is a pending reference until the editor
-	// creates its row: no material id yet, the fence body in "pending".
-	materialID, ok := node["materialId"].(string)
-	if !ok {
+	// A stored reference names its row: a fence imported as markdown is
+	// resolved first (ResolvePendingRefs), and its fence body, which holds the
+	// answer keys, never reaches a document (the catalog forbids "pending").
+	if materialID, _ := node["materialId"].(string); strings.TrimSpace(materialID) == "" {
 		return errors.New("materialId is required")
-	}
-	if strings.TrimSpace(materialID) == "" {
-		if pending, _ := node["pending"].(string); pending == "" {
-			return errors.New("materialId is required")
-		}
 	}
 	kind, ok := node["refKind"].(string)
 	if !ok || !refKinds[kind] {
@@ -588,7 +567,7 @@ func PlainMentions(raw string, live func(userID string) bool) (string, error) {
 // top-level blocks, as everywhere else; a count that does not match ids (a
 // fence nested in another block) is refused.
 func ResolvePendingRefs(raw string, ids []string) (string, error) {
-	doc, err := Parse(raw)
+	doc, err := decode(raw)
 	if err != nil {
 		return "", err
 	}
@@ -646,6 +625,47 @@ func validateNode(node map[string]any, depth int) error {
 	if !hasTextDescendant(node) {
 		return errors.New("element must contain a text descendant")
 	}
+	element, known := elements[typ]
+	if !known {
+		// A stored document holding a type the catalog does not list stays
+		// readable; every write refuses it (validateKind, Epo 2026-10-13).
+		return nil
+	}
+	if err := validateElement(node, typ, depth, children); err != nil {
+		return err
+	}
+	return validateCatalogKeys(node, element, depth)
+}
+
+// validateCatalogKeys applies the key rules the embed catalog gives every
+// element, after its own checks: top-level placement, required keys, keys it
+// never carries (null counts as absent) and its closed field set.
+func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error {
+	if e.TopLevel && depth != 0 {
+		return fmt.Errorf("%s must be a top-level block", e.Type)
+	}
+	for _, key := range e.Required {
+		if node[key] == nil {
+			return fmt.Errorf("%s requires %s", e.Type, key)
+		}
+	}
+	for _, key := range e.Forbidden {
+		if node[key] != nil {
+			return fmt.Errorf("%s cannot carry %s", e.Type, key)
+		}
+	}
+	if e.Fields != nil {
+		for key := range node {
+			if !slices.Contains(e.Fields, key) {
+				return fmt.Errorf("unexpected %s field %s", e.Type, key)
+			}
+		}
+	}
+	return nil
+}
+
+// validateElement checks one element's own values.
+func validateElement(node map[string]any, typ string, depth int, children []any) error {
 	switch typ {
 	case "quiz":
 		return validateQuiz(node)
@@ -687,8 +707,6 @@ func validateNode(node map[string]any, depth int) error {
 
 	case "flashcard_front", "flashcard_back", "mermaid_caption":
 		return validateTextElement(node)
-	case "quiz_prompt", "quiz_option", "quiz_explanation":
-		return errors.New("obsolete quiz child node")
 	case "flashcards":
 		return validateFlashcards(node)
 	case "flashcard":
@@ -702,7 +720,7 @@ func validateNode(node map[string]any, depth int) error {
 			return err
 		}
 		return validateMediaWidth(node)
-	case "image", "audio", "file":
+	case "audio", "file":
 		return validateMedia(node, typ)
 	case RefType:
 		return validateMaterialRef(node)
@@ -1152,8 +1170,8 @@ func ExtractIndexText(raw string) (string, error) {
 }
 
 var (
-	indexContainers = set("callout", "column_group", "column", "toggle", "details")
-	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "image", "audio", "file",
+	indexContainers = set("callout", "column_group", "column")
+	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "audio", "file",
 		"video", "mermaid", HTMLEmbedType, RefType, "quiz", "flashcards")
 )
 
@@ -1359,15 +1377,12 @@ func editorAssetIDs(nodes []map[string]any) []string {
 // removes media nodes, quiz images and card images whose source asset was not
 // copied (and a question whose part loses all content; a card keeps its text). A clone never carries pending or
 // failed asset rows, so preserving those references would create a document
-// that can never render successfully. Nor does it carry a pending quiz or
-// flashcards reference (DropPendingRefs): its fence body holds the answer
-// keys, which the cloner may not read.
+// that can never render successfully.
 func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, error) {
 	doc, err := Parse(raw)
 	if err != nil {
 		return "", err
 	}
-	DropPendingRefs(&doc)
 	var rewrite func(map[string]any) (map[string]any, bool)
 	rewrite = func(node map[string]any) (map[string]any, bool) {
 		if q, ok := node["question"].(map[string]any); ok && node["type"] == "quiz_question" && !questions.RewriteAssetIDs(q, idMap) {

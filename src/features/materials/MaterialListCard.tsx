@@ -34,7 +34,11 @@ export function materialKindLabel(kind: MaterialListItem['kind']): string {
       return m.editor_quiz();
     case 'flashcards':
       return m.editor_flashcards();
-    default:
+    case 'mindmap':
+      return m.generate_kind_mindmap();
+    case 'diagram':
+      return m.generate_kind_diagram();
+    case 'note':
       return m.create_kind_note();
   }
 }

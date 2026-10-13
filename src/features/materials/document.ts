@@ -1,3 +1,4 @@
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { Question, QuestionBlock } from '@/api/types';
 import {
   questionBlockSchema,
@@ -104,10 +105,8 @@ export interface HtmlEmbedElement extends MaterialElement {
 }
 
 export const HTML_EMBED_TYPE = 'html_embed';
-// IMPORTANT: KEEP IN SYNC WITH server/internal/materialdoc/document.go and
-// collaboration-rs/crates/notes/src/material.rs
-export const HTML_EMBED_MAX_BYTES = 64 * 1024;
-export const HTML_EMBED_MAX_COUNT = 10;
+export const HTML_EMBED_MAX_BYTES = EMBED_CATALOG.limits.HTML_EMBED_MAX_BYTES;
+export const HTML_EMBED_MAX_COUNT = EMBED_CATALOG.limits.HTML_EMBED_MAX_COUNT;
 
 export function htmlBytes(html: string): number {
   return new TextEncoder().encode(html).length;
@@ -143,55 +142,23 @@ export type CustomMaterialElement =
   | HtmlEmbedElement;
 
 export const MATERIAL_REF_TYPE = 'material_ref';
-const MATERIAL_REF_KINDS = new Set<string>(['quiz', 'flashcards']);
 
-const CUSTOM_TYPES = new Set([
-  'chart',
-  'plot',
-  'graph',
-  'quiz_prompt',
-  'quiz_option',
-  'quiz_explanation',
-  'quiz',
-  'quiz_question',
-  'flashcards',
-  'flashcard',
-  'flashcard_front',
-  'flashcard_back',
-  'mermaid',
-  'mermaid_caption',
-  MATERIAL_REF_TYPE,
-  HTML_EMBED_TYPE,
-]);
-const MEDIA_TYPES = new Set(['img', 'image', 'audio', 'file']);
+type CatalogElement = (typeof EMBED_CATALOG.elements)[number];
+/** Every element type a document may hold, from the embed catalog
+ * (src/api/embeds.generated.ts, openwiki/embeds.md). */
+const ELEMENTS = new Map<string, CatalogElement>(
+  EMBED_CATALOG.elements.map((element) => [element.type, element])
+);
+const MATERIAL_REF_KINDS = new Set<string>(
+  EMBED_CATALOG.materialKinds
+    .filter((kind) => 'item' in kind && kind.item)
+    .map((kind) => kind.kind)
+);
 /** The one width a resizable block stores: what MediaFrame's resize handles
- * write, a whole percentage from 20 to 100. The Node and Go validators refuse
- * any other (MEDIA_WIDTH, mediaWidth), so an imported document carrying one
- * fails here instead of getting the note's room refused. */
+ * write, a whole percentage from MEDIA_WIDTH_MIN to MEDIA_WIDTH_MAX. Go and
+ * the collaboration server refuse any other, so an imported document carrying
+ * one fails here instead of getting the note's room refused. */
 const MEDIA_WIDTH = /^(?:[2-9][0-9]|100)%$/;
-const RESIZABLE_TYPES = new Set([
-  'img',
-  'video',
-  'mermaid',
-  'diagram',
-  'mindmap',
-  'chart',
-  'plot',
-  'graph',
-]);
-// The only fields a figure and an interactive block store; anything else
-// (the interactive block's old `title`) is refused, as Go and the
-// collaboration server refuse it. IMPORTANT: KEEP IN SYNC WITH
-// server/internal/materialdoc/document.go and
-// collaboration-rs/crates/notes/src/material.rs.
-const FIGURE_FIELDS = new Set(['id', 'type', 'block', 'children', 'width']);
-const HTML_EMBED_FIELDS = new Set([
-  'id',
-  'type',
-  'html',
-  'caption',
-  'children',
-]);
 const YOUTUBE_VIDEO_ID = /^[A-Za-z0-9_-]{11}$/;
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -223,23 +190,53 @@ function hasId(value: MaterialElement): boolean {
   return typeof value.id === 'string' && value.id.length > 0;
 }
 
-function onlyFields(element: MaterialElement, fields: Set<string>): boolean {
-  return Object.keys(element).every((key) => fields.has(key));
+function catalogKeys(
+  element: CatalogElement,
+  key: 'assets' | 'fields' | 'forbidden' | 'required'
+): readonly string[] | undefined {
+  return (element as { [name in typeof key]?: readonly string[] })[key];
 }
 
-/** `depth` 0 is a top-level block: figures and interactive blocks are only
- * top-level. */
-function validateCustomElement(
+/** The embed catalog's key rules every element shares, after its own checks:
+ * top-level placement, required keys, keys it never carries (null counts as
+ * absent), its closed field set and a resizable block's width. A reference
+ * imported from a fence carries its body in `pending` until its row exists
+ * (pendingRefs.ts, markdownConvert.ts): the store refuses one, the editor's
+ * import does not. */
+function followsCatalog(
   element: MaterialElement,
+  catalog: CatalogElement,
   depth: number
 ): boolean {
+  if ('topLevel' in catalog && catalog.topLevel && depth !== 0) return false;
+  if (catalogKeys(catalog, 'required')?.some((key) => element[key] == null))
+    return false;
+  if (
+    catalogKeys(catalog, 'forbidden')?.some(
+      (key) =>
+        element[key] != null &&
+        !(key === 'pending' && element.type === MATERIAL_REF_TYPE)
+    )
+  )
+    return false;
+  const fields = catalogKeys(catalog, 'fields');
+  if (fields && Object.keys(element).some((key) => !fields.includes(key)))
+    return false;
+  return !(
+    'resizable' in catalog &&
+    catalog.resizable &&
+    element.width !== undefined &&
+    (typeof element.width !== 'string' || !MEDIA_WIDTH.test(element.width))
+  );
+}
+
+/** One element's own values; the catalog's key rules follow. */
+function validateCustomElement(element: MaterialElement): boolean {
   switch (element.type) {
     case 'chart':
     case 'plot':
     case 'graph': {
       if (
-        depth !== 0 ||
-        !onlyFields(element, FIGURE_FIELDS) ||
         !hasId(element) ||
         element.children.length !== 1 ||
         !isTextNode(element.children[0]) ||
@@ -292,10 +289,6 @@ function validateCustomElement(
         return false;
       }
     }
-    case 'quiz_prompt':
-    case 'quiz_option':
-    case 'quiz_explanation':
-      return false;
     case 'flashcard':
       return (
         hasId(element) &&
@@ -327,8 +320,6 @@ function validateCustomElement(
       );
     case HTML_EMBED_TYPE:
       return (
-        depth === 0 &&
-        onlyFields(element, HTML_EMBED_FIELDS) &&
         hasId(element) &&
         typeof element.html === 'string' &&
         htmlBytes(element.html) <= HTML_EMBED_MAX_BYTES &&
@@ -360,23 +351,21 @@ function validateCustomElement(
   }
 }
 
-function validateMediaElement(element: MaterialElement): boolean {
-  if (element.type === 'video') {
+/** A YouTube video names its video; an image, audio or file block (an element
+ * whose asset is its own `assetId`) names a non-empty asset. */
+function validateMediaElement(
+  element: MaterialElement,
+  catalog: CatalogElement
+): boolean {
+  if (element.type === 'video')
     return (
       element.provider === 'youtube' &&
       typeof element.videoId === 'string' &&
-      YOUTUBE_VIDEO_ID.test(element.videoId) &&
-      element.assetId == null &&
-      element.url == null &&
-      element.src == null
+      YOUTUBE_VIDEO_ID.test(element.videoId)
     );
-  }
-  if (!MEDIA_TYPES.has(element.type)) return true;
   return (
-    typeof element.assetId === 'string' &&
-    element.assetId.length > 0 &&
-    element.url == null &&
-    element.src == null
+    !catalogKeys(catalog, 'assets')?.includes('assetId') ||
+    (typeof element.assetId === 'string' && element.assetId.length > 0)
   );
 }
 
@@ -388,14 +377,25 @@ export function isMaterialNode(
   if (!isElementNode(value)) return false;
   if (!value.children.every((child) => isMaterialNode(child, depth + 1)))
     return false;
-  if (!validateMediaElement(value)) return false;
-  if (
-    RESIZABLE_TYPES.has(value.type) &&
-    value.width !== undefined &&
-    (typeof value.width !== 'string' || !MEDIA_WIDTH.test(value.width))
-  )
-    return false;
-  return !CUSTOM_TYPES.has(value.type) || validateCustomElement(value, depth);
+  const catalog = ELEMENTS.get(value.type);
+  // A stored document holding a type the catalog does not list stays
+  // readable; building one to write refuses it (createMaterialDocument).
+  if (!catalog) return true;
+  return (
+    validateMediaElement(value, catalog) &&
+    validateCustomElement(value) &&
+    followsCatalog(value, catalog, depth)
+  );
+}
+
+/** The first element type in `value` the catalog does not list. */
+function unknownElementType(nodes: MaterialNode[]): string | undefined {
+  for (const node of nodes) {
+    if ('text' in node) continue;
+    if (!ELEMENTS.has(node.type)) return node.type;
+    const nested = unknownElementType(node.children);
+    if (nested) return nested;
+  }
 }
 
 export function isMaterialDocument(value: unknown): value is MaterialDocument {
@@ -471,6 +471,15 @@ export function assertMaterialDocument(input: unknown): MaterialDocument {
   return document;
 }
 
+/** A document built to be written: valid, and holding only element types the
+ * embed catalog lists, as every server refuses any other. */
+function assertWritable(document: MaterialDocument) {
+  const unknown = unknownElementType(document.value);
+  if (unknown) throw new Error(`Unknown element type ${unknown}`);
+  if (!isMaterialDocument(document))
+    throw new Error('Invalid or unsupported material document');
+}
+
 export function createMaterialDocumentWithMetrics(value: MaterialValue): {
   document: MaterialDocument;
   metrics: MaterialDocumentMetrics;
@@ -480,8 +489,7 @@ export function createMaterialDocumentWithMetrics(value: MaterialValue): {
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     value: normalized.value,
   };
-  if (!isMaterialDocument(document))
-    throw new Error('Invalid or unsupported material document');
+  assertWritable(document);
   return { document, metrics: normalized.metrics };
 }
 
@@ -490,8 +498,7 @@ export function createMaterialDocument(value: MaterialValue): MaterialDocument {
     schemaVersion: MATERIAL_SCHEMA_VERSION,
     value: normalizeMaterialValue(value),
   };
-  if (!isMaterialDocument(document))
-    throw new Error('Invalid or unsupported material document');
+  assertWritable(document);
   return document;
 }
 
@@ -716,14 +723,4 @@ export function flashcardsElementToCards(
     id: card.id,
     ...(card.image ? { image: { assetId: card.image.assetId } } : {}),
   }));
-}
-
-export function isCustomMaterialElement(
-  value: unknown
-): value is CustomMaterialElement {
-  return (
-    isElementNode(value) &&
-    CUSTOM_TYPES.has(value.type) &&
-    isMaterialNode(value)
-  );
 }

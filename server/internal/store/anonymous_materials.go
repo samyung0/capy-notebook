@@ -170,13 +170,7 @@ func (s *Store) AnonymousNote(ctx context.Context, id string) (AnonymousNote, er
 			sources = append(sources, embed.Provenance)
 		}
 	}
-	// A pending reference's fence body holds the answer keys (live-items
-	// REVIEW5): a visitor never gets it.
-	content, err := materialdoc.WithoutPendingRefs(mt.Content)
-	if err != nil {
-		return AnonymousNote{}, err
-	}
-	return AnonymousNote{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Content: json.RawMessage(content), UpdatedAt: mt.UpdatedAt, Author: mt.Author,
+	return AnonymousNote{ID: mt.ID, Name: mt.Title, Privacy: mt.Privacy, Content: json.RawMessage(mt.Content), UpdatedAt: mt.UpdatedAt, Author: mt.Author,
 		Provenance: WithEmbedSources(mt.Provenance, sources), Embeds: embeds}, nil
 }
 

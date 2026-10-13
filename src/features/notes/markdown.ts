@@ -31,6 +31,7 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
   options: {
     remarkPlugins: [remarkGfm, remarkMath, remarkMdx, remarkEmoji] as AnyNode,
     rules: {
+      chart: { serialize: serializeCustomBlock('chart') },
       // Intercept fenced code: custom block fences become custom void nodes;
       // everything else falls back to the default code_block/code_line shape.
       // Rules are keyed by Plate type: mdast `code` maps to `code_block`,
@@ -56,6 +57,7 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
         },
       },
       flashcards: { serialize: serializeCustomBlock('flashcards') },
+      graph: { serialize: serializeCustomBlock('graph') },
       html_embed: { serialize: serializeCustomBlock(HTML_EMBED_LANG) },
       // Export resolves references into inline blocks first
       // (documentAdapters); an unresolved one keeps its fence when pending.
@@ -66,6 +68,7 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
             : { children: [], type: 'paragraph' },
       },
       mermaid: { serialize: serializeCustomBlock('mermaid') },
+      plot: { serialize: serializeCustomBlock('plot') },
       quiz: { serialize: serializeCustomBlock('quiz') },
     } as AnyNode,
   },

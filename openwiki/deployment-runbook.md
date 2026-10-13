@@ -2910,8 +2910,8 @@ In one transaction it:
   the old name. Comment anchors fall back to their block and quote, as after
   a lineage compaction;
 - turns each pending quiz reference left in a note's `materials.content` into
-  an empty paragraph with its id (as `materialdoc.DropPendingRefs` does) and
-  bumps the note's revision;
+  an empty paragraph with its id and bumps the note's revision (no document
+  holds one since: every validator refuses `pending`, `openwiki/embeds.md`);
 - leaves live flashcard and quiz rooms: 0076/0077 drop every older one in the
   same release, and only the Rust server writes them after.
 

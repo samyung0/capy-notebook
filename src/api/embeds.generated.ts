@@ -242,6 +242,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mention_input",
+      "void": true,
       "inline": true,
       "materials": [
         "note",
@@ -253,7 +254,30 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "slash_input",
+      "void": true,
       "inline": true,
+      "materials": [
+        "note",
+        "quiz",
+        "flashcards",
+        "mindmap",
+        "diagram"
+      ]
+    },
+    {
+      "type": "footnoteReference",
+      "void": true,
+      "inline": true,
+      "materials": [
+        "note",
+        "quiz",
+        "flashcards",
+        "mindmap",
+        "diagram"
+      ]
+    },
+    {
+      "type": "footnoteDefinition",
       "materials": [
         "note",
         "quiz",

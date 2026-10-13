@@ -95,28 +95,29 @@ whatever drift is left), then the agent text.
 there is no legacy data (`html-embed` / `html_embed` / `Interactive`,
 `Diagram` / `mermaid`, mindmap and diagram both being one mermaid node).
 
-## Drift found 2026-10-13 (open)
+## Drift found 2026-10-13
 
-- `src/features/notes/markdown.ts` has no serialize rule for `chart`, `plot`
-  or `graph` although `customBlockCode` handles them; what Plate's serializer
-  does with them (copy as markdown) is unchecked.
+Fixed with the Go and browser catalog tests (see Progress): the missing
+`chart`/`plot`/`graph` markdown serialize rules, chat's `ScatterChart` stub,
+`RESIZABLE_TYPES`' `diagram` and `mindmap`, list cards labelling mindmaps and
+diagrams "Note", `blocks.ts`' unused fence writers, `MermaidBlockLabel.ts`,
+Go's `image`, `toggle` and `details` leftovers and Go's `pending` on a
+resolved reference. Open:
+
 - `inspect_document` prints a chart's or graph's `block` but not a plot's
   (`collaboration-rs/crates/notes/src/edit.rs:1375`).
 - Two media-type lists in Rust: `edit.rs:189` (8 types, adds `video`,
   `media_embed`, `youtube`, `excalidraw`) and `material.rs:24` (4).
-- `src/features/workspace/chat/generated.ts:32` stubs a `ScatterChart` that no
-  spec has.
-- `RESIZABLE_TYPES` (`src/features/materials/document.ts:172`) lists
-  `diagram` and `mindmap`, which are not node types.
-- `materialKindLabel` (`src/features/materials/MaterialListCard.tsx:31`)
-  labels mindmaps and diagrams "Note".
-- `src/features/materials/blocks.ts` is a second quiz/flashcards fence codec:
-  `quizMarkdown`/`flashcardsMarkdown` are unused, the parsers serve only
-  `src/mocks/`.
+- **Footnotes (decision needed).** Markdown import reads `[^1]` as
+  `footnoteReference` (inline void) and `footnoteDefinition` elements, which
+  notes already stored; the catalog lists them so nothing changes, but no
+  editor or View renders them: a reference draws nothing and a definition
+  shows its paragraphs. Render a reference as its number, or turn footnotes
+  into text on import.
 - `markdownConvert.ts` `draft()` and `dialogContext.tsx`
   `embeddedDraftFromFence` turn a fence into a create request twice; both drop
-  card images.
-- `src/features/materials/MermaidBlockLabel.ts` is imported nowhere.
+  card images. Needs a decision before merging them: a card image's asset id
+  in a pasted fence belongs to another document, so dropping it may be right.
 - The notes markdown corpus (`collaboration-rs/crates/notes/tests/corpus`) has
   no chart, plot or graph fence; it is a frozen Node oracle, so new cases go in
   by hand.
@@ -126,8 +127,6 @@ there is no legacy data (`html-embed` / `html_embed` / `Interactive`,
 - Chart kinds are listed four times in TS (`questions/types.ts`,
   `questions/validation.ts`, `chat/schema.ts`, `BlockEditor.tsx`) and
   `openui.py` keeps its own `_SKIPPED_PROPS`.
-- `lab/playground/configs/explain-teach.json:27` holds a stale copy of the
-  building skill (old quiz format, chart `unit`).
 
 ## Decisions (Epo, 2026-10-13)
 
@@ -233,3 +232,17 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   enforcing decision 1. The agent contract's `mediaBlocks` now comes from the
   catalog (byte-identical), and Go's HTML embed limits read it. Chat names
   stay `Diagram` and `Interactive` until the rename.
+- **Go and browser validators follow the catalog** (2026-10-13): unknown
+  types refused on every write and read through (decision 5), the catalog's
+  key rules applied generically, Go's `ValidateKind` placing every element by
+  the catalog's material kinds, and `pending` refused on any stored
+  reference (so the read-side strips `DropPendingRefs`/`WithoutPendingRefs`
+  are gone: a planted one fails closed). Tests:
+  `server/internal/materialdoc/catalog_test.go`,
+  `src/features/notes/embedCatalog.test.ts`. `mention_input` and
+  `slash_input` are inline voids (Plate's flags); the read-only kit registers
+  `placeholder` and `slash_input`. Not done yet on this side: the static
+  View's "unsupported block" placeholder, the chat rename with the agent text
+  and contract bump, and the Python lists (after the pipeline session's
+  agent-leniency branch lands, which touches `contract.py`, `tools.py` and
+  `questions.py`).

@@ -23,17 +23,27 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
 
 - **`elements`**: every element type a stored document or a room may hold,
   including Plate's transient ones (a media `placeholder` while it uploads,
-  `mention_input` and `slash_input` while typing). For each: `void`,
+  `mention_input` and `slash_input` while typing) and the markdown import's
+  footnotes (`footnoteReference`, `footnoteDefinition`; no block renders them
+  yet, so the read-only kit and the editor register only their flags,
+  `footnotePlugins.ts`). For each: `void`,
   `inline`, `topLevel` (only a top-level block), `required` keys besides
   `type` and `children`, `fields` (the closed key set, when there is one),
   `forbidden` keys, `sharedText` keys (held as a Y.Text so typing merges;
   only `mermaid.source`), `assets` (paths naming editor assets, `[]` walking a
   list), `resizable` (a width of `MEDIA_WIDTH_MIN`–`MEDIA_WIDTH_MAX` %),
   fixed `children`, and the `materials` kinds whose documents may hold it.
-  A type the catalog does not list is refused by every layer: a stored
-  document holding one stays readable with an "unsupported block" placeholder,
-  and editing it is refused until it is fixed (Epo 2026-10-13; enforcement
-  lands with each layer's tests).
+  A type the catalog does not list is refused by every write: a stored
+  document holding one stays readable (an "unsupported block" placeholder in
+  its place) and editing it is refused until it is fixed (Epo 2026-10-13).
+  Go refuses one in `ValidateKind`, which every write runs, while `Parse`
+  (reads) passes it through; the browser's `createMaterialDocument` (saves,
+  markdown import) refuses it while `parseMaterialDocument` reads it. Both
+  apply the catalog's key rules generically after each element's own checks
+  (`validateCatalogKeys`, `followsCatalog`), and Go's `ValidateKind` refuses
+  an element in a material kind the catalog does not list for it. The
+  browser's import keeps a reference's `pending` fence body until the row
+  exists; the store refuses one.
 - **`embeds`**: the rich kinds, with their name per layer, storage class,
   where they render (`surfaces`) and who edits them (`edit.user` surfaces,
   `edit.agent` tools):
@@ -72,6 +82,9 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
    and run `pnpm gen:openapi`. `TestCatalogIsConsistent` checks that every
    name it uses points at something listed (children, material kinds, the
    element holding an embed, agent tools).
-2. Each layer's catalog test then names what is missing there: the Go and
-   Rust validators, room admission, the editor and static plugins, the
-   markdown rules, chat's components and the agent text.
+2. Each layer's catalog test then names what is missing there:
+   `server/internal/materialdoc/catalog_test.go` (Go's validator, over the
+   every-block note and a document of each material kind: add a sample of a
+   new element there), `src/features/notes/embedCatalog.test.ts` (the
+   read-only plugin kit, and each kind's fence in and out: add a fence body
+   for a new kind), and the collaboration server's tests (todo-embeds.md).

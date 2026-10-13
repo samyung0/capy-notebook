@@ -1,5 +1,6 @@
 /* Markdown fence adapters for the universal Plate material document. */
 import YAML from 'yaml';
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { FlashcardContent, QuizBlock } from '@/features/materials/blocks';
 import {
   type CustomMaterialElement,
@@ -28,16 +29,12 @@ export const MATERIAL_REF_KEY = MATERIAL_REF_TYPE;
 /** Fence language of the interactive HTML block (`html_embed` nodes). */
 export const HTML_EMBED_LANG = 'html-embed';
 
-export const CUSTOM_BLOCK_LANGS = [
-  QUIZ_KEY,
-  FLASHCARDS_KEY,
-  MERMAID_KEY,
-  'chart',
-  'plot',
-  'graph',
-  HTML_EMBED_LANG,
-] as const;
-export type CustomBlockLang = (typeof CUSTOM_BLOCK_LANGS)[number];
+/** Every embed's fence language (the embed catalog). */
+export const CUSTOM_BLOCK_LANGS = EMBED_CATALOG.embeds.map(
+  (embed) => embed.fence.lang
+);
+export type CustomBlockLang =
+  (typeof EMBED_CATALOG.embeds)[number]['fence']['lang'];
 
 export function isCustomBlockLang(lang: unknown): lang is CustomBlockLang {
   return (
@@ -76,7 +73,8 @@ export function customBlockNode(
     return { block, children: [{ text: '' }], id: uid('block'), type };
   }
   if (type === HTML_EMBED_LANG) return htmlEmbedFenceNode(code);
-  return mermaidNode(code);
+  if (type === MERMAID_KEY) return mermaidNode(code);
+  throw new Error(`No block reads a ${type} fence.`);
 }
 
 /** YAML `caption` and `html`; no fallback. Throws on a fence the block cannot

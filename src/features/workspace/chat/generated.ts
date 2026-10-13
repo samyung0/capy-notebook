@@ -29,7 +29,6 @@ const stubs = Object.fromEntries(
     'Row',
     'Chart',
     'Series',
-    'ScatterChart',
     'Point',
     'Plot',
     'Curve',

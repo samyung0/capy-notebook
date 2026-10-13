@@ -129,12 +129,6 @@ func (a *api) materialResponse(
 		return nil, materialContentError(err)
 	}
 	body.SharePath = a.s.MaterialSharePath(material)
-	// A note stored before fences were resolved ahead of insertion may still
-	// hold one, its body the answer keys: only the note's editors get it
-	// (live-items REVIEW5).
-	if material.Kind == "note" && !store.RoleCanEdit(role) {
-		materialdoc.DropPendingRefs(&body.Content)
-	}
 	// A note's footer also credits its live embeds: the app unions them with
 	// the document's current embeds (Epo 2026-10-11), so it gets them by id.
 	if material.Kind == "note" {

@@ -78,7 +78,11 @@ func jsonString(s string) string {
 }
 
 func TestPreview(t *testing.T) {
-	everyBlock, err := os.ReadFile("testdata/every-block-note.json")
+	everyBlockImport, err := os.ReadFile("testdata/every-block-note.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	everyBlock, err := ResolvePendingRefs(string(everyBlockImport), []string{"mat_quiz", "mat_cards"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,7 +194,7 @@ func TestPreview(t *testing.T) {
 		{
 			name:    "the every-block fixture stops at eight blocks",
 			kind:    "note",
-			content: string(everyBlock),
+			content: everyBlock,
 			want:    `{"kind":"note","blocks":[{"t":"h","text":"Every block heading one","level":1},{"t":"h","text":"Every block heading two","level":2},{"t":"h","text":"Every block heading three","level":3},{"t":"h","text":"Every block heading four","level":4},{"t":"h","text":"Every block heading five","level":5},{"t":"h","text":"Every block heading six","level":6},{"t":"p","text":"Marks: bold italic underline strike code x2 H2O highlight Ctrl red shaded large serif"},{"t":"p","text":"Inlines: a link,  and ."}]}`,
 		},
 		{

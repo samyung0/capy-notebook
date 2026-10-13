@@ -241,6 +241,7 @@
     },
     {
       "type": "mention_input",
+      "void": true,
       "inline": true,
       "materials": [
         "note",
@@ -252,7 +253,30 @@
     },
     {
       "type": "slash_input",
+      "void": true,
       "inline": true,
+      "materials": [
+        "note",
+        "quiz",
+        "flashcards",
+        "mindmap",
+        "diagram"
+      ]
+    },
+    {
+      "type": "footnoteReference",
+      "void": true,
+      "inline": true,
+      "materials": [
+        "note",
+        "quiz",
+        "flashcards",
+        "mindmap",
+        "diagram"
+      ]
+    },
+    {
+      "type": "footnoteDefinition",
       "materials": [
         "note",
         "quiz",
