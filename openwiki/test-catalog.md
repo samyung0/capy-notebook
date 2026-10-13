@@ -647,7 +647,7 @@ nonproduction ingest project. See the [journey setup and cleanup guide](../e2e/u
 
 | File                                                                | About                                                                                                                                                                                                                                                                                                  |
 | ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| [`e2e/uat/authorization.spec.ts`](../e2e/uat/authorization.spec.ts) | Short-lived Clerk Backend API sign-in tokens create real sessions that verify private-workspace visibility, non-disclosing unrelated-user denial, owner/editor workspace statistics, and write/denied collaboration-token modes across owner, editor, viewer, and unrelated accounts. |
+| [`e2e/uat/authorization.spec.ts`](../e2e/uat/authorization.spec.ts) | Short-lived Clerk Backend API sign-in tokens create real sessions that verify private-workspace visibility, non-disclosing unrelated-user denial, owner/editor workspace statistics, and collaboration-token modes across accounts (owner and editor write, viewer read for live View, unrelated account 404). |
 
 Supporting configuration: [`e2e/uat/playwright.uat.config.ts`](../e2e/uat/playwright.uat.config.ts)
 fails closed unless authorization is exactly `true`, all UAT hosts are explicitly
