@@ -995,7 +995,11 @@ indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table
 and Image options in context, Clear formatting). Placeholders that do nothing
 stay hidden: Line spacing's empty Paragraph spacing heading. Cut, Copy and
 Paste are left out of the menus (a host click cannot reach the frame's
-clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
+clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too),
+over body paragraphs only (not tables, headers, footers or notes). Page setup
+and Insert › Watermark change only the open editor's document model, outside
+the Yjs state Capy saves, so neither reaches the saved file or co-editors
+(DOCX parity checklist, `bench/parity/fixtures/docx.tsv`).
 
 Format › Table ▸ (Google Docs' place) has Vertical alignment ▸
 Top/Middle/Bottom and Table alignment ▸ Left/Center/Right (radio items ticked
