@@ -33,7 +33,6 @@ KIND_EMBEDDING = "embedding"
 # A search rerank: zero credits like a query embedding, labeled with the
 # reranker row it called.
 KIND_RERANK = "rerank"
-KIND_AUDIO = "audio"
 
 PURPOSE_AGENT = "agent"
 PURPOSE_TERMINAL = "terminal"
@@ -294,9 +293,7 @@ async def open_call(
     if spec is not None:
         provider = provider or elitellm.transport_provider_slug(spec)
         model = model or elitellm.transport_model_slug(spec)
-    if kind == KIND_AUDIO:
-        provider_timeout_s = cfg.elevenlabs_sync_timeout_s
-    elif state.settlement_mode == "ingest":
+    if state.settlement_mode == "ingest":
         provider_timeout_s = cfg.ingest_provider_timeout_s
     else:
         # Interactive streams are bounded by the backstop, not the idle timer.
@@ -614,98 +611,6 @@ def _finish_background_settlement(task: asyncio.Task[Any]) -> None:
         )
 
 
-async def settle_units(
-    *,
-    call_id: str,
-    kind: str,
-    purpose: str,
-    provider: str,
-    model: str,
-    units: int,
-    unit: str,
-    credit_micros: int | None = None,
-) -> RequestAccounting | None:
-    """Settle a provider resource measured in non-token units."""
-    state = current()
-    if state is None:
-        return None
-    if units < 0 or not unit:
-        raise AccountingError("provider units must be non-negative and named")
-    if state.settlement_mode == "ingest":
-        if credit_micros is None or credit_micros < 0:
-            raise AccountingError("ingest unit settlement requires snapshotted credits")
-        await _finish_known_receipt(
-            _retry_local_settlement(
-                _settle_ingest_units_sync,
-                state.session_id,
-                call_id,
-                kind,
-                purpose,
-                provider,
-                model,
-                units,
-                unit,
-                credit_micros,
-                deadline=state.receipt_deadlines.get(call_id),
-            )
-        )
-        state.settled_calls += 1
-        return state
-    payload = {
-        "sessionId": state.session_id,
-        "callId": call_id,
-        "kind": kind,
-        "purpose": purpose,
-        "thinking": "",
-        "provider": provider,
-        "model": model,
-        "units": units,
-        "unit": unit,
-    }
-    deadline = state.receipt_deadlines.get(call_id)
-    response = await _finish_known_receipt(
-        _post_settlement(payload, deadline=deadline)
-        if deadline is not None
-        else _post_settlement(payload)
-    )
-    state.credits_exhausted = bool(response.get("creditsExhausted"))
-    state.terminal_call_allowed = bool(response.get("terminalCallAllowed"))
-    state.settled_calls += 1
-    return state
-
-
-async def settle_ingest_units_for_session(
-    *,
-    session_id: str,
-    call_id: str,
-    kind: str,
-    purpose: str,
-    provider: str,
-    model: str,
-    units: int,
-    unit: str,
-    credit_micros: int,
-) -> None:
-    """Recover a pending artifact against the call's original reservation."""
-    if not cfg.dsn:
-        raise AccountingError("ingest unit recovery requires a database")
-    if not session_id or not call_id:
-        raise AccountingError("ingest unit recovery requires session and call ids")
-    await _retry_local_settlement(
-        _settle_ingest_units_sync,
-        session_id,
-        call_id,
-        kind,
-        purpose,
-        provider,
-        model,
-        units,
-        unit,
-        credit_micros,
-        deadline=None,
-    )
-
-
 async def _retry_local_settlement(
     function: Any,
     *args: Any,
@@ -783,7 +688,7 @@ def _settle_ingest_call_sync(
     usage: NormalizedUsage,
 ) -> None:
     """LLM calls made by ingest (summaries, standalone image captions) bill
-    their tokens; the only per-unit ingest rates are pages and audio seconds."""
+    their tokens; the only per-unit ingest rates are parsed pages."""
     from .. import registry
     from ..store import db
 
@@ -810,43 +715,6 @@ def _settle_ingest_call_sync(
                 model_version=spec.version,
                 usage=usage,
                 credit_micros=credit_micros,
-            )
-        conn.commit()
-        if result == "expired":
-            raise db.ProviderReceiptExpired("provider receipt deadline elapsed")
-
-
-def _settle_ingest_units_sync(
-    session_id: str,
-    call_id: str,
-    kind: str,
-    purpose: str,
-    provider: str,
-    model: str,
-    units: int,
-    unit: str,
-    credit_micros: int,
-) -> None:
-    from ..store import db
-
-    with db.connect() as conn:
-        with conn.cursor() as cur:
-            result = db.settle_ingest_provider_call(
-                cur,
-                session_id=session_id,
-                call_id=call_id,
-                kind=kind,
-                purpose=purpose,
-                thinking="",
-                provider=provider,
-                model=model,
-                catalog_provider_slug="",
-                catalog_model_slug="",
-                model_version=0,
-                usage=NormalizedUsage(),
-                credit_micros=credit_micros,
-                units=units,
-                unit=unit,
             )
         conn.commit()
         if result == "expired":

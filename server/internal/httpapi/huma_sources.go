@@ -99,7 +99,6 @@ func (a *api) getSourceUploadPolicy(
 		},
 	}
 	rates, err := a.s.ActiveResourceRates(ctx, []string{
-		store.ResourceAudioSecond,
 		store.ResourceDigitalParsePage,
 		store.ResourceOCRParsePage,
 	})
@@ -117,8 +116,6 @@ func (a *api) getSourceUploadPolicy(
 			Accept:                       "",
 			MaxBytes:                     maxBytes,
 			AllowNoExtension:             true,
-			AudioSecondCreditMicros:      rates[store.ResourceAudioSecond].CreditMicrosPerUnit,
-			AudioMaxDurationSeconds:      10 * 60 * 60,
 			DigitalParsePageCreditMicros: rates[store.ResourceDigitalParsePage].CreditMicrosPerUnit,
 			OCRParsePageCreditMicros:     rates[store.ResourceOCRParsePage].CreditMicrosPerUnit,
 		},

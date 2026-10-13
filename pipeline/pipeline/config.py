@@ -233,20 +233,6 @@ class Config:
     # patch grid, so this and the model's bbox decide the image-token cost.
     capture_max_edge: int = int(_env("CAPY_CAPTURE_MAX_EDGE", "1568"))
 
-    # Uploaded audio awaits ElevenLabs Scribe v2 in the ingest attempt. Starter
-    # admits 12 weighted units; a call costs min(4, ceil(duration / 480 seconds)).
-    elevenlabs_api_key: str = _env("ELEVENLABS_API_KEY", "")
-    elevenlabs_base_url: str = _env("ELEVENLABS_BASE_URL", "https://api.elevenlabs.io")
-    elevenlabs_sync_timeout_s: int = int(
-        _env("CAPY_ELEVENLABS_SYNC_TIMEOUT_S", "43200")
-    )
-    elevenlabs_concurrency_units: int = int(
-        _env("CAPY_ELEVENLABS_CONCURRENCY_UNITS", "12")
-    )
-    audio_max_duration_seconds: int = int(
-        _env("CAPY_AUDIO_MAX_DURATION_SECONDS", "36000")
-    )
-
     # Shape of deterministic CSV/TSV row text. Bump to keep donor reuse honest
     # if header inference or row formatting changes.
     tabular_text_version: str = _env("CAPY_TABULAR_TEXT_VERSION", "v1")
@@ -293,9 +279,6 @@ for key, value in (
     ("CAPY_INTERACTIVE_STREAM_MAX_S", cfg.interactive_stream_max_s),
     ("CAPY_INTERACTIVE_STREAM_IDLE_S", cfg.interactive_stream_idle_s),
     ("CAPY_INGEST_PROVIDER_TIMEOUT_S", cfg.ingest_provider_timeout_s),
-    ("CAPY_ELEVENLABS_CONCURRENCY_UNITS", cfg.elevenlabs_concurrency_units),
-    ("CAPY_ELEVENLABS_SYNC_TIMEOUT_S", cfg.elevenlabs_sync_timeout_s),
-    ("CAPY_AUDIO_MAX_DURATION_SECONDS", cfg.audio_max_duration_seconds),
 ):
     if value <= 0:
         raise ValueError(f"{key} must be positive")

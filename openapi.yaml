@@ -1915,7 +1915,6 @@ components:
         - page_limit
         - scanned_page_limit
         - image_pixel_limit
-        - audio_duration_limit
         - tabular_cell_limit
         - tabular_text_limit
       type: string
@@ -5310,12 +5309,6 @@ components:
           type: string
         allowNoExtension:
           type: boolean
-        audioMaxDurationSeconds:
-          format: int64
-          type: integer
-        audioSecondCreditMicros:
-          format: int64
-          type: integer
         digitalParsePageCreditMicros:
           format: int64
           type: integer
@@ -5339,8 +5332,6 @@ components:
         - accept
         - maxBytes
         - allowNoExtension
-        - audioSecondCreditMicros
-        - audioMaxDurationSeconds
         - digitalParsePageCreditMicros
         - ocrParsePageCreditMicros
       type: object

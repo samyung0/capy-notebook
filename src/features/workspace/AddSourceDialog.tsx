@@ -146,8 +146,6 @@ export interface PendingSource {
   analysisProgress?: SourceAnalysisProgress;
   analysisResult?: SourceAnalysisResult;
   analysisStatus: SourceAnalysisStatus;
-  audioDurationPending?: boolean;
-  audioDurationSeconds?: number | null;
   chapterId: string | null;
   chapterName: string | null;
   contentType: string;
@@ -170,28 +168,6 @@ function formatSize(bytes: number, estimated = false) {
       ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
       : `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return estimated ? `~${value}` : value;
-}
-
-function readAudioDuration(file: File): Promise<number | null> {
-  return new Promise((resolve) => {
-    const audio = document.createElement('audio');
-    const url = URL.createObjectURL(file);
-    const finish = (duration: number | null) => {
-      audio.removeAttribute('src');
-      audio.load();
-      URL.revokeObjectURL(url);
-      resolve(duration);
-    };
-    audio.preload = 'metadata';
-    audio.onloadedmetadata = () =>
-      finish(
-        Number.isFinite(audio.duration) && audio.duration > 0
-          ? audio.duration
-          : null
-      );
-    audio.onerror = () => finish(null);
-    audio.src = url;
-  });
 }
 
 function workspaceFileRoom(
@@ -327,7 +303,6 @@ function localRows(
         input ?? undefined,
         policy
       ),
-      audioDurationPending: kind === 'audio',
       chapterId: null,
       chapterName: null,
       contentType: file.type || 'application/octet-stream',
@@ -374,21 +349,12 @@ function setConnectResume(
   }
 }
 
-/** Expected cost of one source at the policy rates: audio by duration,
- * fast-parsed documents by digital/OCR page count, everything else free. */
+/** Expected cost of one source at the policy rates: fast-parsed documents
+ * by digital/OCR page count, everything else free. */
 function sourceCreditEstimate(
-  source: Pick<
-    PendingSource,
-    'analysisResult' | 'audioDurationSeconds' | 'kind' | 'parseMode'
-  >,
+  source: Pick<PendingSource, 'analysisResult' | 'parseMode'>,
   uploadPolicy: SourceUploadPolicy
 ): number {
-  if (source.kind === 'audio' && source.audioDurationSeconds != null) {
-    return (
-      Math.ceil(source.audioDurationSeconds) *
-      uploadPolicy.audioSecondCreditMicros
-    );
-  }
   if (source.parseMode !== 'fast' || !source.analysisResult) return 0;
   return calculateParseCreditMicros(source.analysisResult, {
     digitalPageRateMicros: uploadPolicy.digitalParsePageCreditMicros,
@@ -498,16 +464,8 @@ function useSourceBatch(
   const inspectSource = useCallback(
     (source: PendingSource) => {
       enqueueAnalysis(source);
-      if (source.kind === 'audio' && source.file) {
-        void readAudioDuration(source.file).then((duration) =>
-          patchSource(source.key, {
-            audioDurationPending: false,
-            audioDurationSeconds: duration,
-          })
-        );
-      }
     },
-    [enqueueAnalysis, patchSource]
+    [enqueueAnalysis]
   );
 
   useEffect(() => {
@@ -729,34 +687,6 @@ function SourceList({
                   </div>
                 )
               ))}
-            {source.kind === 'audio' && (
-              <p
-                className={cn('t-meta text-fg-muted', {
-                  'text-tint-error-fg':
-                    source.audioDurationSeconds != null &&
-                    source.audioDurationSeconds >
-                      uploadPolicy.audioMaxDurationSeconds,
-                })}
-              >
-                {source.audioDurationPending
-                  ? m.source_audio_reading_duration()
-                  : source.audioDurationSeconds == null
-                    ? m.source_audio_estimate_unavailable()
-                    : source.audioDurationSeconds >
-                        uploadPolicy.audioMaxDurationSeconds
-                      ? m.source_audio_too_long({
-                          hours: uploadPolicy.audioMaxDurationSeconds / 3600,
-                        })
-                      : m.source_audio_estimate({
-                          cost: (
-                            (Math.ceil(source.audioDurationSeconds) *
-                              uploadPolicy.audioSecondCreditMicros) /
-                            1_000_000
-                          ).toLocaleString(),
-                          minutes: Math.ceil(source.audioDurationSeconds / 60),
-                        })}
-              </p>
-            )}
           </li>
         ))}
       </ul>
@@ -791,9 +721,6 @@ function SourceFooter({
     !uploadPolicy ||
     sources.some(
       (source) =>
-        source.audioDurationPending ||
-        (source.audioDurationSeconds != null &&
-          source.audioDurationSeconds > uploadPolicy.audioMaxDurationSeconds) ||
         sourceAnalysisBlocksSubmit(source, uploadPolicy) ||
         source.analysisStatus === 'error' ||
         nameTooLong(source.name)

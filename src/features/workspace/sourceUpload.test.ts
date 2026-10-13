@@ -108,10 +108,10 @@ describe('upload batch limits', () => {
   it('treats text and parsed files as ingest jobs', () => {
     expect(needsIngestJob('notes.md', 'md', 'none')).toBe(true);
     expect(needsIngestJob('paper.pdf', 'pdf', 'fast')).toBe(true);
-    expect(needsIngestJob('recording.mp3', 'audio', 'none')).toBe(true);
     expect(needsIngestJob('image.avif', 'image', 'none')).toBe(true);
     expect(needsIngestJob('data.csv', 'sheet', 'none')).toBe(true);
     expect(needsIngestJob('archive.bin', 'unknown', 'none')).toBe(false);
+    expect(needsIngestJob('recording.mp3', 'audio', 'none')).toBe(false);
   });
 
   it('detects a terminal ingest status from the file cache', () => {

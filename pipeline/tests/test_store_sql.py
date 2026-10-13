@@ -166,7 +166,7 @@ def test_provider_capacity_leases_enforce_weighted_limit(workspace):
         assert db.acquire_provider_capacity(
             cur,
             lease_id=first,
-            provider="elevenlabs:scribe_v2",
+            provider="deepinfra:capacity-test",
             units=4,
             capacity=4,
             lease_seconds=60,
@@ -174,25 +174,16 @@ def test_provider_capacity_leases_enforce_weighted_limit(workspace):
         assert not db.acquire_provider_capacity(
             cur,
             lease_id=second,
-            provider="elevenlabs:scribe_v2",
+            provider="deepinfra:capacity-test",
             units=1,
             capacity=4,
             lease_seconds=60,
         )
-        before = cur.execute(
-            "SELECT expires_at FROM provider_capacity_leases WHERE id=%s", (first,)
-        ).fetchone()[0]
-        assert db.renew_provider_capacity(cur, first, 120)
-        after = cur.execute(
-            "SELECT expires_at FROM provider_capacity_leases WHERE id=%s", (first,)
-        ).fetchone()[0]
-        assert after > before
         db.release_provider_capacity(cur, first)
-        assert not db.renew_provider_capacity(cur, first, 120)
         assert db.acquire_provider_capacity(
             cur,
             lease_id=second,
-            provider="elevenlabs:scribe_v2",
+            provider="deepinfra:capacity-test",
             units=1,
             capacity=4,
             lease_seconds=60,
@@ -496,8 +487,6 @@ def test_applied_ingest_provider_receipt_exact_replay_is_duplicate(workspace):
             anomaly="test_anomaly",
         ),
         "credit_micros": 123_456,
-        "units": 130,
-        "unit": "tokens",
     }
     with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
         cur.execute("UPDATE files SET source_etag='etag-a' WHERE id=%s", (file_id,))
@@ -628,8 +617,6 @@ def test_applied_ingest_provider_receipt_conflicting_replays_are_rejected(worksp
         "model_version": 7,
         "usage": usage,
         "credit_micros": 123_456,
-        "units": 130,
-        "unit": "tokens",
     }
     changed_usage = {
         field: NormalizedUsage(
@@ -655,8 +642,6 @@ def test_applied_ingest_provider_receipt_conflicting_replays_are_rejected(worksp
         {"model_version": 8},
         *({"usage": changed} for changed in changed_usage.values()),
         {"credit_micros": 123_457},
-        {"units": 131},
-        {"unit": "seconds"},
     ]
 
     with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
@@ -724,9 +709,9 @@ def test_ingest_provider_receipt_expires_even_before_sweeper(workspace):
             cur,
             reservation_id,
             call_id,
-            "audio",
-            "transcription",
-            "",
+            "llm",
+            "ingest_summary",
+            "instant",
             job_attempt_id=attempt_id,
             receipt_timeout_seconds=1,
         )
@@ -741,18 +726,16 @@ def test_ingest_provider_receipt_expires_even_before_sweeper(workspace):
             cur,
             session_id=reservation_id,
             call_id=call_id,
-            kind="audio",
-            purpose="transcription",
-            thinking="",
-            provider="elevenlabs",
-            model="scribe_v2",
-            catalog_provider_slug="",
-            catalog_model_slug="",
-            model_version=0,
-            usage=NormalizedUsage(),
+            kind="llm",
+            purpose="ingest_summary",
+            thinking="instant",
+            provider="deepseek",
+            model="deepseek/flash",
+            catalog_provider_slug="deepseek",
+            catalog_model_slug="flash",
+            model_version=1,
+            usage=NormalizedUsage(input_tokens=44, output_tokens=5),
             credit_micros=0,
-            units=10,
-            unit="seconds",
         )
         assert result == "expired"
 

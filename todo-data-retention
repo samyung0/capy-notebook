@@ -56,11 +56,8 @@ part of the account/workspace lifecycle fixes.
 - Decide how to handle Stripe webhook events that cannot yet be correlated to a
   user. Their raw payload cannot be scrubbed by user purge until correlation
   succeeds, so define a bounded retention/redaction rule for unmatched events.
-- Define the external retention and deletion guarantees for synchronous
-  ElevenLabs transcription requests; Capy Notebook stores no provider transcript
-  id or webhook correlation row after the response completes.
 - Inventory object storage, cache objects, collaboration persistence, vector/RAG
-  tenants, parse/transcription providers, email delivery, Clerk, Stripe, Sentry,
+  tenants, LLM and embedding providers, email delivery, Clerk, Stripe, Sentry,
   and PostHog. Record deletion APIs, retention guarantees, and retry/alert paths.
 - Specify backup deletion/expiry and restoration handling so a backup restore
   cannot silently resurrect data whose deletion deadline has passed.

@@ -21,7 +21,7 @@ dependencies = [
   # so both read the same glyphs.
   "pymupdf==1.28.2",
   "fastapi>=0.110",
-  "python-multipart>=0.0.9", # FastAPI UploadFile (/transcribe) form parsing
+  "python-multipart>=0.0.9", # Form parsing for the parser app routes the tests drive
   "uvicorn[standard]>=0.29",
   "pydantic>=2",
   "python-dotenv>=1.0",

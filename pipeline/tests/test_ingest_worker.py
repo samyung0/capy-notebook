@@ -17,17 +17,6 @@ from pipeline.ingest import worker
 from pipeline.parse import parser_client
 
 
-def test_audio_job_timeout_preserves_pre_provider_ingest_budget(monkeypatch):
-    monkeypatch.setattr(worker.cfg, "elevenlabs_sync_timeout_s", 1_200)
-    audio_job = {
-        "type": "ingest",
-        "payload": {"processingPlan": {"route": ingest_plan.AUDIO_TRANSCRIPTION}},
-    }
-
-    assert worker._job_timeout(audio_job, 900) == 900 + 1_200 + 300
-    assert worker._job_timeout({"type": "ingest", "payload": {}}, 900) == 900
-
-
 def test_source_refresh_publishes_only_its_ready_event(monkeypatch):
     events: list[str] = []
     monkeypatch.setattr(
@@ -305,11 +294,6 @@ def _ingest_payload(**overrides):
         "parseArtifact": _artifact(),
         "parseJobId": "job_parse",
         "resourceRates": {
-            "audio_transcription_second": {
-                "version": 1,
-                "unit": "second",
-                "creditMicrosPerUnit": 250_000,
-            },
             "digital_parse_page": {
                 "version": 2,
                 "unit": "page",
@@ -1253,64 +1237,6 @@ async def test_confirmed_parser_oom_is_terminal(monkeypatch):
         )
 
 
-async def test_audio_ingest_downloads_source_before_synchronous_transcription(
-    monkeypatch,
-):
-    from pipeline.jobs import CapacityWait
-
-    async def _pin(_workspace_id):
-        return {
-            "embedding_dim": 2560,
-            "embedding_provider_slug": "deepinfra",
-            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
-            "embedding_model_version": 1,
-        }
-
-    async def _chunks(**values):
-        assert values["local_path"] == "/shared/lecture.mp3"
-        assert values["source_key"] == "sources/lecture.mp3"
-        assert values["source_sha256"] == "aa" * 32
-        raise CapacityWait("provider capacity")
-
-    async def _donor(**_values):
-        return None
-
-    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
-    monkeypatch.setattr(worker, "_read_name", lambda *_a: "lecture.mp3")
-    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
-    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: True)
-    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
-    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
-    monkeypatch.setattr(
-        worker,
-        "_acquire_local_source",
-        lambda *_a: (
-            "/shared/lecture.mp3",
-            "sources/lecture.mp3",
-            "aa" * 32,
-            lambda: None,
-        ),
-    )
-    monkeypatch.setattr(worker.store, "find_ready_donor", _donor)
-    monkeypatch.setattr(worker, "_chunks_for", _chunks)
-    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
-
-    payload = _ingest_payload(
-        blobPath="sources/lecture.mp3",
-        kind="audio",
-    )
-    plan = _plan(ingest_plan.AUDIO_TRANSCRIPTION, format_name="mp3")
-    with pytest.raises(CapacityWait):
-        await worker._process_ingest_job(
-            {"id": "job_audio", "attempts": 1},
-            payload,
-            "f_1",
-            "ws_1",
-            "audio",
-            plan,
-        )
-
-
 async def test_a_missing_ingest_field_fails_without_retry():
     from pipeline.jobs import TerminalError
 
@@ -1572,8 +1498,7 @@ def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
     ) in writes
 
 
-@pytest.mark.parametrize("direct", ["image", "audio"])
-async def test_direct_donor_cache_failure_falls_through(monkeypatch, direct):
+async def test_image_donor_cache_failure_falls_through(monkeypatch):
     async def embedding_pin(_workspace_id):
         return {
             "embedding_provider_slug": "provider",
@@ -1589,11 +1514,6 @@ async def test_direct_donor_cache_failure_falls_through(monkeypatch, direct):
 
     monkeypatch.setattr(worker.caption_cache, "lookup", unavailable_caption)
     monkeypatch.setattr(
-        worker.blobstore,
-        "object_info",
-        lambda _key: (_ for _ in ()).throw(OSError("B2 unavailable")),
-    )
-    monkeypatch.setattr(
         worker.store,
         "attach_file_content",
         lambda **_kwargs: (_ for _ in ()).throw(
@@ -1608,11 +1528,7 @@ async def test_direct_donor_cache_failure_falls_through(monkeypatch, direct):
         ws="ws_1",
         name="diagram.png",
         kind="image",
-        route=(
-            ingest_plan.IMAGE_CAPTION
-            if direct == "image"
-            else ingest_plan.AUDIO_TRANSCRIPTION
-        ),
+        route=ingest_plan.IMAGE_CAPTION,
         donor={
             "id": "content_donor",
             "content_hash": "hash",

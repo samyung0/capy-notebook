@@ -98,7 +98,7 @@ def render(
     source: Path,
     artifact: Mapping[str, Any] | None,
 ) -> bytes | None:
-    """The WebP of page 1, or None for a route without one (store-only, audio,
+    """The WebP of page 1, or None for a route without one (store-only, raw or
     delimited text), a bundle without a page image, or an image format this
     Pillow cannot decode."""
     if plan.route == ingest_plan.DOCUMENT_PARSE:

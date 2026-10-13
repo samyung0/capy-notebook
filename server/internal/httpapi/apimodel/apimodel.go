@@ -182,8 +182,6 @@ type SourceUploadPolicy struct {
 	Accept                       string                        `json:"accept"`
 	MaxBytes                     int64                         `json:"maxBytes"`
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
-	AudioSecondCreditMicros      int64                         `json:"audioSecondCreditMicros"`
-	AudioMaxDurationSeconds      int                           `json:"audioMaxDurationSeconds"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
 	OCRParsePageCreditMicros     int64                         `json:"ocrParsePageCreditMicros"`
 }

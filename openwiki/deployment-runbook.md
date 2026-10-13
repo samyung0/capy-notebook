@@ -692,18 +692,6 @@ role grants in §8, then enter each environment's limits through Ops before
 allowing traffic. Runtime admission reads current limits without worker restarts.
 Do not copy production capacity into another environment automatically.
 
-`ELEVENLABS_API_KEY` is needed only by the Netcup ingest worker. Audio sends the
-model and presigned source URL as multipart fields and waits for the synchronous
-Scribe response, so there is no ElevenLabs webhook ID, secret, or gateway
-callback. Do not add the key to any `VITE_*` variable.
-
-Disable provider training in the ElevenLabs Data Use settings. Starter does not
-offer zero-retention mode: the app privacy policy must disclose ElevenLabs as an
-audio transcription processor and its retention before audio upload is enabled.
-Capy Notebook does not persist a provider transcript ID or webhook payload, but must
-not claim that provider logs or backups are
-immediately erased. Do not process PHI without an enterprise agreement.
-
 Gateway env once those hostnames exist:
 
 ```
@@ -1236,8 +1224,7 @@ those services start.
    derives `DATABASE_URL`, `REDIS_URL`, and `GATEWAY_URL` from that environment's
    `POSTGRES_PASSWORD` and `CAPY_PRIVATE_BIND_ADDRESS`. It supplies `PIPELINE_SECRET`
    to the import
-   worker and `ELEVENLABS_API_KEY` for
-   uploaded-audio transcription. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
+   worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
    embedding route and `RELACE_API_KEY` for the ZAI GLM routing exception
    (Relace) used by standalone-image captions; the app host's
    `retrieval` and `ops` containers carry the same `RELACE_API_KEY` for chat.
@@ -1246,9 +1233,7 @@ those services start.
    `PARSER_BIND_ADDRESS`; its bearer token remains defense in depth. The
    parser is OpenDataLoader 2.5.7 plus the refined repairs and RapidOCR on
    text-less pages (`parser/odl/`), with the RapidOCR models baked into the
-   image (no `parser_models` volume). Synchronous audio calls
-   use `CAPY_ELEVENLABS_SYNC_TIMEOUT_S` (12 hours by default) so the documented
-   10-hour source limit is not cut off by the ordinary 20-minute ingest timeout.
+   image (no `parser_models` volume).
    Configure its platform model capacities through Ops (§1.4) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.

@@ -24,7 +24,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images / transcribes audio, embeds, and writes the file descriptor. Each replica runs one job at a time |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
 | Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
@@ -57,11 +57,9 @@ flowchart LR
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
   Worker -->|image| ImageCaption[ZAI GLM via Relace]
-  Worker -->|audio| AudioTranscript[Synchronous ElevenLabs Scribe v2]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
   Worker -->|parsed document| Chunk[Heading-aware chunker + heading retention + confidence]
   ImageCaption --> Chunk
-  AudioTranscript --> Chunk
   DirectText --> Chunk
   Chunk --> Index[Embed + file descriptor]
   Index --> Store[(rag_chunks / summaries)]
@@ -224,7 +222,7 @@ changed. Until a workspace model-migration job exists:
 | Type | Enqueued by | Does |
 | --- | --- | --- |
 | Parse | Go upload finalization for `document_parse` plans | Validate → download/hash once → exact-vector donor reuse or parser artifact publication → atomic ingest handoff |
-| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk (heading retention, extraction confidence) / caption a standalone image / transcribe → embed → two-tier file summary |
+| Ingest | Go for direct routes; parse coordinator for documents | Extract a completed document artifact or normalize a direct source → chunk (heading retention, extraction confidence) / caption a standalone image → embed → two-tier file summary |
 
 Both stages get one retry (two total attempts), exponential backoff
 (`not_before`), a per-type wall-clock timeout, and a heartbeat lease so a dead
@@ -276,7 +274,7 @@ silently taking a nearby route.
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
 | supported image | Pinned ZAI GLM-5.3-Flash call through Relace | faithful searchable caption | No |
-| supported audio | Presigned B2 source URL + synchronous ElevenLabs Scribe v2 | transcript | No |
+| supported audio | Store-only (playable in the viewer) | none | No |
 | unknown or legacy DOC/XLS/PPT | Store-only | none | No |
 
 HTML, RTF, XML, and source-code extensions have no dedicated handlers. They use
@@ -850,8 +848,8 @@ and bundles older than `CAPY_PARSE_SPOOL_TTL_HOURS` (two hours) that no pending
 or running job names, such as a bundle whose parse job ended before handoff.
 
 `files.indexed` is true only after retrieval chunks are written, or reused from
-identical canonical content. Direct image/audio/CSV/TSV routes get an ingest job
-even though they do not use the parser. Unknown and legacy store-only uploads finish
+identical canonical content. Direct image/CSV/TSV routes get an ingest job
+even though they do not use the parser. Audio, unknown and legacy store-only uploads finish
 `ready` with `indexed=false`: the original blob stays viewable/downloadable, and
 chat/generate cannot search it. A failed ingest keeps the original blob and
 lands `failed`/unindexed; the UI shows a banner rather than replacing the
@@ -859,7 +857,7 @@ viewer.
 
 #### Ingest limits
 
-Six limits are checked on the real content during ingest. A file over one is
+Five limits are checked on the real content during ingest. A file over one is
 not failed: the worker raises `InputLimitError(code)`, the job and its attempt
 fail with that `error_code` (logged at info, no Sentry event), and the file
 ends `ready`, `indexed=false`, with `files.index_limit` set to the code
@@ -877,7 +875,6 @@ Indexing tab lists the change as failed.
 | `page_limit` | Pages in a fast-parse PDF/DOCX/PPTX/XLSX | `CAPY_PARSE_MAX_PAGES` (1,400) | Browser analysis blocks submit; the reservation refuses a claimed `pageCount` over it. Imports and edited Office sources are only checked by the parser. |
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
-| `audio_duration_limit` | `ffprobe` duration | `CAPY_AUDIO_MAX_DURATION_SECONDS` (10 h) | Browser blocks submit from the policy's `audioMaxDurationSeconds` (a fixed 10 h in Go); the server does not check. |
 | `tabular_cell_limit` | Raw delimiter bytes in a CSV/TSV | 100,000 | No |
 | `tabular_text_limit` | Characters of rendered CSV/TSV row text | 64 Mi | No |
 
@@ -957,7 +954,7 @@ than treating a missing SQL value as an unfenced wildcard.
 Nothing calls a third-party parsing API. The former service could not return
 bounding boxes or images, needed polling, and capped files at 10 MB / 20 pages.
 
-### Direct image, audio, and delimited-text ingest
+### Direct image and delimited-text ingest
 
 The Go gateway never processes source media. It enforces the plan byte limit,
 stores the object, resolves the processing plan, snapshots the model pins, and
@@ -968,36 +965,19 @@ performs the planned work:
   frames for animated images, then captioned with the pinned vision model. The
   prompt asks for every visible label, table cell, number, unit, formula,
   diagram relationship, and uncertainty rather than a short visual summary;
-- audio duration is measured with `ffprobe`, capped at 10 hours, and submitted
-  to ElevenLabs Scribe v2 as multipart form fields containing the presigned B2
-  URL and model, without webhook fields. The same
-  ingest attempt waits under one absolute wall-clock provider timeout, settles
-  measured seconds, writes the reusable derived-text artifact, and continues
-  indexing. HTTP 408, 425, 429, and 5xx responses use the bounded ingest retry;
-  other 4xx responses fail the ingest as provider refusals;
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
   row text with explicit field names. Formulas remain literal source values.
   The file stops before parsing when it has more than 100,000 delimiter bytes
   (counted in the raw bytes, so quoted delimiters count too), and while
   rendering when the row text passes 64 Mi characters (see Ingest limits).
 
-Audio derived text is stored under
-`derived-text/{source_sha256}/...` and registered as `derived_text` in
-`artifact_cache`. A Postgres advisory lock on source hash ensures concurrent
-uploads perform at most one provider call. Deleting
-the last logical file drops its association, not the shared artifact; the same
-last-use TTL/reaper policy handles eventual cleanup. Image captions instead use the containing-resource associations described below.
-Cancellation during advisory-lock acquisition waits for the thread result and
-returns any late session lock before propagating cancellation.
+Image captions use the containing-resource associations described below.
 
 These B2 objects are reuse caches, not ingest success conditions. Each cache
 write makes three `put_object` attempts. If all three fail, the worker logs the
 failure and continues indexing from the provider result already in memory. It
 does not register an artifact key. Database registration has the same
-best-effort rule. For audio artifacts, after registration the worker verifies the deterministic B2
-key still exists, which closes the race with a cache deletion already in
-progress. A vanished object loses its cache row and the current ingest keeps its
-in-memory result. Updating `files.caption_blob_path` is diagnostic and follows
+best-effort rule. Updating `files.caption_blob_path` is diagnostic and follows
 the same best-effort rule; a failed pointer write cannot fail chunking or
 indexing. Caption association ownership and live reuse authorization are
 described below. Document parsing uses only its validated local handoff.
@@ -1017,35 +997,7 @@ mutations take the same prefix. Claim transitions lock job before attempt.
 Revocation, provider admission, and lease reclamation therefore serialize
 without a job-to-workspace, file-to-user, or job-to-attempt deadlock. Cleanup uses the same job-attempt fence.
 
-Audio has no special provider-state machine. There is no transcription row,
-polling loop, webhook route, provider transcript id, or provider DELETE worker.
-`provider_capacity_leases` only enforces ElevenLabs' weighted Starter
-concurrency across workers. A live request renews its five-minute lease every
-minute. If renewal cannot be confirmed before the locally tracked expiry, the
-worker cancels and closes the active HTTP request before releasing capacity; a
-killed worker still releases capacity within five minutes. On a completed
-request, the lease is released before receipt settlement or cache persistence;
-even an unusable successful response settles the already-known audio seconds.
-Capacity shutdown, exact settlement, and successful artifact persistence form
-one cancellation-shielded post-response continuation. Cancellation while the
-provider request is still uncertain continues to close the request, release the
-lease, and leave the call open for its receipt deadline. The worker's exact-claim
-heartbeat triggers that cancellation when deletion, replacement, or another
-terminal transition closes the durable job; a zero-row heartbeat does not leave
-the provider coroutine running.
-The audio job timer
-adds the ordinary ingest budget, the full 12-hour provider window, and the
-five-minute receipt grace rather than spending the provider window on download
-or indexing. Attempts, calls, credit sessions, reusable artifacts, and
-cancellation otherwise follow the same synchronous ingest bookkeeping used by
-other provider-backed steps.
-
 The Plate live-dictation feature and its temporary-audio route have been removed.
-
-The upload dialog reads local audio metadata and uses the active per-second
-rate returned by `GET /api/source-upload-policy`. An unreadable duration is
-shown as unavailable, never as zero. The worker's measured duration and the
-job's snapshotted rate remain authoritative for settlement.
 
 ### Figures are read at question time, not captioned
 
@@ -3268,7 +3220,7 @@ current chunk, with full coverage in the large-document reduction path.
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
-| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `ELEVENLABS_API_KEY`, `ELEVENLABS_BASE_URL`, `CAPY_ELEVENLABS_CONCURRENCY_UNITS`, `CAPY_ELEVENLABS_SYNC_TIMEOUT_S`, `CAPY_AUDIO_MAX_DURATION_SECONDS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. Scribe v2 is synchronous, has an absolute 12-hour request timeout, and defaults to 12 weighted Starter units, with each file consuming `min(4, ceil(duration_seconds / 480))`; audio is capped at 10 hours. |
+| Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
 `pipeline.use_compatible_event_loop()` is called by both entrypoints and by the

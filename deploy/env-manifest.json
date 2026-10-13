@@ -96,23 +96,11 @@
     "BANK_PRIVATE_B2_BUCKET": { "kind": "variable", "targets": ["local"] },
     "BANK_PRIVATE_B2_KEY_ID": { "kind": "secret", "targets": ["local"] },
     "BANK_PRIVATE_B2_APP_KEY": { "kind": "secret", "targets": ["local"] },
-    "CAPY_AUDIO_MAX_DURATION_SECONDS": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "CAPY_CAPTION_CACHE_TTL_DAYS": {
       "kind": "variable",
       "targets": ["coolify", "ingest-production", "ingest-shared"]
     },
     "CAPY_CAPTION_MAX_EDGE": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_ELEVENLABS_CONCURRENCY_UNITS": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
-    "CAPY_ELEVENLABS_SYNC_TIMEOUT_S": {
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
@@ -479,14 +467,6 @@
     "DEV_USER_ID": {
       "kind": "variable",
       "targets": ["local"]
-    },
-    "ELEVENLABS_API_KEY": {
-      "kind": "secret",
-      "targets": ["ingest-production", "ingest-queue"]
-    },
-    "ELEVENLABS_BASE_URL": {
-      "kind": "variable",
-      "targets": ["ingest-production"]
     },
     "EMAIL_BACKEND": {
       "kind": "variable",

@@ -958,7 +958,7 @@ live row references them.
 | Upload reserved                      | Creates a pending `upload_sessions` row and reserves the declared bytes against the workspace owner                                                                                                                | Browser receives a presigned PUT for an `incoming/` or `editor-assets/incoming/` key | Pending session is eligible for expiry after its presigned deadline                  |
 | Upload finalized                     | Creates the source file or editor asset, converts reserved bytes into used bytes, and marks the session completed                                                                                                  | Incoming object is promoted to its stable `sources/` or `editor-assets/` key         | Completed session remains temporarily as an idempotency record                       |
 | Upload abandoned/expired             | Marks the session expired and releases its storage reservation                                                                                                                                                     | Both incoming and possible promoted paths are queued, with a 24-hour presign grace   | Upload sweeper runs at startup and every minute, up to 100 expired sessions per pass |
-| File/asset deleted                   | Logical row is deleted; workspace deletion and account purge do this through foreign-key cascades too. Pending/running parse, ingest, import, audio, and provider reservations are cancelled at the same boundary. | The path is queued only when its last database reference disappears                  | Blob reaper runs at startup and every minute                                         |
+| File/asset deleted                   | Logical row is deleted; workspace deletion and account purge do this through foreign-key cascades too. Pending/running parse, ingest, import, and provider reservations are cancelled at the same boundary.        | The path is queued only when its last database reference disappears                  | Blob reaper runs at startup and every minute                                         |
 | Shared blob still referenced         | One row/reference is removed, but the remaining clone/reference keeps the blob live                                                                                                                                | Object is not deleted                                                                | Reaper re-checks references before every claim                                       |
 | Stable object has no database record | No row exists to enqueue it, for example after a request dies between PUT and row creation                                                                                                                         | Object remains in the bucket                                                         | Monthly orphan sweep reports it after 48 hours; it currently **does not delete it**  |
 
@@ -1030,7 +1030,7 @@ Physical deletion is coordinated through `pending_blob_deletions`, a durable
 database outbox. Reference-count triggers cover source objects, parsed objects,
 editor assets, upload-session paths, source collaboration bases and refresh candidates,
 and file thumbnails (`files.thumbnail_key`: a new capture releases the old key;
-[thumbnails.md](thumbnails.md)). Image-caption payloads are owned by `image_caption_associations`; optional audio caches use `artifact_cache`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
+[thumbnails.md](thumbnails.md)). Image-caption payloads are owned by `image_caption_associations`. Document parse output stays in the temporary local spool; migration 0038 releases its retired B2 cache copies through the same outbox. `files.caption_blob_path` is identity/debug metadata rather than a second reference. The triggers run for direct row deletion and
 foreign-key cascades, so deleting a file, deleting a workspace, or purging an
 account all reach the same cleanup path without relying on an HTTP handler to
 enumerate bucket keys.
@@ -1055,14 +1055,6 @@ Backblaze B2 hides overwritten/deleted versions by default, so deployment must
 also apply the configured `daysFromHidingToDeleting` lifecycle rule. Without
 that rule, a successful reaper deletion can leave hidden versions consuming
 bucket storage.
-
-Audio follows the same synchronous ingest lifecycle as image captions and
-other provider-backed derived artifacts. The worker awaits multipart `POST
-/v1/speech-to-text` fields without webhook fields, settles the open provider call,
-writes the reusable artifact, then continues indexing in the same attempt.
-There is no provider transcript row, polling loop, webhook, or remote cleanup
-state. A short `provider_capacity_leases` row only enforces ElevenLabs' weighted
-Starter concurrency across worker processes and expires after a crash.
 
 Sources: [deletion outbox and reference re-check](../server/internal/store/blobs.go#L9),
 [reaper loop and retry behavior](../server/cmd/api/blob_workers.go#L26),
@@ -1194,7 +1186,7 @@ authority for every workspace they own, including workspaces with members.
 
 Once requested, the account enters `deletion_pending`, sessions are revoked,
 live collaboration rooms are evicted, and queued or running imports, ingest,
-parse, audio, and provider reservations are cancelled. The owner's workspaces
+parse, and provider reservations are cancelled. The owner's workspaces
 and materials immediately disappear from member lists, Explore, direct shared
 reads, and clone endpoints. Long-running chat, generate, editor-AI, and ingest
 streams recheck both the actor session and workspace access and cancel when

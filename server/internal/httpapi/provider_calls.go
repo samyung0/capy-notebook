@@ -17,8 +17,6 @@ type providerCallReq struct {
 	Model            string `json:"model"`
 	InputTokens      int64  `json:"inputTokens"`
 	OutputTokens     int64  `json:"outputTokens"`
-	Units            int64  `json:"units"`
-	Unit             string `json:"unit"`
 	CachedReadTokens int64  `json:"cachedReadTokens"`
 	CacheWriteTokens int64  `json:"cacheWriteTokens"`
 	ReasoningTokens  int64  `json:"reasoningTokens"`
@@ -45,8 +43,6 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 		Model:            req.Model,
 		InputTokens:      req.InputTokens,
 		OutputTokens:     req.OutputTokens,
-		Units:            req.Units,
-		Unit:             req.Unit,
 		CachedReadTokens: req.CachedReadTokens,
 		CacheWriteTokens: req.CacheWriteTokens,
 		ReasoningTokens:  req.ReasoningTokens,

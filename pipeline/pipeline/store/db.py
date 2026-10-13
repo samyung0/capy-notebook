@@ -1116,19 +1116,6 @@ def release_provider_capacity(cur, lease_id: str) -> None:
     cur.execute("DELETE FROM provider_capacity_leases WHERE id=%s", (lease_id,))
 
 
-def renew_provider_capacity(cur, lease_id: str, lease_seconds: int) -> bool:
-    """Extend a live capacity lease without reviving an expired one."""
-    cur.execute(
-        """
-        UPDATE provider_capacity_leases
-        SET expires_at=now()+make_interval(secs => %s)
-        WHERE id=%s AND expires_at>now()
-        """,
-        (lease_seconds, lease_id),
-    )
-    return bool(cur.rowcount)
-
-
 def reclaim_expired_leases(
     cur, *, max_attempts: dict[str, int], backoff_base_s: dict[str, int]
 ) -> list[dict[str, Any]]:
@@ -2028,8 +2015,6 @@ def settle_ingest_provider_call(
     model_version: int,
     usage: Any,
     credit_micros: int,
-    units: int = 0,
-    unit: str = "tokens",
 ) -> str:
     """Atomically apply one post-paid ingest provider attempt.
 
@@ -2071,7 +2056,7 @@ def settle_ingest_provider_call(
                receipt_deadline_at <= now(), provider, model,
                input_tokens, output_tokens, cached_read_tokens,
                cache_write_tokens, reasoning_tokens, cache_anomaly,
-               units, unit, credit_micros
+               credit_micros
           FROM provider_calls
          WHERE id = %s FOR UPDATE
         """,
@@ -2105,8 +2090,6 @@ def settle_ingest_provider_call(
             usage.cache_write_tokens,
             usage.reasoning_tokens,
             usage.anomaly,
-            units,
-            unit,
             credit_micros,
         )
         expected_event = (
@@ -2121,8 +2104,8 @@ def settle_ingest_provider_call(
             model_version,
             usage.input_tokens,
             usage.output_tokens,
-            units,
-            unit,
+            0,
+            "tokens",
             credit_micros,
             _ingest_provider_metadata(call_id, purpose, kind, usage, paid_by),
         )
@@ -2169,8 +2152,7 @@ def settle_ingest_provider_call(
         model_version=model_version,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
-        units=units,
-        unit=unit,
+        unit="tokens",
         credit_micros=credit_micros,
         reservation_id=session_id,
         provider_call_id=call_id,
@@ -2184,7 +2166,7 @@ def settle_ingest_provider_call(
           input_tokens = %s, output_tokens = %s,
           cached_read_tokens = %s, cache_write_tokens = %s,
           reasoning_tokens = %s, cache_anomaly = %s,
-          units = %s, unit = %s, credit_micros = %s,
+          credit_micros = %s,
           received_at = now(), applied_at = now()
         WHERE id = %s AND reservation_id = %s AND status = 'open'
         """,
@@ -2197,8 +2179,6 @@ def settle_ingest_provider_call(
             usage.cache_write_tokens,
             usage.reasoning_tokens,
             usage.anomaly,
-            units,
-            unit,
             credit_micros,
             call_id,
             session_id,

@@ -252,10 +252,10 @@ error-boundary rendering do not add another capture call.
 Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
-file over a documented limit (page or scanned-page count, image pixels, audio
-duration, CSV/TSV cells or searchable text) fails the job with the limit's
+file over a documented limit (page or scanned-page count, image pixels,
+CSV/TSV cells or searchable text) fails the job with the limit's
 attempt `error_code` (`page_limit`, `scanned_page_limit`, `image_pixel_limit`,
-`audio_duration_limit`, `tabular_cell_limit`, `tabular_text_limit`) and logs at
+`tabular_cell_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in
 [agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of
@@ -628,7 +628,7 @@ month by `surface`, which the Usage tab draws as one credit bar coloured by area
 (chat, generate, ingest, editor, everything else as Other) with reserved credits
 faint at the end. `GET /api/usage/events` keyset-pages the actor's `usage_events`
 rows newest first (`before` cursor from the previous page's `next`, 20 rows at
-most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`, `audio`,
+most) for the Detailed usage tab: kind (`llm`, `embedding`, `rerank`,
 `parse`, `email`, historical `caption`), surface, catalog provider/model slugs,
 tokens and credits. It does not use a separate analytics table and does not show
 USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe
@@ -666,10 +666,9 @@ That exact call id remains settleable against a `settled` or `released` session
 until its `receipt_deadline_at`. Python sets the deadline from the longest a
 call can legitimately run, plus five minutes: the interactive stream backstop
 (`CAPY_INTERACTIVE_STREAM_MAX_S`, 10 minutes) for every interactive call, the
-ingest provider timeout (120 s) for ingest, and the ElevenLabs sync timeout for
-audio; direct SQL callers use the same maximum 12-hour-five-minute window as
-ElevenLabs. ElevenLabs itself runs under an absolute 12-hour request timeout;
-the additional five minutes are receipt-only settlement grace.
+ingest provider timeout (120 s) for ingest; direct SQL callers get the
+column's default 12-hour-five-minute window. The additional five minutes are
+receipt-only settlement grace.
 
 Interactive provider calls run over the streaming transport, generate, live
 compaction and checkpoint included (assembled back into a completion in
@@ -762,11 +761,8 @@ response as an error rather than finalizing a partial stream as complete.
 ### Where tokens are captured
 
 `pipeline/pipeline/retrieval/models.py` is the single boundary for token-reporting
-LLM and embedding calls. Synchronous ElevenLabs transcription is the deliberate
-non-token exception: `pipeline/pipeline/ingest/source_text.py` opens and settles
-its metered audio call directly around `/v1/speech-to-text`. Any new provider
-path must use one of these explicit accounting boundaries or it is invisible
-and silently free.
+LLM and embedding calls. Any new provider path must go through it or open and
+settle its own metered call explicitly, or it is invisible and silently free.
 
 A contextvar accumulator (`obs.Usage`) still aggregates request telemetry.
 Chat, generate and editor bind a `RequestAccounting` context when the
@@ -937,8 +933,7 @@ The charge is per page, not per container time. Every page gets exactly one of
 two active database rates: the digital-page rate or the OCR-page rate. The
 OCR rate replaces the digital rate. It is not a surcharge added on top.
 
-`GET /api/source-upload-policy` returns both page rates and the audio-second
-rate in microcredits. The browser
+`GET /api/source-upload-policy` returns both page rates in microcredits. The browser
 details dialog applies them to its serial worker's digital/OCR page estimate so
 the user sees an expected cost before submit. It is not a reservation or ledger
 write. PDF page count is exact but OCR routing remains estimated; OOXML counts
@@ -1027,7 +1022,7 @@ primary database and can add optional column-limited read DSNs for UAT/local.
 ### Pricing is policy
 
 Token work is priced from the resolved `model_configs` row. Non-token policy
-(`audio_transcription_second`, digital/OCR pages, and email) is versioned in
+(digital/OCR pages and email) is versioned in
 `resource_credit_rates`; `figure_caption_call` rows remain for history but none
 is active. The Ops usage page edits these
 rates by inserting a new active version and recording an operator audit event.

@@ -343,44 +343,6 @@ func TestListUsageEventsPagesNewestFirst(t *testing.T) {
 	}
 }
 
-func TestAudioProviderCallSettlesRoundedSecondsOnce(t *testing.T) {
-	s := openAccessTestStore(t)
-	ctx := context.Background()
-	userID := newCreditsTestUser(t, s)
-	sessionID := mustBeginPlatformSession(t, ctx, s, userID)
-	call := ProviderCallUsage{
-		CallID:   "pc_audio",
-		Kind:     KindAudio,
-		Purpose:  "transcription",
-		Provider: "elevenlabs",
-		Model:    "transcribe-1",
-		Units:    4,
-		Unit:     "seconds",
-	}
-	mustInsertProviderCall(t, s, sessionID, call)
-
-	if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.SettleProviderCall(ctx, sessionID, call); err != nil {
-		t.Fatal(err)
-	}
-	var kind, unit string
-	var units, credits int64
-	if err := s.pool.QueryRow(ctx, `
-		SELECT kind, units, unit, credit_micros FROM usage_events
-		WHERE reservation_id=$1 AND provider_call_id=$2`, sessionID, call.CallID,
-	).Scan(&kind, &units, &unit, &credits); err != nil {
-		t.Fatal(err)
-	}
-	if kind != KindAudio || units != 4 || unit != "seconds" || credits != 1_000_000 {
-		t.Fatalf("audio usage = %q %d %q %d", kind, units, unit, credits)
-	}
-	if n := eventCount(t, s, userID, sessionID); n != 1 {
-		t.Fatalf("audio provider rows = %d, want 1", n)
-	}
-}
-
 func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -683,7 +645,7 @@ func TestSweepAbandonsOnlyProviderCallsPastReceiptDeadline(t *testing.T) {
 	for _, callID := range []string{pastID, futureID} {
 		if _, err := s.pool.Exec(ctx, `INSERT INTO provider_calls
 			(id, reservation_id, actor_user_id, kind)
-			VALUES ($1,$2,$3,'audio')`, callID, sessionID, userID); err != nil {
+			VALUES ($1,$2,$3,'llm')`, callID, sessionID, userID); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -723,8 +685,9 @@ func TestProviderReceiptCannotSettleAfterDeadlineBeforeSweep(t *testing.T) {
 		t.Fatal(err)
 	}
 	call := ProviderCallUsage{
-		CallID: "pc_expired_direct", Kind: KindAudio, Purpose: "transcription",
-		Provider: "elevenlabs", Model: "scribe_v2", Units: 10, Unit: "seconds",
+		CallID: "pc_expired_direct", Kind: KindLLM, Purpose: "caption",
+		Thinking: models.ThinkingInstant, Provider: "deepseek",
+		Model: "deepseek-v4-flash", InputTokens: 10,
 	}
 	mustInsertProviderCall(t, s, sessionID, call)
 	if _, err := s.pool.Exec(ctx, `UPDATE provider_calls

@@ -600,7 +600,7 @@ async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
     usage = NormalizedUsage(input_tokens=13, output_tokens=5)
     token = accounting.bind_ingest(
         "cr_ingest",
-        {"audio_transcription_second": {"creditMicrosPerUnit": 2_000}},
+        {"digital_parse_page": {"creditMicrosPerUnit": 2_000}},
     )
     try:
         state = await accounting.settle(

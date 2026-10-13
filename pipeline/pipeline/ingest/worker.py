@@ -67,11 +67,9 @@ from . import plan as ingest_plan
 
 log = logging.getLogger("capy.worker")
 
-_RESOURCE_AUDIO_SECOND = "audio_transcription_second"
 _RESOURCE_DIGITAL_PAGE = "digital_parse_page"
 _RESOURCE_OCR_PAGE = "ocr_parse_page"
 _REQUIRED_RESOURCE_RATES = {
-    _RESOURCE_AUDIO_SECOND,
     _RESOURCE_DIGITAL_PAGE,
     _RESOURCE_OCR_PAGE,
 }
@@ -143,20 +141,6 @@ def _rate(resource_key: str) -> dict:
     if version <= 0 or micros < 0:
         raise TerminalError(f"ingest payload has invalid {resource_key} rate")
     return {**rate, "version": version, "creditMicrosPerUnit": micros}
-
-
-def _job_timeout(job: dict, default: int) -> int:
-    payload = job.get("payload") or {}
-    processing_plan = payload.get("processingPlan") or {}
-    if (
-        job.get("type") == "ingest"
-        and processing_plan.get("route") == ingest_plan.AUDIO_TRANSCRIPTION
-    ):
-        # Preserve the ordinary ingest budget for download, validation, and
-        # admission before giving the synchronous provider its full receipt
-        # window.
-        return default + cfg.elevenlabs_sync_timeout_s + 300
-    return default
 
 
 # ----------------------------------------------------------- sync DB helpers
@@ -1086,8 +1070,6 @@ def _pipeline_identity(
         direct = f"direct:tabular:{cfg.tabular_text_version}"
     elif processing_plan.route == ingest_plan.IMAGE_CAPTION:
         direct = "direct:image"
-    elif processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION:
-        direct = "direct:elevenlabs"
     else:
         direct = ""
     if direct:
@@ -1384,7 +1366,6 @@ async def _chunks_for(
     job_id: str | None = None,
 ) -> list[Chunk]:
     """Parse one source into chunks."""
-    blob_path = payload.get("blobPath")
     source_revision = int(payload.get("sourceRevision") or 0)
     source_etag = str(payload.get("sourceETag") or "")
 
@@ -1407,7 +1388,6 @@ async def _chunks_for(
 
     direct = {
         ingest_plan.IMAGE_CAPTION: "image",
-        ingest_plan.AUDIO_TRANSCRIPTION: "audio",
         ingest_plan.DELIMITED_TEXT: "tabular",
     }.get(processing_plan.route)
     if direct:
@@ -1423,11 +1403,7 @@ async def _chunks_for(
         _publish_progress(
             ws,
             file_id,
-            "captioning"
-            if direct == "image"
-            else "transcribing"
-            if direct == "audio"
-            else "indexing",
+            "captioning" if direct == "image" else "indexing",
             20,
             status="processing",
         )
@@ -1453,18 +1429,6 @@ async def _chunks_for(
                 figures_cached=1 if caption_cached else 0,
                 figures_captioned=0 if caption_cached else 1,
                 figures_applied=1,
-            )
-        elif direct == "audio":
-            _set_stage("audio_transcription")
-            (
-                text,
-                derived_key,
-                derived_size,
-            ) = await source_text.transcribe_audio_source(
-                local_path=local_path,
-                source_sha256=source_sha256,
-                blob_path=str(blob_path),
-                audio_rate=_rate(_RESOURCE_AUDIO_SECOND),
             )
         else:
             if not local_path:
@@ -1653,9 +1617,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
             int(payload["sourceRevision"]),
             str(payload.get("sourceETag") or ""),
             str(payload.get("actorUserId") or ""),
-            "waiting for provider capacity"
-            if processing_plan.route == ingest_plan.AUDIO_TRANSCRIPTION
-            else "waiting for parser capacity",
+            "waiting for parser capacity",
             YIELD_BACKOFF_S,
             "capacity_wait",
         )
@@ -1878,11 +1840,7 @@ async def _reuse_donor(
     attempt = int(job.get("attempts") or 1)
     source_revision = int(payload["sourceRevision"])
     source_etag = str(payload.get("sourceETag") or "")
-    direct = {
-        ingest_plan.IMAGE_CAPTION: "image",
-        ingest_plan.AUDIO_TRANSCRIPTION: "audio",
-    }.get(route)
-    if direct == "image":
+    if route == ingest_plan.IMAGE_CAPTION:
         try:
             cached = await caption_cache.lookup(file_id, source_sha256)
         except TerminalError:
@@ -1892,35 +1850,6 @@ async def _reuse_donor(
             return False
         if cached is None:
             return False
-    elif direct == "audio":
-        derived_key = source_text.artifact_key(source_sha256, direct)
-        try:
-            info = await asyncio.to_thread(blobstore.object_info, derived_key)
-        except Exception:
-            # Donor reuse is optional. A failed cache HEAD falls through to the
-            # normal transformation instead of consuming a whole job attempt.
-            log.warning(
-                "could not inspect derived-text cache %s", derived_key, exc_info=True
-            )
-            return False
-        if info is None:
-            return False
-        registered = await asyncio.to_thread(
-            _touch_or_upsert_artifact,
-            object_path=derived_key,
-            kind="derived_text",
-            source_sha256=source_sha256,
-            size_bytes=int(info.get("size") or 0),
-        )
-        if registered:
-            await asyncio.to_thread(
-                _record_caption_blob_best_effort,
-                file_id,
-                derived_key,
-                source_revision,
-                source_etag,
-                str(payload.get("actorUserId") or ""),
-            )
     association = await store.attach_file_content(
         workspace_id=ws,
         file_id=file_id,
@@ -2502,7 +2431,7 @@ async def main_async(job_type: str = "ingest") -> None:
                 heartbeat.start()
                 restart_after_failure = False
                 try:
-                    async with asyncio.timeout(_job_timeout(job, policy.timeout_s)):
+                    async with asyncio.timeout(policy.timeout_s):
                         await job_task
                     if claim_lost.is_set():
                         log.info("job %s stopped after losing its claim", job["id"])

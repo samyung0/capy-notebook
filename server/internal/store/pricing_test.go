@@ -66,12 +66,3 @@ func TestCreditsForParsePagesUsesOCRRateInsteadOfAddingBoth(t *testing.T) {
 		t.Fatalf("CreditsForParsePages clamps OCR pages: %d", got)
 	}
 }
-
-func TestCreditsForAudioSecondsUsesRoundedProviderUnit(t *testing.T) {
-	if got := CreditsForAudioSeconds(61, 250_000); got != 15_250_000 {
-		t.Fatalf("61 audio seconds = %d, want 15250000", got)
-	}
-	if got := CreditsForAudioSeconds(-1, 250_000); got != 0 {
-		t.Fatalf("negative audio seconds = %d, want 0", got)
-	}
-}

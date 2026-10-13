@@ -19,12 +19,11 @@ const (
 	// guessing from a file kind or extension.
 	ProcessingPlanVersion = 2
 
-	RouteStoreOnly       = "store_only"
-	RouteRawText         = "raw_text"
-	RouteDelimitedText   = "delimited_text"
-	RouteImageCaption    = "image_caption"
-	RouteAudioTranscript = "audio_transcription"
-	RouteDocumentParse   = "document_parse"
+	RouteStoreOnly     = "store_only"
+	RouteRawText       = "raw_text"
+	RouteDelimitedText = "delimited_text"
+	RouteImageCaption  = "image_caption"
+	RouteDocumentParse = "document_parse"
 
 	// CaptionMode names whether the route captions the source itself; only a
 	// standalone image upload does. Parsed documents keep their figures for
@@ -432,10 +431,6 @@ func BuildProcessingPlan(name, kind, mode string) (ProcessingPlan, error) {
 		plan.CaptionMode = CaptionStandalone
 		plan.Stages = []string{"fetch_source", "caption_image", "persist_derived_text", "chunk", "index", "generate_derivatives"}
 		plan.Resources = appendResource(directResources, "vision_model", "object_storage_write")
-	case kind == "audio":
-		plan.Route = RouteAudioTranscript
-		plan.Stages = []string{"fetch_source", "transcribe_audio", "persist_derived_text", "chunk", "index", "generate_derivatives"}
-		plan.Resources = appendResource(directResources, "audio_transcription", "object_storage_write")
 	case mode == ParseModeFast && parseExtensions[ext]:
 		plan.Route = RouteDocumentParse
 		plan.ParserRoute = ParseModeFast
@@ -472,8 +467,8 @@ func appendResource(resources []string, values ...string) []string {
 
 // NeedsIngestJob is whether an upload should be queued for searchable derived
 // content. This is deliberately separate from parse mode: images are
-// captioned, audio is transcribed, and CSV/TSV is normalized without using the
-// document parser.
+// captioned and CSV/TSV is normalized without using the document parser.
+// Audio is stored only.
 func NeedsIngestJob(name, kind, mode string) bool {
 	plan, err := BuildProcessingPlan(name, kind, mode)
 	return err == nil && plan.Route != RouteStoreOnly

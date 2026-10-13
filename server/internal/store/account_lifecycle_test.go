@@ -845,8 +845,8 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 	}
 	providerCallID := uid("call")
 	if _, err := s.pool.Exec(ctx, `INSERT INTO provider_calls
-		(id, reservation_id, actor_user_id, job_attempt_id, kind)
-		VALUES ($1,$2,$3,$4,'audio')`,
+		(id, reservation_id, actor_user_id, job_attempt_id, kind, thinking)
+		VALUES ($1,$2,$3,$4,'llm','instant')`,
 		providerCallID, reservationID, ownerID, jobAttemptID); err != nil {
 		t.Fatal(err)
 	}
@@ -923,8 +923,8 @@ func TestDeletionPendingHidesContentAndCancelsAsyncWork(t *testing.T) {
 			jobStatus, attemptStatus, providerCallStatus, sessionStatus, creditReserved, uploadExists)
 	}
 	call := ProviderCallUsage{
-		CallID: providerCallID, Kind: KindAudio, Provider: "elevenlabs",
-		Model: "scribe_v2", Units: 12, Unit: "seconds",
+		CallID: providerCallID, Kind: KindLLM, Thinking: models.ThinkingInstant,
+		Provider: "deepseek", Model: "deepseek-v4-flash", InputTokens: 12,
 	}
 	if _, err := s.SettleProviderCall(ctx, reservationID, call); err != nil {
 		t.Fatalf("settle provider receipt after deletion: %v", err)

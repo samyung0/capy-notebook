@@ -160,8 +160,6 @@ type ProviderCallUsage struct {
 	Model            string
 	InputTokens      int64
 	OutputTokens     int64
-	Units            int64
-	Unit             string
 	CachedReadTokens int64
 	CacheWriteTokens int64
 	ReasoningTokens  int64
@@ -184,7 +182,6 @@ const (
 	KindLLM       = "llm"
 	KindEmbedding = "embedding"
 	KindRerank    = "rerank" // zero credits like a query embedding, labeled with the reranker row called
-	KindAudio     = "audio"
 	KindParse     = "parse"
 	KindEmail     = "email"
 )
@@ -486,7 +483,7 @@ func (s *Store) SettleProviderCall(
 	if sessionID == "" || call.CallID == "" {
 		return out, fmt.Errorf("session id and provider call id are required")
 	}
-	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank && call.Kind != KindAudio {
+	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank {
 		return out, fmt.Errorf("invalid provider call kind %q", call.Kind)
 	}
 	if (call.Kind == KindEmbedding || call.Kind == KindRerank) && call.Thinking != "" {
@@ -495,19 +492,9 @@ func (s *Store) SettleProviderCall(
 	if call.Kind == KindLLM && !models.IsKnownThinking(call.Thinking) {
 		return out, fmt.Errorf("invalid provider call thinking %q", call.Thinking)
 	}
-	if call.Kind == KindAudio && (call.Thinking != "" || call.Unit != "seconds") {
-		return out, errors.New("audio provider calls require second units and no thinking")
-	}
-	if call.Kind == KindAudio && (call.InputTokens != 0 || call.OutputTokens != 0 ||
-		call.CachedReadTokens != 0 || call.CacheWriteTokens != 0 || call.ReasoningTokens != 0) {
-		return out, errors.New("audio provider calls cannot carry token usage")
-	}
 	if call.InputTokens < 0 || call.OutputTokens < 0 || call.CachedReadTokens < 0 ||
-		call.CacheWriteTokens < 0 || call.ReasoningTokens < 0 || call.Units < 0 {
+		call.CacheWriteTokens < 0 || call.ReasoningTokens < 0 {
 		return out, fmt.Errorf("provider usage cannot be negative")
-	}
-	if call.Kind != KindAudio && (call.Units != 0 || call.Unit != "") {
-		return out, errors.New("token provider calls cannot carry non-token units")
 	}
 	if (call.Kind == KindRerank) != (call.ModelVersion > 0) || call.ModelVersion < 0 {
 		return out, errors.New("rerank calls, and only they, name their catalog version")
@@ -596,8 +583,7 @@ func (s *Store) settleProviderCallAtomic(
 		var recorded ProviderCallUsage
 		if err := tx.QueryRow(ctx, `
 			SELECT kind, COALESCE(metadata->>'purpose', ''), thinking, provider, model,
-			       input_tokens, output_tokens, units,
-			       CASE WHEN kind = 'audio' THEN unit ELSE '' END,
+			       input_tokens, output_tokens,
 			       COALESCE((metadata->>'cachedReadTokens')::bigint, 0),
 			       COALESCE((metadata->>'cacheWriteTokens')::bigint, 0),
 			       COALESCE((metadata->>'reasoningTokens')::bigint, 0),
@@ -608,7 +594,7 @@ func (s *Store) settleProviderCallAtomic(
 			sessionID, call.CallID,
 		).Scan(
 			&recorded.Kind, &recorded.Purpose, &recorded.Thinking, &recorded.Provider, &recorded.Model,
-			&recorded.InputTokens, &recorded.OutputTokens, &recorded.Units, &recorded.Unit,
+			&recorded.InputTokens, &recorded.OutputTokens,
 			&recorded.CachedReadTokens, &recorded.CacheWriteTokens,
 			&recorded.ReasoningTokens, &recorded.CacheAnomaly, &recorded.ModelVersion,
 		); err != nil {
@@ -690,15 +676,6 @@ func (s *Store) settleProviderCallAtomic(
 			call.OutputTokens,
 			call.CachedReadTokens,
 		)
-	} else if call.Kind == KindAudio && out.paidBy == models.PaidByPlatform {
-		var audioRate int64
-		if err := tx.QueryRow(ctx, `
-				SELECT credit_micros_per_unit
-				FROM resource_credit_rates
-				WHERE resource_key=$1 AND active`, ResourceAudioSecond).Scan(&audioRate); err != nil {
-			return settlement, err
-		}
-		out.credits = CreditsForAudioSeconds(call.Units, audioRate)
 	}
 	var balance CreditUsage
 	if out.credits > 0 && out.paidBy == models.PaidByPlatform {
@@ -724,12 +701,8 @@ func (s *Store) settleProviderCallAtomic(
 	if call.CacheAnomaly != "" {
 		meta["cacheAnomaly"] = call.CacheAnomaly
 	}
-	if call.Kind != KindAudio && call.InputTokens == 0 && call.OutputTokens == 0 {
+	if call.InputTokens == 0 && call.OutputTokens == 0 {
 		meta["usageMissing"] = true
-	}
-	usageUnit := "tokens"
-	if call.Kind == KindAudio {
-		usageUnit = call.Unit
 	}
 	event := UsageEvent{
 		TraceID:        traceID,
@@ -742,8 +715,7 @@ func (s *Store) settleProviderCallAtomic(
 		Thinking:       call.Thinking,
 		InputTokens:    call.InputTokens,
 		OutputTokens:   call.OutputTokens,
-		Units:          call.Units,
-		Unit:           usageUnit,
+		Unit:           "tokens",
 		CreditMicros:   out.credits,
 		CatalogModel:   catalogModel,
 		ModelVersion:   modelVersion,
@@ -765,12 +737,10 @@ func (s *Store) settleProviderCallAtomic(
 		  model=$7,
 		  input_tokens=$8,
 		  output_tokens=$9,
-		  units=$10,
-		  unit=$11,
-		  cached_read_tokens=$12,
-		  cache_write_tokens=$13,
-		  reasoning_tokens=$14,
-		  cache_anomaly=$15,
+		  cached_read_tokens=$10,
+		  cache_write_tokens=$11,
+		  reasoning_tokens=$12,
+		  cache_anomaly=$13,
 		  credit_micros=$5,
 		  received_at=now(),
 		  applied_at=now()
@@ -778,7 +748,6 @@ func (s *Store) settleProviderCallAtomic(
 		   AND status='open'`,
 		call.CallID, sessionID, call.Kind, call.Purpose, out.credits,
 		call.Provider, call.Model, call.InputTokens, call.OutputTokens,
-		call.Units, call.Unit,
 		call.CachedReadTokens, call.CacheWriteTokens, call.ReasoningTokens,
 		call.CacheAnomaly,
 	)

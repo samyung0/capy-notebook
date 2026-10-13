@@ -47,8 +47,8 @@ func TestWorkspaceDeletionReleasesProviderSessionsButKeepsLateReceipts(t *testin
 		t.Fatal(err)
 	}
 	if _, err := s.pool.Exec(ctx, `INSERT INTO provider_calls
-		(id,reservation_id,actor_user_id,kind)
-		VALUES ($1,$2,$3,'audio')`, callID, reservationID, ownerID); err != nil {
+		(id,reservation_id,actor_user_id,kind,thinking)
+		VALUES ($1,$2,$3,'llm','instant')`, callID, reservationID, ownerID); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.DeleteWorkspace(ctx, ownerID, workspace.ID); err != nil {
@@ -67,8 +67,8 @@ func TestWorkspaceDeletionReleasesProviderSessionsButKeepsLateReceipts(t *testin
 			sessionStatus, workspaceID, reserved)
 	}
 	if _, err := s.SettleProviderCall(ctx, reservationID, ProviderCallUsage{
-		CallID: callID, Kind: KindAudio, Provider: "elevenlabs",
-		Model: "scribe_v2", Units: 1, Unit: "seconds",
+		CallID: callID, Kind: KindLLM, Thinking: "instant",
+		Provider: "deepseek", Model: "deepseek-v4-flash", InputTokens: 1,
 	}); err != nil {
 		t.Fatalf("settle late workspace receipt: %v", err)
 	}

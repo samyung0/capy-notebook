@@ -1687,8 +1687,8 @@ it warns and uploads, since the count can be off by a few pages and the parser
 refuses the file at admission if it really is over. Office OCR estimates miss
 slide-master text, so they warn from 95% and never block. The upload sends the
 page count, and the gateway refuses a fast-parse reservation above `maxPages`. Images and audio do not enter the
-browser page/OCR analysis queue: the ingest worker captions or transcribes them,
-and those provider costs are deliberately absent from the page-based estimate.
+browser page/OCR analysis queue: the ingest worker captions images (a cost
+deliberately absent from the page-based estimate) and stores audio without indexing.
 The server-owned page rates (1.0 credit per digital page and per OCR page) are
 returned by `source-upload-policy`; parser receipts remain authoritative for
 settlement.

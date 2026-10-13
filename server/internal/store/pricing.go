@@ -28,14 +28,12 @@ const (
 )
 
 const (
-	ResourceAudioSecond      = "audio_transcription_second"
 	ResourceDigitalParsePage = "digital_parse_page"
 	ResourceOCRParsePage     = "ocr_parse_page"
 	ResourceEmailMessage     = "email_message"
 )
 
 var ingestResourceKeys = []string{
-	ResourceAudioSecond,
 	ResourceDigitalParsePage,
 	ResourceOCRParsePage,
 }
@@ -164,11 +162,4 @@ func CreditsForParsePages(pages, ocrPages, digitalRate, ocrRate int64) int64 {
 		ocrPages = pages
 	}
 	return (pages-ocrPages)*digitalRate + ocrPages*ocrRate
-}
-
-func CreditsForAudioSeconds(seconds, rate int64) int64 {
-	if seconds <= 0 {
-		return 0
-	}
-	return seconds * rate
 }
