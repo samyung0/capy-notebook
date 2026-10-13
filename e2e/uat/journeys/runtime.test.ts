@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
 import { request } from '@playwright/test';
+import * as Y from 'yjs';
 import { savedTokenStatus } from './accounts';
 import {
   cleanupRun,
@@ -22,7 +23,7 @@ import {
   writeManifest,
 } from './evidence';
 import { settledSpend } from './files';
-import { refresh, savedExport } from './office';
+import { refresh, replaySaved, savedExport, savedUpdates } from './office';
 import { REFUSAL_PREFIX, republication } from './officeRefusal';
 import type { UatRun } from './runtime';
 
@@ -73,6 +74,7 @@ test('saved export accepts an untouched store-only source but keeps checkpoint h
     base_source_sha256: '',
     checkpoint: 0,
     format: 'text',
+    rows: [] as string[],
     state: null as string | null,
   };
   const run = {
@@ -91,11 +93,130 @@ test('saved export accepts an untouched store-only source but keeps checkpoint h
     savedExport(run, 'file_fixture'),
     /missing its source hash/
   );
+  // A delta save's row with no state is saved editing state too.
   row.state = null;
+  row.rows = ['AA=='];
+  await assert.rejects(
+    savedExport(run, 'file_fixture'),
+    /missing its source hash/
+  );
+  row.rows = [];
   row.base_source_sha256 = hash;
   assert.deepEqual((await savedExport(run, 'file_fixture')).bytes, bytes);
   row.base_source_sha256 = '0'.repeat(64);
   await assert.rejects(savedExport(run, 'file_fixture'), assert.AssertionError);
+});
+
+const base64 = (update: Uint8Array) => Buffer.from(update).toString('base64');
+
+/** A room's stores: each appends the update since its durable state
+ * (`stored`, none while nothing is stored). */
+function delta(room: Y.Doc, stored?: Uint8Array) {
+  let durable = stored;
+  return {
+    fold: () => {
+      durable = Y.encodeStateVector(room);
+      return base64(Y.encodeStateAsUpdate(room));
+    },
+    store: () => {
+      const row = Y.encodeStateAsUpdate(room, durable);
+      durable = Y.encodeStateVector(room);
+      return base64(row);
+    },
+  };
+}
+
+test('saved text is the state and its epoch rows replayed in order, as the server loads them', async () => {
+  const base = Buffer.from('Wetland survey notes.\n');
+  const row = {
+    base_blob_path: 'sources/text',
+    base_source_sha256: createHash('sha256').update(base).digest('hex'),
+    checkpoint: 2,
+    format: 'text',
+    rows: [] as string[],
+    state: null as string | null,
+  };
+  const run = {
+    blob: async () => ({ bodyBase64: base.toString('base64') }),
+    query: async () => [row],
+  } as unknown as UatRun;
+  // The room: seed(base) under client 0 (text_seed), edited by two peers.
+  const seed = new Y.Doc();
+  seed.clientID = 0;
+  seed.getText('source').insert(0, base.toString());
+  const room = new Y.Doc();
+  Y.applyUpdate(room, Y.encodeStateAsUpdate(seed));
+  const peer = new Y.Doc();
+  const fromPeer = (edit: (text: Y.Text) => void) => {
+    Y.applyUpdate(peer, Y.encodeStateAsUpdate(room, Y.encodeStateVector(peer)));
+    const vector = Y.encodeStateVector(peer);
+    edit(peer.getText('source'));
+    Y.applyUpdate(room, Y.encodeStateAsUpdate(peer, vector));
+  };
+  const text = room.getText('source');
+  const { fold, store } = delta(room);
+  // A NULL state: the first row holds the seed.
+  text.insert(text.length, 'The launch code is CEDAR-42.\n');
+  const first = store();
+  fromPeer((peerText) => {
+    peerText.delete(0, 'Wetland'.length);
+    peerText.insert(0, 'Marsh');
+  });
+  row.rows = [first, store()];
+  assert.equal(
+    (await savedExport(run, 'file_fixture')).text,
+    'Marsh survey notes.\nThe launch code is CEDAR-42.\n'
+  );
+  // A folded state with two rows after it.
+  row.state = fold();
+  text.insert(text.length, 'Collaborator confirmed July.\n');
+  const third = store();
+  fromPeer((peerText) => peerText.insert(peerText.length - 1, ' (twice)'));
+  const fourth = store();
+  row.rows = [third, fourth];
+  const saved = await savedExport(run, 'file_fixture');
+  assert.equal(saved.text, text.toString());
+  assert.equal(
+    saved.text,
+    'Marsh survey notes.\nThe launch code is CEDAR-42.\nCollaborator confirmed July. (twice)\n'
+  );
+  // A row whose predecessor is missing does not load.
+  row.rows = [fourth];
+  await assert.rejects(savedExport(run, 'file_fixture'), /missing/);
+});
+
+test('a saved Office state replays seed(base), the change over it and its epoch rows', () => {
+  // seed(base) as the engine makes it, then the room's documents without
+  // formatting cleanup.
+  const seed = new Y.Doc();
+  seed.clientID = 0;
+  seed.getText('body').insert(0, 'Wetland survey at 42 sites.');
+  const seedState = Y.encodeStateAsUpdate(seed);
+  const room = new Y.Doc({ meta: { formattingCleanup: false } });
+  Y.applyUpdate(room, seedState);
+  const body = room.getText('body');
+  body.format(0, 'Wetland'.length, { bold: true });
+  body.insert(body.length, ' Owner sentence: CEDAR-42.');
+  // The stored state: the change over the seed, with the whole delete set.
+  const state = base64(Y.encodeStateAsUpdate(room, Y.encodeStateVector(seed)));
+  const { store } = delta(room, Y.encodeStateVector(room));
+  body.delete(0, 'Wetland '.length);
+  const first = store();
+  body.insert(body.length, ' Collaborator confirmed July.');
+  const row = { rows: [first, store()], state };
+  const saved = replaySaved([seedState, ...savedUpdates(row)]);
+  try {
+    assert.equal(
+      saved.getText('body').toString(),
+      'survey at 42 sites. Owner sentence: CEDAR-42. Collaborator confirmed July.'
+    );
+    assert.deepEqual(saved.getText('body').toDelta(), body.toDelta());
+    assert.deepEqual(Y.encodeStateVector(saved), Y.encodeStateVector(room));
+  } finally {
+    saved.destroy();
+  }
+  // The change and rows refer to the seed's content.
+  assert.throws(() => replaySaved(savedUpdates(row)), /missing from the seed/);
 });
 
 test('Office publication stops on a terminal pipeline job while the old file stays ready', async () => {

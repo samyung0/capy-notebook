@@ -23,6 +23,39 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('a ready file offers Clone and its copy opens in the workspace', async ({
+  page,
+}) => {
+  const row = page.locator('[data-workspace-content-row="file:f_1"]');
+  await row.hover({ timeout: 30_000 });
+  await row.getByRole('button', { name: m.a11y_open_menu() }).click();
+  await page.getByRole('menuitem', { name: m.action_clone() }).click();
+  await page
+    .getByRole('dialog', { name: m.action_clone_file() })
+    .getByRole('button', { exact: true, name: m.action_clone() })
+    .click();
+  await expect(page).toHaveURL(/\/workspaces\/ws_bio\?file=(?!f_1\b)\w+$/);
+});
+
+test('a material cloned into a workspace opens there, not on the standalone page', async ({
+  page,
+}) => {
+  await page.goto('/workspaces/ws_bio?material=mat_note_1');
+  const header = page.getByTestId('content-header');
+  await header
+    .getByRole('button', { name: m.a11y_open_menu() })
+    .click({ timeout: 30_000 });
+  await page.getByRole('menuitem', { name: m.action_clone() }).click();
+  await page
+    .getByRole('dialog', { name: m.action_clone_note() })
+    .getByRole('button', { exact: true, name: m.action_clone() })
+    .click();
+  // The copy lands in the source's workspace, with no chapter by default.
+  await expect(page).toHaveURL(
+    /\/workspaces\/ws_bio\?material=(?!mat_note_1\b)\w+$/
+  );
+});
+
 test("a public page's Clone link tells a non-member why they cannot copy", async ({
   page,
 }) => {

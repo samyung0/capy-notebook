@@ -5,8 +5,9 @@ import { useEventStream, useMe } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { useFinishToasts } from '@/features/study/finishToasts';
 import { cn } from '@/lib/cn';
-import { sweepDraftsOnce } from '@/lib/editDrafts';
+import { startDraftSweeps } from '@/lib/editDrafts';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
+import { InShellMain } from './AppErrorBoundary';
 import { Sidebar } from './Sidebar';
 
 const WORKSPACE_PATH_PATTERN = /^\/workspaces\/([^/]+)$/;
@@ -26,11 +27,12 @@ export function AppShell() {
     if (pathname !== '/schedule') scheduleAutoScroll.reset();
   }, [pathname]);
 
-  // Stored edits of documents this account no longer has go, once per load.
+  // Stored edits go to their rooms from any page; those of documents this
+  // account no longer has are deleted.
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
   useEffect(() => {
-    if (actorId) sweepDraftsOnce(actorId, api);
+    if (actorId) startDraftSweeps(actorId, api);
   }, [actorId]);
   useFinishToasts();
 
@@ -42,10 +44,12 @@ export function AppShell() {
         </div>
       )}
       <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden p-1.5 sm:p-2.5">
-        <AccountBlockedScreen />
-        <div className="min-h-0 min-w-0 flex-1">
-          <Outlet />
-        </div>
+        <InShellMain.Provider value>
+          <AccountBlockedScreen />
+          <div className="min-h-0 min-w-0 flex-1">
+            <Outlet />
+          </div>
+        </InShellMain.Provider>
       </main>
     </div>
   );

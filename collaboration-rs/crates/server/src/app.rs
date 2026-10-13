@@ -240,6 +240,8 @@ pub struct Stats {
     pub updates: AtomicU64,
     pub awareness: AtomicU64,
     pub log_bytes: AtomicU64,
+    /// Draft sends refused, by `drafts::Class` (its index in `Class::ALL`).
+    pub draft_refusals: [AtomicU64; 7],
 }
 
 pub struct App {

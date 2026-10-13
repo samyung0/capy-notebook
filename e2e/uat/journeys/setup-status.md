@@ -101,6 +101,10 @@ on `stablestudio.org`.
    extended, as its owner, for the study progress journey:
    `GRANT SELECT ON attempts, study_progress, review_states TO capy_uat_verifier;`
    `scripts/uat/verifier-role.sql` lists them for a new role.
+   Pending (2026-10-13): the journeys read delta-saved rows (migration 0075),
+   so the role also needs, as its owner,
+   `GRANT SELECT ON source_document_updates TO capy_uat_verifier;`
+   (`scripts/uat/verifier-role.sql` lists it for a new role).
 5. Dispatch Deterministic UAT quality from `main`, with the deployed full SHA
    and `critical_paths=true`.
 6. Review the uploaded journey evidence and cleanup report. Retry cleanup from

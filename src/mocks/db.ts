@@ -756,6 +756,7 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 2480 * 1024,
+    status: 'ready',
     workspaceId: 'ws_bio',
   },
   {
@@ -769,6 +770,7 @@ export const files: SourceFile[] = [
     position: 1,
     revision: 1,
     sizeBytes: 14 * 1024,
+    status: 'ready',
     workspaceId: 'ws_bio',
   },
   {
@@ -782,6 +784,7 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 6 * 1024,
+    status: 'ready',
     workspaceId: 'ws_bio',
   },
   {
@@ -795,6 +798,7 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 1890 * 1024,
+    status: 'ready',
     workspaceId: 'ws_bio',
   },
   {
@@ -808,6 +812,7 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 420 * 1024,
+    status: 'ready',
     workspaceId: 'ws_bio',
   },
   {
@@ -821,6 +826,7 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 980 * 1024,
+    status: 'ready',
     workspaceId: 'ws_calc',
   },
   {
@@ -834,6 +840,7 @@ export const files: SourceFile[] = [
     position: 0,
     revision: 1,
     sizeBytes: 11 * 1024,
+    status: 'ready',
     workspaceId: 'ws_calc',
   },
   {
@@ -847,6 +854,7 @@ export const files: SourceFile[] = [
     position: 1,
     revision: 1,
     sizeBytes: 10_000 * 1024,
+    status: 'ready',
     workspaceId: 'ws_bio',
   },
   // After the chat fixtures' cited files, which take the first indexed rows.
@@ -864,6 +872,7 @@ export const files: SourceFile[] = [
       preview: { text: file.body.slice(0, 600) },
       revision: 1,
       sizeBytes: new TextEncoder().encode(file.body).byteLength,
+      status: 'ready',
       workspaceId: 'ws_bio',
     })
   ),
@@ -912,6 +921,7 @@ for (const [index, chapter] of [
       preview: { text: body },
       revision: 1,
       sizeBytes: new TextEncoder().encode(body).byteLength,
+      status: 'ready',
       workspaceId: 'ws_hist',
     });
     fileLinks[id] = { url: textUrl(body) };

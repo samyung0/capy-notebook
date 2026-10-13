@@ -872,10 +872,13 @@ test.describe('DOCX on a phone', () => {
   // The 816 px page and the column's 24 px padding each side fill the pane.
   const fitted = async (frame: FrameLocator) => {
     await expect
-      .poll(async () => {
-        const { page, pane } = await widths(frame);
-        return Math.abs(page - Math.min(816, pane - 48));
-      })
+      .poll(
+        async () => {
+          const { page, pane } = await widths(frame);
+          return Math.abs(page - Math.min(816, pane - 48));
+        },
+        { timeout: 30_000 }
+      )
       .toBeLessThanOrEqual(1);
     return pageWidth(frame);
   };
@@ -886,6 +889,13 @@ test.describe('DOCX on a phone', () => {
     await expect(officeEditMenu(page, 'docx')).toBeVisible({
       timeout: 120_000,
     });
+    // The pages come after the menus: on a CI runner the document is still
+    // loading for several seconds once the Edit menu shows.
+    await expect(
+      page
+        .frameLocator('iframe[src*="office-runtime"]')
+        .locator('.docx-editor__scroll-container canvas[data-page-index="0"]')
+    ).toBeVisible({ timeout: 120_000 });
   };
   const pinchFrame = async (page: Page, scaleFactor: number) => {
     const box = await page
@@ -1201,6 +1211,8 @@ test.describe('DOCX on a phone', () => {
         .filter({ hasText: new RegExp(`^${text}$`) })
         .first();
     const box = async (text: string) => {
+      // The screen-reader mirror is built after the pages, at idle.
+      await expect(run(text)).toBeAttached({ timeout: 60_000 });
       const found = await run(text).boundingBox();
       if (!found) throw new Error(`Missing run ${text}`);
       return found;

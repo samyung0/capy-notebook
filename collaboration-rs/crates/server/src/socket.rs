@@ -1,7 +1,8 @@
 //! One task per WebSocket (DESIGN.md 1.3, 4): channels authenticate on their
-//! own (JOIN runs every `onAuthenticate` check), their messages queue until
-//! JOINED and then go to the room in order; a writer's access is rechecked at
-//! most every 5 s before its updates go on; tokens refresh in band.
+//! own (JOIN runs every `onAuthenticate` check, which a draft send runs too),
+//! their messages queue until JOINED and then go to the room in order; a
+//! writer's access is rechecked at most every 5 s before its updates go on;
+//! tokens refresh in band.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::Ordering;
@@ -15,6 +16,7 @@ use tokio::sync::{mpsc, oneshot};
 use crate::access::{self, AccessError};
 use crate::app::{Out, Outbox, RoomHandle, Shared};
 use crate::auth::{self, Access, Context, RoomName};
+use crate::drafts::Class;
 use crate::incidents::{self, Cause, Incident, Kind as IncidentKind};
 use crate::observe::{Level, log};
 use crate::protocol::{self, Kind, Message};
@@ -47,16 +49,20 @@ enum Channel {
     },
 }
 
-struct Refusal {
+pub struct Refusal {
     reason: String,
-    message: String,
+    pub message: String,
+    /// What a draft send answers with (`drafts.rs`); a socket sends `reason`.
+    pub class: Class,
 }
 
 impl Refusal {
+    /// A refusal the client retries (the room is busy, a lookup failed).
     fn plain(message: impl Into<String>) -> Self {
         Refusal {
             reason: DEFAULT_REFUSAL.into(),
             message: message.into(),
+            class: Class::Unavailable,
         }
     }
 
@@ -64,6 +70,21 @@ impl Refusal {
         Refusal {
             reason: error.reason().unwrap_or(DEFAULT_REFUSAL).into(),
             message: error.to_string(),
+            class: match error {
+                AccessError::Database(_) => Class::Unavailable,
+                _ => Class::Permission,
+            },
+        }
+    }
+
+    /// A token for another room names another lineage than the request's.
+    fn token(error: &auth::TokenError) -> Self {
+        Refusal {
+            class: match error {
+                auth::TokenError::Room => Class::Lineage,
+                _ => Class::Permission,
+            },
+            ..Refusal::plain(error.to_string())
         }
     }
 }
@@ -120,14 +141,17 @@ pub async fn room_evicting(app: &Shared, room: &str) -> Result<bool, String> {
         .map_err(|error| error.to_string())
 }
 
-/// `onAuthenticate` for one channel.
-async fn authenticate(
+/// `onAuthenticate` for one channel or draft send.
+pub async fn authenticate(
     app: Shared,
     room: String,
     token: String,
 ) -> Result<(RoomName, Context), Refusal> {
     let Some(name) = RoomName::parse(&room) else {
-        return Err(Refusal::plain("invalid collaboration room"));
+        return Err(Refusal {
+            class: Class::Malformed,
+            ..Refusal::plain("invalid collaboration room")
+        });
     };
     if app.evictions.blocks(&room, false) {
         return Err(Refusal::plain("collaboration room is being reset"));
@@ -136,13 +160,13 @@ async fn authenticate(
         return Err(match name {
             RoomName::Source { .. } => Refusal {
                 reason: "source-publishing".into(),
-                message: "Source room is locked for a publication".into(),
+                ..Refusal::plain("Source room is locked for a publication")
             },
             RoomName::Material { .. } => Refusal::plain("collaboration room is being compacted"),
         });
     }
     let claims = auth::verify(&token, &app.config.secret, &room, auth::now_seconds())
-        .map_err(|error| Refusal::plain(error.to_string()))?;
+        .map_err(|error| Refusal::token(&error))?;
     let mut viewer = false;
     match &name {
         RoomName::Material {
@@ -179,13 +203,20 @@ async fn authenticate(
             {
                 return Err(Refusal {
                     reason: sources::handoff::OFFICE_EDITING_PAUSED_REASON.into(),
-                    message: "Office editing is paused".into(),
+                    ..Refusal::plain("Office editing is paused")
                 });
             }
             app.sources
                 .assert_access(&source, &claims.sub, claims.access == Access::Write)
                 .await
-                .map_err(|error| Refusal::access(&AccessError::from_source(&error)))?;
+                .map_err(|error| {
+                    let mut refusal = Refusal::access(&AccessError::from_source(&error));
+                    // The gateway's conflict: the epoch (or its base) is not current.
+                    if error.status() == Some(409) {
+                        refusal.class = Class::Lineage;
+                    }
+                    refusal
+                })?;
         }
     }
     // A reset that began during the checks admits no one.

@@ -13,13 +13,20 @@ import (
 	"time"
 )
 
-// Memory is an in-process store for sharing E2E tests. Its presigned URLs are
-// intentionally unusable outside those tests; upload/download flows require B2.
+// Memory is an in-process store for E2E tests. Its presigned URLs are
+// `memory://` names nothing can fetch, unless the store is served
+// (NewServedMemory): then they are paths under ServedPath, which the e2e API
+// serves for the browser (through the dev server's /api proxy) and the
+// collaboration server (against its API URL).
 type Memory struct {
 	mu      sync.RWMutex
 	objects map[string]memoryObject
 	ttl     time.Duration
+	served  bool
 }
+
+// ServedPath is where the e2e API serves a served Memory store's objects.
+const ServedPath = "/api/e2e/blobs/"
 
 type memoryObject struct {
 	data        []byte
@@ -30,6 +37,32 @@ type memoryObject struct {
 // NewMemory returns a ready-to-use in-memory blob store.
 func NewMemory() *Memory {
 	return &Memory{objects: map[string]memoryObject{}, ttl: defaultPresignTTL}
+}
+
+// NewServedMemory is the e2e stack's store, its objects served under
+// ServedPath (httpapi registers the route only for it).
+func NewServedMemory() *Memory {
+	store := NewMemory()
+	store.served = true
+	return store
+}
+
+// Served reports whether the API serves this store's objects.
+func (s *Memory) Served() bool { return s.served }
+
+// Object is a stored object's bytes and content type.
+func (s *Memory) Object(path string) ([]byte, string, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	obj, ok := s.objects[path]
+	return obj.data, obj.contentType, ok
+}
+
+func (s *Memory) url(scheme, path string) string {
+	if s.served {
+		return ServedPath + path
+	}
+	return scheme + path
 }
 
 func (s *Memory) Put(id string, r io.Reader) (string, int64, error) {
@@ -63,19 +96,19 @@ func (s *Memory) PresignGetWithExpiry(_ context.Context, path string) (Presigned
 		return PresignedGet{}, errors.New("blob: object not found")
 	}
 	return PresignedGet{
-		URL:       "memory://" + path,
+		URL:       s.url("memory://", path),
 		ExpiresAt: time.Now().UTC().Add(s.ttl),
 	}, nil
 }
 
 // PresignStableGet is constant per path, which is stable within any hour.
 func (s *Memory) PresignStableGet(_ context.Context, path string) (string, error) {
-	return "memory://" + path, nil
+	return s.url("memory://", path), nil
 }
 
 func (s *Memory) PresignPut(_ context.Context, path, contentType string, _ int64) (PresignedPut, error) {
 	return PresignedPut{
-		URL:       "memory-put://" + path,
+		URL:       s.url("memory-put://", path),
 		Headers:   map[string]string{"Content-Type": contentType},
 		ExpiresAt: time.Now().UTC().Add(s.ttl),
 	}, nil

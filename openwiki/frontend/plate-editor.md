@@ -870,7 +870,10 @@ deleted only by checkpoint receipts: each request records the session's edit
 count, and a receipt deletes the session's update rows it covers (it also
 answers earlier requests it covers, such as one sent while offline). The room's
 sync alone never deletes them. A receipt deletes only its own session's rows
-and the exact rows it adopted, so another tab's newer write survives.
+and the exact rows it adopted, so another tab's newer write survives. A
+sweep's send from a page without the editor open deletes exactly the rows it
+sent, once the service answers (see
+[Sending drafts](#sending-drafts-without-the-editor-open)).
 
 On reconnect the provider's normal sync sends the unsent updates. After
 JOINED the server sends its step 1, the client sends its own, and the room
@@ -903,8 +906,8 @@ document, and the banner goes back to `offline` only once that lands. `navigator
 first row written while offline, except on Firefox, which prompts. Safari
 deletes script storage of a site not visited for 7 days, and private windows
 delete it on close. Rows of a note the account no longer has go on a 404, or a 403
-for the note itself (token, refusal), and in a once-per-load idle sweep that
-asks each stored document's token endpoint. A 403 about the account itself
+for the note itself (token, refusal), and in the draft load sweep (below),
+once per page load, which asks each stored document's token endpoint. A 403 about the account itself
 (`account_suspended`, `account_deletion_pending`: `isAccountForbiddenError`)
 keeps them, and so does the collaboration service's forbidden reason alone,
 which an account lock gives too; the sweep settles that case
@@ -921,6 +924,86 @@ save-delay warning and each offline episode (after the reconnect) are
 reported as editing incidents; the service records its discards, refusals and
 lineage moves itself (see
 [observability](../observability-metering.md#editing-incidents)).
+
+### Sending drafts without the editor open
+
+Rows left behind (a room or save error, a closed tab, offline) go to their
+room from any open Capy page, not only when the file opens again (Epo
+2026-10-13). The sweep (`startDraftSweeps` and `sweepDrafts` in
+`editDrafts.ts`) runs when the page is idle after load (the load sweep),
+when the browser comes back online and when the tab becomes visible; there
+is no service worker or Background Sync yet (it comes with opening offline).
+The drafts worker starts at app start, while the page is online, since one
+that cannot load fails every request for the page load. One sweep runs at a
+time per browser (the Web Lock `capy-drafts-sweep`; a trigger that finds it
+held does nothing), and it skips every document an editor holds: a recorder
+holds `capy-drafts:<key>` (shared) while it records. Without Web Locks
+nothing is sent, and the mock service (MSW) has no endpoint to send to. A
+sweep stops when the page signs in as someone else.
+
+For each other document of the signed-in account the sweep asks the token
+endpoint the editor uses (a file's `POST /files/<id>/collaboration-token`
+too). A 403 or 404 deletes the rows (above) in the load sweep only, once per
+page load; a later sweep that meets one leaves it for the next load. A read
+token sends nothing. A quiz's keys
+(stored as `<actor>:material:<id>:keys`) follow the quiz's own token, then
+go with the keys token (`{ document: 'keys' }`, room `keys:<id>:schema:<n>`);
+flashcard sets and a quiz's content go as notes do. With a write token the
+sweep takes the rows of the token's room that are neither refused nor
+`held` (left for the editor, below), one group per lineage (an Office file's rows of another base
+apart). The drafts worker merges each group (`merged`: the page's main
+thread pays about 4 ms for a 20 MB Office state, against 160-192 ms with a
+132-158 ms task when it merged there), and the page POSTs it to the
+collaboration service's `/drafts` on the host of the token's URL, the same
+URL for every document (so one preflight, kept 2 h, covers a sweep):
+`Authorization: Bearer <token>`, `X-Capy-Room: <room>`, `X-Capy-Base: <sha>`
+for a source, the update as the body
+(`collaboration-rs/crates/server/src/drafts.rs`). A note group past the
+4 MiB sync cap is not uploaded.
+
+The service runs a channel's JOIN checks (origin, token, access, the room's
+eviction and pause state), refuses a read-only token, checks the note's
+current schema, reads the body within a writer's sync message cap (4 MiB for
+a note, the frame cap for a source), checks the eviction lease and a local
+reset again (the body may have arrived after them), and hands the update to
+the room, loading it if need be: the same writer admission and apply as a
+channel's update (`admit_update` in `room.rs`, a read token's draft as a
+read channel's), so open editors receive it live, then a store at once. A
+source send counts as joining its room meanwhile. It answers only after that
+store, and that answer is the receipt for every row the request carried:
+only then are the rows deleted. A source room takes no send during a
+publication handoff, and an Office file's only over the room's base. A room
+whose load failed answers the failure (one load per send). A successful send
+is silent: the edits just appear for everyone.
+
+A refusal answers its class alone (`{"class": ...}`); the service logs the
+detail with the room and counts it by class
+(`capy_collaboration_draft_refusals_total`). Nothing is retried in a loop:
+
+- `limit` (422, over a content limit or a source's state cap) and
+  `malformed` (400, not an update a writer may send): the group is marked
+  `refused` and opens read-only at the next open, as the editor's own
+  refusals do, when it draws on its own (the worker's `draws`); otherwise it
+  is marked `held`, left for the editor's next open, where the room
+  refuses it again and the editor keeps the whole document as its refused
+  row; neither is sent again, so the room records the over-limit incident
+  once per open, not per page load;
+- `unheld` (409, the room lacks the update's base), `too_large` (413) and
+  `lineage` (409, a token for another room, a schema or epoch that moved on,
+  another Office base): marked `held`, left for the editor;
+- `permission` (403), `unavailable` (503) and any other answer: kept, and
+  not sent again until the next page load;
+- no answer (offline) or rows that changed meanwhile: kept for the next
+  trigger.
+
+`held` is the sweep's own mark: a held group that enters recovery at the
+next open (its file moved on) is still reported as another epoch's draft,
+which only the recovery's own `reported` mark stops, and rows a recovery
+marked `reported` go again once they are current (an epoch kept). A
+document whose rows a sweep settled is skipped by later sweeps of the page
+load while its row ids stay the same (the `documents` request reads them
+from the index without loading a row); the load sweep reads every
+document.
 
 ## Document limits and rejection
 

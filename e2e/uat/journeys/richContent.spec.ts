@@ -128,7 +128,9 @@ for (const format of ['docx', 'xlsx', 'pptx'] as const) {
       'edit'
     );
     const current = await savedExport(run, fileId);
+    // Nothing saved over seed(published): no state and no rows in its epoch.
     assert.equal(current.row.state, null);
+    assert.deepEqual(current.row.rows, []);
     assert.equal(sha256(current.bytes), published.source_sha256);
     await openFile(run, editor, workspaceId, fileId, 'view');
     await expectRichContent(

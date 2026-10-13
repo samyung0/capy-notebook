@@ -128,10 +128,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    Worker subrequests reach the API without the visitor's IP. There is no
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
    request, SPA fallbacks included, is served by the asset layer without an
-   invocation. `public/_headers` marks the content-hashed `/assets/*` bundles
-   `immutable` and the avatar/workspace `/icons/*` `max-age=31536000, immutable` (stable artwork, kept names); the rest
-   keep the Workers Assets default of `public, max-age=0, must-revalidate`
-   with an `ETag`.
+   invocation. `public/_headers` marks the avatar/workspace `/icons/*`
+   `max-age=31536000, immutable` (stable artwork, kept names); everything else,
+   the content-hashed `/assets/*` bundles included, keeps the Workers Assets
+   default of `public, max-age=0, must-revalidate` with an `ETag`. `/assets/*`
+   is not immutable because the SPA fallback answers an unknown asset name
+   with `index.html` (200), and during a deploy some edge locations do that
+   for new chunk names; an immutable header would pin that HTML for a year.
    The Office viewer/editor needs its own cookie-less hostname in production,
    such as `office.capynotebook.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
@@ -2878,3 +2881,191 @@ No rows: deploy normally. Otherwise, on the old release, `pause`, then
 (each such file publishes with no later edits, which returns its state to
 NULL), deploy with editing still paused, then `resume`. The BetterOffice pin
 of this release keeps every seed, so it needs no reset migration.
+
+## Rust collaboration cutover reset (migration 0080)
+
+The release that moves an environment from the Node collaboration server to
+the Rust one (shipped with live items, 0076/0077) drops every live
+collaboration state with
+[`0080_cutover_reset.sql`](../server/migrations/0080_cutover_reset.sql).
+States stored before the cutover keep base64 user ids as deleted map keys in
+their Yjs history, their saved rows hold user ids (source clones copy them),
+and a note's Yjs state may hold a pending quiz reference, which the Rust
+server neither cleans on load nor stores. A database with no collaboration
+rows (production today) passes and needs none of the steps.
+
+In one transaction it:
+
+- resets every source (DOCX, XLSX, PPTX and text) as the Office window does:
+  AI edit Undo released, refresh candidates and saved rows
+  (`source_document_updates`) deleted, epoch bumped, state NULL, pending
+  effects emptied. Rooms re-seed from their base, the published bytes;
+- deletes every note's, mindmap's and diagram's `material_yjs_documents` row
+  with its `material_yjs_updates` and releases its AI edit Undo. The next open
+  bootstraps it from `materials.content`. `materials.trash_restores` rises to
+  the dropped `room_schema`, so the new room (`1 + trash_restores`,
+  `store.MaterialRoom`) is past every old name: browser drafts of the old
+  lineage open copy-only recovery, and the collaboration server refuses to
+  bootstrap a room below `1 + trash_restores`, so an old token cannot revive
+  the old name. Comment anchors fall back to their block and quote, as after
+  a lineage compaction;
+- turns each pending quiz reference left in a note's `materials.content` into
+  an empty paragraph with its id (as `materialdoc.DropPendingRefs` does) and
+  bumps the note's revision;
+- leaves live flashcard and quiz rooms: 0076/0077 drop every older one in the
+  same release, and only the Rust server writes them after.
+
+Its guard refuses, and the deploy stops at `migrate`, while any source has
+unpublished edits, a refresh in flight or a pending rebuild, while Office
+editing is not paused, or while a note's projection is behind its stored Yjs
+state. Text sources need their own step: `publish-all` and `status` cover
+Office files only, and the pause leaves text editing on. 0076 and 0077, which
+run just before 0080 in the same deploy, delete every flashcard and quiz Yjs
+row with no such guard: step 4 below is what keeps their unprojected edits.
+Migrations commit one file at a time, so a refusal leaves 0073 to 0079
+applied; see "If 0080 refuses" below. The checks make a refusal unlikely.
+
+Dropping unpublished work is never a default: every explicit-loss `UPDATE`
+below runs only after the operator has saved the listed ids, kinds and owners
+with the cutover notes and Epo has approved those rows.
+
+Steps on UAT (`docker exec` on the UAT host; find the container names with
+`docker ps`):
+
+1. `docker exec server-<uuid> /app/office-maintenance pause`. Notes and text
+   sources stay editable until step 5; ask whoever uses UAT to stop editing.
+2. `publish-all --limit N` and `status` until `status` prints
+   `0 unpublished, 0 in flight`, as in the
+   [Office maintenance window](#office-maintenance-window) step 5.
+3. Text sources with unpublished edits:
+
+   ```sql
+   SELECT d.file_id, f.name, f.workspace_id, w.user_id AS owner, d.checkpoint,
+          d.indexed_checkpoint, d.running_job_id, d.refresh_error
+   FROM source_documents d JOIN files f ON f.id = d.file_id JOIN workspaces w ON w.id = f.workspace_id
+   WHERE d.format = 'text'
+     AND (d.checkpoint > d.indexed_checkpoint OR d.pending_effects <> '[]' OR d.running_job_id IS NOT NULL);
+   ```
+
+   The owner of each listed file runs **Process all** in the workspace's file
+   changes (owner-paid, as any Process). Repeat until no row is left. A file
+   that cannot process (a failed file, a suspended or deletion-pending owner,
+   a trashed file) keeps the deploy waiting: fix it, or accept losing its
+   unpublished text with
+   `UPDATE source_documents SET indexed_checkpoint = checkpoint, pending_effects = '[]' WHERE file_id = '<id>'`.
+4. Materials of every kind (notes, mindmaps, diagrams, quizzes, flashcard
+   sets) whose projection is behind their stored Yjs state (a room projects
+   once it is idle or unloads):
+
+   ```sql
+   SELECT d.material_id, m.kind, m.owner_user_id, m.trashed_at, d.stored_version,
+          d.projected_version, d.projection_error
+   FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+   WHERE d.projected_version < d.stored_version;
+   ```
+
+   Wait until it is empty. A row that keeps a `projection_error` (or belongs
+   to a trashed material, which never projects) needs the material fixed or
+   restored on the old release, or an explicit loss of its unprojected edits:
+   `UPDATE material_yjs_documents SET projected_version = stored_version WHERE material_id = '<id>'`.
+5. `docker stop collaboration-<uuid>` (its 60 s grace period flushes every
+   room). From here nothing writes collaboration state. Run `status` and the
+   queries of steps 3 and 4 again; if anything shows, `docker start
+   collaboration-<uuid>`, repeat steps 2 to 4 and stop it again. This restart
+   is allowed only before step 8.
+6. Note any storage drift that already exists, to compare after the deploy
+   (reconciliation's recount, `storageRecountSQL`, against what the triggers
+   booked):
+
+   ```sql
+   SELECT u.id FROM users u
+   WHERE COALESCE((SELECT used_bytes FROM user_storage WHERE user_id = u.id), 0)
+       + COALESCE((SELECT sum(delta_bytes) FROM user_storage_deltas WHERE user_id = u.id), 0)
+    <> COALESCE((SELECT sum(size_bytes) FROM files WHERE user_id = u.id), 0)
+       + COALESCE((SELECT sum(storage_bytes) FROM source_documents WHERE user_id = u.id), 0)
+       + COALESCE((SELECT sum(size_bytes) FROM editor_assets WHERE user_id = u.id AND status = 'ready'), 0)
+       + COALESCE((SELECT sum(size_bytes) FROM materials WHERE owner_user_id = u.id), 0)
+       + COALESCE((SELECT sum(inverse_bytes) FROM agent_edit_inverses WHERE owner_user_id = u.id), 0);
+   ```
+
+7. Back up the database (nothing writes it now):
+
+   ```bash
+   mkdir -p /root/backups
+   docker exec db-<uuid> pg_dump -U capy -d capy -Fc > /root/backups/capy-uat-pre-cutover-$(date -u +%Y%m%dT%H%MZ).dump
+   docker exec -i db-<uuid> pg_restore --list < /root/backups/capy-uat-pre-cutover-<UTC>.dump | head
+   ```
+
+   Keep the dump on the UAT host and copy it to the developer machine
+   (`scp -i ~/.ssh/id_ed25519_capy_uat root@159.195.250.206:/root/backups/<file> .`,
+   outside any repository). It holds UAT accounts' content: delete both copies
+   once the step 10 checks pass and UAT has been used normally for a week.
+8. Deploy the release (`deploy-uat`), still paused. `migrate` runs 0073 to
+   0080; the Rust collaboration server starts after it. **Once `deploy-uat`
+   has begun, never start the old collaboration container again**: on a
+   schema where 0076/0077 ran it would bootstrap quiz and flashcard rows in
+   the old Plate shape, holding user ids, which the Rust server cannot load
+   and no later migration drops.
+9. `resume`. Old tabs speak the Node protocol and cannot join; a reload loads
+   the new app, whose drafts of old rooms open in recovery.
+10. Check:
+    - the storage query from step 6 lists no new user;
+    - no note room from before the reset was recreated, and no pending
+      reference is left:
+
+      ```sql
+      SELECT count(*) FROM material_yjs_documents d JOIN materials m ON m.id = d.material_id
+      WHERE m.kind IN ('note', 'mindmap', 'diagram') AND d.room_schema <= m.trash_restores;
+      SELECT count(*) FROM materials m, jsonb_array_elements(m.content->'value') b
+      WHERE m.kind = 'note' AND b->>'type' = 'material_ref'
+        AND (b ? 'pending' OR jsonb_typeof(b->'materialId') IS DISTINCT FROM 'string'
+             OR b->>'materialId' !~ '\S');
+      ```
+
+      Both print 0;
+    - open a note in Edit (its saved content shows), type, reload; open a
+      text source and one Office file of each format in Edit, make an edit,
+      save and publish it.
+
+**If 0080 refuses.** The deploy stops at `migrate` with 0073 to 0079 applied.
+The new gateway, collaboration and retrieval services wait on `migrate` and
+never start, so no collaboration server runs: unpublished text cannot be
+processed and lagging projections cannot catch up. Read the refusal message:
+
+- "Office editing is not paused": pause (`INSERT INTO office_editing_pause
+  DEFAULT VALUES ON CONFLICT DO NOTHING` in `psql`) and rerun `deploy-uat` at
+  the same SHA. Nothing is lost.
+- "unpublished edits" or "projection is behind": the only way forward is the
+  explicit loss. List the rows with the queries of steps 3 and 4 and, for
+  Office files, `SELECT file_id, format FROM source_documents WHERE
+  checkpoint > indexed_checkpoint OR pending_effects <> '[]' OR running_job_id
+  IS NOT NULL OR rebuild_pending`. An Office file listed there takes
+  `UPDATE source_documents SET indexed_checkpoint = checkpoint,
+  pending_effects = '[]', running_job_id = NULL WHERE file_id = '<id>'`; a
+  pending rebuild cannot be accepted this way and needs the restore below.
+  Save the ids, kinds and owners, get Epo's approval, run the `UPDATE`s for
+  exactly those rows, and rerun `deploy-uat` at the same SHA; `migrate` then
+  runs 0080 alone.
+
+Never start the old collaboration container to publish or project (see step
+8). To abandon the cutover instead, restore the step 7 dump into a fresh
+database and redeploy the old release:
+
+```bash
+# Stop every service that connects to the database first: the stack's app
+# services, Ops and the nonprod ingest lane's consumers on the ingest host.
+docker exec db-<uuid> psql -U capy -d postgres -c 'DROP DATABASE capy WITH (FORCE)' -c 'CREATE DATABASE capy OWNER capy'
+docker exec -i db-<uuid> pg_restore -U capy -d capy --exit-on-error < /root/backups/capy-uat-pre-cutover-<UTC>.dump
+```
+
+Restore into a fresh database, never over the refused one: `--clean` leaves
+the tables 0073 to 0079 created, and the next deploy's migrations fail on
+them. The dump holds the pause row, so run `resume` once the old release is
+back.
+
+**Local development.** The compose gateway runs migrations at start
+(`MIGRATE=true`), so 0080 refuses on a local database with Office rows and no
+pause, unprocessed text edits or a lagging projection, and the gateway does
+not boot. Run `cd server && go run ./cmd/office-maintenance pause`, then
+process or accept the listed rows with the `UPDATE`s above, or recreate the
+local database (`docker compose down -v`; there is no backward compatibility).

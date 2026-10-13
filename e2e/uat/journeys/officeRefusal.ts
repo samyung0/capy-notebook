@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { expect, type FrameLocator, type Page } from '@playwright/test';
 import { sanitize } from './evidence';
 import { api, fileRow, object, string } from './files';
-import { saveOffice } from './office';
+import { SAVED_ROWS, saveOffice } from './office';
 import type { UatRun } from './runtime';
 
 /** UAT's COLLABORATION_UAT_PUBLICATION_HOLD holds a file named with it. */
@@ -304,7 +304,7 @@ export async function republication(
 /**
  * The republication's rebuild completed: nothing was saved after its capture,
  * so editing moved onto the published file (a new epoch after `epoch`) with
- * the state seed(published).
+ * the state seed(published): no state and no rows in the new epoch.
  */
 export async function rebuiltAfterRepublication(
   run: UatRun,
@@ -315,8 +315,9 @@ export async function rebuiltAfterRepublication(
     `rebuilt ${fileId}`,
     () =>
       run.query(
-        `SELECT epoch,rebuild_pending,rebuild_refusal,base_blob_path,
-        encode(state,'base64') AS state FROM source_documents WHERE file_id=%s`,
+        `SELECT d.epoch,d.rebuild_pending,d.rebuild_refusal,d.base_blob_path,
+        encode(d.state,'base64') AS state,${SAVED_ROWS}
+        FROM source_documents d WHERE d.file_id=%s`,
         [fileId]
       ),
     (rows) => rows[0]?.rebuild_pending === false,
@@ -325,6 +326,7 @@ export async function rebuiltAfterRepublication(
   assert(Number(row.epoch) > epoch);
   assert.equal(row.rebuild_refusal, null);
   assert.equal(row.state, null);
+  assert.deepEqual(row.rows, []);
   const file = await fileRow(run, fileId);
   assert.equal(row.base_blob_path, file.blob_path);
   return row;

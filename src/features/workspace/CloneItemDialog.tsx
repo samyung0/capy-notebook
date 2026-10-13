@@ -210,6 +210,14 @@ export function CloneItemDialog({
   });
 
   function openMaterialCopy(material: Material) {
+    // A copy in a workspace opens there; only a standalone one has its own page.
+    if (material.workspaceId) {
+      return navigate({
+        params: { workspaceId: material.workspaceId },
+        search: { material: material.id },
+        to: '/workspaces/$workspaceId',
+      });
+    }
     switch (material.kind) {
       case 'quiz':
         return navigate({

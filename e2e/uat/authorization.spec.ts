@@ -48,9 +48,12 @@ test('workspace statistics stay with owner and editor members', async ({
   }
 });
 
+// A viewer follows a note live on a read channel (live note View, 2026-10-10),
+// so it receives read access only.
 for (const [actor, access] of [
   ['owner', 'write'],
   ['editor', 'write'],
+  ['viewer', 'read'],
 ] as const) {
   test(`${actor} receives only ${access} collaboration access`, async ({
     page,
@@ -66,12 +69,8 @@ for (const [actor, access] of [
   });
 }
 
-// A viewer can read the material and is refused; a stranger cannot learn it
-// exists.
-for (const [actor, status] of [
-  ['viewer', 403],
-  ['other', 404],
-] as const) {
+// A stranger cannot learn the material exists.
+for (const [actor, status] of [['other', 404]] as const) {
   test(`${actor} cannot mint a collaboration token`, async ({ page }) => {
     await signIn(page, actor);
     const response = await api(

@@ -1,5 +1,5 @@
 import { createClerkClient } from '@clerk/backend';
-import type { Page } from '@playwright/test';
+import type { Page, Response } from '@playwright/test';
 
 export type Actor = 'editor' | 'other' | 'owner' | 'viewer';
 
@@ -75,6 +75,36 @@ async function evaluateWhenReady<T>(
   });
 }
 
+// While a site deploy propagates, or once the edge has cached the SPA fallback
+// under a chunk's name, UAT answers /assets/* with index.html: the app then
+// never boots ("Loading...") or shows "An update is ready" (2026-10-13). Fail
+// on the first such answer, naming it, instead of timing out.
+async function failOnHtmlAssets<T>(page: Page, run: () => Promise<T>) {
+  let onResponse = (_response: Response) => {};
+  const htmlAsset = new Promise<never>((_resolve, reject) => {
+    onResponse = (response) => {
+      const { pathname } = new URL(response.url());
+      const headers = response.headers();
+      if (
+        pathname.startsWith('/assets/') &&
+        headers['content-type']?.startsWith('text/html')
+      ) {
+        reject(
+          new Error(
+            `UAT answered ${pathname} with HTML (cf-cache-status ${headers['cf-cache-status'] ?? 'none'}): the site deploy has not settled, or the edge cached the SPA fallback for it`
+          )
+        );
+      }
+    };
+  });
+  page.on('response', onResponse);
+  try {
+    return await Promise.race([run(), htmlAsset]);
+  } finally {
+    page.off('response', onResponse);
+  }
+}
+
 export async function signIn(page: Page, actor: Actor) {
   const { data: users } = await clerkClient.users.getUserList({
     emailAddress: [emails[actor]],
@@ -85,48 +115,50 @@ export async function signIn(page: Page, actor: Actor) {
       `Expected exactly one Clerk UAT user for ${actor}; found ${users.length}`
     );
   }
-  await retryAcrossNavigation(page, () => page.goto('/'));
-  // Start from a clean session so an existing one below can only mean this
-  // call's own earlier attempt, never a leftover from the previous actor.
-  await signOut(page);
-  // A ticket is single use, so each attempt mints its own: a navigation can
-  // interrupt an attempt after Clerk has already consumed the one it was given.
-  await retryAcrossNavigation(page, async () => {
+  await failOnHtmlAssets(page, async () => {
+    await retryAcrossNavigation(page, () => page.goto('/'));
+    // Start from a clean session so an existing one below can only mean this
+    // call's own earlier attempt, never a leftover from the previous actor.
+    await signOut(page);
+    // A ticket is single use, so each attempt mints its own: a navigation can
+    // interrupt an attempt after Clerk has already consumed the one it was given.
+    await retryAcrossNavigation(page, async () => {
+      await page.waitForFunction(() => {
+        const clerk = (window as unknown as { Clerk?: ClerkBrowser }).Clerk;
+        return clerk?.loaded === true;
+      });
+      const ticket = await clerkClient.signInTokens.createSignInToken({
+        expiresInSeconds: 60,
+        userId: users[0].id,
+      });
+      await page.evaluate(async (token) => {
+        const clerk = (window as unknown as { Clerk: ClerkBrowser }).Clerk;
+        if (clerk.session) {
+          return;
+        }
+        const attempt = await clerk.client.signIn.create({
+          strategy: 'ticket',
+          ticket: token,
+        });
+        if (attempt.status !== 'complete' || !attempt.createdSessionId) {
+          throw new Error(`Clerk ticket sign-in ended with ${attempt.status}`);
+        }
+        await clerk.setActive({ session: attempt.createdSessionId });
+      }, ticket.token);
+    });
+    // Signing in redirects, which can abort this navigation the same way.
+    await retryAcrossNavigation(page, () => page.goto('/'));
+    // Clerk bootstraps again after this navigation, and the app bounces through
+    // the sign-in route until the session is restored. Wait for that to settle:
+    // page.evaluate cannot survive a navigation, so callers would otherwise race
+    // it and see "Execution context was destroyed".
     await page.waitForFunction(() => {
       const clerk = (window as unknown as { Clerk?: ClerkBrowser }).Clerk;
-      return clerk?.loaded === true;
+      return clerk?.loaded === true && Boolean(clerk.session);
     });
-    const ticket = await clerkClient.signInTokens.createSignInToken({
-      expiresInSeconds: 60,
-      userId: users[0].id,
-    });
-    await page.evaluate(async (token) => {
-      const clerk = (window as unknown as { Clerk: ClerkBrowser }).Clerk;
-      if (clerk.session) {
-        return;
-      }
-      const attempt = await clerk.client.signIn.create({
-        strategy: 'ticket',
-        ticket: token,
-      });
-      if (attempt.status !== 'complete' || !attempt.createdSessionId) {
-        throw new Error(`Clerk ticket sign-in ended with ${attempt.status}`);
-      }
-      await clerk.setActive({ session: attempt.createdSessionId });
-    }, ticket.token);
+    await page.waitForURL((url) => !/\/sign-in(?:[/?]|$)/.test(url.pathname));
+    await page.locator('main').waitFor({ state: 'visible' });
   });
-  // Signing in redirects, which can abort this navigation the same way.
-  await retryAcrossNavigation(page, () => page.goto('/'));
-  // Clerk bootstraps again after this navigation, and the app bounces through
-  // the sign-in route until the session is restored. Wait for that to settle:
-  // page.evaluate cannot survive a navigation, so callers would otherwise race
-  // it and see "Execution context was destroyed".
-  await page.waitForFunction(() => {
-    const clerk = (window as unknown as { Clerk?: ClerkBrowser }).Clerk;
-    return clerk?.loaded === true && Boolean(clerk.session);
-  });
-  await page.waitForURL((url) => !/\/sign-in(?:[/?]|$)/.test(url.pathname));
-  await page.locator('main').waitFor({ state: 'visible' });
 }
 
 export async function signOut(page: Page) {
