@@ -1,4 +1,5 @@
 import type { Question, SourceFile, SourceSession } from '@/api/types';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import {
   createMaterialDocument,
   flashcardsNode,
@@ -281,6 +282,9 @@ export async function scenarioSourceSession(
     epoch: seed.epoch,
     fileId,
     format: seed.format,
+    // The Free cap, as the mock materials carry.
+    imageMaxBytes:
+      seed.format === 'text' ? undefined : PLAN_LIMITS.free.imageMaxBytes,
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: null,

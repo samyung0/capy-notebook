@@ -1229,6 +1229,7 @@
   "workspaces_empty": "No workspaces yet.",
   "quiz_untitled": "Untitled quiz",
   "image_too_large": "Images must be {limit} or smaller, and this one is still too large after shrinking.",
+  "image_unreadable": "This image type can't be inserted.",
   "note_updated": "Updated {date}",
   "quiz_prompt_placeholder": "Question prompt",
   "quiz_signin_save_title": "Sign in to save your score",

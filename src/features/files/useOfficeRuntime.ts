@@ -7,6 +7,7 @@ import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { imageLimit } from '@/lib/fitImage';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useTheme } from '@/theme/theme';
 import { useFileMode } from './FileModeControl';
@@ -386,7 +387,15 @@ export function useOfficeRuntime({
             initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
           }
         : undefined;
+    const imageMaxBytes =
+      mode === 'edit' ? source.session!.imageMaxBytes : undefined;
     initializedFrame.current = frameGeneration;
+    // An Office edit session always names the payer's image cap; without one
+    // the editor cannot open, so it fails here instead of hanging.
+    if (mode === 'edit' && !(imageMaxBytes && imageMaxBytes > 0)) {
+      setError(m.error_file_body());
+      return;
+    }
     frameDoc.current = mode === 'edit' ? source.doc! : null;
     post(
       {
@@ -399,6 +408,7 @@ export function useOfficeRuntime({
         collaboration,
         fileName: file.name,
         format,
+        imageMaxBytes,
         mode,
         revision: revisionRef.current,
         type: 'load',
@@ -564,7 +574,10 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'notice') {
-        notices.show(message.notice);
+        // Notices come from an edit frame, which loads only with the payer's
+        // image cap; without one (no edit session) there is nothing to word.
+        const imageMaxBytes = active.session?.imageMaxBytes;
+        if (imageMaxBytes) notices.show(message.notice, imageMaxBytes);
         return;
       }
       if (message.type === 'error') {
@@ -894,32 +907,45 @@ function saveBlob(blob: Blob, name: string) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-/**
- * The frame's `open-presenter`: opens the presenter window only for a command
- * Capy itself opens it for (`popup: 'presenter'` in the frame's menus), so the
- * sandboxed runtime cannot have Capy open a window for anything else.
- */
-/** Each notice's message: a new notice needs its copy here. */
-const OFFICE_NOTICE_TITLES: Record<OfficeNotice, () => string> = {
-  'equation-text': () => m.files_office_equation_text(),
+/** Each notice's toast: a new notice needs its entry here. */
+const OFFICE_NOTICE_TOASTS: Record<
+  OfficeNotice,
+  { once: boolean; title: (imageMaxBytes: number) => string }
+> = {
+  // A refused keystroke repeats on every key: once per frame.
+  'equation-text': { once: true, title: () => m.files_office_equation_text() },
+  // Each refused image is its own pick: every time.
+  'image-too-large': {
+    once: false,
+    title: (imageMaxBytes) =>
+      m.image_too_large({ limit: imageLimit(imageMaxBytes) }),
+  },
+  'image-type': { once: false, title: () => m.image_unreadable() },
 };
 
 /**
- * The notices a frame shows: each once, since a refused keystroke repeats on
- * every key; a new frame starts over.
+ * The notices a frame shows, each as its entry says: a `once` notice once per
+ * frame (a new frame starts over), the others every time. `imageMaxBytes` is
+ * the edit session's image cap, which the size notice names.
  */
 export function officeNotices(toast: (title: string) => void) {
   const shown = new Set<OfficeNotice>();
   return {
     frame: () => shown.clear(),
-    show: (notice: OfficeNotice) => {
-      if (shown.has(notice)) return;
+    show: (notice: OfficeNotice, imageMaxBytes: number) => {
+      const { once, title } = OFFICE_NOTICE_TOASTS[notice];
+      if (once && shown.has(notice)) return;
       shown.add(notice);
-      toast(OFFICE_NOTICE_TITLES[notice]());
+      toast(title(imageMaxBytes));
     },
   };
 }
 
+/**
+ * The frame's `open-presenter`: opens the presenter window only for a command
+ * Capy itself opens it for (`popup: 'presenter'` in the frame's menus), so the
+ * sandboxed runtime cannot have Capy open a window for anything else.
+ */
 export function openRequestedPresenter(
   menus: Parameters<typeof officeCommandNeeds>[0],
   id: string,

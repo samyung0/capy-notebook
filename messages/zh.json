@@ -1229,6 +1229,7 @@
   "workspaces_empty": "还没有工作区。",
   "quiz_untitled": "未命名测验",
   "image_too_large": "图片不能超过 {limit}，这张图片压缩后仍然太大。",
+  "image_unreadable": "无法插入这种类型的图片。",
   "note_updated": "更新于 {date}",
   "quiz_prompt_placeholder": "题目",
   "quiz_signin_save_title": "登录以保存成绩",

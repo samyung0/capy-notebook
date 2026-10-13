@@ -7,10 +7,13 @@ import {
   undoDepth,
 } from '@codemirror/commands';
 import {
+  EditorState,
   type Extension,
   RangeSet,
   StateEffect,
   StateField,
+  type Text,
+  Transaction,
 } from '@codemirror/state';
 import {
   Decoration,
@@ -117,6 +120,25 @@ const indentKey = {
   },
 };
 
+/** Refuses a typed, pasted or undone change that takes the source past
+ * `maxBytes` of UTF-8 and grows it (`onRefused` hears of it); remote edits
+ * carry no user event and always land. */
+export function byteBound(maxBytes: number, onRefused: () => void): Extension {
+  // Up to 3 bytes a UTF-16 unit: a short source needs no count.
+  const bytes = (doc: Text) =>
+    doc.length * 3 <= maxBytes
+      ? 0
+      : new TextEncoder().encode(doc.toString()).length;
+  return EditorState.transactionFilter.of((tr) => {
+    if (!tr.docChanged || tr.annotation(Transaction.userEvent) === undefined)
+      return tr;
+    const next = bytes(tr.newDoc);
+    if (next <= maxBytes || next <= bytes(tr.startState.doc)) return tr;
+    onRefused();
+    return [];
+  });
+}
+
 /** Undo and Redo keys that act on a live item's history instead of the
  * editor's own (the standalone diagram's header buttons share it). */
 function itemHistoryKeys(target: UndoTarget): Extension {
@@ -167,14 +189,17 @@ export function editorHistory(): {
  * follows others' edits; otherwise the parent owns the string and a `value`
  * that differs from what is typed replaces the document. `history` hands
  * Undo and Redo to a live item's history; without it the editor keeps its
- * own, which `onView` lets the caller drive.
+ * own, which `onView` lets the caller drive. `maxBytes` refuses edits past
+ * that many bytes (`byteBound`).
  */
 export function MermaidCodeEditor({
   className,
   errorLine: line,
   history: itemHistory,
   label,
+  maxBytes,
   onChange,
+  onRefused,
   onView,
   origin,
   text,
@@ -184,7 +209,9 @@ export function MermaidCodeEditor({
   errorLine: number | null;
   history?: UndoTarget;
   label: string;
+  maxBytes?: number;
   onChange: (value: string) => void;
+  onRefused?: () => void;
   onView?: (view: EditorView | null) => void;
   origin?: unknown;
   text?: Y.Text;
@@ -196,6 +223,8 @@ export function MermaidCodeEditor({
   onChangeRef.current = onChange;
   const onViewRef = useRef(onView);
   onViewRef.current = onView;
+  const onRefusedRef = useRef(onRefused);
+  onRefusedRef.current = onRefused;
 
   // Created once per bound text; the effects below keep it in step with
   // the other props.
@@ -208,6 +237,7 @@ export function MermaidCodeEditor({
           ? [keymap.of([indentKey]), itemHistoryKeys(itemHistory)]
           : [history(), keymap.of([indentKey, ...historyKeymap])],
         text ? yTextSync(text, origin) : [],
+        maxBytes ? byteBound(maxBytes, () => onRefusedRef.current?.()) : [],
         errorLine,
         errorMarks,
         theme,

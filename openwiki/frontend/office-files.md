@@ -807,7 +807,24 @@ waits for the editor's replica, as the old Save button did. A click sends
 `menu-command` {id, value?}; an item's parameter rides in its id after a colon
 ("zoom:125"), `value` carries only the grid's "<rows>x<cols>". Items marked
 `pick: 'image'` open Capy's own file picker, because a click in the host gives
-the frame no user activation, and the file goes over as `menu-file`. For the
+the frame no user activation, and the file goes over as `menu-file`. Every
+inserted image (that file, one picked from the editor's own toolbar button, or
+a DOCX picture watermark) passes the editor's `prepareImage` first: the runtime
+shrinks one over the payer's plan image cap, which the edit `load` carries as
+`imageMaxBytes` (protocol v10; an edit session without one fails with the file
+error instead of loading), and re-encodes any type but PNG, JPEG and GIF, to
+JPEG or PNG (`fitImage` with `office`;
+[backend-storage-quota.md](../backend-storage-quota.md)). An image it cannot fit
+or decode reaches the runtime through the editor's `onError` as an
+`ImageTooLargeError` or `ImageUnreadableError`; the runtime sends a `notice`
+(`image-too-large` or `image-type`, beside parity-px's `equation-text`)
+instead of `error`, and Capy shows a toast for each pick, leaving the document
+and the editor as they were (the PPTX editor treats a `prepareImage` refusal
+as it does `EquationTextError`: no error box of its own). While it
+prepares, DOCX reports pending input and ignores another pick, as PPTX reports
+its pending insert; when the picture lands, an editor takes the focus back only
+if its frame still has it, so a slow shrink leaves a Capy menu, the chat box or
+a dialog the user moved to alone. For the
 same reason items marked `fullscreen` (and a header action marked so) go over
 with the click's full-screen permission, and items marked `popup: 'presenter'`
 have Capy open the PPTX presenter window first (`officeCommandNeeds`, see PPTX

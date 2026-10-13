@@ -517,7 +517,8 @@ after rendering. Preset fonts (Excalifont, vendored Latin subset in
 failed font load draws in the fallback font. In edit mode the hover toolbar has
 theme, caption, edit, copy and delete. A resized diagram stretches
 past its natural width. The
-caption is typed in a field under the diagram that rewrites the
+caption is typed in a field under the diagram (at most 300 characters, a
+silent `maxLength`, `BLOCK_CAPTION_MAX`) that rewrites the
 `mermaid_caption` text with `voids: true`. The node stays void, so a DOM
 selection inside it maps to the caption element; `fixMermaidSelection` moves
 such points onto the caption text. The edit dialog shows source beside a live
@@ -525,6 +526,10 @@ preview in the block's theme (Tab indents by two spaces; deleting lives on the
 toolbar) and edits the block live: there is no Save or Cancel, it closes with
 its X or Esc, and its footer holds Undo, Redo (CodeMirror's own history; the
 note's Undo does not cover the dialog's typing) and the note's save status.
+An edit (typing, paste, Undo) that would take the source past the HTML embed
+source's 64 KB (UTF-8) is refused with that bound's message ("The snippet is
+over 64 KB."; `byteBound`), while other peers' edits and shrinking edits always
+land; these bounds are the browser's only.
 The source is a trimmed CodeMirror 6 (`MermaidCodeEditor.tsx`: state,
 view and history only, ~78 KB gzipped, loaded with the dialog or the editor,
 ligatures off) with line numbers; the line mermaid blames gets a tinted
@@ -614,8 +619,9 @@ source dialog.
 with no border, radius or label): the caption as muted text under the
 frame, and a hover toolbar with View source, Copy
 and Delete in the editor and View source only in view mode. View source opens
-`HtmlEmbedSourceDialog`, titled Source: editors change the caption and snippet and Save within
-the 64 KB cap; read-only users only read it. The snippet runs only in
+`HtmlEmbedSourceDialog`, titled Source: editors change the caption (at most
+300 characters, a silent `maxLength`) and snippet and Save within the 64 KB
+cap; read-only users only read it. The snippet runs only in
 `<iframe sandbox="allow-scripts">` at `VITE_EMBED_ORIGIN/`, the
 wrapper page in `embed/` on its own site (see
 [deployment-runbook.md](../deployment-runbook.md)); without that origin the

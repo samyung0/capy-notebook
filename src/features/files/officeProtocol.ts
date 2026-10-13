@@ -6,7 +6,7 @@ import {
   type OfficeMenu,
 } from './officeMenus';
 
-export const OFFICE_PROTOCOL_VERSION = 9 as const;
+export const OFFICE_PROTOCOL_VERSION = 10 as const;
 
 /** Capy's UI locales; the runtime draws its chrome and menus in the same one. */
 export type OfficeLocale = 'en' | 'zh';
@@ -68,6 +68,11 @@ export type OfficeHostMessage =
       mode: OfficeMode;
       revision: number;
       collaboration?: { epoch: number; initialUpdate: ArrayBuffer };
+      /**
+       * Edit mode only: the plan image cap of the account paying for the
+       * file; an inserted image over it is shrunk first.
+       */
+      imageMaxBytes?: number;
       /** View mode only: saved Yrs state to export over `bytes` before opening. */
       checkpoint?: ArrayBuffer;
       /**
@@ -157,8 +162,16 @@ export interface OfficeReadyTimings {
   paintMs: number;
 }
 
-/** Refusals the editor reports for the host to show once, not errors. */
-export const OFFICE_NOTICES = ['equation-text'] as const;
+/**
+ * Refusals the runtime reports for the host to show, not errors: typing into
+ * a PPTX equation, or an inserted image over the payer's plan cap or of a
+ * type the browser cannot decode (nothing is inserted).
+ */
+export const OFFICE_NOTICES = [
+  'equation-text',
+  'image-too-large',
+  'image-type',
+] as const;
 export type OfficeNotice = (typeof OFFICE_NOTICES)[number];
 
 export type OfficeRuntimeMessage =
@@ -369,7 +382,9 @@ export function isOfficeHostMessage(
           .checkpointSeedSHA256
       ) &&
       (candidate.mode === 'view' ||
-        isCollaboration(candidate.collaboration))) ||
+        (isCollaboration(candidate.collaboration) &&
+          isCount(candidate.imageMaxBytes) &&
+          candidate.imageMaxBytes > 0))) ||
       (candidate.type === 'set-capabilities' &&
         typeof (candidate as { canEdit?: unknown }).canEdit === 'boolean'))
   );

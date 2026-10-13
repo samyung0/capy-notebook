@@ -652,9 +652,13 @@ the preview, even when the URL is unchanged. CSV/text retries retain their
 `SourceTextView` session. Office retry is view-only and reloads the source
 session, bytes and iframe. The Office iframe reports errors to the host,
 which owns error presentation; recoverable errors keep editors mounted. A
-refusal is a `notice` message instead (today only typing into a PPTX
-equation, `equation-text`): the host shows its reason once per frame as a
-default toast, and the editor shows nothing of its own.
+refusal is a `notice` message instead, and the editor shows nothing of its
+own. The host shows each notice's message as a default toast from one table
+(`officeNotices`): typing into a PPTX equation (`equation-text`) once per
+frame, since it repeats on every key; an inserted image over the payer's plan
+cap (`image-too-large`, worded with the cap the edit session loaded) or of a
+type the browser cannot decode (`image-type`), which leaves the document as it
+was, on every pick.
 PDF annotation-load failures use `userToast` with Retry to refetch private marks
 without reloading the PDF. The file viewer reports the request failure even
 while PDF bytes are loading or the PDF cannot render. Repeated failures reuse one toast per file; recovery

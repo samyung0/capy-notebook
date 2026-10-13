@@ -41,6 +41,12 @@ type SourceSession struct {
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
 	Access            string          `json:"access" enum:"write,read"`
+	// ImageMaxBytes: the browser's Office edit read only. The plan image cap
+	// of the workspace owner, who pays for the file: inserted images over it
+	// are shrunk in the browser first.
+	ImageMaxBytes int64 `json:"imageMaxBytes,omitempty"`
+	// OwnerID is the storage owner (files.user_id) the session read locked.
+	OwnerID string `json:"-"`
 	// RebuildPending: the file and its index were published while editing
 	// stayed on this base; the collaboration service rebuilds the editing
 	// state onto the published file once the room is empty. PublishedState is
@@ -217,6 +223,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	if err != nil {
 		return out, err
 	}
+	out.OwnerID = owner
 	var canEdit bool
 	err = tx.QueryRow(ctx, `SELECT w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND m.role IN ('owner','editor')) OR(w.privacy IN ('link','public') AND w.share_role='editor') FROM workspaces w WHERE id=$1`, ws, actor).Scan(&canEdit)
 	if err != nil {

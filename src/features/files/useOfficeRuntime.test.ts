@@ -86,11 +86,27 @@ describe('the notices a frame shows', () => {
   it('toasts a notice once per frame, and again in a new frame', () => {
     const toast = vi.fn();
     const notices = officeNotices(toast);
-    for (let key = 0; key < 3; key += 1) notices.show('equation-text');
+    for (let key = 0; key < 3; key += 1)
+      notices.show('equation-text', 2_097_152);
     expect(toast).toHaveBeenCalledTimes(1);
     expect(toast).toHaveBeenCalledWith(m.files_office_equation_text());
     notices.frame();
-    notices.show('equation-text');
+    notices.show('equation-text', 2_097_152);
     expect(toast).toHaveBeenCalledTimes(2);
+  });
+
+  it('toasts every refused image, naming the session cap for its size', () => {
+    const toast = vi.fn();
+    const notices = officeNotices(toast);
+    for (let pick = 0; pick < 2; pick += 1) {
+      notices.show('image-too-large', 2_097_152);
+      notices.show('image-type', 2_097_152);
+    }
+    expect(toast.mock.calls).toEqual([
+      [m.image_too_large({ limit: '2 MB' })],
+      [m.image_unreadable()],
+      [m.image_too_large({ limit: '2 MB' })],
+      [m.image_unreadable()],
+    ]);
   });
 });

@@ -155,6 +155,9 @@ func (a *api) getSourceSession(ctx context.Context, in *sourceSessionInput) (*so
 	session.RebuildPending, session.PublishedState, session.PublishedStateSeedSHA256, session.PublishedSourceSHA256 = false, nil, nil, ""
 	if session.Format != "text" {
 		session.State, session.StateSeedSHA256, session.StateRows = nil, nil, nil
+		if session.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, session.OwnerID); err != nil {
+			return nil, hErr(err)
+		}
 	}
 	return a.sourceSessionResponse(ctx, session)
 }

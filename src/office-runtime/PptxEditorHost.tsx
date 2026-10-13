@@ -58,6 +58,7 @@ export function PptxEditorHost({
   onSave,
   onThumbnailer,
   onZoomChange,
+  prepareImage,
   readOnly,
 }: {
   bytes: Uint8Array;
@@ -84,6 +85,8 @@ export function PptxEditorHost({
   onSave: () => void;
   onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
+  /** Shrinks an inserted image to the payer's plan cap. */
+  prepareImage: (file: File) => Promise<File>;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -126,7 +129,7 @@ export function PptxEditorHost({
             void file
               .arrayBuffer()
               .then((buffer) =>
-                api.insertImage(new Uint8Array(buffer), file.name)
+                api.insertImage(new Uint8Array(buffer), file.name, file.type)
               )
               // The editor reports its own insert failures.
               .catch(() => {});
@@ -265,6 +268,7 @@ export function PptxEditorHost({
         onSpeakerNotesChange={(visible) =>
           writeViewToggle('speakerNotes', visible)
         }
+        prepareImage={prepareImage}
         readOnly={readOnly}
         // Present is a header action and Capy has no PPTX agent proposals.
         showFontPicker={!narrow}

@@ -5199,6 +5199,9 @@ components:
             - pptx
             - text
           type: string
+        imageMaxBytes:
+          format: int64
+          type: integer
         indexedCheckpoint:
           format: int64
           type: integer
