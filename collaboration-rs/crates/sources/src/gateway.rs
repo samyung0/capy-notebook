@@ -182,6 +182,16 @@ impl Gateway {
         .await
     }
 
+    /// A source object's URL: a signed bucket URL as is, or a path the API
+    /// serves itself (the e2e stack's memory store, `/api/e2e/blobs/`).
+    pub fn object_url(&self, url: &str) -> String {
+        if url.starts_with('/') {
+            format!("{}{url}", self.api_url)
+        } else {
+            url.to_owned()
+        }
+    }
+
     pub async fn request<T: DeserializeOwned>(
         &self,
         path: &str,
@@ -308,4 +318,20 @@ pub fn encode(value: &str) -> String {
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn a_source_object_path_is_the_apis_own() {
+        let gateway = super::Gateway::new(reqwest::Client::new(), "http://server:8080", "secret");
+        assert_eq!(
+            gateway.object_url("/api/e2e/blobs/sources/a.md"),
+            "http://server:8080/api/e2e/blobs/sources/a.md"
+        );
+        assert_eq!(
+            gateway.object_url("https://bucket.test/a.md?signed"),
+            "https://bucket.test/a.md?signed"
+        );
+    }
 }

@@ -148,8 +148,8 @@ func openBlobStore(appEnv string) (blob.Store, error) {
 		if appEnv != "e2e" {
 			return nil, errors.New("blob: memory backend is only allowed when APP_ENV=e2e")
 		}
-		log.Printf("blob store: in-memory (sharing E2E; upload URLs unsupported)")
-		return blob.NewMemory(), nil
+		log.Printf("blob store: in-memory (E2E; objects served under %s)", blob.ServedPath)
+		return blob.NewServedMemory(), nil
 	case "disk":
 		if appEnv != "e2e" {
 			return nil, errors.New("blob: disk backend is only allowed when APP_ENV=e2e")

@@ -151,6 +151,26 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
 		go a.listenWorkspaceTree(context.Background())
 	}
+	// The e2e memory store, when its objects are served (blob.ServedPath).
+	served, _ := b.(*blob.Memory)
+	if served != nil && !served.Served() {
+		served = nil
+	}
+	publicPrefix := []string{
+		"/api/email/unsubscribe",
+		// Signed-out grading of a shared quiz or of a quiz embedded in a
+		// shared note; the handler verifies the share token and applies
+		// the anonymous daily caps.
+		"/api/public/quizzes/",
+		"/api/public/notes/",
+		// Service-to-service, authenticated by X-Pipeline-Secret inside the
+		// handler; there is no Clerk session to verify.
+		"/api/internal/",
+	}
+	if served != nil {
+		// Read by the collaboration server too, which has no session.
+		publicPrefix = append(publicPrefix, blob.ServedPath)
+	}
 	r := chi.NewRouter()
 	// Trace first so the recovery handler and every log line below it can name
 	// the request; access logging second so it records panics as 500s.
@@ -180,24 +200,14 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		})
 	})
 	r.Use(auth.Middleware(auth.Config{
-		SecretKey:  cfg.ClerkSecretKey,
-		Disabled:   cfg.AuthDisabled,
-		DevUserID:  cfg.DevUserID,
-		E2EAuth:    cfg.E2EAuth,
-		E2ESecret:  cfg.E2ESecret,
-		E2EUserIDs: cfg.E2EUserIDs,
-		Store:      s,
-		PublicPrefix: []string{
-			"/api/email/unsubscribe",
-			// Signed-out grading of a shared quiz or of a quiz embedded in a
-			// shared note; the handler verifies the share token and applies
-			// the anonymous daily caps.
-			"/api/public/quizzes/",
-			"/api/public/notes/",
-			// Service-to-service, authenticated by X-Pipeline-Secret inside the
-			// handler; there is no Clerk session to verify.
-			"/api/internal/",
-		},
+		SecretKey:    cfg.ClerkSecretKey,
+		Disabled:     cfg.AuthDisabled,
+		DevUserID:    cfg.DevUserID,
+		E2EAuth:      cfg.E2EAuth,
+		E2ESecret:    cfg.E2ESecret,
+		E2EUserIDs:   cfg.E2EUserIDs,
+		Store:        s,
+		PublicPrefix: publicPrefix,
 		PublicReadPrefix: []string{
 			"/api/public/",
 		},
@@ -250,6 +260,10 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		r.Post("/api/internal/import/fail", a.internalFailSourceImport)
 	}
 	r.Get("/api/workspaces/{id}/sources/import-content", a.getSourceImportContent)
+	if served != nil {
+		r.Get(blob.ServedPath+"*", e2eBlobs(served))
+		r.Put(blob.ServedPath+"*", e2eBlobs(served))
+	}
 
 	return r
 }

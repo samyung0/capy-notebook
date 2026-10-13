@@ -285,7 +285,7 @@ impl Sources {
         {
             return Ok(bytes);
         }
-        let bytes = read_source_bytes(self.gateway.http(), url).await?;
+        let bytes = read_source_bytes(self.gateway.http(), &self.gateway.object_url(url)).await?;
         let actual = office_service::sha256_hex(&bytes);
         if !sha.is_empty() && actual != sha {
             return Err(SourceError::Other("Source SHA mismatch".into()));

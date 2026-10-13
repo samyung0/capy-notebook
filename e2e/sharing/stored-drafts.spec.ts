@@ -1,8 +1,14 @@
-import type { BrowserContext, Page, WebSocketRoute } from '@playwright/test';
+import type {
+  APIRequestContext,
+  BrowserContext,
+  Page,
+  WebSocketRoute,
+} from '@playwright/test';
 import { expect, test } from '../fixtures/actors';
 import { users } from '../fixtures/seed';
 import { expectEditorLive } from '../helpers/editor';
 import { openWorkspaceMaterial } from '../helpers/workspace';
+import { m } from '../i18n';
 
 /**
  * The context's collaboration sockets pass through the test, so going offline
@@ -38,18 +44,57 @@ async function collaborationLink(context: BrowserContext) {
   };
 }
 
-/** How many rows of the note the owner's device stores, read in `page`
+/** How many rows of a document the owner's device stores, read in `page`
  * (the page's drafts worker answers after every write it was sent). */
-async function storedRows(page: Page, materialId: string) {
+async function storedRows(
+  page: Page,
+  id: string,
+  kind: 'file' | 'material' = 'material'
+) {
   return page.evaluate(
-    async ([actor, id]) => {
+    async ([actor, document, documentKind]) => {
       const draftsPath = '/src/lib/editDrafts.ts';
       const { draftKey, readDrafts } = await import(draftsPath);
-      const rows: unknown[] = await readDrafts(draftKey(actor, 'material', id));
+      const rows: unknown[] = await readDrafts(
+        draftKey(actor, documentKind, document)
+      );
       return rows.length;
     },
-    [users.owner, materialId] as const
+    [users.owner, id, kind] as const
   );
+}
+
+/** A text source uploaded to `workspaceId` through the API (the e2e
+ * stack's memory store serves its bytes under /api/e2e/blobs/). */
+async function uploadText(
+  api: APIRequestContext,
+  workspaceId: string,
+  name: string,
+  text: string
+) {
+  const bytes = Buffer.from(text);
+  const reserved = await api.post(
+    `/api/workspaces/${workspaceId}/sources/uploads`,
+    {
+      data: { contentType: 'text/markdown', name, sizeBytes: bytes.length },
+    }
+  );
+  expect(reserved.status(), await reserved.text()).toBe(201);
+  const upload = (await reserved.json()) as {
+    headers?: Record<string, string>;
+    uploadId: string;
+    url: string;
+  };
+  const put = await api.put(upload.url, {
+    data: bytes,
+    headers: upload.headers,
+  });
+  expect(put.status(), await put.text()).toBe(200);
+  const completed = await api.post(
+    `/api/workspaces/${workspaceId}/sources/uploads/${upload.uploadId}/complete`
+  );
+  expect(completed.status(), await completed.text()).toBe(201);
+  return ((await completed.json()) as { id: string }).id;
 }
 
 test('a note edited offline in a closed tab reaches a co-editor from another page', async ({
@@ -83,9 +128,6 @@ test('a note edited offline in a closed tab reaches a co-editor from another pag
   const other = await ownerPage.context().newPage();
   await other.goto('/');
   await expect(other.locator('main')).toBeVisible();
-  // Its drafts worker starts on first use: here, while online (one that
-  // cannot load fails every request for the page load).
-  await storedRows(other, material.id);
 
   await link.down(ownerPage);
   await expect(
@@ -116,4 +158,45 @@ test('a note edited offline in a closed tab reaches a co-editor from another pag
     timeout: 20_000,
   });
   await expect.poll(() => storedRows(other, material.id)).toBe(0);
+});
+
+test('a text source edited offline in a closed tab reaches a co-editor from another page', async ({
+  editorPage,
+  ownerApi,
+  ownerPage,
+  seed,
+}) => {
+  test.setTimeout(120_000);
+  const body = 'Stored drafts source';
+  const fileId = await uploadText(
+    ownerApi,
+    seed.editableWorkspace.id,
+    'stored-drafts.md',
+    body
+  );
+  const link = await collaborationLink(ownerPage.context());
+  const path = `/workspaces/${seed.editableWorkspace.id}?file=${fileId}&mode=edit`;
+  await Promise.all([ownerPage.goto(path), editorPage.goto(path)]);
+  const source = (page: Page) =>
+    page.getByRole('textbox', { exact: true, name: m.source_edit_raw() });
+  await expect(source(ownerPage)).toHaveValue(body, { timeout: 60_000 });
+  await expect(source(editorPage)).toHaveValue(body, { timeout: 60_000 });
+  const other = await ownerPage.context().newPage();
+  await other.goto('/');
+  await expect(other.locator('main')).toBeVisible();
+
+  await link.down(ownerPage);
+  await source(ownerPage).click();
+  await ownerPage.keyboard.press('ControlOrMeta+End');
+  await ownerPage.keyboard.type(' written offline');
+  await expect(source(ownerPage)).toHaveValue(`${body} written offline`);
+  expect(await storedRows(ownerPage, fileId, 'file')).toBeGreaterThan(1);
+  await expect(source(editorPage)).toHaveValue(body);
+
+  await ownerPage.close();
+  await link.up(other);
+  await expect(source(editorPage)).toHaveValue(`${body} written offline`, {
+    timeout: 20_000,
+  });
+  await expect.poll(() => storedRows(other, fileId, 'file')).toBe(0);
 });
