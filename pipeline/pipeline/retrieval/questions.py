@@ -48,7 +48,7 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator, ValidationError
 
-from . import contract
+from . import contract, embeds
 
 
 def _schema(name: str) -> dict[str, Any]:
@@ -118,7 +118,9 @@ EXPECTED = {
 }
 # Fields the server fills: the old question format's.
 SERVER_FILLED = {"id", "stem", "parts", "layout", "labels", "level", "points"}
-MEDIA_KEYS = {"media", "chart", "plot", "graph", "image", "figure", "table"}
+# Fields that try to put a figure in a question: the catalog's question-block
+# kinds and the other names a model reaches for.
+MEDIA_KEYS = {"media", "image", "figure", "table", *embeds.QUESTION_BLOCK_KINDS}
 
 # A value with a unit: a number or a fraction (questions.quantityPattern).
 _NUMBER = r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"

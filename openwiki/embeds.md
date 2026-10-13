@@ -9,7 +9,7 @@ that handles it. The **embed catalog** lists all of it in one place:
 
 | File | For |
 | --- | --- |
-| `pipeline/pipeline/generated/embeds.json` | the pipeline (package data) |
+| `pipeline/pipeline/generated/embeds.json` | the pipeline (package data, read by `retrieval/embeds.py`) |
 | `src/api/embeds.generated.ts` | the browser (`EMBED_CATALOG`, typed by its literal values) |
 | `collaboration-rs/crates/notes/src/catalog.rs` | the collaboration server (`notes::catalog`) |
 

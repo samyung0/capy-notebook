@@ -254,6 +254,12 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   `HtmlEmbed` description. Old UAT chat answers naming `Diagram` or
   `Interactive` still render, without those blocks: the parser drops an
   unknown component and marks the answer as having a gap.
-- Not done yet on this side: the Python lists (after the pipeline session's
-  agent-leniency branch lands, which touches `contract.py`, `tools.py` and
-  `questions.py`).
+- **Python against the catalog** (2026-10-14): `retrieval/embeds.py` loads
+  `generated/embeds.json`; `questions.py`'s `MEDIA_KEYS` takes the catalog's
+  question-block kinds (`_MEDIA`, the chart kinds and the fence repair already
+  read the contract's media schemas, which Go builds from the catalog).
+  `pipeline/tests/test_embeds.py` checks the media schemas are the catalog's
+  question media and that the note format describes every kind the agent
+  writes in notes. The embeds side of the split is done; what is left is the
+  two decisions above (footnotes, card images) and the Rust session's
+  live-layer items.
