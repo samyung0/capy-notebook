@@ -96,12 +96,16 @@ Files that change for the new type:
 - TypeScript: `src/features/questions/types.ts`, `validation.ts`, `graph.ts`,
   `graphSyntax.ts`.
 - Go: `server/internal/questions/questions.go` (element keys, term check with
-  `y`), `server/internal/fieldlimits/fieldlimits.go` (new cap), then regenerate
-  the limits and embed catalog outputs (`src/api/limits.generated.ts`,
-  `src/api/embeds.generated.ts`, `pipeline/pipeline/generated/`).
+  `y`), `server/internal/fieldlimits/fieldlimits.go` (new cap), then
+  `pnpm gen:openapi` regenerates the limits and the embed catalog
+  (`src/api/limits.generated.ts`, `src/api/embeds.generated.ts`,
+  `pipeline/pipeline/generated/`, `collaboration-rs/crates/notes/src/catalog.rs`);
+  commit `catalog.rs` with it.
 - Rust: `collaboration-rs/crates/notes/src/questions.rs` (`graph_element`,
-  `valid_graph_term`), the regenerated `catalog.rs` above, and the parity fixtures in
+  `valid_graph_term`), reading the cap from the generated `catalog.rs` rather
+  than a hand-copied constant, and the parity fixtures in
   `collaboration-rs/crates/items/tests/parity/` (`rust.json`, `ts.json`).
+  Live quiz rooms validate through the same `notes::questions` path;
   `crates/items/src/quiz.rs` stores a graph as one opaque value and needs no
   change.
 - Lab: `lab/questions/schema.py` (the bank writer's schema), so bank recipes can
@@ -112,10 +116,25 @@ Files that change for the new type:
 
 - Unit: `graphSyntax` parse and print for each row kind; the region sampler on
   a disk, a half-plane and a function with an undefined part; the new type's
-  validation in TS, Go and Rust through the shared parity fixtures.
+  validation in TS, Go and Rust through the shared parity fixtures (Rust
+  `items/tests/parity/`, Go `server/internal/questions/testdata/`): an
+  `implicit` with an x-only term, a `y` in a non-implicit element (refused),
+  and a bad relation.
 - One editor e2e: type a row, see the board change, save, see the SVG.
 - Update `openwiki/question-bank.md`, `openwiki/frontend/plate-editor.md` and
   `openwiki/test-catalog.md`.
+
+## Rust session check (2026-10-13)
+
+No clash. The Rust session will soon swap the hand-copied limits at the top of
+`notes/src/questions.rs` for `catalog.rs` constants and edit `material.rs`,
+`limits.rs` and `edit.rs`; it leaves `graph_element` and `valid_graph_term`
+alone. Whoever lands second in `questions.rs` rebases. A graph stays an inline
+value replaced whole (last save wins), so in-place board updates in phase 1 are
+editor-local. Phase 2 ships Go, Rust and the browser in one release: an older
+server refuses an unknown element type, which in a live quiz room closes the
+writer's channel and sends unsaved edits to recovery. Say so in the landing
+notes.
 
 ## Open
 
