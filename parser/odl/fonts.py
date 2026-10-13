@@ -85,7 +85,7 @@ def eligible_fonts(doc: pymupdf.Document) -> list[dict]:
     fonts: dict[int, dict] = {}
     for page in doc:
         for xref in sorted({font[0] for font in page.get_fonts(full=True)}):
-            if xref in fonts:
+            if xref in fonts or not _valid(doc, xref):
                 continue
             name, extension, kind, program = doc.extract_font(xref)
             record = {"xref": xref, "name": name, "eligible": False}
@@ -97,10 +97,9 @@ def eligible_fonts(doc: pymupdf.Document) -> list[dict]:
             ):
                 continue
             encoding = explicit_encoding(program)
-            unicode_key = doc.xref_get_key(xref, "ToUnicode")
-            if not encoding or unicode_key[0] != "xref":
+            cmap_xref = _target(doc, doc.xref_get_key(xref, "ToUnicode"))
+            if not encoding or cmap_xref is None:
                 continue
-            cmap_xref = int(unicode_key[1].split()[0])
             cmap_bytes = doc.xref_stream(cmap_xref)
             record.update(contradiction(encoding, cmap_bytes.decode("latin1")))
             if record["eligible"]:
@@ -140,8 +139,28 @@ def repair_fonts(data: bytes) -> tuple[bytes, int]:
         return doc.tobytes(), repaired
 
 
+def _valid(doc: pymupdf.Document, xref: int) -> bool:
+    """A damaged file (a Google Books scan) can name objects past its xref table."""
+    return 0 < xref < doc.xref_length()
+
+
+def _target(doc: pymupdf.Document, key: tuple[str, str]) -> int | None:
+    """The object a key refers to, or None when it is not a valid reference."""
+    if key[0] != "xref":
+        return None
+    xref = int(key[1].split()[0])
+    return xref if _valid(doc, xref) else None
+
+
 def _font_xrefs(doc: pymupdf.Document) -> list[int]:
-    return sorted({font[0] for page in doc for font in page.get_fonts(full=True)})
+    return sorted(
+        {
+            font[0]
+            for page in doc
+            for font in page.get_fonts(full=True)
+            if _valid(doc, font[0])
+        }
+    )
 
 
 # One bfrange entry: <lo> <hi> followed by a destination string or an array of
@@ -159,11 +178,10 @@ def split_wide_ranges(doc: pymupdf.Document) -> int:
     """
     fixed, seen = 0, set()
     for font in _font_xrefs(doc):
-        key = doc.xref_get_key(font, "ToUnicode")
-        if key[0] != "xref" or key[1] in seen:
+        xref = _target(doc, doc.xref_get_key(font, "ToUnicode"))
+        if xref is None or xref in seen:
             continue
-        seen.add(key[1])
-        xref = int(key[1].split()[0])
+        seen.add(xref)
         stream = doc.xref_stream(xref)
         if not stream:
             continue
@@ -376,12 +394,12 @@ def map_symbol_fonts(doc: pymupdf.Document) -> int:
     rewrite would drop them. Returns the fonts."""
     mapped = 0
     for xref in _font_xrefs(doc):
-        kind, target = doc.xref_get_key(xref, "ToUnicode")
-        if kind != "xref" or not _SYMBOL_FONT.fullmatch(
+        target = _target(doc, doc.xref_get_key(xref, "ToUnicode"))
+        if target is None or not _SYMBOL_FONT.fullmatch(
             doc.xref_get_key(xref, "BaseFont")[1][1:]
         ):
             continue
-        cmap = doc.xref_stream(int(target.split()[0])).decode("latin1")
+        cmap = doc.xref_stream(target).decode("latin1")
         if re.search(r"beginbfrange[^e]*\[", cmap):
             continue
         mapping = _read_cmap(cmap)
@@ -425,16 +443,15 @@ def repair_named_glyphs(doc: pymupdf.Document) -> int:
             "/Type3",
         ):
             continue
-        unicode_key = doc.xref_get_key(xref, "ToUnicode")
+        cmap_xref = _target(doc, doc.xref_get_key(xref, "ToUnicode"))
         encoding = doc.xref_get_key(xref, "Encoding")
-        if unicode_key[0] != "xref" or encoding[0] not in ("dict", "xref"):
+        encoding_xref = _target(doc, encoding)
+        if cmap_xref is None or not (encoding[0] == "dict" or encoding_xref):
             continue
         names = _differences(
-            encoding[1]
-            if encoding[0] == "dict"
-            else doc.xref_object(int(encoding[1].split()[0]))
+            encoding[1] if encoding[0] == "dict" else doc.xref_object(encoding_xref)
         )
-        stream = doc.xref_stream(int(unicode_key[1].split()[0]))
+        stream = doc.xref_stream(cmap_xref)
         if not names or not stream:
             continue
         try:

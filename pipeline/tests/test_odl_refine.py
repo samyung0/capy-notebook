@@ -1314,3 +1314,18 @@ def test_empty_tables_are_only_tables_without_any_cell_text_or_caption() -> None
     assert not pictures.empty_table(
         {"type": "table", "table_body": "<table><tr><td>0</td></tr></table>"}
     )
+
+
+def test_font_repair_skips_font_references_past_the_xref_table(monkeypatch) -> None:
+    # A Google Books scan names font objects its xref table does not hold;
+    # MuPDF raises "bad xref" when such a reference is read.
+    document = pymupdf.open()
+    document.new_page().insert_text((72, 72), "Scanned page", fontname="helv")
+    data = document.tobytes()
+    real = pymupdf.Page.get_fonts
+
+    def with_broken(self, full=False):
+        return [*real(self, full=full), (10_000, "n/a", "Type1", "Ghost", "F9", "")]
+
+    monkeypatch.setattr(pymupdf.Page, "get_fonts", with_broken)
+    assert fonts.repair_fonts(data) == (data, 0)

@@ -390,6 +390,84 @@ CC BY book) so the gate catches this class.
 - Headings set in the body style (37 of the 77 the rule still misses).
 - Levels for recalled headings come from style rank and can sit too high.
 
+## Update: v14 against MinerU on the 2026-10-12 pages
+
+The same 72 pages (6 books) as `2026-10-12-v12-vs-mineru-unseen-books.md`:
+
+- **Arms:** v14 parsed the whole books; MinerU's stored outputs were reused.
+- **Grading:** three new blind graders, pages shuffled with the original key.
+
+| Element | n | v12 (10-12) | MinerU (10-12) | v14 | MinerU (re-graded) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Formulas | 174 / 179 | 0.51 | 0.79 | 0.79 | 0.78 |
+| Tables | 4 | 0.50 | 0.75 | 0.50 | 0.75 |
+| Figures | 32 | 0.48 | 0.92 | 0.78 | 0.92 |
+| Headings | 90 / 70 | 0.47 | 0.64 | 0.73 | 0.70 |
+| Section paths | 72 | 0.62 | 0.69 | 0.69 | 0.63 |
+| Text | 72 | 0.78 | 0.79 | 0.88 | 0.78 |
+| False headings / tables | | 5 / 6 | 8 / 4 | 11 / 3 | 19 / 4 |
+
+**Caveats:**
+
+- These pages are now partly development data. The formula stage was graded
+  on 47 of them and heading recall was scored on them, so v14's numbers are
+  optimistic; the blind gate measures v14 on unseen documents.
+- The graders differ from 2026-10-12.
+  - MinerU's formula and text scores held (0.79/0.78, 0.79/0.78), so the
+    grading is calibrated there.
+  - The heading gold changed: 70 items against 90, run-ins treated
+    differently, and the legal book's "§ X Examples" box labels counted as
+    false headings.
+  - Compare headings and section paths within a column rather than across
+    rounds.
+
+**Where MinerU still wins:**
+
+- **Waterworks headings and paths: 0.00 against 1.00.** "Practice Problems N"
+  is demoted as a callout series, and heading recall leaves blocks an earlier
+  stage gave a role.
+- **MATLAB formulas: 0.23 against 0.66.** They are images.
+- **Figures: 0.78 against 0.92.** Captions and split figures in the
+  instrumentation and marine books.
+
+**Speed:** v14 parsed the whole books in 4.7–19 s each (the instrumentation
+manual 332 s, 3,311 pages). MinerU took 64–139 s per 12-page window on MPS.
+
+## Update: blind holdout gate, v13 → v14
+
+The second run of `scripts/holdout_gate.py`. It used 29 new documents, none
+from any earlier set or the previous gate: 10 table-heavy, 9 math, 9
+non-English (Japanese, Korean, Chinese, Cyrillic, Greek, Hebrew, Spanish), 7
+long, 5 scans and 4 slide decks. 28 documents were graded (84 pages). The base
+was HEAD's parser (v13); the candidate was the working tree (v14).
+
+| Element | n | v13 | v14 | Win/tie/loss | Difference [95% CI] |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Formulas | 147 | 0.61 | 0.69 | 24/123/0 | +0.08 [+0.04, +0.15] |
+| Tables | 17 | 0.53 | 0.53 | 0/17/0 | +0.00 |
+| Figures | 53 | 0.31 | 0.34 | 2/51/0 | +0.03 [+0.00, +0.10] |
+| Headings | 154 | 0.42 | 0.46 | 6/148/0 | +0.04 [+0.00, +0.09] |
+| Section paths | 84 | 0.38 | 0.48 | 15/69/0 | +0.10 [+0.04, +0.17] |
+| Text | 84 | 0.66 | 0.71 | 9/75/0 | +0.05 [+0.02, +0.10] |
+
+- **False headings:** 67 → 48. **False tables:** 89 → 17.
+- **Documents:** 15 better, 13 the same, none worse.
+- **Time, v14/v13:** total 0.83, median 1.07, max 1.94.
+- **Verdict:** passes. Formulas, section paths and text improve with
+  intervals above zero, and no element loses on any page.
+- **One crash in both arms, fixed after the gate.** A pure scan (127 of 128
+  pages without a text layer, made by a Google Books converter) crashed
+  before Java with `ValueError: bad xref`. Font repair read font references
+  past the file's xref table. It now skips any reference outside the table
+  (`fonts._valid`, `fonts._target`), with a test.
+  - With the fix the document parses: 127 OCR pages, 27,149 blocks.
+  - It took 1,314 s on the loaded Mac. In the service these pages go to the
+    OCR stage, which has no document deadline; this is the `scan-120p`
+    budget's throughput, not a new cost.
+  - Diagnosed from the traceback and file properties only, so the rest of
+    the set stays blind.
+- **This set is spent.**
+
 ## 4. Next steps, in order
 
 1. ~~Running header and footer furniture~~: done, see the update above.
