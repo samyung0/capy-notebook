@@ -27,8 +27,16 @@ func TestTurnThumbnailsNameEachEditedOfficeFileOnce(t *testing.T) {
 	ctx := context.Background()
 	owner := newBlobTestUser(t, s, "thumb_owner")
 	turn, other := uid("msg"), uid("msg")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Thumbnail workspace", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
 	file := func(name, kind string) string {
-		_, f := sourceTestFile(t, s, owner, name, kind)
+		t.Helper()
+		f, err := s.createReadyFile(ctx, ws.ID, owner, name, kind, nil, "", 100, "sources/"+uid("base"))
+		if err != nil {
+			t.Fatal(err)
+		}
 		return f.ID
 	}
 	edit := func(fileID, message, inverse, guards string) (string, error) {
