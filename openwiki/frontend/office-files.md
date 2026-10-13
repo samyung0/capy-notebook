@@ -89,6 +89,12 @@ Until parser-tolerant XLSX binding lands, any change under `crates/xlsx-parse`,
 `crates/xlsx-model` or `crates/betteroffice-xlsx` counts as seed-changing for
 XLSX: a room binds to a fingerprint of the whole parse, which four golden
 workbooks cannot vouch for.
+The pin bringing the fork's capy/parity-docx work is seed-changing for DOCX
+bases that hold SmartArt or `w:ruby`: a phonetic guide becomes one unit
+carrying its run's marks, a drawn SmartArt shape carries its source XML, and
+a SmartArt frame the parser cannot draw becomes a raw unit. The goldens hold
+neither, so the seed check on each environment decides whether DOCX joins the
+reset.
 
 ## Browser loading model
 
@@ -302,10 +308,14 @@ changed, over the fingerprinted source that every open requires:
   next publication rebases it into a reference. Charts and drawings the model
   cannot draw (`w:pict`, `w:object`, `mc:AlternateContent`) travel as raw XML
   and export unchanged until edited, as do SmartArt frames (drawn from their
-  diagram parts) and phonetic guides (`w:ruby`, shown as their base text, one
-  unit the caret steps over). Lists the bullet and number buttons make write
-  the two `w:num` ids after the source's, and the export adds their
-  definitions to numbering.xml, creating it when missing (Epo 2026-10-13).
+  diagram parts) and phonetic guides (`w:ruby`, shown as their base text in
+  their run's formatting, one unit the caret steps over, the run's `w:rPr`
+  saved with them). The bullet and number buttons write the two `w:num` ids
+  after the source's, and the export defines each id a list paragraph uses
+  that the numbering lacks as the kind the editor shows (`listIsBullet`), in
+  the numbering part its relationship names (created when missing), and with
+  either button id the other, so lists rebased across a publication keep
+  their kind (Epo 2026-10-13).
   A comment range covers the same content
   from one publication to the next within the story it opened in: the seed
   gives each unit inside a range to every comment open there (another
