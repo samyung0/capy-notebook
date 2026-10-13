@@ -34,7 +34,7 @@ fn leaf() -> Value {
 /// Valid documents of every material kind that together hold every element
 /// type the catalog lists (Go's `catalogDocuments`): the every-block note
 /// shared with Go and the UAT journey, its imported fences named as rows,
-/// plus the transient, footnote and newer elements it does not carry; a
+/// plus the transient and newer elements it does not carry; a
 /// quiz, a card set and a mindmap.
 fn documents() -> BTreeMap<&'static str, Vec<Value>> {
     let fixture = read_json("server/internal/materialdoc/testdata/every-block-note.json");
@@ -49,14 +49,6 @@ fn documents() -> BTreeMap<&'static str, Vec<Value>> {
     note.extend([
         json!({ "type": "plot", "id": "cat_plot", "block": question("plot")["stem"][1], "children": leaf() }),
         json!({ "type": "placeholder", "id": "cat_upload", "mediaType": "img", "children": leaf() }),
-        json!({ "type": "p", "id": "cat_footnote", "children": [
-            { "text": "Cited" },
-            { "type": "footnoteReference", "identifier": "1", "children": leaf() },
-            { "text": "." },
-        ] }),
-        json!({ "type": "footnoteDefinition", "id": "cat_note", "identifier": "1", "children": [
-            { "type": "p", "children": [{ "text": "The note." }] },
-        ] }),
         json!({ "type": "p", "id": "cat_inputs", "children": [
             { "text": "Ask " },
             { "type": "mention_input", "trigger": "@", "children": leaf() },
