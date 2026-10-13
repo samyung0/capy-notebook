@@ -461,7 +461,8 @@ hollow; the next has a ring and a "Next: <item>" tag (raised above a station
 it would cover); faint from six items past the next or last touched item,
 whichever is later. Hover shows the title, a click opens the item. Once every
 item is done there is no ring or Next tag: the line is solid to the buffer stop
-and a "Finished" tag rises above the terminus's flag.
+and a "Finished" tag sits left of the terminus's flag, as on the bank's
+summit (`map.flag`, reported by the terminus drawing).
 
 Biomes are 260 to 440 map units (about 4 to 7 items), blending over 60:
 city and industry (rows of buildings behind the line and, partly hidden by

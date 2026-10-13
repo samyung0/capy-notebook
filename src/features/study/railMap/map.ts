@@ -413,6 +413,8 @@ export interface Segment {
   biome: BiomeName;
 }
 export interface RailMap {
+  /** The terminus flag's pole at the cloth's middle height, for the Finished tag. */
+  flag: Pt;
   /** Visual weight per question-width, both sides summed, for measure(). */
   ink: Map<number, number>;
   /** Drawn after the backdrop: stations, then placed elements back to front. */
@@ -761,7 +763,7 @@ class Builder {
 
   // ---------- stations ----------
 
-  stations(): Piece[] {
+  stations(): { flag: Pt; pieces: Piece[] } {
     const out: Piece[] = [];
     this.starts.forEach(({ sx, lines }, k) => {
       const y = this.ty(sx + 60);
@@ -789,7 +791,7 @@ class Builder {
       b: this.lineEnd + 12,
       svg: B.bufferStop(this.lineEnd + 2, y, this.rand('buffer', 0)),
     });
-    return out;
+    return { flag: end.flag as Pt, pieces: out };
   }
 
   // ---------- landmarks ----------
@@ -1104,7 +1106,7 @@ class Builder {
   }
 
   build(): RailMap {
-    const stations = this.stations();
+    const { flag, pieces: stations } = this.stations();
     this.landmarks();
     this.rows();
     this.scatter();
@@ -1124,6 +1126,7 @@ class Builder {
       ink.set(bin, (ink.get(bin) ?? 0) + v);
     }
     return {
+      flag,
       ink,
       over: [
         ...stations,
