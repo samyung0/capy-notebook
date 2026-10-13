@@ -4,12 +4,44 @@ import {
   useQueryClient,
 } from '@tanstack/react-query';
 import { type ErrorComponentProps, Link } from '@tanstack/react-router';
-import { Component, type ErrorInfo, type ReactNode, useEffect } from 'react';
+import {
+  Component,
+  createContext,
+  type ErrorInfo,
+  type ReactNode,
+  useContext,
+  useEffect,
+} from 'react';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
 import { describeError } from '@/lib/errors';
 import { ErrorState } from './ErrorState';
 import { Panel } from './layout';
+
+/** True inside AppShell's `<main>`: a fallback there must not add a second
+ * main landmark. */
+export const InShellMain = createContext(false);
+
+/** A fallback's frame: the page's main landmark, or a plain box in the shell. */
+function FallbackFrame({
+  children,
+  className,
+}: {
+  children: ReactNode;
+  className: string;
+}) {
+  const Frame = useContext(InShellMain) ? 'div' : 'main';
+  return (
+    <Frame className={className}>
+      <Panel
+        className="h-full w-full"
+        sectionClassName="h-full w-full min-h-full flex flex-row"
+      >
+        {children}
+      </Panel>
+    </Frame>
+  );
+}
 
 interface BoundaryProps {
   children: ReactNode;
@@ -90,30 +122,25 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
     const description = describeError(this.state.error);
     const reload = description.action === 'reload';
     return (
-      <main className="h-dvh overflow-hidden p-1.5 sm:p-2.5">
-        <Panel
-          className="h-full w-full"
-          sectionClassName="h-full w-full min-h-full flex flex-row"
-        >
-          <ErrorState
-            action={
-              <ErrorAction
-                iconLeftClassName="me-1"
-                onClick={reload ? () => window.location.reload() : this.reset}
-              >
-                {reload ? m.error_action_reload() : m.error_action_retry()}
-              </ErrorAction>
-            }
-            className={
-              this.props.variant === 'page' ? 'h-full w-full' : undefined
-            }
-            description={description.description}
-            icon={description.icon}
-            title={description.title}
-            variant={this.props.variant ?? 'panel'}
-          />
-        </Panel>
-      </main>
+      <FallbackFrame className="h-dvh overflow-hidden p-1.5 sm:p-2.5">
+        <ErrorState
+          action={
+            <ErrorAction
+              iconLeftClassName="me-1"
+              onClick={reload ? () => window.location.reload() : this.reset}
+            >
+              {reload ? m.error_action_reload() : m.error_action_retry()}
+            </ErrorAction>
+          }
+          className={
+            this.props.variant === 'page' ? 'h-full w-full' : undefined
+          }
+          description={description.description}
+          icon={description.icon}
+          title={description.title}
+          variant={this.props.variant ?? 'panel'}
+        />
+      </FallbackFrame>
     );
   }
 }
@@ -156,52 +183,42 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
   );
 
   return (
-    <main className="h-full overflow-hidden p-1.5 sm:p-2.5">
-      <Panel
-        className="h-full w-full"
-        sectionClassName="h-full w-full min-h-full flex flex-row"
-      >
-        <ErrorState
-          action={
-            <ErrorAction
-              iconLeftClassName="me-1"
-              onClick={reload ? () => window.location.reload() : retry}
-            >
-              {reload ? m.error_action_reload() : m.error_action_retry()}
-            </ErrorAction>
-          }
-          description={description.description}
-          icon={description.icon}
-          title={description.title}
-          variant="page"
-        />
-      </Panel>
-    </main>
+    <FallbackFrame className="h-full overflow-hidden p-1.5 sm:p-2.5">
+      <ErrorState
+        action={
+          <ErrorAction
+            iconLeftClassName="me-1"
+            onClick={reload ? () => window.location.reload() : retry}
+          >
+            {reload ? m.error_action_reload() : m.error_action_retry()}
+          </ErrorAction>
+        }
+        description={description.description}
+        icon={description.icon}
+        title={description.title}
+        variant="page"
+      />
+    </FallbackFrame>
   );
 }
 
 export function RouteNotFoundComponent() {
   return (
-    <main className="h-full overflow-hidden p-1.5 sm:p-2.5">
-      <Panel
-        className="h-full w-full"
-        sectionClassName="h-full w-full min-h-full flex flex-row"
-      >
-        <ErrorState
-          action={
-            <ErrorAction
-              asChild
-              iconLeft="navigationBack"
-              iconLeftClassName="me-1"
-            >
-              <Link to="/">{m.error_action_go_back()}</Link>
-            </ErrorAction>
-          }
-          description={m.error_not_found_page_body()}
-          title={m.error_not_found_page_title()}
-          variant="page"
-        />
-      </Panel>
-    </main>
+    <FallbackFrame className="h-full overflow-hidden p-1.5 sm:p-2.5">
+      <ErrorState
+        action={
+          <ErrorAction
+            asChild
+            iconLeft="navigationBack"
+            iconLeftClassName="me-1"
+          >
+            <Link to="/">{m.error_action_go_back()}</Link>
+          </ErrorAction>
+        }
+        description={m.error_not_found_page_body()}
+        title={m.error_not_found_page_title()}
+        variant="page"
+      />
+    </FallbackFrame>
   );
 }

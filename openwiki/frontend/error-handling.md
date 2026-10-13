@@ -190,6 +190,16 @@ not offline use: without a service worker the app itself does not load offline.
 
 Resetting a boundary also resets TanStack Query's error state before retrying.
 
+A page has one main landmark. `AppShell` owns it and marks its children with
+`InShellMain`, so a boundary or router fallback rendered inside the shell
+(a pane boundary, a route error or not-found) frames itself in a plain `div`;
+outside the shell (the root boundary, a public route) the fallback is the
+`main`.
+
+A route chunk that comes back as HTML (a site deploy still propagating answers
+a missing `/assets/*` name with the SPA's `index.html`) fails as a chunk-load
+error: the router reloads once, then shows "An update is ready" with Reload.
+
 ## Shared-resource security
 
 Public workspace summaries at `/w/:id.:signature` render on the server. Unsigned or

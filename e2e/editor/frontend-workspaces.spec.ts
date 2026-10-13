@@ -224,6 +224,31 @@ test('invitations are standalone and transfer previews open only one dialog', as
   await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
+// A deploy still propagating answered new chunks with the SPA's index.html
+// (UAT 2026-10-13): the route's update fallback renders inside the shell,
+// which already owns the page's one main landmark.
+test('a route chunk answered with HTML shows the update fallback inside the shell', async ({
+  context,
+  page,
+}) => {
+  await context.route(
+    (url) => url.pathname === '/src/routes/Dashboard.tsx',
+    (route) =>
+      route.fulfill({
+        body: '<div id="root">Loading...</div>',
+        contentType: 'text/html',
+      })
+  );
+  await page.goto('/');
+  await expect(
+    page.getByRole('alert').getByText(m.error_chunk_title(), { exact: true })
+  ).toBeVisible({ timeout: 30_000 });
+  await expect(
+    page.getByRole('link', { exact: true, name: m.nav_workspaces() })
+  ).toBeVisible();
+  await expect(page.getByRole('main')).toHaveCount(1);
+});
+
 test('workspace sorting picks an order and reverses it from the active option', async ({
   page,
 }) => {
