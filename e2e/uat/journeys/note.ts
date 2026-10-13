@@ -651,7 +651,11 @@ export async function sharedNote(
   ) as { items: { id: string; sharePath?: string }[] };
   const sharePath = string(items.find((item) => item.id === clone)?.sharePath);
   const token = string(sharePath.split('/').pop());
+  // A copy keeps a mention only of a user among its readers; a standalone
+  // copy has none but its owner, so mentions arrive as plain "@Name" text
+  // (store.PlainMentions, the item clone round).
   const want = kinds(await everyBlockValue());
+  want.types.delete('mention');
   const context = await browser.newContext({
     baseURL: run.env.appUrl,
     locale: 'en-US',
