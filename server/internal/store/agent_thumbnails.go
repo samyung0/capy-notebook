@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,10 +14,14 @@ import (
 )
 
 // Server-side Office thumbnails after agent edits (openwiki/thumbnails.md,
-// "Agent captures"): once per finished agent response, each Office file the
-// turn's committed edits may have changed page 1 of is exported by the
-// collaboration server, rendered by the parser and stored like a browser
+// "Agent captures"): once per finished agent response, the collaboration
+// server draws page 1 of each Office file the turn's committed edits may have
+// changed, as the browser's capture draws it, and Go stores it like a browser
 // capture.
+
+// thumbnailCaptureMaxBytes is the most a capture may hold (the browser
+// endpoint's 64 KiB limit).
+const thumbnailCaptureMaxBytes = 64 << 10
 
 // The XLSX capture area an edited cell must fall in: about the 800 x 550
 // sheet px of the browser capture at default sizes, A1:H25 (Epo 2026-10-11).
@@ -153,10 +156,10 @@ func appendNew(list []string, values ...string) []string {
 	return list
 }
 
-// ExportSourceThumbnail asks the collaboration server for the file's Office
-// bytes when the turn's edits may have changed its page 1; nil when they did
-// not.
-func (s *Store) ExportSourceThumbnail(ctx context.Context, t AgentThumbnail) ([]byte, error) {
+// CaptureSourceThumbnail asks the collaboration server for the file's page 1
+// as a list-card WebP, drawn as the browser's capture draws it, when the
+// turn's edits may have changed it; nil when they did not.
+func (s *Store) CaptureSourceThumbnail(ctx context.Context, t AgentThumbnail) ([]byte, error) {
 	if s.collaborationURL == "" || s.collaborationSecret == "" {
 		return nil, ErrAuthorityUnavailable
 	}
@@ -164,7 +167,7 @@ func (s *Store) ExportSourceThumbnail(ctx context.Context, t AgentThumbnail) ([]
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.collaborationURL+"/internal/source-thumbnails/export", bytes.NewReader(raw))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.collaborationURL+"/internal/source-thumbnails/capture", bytes.NewReader(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -180,13 +183,8 @@ func (s *Store) ExportSourceThumbnail(ctx context.Context, t AgentThumbnail) ([]
 	case http.StatusNoContent:
 		return nil, nil
 	case http.StatusOK:
-		// The collaboration server refuses an export past this
-		// (MAX_SOURCE_STATE_BYTES), as source checkpoints do.
-		body, err := io.ReadAll(io.LimitReader(response.Body, 100<<20+1))
-		if err == nil && len(body) > 100<<20 {
-			err = errors.New("the export exceeds its byte limit")
-		}
-		return body, err
+		// Past the capture limit the caller's check refuses it.
+		return io.ReadAll(io.LimitReader(response.Body, thumbnailCaptureMaxBytes+1))
 	}
 	message, _ := io.ReadAll(io.LimitReader(response.Body, 4<<10))
 	return nil, fmt.Errorf("%w: %s %s", ErrAuthorityUnavailable, response.Status, bytes.TrimSpace(message))

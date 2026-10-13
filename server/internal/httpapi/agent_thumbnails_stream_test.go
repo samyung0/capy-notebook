@@ -16,22 +16,16 @@ import (
 
 // A chat response whose agent committed edits to a DOCX starts one capture
 // when it finishes, after the message is final: the collaboration server
-// exports the file once and the parser renders it once, though the response
-// edited it twice.
+// draws the file once, though the response edited it twice.
 func TestAFinishedChatResponseCapturesItsEditedFileOnce(t *testing.T) {
 	var st *store.Store
-	var exports, renders atomic.Int32
+	var captures atomic.Int32
 	collaboration := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		exports.Add(1)
-		_, _ = w.Write([]byte("office bytes"))
-	}))
-	t.Cleanup(collaboration.Close)
-	parser := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		renders.Add(1)
+		captures.Add(1)
 		w.Header().Set("Content-Type", "image/webp")
 		_, _ = w.Write(webpLossless)
 	}))
-	t.Cleanup(parser.Close)
+	t.Cleanup(collaboration.Close)
 	// The agent's two edits of the file commit while the response streams.
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -54,9 +48,8 @@ func TestAFinishedChatResponseCapturesItsEditedFileOnce(t *testing.T) {
 		_, _ = fmt.Fprint(w, "data: {\"type\":\"done\",\"answer\":\"Edited the plan.\"}\n\n")
 	}))
 	t.Cleanup(upstream.Close)
-	h, opened, _, _ := openInternalHTTPWith(t, pipeline.New(upstream.URL, ""), func(s *store.Store, c *httpapi.Config) {
+	h, opened, _, _ := openInternalHTTPWith(t, pipeline.New(upstream.URL, ""), func(s *store.Store, _ *httpapi.Config) {
 		s.ConfigureCollaboration(collaboration.URL, "secret")
-		c.ParserURL = parser.URL + "/file_parse"
 	})
 	st = opened
 	ctx := t.Context()
@@ -92,7 +85,7 @@ func TestAFinishedChatResponseCapturesItsEditedFileOnce(t *testing.T) {
 			t.Fatalf("thumbnail_key = %q after the response, want %q", got, key)
 		}
 	}
-	if exports.Load() != 1 || renders.Load() != 1 {
-		t.Fatalf("exports = %d, renders = %d, want one each", exports.Load(), renders.Load())
+	if captures.Load() != 1 {
+		t.Fatalf("captures asked = %d, want one", captures.Load())
 	}
 }

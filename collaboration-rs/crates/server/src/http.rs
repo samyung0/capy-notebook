@@ -31,8 +31,8 @@ pub fn router(app: Shared) -> Router {
             post(publish_source_refresh),
         )
         .route(
-            "/internal/source-thumbnails/export",
-            post(export_source_thumbnail),
+            "/internal/source-thumbnails/capture",
+            post(capture_source_thumbnail),
         )
         .route("/internal/documents/inspect", post(document))
         .route("/internal/documents/edit", post(document))
@@ -266,9 +266,10 @@ async fn publish_source_refresh(
     source_answer("source_publish", result)
 }
 
-/// An Office file's bytes for its list-card thumbnail after an agent turn
-/// (`sources::thumbnail`), or 204 when the turn's edits left page 1 alone.
-async fn export_source_thumbnail(
+/// An Office file's list-card thumbnail after an agent turn, page 1 drawn as
+/// the browser's capture draws it (`sources::thumbnail`), or 204 when the
+/// turn's edits left page 1 alone.
+async fn capture_source_thumbnail(
     State(app): State<Shared>,
     headers: HeaderMap,
     body: Bytes,
@@ -289,13 +290,10 @@ async fn export_source_thumbnail(
             json!({ "message": "Invalid thumbnail request" }),
         );
     };
-    match app.sources.thumbnail_export(&targets).await {
-        Ok(Some(bytes)) => (
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, "application/octet-stream")],
-            bytes,
-        )
-            .into_response(),
+    match app.sources.thumbnail_capture(&targets).await {
+        Ok(Some(webp)) => {
+            (StatusCode::OK, [(header::CONTENT_TYPE, "image/webp")], webp).into_response()
+        }
         Ok(None) => StatusCode::NO_CONTENT.into_response(),
         Err(error) => source_answer("source_thumbnail", Err(error)),
     }

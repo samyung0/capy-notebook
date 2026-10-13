@@ -539,11 +539,11 @@ async fn a_text_save_carries_the_files_opening_characters() {
     assert!(text.starts_with("Xhello\nworldyyy"));
 }
 
-// An agent turn's thumbnail exports the durable document only when page 1
-// may have changed: any DOCX edit, an XLSX edit on the first sheet.
+// An agent turn's thumbnail draws the durable document's page 1 only when
+// it may have changed: any DOCX edit, an XLSX edit on the first sheet.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
-async fn a_turns_thumbnail_exports_only_what_may_show_on_page_one() {
+async fn a_turns_thumbnail_draws_only_what_may_show_on_page_one() {
     use sources::thumbnail::TurnTargets;
     let h = harness().await;
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..");
@@ -554,11 +554,13 @@ async fn a_turns_thumbnail_exports_only_what_may_show_on_page_one() {
         sheets: sheets.iter().map(|sheet| (*sheet).to_owned()).collect(),
         stories: Vec::new(),
     };
-    let zip = |bytes: Option<Vec<u8>>| bytes.is_some_and(|bytes| bytes.starts_with(b"PK"));
+    let webp = |bytes: Option<Vec<u8>>| {
+        bytes.is_some_and(|bytes| bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP")
+    };
 
     let lesson = h.file("docx", "lesson.docx", &docx).await;
-    let exported = h.sources.thumbnail_export(&targets(&lesson, &[])).await;
-    assert!(zip(exported.unwrap()));
+    let drawn = h.sources.thumbnail_capture(&targets(&lesson, &[])).await;
+    assert!(webp(drawn.unwrap()));
 
     let grades = h.file("xlsx", "grades.xlsx", &xlsx).await;
     let seed = Doc::new();
@@ -574,18 +576,18 @@ async fn a_turns_thumbnail_exports_only_what_may_show_on_page_one() {
         };
         first.to_string()
     };
-    let exported = h
+    let drawn = h
         .sources
-        .thumbnail_export(&targets(&grades, &[&first]))
+        .thumbnail_capture(&targets(&grades, &[&first]))
         .await;
-    assert!(zip(exported.unwrap()));
+    assert!(webp(drawn.unwrap()));
     for sheets in [&["another"][..], &[]] {
-        let exported = h.sources.thumbnail_export(&targets(&grades, sheets)).await;
-        assert_eq!(exported.unwrap(), None);
+        let drawn = h.sources.thumbnail_capture(&targets(&grades, sheets)).await;
+        assert_eq!(drawn.unwrap(), None);
     }
 
     let notes = h.file("text", "notes.md", b"text").await;
-    let refused = h.sources.thumbnail_export(&targets(&notes, &[])).await;
+    let refused = h.sources.thumbnail_capture(&targets(&notes, &[])).await;
     assert_eq!(refused.unwrap_err().status(), Some(422));
 }
 

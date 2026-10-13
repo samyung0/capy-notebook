@@ -1487,10 +1487,16 @@ def share_file_thumbnail(
 
 
 def set_file_text_preview(cur, file_id: str, source_sha256: str, text: str) -> None:
+    """The opening text of the bytes the file still holds, for an untouched
+    upload only: once the file has saved edits (a stored state or rows), every
+    save writes its preview, and an ingest's would be older."""
     cur.execute(
         """UPDATE files SET preview=jsonb_build_object('text', %s::text)
         WHERE id=%s AND source_sha256=%s AND trashed_at IS NULL
-          AND preview IS DISTINCT FROM jsonb_build_object('text', %s::text)""",
+          AND preview IS DISTINCT FROM jsonb_build_object('text', %s::text)
+          AND NOT EXISTS (
+            SELECT 1 FROM source_documents d
+             WHERE d.file_id = files.id AND (d.state IS NOT NULL OR d.log_rows > 0))""",
         (text, file_id, source_sha256, text),
     )
 

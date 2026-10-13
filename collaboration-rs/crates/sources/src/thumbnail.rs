@@ -1,8 +1,9 @@
 //! List-card thumbnails after agent edits (openwiki/thumbnails.md, "Agent
 //! captures"). Once per finished agent response Go names each Office file the
 //! turn edited with the edits' targets; this checks them against the durable
-//! document and, when page 1 may have changed, exports the Office bytes the
-//! parser renders page 1 of. Nothing here runs on an edit or a save.
+//! document and, when page 1 may have changed, draws page 1 as the browser's
+//! capture does (`render`, in an engine process). Nothing here runs on an
+//! edit or a save.
 
 use std::collections::HashSet;
 
@@ -109,10 +110,10 @@ fn slide_one_stories<T: ReadTxn>(txn: &T) -> HashSet<String> {
 }
 
 impl Sources {
-    /// The Office bytes of the file's durable state (every committed agent
-    /// edit is in it) when the turn's edits may have changed its page 1, or
-    /// `None`. Exported as a refresh candidate is.
-    pub async fn thumbnail_export(
+    /// Page 1 of the file's durable state (every committed agent edit is in
+    /// it) as a list-card WebP when the turn's edits may have changed it, or
+    /// `None`. A DOCX is exported first as a refresh candidate is.
+    pub async fn thumbnail_capture(
         &self,
         targets: &TurnTargets,
     ) -> Result<Option<Vec<u8>>, SourceError> {
@@ -152,7 +153,9 @@ impl Sources {
             room: None,
         };
         Ok(Some(
-            self.engines().export(on, &state, &seed, EXPORT_NOW).await?,
+            self.engines()
+                .render_thumbnail(on, &state, &seed, EXPORT_NOW)
+                .await?,
         ))
     }
 }

@@ -23,6 +23,21 @@ indexmap = "2"
 memory-stats = "1"
 notes.workspace = true
 office-service = { package = "betteroffice-office-service", path = "../../../vendor/betteroffice/crates/office-service" }
+# Page 1 as the browser draws it (`render`): the fork's layout engines and
+# rasterizers, in engine processes only.
+betteroffice-xlsx = { path = "../../../vendor/betteroffice/crates/betteroffice-xlsx", default-features = false }
+docx-edit = { package = "betteroffice-docx-edit", path = "../../../vendor/betteroffice/crates/docx-edit" }
+docx-layout = { package = "betteroffice-docx-layout", path = "../../../vendor/betteroffice/crates/docx-layout" }
+docx-parse = { package = "betteroffice-docx-parse", path = "../../../vendor/betteroffice/crates/docx-parse", default-features = false }
+docx-raster = { package = "betteroffice-docx-raster", path = "../../../vendor/betteroffice/crates/docx-raster" }
+image = { version = "0.25", default-features = false, features = ["png"] }
+ooxml-text = { package = "betteroffice-ooxml-text", path = "../../../vendor/betteroffice/crates/ooxml-text" }
+pptx-edit = { package = "betteroffice-pptx-edit", path = "../../../vendor/betteroffice/crates/pptx-edit" }
+pptx-raster = { package = "betteroffice-pptx-raster", path = "../../../vendor/betteroffice/crates/pptx-raster" }
+pptx-render = { package = "betteroffice-pptx-render", path = "../../../vendor/betteroffice/crates/pptx-render" }
+xlsx-raster = { package = "betteroffice-xlsx-raster", path = "../../../vendor/betteroffice/crates/xlsx-raster" }
+# libwebp, the encoder the browser's canvas captures with (lossy, quality 60).
+webp = { version = "0.3", default-features = false }
 redis.workspace = true
 reqwest.workspace = true
 serde.workspace = true

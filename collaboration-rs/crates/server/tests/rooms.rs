@@ -1780,7 +1780,7 @@ async fn internal_routes_refuse_a_missing_or_wrong_service_secret() {
         "/internal/materials/m/project",
         "/internal/source-changes/resolve",
         "/internal/source-refresh/publish",
-        "/internal/source-thumbnails/export",
+        "/internal/source-thumbnails/capture",
         "/internal/documents/inspect",
         "/internal/documents/edit",
         "/internal/documents/undo",

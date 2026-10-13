@@ -6,7 +6,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -17,19 +16,18 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
-// agentThumbnailFakes stand in for the collaboration server's export and the
-// parser's render, counting what a turn asks of them.
-type agentThumbnailFakes struct {
-	mu       sync.Mutex
-	exports  map[string]int
-	targets  map[string]store.AgentThumbnail
-	renders  []string // the uploaded file names
-	auth     []string
-	unchange map[string]bool // files whose page 1 the export reports unchanged
+// agentThumbnails stands in for the collaboration server's capture route,
+// counting what a turn asks of it.
+type agentThumbnails struct {
+	mu        sync.Mutex
+	captures  map[string]int
+	targets   map[string]store.AgentThumbnail
+	unchanged map[string]bool // files whose page 1 it reports unchanged
+	image     []byte
 }
 
-func (f *agentThumbnailFakes) export(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/internal/source-thumbnails/export" || r.Header.Get("X-Collaboration-Secret") != "secret" {
+func (f *agentThumbnails) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/internal/source-thumbnails/capture" || r.Header.Get("X-Collaboration-Secret") != "secret" {
 		http.Error(w, "unexpected request", http.StatusBadRequest)
 		return
 	}
@@ -37,38 +35,22 @@ func (f *agentThumbnailFakes) export(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewDecoder(r.Body).Decode(&t)
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.exports[t.FileID]++
+	f.captures[t.FileID]++
 	f.targets[t.FileID] = t
-	if f.unchange[t.FileID] {
+	if f.unchanged[t.FileID] {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	_, _ = w.Write([]byte("office bytes of " + t.FileID))
-}
-
-func (f *agentThumbnailFakes) render(capture []byte) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		file, header, err := r.FormFile("file")
-		if r.URL.Path != "/page_thumbnail" || err != nil {
-			http.Error(w, "unexpected request", http.StatusBadRequest)
-			return
-		}
-		body, _ := io.ReadAll(file)
-		f.mu.Lock()
-		f.renders = append(f.renders, header.Filename+": "+string(body))
-		f.auth = append(f.auth, r.Header.Get("Authorization"))
-		f.mu.Unlock()
-		w.Header().Set("Content-Type", "image/webp")
-		_, _ = w.Write(capture)
-	}
+	w.Header().Set("Content-Type", "image/webp")
+	_, _ = w.Write(f.image)
 }
 
 // A finished turn captures each Office file whose page 1 its committed edits
-// may have changed exactly once: the collaboration server exports it, the
-// parser renders it and the WebP is stored and recorded with the capture
-// time. An export answering "unchanged" renders nothing, a refused edit
-// (no committed row) exports nothing, and the turn's second run finds the
-// captured file inside the 60 s interval.
+// may have changed exactly once: the collaboration server draws it and the
+// WebP is stored and recorded with the capture time. A "page 1 unchanged"
+// answer stores nothing, a refused edit (no committed row) asks for nothing,
+// a drawing Go's check refuses is not stored, and the turn's second run finds
+// the captured file inside the 60 s interval.
 func TestAgentTurnCapturesEachOfficeFileOnce(t *testing.T) {
 	ctx := context.Background()
 	st, err := store.New(ctx, testdb.URL(t))
@@ -80,14 +62,12 @@ func TestAgentTurnCapturesEachOfficeFileOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fakes := &agentThumbnailFakes{exports: map[string]int{}, targets: map[string]store.AgentThumbnail{}, unchange: map[string]bool{}}
-	collaboration := httptest.NewServer(http.HandlerFunc(fakes.export))
+	fakes := &agentThumbnails{captures: map[string]int{}, targets: map[string]store.AgentThumbnail{}, unchanged: map[string]bool{}, image: capture}
+	collaboration := httptest.NewServer(fakes)
 	t.Cleanup(collaboration.Close)
-	parser := httptest.NewServer(fakes.render(capture))
-	t.Cleanup(parser.Close)
 	st.ConfigureCollaboration(collaboration.URL, "secret")
 	bucket := blob.NewMemory()
-	a := &api{s: st, blob: bucket, cfg: Config{ParserURL: parser.URL + "/file_parse", ParserToken: "parser-token"}}
+	a := &api{s: st, blob: bucket}
 
 	pool := st.Pool()
 	message := "msg_agent_thumbs"
@@ -128,18 +108,15 @@ func TestAgentTurnCapturesEachOfficeFileOnce(t *testing.T) {
 	edit("f_agent_deck", "succeeded", `[{"kind":"office","id":"p","path":["pptx:stories","story:3"]}]`)
 	edit("f_agent_plan", "succeeded", `[]`)
 	edit("f_agent_refused", "refused", `[]`)
-	fakes.unchange["f_agent_deck"] = true
+	fakes.unchanged["f_agent_deck"] = true
 
 	a.captureAgentThumbnails(ctx, message)
 
-	if fakes.exports["f_agent_plan"] != 1 || fakes.exports["f_agent_deck"] != 1 || len(fakes.exports) != 2 {
-		t.Fatalf("exports = %v, want one each for the edited plan and deck", fakes.exports)
+	if fakes.captures["f_agent_plan"] != 1 || fakes.captures["f_agent_deck"] != 1 || len(fakes.captures) != 2 {
+		t.Fatalf("captures asked = %v, want one each for the edited plan and deck", fakes.captures)
 	}
 	if got := fakes.targets["f_agent_deck"].Stories; len(got) != 1 || got[0] != "story:3" {
 		t.Fatalf("deck stories sent = %v", got)
-	}
-	if len(fakes.renders) != 1 || fakes.renders[0] != "source.docx: office bytes of f_agent_plan" || fakes.auth[0] != "Bearer parser-token" {
-		t.Fatalf("renders = %q auth = %q", fakes.renders, fakes.auth)
 	}
 	sum := sha256.Sum256(capture)
 	key := "thumbs/f_agent_plan/" + hex.EncodeToString(sum[:]) + ".webp"
@@ -160,10 +137,19 @@ func TestAgentTurnCapturesEachOfficeFileOnce(t *testing.T) {
 		}
 	}
 
-	// The plan was captured just now: a second run of the turn exports it no
+	// The plan was captured just now: a second run of the turn asks for it no
 	// more; the deck, never captured, is asked again.
 	a.captureAgentThumbnails(ctx, message)
-	if fakes.exports["f_agent_plan"] != 1 || fakes.exports["f_agent_deck"] != 2 || len(fakes.renders) != 1 {
-		t.Fatalf("second run: exports = %v renders = %d", fakes.exports, len(fakes.renders))
+	if fakes.captures["f_agent_plan"] != 1 || fakes.captures["f_agent_deck"] != 2 {
+		t.Fatalf("second run: captures asked = %v", fakes.captures)
+	}
+
+	// A drawing that is not one plain WebP image is refused before storage.
+	file("f_agent_bad", "bad.docx")
+	edit("f_agent_bad", "succeeded", `[]`)
+	fakes.image = []byte("RIFF....WEBPVP8 not an image")
+	a.captureAgentThumbnails(ctx, message)
+	if err := pool.QueryRow(ctx, `SELECT COALESCE(thumbnail_key,'') FROM files WHERE id='f_agent_bad'`).Scan(&got); err != nil || got != "" {
+		t.Fatalf("a refused drawing was stored: %q %v", got, err)
 	}
 }

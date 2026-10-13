@@ -16,6 +16,7 @@ pub mod gateway;
 pub mod handoff;
 pub mod observe;
 pub mod refresh;
+pub mod render;
 pub mod schedule;
 pub mod seed_check;
 pub mod store;

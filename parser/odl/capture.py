@@ -5,35 +5,23 @@ import base64
 import pymupdf
 
 # The list-card thumbnail ingest stores (openwiki/thumbnails.md): page 1 this
-# many pixels wide, cut from the top at twice that, and its WebP quality
-# (pipeline/ingest/thumbnail.py WEBP_QUALITY).
+# many pixels wide, cut from the top at twice that.
 THUMBNAIL_WIDTH = 200
-THUMBNAIL_WEBP_QUALITY = 60
 
 
-def _page_one(pdf: bytes) -> pymupdf.Pixmap:
+def page_thumbnail(pdf: bytes) -> bytes:
+    """Page 1 of the PDF a parse already holds, as a PNG THUMBNAIL_WIDTH wide;
+    ingest encodes the stored WebP."""
     with pymupdf.open(stream=pdf, filetype="pdf") as doc:
         page = doc[0]
         rect = page.rect
         scale = THUMBNAIL_WIDTH / rect.width
         bottom = rect.y0 + min(rect.height, 2 * THUMBNAIL_WIDTH / scale)
         clip = pymupdf.Rect(rect.x0, rect.y0, rect.x1, bottom)
-        return page.get_pixmap(
+        pix = page.get_pixmap(
             matrix=pymupdf.Matrix(scale, scale), clip=clip, alpha=False
         )
-
-
-def page_thumbnail(pdf: bytes) -> bytes:
-    """Page 1 of the PDF a parse already holds, as a PNG THUMBNAIL_WIDTH wide;
-    ingest encodes the stored WebP."""
-    return _page_one(pdf).tobytes("png")
-
-
-def page_thumbnail_webp(pdf: bytes) -> bytes:
-    """Page 1 as the WebP ingest would store from page_thumbnail, for the
-    server capture of an Office file an agent turn edited (/page_thumbnail),
-    which the API stores itself."""
-    return _page_one(pdf).pil_tobytes(format="WEBP", quality=THUMBNAIL_WEBP_QUALITY)
+        return pix.tobytes("png")
 
 
 def capture_page(

@@ -148,6 +148,18 @@ pub fn dispatch(request: &Frame) -> Answer {
                 office_service::export(blob(0)?, checkpoint(1)?, determinism).map_err(failure)?;
             Ok((Value::Null, vec![bytes]))
         }
+        "renderThumbnail" => {
+            let determinism = Determinism {
+                seed: args.seed.as_deref().unwrap_or_default(),
+                now: args.now.as_deref().unwrap_or_default(),
+            };
+            let webp = crate::render::page_one(format()?, blob(0)?, sha, blob(1)?, determinism)
+                .map_err(|message| Failure {
+                    kind: FailureKind::Engine,
+                    message,
+                })?;
+            Ok((Value::Null, vec![webp]))
+        }
         "inspectOffice" => Ok((
             to_json(office_service::inspect(blob(0)?, checkpoint(1)?).map_err(failure)?)?,
             Vec::new(),
@@ -313,6 +325,26 @@ pub mod calls {
             request.now = Some(now.to_owned());
             let request = frame(
                 "exportOffice",
+                &request,
+                vec![on.base.to_vec(), state.to_vec()],
+            );
+            blob(&mut self.call(Lane::Background, on.room, request).await?)
+        }
+
+        /// Page 1 of `state` as the browser's list-card capture draws it, a
+        /// WebP (`render`); `seed` and `now` fix a DOCX's export.
+        pub async fn render_thumbnail(
+            &self,
+            on: On<'_>,
+            state: &[u8],
+            seed: &str,
+            now: &str,
+        ) -> Result<Vec<u8>, EngineError> {
+            let mut request = args(on);
+            request.seed = Some(seed.to_owned());
+            request.now = Some(now.to_owned());
+            let request = frame(
+                "renderThumbnail",
                 &request,
                 vec![on.base.to_vec(), state.to_vec()],
             );

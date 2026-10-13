@@ -11,8 +11,9 @@ only. Uploaded images go through Pillow. The 200 px wide WebP
 is stored content-addressed at ``thumbs/{file id}/{sha256}.webp`` and
 ``files.thumbnail_key`` points at it; the blob triggers release the key it
 replaces. Text sources store their first 600 characters in ``files.preview``
-instead. A source refresh publishes and ingests again, so an edit replaces
-both.
+instead, while the upload is untouched: once the file has saved edits, every
+save writes its preview. A source refresh publishes and ingests again, so an
+edit replaces the page image.
 
 Thumbnails are a platform cost outside the storage quota. A capture is best
 effort: any failure is logged and dropped, never retried, and never fails the

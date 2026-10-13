@@ -477,3 +477,40 @@ def test_ingest_leaves_a_browser_capture_alone(workspace):
         workspace.scalar("SELECT thumbnail_key FROM files WHERE id=%s", (captured,))
         == capture_key
     )
+
+
+@pytest.mark.integration
+def test_ingest_writes_a_text_preview_only_for_an_untouched_upload(workspace):
+    """The save path owns a text source's preview (Epo 2026-10-13): once the
+    file has saved edits, rows or a folded state, an ingest of its bytes
+    leaves the preview the saves wrote; an untouched upload takes it."""
+    sha = "ab" * 32
+    untouched = workspace.add_file("notes.md")
+    saved = workspace.add_file("draft.md")
+    folded = workspace.add_file("folded.md")
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE files SET kind='text', source_sha256=%s WHERE id IN (%s, %s, %s)",
+            (sha, untouched, saved, folded),
+        )
+        for file_id, state, rows in ((saved, None, 1), (folded, b"state", 0)):
+            conn.execute(
+                """INSERT INTO source_documents (file_id, user_id, format, base_revision,
+                     base_blob_path, base_source_sha256, state, log_rows)
+                   VALUES (%s, %s, 'text', 1, %s, %s, %s, %s)""",
+                (file_id, workspace.user_id, f"p/{file_id}", sha, state, rows),
+            )
+        conn.execute(
+            "UPDATE files SET preview=jsonb_build_object('text', 'saved') WHERE id IN (%s, %s)",
+            (saved, folded),
+        )
+    with workspace._connect() as conn, conn.cursor() as cur:
+        for file_id in (untouched, saved, folded):
+            thumbnail.db.set_file_text_preview(cur, file_id, sha, "ingested")
+    previews = {
+        file_id: workspace.scalar(
+            "SELECT preview->>'text' FROM files WHERE id=%s", (file_id,)
+        )
+        for file_id in (untouched, saved, folded)
+    }
+    assert previews == {untouched: "ingested", saved: "saved", folded: "saved"}
