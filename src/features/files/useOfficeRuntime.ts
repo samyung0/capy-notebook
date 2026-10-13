@@ -155,8 +155,9 @@ export function useOfficeRuntime({
   // The zoom the file was last shown at, kept (not stored) while it stays
   // open: the next frame, for View or Edit or after a reload, opens at it.
   const zoomRef = useRef<OfficeZoom | undefined>(undefined);
-  // Notices the current frame already showed.
-  const noticesShown = useRef(new Set<OfficeNotice>());
+  const [notices] = useState(() =>
+    officeNotices((title) => userToast({ title }))
+  );
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
   // The source document the frame was loaded with: a frame still showing an
@@ -502,7 +503,7 @@ export function useOfficeRuntime({
       const message = event.data,
         active = sourceRef.current;
       if (message.type === 'initialized') {
-        noticesShown.current.clear();
+        notices.frame();
         setReplicaReady(false);
         setMenus(null);
         setPresenting(false);
@@ -563,10 +564,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'notice') {
-        // Once per frame: a refused keystroke would otherwise toast per key.
-        if (noticesShown.current.has(message.notice)) return;
-        noticesShown.current.add(message.notice);
-        userToast({ title: m.files_office_equation_text() });
+        notices.show(message.notice);
         return;
       }
       if (message.type === 'error') {
@@ -901,6 +899,27 @@ function saveBlob(blob: Blob, name: string) {
  * Capy itself opens it for (`popup: 'presenter'` in the frame's menus), so the
  * sandboxed runtime cannot have Capy open a window for anything else.
  */
+/** Each notice's message: a new notice needs its copy here. */
+const OFFICE_NOTICE_TITLES: Record<OfficeNotice, () => string> = {
+  'equation-text': () => m.files_office_equation_text(),
+};
+
+/**
+ * The notices a frame shows: each once, since a refused keystroke repeats on
+ * every key; a new frame starts over.
+ */
+export function officeNotices(toast: (title: string) => void) {
+  const shown = new Set<OfficeNotice>();
+  return {
+    frame: () => shown.clear(),
+    show: (notice: OfficeNotice) => {
+      if (shown.has(notice)) return;
+      shown.add(notice);
+      toast(OFFICE_NOTICE_TITLES[notice]());
+    },
+  };
+}
+
 export function openRequestedPresenter(
   menus: Parameters<typeof officeCommandNeeds>[0],
   id: string,
