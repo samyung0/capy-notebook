@@ -313,9 +313,11 @@ changed, over the fingerprinted source that every open requires:
   saved with them). The bullet and number buttons write the two `w:num` ids
   after the source's, and the export defines each id a list paragraph uses
   that the numbering lacks as the kind the editor shows (`listIsBullet`), in
-  the numbering part its relationship names (created when missing), and with
-  either button id the other, so lists rebased across a publication keep
-  their kind (Epo 2026-10-13).
+  the numbering part its relationship names (written afresh when missing or
+  holding no element; a part in another encoding or with another root refuses
+  the save rather than lose its definitions), and with either button id the
+  other, so lists rebased across a publication keep their kind (Epo
+  2026-10-13). A `w:num` with no abstract numbering draws no list.
   A comment range covers the same content
   from one publication to the next within the story it opened in: the seed
   gives each unit inside a range to every comment open there (another
