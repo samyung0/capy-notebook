@@ -42,6 +42,7 @@ import {
   canEncodeWebp,
   createThumbnailCapture,
   NOT_DRAWN_YET,
+  openedOn,
   type ThumbnailCapture,
   uploadThumbnail,
 } from './thumbnailCapture';
@@ -677,13 +678,15 @@ export function useOfficeRuntime({
   );
 
   // Once the editor holds the document, a card older than it (Go's
-  // `thumbnailStale`) is captured, once per open.
-  const opened = replicaReady ? !!source.session?.thumbnailStale : null;
-  const openedRef = useRef(opened);
-  openedRef.current = opened;
+  // `thumbnailStale`) is captured, once per session read.
+  const held = replicaReady ? source.session : null;
+  const heldRef = useRef(held);
+  heldRef.current = held;
+  const staleSeen = useRef(new WeakSet<object>());
   useEffect(() => {
-    if (opened !== null) captureRef.current?.opened(opened);
-  }, [opened]);
+    if (held && captureRef.current)
+      openedOn(captureRef.current, held, staleSeen.current);
+  }, [held]);
 
   // Browsers that cannot encode WebP (Safari) capture nothing.
   useEffect(() => {
@@ -708,7 +711,8 @@ export function useOfficeRuntime({
           uploadThumbnail(file.id, drawn, keepalive),
       });
       captureRef.current = capture;
-      if (openedRef.current !== null) capture.opened(openedRef.current);
+      if (heldRef.current)
+        openedOn(capture, heldRef.current, staleSeen.current);
     });
     const leave = () => captureRef.current?.leave();
     const hidden = () => {

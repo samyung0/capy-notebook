@@ -271,7 +271,8 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
   the upload). Once the editor's replica holds the document
   (`collaboration-ready`), such an open counts as one change (`opened`): drawn
   and uploaded at once when the editor may, else by the cycle's idle upload or
-  leaving, once per open (a frame restart adds nothing). The editor-only rule,
+  leaving, once per session read (`openedOn`: a frame restart, or closing for
+  View and editing again on the same session, adds nothing). The editor-only rule,
   the WebP checks and the 60 s interval apply as to any capture, and nothing
   retries. When several editors open the file, one claim wins; a loser whose
   cycle holds only the stale open (no local edit) ends it on its `429`

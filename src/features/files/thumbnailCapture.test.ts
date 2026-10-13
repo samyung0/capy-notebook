@@ -6,6 +6,7 @@ import {
   type DrawnThumbnail,
   MAX_UPLOAD_BYTES,
   NOT_DRAWN_YET,
+  openedOn,
   ThumbnailUploadRefused,
   UPLOAD_AFTER_MS,
   UPLOAD_WITHIN_MS,
@@ -249,6 +250,26 @@ describe('thumbnail capture scheduling', () => {
     fresh.capture.leave();
     expect(fresh.draw).not.toHaveBeenCalled();
     expect(fresh.upload).not.toHaveBeenCalled();
+  });
+
+  it('counts a stale session once, though the editor opens again on it', async () => {
+    const seen = new WeakSet<object>();
+    const session = { thumbnailStale: true };
+    const first = setup();
+    openedOn(first.capture, session, seen);
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(first.upload).toHaveBeenCalledOnce();
+    // View and back: a new editor on the same session read.
+    first.capture.dispose();
+    const again = setup();
+    openedOn(again.capture, session, seen);
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    expect(again.upload).not.toHaveBeenCalled();
+    // A new read that is stale again counts.
+    const next = setup();
+    openedOn(next.capture, { thumbnailStale: true }, seen);
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(next.upload).toHaveBeenCalledOnce();
   });
 
   it('a stale open the editor may not capture yet goes with the idle upload', async () => {

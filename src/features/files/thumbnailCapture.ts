@@ -200,6 +200,20 @@ export function createThumbnailCapture({
   };
 }
 
+/**
+ * Tells `capture` the editor holds the document of `session`. Its stale card
+ * counts once per session read: the editor can close and open again on the
+ * same session (View and back) after that capture landed.
+ */
+export function openedOn(
+  capture: ThumbnailCapture,
+  session: { thumbnailStale?: boolean },
+  seen: WeakSet<object>
+) {
+  capture.opened(!!session.thumbnailStale && !seen.has(session));
+  seen.add(session);
+}
+
 let webp: Promise<boolean> | undefined;
 
 /** Whether this browser encodes WebP from a canvas (Safari does not). */
