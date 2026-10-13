@@ -91,4 +91,5 @@ spot-checked and agreed (one came out `topic_only`).
   more digits, that no other candidate book's text has: precision 86%, 2 of
   129 used books dropped, no material left uncredited. Three 4-grams: 93%, 6
   dropped. Epo took the first (2026-10-13): a missing credit on a CC BY book
-  is the worse error. Named credits stay as named.
+  is the worse error. Named credits stay as named, and a write whose text
+  matches no candidate book keeps every candidate, as before the filter.
