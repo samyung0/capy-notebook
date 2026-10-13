@@ -2385,11 +2385,11 @@ UAT domain without Cloudflare's signature is refused. `capynotebook.com` itself
 publishes no DMARC record yet. When production gets one, remember that
 subdomains without a record of their own (such as `inbox.uat`) inherit it.
 
-**Retiring Resend.** Resend's records stay until the account journey passes on
-Cloudflare: TXT `resend._domainkey.uat`, MX and TXT `send.uat`, and the GitHub
-`uat` entries `RESEND_API_KEY`, `UAT_RESEND_FROM` and `UAT_RESEND_READ_KEY`
-(no longer in `deploy/env-manifest.json`, so deploys ignore them). Delete them
-and revoke the Resend key after that run.
+**Resend is retired.** The account journey passed on Cloudflare on 2026-10-13
+(UAT quality run 38359470612), and the GitHub `uat` entries `RESEND_API_KEY`,
+`UAT_RESEND_FROM` and `UAT_RESEND_READ_KEY` and Coolify UAT's `RESEND_API_KEY`
+were deleted that day. The DNS records TXT `resend._domainkey.uat` and MX/TXT
+`send.uat` go with the Resend key.
 
 **UAT journey inbox.** Journeys register actors as
 `journeys+uat-<run>-<label>-<id>+clerk_test@inbox.uat.capynotebook.com`
