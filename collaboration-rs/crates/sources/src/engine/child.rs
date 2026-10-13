@@ -127,14 +127,13 @@ fn apply_limits() {
         if let Some(limit) = std::env::var(ENV_MEMORY_LIMIT)
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
+            && let Err(error) = rlimit::setrlimit(rlimit::Resource::DATA, limit, limit)
         {
-            if let Err(error) = rlimit::setrlimit(rlimit::Resource::DATA, limit, limit) {
-                crate::observe::log(
-                    "warn",
-                    "engine memory limit not applied",
-                    serde_json::json!({ "error": error.to_string() }),
-                );
-            }
+            crate::observe::log(
+                "warn",
+                "engine memory limit not applied",
+                serde_json::json!({ "error": error.to_string() }),
+            );
         }
         if let Err(error) = std::fs::write("/proc/self/oom_score_adj", "1000") {
             crate::observe::log(
