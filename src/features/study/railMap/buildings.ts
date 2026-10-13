@@ -817,6 +817,7 @@ export function station(
     0.1
   );
   s += `<g transform="translate(${n(can1 + 4)} ${n(base)})">${lamp(rng)}</g>`;
+  let flag: Pt | undefined;
   if (terminus) {
     // the finish flag on the canopy's far end, away from the last item
     const [fx, fb] = [can1 - 8, fy - bh - 5];
@@ -832,8 +833,9 @@ export function station(
         { amp: 0.3, smooth: false }
       ) +
       `<path class="tm-flag" d="M${n(fx)} ${n(ft)} Q${n(fx + 12)} ${n(ft - 4)} ${n(fx + 22)} ${n(ft + 2)} L${n(fx + 14)} ${n(ft + 8)} L${n(fx + 22)} ${n(ft + 15)} Q${n(fx + 11)} ${n(ft + 12)} ${n(fx)} ${n(ft + 14)}Z"/>`;
+    flag = [fx, ft + 7];
   }
-  return { right, svg: s, top: Math.min(fy - bh - 5, top - 17) };
+  return { flag, right, svg: s, top: Math.min(fy - bh - 5, top - 17) };
 }
 
 export function bufferStop(x: number, y: number, rng: Rng) {

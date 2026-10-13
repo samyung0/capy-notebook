@@ -175,14 +175,16 @@ export function RailMap({
     : m.learning_map_next({ title: items[nextIndex].title });
   // Over a station the tag rises above its roof, so the chapter name stays readable.
   const tagHalf = (tag.length * 7 + 18) / SCALE / 2;
-  // Finished, the tag rises over the terminus's flag.
-  const lift = finished
-    ? 118
-    : map.stations.some(
-          ({ a, b }) => a < next[0] + tagHalf && next[0] - tagHalf < b
-        )
-      ? 84
-      : 46;
+  // Over a station the Next tag rises above its roof; the Finished tag sits
+  // left of the terminus flag, as on the bank's summit.
+  const lift = map.stations.some(
+    ({ a, b }) => a < next[0] + tagHalf && next[0] - tagHalf < b
+  )
+    ? 84
+    : 46;
+  const tagStyle = finished
+    ? { left: map.flag[0] * SCALE - 10, top: (map.flag[1] - TOP) * SCALE }
+    : { left: next[0] * SCALE, top: (next[1] - TOP - lift) * SCALE };
 
   return (
     <div className="relative" ref={hostRef}>
@@ -283,12 +285,14 @@ export function RailMap({
           )}
           {onOpen && (
             <span
-              className="t-meta absolute -translate-x-1/2 whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface"
+              className={cn(
+                't-meta absolute whitespace-nowrap rounded-md bg-fg px-2 py-1 font-bold text-surface',
+                finished
+                  ? '-translate-x-full -translate-y-1/2'
+                  : '-translate-x-1/2'
+              )}
               data-finish={finished ? 'tag' : undefined}
-              style={{
-                left: next[0] * SCALE,
-                top: (next[1] - TOP - lift) * SCALE,
-              }}
+              style={tagStyle}
             >
               {tag}
             </span>
