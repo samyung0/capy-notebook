@@ -11,8 +11,6 @@ import pymupdf
 
 from . import page_text
 
-TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
-
 
 def text(block: dict) -> str:
     return " ".join([block.get("text", ""), *block.get("list_items", [])])

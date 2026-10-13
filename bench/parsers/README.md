@@ -44,7 +44,11 @@ the machine name and come from `propose` over three green CI runs (slowest plus
 25%), signed off by a developer; until then only the invariants are checked.
 Local in-process numbers vary by 15 to 30% between runs on a laptop and are
 for comparing two revisions run alternately, not for the budgets
-([v13 report](reports/2026-10-12-parser-v13-budget.md)).
+([v13 report](reports/2026-10-12-parser-v13-budget.md)). Each result also
+keeps the SHA-256 of the fixture's `content_list.json` (`content_sha256`) and
+the seconds of every refinement stage (`stages`, the receipt's `_stages`);
+`compare` says per fixture whether the output is the same, so an
+output-neutral change such as a speed-up shows `same` everywhere.
 
 ## Holdout gate
 

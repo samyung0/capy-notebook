@@ -714,14 +714,22 @@ placement) answers almost every picture: a 3,311-page manual has pages with
 17,561 inline-image pictures, which an all-pairs overlap search turned into
 hours.
 
-Speed (same output). Inside `parse_pdf`, `page_text.session` keeps each page's
-`get_text("dict")` and words for the nine stages that read them, up to 100,000
-spans (about 90 MiB; pages past it are read again), and keeps only the facts two
-stages need from the text trace. ODL writes JSON only, with no image files
-(above). On the budget fixtures the Python stages are 11–38% faster with the
-cache, and the figure-heavy textbook's whole parse falls from 189 s to 87 s,
-its Java step from 127 s to 8 s. ODL's `--threads` gave identical output and no
-speed, so it stays at 1.
+Speed (same output). Inside `parse_pdf`, `page_text.session` extracts each
+page's text once: the first stage to read a page takes MuPDF's `rawdict` and
+keeps it for the rest of the parse in columns (integer and float32 arrays, the
+characters as one string, styles shared by index; 74 MiB for the 1,400-page
+budget book, all of it dropped when the session ends; past 6M kept characters,
+about 200 MiB, pages are read from MuPDF on each call). `page_dict` and
+`page_raw` rebuild MuPDF's `dict` and `rawdict` from it key for key, and
+`page_words` keeps words the same way, so every stage reads the page without
+MuPDF. Text-less page detection reads plain text only for pages whose kept
+characters fall short of its 40. Only the facts two stages need from the text
+trace are kept; drawings and image placements are still read from MuPDF where
+a stage needs them. `ParseOutput.stages` (the receipt's `_stages`) records
+the seconds of each stage. ODL writes JSON only, with no image files (above):
+the figure-heavy textbook's whole parse fell from 189 s to 87 s, its Java step
+from 127 s to 8 s. ODL's `--threads` gave identical output and no speed, so it
+stays at 1.
 
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test

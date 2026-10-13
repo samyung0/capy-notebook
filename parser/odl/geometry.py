@@ -23,8 +23,6 @@ NUMBER = re.compile(
     r"(?:[·×]10\^[+−-]?\d+)?(?:[%#@*]+)?"
     r"(?:\([↑↓]?[+−-]?\d[\d,.]*[↑↓]?\))?"
 )
-# Text blocks only: image payloads in the dict are never read here.
-TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 CAPTION = re.compile(r"^(?:Table|表)\s*\d+\s*[:：.]?", re.IGNORECASE)
 SECTION = re.compile(r"^\d+\.\d+(?:\.\d+)*$")
 

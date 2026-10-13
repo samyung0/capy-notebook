@@ -40,7 +40,6 @@ REPEAT_PAGES = 5
 MIN_SIDE_PT = 1.0
 SUBTLE_ASPECT = 0.01
 PLACEHOLDER = "[formula]"
-TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 CAPTION = re.compile(
     r"^\s*(figure|fig\.?|table|chart|graph|exhibit|diagram|abb\.?|figura|図|表)\s*[\dIVXA-Z]",
     re.IGNORECASE,

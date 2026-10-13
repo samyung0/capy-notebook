@@ -34,6 +34,7 @@ from odl import (
     hidden,
     lists,
     order,
+    page_text,
     source_text,
     styles,
     tables,
@@ -713,7 +714,7 @@ def mixed_grid(page, region, lines):
         raise ValueError("duplicate header paths need parent scope")
     # Explicit italic group labels must follow a full-width separator. Other
     # loose text is assigned to a leaf cell only when it fits that column.
-    raw = page.get_text("dict", flags=geometry.TEXT_FLAGS)
+    raw = page.get_text("dict", flags=page_text.TEXT_FLAGS)
     spans = [s for b in raw["blocks"] for l in b.get("lines", []) for s in l["spans"]]
 
     def italic(line):
@@ -829,7 +830,7 @@ def substitute_grid(blocks, grid, page):
     if missing:
         raise ValueError("native text not conserved: " + str(missing))
     source = source_text.source_text(
-        page.get_text("rawdict", flags=source_text.RAW_FLAGS)["blocks"], region
+        page.get_text("rawdict", flags=page_text.TEXT_FLAGS)["blocks"], region
     )
     missing_source = semantic_chars(source) - semantic_chars(meaning)
     if missing_source:
@@ -929,7 +930,7 @@ def double_overprints(blocks, pdf):
             page = d[b["page_idx"]]
             area = source_text.rect_for(b, page)
             source = source_text.source_text(
-                page.get_text("rawdict", flags=source_text.RAW_FLAGS)["blocks"], area
+                page.get_text("rawdict", flags=page_text.TEXT_FLAGS)["blocks"], area
             )
             value, removed = source_text.delete_supported_repeats(
                 text, source, Counter(text)

@@ -11,14 +11,15 @@ from pathlib import Path
 
 import pymupdf
 
-from .source_text import RAW_FLAGS, source_text
+from . import page_text
+from .source_text import source_text
 
 SCIENTIFIC = re.compile(r"(?<![\w.])([+−-]?\d+(?:\.\d+)?\s*[×·]\s*10)$")
 
 
 def source_exponents(page: pymupdf.Page) -> list[dict]:
     result = []
-    for group in page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]:
+    for group in page_text.page_raw(page)["blocks"]:
         for line in group.get("lines", []):
             if abs(line["dir"][0] - 1) > 0.01 or abs(line["dir"][1]) > 0.01:
                 continue
@@ -124,7 +125,7 @@ def restore_exponents(blocks: list[dict], pdf: Path) -> tuple[list[dict], int]:
                     if any(marked.search(text) for _, _, text in slots(block)):
                         continue
                     if groups is None:
-                        groups = page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]
+                        groups = page_text.page_raw(page)["blocks"]
                     # A raised and an ordinary expression can flatten identically.
                     # Require unique source text too, including already-correct output.
                     if (
