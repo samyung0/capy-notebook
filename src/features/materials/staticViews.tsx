@@ -196,6 +196,15 @@ export function FigureView({
           <QuestionBlockView block={block} />
         </div>
       </MediaFrame>
+      {/* A graph's description reads as its caption, like an image's. */}
+      {block.type === 'graph' && block.description && (
+        <p
+          className={MEDIA_CAPTION_CLASS}
+          style={{ width: width ?? block.width }}
+        >
+          {block.description}
+        </p>
+      )}
       {preview.opened && (
         <Suspense fallback={null}>
           <MediaPreview

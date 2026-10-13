@@ -1,637 +1,338 @@
+import type { MathfieldElement } from 'mathlive';
 import { Collapsible } from 'radix-ui';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as limits from '@/api/limits.generated';
+import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
+import { Switch } from '@/components/ui/Switch';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ToolbarPopoverContent } from '@/components/ui/ToolbarPopover';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from '@/components/ui/Tooltip';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { Field, FieldInput, MenuItem, SelectField } from './editorFields';
+import { GraphRowField } from './GraphRowField';
 import { createGraphBoard, GraphError } from './graph';
+import {
+  buildElements,
+  type GraphRow,
+  type ParsedRow,
+  parseRow,
+  pointLatex,
+  RowError,
+  type RowStyle,
+  rowsFromElements,
+  styleKeys,
+} from './graphSyntax';
 import type { GraphBlock, GraphElement } from './types';
 
-const graphLabels = {
-  angle: m.question_ui_angle,
-  arc: m.question_ui_arc,
-  circle: m.question_ui_circle,
-  functiongraph: m.question_ui_function,
-  line: m.question_ui_line,
-  point: m.question_ui_point,
-  polygon: m.question_ui_polygon,
-  sector: m.question_ui_sector,
-  segment: m.question_ui_segment,
-  text: m.question_ui_label,
-};
+type Board = Awaited<ReturnType<typeof createGraphBoard>>;
+type ExpressionRow = Extract<GraphRow, { kind: 'expression' }>;
 
-const graphTypes = [
-  'functiongraph',
-  'point',
-  'line',
-  'segment',
-  'circle',
-  'angle',
-  'arc',
-  'sector',
-  'polygon',
-  'text',
-] as const;
+const elementType = (parsed: ParsedRow): GraphElement['type'] =>
+  parsed.kind === 'point'
+    ? 'point'
+    : parsed.kind === 'function'
+      ? 'functiongraph'
+      : parsed.command;
 
-/** How many existing points an element needs before it can be added. */
-const pointsNeeded: Partial<Record<GraphElement['type'], number>> = {
-  angle: 3,
-  arc: 3,
-  circle: 1,
-  line: 2,
-  polygon: 3,
-  sector: 3,
-  segment: 2,
-};
+function parsedRow(latex: string, ascii: string) {
+  if (!latex.trim()) return { error: undefined, parsed: undefined };
+  try {
+    return { error: undefined, parsed: parseRow(ascii) };
+  } catch (error) {
+    if (!(error instanceof RowError)) throw error;
+    return { error: error.message, parsed: undefined };
+  }
+}
 
+/** Desmos-style graph editor: typed rows on the left, the live board on the
+ * right; phones stack the board on top. The board frames what Save exports. */
 export function GraphEditor({
   value,
   onChange,
+  onInvalidChange,
 }: {
   value: GraphBlock;
   onChange: (value: GraphBlock) => void;
+  /** Rows that cannot be drawn keep the dialog from saving. */
+  onInvalidChange?: (invalid: boolean) => void;
 }) {
-  const container = useRef<HTMLDivElement>(null);
-  const [error, setError] = useState('');
+  const [rows, setRows] = useState(() => rowsFromElements(value.elements));
+  const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
+  // An empty graph starts in its first row.
+  const [startKey] = useState(() => (rows.length ? undefined : draftKey));
+  const latest = useRef({ onChange, rows, value });
+  latest.current = { onChange, rows, value };
+  const fields = useRef(new Map<string, MathfieldElement>());
+  const { errors } = useMemo(() => buildElements(rows), [rows]);
+  const invalid = errors.size > 0;
   useEffect(() => {
-    let cancelled = false;
-    let destroy = () => {};
-    setError('');
-    const target = container.current;
-    if (!target) return;
-    const stage = document.createElement('div');
-    stage.style.width = '100%';
-    stage.style.aspectRatio = `${value.width} / ${value.height}`;
-    target.append(stage);
-    createGraphBoard(stage, value)
-      .then((board) => {
-        if (cancelled) board.destroy();
-        else {
-          destroy = board.destroy;
-          const svg = stage.querySelector('svg');
-          if (svg) {
-            svg.setAttribute(
-              'viewBox',
-              `0 0 ${stage.clientWidth} ${stage.clientHeight}`
-            );
-            svg.setAttribute('width', '100%');
-            svg.setAttribute('height', '100%');
-          }
-        }
-      })
-      .catch((error: unknown) => {
-        if (!cancelled)
-          setError(
-            error instanceof GraphError
-              ? error.message
-              : m.question_ui_graph_could_not_load()
-          );
-      });
-    return () => {
-      cancelled = true;
-      destroy();
-      stage.remove();
-    };
-  }, [value]);
-  const update = (id: string, next: GraphElement) =>
-    onChange({
-      ...value,
-      elements: value.elements.map((element) =>
-        element.id === id ? next : element
-      ),
-    });
-  const points = value.elements
-    .filter((element) => element.type === 'point')
-    .map((element) => ({
-      label: element.name || element.id,
-      value: element.id,
-    }));
-  const add = (type: GraphElement['type']) => {
-    const id = crypto.randomUUID();
-    let element: GraphElement;
-    switch (type) {
-      case 'functiongraph':
-        element = { id, term: 'x', type };
-        break;
-      case 'point':
-        element = {
-          coords: [0, 0],
-          id,
-          name: String.fromCharCode(65 + points.length),
-          type,
-        };
-        break;
-      case 'text':
-        element = { coords: [0, 0], id, text: '', type };
-        break;
-      case 'circle':
-        if (!points.length) return;
-        element = { center: points[0].value, id, radius: 1, type };
-        break;
-      case 'line':
-      case 'segment':
-        if (points.length < 2) return;
-        element = { id, points: [points[0].value, points[1].value], type };
-        break;
-      case 'angle':
-        if (points.length < 3) return;
-        element = {
-          id,
-          points: [points[0].value, points[1].value, points[2].value],
-          type,
-        };
-        break;
-      case 'arc':
-      case 'sector':
-        if (points.length < 3) return;
-        element = {
-          center: points[0].value,
-          id,
-          points: [points[1].value, points[2].value],
-          type,
-        };
-        break;
-      case 'polygon':
-        if (points.length < 3) return;
-        element = {
-          id,
-          points: points.slice(0, 3).map((point) => point.value),
-          type,
-        };
-        break;
-    }
-    onChange({ ...value, elements: [...value.elements, element] });
+    onInvalidChange?.(invalid);
+  }, [invalid, onInvalidChange]);
+  useEffect(() => () => onInvalidChange?.(false), [onInvalidChange]);
+
+  const commit = (next: GraphRow[]) => {
+    setRows(next);
+    const { elements } = buildElements(next);
+    latest.current.onChange({ ...latest.current.value, elements });
   };
+  const edit = (key: string, latex: string, ascii: string) => {
+    const current = latest.current.rows;
+    const index = current.findIndex((row) => row.key === key);
+    if (index < 0) {
+      if (!latex.trim()) return;
+      commit([
+        ...current,
+        {
+          key,
+          kind: 'expression',
+          latex,
+          style: {},
+          ...parsedRow(latex, ascii),
+        },
+      ]);
+      setDraftKey(crypto.randomUUID());
+      return;
+    }
+    commit(
+      current.map((row) =>
+        row.key === key && row.kind === 'expression'
+          ? { ...row, latex, ...parsedRow(latex, ascii) }
+          : row
+      )
+    );
+  };
+  const restyle = (key: string, style: RowStyle) =>
+    commit(
+      latest.current.rows.map((row) =>
+        row.key === key && row.kind === 'expression' ? { ...row, style } : row
+      )
+    );
+  const remove = (key: string) =>
+    commit(latest.current.rows.filter((row) => row.key !== key));
+  const order = [...rows.map((row) => row.key), draftKey];
+  const focus = (key: string | undefined) => {
+    if (key) fields.current.get(key)?.focus();
+  };
+  const neighbour = (key: string, step: 1 | -1) => {
+    const keys = order.filter(
+      (other) =>
+        other === draftKey ||
+        rows.find((row) => row.key === other)?.kind === 'expression'
+    );
+    return keys[keys.indexOf(key) + step];
+  };
+
+  const hooks = useMemo(
+    () => ({
+      onBoundingBox: (bbox: GraphBlock['board']['bbox']) => {
+        const { value, onChange } = latest.current;
+        onChange({ ...value, board: { ...value.board, bbox } });
+      },
+      onMove: (id: string, coords: [number, number]) =>
+        commit(
+          latest.current.rows.map((row) => {
+            if (row.key !== id) return row;
+            if (row.kind === 'label') return { ...row, coords };
+            if (row.parsed?.kind !== 'point') return row;
+            return {
+              ...row,
+              latex: pointLatex(row.parsed.name, coords),
+              parsed: { ...row.parsed, coords },
+            };
+          })
+        ),
+    }),
+    // commit only reads refs.
+    []
+  );
+
+  const setBoard = (board: Partial<GraphBlock['board']>) =>
+    onChange({ ...value, board: { ...value.board, ...board } });
+  const shown = [
+    { label: m.question_ui_graph_shown(), value: 'shown' },
+    { label: m.question_ui_graph_hidden(), value: 'hidden' },
+  ];
+  const bboxLabels = [
+    m.question_ui_x_minimum(),
+    m.question_ui_y_maximum(),
+    m.question_ui_x_maximum(),
+    m.question_ui_y_minimum(),
+  ];
+
   return (
-    <div className="grid min-w-0 items-start gap-6 md:grid-cols-2">
-      <div className="min-w-0">
-        <div className="w-full bg-white" ref={container} />
-        {error && (
-          <p className="text-solid-error" role="alert">
-            {error}
-          </p>
-        )}
-      </div>
-      <div className="min-w-0 space-y-4">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold">{m.question_ui_elements()}</h3>
-          <Popover>
-            <PopoverTrigger asChild>
-              <ToolbarButton label={m.question_ui_add_graph_element()}>
-                <Icon name="plus" />
-              </ToolbarButton>
-            </PopoverTrigger>
-            <ToolbarPopoverContent align="end" className="w-44">
-              {graphTypes.map((type) => (
-                <MenuItem
-                  disabled={points.length < (pointsNeeded[type] ?? 0)}
-                  key={type}
-                  label={graphLabels[type]()}
-                  onClick={() => add(type)}
-                />
-              ))}
-            </ToolbarPopoverContent>
-          </Popover>
-        </div>
-        {value.elements.map((element) => (
-          <div
-            className="flex items-end gap-3 border-divider border-b py-3"
-            key={element.id}
-          >
-            <div className="min-w-0 flex-1 space-y-2">
-              {element.type === 'functiongraph' && (
-                <Field
-                  count={{
-                    max: limits.QUESTION_GRAPH_TERM_MAX,
-                    value: textLength(element.term),
+    <div className="@container min-w-0">
+      <div className="grid min-w-0 @3xl:grid-cols-[20rem_minmax(0,1fr)] items-start gap-7">
+        <GraphStage hooks={hooks} value={value} />
+        <div className="@3xl:order-first flex min-w-0 flex-col gap-3.5">
+          <ol className="border-divider border-t">
+            {order.map((key, index) => {
+              const row = rows.find((item) => item.key === key);
+              if (row?.kind === 'label')
+                return (
+                  <LabelRow
+                    error={errors.get(key)}
+                    key={key}
+                    onChange={(next) =>
+                      commit(
+                        rows.map((item) => (item.key === key ? next : item))
+                      )
+                    }
+                    onRemove={() => remove(key)}
+                    row={row}
+                  />
+                );
+              return (
+                <ExpressionItem
+                  autoFocus={key === startKey}
+                  error={row ? errors.get(key) : undefined}
+                  key={key}
+                  label={m.question_ui_graph_expression({ number: index + 1 })}
+                  onChange={(latex, ascii) => edit(key, latex, ascii)}
+                  onEnter={() => focus(neighbour(key, 1))}
+                  onMoveOut={(direction) =>
+                    focus(neighbour(key, direction === 'up' ? -1 : 1))
+                  }
+                  onRemove={row ? () => remove(key) : undefined}
+                  onRemoveEmpty={
+                    row
+                      ? () => {
+                          focus(neighbour(key, -1) ?? neighbour(key, 1));
+                          remove(key);
+                        }
+                      : undefined
+                  }
+                  onRestyle={(style) => restyle(key, style)}
+                  register={(field) => {
+                    if (field) fields.current.set(key, field);
+                    else fields.current.delete(key);
                   }}
-                  label={m.question_ui_function_f_x()}
-                >
-                  <FieldInput
-                    onChange={(event) =>
-                      update(element.id, {
-                        ...element,
-                        term: event.target.value,
-                      })
-                    }
-                    value={element.term}
-                  />
-                </Field>
-              )}
-              {(element.type === 'point' || element.type === 'text') && (
-                <>
+                  row={row}
+                />
+              );
+            })}
+          </ol>
+          <Button
+            className="-mt-1.5 -ml-4 self-start"
+            iconLeft="plus"
+            onClick={() => {
+              const [left, top, right, bottom] = value.board.bbox;
+              commit([
+                ...rows,
+                {
+                  coords: [
+                    Number(((left + right) / 2).toPrecision(6)),
+                    Number(((top + bottom) / 2).toPrecision(6)),
+                  ],
+                  key: crypto.randomUUID(),
+                  kind: 'label',
+                  text: '',
+                },
+              ]);
+            }}
+            size="sm"
+            type="button"
+            variant="ghost"
+          >
+            {m.question_ui_graph_add_label()}
+          </Button>
+          <Collapsible.Root>
+            <Collapsible.Trigger asChild>
+              <Button
+                className="-ml-4 self-start"
+                iconLeft="chevronDown"
+                size="sm"
+                type="button"
+                variant="ghost"
+              >
+                {m.question_ui_advanced()}
+              </Button>
+            </Collapsible.Trigger>
+            {/* Nudged under the chevron's ink, like the chart dialog. */}
+            <Collapsible.Content className="translate-x-0.5 space-y-3 pt-3">
+              <div className="grid grid-cols-2 gap-3">
+                {(['width', 'height'] as const).map((key) => (
                   <Field
-                    count={
-                      element.type === 'point'
-                        ? {
-                            max: limits.QUESTION_METADATA_MAX,
-                            value: textLength(element.name),
-                          }
-                        : {
-                            max: limits.QUESTION_TEXT_MAX,
-                            value: textLength(element.text),
-                          }
-                    }
+                    key={key}
                     label={
-                      element.type === 'point'
-                        ? m.question_ui_point_name()
-                        : m.question_ui_label()
+                      key === 'width'
+                        ? m.question_ui_graph_width()
+                        : m.question_ui_graph_height()
                     }
                   >
                     <FieldInput
+                      min={1}
                       onChange={(event) =>
-                        update(
-                          element.id,
-                          element.type === 'point'
-                            ? { ...element, name: event.target.value }
-                            : { ...element, text: event.target.value }
-                        )
-                      }
-                      value={
-                        element.type === 'point'
-                          ? (element.name ?? '')
-                          : element.text
-                      }
-                    />
-                  </Field>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['x', 'y'] as const).map((axis, i) => (
-                      <Field key={axis} label={axis}>
-                        <FieldInput
-                          onChange={(event) =>
-                            update(element.id, {
-                              ...element,
-                              coords:
-                                i === 0
-                                  ? [
-                                      event.target.valueAsNumber,
-                                      element.coords[1],
-                                    ]
-                                  : [
-                                      element.coords[0],
-                                      event.target.valueAsNumber,
-                                    ],
-                            })
-                          }
-                          type="number"
-                          value={
-                            Number.isFinite(element.coords[i])
-                              ? element.coords[i]
-                              : ''
-                          }
-                        />
-                      </Field>
-                    ))}
-                  </div>
-                </>
-              )}
-              {(element.type === 'line' || element.type === 'segment') && (
-                <div className="grid grid-cols-2 gap-2">
-                  {[0, 1].map((i) => (
-                    <SelectField
-                      key={i}
-                      label={m.question_ui_graph_point({
-                        kind: graphLabels[element.type](),
-                        number: i + 1,
-                      })}
-                      onChange={(id) =>
-                        update(element.id, {
-                          ...element,
-                          points:
-                            i === 0
-                              ? [id, element.points[1]]
-                              : [element.points[0], id],
-                        })
-                      }
-                      options={points}
-                      value={element.points[i]}
-                    />
-                  ))}
-                </div>
-              )}
-              {element.type === 'angle' && (
-                <>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[0, 1, 2].map((i) => (
-                      <SelectField
-                        key={i}
-                        label={
-                          i === 1
-                            ? m.question_ui_vertex()
-                            : m.question_ui_graph_point({
-                                kind: graphLabels.angle(),
-                                number: i === 0 ? 1 : 2,
-                              })
-                        }
-                        onChange={(id) =>
-                          update(element.id, {
-                            ...element,
-                            points: element.points.map((point, j) =>
-                              j === i ? id : point
-                            ) as [string, string, string],
-                          })
-                        }
-                        options={points}
-                        value={element.points[i]}
-                      />
-                    ))}
-                  </div>
-                  <Field
-                    count={{
-                      max: limits.QUESTION_METADATA_MAX,
-                      value: textLength(element.label),
-                    }}
-                    label={m.question_ui_label()}
-                  >
-                    <FieldInput
-                      onChange={(event) =>
-                        update(element.id, {
-                          ...element,
-                          label: event.target.value,
-                        })
-                      }
-                      value={element.label ?? ''}
-                    />
-                  </Field>
-                </>
-              )}
-              {(element.type === 'arc' || element.type === 'sector') && (
-                <div className="grid grid-cols-3 gap-2">
-                  <SelectField
-                    label={m.question_ui_center()}
-                    onChange={(center) =>
-                      update(element.id, { ...element, center })
-                    }
-                    options={points}
-                    value={element.center}
-                  />
-                  {[0, 1].map((i) => (
-                    <SelectField
-                      key={i}
-                      label={m.question_ui_graph_point({
-                        kind: graphLabels[element.type](),
-                        number: i + 1,
-                      })}
-                      onChange={(id) =>
-                        update(element.id, {
-                          ...element,
-                          points:
-                            i === 0
-                              ? [id, element.points[1]]
-                              : [element.points[0], id],
-                        })
-                      }
-                      options={points}
-                      value={element.points[i]}
-                    />
-                  ))}
-                </div>
-              )}
-              {element.type === 'polygon' && (
-                <>
-                  <div className="grid grid-cols-3 gap-2">
-                    {element.points.map((point, i) => (
-                      <SelectField
-                        key={i}
-                        label={m.question_ui_graph_point({
-                          kind: graphLabels.polygon(),
-                          number: i + 1,
-                        })}
-                        onChange={(id) =>
-                          update(element.id, {
-                            ...element,
-                            points: element.points.map((value, j) =>
-                              j === i ? id : value
-                            ),
-                          })
-                        }
-                        options={points}
-                        value={point}
-                      />
-                    ))}
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      disabled={
-                        element.points.length >= points.length ||
-                        element.points.length >=
-                          limits.QUESTION_GRAPH_POLYGON_MAX
-                      }
-                      onClick={() =>
-                        update(element.id, {
-                          ...element,
-                          points: [
-                            ...element.points,
-                            (
-                              points.find(
-                                (point) => !element.points.includes(point.value)
-                              ) ?? points[0]
-                            ).value,
-                          ],
-                        })
-                      }
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      {m.question_ui_add_point()}
-                    </Button>
-                    <Button
-                      disabled={element.points.length <= 3}
-                      onClick={() =>
-                        update(element.id, {
-                          ...element,
-                          points: element.points.slice(0, -1),
-                        })
-                      }
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      {m.question_ui_remove_point()}
-                    </Button>
-                  </div>
-                </>
-              )}
-              {element.type === 'circle' && (
-                <div className="grid grid-cols-2 gap-2">
-                  <SelectField
-                    label={m.question_ui_center()}
-                    onChange={(center) =>
-                      update(element.id, { ...element, center })
-                    }
-                    options={points}
-                    value={element.center}
-                  />
-                  <Field label={m.question_ui_radius()}>
-                    <FieldInput
-                      onChange={(event) =>
-                        update(element.id, {
-                          ...element,
-                          radius: event.target.valueAsNumber,
+                        onChange({
+                          ...value,
+                          [key]: event.target.valueAsNumber,
                         })
                       }
                       type="number"
+                      value={Number.isFinite(value[key]) ? value[key] : ''}
+                    />
+                  </Field>
+                ))}
+                <SelectField
+                  label={m.question_ui_axes()}
+                  onChange={(next) => setBoard({ axis: next === 'shown' })}
+                  options={shown}
+                  value={value.board.axis ? 'shown' : 'hidden'}
+                />
+                <SelectField
+                  label={m.question_ui_grid()}
+                  onChange={(next) => setBoard({ grid: next === 'shown' })}
+                  options={shown}
+                  value={value.board.grid ? 'shown' : 'hidden'}
+                />
+                {[0, 2, 3, 1].map((i) => (
+                  <Field key={i} label={bboxLabels[i]}>
+                    <FieldInput
+                      onChange={(event) => {
+                        const bbox = [
+                          ...value.board.bbox,
+                        ] as GraphBlock['board']['bbox'];
+                        bbox[i] = event.target.valueAsNumber;
+                        setBoard({ bbox });
+                      }}
+                      type="number"
                       value={
-                        Number.isFinite(element.radius) ? element.radius : ''
+                        Number.isFinite(value.board.bbox[i])
+                          ? Number(value.board.bbox[i].toPrecision(6))
+                          : ''
                       }
                     />
                   </Field>
-                </div>
-              )}
-            </div>
-            <Popover>
-              <PopoverTrigger asChild>
-                <ToolbarButton label={m.question_ui_element_actions()}>
-                  <Icon name="moreVertical" />
-                </ToolbarButton>
-              </PopoverTrigger>
-              <ToolbarPopoverContent align="end" className="w-52">
-                <MenuItem
-                  label={
-                    element.hidden ? m.question_ui_show() : m.question_ui_hide()
-                  }
-                  onClick={() =>
-                    update(element.id, { ...element, hidden: !element.hidden })
-                  }
-                />
-                {element.type !== 'point' &&
-                element.type !== 'text' &&
-                element.type !== 'angle' ? (
-                  <MenuItem
-                    label={
-                      element.dash
-                        ? m.question_ui_solid_line()
-                        : m.question_ui_dashed_line()
-                    }
-                    onClick={() =>
-                      update(element.id, { ...element, dash: !element.dash })
-                    }
-                  />
-                ) : null}
-                {element.type === 'segment' && (element.ticks ?? 0) < 3 && (
-                  <MenuItem
-                    label={m.question_ui_add_equal_length_mark()}
-                    onClick={() =>
-                      update(element.id, {
-                        ...element,
-                        ticks: (element.ticks ?? 0) + 1,
-                      })
-                    }
-                  />
-                )}
-                {element.type === 'segment' && (element.ticks ?? 0) > 0 && (
-                  <MenuItem
-                    label={m.question_ui_remove_equal_length_marks()}
-                    onClick={() =>
-                      update(element.id, { ...element, ticks: undefined })
-                    }
-                  />
-                )}
-                {(element.type === 'sector' || element.type === 'polygon') && (
-                  <MenuItem
-                    label={
-                      element.shade
-                        ? m.question_ui_remove_shading()
-                        : m.question_ui_shade()
-                    }
-                    onClick={() =>
-                      update(element.id, { ...element, shade: !element.shade })
-                    }
-                  />
-                )}
-                <MenuItem
-                  label={m.question_ui_delete()}
-                  onClick={() =>
-                    onChange({
-                      ...value,
-                      // Drop everything built on a deleted point.
-                      elements: value.elements.filter(
-                        (item) =>
-                          item.id !== element.id &&
-                          !(
-                            'points' in item && item.points.includes(element.id)
-                          ) &&
-                          !('center' in item && item.center === element.id)
-                      ),
-                    })
-                  }
-                />
-              </ToolbarPopoverContent>
-            </Popover>
-          </div>
-        ))}
-        <Collapsible.Root>
-          <Collapsible.Trigger asChild>
-            <Button
-              iconLeft="chevronDown"
-              size="sm"
-              type="button"
-              variant="ghost"
-            >
-              {m.question_ui_advanced()}
-            </Button>
-          </Collapsible.Trigger>
-          <Collapsible.Content className="space-y-3 pt-3">
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                m.question_ui_x_minimum(),
-                m.question_ui_y_maximum(),
-                m.question_ui_x_maximum(),
-                m.question_ui_y_minimum(),
-              ].map((label, i) => (
-                <Field key={label} label={label}>
-                  <FieldInput
-                    onChange={(event) => {
-                      const bbox = [
-                        ...value.board.bbox,
-                      ] as GraphBlock['board']['bbox'];
-                      bbox[i] = event.target.valueAsNumber;
-                      onChange({ ...value, board: { ...value.board, bbox } });
-                    }}
-                    type="number"
-                    value={
-                      Number.isFinite(value.board.bbox[i])
-                        ? value.board.bbox[i]
-                        : ''
-                    }
-                  />
-                </Field>
-              ))}
-            </div>
-            <div className="flex gap-5">
-              <label className="flex items-center gap-2">
-                <input
-                  checked={value.board.grid}
+                ))}
+              </div>
+              <Field
+                count={{
+                  max: limits.QUESTION_METADATA_MAX,
+                  value: textLength(value.attribution),
+                }}
+                label={m.question_ui_attribution()}
+              >
+                <FieldInput
                   onChange={(event) =>
                     onChange({
                       ...value,
-                      board: { ...value.board, grid: event.target.checked },
+                      attribution: event.target.value || undefined,
                     })
                   }
-                  type="checkbox"
+                  value={value.attribution ?? ''}
                 />
-                {m.question_ui_grid()}
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  checked={value.board.axis}
-                  onChange={(event) =>
-                    onChange({
-                      ...value,
-                      board: { ...value.board, axis: event.target.checked },
-                    })
-                  }
-                  type="checkbox"
-                />
-                {m.question_ui_axes()}
-              </label>
-            </div>
+              </Field>
+            </Collapsible.Content>
+          </Collapsible.Root>
+          <div className="translate-x-0.5">
             <Field
               count={{
                 max: limits.QUESTION_TEXT_MAX,
@@ -646,9 +347,486 @@ export function GraphEditor({
                 value={value.description}
               />
             </Field>
-          </Collapsible.Content>
-        </Collapsible.Root>
+          </div>
+        </div>
       </div>
     </div>
+  );
+}
+
+/** The live board at the export's pixel size, scaled to the column. */
+function GraphStage({
+  value,
+  hooks,
+}: {
+  value: GraphBlock;
+  hooks: Parameters<typeof createGraphBoard>[2];
+}) {
+  const wrapper = useRef<HTMLDivElement>(null);
+  const stage = useRef<HTMLDivElement>(null);
+  const board = useRef<Board | null>(null);
+  const latest = useRef(value);
+  latest.current = value;
+  const [scale, setScale] = useState(0);
+  const [error, setError] = useState('');
+  const show = (error: unknown) =>
+    setError(
+      error instanceof GraphError
+        ? error.message
+        : m.question_ui_graph_could_not_load()
+    );
+  useEffect(() => {
+    const target = wrapper.current;
+    if (!target) return;
+    const observer = new ResizeObserver(() =>
+      setScale(target.clientWidth / latest.current.width)
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, []);
+  const { width, height } = value;
+  const { axis, grid } = value.board;
+  useEffect(() => {
+    setScale((wrapper.current?.clientWidth ?? 0) / width);
+  }, [width]);
+  // Size and axes are fixed when JSXGraph builds a board; anything else updates it.
+  useEffect(() => {
+    let cancelled = false;
+    if (!stage.current || !(width > 0) || !(height > 0)) return;
+    // A fresh host per board: freeing a stale board clears its container.
+    const target = document.createElement('div');
+    target.style.cssText = `width:${width}px;height:${height}px`;
+    stage.current.append(target);
+    setError('');
+    createGraphBoard(target, latest.current, hooks)
+      .then((created) => {
+        if (cancelled) return created.destroy();
+        board.current = created;
+        // Catch up with edits made while JSXGraph loaded.
+        created.update(latest.current);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) show(error);
+      });
+    return () => {
+      cancelled = true;
+      board.current?.destroy();
+      board.current = null;
+      target.remove();
+    };
+  }, [width, height, axis, grid, hooks]);
+  useEffect(() => {
+    if (!board.current) return;
+    try {
+      board.current.update(value);
+      setError('');
+    } catch (error) {
+      show(error);
+    }
+  }, [value]);
+  return (
+    <div className="min-w-0">
+      <div
+        className="relative w-full overflow-hidden bg-white"
+        ref={wrapper}
+        style={{
+          aspectRatio: scale ? undefined : `${width} / ${height}`,
+          height: scale ? height * scale : undefined,
+        }}
+      >
+        <div
+          className="origin-top-left touch-none"
+          ref={stage}
+          style={{ height, transform: `scale(${scale || 1})`, width }}
+        />
+        <BlockToolbar className="absolute top-2 right-2">
+          <ToolbarButton
+            label={m.material_zoom_in()}
+            onClick={() => board.current?.zoom(1.5)}
+            type="button"
+          >
+            <Icon name="zoomIn" />
+          </ToolbarButton>
+          <ToolbarButton
+            label={m.material_zoom_out()}
+            onClick={() => board.current?.zoom(1 / 1.5)}
+            type="button"
+          >
+            <Icon name="zoomOut" />
+          </ToolbarButton>
+          <ToolbarButton
+            label={m.question_ui_graph_fit()}
+            onClick={() => board.current?.fit()}
+            type="button"
+          >
+            <Icon name="maximize" />
+          </ToolbarButton>
+        </BlockToolbar>
+      </div>
+      {error && (
+        <p className="mt-2 text-sm text-solid-error" role="alert">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ExpressionItem({
+  autoFocus,
+  row,
+  error,
+  label,
+  onChange,
+  onEnter,
+  onMoveOut,
+  onRemove,
+  onRemoveEmpty,
+  onRestyle,
+  register,
+}: {
+  autoFocus?: boolean;
+  row: ExpressionRow | undefined;
+  error: string | undefined;
+  label: string;
+  onChange: (latex: string, ascii: string) => void;
+  onEnter: () => void;
+  onMoveOut: (direction: 'up' | 'down') => void;
+  onRemove?: () => void;
+  onRemoveEmpty?: () => void;
+  onRestyle: (style: RowStyle) => void;
+  register: (field: MathfieldElement | null) => void;
+}) {
+  const type = row?.parsed && !error ? elementType(row.parsed) : undefined;
+  return (
+    <li
+      className="group grid min-h-12 cursor-text grid-cols-[2rem_minmax(0,1fr)_1.75rem] items-center gap-2 border-divider border-b py-1 pl-1 focus-within:bg-tint-accent-1/25 focus-within:shadow-[inset_2px_0_0_var(--color-action-accent)]"
+      onClick={(event) => {
+        if (
+          event.target === event.currentTarget ||
+          (event.target as Element).closest('[data-row-field]')
+        )
+          (
+            event.currentTarget.querySelector(
+              'math-field'
+            ) as HTMLElement | null
+          )?.focus();
+      }}
+    >
+      {error ? (
+        <RowErrorIcon message={error} />
+      ) : type && row ? (
+        <StyleMenu onChange={onRestyle} row={row} type={type} />
+      ) : (
+        <span />
+      )}
+      <span className="min-w-0" data-row-field>
+        <GraphRowField
+          autoFocus={autoFocus}
+          label={label}
+          latex={row?.latex ?? ''}
+          onChange={onChange}
+          onEnter={onEnter}
+          onMoveOut={onMoveOut}
+          onRemoveEmpty={onRemoveEmpty}
+          register={register}
+        />
+      </span>
+      {onRemove ? <RowMenu onRemove={onRemove} /> : <span />}
+    </li>
+  );
+}
+
+/** A row that cannot be drawn: the warning icon, its message on hover. */
+function RowErrorIcon({ message }: { message: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        className="grid size-8 place-items-center rounded-button text-solid-error outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        render={<span role="img" />}
+        tabIndex={0}
+      >
+        <Icon className="size-4.5" name="alert" />
+        <span className="sr-only">{message}</span>
+      </TooltipTrigger>
+      <TooltipContent side="right">{message}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+function RowMenu({ onRemove }: { onRemove: () => void }) {
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <ToolbarButton
+          className="opacity-0 focus-visible:opacity-100 group-focus-within:opacity-100 group-hover:opacity-100 data-[state=open]:opacity-100"
+          label={m.question_ui_element_actions()}
+          type="button"
+        >
+          <Icon name="moreVertical" />
+        </ToolbarButton>
+      </PopoverTrigger>
+      <ToolbarPopoverContent align="end" className="w-44">
+        <MenuItem label={m.question_ui_delete()} onClick={onRemove} />
+      </ToolbarPopoverContent>
+    </Popover>
+  );
+}
+
+function StyleMenu({
+  row,
+  type,
+  onChange,
+}: {
+  row: ExpressionRow;
+  type: GraphElement['type'];
+  onChange: (style: RowStyle) => void;
+}) {
+  const keys = styleKeys(type);
+  const { style } = row;
+  const pointName = row.parsed?.kind === 'point' ? (row.parsed.name ?? '') : '';
+  const label =
+    type === 'point' ? (style.label ?? pointName) : (style.label ?? '');
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <ToolbarButton label={m.question_ui_graph_style()} type="button">
+          <GraphGlyph style={style} type={type} />
+        </ToolbarButton>
+      </PopoverTrigger>
+      <ToolbarPopoverContent align="start" className="w-60 space-y-3 p-3">
+        {keys.includes('dash') && (
+          <SelectField
+            label={m.question_ui_graph_line_style()}
+            onChange={(next) =>
+              onChange({ ...style, dash: next === 'dashed' || undefined })
+            }
+            options={[
+              { label: m.question_ui_graph_solid(), value: 'solid' },
+              { label: m.question_ui_graph_dashed(), value: 'dashed' },
+            ]}
+            value={style.dash ? 'dashed' : 'solid'}
+          />
+        )}
+        {keys.includes('ticks') && (
+          <SelectField
+            label={m.question_ui_graph_marks()}
+            onChange={(next) =>
+              onChange({ ...style, ticks: Number(next) || undefined })
+            }
+            options={[
+              { label: m.question_ui_graph_none(), value: '0' },
+              ...[1, 2, 3].map((n) => ({ label: String(n), value: String(n) })),
+            ]}
+            value={String(style.ticks ?? 0)}
+          />
+        )}
+        {keys.includes('shade') && (
+          <SelectField
+            label={m.question_ui_graph_shading()}
+            onChange={(next) =>
+              onChange({ ...style, shade: next === 'shaded' || undefined })
+            }
+            options={[
+              { label: m.question_ui_graph_none(), value: 'none' },
+              { label: m.question_ui_graph_shaded(), value: 'shaded' },
+            ]}
+            value={style.shade ? 'shaded' : 'none'}
+          />
+        )}
+        {(type === 'point' || type === 'angle') && (
+          <Field
+            count={{
+              max: limits.QUESTION_METADATA_MAX,
+              value: textLength(label),
+            }}
+            label={m.question_ui_label()}
+          >
+            <FieldInput
+              onChange={(event) => {
+                const next = event.target.value;
+                onChange({
+                  ...style,
+                  label:
+                    type === 'point' && next === pointName ? undefined : next,
+                });
+              }}
+              value={label}
+            />
+          </Field>
+        )}
+        <HideSwitch
+          checked={Boolean(style.hidden)}
+          onChange={(hidden) =>
+            onChange({ ...style, hidden: hidden || undefined })
+          }
+        />
+      </ToolbarPopoverContent>
+    </Popover>
+  );
+}
+
+function HideSwitch({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+}) {
+  return (
+    <label className="flex items-center justify-between gap-3">
+      <span className="t-label">{m.question_ui_hide()}</span>
+      <Switch checked={checked} onCheckedChange={onChange} size="sm" />
+    </label>
+  );
+}
+
+function LabelRow({
+  row,
+  error,
+  onChange,
+  onRemove,
+}: {
+  row: Extract<GraphRow, { kind: 'label' }>;
+  error: string | undefined;
+  onChange: (row: Extract<GraphRow, { kind: 'label' }>) => void;
+  onRemove: () => void;
+}) {
+  return (
+    <li
+      className="group grid min-h-12 cursor-text grid-cols-[2rem_minmax(0,1fr)_1.75rem] items-center gap-2 border-divider border-b py-1 pl-1 focus-within:bg-tint-accent-1/25 focus-within:shadow-[inset_2px_0_0_var(--color-action-accent)]"
+      onClick={(event) => {
+        if (
+          event.target === event.currentTarget ||
+          (event.target as Element).closest('[data-row-field]')
+        )
+          (
+            event.currentTarget.querySelector(
+              'math-field'
+            ) as HTMLElement | null
+          )?.focus();
+      }}
+    >
+      {error ? (
+        <RowErrorIcon message={error} />
+      ) : (
+        <Popover>
+          <PopoverTrigger asChild>
+            <ToolbarButton label={m.question_ui_graph_style()} type="button">
+              <GraphGlyph style={{ hidden: row.hidden }} type="text" />
+            </ToolbarButton>
+          </PopoverTrigger>
+          <ToolbarPopoverContent align="start" className="w-60 p-3">
+            <HideSwitch
+              checked={Boolean(row.hidden)}
+              onChange={(hidden) =>
+                onChange({ ...row, hidden: hidden || undefined })
+              }
+            />
+          </ToolbarPopoverContent>
+        </Popover>
+      )}
+      <span className="flex min-w-0 items-baseline gap-2">
+        <FieldInput
+          aria-label={m.question_ui_label()}
+          maxLength={limits.QUESTION_TEXT_MAX}
+          onChange={(event) => onChange({ ...row, text: event.target.value })}
+          value={row.text}
+          variant="transparent"
+          wrapperClassName="min-w-0 flex-1"
+        />
+        <span className="shrink-0 text-fg-muted text-sm">
+          {m.question_ui_graph_label_at({
+            x: String(row.coords[0]),
+            y: String(row.coords[1]),
+          })}
+        </span>
+      </span>
+      <RowMenu onRemove={onRemove} />
+    </li>
+  );
+}
+
+/** What a row draws, in the export's ink; dashed or shaded when styled so. */
+function GraphGlyph({
+  type,
+  style,
+}: {
+  type: GraphElement['type'];
+  style: RowStyle;
+}) {
+  const dash = style.dash ? '3.5 3' : undefined;
+  const shade = style.shade ? 0.18 : 0;
+  const paths: Record<GraphElement['type'], React.ReactNode> = {
+    angle: (
+      <>
+        <path d="M18 17H3L14 4" fill="none" />
+        <path d="M9 17a5 5 0 0 0-1.6-3.6" fill="none" strokeWidth={1.5} />
+      </>
+    ),
+    arc: <path d="M4 15a7 7 0 0 1 12 0" fill="none" strokeDasharray={dash} />,
+    circle: <circle cx="10" cy="10" fill="none" r="7" strokeDasharray={dash} />,
+    functiongraph: (
+      <path
+        d="M2 17C6 17 7 3 10 3s4 14 8 14"
+        fill="none"
+        strokeDasharray={dash}
+      />
+    ),
+    line: <path d="M2 18 18 2" strokeDasharray={dash} />,
+    point: <circle cx="10" cy="10" fill="currentColor" r="4" stroke="none" />,
+    polygon: (
+      <path
+        d="M10 3 18 17H2z"
+        fillOpacity={shade}
+        strokeDasharray={dash}
+        strokeWidth={1.5}
+      />
+    ),
+    sector: (
+      <path
+        d="M10 15 3 8a10 10 0 0 1 14 0z"
+        fillOpacity={shade}
+        strokeDasharray={dash}
+        strokeWidth={1.5}
+      />
+    ),
+    segment: (
+      <>
+        <path d="M3 17 17 3" strokeDasharray={dash} />
+        {Array.from({ length: style.ticks ?? 0 }, (_, i) => (
+          <path
+            d={`M${6 + i * 2.5} ${8 - i * 2.5}l5 5`}
+            key={i}
+            strokeWidth={1.5}
+          />
+        ))}
+      </>
+    ),
+    text: (
+      <text
+        fill="currentColor"
+        fontSize="12"
+        fontWeight="700"
+        stroke="none"
+        textAnchor="middle"
+        x="10"
+        y="14.5"
+      >
+        Aa
+      </text>
+    ),
+  };
+  return (
+    <svg
+      aria-hidden
+      className={cn('size-5', style.hidden && 'opacity-35')}
+      fill="currentColor"
+      stroke="currentColor"
+      strokeWidth={2}
+      viewBox="0 0 20 20"
+    >
+      {paths[type]}
+    </svg>
   );
 }

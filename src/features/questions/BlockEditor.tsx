@@ -331,11 +331,14 @@ export function BlockEditor({
   onChange,
   uploadAsset,
   onBusyChange,
+  onInvalidChange,
 }: {
   block: QuestionBlock;
   onChange: (block: QuestionBlock) => void;
   uploadAsset?: UploadQuestionAsset;
   onBusyChange?: (busy: boolean) => void;
+  /** Graph rows that cannot be drawn; the dialog holds Save meanwhile. */
+  onInvalidChange?: (invalid: boolean) => void;
 }) {
   const [cell, setCell] = useState<string | null>(null);
   const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
@@ -392,7 +395,13 @@ export function BlockEditor({
   // Plots come from the agent and chat; the dialog shows them and can remove them.
   if (block.type === 'plot') return <QuestionBlockView block={block} />;
   if (block.type === 'graph')
-    return <GraphEditor onChange={onChange} value={block} />;
+    return (
+      <GraphEditor
+        onChange={onChange}
+        onInvalidChange={onInvalidChange}
+        value={block}
+      />
+    );
   if (block.type === 'image')
     return (
       <div className="space-y-4">

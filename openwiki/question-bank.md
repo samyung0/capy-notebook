@@ -195,7 +195,22 @@ points, lines, segments, circles, labels, angles (three points with the vertex
 in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
 (counterclockwise from the first point around a centre) and polygons (3–12
 points); sectors and polygons can be shaded. A segment's `ticks` (1–3) draws
-JSXGraph hatch marks, so equal sides carry the same count. Question charts sit
+JSXGraph hatch marks, so equal sides carry the same count. The graph editor
+(`GraphEditor.tsx`, the same in quizzes and notes) is Desmos-style: one typeset
+MathLive row per element on the left, a live board at the export's pixel size on
+the right (stacked on phones). `graphSyntax.ts` turns rows into recipe elements
+and back: Desmos input (`y = 0.5x^2 - 3`, `{0 ≤ x ≤ 4}` restrictions,
+`A = (1, 2)`, `segment(A, B)`, `polygon(…)`, `circle(A, 3)`, `angle(…)`,
+`arc(O, A, B)`, `sector(…)`) with implicit products, stored as JessieCode with
+explicit `*`; style (dash, equal-side marks, shading, labels, hide) sits in each
+row's style menu. A row's point names are its references; a saved point another
+element uses but whose label is not a name gets the row name `P_n`. Rows that
+cannot be drawn show a warning icon whose tooltip is the reason, and the dialog
+holds Save until they are fixed or deleted. Dragging, wheel or pinch zoom around
+the pointer, double-click and Fit move the board, and the visible area is the
+saved `bbox`; dragged points round to the board's precision (0.1 at the default
+zoom). The board compiles `pi` and `e` as JessieCode's `PI` and `EULER`.
+Implicit curves and inequalities are planned (`todo-graph.md`). Question charts sit
 at about a graph's width with a centred title and never show a values table.
 A `plot` block holds numeric series over numeric axes: optional `kind` (`line`,
 the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4

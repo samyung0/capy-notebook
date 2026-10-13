@@ -42,7 +42,7 @@ Line style, equal-side marks, shading, hiding and an angle's label sit in the
 row's style menu (its left button), not in the typed text. Parametric and polar
 curves come later.
 
-## Phase 1: editor, frontend only
+## Phase 1: editor, frontend only (built 2026-10-13, uncommitted)
 
 No stored-format change, so nothing for Go or Rust.
 
@@ -136,9 +136,26 @@ server refuses an unknown element type, which in a live quiz room closes the
 writer's channel and sends unsaved edits to recovery. Say so in the landing
 notes.
 
+## Embeds session check (2026-10-13)
+
+No clash. Add `QUESTION_GRAPH_IMPLICIT_MAX` to `fieldlimits.QuestionBounds`; the
+catalog appends those, so `pnpm gen:openapi` carries it into `embeds.json`,
+`embeds.generated.ts` and `catalog.rs` (`TestGeneratedFilesAreCurrent` in
+`server/internal/embeds` fails without the regen). Until the Rust session swaps
+to catalog constants, `TestCollaborationQuestionBoundsMatchGo` also wants the
+constant hand-copied in `notes/src/questions.rs`. `implicit` is an element inside
+a graph block, not a document element, so the catalog's `elements` list does not
+change. `server/internal/materialdoc/catalog_test.go` and
+`src/features/notes/embedCatalog.test.ts` take their graph sample from
+`server/internal/questions/testdata/rich-blocks.json` (stem[1]); keep it valid.
+The collaboration server's markdown converter is a gitignored bundle of `src/`
+(`collaboration-rs/crates/notes/markdown`, `node build.mjs`): rebuild it before
+trusting the Rust markdown tests after `validation.ts` changes.
+
 ## Open
 
-- Saving with a row in error: refuse Save and point at the marked rows
-  (proposed), or drop those rows.
-- Dragged points: round to 0.1 (proposed), or snap to the grid when it shows.
+- Saving with a row in error: built as Save disabled while any row shows its
+  warning icon.
+- Dragged points: built as rounding to the board's precision (0.1 at the
+  default zoom, finer when zoomed in).
 - The implicit cap of 8.

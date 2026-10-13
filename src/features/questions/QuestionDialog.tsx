@@ -150,7 +150,7 @@ export function newQuestionBlock(type: AddableBlock): QuestionBlock {
       };
     case 'graph':
       return {
-        board: { axis: true, bbox: [-5, 5, 5, -5], grid: false },
+        board: { axis: true, bbox: [-7.5, 5, 7.5, -5], grid: false },
         description: '',
         elements: [],
         height: 400,
@@ -270,6 +270,8 @@ function QuestionDialogSession({
   }, [reveal]);
   const [error, setError] = useState('');
   const [savingBlock, setSavingBlock] = useState(false);
+  // A graph row that cannot be drawn holds the block's Save.
+  const [blockInvalid, setBlockInvalid] = useState(false);
   const [reloading, setReloading] = useState(false);
   const dragged = useRef<Row | null>(null);
   const [drop, setDrop] = useState<{ key: string; after: boolean } | null>(
@@ -922,7 +924,7 @@ function QuestionDialogSession({
             )}
             {editing?.kind === 'block' && stagedBlock(editing.block) && (
               <Button
-                disabled={pending}
+                disabled={pending || blockInvalid}
                 onClick={() => void saveInner()}
                 rounded="large"
                 size="lg"
@@ -954,7 +956,7 @@ function QuestionDialogSession({
                 : m.question_ui_remove_block()}
             </Button>
             <Button
-              disabled={pending}
+              disabled={pending || (editing.kind === 'block' && blockInvalid)}
               onClick={() => void saveInner()}
               rounded="large"
               size="md"
@@ -1069,6 +1071,7 @@ function QuestionDialogSession({
                 block={shown.block}
                 onBusyChange={setSavingBlock}
                 onChange={(block) => editBlock(shown.location, block)}
+                onInvalidChange={setBlockInvalid}
                 uploadAsset={uploadAsset}
               />
             ) : (

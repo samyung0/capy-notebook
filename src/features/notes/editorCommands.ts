@@ -48,7 +48,7 @@ function newVisualBlock(type: 'chart' | 'graph'): NoteVisualBlock {
         type,
       }
     : {
-        board: { axis: true, bbox: [-5, 5, 5, -5], grid: false },
+        board: { axis: true, bbox: [-7.5, 5, 7.5, -5], grid: false },
         description: '',
         elements: [],
         height: 400,

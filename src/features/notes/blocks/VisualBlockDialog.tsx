@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { Controller, useForm } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
@@ -28,6 +28,7 @@ export default function VisualBlockDialog({
   onClose: () => void;
 }) {
   const exportHost = useRef<HTMLDivElement>(null);
+  const [invalid, setInvalid] = useState(false);
   const {
     control,
     handleSubmit,
@@ -72,7 +73,7 @@ export default function VisualBlockDialog({
             {m.action_cancel()}
           </Button>
           <Button
-            disabled={isSubmitting}
+            disabled={isSubmitting || invalid}
             size="lg"
             type="submit"
             variant="accent"
@@ -87,14 +88,18 @@ export default function VisualBlockDialog({
       onSubmit={save}
       open
       title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
-      width={block.type === 'chart' ? 1040 : 760}
+      width={1040}
     >
       <fieldset className="min-w-0" disabled={isSubmitting}>
         <Controller
           control={control}
           name="block"
           render={({ field }) => (
-            <BlockEditor block={field.value} onChange={field.onChange} />
+            <BlockEditor
+              block={field.value}
+              onChange={field.onChange}
+              onInvalidChange={setInvalid}
+            />
           )}
         />
       </fieldset>
