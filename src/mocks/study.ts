@@ -665,6 +665,28 @@ const SHOWCASE_PAST: PastReview[] = [
   },
 ];
 
+/** The server's past review orders (review_sessions.go). */
+function pastSortKey(r: PastReview, sort: string | null) {
+  const ratio = (s?: { correct: number; total: number }) =>
+    s?.total ? s.correct / s.total : null;
+  switch (sort) {
+    case 'quiz':
+      return ratio(r.quiz);
+    case 'cards':
+      return ratio(r.cards);
+    case 'time':
+      return +new Date(r.lastAnswerAt) - +new Date(r.startedAt);
+    case 'workspace':
+      return r.workspaceName.toLowerCase();
+    case 'chapter':
+      return r.group === 'chapter' ? (r.chapterName ?? '').toLowerCase() : null;
+    case 'status':
+      return r.answered < r.total ? 1 : 0;
+    default:
+      return r.startedAt;
+  }
+}
+
 function pastReviews(params: URLSearchParams) {
   const recorded: PastReview[] = [...sessions]
     .filter(([, s]) => s.finishedAt)
@@ -711,8 +733,15 @@ function pastReviews(params: URLSearchParams) {
         (has.includes('quiz') && r.quiz) ||
         (has.includes('flashcards') && r.cards)
     )
-    .sort((a, b) => b.startedAt.localeCompare(a.startedAt));
-  if (params.get('dir') === 'asc') list.reverse();
+    .sort((a, b) => {
+      const ka = pastSortKey(a, params.get('sort'));
+      const kb = pastSortKey(b, params.get('sort'));
+      // Rows without a value (no quiz, Others) stay last either way.
+      if (ka === null || kb === null)
+        return ka === kb ? 0 : ka === null ? 1 : -1;
+      const cmp = ka < kb ? -1 : ka > kb ? 1 : 0;
+      return params.get('dir') === 'asc' ? cmp : -cmp;
+    });
   return { items: list, more: false };
 }
 

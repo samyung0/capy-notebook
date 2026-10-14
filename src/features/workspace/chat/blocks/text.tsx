@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { type ComponentProps, type ReactNode, useMemo } from 'react';
 import { Streamdown } from 'streamdown';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -10,18 +10,97 @@ import {
 import { cn } from '@/lib/cn';
 import type { CalloutProps, MdProps, RevealProps, StepProps } from '../schema';
 import { Cites, elements } from './Cite';
+import { CodeBlock } from './CodeBlock';
 import { chatMath, MathSpan, prepareMath } from './math';
 
 const plugins = { math: chatMath };
+const TRAILING_NEWLINE = /\n$/;
+const LANGUAGE_CLASS = /language-(\S+)/;
 
-/** Markdown inside a rich answer; the same list styling the plain answer had,
- * and `$…$` / `$$…$$` math. */
+/** Streamdown marks a fenced block's `code` with `data-block` (via `pre`). */
+function Code({
+  className,
+  children,
+  ...props
+}: ComponentProps<'code'> & { 'data-block'?: string }) {
+  if ('data-block' in props) {
+    return (
+      <CodeBlock
+        code={String(children ?? '').replace(TRAILING_NEWLINE, '')}
+        language={LANGUAGE_CLASS.exec(className ?? '')?.[1]}
+      />
+    );
+  }
+  return (
+    <code className="rounded bg-code-inline px-1 py-px font-mono text-[0.9em] text-code-inline-fg">
+      {children}
+    </code>
+  );
+}
+
+function Heading({ children }: { children?: ReactNode }) {
+  return (
+    <h2 className="mt-1 font-semibold text-[17px] tracking-tight first:mt-0">
+      {children}
+    </h2>
+  );
+}
+
+const components = {
+  a: ({ children, href }: ComponentProps<'a'>) => (
+    <a
+      className="text-link underline underline-offset-3 hover:text-link-hover"
+      href={href}
+      rel="noopener noreferrer"
+      target="_blank"
+    >
+      {children}
+    </a>
+  ),
+  blockquote: ({ children }: { children?: ReactNode }) => (
+    <blockquote className="border-line border-l-2 pl-2.5 text-fg-secondary">
+      {children}
+    </blockquote>
+  ),
+  code: Code,
+  h1: Heading,
+  h2: Heading,
+  h3: ({ children }: { children?: ReactNode }) => (
+    <h3 className="mt-1 font-semibold text-[15px] first:mt-0">{children}</h3>
+  ),
+  h4: ({ children }: { children?: ReactNode }) => (
+    <h4 className="font-semibold text-sm">{children}</h4>
+  ),
+  li: ({ children }: { children?: ReactNode }) => (
+    <li className="[&+li]:mt-0.5 [&>p]:inline">{children}</li>
+  ),
+  ol: ({ children }: { children?: ReactNode }) => (
+    <ol className="ml-5 list-outside list-decimal whitespace-normal marker:[font-variant-numeric:normal]">
+      {children}
+    </ol>
+  ),
+  span: MathSpan,
+  ul: ({ children }: { children?: ReactNode }) => (
+    <ul className="ml-5 list-outside list-disc whitespace-normal">
+      {children}
+    </ul>
+  ),
+};
+
+/**
+ * Markdown inside a rich answer (and the plain-Markdown fallback), with
+ * `$…$` / `$$…$$` math. Citation markers follow the last paragraph on its
+ * line: Streamdown's root is `display: contents`, so that paragraph can sit
+ * inline beside the markers while earlier blocks keep their 8px gap.
+ */
 export function Prose({
   text,
+  passages,
   className,
   muted,
 }: {
   text: string;
+  passages?: number[];
   className?: string;
   muted?: boolean;
 }) {
@@ -29,41 +108,25 @@ export function Prose({
   return (
     <div
       className={cn(
-        'streamdown-body max-w-none [&_p]:my-1.5 [&_pre]:my-2',
+        'streamdown-body max-w-none',
         muted && 'text-fg-secondary',
         className
       )}
     >
       <Streamdown
-        className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
-        components={{
-          ol: ({ children }) => (
-            <ol className="ml-4 list-outside list-decimal whitespace-normal">
-              {children}
-            </ol>
-          ),
-          span: MathSpan,
-          ul: ({ children }) => (
-            <ul className="ml-4 list-outside list-disc whitespace-normal">
-              {children}
-            </ul>
-          ),
-        }}
+        className="contents [&>*:not(:last-child)]:mb-2 [&>p:last-child]:inline"
+        components={components}
         plugins={plugins}
       >
         {source}
       </Streamdown>
+      <Cites passages={passages} />
     </div>
   );
 }
 
 export function Md({ props }: { props: MdProps }) {
-  return (
-    <div className="my-2">
-      <Prose text={props.text} />
-      <Cites passages={props.passages} />
-    </div>
-  );
+  return <Prose passages={props.passages} text={props.text} />;
 }
 
 export function Callout({ props }: { props: CalloutProps }) {
@@ -71,16 +134,19 @@ export function Callout({ props }: { props: CalloutProps }) {
   return (
     <div
       className={cn(
-        'my-3 flex items-start gap-2 px-3 py-2.5',
+        'flex items-start gap-2 px-3 py-2.5',
         CALLOUT_CONTAINER_CLASS,
         CALLOUT_VARIANT_CLASS[variant]
       )}
     >
       <Icon className="mt-px" name={CALLOUT_ICON[variant]} size={16} />
       <div className="min-w-0 flex-1">
-        <p className="mb-0.5 font-semibold text-xs">{props.title}</p>
-        <Prose className="text-[13px] text-fg [&_p]:my-1" text={props.text} />
-        <Cites passages={props.passages} />
+        <p className="mb-0.5 font-semibold text-[13.5px]">{props.title}</p>
+        <Prose
+          className="text-fg text-sm"
+          passages={props.passages}
+          text={props.text}
+        />
       </div>
     </div>
   );
@@ -88,22 +154,19 @@ export function Callout({ props }: { props: CalloutProps }) {
 
 export function Steps({ props }: { props: { items: unknown[] } }) {
   return (
-    <ol className="my-3 flex flex-col">
+    <ol className="flex flex-col gap-3">
       {elements<StepProps>(props.items).map((step, index) => (
-        <li
-          className="relative pb-3.5 pl-8 last:pb-0 [&:not(:last-child)]:before:absolute [&:not(:last-child)]:before:top-6 [&:not(:last-child)]:before:bottom-0.5 [&:not(:last-child)]:before:left-[9px] [&:not(:last-child)]:before:border-divider [&:not(:last-child)]:before:border-l"
-          key={index}
-        >
-          <span className="absolute top-0 left-0 grid size-5 place-items-center rounded-full border border-line bg-surface text-[10px] text-fg-muted">
+        <li className="relative pl-6" key={index}>
+          <span className="absolute top-px left-0 w-4 text-right font-semibold text-fg-muted text-xs">
             {index + 1}
           </span>
-          <p className="font-semibold text-xs">{step.props.title}</p>
+          <p className="font-semibold text-sm">{step.props.title}</p>
           <Prose
-            className="text-[13px] [&_p]:my-0.5"
+            className="mt-0.5 text-sm"
             muted
+            passages={step.props.passages}
             text={step.props.text}
           />
-          <Cites passages={step.props.passages} />
         </li>
       ))}
     </ol>
@@ -112,14 +175,21 @@ export function Steps({ props }: { props: { items: unknown[] } }) {
 
 export function Reveal({ props }: { props: RevealProps }) {
   return (
-    <details className="my-2 rounded-card border border-line px-3 py-2">
-      <summary className="cursor-pointer font-semibold text-xs">
+    <details className="group">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 font-semibold text-link text-sm hover:text-link-hover [&::-webkit-details-marker]:hidden">
+        <Icon
+          className="transition-transform group-open:rotate-90"
+          name="chevronRight"
+          size={12}
+        />
         {props.title}
       </summary>
-      <div className="mt-1.5">
-        <Prose className="text-[13px]" muted text={props.text} />
-        <Cites passages={props.passages} />
-      </div>
+      <Prose
+        className="mt-3 pl-3 text-sm"
+        muted
+        passages={props.passages}
+        text={props.text}
+      />
     </details>
   );
 }

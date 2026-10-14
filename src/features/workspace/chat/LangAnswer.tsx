@@ -17,7 +17,7 @@ import { chatLibrary, parseAnswer } from './library';
 function AnswerError({ partial = false }: { partial?: boolean }) {
   return (
     <p
-      className="mt-2 rounded-card border border-tint-error bg-tint-error px-3 py-2 text-sm text-solid-error"
+      className="rounded-lg bg-tint-error px-2.5 py-1.5 text-sm text-tint-error-fg"
       role="alert"
     >
       {partial ? m.chat_answer_incomplete() : m.chat_failed()}
@@ -55,8 +55,10 @@ function Markdown({
 }) {
   return (
     <MarkdownBoundary text={text}>
-      <Prose text={text} />
-      {incomplete ? <AnswerError partial /> : null}
+      <div className="flex flex-col gap-5">
+        <Prose text={text} />
+        {incomplete ? <AnswerError partial /> : null}
+      </div>
     </MarkdownBoundary>
   );
 }
@@ -118,29 +120,31 @@ export function LangAnswer({
   const gap = complete && !streaming && inspected.gap;
   return (
     <CitationContext.Provider value={lookup}>
-      {prefix ? <Markdown text={prefix} /> : null}
-      {failed ? (
-        inspected.text ? (
-          <Markdown incomplete={gap} text={inspected.text} />
-        ) : gap ? (
-          <AnswerError />
-        ) : null
-      ) : (
-        <InvalidChartContext.Provider value={inspected.invalidCharts}>
-          <LatestAnswerContext.Provider value={latest}>
-            <Renderer
-              isStreaming={streaming}
-              library={chatLibrary}
-              onError={(errors) => {
-                if (errors.some((error) => error.source !== 'parser'))
-                  setRenderFailure(content);
-              }}
-              response={program}
-            />
-          </LatestAnswerContext.Provider>
-        </InvalidChartContext.Provider>
-      )}
-      {gap && !failed ? <AnswerError partial={!!inspected.text} /> : null}
+      <div className="flex flex-col gap-5">
+        {prefix ? <Markdown text={prefix} /> : null}
+        {failed ? (
+          inspected.text ? (
+            <Markdown incomplete={gap} text={inspected.text} />
+          ) : gap ? (
+            <AnswerError />
+          ) : null
+        ) : (
+          <InvalidChartContext.Provider value={inspected.invalidCharts}>
+            <LatestAnswerContext.Provider value={latest}>
+              <Renderer
+                isStreaming={streaming}
+                library={chatLibrary}
+                onError={(errors) => {
+                  if (errors.some((error) => error.source !== 'parser'))
+                    setRenderFailure(content);
+                }}
+                response={program}
+              />
+            </LatestAnswerContext.Provider>
+          </InvalidChartContext.Provider>
+        )}
+        {gap && !failed ? <AnswerError partial={!!inspected.text} /> : null}
+      </div>
     </CitationContext.Provider>
   );
 }

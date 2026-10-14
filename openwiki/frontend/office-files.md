@@ -1219,8 +1219,8 @@ The three toolbar rows take the note toolbar's scale (`--toolbar-button`,
 icons"). `office-runtime.css` defines it once as `--toolbar-height`,
 `--toolbar-padding`, `--toolbar-button`, `--toolbar-icon`,
 `--toolbar-divider-height` and `--toolbar-divider-margin`: 36px rows, 4px
-padding, 28px buttons, 14px icons and 20px dividers with 4px margins in a
-frame under 640px, and 40/8/32/16/28/6px from 640px up. The breakpoint is the
+padding, 30px buttons, 18px icons and 20px dividers with 4px margins in a
+frame under 640px, and 40/8/32/18/28/6px from 640px up. The breakpoint is the
 frame's own width, not the page's, so a viewer narrower than 640px at a
 desktop width also gets the compact row. Each runtime reads the scale through
 its own variables: DOCX's `--doc-toolbar-height`, `--doc-toolbar-button-size`
@@ -1243,9 +1243,11 @@ host rule on the row's disabled buttons and inputs plus
 PPTX through `--xlsx-disabled-opacity` and `--pptx-disabled-opacity`. Below
 640px of frame the XLSX name box is 56px wide (`--xlsx-name-box-width`, 64px
 from 640px) and the sheet-tab row 34px (tab padding 6/4px, 8/6px from 640px),
-in both modes. Those fork variables fall back to the fork's own values. XLSX
-and PPTX icons shrink with a rule on the 16px icons inside the toolbar row,
-leaving chevrons and the menus' icons alone. The rows keep their edge fades as
+in both modes. Those fork variables fall back to the fork's own values. Every
+icon the three icon sets draw is 18px whatever size the editor asks for
+(`officeIconSize`), except chevrons, check marks and the table edge's +, which
+keep the smaller size requested; Office menu icons are 18px in 30px rows
+(`--office-menu-icon-size`, `--office-menu-item-height`). The rows keep their edge fades as
 overlays rather than `scroll-fade-x`: the toolbar dropdowns are fixed panels
 inside the scroll row, and a mask on the row clips them.
 

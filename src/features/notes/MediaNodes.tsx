@@ -311,7 +311,7 @@ export const MediaPlaceholderElement = withHOC(
               }}
               type="button"
             >
-              <EditorIcon className="size-4" name="x" />
+              <EditorIcon className="size-4.5" name="x" />
             </button>
           ) : canCreateAssets ? (
             <EditorIcon className="size-4 text-fg-muted" name="upload" />

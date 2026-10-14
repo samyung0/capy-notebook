@@ -11,4 +11,6 @@ export type ListAttemptsSort = typeof ListAttemptsSort[keyof typeof ListAttempts
 export const ListAttemptsSort = {
   date: 'date',
   score: 'score',
+  quiz: 'quiz',
+  workspace: 'workspace',
 } as const;

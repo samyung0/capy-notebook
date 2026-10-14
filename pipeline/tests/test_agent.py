@@ -12,9 +12,9 @@ from dataclasses import replace
 import pytest
 from PIL import Image
 
-from pipeline import obs
+from pipeline import config, obs
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import accounting, agent, contract, pending, tools
+from pipeline.retrieval import accounting, agent, contract, pending, scripted, tools
 from pipeline.retrieval.limits import TOOLS_PER_RESPONSE
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
@@ -3204,3 +3204,53 @@ async def test_chat_rejects_instant_before_any_model_call(monkeypatch):
         "help", ToolContext(workspace_id="ws", user_id="u"), model=spec
     )
     assert events[-1]["code"] == "model_unavailable"
+
+
+async def test_a_uat_scripted_turn_runs_its_calls_through_the_tools_not_a_model(
+    monkeypatch,
+):
+    query = scripted.MARKER + json.dumps(
+        {
+            "steps": [
+                [
+                    {"name": "read_skill", "arguments": {"name": "editing"}},
+                    {"name": "list_trashed_files", "arguments": {}},
+                ],
+                "Scripted.",
+            ]
+        }
+    )
+    # Without the UAT switch the marker is ordinary text for the model.
+    assert scripted.parse(query) is None
+    monkeypatch.setattr(scripted.cfg, "uat_scripted_tools", True)
+    with pytest.raises(scripted.ScriptError):
+        scripted.parse(scripted.MARKER + '{"steps": [[{"name": 1}]]}')
+
+    async def forbidden(*_args, **_kwargs):
+        pytest.fail("a scripted turn must not call a model")
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", forbidden)
+    events = await _collect(
+        query,
+        ToolContext(workspace_id="ws", operations=frozenset({"material.create"})),
+        script=scripted.parse(query),
+    )
+    # The calls take the model's path: list_trashed_files needs trash.read,
+    # which this actor lacks.
+    assert {e["callId"]: e["outcome"] for e in events if e["type"] == "tool_end"} == {
+        "call_uat_1_1": "succeeded",
+        "call_uat_1_2": "refused",
+    }
+    assert events[-1]["type"] == "done"
+    assert events[-1]["answer"] == "Scripted."
+
+
+def test_the_scripted_tools_switch_is_true_or_unset_and_uat_only():
+    flag = config.uat_only_flag
+    key = "RETRIEVAL_UAT_SCRIPTED_TOOLS"
+    assert not flag(key, {"SENTRY_ENVIRONMENT": "uat"})
+    assert flag(key, {key: "true", "SENTRY_ENVIRONMENT": "uat"})
+    with pytest.raises(ValueError, match="only with SENTRY_ENVIRONMENT=uat"):
+        flag(key, {key: "true", "SENTRY_ENVIRONMENT": "production"})
+    with pytest.raises(ValueError, match="true or unset"):
+        flag(key, {key: "1", "SENTRY_ENVIRONMENT": "uat"})

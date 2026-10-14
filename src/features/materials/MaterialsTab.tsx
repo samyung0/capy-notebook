@@ -1,11 +1,14 @@
 import { linkOptions, useNavigate, useSearch } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { useMediaQuery } from 'usehooks-ts';
 import { updateMaterialBodyTitleMax } from '@/api/gen/validators';
 import {
   useCreateFlashcardSet,
   useCreateQuiz,
   useCreateStandaloneNote,
   useDeleteMaterial,
+  useDeleteOwnedMaterial,
   useOwnedMaterials,
   useUpdateMaterial,
   useWorkspaces,
@@ -15,7 +18,11 @@ import type {
   MaterialListLocation,
   MaterialListSort,
 } from '@/api/types';
-import { ItemList, ItemSkeletonGrid } from '@/components/app/ItemCard';
+import {
+  ItemList,
+  ItemPick,
+  ItemSkeletonGrid,
+} from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
 import {
   type FilterSection,
@@ -25,12 +32,23 @@ import {
   toggleValue,
 } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import type { ColumnSort } from '@/components/app/SortHeader';
 import { TrashConfirmDialog } from '@/components/app/TrashConfirmDialog';
 import { Button } from '@/components/ui/Button';
+import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import type { MenuItem } from '@/components/ui/Menu';
 import { Menu } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import {
+  clearOnBlank,
+  SelectionAction,
+  SelectionBar,
+} from '@/features/files/SelectionBar';
+import {
+  collectSelectionPages,
+  useFileSelection,
+} from '@/features/files/useFileSelection';
 import {
   MaterialCard,
   materialKindLabel,
@@ -69,12 +87,18 @@ function materialLink(item: MaterialListItem) {
 /** The Files page's Blocks tab: every note, quiz and flashcard set the user
  * owns or reaches through a workspace, plus New block for standalone ones. */
 export function MaterialsTab({
+  headerSlot,
   view,
+  onBusyChange,
   onViewChange,
 }: {
+  /** Where New block goes on phones (beside the page title). */
+  headerSlot?: HTMLElement | null;
   view: ListView;
+  onBusyChange: (busy: boolean) => void;
   onViewChange: (view: ListView) => void;
 }) {
+  const phone = !useMediaQuery('(min-width: 640px)');
   const sorts: SortOption<MaterialListSort>[] = [
     {
       icon: 'clock',
@@ -108,7 +132,13 @@ export function MaterialsTab({
     kinds = [],
     workspaceIds = [],
   } = params;
-  const ascending = params.dir === 'asc';
+  const sorting: ColumnSort<MaterialListSort> = {
+    ascending: params.dir === 'asc',
+    ascendingFirst: ['title', 'workspace', 'kind'],
+    onSortChange: (next, asc) =>
+      setSearch(sortSearch('blocks', next, asc, MATERIAL_SORT_DEFAULT)),
+    sort,
+  };
   const location = search.location;
 
   const {
@@ -121,6 +151,19 @@ export function MaterialsTab({
     isLoading,
   } = useOwnedMaterials(params);
   const items = data?.pages.flatMap((page) => page.items) ?? [];
+  const selection = useFileSelection(
+    items,
+    (item) => item.id,
+    () =>
+      collectSelectionPages(data?.pages ?? [], () =>
+        fetchNextPage({ throwOnError: true })
+      ),
+    onBusyChange
+  );
+  const { mutateAsync: deleteOwnedMaterial } = useDeleteOwnedMaterial();
+  const [deleteTargets, setDeleteTargets] = useState<MaterialListItem[] | null>(
+    null
+  );
   const revealRef = useLoadingReveal(isLoading);
   const { data: workspaces = [] } = useWorkspaces(
     { sort: 'accessed' },
@@ -231,92 +274,99 @@ export function MaterialsTab({
   );
   const [cloning, setCloning] = useState<MaterialListItem | null>(null);
 
-  function menuFor(item: MaterialListItem): MenuItem[] {
-    const standalone = !item.workspaceId;
-    const items: MenuItem[] = [];
-    if (item.kind === 'quiz') {
-      items.push(
-        {
-          icon: 'quiz',
-          label: m.quiz_start(),
+  // Stable while `frozen` holds, so the memoised cards skip a pick's render.
+  const menuFor = useCallback(
+    (item: MaterialListItem): MenuItem[] => {
+      const standalone = !item.workspaceId;
+      const items: MenuItem[] = [];
+      if (item.kind === 'quiz') {
+        items.push(
+          {
+            icon: 'quiz',
+            label: m.quiz_start(),
+            onClick: () =>
+              navigate({
+                params: { quizId: item.id },
+                to: '/quizzes/$quizId/attempt',
+              }),
+          },
+          {
+            icon: 'settings',
+            label: m.action_edit(),
+            onClick: () =>
+              navigate({ ...materialLink(item), search: { mode: 'edit' } }),
+          }
+        );
+      } else if (item.kind === 'flashcards') {
+        items.push({
+          icon: 'flashcards',
+          label: m.action_study(),
           onClick: () =>
             navigate({
-              params: { quizId: item.id },
-              to: '/quizzes/$quizId/attempt',
+              params: { flashcardSetId: item.id },
+              to: '/flashcards/$flashcardSetId',
             }),
-        },
-        {
-          icon: 'settings',
-          label: m.action_edit(),
-          onClick: () =>
-            navigate({ ...materialLink(item), search: { mode: 'edit' } }),
-        }
-      );
-    } else if (item.kind === 'flashcards') {
+        });
+      } else {
+        items.push({
+          icon: 'newNote',
+          label: m.action_open(),
+          onClick: () => navigate(materialLink(item)),
+        });
+      }
       items.push({
-        icon: 'flashcards',
-        label: m.action_study(),
-        onClick: () =>
-          navigate({
-            params: { flashcardSetId: item.id },
-            to: '/flashcards/$flashcardSetId',
-          }),
+        icon: 'pencil',
+        label: m.action_rename(),
+        onClick: () => setRenaming(item),
       });
-    } else {
+      if (standalone) {
+        items.push({
+          icon: 'link',
+          label: m.action_share(),
+          onClick: () => setSharing(item),
+        });
+      }
       items.push({
-        icon: 'newNote',
-        label: m.action_open(),
-        onClick: () => navigate(materialLink(item)),
+        disabled: frozen,
+        icon: 'clone',
+        label: m.action_clone(),
+        onClick: () => setCloning(item),
       });
-    }
-    items.push({
-      icon: 'pencil',
-      label: m.action_rename(),
-      onClick: () => setRenaming(item),
-    });
-    if (standalone) {
       items.push({
-        icon: 'link',
-        label: m.action_share(),
-        onClick: () => setSharing(item),
+        danger: true,
+        icon: 'trash',
+        label: m.action_delete(),
+        onClick: () => setDeleting(item),
       });
-    }
-    items.push({
-      disabled: frozen,
-      icon: 'clone',
-      label: m.action_clone(),
-      onClick: () => setCloning(item),
-    });
-    items.push({
-      danger: true,
-      icon: 'trash',
-      label: m.action_delete(),
-      onClick: () => setDeleting(item),
-    });
-    return items;
-  }
+      return items;
+    },
+    [frozen, navigate]
+  );
+
+  const newBlock = (
+    <Menu
+      align="end"
+      items={newMenu}
+      trigger={
+        <Button
+          className="px-1.5 font-bold text-link"
+          disabled={frozen}
+          iconLeft="plus"
+          size="sm"
+          variant="ghost-hover"
+        >
+          {m.files_new_block()}
+        </Button>
+      }
+    />
+  );
+  const newBlockInHeader = phone && !!headerSlot;
 
   return (
     <>
+      {newBlockInHeader && createPortal(newBlock, headerSlot)}
       <ListToolbar
-        action={
-          <Menu
-            align="end"
-            items={newMenu}
-            trigger={
-              <Button
-                className="px-1.5 font-bold text-link"
-                disabled={frozen}
-                iconLeft="plus"
-                size="sm"
-                variant="ghost-hover"
-              >
-                {m.files_new_block()}
-              </Button>
-            }
-          />
-        }
-        ascending={ascending}
+        action={newBlockInHeader ? undefined : newBlock}
         filters={filters}
         onResetFilters={() =>
           setSearch({
@@ -325,15 +375,36 @@ export function MaterialsTab({
             workspace: undefined,
           })
         }
-        onSortChange={(next, asc) =>
-          setSearch(sortSearch('blocks', next, asc, MATERIAL_SORT_DEFAULT))
-        }
         onViewChange={onViewChange}
-        sort={sort}
-        sorts={sorts}
+        selection={
+          selection.selecting && (
+            <SelectionBar
+              allSelected={
+                !hasNextPage && selection.selected.length === items.length
+              }
+              busy={selection.busy || isFetchingNextPage}
+              count={selection.selected.length}
+              onClear={selection.clear}
+              onSelectAll={() => void selection.selectAll()}
+            >
+              <SelectionAction
+                danger
+                disabled={selection.busy || isFetchingNextPage}
+                icon="trash"
+                label={m.action_delete()}
+                onClick={() => setDeleteTargets([...selection.selected])}
+              />
+            </SelectionBar>
+          )
+        }
+        sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
         view={view}
       />
-      <div className="w-full shrink-0 grow px-6 pt-2 pb-6">
+      {/* Mouse only: the selection bar's clear button is the keyboard way. */}
+      <div
+        className="w-full shrink-0 grow px-2.5 pt-2 pb-6 sm:px-4"
+        onClick={clearOnBlank(selection.clear)}
+      >
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -350,28 +421,34 @@ export function MaterialsTab({
           </p>
         ) : (
           <div className="flex flex-col gap-3" ref={revealRef}>
-            <ItemList
-              columns={[
-                m.list_col_name(),
-                m.create_filter_workspace(),
-                m.list_col_details(),
-                m.list_col_updated(),
-              ]}
-              view={view}
-            >
-              {items.map((item) => (
-                <MaterialCard
-                  item={item}
-                  key={item.id}
-                  link={materialLink(item)}
-                  menu={menuFor(item)}
-                  view={view}
-                  workspaceIconId={
-                    workspaces.find((ws) => ws.id === item.workspaceId)?.iconId
-                  }
-                />
-              ))}
-            </ItemList>
+            <ItemPick.Provider value={selection.pickContext}>
+              <ItemList
+                columns={[
+                  { label: m.list_col_name(), sort: 'title' },
+                  { label: m.create_filter_workspace(), sort: 'workspace' },
+                  // Question and card counts and sizes do not sort together.
+                  m.list_col_details(),
+                  { label: m.list_col_updated(), sort: 'updated' },
+                ]}
+                sorting={sorting}
+                view={view}
+              >
+                {items.map((item) => (
+                  <MaterialCard
+                    item={item}
+                    key={item.id}
+                    linkFor={materialLink}
+                    menuFor={menuFor}
+                    selected={selection.isSelected(item)}
+                    view={view}
+                    workspaceIconId={
+                      workspaces.find((ws) => ws.id === item.workspaceId)
+                        ?.iconId
+                    }
+                  />
+                ))}
+              </ItemList>
+            </ItemPick.Provider>
             <ListEnd
               fetchNextPage={fetchNextPage}
               hasNextPage={hasNextPage}
@@ -413,6 +490,19 @@ export function MaterialsTab({
           onClose={() => setCloning(null)}
         />
       )}
+      <ConfirmDialog
+        body={m.blocks_delete_selected_body({
+          count: deleteTargets?.length ?? 0,
+        })}
+        confirmLabel={m.action_delete()}
+        onClose={() => setDeleteTargets(null)}
+        onConfirm={() => {
+          if (deleteTargets)
+            void selection.run(deleteTargets, deleteOwnedMaterial);
+        }}
+        open={!!deleteTargets}
+        title={m.blocks_delete_selected_title()}
+      />
       <TrashConfirmDialog
         name={deleting?.title ?? ''}
         onClose={() => setDeleting(null)}

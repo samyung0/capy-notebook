@@ -46,8 +46,8 @@
   --toolbar-disabled-opacity: 0.4;
   --toolbar-height: 36px;
   --toolbar-padding: 4px;
-  --toolbar-button: 28px;
-  --toolbar-icon: 14px;
+  --toolbar-button: 30px;
+  --toolbar-icon: 18px;
   --toolbar-divider-height: 20px;
   --toolbar-divider-margin: 4px;
 }
@@ -56,7 +56,6 @@
     --toolbar-height: 40px;
     --toolbar-padding: 8px;
     --toolbar-button: 32px;
-    --toolbar-icon: 16px;
     --toolbar-divider-height: 28px;
     --toolbar-divider-margin: 6px;
   }
@@ -187,8 +186,8 @@
   --office-menu-font-size: 0.875rem;
   --office-menu-font-weight: 500;
   --office-menu-line-height: var(--body-line-height);
-  --office-menu-icon-size: 16px;
-  --office-menu-item-height: 28px;
+  --office-menu-icon-size: 18px;
+  --office-menu-item-height: 30px;
   --office-menu-item-padding-x: 8px;
   --office-menu-item-gap: 8px;
   --office-menu-item-radius: 0.5rem;

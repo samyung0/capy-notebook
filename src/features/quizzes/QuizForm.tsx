@@ -89,7 +89,6 @@ export function QuizForm({
       <Button
         className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
         iconLeft="pencil"
-        iconLeftClassName="size-3.5 sm:size-3.75"
         onClick={() => setEditing({ blank: false, id: item.id })}
         rounded="large"
         size="sm"
@@ -101,7 +100,6 @@ export function QuizForm({
       <Button
         className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
         iconLeft="trash"
-        iconLeftClassName="size-3.5 sm:size-3.75"
         onClick={() => setRemoving(item.id)}
         rounded="large"
         size="sm"

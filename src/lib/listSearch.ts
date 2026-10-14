@@ -112,7 +112,13 @@ export const FILE_KINDS: FileKind[] = [
   'json',
   'unknown',
 ];
-export const FILE_SORTS: FileListSort[] = ['added', 'name', 'size', 'kind'];
+export const FILE_SORTS: FileListSort[] = [
+  'added',
+  'name',
+  'size',
+  'kind',
+  'workspace',
+];
 export const FILE_SORT_DEFAULT: FileListSort = 'added';
 export const MATERIAL_KINDS: MaterialListKind[] = [
   'note',
@@ -128,6 +134,7 @@ export const MATERIAL_SORTS: MaterialListSort[] = [
   'created',
   'title',
   'kind',
+  'workspace',
 ];
 export const MATERIAL_SORT_DEFAULT: MaterialListSort = 'updated';
 

@@ -379,13 +379,13 @@ export interface ReviewStart {
   group: GenReviewSession['group'];
   mode?: ReviewMode;
 }
-export type AttemptSort = 'date' | 'score';
+export type AttemptSort = ListAttemptsSort;
 export interface AttemptParams {
   dir?: 'asc';
   sort?: AttemptSort;
   workspaceIds?: string[];
 }
-export type PastReviewSort = 'date' | 'quiz' | 'cards' | 'time';
+export type PastReviewSort = ListPastReviewsSort;
 export type PastReviewHas = 'quiz' | 'flashcards';
 export interface PastReviewParams {
   dir?: 'asc';
@@ -524,6 +524,12 @@ import type {
   QuestionType,
 } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
+import type {
+  ListAttemptsSort,
+  ListOwnedFilesSort,
+  ListOwnedMaterialsSort,
+  ListPastReviewsSort,
+} from './gen/model';
 
 /* ---------------- Generate (request options, not wire response types) ----------------
    Every generation is scoped: `chapters` (ids) and/or `fileIds` narrow the
@@ -587,7 +593,7 @@ export type MaterialPage = Omit<GenMaterialPage, 'items'> & {
 export type TrashPage = Omit<GenTrashPage, 'items'> & { items: TrashItem[] };
 export type MaterialListKind = 'note' | 'quiz' | 'flashcards';
 export type MaterialListLocation = 'workspace' | 'standalone';
-export type MaterialListSort = 'updated' | 'created' | 'title' | 'kind';
+export type MaterialListSort = ListOwnedMaterialsSort;
 /** owned: the caller's workspaces (and standalone materials); member: also
  * every workspace they are a member of. */
 export type ListScope = 'owned' | 'member';
@@ -599,7 +605,7 @@ export interface MaterialListParams {
   sort?: MaterialListSort;
   workspaceIds?: string[];
 }
-export type FileListSort = 'added' | 'name' | 'size' | 'kind';
+export type FileListSort = ListOwnedFilesSort;
 export interface FileListParams {
   dir?: 'asc' | 'desc';
   kinds?: FileKind[];

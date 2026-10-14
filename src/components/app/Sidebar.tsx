@@ -1,7 +1,9 @@
 import { Link, useRouterState } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
+import { useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
+import { NotificationsBell } from '@/features/notification/NotificationBell';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
@@ -10,6 +12,8 @@ import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
+import { ProfileMenu } from './ProfileMenu';
+import { SearchDialog } from './SearchDialog';
 
 interface NavItem {
   exact?: boolean;
@@ -18,13 +22,15 @@ interface NavItem {
   to: string;
 }
 
+const SETTINGS = '/settings';
+
 function items(): {
   sections: { label: string; items: NavItem[] }[];
   bottom: NavItem[];
 } {
   return {
     bottom: [
-      { icon: 'settings', label: m.profile_menu_settings(), to: '/settings' },
+      { icon: 'settings', label: m.profile_menu_settings(), to: SETTINGS },
       { icon: 'book', label: m.nav_help_legal(), to: '/help-and-legal' },
     ],
     sections: [
@@ -89,122 +95,150 @@ function isActive(pathname: string, item: NavItem): boolean {
   return pathname === item.to || pathname.startsWith(item.to + '/');
 }
 
+// Rows clip their own label so the 70px rail shows only the icon.
+const ROW_CLASS =
+  'flex h-fit w-full justify-start gap-3 overflow-hidden whitespace-nowrap px-3 py-2 leading-(--body-line-height) active:-rotate-1';
+
+/* The rail fades every `data-label` (row labels, the profile's name) in as it
+   widens and out as it narrows. */
+const RAIL_LABELS =
+  '[&_[data-label]]:opacity-0 [&_[data-label]]:transition-opacity [&_[data-label]]:duration-(--motion-duration-fast) rail-open:[&_[data-label]]:opacity-100 group-hover/rail:[&_[data-label]]:delay-100';
+const ROW_IDLE = 'font-medium text-fg hover:bg-page-hover';
+
 function Row({
   item,
   active,
-  collapsed,
+  className,
   onNavigate,
 }: {
   item: NavItem;
   active: boolean;
-  collapsed: boolean;
+  className?: string;
   onNavigate?: () => void;
 }) {
   return (
     <Link
       className={cn(
         BASE_BUTTON_STYLE,
-        'flex h-fit justify-start px-0 py-0 leading-(--body-line-height) active:-rotate-1',
-        collapsed ? 'h-10 w-10 justify-center' : 'w-full gap-3 px-3 py-2',
-        active
-          ? 'bg-action font-bold text-action-fg'
-          : 'font-medium text-fg hover:bg-page-hover'
+        ROW_CLASS,
+        active ? 'bg-action font-bold text-action-fg' : ROW_IDLE,
+        className
       )}
       onClick={onNavigate}
       preload="intent"
-      title={collapsed ? item.label : undefined}
       to={item.to}
     >
-      <Icon name={item.icon} size={19} />
-      {!collapsed && (
-        <span className={cn('translate-y-px font-semibold')}>{item.label}</span>
-      )}
+      <Icon className="shrink-0" name={item.icon} size={19} />
+      <span className="translate-y-px font-semibold" data-label>
+        {item.label}
+      </span>
     </Link>
   );
 }
 
+/** A nav-style row that opens the search dialog. */
+function SearchRow() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        className={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}
+        onClick={() => setOpen(true)}
+        type="button"
+      >
+        <Icon className="shrink-0" name="search" size={19} />
+        <span className="translate-y-px font-semibold" data-label>
+          {m.nav_search()}
+        </span>
+      </button>
+      <SearchDialog open={open} setOpen={setOpen} />
+    </>
+  );
+}
+
+/**
+ * The app nav. With `account` it also carries search, notifications and the
+ * profile menu (which holds Settings, so the Settings row goes):
+ * `below-xl` for the shell's sidebar, whose top bar sits in the page panel's
+ * notch only from xl; `true` for the phone drawer.
+ *
+ * `rail` is the 640–1023px sidebar: the same rows clipped to 70px, where a
+ * row's icon already sits at the rail's centre, without section labels. On
+ * hover (or keyboard focus, or while one of its menus is open) it widens over
+ * the page to the full sidebar, so only its width animates.
+ */
 export function Sidebar({
-  collapsed = false,
+  account = false,
+  rail = false,
   className,
   onNavigate,
 }: {
-  collapsed?: boolean;
+  account?: boolean | 'below-xl';
+  rail?: boolean;
   className?: string;
   onNavigate?: () => void;
 }) {
-  // TODO: maybe switch to shadcn sidebar approach?
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const nav = items();
+  const withAccount = rail || account;
+  const accountClass = account === 'below-xl' ? 'xl:hidden' : undefined;
+  const settingsClass =
+    account === 'below-xl'
+      ? 'hidden xl:flex'
+      : withAccount
+        ? 'hidden'
+        : undefined;
 
-  // TODO: untested
-  if (collapsed) {
-    return (
-      <Card
-        asChild
-        className="m-2.5 mr-0 flex w-15 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 py-4"
-        radius="row"
-        theme="surface-dark"
-      >
-        <nav>
-          <LogoMark size={36} />
-          <div className="h-2" />
-          {nav.sections.map((section, index) => (
-            <div className="contents" key={section.label}>
-              {index > 0 && <div className="h-2" />}
-              {section.items.map((i) => (
-                <Row
-                  active={isActive(pathname, i)}
-                  collapsed
-                  item={i}
-                  key={i.to}
-                />
-              ))}
-            </div>
-          ))}
-          <div className="mt-auto" />
-          {nav.bottom.map((i) => (
-            <Row
-              active={isActive(pathname, i)}
-              collapsed
-              item={i}
-              key={i.to}
-              onNavigate={onNavigate}
+  const body = (
+    <nav aria-label={m.a11y_main_navigation()}>
+      {rail ? (
+        // The logo smokes out as the rail widens and the app name fades in
+        // in line with the row icons, as on the full sidebar; narrowing drops
+        // the name at once and the logo fades back.
+        <div className="relative flex items-center px-0.75 pb-3">
+          <span className="motion-smoke rail-open:motion-smoked shrink-0 group-hover/rail:delay-100">
+            <LogoMark size={36} />
+          </span>
+          <p className="t-card-title absolute top-1 left-3 whitespace-nowrap font-extrabold tracking-tight opacity-0 rail-open:opacity-100 transition-opacity duration-0 rail-open:duration-(--motion-duration-fast) group-hover/rail:delay-(--motion-duration-fast)">
+            {m.app_name()}
+          </p>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between px-3 pt-1 pb-3">
+          <p className="t-card-title font-extrabold tracking-tight">
+            {m.app_name()}
+          </p>
+          {onNavigate && (
+            <IconButton
+              icon="x"
+              label={m.action_close()}
+              onClick={onNavigate}
+              size="sm"
+              variant="ghost-hover"
             />
-          ))}
-        </nav>
-      </Card>
-    );
-  }
-
-  return (
-    <Card
-      asChild
-      className={cn(
-        'm-2.5 mr-0 ml-1 flex w-52 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 py-4',
-        className
+          )}
+        </div>
       )}
-      radius="card-xl"
-      theme="page"
-    >
-      <nav>
-        <div className="flex items-center justify-between px-3 pt-1 pb-6">
-          <div className="flex items-center gap-3">
-            {/* <LogoMark size={36} /> */}
-            <h1 className={cn('t-card-title font-extrabold tracking-tight')}>
-              {m.app_name()}
-            </h1>
-          </div>
-          <IconButton
-            className="lg:hidden"
-            icon="x"
-            label={m.action_close()}
-            onClick={onNavigate}
-            size="sm"
-            variant="ghost-hover"
+
+      {withAccount && (
+        <div className={cn('mb-4 flex flex-col gap-1', accountClass)}>
+          <SearchRow />
+          <NotificationsBell
+            rowClassName={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}
           />
         </div>
+      )}
 
-        {nav.sections.map((section, index) => (
+      {rail ? (
+        <div className="flex flex-col gap-1">
+          {nav.sections.flatMap((section) =>
+            section.items.map((i) => (
+              <Row active={isActive(pathname, i)} item={i} key={i.to} />
+            ))
+          )}
+        </div>
+      ) : (
+        nav.sections.map((section, index) => (
           <div key={section.label}>
             <div
               className={cn(
@@ -218,7 +252,6 @@ export function Sidebar({
               {section.items.map((i) => (
                 <Row
                   active={isActive(pathname, i)}
-                  collapsed={false}
                   item={i}
                   key={i.to}
                   onNavigate={onNavigate}
@@ -226,33 +259,83 @@ export function Sidebar({
               ))}
             </div>
           </div>
-        ))}
+        ))
+      )}
 
-        <div className="mt-auto" />
-        <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
-          {nav.bottom.map((i) => (
-            <Row
-              active={isActive(pathname, i)}
-              collapsed={false}
-              item={i}
-              key={i.to}
-              onNavigate={onNavigate}
-            />
-          ))}
-        </div>
-      </nav>
+      <div className="mt-auto" />
+      <div className="mt-3 flex flex-col gap-1 border-divider border-t pt-2">
+        {nav.bottom.map((i) => (
+          <Row
+            active={isActive(pathname, i)}
+            className={i.to === SETTINGS ? settingsClass : undefined}
+            item={i}
+            key={i.to}
+            onNavigate={onNavigate}
+          />
+        ))}
+        {withAccount && (
+          <div className={cn('flex flex-col', accountClass)}>
+            <ProfileMenu trigger="row" />
+          </div>
+        )}
+      </div>
+    </nav>
+  );
+
+  if (rail)
+    return (
+      // The hover area is the whole strip from the window edge to the page
+      // panel; it reaches over the shell's 10px padding without taking layout
+      // width (-mr). The 70px card sits 4px in from both, its rows centred in
+      // the strip, and widens over the page.
+      <div className="group/rail relative z-40 -mr-2.5 w-19.5 shrink-0">
+        <Card
+          asChild
+          className={cn(
+            RAIL_LABELS,
+            'absolute inset-y-2.5 left-1 z-40 flex rail-open:w-52 w-[70px] items-stretch gap-0 overflow-y-auto overflow-x-hidden px-3.5 pt-4 pb-1 transition-[width,box-shadow] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out) group-hover/rail:shadow-pop group-hover/rail:delay-100'
+          )}
+          radius="card-xl"
+          theme="page"
+        >
+          {body}
+        </Card>
+      </div>
+    );
+
+  return (
+    <Card
+      asChild
+      className={cn(
+        'm-2.5 mr-0 ml-1 flex w-52 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 pt-4 pb-1',
+        className
+      )}
+      radius="card-xl"
+      theme="page"
+    >
+      {body}
     </Card>
   );
 }
 
 /**
- * Mobile-only hamburger that slides the full nav in from the left.
- * The trigger is meant to live in the top inset bar; the drawer closes
- * itself whenever the route changes.
+ * The hamburger that slides the full nav in from the left; the drawer closes
+ * itself whenever the route changes. With `account` (phones) the drawer
+ * carries search, notifications and the profile; without it (next to the top
+ * bar on the opened workspace) the drawer is nav only.
  */
-export function MobileNavDrawer({ className }: { className?: string }) {
+export function MobileNavDrawer({
+  account = false,
+  className,
+}: {
+  account?: boolean;
+  className?: string;
+}) {
   const [open, setOpen] = useState(false);
-  const isLg = useMediaQuery('(min-width: 1024px)');
+  // The trigger hides from sm (rail) or lg (sidebar); close with it.
+  const triggerGone = useMediaQuery(
+    account ? '(min-width: 640px)' : '(min-width: 1024px)'
+  );
   const pathname = useRouterState({ select: (s) => s.location.pathname });
 
   useEffect(() => {
@@ -260,10 +343,10 @@ export function MobileNavDrawer({ className }: { className?: string }) {
   }, [pathname]);
 
   useEffect(() => {
-    if (isLg && open) {
+    if (triggerGone && open) {
       setOpen(false);
     }
-  }, [isLg, open]);
+  }, [triggerGone, open]);
 
   return (
     <Drawer
@@ -285,10 +368,43 @@ export function MobileNavDrawer({ className }: { className?: string }) {
       />
       <DrawerContent>
         <Sidebar
+          account={account}
           className="m-0 h-full w-full min-w-62 rounded-none bg-surface text-fg"
           onNavigate={() => setOpen(false)}
         />
       </DrawerContent>
     </Drawer>
+  );
+}
+
+/** The phone (below sm) top of a page, scrolling with it: the nav drawer's
+ * menu button, and the profile menu behind an avatar a little larger than it
+ * that carries the unread notifications dot; its Notifications item opens
+ * the notification list under the avatar. */
+export function PhoneTopRow({ className }: { className?: string }) {
+  // Shared with the bell's own query, so this costs no extra request.
+  const { data: unread } = useUnreadNotificationCount({
+    errorBoundary: false,
+  });
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  return (
+    <div
+      className={cn('flex items-center justify-between sm:hidden', className)}
+    >
+      <MobileNavDrawer account />
+      <NotificationsBell
+        anchor={
+          <span>
+            <ProfileMenu
+              dot={(unread?.count ?? 0) > 0}
+              onNotifications={() => setNotificationsOpen(true)}
+              trigger="avatar"
+            />
+          </span>
+        }
+        onOpenChange={setNotificationsOpen}
+        open={notificationsOpen}
+      />
+    </div>
   );
 }

@@ -44,75 +44,122 @@ export function useListView(key: string): [ListView, (view: ListView) => void] {
   return useLocalPref<ListView>(key, 'grid', isListView);
 }
 
+/** The sort menu's options and state. A table header can take its place:
+ * `hiddenFromMd` hides the menu where a list view's sortable header shows. */
+export interface SortMenuProps<V extends string> {
+  ascending: boolean;
+  hiddenFromMd?: boolean;
+  onSortChange: (sort: V, ascending: boolean) => void;
+  sort: V;
+  sorts: readonly SortOption<V>[];
+}
+
 export function ListToolbar<V extends string>({
-  sorts,
-  sort,
-  ascending,
-  onSortChange,
+  sortMenu,
   filters,
   onResetFilters,
   view,
   onViewChange,
   action,
-  selectionActions,
+  selection,
 }: {
-  sorts: readonly SortOption<V>[];
-  sort: V;
-  ascending: boolean;
-  onSortChange: (sort: V, ascending: boolean) => void;
+  /** Left out where every sort lives in the table's header. */
+  sortMenu?: SortMenuProps<V>;
   filters: FilterSection[];
   onResetFilters: () => void;
   view?: ListView;
   onViewChange?: (view: ListView) => void;
   /** Primary action rendered at the right edge. */
   action?: ReactNode;
-  /** Replaces the entire sort/filter group, including its styled container. */
-  selectionActions?: ReactNode;
+  /** The SelectionBar, shown instead of the whole toolbar while anything is
+   * selected. */
+  selection?: ReactNode;
 }) {
-  const current = sorts.find((option) => option.value === sort) ?? sorts[0];
-
+  // The toolbar stays mounted under the selection bar, so a first pick or a
+  // last deselect does not rebuild its menus.
   return (
-    <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-4 sm:px-6">
-      <div className="flex h-10 items-center sm:h-11.5 sm:py-2">
-        {selectionActions ?? (
+    <>
+      {selection && <div className="-mb-3 flex px-4 sm:px-6">{selection}</div>}
+      {/* Phones: icon-only sort and filter with the action on one row, the
+          view toggle on its own row at the right (or on the first, without
+          an action). From sm, one labelled row. */}
+      <div
+        className={cn(
+          '-mb-3 flex flex-wrap items-center gap-x-3 px-4 sm:px-6',
+          selection && 'hidden'
+        )}
+      >
+        <div className="flex min-h-10 items-center sm:min-h-11.5 sm:py-2">
           <div className="flex flex-wrap items-center gap-2">
-            <Menu
-              align="start"
-              alignWidthToTrigger
-              itemClassName="gap-2.5"
-              items={sorts.map((option) => ({
-                icon: option.icon,
-                label: option.label,
-                onClick: () =>
-                  onSortChange(
-                    option.value,
-                    option.value === sort ? !ascending : false
-                  ),
-              }))}
-              trigger={
-                <Button
-                  className="-mx-1 h-fit px-2 py-1.5"
-                  data-order={ascending ? 'ascending' : 'descending'}
-                  data-sort={current.value}
-                  iconRight="chevronDown"
-                  size="md"
-                  variant="ghost-hover"
-                >
-                  {m.workspaces_sort_prefix({ label: current.label })}
-                </Button>
-              }
-            />
+            {sortMenu && <SortMenu {...sortMenu} />}
             <FilterPopover filters={filters} onResetFilters={onResetFilters} />
+          </div>
+        </div>
+        {action && (
+          <div className="ml-auto flex min-h-10 items-center gap-2 sm:min-h-11.5">
+            {action}
+          </div>
+        )}
+        {/* On phones the toggle takes its own row only when an action shares
+          the first one. */}
+        {view && onViewChange && (
+          <div
+            className={cn(
+              'flex min-h-10 items-center justify-end sm:min-h-11.5',
+              action ? 'w-full sm:w-auto' : 'ml-auto'
+            )}
+          >
+            <ListViewToggle onViewChange={onViewChange} view={view} />
           </div>
         )}
       </div>
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-2">{action}</div>
-        {view && onViewChange && (
-          <ListViewToggle onViewChange={onViewChange} view={view} />
-        )}
-      </div>
-    </div>
+    </>
+  );
+}
+
+function SortMenu<V extends string>({
+  sorts,
+  sort,
+  ascending,
+  onSortChange,
+  hiddenFromMd,
+}: SortMenuProps<V>) {
+  const current = sorts.find((option) => option.value === sort) ?? sorts[0];
+  return (
+    <Menu
+      align="start"
+      alignWidthToTrigger
+      itemClassName="gap-2.5"
+      items={sorts.map((option) => ({
+        icon: option.icon,
+        label: option.label,
+        onClick: () =>
+          onSortChange(
+            option.value,
+            option.value === sort ? !ascending : false
+          ),
+      }))}
+      trigger={
+        <Button
+          aria-label={m.workspaces_sort_prefix({
+            label: current.label,
+          })}
+          className={cn('-mx-1 h-fit px-2 py-1.5', hiddenFromMd && 'md:hidden')}
+          data-order={ascending ? 'ascending' : 'descending'}
+          data-sort={current.value}
+          iconLeft="sort"
+          iconLeftClassName="sm:hidden!"
+          iconRight="chevronDown"
+          iconRightClassName="max-sm:hidden!"
+          size="md"
+          variant="ghost-hover"
+        >
+          <span className="hidden sm:inline">
+            {m.workspaces_sort_prefix({ label: current.label })}
+          </span>
+        </Button>
+      }
+    />
   );
 }
 
@@ -145,13 +192,15 @@ export function FilterPopover({
     <Popover onOpenChange={setFilterOpen} open={filterOpen}>
       <PopoverTrigger asChild>
         <Button
+          aria-label={filterLabel}
           className="-mx-1 h-fit px-2 py-1.5"
           iconLeft="filter"
           iconRight="chevronDown"
+          iconRightClassName="max-sm:hidden!"
           size="md"
           variant="ghost-hover"
         >
-          {filterLabel}
+          <span className="hidden sm:inline">{filterLabel}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent

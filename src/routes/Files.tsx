@@ -1,5 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useMemo, useState } from 'react';
+import { memo, useCallback, useContext, useMemo, useState } from 'react';
 import {
   useDeleteOwnedFile,
   useOwnedFiles,
@@ -13,12 +13,13 @@ import type {
   FileListSort,
   SourceFile,
   TrashItem,
+  Workspace,
 } from '@/api/types';
 import {
   ItemCard,
   ItemList,
+  ItemPick,
   ItemSkeletonGrid,
-  itemMenuAlign,
 } from '@/components/app/ItemCard';
 import { ListEnd } from '@/components/app/ListEnd';
 import {
@@ -31,13 +32,18 @@ import {
 } from '@/components/app/ListToolbar';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import type { ColumnSort } from '@/components/app/SortHeader';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
 import { Tabs } from '@/components/ui/Tabs';
-import { FileSelectionActions } from '@/features/files/FileSelectionActions';
 import { formatFileSize } from '@/features/files/fileUtils';
+import {
+  clearOnBlank,
+  SelectionAction,
+  SelectionBar,
+} from '@/features/files/SelectionBar';
 import {
   collectSelectionPages,
   useFileSelection,
@@ -71,11 +77,23 @@ export default function Files() {
   const { tab = 'files' } = useSearch({ from: '/auth-shell/files' });
   const [view, changeView] = useListView(PREF_KEYS.filesView);
   const [busy, setBusy] = useState(false);
+  const [headerSlot, setHeaderSlot] = useState<HTMLDivElement | null>(null);
 
   return (
     <PanelWithInvertedRadius
       header={
-        <PageHeader actions={<AccountStatusButton />} title={m.nav_files()} />
+        <PageHeader
+          actions={
+            <>
+              <AccountStatusButton />
+              {/* Blocks' New block moves here on phones, so the toolbar
+                  keeps one row. */}
+              <div className="sm:hidden" ref={setHeaderSlot} />
+            </>
+          }
+          className="justify-between"
+          title={m.nav_files()}
+        />
       }
     >
       <fieldset className="min-w-0" disabled={busy}>
@@ -103,7 +121,12 @@ export default function Files() {
           view={view}
         />
       ) : tab === 'blocks' ? (
-        <MaterialsTab onViewChange={changeView} view={view} />
+        <MaterialsTab
+          headerSlot={headerSlot}
+          onBusyChange={setBusy}
+          onViewChange={changeView}
+          view={view}
+        />
       ) : (
         <ActiveFiles
           onBusyChange={setBusy}
@@ -178,7 +201,13 @@ function ActiveFiles({
     void navigate({ replace: true, search: (prev) => ({ ...prev, ...patch }) });
   const params = useMemo(() => fileListParams(search), [search]);
   const { sort = FILE_SORT_DEFAULT, kinds = [], workspaceIds = [] } = params;
-  const ascending = params.dir === 'asc';
+  const sorting: ColumnSort<FileListSort> = {
+    ascending: params.dir === 'asc',
+    ascendingFirst: ['name', 'workspace', 'kind'],
+    onSortChange: (next, asc) =>
+      setSearch(sortSearch('files', next, asc, FILE_SORT_DEFAULT)),
+    sort,
+  };
   const {
     data,
     fetchNextPage,
@@ -209,39 +238,6 @@ function ActiveFiles({
   return (
     <>
       <ListToolbar
-        action={
-          <>
-            {selection.selecting && (
-              <Button
-                className="px-1.5"
-                disabled={
-                  selection.busy ||
-                  isFetchingNextPage ||
-                  selection.selected.length === 0
-                }
-                iconLeft="trash"
-                onClick={() => setDeleteTargets([...selection.selected])}
-                size="sm"
-                variant="danger-light"
-              >
-                {m.action_delete()}
-              </Button>
-            )}
-            <Button
-              className="px-1.5"
-              disabled={
-                selection.busy || (!selection.selecting && files.length === 0)
-              }
-              iconLeft={selection.selecting ? 'x' : 'check'}
-              onClick={selection.selecting ? selection.exit : selection.start}
-              size="sm"
-              variant="ghost-hover"
-            >
-              {selection.selecting ? m.action_cancel() : m.files_select()}
-            </Button>
-          </>
-        }
-        ascending={ascending}
         filters={[
           {
             key: 'kind',
@@ -269,30 +265,36 @@ function ActiveFiles({
         onResetFilters={() =>
           setSearch({ kind: undefined, workspace: undefined })
         }
-        onSortChange={(next, asc) =>
-          setSearch(sortSearch('files', next, asc, FILE_SORT_DEFAULT))
-        }
         onViewChange={onViewChange}
-        selectionActions={
-          selection.selecting ? (
-            <FileSelectionActions
+        selection={
+          selection.selecting && (
+            <SelectionBar
               allSelected={
-                !hasNextPage &&
-                files.length > 0 &&
-                selection.selected.length === files.length
+                !hasNextPage && selection.selected.length === files.length
               }
               busy={selection.busy || isFetchingNextPage}
               count={selection.selected.length}
               onClear={selection.clear}
               onSelectAll={() => void selection.selectAll()}
-            />
-          ) : undefined
+            >
+              <SelectionAction
+                danger
+                disabled={selection.busy || isFetchingNextPage}
+                icon="trash"
+                label={m.action_delete()}
+                onClick={() => setDeleteTargets([...selection.selected])}
+              />
+            </SelectionBar>
+          )
         }
-        sort={sort}
-        sorts={sorts}
+        sortMenu={{ ...sorting, hiddenFromMd: view === 'list', sorts }}
         view={view}
       />
-      <div className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6">
+      {/* Mouse only: the selection bar's clear button is the keyboard way. */}
+      <div
+        className="shrink-0 grow px-2.5 pt-2 pb-5 sm:px-4"
+        onClick={clearOnBlank(selection.clear)}
+      >
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -309,71 +311,30 @@ function ActiveFiles({
           </p>
         ) : (
           <div className="flex flex-col gap-3" ref={revealRef}>
-            <ItemList
-              columns={[
-                m.list_col_name(),
-                m.create_filter_workspace(),
-                m.list_col_details(),
-                m.files_sort_added(),
-              ]}
-              view={view}
-            >
-              {files.map((file) => (
-                <ItemCard
-                  actions={
-                    <ContentActions
-                      canClone={
-                        file.status === 'ready' &&
-                        !!workspaces.find(
-                          (workspace) => workspace.id === file.workspaceId
-                        )?.canClone
-                      }
-                      chapters={[]}
-                      content={toFileActionTarget(file)}
-                      display="menu"
-                      menuAlign={itemMenuAlign(view)}
-                      menuTriggerIcon="moreHorizontal"
-                      renameFieldLabel={m.files_file_name()}
-                      renameTitle={m.files_rename()}
-                      showMove={false}
-                      workspaceId={file.workspaceId}
-                    />
-                  }
-                  details={formatFileSize(file.sizeBytes)}
-                  icon={fileIconName(file)}
-                  key={file.id}
-                  link={{ params: { fileId: file.id }, to: '/files/$fileId' }}
-                  meta={relativeTime(file.addedAt)}
-                  selection={
-                    selection.selecting
-                      ? {
-                          busy: selection.busy,
-                          label: m.files_select_item({ name: file.name }),
-                          onToggle: () => selection.toggle(file),
-                          selected: selection.isSelected(file),
-                        }
-                      : undefined
-                  }
-                  thumbnail={{
-                    fileKind: file.kind,
-                    preview: file.preview,
-                    thumbnailUrl: file.thumbnailUrl,
-                  }}
-                  title={file.name}
-                  view={view}
-                  workspace={
-                    workspaces.find(
+            <ItemPick.Provider value={selection.pickContext}>
+              <ItemList
+                columns={[
+                  { label: m.list_col_name(), sort: 'name' },
+                  { label: m.create_filter_workspace(), sort: 'workspace' },
+                  { label: m.list_col_details(), sort: 'size' },
+                  { label: m.files_sort_added(), sort: 'added' },
+                ]}
+                sorting={sorting}
+                view={view}
+              >
+                {files.map((file) => (
+                  <FileItem
+                    file={file}
+                    key={file.id}
+                    selected={selection.isSelected(file)}
+                    view={view}
+                    workspace={workspaces.find(
                       (workspace) => workspace.id === file.workspaceId
-                    )?.name ?? ''
-                  }
-                  workspaceIconId={
-                    workspaces.find(
-                      (workspace) => workspace.id === file.workspaceId
-                    )?.iconId
-                  }
-                />
-              ))}
-            </ItemList>
+                    )}
+                  />
+                ))}
+              </ItemList>
+            </ItemPick.Provider>
             <ListEnd
               fetchNextPage={fetchNextPage}
               hasNextPage={hasNextPage}
@@ -398,6 +359,112 @@ function ActiveFiles({
     </>
   );
 }
+
+/** One file in the Files tab; memoised so a pick re-renders only the cards
+ * whose selection changed. */
+const FileItem = memo(function FileItem({
+  file,
+  selected,
+  view,
+  workspace,
+}: {
+  file: SourceFile;
+  selected: boolean;
+  view: ListView;
+  workspace?: Workspace;
+}) {
+  return (
+    <ItemCard
+      actions={
+        <ContentActions
+          canClone={file.status === 'ready' && !!workspace?.canClone}
+          chapters={[]}
+          content={toFileActionTarget(file)}
+          display="menu"
+          menuAlign="end"
+          menuTriggerIcon="moreHorizontal"
+          renameFieldLabel={m.files_file_name()}
+          renameTitle={m.files_rename()}
+          showMove={false}
+          workspaceId={file.workspaceId}
+        />
+      }
+      details={formatFileSize(file.sizeBytes)}
+      icon={fileIconName(file)}
+      link={{ params: { fileId: file.id }, to: '/files/$fileId' }}
+      meta={relativeTime(file.addedAt)}
+      pickKey={file.id}
+      selected={selected}
+      thumbnail={{
+        fileKind: file.kind,
+        preview: file.preview,
+        thumbnailUrl: file.thumbnailUrl,
+      }}
+      title={file.name}
+      view={view}
+      workspace={workspace?.name ?? ''}
+      workspaceIconId={workspace?.iconId}
+    />
+  );
+});
+
+/** One trashed item; memoised like FileItem. */
+const TrashCard = memo(function TrashCard({
+  item,
+  onPurge,
+  onRestore,
+  selected,
+  view,
+  workspaceIconId,
+}: {
+  item: TrashItem;
+  onPurge: (item: TrashItem) => void;
+  onRestore: (item: TrashItem) => void;
+  selected: boolean;
+  view: ListView;
+  workspaceIconId?: string;
+}) {
+  const busy = !!useContext(ItemPick)?.busy;
+  return (
+    <ItemCard
+      actions={
+        <Menu
+          items={[
+            {
+              disabled: busy,
+              icon: 'undo',
+              label: m.trash_restore(),
+              onClick: () => onRestore(item),
+            },
+            {
+              danger: true,
+              disabled: busy,
+              icon: 'trash',
+              label: m.trash_delete_forever(),
+              onClick: () => onPurge(item),
+            },
+          ]}
+          triggerIcon="moreHorizontal"
+        />
+      }
+      details={formatFileSize(item.sizeBytes)}
+      icon={trashIconName(item)}
+      meta={formatDate(item.purgeAfter)}
+      pickKey={`${item.kind}:${item.id}:${item.episodeId}`}
+      selected={selected}
+      thumbnail={{
+        fileKind: trashFileKind(item),
+        pill: trashPill(item),
+        preview: item.preview,
+        thumbnailUrl: item.thumbnailUrl,
+      }}
+      title={item.title}
+      view={view}
+      workspace={item.workspaceName || m.trash_standalone()}
+      workspaceIconId={workspaceIconId}
+    />
+  );
+});
 
 function formatDate(iso: string): string {
   return new Intl.DateTimeFormat(getLocale(), { dateStyle: 'medium' }).format(
@@ -450,8 +517,17 @@ function TrashTab({
     onBusyChange
   );
 
+  const { run } = selection;
+  const restoreOne = useCallback(
+    (item: TrashItem) => void run([item], restore),
+    [run, restore]
+  );
+  const purgeOne = useCallback(
+    (item: TrashItem) => setPurgeRequest({ empty: false, items: [item] }),
+    []
+  );
+
   async function prepareEmptyTrash() {
-    selection.start();
     const all = await selection.selectAll();
     if (all?.length) setPurgeRequest({ empty: true, items: all });
   }
@@ -478,27 +554,40 @@ function TrashTab({
   }
   return (
     <>
-      <div className="-mb-3 flex flex-wrap items-center justify-between gap-x-3 px-4 sm:px-6">
+      <div className="-mb-3 flex items-center px-4 sm:px-6">
         {selection.selecting ? (
-          <FileSelectionActions
+          <SelectionBar
             allSelected={
-              !hasNextPage &&
-              items.length > 0 &&
-              selection.selected.length === items.length
+              !hasNextPage && selection.selected.length === items.length
             }
             busy={selection.busy || isFetchingNextPage}
             count={selection.selected.length}
             onClear={selection.clear}
-            onRestore={() =>
-              void selection.run([...selection.selected], restore)
-            }
             onSelectAll={() => void selection.selectAll()}
-          />
+          >
+            <SelectionAction
+              disabled={selection.busy || isFetchingNextPage}
+              icon="undo"
+              label={m.trash_restore()}
+              onClick={() =>
+                void selection.run([...selection.selected], restore)
+              }
+            />
+            <SelectionAction
+              danger
+              disabled={selection.busy || isFetchingNextPage}
+              icon="trash"
+              label={m.trash_delete_forever()}
+              onClick={() =>
+                setPurgeRequest({
+                  empty: false,
+                  items: [...selection.selected],
+                })
+              }
+            />
+          </SelectionBar>
         ) : (
-          <div aria-hidden className="h-11.5" />
-        )}
-        <div className="flex flex-wrap items-center gap-1">
-          {!selection.selecting && (
+          <div className="ml-auto flex min-h-10 items-center gap-1 sm:min-h-11.5">
             <Button
               className="px-1.5"
               disabled={
@@ -511,44 +600,15 @@ function TrashTab({
             >
               {m.trash_empty_action()}
             </Button>
-          )}
-          {selection.selecting && (
-            <Button
-              className="px-1.5"
-              disabled={
-                selection.busy ||
-                isFetchingNextPage ||
-                selection.selected.length === 0
-              }
-              iconLeft="trash"
-              onClick={() =>
-                setPurgeRequest({
-                  empty: false,
-                  items: [...selection.selected],
-                })
-              }
-              size="sm"
-              variant="danger-light"
-            >
-              {m.trash_delete_forever()}
-            </Button>
-          )}
-          <Button
-            className="px-1.5"
-            disabled={
-              selection.busy || (!selection.selecting && items.length === 0)
-            }
-            iconLeft={selection.selecting ? 'x' : 'check'}
-            onClick={selection.selecting ? selection.exit : selection.start}
-            size="sm"
-            variant="ghost-hover"
-          >
-            {selection.selecting ? m.action_cancel() : m.files_select()}
-          </Button>
-          <ListViewToggle onViewChange={onViewChange} view={view} />
-        </div>
+            <ListViewToggle onViewChange={onViewChange} view={view} />
+          </div>
+        )}
       </div>
-      <div className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6">
+      {/* Mouse only: the selection bar's clear button is the keyboard way. */}
+      <div
+        className="shrink-0 grow px-2.5 pt-2 pb-5 sm:px-4"
+        onClick={clearOnBlank(selection.clear)}
+      >
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}
@@ -564,68 +624,32 @@ function TrashTab({
           ) : items.length === 0 ? (
             <p className="text-fg-muted">{m.trash_empty()}</p>
           ) : (
-            <ItemList
-              columns={[
-                m.list_col_name(),
-                m.create_filter_workspace(),
-                m.list_col_details(),
-                m.trash_expires({ date: '' }).trim(),
-              ]}
-              view={view}
-            >
-              {items.map((item) => (
-                <ItemCard
-                  actions={
-                    <Menu
-                      align={itemMenuAlign(view)}
-                      items={[
-                        {
-                          disabled: selection.busy,
-                          icon: 'undo',
-                          label: m.trash_restore(),
-                          onClick: () => void selection.run([item], restore),
-                        },
-                        {
-                          danger: true,
-                          disabled: selection.busy,
-                          icon: 'trash',
-                          label: m.trash_delete_forever(),
-                          onClick: () =>
-                            setPurgeRequest({ empty: false, items: [item] }),
-                        },
-                      ]}
-                      triggerIcon="moreHorizontal"
-                    />
-                  }
-                  details={formatFileSize(item.sizeBytes)}
-                  icon={trashIconName(item)}
-                  key={`${item.kind}:${item.id}:${item.episodeId}`}
-                  meta={formatDate(item.purgeAfter)}
-                  selection={
-                    selection.selecting
-                      ? {
-                          busy: selection.busy,
-                          label: m.files_select_item({ name: item.title }),
-                          onToggle: () => selection.toggle(item),
-                          selected: selection.isSelected(item),
-                        }
-                      : undefined
-                  }
-                  thumbnail={{
-                    fileKind: trashFileKind(item),
-                    pill: trashPill(item),
-                    preview: item.preview,
-                    thumbnailUrl: item.thumbnailUrl,
-                  }}
-                  title={item.title}
-                  view={view}
-                  workspace={item.workspaceName || m.trash_standalone()}
-                  workspaceIconId={
-                    workspaces.find((ws) => ws.id === item.workspaceId)?.iconId
-                  }
-                />
-              ))}
-            </ItemList>
+            <ItemPick.Provider value={selection.pickContext}>
+              <ItemList
+                columns={[
+                  m.list_col_name(),
+                  m.create_filter_workspace(),
+                  m.list_col_details(),
+                  m.trash_expires({ date: '' }).trim(),
+                ]}
+                view={view}
+              >
+                {items.map((item) => (
+                  <TrashCard
+                    item={item}
+                    key={`${item.kind}:${item.id}:${item.episodeId}`}
+                    onPurge={purgeOne}
+                    onRestore={restoreOne}
+                    selected={selection.isSelected(item)}
+                    view={view}
+                    workspaceIconId={
+                      workspaces.find((ws) => ws.id === item.workspaceId)
+                        ?.iconId
+                    }
+                  />
+                ))}
+              </ItemList>
+            </ItemPick.Provider>
           )}
           <ListEnd
             fetchNextPage={fetchNextPage}

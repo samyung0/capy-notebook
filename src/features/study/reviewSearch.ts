@@ -47,6 +47,9 @@ export const PAST_REVIEW_SORTS: readonly PastReviewSort[] = [
   'quiz',
   'cards',
   'time',
+  'workspace',
+  'chapter',
+  'status',
 ];
 export const PAST_REVIEW_SORT_DEFAULT: PastReviewSort = 'date';
 const HAS: readonly PastReviewHas[] = ['quiz', 'flashcards'];
@@ -84,7 +87,12 @@ export function pastReviewParams(search: PastReviewsSearch): PastReviewParams {
 
 /* Learning → All results keeps the same keys, the server sorting, filtering
  * and paging. */
-export const RESULT_SORTS: readonly AttemptSort[] = ['date', 'score'];
+export const RESULT_SORTS: readonly AttemptSort[] = [
+  'date',
+  'score',
+  'quiz',
+  'workspace',
+];
 export const RESULT_SORT_DEFAULT: AttemptSort = 'date';
 export type ResultsSearch = {
   sort?: AttemptSort;

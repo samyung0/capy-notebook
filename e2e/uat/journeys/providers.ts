@@ -91,6 +91,35 @@ export async function verifyStripeSandbox(env: UatEnvironment) {
   return price;
 }
 
+/** The current period end, on the subscription item in this API version. */
+export function stripePeriodEnd(subscription: Record<string, unknown>) {
+  const item = object(arrayField(subscription.items, 'data')[0]);
+  if (typeof item.current_period_end !== 'number')
+    throw new Error('Stripe subscription item omitted current_period_end');
+  return item.current_period_end;
+}
+
+/** Moves a test clock to `timestamp` and waits until Stripe has caught up. */
+export async function advanceStripeClock(
+  run: UatRun,
+  clockId: string,
+  timestamp: number
+) {
+  await stripeRequest(
+    run.env,
+    `/v1/test_helpers/test_clocks/${clockId}/advance`,
+    'POST',
+    { frozen_time: String(timestamp) },
+    `${run.id}-${clockId}-${timestamp}`
+  );
+  await run.poll(
+    'Stripe clock ready',
+    () => stripeRequest(run.env, `/v1/test_helpers/test_clocks/${clockId}`),
+    (clock) => clock.status === 'ready',
+    120_000
+  );
+}
+
 export async function claimStripeCustomer(
   run: UatRun,
   customerId: string,

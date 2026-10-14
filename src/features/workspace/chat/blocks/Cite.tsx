@@ -1,6 +1,5 @@
-import { createContext, useContext } from 'react';
+import { createContext, Fragment, useContext } from 'react';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
 
 /**
  * Passage numbers in an answer are the model's own ([n] as shown in the tool
@@ -36,33 +35,29 @@ export function elements<P>(value: unknown): ElementNode<P>[] {
   );
 }
 
-/** Inline [k] markers after a block of prose. */
-export function Cites({
-  passages,
-  className,
-}: {
-  passages?: number[];
-  className?: string;
-}) {
+/** Raised source numbers (¹,²) at the end of the text they back. */
+export function Cites({ passages }: { passages?: number[] }) {
   const { numberOf, open } = useContext(CitationContext);
   const marks = [...new Set(passages ?? [])]
     .map((n) => ({ k: numberOf(n), n }))
     .filter((mark): mark is { k: number; n: number } => mark.k !== undefined);
   if (!marks.length) return null;
   return (
-    <span className={cn('ml-1 inline-flex gap-0.5 align-[2px]', className)}>
-      {marks.map(({ k, n }) => (
-        <button
-          className="rounded bg-tint-info px-1 font-semibold text-[10px] text-tint-info-fg leading-4 hover:brightness-97"
-          key={n}
-          onClick={() => open?.(n)}
-          title={m.chat_source_number({ n: k })}
-          type="button"
-        >
-          {k}
-        </button>
+    <sup className="ml-px whitespace-nowrap text-[10px] text-fg-muted leading-none">
+      {marks.map(({ k, n }, index) => (
+        <Fragment key={n}>
+          {index ? ',' : null}
+          <button
+            className="hover:text-fg hover:underline"
+            onClick={() => open?.(n)}
+            title={m.chat_source_number({ n: k })}
+            type="button"
+          >
+            {k}
+          </button>
+        </Fragment>
       ))}
-    </span>
+    </sup>
   );
 }
 
@@ -80,7 +75,7 @@ export function CiteFooter({
   const cited = rows?.filter((row) => row.passages?.length) ?? [];
   if (!(passages?.length || cited.length || note)) return null;
   return (
-    <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-fg-muted">
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-fg-muted text-xs">
       {note ? <span>{note}</span> : null}
       {passages?.length ? (
         <span>

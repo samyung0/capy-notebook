@@ -2,33 +2,29 @@ import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
 import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
-import { Panel } from '@/components/app/layout';
+import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { TopInsetBar } from '@/components/app/TopInsetBar';
 import DashboardBanner from '@/components/banners/DashboardBanner';
 import { Button } from '@/components/ui/Button';
-import { SkeletonCardGrid } from '@/components/ui/feedback';
+import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 
-function Greeting() {
-  return (
-    <div>
-      <h2 className="t-page-title">{m.dashboard_learn_today()}</h2>
-      <p className="t-subtitle mt-1 text-fg-muted">
-        {m.dashboard_empty_intro()}
-      </p>
-    </div>
-  );
-}
-
 const DASHBOARD_WORKSPACE_LIMIT = 12;
+
+/** One row of recent workspaces scrolling sideways, inside the content
+ * width; the scroll fade marks the hidden cards. */
+const SLIDER_CLASS =
+  'scroll-fade-x flex snap-x snap-mandatory gap-4 overflow-x-auto pt-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
+// Phones show part of the next card so the row reads as scrollable.
+const SLIDE_CLASS = 'w-[85%] shrink-0 snap-start sm:w-75';
 
 function WorkspacesSection() {
   const { data, fetchStatus, isLoading } = useWorkspaces(
@@ -40,7 +36,7 @@ function WorkspacesSection() {
   const revealRef = useLoadingReveal(isLoading);
   return (
     <section>
-      <div className="mb-3 flex items-center justify-between sm:mt-3">
+      <div className="mb-3 flex items-center justify-between">
         <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
         <Button
           asChild
@@ -57,10 +53,18 @@ function WorkspacesSection() {
       {fetchStatus === 'paused' ? (
         <QueryPausedState />
       ) : isLoading ? (
-        <SkeletonCardGrid count={6} />
+        <div className={SLIDER_CLASS}>
+          {Array.from({ length: 4 }, (_, i) => (
+            <Skeleton
+              className={cn(SLIDE_CLASS, 'h-37.5 rounded-card-lg')}
+              key={i}
+            />
+          ))}
+        </div>
       ) : !recent || recent.length === 0 ? (
         <div
-          className="mt-16 flex w-full flex-col items-center justify-center gap-4 text-center"
+          // The skeleton row's height, so the empty state sits in its middle.
+          className="flex h-37.5 w-full flex-col items-center justify-center gap-4 text-center"
           ref={revealRef}
         >
           <p className="t-subtitle">{m.workspaces_empty()}</p>
@@ -77,20 +81,19 @@ function WorkspacesSection() {
           </Button>
         </div>
       ) : (
-        <div
-          className="grid w-full auto-rows-fr grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
-          ref={revealRef}
-        >
+        <div className={SLIDER_CLASS} ref={revealRef}>
           {recent?.map((w) => (
-            <WorkspaceCard key={w.id} workspace={w} />
+            <div className={SLIDE_CLASS} key={w.id}>
+              <WorkspaceCard workspace={w} />
+            </div>
           ))}
           {hasMore && (
-            <div className="flex items-center justify-center p-5">
+            <div className="flex shrink-0 snap-start items-center justify-center p-5">
               <Button asChild size="xs" variant="ghost-link">
                 <Link preload="intent" to="/workspaces">
                   <span className="flex items-center gap-2">
                     {m.action_see_all()}
-                    <Icon name="arrowRight" size={16} />
+                    <Icon name="arrowRight" />
                   </span>
                 </Link>
               </Button>
@@ -104,29 +107,24 @@ function WorkspacesSection() {
 
 export default function Dashboard() {
   return (
-    <div className="flex h-full min-h-full flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
-      <Panel
-        className="order-last min-h-0 flex-1 rounded-button lg:order-first lg:rounded-card-xl"
-        sectionClassName="gap-4 sm:gap-5 2xl:gap-6 p-4 sm:p-6"
+    <>
+      <PanelWithInvertedRadius
+        header={
+          <PageHeader
+            subtitle={m.dashboard_empty_intro()}
+            title={m.dashboard_learn_today()}
+          />
+        }
       >
-        <Greeting />
-        {/* <CloudConnectBanner /> */}
-        <DashboardBanner />
-        <WorkspacesSection />
-      </Panel>
+        <div className="flex flex-col gap-6 px-4 pt-5 pb-6 sm:gap-8 sm:px-6 sm:pt-6">
+          {/* <CloudConnectBanner /> */}
+          <DashboardBanner />
+          <WorkspacesSection />
+          <RecentItemsCard />
+        </div>
+      </PanelWithInvertedRadius>
       {CLERK_ACTIVE && <OnboardingDialog />}
       <CloneLinkDialog />
-
-      {/* Wider than the shared bar so Recent Files' two grid columns breathe. */}
-      <div className="order-first flex h-auto min-h-0 w-(--top-inset-bar-width) shrink-0 flex-col gap-2.5 overflow-visible lg:order-last lg:h-full lg:min-h-full lg:[--top-inset-bar-width:360px] xl:[--top-inset-bar-width:420px]">
-        <TopInsetBar />
-        <Panel
-          className="hidden min-h-0 flex-1 lg:flex"
-          sectionClassName="scroll-fade-y min-h-0 flex-1 gap-2.5 px-2 pt-5 pb-6 [--scroll-fade-bottom-padding:--spacing(6)]"
-        >
-          <RecentItemsCard />
-        </Panel>
-      </div>
-    </div>
+    </>
   );
 }

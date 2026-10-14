@@ -1,5 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
-import { useLayoutEffect, useRef, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import {
   useMarkNotificationRead,
   useMarkNotificationsRead,
@@ -9,9 +9,11 @@ import {
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { SkeletonList } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/Popover';
@@ -19,8 +21,24 @@ import {
 import { m } from '@/i18n';
 import { NotificationItem } from '../../features/notification/NotificationItem';
 
-export function NotificationsBell() {
-  const [open, setOpen] = useState(false);
+/** The top bar's bell; `rowClassName` turns the trigger into a labelled
+ * sidebar row styled by the caller. With `anchor` there is no trigger: the
+ * caller opens it (the phone avatar menu's Notifications item) and the list
+ * hangs off the anchor. */
+export function NotificationsBell({
+  anchor,
+  onOpenChange,
+  open: openProp,
+  rowClassName,
+}: {
+  anchor?: ReactNode;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
+  rowClassName?: string;
+}) {
+  const [ownOpen, setOwnOpen] = useState(false);
+  const open = openProp ?? ownOpen;
+  const setOpen = onOpenChange ?? setOwnOpen;
   // The list loads on first open, not on every page: the dot and its label
   // come from the unread count, which is all a closed bell shows.
   const [wanted, setWanted] = useState(false);
@@ -74,20 +92,49 @@ export function NotificationsBell() {
 
   return (
     <Popover onOpenChange={setOpen} open={open}>
-      <PopoverTrigger asChild>
-        <IconButton
-          // The top bar is the hover color in Frappe/Mocha, so lift past it.
-          className="shrink-0 [[data-style=classroom][data-theme=frappe]_&]:hover:bg-surface-dark-hover-bg [[data-style=classroom][data-theme=mocha]_&]:hover:bg-surface-dark-hover-bg"
-          // NOTE: dont include unread notification numbers in ui display, labelling is OK for accessibility
-          data-unread-count={unreadCountValue}
-          dot={unread}
-          icon="bell"
-          label={bellLabel}
-          size="md"
-          variant="surface"
-        />
-      </PopoverTrigger>
-      <PopoverContent className="border-0 bg-transparent shadow-none!">
+      {anchor ? (
+        <PopoverAnchor asChild>{anchor}</PopoverAnchor>
+      ) : (
+        <PopoverTrigger asChild>
+          {rowClassName ? (
+            <button
+              aria-label={bellLabel}
+              className={rowClassName}
+              data-unread-count={unreadCountValue}
+              type="button"
+            >
+              <span className="relative">
+                <Icon name="bell" size={19} />
+                {unread && (
+                  <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-page" />
+                )}
+              </span>
+              <span className="translate-y-px font-semibold" data-label>
+                {m.notifications_title()}
+              </span>
+            </button>
+          ) : (
+            <IconButton
+              // The top bar is the hover color in Frappe/Mocha, so lift past it.
+              className="shrink-0 [[data-style=classroom][data-theme=frappe]_&]:hover:bg-surface-dark-hover-bg [[data-style=classroom][data-theme=mocha]_&]:hover:bg-surface-dark-hover-bg"
+              // NOTE: dont include unread notification numbers in ui display, labelling is OK for accessibility
+              data-unread-count={unreadCountValue}
+              dot={unread}
+              icon="bell"
+              label={bellLabel}
+              size="md"
+              variant="surface"
+            />
+          )}
+        </PopoverTrigger>
+      )}
+      <PopoverContent
+        align={anchor ? 'end' : rowClassName ? 'start' : undefined}
+        className="border-0 bg-transparent shadow-none!"
+        // The menu that opened it hands focus back to the anchor as it
+        // closes; that must not close the list again.
+        onFocusOutside={anchor ? (event) => event.preventDefault() : undefined}
+      >
         <Card
           border="solid"
           className="block min-w-[320px] max-w-120 border-overlay-line bg-overlay p-1 shadow-pop"

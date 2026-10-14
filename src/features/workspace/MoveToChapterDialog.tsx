@@ -53,7 +53,7 @@ export function MoveToChapterDialog({
               type="button"
             >
               <Icon
-                className="size-3.75 shrink-0 -translate-y-px"
+                className="shrink-0 -translate-y-px"
                 name="removeFromChapter"
               />
               <span
@@ -65,7 +65,7 @@ export function MoveToChapterDialog({
                 {m.move_remove_chapters()}
               </span>
               {currentChapterId === null && (
-                <Icon className="size-3.75 shrink-0" name="check" />
+                <Icon className="shrink-0" name="check" />
               )}
             </button>
             {chapters.map((c) => {
@@ -78,18 +78,13 @@ export function MoveToChapterDialog({
                   style={styleCls(active)}
                   type="button"
                 >
-                  <Icon
-                    className="size-3.75 shrink-0 -translate-y-px"
-                    name="chapter"
-                  />
+                  <Icon className="shrink-0 -translate-y-px" name="chapter" />
                   <span
                     className={cn('flex-1 truncate', active && 'font-bold')}
                   >
                     {c.name}
                   </span>
-                  {active && (
-                    <Icon className="size-3.75 shrink-0" name="check" />
-                  )}
+                  {active && <Icon className="shrink-0" name="check" />}
                 </button>
               );
             })}

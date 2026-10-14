@@ -36,7 +36,7 @@ type reviewSessionIDInput struct {
 	ID string `path:"id" format:"uuid"`
 }
 type pastReviewsInput struct {
-	Sort        string `query:"sort" enum:"date,quiz,cards,time" default:"date"`
+	Sort        string `query:"sort" enum:"date,quiz,cards,time,workspace,chapter,status" default:"date"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Has         string `query:"has" doc:"Comma-separated: quiz, flashcards; a session with either passes"`

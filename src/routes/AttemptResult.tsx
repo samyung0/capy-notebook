@@ -113,7 +113,7 @@ export default function AttemptResult() {
             void navigate({ search: { tab: 'results' }, to: '/learning' })
           }
           title={attempt.quizName}
-          topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
+          topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
           trail={[
             { label: m.nav_learning(), link: linkOptions({ to: '/learning' }) },
             {

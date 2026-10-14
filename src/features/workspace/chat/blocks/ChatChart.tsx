@@ -5,6 +5,7 @@ import {
   format,
 } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
+import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { chartBlock, chartKey, plotBlock } from '../answer';
 import type { ChartProps, PlotProps } from '../schema';
@@ -24,7 +25,7 @@ export const InvalidChartContext = createContext<ReadonlySet<string>>(
 function Legend({ names }: { names: string[] }) {
   if (names.length < 2) return null;
   return (
-    <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-fg-secondary">
+    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-fg-secondary text-xs">
       {names.map((name, index) => (
         <span
           className="inline-flex items-center gap-1"
@@ -49,8 +50,13 @@ function Values({
   rows: (string | number)[][];
 }) {
   return (
-    <details className="mt-1 text-[11px]">
-      <summary className="cursor-pointer text-fg-muted">
+    <details className="group text-xs">
+      <summary className="flex w-fit cursor-pointer list-none items-center gap-1 text-fg-muted [&::-webkit-details-marker]:hidden">
+        <Icon
+          className="transition-transform group-open:rotate-90"
+          name="chevronRight"
+          size={11}
+        />
         {m.chat_chart_values()}
       </summary>
       <table className="mt-1 w-full border-collapse">
@@ -100,12 +106,13 @@ function Frame({
   children?: React.ReactNode;
 }) {
   return (
-    <figure className="my-3 rounded-card border border-line px-3 py-2.5">
-      <figcaption className="mb-1.5">
-        <p className="font-semibold text-xs">{title}</p>
-        {unit ? <p className="text-[11px] text-fg-muted">{unit}</p> : null}
+    <figure className="flex flex-col gap-1.5">
+      <figcaption className="text-[13.5px]">
+        <span className="font-semibold">{title}</span>
+        {unit ? <span className="ml-1.5 text-fg-muted">{unit}</span> : null}
       </figcaption>
-      {children}
+      {/* Charts scale with their box; past this their labels outgrow the text. */}
+      <div className="w-full max-w-[480px]">{children}</div>
       <Legend names={legend} />
       <Values columns={values.columns} rows={values.rows} />
       <CiteFooter

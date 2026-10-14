@@ -164,7 +164,7 @@ export const listAttemptsQueryLimitMax = 100;
 
 
 export const ListAttemptsQueryParams = zod.object({
-  "sort": zod.enum(['date', 'score']).default(listAttemptsQuerySortDefault),
+  "sort": zod.enum(['date', 'score', 'quiz', 'workspace']).default(listAttemptsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listAttemptsQueryDirDefault),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; the quiz\'s current workspace'),
   "offset": zod.int().min(listAttemptsQueryOffsetMin).optional(),
@@ -1510,7 +1510,7 @@ export const ListOwnedFilesQueryParams = zod.object({
   "kind": zod.string().optional().describe('Comma-separated file kinds'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the caller\'s workspaces; member: also every workspace they are a member of'),
-  "sort": zod.enum(['added', 'name', 'size', 'kind']).default(listOwnedFilesQuerySortDefault),
+  "sort": zod.enum(['added', 'name', 'size', 'kind', 'workspace']).default(listOwnedFilesQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedFilesQueryDirDefault),
   "limit": zod.int().min(1).max(listOwnedFilesQueryLimitMax).default(listOwnedFilesQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
@@ -1524,7 +1524,7 @@ export const ListOwnedFilesResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_cell_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -1620,7 +1620,7 @@ export const GetFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_cell_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -1705,7 +1705,7 @@ export const UpdateFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_cell_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -1990,7 +1990,7 @@ export const CloneFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_cell_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -2735,7 +2735,7 @@ export const ListOwnedMaterialsQueryParams = zod.object({
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "location": zod.string().optional().describe('Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed'),
   "scope": zod.enum(['owned', 'member']).default(listOwnedMaterialsQueryScopeDefault).describe('owned: the caller\'s workspaces and standalone materials; member: also every workspace they are a member of'),
-  "sort": zod.enum(['updated', 'created', 'title', 'kind']).default(listOwnedMaterialsQuerySortDefault),
+  "sort": zod.enum(['updated', 'created', 'title', 'kind', 'workspace']).default(listOwnedMaterialsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listOwnedMaterialsQueryDirDefault),
   "limit": zod.int().min(1).max(listOwnedMaterialsQueryLimitMax).default(listOwnedMaterialsQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
@@ -5103,7 +5103,7 @@ export const listPastReviewsQueryLimitMax = 100;
 
 
 export const ListPastReviewsQueryParams = zod.object({
-  "sort": zod.enum(['date', 'quiz', 'cards', 'time']).default(listPastReviewsQuerySortDefault),
+  "sort": zod.enum(['date', 'quiz', 'cards', 'time', 'workspace', 'chapter', 'status']).default(listPastReviewsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listPastReviewsQueryDirDefault),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "has": zod.string().optional().describe('Comma-separated: quiz, flashcards; a session with either passes'),
@@ -6192,7 +6192,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_cell_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -6584,7 +6584,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_cell_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -6955,7 +6955,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_cell_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),

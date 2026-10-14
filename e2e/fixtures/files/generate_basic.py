@@ -29,7 +29,7 @@ def stable_zip(path):
 def main():
     ROOT.mkdir(parents=True, exist_ok=True)
     doc = Document()
-    doc.core_properties.created = doc.core_properties.modified = datetime(2026, 1, 1)  # noqa: DTZ001 - fixed OOXML metadata uses a naive timestamp
+    doc.core_properties.created = doc.core_properties.modified = datetime(2026, 1, 1)
     doc.add_paragraph("Owner sentence: The launch code is LARCH-17.")
     doc.add_paragraph("Collaborator sentence: The survey starts in June.")
     doc.add_paragraph(FACT)
@@ -42,7 +42,7 @@ def main():
     doc.save(ROOT / "lesson.docx")
 
     workbook = Workbook()
-    workbook.properties.created = workbook.properties.modified = datetime(2026, 1, 1)  # noqa: DTZ001 - fixed OOXML metadata uses a naive timestamp
+    workbook.properties.created = workbook.properties.modified = datetime(2026, 1, 1)
     sheet = workbook.active
     sheet.title = "Grades"
     sheet.append(["Student", "Score", "Double score"])
@@ -58,7 +58,7 @@ def main():
     workbook.save(ROOT / "grades.xlsx")
 
     deck = Presentation()
-    deck.core_properties.created = deck.core_properties.modified = datetime(2026, 1, 1)  # noqa: DTZ001 - fixed OOXML metadata uses a naive timestamp
+    deck.core_properties.created = deck.core_properties.modified = datetime(2026, 1, 1)
     for text in (
         "Owner sentence: The launch code is LARCH-17.",
         "Collaborator sentence: The survey starts in June.",
@@ -86,7 +86,8 @@ def main():
     (ROOT / "grades.csv").write_text(
         f'name,score,note\nOwner,42,"{FACT}"\nCollaborator,17,{MARKER}\n'
     )
-    (ROOT / "delimiter-limit.csv").write_text(MARKER + "," * 100_000 + "\n")
+    # One row of 1,001 columns: one over the ingest column cap.
+    (ROOT / "column-limit.csv").write_text(MARKER + "," * 1_000 + "\n")
     for name in ("lesson.docx", "grades.xlsx", "lesson.pptx"):
         stable_zip(ROOT / name)
 

@@ -109,6 +109,8 @@ var materialListSorts = map[string]listSort{
 	"created": {column: "m.created_at", kind: "time"},
 	"title":   {column: "lower(m.title)", kind: "text"},
 	"kind":    {column: "m.kind", kind: "text"},
+	// Standalone rows have no workspace name and sort first ascending.
+	"workspace": {column: "lower(m.workspace_name)", kind: "text"},
 }
 
 // materialLocations are the Locations values: rows in or outside a
@@ -240,8 +242,11 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			at = last.CreatedAt
 		}
 		text := strings.ToLower(last.Title)
-		if f.Sort == "kind" {
+		switch f.Sort {
+		case "kind":
 			text = string(last.Kind)
+		case "workspace":
+			text = strings.ToLower(last.WorkspaceName)
 		}
 		page.NextCursor = encodeListCursor(cursorPrimary(sort, at, text, 0), last.ID)
 	}
@@ -251,10 +256,11 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 /* -------------------------------------------------------------------- files */
 
 var fileListSorts = map[string]listSort{
-	"added": {column: "f.added_at", kind: "time"},
-	"name":  {column: "lower(f.name)", kind: "text"},
-	"size":  {column: "f.size_bytes", kind: "int"},
-	"kind":  {column: "f.kind", kind: "text"},
+	"added":     {column: "f.added_at", kind: "time"},
+	"name":      {column: "lower(f.name)", kind: "text"},
+	"size":      {column: "f.size_bytes", kind: "int"},
+	"kind":      {column: "f.kind", kind: "text"},
+	"workspace": {column: "lower(w.name)", kind: "text"},
 }
 
 type FileListFilter struct {
@@ -323,8 +329,14 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 		last := page.Items[f.Limit-1]
 		page.Items = page.Items[:f.Limit]
 		text := strings.ToLower(last.Name)
-		if f.Sort == "kind" {
+		switch f.Sort {
+		case "kind":
 			text = string(last.Kind)
+		case "workspace":
+			// A file row carries no workspace name; read it as the sort does.
+			if err := s.pool.QueryRow(ctx, `SELECT lower(name) FROM workspaces WHERE id=$1`, last.WorkspaceID).Scan(&text); err != nil {
+				return FilePage{}, err
+			}
 		}
 		page.NextCursor = encodeListCursor(cursorPrimary(sort, last.AddedAt, text, last.SizeBytes), last.ID)
 	}

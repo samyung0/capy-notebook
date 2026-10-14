@@ -368,15 +368,19 @@ as on workspace cards).
 
 `src/features/study/PastReviews.tsx`: finished sessions in the Files table
 style (Date, Workspace, Chapter, Quiz, Flashcards, Time, ⋮ with Review again),
-with the list pages' sort menu (newest, quiz score, flashcard score, time
-spent) and filter (workspace, has quiz questions or flashcards) kept in the URL
-(`parsePastReviewsSearch`). Quiz is marks of the questions answered, Flashcards
+sorted from its column headers (`SortHeader`, no sort menu: date, workspace,
+chapter, quiz score, flashcard score, time spent, status; text columns start
+A to Z, the rest newest or largest first, a second click flips) and the list
+pages' filter (workspace, has quiz questions or flashcards), both kept in the
+URL (`parsePastReviewsSearch`). Chapter sorts chapter sessions by name with
+Others and whole-workspace sessions last; status puts completed before
+stopped. Quiz is marks of the questions answered, Flashcards
 cards rated Good or Easy. A session ended early shows "Stopped after
 N of M" under Status. Scores are plain "x / y" text. Below xl the Files table
 gives way to Billing's plain table (`BillingTable`, no border, scrolls
-sideways) without Time and Status, its toolbar nudged half a step left to
-line up with the plain table's text. Thirty rows a page. Both table tabs put
-their toolbar right under the tabs, as Files does. Workspace, chapter and quiz
+sideways) without Time and Status, its headers sorting the same way. Thirty
+rows a page. Both table tabs lay out as Files' list does: toolbar right under
+the tabs, then the table in the list's padding. Workspace, chapter and quiz
 names show the workspace icon beside the name (`WorkspaceCell`) and wrap to
 two lines before the ellipsis; their columns are somewhat wider than the
 number columns, and every column shares the leftover width.
@@ -388,7 +392,8 @@ Date, ⋮ with Check result and Redo), the same table switch below md. A
 click anywhere on a row opens Check result. Attempts carry the workspace's
 `iconId` (left out once the quiz is deleted).
 `GET /api/attempts?sort=&dir=&workspaceId=&offset=&limit=` (`ListAttempts`)
-sorts (date, score as correct / total), filters by the quiz's current
+sorts (date, score as correct / total, quiz name, workspace name; from the
+column headers, as Past reviews), filters by the quiz's current
 workspace and pages in SQL, thirty a page loaded on scroll; each attempt
 carries that `workspaceId`, null once the quiz is deleted, so a workspace
 filter leaves those out. The filter lists the user's workspaces as Files

@@ -48,7 +48,7 @@ export function QuizPageHeader({
   /** The owner on public pages, between the title and the meta line. */
   byline?: ReactNode;
   actions?: ReactNode;
-  /** The app's top bar, which from lg sits in PanelWithInvertedRadius's notch
+  /** The app's top bar, which from xl sits in PanelWithInvertedRadius's notch
    * beside this header; public pages have their own header and pass none. */
   topBar?: ReactNode;
 }) {

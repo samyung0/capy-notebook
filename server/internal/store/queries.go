@@ -1972,7 +1972,7 @@ func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadat
 }
 
 type AttemptParams struct {
-	Sort       string // date, score
+	Sort       string // date, score, quiz, workspace
 	Ascending  bool
 	Workspaces []string
 	Offset     int
@@ -1982,9 +1982,13 @@ type AttemptParams struct {
 // ListAttempts pages the user's attempts, sorted and filtered by the quiz's
 // current workspace. The second value is whether more follow.
 func (s *Store) ListAttempts(ctx context.Context, userID string, p AttemptParams) ([]Attempt, bool, error) {
-	order := "a.taken_at"
-	if p.Sort == "score" {
-		order = "a.correct / NULLIF(a.total, 0)"
+	order := map[string]string{
+		"score":     "a.correct / NULLIF(a.total, 0)",
+		"quiz":      "lower(a.quiz_name)",
+		"workspace": "lower(a.workspace_name)",
+	}[p.Sort]
+	if order == "" {
+		order = "a.taken_at"
 	}
 	dir := "DESC"
 	if p.Ascending {

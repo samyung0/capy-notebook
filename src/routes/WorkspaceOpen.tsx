@@ -80,13 +80,14 @@ const TAB_ICON: Record<PanelTab, IconName> = {
 /** Three columns is a per-browser preference, not per workspace. */
 
 // The rail is 32% of the group from 1380px up (~438px at a 1400px window).
-// Narrower, it takes three quarters of the lost width so the viewer keeps
-// its room: ~337px at a 1260px window. 320px keeps the tab row whole.
+// Narrower, it takes three quarters of the lost width down to 400px, the
+// least a rich chat answer (cards, tables, charts) reads well in.
 const RAIL_SHARE = 0.32;
 const RAIL_FULL_AT = 1380;
+const RAIL_MIN = 400;
 function railSize(groupWidth: number) {
   if (groupWidth >= RAIL_FULL_AT) return `${RAIL_SHARE * 100}%`;
-  return `${RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth)}px`;
+  return `${Math.max(RAIL_MIN, RAIL_SHARE * RAIL_FULL_AT - 0.75 * (RAIL_FULL_AT - groupWidth))}px`;
 }
 
 /** The right rail. In two columns it refits whenever the group's width
@@ -117,7 +118,7 @@ function RailPanel({
       elementRef={setElement}
       id="rail"
       maxSize="50%"
-      minSize="320px"
+      minSize={`${RAIL_MIN}px`}
       panelRef={panelRef}
     >
       {children}

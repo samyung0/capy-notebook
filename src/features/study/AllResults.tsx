@@ -3,12 +3,14 @@ import { useMemo } from 'react';
 import { useAttempts, useWorkspaces } from '@/api/hooks';
 import type { Attempt, AttemptSort } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
-import {
-  ListToolbar,
-  type SortOption,
-  toggleValue,
-} from '@/components/app/ListToolbar';
+import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import {
+  ariaSort,
+  type ColumnSort,
+  SortHeader,
+  sortDirection,
+} from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
@@ -23,8 +25,9 @@ import {
   resultParams,
 } from './reviewSearch';
 
-/** Learning → All results: quiz attempts with the list pages' sort menu and
- * workspace filter, sorted, filtered and paged by the server. */
+/** Learning → All results: quiz attempts with the list pages' workspace
+ * filter and sorting column headers, sorted, filtered and paged by the
+ * server. */
 export function AllResults() {
   const search = useSearch({ strict: false }) as ResultsSearch;
   const params = useMemo(() => resultParams(search), [search]);
@@ -51,10 +54,13 @@ export function AllResults() {
       search: (prev: Record<string, unknown>) => ({ ...prev, ...patch }),
       to: '/learning',
     });
-  const sorts: SortOption<AttemptSort>[] = [
-    { icon: 'clock', label: m.past_sort_newest(), value: 'date' },
-    { icon: 'quiz', label: m.quiz_col_score(), value: 'score' },
-  ];
+  const sorting: ColumnSort<AttemptSort> = {
+    ascending: dir === 'asc',
+    ascendingFirst: ['quiz', 'workspace'],
+    onSortChange: (next, asc) =>
+      setSearch(sortSearch('results', next, asc, RESULT_SORT_DEFAULT)),
+    sort,
+  };
   // Attempts of a deleted quiz have no quiz to redo.
   const redo = (quizId: string | null) =>
     quizId
@@ -87,35 +93,25 @@ export function AllResults() {
   );
 
   return (
-    <div className="flex flex-col">
-      {/* Lifted so the toolbar's labels start at the table's edge; nudged
-       * left over the plain table, whose text has no inset. */}
-      <div className="-mx-4 -translate-x-0.5 sm:-mx-6 md:translate-x-0">
-        <ListToolbar
-          ascending={dir === 'asc'}
-          filters={[
-            {
-              emptyLabel: m.create_filter_no_workspaces(),
-              key: 'workspace',
-              label: m.files_filter_workspace(),
-              onToggle: (value) =>
-                setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
-              options: workspaces.map((ws) => ({
-                label: ws.name,
-                value: ws.id,
-              })),
-              selected: workspaceIds,
-            },
-          ]}
-          onResetFilters={() => setSearch({ workspace: undefined })}
-          onSortChange={(next, asc) =>
-            setSearch(sortSearch('results', next, asc, RESULT_SORT_DEFAULT))
-          }
-          sort={sort}
-          sorts={sorts}
-        />
-      </div>
-      <div className="pt-2">
+    <>
+      <ListToolbar
+        filters={[
+          {
+            emptyLabel: m.create_filter_no_workspaces(),
+            key: 'workspace',
+            label: m.files_filter_workspace(),
+            onToggle: (value) =>
+              setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
+            options: workspaces.map((ws) => ({
+              label: ws.name,
+              value: ws.id,
+            })),
+            selected: workspaceIds,
+          },
+        ]}
+        onResetFilters={() => setSearch({ workspace: undefined })}
+      />
+      <div className="w-full shrink-0 grow px-2.5 pt-2 pb-6 sm:px-4">
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -130,14 +126,20 @@ export function AllResults() {
             <div className="md:hidden">
               <BillingTable
                 columns={[
-                  { clamp: true, id: 'quiz', label: m.quiz_col_quiz() },
+                  {
+                    clamp: true,
+                    id: 'quiz',
+                    label: m.quiz_col_quiz(),
+                    sort: 'quiz',
+                  },
                   {
                     clamp: true,
                     id: 'workspace',
                     label: m.quiz_col_workspace(),
+                    sort: 'workspace',
                   },
-                  { id: 'score', label: m.quiz_col_score() },
-                  { id: 'date', label: m.quiz_col_date() },
+                  { id: 'score', label: m.quiz_col_score(), sort: 'score' },
+                  { id: 'date', label: m.quiz_col_date(), sort: 'date' },
                   { align: 'right', id: 'menu', label: '' },
                 ]}
                 rows={rows.map((a) => ({
@@ -153,14 +155,28 @@ export function AllResults() {
                   className: 'relative hover:bg-surface-hover-bg',
                   key: a.id,
                 }))}
+                sorting={sorting}
               />
             </div>
             <div className="hidden overflow-hidden rounded-card border border-line md:block">
               <div className="grid grid-cols-[minmax(10rem,1.8fr)_minmax(10rem,1.6fr)_minmax(6rem,1fr)_minmax(7rem,1fr)_2.25rem] items-center bg-surface-hover-bg py-3 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
-                <div>{m.quiz_col_quiz()}</div>
-                <div>{m.quiz_col_workspace()}</div>
-                <div>{m.quiz_col_score()}</div>
-                <div>{m.quiz_col_date()}</div>
+                {(
+                  [
+                    ['quiz', m.quiz_col_quiz()],
+                    ['workspace', m.quiz_col_workspace()],
+                    ['score', m.quiz_col_score()],
+                    ['date', m.quiz_col_date()],
+                  ] as const
+                ).map(([value, label]) => (
+                  <div
+                    aria-sort={ariaSort(sortDirection(sorting, value))}
+                    className="min-w-0"
+                    key={value}
+                    role="columnheader"
+                  >
+                    <SortHeader label={label} sorting={sorting} value={value} />
+                  </div>
+                ))}
                 <div />
               </div>
               {rows.map((a) => (
@@ -193,7 +209,7 @@ export function AllResults() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 

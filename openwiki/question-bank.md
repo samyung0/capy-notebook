@@ -4,8 +4,8 @@ The bank is a separate syllabus and question database. Signed-in learners read
 question content; granted bank editors can edit, mark reviewed, upload figures
 and send a comment. The bank page is at `/qb`, under Explore in the
 sidebar, inside the app shell: the main panel shows the chosen topic's
-questions, and a dashboard-style right column (`PanelHeader`, shared with
-Recent Files and the theme drawer) holds exams and topics (Exam switcher and
+questions, and a right column (`PanelHeader`, shared with the theme
+drawer) holds exams and topics (Exam switcher and
 covers, below), swapping to the topic's question list. Below `lg` that column
 becomes a bottom sheet opened from `PageFloatingBar`
 (`src/components/ui/PageFloatingBar.tsx`, shared with the workspace tools bar):

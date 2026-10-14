@@ -142,7 +142,7 @@ function Attempt({ quizId }: { quizId: string }) {
       }
       provenance={quiz.provenance}
       questions={questions}
-      topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
+      topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
       trail={[blockHomeCrumb(quiz), blockKindCrumb(m.quiz_quizzes(), 'quiz')]}
     />
   );

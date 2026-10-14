@@ -116,7 +116,7 @@ export function EditorCommandPalette() {
               size="sm"
               variant="ghost"
             >
-              <EditorIcon className="size-4" name="x" />
+              <EditorIcon className="size-4.5" name="x" />
             </Button>
           </div>
           <div className="max-h-80 overflow-auto p-1">
@@ -133,7 +133,7 @@ export function EditorCommandPalette() {
                   type="button"
                 >
                   <EditorIcon
-                    className="size-4 text-fg-muted"
+                    className="size-4.5 text-fg-muted"
                     name={command.icon}
                   />
                   <span className="min-w-0 flex-1">

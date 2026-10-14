@@ -69,7 +69,7 @@ export function NoteCard({
             }}
             type="button"
           >
-            <Icon name="moreVertical" size={16} strokeWidth={2.4} />
+            <Icon name="moreVertical" strokeWidth={2.4} />
           </button>
         )}
       </div>

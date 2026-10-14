@@ -116,32 +116,34 @@ class ConfigTest(unittest.TestCase):
             )
             self.assertEqual(Path(temp, "uat.queue.env").stat().st_mode & 0o777, 0o600)
 
-    def test_render_refuses_the_uat_publication_hold_outside_uat(self):
-        values = {
-            key: "explicit"
-            for key, rule in config.MANIFEST.items()
-            if rule.get("required_for")
-        }
-        values.update(
-            POSTGRES_PASSWORD="secret",
-            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
-            CLERK_PUBLISHABLE_KEY="pk_public",
-            DEPLOYMENT_APP_URL="https://uat.example.com",
-        )
-        with tempfile.TemporaryDirectory() as temp:
-            with contextlib.redirect_stdout(io.StringIO()):
-                config.render(values, "production", temp, "a" * 40)
-            coolify = json.loads(Path(temp, "coolify.json").read_text())
-            self.assertEqual(coolify["COLLABORATION_UAT_PUBLICATION_HOLD"], "")
-            values["COLLABORATION_UAT_PUBLICATION_HOLD"] = "true"
-            with contextlib.redirect_stdout(io.StringIO()):
-                config.render(values, "uat", temp, "a" * 40)
-            coolify = json.loads(Path(temp, "coolify.json").read_text())
-            self.assertEqual(coolify["COLLABORATION_UAT_PUBLICATION_HOLD"], "true")
-            with self.assertRaisesRegex(
-                ValueError, "COLLABORATION_UAT_PUBLICATION_HOLD is not allowed"
-            ):
-                config.render(values, "production", temp, "a" * 40)
+    def test_render_refuses_the_uat_switches_outside_uat(self):
+        for switch in (
+            "COLLABORATION_UAT_PUBLICATION_HOLD",
+            "RETRIEVAL_UAT_SCRIPTED_TOOLS",
+        ):
+            values = {
+                key: "explicit"
+                for key, rule in config.MANIFEST.items()
+                if rule.get("required_for")
+            }
+            values.update(
+                POSTGRES_PASSWORD="secret",
+                CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+                CLERK_PUBLISHABLE_KEY="pk_public",
+                DEPLOYMENT_APP_URL="https://uat.example.com",
+            )
+            with tempfile.TemporaryDirectory() as temp:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, "production", temp, "a" * 40)
+                coolify = json.loads(Path(temp, "coolify.json").read_text())
+                self.assertEqual(coolify[switch], "")
+                values[switch] = "true"
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, "uat", temp, "a" * 40)
+                coolify = json.loads(Path(temp, "coolify.json").read_text())
+                self.assertEqual(coolify[switch], "true")
+                with self.assertRaisesRegex(ValueError, f"{switch} is not allowed"):
+                    config.render(values, "production", temp, "a" * 40)
 
     def test_render_pins_collaboration_cores_only_in_production(self):
         values = {

@@ -694,6 +694,11 @@
       "kind": "variable",
       "targets": ["local"]
     },
+    "RETRIEVAL_UAT_SCRIPTED_TOOLS": {
+      "kind": "variable",
+      "targets": ["coolify"],
+      "environments": ["uat"]
+    },
     "SENTRY_AUTH_TOKEN": {
       "kind": "secret",
       "targets": ["workflow", "build"]

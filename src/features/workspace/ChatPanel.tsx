@@ -13,6 +13,7 @@ import type {
   UndoStatus,
   UserColor,
 } from '@/api/types';
+import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Spinner } from '@/components/ui/feedback';
@@ -65,18 +66,18 @@ function Citations({
       {msg.citations.map((c, i) => {
         const page = pageLabel(c);
         return (
-          <button
-            className="inline-flex items-center gap-1 rounded-full bg-tint-info px-2 py-0.5 font-medium text-[11px] text-tint-info-fg hover:brightness-97"
+          <Badge
+            asChild
+            className="max-w-full font-medium hover:bg-page-hover"
             key={`${c.materialId || c.fileId}:${i}`}
-            onClick={() => onOpen?.(c)}
-            title={c.snippet}
-            type="button"
+            size="sm"
           >
-            <span className="opacity-70">[{i + 1}]</span>
-            <Icon name={c.materialId ? 'newNote' : 'files'} size={12} />{' '}
-            {c.fileName}
-            {page && <span className="opacity-70">{page}</span>}
-          </button>
+            <button onClick={() => onOpen?.(c)} title={c.snippet} type="button">
+              <span className="text-fg-muted">{i + 1}</span>
+              <span className="truncate">{c.fileName}</span>
+              {page ? <span className="text-fg-muted">{page}</span> : null}
+            </button>
+          </Badge>
         );
       })}
     </div>
@@ -230,7 +231,7 @@ function ActivityList({
 }) {
   if (!blocks.length) return null;
   return (
-    <div className="mb-2 flex flex-col gap-2">
+    <div className="mb-3 flex flex-col gap-2">
       {blocks.map((block) =>
         block.kind === 'narration' ? (
           <div className="text-fg-muted text-sm" key={block.id}>
@@ -246,7 +247,7 @@ function ActivityList({
           <div className="flex flex-col gap-1.5" key={block.id}>
             <div
               className={cn(
-                'inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px]',
+                'inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-xs',
                 block.outcome && block.outcome !== 'succeeded'
                   ? 'bg-tint-error text-solid-error'
                   : 'bg-page text-fg-muted'
@@ -331,7 +332,7 @@ function AssistantBubble({
   const answer = msg.content || draft || '';
   const empty = !answer && !msg.activity?.length && !waiting;
   return (
-    <div className="mr-auto max-w-[92%] py-2.5 xl:px-3.5">
+    <div className="py-2.5">
       <ActivityList
         blocks={msg.activity ?? []}
         citations={msg.citations}
@@ -367,7 +368,7 @@ function AssistantBubble({
       )}
       {msg.status === 'error' && (
         <div
-          className="mt-2 rounded-card border border-tint-error bg-tint-error px-3 py-2 text-sm text-solid-error"
+          className="mt-2 rounded-lg bg-tint-error px-2.5 py-1.5 text-sm text-tint-error-fg"
           role="alert"
         >
           <p className="font-medium">{m.chat_interrupted()}</p>
@@ -375,7 +376,7 @@ function AssistantBubble({
         </div>
       )}
       {msg.modelDisplayName || msg.modelSlug ? (
-        <p className="mt-1.5 text-[11px] text-fg-muted">
+        <p className="mt-3 text-fg-muted text-xs">
           {msg.modelDisplayName || msg.modelSlug}
         </p>
       ) : null}
@@ -436,15 +437,20 @@ export function ChatPanel({
 
   const lightPair = userColorPairDark(color);
 
-  // Questions belong to the latest completed reply only: once anything is
-  // sent, unanswered ones stay readable in the bubble and are never re-asked.
+  // Questions belong to the latest completed reply only and take the
+  // composer's place until answered or dismissed; after that, unanswered ones
+  // stay readable in the bubble and are never re-asked.
   const last = messages.at(-1);
+  const [dismissedId, setDismissedId] = useState<string | null>(null);
   const questions = useMemo(
     () =>
-      !streaming && last?.role === 'assistant' && last.status === 'complete'
+      !streaming &&
+      last?.role === 'assistant' &&
+      last.status === 'complete' &&
+      last.id !== dismissedId
         ? extractQuestions(last.content)
         : [],
-    [last, streaming]
+    [last, streaming, dismissedId]
   );
 
   // Seed local state when a previously-saved conversation is opened.
@@ -546,7 +552,7 @@ export function ChatPanel({
       </SimpleDialog>
 
       <div
-        className="flex flex-1 flex-col gap-4 self-stretch overflow-auto px-2 py-4"
+        className="flex flex-1 flex-col gap-4 self-stretch overflow-auto px-4 py-4"
         ref={scrollRef}
       >
         {!messages.length && (
@@ -579,7 +585,7 @@ export function ChatPanel({
         {messages.map((msg, index) =>
           msg.role === 'user' ? (
             <div
-              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page py-2.5 xl:px-3.5"
+              className="ml-auto max-w-[85%] whitespace-pre-wrap rounded-[14px] rounded-tr-sm bg-page px-3.5 py-2.5"
               key={msg.id}
             >
               {msg.content}
@@ -590,7 +596,8 @@ export function ChatPanel({
               latest={
                 index === messages.length - 1 &&
                 msg.status !== 'aborted' &&
-                msg.status !== 'error'
+                msg.status !== 'error' &&
+                msg.id !== dismissedId
               }
               msg={msg}
               onOpenCitation={onOpenCitation}
@@ -602,91 +609,88 @@ export function ChatPanel({
         )}
       </div>
 
-      {questions.length > 0 && last ? (
-        <QuestionBlock
-          disabled={streaming}
-          key={last.id}
-          onSend={(answer) =>
-            void send(answer, chatTurn(library, openResource))
-          }
-          questions={questions}
-        />
-      ) : null}
-
       <div className="grow-0 p-3">
-        <div
-          className={cn(
-            'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
-          )}
-        >
-          <Textarea
-            aria-invalid={overLimit || undefined}
-            aria-label={m.chat_placeholder()}
-            className={cn(
-              'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0'
-            )}
-            onChange={(e) => setText(e.target.value)}
-            placeholder={
-              questions.length
-                ? m.chat_question_placeholder()
-                : m.chat_placeholder()
+        {questions.length > 0 && last ? (
+          <QuestionBlock
+            disabled={streaming}
+            key={last.id}
+            onDismiss={() => setDismissedId(last.id)}
+            onSend={(answer) =>
+              void send(answer, chatTurn(library, openResource))
             }
-            rows={2}
-            value={text}
+            questions={questions}
           />
-          <div className="flex items-center gap-2">
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    aria-pressed={library}
-                    className={cn(
-                      'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
-                      library &&
-                        'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
-                    )}
-                    iconLeft="book"
-                    onClick={() => setLibrary((value) => !value)}
-                    size="sm"
-                    variant="outline"
-                  >
-                    {m.chat_library()}
-                  </Button>
-                }
-              />
-              <TooltipContent>{m.chat_library_hint()}</TooltipContent>
-            </Tooltip>
-            <span className="ml-auto" />
-            <CharCount max={CHAT_CHARACTER_LIMIT} value={textLength(text)} />
-            <IconButton
-              className="p-2.5"
-              disabled={!streaming && overLimit}
-              icon="send"
-              iconClassName={cn(
-                'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
-                streaming
-                  ? 'scale-25 opacity-0 blur-[2px]'
-                  : 'scale-100 opacity-100 blur-none'
+        ) : (
+          <div
+            className={cn(
+              'flex flex-col gap-2 rounded-input border border-line bg-surface px-3 pt-2.5 pb-2 transition-colors focus-within:border-action-accent has-[textarea[aria-invalid=true]]:border-solid-error has-[textarea[aria-invalid=true]]:transition-none'
+            )}
+          >
+            <Textarea
+              aria-invalid={overLimit || undefined}
+              aria-label={m.chat_placeholder()}
+              className={cn(
+                'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0'
               )}
-              label={streaming ? m.chat_stop() : m.chat_send()}
-              onClick={streaming ? stop : submit}
-              size="sm"
-              variant="accent"
-            >
-              <span
-                aria-hidden
-                className={cn(
-                  'pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+              onChange={(e) => setText(e.target.value)}
+              placeholder={m.chat_placeholder()}
+              rows={2}
+              value={text}
+            />
+            <div className="flex items-center gap-2">
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      aria-pressed={library}
+                      className={cn(
+                        'h-7.5 rounded-full px-2.5 font-semibold text-[13px]',
+                        library &&
+                          'border-transparent bg-tint-accent-1 text-tint-accent-1-fg hover:bg-tint-accent-1'
+                      )}
+                      iconLeft="book"
+                      onClick={() => setLibrary((value) => !value)}
+                      size="sm"
+                      variant="outline"
+                    >
+                      {m.chat_library()}
+                    </Button>
+                  }
+                />
+                <TooltipContent>{m.chat_library_hint()}</TooltipContent>
+              </Tooltip>
+              <span className="ml-auto" />
+              <CharCount max={CHAT_CHARACTER_LIMIT} value={textLength(text)} />
+              <IconButton
+                className="p-2.5"
+                disabled={!streaming && overLimit}
+                icon="send"
+                iconClassName={cn(
+                  'transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
                   streaming
-                    ? 'scale-100 opacity-100 blur-none'
-                    : 'scale-25 opacity-0 blur-[2px]'
+                    ? 'scale-25 opacity-0 blur-[2px]'
+                    : 'scale-100 opacity-100 blur-none'
                 )}
+                label={streaming ? m.chat_stop() : m.chat_send()}
+                onClick={streaming ? stop : submit}
+                size="sm"
+                variant="accent"
               >
-                <Icon className="fill-current" name="stop" size={14} />
-              </span>
-            </IconButton>
+                <span
+                  aria-hidden
+                  className={cn(
+                    'pointer-events-none absolute inset-0 grid place-items-center transition-[opacity,filter,scale] duration-(--motion-duration-fast) ease-(--motion-ease-in-out) motion-reduce:transition-none',
+                    streaming
+                      ? 'scale-100 opacity-100 blur-none'
+                      : 'scale-25 opacity-0 blur-[2px]'
+                  )}
+                >
+                  <Icon className="fill-current" name="stop" />
+                </span>
+              </IconButton>
+            </div>
           </div>
-        </div>
+        )}
         {/* TODO: update workdings to sth like answer generated may not be accurate etc  */}
         <p className="mt-2 text-center text-[11px] text-fg-muted">
           {library ? m.chat_grounded_library() : m.chat_grounded()}

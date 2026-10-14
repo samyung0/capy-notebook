@@ -94,7 +94,6 @@ export default function Workspaces() {
             {m.action_new_workspace()}
           </Button>
         }
-        ascending={ascending}
         filters={[
           {
             emptyLabel: m.workspaces_filter_no_tags(),
@@ -107,11 +106,15 @@ export default function Workspaces() {
           },
         ]}
         onResetFilters={() => setSearch({ tag: undefined })}
-        onSortChange={(next, asc) =>
-          setSearch(sortSearch('workspaces', next, asc, WORKSPACE_SORT_DEFAULT))
-        }
-        sort={sort}
-        sorts={sorts}
+        sortMenu={{
+          ascending,
+          onSortChange: (next, asc) =>
+            setSearch(
+              sortSearch('workspaces', next, asc, WORKSPACE_SORT_DEFAULT)
+            ),
+          sort,
+          sorts,
+        }}
       />
 
       <div className="w-full shrink-0 grow px-4 pt-4 pb-6 sm:px-6 sm:pt-2">

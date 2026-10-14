@@ -22,15 +22,20 @@ def test_tabular_text_preserves_headers_values_and_formulas(tmp_path) -> None:
     assert "Formula==B2/100" in text
 
 
-def test_tabular_text_rejects_a_delimiter_allocation_bomb(
-    monkeypatch, tmp_path
-) -> None:
-    source = tmp_path / "wide.csv"
-    source.write_text("a,b,c,d,e\n", encoding="utf-8")
-    monkeypatch.setattr(source_text, "_TABULAR_MAX_CELLS", 4)
+def test_tabular_text_caps_columns_per_row_not_cells(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(source_text, "_TABULAR_MAX_COLUMNS", 4)
+    tall = tmp_path / "tall.csv"
+    tall.write_text("a,b,c,d\n" + "1,2,3,4\n" * 500, encoding="utf-8")
+    assert "Row 501: a=1 | b=2 | c=3 | d=4" in source_text.tabular_text(
+        str(tall), tall.name
+    )
 
-    with pytest.raises(source_text.TerminalError, match="cell limit"):
-        source_text.tabular_text(str(source), source.name)
+    # Quoted newlines split this five-column row over lines of two delimiters.
+    wide = tmp_path / "wide.csv"
+    wide.write_text('a,b,c,d\n1,"x\ny",2,"z\nw",3\n', encoding="utf-8")
+    with pytest.raises(source_text.TerminalError, match="column limit") as error:
+        source_text.tabular_text(str(wide), wide.name)
+    assert error.value.code == "tabular_column_limit"
 
 
 def test_tabular_text_bounds_its_expanded_search_projection(

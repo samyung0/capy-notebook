@@ -6,9 +6,12 @@ import {
   useWorkspaces,
 } from '@/api/hooks';
 import { InlineErrorState } from '@/components/app/ErrorState';
-import { ItemCard, ItemSkeletonGrid } from '@/components/app/ItemCard';
+import {
+  ItemCard,
+  ItemGrid,
+  ItemSkeletonGrid,
+} from '@/components/app/ItemCard';
 import { ListViewToggle, useListView } from '@/components/app/ListToolbar';
-import { PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import {
   type Thumbnail,
@@ -77,7 +80,7 @@ function RecentActions({
       }
       display={display}
       hoverClassName="mr-1.5"
-      menuAlign="start"
+      menuAlign="end"
       menuTriggerIcon="moreHorizontal"
       readOnly={!item.canEdit}
       showMove={false}
@@ -149,53 +152,56 @@ export function RecentItemsCard() {
   const missing = failed.filter(([data, isError]) => !data && isError);
 
   return (
-    <div className="flex min-h-full shrink-0 flex-col gap-3">
-      <PanelHeader
-        actions={<ListViewToggle onViewChange={setView} view={view} />}
-        title={m.dashboard_recent()}
-      />
+    <section className="flex flex-col gap-3">
+      <div className="flex items-center justify-between">
+        <h2 className="t-large-card-title">{m.dashboard_recent()}</h2>
+        <ListViewToggle onViewChange={setView} view={view} />
+      </div>
       {paused ? (
-        <QueryPausedState className="h-full min-h-full flex-1" />
+        <QueryPausedState />
       ) : isLoading ? (
         view === 'grid' ? (
-          <ItemSkeletonGrid
-            className="px-2 sm:grid-cols-2 sm:gap-2"
-            count={6}
-            dense
-          />
+          <ItemSkeletonGrid count={8} dense />
         ) : (
-          <SkeletonList className="px-3" count={8} rowHeight={52} />
+          <SkeletonList count={8} rowHeight={52} />
         )
       ) : missing.length ? (
         <InlineErrorState
-          className="px-1 pt-2 pb-4"
+          className="pt-10 pb-6"
           message={m.dashboard_recent_error()}
           onRetry={() => {
             for (const [, , refetch] of missing) void refetch();
           }}
         />
       ) : items.length === 0 ? (
-        <p className="px-1 pt-2 pb-4 text-center text-fg-muted">
+        <p className="pt-10 pb-6 text-center text-fg-muted">
           {m.dashboard_recent_empty()}
         </p>
       ) : view === 'grid' ? (
-        <div className="grid grid-cols-2 gap-2 px-2">
-          {items.map((item) => (
-            <ItemCard
-              actions={<RecentActions display="menu" item={item} />}
-              dense
-              icon={recentIcon(item)}
-              key={`${item.kind}-${item.id}`}
-              link={{ ...recentLink(item), preload: 'intent' }}
-              meta={recentHint(item)}
-              thumbnail={recentThumbnail(item)}
-              title={item.title}
-              view="grid"
-            />
-          ))}
-        </div>
+        <ItemGrid>
+          {items.map((item) => {
+            const workspace = workspaces?.find(
+              (ws) => ws.id === item.workspaceId
+            );
+            return (
+              <ItemCard
+                actions={<RecentActions display="menu" item={item} />}
+                dense
+                icon={recentIcon(item)}
+                key={`${item.kind}-${item.id}`}
+                link={{ ...recentLink(item), preload: 'intent' }}
+                meta={recentHint(item)}
+                thumbnail={recentThumbnail(item)}
+                title={item.title}
+                view="grid"
+                workspace={workspace?.name}
+                workspaceIconId={workspace?.iconId}
+              />
+            );
+          })}
+        </ItemGrid>
       ) : (
-        <div className="flex -translate-x-0.5 flex-col gap-0.5 px-2">
+        <div className="-mx-1.5 flex flex-col gap-0.5">
           {items.map((item) => (
             <div
               className="group relative flex items-center justify-between rounded-button hover:bg-surface-hover-bg"
@@ -225,6 +231,6 @@ export function RecentItemsCard() {
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }

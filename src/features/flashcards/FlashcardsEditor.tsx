@@ -91,7 +91,7 @@ export function FlashcardsEditor({
             label={m.flashcards_edit_card()}
             onOpen={() => setEditing({ added: false, id: card.id })}
           >
-            <BlockToolbar className="absolute top-2 right-2 z-10 rounded-md p-0.5 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100 [&_button]:size-7">
+            <BlockToolbar className="absolute top-2 right-2 z-10 rounded-md p-0.5 opacity-0 pointer-coarse:opacity-100 transition-opacity group-hover/tile:opacity-100 has-focus-visible:opacity-100">
               <ToolbarButton
                 label={m.action_edit()}
                 onClick={() => setEditing({ added: false, id: card.id })}

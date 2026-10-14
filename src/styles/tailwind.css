@@ -13,6 +13,10 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The sidebar rail is widened: hovered, holding keyboard focus, or with one
+   of its menus open. */
+@custom-variant rail-open (&:is(:where(.group\/rail):is(:hover, :has(:focus-visible, [aria-expanded="true"])) *));
+
 /* ============================================================
    Tailwind bridge — semantic roles → utilities.
    `inline` keeps the var() reference so utilities re-theme at
@@ -269,15 +273,15 @@
 @utility t-page-title {
   font-size: var(--page-title-font-size);
   font-weight: var(--page-title-font-weight);
-  line-height: var(--page-title-font-line-height);
+  line-height: var(--page-title-line-height);
   letter-spacing: var(--page-title-letter-spacing);
 }
 
 @utility t-large-card-title {
   font-size: var(--large-card-title-font-size);
   font-weight: var(--large-card-title-font-weight);
-  line-height: var(--large-card-title-font-line-height);
-  letter-spacing: var(--large-card-title-font-letter-spacing);
+  line-height: var(--large-card-title-line-height);
+  letter-spacing: var(--large-card-title-letter-spacing);
 }
 
 @utility t-card-title {
@@ -290,7 +294,7 @@
 @utility t-subtitle {
   font-size: var(--subtitle-font-size);
   font-weight: var(--subtitle-font-weight);
-  line-height: var(--subtitle-font-line-height);
+  line-height: var(--subtitle-line-height);
 }
 
 /* The Plate settings font picker shows each option in its own font. */
@@ -360,9 +364,9 @@
     position: relative;
   }
 
-  /* Below lg the top bar sits above the panel (as on the dashboard), so the
-     notch and its shadow cover only exist from lg. */
-  @media (width >= 64rem) {
+  /* Below xl the top bar's items live in the sidebar, so the notch and its
+     shadow cover only exist from xl. */
+  @media (width >= 80rem) {
     .inverted-radius-large-panel-container::before {
       /* this covers the top right box shadow that is leaking out */
       position: absolute;
@@ -383,7 +387,7 @@
   }
 
   /* code from https://css-shape.com/inverted-radius/ */
-  @media (width >= 64rem) {
+  @media (width >= 80rem) {
     .inverted-radius-large-panel {
       --r: var(--top-inset-bar-radius); /* the radius */
       --s: var(--top-inset-bar-radius); /* size of inner curve */
@@ -506,12 +510,12 @@ math-field {
 :root {
   /* Five 36px tag rows plus the list's p-1. */
   --tag-dropdown-height: calc(var(--spacing) * 47);
-  /* ToolbarButton size and icon: compact on phones. */
-  --toolbar-button: 28px;
-  --toolbar-icon: 14px;
+  /* ToolbarButton size and icon: an 18px icon everywhere, a tighter box on
+     phones. */
+  --toolbar-button: 30px;
+  --toolbar-icon: 18px;
   @variant sm {
     --toolbar-button: 32px;
-    --toolbar-icon: 16px;
   }
 }
 
@@ -587,73 +591,74 @@ math-field {
     animation-name: nav-flash-b;
   }
 
-  /* lowlight emits highlight.js token classes on code-syntax leaves. */
-  .note-editor pre .hljs-comment,
-  .note-editor pre .hljs-code,
-  .note-editor pre .hljs-formula {
+  /* lowlight emits highlight.js token classes on code-syntax leaves (notes)
+     and in chat's code blocks. */
+  :is(.note-editor pre, .hljs-tokens) .hljs-comment,
+  :is(.note-editor pre, .hljs-tokens) .hljs-code,
+  :is(.note-editor pre, .hljs-tokens) .hljs-formula {
     color: var(--syntax-comment);
   }
 
-  .note-editor pre .hljs-comment {
+  :is(.note-editor pre, .hljs-tokens) .hljs-comment {
     font-style: italic;
   }
 
-  .note-editor pre .hljs-keyword,
-  .note-editor pre .hljs-doctag,
-  .note-editor pre .hljs-template-tag,
-  .note-editor pre .hljs-template-variable,
-  .note-editor pre .hljs-type,
-  .note-editor pre .hljs-variable.language_ {
+  :is(.note-editor pre, .hljs-tokens) .hljs-keyword,
+  :is(.note-editor pre, .hljs-tokens) .hljs-doctag,
+  :is(.note-editor pre, .hljs-tokens) .hljs-template-tag,
+  :is(.note-editor pre, .hljs-tokens) .hljs-template-variable,
+  :is(.note-editor pre, .hljs-tokens) .hljs-type,
+  :is(.note-editor pre, .hljs-tokens) .hljs-variable.language_ {
     color: var(--syntax-keyword);
   }
 
-  .note-editor pre .hljs-string,
-  .note-editor pre .hljs-regexp {
+  :is(.note-editor pre, .hljs-tokens) .hljs-string,
+  :is(.note-editor pre, .hljs-tokens) .hljs-regexp {
     color: var(--syntax-string);
   }
 
-  .note-editor pre .hljs-number,
-  .note-editor pre .hljs-literal,
-  .note-editor pre .hljs-attr,
-  .note-editor pre .hljs-attribute,
-  .note-editor pre .hljs-meta,
-  .note-editor pre .hljs-operator,
-  .note-editor pre .hljs-selector-attr,
-  .note-editor pre .hljs-selector-class,
-  .note-editor pre .hljs-selector-id,
-  .note-editor pre .hljs-variable {
+  :is(.note-editor pre, .hljs-tokens) .hljs-number,
+  :is(.note-editor pre, .hljs-tokens) .hljs-literal,
+  :is(.note-editor pre, .hljs-tokens) .hljs-attr,
+  :is(.note-editor pre, .hljs-tokens) .hljs-attribute,
+  :is(.note-editor pre, .hljs-tokens) .hljs-meta,
+  :is(.note-editor pre, .hljs-tokens) .hljs-operator,
+  :is(.note-editor pre, .hljs-tokens) .hljs-selector-attr,
+  :is(.note-editor pre, .hljs-tokens) .hljs-selector-class,
+  :is(.note-editor pre, .hljs-tokens) .hljs-selector-id,
+  :is(.note-editor pre, .hljs-tokens) .hljs-variable {
     color: var(--syntax-constant);
   }
 
-  .note-editor pre .hljs-title,
-  .note-editor pre .hljs-name,
-  .note-editor pre .hljs-quote,
-  .note-editor pre .hljs-selector-tag,
-  .note-editor pre .hljs-selector-pseudo {
+  :is(.note-editor pre, .hljs-tokens) .hljs-title,
+  :is(.note-editor pre, .hljs-tokens) .hljs-name,
+  :is(.note-editor pre, .hljs-tokens) .hljs-quote,
+  :is(.note-editor pre, .hljs-tokens) .hljs-selector-tag,
+  :is(.note-editor pre, .hljs-tokens) .hljs-selector-pseudo {
     color: var(--syntax-function);
   }
 
-  .note-editor pre .hljs-built_in,
-  .note-editor pre .hljs-symbol {
+  :is(.note-editor pre, .hljs-tokens) .hljs-built_in,
+  :is(.note-editor pre, .hljs-tokens) .hljs-symbol {
     color: var(--syntax-builtin);
   }
 
-  .note-editor pre .hljs-section,
-  .note-editor pre .hljs-strong {
+  :is(.note-editor pre, .hljs-tokens) .hljs-section,
+  :is(.note-editor pre, .hljs-tokens) .hljs-strong {
     font-weight: 700;
     color: var(--syntax-constant);
   }
 
-  .note-editor pre .hljs-emphasis {
+  :is(.note-editor pre, .hljs-tokens) .hljs-emphasis {
     font-style: italic;
   }
 
-  .note-editor pre .hljs-addition {
+  :is(.note-editor pre, .hljs-tokens) .hljs-addition {
     color: var(--tint-success-fg);
     background-color: var(--tint-success-bg);
   }
 
-  .note-editor pre .hljs-deletion {
+  :is(.note-editor pre, .hljs-tokens) .hljs-deletion {
     color: var(--tint-error-fg);
     background-color: var(--tint-error-bg);
   }

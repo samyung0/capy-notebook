@@ -304,7 +304,7 @@ export function CoverPicker({
                   type="button"
                   variant="ghost-hover"
                 >
-                  <Icon className="size-4" name="shuffle" />
+                  <Icon name="shuffle" />
                   {m.cover_shuffle()}
                 </Button>
               </div>

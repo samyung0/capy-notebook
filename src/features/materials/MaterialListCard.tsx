@@ -1,6 +1,7 @@
 import type { LinkProps } from '@tanstack/react-router';
+import { memo } from 'react';
 import type { MaterialListItem } from '@/api/types';
-import { ItemCard, itemMenuAlign } from '@/components/app/ItemCard';
+import { ItemCard } from '@/components/app/ItemCard';
 import type { ListView } from '@/components/app/ListToolbar';
 import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { formatFileSize } from '@/features/files/fileUtils';
@@ -8,7 +9,7 @@ import { getLocale, m } from '@/i18n';
 import { materialIconName } from '@/lib/fileIcons';
 import { cardCountLabel, questionCountLabel } from './countLabels';
 
-/** Create page item mapped onto the shared ItemCard. The page owns navigation,
+/** Blocks tab item mapped onto the shared ItemCard. The tab owns navigation,
  * the action menu and every dialog. */
 
 const RELATIVE_STEPS: [Intl.RelativeTimeFormatUnit, number][] = [
@@ -58,32 +59,33 @@ export function materialDetails(item: MaterialListItem): string {
   return '';
 }
 
-export function MaterialCard({
+/** One block in the Blocks tab, pickable there. Memoised: its menu and link
+ * come from the tab's stable `menuFor` and `linkFor`, so a pick re-renders
+ * only the cards whose selection changed. */
+export const MaterialCard = memo(function MaterialCard({
   item,
   view,
-  menu,
-  link,
+  menuFor,
+  linkFor,
+  selected,
   workspaceIconId,
 }: {
   item: MaterialListItem;
   view: ListView;
-  menu: MenuItem[];
-  link: LinkProps;
+  menuFor: (item: MaterialListItem) => MenuItem[];
+  linkFor: (item: MaterialListItem) => LinkProps;
+  selected: boolean;
   workspaceIconId?: string;
 }) {
   return (
     <ItemCard
-      actions={
-        <Menu
-          align={itemMenuAlign(view)}
-          items={menu}
-          triggerIcon="moreHorizontal"
-        />
-      }
+      actions={<Menu items={menuFor(item)} triggerIcon="moreHorizontal" />}
       details={materialListDetails(item)}
       icon={materialIconName(item.kind)}
-      link={link}
+      link={linkFor(item)}
       meta={relativeTime(item.updatedAt)}
+      pickKey={item.id}
+      selected={selected}
       thumbnail={{
         pill: materialDetails(item) || undefined,
         preview: item.preview,
@@ -94,4 +96,4 @@ export function MaterialCard({
       workspaceIconId={workspaceIconId}
     />
   );
-}
+});

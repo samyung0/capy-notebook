@@ -3,8 +3,9 @@
 // owner, progress on, and enough steps to prove each record is written. The
 // detailed cases (unread, started items, skipping, counts) live in the Docker
 // suite, e2e/study/study-progress.spec.ts. The file is store-only and the
-// quiz part true/false, which the server grades without Jev, so the journey
-// makes no parser, embedding or LLM call.
+// quiz part true/false, which the server grades without Jev, so those steps
+// make no parser, embedding or LLM call. A last quiz with one open part is
+// graded by Jev: the journey's one real grading call.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { Page } from '@playwright/test';
@@ -42,8 +43,36 @@ async function material(
   return string(created.id);
 }
 
-/** A one-question true/false quiz (a closed part, graded on the server). */
-function quiz(run: UatRun, workspaceId: string, title: string) {
+/** A true/false part: closed, graded on the server. */
+const truePart = {
+  answer: { correct: true, type: 'boolean' },
+  blocks: [{ text: prompt, type: 'text' }],
+  id: 'q_1:part:1',
+  marks: 1,
+  solution: [],
+};
+
+/** An open part: Jev grades it against its one marking item. */
+const openPart = {
+  answer: {
+    accepted: ['Their roots and waterlogged soil hold the carbon they absorb.'],
+    hints: [],
+    type: 'open',
+  },
+  blocks: [{ text: 'Explain how wetland plants store carbon.', type: 'text' }],
+  id: 'q_1:part:1',
+  marks: 1,
+  markscheme: [{ marks: 1, text: 'Says the carbon stays in roots or soil.' }],
+  solution: [],
+};
+
+/** A one-question quiz of one part. */
+function quiz(
+  run: UatRun,
+  workspaceId: string,
+  title: string,
+  part: object = truePart
+) {
   return material(run, workspaceId, 'quiz', title, [
     {
       children: [
@@ -54,15 +83,7 @@ function quiz(run: UatRun, workspaceId: string, title: string) {
             id: 'q_1',
             labels: 'letters',
             layout: 'paper',
-            parts: [
-              {
-                answer: { correct: true, type: 'boolean' },
-                blocks: [{ text: prompt, type: 'text' }],
-                id: 'q_1:part:1',
-                marks: 1,
-                solution: [],
-              },
-            ],
+            parts: [part],
             stem: [],
           },
           type: 'quiz_question',
@@ -287,4 +308,54 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   );
   await run.attach(`${workspaceId}-study`, { attempts, progress, states });
   await noProviderCalls(run, workspaceId);
+
+  // An open answer, graded by Jev (typesafe.ai, called by Go directly, not
+  // through EliteLLM). The grade itself is not asserted, only that Jev gave
+  // one award per marking item and the call was recorded, uncharged.
+  const openQuiz = await quiz(run, workspaceId, 'Open quiz', openPart);
+  await page.goto(`${run.env.appUrl}/quizzes/${openQuiz}/attempt`);
+  await page
+    .getByRole('textbox', { exact: true, name: m.question_ui_your_answer() })
+    .fill('The plants keep the carbon in their roots and in the wet soil.');
+  assert.equal(
+    await clicked(page, `/api/quizzes/${openQuiz}/attempts`, m.quiz_submit()),
+    201
+  );
+  await expect(page.getByRole('button', { name: m.quiz_redo() })).toBeVisible();
+  const graded = await run.query<{ questions: { parts: object[] }[] }>(
+    'SELECT questions FROM attempts WHERE user_id=%s AND material_id=%s',
+    [run.owner.id, openQuiz]
+  );
+  assert.equal(graded.length, 1);
+  const awards = object(graded[0].questions[0].parts[0]).itemAwards;
+  assert(Array.isArray(awards) && awards.length === 1, 'one award per item');
+  assert([0, 0.5, 1].includes(Number(awards[0])));
+  const usage = await run.query(
+    `SELECT actor_user_id,kind,surface,provider,model,credit_micros,units,unit,
+    input_tokens,metadata FROM usage_events WHERE workspace_id=%s`,
+    [workspaceId]
+  );
+  assert.equal(usage.length, 1, 'the Jev grading is the only usage');
+  const [jev] = usage;
+  assert.deepEqual(
+    [jev.actor_user_id, jev.kind, jev.surface, jev.provider, jev.model],
+    [run.owner.id, 'llm', 'quiz', 'typesafe', 'jev-1.13.0']
+  );
+  assert.deepEqual(
+    [Number(jev.credit_micros), Number(jev.units), jev.unit],
+    [0, 1, 'parts']
+  );
+  assert(Number(jev.input_tokens) > 0);
+  assert.equal(object(jev.metadata).quizId, openQuiz);
+  assert(Number(object(jev.metadata).costMicroUsd) >= 0);
+  assert.equal(
+    (
+      await run.query(
+        'SELECT id FROM provider_sessions WHERE workspace_id=%s',
+        [workspaceId]
+      )
+    ).length,
+    0
+  );
+  await run.attach(`${workspaceId}-jev`, { awards, usage });
 });

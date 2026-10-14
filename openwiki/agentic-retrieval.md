@@ -989,7 +989,7 @@ Five limits are checked on the real content during ingest. A file over one is
 not failed: the worker raises `InputLimitError(code)`, the job and its attempt
 fail with that `error_code` (logged at info, no Sentry event), and the file
 ends `ready`, `indexed=false`, with `files.index_limit` set to the code
-(migration `0072`). It opens, downloads, edits and clones like any file; only
+(migrations `0072`, `0081`). It opens, downloads, edits and clones like any file; only
 search, chat and generate skip it. The file banner and the upload panel say it
 is too large to index (`files_not_indexed_too_large`), Retry processing is not
 offered (that is for `failed` files), and the Indexing tab counts it as not
@@ -1003,7 +1003,7 @@ Indexing tab lists the change as failed.
 | `page_limit` | Pages in a fast-parse PDF/DOCX/PPTX/XLSX | `CAPY_PARSE_MAX_PAGES` (1,400) | Browser analysis blocks submit; the reservation refuses a claimed `pageCount` over it. Imports and edited Office sources are only checked by the parser. |
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
-| `tabular_cell_limit` | Raw delimiter bytes in a CSV/TSV | 100,000 | No |
+| `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
 | `tabular_text_limit` | Characters of rendered CSV/TSV row text | 64 Mi | No |
 
 ### Provider source imports
@@ -3069,16 +3069,25 @@ interactives in the notes' sandboxed html-embed frame (`HtmlEmbed`, the same
 64 KB cap and theme variables), mounted once their html has stopped changing
 for a second while the answer streams; their text projection keeps the title
 and drops the html, here and in the Python summary text). Answers stored before the program format
-still render as Markdown. Inline `[k]` markers come from the message's
-citation list by `n`; tables and charts put their sources under the block.
+still render as Markdown through the same `Prose` renderer, as does a plain
+Markdown reply. Blocks sit 20px apart with no frames around figures; fenced
+code is chat's own `CodeBlock` (copy, download, highlighted by the notes'
+lowlight loaded with the first block and coloured by the shared `hljs-*`
+rules); charts stop growing at 480px and diagrams at min(60vh, 32rem) tall.
+Raised `k` markers come from
+the message's citation list by `n` and follow the last paragraph of the text
+they back (Streamdown's root is `display: contents` so that paragraph can run
+inline); tables and charts put their sources under the block, and the
+message's sources are neutral badges under the model name.
 The prompt reserves `AskUser` for required user input and excludes simple follow-up questions.
 `AskUser` blocks of the latest completed reply render nothing inline and
-appear in the docked question block (`chat/QuestionBlock.tsx`, between the
-list and the composer): one question at a time, numbered choices, a
-"something else" field, Skip, and one Send that composes every answered
-question with its wording into an ordinary user message through the same
-`send()`. Nothing about the block persists; older replies show their
-questions as read-only "Asked:" lines and are never re-asked.
+replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
+one question at a time, numbered choices, a "something else" field, Skip,
+and one Send that composes every answered question with its wording into an
+ordinary user message through the same `send()`. ✕ dismisses the set and
+brings the composer back. Nothing about the block persists (a dismissal lasts
+while the panel is mounted); older or dismissed replies show their questions
+as read-only "Asked:" lines and are never re-asked.
 
 Before rendering, `retrieval/response_guard.py` holds partial protocol markers across
 stream chunks and detects known tool-call envelopes, including DSML, XML tool calls

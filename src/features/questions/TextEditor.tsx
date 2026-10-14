@@ -136,29 +136,25 @@ export function TextEditor({
         >
           {m.question_ui_display()}
         </ToolbarButton>
-        <span className="flex flex-col justify-center">
-          {controls?.toggleKeyboard && (
-            <ToolbarButton
-              className="h-4"
-              data-math-keyboard-toggle
-              label={m.question_ui_formula_keyboard()}
-              onClick={controls?.toggleKeyboard}
-              onMouseDown={(event) => event.preventDefault()}
-            >
-              <Icon name="keyboard" />
-            </ToolbarButton>
-          )}
+        {controls?.toggleKeyboard && (
           <ToolbarButton
-            aria-haspopup="menu"
-            className="h-4"
-            disabled={!controls}
-            label={m.question_ui_formula_menu()}
-            onClick={controls?.showMenu}
+            data-math-keyboard-toggle
+            label={m.question_ui_formula_keyboard()}
+            onClick={controls?.toggleKeyboard}
             onMouseDown={(event) => event.preventDefault()}
           >
-            <Icon name="menu" />
+            <Icon name="keyboard" />
           </ToolbarButton>
-        </span>
+        )}
+        <ToolbarButton
+          aria-haspopup="menu"
+          disabled={!controls}
+          label={m.question_ui_formula_menu()}
+          onClick={controls?.showMenu}
+          onMouseDown={(event) => event.preventDefault()}
+        >
+          <Icon name="menu" />
+        </ToolbarButton>
       </ToolbarGroup>
       <ToolbarGroup>
         {[

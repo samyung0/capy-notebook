@@ -764,13 +764,18 @@ socket (expiry, eviction, an access recheck) only emits the provider's `close`,
 never `disconnect`, so `roomReconnector` (`src/features/notes/roomConnection.ts`)
 reconnects at once with a fresh token and backs off while refusals repeat.
 Authentication refusals carry reasons: `collaboration-read-only` drops to view
-under the read-only strip, `collaboration-not-found` (trashed or deleted) and
+under the read-only strip (it names no reason: a demoted viewer, a frozen
+account and a full owner all see it, and the account banner explains the
+account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
 file-missing or no-access panel, and anything else (an expired token, a room
 being reset or compacted) is retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
 sync it turns the status red). A failed first token request shows the panel for its status (not found,
-no access, or unavailable with Retry).
+no access, or unavailable with Retry). A member removed from the workspace gets
+the server's hidden `404`, so their editor shows the file-missing panel, not
+no access: by decision (Epo, 2026-10-14) the app never tells a user whether
+something they can't reach is blocked or gone.
 
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
 pending receipts (the failed-store retry answers them), shows Not saved and,
@@ -1579,10 +1584,12 @@ invalidate the discussion query.
 
 ## Toolbar icons
 
-Plate and PDF toolbar icons use `size-4` (16px) and the shared `Icon` default
-stroke width of 1.8, including dropdown chevrons and floating toolbar actions.
-`EditorIcon` re-exports `Icon` without a separate stroke override. Below `sm`
-(640px) `ToolbarButton` shrinks to 28px with 14px icons through the
+No icon inside a button draws smaller than 18px (decided 2026-10-14; the
+exceptions are select and disclosure chevrons, drag grips, check marks and
+decorative row icons). Plate and PDF toolbar icons are 18px with the shared
+`Icon` default stroke width of 1.8, including dropdown chevrons and floating
+toolbar actions. `EditorIcon` re-exports `Icon` without a separate stroke
+override. `ToolbarButton` is 32px, and 30px below `sm` (640px), through the
 `--toolbar-button` / `--toolbar-icon` variables in `tailwind.css`, so every
 toolbar, floating toolbar and header action follows while a caller's own size
 classes still win. The Office runtime is its own document, so
@@ -1617,10 +1624,10 @@ wheel input passes through at the scroll boundaries.
 `components/ui/ToolbarButton` reuses `BASE_BUTTON_STYLE` for shared button behavior
 and supplies both editors' 32px buttons, focus/disabled
 styles, purple active tint, and dropdown triggers (content width, 4px gap and
-16px chevron). Plate's wrapper preserves the editor selection on mouse-down;
+18px chevron). Plate's wrapper preserves the editor selection on mouse-down;
 PDF supplies its current tool directly. Link, table and column floating actions
 reuse the Plate wrapper. Workspace center-header icon actions and Files/Chat/Create
-panel actions also use the shared 32px button and 16px icon, including mode and
+panel actions also use the shared 32px button and 18px icon, including mode and
 action-menu triggers. Their action rows use zero inter-button gap and 8px
 right-edge padding, matching the toolbar. Workspace dropdown chevrons retain
 their existing styling.
@@ -1862,7 +1869,7 @@ Redis. Docker E2E adds coverage for persistence, projection, reconnect, and
 multi-context behavior.
 
 Plate and PDF toolbar popovers share `components/ui/ToolbarPopover`: 8px corners,
-4px container padding, gapless 28px rows, 14px medium text and the dropdown
+4px container padding, gapless 30px rows with 18px icons, 14px medium text and the dropdown
 body line height. Plate wraps shared buttons to restore editor/command focus.
 Insert adds an 8px top padding plus 4px above its first section label; later
 labels have 12px above and all labels have 6px below. Color/input layouts retain

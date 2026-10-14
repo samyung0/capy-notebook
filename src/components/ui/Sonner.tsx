@@ -84,7 +84,7 @@ function Toast(props: ToastProps) {
       )}
       {showCloseButton && (
         <IconButton
-          className="absolute -top-2 -left-2 size-5 rounded-full border border-divider bg-surface p-0 text-fg-secondary shadow-card hover:bg-surface-hover-bg [&>svg]:size-3"
+          className="absolute -top-2.5 -left-2.5 size-6.5 rounded-full border border-divider bg-surface p-0 text-fg-secondary shadow-card hover:bg-surface-hover-bg"
           icon="x"
           label={m.action_close()}
           onClick={() => {

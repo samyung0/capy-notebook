@@ -3,12 +3,14 @@ import { useMemo } from 'react';
 import { usePastReviews, useReviewOverview } from '@/api/hooks';
 import type { PastReview, PastReviewSort, SessionScore } from '@/api/types';
 import { ListEnd } from '@/components/app/ListEnd';
-import {
-  ListToolbar,
-  type SortOption,
-  toggleValue,
-} from '@/components/app/ListToolbar';
+import { ListToolbar, toggleValue } from '@/components/app/ListToolbar';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import {
+  ariaSort,
+  type ColumnSort,
+  SortHeader,
+  sortDirection,
+} from '@/components/app/SortHeader';
 import { WorkspaceCell } from '@/components/app/WorkspaceCell';
 import { SkeletonList } from '@/components/ui/feedback';
 import { Menu } from '@/components/ui/Menu';
@@ -25,7 +27,7 @@ import {
 import { groupName } from './reviewText';
 
 /** Learning → Past reviews: finished review sessions in the Files table
- * style, with the list pages' sort menu and filter. */
+ * style, with the list pages' filter; every column header sorts. */
 export function PastReviews() {
   const search = useSearch({ strict: false }) as PastReviewsSearch;
   const navigate = useNavigate();
@@ -53,12 +55,13 @@ export function PastReviews() {
   const { data: overview } = useReviewOverview({ errorBoundary: false });
   const revealRef = useLoadingReveal(isLoading);
   const rows = data?.pages.flatMap((page) => page.items) ?? [];
-  const sorts: SortOption<PastReviewSort>[] = [
-    { icon: 'clock', label: m.past_sort_newest(), value: 'date' },
-    { icon: 'quiz', label: m.past_sort_quiz(), value: 'quiz' },
-    { icon: 'flashcards', label: m.past_sort_cards(), value: 'cards' },
-    { icon: 'schedule', label: m.past_sort_time(), value: 'time' },
-  ];
+  const sorting: ColumnSort<PastReviewSort> = {
+    ascending: params.dir === 'asc',
+    ascendingFirst: ['workspace', 'chapter', 'status'],
+    onSortChange: (next, asc) =>
+      setSearch(sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)),
+    sort,
+  };
   const again = (r: PastReview) =>
     navigate({
       params: { workspaceId: r.workspaceId },
@@ -72,50 +75,38 @@ export function PastReviews() {
     });
 
   return (
-    <div className="flex flex-col">
-      {/* Lifted so the toolbar's labels start at the table's edge; nudged
-       * left over the plain table, whose text has no inset. */}
-      <div className="-mx-4 -translate-x-0.5 sm:-mx-6 xl:translate-x-0">
-        <ListToolbar
-          ascending={params.dir === 'asc'}
-          filters={[
-            {
-              emptyLabel: m.create_filter_no_workspaces(),
-              key: 'workspace',
-              label: m.files_filter_workspace(),
-              onToggle: (value) =>
-                setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
-              options: (overview?.workspaces ?? []).map((ws) => ({
-                label: ws.name,
-                value: ws.workspaceId,
-              })),
-              selected: workspaceIds,
-            },
-            {
-              key: 'has',
-              label: m.past_filter_has(),
-              onToggle: (value) =>
-                setSearch({ has: csv(toggleValue(has, value)) }),
-              options: [
-                { label: m.past_has_quiz(), value: 'quiz' },
-                { label: m.past_has_cards(), value: 'flashcards' },
-              ],
-              selected: has,
-            },
-          ]}
-          onResetFilters={() =>
-            setSearch({ has: undefined, workspace: undefined })
-          }
-          onSortChange={(next, asc) =>
-            setSearch(
-              sortSearch('pastReviews', next, asc, PAST_REVIEW_SORT_DEFAULT)
-            )
-          }
-          sort={sort}
-          sorts={sorts}
-        />
-      </div>
-      <div className="pt-2">
+    <>
+      <ListToolbar
+        filters={[
+          {
+            emptyLabel: m.create_filter_no_workspaces(),
+            key: 'workspace',
+            label: m.files_filter_workspace(),
+            onToggle: (value) =>
+              setSearch({ workspace: csv(toggleValue(workspaceIds, value)) }),
+            options: (overview?.workspaces ?? []).map((ws) => ({
+              label: ws.name,
+              value: ws.workspaceId,
+            })),
+            selected: workspaceIds,
+          },
+          {
+            key: 'has',
+            label: m.past_filter_has(),
+            onToggle: (value) =>
+              setSearch({ has: csv(toggleValue(has, value)) }),
+            options: [
+              { label: m.past_has_quiz(), value: 'quiz' },
+              { label: m.past_has_cards(), value: 'flashcards' },
+            ],
+            selected: has,
+          },
+        ]}
+        onResetFilters={() =>
+          setSearch({ has: undefined, workspace: undefined })
+        }
+      />
+      <div className="w-full shrink-0 grow px-2.5 pt-2 pb-6 sm:px-4">
         {fetchStatus === 'paused' && !data ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -129,15 +120,21 @@ export function PastReviews() {
             <div className="xl:hidden">
               <BillingTable
                 columns={[
-                  { id: 'date', label: m.quiz_col_date() },
+                  { id: 'date', label: m.quiz_col_date(), sort: 'date' },
                   {
                     clamp: true,
                     id: 'workspace',
                     label: m.quiz_col_workspace(),
+                    sort: 'workspace',
                   },
-                  { clamp: true, id: 'chapter', label: m.past_col_chapter() },
-                  { id: 'quiz', label: m.past_col_quiz() },
-                  { id: 'cards', label: m.past_col_cards() },
+                  {
+                    clamp: true,
+                    id: 'chapter',
+                    label: m.past_col_chapter(),
+                    sort: 'chapter',
+                  },
+                  { id: 'quiz', label: m.past_col_quiz(), sort: 'quiz' },
+                  { id: 'cards', label: m.past_col_cards(), sort: 'cards' },
                   { align: 'right', id: 'menu', label: '' },
                 ]}
                 rows={rows.map((r) => ({
@@ -153,17 +150,31 @@ export function PastReviews() {
                   },
                   key: r.id,
                 }))}
+                sorting={sorting}
               />
             </div>
             <div className="hidden overflow-hidden rounded-card border border-line xl:block">
-              <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(10rem,1.6fr)_minmax(10rem,1.6fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(8.5rem,1fr)_40px] bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
-                <div>{m.quiz_col_date()}</div>
-                <div>{m.quiz_col_workspace()}</div>
-                <div>{m.past_col_chapter()}</div>
-                <div>{m.past_col_quiz()}</div>
-                <div>{m.past_col_cards()}</div>
-                <div>{m.past_col_time()}</div>
-                <div>{m.past_col_status()}</div>
+              <div className="grid grid-cols-[minmax(7rem,1fr)_minmax(10rem,1.6fr)_minmax(10rem,1.6fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(5rem,1fr)_minmax(8.5rem,1fr)_40px] items-center bg-surface-hover-bg py-2.5 pr-2 pl-4 font-bold text-fg-muted text-xs uppercase tracking-wide *:pr-4">
+                {(
+                  [
+                    ['date', m.quiz_col_date()],
+                    ['workspace', m.quiz_col_workspace()],
+                    ['chapter', m.past_col_chapter()],
+                    ['quiz', m.past_col_quiz()],
+                    ['cards', m.past_col_cards()],
+                    ['time', m.past_col_time()],
+                    ['status', m.past_col_status()],
+                  ] as const
+                ).map(([value, label]) => (
+                  <div
+                    aria-sort={ariaSort(sortDirection(sorting, value))}
+                    className="min-w-0"
+                    key={value}
+                    role="columnheader"
+                  >
+                    <SortHeader label={label} sorting={sorting} value={value} />
+                  </div>
+                ))}
                 <div />
               </div>
               {rows.map((r) => (
@@ -179,7 +190,7 @@ export function PastReviews() {
           </div>
         )}
       </div>
-    </div>
+    </>
   );
 }
 

@@ -1753,7 +1753,11 @@ export const handlers = [
                 ? f.sizeBytes
                 : sort === 'kind'
                   ? f.kind
-                  : f.addedAt,
+                  : sort === 'workspace'
+                    ? (db.workspaces
+                        .find((ws) => ws.id === f.workspaceId)
+                        ?.name.toLowerCase() ?? '')
+                    : f.addedAt,
           asc
         )
       );
@@ -1928,7 +1932,9 @@ export const handlers = [
                 ? mt.kind
                 : sort === 'created'
                   ? mt.createdAt
-                  : mt.updatedAt,
+                  : sort === 'workspace'
+                    ? (mt.workspaceName ?? '').toLowerCase()
+                    : mt.updatedAt,
           asc
         )
       );
@@ -2853,19 +2859,28 @@ export const handlers = [
   http.get('/api/attempts', ({ request }) => {
     const params = new URL(request.url).searchParams;
     const workspaces = params.get('workspaceId')?.split(',') ?? [];
-    const score = (a: Attempt) => (a.total ? a.correct / a.total : 0);
+    const sort = params.get('sort');
     const list = db.attempts
       .filter(
         (a) =>
           !workspaces.length ||
           (a.workspaceId !== null && workspaces.includes(a.workspaceId))
       )
-      .sort((a, b) =>
-        params.get('sort') === 'score'
-          ? score(b) - score(a)
-          : +new Date(b.takenAt) - +new Date(a.takenAt)
+      .sort(
+        sortBy(
+          (a: Attempt) =>
+            sort === 'score'
+              ? a.total
+                ? a.correct / a.total
+                : 0
+              : sort === 'quiz'
+                ? a.quizName.toLowerCase()
+                : sort === 'workspace'
+                  ? a.workspaceName.toLowerCase()
+                  : a.takenAt,
+          params.get('dir') === 'asc'
+        )
       );
-    if (params.get('dir') === 'asc') list.reverse();
     const offset = Number(params.get('offset') ?? 0);
     const limit = Number(params.get('limit') ?? 30);
     return HttpResponse.json({

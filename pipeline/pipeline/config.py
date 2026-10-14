@@ -10,6 +10,7 @@ namespaces, no working directory, no graph extension.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 
 
 def _env(key: str, default: str = "") -> str:
@@ -31,6 +32,21 @@ def env_name_for_provider(provider_slug: str) -> str:
 
 def platform_api_key(provider_slug: str) -> str:
     return _env(env_name_for_provider(provider_slug))
+
+
+def uat_only_flag(key: str, environ: Mapping[str, str] = os.environ) -> bool:
+    """A UAT-only switch: exactly ``true`` or unset, and refused unless the
+    process reports to Sentry as ``uat``. UAT keeps APP_ENV=production to
+    exercise production checks, so SENTRY_ENVIRONMENT is the only name it has;
+    the deployment renderer also refuses the key outside UAT."""
+    value = environ.get(key, "").strip()
+    if not value:
+        return False
+    if value != "true":
+        raise ValueError(f"{key} must be true or unset")
+    if environ.get("SENTRY_ENVIRONMENT", "").strip() != "uat":
+        raise ValueError(f"{key} is allowed only with SENTRY_ENVIRONMENT=uat")
+    return True
 
 
 class Config:
@@ -182,6 +198,10 @@ class Config:
     # open-ended: the cost of a wrong plan is bounded. Each round re-sends the
     # whole transcript, so this is the main lever on chat spend.
     agent_max_steps: int = int(_env("CAPY_AGENT_MAX_STEPS", "12"))
+    # UAT only (retrieval/scripted.py): a chat message that starts with the
+    # scripted-tools marker takes its model responses from its own script. An
+    # invalid value, or the switch outside UAT, stops every pipeline process.
+    uat_scripted_tools: bool = uat_only_flag("RETRIEVAL_UAT_SCRIPTED_TOOLS")
     # Pre-model gathering budget when no catalog model has been selected yet.
     # Provider calls use the selected catalog row's required context window.
     llm_input_budget_tokens: int = int(_env("CAPY_LLM_INPUT_BUDGET_TOKENS", "50000"))

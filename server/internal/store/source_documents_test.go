@@ -1101,10 +1101,10 @@ func TestWorkspaceSourceIndexCountsAndSettings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err = s.pool.Exec(ctx, `UPDATE files SET index_limit='tabular_cell_limit' WHERE id=$1`, limited.ID); err != nil {
+	if _, err = s.pool.Exec(ctx, `UPDATE files SET index_limit='tabular_column_limit' WHERE id=$1`, limited.ID); err != nil {
 		t.Fatal(err)
 	}
-	if limited, err = s.GetFile(ctx, limited.ID); err != nil || limited.IndexLimit == nil || *limited.IndexLimit != "tabular_cell_limit" {
+	if limited, err = s.GetFile(ctx, limited.ID); err != nil || limited.IndexLimit == nil || *limited.IndexLimit != "tabular_column_limit" {
 		t.Fatalf("index limit not read: %+v %v", limited, err)
 	}
 	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "below-threshold")

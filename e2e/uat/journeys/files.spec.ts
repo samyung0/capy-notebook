@@ -1,6 +1,7 @@
 /* biome-ignore-all lint/suspicious/noMisplacedAssertion: The cell assertion helper executes only inside these tests. */
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import { crc32, deflateSync } from 'node:zlib';
 import { read as readWorkbook } from 'xlsx';
 import { m } from '../../i18n';
 import {
@@ -22,6 +23,7 @@ import {
   whenReady,
   workspace,
 } from './files';
+import { captionedByDefault } from './models';
 import {
   assertPreserved,
   editOffice,
@@ -167,10 +169,10 @@ function assertCells(bytes: Uint8Array) {
   assert.equal(workbook.Sheets.Grades.C2.f, 'B2*2');
 }
 
-test('text: browser edit automatically publishes durable UTF-8 source', async ({
+test('text and image: browser edit automatically publishes durable UTF-8 source; an image is captioned', async ({
   run,
 }) => {
-  test.setTimeout(1_200_000);
+  test.setTimeout(1_800_000);
   const workspaceId = await workspace(run, 'text');
   const marker = `UAT_${randomUUID().replaceAll('-', '')}`;
   const fileId = await upload(
@@ -211,7 +213,41 @@ test('text: browser edit automatically publishes durable UTF-8 source', async ({
   await openFile(run, run.owner, workspaceId, fileId);
   assert.equal((await savedExport(run, fileId)).text, edited);
   await trashRestorePurge(run, fileId);
+
+  // A standalone image is captioned (one real call on the captioning slot's
+  // default), then indexed like text. Its bytes are new each run, so no
+  // earlier caption or donor stands in for the call.
+  const image = await upload(run, workspaceId, 'swatch.png', swatch(marker));
+  await processed(run, image, []);
+  await captionedByDefault(run, image);
 });
+
+/** A 96 px PNG of two colour bands taken from the marker's hash. */
+function swatch(marker: string) {
+  const hash = createHash('sha256').update(marker).digest();
+  const size = 96;
+  const row = Buffer.alloc(1 + size * 3);
+  for (let x = 0; x < size; x++)
+    hash.copy(row, 1 + x * 3, x < size / 2 ? 0 : 3, x < size / 2 ? 3 : 6);
+  const chunk = (type: string, data: Buffer) => {
+    const body = Buffer.concat([Buffer.from(type, 'latin1'), data]);
+    const out = Buffer.alloc(body.length + 8);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(crc32(body), body.length + 4);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(size, 0);
+  header.writeUInt32BE(size, 4);
+  header.set([8, 2, 0, 0, 0], 8); // 8-bit RGB
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', header),
+    chunk('IDAT', deflateSync(Buffer.concat(new Array(size).fill(row)))),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
 
 test('digital PDF: reader annotations are private and source bytes stay unchanged', async ({
   run,
@@ -283,20 +319,20 @@ test('digital PDF: reader annotations are private and source bytes stay unchange
   await trashRestorePurge(run, fileId);
 });
 
-test('oversized delimited structure: the file opens unindexed and never publishes an index', async ({
+test('CSV row over the column cap: the file opens unindexed and never publishes an index', async ({
   run,
 }) => {
   test.setTimeout(600_000);
   const workspaceId = await workspace(run, 'invalid-csv');
   const bytes = await fixture(
-    'delimiter-limit.csv',
+    'column-limit.csv',
     `UAT_${randomUUID().replaceAll('-', '')}`
   );
-  const fileId = await upload(run, workspaceId, 'delimiter-limit.csv', bytes);
+  const fileId = await upload(run, workspaceId, 'column-limit.csv', bytes);
   // Over an ingest limit the file is not failed: it is ready, unindexed, and
   // names the limit.
   const row = await run.poll(
-    'CSV over the cell limit settles',
+    'CSV over the column limit settles',
     () => fileRow(run, fileId),
     (current) => {
       assert.notEqual(current.status, 'failed', `file ${fileId} failed`);
@@ -305,7 +341,7 @@ test('oversized delimited structure: the file opens unindexed and never publishe
     300_000
   );
   assert.equal(row.indexed, false);
-  assert.equal(row.index_limit, 'tabular_cell_limit');
+  assert.equal(row.index_limit, 'tabular_column_limit');
   // It still opens: the owner gets its bytes and the file page says why it is
   // not searchable.
   const links = object(await api(run.owner, `/api/files/${fileId}/links`));
@@ -341,8 +377,8 @@ test('oversized delimited structure: the file opens unindexed and never publishe
     attempts.some(
       (attempt) =>
         attempt.status === 'failed' &&
-        attempt.error_code === 'tabular_cell_limit' &&
-        attempt.job_error === 'delimited table exceeds the cell limit'
+        attempt.error_code === 'tabular_column_limit' &&
+        attempt.job_error === 'delimited table exceeds the column limit'
     )
   );
   for (const attempt of attempts) {

@@ -267,7 +267,7 @@ function BlockDiscussionThreads({
               style={{ marginTop: triggerTop }}
               variant="ghost-hover"
             >
-              <EditorIcon className="size-4 shrink-0" name="comment" />
+              <EditorIcon className="size-4.5 shrink-0" name="comment" />
               <span className="font-semibold text-xs">
                 {discussions.length}
               </span>

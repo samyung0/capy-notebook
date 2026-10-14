@@ -43,15 +43,6 @@
   --pptx-control-font-weight: 500;
 }
 
-/* Toolbar icons at the scale (pptxIcons draws 16px); chevrons and menus keep
-   their size. */
-[data-testid="pptx-formatting-toolbar"]
-  button
-  svg[width="16"]:not([role="menu"] *) {
-  width: var(--toolbar-icon);
-  height: var(--toolbar-icon);
-}
-
 .pptx-viewer {
   display: flex;
   flex-direction: column;
@@ -136,8 +127,8 @@
 .pptx-viewer-pager button {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  width: var(--toolbar-button);
+  height: var(--toolbar-button);
   color: var(--pptx-text);
   cursor: pointer;
   border-radius: var(--radius-button);

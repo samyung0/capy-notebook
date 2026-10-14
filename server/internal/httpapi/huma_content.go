@@ -47,7 +47,7 @@ type filesListInput struct {
 	Kind        string `query:"kind" doc:"Comma-separated file kinds"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the caller's workspaces; member: also every workspace they are a member of"`
-	Sort        string `query:"sort" enum:"added,name,size,kind" default:"added"`
+	Sort        string `query:"sort" enum:"added,name,size,kind,workspace" default:"added"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
 	Cursor      string `query:"cursor" doc:"Opaque cursor from the previous page"`

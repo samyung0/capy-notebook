@@ -107,6 +107,7 @@ import {
 import type { IconSvgElement } from '@hugeicons/react';
 import type { ComponentProps } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
+import { officeIconSize } from './officeIconSize';
 
 // Capy's own icons where Hugeicons has none, as in Icon.tsx.
 const PILCROW = ['M10 3v11', 'M14 3v11', 'M16 3H9.5a3.5 3.5 0 000 7H10'];
@@ -268,7 +269,7 @@ const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
   wrap_text: TextWrapIcon,
 };
 
-/** Capy's toolbars and menus draw 16px icons; smaller requests stay smaller.
+/** Capy's toolbars and menus draw 18px icons (officeIconSize).
  * The empty and error placeholders keep the size the editor asks for. */
 export const docxIcons = Object.fromEntries(
   Object.entries(ICONS).map(([name, icon]) => [
@@ -281,7 +282,9 @@ export const docxIcons = Object.fromEntries(
       <HugeIcon
         className={className}
         icon={icon}
-        size={name.startsWith('placeholder-') ? size : Math.min(size, 16)}
+        size={
+          name.startsWith('placeholder-') ? size : officeIconSize(name, size)
+        }
         style={style}
       />
     ),

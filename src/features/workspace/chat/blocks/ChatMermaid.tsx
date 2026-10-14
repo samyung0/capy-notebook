@@ -17,12 +17,16 @@ export function ChatMermaid({ props }: { props: MermaidProps }) {
   const settled = useDebounced(code, SETTLE_MS);
   const drawn = streaming ? settled : code;
   return (
-    <figure className="my-3 rounded-card border border-line px-3 py-2.5">
-      <figcaption className="mb-1.5 font-semibold text-xs">
+    <figure className="flex flex-col gap-1.5">
+      <figcaption className="font-semibold text-[13.5px]">
         {props.title}
       </figcaption>
       {drawn ? (
-        <Mermaid code={drawn} onError={streaming ? ignore : undefined} />
+        <Mermaid
+          className="[&>svg]:max-h-[min(60vh,32rem)]"
+          code={drawn}
+          onError={streaming ? ignore : undefined}
+        />
       ) : (
         <div className="grid h-40 place-items-center text-fg-muted">
           <span className="text-xs">{m.mermaid_rendering()}</span>

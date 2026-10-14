@@ -1,32 +1,127 @@
-import { Link, type LinkProps } from '@tanstack/react-router';
-import type { ComponentProps, ReactNode } from 'react';
+import { Link, type LinkProps, useNavigate } from '@tanstack/react-router';
+import {
+  type ComponentProps,
+  createContext,
+  type ReactNode,
+  useContext,
+  useRef,
+} from 'react';
 import { Card } from '@/components/ui/Card';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
-import { FileSelectionMark } from '@/features/files/FileSelectionActions';
+import type { PickContext } from '@/features/files/useFileSelection';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { iconUrl } from '@/lib/icon-catalog';
 import type { ListView } from './ListToolbar';
+import {
+  ariaSort,
+  type ColumnSort,
+  SortHeader,
+  sortDirection,
+} from './SortHeader';
 import { type Thumbnail, ThumbnailPanel } from './ThumbnailPanel';
 import { WorkspaceCell } from './WorkspaceCell';
 
-/** Grid card and list row shared by the Create, Files and Trash pages.
+/** Grid card and list row shared by the Files, Blocks and Trash lists and the
+ * Dashboard's recents.
  * Presentation only: the page owns navigation, actions and dialogs. */
 
-/** Present while the page is in selection mode; replaces the link and the
- * actions with a toggle. */
-export interface ItemSelection {
-  busy: boolean;
-  label: string;
-  onToggle: () => void;
-  selected: boolean;
-}
+/** The page's selection (useFileSelection's pickContext) for its pickable
+ * items. With a mouse a click selects just that item, Cmd/Ctrl-click adds or
+ * removes it, Shift-click picks a range and a double click opens; on touch a tap opens, a long press
+ * selects, and while anything is selected a tap adds or removes. A context,
+ * so a pick re-renders only the overlays, not every card. */
+export const ItemPick = createContext<PickContext | null>(null);
 
-/** Where an item's ⋯ menu opens: a grid card's trigger sits mid-grid, so the
- * menu runs rightwards from it like the workspace cards'; a list row's sits at
- * the row's right end. */
-export function itemMenuAlign(view: ListView): 'start' | 'end' {
-  return view === 'grid' ? 'start' : 'end';
+const LONG_PRESS_MS = 450;
+const PRESS_SLOP_PX = 10;
+
+/** The pick-and-open button laid over a selectable item. */
+function PickOverlay({
+  pickKey,
+  label,
+  link,
+  selected,
+}: {
+  pickKey: string;
+  label: string;
+  link?: LinkProps;
+  selected: boolean;
+}) {
+  const selection = useContext(ItemPick);
+  const navigate = useNavigate();
+  const press = useRef<{
+    timer?: number;
+    x: number;
+    y: number;
+    held: boolean;
+    touch: boolean;
+  }>({ held: false, touch: false, x: 0, y: 0 });
+  const open = () => {
+    if (link) void navigate(link);
+  };
+  const release = () => window.clearTimeout(press.current.timer);
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={selected}
+      className="absolute inset-0 z-10 cursor-default select-none rounded-[inherit] [-webkit-touch-callout:none] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
+      disabled={selection?.busy}
+      onClick={(event) => {
+        const { held, touch } = press.current;
+        press.current.held = false;
+        if (touch) {
+          if (held) return;
+          if (selection?.active) selection.pick(pickKey, 'toggle');
+          else open();
+          return;
+        }
+        selection?.pick(
+          pickKey,
+          event.shiftKey
+            ? 'range'
+            : event.metaKey || event.ctrlKey
+              ? 'toggle'
+              : 'only'
+        );
+      }}
+      onContextMenu={(event) => {
+        if (press.current.touch) event.preventDefault();
+      }}
+      onDoubleClick={() => {
+        if (!press.current.touch) open();
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter') return;
+        event.preventDefault();
+        open();
+      }}
+      onPointerCancel={release}
+      onPointerDown={(event) => {
+        release();
+        const touch = event.pointerType === 'touch';
+        press.current = {
+          held: false,
+          touch,
+          x: event.clientX,
+          y: event.clientY,
+        };
+        if (!touch) return;
+        press.current.timer = window.setTimeout(() => {
+          press.current.held = true;
+          selection?.pick(pickKey, 'toggle');
+        }, LONG_PRESS_MS);
+      }}
+      onPointerMove={(event) => {
+        const { x, y } = press.current;
+        if (Math.hypot(event.clientX - x, event.clientY - y) > PRESS_SLOP_PX)
+          release();
+      }}
+      onPointerUp={release}
+      type="button"
+    />
+  );
 }
 
 export function ItemCard({
@@ -39,55 +134,58 @@ export function ItemCard({
   meta,
   link,
   actions,
-  selection,
+  pickKey,
+  selected = false,
   thumbnail,
   dense = false,
 }: {
   view: ListView;
   icon: FileIconName;
   title: string;
-  /** List view only, like `details`. */
+  /** The list's column; the grid card's bottom line, before `meta`. */
   workspace?: string;
   workspaceIconId?: string;
   /** Question or card count, file size. */
   details?: string;
-  /** Updated, added or expiry line: the grid card's one hint line. */
+  /** Updated, added or expiry line: the grid card's bottom line. */
   meta: string;
   /** Grid view only. */
   thumbnail?: Thumbnail;
-  /** Grid view only: the dashboard's narrow column, with one-line titles
-   * and a shorter thumbnail. */
+  /** Grid view only: the dashboard's cards, with a shorter thumbnail. */
   dense?: boolean;
   link?: LinkProps;
   actions?: ReactNode;
-  selection?: ItemSelection;
+  /** Makes the item pickable under an ItemPick provider (Files, Blocks,
+   * Trash); the key the page's selection knows it by. */
+  pickKey?: string;
+  selected?: boolean;
 }) {
-  const selected = !!selection?.selected;
-  const overlay = selection && (
-    <button
-      aria-label={selection.label}
-      aria-pressed={selection.selected}
-      className="absolute inset-0 z-10 rounded-[inherit] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-action focus-visible:ring-inset"
-      disabled={selection.busy}
-      onClick={selection.onToggle}
-      type="button"
+  const pickable = pickKey !== undefined;
+  const overlay = pickable && (
+    <PickOverlay
+      label={m.files_select_item({ name: title })}
+      link={link}
+      pickKey={pickKey}
+      selected={selected}
     />
   );
+  // A pickable item opens from its overlay, so its title is no link.
+  const titleLink = pickable ? undefined : link;
   if (view === 'list') {
     return (
       <div
         className={cn(
           'relative flex flex-col gap-1 border-divider border-t px-4 py-2.5 text-sm hover:bg-surface-hover-bg md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3',
-          selected && 'bg-surface-hover-bg'
+          selected && 'bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
         )}
+        data-item
       >
         {overlay}
         <div className="flex min-w-0 items-center gap-3.5">
-          {selection && <FileSelectionMark selected={selected} />}
           <FileIcon className="size-4 -translate-y-px" name={icon} />
           <Title
             className="truncate focus-visible:after:ring-inset"
-            link={selection ? undefined : link}
+            link={titleLink}
           >
             {title}
           </Title>
@@ -100,63 +198,65 @@ export function ItemCard({
         <p>{details}</p>
         <p>{meta}</p>
         <div className="relative z-10 -my-2 flex justify-self-end">
-          {!selection && actions}
+          {actions}
         </div>
       </div>
     );
   }
-  // Card A: the thumbnail on top, then the icon and title, then one hint
-  // line beside the actions, so the title gets the full width. One-line
-  // titles cut mid-word; below 200px wide (phones, the dashboard's two
-  // columns) non-dense titles wrap to two lines and the spacing tightens.
+  // Drive's card: icon, title and ⋯ on top, the thumbnail, then the hint.
+  // One-line titles keep every card in a row the same height.
   return (
     <Card
       border="solid"
       className={cn(
         '@container relative gap-0 p-1.5',
-        selected && 'ring-2 ring-accent'
+        selected &&
+          'border-solid-accent-1 bg-tint-accent-1/60 hover:bg-tint-accent-1/60'
       )}
-      interactive={!!link || !!selection}
+      data-item
+      // A selectable card picks on click, so it shows no link affordance
+      // (pointer, lift): a click must not look like it opens the file.
+      interactive={!!link && !pickable}
     >
       {overlay}
-      <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:px-2.5 px-2 @min-[200px]:pt-2.5 pt-2 @min-[200px]:pb-2 pb-1.5">
-        <FileIcon
-          className={cn(
-            'size-4',
-            !dense &&
-              '@min-[200px]:mt-0 mt-0.5 self-start @min-[200px]:self-center'
-          )}
-          name={icon}
-        />
+      <div className="flex min-w-0 items-center gap-2 pb-1.5 pl-1.5">
+        <FileIcon className="size-4 shrink-0" name={icon} />
         <Title
-          className={cn(
-            'wrap-anywhere font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card',
-            dense ? 'truncate' : 'line-clamp-2 @min-[200px]:truncate'
-          )}
-          link={selection ? undefined : link}
+          className="min-w-0 flex-1 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card"
+          link={titleLink}
         >
           {title}
         </Title>
-        {/* The actions sit on the hint line, so they line up with it even
-            when a neighbour's longer title stretches the card. A tighter
-            button whose hover fill feathers out keeps off the title. */}
-        <div className="relative col-start-2 min-w-0">
-          <p className="truncate @min-[200px]:pr-[26px] pr-[22px] text-fg-muted text-xs">
-            {meta}
-          </p>
-          {!selection && actions && (
-            <div className="absolute top-1/2 -right-1 @min-[200px]:-right-0.5 z-10 -translate-y-[calc(50%+1px)] [&_button:hover]:shadow-[0_0_6px_3px_var(--color-surface-hover-bg)] [&_button]:p-1.5">
-              {actions}
-            </div>
-          )}
-        </div>
+        {actions ? (
+          <div className="relative z-10 -my-0.5 shrink-0 [&_button]:p-1.5">
+            {actions}
+          </div>
+        ) : (
+          <span className="h-7" />
+        )}
       </div>
-      {selection && (
-        <span className="absolute @min-[200px]:right-3.5 right-2.5 @min-[200px]:bottom-4 bottom-3">
-          <FileSelectionMark selected={selected} />
-        </span>
-      )}
+      <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
+      {/* A fixed-height line, so cards with and without a workspace match. */}
+      <div className="box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-1.5 pb-1 text-fg-muted text-xs">
+        {workspace && (
+          <>
+            {workspaceIconId && (
+              <img
+                alt=""
+                className="size-3.5 shrink-0 rounded-[3px]"
+                height={14}
+                src={iconUrl(workspaceIconId)}
+                width={14}
+              />
+            )}
+            <span className="min-w-0 truncate">{workspace}</span>
+            <span aria-hidden className="shrink-0">
+              ·
+            </span>
+          </>
+        )}
+        <span className="shrink-0 whitespace-nowrap">{meta}</span>
+      </div>
     </Card>
   );
 }
@@ -177,7 +277,8 @@ function Title({
       {...link}
       className={cn(
         className,
-        'after:absolute after:inset-0 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action'
+        // Above the thumbnail (positioned, later in the card), under the ⋯.
+        'after:absolute after:inset-0 after:z-1 focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-action'
       )}
     >
       {children}
@@ -185,24 +286,47 @@ function Title({
   );
 }
 
+/** A list column's label, or a label that sorts the list by `sort`. */
+export type ItemColumn<S extends string> = string | { label: string; sort: S };
+
 /** Grid, or bordered list with a header row for the four text columns; the
- * fifth column holds the actions. */
-export function ItemList({
+ * fifth column holds the actions. With `sorting` the columns that name a
+ * sort order the list from the header (only from md, where it shows). */
+export function ItemList<S extends string = string>({
   view,
   columns,
+  sorting,
   children,
 }: {
   view: ListView;
-  columns: [string, string, string, string];
+  columns: [ItemColumn<S>, ItemColumn<S>, ItemColumn<S>, ItemColumn<S>];
+  sorting?: ColumnSort<S>;
   children: ReactNode;
 }) {
   if (view === 'grid') return <ItemGrid>{children}</ItemGrid>;
   return (
     <div className="overflow-hidden rounded-card border border-line">
-      <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:gap-3">
-        {columns.map((label) => (
-          <div key={label}>{label}</div>
-        ))}
+      <div className="hidden bg-surface-hover-bg px-4 py-2.5 font-bold text-fg-muted text-xs uppercase tracking-wide md:grid md:grid-cols-[minmax(200px,2.4fr)_minmax(160px,2fr)_1.5fr_1fr_40px] md:items-center md:gap-3">
+        {columns.map((column) =>
+          typeof column === 'string' || !sorting ? (
+            <div key={typeof column === 'string' ? column : column.label}>
+              {typeof column === 'string' ? column : column.label}
+            </div>
+          ) : (
+            <div
+              aria-sort={ariaSort(sortDirection(sorting, column.sort))}
+              className="min-w-0"
+              key={column.label}
+              role="columnheader"
+            >
+              <SortHeader
+                label={column.label}
+                sorting={sorting}
+                value={column.sort}
+              />
+            </div>
+          )
+        )}
         <div />
       </div>
       {children}
@@ -210,12 +334,13 @@ export function ItemList({
   );
 }
 
-/** Card A's grid: two columns on phones, 180px columns from `sm`. */
-function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
+/** The card grid: as many columns as fit at 150px (180px from `sm`), each
+ * card at most 220px wide and centred in a column that grows past that. */
+export function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'grid w-full grid-cols-2 gap-2.5 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] sm:gap-3',
+        'grid w-full grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] sm:gap-4 [&>*]:w-full [&>*]:max-w-55 [&>*]:justify-self-center',
         className
       )}
       {...rest}
@@ -223,9 +348,8 @@ function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
   );
 }
 
-/** Loading cards the size of card A, so the grid does not shift when rows
- * arrive. The title bar takes two lines below 200px wide, as titles wrap
- * there, except on `dense` cards. */
+/** Loading cards the size of the real ones, so the grid does not shift
+ * when rows arrive. */
 export function ItemSkeletonGrid({
   count,
   className,
@@ -242,27 +366,18 @@ export function ItemSkeletonGrid({
           className="@container rounded-card border border-line bg-surface p-1.5"
           key={i}
         >
+          <div className="flex h-7 items-center gap-2 pb-1.5 pl-1.5">
+            <Skeleton className="size-4 shrink-0" />
+            <Skeleton className="h-3.5 w-2/3" />
+          </div>
           <Skeleton
             className={cn(
               'rounded-[13px]',
               dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
             )}
           />
-          <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center @min-[200px]:gap-x-[9px] gap-x-[7px] gap-y-px @min-[200px]:px-2.5 px-2 @min-[200px]:pt-2.5 pt-2 @min-[200px]:pb-2 pb-1.5">
-            <Skeleton
-              className={cn(
-                'size-4',
-                !dense &&
-                  '@min-[200px]:mt-0 mt-0.5 self-start @min-[200px]:self-center'
-              )}
-            />
-            <Skeleton
-              className={cn(
-                '@min-[200px]:text-[14.5px] text-[13.5px] leading-tight',
-                dense ? 'h-[1lh]' : '@min-[200px]:h-[1lh] h-[2lh]'
-              )}
-            />
-            <Skeleton className="col-start-2 h-[1lh] w-1/2 text-xs" />
+          <div className="box-content flex h-5 items-center px-1.5 pt-1.5 pb-1">
+            <Skeleton className="h-3 w-1/2" />
           </div>
         </div>
       ))}

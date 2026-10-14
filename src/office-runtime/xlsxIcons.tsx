@@ -43,6 +43,7 @@ import {
 import type { IconSvgElement } from '@hugeicons/react';
 import type { ComponentProps } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
+import { officeIconSize } from './officeIconSize';
 
 /**
  * Every icon xlsx-react draws, from Capy's set: the same icon as Icon.tsx and
@@ -95,12 +96,12 @@ export const XLSX_ICONS: Record<keyof IconSet, IconSvgElement> = {
   wrap: TextWrapIcon,
 };
 
-/** Capy's toolbars and menus draw 16px icons; smaller requests stay smaller. */
+/** Capy's toolbars and menus draw 18px icons (officeIconSize). */
 export const xlsxIcons = Object.fromEntries(
   Object.entries(XLSX_ICONS).map(([name, icon]) => [
     name,
     ({ size = 16, style }: ComponentProps<IconSet[keyof IconSet]>) => (
-      <HugeIcon icon={icon} size={Math.min(size, 16)} style={style} />
+      <HugeIcon icon={icon} size={officeIconSize(name, size)} style={style} />
     ),
   ])
 ) as IconSet;

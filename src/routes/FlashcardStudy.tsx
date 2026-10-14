@@ -156,7 +156,7 @@ function Study({ setId }: { setId: string }) {
         )
       }
       provenance={set.provenance}
-      topBar={<TopInsetBar className="hidden shrink-0 lg:flex" />}
+      topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
       trail={[
         blockHomeCrumb(set),
         blockKindCrumb(m.editor_flashcards(), 'flashcards'),

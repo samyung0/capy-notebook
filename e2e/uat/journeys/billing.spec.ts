@@ -1,11 +1,13 @@
 import { expect } from '@playwright/test';
 import {
+  advanceStripeClock,
   arrayField,
   claimStripeCustomer,
   cleanupStripeTestClock,
   expireStripeCheckout,
   object,
   stringField,
+  stripePeriodEnd,
   stripeRequest,
   verifyStripeSandbox,
 } from './providers';
@@ -37,29 +39,6 @@ async function subscriptionProjection(
       rows.length === 1 &&
       rows[0].status === status &&
       rows[0].plan_tier === plan,
-    120_000
-  );
-}
-
-function periodEnd(subscription: Record<string, unknown>) {
-  const item = object(arrayField(subscription.items, 'data')[0]);
-  if (typeof item.current_period_end !== 'number')
-    throw new Error('Stripe subscription item omitted current_period_end');
-  return item.current_period_end;
-}
-
-async function advanceClock(run: UatRun, clockId: string, timestamp: number) {
-  await stripeRequest(
-    run.env,
-    `/v1/test_helpers/test_clocks/${clockId}/advance`,
-    'POST',
-    { frozen_time: String(timestamp) },
-    `${run.id}-${clockId}-${timestamp}`
-  );
-  await run.poll(
-    'Stripe clock ready',
-    () => stripeRequest(run.env, `/v1/test_helpers/test_clocks/${clockId}`),
-    (clock) => clock.status === 'ready',
     120_000
   );
 }
@@ -234,8 +213,8 @@ test('sandbox paid subscription, renewal, deletion blocker and cancellation conv
       .status
   ).toBe(409);
 
-  const firstEnd = periodEnd(subscription);
-  await advanceClock(run, clockId, firstEnd + 1);
+  const firstEnd = stripePeriodEnd(subscription);
+  await advanceStripeClock(run, clockId, firstEnd + 1);
   const renewed = await run.poll(
     'paid renewal',
     async () => {
@@ -243,7 +222,7 @@ test('sandbox paid subscription, renewal, deletion blocker and cancellation conv
         run.env,
         `/v1/subscriptions/${subscriptionId}`
       );
-      return { end: periodEnd(current), subscription: current };
+      return { end: stripePeriodEnd(current), subscription: current };
     },
     (value) => value.subscription.status === 'active' && value.end > firstEnd,
     120_000
@@ -256,7 +235,7 @@ test('sandbox paid subscription, renewal, deletion blocker and cancellation conv
   });
   // Renewal first creates a draft invoice. Move the frozen clock through
   // Stripe's one-hour finalization window before waiting for collection.
-  await advanceClock(run, clockId, firstEnd + 3601);
+  await advanceStripeClock(run, clockId, firstEnd + 3601);
   const invoice = await run.poll(
     'renewal invoice paid',
     () => stripeRequest(run.env, `/v1/invoices/${invoiceId}`),
@@ -288,7 +267,7 @@ test('sandbox paid subscription, renewal, deletion blocker and cancellation conv
   const allowed = await actor.request('/api/account/deletion');
   expect(allowed.status).toBe(200);
   expect(object(allowed.body).canDelete).toBe(true);
-  await advanceClock(run, clockId, renewed.end + 1);
+  await advanceStripeClock(run, clockId, renewed.end + 1);
   await subscriptionProjection(run, actor, subscriptionId, 'canceled', 'free');
   const receipts = await run.poll(
     'subscription webhook receipts',

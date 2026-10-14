@@ -321,7 +321,7 @@ export function MathField({
           {displayMode && (
             <IconButton
               aria-expanded={keyboardVisible}
-              className="size-5 p-0.5"
+              className="size-6.5 p-1"
               icon="keyboard"
               label={m.question_ui_formula_keyboard()}
               onClick={toggleKeyboard}
@@ -334,7 +334,7 @@ export function MathField({
           )}
           <IconButton
             aria-haspopup="menu"
-            className="size-5 p-0.5"
+            className="size-6.5 p-1"
             icon="menu"
             label={m.question_ui_formula_menu()}
             onClick={showMenu}

@@ -135,7 +135,7 @@ describe('transfer status', () => {
         transfer,
         file({
           indexed: false,
-          indexLimit: 'tabular_cell_limit',
+          indexLimit: 'tabular_column_limit',
           status: 'ready',
         })
       )

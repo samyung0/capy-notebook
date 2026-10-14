@@ -253,9 +253,9 @@ Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
 file over a documented limit (page or scanned-page count, image pixels,
-CSV/TSV cells or searchable text) fails the job with the limit's
+CSV/TSV columns per row or searchable text) fails the job with the limit's
 attempt `error_code` (`page_limit`, `scanned_page_limit`, `image_pixel_limit`,
-`tabular_cell_limit`, `tabular_text_limit`) and logs at
+`tabular_column_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in
 [agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of

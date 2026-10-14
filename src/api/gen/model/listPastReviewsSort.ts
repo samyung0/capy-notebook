@@ -13,4 +13,7 @@ export const ListPastReviewsSort = {
   quiz: 'quiz',
   cards: 'cards',
   time: 'time',
+  workspace: 'workspace',
+  chapter: 'chapter',
+  status: 'status',
 } as const;

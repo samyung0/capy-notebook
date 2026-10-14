@@ -888,7 +888,7 @@ type PastReview struct {
 }
 
 type PastReviewParams struct {
-	Sort       string // date, quiz, cards, time
+	Sort       string // date, quiz, cards, time, workspace, chapter, status
 	Ascending  bool
 	Workspaces []string
 	Has        []string // quiz, flashcards
@@ -900,10 +900,15 @@ type PastReviewParams struct {
 // more follow.
 func (s *Store) PastReviews(ctx context.Context, userID string, p PastReviewParams) ([]PastReview, bool, error) {
 	order := map[string]string{
-		"date":  "s.started_at",
-		"quiz":  "s.qc / NULLIF(s.qt, 0)",
-		"cards": "s.kc::float / NULLIF(s.kt, 0)",
-		"time":  "s.last_answer_at - s.started_at",
+		"date":      "s.started_at",
+		"quiz":      "s.qc / NULLIF(s.qt, 0)",
+		"cards":     "s.kc::float / NULLIF(s.kt, 0)",
+		"time":      "s.last_answer_at - s.started_at",
+		"workspace": "lower(s.name)",
+		// Chapter sessions by name; Others and whole-workspace ones last.
+		"chapter": "CASE WHEN s.group_kind='chapter' THEN lower(s.chapter) END",
+		// Completed (every served item answered) before stopped, ascending.
+		"status": "s.answered < s.served",
 	}[p.Sort]
 	if order == "" {
 		order = "s.started_at"

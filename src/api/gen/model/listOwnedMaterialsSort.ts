@@ -13,4 +13,5 @@ export const ListOwnedMaterialsSort = {
   created: 'created',
   title: 'title',
   kind: 'kind',
+  workspace: 'workspace',
 } as const;

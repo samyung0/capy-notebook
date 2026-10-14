@@ -14,8 +14,8 @@ const iconButtonVariants = cva(BASE_BUTTON_STYLE, {
     size: {
       lg: 'p-2.5 [&>svg]:size-6',
       md: 'p-2.5 [&>svg]:size-5',
-      sm: 'p-2.5 [&>svg]:size-4.25',
-      xs: 'p-1 [&>svg]:size-3.5',
+      sm: 'p-2.5 [&>svg]:size-4.5',
+      xs: 'p-1 [&>svg]:size-4.5',
     },
     variant: {
       accent:

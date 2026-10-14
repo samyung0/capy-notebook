@@ -26,7 +26,7 @@ export function ToolbarPopoverButton({
   return (
     <Button
       className={cn(
-        'h-7 w-full justify-start gap-2 rounded-lg px-2 py-0 text-left font-medium leading-(--body-line-height) [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:-translate-y-px',
+        'h-7.5 w-full justify-start gap-2 rounded-lg px-2 py-0 text-left font-medium leading-(--body-line-height) [&_svg]:size-4.5 [&_svg]:shrink-0 [&_svg]:-translate-y-px',
         className
       )}
       size="sm"
@@ -52,7 +52,7 @@ export function ToolbarPopoverItem({
   return (
     <ToolbarPopoverButton aria-pressed={selected} {...props}>
       {icon && (
-        <span className="flex size-4 shrink-0 items-center justify-center">
+        <span className="flex size-4.5 shrink-0 items-center justify-center">
           {icon}
         </span>
       )}

@@ -735,12 +735,12 @@ def test_a_file_over_a_limit_publishes_a_ready_unindexed_event(monkeypatch):
         "f_1",
         "ws_1",
         "job_1",
-        "delimited table exceeds the cell limit",
+        "delimited table exceeds the column limit",
         1,
         _ingest_payload(),
         "input",
-        "tabular_cell_limit",
-        "tabular_cell_limit",
+        "tabular_column_limit",
+        "tabular_column_limit",
     )
 
     assert events == [("done", {"status": "ready", "indexed": False})]
@@ -1403,17 +1403,17 @@ async def test_final_provider_receipt_failure_does_not_requeue_ingest(monkeypatc
     assert events == [("terminal", "job_ingest")]
 
 
-_CELL_LIMIT = worker.InputLimitError(
-    "tabular_cell_limit", "delimited table exceeds the cell limit"
+_COLUMN_LIMIT = worker.InputLimitError(
+    "tabular_column_limit", "delimited table exceeds the column limit"
 )
 
 
 @pytest.mark.parametrize(
     ("error", "refresh", "captured", "code", "index_limit"),
     [
-        (_CELL_LIMIT, False, False, "tabular_cell_limit", "tabular_cell_limit"),
+        (_COLUMN_LIMIT, False, False, "tabular_column_limit", "tabular_column_limit"),
         # An edited source over the limit keeps its published version.
-        (_CELL_LIMIT, True, False, "tabular_cell_limit", ""),
+        (_COLUMN_LIMIT, True, False, "tabular_column_limit", ""),
         (
             worker.TerminalError("source blob is missing"),
             False,
@@ -1453,7 +1453,7 @@ async def test_input_limit_leaves_the_file_unindexed_without_a_sentry_event(
     assert (error_code, limit) == (code, index_limit)
 
 
-@pytest.mark.parametrize("index_limit", ["", "tabular_cell_limit"])
+@pytest.mark.parametrize("index_limit", ["", "tabular_column_limit"])
 def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
     writes: list[tuple] = []
     monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
@@ -1474,7 +1474,7 @@ def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
     assert worker._finish_fail(
         file_id="f_1",
         job_id="job_1",
-        error="delimited table exceeds the cell limit",
+        error="delimited table exceeds the column limit",
         index_limit=index_limit,
     )
 
@@ -1483,7 +1483,7 @@ def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
         assert file_writes == [
             ("set_file_status", "f_1", "ready"),
             ("set_file_indexed", "f_1", False),
-            ("set_file_index_limit", "f_1", "tabular_cell_limit"),
+            ("set_file_index_limit", "f_1", "tabular_column_limit"),
         ]
     else:
         assert file_writes == [
@@ -1494,7 +1494,7 @@ def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
         "set_job",
         "job_1",
         "failed",
-        "delimited table exceeds the cell limit",
+        "delimited table exceeds the column limit",
     ) in writes
 
 

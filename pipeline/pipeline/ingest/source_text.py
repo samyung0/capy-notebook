@@ -14,18 +14,21 @@ import io
 import math
 import mimetypes
 import warnings
-from itertools import islice
+from collections.abc import Iterator
 from pathlib import Path
 
 from ..config import cfg
 from ..jobs import InputLimitError, RetryableError, TerminalError
 from ..prompts.captioning import IMAGE_PROMPT
 
-# A compressed object-size limit is not a useful allocation bound for CSV: a
-# delimiter-heavy row becomes one Python object per cell, and repeating long
-# headers can make the searchable projection much larger than the source. Keep
-# those two independent expansions bounded before the chunker sees them.
-_TABULAR_MAX_CELLS = 100_000
+# csv.reader streams rows, but it builds a whole row before its width can be
+# read: one 30 MiB row of short fields peaks above 500 MiB, and the widest row
+# sets the header list. So each row's raw delimiters (quoted ones too, an upper
+# bound on its columns) are counted as its lines reach the reader, and a row
+# over the cap is refused before it is parsed. Repeating long headers can
+# still make the searchable projection much larger than the source, so that is
+# bounded separately before the chunker sees it.
+_TABULAR_MAX_COLUMNS = 1_000
 _TABULAR_MAX_FIELD_CHARS = 8 << 20
 _TABULAR_MAX_OUTPUT_CHARS = 64 << 20
 
@@ -154,22 +157,29 @@ async def caption_image_source(
 def tabular_text(path: str, name: str) -> str:
     """Turn CSV/TSV rows into explicit field/value text for semantic search."""
     delimiter = "\t" if extension(name) == "tsv" else ","
-    delimiter_byte = delimiter.encode()
-    cell_count = 1
-    with open(path, "rb") as raw:
-        while block := raw.read(1 << 20):
-            cell_count += block.count(delimiter_byte)
-            if cell_count > _TABULAR_MAX_CELLS:
-                raise InputLimitError(
-                    "tabular_cell_limit", "delimited table exceeds the cell limit"
-                )
-
     csv.field_size_limit(_TABULAR_MAX_FIELD_CHARS)
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as source:
-        reader = csv.reader(source, delimiter=delimiter)
-        sample_rows = list(islice(reader, 20))
-        width = max((len(row) for row in sample_rows), default=0)
-        for row in reader:
+        row_delimiters = 0
+
+        def lines() -> Iterator[str]:
+            # The reader pulls lines only until its row ends, so the count
+            # since the last row covers exactly the row being built.
+            nonlocal row_delimiters
+            for line in source:
+                row_delimiters += line.count(delimiter)
+                if row_delimiters >= _TABULAR_MAX_COLUMNS:
+                    raise InputLimitError(
+                        "tabular_column_limit",
+                        "delimited table exceeds the column limit",
+                    )
+                yield line
+
+        sample_rows: list[list[str]] = []
+        width = 0
+        for row in csv.reader(lines(), delimiter=delimiter):
+            row_delimiters = 0
+            if len(sample_rows) < 20:
+                sample_rows.append(row)
             width = max(width, len(row))
     if not sample_rows or width == 0:
         return ""

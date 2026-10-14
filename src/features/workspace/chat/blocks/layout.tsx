@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
+import { Icon } from '@/components/ui/Icon';
 import { Tabs } from '@/components/ui/Tabs';
 import type {
   AccordionItemProps,
@@ -6,7 +7,7 @@ import type {
   FactProps,
   TabProps,
 } from '../schema';
-import { Cites, elements } from './Cite';
+import { elements } from './Cite';
 import { Prose } from './text';
 
 type Render = (value: unknown) => ReactNode;
@@ -29,9 +30,9 @@ export function ChatTabs({
   const active = tabs[selected] ?? tabs[0];
   if (!tabs.length) return null;
   return (
-    <div className="my-3">
+    <div>
       <Tabs
-        className="mb-2 [&>button]:px-2 [&>button]:py-1.5 [&>button]:text-xs"
+        className="mb-3 [&>button]:px-2 [&>button]:py-1.5 [&>button]:text-sm"
         onChange={(value) => setSelected(Number(value))}
         tabs={tabs.map((tab, index) => ({
           label: tab.props.label,
@@ -39,7 +40,9 @@ export function ChatTabs({
         }))}
         value={String(tabs.indexOf(active))}
       />
-      <div>{renderNode(active.props.children)}</div>
+      <div className="flex flex-col gap-3">
+        {renderNode(active.props.children)}
+      </div>
     </div>
   );
 }
@@ -52,16 +55,23 @@ export function Accordion({
   renderNode: Render;
 }) {
   return (
-    <div className="my-3 flex flex-col">
+    <div className="flex flex-col">
       {elements<AccordionItemProps>(props.items).map((item, index) => (
         <details
-          className="border-divider border-t py-2 last:border-b"
+          className="group border-divider border-t py-2.5 last:border-b"
           key={index}
         >
-          <summary className="cursor-pointer font-semibold text-xs">
+          <summary className="flex cursor-pointer list-none items-center gap-1.5 font-semibold text-sm [&::-webkit-details-marker]:hidden">
+            <Icon
+              className="text-fg-muted transition-transform group-open:rotate-90"
+              name="chevronRight"
+              size={12}
+            />
             {item.props.title}
           </summary>
-          <div className="mt-1.5">{renderNode(item.props.children)}</div>
+          <div className="mt-3 flex flex-col gap-3 pl-3">
+            {renderNode(item.props.children)}
+          </div>
         </details>
       ))}
     </div>
@@ -70,7 +80,7 @@ export function Accordion({
 
 export function Facts({ props }: { props: { items: unknown[] } }) {
   return (
-    <dl className="my-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-[13px]">
+    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5 text-sm">
       {elements<FactProps>(props.items).map((fact, index) => (
         <div className="contents" key={index}>
           <dt className="text-fg-muted">{fact.props.label}</dt>
@@ -83,24 +93,21 @@ export function Facts({ props }: { props: { items: unknown[] } }) {
 
 export function Cards({ props }: { props: { items: unknown[] } }) {
   return (
-    <div className="my-3 grid grid-cols-2 gap-2">
+    <div className="grid grid-cols-2 gap-2">
       {elements<CardProps>(props.items).map((card, index) => (
-        <div
-          className="rounded-card border border-divider px-3 py-2.5"
-          key={index}
-        >
-          <p className="text-[11px] text-fg-muted">{card.props.title}</p>
+        <div className="rounded-lg border border-line px-3 py-2.5" key={index}>
+          <p className="text-fg-muted text-xs">{card.props.title}</p>
           {card.props.value ? (
             <p className="font-semibold text-xl tracking-tight">
               {card.props.value}
             </p>
           ) : null}
           <Prose
-            className="text-[12px] [&_p]:my-0.5"
+            className="text-sm"
             muted={!!card.props.value}
+            passages={card.props.passages}
             text={card.props.text}
           />
-          <Cites passages={card.props.passages} />
         </div>
       ))}
     </div>

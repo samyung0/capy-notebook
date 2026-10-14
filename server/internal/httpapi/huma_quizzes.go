@@ -43,7 +43,7 @@ type createAttemptInput struct {
 	Body apimodel.CreateAttemptReq
 }
 type attemptsInput struct {
-	Sort        string `query:"sort" enum:"date,score" default:"date"`
+	Sort        string `query:"sort" enum:"date,score,quiz,workspace" default:"date"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids; the quiz's current workspace"`
 	Offset      int    `query:"offset" minimum:"0"`

@@ -89,7 +89,7 @@ export function MiniCalendar({
               }
               type="button"
             >
-              <Icon name="chevronLeft" size={16} />
+              <Icon name="chevronLeft" />
             </button>
             <span className="font-bold text-sm">{month.getFullYear()}</span>
             <button
@@ -102,7 +102,7 @@ export function MiniCalendar({
               }
               type="button"
             >
-              <Icon name="chevronRight" size={16} />
+              <Icon name="chevronRight" />
             </button>
           </div>
           <div className="grid grid-cols-3 gap-1">

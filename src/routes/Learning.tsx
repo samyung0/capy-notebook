@@ -265,25 +265,23 @@ export default function Learning() {
         ]}
         value={tab}
       />
-      {/* Settings' tab padding, without its width cap: the map runs to the
-       * panel's edges. The table tabs start with their toolbar right under
-       * the tabs, as Files does. */}
-      <div
-        className={cn(
-          'flex flex-1 flex-col gap-4 px-4 pb-8 sm:px-6 lg:px-10 xl:px-16',
-          tab === 'past' || tab === 'results' ? 'pt-0' : 'pt-5 sm:pt-8'
-        )}
-      >
-        {tab === 'progress' ? (
-          <Progress finished={finished} />
-        ) : tab === 'review' ? (
-          <ReviewTab />
-        ) : tab === 'past' ? (
-          <PastReviews />
-        ) : (
-          <AllResults />
-        )}
-      </div>
+      {/* The table tabs lay out as Files does: toolbar right under the tabs,
+       * then the table in the list's padding. */}
+      {tab === 'past' ? (
+        <PastReviews />
+      ) : tab === 'results' ? (
+        <AllResults />
+      ) : (
+        // Settings' tab padding, without its width cap: the map runs to the
+        // panel's edges.
+        <div className="flex flex-1 flex-col gap-4 px-4 pt-5 pb-8 sm:px-6 sm:pt-8 lg:px-10 xl:px-16">
+          {tab === 'progress' ? (
+            <Progress finished={finished} />
+          ) : (
+            <ReviewTab />
+          )}
+        </div>
+      )}
     </PanelWithInvertedRadius>
   );
 }

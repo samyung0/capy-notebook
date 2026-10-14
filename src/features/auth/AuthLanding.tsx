@@ -7,12 +7,12 @@ import { Panel } from '@/components/app/layout';
 import { PublicThemeToggle } from '@/components/app/PublicThemeToggle';
 import { GoogleIcon, MicrosoftIcon } from '@/components/ui/BrandIcons';
 import { BASE_BUTTON_STYLE, Button } from '@/components/ui/Button';
-import { ButtonCard } from '@/components/ui/ButtonCard';
 import { Card } from '@/components/ui/Card';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { FormAlert } from '@/components/ui/FormAlert';
 import { Spinner } from '@/components/ui/feedback';
 import { Input, InputField } from '@/components/ui/Input';
+import { Tile } from '@/components/ui/Tile';
 import { useAuth, useSignIn, useSignUp } from '@/features/auth/clerkHooks';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -117,17 +117,15 @@ function OAuthButtons({ onError }: { onError: (message: string) => void }) {
       <p className="t-label my-2 flex items-center gap-3 text-fg-muted uppercase before:h-px before:flex-1 before:bg-line after:h-px after:flex-1 after:bg-line">
         {m.auth_or()}
       </p>
-      <div className="mt-4 flex flex-wrap gap-2">
-        <ButtonCard
-          buttonText={'Google'}
-          className="w-full flex-1"
-          componentBeforeText={<GoogleIcon className="h-6 w-6 shrink-0" />}
+      <div className="mt-4 grid grid-cols-2 gap-2">
+        <Tile
+          icon={<GoogleIcon className="size-5.5 shrink-0" />}
+          label="Google"
           onClick={() => void start('oauth_google')}
         />
-        <ButtonCard
-          buttonText={'Microsoft'}
-          className="w-full flex-1"
-          componentBeforeText={<MicrosoftIcon className="h-6 w-6 shrink-0" />}
+        <Tile
+          icon={<MicrosoftIcon className="size-5.5 shrink-0" />}
+          label="Microsoft"
           onClick={() => void start('oauth_microsoft')}
         />
       </div>

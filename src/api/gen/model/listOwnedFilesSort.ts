@@ -13,4 +13,5 @@ export const ListOwnedFilesSort = {
   name: 'name',
   size: 'size',
   kind: 'kind',
+  workspace: 'workspace',
 } as const;

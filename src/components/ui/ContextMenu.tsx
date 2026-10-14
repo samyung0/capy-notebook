@@ -73,7 +73,7 @@ function ContextMenuItem({
         'relative flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
         'focus:bg-overlay-hover data-highlighted:bg-overlay-hover',
         'data-disabled:pointer-events-none data-disabled:opacity-40',
-        'data-inset:pl-8 [&_svg]:size-4 [&_svg]:shrink-0',
+        'data-inset:pl-8 [&_svg]:size-4.5 [&_svg]:shrink-0',
         className
       )}
       data-inset={inset || undefined}
@@ -123,7 +123,7 @@ function ContextMenuSubTrigger({
         'flex cursor-default select-none items-center gap-2 rounded-button px-2 py-1.5 text-sm outline-none',
         'focus:bg-overlay-hover data-[state=open]:bg-overlay-hover data-highlighted:bg-overlay-hover',
         'data-disabled:pointer-events-none data-inset:pl-8 data-disabled:opacity-40',
-        '[&_svg]:size-4 [&_svg]:shrink-0',
+        '[&_svg]:size-4.5 [&_svg]:shrink-0',
         className
       )}
       data-inset={inset || undefined}
@@ -135,7 +135,7 @@ function ContextMenuSubTrigger({
       {...props}
     >
       {children}
-      <Icon className="ml-auto size-4 text-fg-muted" name="chevronRight" />
+      <Icon className="ml-auto size-4.5 text-fg-muted" name="chevronRight" />
     </ContextMenuPrimitive.SubTrigger>
   );
 }

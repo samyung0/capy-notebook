@@ -119,6 +119,45 @@ func TestOwnedMaterialListingScopesFiltersAndPages(t *testing.T) {
 	if len(files.Items) != 1 || files.Items[0].ID != file.ID || files.NextCursor != "" {
 		t.Fatalf("owned files = %+v", files)
 	}
+	// Workspace order resumes across pages by workspace name; a standalone
+	// material has none and comes first ascending.
+	byWorkspace, err := s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Sort: "workspace", Ascending: true, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byWorkspace.Items) != 1 || byWorkspace.Items[0].ID != standalone.ID || byWorkspace.NextCursor == "" {
+		t.Fatalf("first workspace page = %+v", byWorkspace)
+	}
+	byWorkspace, err = s.ListOwnedMaterials(ctx, ownerID, MaterialListFilter{Sort: "workspace", Ascending: true, Limit: 1, Cursor: byWorkspace.NextCursor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(byWorkspace.Items) != 1 || byWorkspace.Items[0].ID != note.ID {
+		t.Fatalf("second workspace page = %+v", byWorkspace)
+	}
+	other, err := s.CreateWorkspace(ctx, ownerID, WorkspaceCreate{Name: "Archive", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherFile, err := s.createReadyFile(ctx, other.ID, ownerID, "old.md", "md", nil, "", 10, "sources/"+uid("blob")+"/old.md")
+	if err != nil {
+		t.Fatal(err)
+	}
+	filePage, err := s.ListOwnedFiles(ctx, ownerID, FileListFilter{Sort: "workspace", Ascending: true, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filePage.Items) != 1 || filePage.Items[0].ID != otherFile.ID || filePage.NextCursor == "" {
+		t.Fatalf("first file workspace page = %+v", filePage)
+	}
+	filePage, err = s.ListOwnedFiles(ctx, ownerID, FileListFilter{Sort: "workspace", Ascending: true, Limit: 1, Cursor: filePage.NextCursor})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(filePage.Items) != 1 || filePage.Items[0].ID != file.ID || filePage.NextCursor != "" {
+		t.Fatalf("second file workspace page = %+v", filePage)
+	}
+
 	memberFiles, err := s.ListOwnedFiles(ctx, memberID, FileListFilter{})
 	if err != nil {
 		t.Fatal(err)

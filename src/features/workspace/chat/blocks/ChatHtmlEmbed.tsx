@@ -27,7 +27,7 @@ export function ChatHtmlEmbed({
   }, [html, streaming]);
   const drawn = streaming ? settled : html;
   return (
-    <figure className="my-3 rounded-card border border-line px-3 py-2.5">
+    <figure className="flex flex-col gap-1.5">
       {htmlBytes(drawn) > HTML_EMBED_MAX_BYTES ? (
         <p className="text-fg-muted text-sm">{m.html_embed_too_large()}</p>
       ) : drawn ? (

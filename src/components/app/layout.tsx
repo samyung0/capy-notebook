@@ -1,17 +1,9 @@
-import {
-  createContext,
-  type ReactNode,
-  type RefObject,
-  useContext,
-  useRef,
-} from 'react';
+import { createContext, type ReactNode, type RefObject, useRef } from 'react';
+import { useMediaQuery } from 'usehooks-ts';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/cn';
+import { PhoneTopRow } from './Sidebar';
 import { TopInsetBar } from './TopInsetBar';
-
-/** Set inside PanelWithInvertedRadius, which already shows the top bar above
- * the panel below lg; the header then keeps its own copy for lg and up. */
-const TopBarAbovePanel = createContext(false);
 
 /** The scrolling body of the page panel, the root that ListEnd watches. */
 export const PanelScrollRoot = createContext<
@@ -19,30 +11,32 @@ export const PanelScrollRoot = createContext<
 >(undefined);
 
 /**
- * Large page panel with the top bar in a notch at its top-right from lg.
- * Below lg the notch goes away and the top bar sits above the panel, as on
- * the dashboard.
+ * Large page panel with the top bar in a notch at its top-right from xl.
+ * Below xl there is no notch: the sidebar or rail carries search,
+ * notifications and the profile, and on phones the panel opens with the
+ * nav drawer's menu button.
  */
 export function PanelWithInvertedRadius({
   children,
   header,
   className,
   sectionClassName,
-  topBar = <TopInsetBar />,
 }: {
   children: ReactNode;
-  /** Stays put above the scrolling body. It holds the top bar in the notch
-   * from lg, and content scrolling under the notch would show outside the
-   * panel's shape. */
+  /** From xl it stays put above the scrolling body: it holds the top bar in
+   * the notch, and content scrolling under the notch would show outside the
+   * panel's shape. Below xl it scrolls with the body. */
   header?: ReactNode;
   sectionClassName?: string;
   scroll?: boolean;
   /** Placement in the parent layout, e.g. flex-1 in a row. */
   className?: string;
-  /** Shown above the panel below lg; pass null for none. */
-  topBar?: ReactNode;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
+  // Below xl the header scrolls too, so the scroller is the wrapper of
+  // header and body; from xl it is the body alone.
+  const outerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const xl = useMediaQuery('(min-width: 1280px)');
   return (
     <div
       className={cn(
@@ -50,9 +44,8 @@ export function PanelWithInvertedRadius({
         className
       )}
     >
-      {topBar && <div className="shrink-0 lg:hidden">{topBar}</div>}
       <Card
-        className="inverted-radius-large-panel-container min-h-0 w-full flex-1 p-0 shadow-card lg:rounded-card-xl"
+        className="inverted-radius-large-panel-container min-h-0 w-full flex-1 p-0 shadow-card sm:rounded-card-xl"
         radius="button"
         theme="transparent"
       >
@@ -64,23 +57,27 @@ export function PanelWithInvertedRadius({
         >
           <Card
             asChild
-            className="inverted-radius-large-panel absolute inset-0 block p-0 lg:rounded-card-xl"
+            className="inverted-radius-large-panel absolute inset-0 block p-0 sm:rounded-card-xl"
             radius="button"
           >
             <div />
           </Card>
           <div className="relative flex h-full flex-col gap-2">
-            <TopBarAbovePanel.Provider value={Boolean(topBar)}>
+            <div
+              className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto xl:overflow-visible"
+              ref={outerRef}
+            >
+              <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
               {header && <div className="shrink-0">{header}</div>}
               <div
-                className="flex min-h-0 flex-1 flex-col items-stretch gap-2 overflow-auto p-0"
-                ref={scrollRef}
+                className="flex flex-1 flex-col items-stretch gap-2 p-0 xl:min-h-0 xl:overflow-auto"
+                ref={bodyRef}
               >
-                <PanelScrollRoot.Provider value={scrollRef}>
+                <PanelScrollRoot.Provider value={xl ? bodyRef : outerRef}>
                   {children}
                 </PanelScrollRoot.Provider>
               </div>
-            </TopBarAbovePanel.Provider>
+            </div>
           </div>
         </section>
       </Card>
@@ -125,9 +122,9 @@ export function Panel({
 }
 
 /**
- * The title row of a side panel or drawer (Dashboard's Recent Files, the
- * /qb topics panel, the theme drawer): card title, with optional controls
- * before it and after it. Sits in a `px-2 py-5` panel section.
+ * The title row of a side panel or drawer (the /qb topics panel, the theme
+ * drawer): card title, with optional controls before it and after it. Sits
+ * in a `px-2 py-5` panel section.
  */
 export function PanelHeader({
   title,
@@ -155,7 +152,7 @@ export function PanelHeader({
 
 /**
  * General-page header: page title + actions on the left, the top-level inset
- * bar (search / notifications / profile) nested at the top-right.
+ * bar (search / notifications / profile) nested at the top-right from xl.
  */
 export function PageHeader({
   title,
@@ -172,12 +169,11 @@ export function PageHeader({
   titleClassName?: string;
   className?: string;
 }) {
-  const barAbove = useContext(TopBarAbovePanel);
   return (
     <header className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between md:gap-6">
       <div
         className={cn(
-          'flex min-w-0 items-center gap-10 px-4 pt-6 pb-0 sm:px-6 sm:pb-2',
+          'flex min-w-0 items-center gap-10 px-4 pt-2 pb-0 sm:px-6 sm:pt-6 sm:pb-2',
           className
         )}
       >
@@ -191,9 +187,7 @@ export function PageHeader({
         </div>
         {actions && <div className="flex items-center gap-2">{actions}</div>}
       </div>
-      {showTopBar && (
-        <TopInsetBar className={cn(barAbove && 'hidden lg:flex')} />
-      )}
+      {showTopBar && <TopInsetBar className="hidden xl:flex" />}
     </header>
   );
 }

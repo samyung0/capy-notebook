@@ -6,11 +6,11 @@ export function ChatTable({ props }: { props: TableProps }) {
   const rows = elements<RowProps>(props.rows);
   const columns = props.columns ?? [];
   return (
-    <div className="my-3">
-      <div className="overflow-x-auto rounded-card border border-line">
+    <div className="flex flex-col gap-1.5">
+      <div className="overflow-x-auto">
         <table className="w-full border-collapse text-xs">
           {props.caption ? (
-            <caption className="px-2 py-1.5 text-left font-semibold text-fg">
+            <caption className="pb-2 text-left font-semibold text-[13.5px] text-fg">
               {props.caption}
             </caption>
           ) : null}
@@ -18,7 +18,7 @@ export function ChatTable({ props }: { props: TableProps }) {
             <tr>
               {columns.map((column, index) => (
                 <th
-                  className="border-divider border-b bg-page px-2 py-1.5 text-left font-semibold text-[11px] text-fg-secondary"
+                  className="bg-page px-2 py-1.5 text-left font-semibold text-[11px] text-fg-secondary"
                   key={index}
                   scope="col"
                 >
@@ -29,10 +29,7 @@ export function ChatTable({ props }: { props: TableProps }) {
           </thead>
           <tbody>
             {rows.map((row, index) => (
-              <tr
-                className="border-divider border-b last:border-b-0"
-                key={index}
-              >
+              <tr className="border-divider border-b" key={index}>
                 {columns.map((_, cell) => (
                   <td
                     className="px-2 py-1.5 align-top first:font-semibold"

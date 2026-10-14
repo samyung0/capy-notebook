@@ -501,6 +501,23 @@
     var(--motion-ease-in-out) forwards;
 }
 
+/* The same dissolve as a state, for things that come back: a `motion-smoke`
+   element smokes out (motion-smoke-out's end frame and timing) while it holds
+   `motion-smoked`, and fades back quickly once it drops it. The sidebar rail's
+   logo gives way to the app name this way. */
+@utility motion-smoke {
+  transition-timing-function: var(--motion-ease-in-out);
+  transition-duration: var(--motion-duration-fast);
+  transition-property: opacity, translate, scale, filter;
+}
+@utility motion-smoked {
+  opacity: 0;
+  filter: blur(var(--motion-blur-large));
+  scale: calc(2 - var(--motion-scale-modal));
+  translate: 0 calc(var(--motion-distance-base) * -1);
+  transition-duration: var(--motion-duration-very-slow);
+}
+
 /* The row's collapse, after the smoke clears. */
 @utility motion-smoke-collapse {
   display: grid;

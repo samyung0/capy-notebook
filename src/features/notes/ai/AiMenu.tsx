@@ -254,7 +254,7 @@ export function AiMenu() {
             onClick={() => editor.getApi(AIChatPlugin).aiChat.hide()}
             type="button"
           >
-            <EditorIcon className="size-4" name="x" />
+            <EditorIcon className="size-4.5" name="x" />
           </button>
         </div>
 
@@ -350,7 +350,7 @@ export function AiMenu() {
                 type="button"
               >
                 <EditorIcon
-                  className="size-4 text-fg-muted"
+                  className="size-4.5 text-fg-muted"
                   name={action.icon}
                 />
                 {action.label}
@@ -370,7 +370,7 @@ export function AiMenu() {
                 }}
                 type="button"
               >
-                <EditorIcon className="size-4 text-fg-muted" name="refresh" />
+                <EditorIcon className="size-4.5 text-fg-muted" name="refresh" />
                 {m.action_retry()}
               </button>
             )}

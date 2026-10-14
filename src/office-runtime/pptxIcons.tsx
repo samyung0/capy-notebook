@@ -50,6 +50,7 @@ import {
 import type { IconSvgElement } from '@hugeicons/react';
 import type { ComponentProps } from 'react';
 import { HugeIcon } from '@/components/ui/HugeIcon';
+import { officeIconSize } from './officeIconSize';
 
 /**
  * Every icon pptx-react's toolbar, show and presenter window draw, from
@@ -117,12 +118,12 @@ const ICONS: Record<keyof IconSet, IconSvgElement | readonly string[]> = {
   undo: Undo03Icon,
 };
 
-/** Capy's toolbars and menus draw 16px icons; smaller requests (chevrons) stay smaller. */
+/** Capy's toolbars and menus draw 18px icons (officeIconSize). */
 export const pptxIcons = Object.fromEntries(
   Object.entries(ICONS).map(([name, icon]) => [
     name,
     ({ size = 16, style }: ComponentProps<IconSet[keyof IconSet]>) => (
-      <HugeIcon icon={icon} size={Math.min(size, 16)} style={style} />
+      <HugeIcon icon={icon} size={officeIconSize(name, size)} style={style} />
     ),
   ])
 ) as IconSet;

@@ -4,7 +4,6 @@ import { api } from '@/api/client';
 import { useEventStream, useMe } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { useFinishToasts } from '@/features/study/finishToasts';
-import { cn } from '@/lib/cn';
 import { startDraftSweeps } from '@/lib/editDrafts';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { InShellMain } from './AppErrorBoundary';
@@ -38,10 +37,16 @@ export function AppShell() {
 
   return (
     <div className="t-body relative flex h-dvh overflow-hidden bg-page text-fg">
+      {/* Phones open the nav from the page panel's menu button instead. */}
       {!hideSidebar && (
-        <div className={cn('hidden lg:flex')}>
-          <Sidebar collapsed={false} />
-        </div>
+        <>
+          <div className="hidden sm:flex lg:hidden">
+            <Sidebar rail />
+          </div>
+          <div className="hidden lg:flex">
+            <Sidebar account="below-xl" />
+          </div>
+        </>
       )}
       <main className="flex h-full min-w-0 flex-1 flex-col overflow-hidden p-1.5 sm:p-2.5">
         <InShellMain.Provider value>

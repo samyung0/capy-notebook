@@ -736,7 +736,7 @@ export const files: SourceFile[] = [
     hasBytes: true,
     id: 'bio-state-too-large',
     indexed: false,
-    indexLimit: 'tabular_cell_limit',
+    indexLimit: 'tabular_column_limit',
     kind: 'sheet',
     name: 'Field counts - too large to index.csv',
     position: dialogFiles.length + 4 + biologyOfficeFixtures.length,

@@ -62,6 +62,7 @@ GRANT SELECT ON TABLE
     public.provider_calls,
     public.usage_events,
     public.provider_sessions,
+    public.model_configs,
     public.webhook_events,
     public.email_outbox,
     public.user_subscriptions,

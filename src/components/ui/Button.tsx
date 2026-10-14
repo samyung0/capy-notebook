@@ -84,23 +84,16 @@ export function ErrorAction({
   );
 }
 
+/** Icon's default 18px at every button size, the smallest icon a button carries. */
 const InlineIcon = ({
   name,
-  size,
   className,
 }: {
   name: IconName;
-  size: VariantProps<typeof buttonVariants>['size'];
   className?: string;
 }) => (
   <Icon
-    className={cn(
-      'pointer-events-none shrink-0 -translate-y-px',
-      size === 'sm' && 'size-3.75',
-      size === 'md' && 'size-4',
-      size === 'lg' && 'size-4.5',
-      className
-    )}
+    className={cn('pointer-events-none shrink-0 -translate-y-px', className)}
     name={name}
   />
 );
@@ -137,19 +130,11 @@ export function Button({
         {(content) => (
           <>
             {iconLeft && (
-              <InlineIcon
-                className={iconLeftClassName}
-                name={iconLeft}
-                size={size}
-              />
+              <InlineIcon className={iconLeftClassName} name={iconLeft} />
             )}
             {content}
             {iconRight && (
-              <InlineIcon
-                className={iconRightClassName}
-                name={iconRight}
-                size={size}
-              />
+              <InlineIcon className={iconRightClassName} name={iconRight} />
             )}
           </>
         )}

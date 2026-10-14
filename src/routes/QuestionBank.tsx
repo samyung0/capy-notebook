@@ -41,6 +41,7 @@ import {
 } from '@/components/app/ListToolbar';
 import { PageHeader, Panel, PanelHeader } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { PhoneTopRow } from '@/components/app/Sidebar';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -607,10 +608,12 @@ export default function QuestionBank() {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
-      <div className="order-first flex shrink-0 flex-col gap-2.5 lg:order-last lg:h-full lg:w-(--top-inset-bar-width)">
-        <TopInsetBar />
+      {/* The topics panel from lg, under the top bar from xl (below it the
+          sidebar has the bar's items). */}
+      <div className="order-last hidden h-full shrink-0 flex-col gap-2.5 lg:flex lg:w-(--top-inset-bar-width)">
+        <TopInsetBar className="hidden xl:flex" />
         <Panel
-          className="hidden min-h-0 flex-1 lg:flex"
+          className="min-h-0 flex-1"
           sectionClassName="scroll-fade-y h-full px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
         >
           {nav()}
@@ -618,10 +621,11 @@ export default function QuestionBank() {
       </div>
       <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
         <Panel
-          className="min-h-0 flex-1 rounded-button lg:rounded-card-xl"
+          className="min-h-0 flex-1 rounded-button sm:rounded-card-xl"
           scrollRef={scrollRef}
           sectionClassName="h-full gap-0"
         >
+          <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
           {topicId ? (
             <>
               <QuizPageHeader
@@ -682,7 +686,7 @@ export default function QuestionBank() {
                 }
                 trail={trail}
               />
-              <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 lg:pb-10 xl:px-16">
+              <div className="px-4 pt-8 pb-28 sm:px-6 lg:pb-10">
                 <div className="max-w-3xl">{body}</div>
               </div>
             </>
@@ -705,19 +709,12 @@ export default function QuestionBank() {
                 }
                 className="justify-between md:flex-1"
                 showTopBar={false}
-                title={
-                  <div>
-                    <h1 className="t-page-title">
-                      {m.question_ui_question_bank()}
-                    </h1>
-                    <p className="t-subtitle mt-1 text-fg-muted">
-                      {m.question_ui_bank_hint()}
-                    </p>
-                  </div>
-                }
+                subtitle={m.question_ui_bank_hint()}
+                title={m.question_ui_question_bank()}
               />
-              {/* Learning's tab padding, full panel width. */}
-              <div className="px-4 pt-5 pb-28 sm:px-6 sm:pt-8 lg:px-10 lg:pb-10 xl:px-16">
+              {/* The title's side padding: the side panel already narrows
+                  the page, so it does not grow with the screen. */}
+              <div className="px-4 pt-5 pb-28 sm:px-6 sm:pt-8 lg:pb-10">
                 {body}
               </div>
             </>
@@ -1129,7 +1126,6 @@ function CheckableQuestion({
           <Button
             className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
             iconLeft="refresh"
-            iconLeftClassName="size-3.5 sm:size-3.75"
             onClick={() => {
               reset();
               setAnswers({});
@@ -1145,7 +1141,6 @@ function CheckableQuestion({
             className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
             disabled={isPending}
             iconLeft="check"
-            iconLeftClassName="size-3.5 sm:size-3.75"
             onClick={() => check(answers)}
             rounded="large"
             size="sm"
@@ -1738,7 +1733,6 @@ function ReviewBar({
           className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
           disabled={reviewing}
           iconLeft={detail.reviewedAt ? 'x' : 'check'}
-          iconLeftClassName="size-3.5 sm:size-3.75"
           onClick={onReview}
           rounded="large"
           size="sm"
@@ -1751,7 +1745,6 @@ function ReviewBar({
         <Button
           className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
           iconLeft="comment"
-          iconLeftClassName="size-3.5 sm:size-3.75"
           onClick={onComment}
           rounded="large"
           size="sm"
@@ -1763,7 +1756,6 @@ function ReviewBar({
           aria-label={m.question_ui_edit_question()}
           className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
           iconLeft="pencil"
-          iconLeftClassName="size-3.5 sm:size-3.75"
           onClick={onEdit}
           rounded="large"
           size="sm"

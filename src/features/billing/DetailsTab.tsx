@@ -103,14 +103,14 @@ export function DetailsTab() {
             to: String(page * PAGE_SIZE + items.length),
           })}
         </span>
-        <div className="flex gap-2">
+        <div className="flex gap-1">
           <IconButton
             disabled={page === 0}
             icon="navigationBack"
             label={m.action_previous()}
             onClick={() => show(page - 1)}
             size="sm"
-            variant="outline"
+            variant="ghost-hover"
           />
           <IconButton
             disabled={
@@ -120,7 +120,7 @@ export function DetailsTab() {
             label={m.action_next()}
             onClick={next}
             size="sm"
-            variant="outline"
+            variant="ghost-hover"
           />
         </div>
       </div>

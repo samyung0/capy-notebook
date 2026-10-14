@@ -463,7 +463,7 @@ export function Header({
           {menuBar}
           <EditorSaveStatus layout="office" store={editorStatus} />
         </div>
-        <div className="col-start-2 row-start-1 flex items-center gap-0 sm:row-span-2 max-sm:[&_[data-slot=button]]:size-6 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-6">
+        <div className="col-start-2 row-start-1 flex items-center gap-0 sm:row-span-2 max-sm:[&_[data-slot=button]]:size-7.5 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-7.5">
           {right}
         </div>
       </div>

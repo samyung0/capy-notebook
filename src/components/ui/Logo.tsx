@@ -11,6 +11,7 @@ export function LogoMark({ size = 36 }: { size?: number }) {
       }}
     >
       <svg
+        aria-hidden
         fill="none"
         height={size * 0.62}
         viewBox="0 0 36 36"

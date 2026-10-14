@@ -113,7 +113,7 @@ export function ColorPicker({
           onMouseDown={(event) => event.preventDefault()}
           type="button"
         >
-          <Icon className="size-3.5" name="refresh" />
+          <Icon name="refresh" />
           <span className="translate-y-px">{m.color_default()}</span>
         </button>
       </div>

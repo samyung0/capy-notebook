@@ -73,6 +73,7 @@ import type {
   MaterialCollaborationToken,
   MaterialComment,
   MaterialDiscussion,
+  MaterialListItem,
   MaterialListParams,
   MaterialPage,
   MaterialRef,
@@ -1702,6 +1703,22 @@ export function useDeleteMaterial(wsId: string) {
     mutationFn: (id: string) => api.del<void>(`/materials/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: qk.materials(wsId) });
+      invalidateOwnedMaterials(qc);
+      qc.invalidateQueries({ queryKey: qk.trash() });
+    },
+  });
+}
+
+/** Delete a block from a list spanning workspaces (Files › Blocks): each
+ * delete refreshes the block's own workspace. */
+export function useDeleteOwnedMaterial() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id }: Pick<MaterialListItem, 'id' | 'workspaceId'>) =>
+      api.del<void>(`/materials/${id}`),
+    onSuccess: (_data, { workspaceId }) => {
+      if (workspaceId)
+        qc.invalidateQueries({ queryKey: qk.materials(workspaceId) });
       invalidateOwnedMaterials(qc);
       qc.invalidateQueries({ queryKey: qk.trash() });
     },

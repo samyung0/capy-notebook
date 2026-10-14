@@ -391,7 +391,7 @@ export function PptxViewer({
                 title={m.files_office_previous_slide()}
                 type="button"
               >
-                <HugeIcon icon={ArrowLeft04Icon} size={16} />
+                <HugeIcon icon={ArrowLeft04Icon} />
               </button>
               <span
                 aria-atomic="true"
@@ -412,7 +412,7 @@ export function PptxViewer({
                 title={m.files_office_next_slide()}
                 type="button"
               >
-                <HugeIcon icon={ArrowRight04Icon} size={16} />
+                <HugeIcon icon={ArrowRight04Icon} />
               </button>
             </div>
           </aside>
@@ -476,7 +476,7 @@ export function PptxViewer({
               title={pptxT(locale)('notes.toggle')}
               type="button"
             >
-              <HugeIcon icon={Note01Icon} size={16} />
+              <HugeIcon icon={Note01Icon} />
               <span>{pptxT(locale)('notes.toggle')}</span>
             </button>
           )}

@@ -43,7 +43,7 @@ type materialsListInput struct {
 	WorkspaceID string `query:"workspaceId" doc:"Comma-separated workspace ids"`
 	Location    string `query:"location" doc:"Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed"`
 	Scope       string `query:"scope" enum:"owned,member" default:"owned" doc:"owned: the caller's workspaces and standalone materials; member: also every workspace they are a member of"`
-	Sort        string `query:"sort" enum:"updated,created,title,kind" default:"updated"`
+	Sort        string `query:"sort" enum:"updated,created,title,kind,workspace" default:"updated"`
 	Dir         string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit       int    `query:"limit" minimum:"1" maximum:"100" default:"40"`
 	Cursor      string `query:"cursor" doc:"Opaque cursor from the previous page"`

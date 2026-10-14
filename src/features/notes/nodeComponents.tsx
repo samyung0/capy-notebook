@@ -271,7 +271,7 @@ function CodeBlock(props: PlateElementProps) {
         )}
         <button
           aria-label={copied ? m.editor_code_copied() : m.editor_copy_code()}
-          className="flex size-6 items-center justify-center rounded-md bg-transparent text-fg-muted hover:bg-line/50 hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
+          className="flex size-7.5 items-center justify-center rounded-md bg-transparent text-fg-muted hover:bg-line/50 hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
           data-plate-prevent-deselect
           onClick={() => void copy()}
           title={copied ? m.editor_copied() : m.editor_copy_code()}
@@ -279,9 +279,9 @@ function CodeBlock(props: PlateElementProps) {
         >
           <ContentSwap contentKey={String(copied)} kind="icon">
             {copied ? (
-              <EditorIcon className="size-3.5" name="check" />
+              <EditorIcon className="size-4.5" name="check" />
             ) : (
-              <EditorIcon className="size-3.5" name="clipboard" />
+              <EditorIcon className="size-4.5" name="clipboard" />
             )}
           </ContentSwap>
         </button>

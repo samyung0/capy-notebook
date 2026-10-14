@@ -32,6 +32,7 @@ from . import (
     evidence,
     models,
     pending,
+    scripted,
     skills,
     store,
     tools,
@@ -229,11 +230,13 @@ async def run_agent(
     locale: str | None = None,
     checkpoint: dict[str, Any] | None = None,
     client: ClientDrop | None = None,
+    script: scripted.Script | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     """The turn, plus the one piece of it that outlives the turn.
 
     However the loop ends — the answer, the stall guard, a failure, a lost
-    client — its deck working directory goes away.
+    client — its deck working directory goes away. ``script`` is UAT's
+    scripted turn (``scripted.py``): its steps stand in for the model.
     """
     try:
         async for event in _run_turn(
@@ -244,6 +247,7 @@ async def run_agent(
             locale=locale,
             checkpoint=checkpoint,
             client=client,
+            script=script,
         ):
             yield event
     finally:
@@ -260,6 +264,7 @@ async def _run_turn(
     locale: str | None = None,
     checkpoint: dict[str, Any] | None = None,
     client: ClientDrop | None = None,
+    script: scripted.Script | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
     budget = TurnBudget()
     ctx.budget = budget
@@ -510,7 +515,10 @@ async def _run_turn(
             step += 1
             await ctx.pending_sources.validate()
             stream_task = asyncio.create_task(
-                models.stream_agent_response(
+                # A UAT scripted turn answers from its script, never a provider.
+                script.respond(step - 1, _on_event)
+                if script is not None
+                else models.stream_agent_response(
                     request_messages,
                     model=spec,
                     tools=active_schemas,

@@ -14,24 +14,43 @@
     "Fustat Variable", "Fustat", "Fustat Fallback", var(--font-cjk), system-ui,
     -apple-system, "Segoe UI", sans-serif;
 
-  --display-font-size: 3.125rem;
+  /* Titles above 18px shrink on narrow screens with the notes' rule
+     (tailwind.css note-fs): at 360px wide a size keeps 16px plus half of
+     what it has above 16px, growing linearly to its full size at 768px.
+     Smaller sizes stay the same on every screen. */
+  --display-font-size: clamp(
+    2.0625rem,
+    calc(2.0625rem + 17 * (100vw - 360px) / 408),
+    3.125rem
+  );
   --display-font-weight: 800;
   --display-line-height: 1.15;
   --display-letter-spacing: -0.02rem;
 
-  --page-title-font-size: 1.75rem;
+  --page-title-font-size: clamp(
+    1.375rem,
+    calc(1.375rem + 6 * (100vw - 360px) / 408),
+    1.75rem
+  );
   --page-title-font-weight: 800;
-  --page-title-line-height: 1.15;
+  /* Titles keep the body's 1.45 they inherited while these names were
+     misspelled in the t-* utilities. */
+  --page-title-line-height: 1.45;
   --page-title-letter-spacing: -0.02rem;
 
-  --large-card-title-font-size: 1.375rem;
+  --large-card-title-font-size: clamp(
+    1.1875rem,
+    calc(1.1875rem + 3 * (100vw - 360px) / 408),
+    1.375rem
+  );
   --large-card-title-font-weight: 800;
-  --large-card-title-line-height: 1.35;
-  --large-card-title-letter-spacing: -0.02rem;
+  --large-card-title-line-height: 1.45;
+  --large-card-title-letter-spacing: normal;
 
   --card-title-font-size: 1.125rem;
   --card-title-font-weight: 700;
   --card-title-line-height: 1.35;
+  --card-title-letter-spacing: normal;
 
   --subtitle-font-size: 1rem;
   --subtitle-font-weight: 600;
@@ -56,21 +75,6 @@
   --radius-card: 18px;
   --radius-card-lg: 24px;
   --radius-card-xl: 28px;
-}
-
-/* Dial the type scale down on phones so dense screens stay readable. */
-@media (max-width: 767px) {
-  [data-style="classroom"] {
-    --display-font-size: 2.25rem;
-    --page-title-font-size: 1.375rem;
-    --section-font-size: 1.125rem;
-    --card-title-font-size: 1rem;
-    --subtitle-font-size: 0.9375rem;
-    --font-subtitle-size: 0.9375rem;
-    --body-font-size: 0.8125rem;
-    --meta-font-size: 0.75rem;
-    --label-font-size: 0.625rem;
-  }
 }
 
 /* ---------------- classroom · LIGHT ---------------- */

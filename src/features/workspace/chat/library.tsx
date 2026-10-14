@@ -16,8 +16,11 @@ const leaf = () => null;
 export const chatLibrary = buildLibrary({
   Accordion,
   AccordionItem: leaf,
+  // Consecutive asked questions read as one group, not separate blocks.
   Answer: ({ props, renderNode }) => (
-    <div className="flex flex-col">{renderNode(props.children)}</div>
+    <div className="flex flex-col gap-5 [&>[data-asked]+[data-asked]]:-mt-4">
+      {renderNode(props.children)}
+    </div>
   ),
   AskUser,
   Callout,

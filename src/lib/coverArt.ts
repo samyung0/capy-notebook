@@ -243,26 +243,6 @@ const svg = (body: string, anchor: 'xMid' | 'xMax') =>
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="${anchor}YMid slice">${body}</svg>`
   )}")`;
 
-// Maths, letters and kana together: the dashboard banner's "any subject" art.
-const MIXED = [
-  '∑',
-  'Aa',
-  'あ',
-  'π',
-  '?',
-  '∫',
-  '“ ”',
-  '△',
-  'x²',
-  '!',
-  'é',
-  '√x',
-  '学',
-  '¶',
-  'θ',
-  '&',
-];
-
 function symbols(
   id: string,
   color: string,
@@ -287,16 +267,6 @@ function symbols(
     'xMid'
   );
 }
-
-/** The dashboard's default banner: mixed symbols on the accent purple. */
-export const mixedSymbolsArt = (seed: string) =>
-  symbols(
-    seed,
-    COVER_COLORS[0],
-    MIXED,
-    "'Times New Roman',Georgia,'Hiragino Sans','Noto Sans JP',serif",
-    true
-  );
 
 function doodles(id: string, color: string, kind: Kind) {
   const r = random(`${id}-doodle`);

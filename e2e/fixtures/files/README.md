@@ -43,7 +43,7 @@ e2e/fixtures/files/
     truncated.pdf
     corrupt.docx
     invalid-utf8.txt
-    delimiter-limit.csv
+    column-limit.csv
     corrupt.wav
 ```
 

@@ -57,14 +57,16 @@ export async function workspace(run: UatRun, label: string) {
   return id;
 }
 
+/** `inviter` owns the workspace: the run's owner unless another actor's. */
 export async function invite(
   run: UatRun,
   workspaceId: string,
   actor: Actor,
-  role: 'editor' | 'viewer'
+  role: 'editor' | 'viewer',
+  inviter = run.owner
 ) {
   await api(
-    run.owner,
+    inviter,
     `/api/workspaces/${workspaceId}/invites`,
     'POST',
     { identifier: actor.id, role },
@@ -395,24 +397,42 @@ export async function processed(
   return row;
 }
 
-export async function settledSpend(
+/** The provider sessions of one file's ingest jobs, settled. */
+export function settledSpend(run: UatRun, fileId: string, noCalls = false) {
+  return settledSessions(
+    run,
+    fileId,
+    `provider_sessions p JOIN jobs j ON j.payload->>'reservationId'=p.id
+    WHERE j.payload->>'fileId'=%s`,
+    [fileId],
+    noCalls
+  );
+}
+
+/**
+ * Waits until every provider session `from` selects (aliased `p`) is closed
+ * with no open call; returns them oldest first. With `noCalls` each was
+ * released without a provider call or receipt.
+ */
+export async function settledSessions(
   run: UatRun,
-  fileId: string,
+  label: string,
+  from: string,
+  params: unknown[],
   noCalls = false
 ) {
   // A timed-out provider attempt can outlive its settled parent session.
   // Ingest allows 120 s plus 5 min for its receipt, then a minutely sweep.
   const sessions = await run.poll(
-    `settled provider calls ${fileId}`,
+    `settled provider calls ${label}`,
     () =>
       run.query(
-        `SELECT DISTINCT p.id,p.status,p.settled_at,
+        `SELECT DISTINCT p.id,p.status,p.settled_at,p.created_at,
     (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id AND c.status='open') AS open_calls,
     (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id) AS calls,
     (SELECT count(*)::int FROM usage_events u WHERE u.reservation_id=p.id) AS receipts
-    FROM provider_sessions p JOIN jobs j ON j.payload->>'reservationId'=p.id
-    WHERE j.payload->>'fileId'=%s`,
-        [fileId]
+    FROM ${from} ORDER BY p.created_at`,
+        params
       ),
     (rows) =>
       rows.length > 0 &&
@@ -424,9 +444,9 @@ export async function settledSpend(
       ),
     8 * 60_000
   );
-  assert(sessions.length > 0, 'ingest must have a recorded spend reservation');
+  assert(sessions.length > 0, `${label} must have a recorded provider session`);
   for (const session of sessions) {
-    await run.record('provider-session', string(session.id), { fileId });
+    await run.record('provider-session', string(session.id), { label });
     assert(session.status === 'settled' || session.status === 'released');
     assert(session.settled_at);
     assert.equal(session.open_calls, 0);
@@ -436,7 +456,8 @@ export async function settledSpend(
       assert.equal(session.receipts, 0);
     }
   }
-  await run.attach(`${fileId}-spend`, sessions);
+  await run.attach(`${label}-spend`, sessions);
+  return sessions;
 }
 
 /** No provider session or model, caption or parse usage belongs to the workspace. */

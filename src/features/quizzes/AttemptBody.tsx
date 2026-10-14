@@ -241,7 +241,6 @@ export function AttemptBody({
             <Button
               className="h-7 gap-1 px-2.5 text-xs sm:h-7.5 sm:gap-1.75 sm:px-4 sm:text-sm"
               iconLeft="refresh"
-              iconLeftClassName="size-3.5 sm:size-3.75"
               onClick={() => {
                 setAnswers({});
                 setGraded(null);

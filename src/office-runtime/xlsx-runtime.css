@@ -65,15 +65,6 @@
   border-bottom: 1px solid var(--xlsx-divider);
 }
 
-/* Toolbar icons at the scale (xlsxIcons draws 16px); chevrons and menus keep
-   their size. */
-[data-testid="xlsx-formatting-toolbar"]
-  button
-  svg[width="16"]:not([role="menu"] *) {
-  width: var(--toolbar-icon);
-  height: var(--toolbar-icon);
-}
-
 .xlsx-name-box,
 .xlsx-formula-value {
   height: 28px;

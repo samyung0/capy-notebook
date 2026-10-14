@@ -168,7 +168,7 @@ export default async function preflight() {
     'basic/lesson.pptx',
     'basic/notes.txt',
     'basic/digital.pdf',
-    'basic/delimiter-limit.csv',
+    'basic/column-limit.csv',
     'rich-content/exchange-plan.docx',
     'rich-content/course-guide.xlsx',
     'rich-content/lecture.pptx',

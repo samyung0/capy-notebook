@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { collectSelectionPages } from './useFileSelection';
+import { collectSelectionPages, pickKeys } from './useFileSelection';
 
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
 vi.mock('@/i18n', () => ({ m: {} }));
@@ -47,5 +47,30 @@ describe('collectSelectionPages', () => {
       'Selection page unavailable'
     );
     expect(fetchNext).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('pickKeys', () => {
+  const order = ['a', 'b', 'c', 'd', 'e'];
+
+  it('selects only, adds or removes the clicked item', () => {
+    expect(pickKeys(['a', 'b'], order, 'c', 'only', 'a')).toEqual(['c']);
+    expect(pickKeys(['a'], order, 'c', 'toggle', 'a')).toEqual(['a', 'c']);
+    expect(pickKeys(['a', 'c'], order, 'c', 'toggle', 'a')).toEqual(['a']);
+  });
+
+  it('adds the span from the anchor in either direction', () => {
+    expect(pickKeys(['b'], order, 'd', 'range', 'b')).toEqual(['b', 'c', 'd']);
+    expect(pickKeys(['e', 'a'], order, 'b', 'range', 'd')).toEqual([
+      'e',
+      'a',
+      'b',
+      'c',
+      'd',
+    ]);
+  });
+
+  it('falls back to the clicked item without an anchor', () => {
+    expect(pickKeys([], order, 'c', 'range', null)).toEqual(['c']);
   });
 });

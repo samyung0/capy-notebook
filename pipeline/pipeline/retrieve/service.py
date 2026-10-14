@@ -33,6 +33,7 @@ from ..retrieval import (
     library,
     models,
     pending,
+    scripted,
     store,
     workflows,
 )
@@ -391,6 +392,11 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             )
         )
         return
+    try:
+        script = scripted.parse(req.query)
+    except scripted.ScriptError as exc:
+        yield _sse(client_error(f"Invalid UAT script: {exc}", "invalid_script"))
+        return
     _bind_llm(req)
     accounting_token = None
     client = ClientDrop()
@@ -417,6 +423,7 @@ async def _chat_events(req: ChatStreamReq, request: Request):
             locale=req.locale,
             checkpoint=req.checkpoint,
             client=client,
+            script=script,
         )
         async for chunk in _relay_until_disconnect(request, agen, client):
             yield chunk

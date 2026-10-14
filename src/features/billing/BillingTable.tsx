@@ -1,25 +1,35 @@
 import type { ReactNode } from 'react';
+import {
+  ariaSort,
+  type ColumnSort,
+  SortHeader,
+  sortDirection,
+} from '@/components/app/SortHeader';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 
-export interface BillingColumn {
+export interface BillingColumn<S extends string = string> {
   align?: 'right';
   /** Long names: wrap to at most two lines in a bounded width. */
   clamp?: boolean;
   id: string;
   label: string;
   muted?: boolean;
+  /** With the table's `sorting`, the header sorts the list by this. */
+  sort?: S;
 }
 
 /** The one table design on Billing & usage: muted header, divider rows,
  * scrolling sideways. Detailed usage and Invoices use it, and Learning's Past
  * reviews and All results on smaller screens. */
-export function BillingTable({
+export function BillingTable<S extends string = string>({
   columns,
   rows,
+  sorting,
 }: {
-  columns: BillingColumn[];
+  columns: BillingColumn<S>[];
+  sorting?: ColumnSort<S>;
   rows: {
     key: string;
     cells: Record<string, ReactNode>;
@@ -34,13 +44,26 @@ export function BillingTable({
           <tr className="border-divider border-b">
             {columns.map((c) => (
               <th
+                aria-sort={
+                  sorting && c.sort
+                    ? ariaSort(sortDirection(sorting, c.sort))
+                    : undefined
+                }
                 className={cn(
                   't-meta whitespace-nowrap py-2.5 pr-4 font-medium text-fg-muted',
                   c.align === 'right' && 'pr-0 text-right'
                 )}
                 key={c.id}
               >
-                {c.label}
+                {sorting && c.sort ? (
+                  <SortHeader
+                    label={c.label}
+                    sorting={sorting}
+                    value={c.sort}
+                  />
+                ) : (
+                  c.label
+                )}
               </th>
             ))}
           </tr>

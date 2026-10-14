@@ -1915,7 +1915,7 @@ components:
         - page_limit
         - scanned_page_limit
         - image_pixel_limit
-        - tabular_cell_limit
+        - tabular_column_limit
         - tabular_text_limit
       type: string
     FileKind:
@@ -6729,6 +6729,8 @@ paths:
             enum:
               - date
               - score
+              - quiz
+              - workspace
             type: string
         - explode: false
           in: query
@@ -7769,6 +7771,7 @@ paths:
               - name
               - size
               - kind
+              - workspace
             type: string
         - explode: false
           in: query
@@ -8621,6 +8624,7 @@ paths:
               - created
               - title
               - kind
+              - workspace
             type: string
         - explode: false
           in: query
@@ -9973,6 +9977,9 @@ paths:
               - quiz
               - cards
               - time
+              - workspace
+              - chapter
+              - status
             type: string
         - explode: false
           in: query

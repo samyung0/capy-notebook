@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
+import {
+  ariaSort,
+  SortChevrons,
+  type SortDirection,
+} from '@/components/app/SortHeader';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -14,7 +19,6 @@ import { FileError } from './FileStates';
  *  measured width, so it truncates at the same point as the others. */
 const FIRST_COLUMN_INSET_PX = 8;
 
-type SortDirection = 'asc' | 'desc';
 interface Sort {
   column: number;
   direction: SortDirection;
@@ -40,31 +44,6 @@ function sortRows(rows: string[][], sort: Sort, numeric: boolean): string[][] {
 function nextSort(current: Sort | null, column: number): Sort | null {
   if (current?.column !== column) return { column, direction: 'asc' };
   return current.direction === 'asc' ? { column, direction: 'desc' } : null;
-}
-
-function SortChevrons({ direction }: { direction: SortDirection | null }) {
-  return (
-    <span aria-hidden className="flex shrink-0 flex-col gap-0.5">
-      <svg
-        className={cn(
-          'h-[4.5px] w-[7px]',
-          direction === 'asc' ? 'fill-fg' : 'fill-placeholder'
-        )}
-        viewBox="0 0 8 5"
-      >
-        <path d="M4 0 8 5H0z" />
-      </svg>
-      <svg
-        className={cn(
-          'h-[4.5px] w-[7px]',
-          direction === 'desc' ? 'fill-fg' : 'fill-placeholder'
-        )}
-        viewBox="0 0 8 5"
-      >
-        <path d="M0 0h8L4 5z" />
-      </svg>
-    </span>
-  );
 }
 
 type WorkerResponse =
@@ -204,13 +183,7 @@ function HeaderCell({
 }) {
   return (
     <th
-      aria-sort={
-        direction === 'asc'
-          ? 'ascending'
-          : direction === 'desc'
-            ? 'descending'
-            : 'none'
-      }
+      aria-sort={ariaSort(direction)}
       className="sticky top-0 z-1 border-line bg-page p-0 text-left font-medium first:*:pl-5 last:border-r"
     >
       <button

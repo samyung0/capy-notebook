@@ -13,7 +13,10 @@ export function AskUser({ props }: { props: AskUserProps }) {
   const latest = useContext(LatestAnswerContext);
   if (latest) return null;
   return (
-    <p className="my-2 border-line border-l-2 pl-2 text-[12px] text-fg-muted">
+    <p
+      className="border-line border-l-2 pl-2 text-[13px] text-fg-muted"
+      data-asked
+    >
       <span className="font-semibold text-fg-secondary">
         {m.chat_question_asked()}{' '}
       </span>

@@ -12,6 +12,6 @@ export const FileIndexLimit = {
   page_limit: 'page_limit',
   scanned_page_limit: 'scanned_page_limit',
   image_pixel_limit: 'image_pixel_limit',
-  tabular_cell_limit: 'tabular_cell_limit',
+  tabular_column_limit: 'tabular_column_limit',
   tabular_text_limit: 'tabular_text_limit',
 } as const;
