@@ -54,9 +54,11 @@ Inside an admitted book (decisions of 2026-09-29 to 2026-10-15):
 
 - Whole works reprinted inside the book and credited only to their author, or
   under another licence, are withheld behind the reversible per-work switch;
-  short attributed quotations the book discusses stay. A short quoted message
-  the book discusses stays even when it may be complete (a 96-word email was
-  kept); long whole works are withheld.
+  short attributed quotations the book discusses stay. A quoted message stays
+  when the book does not show it is reprinted whole (a 96-word email whose
+  completeness the source leaves open was kept); a message the book reprints
+  complete, quotes in full or reprints with permission is withheld, whatever
+  its length.
 - Text reproduced under single-use or limited permission is withheld with its
   images, not only the images (permission-only planning cards).
 - When an NC or ND adaptation credit sits at chapter level with no section

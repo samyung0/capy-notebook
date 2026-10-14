@@ -116,3 +116,66 @@ Sonnet 5.5 at medium effort and Opus 5.5 at low effort, the obvious next
 cost cuts; topic proposals across a whole book; split-scope assembly;
 publishing. One run per model per book: small samples, the gaps above
 are large enough to matter, the 1–2 point differences are not.
+
+## Round 2: Sonnet 5.5 medium, Opus 5.5 low, and the brief fixes
+
+Same slices, books, folders and scoring, with two changes Epo approved after
+round 1 (`lab/knowledge/source-repair.md`, `lab/knowledge/README.md`, recorded
+in `human/agentic-retrieval.md`): chunk overlap is by design, and four
+rights rules that match the published record. One judge per book then scored
+all five reviews (round 1's three and round 2's two) blind as A to E.
+
+### Source review (52 excerpts, 65 judged defects, five-way blind judge)
+
+| | Opus 5.5 medium | Sonnet 5.5 high | Opus 5.5 low | Haiku 5.5 xhigh | Sonnet 5.5 medium |
+|---|---|---|---|---|---|
+| Judge rank (Calculus, AHSS, LSJ) | 1, 1, 2 | 3, 3, 1 | 2, 2, 4 | 4, 4, 3 | 5, 5, 5 |
+| Wrong claims | 0 | 2 | 2 | 6 | 8 |
+| Roles right | 52 | 52 | 50 | 52 | 52 |
+| Defects repaired / flagged / missed | 61 / 2 / 2 | 61 / 2 / 2 | 51 / 8 / 6 | 51 / 5 / 9 | 49 / 9 / 6 (+1 wrong) |
+| False repairs | 0 | 0 | 0 | 2 | 7 |
+| Unneeded links | 0 | 4 | 0 | 3 | 10 |
+| Overlap edits (round 1 had no overlap rule) | 14 | 5 | 0 | 4 | 0 |
+| Publishable as is / minor fix | 45 / 7 | 41 / 11 | 48 / 4 | 37 / 15 | 27 / 25 |
+| Cost per slice | $1.83 | $1.36 | $1.24 | $0.66 | $1.03 |
+
+- **Sonnet 5.5 medium is not usable for review**: last on every book, with
+  broken repair records (a duplicated sentence, a wrong span replaced, editor's
+  notes written into book text), problem renumbering and the most wrong claims.
+- **Opus 5.5 low** writes clean, accurate notes (most excerpts publishable as
+  is, helped by the overlap rule round 1 lacked) but repairs fewer defects:
+  51 of 65, flagging rather than fixing, and on LSJ it opened only 9 of 14
+  pages. It is 32% cheaper than Opus medium.
+- **Opus 5.5 medium and Sonnet 5.5 high** repaired the most (61 of 65); Opus
+  made no wrong claims, Sonnet two. Their overlap edits are what the new
+  overlap rule removes.
+
+### Rights screening with the new rules (5 books)
+
+| | Opus 5.5 low | Sonnet 5.5 medium |
+|---|---|---|
+| Manufacturing (110 withheld) | 108, +20 pages of the same chapters | 108, +20 |
+| #TheatreAppreciation (8 pages, 22 image pages) | 7, 22, no extra exclusions | 7, 22, no extra |
+| Media (29 pages, 8 image pages) | 29, 6 (missed the two "not CC BY" images) | 25 (kept the card text), 8 |
+| Music | right, no exclusions | right, no exclusions |
+| OSS (6 pages; the Reiners email kept) | 3 (kept the Deloitte disclaimer) | 5, nothing extra |
+| Cost per book | $0.47 | $0.58 |
+
+The rules closed nearly every round-1 gap. The first wording of the message
+rule ("a short quoted message stays even when it may be complete, about a
+hundred words") made both models keep every reprinted email in OSS; restated
+as Epo's 2026-10-02 decision (a message stays only when the book does not
+show it is reprinted whole), the reruns above withheld them. The +20
+Manufacturing pages are pages of the withheld chapters the published record
+kept; whole-chapter withholding is the rule Epo approved.
+
+### Recommendation
+
+- **Rights screening: Opus 5.5 low** ($0.47 per book, a quarter of round 1's
+  Opus medium), or Sonnet 5.5 medium at a similar price; with the rules in
+  the brief both match the record closely. A human still confirms each
+  book's withheld list, as before.
+- **Source review: Sonnet 5.5 high** for about 25% less than Opus 5.5 medium
+  with the same repair rate, or keep Opus 5.5 medium where accuracy matters
+  most. Opus 5.5 low saves 32% but leaves about one in six defects
+  unrepaired; Sonnet 5.5 medium and Haiku 5.5 xhigh are not safe.
