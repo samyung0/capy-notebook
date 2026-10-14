@@ -3235,8 +3235,17 @@ inserts one `ingest` job carrying `materialId`, and records it in
 `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
 `pendingNotes` in workspace settings until the note changes again; transient
-failures retry on the next tick. A job whose worker died is failed by the
-lease reaper, which parks the note the same way.
+failures retry on the next tick. Notes have no Process: with `auto_process`
+off, dirty notes wait until it is on again.
+
+When the job ends, whatever ended it (the worker, the lease reaper,
+`cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
+account-deletion request), the `jobs_release_note_index` trigger (migration
+0082) releases the note. A done job clears `index_job_id` and `index_error`;
+an edit made while it ran leaves the note dirty, so it is due again. A failed
+job parks the note: it stays dirty with `index_error` set (the job's error) and
+counts in `pendingNotes`, and nothing admits it again until its next edit
+clears the error. There is no automatic re-admission or backoff.
 
 The ingest worker branches on `materialId`: it fetches the note's
 markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`
@@ -3244,11 +3253,19 @@ markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId
 (`materialdoc.ExtractIndexText`: headings keep their level, list items their
 bullets, table rows their cells, code its fence; references, diagrams and
 media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
-so a note never shares a content row with a file of identical text, reuses
-vectors for unchanged chunk text from the note's previous content row (read
-before the alias moves), writes the content with no descriptor,
-and clears `index_job_id`. A 404 from Go (trashed,
-standalone, deleted) ends the job without work.
+so a note never shares a content row with a file of identical text, and
+claims a new content row without moving the alias. It reuses vectors for
+unchanged chunk text from the note's previous content row, which stays
+aliased and searchable while the job runs, and writes the content with no
+descriptor. `publish_material_content` then marks the new row ready and moves
+the alias in one transaction, and the orphan trigger drops the old row. A
+failed job abandons its claimed row, so the note keeps its previous index. The
+attempt records `chunks_created` and, in `details`, `chunks_embedded`. A 404
+from Go (trashed, standalone, deleted) ends the job without work. The job's
+source boundary (heartbeat, claim fence and provider admission,
+`_pipeline_source_cancellation`) is the workspace and its owner's account
+lifecycle; a note job has no file or revision, and one trashed mid-job still
+finishes (search hides it by `trashed_at`).
 
 Search runs one pool: the `scoped_files` CTE unions files and notes with a
 `kind` column, the per-resource cap counts a note like a file, and a note
@@ -3338,8 +3355,9 @@ candidate without changing the readable `files` row or `rag_file_contents` alias
 The workspace owner funds automatic refresh: provider calls only, since the
 parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
-gates every automatic Office reparse, text reindex and note index; off, edits
-wait for the owner's Process.
+gates every automatic Office reparse, text reindex and note index; off, file
+edits wait for the owner's Process, and notes, which have no Process, wait
+until the switch is on again.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
 tokens count those excerpts. Net tokens measure editing, not context size: the

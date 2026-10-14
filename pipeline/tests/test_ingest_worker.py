@@ -1711,3 +1711,153 @@ async def test_completed_source_publication_retry_skips_providers_and_processing
     monkeypatch.setattr(worker, "_workspace_embedding_spec", no_processing)
     monkeypatch.setattr(worker, "_process_ingest_job", no_processing)
     await worker._process_ingest_job_bound(job)
+
+
+# The keys Go's RequestMaterialIndex writes for a note index job.
+_NOTE_PAYLOAD = {
+    "actorUserId": "u_owner",
+    "automatic": True,
+    "materialId": "mat_1",
+    "reservationId": "cr_1",
+    "resourceRates": _ingest_payload()["resourceRates"],
+    "revision": 3,
+    "workspaceId": "ws_1",
+}
+
+
+class _NoteCursor:
+    """Answers the source boundary's reads for one live note job claim."""
+
+    rowcount = 1
+
+    def __init__(self, accounts=None, locked_payload=None):
+        self.accounts = accounts or [("u_owner", None, None, None)]
+        self.locked_payload = locked_payload or _NOTE_PAYLOAD
+        self.calls: list[str] = []
+        self.result = None
+        self.connection = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        return self
+
+    def commit(self):
+        return None
+
+    def execute(self, query, _params=()):
+        statement = " ".join(query.split())
+        self.calls.append(statement)
+        if "FROM ingest_job_attempts a JOIN jobs j" in statement:
+            self.result = ("job_1", _NOTE_PAYLOAD)
+        elif (
+            "SELECT type, status, attempts, lease_expires_at > now(), payload"
+            in statement
+        ):
+            self.result = ("ingest", "running", 1, True, self.locked_payload)
+        elif "SELECT job_id, attempt, job_type, status" in statement:
+            self.result = ("job_1", 1, "ingest", "running")
+        elif "SELECT type, payload FROM jobs" in statement:
+            self.result = ("ingest", _NOTE_PAYLOAD)
+        elif "FROM workspaces WHERE id=" in statement:
+            self.result = ("u_owner",)
+        elif "FROM users" in statement:
+            self.result = self.accounts
+        elif "cancel_pipeline_jobs" in statement:
+            self.result = (1,)
+        else:
+            self.result = None
+        return self
+
+    def fetchone(self):
+        return self.result
+
+    def fetchall(self):
+        return self.result
+
+    def ran(self, needle: str) -> bool:
+        return any(needle in statement for statement in self.calls)
+
+
+@pytest.mark.parametrize(
+    ("accounts", "renewed"),
+    [([("u_owner", None, None, None)], True), ([("u_owner", None, None, 1)], False)],
+    ids=["live", "owner-deleting"],
+)
+def test_heartbeat_fences_a_note_job_on_its_owner_not_a_file(accounts, renewed):
+    cur = _NoteCursor(accounts)
+
+    assert worker.db.heartbeat_job(cur, "job_1", 180, 1) is renewed
+    assert not cur.ran("FROM files")
+    assert cur.ran("UPDATE jobs SET locked_at") is renewed
+    assert cur.ran("cancel_pipeline_jobs") is not renewed
+
+
+async def test_a_retryable_note_failure_requeues(monkeypatch):
+    from pipeline.jobs import RetryableError
+
+    cur = _NoteCursor()
+    monkeypatch.setattr(worker.db, "connect", lambda: cur)
+    job = {"id": "job_1", "type": "ingest", "attempts": 1, "payload": _NOTE_PAYLOAD}
+
+    await worker._handle_job_failure(job, RetryableError("embedding timed out"))
+
+    assert cur.ran("UPDATE jobs SET status='pending'")
+    assert not cur.ran("cancel_pipeline_jobs")
+
+
+def test_provider_admission_binds_a_note_job_to_its_note():
+    def admit(cur):
+        worker.db._lock_ingest_provider_boundary(
+            cur,
+            session_id="cr_1",
+            job_attempt_id=7,
+            expected_actor="u_owner",
+            expected_workspace="ws_1",
+        )
+
+    admit(_NoteCursor())
+    with pytest.raises(RuntimeError, match="does not match its session"):
+        admit(_NoteCursor(locked_payload={**_NOTE_PAYLOAD, "materialId": "mat_2"}))
+
+
+async def test_a_failed_note_index_abandons_its_content_claim(monkeypatch):
+    from pipeline.jobs import TerminalError
+
+    abandoned: list[str] = []
+
+    async def attach(**_kwargs):
+        return {
+            "content_id": "rgc_new",
+            "previous_content_id": "rgc_old",
+            "ready": False,
+            "created": True,
+        }
+
+    async def refuse(**_kwargs):
+        raise TerminalError("embedding refused")
+
+    async def abandon(content_id):
+        abandoned.append(content_id)
+
+    async def embedding_spec(_ws):
+        return object()
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", embedding_spec)
+    monkeypatch.setattr(worker.registry, "pins_from_payload", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.accounting, "bind_ingest", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker, "_fetch_material_text", lambda *_a: {"text": "# Cells\n\nbody"}
+    )
+    monkeypatch.setattr(worker.store, "attach_material_content", attach)
+    monkeypatch.setattr(worker.indexing, "index_material", refuse)
+    monkeypatch.setattr(worker.store, "abandon_content", abandon)
+    job = {"id": "job_1", "type": "ingest", "attempts": 1, "payload": _NOTE_PAYLOAD}
+
+    with pytest.raises(TerminalError):
+        await worker._process_material_index_bound(job)
+    assert abandoned == ["rgc_new"]

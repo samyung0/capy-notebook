@@ -186,14 +186,16 @@ async def index_file(
 async def index_material(
     *,
     workspace_id: str,
+    material_id: str,
     content_id: str,
     previous_content_id: str | None,
     chunks: list[Chunk],
     claim_job_id: str,
 ) -> dict[str, Any]:
-    """Write a note's chunks into canonical content. Notes get no descriptor
-    or summary: the agent lists them by title and describes them from their
-    headings."""
+    """Write a note's chunks into canonical content and publish it. Notes get
+    no descriptor or summary: the agent lists them by title and describes them
+    from their headings. Unchanged chunks reuse the previous content's vectors,
+    which stays aliased (and searchable) until the publish."""
     if not chunks:
         await store.replace_content_chunks(
             workspace_id=workspace_id,
@@ -201,8 +203,13 @@ async def index_material(
             rows=[],
             claim_job_id=claim_job_id,
         )
-        await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
-        return {"chunks": 0}
+        await store.publish_material_content(
+            workspace_id=workspace_id,
+            material_id=material_id,
+            content_id=content_id,
+            claim_job_id=claim_job_id,
+        )
+        return {"chunks": 0, "embedded": 0}
     indexed = [chunk.indexed_text() for chunk in chunks]
     spec = embedding_spec()
     reusable = (
@@ -243,8 +250,13 @@ async def index_material(
         rows=rows,
         claim_job_id=claim_job_id,
     )
-    await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
-    return {"chunks": len(rows), "fingerprint": content_hash(chunks)}
+    await store.publish_material_content(
+        workspace_id=workspace_id,
+        material_id=material_id,
+        content_id=content_id,
+        claim_job_id=claim_job_id,
+    )
+    return {"chunks": len(rows), "embedded": len(missing)}
 
 
 async def embed_copied_chunks(
