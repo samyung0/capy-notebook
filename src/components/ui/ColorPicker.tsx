@@ -107,7 +107,7 @@ export function ColorPicker({
           {m.color_document_colors()}
         </span>
         <button
-          className="inline-flex h-7 items-center gap-1 rounded-button px-2 text-fg-secondary text-xs outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-focus"
+          className="inline-flex h-7 items-center gap-1 rounded-button px-2 text-fg-secondary text-xs outline-none hover:bg-surface-hover-bg hover:text-fg focus-visible:ring-2 focus-visible:ring-action"
           data-plate-prevent-deselect
           onClick={onClear}
           onMouseDown={(event) => event.preventDefault()}
@@ -131,7 +131,7 @@ export function ColorPicker({
               aria-label={color.name}
               aria-selected={selected}
               className={cn(
-                'flex size-6 items-center justify-center rounded-full border border-line-strong outline-none transition-transform ease-(--motion-ease-smooth-out) hover:scale-110 focus-visible:ring-2 focus-visible:ring-focus',
+                'flex size-6 items-center justify-center rounded-full border border-line-strong outline-none transition-transform ease-(--motion-ease-smooth-out) hover:scale-110 focus-visible:ring-2 focus-visible:ring-action',
                 selected &&
                   'ring-2 ring-action ring-offset-1 ring-offset-surface'
               )}

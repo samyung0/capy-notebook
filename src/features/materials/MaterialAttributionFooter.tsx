@@ -174,7 +174,7 @@ export const SourcesLine = memo(function SourcesLine({
       <button
         aria-controls={id}
         aria-expanded={open}
-        className="-ml-0.5 inline-flex cursor-pointer items-center gap-1 rounded-sm px-0.5 outline-none hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-focus"
+        className="-ml-0.5 inline-flex cursor-pointer items-center gap-1 rounded-sm px-0.5 outline-none hover:text-fg-secondary focus-visible:ring-2 focus-visible:ring-action"
         onClick={() => setOpen((value) => !value)}
         type="button"
       >

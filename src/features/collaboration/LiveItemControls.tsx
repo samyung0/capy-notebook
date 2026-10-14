@@ -52,8 +52,15 @@ export function LiveStatus({
   );
 }
 
-/** Undo and Redo of this user's own edits to one live item. */
-export function UndoButtons({ manager }: { manager: UndoTarget }) {
+/** Undo and Redo of this user's own edits to one live item. `header` lifts
+ * the icons 1px from lg, level with the View toggle's icon beside them. */
+export function UndoButtons({
+  manager,
+  header,
+}: {
+  manager: UndoTarget;
+  header?: boolean;
+}) {
   const canUndo = useSyncExternalStore(manager.subscribe, manager.canUndo);
   const canRedo = useSyncExternalStore(manager.subscribe, manager.canRedo);
   return (
@@ -63,14 +70,14 @@ export function UndoButtons({ manager }: { manager: UndoTarget }) {
         label={m.editor_undo()}
         onClick={() => manager.undo()}
       >
-        <Icon name="undo" />
+        <Icon className={cn(header && 'lg:-translate-y-px')} name="undo" />
       </ToolbarButton>
       <ToolbarButton
         disabled={!canRedo}
         label={m.editor_redo()}
         onClick={() => manager.redo()}
       >
-        <Icon name="redo" />
+        <Icon className={cn(header && 'lg:-translate-y-px')} name="redo" />
       </ToolbarButton>
     </span>
   );

@@ -78,7 +78,7 @@ export function FontSizeControl() {
               })}
               className={cn(
                 'h-(--toolbar-button) w-9 shrink-0 text-center font-semibold text-sm outline-none sm:w-10',
-                'bg-surface-hover-bg text-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-focus'
+                'bg-surface-hover-bg text-fg hover:bg-surface-dark focus-visible:ring-2 focus-visible:ring-action'
               )}
               data-plate-prevent-deselect
               onMouseDown={(event) => event.preventDefault()}
@@ -102,7 +102,7 @@ export function FontSizeControl() {
                   aria-selected={size === cursorFontSize}
                   className={cn(
                     'flex h-7 w-full items-center justify-center rounded-lg font-medium text-sm leading-(--body-line-height) outline-none',
-                    'hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus',
+                    'hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action',
                     size === cursorFontSize &&
                       'bg-tint-accent-1 text-tint-accent-1-fg'
                   )}

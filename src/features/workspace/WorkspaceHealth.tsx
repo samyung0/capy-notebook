@@ -119,7 +119,7 @@ export function OfflineStatus() {
   return (
     <Tooltip>
       <TooltipTrigger
-        className="ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        className="ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-action"
         data-connection-status="offline"
         render={<span role="status" />}
         tabIndex={0}

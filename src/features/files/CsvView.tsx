@@ -140,16 +140,21 @@ export default function CsvView({
               <tr key={rowIndex}>
                 {result.columns.map((column, columnIndex) => {
                   const text = row[columnIndex] ?? '';
+                  // Clicking focuses the cell (tabIndex -1 keeps it out of
+                  // the tab order) and lifts the clamp; clicking away
+                  // blurs it and clamps again.
                   return (
                     <td
                       className={cn(
-                        'truncate border-line border-b px-3 py-1.5 first:pl-5 last:border-r',
+                        'border-line border-b px-3 py-1.5 align-top outline-none first:pl-5 last:border-r',
                         column.numeric && 'text-right'
                       )}
                       key={columnIndex}
-                      title={text}
+                      tabIndex={-1}
                     >
-                      {text}
+                      <div className="line-clamp-3 in-focus:line-clamp-none whitespace-pre-wrap break-words">
+                        {text}
+                      </div>
                     </td>
                   );
                 })}

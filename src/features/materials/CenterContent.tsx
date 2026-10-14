@@ -758,7 +758,7 @@ function TitleAction({
 }) {
   return (
     <button
-      className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm font-semibold text-sm text-tint-accent-1-fg underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-2 focus-visible:ring-focus"
+      className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-sm font-semibold text-sm text-tint-accent-1-fg underline underline-offset-4 outline-none hover:decoration-2 focus-visible:ring-2 focus-visible:ring-action"
       onClick={onClick}
       type="button"
     >
@@ -851,7 +851,7 @@ function QuickOpenCard({
   const icon = recentIcon(item);
   return (
     <Link
-      className="flex min-w-0 flex-col gap-1.5 rounded-[15px] p-1 outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus"
+      className="flex min-w-0 flex-col gap-1.5 rounded-[15px] p-1 outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action"
       params={{ workspaceId }}
       preload="intent"
       search={

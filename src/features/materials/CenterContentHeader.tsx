@@ -124,7 +124,7 @@ export function EditorSaveStatus({
     <Tooltip>
       <TooltipTrigger
         className={cn(
-          'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-focus',
+          'ml-1 inline-flex shrink-0 items-center rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-action',
           failed && 'text-solid-error'
         )}
         data-save-state={editorStatus.saveState}

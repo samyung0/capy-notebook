@@ -48,7 +48,10 @@ export function QuizEditor({
     <div className="flex flex-col gap-7">
       {rooms.undo &&
         headerActions &&
-        createPortal(<UndoButtons manager={rooms.undo} />, headerActions)}
+        createPortal(
+          <UndoButtons header manager={rooms.undo} />,
+          headerActions
+        )}
       <h1 className="t-large-card-title">{title}</h1>
       {rooms.recovery ? (
         <QuizRecovery recovery={rooms.recovery} rooms={rooms} />

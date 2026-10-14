@@ -1824,7 +1824,7 @@ function BankLanding({
               >
                 <TopicName exams={exams} topic={topic} />
                 <time
-                  className="hidden text-fg-muted text-sm sm:block"
+                  className="hidden text-right text-fg-secondary text-sm sm:block"
                   dateTime={topic.lastAnsweredAt}
                 >
                   {new Date(topic.lastAnsweredAt).toLocaleDateString(

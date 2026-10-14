@@ -230,7 +230,7 @@ function OfficeMenuBar({
     >
       {menus.map((menu) => (
         <MenubarMenu key={menu.id} value={menu.id}>
-          <MenubarTrigger className="flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-button px-2 font-medium text-fg text-sm leading-none outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-focus data-[state=open]:bg-surface-hover-bg">
+          <MenubarTrigger className="flex h-6 shrink-0 cursor-pointer items-center whitespace-nowrap rounded-button px-2 font-medium text-fg text-sm leading-none outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-action data-[state=open]:bg-surface-hover-bg">
             {menu.label}
           </MenubarTrigger>
           {/* The note toolbar's popover (ToolbarPopoverContent). */}

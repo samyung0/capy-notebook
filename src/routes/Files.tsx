@@ -460,7 +460,7 @@ const TrashCard = memo(function TrashCard({
       }}
       title={item.title}
       view={view}
-      workspace={item.workspaceName || m.trash_standalone()}
+      workspace={item.workspaceName}
       workspaceIconId={workspaceIconId}
     />
   );

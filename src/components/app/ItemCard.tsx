@@ -237,16 +237,16 @@ export function ItemCard({
       </div>
       <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
       {/* A fixed-height line, so cards with and without a workspace match. */}
-      <div className="box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-1.5 pb-1 text-fg-muted text-xs">
+      <div className="box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[13px] text-fg">
         {workspace && (
           <>
             {workspaceIconId && (
               <img
                 alt=""
-                className="size-3.5 shrink-0 rounded-[3px]"
-                height={14}
+                className="size-4 shrink-0 -translate-y-px rounded-[3px]"
+                height={16}
                 src={iconUrl(workspaceIconId)}
-                width={14}
+                width={16}
               />
             )}
             <span className="min-w-0 truncate">{workspace}</span>
@@ -255,7 +255,7 @@ export function ItemCard({
             </span>
           </>
         )}
-        <span className="shrink-0 whitespace-nowrap">{meta}</span>
+        <span className="shrink-0 whitespace-nowrap text-fg-muted">{meta}</span>
       </div>
     </Card>
   );
@@ -363,7 +363,7 @@ export function ItemSkeletonGrid({
     <ItemGrid aria-label={m.a11y_loading()} className={className} role="status">
       {Array.from({ length: count }, (_, i) => (
         <div
-          className="@container rounded-card border border-line bg-surface p-1.5"
+          className="@container rounded-card border border-transparent p-1.5"
           key={i}
         >
           <div className="flex h-7 items-center gap-2 pb-1.5 pl-1.5">
@@ -376,8 +376,8 @@ export function ItemSkeletonGrid({
               dense ? 'aspect-[16/10]' : 'aspect-[16/11]'
             )}
           />
-          <div className="box-content flex h-5 items-center px-1.5 pt-1.5 pb-1">
-            <Skeleton className="h-3 w-1/2" />
+          <div className="box-content flex h-5 items-center px-1.5 pt-2.5 pb-1">
+            <Skeleton className="h-3.5 w-1/2" />
           </div>
         </div>
       ))}

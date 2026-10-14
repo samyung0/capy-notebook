@@ -36,7 +36,7 @@ export function ToolbarButton({
       className={cn(
         BASE_BUTTON_STYLE,
         'size-(--toolbar-button) shrink-0 gap-1 px-0.5 text-fg [&_svg]:size-(--toolbar-icon)',
-        'focus-visible:ring-focus disabled:opacity-40',
+        'disabled:opacity-40',
         !variant &&
           'hover:bg-surface-hover-bg hover:text-fg [[data-floating-toolbar]_&]:hover:bg-overlay-hover',
         'data-[active=true]:bg-tint-accent-1/50 data-[active=true]:text-tint-accent-1-fg data-[active=true]:hover:bg-tint-accent-1/50',

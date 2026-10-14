@@ -645,8 +645,9 @@ function PartRunner({
         : {};
     const choose = (i: number, index: number) =>
       onChange({ ...choices, [String(i)]: answer.options[index] });
+    // Side by side, the padding pulls the letter menus away from the options.
     const rows = (
-      <ol className="grid content-start">
+      <ol className="grid content-start @min-[50rem]:pr-6">
         {('left' in answer
           ? answer.left
           : answer.pairs.map((pair) => pair.left)

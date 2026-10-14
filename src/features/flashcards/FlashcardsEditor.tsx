@@ -72,7 +72,7 @@ export function FlashcardsEditor({
     <div className="flex flex-col gap-6">
       {showUndo &&
         headerActions &&
-        createPortal(<UndoButtons manager={undo} />, headerActions)}
+        createPortal(<UndoButtons header manager={undo} />, headerActions)}
       {(showTitle || (showUndo && !headerActions)) && (
         <div className="flex items-center gap-2">
           {showTitle && <h1 className="t-large-card-title">{title}</h1>}

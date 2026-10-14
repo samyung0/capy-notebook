@@ -255,7 +255,7 @@ export function TableRowElement({ children, ...props }: PlateElementProps) {
         >
           <button
             aria-label={m.editor_drag_row()}
-            className="absolute top-1/2 left-0 z-40 flex size-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-button border border-line bg-surface text-fg-muted opacity-0 shadow-sm outline-none transition-opacity hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-focus active:cursor-grabbing group-hover/row:opacity-100"
+            className="absolute top-1/2 left-0 z-40 flex size-5 -translate-y-1/2 cursor-grab items-center justify-center rounded-button border border-line bg-surface text-fg-muted opacity-0 shadow-sm outline-none transition-opacity hover:bg-surface-hover-bg hover:text-fg focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-action active:cursor-grabbing group-hover/row:opacity-100"
             contentEditable={false}
             data-plate-prevent-deselect
             onClick={() => editor.tf.select(element)}
