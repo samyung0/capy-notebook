@@ -228,23 +228,6 @@ func TestBankProgressAndRetraction(t *testing.T) {
 			t.Fatalf("%s = %d", path, code)
 		}
 	}
-	internal := func(path string, body map[string]any) (int, map[string]any) {
-		t.Helper()
-		rec := doInternal(t, h, http.MethodPost, path, pipeSecret, body)
-		out := map[string]any{}
-		_ = json.Unmarshal(rec.Body.Bytes(), &out)
-		return rec.Code, out
-	}
-	if code, page := internal("/api/internal/bank/list", map[string]any{"userId": "u_editor", "topicId": "t"}); code != 200 || page["total"].(float64) != 3 {
-		t.Fatalf("internal page: %d %v", code, page)
-	}
-	if code, _ := internal("/api/internal/bank/read", map[string]any{"userId": "u_editor", "questionId": "bp1"}); code != 404 {
-		t.Fatalf("internal read of a retracted question = %d", code)
-	}
-	if code, _ := internal("/api/internal/bank/copy", map[string]any{"workspaceId": "ws_e2e_private", "userId": "u_editor",
-		"assistantMessageId": "m", "toolCallId": "c", "questionIds": []string{"bp1"}, "title": "T"}); code != 404 {
-		t.Fatalf("internal copy of a retracted question = %d", code)
-	}
 	if code := doReq(t, h, http.MethodPost, "/api/bank/copy", "u_editor", map[string]any{
 		"questionIds": []string{"bp1"}, "workspaceId": "ws_e2e_private", "quizName": "T"}).Code; code != 404 {
 		t.Fatalf("copy of a retracted question = %d", code)
@@ -274,8 +257,8 @@ func TestFrozenAccountRecordsBankAnswers(t *testing.T) {
 	}
 }
 
-// The bank's keys follow the editor grant and the mode: View mode reads and a
-// learner's agent are answer-free, an editor's Edit mode read and agent are not.
+// The bank's keys follow the editor grant and the mode: View mode reads are
+// answer-free, an editor's Edit mode read is not.
 func TestBankAnswerKeysFollowTheEditorGrant(t *testing.T) {
 	h, st, _, _ := openInternalHTTPWith(t, nil, func(st *store.Store, c *httpapi.Config) {
 		bankDSN, pool := openTestBank(t, st, testdb.URL(t))
@@ -305,20 +288,6 @@ func TestBankAnswerKeysFollowTheEditorGrant(t *testing.T) {
 		rec := doReq(t, h, http.MethodGet, tc.path, tc.user, nil)
 		if rec.Code != tc.status || keyed(rec.Body.String()) != tc.keys {
 			t.Fatalf("%s %s = %d %s", tc.user, tc.path, rec.Code, rec.Body.String())
-		}
-	}
-	for _, user := range []string{"u_viewer", "u_editor"} {
-		for _, req := range []struct {
-			path string
-			body map[string]any
-		}{
-			{"/api/internal/bank/read", map[string]any{"userId": user, "questionId": "key1"}},
-			{"/api/internal/bank/list", map[string]any{"userId": user, "topicId": "t"}},
-		} {
-			rec := doInternal(t, h, http.MethodPost, req.path, pipeSecret, req.body)
-			if rec.Code != 200 || keyed(rec.Body.String()) != (user == "u_editor") {
-				t.Fatalf("agent %s as %s = %d %s", req.path, user, rec.Code, rec.Body.String())
-			}
 		}
 	}
 }

@@ -238,7 +238,7 @@ resolved to signed URLs at render and export time and follow editor-asset
 cloning: a clone copies the asset rows, rewrites the ids, drops images whose
 asset was not copied, and drops a question whose part loses all content. Uploads
 go through the quiz's material route and name the quiz; the workspace owner
-pays for a workspace quiz's images, the quiz owner for a standalone quiz's. A question the chat copied from the bank (`copy_questions`) keeps its
+pays for a workspace quiz's images, the quiz owner for a standalone quiz's. A question copied from the bank (Copy to quiz) keeps its
 bank `{ url }` figures in the quiz: they are immutable, so the quiz links to
 them rather than copying them, and the Go validator accepts a quiz image or
 graph URL only under `BANK_ASSETS_URL` (`questions.QuizBankAssetsURL`). Each
@@ -348,10 +348,10 @@ malformed question loses fields instead of failing the read.
 | `GET /api/bank/questions/{id}`, `GET /api/bank/questions?ids=` | bank readers, editors included (View mode); `editor` still reports the grant | none |
 | `GET /api/bank/questions/{id}/edit` | bank editors on an editable bank; others 404 | full |
 | Create, content/metadata/sharing PATCH, clone, bank save and review marker | editors and a copy's new owner | full |
-| Chat `inspect_document` on a quiz, `read_question`, `list_question_bank` pages | the acting user | full only for a material editor or a bank editor |
+| Chat `inspect_document` on a quiz | the acting user | full only for a material editor |
 
-Copies keep keys because their owner edits them: clones, Copy to quiz
-(`POST /api/bank/copy`) and the chat's `copy_questions`. The signed-out image
+Copies keep keys because their owner edits them: clones and Copy to quiz
+(`POST /api/bank/copy`). The signed-out image
 route (`AnonymousQuizAssetPath`) still checks the full content, so a solution's
 images resolve once an answer is checked. Live quizzes keep the rule by room
 (Epo 2026-10-10): answer keys live in a keys document only editors who can
@@ -490,9 +490,7 @@ palette colour picked from its id. Publication files topics only under an exam
 that already exists. Bank migration `0005_exam_covers.sql` adds the two exam
 columns and fills the pilot's HKDSE and IELTS. Publication uploads
 immutable assets and inserts new IDs; it does not overwrite later reviewer edits.
-No task-type labels are stored (Epo, 2026-10-06): the page and the chat
-agent's `list_question_bank` (`answer_type`, see
-[agentic-retrieval.md](agentic-retrieval.md), Question bank) filter by the
+No task-type labels are stored (Epo, 2026-10-06): the page filters by the
 parts' answer types read from each question's content. Bank migration
 `0004_drop_question_types.sql` drops the old `questions.question_types`; run it
 only after the code that stopped reading the column is deployed.
@@ -527,8 +525,7 @@ and record nothing; frozen accounts record (`requireAccountMutate`). Account
 purge deletes the rows.
 
 `POST /api/bank/copy` (`server/internal/httpapi/huma_bank_progress.go`) copies
-questions unchanged with the chat's `copy_questions` logic (`bankCopies` and
-`bankAppendCommands` in `internal_bank.go`): each question's credit is resolved
+questions unchanged (`bankCopies`, `bankAppendCommands`): each question's credit is resolved
 from its bank sources into the quiz's provenance under the question's id, and
 an unknown or retracted id fails the call with 404. Exactly one destination:
 `quizName` makes a new quiz in the workspace, filed in `chapterId` or
@@ -549,8 +546,7 @@ Bank migration `0003_retracted.sql` adds `questions.retracted_at`, which only
 the owner sets (see [deployment-runbook.md](deployment-runbook.md)); the editor
 role has no grant on it. Syllabus counts, the topic list, single and batch
 reads (a retracted id fails a batch with 404 like an unknown one), comments,
-check, marks, progress, copy and the chat's list, read and
-`copy_questions` routes all skip retracted questions. Editors' save and review
+check, marks, progress and copy routes all skip retracted questions. Editors' save and review
 routes do not check the flag; the page never lists those questions. UAT and
 production share the bank: run `go run ./cmd/bank migrate` before deploying
 code that reads the column, and code older than this change still shows

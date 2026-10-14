@@ -66,7 +66,6 @@ WRITE_TOOLS = frozenset(
         "add_questions",
         "add_question_media",
         "edit_document",
-        "copy_questions",
         "create_deck",
         "write_slide",
     }
@@ -291,11 +290,6 @@ async def _run_turn(
             log.warning("knowledge library unavailable for this turn", exc_info=True)
         if not ctx.library_catalog and not ctx.library_books:
             ctx.library = False
-    if ctx.library:
-        try:
-            await tools.load_bank_catalog(ctx)
-        except Exception:  # any failure to reach the bank
-            log.warning("question bank unavailable for this turn", exc_info=True)
     ctx.chapters, open_chapter = await store.workspace_chapters(
         ctx.workspace_id, ctx.open_resource.get("id")
     )

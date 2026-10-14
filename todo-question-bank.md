@@ -22,10 +22,9 @@ work is in [openwiki/question-bank.md](openwiki/question-bank.md) and
   Both are now in the ignored `deploy/.env.uat` (the reader URL over WireGuard,
   `10.77.0.2:5433/bank`) and pushed to the GitHub `uat` environment; the
   example file lists them.
-- **Chat.** The agent walks the bank by listing (`list_question_bank`,
-  `read_question`) and copies with `copy_questions`, all through Go's
-  `/api/internal/bank/{list,read,copy}`; each copied question carries its
-  credits. Details in `todo-learning.md` 1.7 and 2.5.
+- **Chat.** The agent has no bank tools since 2026-10-14 (contract v26; Epo):
+  no playground run ever copied a bank question. Learners copy with the bank
+  page's Copy to quiz, and each copied question carries its credits.
 - **Before round 2.** The 1,098 pilot questions are gone from the bank. Their
   dump is `data/question-bank/backups/bank-2026-10-03-before-round2.dump`; the
   pilot run evidence is archived in the private bank bucket.

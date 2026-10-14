@@ -75,7 +75,9 @@ import (
 // v25: add_open_question is gone (Epo 2026-10-14): add_questions items take
 // an open question too (marks, markscheme, model_answer, hints?), the item's
 // fields deciding its kind, so a note's quiz fence takes exactly its items.
-const ContractVersion = 25
+// v26: the question-bank tools are gone (Epo 2026-10-14): no list_question_bank,
+// read_question or copy_questions; the learner's bank keeps its own copy.
+const ContractVersion = 26
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -687,56 +689,6 @@ func Definitions() []Definition {
 			}),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
-		}),
-		chatTool(Definition{
-			Name:      "list_question_bank",
-			Retention: RetainNone,
-			Description: "List the question bank of reviewed exam questions: a bank subject " +
-				"listed below for its topics, or a topic for its questions as cards, 50 per page, " +
-				"optionally only those with a part of one answer type.",
-			InputSchema: obj(map[string]any{
-				"subject": str("A bank subject id from this description."),
-				"topic":   str("A topic id from a subject's list."),
-				"answer_type": map[string]any{
-					"type": "string",
-					"enum": []string{"mcq", "multi", "boolean", "short", "matching", "ordering", "open", "gaps"},
-					"description": "With topic: only questions with a part of this answer type, as cards list " +
-						"them after their marks (True/False/Not given items are mcq).",
-				},
-				"offset": map[string]any{"type": "integer", "minimum": 0, "default": 0},
-			}),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpLibraryRead},
-		}),
-		chatTool(Definition{
-			Name:      "read_question",
-			Retention: RetainFull,
-			Description: "Read one question-bank question with its sources: in full (answer key, " +
-				"solution, marking scheme) when the user edits the bank, otherwise without answers. " +
-				"copy_questions copies the answers either way.",
-			InputSchema: obj(map[string]any{
-				"question_id": str(""),
-			}, "question_id"),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpLibraryRead},
-		}),
-		chatTool(Definition{
-			Name:      "copy_questions",
-			Retention: RetainFull,
-			Description: "Copy question-bank questions by id, unchanged, into a new quiz (title, " +
-				"optional chapter_id) or a quiz in this workspace (quiz_id), instead of writing them out.",
-			InputSchema: obj(map[string]any{
-				"question_ids": map[string]any{
-					"type": "array", "minItems": 1, "maxItems": 20, "uniqueItems": true,
-					"items": map[string]any{"type": "string", "minLength": 1},
-				},
-				"title":      map[string]any{"type": "string", "minLength": 1, "maxLength": fieldlimits.MaterialTitle},
-				"chapter_id": str("The chapter to file a new quiz in."),
-				"quiz_id":    str("A quiz in this workspace to append to."),
-			}, "question_ids"),
-			Mutates:            true,
-			Concurrency:        "mutate",
-			RequiredOperations: []Operation{OpMaterialCreate, OpLibraryRead},
 		}),
 		chatTool(Definition{
 			Name:      "capture_knowledge_page",

@@ -97,8 +97,8 @@ network and no pin.
 
 Agent tool descriptions come from the shared contract
 (`retrieval/contract.py`) alone; `tools.schemas_for` only appends the
-library's subject list to `browse_knowledge`, the bank's exams to
-`list_question_bank` and the skill list to `read_skill`, and drops
+library's subject list to `browse_knowledge` and the skill list to
+`read_skill`, and drops
 `excerpt_ids` from the write tools when the library is not a source this turn
 (the model otherwise fills it with workspace passage ids). Curate mode's prompt module
 (`prompts/curate.py`) was deleted on 2026-10-04. Almost nothing model-facing is
@@ -2367,10 +2367,10 @@ build, and the knowledge library is one more source while the switch is on.
   chapter they practise, study preferences, grow a long note by appending
   sections), the note format (`Formats` in the contract:
   `noteMarkdownDescription`), which question tool writes what (Question
-  tools, below), and with Library on one primary excerpt and question-bank
-  and exercise reuse. A write is refused until the skills it needs are in the
-  request (`skills.REQUIRES`, checked in `tools.run`): `copy_questions` needs
-  `editing`; `create_material` and the three question tools both;
+  tools, below), and with Library on one primary excerpt and exercise
+  reuse. A write is refused until the skills it needs are in the request
+  (`skills.REQUIRES`, checked in `tools.run`): `create_material` and the
+  question tools need both;
   `edit_document` `editing`, plus `workspace_building` when a command is
   `insert_markdown` or `replace_block`. The refusal carries the missing
   skills: a short error (`Not applied: this write needs the … skills, which
@@ -2419,8 +2419,8 @@ build, and the knowledge library is one more source while the switch is on.
   `CAPY_AGENT_MAX_STEPS` and stated in the prompt from that value), the last
   with tools off, and an empty response ends it with `invalid_answer`; reads
   and refused writes do not lift that cap. Once a call to one of the write
-  tools (`agent.WRITE_TOOLS`: `create_material`, the three question tools,
-  `edit_document`, `copy_questions`, `create_deck`, `write_slide`) succeeds,
+  tools (`agent.WRITE_TOOLS`: `create_material`, the question tools,
+  `edit_document`, `create_deck`, `write_slide`) succeeds,
   the turn takes the build budget and has no response ceiling: 160 tool calls
   (`BUILD_TOOLS_PER_TURN`), and reaching them runs one final tools-off
   response, reported as `tool_cap` even if that response is empty. Every
@@ -2472,11 +2472,11 @@ build, and the knowledge library is one more source while the switch is on.
   needs no read call; one that does not fit or cannot be read stays unread and
   the refusal says to `read_knowledge` it. The write itself is not applied, so
   a write still cites only excerpts whose full text the model has seen. None
-  of this reaches an `edit_document` on a **source file** or `copy_questions`:
-  the learner's own file is not written from the library, so it carries no
-  provenance to Go (which refuses a source edit that does), `excerpt_ids` on a
-  source target is refused rather than ignored, and neither write credits or
-  consumes the turn's reads. The playground measured this rule against the
+  of this reaches an `edit_document` on a **source file**: the learner's own
+  file is not written from the library, so it carries no provenance to Go
+  (which refuses a source edit that does), `excerpt_ids` on a source target is
+  refused rather than ignored, and the edit neither credits nor consumes the
+  turn's reads. The playground measured this rule against the
   ledger's required todos and named excerpts
   (`bench/rag/reports/2026-10-13-ledger-vs-noledger.md`): about a quarter fewer
   input tokens and a third of the refused writes; automatic crediting
@@ -2499,42 +2499,20 @@ build, and the knowledge library is one more source while the switch is on.
   `store.AgentStudyProgress`: items marked done, started or removed, recent
   quiz results, and the chapters whose rated questions and cards are least
   retained. `tools.render_progress` turns it into the text the model reads.
-- **Question bank** (`retrieval/bank.py` renders; Go reads). The retrieval
-  service holds no bank credentials: `list_question_bank(subject?, topic?,
-  answer_type?, offset?)` and `read_question(question_id)` go through
-  `POST /api/internal/bank/list` and `/read` (`internal_bank.go`, pipeline
-  secret and an actor who can sign in), and `copy_questions` through
-  `/api/internal/bank/copy`. All three require `library.read` (the copy also
-  `material.create`) and are offered with Library on, a configured library and
-  a bank the gateway answers for: the subject list comes back empty when Go has
-  no `BANK_DATABASE_URL`, which leaves them unoffered. The syllabus is fixed,
-  so the agent walks it rather than searching: with no arguments the exams and
-  subjects with question counts (in the tool description), with `subject` its
-  topics with counts, with `topic` 50 question cards per page (the stem's
-  opening, such as a reading passage, then what the parts ask). A card lists
-  the question's answer types after its marks (`bank.AnswerTypes`: mcq, multi,
-  boolean, short, matching, ordering, open, gaps, read from its parts; IELTS
-  True/False/Not given items are mcq); `answer_type` with `topic` keeps that
-  topic's questions with a part of one answer type and their count
-  (`answerType` on the route, refused without `topicId`), and an empty filtered
-  page tells the agent to list the topic unfiltered to see its types. The
-  bank page's Copy to quiz (`POST /api/bank/copy`, see
-  [question-bank.md](question-bank.md#learner-progress-and-retraction)) shares
-  the copy's credit and append logic.
-  `read_question` returns the question's JSON and its sources, to judge it.
-  `copy_questions(question_ids ≤ 20, title + chapter_id? | quiz_id)` writes
-  none of the content through the model: Go reads the questions from the bank,
-  resolves each one's sources (`bank.Provenance`: library books at their
-  historical version, openly licensed web pages) and creates the quiz or
-  appends after the quiz's last question through the same writes as
-  `create_material` and `edit_document`. Each copy's credit is kept in the
-  quiz's provenance under its question id (`provenance.questions`), shown under
-  that question (`QuestionCreditNote`), never in the material footer, and the
-  model cannot supply one: only the copy route writes it. The route validates
-  the credits before either write (`ValidateStoredProvenance`), which computes
-  each credit's licence line (a ShareAlike source's licence). A copy needs no
-  indexed workspace content, sourced or not (`internalMaterialReq.FromBank`).
-  `copy_questions` counts as a write for the stall guard (`WRITE_TOOLS`).
+- **Question bank.** The chat agent has no bank tools (contract v26, Epo
+  2026-10-14): it listed, read and copied bank questions from contract v11 to
+  v25, and no playground run ever copied one. Learners copy from the bank
+  page's Copy to quiz (`POST /api/bank/copy`, see
+  [question-bank.md](question-bank.md#learner-progress-and-retraction)): Go
+  reads the questions from the bank, resolves each one's sources
+  (`bank.Provenance`: library books at their historical version, openly
+  licensed web pages) and creates the quiz or appends after its last question
+  (`bankCopies`, `bankAppendCommands` in `huma_bank_progress.go`). Each copy's
+  credit is kept in the quiz's provenance under its question id
+  (`provenance.questions`), shown under that question (`QuestionCreditNote`),
+  never in the material footer, and no agent write may supply one. The credits
+  are validated before the write (`ValidateStoredProvenance`), which computes
+  each credit's licence line (a ShareAlike source's licence).
   Copied figures keep linking to the bank's public, content-hashed URLs, under
   the same base in every validator: Go `questions.QuizBankAssetsURL` and the
   collaboration service's `questions.ts` read `BANK_ASSETS_URL`, and the
@@ -2542,7 +2520,8 @@ build, and the knowledge library is one more source while the switch is on.
   `scripts/env/config.py` builds from `BANK_ASSETS_URL`. Each checks the exact
   origin and the cleaned path. An embedding search came first
   (`bench/rag/reports/2026-10-04-bank-search.md`); Epo chose listing on
-  2026-10-04, and the copy and its per-question credits on 2026-10-05.
+  2026-10-04, the copy and its per-question credits on 2026-10-05, and removed
+  the agent's bank tools on 2026-10-14.
 - **Provenance.** Provenance is the excerpts a work was written from. Both
   writes resolve their `excerpt_ids` through `library.provenance` and send the
   books to Go, which bounds the shape, requires each book's version (the
@@ -2611,8 +2590,8 @@ build, and the knowledge library is one more source while the switch is on.
   bar is on screen; `pb-28`). In the editor the stats footer, when shown,
   follows it and keeps that room instead.
   **Embedded quizzes and flashcard sets** keep their own provenance (Epo
-  2026-10-10): every fence of an agent write (above), `copy_questions` or the
-  bank page's copy into an embedded quiz (credits under `provenance.questions`
+  2026-10-10): every fence of an agent write (above), the bank page's copy
+  into an embedded quiz (credits under `provenance.questions`
   of that quiz only), and agent edits that target the embedded row's id all
   write the row's own record, which only grows like a note's. A pasted block's
   copy (`AdoptEmbeddedMaterials`) and every clone carry the row's record,
@@ -2718,9 +2697,7 @@ build, and the knowledge library is one more source while the switch is on.
   library figures go through `tools.note_figures` and the production render;
   each crop is kept as `assets/<figure id>.jpg` under the run and recorded on
   the material (`figures`), which the preview shows with its caption
-  (`AssetUrlContext` maps `figure:<id>` to the file). The bank tools
-  read a local restore (`CAPY_PLAYGROUND_BANK_URL`), never the live bank, and
-  decks (`create_deck`, `write_slide`, made the ppt-master way per `lab/playground/DECKS.md`) exist only there. Details, including
+  (`AssetUrlContext` maps `figure:<id>` to the file). Decks (`create_deck`, `write_slide`, made the ppt-master way per `lab/playground/DECKS.md`) exist only there. Details, including
   the tool-description overrides and run restoration, are in
   `lab/playground/README.md`.
 
@@ -2735,9 +2712,6 @@ build, and the knowledge library is one more source while the switch is on.
 | `browse_knowledge` | none | Library on only. Exactly one of `subject` or `topic` (enforced in Python), or `book` with `CAPY_LIBRARY_SECTION_TOOLS`. A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. A book id: its outline of section paths, two levels deep, with pages and the chunks a read of each covers, 120 lines per `page`. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime; with the flag and no subject to list, its current books (id, title, pages). Retains nothing |
 | `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book; with `CAPY_LIBRARY_SECTION_TOOLS`, `book` and `section` instead read one run of a section in order as continuous text (up to 24 chunks a page) with each reviewed excerpt's scope where it begins, naming the next run's first chunk, recording every excerpt shown as read. Retains exact bounded excerpt reads used in successful material writes |
 | `read_skill` | none | Requires `material.create`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
-| `list_question_bank` | none | Library on only, with a configured library and a bank behind the gateway. The bank's exams and subjects, a subject's topics, or a topic's questions 50 per page, optionally only those with a part of one `answer_type`; compact cards. Retains nothing |
-| `read_question` | none | Same gating as `list_question_bank`. One bank question's JSON with its sources, to judge it |
-| `copy_questions` | yes | Same gating, plus `material.create`. Go copies up to 20 bank questions unchanged into a new quiz or after an existing quiz's last question, crediting each under its id; no `excerpt_ids`, and it neither credits nor consumes the turn's library reads |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
@@ -2849,8 +2823,10 @@ against, not shown to the model) and puts the small shapes in quiz fences.
 Version 22 (2026-10-13) drops the build ledger: no `create_ledger` and no
 `todo` on any write tool, and `excerpt_ids` says it is optional (Write guard,
 above). Version 25 (2026-10-14) removes `add_open_question`: `add_questions`
-items take open questions too, and a quiz fence takes exactly its items. Go
-and the pipeline deploy together. `cmd/openapi -agent-tools`
+items take open questions too, and a quiz fence takes exactly its items.
+Version 26 (2026-10-14) removes `list_question_bank`, `read_question` and
+`copy_questions` with their internal routes. Go and the pipeline deploy
+together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -3444,7 +3420,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
 | Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`, `CAPY_LIBRARY_SECTION_TOOLS`, `CAPY_LIBRARY_REQUIRE_TAGS` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. The two flags (0 or 1, anything else fails at startup) belong to the intake comparison: section tools off and tags required (`0` and `1`) are production. |
-| Question bank | `BANK_DATABASE_URL`, `BANK_ASSETS_URL` (Go, collaboration; `VITE_BANK_ASSETS_URL` in the SPA build) | The bank's read-only DSN, which only the Go server holds: the chat's bank tools read and copy through its internal routes. Unset leaves them unoffered. `BANK_ASSETS_URL` is also the one base a quiz's copied figures may link to; the collaboration service gets it in both compose files, and the SPA build gets it as `VITE_BANK_ASSETS_URL` (set it by hand in `deploy/.env` for local development). |
+| Question bank | `BANK_DATABASE_URL`, `BANK_ASSETS_URL` (Go, collaboration; `VITE_BANK_ASSETS_URL` in the SPA build) | The bank's read-only DSN, which only the Go server holds; unset, the bank routes answer that no bank is configured. `BANK_ASSETS_URL` is also the one base a quiz's copied figures may link to; the collaboration service gets it in both compose files, and the SPA build gets it as `VITE_BANK_ASSETS_URL` (set it by hand in `deploy/.env` for local development). |
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default and maximum 12 (`PLANNING_RESPONSES`): the responses a turn gets until its first successful write, the last with tools off. 4 tool calls per response on every turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Once a write lands there is no response ceiling: `BUILD_TOOLS_PER_TURN` (160) and the `STALL_RESPONSES` guard (5, plus `WRITE_ERROR_GRACE` 2 per errored write for at most 2 errors) bound it. No context-window minimum |
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |

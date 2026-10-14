@@ -33,7 +33,7 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from . import bank, capture, contract, deck, library, pending, questions, skills, store
+from . import capture, contract, deck, library, pending, questions, skills, store
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
 from .limits import TurnBudget
@@ -173,7 +173,6 @@ class ToolContext:
     # books ({id, title, pages}), which keep the library on and give
     # browse_knowledge.book its ids.
     library_books: list[dict[str, Any]] | None = None
-    bank_catalog: list[dict[str, Any]] | None = None
     subject_topics: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Resource operations the gateway granted this actor for the turn
     # (contract.OPERATIONS names). Tools whose required operations are not all
@@ -649,21 +648,6 @@ async def load_library_catalog(ctx: ToolContext) -> None:
         # Only an untagged library (no subject to list) needs its books named.
         if cfg.library_section_tools and not ctx.library_catalog:
             ctx.library_books = await library.books(conn)
-
-
-async def load_bank_catalog(ctx: ToolContext) -> None:
-    """Read the question bank's exams and subjects once, for list_question_bank's
-    description. A bank the gateway does not have leaves it empty, and the bank
-    tools unoffered."""
-    if not ctx.library or ctx.bank_catalog is not None:
-        return
-    if not _gateway_ready() or not ctx.user_id:
-        ctx.bank_catalog = []
-        return
-    body = await _gateway_read(
-        "/api/internal/bank/list", {"userId": ctx.user_id}, "list the question bank"
-    )
-    ctx.bank_catalog = [] if isinstance(body, ToolResult) else body["subjects"]
 
 
 def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
@@ -2306,113 +2290,6 @@ async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     return _result(skills.render(name, skill.text(ctx.library)))
 
 
-async def _list_question_bank(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """The bank's table of contents: a subject's topics, or a page of a topic's
-    questions, optionally only those with a part of one answer type. The exams and subjects ride in
-    the tool description."""
-    # A topic id is unique on its own, so a subject passed with it is ignored.
-    topic, subject = args.get("topic"), args.get("subject")
-    atype = str(args.get("answer_type") or "")
-    if not (topic or subject):
-        return _refused(
-            "list_question_bank takes subject (a bank subject from its description, "
-            "not a library subject) or topic (from a subject's list)."
-        )
-    if atype and not topic:
-        return _refused(
-            "answer_type filters a topic's questions; pass a topic from the "
-            "subject's list with it."
-        )
-    if topic:
-        offset = int(args.get("offset") or 0)
-        payload = {"userId": ctx.user_id, "topicId": str(topic), "offset": offset}
-        if atype:
-            payload["answerType"] = atype
-        body = await _gateway_read(
-            "/api/internal/bank/list", payload, f"list bank topic {topic}"
-        )
-        if isinstance(body, ToolResult):
-            return body
-        total, rows = body["total"], body["questions"]
-        if not rows:
-            hint = (
-                f"No questions with {atype} parts under topic {topic} from offset "
-                f"{offset}; list the topic without answer_type to see the answer "
-                "types its cards carry."
-                if atype
-                else f"No bank questions under topic {topic} from offset {offset}; "
-                "list the subject's topics for their ids and counts."
-            )
-            return _refused(hint, code="unavailable_target")
-        of = f" {atype}" if atype else ""
-        head = f"Topic {topic}:{of} questions {offset + 1}-{offset + len(rows)} of {total}."
-        more = offset + len(rows)
-        tail = f"\nNext page: offset {more}." if more < total else ""
-        return _result(head + "\n\n" + "\n\n".join(bank.card(r) for r in rows) + tail)
-    body = await _gateway_read(
-        "/api/internal/bank/list",
-        {"userId": ctx.user_id, "subjectId": str(subject)},
-        f"list bank subject {subject}; the bank's subjects are in the "
-        "list_question_bank description",
-    )
-    if isinstance(body, ToolResult):
-        return body
-    rows = body["topics"]
-    return _result(
-        f"Topics of {subject}:\n"
-        + "\n".join(
-            f"- {r['id']}: {r['label']} · {r['questions']} questions" for r in rows
-        )
-    )
-
-
-async def _read_question(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    body = await _gateway_read(
-        "/api/internal/bank/read",
-        {"userId": ctx.user_id, "questionId": str(args["question_id"])},
-        f"read bank question {args['question_id']}",
-    )
-    if isinstance(body, ToolResult):
-        return body
-    return _result(bank.full(body))
-
-
-async def _copy_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    """Copy bank questions into a quiz through the gateway, which reads them
-    from the bank itself and credits each one: the model writes none of it."""
-    if not ctx.assistant_message_id:
-        return _refused("copy_questions needs the assistant message id.")
-    call_id = str(args.get("_tool_call_id") or "")
-    if not call_id:
-        return _refused("copy_questions is missing its tool-call id.")
-    title, quiz_id = str(args.get("title") or "").strip(), args.get("quiz_id")
-    if bool(title) == bool(quiz_id):
-        return _refused(
-            "copy_questions takes exactly one destination: title for a new quiz, "
-            "or quiz_id for a quiz in this workspace."
-        )
-    if args.get("chapter_id") and quiz_id:
-        return _refused("chapter_id files a new quiz; it goes with title.")
-    # Copied questions carry the bank's credits, so they credit no excerpts.
-    payload = {
-        "workspaceId": ctx.workspace_id,
-        "userId": ctx.user_id,
-        "assistantMessageId": ctx.assistant_message_id,
-        "toolCallId": call_id,
-        "questionIds": [str(q) for q in args["question_ids"]],
-        "title": title[:MATERIAL_TITLE_MAX].strip(),
-        "chapterId": str(args.get("chapter_id") or ""),
-        "quizId": str(quiz_id or ""),
-    }
-    return await _post_operation(
-        "/api/internal/bank/copy",
-        payload,
-        operation_id(ctx.assistant_message_id, call_id),
-        ctx,
-        failure="copy the questions",
-    )
-
-
 # --------------------------------------------------------------- questions
 
 
@@ -2772,9 +2649,6 @@ _register("browse_knowledge", _browse_knowledge)
 _register("read_knowledge", _read_knowledge)
 _register("read_skill", _read_skill)
 _register("read_study_progress", _read_study_progress)
-_register("list_question_bank", _list_question_bank)
-_register("read_question", _read_question)
-_register("copy_questions", _copy_questions)
 _register("capture_knowledge_page", _capture_knowledge_page)
 _register("list_sources", _list_sources)
 _register("read_document", _read_document)
@@ -2799,7 +2673,6 @@ KNOWLEDGE_TOOLS = (
     "read_knowledge",
 )
 KNOWLEDGE_CAPTURE = "capture_knowledge_page"
-BANK_TOOLS = ("list_question_bank", "read_question", "copy_questions")
 # Offered with ppt-master installed (the retrieval image has it).
 DECK_TOOLS = ("create_deck", "write_slide")
 
@@ -2812,9 +2685,6 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
         return False
     if spec.name == "read_study_progress":
         return ctx.study_progress
-    if spec.name in BANK_TOOLS:
-        # Part of the Library switch; a bank that is down or empty is not offered.
-        return ctx.library and bool(ctx.bank_catalog)
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return ctx.library and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
@@ -2841,8 +2711,8 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         for spec in REGISTRY.values()
         if _offered(spec, ctx)
     ]
-    # The model maps the learner's words onto a subject from these lists, then
-    # browses or lists it for topic ids.
+    # The model maps the learner's words onto a subject from this list, then
+    # browses it for topic ids.
     # The deck skill is listed only where its tools can run.
     extra = {
         "read_skill": skills.catalog(
@@ -2861,15 +2731,6 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
                 f"- browse_knowledge({json.dumps({'book': b['id']})}): "
                 f"{b['title']} ({b['pages']} pages)"
                 for b in ctx.library_books
-            )
-        )
-    if ctx.bank_catalog:
-        extra["list_question_bank"] = (
-            "\n\nExams and subjects this bank holds (list one for its topics):\n"
-            + "\n".join(
-                f"- list_question_bank({json.dumps({'subject': s['id']})}): "
-                f"{s['examLabel']} {s['label']} ({s['questions']} questions)"
-                for s in ctx.bank_catalog
             )
         )
     for schema in schemas:

@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -163,9 +164,8 @@ func (a *api) bankProgress(ctx context.Context, _ *struct{}) (*bankProgressOutpu
 	return out, bankHTTPError(err)
 }
 
-// bankCopy copies bank questions, unchanged and credited like the chat's
-// copy_questions, into a new quiz or the end of one in a workspace the
-// learner edits.
+// bankCopy copies bank questions, unchanged and each credited from the bank's
+// sources, into a new quiz or the end of one in a workspace the learner edits.
 func (a *api) bankCopy(ctx context.Context, in *bankCopyInput) (*bankCopyOutput, error) {
 	if _, err := a.bankAccess(ctx, false); err != nil {
 		return nil, err
@@ -290,4 +290,67 @@ func documentHTTPError(err error) error {
 		return huma.Error503ServiceUnavailable("the document authority is unavailable")
 	}
 	return hErr(err)
+}
+
+// bankCopies reads bank questions for a copy, unchanged and in order, with
+// each one's credit resolved from the bank's sources and kept under the
+// question's id. An unknown or retracted id is bank.ErrNotFound.
+func (a *api) bankCopies(ctx context.Context, ids []string) ([]map[string]any, *store.Provenance, error) {
+	details, err := a.cfg.Bank.GetMany(ctx, ids)
+	if err != nil {
+		return nil, nil, err
+	}
+	copied := make([]map[string]any, 0, len(details))
+	credits := map[string]store.QuestionCredit{}
+	for _, d := range details {
+		copied = append(copied, d.Question)
+		sources, err := a.cfg.Bank.Provenance(ctx, d.Sources)
+		if err != nil {
+			return nil, nil, err
+		}
+		if sources != nil {
+			id, _ := d.Question["id"].(string)
+			credits[id] = store.QuestionCredit{Books: sources.Books, Web: sources.Web}
+		}
+	}
+	if len(credits) == 0 {
+		return copied, nil, nil
+	}
+	provenance := &store.Provenance{Books: []store.ProvenanceBook{}, Questions: credits}
+	// Bounds the record and computes each credit's licence line.
+	if _, err := validateStoredProvenance(provenance); err != nil {
+		return nil, nil, fmt.Errorf("%w: %v", bank.ErrUnavailable, err)
+	}
+	return copied, provenance, nil
+}
+
+// bankAppendCommands appends the copied questions, in order, after the quiz's
+// last question.
+func bankAppendCommands(content string, copied []map[string]any) ([]json.RawMessage, error) {
+	existing, _, err := materialdoc.ExtractQuiz(content)
+	if err != nil {
+		return nil, err
+	}
+	var present []map[string]any
+	if err := json.Unmarshal(existing, &present); err != nil {
+		return nil, err
+	}
+	var after *string
+	if n := len(present); n > 0 {
+		if id, ok := present[n-1]["id"].(string); ok {
+			after = &id
+		}
+	}
+	commands := make([]json.RawMessage, 0, len(copied))
+	for _, q := range copied {
+		command, err := json.Marshal(map[string]any{"type": "add_question", "question": q, "after_question_id": after})
+		if err != nil {
+			return nil, err
+		}
+		commands = append(commands, command)
+		if id, ok := q["id"].(string); ok {
+			after = &id
+		}
+	}
+	return commands, nil
 }

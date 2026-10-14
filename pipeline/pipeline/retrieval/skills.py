@@ -49,7 +49,6 @@ SKILLS: dict[str, Skill] = {
 # The skills each write needs. edit_document needs workspace_building only for
 # the commands that carry its formats.
 REQUIRES: dict[str, tuple[str, ...]] = {
-    "copy_questions": (EDITING,),
     "create_material": (EDITING, BUILDING),
     "add_questions": (EDITING, BUILDING),
     "add_question_media": (EDITING, BUILDING),

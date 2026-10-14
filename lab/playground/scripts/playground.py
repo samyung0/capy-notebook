@@ -28,7 +28,6 @@ from typing import Any
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import bank_local
 import deck
 from deck import production as production_deck
 from common import (
@@ -267,7 +266,6 @@ SEARCH_SUBJECTS = "\n\nSubjects this library holds:\n"
 CATALOGS = {
     "browse_knowledge": SUBJECT_CATALOG,
     "search_knowledge": SEARCH_SUBJECTS,
-    "list_question_bank": "\n\nExams and subjects this bank holds",
     "read_skill": "\n\nSkills:\n",
 }
 
@@ -979,81 +977,6 @@ async def deck_locally(
     return result
 
 
-async def copy_locally(
-    args: dict[str, Any], ctx, state: dict[str, Any], message_id: str
-):
-    """copy_questions as the gateway runs it: bank questions copied unchanged
-    into a new quiz or one this conversation made, each credited under its id with its
-    bank sources (Go resolves those into book and web credits)."""
-    from pipeline.retrieval import tools
-
-    clean = {k: v for k, v in args.items() if not k.startswith("_")}
-    title, quiz_id = str(clean.get("title") or "").strip(), clean.get("quiz_id")
-    if bool(title) == bool(quiz_id):
-        return tools._refused(
-            "copy_questions takes exactly one destination: title for a new quiz, "
-            "or quiz_id for a quiz in this workspace."
-        )
-    if clean.get("chapter_id") and quiz_id:
-        return tools._refused("chapter_id files a new quiz; it goes with title.")
-    rows = [await bank_local.read(str(qid)) for qid in clean["question_ids"]]
-    missing = [qid for qid, row in zip(clean["question_ids"], rows, strict=True) if row is None]
-    if missing:
-        return tools._refused(
-            "A question id is not in the bank; list_question_bank shows them.",
-            code="unavailable_target",
-        )
-    record = None
-    if quiz_id:
-        record = run_material(state, str(quiz_id))
-        if record is None or record["kind"] != "quiz":
-            return tools._refused(
-                "quiz_id is not a quiz in this workspace", code="unavailable_target"
-            )
-    questions = [row["question"] for row in rows]
-    credits = {row["id"]: row["sources"] for row in rows if row.get("sources")}
-    if record is None:
-        record = {
-            "id": material_id(message_id, str(args.get("_tool_call_id") or "")),
-            "kind": "quiz",
-            "title": title,
-            "content": "",
-            "cards": [],
-            "questions": questions,
-            "excerpt_ids": [],
-            "provenance": {"questions": credits} if credits else None,
-            "chapter_id": clean.get("chapter_id") or None,
-            "edits": [],
-        }
-        state["materials"].append(record)
-        operation = "created"
-    else:
-        record["questions"] = [*record["questions"], *questions]
-        provenance = record.get("provenance") or {}
-        record["provenance"] = {
-            **provenance,
-            "questions": {**(provenance.get("questions") or {}), **credits},
-        }
-        record["edits"].append({"copy": list(clean["question_ids"])})
-        operation = "edited"
-    record["size"] = material_size("quiz", record)
-    write_material(state, record)
-    return tools._receipt_result(
-        {
-            "outcome": "succeeded",
-            "effect": {
-                "operation": operation,
-                "resource": {
-                    "kind": "material",
-                    "id": record["id"],
-                    "title": record["title"],
-                    "materialKind": "quiz",
-                },
-            },
-        }
-    )
-
-
 def apply_question_commands(
     current: list[dict[str, Any]], commands: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
@@ -1497,8 +1420,6 @@ class Turn:
                 result = tools._result(tools.render_progress(c["study_progress"]))
             elif name in deck.NAMES:
                 result = await deck_locally(name, args, ctx_, state, self.id)
-            elif name == "copy_questions":
-                result = await copy_locally(args, ctx_, state, self.id)
             elif name in tools.contract.HANDLER_CHECKED:
                 result = await questions_locally(name, args, ctx_, state, self.id)
             elif name == "inspect_document" and (
@@ -2082,24 +2003,6 @@ def build_app(target: str):
     cfg.pipeline_secret = cfg.pipeline_secret or "playground"
     # Production offers the deck tools only with ppt-master installed.
     deck.ensure_ppt_master()
-    # The bank routes answer from the local restore, so the production bank
-    # tools run unchanged.
-    gateway_read = tools._gateway_read
-
-    async def local_gateway_read(path, payload, failure):
-        if not path.startswith("/api/internal/bank/"):
-            return await gateway_read(path, payload, failure)
-        try:
-            status, body = await bank_local.handle(path, payload)
-        except Exception as exc:  # the restore is down: the tools go unoffered
-            return tools._failed(f"Could not {failure}: {exc}")
-        if status != 200:
-            return tools._refused(
-                f"Could not {failure}: {body['message']}", code=body["code"]
-            )
-        return body
-
-    tools._gateway_read = local_gateway_read
     app = FastAPI(title="Capy agentic playground")
     resolver = PdfResolver(target)
     turn_lock = asyncio.Lock()
@@ -2251,13 +2154,8 @@ def build_app(target: str):
         )
         if c["library"]:
             # The pinned version's topic catalog rides in the knowledge tool
-            # descriptions, so this reads the library exactly as a turn does;
-            # like a turn, a bank that is down leaves its tools out.
+            # descriptions, so this reads the library exactly as a turn does.
             await tools.load_library_catalog(ctx)
-            try:
-                await tools.load_bank_catalog(ctx)
-            except Exception as exc:
-                print(f"question bank unavailable for the preview: {exc}", flush=True)
         return {
             "prompt": effective_prompt(
                 c, production_prompt(c["locale"]), with_library=False
@@ -2477,45 +2375,6 @@ def check_decks() -> None:
         assert bad_args.refused and "arguments invalid" in bad_args.text()
 
     with TemporaryDirectory() as tmp:
-        asyncio.run(flow(Path(tmp) / "runs" / "r1"))
-
-
-def check_copy() -> None:
-    """copy_questions into a new quiz and a run's quiz, its refusals, and no
-    excerpt rule for copied bank questions."""
-    from tempfile import TemporaryDirectory
-    from unittest.mock import patch
-
-    from pipeline.retrieval import tools
-
-    async def read(qid: str):
-        if not qid.startswith("q"):
-            return None
-        question = {"id": qid, "stem": [], "parts": [{"id": f"{qid}-p", "blocks": [{"type": "text", "text": "Q"}], "marks": 1}]}
-        return {"id": qid, "question": question, "sources": [{"kind": "web", "title": "S"}]}
-
-    async def flow(run_dir: Path) -> None:
-        ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS)
-        ctx.library_reads.note("exc_1", 0, "1.1")  # a library read does not ask copies for excerpts
-        state = {"materials": [], "captures": [], "run_dir": run_dir}
-        for args, says in (
-            ({"question_ids": ["q1"]}, "exactly one destination"),
-            ({"question_ids": ["q1"], "title": "T", "quiz_id": "x"}, "exactly one destination"),
-            ({"question_ids": ["q1"], "quiz_id": "x", "chapter_id": "c"}, "goes with title"),
-            ({"question_ids": ["q1", "nope"], "title": "T"}, "not in the bank"),
-            ({"question_ids": ["q1"], "quiz_id": "mat_x"}, "not a quiz in this workspace"),
-        ):
-            refused = await copy_locally(args, ctx, state, "m1")
-            assert refused.refused and says in refused.text(), refused.text()
-        made = await copy_locally({"question_ids": ["q1", "q2"], "title": "IELTS reading", "_tool_call_id": "c1"}, ctx, state, "m1")
-        assert not made.refused, made.text()
-        quiz = state["materials"][-1]
-        assert [q["id"] for q in quiz["questions"]] == ["q1", "q2"]
-        assert set(quiz["provenance"]["questions"]) == {"q1", "q2"}
-        more = await copy_locally({"question_ids": ["q3"], "quiz_id": quiz["id"]}, ctx, state, "m1")
-        assert not more.refused and len(quiz["questions"]) == 3 and "q3" in quiz["provenance"]["questions"]
-
-    with TemporaryDirectory() as tmp, patch.object(bank_local, "read", new=read):
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 
 
@@ -2819,7 +2678,6 @@ def check() -> None:
     ):
         assert says in asyncio.run(check_note(bad)), bad
     check_decks()
-    check_copy()
     check_questions()
     check_figures()
     check_edits()
@@ -2885,7 +2743,6 @@ def check() -> None:
                 with (
                     patch.object(chat, "system_prompt", return_value="active turn"),
                     patch.object(tools, "load_library_catalog", new=AsyncMock()),
-                    patch.object(tools, "load_bank_catalog", new=AsyncMock()),
                 ):
                     response = await client.post("/api/prompt", json=c)
                 assert response.status_code == 200
