@@ -33,17 +33,29 @@
     },
     "B2_BUCKET": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
+      "targets": [
+        "coolify",
+        "ingest-production",
+        "ingest-queue",
+        "quality",
+        "build"
+      ],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
     "B2_ENDPOINT": {
       "kind": "variable",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "quality"],
+      "targets": [
+        "coolify",
+        "ingest-production",
+        "ingest-queue",
+        "quality",
+        "build"
+      ],
       "required_for": ["coolify", "ingest-production", "ingest-queue"]
     },
     "B2_FORCE_PATH_STYLE": {
       "kind": "variable",
-      "targets": ["coolify"]
+      "targets": ["coolify", "build"]
     },
     "B2_KEY_ID": {
       "kind": "secret",

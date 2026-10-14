@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -161,10 +162,45 @@ func (s *B2) PresignGet(ctx context.Context, path string) (string, error) {
 	return req.URL, err
 }
 
-func (s *B2) PresignGetWithExpiry(ctx context.Context, path string) (PresignedGet, error) {
+// inlineTypes are the formats a read link opens in place, in the app's viewers
+// or in a tab (a note's PDF attachment): PDF, raster images and audio. SVG is
+// an image that can carry script, so it is not one of them.
+var inlineTypes = map[string]string{
+	".pdf": "application/pdf",
+	".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+	".gif": "image/gif", ".webp": "image/webp", ".avif": "image/avif",
+	".bmp": "image/bmp", ".ico": "image/x-icon", ".tif": "image/tiff",
+	".tiff": "image/tiff", ".heic": "image/heic", ".heif": "image/heif",
+	".jp2": "image/jp2",
+	".mp3": "audio/mpeg", ".mpga": "audio/mpeg", ".mpeg": "audio/mpeg",
+	".wav": "audio/wav", ".m4a": "audio/mp4", ".mp4": "audio/mp4",
+	".aac": "audio/aac", ".ogg": "audio/ogg", ".opus": "audio/ogg",
+	".flac": "audio/flac", ".webm": "audio/webm",
+}
+
+// readHeaders is the type and disposition the bucket answers a short-lived
+// read link with, from the key's extension and never from the type the
+// uploader declared: inline types open in place, everything else downloads.
+// SVG keeps its type so <img> still draws it, and downloads when opened.
+// Hour-stable thumbnail links carry none of this (PresignStableGet).
+func readHeaders(key string) (contentType, disposition string) {
+	ext := strings.ToLower(path.Ext(key))
+	if t, ok := inlineTypes[ext]; ok {
+		return t, "inline"
+	}
+	if ext == ".svg" {
+		return "image/svg+xml", "attachment"
+	}
+	return "application/octet-stream", "attachment"
+}
+
+func (s *B2) PresignGetWithExpiry(ctx context.Context, key string) (PresignedGet, error) {
+	contentType, disposition := readHeaders(key)
 	req, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.bucket),
-		Key:    aws.String(path),
+		Bucket:                     aws.String(s.bucket),
+		Key:                        aws.String(key),
+		ResponseContentType:        aws.String(contentType),
+		ResponseContentDisposition: aws.String(disposition),
 	}, s3.WithPresignExpires(s.linkTTL))
 	if err != nil {
 		return PresignedGet{}, err

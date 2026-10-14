@@ -1,3 +1,4 @@
+import { IMAGE_POLICY } from 'capy-share-render';
 import { describe, expect, it, vi } from 'vitest';
 import { MATERIAL_SCHEMA_VERSION } from '../../src/lib/const';
 import { DEV_SHARE_LINK_SECRET, shareToken } from '../../src/lib/shareLink';
@@ -57,6 +58,9 @@ describe('anonymous material routes', () => {
       'public, s-maxage=300, max-age=0, must-revalidate'
     );
     expect(first.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+    expect(first.headers.get('Content-Security-Policy-Report-Only')).toBe(
+      IMAGE_POLICY
+    );
     // What the render waited on, read by bench/share-pages.
     expect(first.headers.get('Server-Timing')).toMatch(SERVER_TIMING);
     const html = await first.text();

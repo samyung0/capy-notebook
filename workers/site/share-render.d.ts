@@ -27,4 +27,6 @@ declare module 'capy-share-render' {
   ): string;
   /** The error page, inside summary.html when given, standalone otherwise. */
   export function renderFailure(status: number, template?: string): string;
+  /** The report-only image-source policy for every rendered page. */
+  export const IMAGE_POLICY: string;
 }

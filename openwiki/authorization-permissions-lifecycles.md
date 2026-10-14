@@ -385,8 +385,21 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   not the editor who uploaded them.
 - Direct cloud-source inspection treats DNS and connection failures as
   retryable provider outages. Request cancellation remains cancellation.
+- Short-lived read links (a file's `/links`, an editor asset's resolve, the
+  Office source session and its refresh) tell the bucket how to answer:
+  the type comes from the stored key's extension, never from the type the
+  uploader declared. PDF, raster images and audio are `inline`; every other
+  file is an `attachment` typed `application/octet-stream`, except SVG, which
+  keeps `image/svg+xml` so `<img>` still draws it but downloads when opened.
+  The viewers read bytes through `fetch`, `<img>` or `<audio>`, which ignore
+  the disposition, so only opening a link in a tab changes: Download original
+  and a note's file attachment save the file instead of showing it, while a
+  note's PDF attachment still opens in the browser. Hour-stable thumbnail
+  links carry no overrides ([thumbnails.md](thumbnails.md)). The bank's public
+  figures are not presigned and keep their server-detected type.
 
-Sources: [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
+Sources: [read link headers](../server/internal/blob/s3.go#L165),
+[chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),
 [source upload guard](../server/internal/httpapi/uploads.go#L40),
 [editor asset guard](../server/internal/httpapi/editor_assets.go#L142), and
 [owner storage gate](../server/internal/httpapi/server.go#L234).

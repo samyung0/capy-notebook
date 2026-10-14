@@ -997,6 +997,44 @@ is a loopback `http` origin (`vite-embed.ts`), with the headers from
 runs on `localhost`; another port alone would be the same site. The Playwright
 configs serve their own frame on `localhost` next to the app's `127.0.0.1`.
 
+### 2.4 App image policy (report-only)
+
+Every HTML page of the app is sent with
+`Content-Security-Policy-Report-Only: img-src …`, listing the only places a
+page may draw an image or CSS `url()` from: `'self'`, `data:`, `blob:`, the
+environment's bucket, the `BANK_ASSETS_URL` origin, `https://img.clerk.com`
+(avatars, Clerk's UI) and `https://i.ytimg.com` (YouTube posters).
+`vite-image-policy.ts` builds the value once per SPA build and sends it two
+ways:
+
+- Workers Assets serves the SPA's HTML, so the client build appends a `/*`
+  rule to `dist/_headers` (after `public/_headers`).
+- Worker responses get no `_headers`, so the share, summary and error pages
+  the site Worker renders read the same value from the share renderer bundle
+  (`IMAGE_POLICY`, `src/share/server.tsx`) and set it in
+  `workers/site/handler.ts`.
+
+Nothing is set by hand. The hosts come from configuration the deploy already
+has:
+
+- the bucket from `B2_BUCKET` and `B2_ENDPOINT`, addressed like Go's
+  presigner: `https://{bucket}.{endpoint host}`, or the bucket's path on the
+  endpoint when `B2_FORCE_PATH_STYLE=true`. The manifest gives these three to
+  the `build` target;
+- the bank from `VITE_BANK_ASSETS_URL`, which `scripts/env/config.py` builds
+  from `BANK_ASSETS_URL`;
+- reports go to the `capy-web` Sentry project's security endpoint, derived
+  from `VITE_SENTRY_DSN` and tagged with `VITE_APP_ENV`
+  (`https://{host}/api/{project}/security/?sentry_key=…&sentry_environment=…`).
+  Without a DSN the policy has no report endpoint and violations only reach
+  the browser console.
+
+A new image host goes into `imagePolicy` (and its test) before any page uses
+it. To enforce, send the same value as `Content-Security-Policy` in both places
+once UAT shows no reports from the app's own pages. The HTML embed frame, the
+Office runtime and Ops keep their own policies (§2.3, `workers/office/_headers`,
+the Ops application below).
+
 ---
 
 ## 3. Origin lockdown
@@ -1048,6 +1086,15 @@ Pick one:
 6. Leave file versioning off, or set versions to expire after 1 day. With
    versioning on, the blob reaper's deletes only hide objects and storage grows
    without bound.
+7. **Read links set the response headers.** A short-lived read link asks the
+   bucket for `response-content-type` and `response-content-disposition`
+   (`blob.readHeaders`): the type from the key's extension, `inline` for PDF,
+   raster images and audio, `attachment` for everything else. B2 has to
+   honour both overrides, or a file comes back with the type its uploader
+   declared. Check it after each deploy that changes `server/internal/blob`
+   ([UAT checklist §5](uat-activation-checklist.md#5-data-and-money)). The
+   bucket also appears in the app's image policy (§2.4), so `B2_BUCKET`,
+   `B2_ENDPOINT` and `B2_FORCE_PATH_STYLE` reach the SPA build too.
 
 Do **not** put a current-object B2 lifecycle rule on `captions/` or
 `derived-text/`. Their database references and the blob reaper own cleanup;
@@ -1181,6 +1228,10 @@ re-embedding stays on the parse path and is handled later by ingest.
    behind the client-side `ignoreErrors`.
 7. Set a spend cap. Default sampling can burn a month's quota in a day during
    an incident, which is exactly when reporting must not stop.
+8. The app's image policy (§2.4) reports to `capy-web`'s security endpoint,
+   tagged by environment. Keep the project's default ignored sources for CSP
+   reports on (Settings → Security Headers: browser extensions and local
+   schemes), so extensions that inject images do not file reports.
 
 ---
 
@@ -2544,8 +2595,9 @@ Clerk: its browser bundle and API calls, `img.clerk.com` avatars, the worker it
 spawns, and the Cloudflare challenge frame bot protection renders at sign-in.
 The origin comes from decoding `VITE_CLERK_PUBLISHABLE_KEY`, so it follows the
 environment; an unreadable key leaves the policy at `'self'` and the dashboard
-reports that Clerk failed to load. The SPA sends no such policy, which is why
-the same Clerk setup works there without configuration.
+reports that Clerk failed to load. The SPA sends only a report-only image
+policy (§2.4), which is why the same Clerk setup works there without
+configuration.
 
 Every hostname a stack publishes on the shared `coolify` network has to be
 unique, because Coolify's own infrastructure containers claim bare service

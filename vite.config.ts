@@ -8,6 +8,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
 import { summaryVitePlugin } from './src/summary/vite';
 import { embedFrame } from './vite-embed';
+import { imagePolicy, imagePolicyHeaders } from './vite-image-policy';
 import { mathliveFonts } from './vite-mathlive';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
@@ -135,6 +136,7 @@ export default defineConfig(({ isSsrBuild, mode }) => {
       react(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),
+      imagePolicyHeaders(imagePolicy(env)),
       tailwindcss(),
       summaryVitePlugin(
         env.VITE_API_URL || 'http://localhost:8080',

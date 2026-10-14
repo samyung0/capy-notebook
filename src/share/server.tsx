@@ -33,6 +33,11 @@ export {
   summarySchema,
 } from '@/summary/render';
 
+declare const __CAPY_IMAGE_POLICY__: string;
+/** The image-source policy every rendered page is sent with, report-only,
+ * as the app's own pages are (vite-image-policy.ts). */
+export const IMAGE_POLICY = __CAPY_IMAGE_POLICY__;
+
 /** The API's read for one share link. */
 export type SharePage =
   | StudyState
