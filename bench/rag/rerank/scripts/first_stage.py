@@ -164,12 +164,11 @@ async def pools():
                 candidates=cfg.search_candidates,
                 pin=pin,
                 conn=conn,
-                # Frozen 2026-09-25 experiment: production's filter with no section;
+                # Frozen 2026-09-25 experiment: production's filter with no facets;
                 # library.search now also folds by section, so fold_mismatch may report it.
                 chunk_filter=library._search_filter(),
-                chunk_filter_params={"min_confidence": cfg.library_tag_min_confidence, "no_topics": True, "topics": [],
-                                     "no_roles": True, "roles": [],
-                                     "no_section": True, "section": "", "section_under": library._under("")},
+                chunk_filter_params={"min_confidence": cfg.library_tag_min_confidence, "no_subject": True, "subject": "",
+                                     "no_roles": True, "roles": []},
             )
         result = await library.search(q["query"], vector=vec.tolist(), top_k=10)
         mine = [k for k, _ in fold([r["id"] for r in rows], text_of, excerpt_of, book_file, depth=10)]

@@ -97,7 +97,7 @@ network and no pin.
 
 Agent tool descriptions come from the shared contract
 (`retrieval/contract.py`) alone; `tools.schemas_for` only appends the
-library's subject list to `browse_knowledge` and the skill list to
+library's subject list to `search_knowledge` and the skill list to
 `read_skill`, and drops
 `excerpt_ids` from the write tools when the library is not a source this turn
 (the model otherwise fills it with workspace passage ids). Curate mode's prompt module
@@ -1724,46 +1724,34 @@ content rows and model runs, the version rows, the book's `rag_file_contents`,
 topics only it kept. The source PDF stays in the knowledge-base bucket
 (`books/<sha256>.pdf`), so a republish from the book's saved run restores it.
 
-- `search(query, topics, roles, book, section)`: hybrid search restricted in
-  SQL to chunks whose excerpt carries a verified tag (evidence quote found in
-  the body, confidence at least `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`) matching
-  every requested facet; `book` is the file filter `store.hybrid_search`
-  already has (books are the library's files), and `section` keeps chunks whose
-  path is that section or lies under it (`= section` or `LIKE section || ' › %'`
-  with `%` and `_` escaped, so a partial heading matches nothing). The first
-  20 fused chunks are reranked (search step 4), then hits fold into excerpts by
-  best chunk and into one hit per book section (book and `section_path`, the
-  best-ranked chunk kept, decision 2026-10-06), so `top_k` counts sections
-  rather than chunks or sibling micro-excerpts, each returning with a compact
-  reviewed teaching description and scope, roles, topics, pages, figure ids
-  (without decorative or excluded figures) and the hit chunk. The result
-  header names the book's title and id, which `book` takes.
-  Non-teaching excerpts are excluded. Repeated identical hit text within one
-  book is collapsed; similarity alone does not collapse different books.
-  An empty result under a role filter carries the verified counts by role
-  for the same topics, so the model relaxes on purpose — only when topics were
-  given, because without them those counts are the whole library's and say
-  nothing about the query.
-- `browse_subject(subject_id)` returns `{"subject", "topics"}`, the subject's
-  topics with their searchable verified-excerpt counts; `browse(topic_id, page)` returns
-  verified excerpt counts by role and by book, then a page of excerpts ordered
-  by book and first page; the by-role numbers are role assignments: an excerpt
-  tagged both `formal` and `reference` counts in both, so they do not sum to
-  the total. They are two functions because subjects and topics are separate
-  catalogs whose ids can coincide (the pilot topic `probability` did, against
-  the `probability` subject, and was renamed `probability-basics` on
-  2026-09-19): `browse_knowledge` calls the one matching the argument it was
-  given, never a lookup order, and a miss raises a `ValueError` naming that
-  catalog (`unknown topic id`, `unknown subject id`). The loader keeps new
-  collisions out: a topic whose id is a subject id refuses the publish naming
-  both.
+- `search(query, subject, roles)`: hybrid search restricted in SQL to chunks
+  whose excerpt carries a verified tag (evidence quote found in the body,
+  confidence at least `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`) matching every
+  requested facet; `subject` keeps excerpts carrying any of that subject's
+  topics (`library._IN_SUBJECT`). The first 20 fused chunks are reranked
+  (search step 4), then hits fold into excerpts by best chunk and into one hit
+  per book section (book and `section_path`, the best-ranked chunk kept,
+  decision 2026-10-06), so `top_k` counts sections rather than chunks or
+  sibling micro-excerpts, each returning with a compact reviewed teaching
+  description and scope, roles, pages, figure ids (without decorative or
+  excluded figures) and the hit chunk; the card names the book's title and id
+  and shows no topic ids. Non-teaching excerpts are excluded. Repeated
+  identical hit text within one book is collapsed; similarity alone does not
+  collapse different books. An empty result under a role filter carries the
+  verified counts by role for the same subject, so the model relaxes on
+  purpose — only when a subject was given, because without one those counts
+  are the whole library's and say nothing about the query. Search filtered by
+  topic ids from a `browse_knowledge` subject browse, with `book` and `section`
+  filters, until 2026-10-14 (Epo), when guessed topic ids were its only
+  refused searches (`bench/rag/reports/2026-10-14-library-flow.md`).
 - `catalog(conn)`: the subjects that hold at least one searchable verified excerpt on a
   current book version, `[{id, label, aliases, area, excerpts}]` sorted by
-  label, for the `browse_knowledge` description. It is read once per turn with
-  Library on, before the first model call, which is also how a configured but
-  unreachable or empty library leaves that turn on the workspace instead of
-  failing on the first tool call. `known_topics(ids)` answers which topic ids exist in one query, for a
-  search whose topics were never browsed. `pool()` takes a lock so two turns
+  label, for `search_knowledge`'s description, whose `subject` takes those
+  ids. It is read once per turn with Library on, before the first model call,
+  which is also how a configured but unreachable or empty library leaves that
+  turn on the workspace instead of failing on the first tool call. The loader
+  keeps topic ids apart from subject ids: a topic whose id is a subject id
+  refuses the publish naming both. `pool()` takes a lock so two turns
   starting together cannot each build a pool, and waits at most ten seconds
   for a connection.
 - `read_excerpt(excerpt_id, start, count)`: the excerpt's own chunks from chunk
@@ -1791,48 +1779,15 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
   chunks share a page, the read drops a chunk's leading words that repeat the
   previous chunk's tail (`chunking.strip_carried`: the longest such run on
   whitespace-collapsed words, at least 40 characters). Stored text keeps them.
-- Section reading, for the intake comparison (`bench/rag/reports/2026-10-06-intake-retrieval-comparison-plan.md`),
-  offered only with `CAPY_LIBRARY_SECTION_TOOLS=1`; without it the two
-  arguments below are left out of the offered schemas (`tools.without_sections`,
-  which also gives `count` its 12-chunk bound and description) and refused.
-  A section's chunks are those whose path is the section or lies under it.
-  They form runs (`library._runs`): a gap of at most two chunks of other paths
-  (a captioned table, whose path is its caption, `packing.py`) stays inside a
-  run, a larger gap starts the next one, as when "Exercises" recurs through a
-  chapter. `outline(book_id)` (`browse_knowledge(book, page)`) lists the book's
-  section paths of the current version cut to two heading levels, in reading
-  order, each with the pages and the chunks of all its runs (what reading it
-  covers), 120 lines a page under a header with the book id, title, version,
-  pages and "page N of M", and the next page number when more remain.
-  `read_section(book_id, section, start, count)` (`read_knowledge(book,
-  section)`) reads the run that holds `start`, or the first run after it when
-  it falls between runs (the first run when omitted or 0; only a `start` past
-  the last run is refused, naming the runs), in pages of up to 24 chunks
-  (default 24) with `next_start` as above. Paths are compared with "›", ">"
-  or "/" between levels read as one separator and whitespace collapsed
-  (`library._normalised`), so "Ch 2/2.1 Events" reads "Ch 2 › 2.1 Events"; a
-  path that still matches nothing is refused with the book's three outline
-  lines sharing the most leading words with it. The output is
-  continuous text: one header (book, section, "run k of n" and, when another
-  run follows, the chunk it starts at, the run's pages and chunk range), the
-  path where it moves to a subsection, a `[p. N]` marker where the page
-  changes, where an excerpt with reviewed metadata begins on the page its scope
-  in the excerpt read's form (`[id] teaches: … scope: …`, printed errors
-  included, decision 2026-09-23; an unreviewed excerpt adds nothing), the
-  figures on the shown pages (by page, not by excerpt; excluded and decorative
-  ones left out), and one footer line with the excerpt ids covered; the end of
-  a run that another follows names that run's first chunk again. Every covered
-  excerpt is recorded as read at its first chunk on the page, so the write
-  guard and provenance work as for `read_knowledge` of that excerpt; a section
-  read is not retained as library evidence for a later turn. With the flag on
-  and no subject holding a tagged excerpt (an untagged library, arm B),
-  `books(conn)` (the books with a current version) is read at turn start: a
-  current book keeps the library on, and the `browse_knowledge` description
-  lists the books as `browse_knowledge({"book": id}): title (N pages)`. A
-  library with subjects lists none; search hits carry book ids.
+- Section reading (a book outline through `browse_knowledge(book)` and
+  ordered section reads through `read_knowledge(book, section)`, behind
+  `CAPY_LIBRARY_SECTION_TOOLS`, built for the 2026-10-06 intake comparison)
+  was removed on 2026-10-14 (Epo): neither that comparison nor the
+  2026-10-14 runs showed a gain over excerpt reads, and the agent guessed
+  section names from memory.
 - `CAPY_LIBRARY_REQUIRE_TAGS=0` (default 1, the comparison's untagged arm)
   drops the verified-tag condition from eligibility: untagged excerpts are
-  searched, browsed and counted; non-teaching ones stay out.
+  searched and counted; non-teaching ones stay out.
 - `provenance(excerpt_ids)`: one entry per source book (id, title, authors,
   edition, licence, licence url, source url, the book version read and the
   excerpt ids used), which is what a curated material stores and its
@@ -1848,7 +1803,7 @@ topics only it kept. The source PDF stays in the knowledge-base bucket
   plain search lands on the expected topic for every first hit but reaches
   an expected role 58 of 110 times; role wording in the query does not move
   that; tag predicates do, and expose gaps. The chat offers these as
-  `search_knowledge`, `browse_knowledge` and `read_knowledge` on turns with the
+  `search_knowledge` and `read_knowledge` on turns with the
   Library switch on (Build flow and the Library switch, below).
 
 Delegated Sol reviews follow `lab/knowledge/review.md`. The optional `retrieval`
@@ -1862,9 +1817,9 @@ is explicitly unknown. `non_teaching` is a successful role classification used
 alone and excluded from search and retrieval coverage counts. Classification
 confidence and extraction quality remain separate.
 
-With Library on, the model may search directly without browsing first and
-keeps the learner's constraints when a filtered search misses and it searches
-again without topics. The library rules (`LIBRARY_RULES` in `prompts/chat.py`)
+With Library on, the model searches with the learner's subject or without one,
+and keeps the learner's constraints when a subject search misses and it
+searches again without the subject. The library rules (`LIBRARY_RULES` in `prompts/chat.py`)
 require explicit applicability and distinguish source exercises from adapted
 practice. Once a write lands the turn context shows the responses left under the
 stall guard. Search continuation caching is absent.
@@ -2318,20 +2273,12 @@ build, and the knowledge library is one more source while the switch is on.
   unconfigured library, one that does not answer (logged as a warning) or one
   with no subject holding a searchable excerpt turns `ctx.library` off for that
   turn: no library tools and no library rules, and the turn runs on the
-  workspace instead of failing; with `CAPY_LIBRARY_SECTION_TOOLS` a current
-  book is enough (Knowledge library, section reading). There is no
-  context-window minimum. The
-  subject list is appended to the `browse_knowledge` description only, as
-  explicit subject browse calls
-  with tagged-excerpt counts. Labels and aliases are omitted. The tool and
-  parameter descriptions distinguish subject IDs from the returned `topic_id`
-  values accepted by `search_knowledge.topics` and `browse_knowledge.topic`.
-  Direct search can omit `topics`. Topic ids are never in a description: the
-  model browses a subject to get them, and `browse_knowledge` remembers each
-  subject's topics on the `ToolContext` for the turn, so a `search_knowledge`
-  whose topic ids were browsed is validated from that cache and one whose ids
-  were not is validated against the library in one query; unknown ids are
-  refused naming them.
+  workspace instead of failing. There is no context-window minimum. The
+  subject list is appended to the `search_knowledge` description only, one
+  line per subject with its tagged-excerpt count (`- "statistics" (5166
+  excerpts)`); labels and aliases are omitted. `subject` takes one of those
+  ids, and one the turn's catalog lacks is refused naming it before any
+  search. Topic ids are never in a description or a search card.
 - **Prompt** (`prompts/chat.py`). `system_prompt(locale, library=...)` is one
   prompt for every turn and stays lean: grounding rules; answer or build (a
   question gets an answer with citations, a request to learn, make, expand or
@@ -2341,8 +2288,9 @@ build, and the knowledge library is one more source while the switch is on.
   until the first successful write, then the build budget's tool cap and stall
   guard, in one sentence), with its numbers read from `retrieval/limits.py`. The
   account-language, follow-references and capture rules follow. With Library
-  on, `LIBRARY_RULES` is appended: subject ids only for browsing, a search hit
-  is not a read, state applicability and gaps, relax a missed topic filter,
+  on, `LIBRARY_RULES` is appended: search with the learner's subject or
+  without one, a search hit is not a read, state applicability and gaps,
+  relax a missed subject filter,
   `capture_knowledge_page` when numbers or formulas look corrupted, and
   `[Diagram description: ...]` never quoted as the book's text. The OpenUI Lang
   rules close every prompt.
@@ -2716,9 +2664,8 @@ build, and the knowledge library is one more source while the switch is on.
 | `search_workspace` | none | Hybrid search; one call per assistant message; omitted `file_ids` uses the chat scope; any invalid supplied id rejects the call |
 | `list_sources` | none | Scoped source files and workspace study materials grouped by chapter, each chapter header carrying its `chapter_id` (materials Go lists with their `chapterId`; unfiled ones last), so the model sees which chapters already have practice; source `file_id` / material `id`, resource kind, material kind and editability as `material_kind=` (non-note kinds name `inspect_document` and `edit_document`, since only notes are outlined and indexed); sources retain passage counts, status and short descriptors. Editability and materials come from Go `/api/internal/documents/list`; no name filter. |
 | `read_document` | none | Sequential chunks by required file id; workspace and chat scope checked before reading |
-| `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `topics` / `roles` predicates, optionally one `book` and one `section` path with the paths under it, one hit per book section; topic ids come from a subject browse and unknown ones are refused by name; an empty result reports what those topics hold by role, or, with no topics, says the search had no topic filter. Retains nothing |
-| `browse_knowledge` | none | Library on only. Exactly one of `subject` or `topic` (enforced in Python), or `book` with `CAPY_LIBRARY_SECTION_TOOLS`. A subject id: its topics with search-eligible excerpt counts, one line each. A topic id: eligible excerpt counts by role and by book, then a page of excerpts with section paths and compact reviewed scope. A book id: its outline of section paths, two levels deep, with pages and the chunks a read of each covers, 120 lines per `page`. Full notes come from `read_knowledge`. The library's subject list is appended to this description at runtime; with the flag and no subject to list, its current books (id, title, pages). Retains nothing |
-| `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book; with `CAPY_LIBRARY_SECTION_TOOLS`, `book` and `section` instead read one run of a section in order as continuous text (up to 24 chunks a page) with each reviewed excerpt's scope where it begins, naming the next run's first chunk, recording every excerpt shown as read. Retains exact bounded excerpt reads used in successful material writes |
+| `search_knowledge` | none | Library on only. Excerpt-level hybrid search of the knowledge library with verified `subject` / `roles` predicates (a subject keeps excerpts carrying any of its topics), one hit per book section; a subject outside the turn's catalog is refused by name; an empty result reports what that subject holds by role, or, with no subject, says the search had no subject filter. The library's subject list is appended to this description at runtime. Retains nothing |
+| `read_knowledge` | none | Library on only. One excerpt's chunks from chunk index `start`, `count` 1 to 12, with the excerpt's chunk range in the header, a next-start marker counted from what fit the output limit, and on the last page the excerpts before and after it in the book. Retains exact bounded excerpt reads used in successful material writes |
 | `read_skill` | none | Requires `material.create`. A skill's instructions by name; the description lists the skills and when to read each. Retains nothing |
 | `read_study_progress` | none | Offered only when study progress is on for the requester in this workspace (Go `/api/internal/study-progress`): items done, started or removed, recent quiz results and the least retained chapters |
 | `capture_knowledge_page` | none | Library on only, and only with the knowledge-base bucket configured. Renders one printed page of the excerpt's book (or a 0-1000 `bbox` on it) as a JPEG; refused for a page the excerpt and its figures do not cover. No per-turn capture cap. Adds no citation. Retains nothing |
@@ -2833,7 +2780,10 @@ Version 22 (2026-10-13) drops the build ledger: no `create_ledger` and no
 above). Version 25 (2026-10-14) removes `add_open_question`: `add_questions`
 items take open questions too, and a quiz fence takes exactly its items.
 Version 26 (2026-10-14) removes `list_question_bank`, `read_question` and
-`copy_questions` with their internal routes. Go and the pipeline deploy
+`copy_questions` with their internal routes. Version 28 (2026-10-14) gives
+`search_knowledge` a `subject` id in place of `topics`, `book` and `section`,
+and removes `browse_knowledge` and section reading (`read_knowledge` takes an
+`excerpt_id` again). Go and the pipeline deploy
 together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
@@ -3461,7 +3411,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
 | Search | `CAPY_SEARCH_CANDIDATES`, `CAPY_SEARCH_TOP_K`, `CAPY_SEARCH_PER_FILE_CAP` | |
-| Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`, `CAPY_LIBRARY_SECTION_TOOLS`, `CAPY_LIBRARY_REQUIRE_TAGS` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. The two flags (0 or 1, anything else fails at startup) belong to the intake comparison: section tools off and tags required (`0` and `1`) are production. |
+| Knowledge library | `LIBRARY_DATABASE_URL`, `CAPY_LIBRARY_TAG_MIN_CONFIDENCE`, `CAPY_LIBRARY_REQUIRE_TAGS` | Unset URL leaves library tools unavailable. Every environment reads the same live library; books carry their own versions, so there is nothing to pin. Tags below 0.8 confidence, or with an unverified evidence quote, never act as filters. The flag (0 or 1, anything else fails at startup) belongs to the intake comparison: tags required (`1`) is production. |
 | Question bank | `BANK_DATABASE_URL`, `BANK_ASSETS_URL` (Go, collaboration; `VITE_BANK_ASSETS_URL` in the SPA build) | The bank's read-only DSN, which only the Go server holds; unset, the bank routes answer that no bank is configured. `BANK_ASSETS_URL` is also the one base a quiz's copied figures may link to; the collaboration service gets it in both compose files, and the SPA build gets it as `VITE_BANK_ASSETS_URL` (set it by hand in `deploy/.env` for local development). |
 | Library source PDFs | `KNOWLEDGE_BASE_B2_ENDPOINT`, `KNOWLEDGE_BASE_B2_REGION`, `KNOWLEDGE_BASE_B2_BUCKET`, `KNOWLEDGE_BASE_B2_KEY_ID`, `KNOWLEDGE_BASE_B2_APP_KEY` | A dedicated private bucket with its own restricted key, not a prefix of the app bucket. All five or none; unset leaves `capture_knowledge_page` unoffered. |
 | Agent | `CAPY_AGENT_MAX_STEPS` | Default and maximum 12 (`PLANNING_RESPONSES`): the responses a turn gets until its first successful write, the last with tools off. 4 tool calls per response on every turn (`retrieval/limits.py`). Cap is the design, not a safety valve. Once a write lands there is no response ceiling: `BUILD_TOOLS_PER_TURN` (160) and the `STALL_RESPONSES` guard (5, plus `WRITE_ERROR_GRACE` 2 per errored write for at most 2 errors) bound it. No context-window minimum |

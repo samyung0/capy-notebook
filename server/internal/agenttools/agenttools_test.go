@@ -38,7 +38,7 @@ func TestDefinitionsAreClosedObjects(t *testing.T) {
 	}
 	for _, name := range []string{
 		"search_workspace", "create_material", "trash_file",
-		"search_knowledge", "browse_knowledge", "read_knowledge", "capture_knowledge_page",
+		"search_knowledge", "read_knowledge", "capture_knowledge_page",
 	} {
 		if !seen[name] {
 			t.Fatalf("missing tool %s", name)

@@ -2768,65 +2768,6 @@ async def test_a_library_that_is_down_or_empty_leaves_the_turn_on_the_workspace(
     assert "pool timeout" in caplog.text
 
 
-async def test_with_section_tools_a_library_of_untagged_books_stays_on(
-    monkeypatch, library_on
-):
-    """No subject lists untagged books; with section tools the books keep the
-    library and name the ids browse_knowledge.book takes. Without the flag the
-    same library leaves the turn on the workspace."""
-    import contextlib
-
-    class _Pool:
-        @contextlib.asynccontextmanager
-        async def connection(self):
-            yield None
-
-    async def _pool():
-        return _Pool()
-
-    subjects: list[dict] = []
-    looked_up = []
-
-    async def _subjects(_conn):
-        return subjects
-
-    async def _books(_conn):
-        looked_up.append("books")
-        return [{"id": "os4", "title": "OpenIntro Statistics", "pages": 465}]
-
-    monkeypatch.setattr(agent.tools.library, "pool", _pool)
-    monkeypatch.setattr(agent.tools.library, "catalog", _subjects)
-    monkeypatch.setattr(agent.tools.library, "books", _books)
-
-    async def turn(sections):
-        monkeypatch.setattr(agent.tools.cfg, "library_section_tools", sections)
-        stream, seen = _script_stream([_assembled(_answer(("From the library.", [])))])
-        monkeypatch.setattr(agent.models, "stream_agent_response", stream)
-        ctx = _build_ctx(library_catalog=None)
-        await _collect("teach me statistics", ctx)
-        described = {
-            tool["function"]["name"]: tool["function"]["description"]
-            for tool in seen[0]["tools"]
-        }
-        return ctx, described.get("browse_knowledge")
-
-    off, browse = await turn(False)
-    assert not off.library and browse is None and looked_up == []
-    on, browse = await turn(True)
-    assert on.library and looked_up == ["books"]
-    assert (
-        '- browse_knowledge({"book": "os4"}): OpenIntro Statistics (465 pages)'
-        in browse
-    )
-    assert "Subjects this library holds" not in browse
-    # A library with subjects names no books: hits carry book ids.
-    subjects.append(
-        {"id": "statistics", "label": "Statistics", "aliases": [], "excerpts": 3}
-    )
-    _, browse = await turn(True)
-    assert looked_up == ["books"] and "Books this library holds" not in browse
-
-
 async def test_a_retained_read_replays_with_its_own_count(monkeypatch):
     """A page read with count 4 matches only when it is read again with 4."""
     from pipeline.retrieval.library_evidence import LibraryEvidence

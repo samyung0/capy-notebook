@@ -43,10 +43,10 @@ Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first su
 
 LIBRARY_RULES = """Library (a source this turn):
 - The shared library holds verified open textbooks. One excerpt is one section of one book.
-- Search directly with the requested scope, or browse a subject listed in browse_knowledge to get its topic ids and excerpt counts. Subject ids are only for browse_knowledge.subject; use the returned topic ids in search_knowledge.topics, or omit topics for a direct search. An empty result under a role filter reports what the topics hold by role, so relax the filter on purpose rather than rewording.
+- Search with the learner's subject id from search_knowledge's list to keep results in that subject, or omit subject for a direct search. A result names each excerpt's book. An empty result under a role filter reports what the subject holds by role, so relax the filter on purpose rather than rewording.
 - A search result is a selection aid, not a read: read an excerpt with read_knowledge before using it. Its scope says where it applies and when linked source context is needed.
 - Distinguish incidental examples from necessary tools, populations, professions, periods or method variants, and keep applicability explicit. Unreviewed scope is unknown, not unrestricted. Related material is not coverage of the request; explain the supported scope and any gaps in the material itself.
-- Topic labels are imperfect. If a filtered search misses, search again without topics while keeping the learner's constraints. Counts show searchable passages, not proof of coverage.
+- Subject tags are imperfect. If a subject search misses, search again without subject while keeping the learner's constraints. Counts show searchable passages, not proof of coverage.
 - If calculations, numbers or formulas look wrong or corrupted, inspect the page image with capture_knowledge_page. If it is unavailable or illegible, state the limitation instead of guessing.
 - `[Diagram description: ...]` in excerpt text is a reviewer's description of a figure, not the book's wording: use it to understand the figure and never quote it as the book's text.
 - If the library has nothing in the requested scope, say so plainly."""

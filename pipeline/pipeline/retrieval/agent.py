@@ -96,8 +96,6 @@ def _parse_args(raw: str | None) -> dict[str, Any]:
 def _describe(name: str, args: dict[str, Any]) -> str:
     if name in ("search_workspace", "search_knowledge"):
         return str(args.get("query") or "")
-    if name == "browse_knowledge":
-        return str(args.get("topic") or "")
     if name == "read_knowledge":
         return str(args.get("excerpt_id") or "")
     if name == "read_skill":
@@ -282,13 +280,12 @@ async def _run_turn(
 
     if ctx.library:
         # A library that is down or empty leaves the turn on the workspace
-        # alone rather than failing it. With section tools a current book is
-        # enough: an untagged library has no subject to list.
+        # alone rather than failing it.
         try:
             await tools.load_library_catalog(ctx)
         except Exception:  # any failure to reach the library
             log.warning("knowledge library unavailable for this turn", exc_info=True)
-        if not ctx.library_catalog and not ctx.library_books:
+        if not ctx.library_catalog:
             ctx.library = False
     ctx.chapters, open_chapter = await store.workspace_chapters(
         ctx.workspace_id, ctx.open_resource.get("id")

@@ -116,11 +116,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "skill_addons": {},
     # null offers what production offers; a list narrows it for an experiment.
     "tools": None,
-    # library_flow reshapes the library tools for an experiment: null keeps
-    # production's; "browse_first" keeps browse_knowledge to a subject's topic
-    # list; "search_subject" gives search_knowledge a subject id in place of
-    # topics and drops browse_knowledge, its subject list moving to search.
-    "library_flow": None,
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
         "mode": "pixels",
@@ -203,8 +198,6 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         or any(name not in known for name in out["tools"])
     ):
         raise HTTPException(400, "tools must be null or a list of known tool names")
-    if out["library_flow"] not in LIBRARY_FLOWS:
-        raise HTTPException(400, f"library_flow must be one of {LIBRARY_FLOWS}")
     return out
 
 
@@ -282,102 +275,12 @@ def effective_prompt(
     return prompt
 
 
-SUBJECT_CATALOG = "\n\nSubjects this library holds (browse one for its topic ids):\n"
-SEARCH_SUBJECTS = "\n\nSubjects this library holds:\n"
+SUBJECT_CATALOG = "\n\nSubjects this library holds:\n"
 # The lists production appends per turn, kept when a config replaces the text.
 CATALOGS = {
-    "browse_knowledge": SUBJECT_CATALOG,
-    "search_knowledge": SEARCH_SUBJECTS,
+    "search_knowledge": SUBJECT_CATALOG,
     "read_skill": "\n\nSkills:\n",
 }
-
-
-LIBRARY_FLOWS = (None, "browse_first", "search_subject")
-SUBJECT_LINE = re.compile(r'^- browse_knowledge\(\{"subject": (".*?")\}\) ', re.M)
-# Result lines that name a tool argument the flow took away, and what they say instead.
-FLOW_TEXT = {
-    "browse_first": (
-        (", or in browse_knowledge.topic to see excerpts by role and book.", "."),
-        ("Browse one of those topics to see what it does hold.", "Search again with other words or roles."),
-    ),
-    "search_subject": (
-        (
-            " This search had no topic filter. Browse a subject from the browse_knowledge "
-            "description to get its topic ids, then pass topics to see what the library "
-            "holds for them by role.",
-            " Pass a subject from this tool's list to see what that subject holds by role.",
-        ),
-        ("Browse one of those topics to see what it does hold.", "Search again with other words or roles."),
-    ),
-}
-
-
-def flow_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
-    """The library tools as library_flow reshapes them (see DEFAULT_CONFIG)."""
-    flow = c["library_flow"]
-    functions = {s["function"]["name"]: s["function"] for s in schemas}
-    browse, search = functions.get("browse_knowledge"), functions.get("search_knowledge")
-    if flow == "browse_first" and browse:
-        subject = browse["parameters"]["properties"]["subject"]
-        browse["parameters"] = {
-            **browse["parameters"], "properties": {"subject": subject}, "required": ["subject"],
-        }
-    if flow != "search_subject":
-        return schemas
-    if search:
-        rest = {k: v for k, v in search["parameters"]["properties"].items() if k != "topics"}
-        subject = {"type": "string", "description": "A subject id listed below: search only its excerpts."}
-        search["parameters"] = {**search["parameters"], "properties": {**rest, "subject": subject}}
-        listed = browse["description"].partition(SUBJECT_CATALOG)[2] if browse else ""
-        if listed:
-            search["description"] += SEARCH_SUBJECTS + SUBJECT_LINE.sub(r"- \1 ", listed)
-    return [s for s in schemas if s["function"]["name"] != "browse_knowledge"]
-
-
-def flow_problem(state: dict[str, Any], name: str, args: dict[str, Any]) -> str | None:
-    """A reshaped library tool's arguments checked against what the turn offered."""
-    from jsonschema import Draft202012Validator
-
-    function = next(
-        (s["function"] for s in state.get("tool_schemas") or [] if s["function"]["name"] == name),
-        None,
-    )
-    if function is None:
-        return f"{name} is not offered in this configuration."
-    error = next(iter(Draft202012Validator(function["parameters"]).iter_errors(args)), None)
-    return f"{name} arguments invalid: {error.message}" if error else None
-
-
-async def flow_run(c: dict[str, Any], name: str, args: dict[str, Any], ctx, run):
-    """A library tool under library_flow: a subject search filters by the
-    subject's topics, and result lines naming a removed argument are reworded."""
-    from pipeline.retrieval import library, tools
-
-    subject = args.get("subject") if name == "search_knowledge" else None
-    if subject:
-        try:
-            listing = await library.browse_subject(subject)
-        except ValueError:
-            return tools._refused(
-                f"Unknown subject id {subject!r}: use one listed in this tool's "
-                "description, or omit subject for a direct search."
-            )
-        ctx.subject_topics[subject] = listing["topics"]
-        topics = [t["id"] for t in listing["topics"]]
-        args = {**{k: v for k, v in args.items() if k != "subject"}, "topics": topics}
-        # A subject holds more topics than the contract's cap of 8, so the
-        # handler runs directly; flow_problem already checked the arguments.
-        result = await tools.REGISTRY[name].handler(args, ctx)
-    else:
-        result = await run(name, args, ctx)
-    replacements = list(FLOW_TEXT[c["library_flow"]])
-    if subject:
-        replacements.append((f"on topics {', '.join(topics)}", f"in subject {subject}"))
-    for i, part in enumerate(result.text_parts):
-        for old, new in replacements:
-            part = part.replace(old, new)
-        result.text_parts[i] = part
-    return result
 
 
 def tool_prompt(function: dict[str, Any]) -> str:
@@ -422,7 +325,7 @@ def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
         if (c["decks"]["offer"] or s["function"]["name"] not in deck.NAMES)
         and (c["tools"] is None or s["function"]["name"] in c["tools"])
     ]
-    schemas = flow_tools(c, configured_tools(c, out))
+    schemas = configured_tools(c, out)
     if not c["decks"]["offer"]:
         line = "\n" + skills.catalog_line(skills.DECK, skills.SKILLS[skills.DECK].when)
         for schema in schemas:
@@ -1442,13 +1345,11 @@ class Turn:
                 record["clean_args"] = clean
             state["calls"].append(record)
             started = time.perf_counter()
-            flowed = c["library_flow"] and name in ("search_knowledge", "browse_knowledge")
-            if flowed:
-                problem = flow_problem(state, name, clean)
-            elif name in tools.contract.DEFINITIONS:
-                problem = tools.contract.validate_args(name, clean)
-            else:
-                problem = None
+            problem = (
+                tools.contract.validate_args(name, clean)
+                if name in tools.contract.DEFINITIONS
+                else None
+            )
             if offered is not None and name not in offered:
                 result = tools._refused(
                     f"{name} is not offered in this configuration.",
@@ -1502,8 +1403,6 @@ class Turn:
                 result = await create_material_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
                 result = await edit_material_locally(args, ctx_, state)
-            elif flowed:
-                result = await flow_run(c, name, args, ctx_, saved["run"])
             else:
                 result = await saved["run"](name, args, ctx_)
             if result.effects:
@@ -2660,28 +2559,6 @@ def check_edits() -> None:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 
 
-def check_flows() -> None:
-    """library_flow: browse_first leaves browse_knowledge a subject only;
-    search_subject moves the subject list into search and drops browse."""
-
-    def schemas() -> list[dict]:
-        listed = SUBJECT_CATALOG + '- browse_knowledge({"subject": "math"}) (10 excerpts)'
-        return [
-            {"type": "function", "function": {"name": "browse_knowledge", "description": "b" + listed,
-             "parameters": {"type": "object", "properties": {"subject": {}, "topic": {}}}}},
-            {"type": "function", "function": {"name": "search_knowledge", "description": "s",
-             "parameters": {"type": "object", "properties": {"query": {}, "topics": {}}}}},
-        ]
-
-    first = flow_tools(merged({"library_flow": "browse_first"}), schemas())
-    assert first[0]["function"]["parameters"]["properties"] == {"subject": {}}
-    assert first[0]["function"]["parameters"]["required"] == ["subject"]
-    [search] = flow_tools(merged({"library_flow": "search_subject"}), schemas())
-    assert set(search["function"]["parameters"]["properties"]) == {"query", "subject"}
-    assert search["function"]["description"] == 's' + SEARCH_SUBJECTS + '- "math" (10 excerpts)'
-    assert flow_tools(merged({}), schemas()) == schemas()
-
-
 def check_preferences() -> None:
     """skill_addons follow a skill's text; preference_text replaces one value's
     turn-context line for a turn only, and names outside preferences.py are
@@ -2720,22 +2597,22 @@ def check() -> None:
             },
         }
         for name, catalog in (
-            ("search_knowledge", ""),
-            ("browse_knowledge", SUBJECT_CATALOG + "math: Mathematics (10 excerpts)"),
+            ("read_knowledge", ""),
+            ("search_knowledge", SUBJECT_CATALOG + '- "math" (10 excerpts)'),
         )
     ]
     config = merged(
         {
             "tool_descriptions": {
+                "read_knowledge": "custom read",
                 "search_knowledge": "custom search",
-                "browse_knowledge": "custom browse",
             }
         }
     )
     customized = configured_tools(config, schemas)
-    assert customized[0]["function"]["description"] == "custom search"
+    assert customized[0]["function"]["description"] == "custom read"
     assert customized[1]["function"]["description"] == (
-        "custom browse" + SUBJECT_CATALOG + "math: Mathematics (10 excerpts)"
+        "custom search" + SUBJECT_CATALOG + '- "math" (10 excerpts)'
     )
     assert (
         customized[1]["function"]["parameters"] == schemas[1]["function"]["parameters"]
@@ -2798,7 +2675,6 @@ def check() -> None:
     check_questions()
     check_figures()
     check_edits()
-    check_flows()
     check_preferences()
     # Preview requests must not inherit the monkeypatches of an active turn.
     from tempfile import TemporaryDirectory

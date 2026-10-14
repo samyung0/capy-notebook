@@ -6,9 +6,9 @@
 // scripted calls run as a model's would, under the owner's operations and the
 // contract's validation, against the real workspace, index and gateway.
 //
-// Not called: the Library switch's tools (search_knowledge, browse_knowledge,
-// read_knowledge, capture_knowledge_page), because UAT has no knowledge
-// library and the switch is off; create_deck and write_slide, because a stored deck enqueues a paid
+// Not called: the Library switch's tools (search_knowledge, read_knowledge,
+// capture_knowledge_page), because UAT has no knowledge library and the
+// switch is off; create_deck and write_slide, because a stored deck enqueues a paid
 // parse and index; resolve_source_change, which needs pending Office images.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';

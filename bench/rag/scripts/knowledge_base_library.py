@@ -388,8 +388,8 @@ def book_topics(run: Path, manifest: dict, book: dict, subjects: dict) -> list[d
 
     A builder run writes `<run>/topics.json` from its topics stage; the pilot
     run has none and its manifest carries the hand-written catalog. A topic
-    whose id is a subject id is refused: `browse_knowledge` tells the two
-    catalogs apart by argument, and the ids stay distinct at the source.
+    whose id is a subject id is refused, so the two catalogs' ids stay
+    distinct at the source.
     """
     path = run / "topics.json"
     if path.exists():

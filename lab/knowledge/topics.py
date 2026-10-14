@@ -139,7 +139,7 @@ def merge(
     """Reused ids that exist; proposed topics that clash with nothing by id,
     label or alias (a clash maps to the existing topic instead). A proposed id
     equal to a subject id is renamed with a `-basics` suffix: the loader
-    refuses the collision and browse_knowledge dispatches on the argument.
+    refuses the collision.
     A new id that another subject holds (`others`) is refused; the answer's
     `shared` ids reuse such topics as they are, marked shared with their subject."""
     others = others or {}

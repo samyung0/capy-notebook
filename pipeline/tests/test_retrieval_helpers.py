@@ -216,7 +216,7 @@ _STATISTICS = {
 }
 
 
-def test_subject_list_rides_on_browse_knowledge_only(monkeypatch):
+def test_subject_list_rides_on_search_knowledge_only(monkeypatch):
     monkeypatch.setattr(tools.library, "enabled", lambda: True)
     ctx = ToolContext(
         workspace_id="ws",
@@ -231,31 +231,27 @@ def test_subject_list_rides_on_browse_knowledge_only(monkeypatch):
         for s in tools.schemas_for(ctx)
     }
 
-    assert (
-        '- browse_knowledge({"subject": "statistics"}) (12 excerpts)'
-        in described["browse_knowledge"]
-    )
-    assert "Statistics" not in described["browse_knowledge"]
-    assert "also: stats" not in described["browse_knowledge"]
-    assert "statistics" not in described["search_knowledge"], (
+    assert '- "statistics" (12 excerpts)' in described["search_knowledge"]
+    assert "Statistics" not in described["search_knowledge"]
+    assert "also: stats" not in described["search_knowledge"]
+    assert "statistics" not in described["read_knowledge"], (
         "the list is long; it is listed once"
     )
-    assert "statistics" not in described["read_knowledge"]
-    assert "statistics" not in contract.DEFINITIONS["browse_knowledge"]["description"]
+    assert "browse_knowledge" not in described
+    assert "statistics" not in contract.DEFINITIONS["search_knowledge"]["description"]
 
 
-async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
+async def test_search_knowledge_renders_excerpts_and_refuses_unknown_subjects(
     monkeypatch,
 ):
-    """Topic ids seen in a subject browse this turn need no lookup; the rest
-    are checked against the library in one query."""
+    """A subject is checked against the turn's catalog, which the description
+    lists; cards name the book and roles, not topic ids."""
     ctx = ToolContext(
         workspace_id="ws",
         user_id="u_1",
         operations=_LIBRARY,
         library=True,
         library_catalog=[_STATISTICS],
-        subject_topics={"statistics": [{"id": "linear-regression", "excerpts": 3}]},
     )
     excerpt = _excerpt()
     excerpt.retrieval = {
@@ -266,28 +262,20 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
     excerpt.links = [{"id": "e_2", "section_path": "8.2 Residuals", "pages": [340]}]
     excerpt.synopsis = "Complete reviewed notes " * 1000
     excerpt.hit_text = "The least squares line minimises the sum of squared residuals."
-    looked_up: list[list[str]] = []
+    searched: list[str] = []
 
-    async def _known(ids):
-        looked_up.append(ids)
-        return set()
-
-    async def _search(query, *, topics=None, roles=None, **_kwargs):
-        assert (query, topics, roles) == (
+    async def _search(query, *, subject=None, roles=None, **_kwargs):
+        searched.append(query)
+        assert (query, subject, roles) == (
             "least squares",
-            ["linear-regression"],
+            "statistics",
             ["introduction"],
         )
-        return library.SearchResult([excerpt], topics, roles)
+        return library.SearchResult([excerpt], subject, roles)
 
     monkeypatch.setattr(tools.library, "search", _search)
-    monkeypatch.setattr(tools.library, "known_topics", _known)
     result = await tools._search_knowledge(
-        {
-            "query": "least squares",
-            "topics": ["linear-regression"],
-            "roles": ["introduction"],
-        },
+        {"query": "least squares", "subject": "statistics", "roles": ["introduction"]},
         ctx,
     )
     text = result.text()
@@ -295,21 +283,20 @@ async def test_search_knowledge_renders_excerpts_and_refuses_unknown_topics(
     assert (
         "[e_1] Advanced High School Statistics (book ahss) — 8.1 Line fitting "
         "(pages 338, 339)" in text
-    ), "the book id is what search_knowledge.book takes"
+    )
     assert "roles: introduction" in text and "figures: fig_8_1" in text
+    assert "topics:" not in text
     assert "least squares line" in text and "Fitting a line" in text
     assert "One predictor" in text and "- [e_2] 8.2 Residuals (pages 340)" in text
     assert "Complete reviewed notes" not in text
-    assert looked_up == [], "a browsed topic id is known without a query"
 
-    refused = await tools._search_knowledge({"query": "x", "topics": ["algebra"]}, ctx)
-    assert refused.refused and "algebra" in refused.text()
-    assert "subject browse call" in refused.text()
-    assert "returned topic_id values" in refused.text()
-    assert looked_up == [["algebra"]], "an unbrowsed id is checked once"
+    refused = await tools._search_knowledge({"query": "x", "subject": "algebra"}, ctx)
+    assert refused.refused and "Unknown subject id 'algebra'" in refused.text()
+    assert "listed in this tool's description" in refused.text()
+    assert searched == ["least squares"], "an unknown subject never searches"
 
 
-async def test_empty_result_reports_role_counts_only_under_a_topic_filter(monkeypatch):
+async def test_empty_result_reports_role_counts_only_under_a_subject(monkeypatch):
     ctx = ToolContext(
         workspace_id="ws",
         operations=_LIBRARY,
@@ -318,132 +305,27 @@ async def test_empty_result_reports_role_counts_only_under_a_topic_filter(monkey
     )
     available: dict[str, int] | None = {"introduction": 3, "exercise": 1}
 
-    async def _known(ids):
-        return set(ids)
-
-    async def _search(_query, *, topics=None, roles=None, **_kwargs):
+    async def _search(_query, *, subject=None, roles=None, **_kwargs):
         return library.SearchResult(
-            [], topics or [], roles or [], available if topics else None
+            [], subject, roles or [], available if subject else None
         )
 
     monkeypatch.setattr(tools.library, "search", _search)
-    monkeypatch.setattr(tools.library, "known_topics", _known)
     filtered = await tools._search_knowledge(
-        {"query": "proofs", "topics": ["linear-regression"], "roles": ["formal"]}, ctx
+        {"query": "proofs", "subject": "statistics", "roles": ["formal"]}, ctx
     )
 
-    assert "No verified excerpt matches roles formal" in filtered.text()
-    assert "Those topics hold: introduction 3, exercise 1" in filtered.text()
+    assert "No verified excerpt matches roles formal in subject statistics." in (
+        filtered.text()
+    )
+    assert "That subject holds: introduction 3, exercise 1" in filtered.text()
 
-    # Without topics the same counts would be the whole library's.
+    # Without a subject the same counts would be the whole library's.
     unfiltered = await tools._search_knowledge(
         {"query": "proofs", "roles": ["formal"]}, ctx
     )
-    assert "no topic filter" in unfiltered.text()
+    assert "no subject filter" in unfiltered.text()
     assert "introduction 3" not in unfiltered.text()
-
-
-async def test_browse_labels_the_role_numbers_as_assignments(monkeypatch):
-    """They do not sum to the total: an excerpt counts once per role it carries."""
-    ctx = ToolContext(
-        workspace_id="ws",
-        operations=_LIBRARY,
-        library=True,
-        library_catalog=[_STATISTICS],
-    )
-
-    async def _browse(topic, *, page=1, **_kwargs):
-        return library.BrowseResult(
-            topic={"id": topic, "label": "Linear regression", "scope": "Fitting lines"},
-            by_role={"introduction": 2, "formal": 2},
-            by_book={"ahss": 3},
-            total=3,
-            page=page,
-            page_size=20,
-            items=[_excerpt()],
-        )
-
-    monkeypatch.setattr(tools.library, "browse", _browse)
-    result = await tools._browse_knowledge({"topic": "linear-regression"}, ctx)
-    text = result.text()
-
-    assert "3 verified excerpts. By book: ahss 3." in text
-    assert "Role assignments (an excerpt counts once per role it carries)" in text
-    assert "introduction 2, formal 2" in text
-    assert "[e_1] Advanced High School Statistics" in text
-
-
-async def test_browse_of_a_subject_lists_its_topics_and_remembers_them(monkeypatch):
-    ctx = ToolContext(
-        workspace_id="ws",
-        operations=_LIBRARY,
-        library=True,
-        library_catalog=[_STATISTICS],
-    )
-    topics = [
-        {
-            "id": "linear-regression",
-            "label": "Linear regression",
-            "scope": "Fitting lines",
-            "excerpts": 3,
-        },
-        {"id": "sampling", "label": "Sampling", "scope": "", "excerpts": 0},
-    ]
-
-    async def _browse_subject(key):
-        assert key == "statistics"
-        return {"subject": _STATISTICS, "topics": topics}
-
-    monkeypatch.setattr(tools.library, "browse_subject", _browse_subject)
-    result = await tools._browse_knowledge({"subject": "statistics"}, ctx)
-    text = result.text()
-
-    assert text.startswith("Subject 'statistics': 2 topics\n")
-    assert (
-        '- topic_id="linear-regression": Linear regression — Fitting lines (3 excerpts)'
-        in text
-    )
-    assert '- topic_id="sampling": Sampling (0 excerpts)' in text
-    assert "Use these topic_id values in search_knowledge.topics" in text
-    assert ctx.subject_topics == {"statistics": topics}
-
-    both = await tools._browse_knowledge({"subject": "statistics", "topic": "x"}, ctx)
-    neither = await tools._browse_knowledge({}, ctx)
-    assert both.refused and neither.refused
-    assert "exactly one of subject" in neither.text()
-
-
-async def test_browse_dispatches_on_the_argument_not_the_id(monkeypatch):
-    """`probability` is both a subject and (until renamed) a topic id: the
-    argument given picks the catalog, and a miss names that catalog."""
-    ctx = ToolContext(
-        workspace_id="ws",
-        operations=_LIBRARY,
-        library=True,
-        library_catalog=[_STATISTICS],
-    )
-    calls = []
-
-    async def _browse_subject(key):
-        calls.append(("subject", key))
-        raise ValueError(f"unknown subject id {key!r}")
-
-    async def _browse(key, *, page=1):
-        calls.append(("topic", key))
-        raise ValueError(f"unknown topic id {key!r}")
-
-    monkeypatch.setattr(tools.library, "browse_subject", _browse_subject)
-    monkeypatch.setattr(tools.library, "browse", _browse)
-
-    as_topic = await tools._browse_knowledge({"topic": "probability"}, ctx)
-    as_subject = await tools._browse_knowledge({"subject": "probability"}, ctx)
-
-    assert calls == [("topic", "probability"), ("subject", "probability")]
-    assert as_topic.refused and "unknown topic id 'probability'" in as_topic.text()
-    assert (
-        as_subject.refused and "unknown subject id 'probability'" in as_subject.text()
-    )
-    assert ctx.subject_topics == {}
 
 
 def _read_result(**kwargs) -> library.ExcerptRead:
@@ -516,139 +398,6 @@ async def test_a_page_the_output_limit_cuts_continues_at_the_first_unshown_chunk
     assert shown.endswith(
         "[Tool output truncated. Narrow the request or continue reading.]"
     )
-
-
-def test_a_section_page_reads_as_text_with_page_markers_and_headings():
-    carried = "The carried paragraph repeats across the two chunks."
-    chunks = [
-        {
-            "chunk_idx": 4,
-            "excerpt_id": "x4",
-            "section_path": "Ch 2",
-            "page_start": 10,
-            "page_end": 10,
-            "text": "Probability measures chance.",
-        },
-        {
-            "chunk_idx": 5,
-            "excerpt_id": "x5",
-            "section_path": "Ch 2",
-            "page_start": 10,
-            "page_end": 11,
-            "text": f"A sample space lists outcomes.\n\n{carried}",
-        },
-        {
-            "chunk_idx": 6,
-            "excerpt_id": "x6",
-            "section_path": "Ch 2 › 2.1 Events",
-            "page_start": 11,
-            "page_end": 11,
-            "text": f"{carried}\n\nAn event is a subset.",
-        },
-        {
-            "chunk_idx": 8,
-            "excerpt_id": "x8",
-            "section_path": "Ch 2 › 2.1 Events",
-            "page_start": 12,
-            "page_end": None,
-            "text": f"{carried} Not consecutive, so kept.",
-        },
-    ]
-
-    assert tools._section_text("Ch 2", chunks, {}) == "\n\n".join(
-        [
-            "[p. 10]",
-            "Probability measures chance.",
-            "[p. 10-11]",
-            f"A sample space lists outcomes.\n\n{carried}",
-            "## Ch 2 › 2.1 Events",
-            "An event is a subset.",
-            "[p. 12]",
-            f"{carried} Not consecutive, so kept.",
-        ]
-    )
-
-
-async def test_a_section_read_counts_every_excerpt_it_shows_as_read(monkeypatch):
-    """Each excerpt on the page satisfies the write guard, as read_knowledge
-    of that excerpt would; with the flag off the arguments are refused."""
-    from unittest.mock import AsyncMock
-
-    ctx = _library_ctx()
-    calls = []
-
-    async def _read_section(book, section, *, start=None, count=24):
-        calls.append((book, section, start, count))
-        return library.SectionRead(
-            book_id=book,
-            title="Brief Calculus",
-            version=5,
-            section=section,
-            first=10,
-            last=13,
-            page_first=30,
-            page_last=32,
-            run=1,
-            runs=1,
-            next_run=None,
-            start=10,
-            chunks=[
-                {
-                    "chunk_idx": 10 + i,
-                    "excerpt_id": eid,
-                    "section_path": "3 Rules",
-                    "page_start": 30 + i // 2,
-                    "page_end": None,
-                    "text": f"Part {i}.",
-                }
-                for i, eid in enumerate(["x1", "x1", "x2", "x3"])
-            ],
-            next_start=None,
-            figures=[
-                {
-                    "id": "f_30",
-                    "label": "Figure 3.1",
-                    "description": "",
-                    "credit": "",
-                    "page": 30,
-                },
-                {
-                    "id": "f_40",
-                    "label": "Figure 4.1",
-                    "description": "",
-                    "credit": "",
-                    "page": 40,
-                },
-            ],
-        )
-
-    monkeypatch.setattr(tools.library, "read_section", _read_section)
-    monkeypatch.setattr(tools.library, "provenance", AsyncMock(return_value=[]))
-    args = {"book": "brief-calculus", "section": "3 Rules"}
-    off = await tools._read_knowledge(args, ctx)
-    assert off.refused and calls == [], "section reading is the experiment's"
-
-    monkeypatch.setattr(tools.cfg, "library_section_tools", True)
-    text = (await tools._read_knowledge(args, ctx)).text()
-
-    assert calls == [("brief-calculus", "3 Rules", None, 24)]
-    assert text.startswith(
-        'Brief Calculus (book brief-calculus, version 5), section "3 Rules": '
-        "run 1 of 1, pages 30-32, chunks 10-13, from 10"
-    )
-    assert "- f_30: Figure 3.1" in text and "f_40" not in text, "figures on its pages"
-    assert text.endswith("Excerpts on this page: x1, x2, x3\n\n(end of section)")
-    assert [(r.excerpt_id, r.start) for r in ctx.library_reads.reads] == [
-        ("x1", 10),
-        ("x2", 12),
-        ("x3", 13),
-    ]
-    assert await tools.write_sources(
-        ctx, "create_material", {"excerpt_ids": ["x1", "x3"]}
-    ) == ([], ["x1", "x3"])
-
-
-# ------------------------------------------------------------ write sources
 
 
 def _library_ctx() -> ToolContext:

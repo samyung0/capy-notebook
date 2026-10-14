@@ -166,15 +166,9 @@ class ToolContext:
     # read it.
     study_progress: bool = False
     library_evidence: LibraryEvidence = field(default_factory=LibraryEvidence)
-    # The library's subjects that hold excerpts, fetched once per turn for the
-    # browse_knowledge description, and the topics of each subject browsed
-    # this turn, which is where search_knowledge topic ids come from.
+    # The library's subjects that hold excerpts, fetched once per turn for
+    # search_knowledge's description; its subject argument takes their ids.
     library_catalog: list[dict[str, Any]] | None = None
-    # With CAPY_LIBRARY_SECTION_TOOLS and no subject to list, the current
-    # books ({id, title, pages}), which keep the library on and give
-    # browse_knowledge.book its ids.
-    library_books: list[dict[str, Any]] | None = None
-    subject_topics: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     # Resource operations the gateway granted this actor for the turn
     # (contract.OPERATIONS names). Tools whose required operations are not all
     # present are neither offered nor dispatched.
@@ -646,38 +640,13 @@ async def load_library_catalog(ctx: ToolContext) -> None:
     db = await library.pool()
     async with db.connection() as conn:
         ctx.library_catalog = await library.catalog(conn)
-        # Only an untagged library (no subject to list) needs its books named.
-        if cfg.library_section_tools and not ctx.library_catalog:
-            ctx.library_books = await library.books(conn)
 
 
 def _catalog_lines(catalog: list[dict[str, Any]]) -> str:
     return "\n".join(
-        f"- browse_knowledge({json.dumps({'subject': subject['id']})})"
-        f" ({int(subject.get('excerpts') or 0)} excerpts)"
+        f"- {json.dumps(subject['id'])} ({int(subject.get('excerpts') or 0)} excerpts)"
         for subject in catalog
     )
-
-
-async def _unknown_topics(ctx: ToolContext, topics: list[str]) -> list[str]:
-    """Topic ids the library does not hold.
-
-    Ids seen in a subject browse this turn are known; the rest are checked
-    against the library in one query, so a model that skips browsing still
-    gets a refusal naming the ids rather than an empty search.
-    """
-    known = {str(t["id"]) for ts in ctx.subject_topics.values() for t in ts}
-    unchecked = [topic for topic in topics if topic not in known]
-    if not unchecked:
-        return []
-    held = await library.known_topics(unchecked)
-    return [topic for topic in unchecked if topic not in held]
-
-
-def _facets(args: dict[str, Any]) -> tuple[list[str], list[str]]:
-    topics = [str(t) for t in (args.get("topics") or [])]
-    roles = [str(r) for r in (args.get("roles") or [])]
-    return topics, roles
 
 
 def _excerpt_link(excerpt_id: str, section_path: str | None, pages: list[int]) -> str:
@@ -690,7 +659,7 @@ def _excerpt_link(excerpt_id: str, section_path: str | None, pages: list[int]) -
 
 
 def _excerpt_head(excerpt: library.Excerpt) -> str:
-    """The excerpt with its book's title and id, which search_knowledge.book takes."""
+    """The excerpt with its book's title and id."""
     return _excerpt_link(
         excerpt.id,
         f"{excerpt.book_title} (book {excerpt.book_id}) — {excerpt.section_path}",
@@ -699,10 +668,7 @@ def _excerpt_head(excerpt: library.Excerpt) -> str:
 
 
 def _excerpt_facets(excerpt: library.Excerpt) -> str:
-    parts = [
-        f"roles: {', '.join(excerpt.roles)}",
-        f"topics: {', '.join(excerpt.topic_ids)}",
-    ]
+    parts = [f"roles: {', '.join(excerpt.roles)}"]
     if excerpt.figure_ids:
         parts.append(f"figures: {', '.join(excerpt.figure_ids)}")
     return " | ".join(parts)
@@ -732,66 +698,47 @@ def _excerpt_scope(excerpt: library.Excerpt) -> str:
 
 
 def _no_excerpts(
-    topics: list[str],
-    roles: list[str],
-    available: dict[str, int] | None,
-    where: str = "",
+    subject: str | None, roles: list[str], available: dict[str, int] | None
 ) -> str:
-    """What an empty search means. Counts only say something under topics.
+    """What an empty search means. Counts only say something under a subject.
 
-    Without a topic filter the by-role numbers are the whole library's and
-    carry no information about the query, so the model is pointed at the
-    filter it did not use instead.
+    Without a subject the by-role numbers are the whole library's and carry no
+    information about the query, so the model is pointed at the filter it did
+    not use instead.
     """
-    head = (
-        f"No verified excerpt matches roles {', '.join(roles) or 'any'} on topics "
-        f"{', '.join(topics) or 'any'}{where}."
+    head = f"No verified excerpt matches roles {', '.join(roles) or 'any'}" + (
+        f" in subject {subject}." if subject else "."
     )
-    if not topics:
+    if not subject:
         return (
-            f"{head} This search had no topic filter. Browse a subject from the "
-            "browse_knowledge description to get its topic ids, then pass "
-            "topics to see what the library holds for them by role."
+            f"{head} This search had no subject filter. Pass a subject from this "
+            "tool's list to see what that subject holds by role."
         )
     held = ", ".join(f"{role} {count}" for role, count in (available or {}).items())
     if held:
-        return f"{head} Those topics hold: {held}."
-    return f"{head} Browse one of those topics to see what it does hold."
+        return f"{head} That subject holds: {held}."
+    return f"{head} Search again with other words or roles."
 
 
 async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     query = str(args.get("query") or "").strip()
     if not query:
         return _refused("search_knowledge needs a query.")
-    topics, roles = _facets(args)
-    unknown = await _unknown_topics(ctx, topics)
-    if unknown:
+    subject = str(args.get("subject") or "").strip() or None
+    roles = [str(r) for r in (args.get("roles") or [])]
+    if subject and subject not in {s["id"] for s in ctx.library_catalog or []}:
         return _refused(
-            f"Unknown topic ids {unknown}. Use a subject browse call listed in "
-            "browse_knowledge and pass the returned topic_id values, not the "
-            "subject ID or label. Or omit topics for a direct search."
+            f"Unknown subject id {subject!r}: use one listed in this tool's "
+            "description, or omit subject for a direct search."
         )
-    book = str(args.get("book") or "").strip()
-    section = str(args.get("section") or "").strip()
     if ctx.budget is not None:
         ctx.budget.embedding_calls += 1
     try:
-        result = await library.search(
-            query,
-            topics=topics,
-            roles=roles,
-            book=book or None,
-            section=section or None,
-        )
+        result = await library.search(query, subject=subject, roles=roles)
     except ValueError as exc:
         return _refused(f"search_knowledge: {exc}")
     if not result.excerpts:
-        where = (f" in book {book}" if book else "") + (
-            f" under section {json.dumps(section, ensure_ascii=False)}"
-            if section
-            else ""
-        )
-        return _result(_no_excerpts(topics, roles, result.available_roles, where))
+        return _result(_no_excerpts(subject, roles, result.available_roles))
     blocks = []
     for excerpt in result.excerpts:
         blocks.append(
@@ -808,101 +755,6 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         "\n\n".join(blocks)
         + "\n\nRead an excerpt in full with read_knowledge before writing from it."
     )
-
-
-def _subject_browse(result: dict[str, Any]) -> str:
-    """One line per topic with its count; the topic ids are what search takes."""
-    subject = result["subject"]
-    topics = result["topics"]
-    head = f"Subject {subject['id']!r}: {len(topics)} topics"
-    if not topics:
-        return f"{head}. The library holds no topic for this subject yet."
-    lines = [
-        f"- topic_id={json.dumps(t['id'])}: {t['label']}"
-        + (f" — {t['scope']}" if t.get("scope") else "")
-        + f" ({int(t.get('excerpts') or 0)} excerpts)"
-        for t in topics
-    ]
-    return (
-        head
-        + "\n"
-        + "\n".join(lines)
-        + "\n\nUse these topic_id values in search_knowledge.topics to filter a "
-        "search, or in browse_knowledge.topic to see excerpts by role and book."
-    )
-
-
-# Outline lines per browse_knowledge(book) page: a book whose parser made
-# every callout a heading has hundreds of two-level paths.
-OUTLINE_LINES = 120
-
-
-def _book_outline(outline: library.BookOutline, page: int) -> str:
-    """One line per section path (``library.outline_line``), ``OUTLINE_LINES``
-    to a page."""
-    lines = [library.outline_line(s) for s in outline.sections]
-    pages = max(1, -(-len(lines) // OUTLINE_LINES))
-    if not 1 <= page <= pages:
-        raise ValueError(
-            f"book {outline.book_id}'s outline has {pages} "
-            + ("page" if pages == 1 else "pages")
-        )
-    shown = lines[(page - 1) * OUTLINE_LINES : page * OUTLINE_LINES]
-    return (
-        f"Book {outline.book_id}: {outline.title}, version {outline.version}, "
-        f"{outline.pages} pages. Outline page {page} of {pages}: sections in "
-        "reading order, two heading levels (deeper ones count in their parent); "
-        "read one with read_knowledge book and section:\n"
-        + "\n".join(shown)
-        + (f"\n\n(next page = {page + 1})" if page < pages else "")
-    )
-
-
-async def _browse_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    subject = str(args.get("subject") or "").strip()
-    topic = str(args.get("topic") or "").strip()
-    book = str(args.get("book") or "").strip()
-    sections = cfg.library_section_tools
-    if [bool(subject), bool(topic), bool(book)].count(True) != 1 or (
-        book and not sections
-    ):
-        return _refused(
-            "browse_knowledge takes exactly one of subject (a subject id from "
-            "this tool's description) or topic (a topic id from a subject browse)"
-            + (" or book (a book id, for its outline)." if sections else ".")
-        )
-    # Dispatch on the argument given, never on which catalog holds the id: a
-    # topic id may coincide with a subject id.
-    try:
-        if book:
-            outline = await library.outline(book)
-            return _result(_book_outline(outline, int(args.get("page") or 1)))
-        if subject:
-            listing = await library.browse_subject(subject)
-            ctx.subject_topics[subject] = listing["topics"]
-            return _result(_subject_browse(listing))
-        result = await library.browse(topic, page=int(args.get("page") or 1))
-    except ValueError as exc:
-        return _refused(f"browse_knowledge: {exc}")
-    by_role = ", ".join(f"{role} {count}" for role, count in result.by_role.items())
-    by_book = ", ".join(f"{book} {count}" for book, count in result.by_book.items())
-    counts = (
-        f"{result.total} verified excerpts. By book: {by_book or 'none'}. "
-        "Role assignments (an excerpt counts once per role it carries): "
-        f"{by_role or 'none'}."
-    )
-    head = [
-        f"{result.topic['id']}: {result.topic['label']} — {result.topic['scope']}",
-        counts,
-    ]
-    items = [
-        f"{_excerpt_head(excerpt)}\n{_excerpt_facets(excerpt)}\n{_excerpt_scope(excerpt)}"
-        for excerpt in result.items
-    ]
-    tail = ""
-    if result.page * result.page_size < result.total:
-        tail = f"\n\n(next page = {result.page + 1})"
-    return _result("\n".join(head) + "\n\n" + "\n\n".join(items) + tail)
 
 
 def _short_section(section_path: str) -> str:
@@ -961,19 +813,8 @@ def _without_repeats(chunks: list[dict[str, Any]]) -> list[str]:
 
 async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     excerpt_id = str(args.get("excerpt_id") or "").strip()
-    book = str(args.get("book") or "").strip()
-    section = str(args.get("section") or "").strip()
-    if cfg.library_section_tools and not excerpt_id and book and section:
-        return await _read_section(book, section, args, ctx)
-    if not excerpt_id or book or section:
-        return _refused(
-            "read_knowledge takes an excerpt_id"
-            + (
-                ", or a book and a section together."
-                if cfg.library_section_tools
-                else "."
-            )
-        )
+    if not excerpt_id:
+        return _refused("read_knowledge takes an excerpt_id.")
     start = max(0, int(args.get("start") or 0))
     try:
         read = await library.read_excerpt(
@@ -1018,107 +859,6 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     ctx.library_reads.note(
         read.excerpt.id, start, _short_section(read.excerpt.section_path), text=text
     )
-    return _result(text)
-
-
-def _section_text(
-    section: str, chunks: list[dict[str, Any]], scopes: dict[str, str]
-) -> str:
-    """A section page as continuous text: the path where it moves to another
-    (sub)section, a [p. N] marker where the page changes, an excerpt's
-    reviewed scope (``scopes``, by excerpt id) where it begins on the page, and
-    no text a chunk repeats from the one before it."""
-    parts: list[str] = []
-    path, page = section, None
-    begun: set[str] = set()
-    for chunk, text in zip(chunks, _without_repeats(chunks), strict=True):
-        if chunk["section_path"] != path:
-            path = chunk["section_path"]
-            parts.append(f"## {path}")
-        first = chunk["page_start"]
-        if first is not None:
-            last = chunk["page_end"] or first
-            if not first == last == page:
-                parts.append(
-                    f"[p. {first}]" if first == last else f"[p. {first}-{last}]"
-                )
-                page = last
-        excerpt_id = chunk["excerpt_id"]
-        if excerpt_id not in begun:
-            begun.add(excerpt_id)
-            if excerpt_id in scopes:
-                parts.append(scopes[excerpt_id])
-        if text:
-            parts.append(text)
-    return "\n\n".join(parts)
-
-
-async def _read_section(
-    book: str, section: str, args: dict[str, Any], ctx: ToolContext
-) -> ToolResult:
-    """read_knowledge(book, section): one run of a section in order. Every
-    excerpt the page shows counts as read, so a write may name it in
-    excerpt_ids."""
-    start = args.get("start")
-    try:
-        read = await library.read_section(
-            book,
-            section,
-            start=None if start is None else int(start),
-            count=int(args.get("count") or library.SECTION_CHUNKS),
-        )
-    except ValueError as exc:
-        return _refused(f"read_knowledge: {exc}")
-    following = f"the next run starts at chunk {read.next_run}" if read.next_run else ""
-    head = (
-        f"{read.title} (book {read.book_id}, version {read.version}), section "
-        f"{json.dumps(section, ensure_ascii=False)}: run {read.run} of {read.runs}"
-        + (f" ({following})" if following else "")
-        + f", {library.page_span(read.page_first, read.page_last)}, "
-        f"chunks {read.first}-{read.last}, from {read.start}"
-    )
-    end = (
-        f"(end of run {read.run} of {read.runs}; {following})"
-        if following
-        else "(end of section)"
-    )
-    # Reviewed scope (printed errors included) in the excerpt read's form;
-    # an excerpt without reviewed metadata adds nothing.
-    scopes = {
-        excerpt_id: f"[{excerpt_id}] {_excerpt_scope(excerpt)}"
-        for excerpt_id, excerpt in read.excerpts.items()
-        if excerpt.retrieval is not None
-    }
-
-    def page(n: int) -> tuple[str, str]:
-        shown = read.chunks[:n]
-        pages = {
-            p
-            for c in shown
-            if c["page_start"] is not None
-            for p in range(c["page_start"], (c["page_end"] or c["page_start"]) + 1)
-        }
-        excerpts = dict.fromkeys(c["excerpt_id"] for c in shown)
-        return (
-            f"{head}\n\n{_section_text(section, shown, scopes)}"
-            + _excerpt_figures([f for f in read.figures if f["page"] in pages])
-            + "\n\nExcerpts on this page: "
-            + ", ".join(excerpts),
-            _tail(read.chunks, n, read.next_start, end),
-        )
-
-    n, text = _fitting(page, len(read.chunks))
-    # Each excerpt's read starts at its first chunk on this page.
-    firsts: dict[str, dict[str, Any]] = {}
-    for chunk in read.chunks[:n]:
-        firsts.setdefault(chunk["excerpt_id"], chunk)
-    for excerpt_id, chunk in firsts.items():
-        ctx.library_reads.note(
-            excerpt_id,
-            chunk["chunk_idx"],
-            _short_section(chunk["section_path"]),
-            text=text,
-        )
     return _result(text)
 
 
@@ -2753,7 +2493,6 @@ def _register(name: str, handler: Handler) -> None:
 
 _register("search_workspace", _search_workspace)
 _register("search_knowledge", _search_knowledge)
-_register("browse_knowledge", _browse_knowledge)
 _register("read_knowledge", _read_knowledge)
 _register("read_skill", _read_skill)
 _register("read_study_progress", _read_study_progress)
@@ -2775,11 +2514,7 @@ _register("write_slide", _write_slide)
 
 
 # Offered only with the Library switch on and a configured library.
-KNOWLEDGE_TOOLS = (
-    "search_knowledge",
-    "browse_knowledge",
-    "read_knowledge",
-)
+KNOWLEDGE_TOOLS = ("search_knowledge", "read_knowledge")
 KNOWLEDGE_CAPTURE = "capture_knowledge_page"
 # Offered with ppt-master installed (the retrieval image has it).
 DECK_TOOLS = ("create_deck", "write_slide")
@@ -2819,8 +2554,7 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         for spec in REGISTRY.values()
         if _offered(spec, ctx)
     ]
-    # The model maps the learner's words onto a subject from this list, then
-    # browses it for topic ids.
+    # The model maps the learner's words onto a subject from this list.
     # The deck skill is listed only where its tools can run.
     extra = {
         "read_skill": skills.catalog(
@@ -2828,57 +2562,14 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         )
     }
     if ctx.library_catalog:
-        extra["browse_knowledge"] = (
-            "\n\nSubjects this library holds (browse one for its topic ids):\n"
-            + _catalog_lines(ctx.library_catalog)
-        )
-    if ctx.library_books:
-        extra["browse_knowledge"] = extra.get("browse_knowledge", "") + (
-            "\n\nBooks this library holds (browse one for its section outline):\n"
-            + "\n".join(
-                f"- browse_knowledge({json.dumps({'book': b['id']})}): "
-                f"{b['title']} ({b['pages']} pages)"
-                for b in ctx.library_books
-            )
+        extra["search_knowledge"] = (
+            "\n\nSubjects this library holds:\n" + _catalog_lines(ctx.library_catalog)
         )
     for schema in schemas:
         name = schema["function"]["name"]
         if name in extra:
             schema["function"]["description"] += extra[name]
-    if not cfg.library_section_tools:
-        schemas = [without_sections(s) for s in schemas]
     return schemas if ctx.library else [without_excerpts(s) for s in schemas]
-
-
-def without_sections(schema: dict[str, Any]) -> dict[str, Any]:
-    """browse_knowledge and read_knowledge as production offers them: the
-    contract's book and section arguments are the CAPY_LIBRARY_SECTION_TOOLS
-    experiment's, and an excerpt read pages at most 12 chunks."""
-    function = schema["function"]
-    if function["name"] not in ("browse_knowledge", "read_knowledge"):
-        return schema
-    parameters = function["parameters"]
-    properties = {
-        k: v
-        for k, v in parameters["properties"].items()
-        if k not in ("book", "section")
-    }
-    if function["name"] == "read_knowledge":
-        properties["count"] = {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": library.READ_CHUNKS,
-            "default": library.READ_CHUNKS,
-            "description": "Chunks per page, at most 12.",
-        }
-        parameters = {**parameters, "required": ["excerpt_id"]}
-    return {
-        **schema,
-        "function": {
-            **function,
-            "parameters": {**parameters, "properties": properties},
-        },
-    }
 
 
 def without_excerpts(schema: dict[str, Any]) -> dict[str, Any]:

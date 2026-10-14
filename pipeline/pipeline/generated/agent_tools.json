@@ -1,5 +1,5 @@
 {
-  "version": 27,
+  "version": 28,
   "operations": [
     "source.read",
     "material.read",
@@ -204,11 +204,6 @@
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "book": {
-            "description": "A book id from a result header: search only that book.",
-            "minLength": 1,
-            "type": "string"
-          },
           "query": {
             "minLength": 1,
             "type": "string"
@@ -229,19 +224,10 @@
             "maxItems": 6,
             "type": "array"
           },
-          "section": {
-            "description": "A section path from a result: search only that section and the ones under it.",
+          "subject": {
+            "description": "A subject id listed below: search only its excerpts.",
             "minLength": 1,
             "type": "string"
-          },
-          "topics": {
-            "description": "topic_id values from a browse_knowledge subject; omit for a direct search.",
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 8,
-            "type": "array"
           }
         },
         "required": [
@@ -261,70 +247,20 @@
       "retention": "none"
     },
     {
-      "name": "browse_knowledge",
-      "version": 1,
-      "description": "List what the library holds: a subject listed below for its topics with excerpt counts, or a topic for its excerpts by role and book.",
-      "inputSchema": {
-        "additionalProperties": false,
-        "properties": {
-          "book": {
-            "description": "A book id: its outline of section paths with pages.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "page": {
-            "default": 1,
-            "minimum": 1,
-            "type": "integer"
-          },
-          "subject": {
-            "description": "A subject id listed below.",
-            "minLength": 1,
-            "type": "string"
-          },
-          "topic": {
-            "description": "A topic_id from a subject browse.",
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "type": "object"
-      },
-      "mutates": false,
-      "usesEmbedding": false,
-      "concurrency": "read",
-      "allowedSlots": [
-        "chat"
-      ],
-      "requiredOperations": [
-        "library.read"
-      ],
-      "retention": "none"
-    },
-    {
       "name": "read_knowledge",
       "version": 1,
       "description": "Read an excerpt's reviewed notes and source chunks in order from a chunk index; the notes and scope come on its first page.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
-          "book": {
-            "description": "With section, instead of excerpt_id: the book to read a section of.",
-            "minLength": 1,
-            "type": "string"
-          },
           "count": {
-            "description": "Chunks per page: at most and by default 12 of an excerpt, 24 of a section.",
-            "maximum": 24,
+            "default": 12,
+            "description": "Chunks per page, at most 12.",
+            "maximum": 12,
             "minimum": 1,
             "type": "integer"
           },
           "excerpt_id": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "section": {
-            "description": "A section path from the book's outline: read it in order, subsections included.",
             "minLength": 1,
             "type": "string"
           },
@@ -334,6 +270,9 @@
             "type": "integer"
           }
         },
+        "required": [
+          "excerpt_id"
+        ],
         "type": "object"
       },
       "mutates": false,

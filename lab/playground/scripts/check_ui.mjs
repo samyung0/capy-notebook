@@ -45,7 +45,7 @@ const resolvePreview = async (index, prompt) => {
   const config = JSON.parse(request.options.body);
   const toolPrompts = {
     search_knowledge: 'Production search',
-    browse_knowledge: 'Production browse',
+    read_knowledge: 'Production read',
   };
   request.resolve({
     ok: true,
@@ -98,7 +98,7 @@ assert.equal(element('prompt').value, 'Production prompt');
 element('toolName').value = 'search_knowledge';
 element('toolName').onchange();
 type('toolPrompt', 'My search instructions');
-element('toolName').value = 'browse_knowledge';
+element('toolName').value = 'read_knowledge';
 element('toolName').onchange();
 element('toolName').value = 'search_knowledge';
 element('toolName').onchange();

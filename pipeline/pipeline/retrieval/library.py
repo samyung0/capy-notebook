@@ -11,20 +11,18 @@ verified role and topic tags, figures and model-run receipts.
 
 Retrieval unit is the excerpt (one section of one book). ``search`` ranks
 chunks with hybrid search, restricted in SQL to excerpts whose verified tags
-match the requested topics and roles, and folds the hits into excerpts by
-best chunk. The taxonomy has subjects (the committed fixture) over topics
-(derived per book): ``catalog`` lists the subjects that hold excerpts,
-``browse_subject`` a subject's topics, ``browse`` one topic's excerpts. Measured
-motivation in bench/rag/reports/2026-09-17-knowledge-base-retrieval.md: role
-wording in a query does not move the ranker, tag predicates do. ``outline`` and
-``read_section`` read a book by section instead (the intake comparison's
-section reading, behind CAPY_LIBRARY_SECTION_TOOLS).
+match the requested subject (any of its topics) and roles, and folds the hits
+into excerpts by best chunk. The taxonomy has subjects (the committed fixture)
+over topics (derived per book); ``catalog`` lists the subjects that hold
+excerpts. Measured motivation in
+bench/rag/reports/2026-09-17-knowledge-base-retrieval.md: role wording in a
+query does not move the ranker, tag predicates do; the subject filter replaced
+topic ids on 2026-10-14 (bench/rag/reports/2026-10-14-library-flow.md).
 """
 
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 from dataclasses import dataclass, field
 from typing import Any
@@ -160,8 +158,16 @@ def _eligible() -> str:
                             AND eligible_chunk.searchable)"""
 
 
+# An excerpt is in a subject when it carries any of that subject's topics.
+_IN_SUBJECT = (
+    "e.topic_ids && ARRAY(SELECT t.id FROM library_topics t "
+    "WHERE t.subject_id = %(subject)s)"
+)
+
+
 def _search_filter() -> str:
-    """The search's chunk predicate: tag facets, then an optional section."""
+    """The search's chunk predicate: verified tags, an optional subject and
+    optional roles."""
     return f"""
       AND EXISTS (
             SELECT 1 FROM library_chunks lc
@@ -169,16 +175,9 @@ def _search_filter() -> str:
               ON e.content_id = lc.content_id AND e.id = lc.excerpt_id
             WHERE lc.id = c.id
               AND {_verified()}
-              AND (%(no_topics)s OR e.topic_ids && %(topics)s::text[])
+              AND (%(no_subject)s OR {_IN_SUBJECT})
               AND (%(no_roles)s OR e.roles && %(roles)s::text[])
-      )
-      AND (%(no_section)s OR c.section_path = %(section)s
-           OR c.section_path LIKE %(section_under)s)"""
-
-
-def _under(section: str) -> str:
-    """LIKE pattern for the paths under a section, its own % and _ escaped."""
-    return re.sub(r"([\\%_])", r"\\\1", section) + " › %"
+      )"""
 
 
 _pool: AsyncConnectionPool | None = None
@@ -261,74 +260,6 @@ async def catalog(conn: Any) -> list[dict[str, Any]]:
     return [dict(row) for row in await cur.fetchall()]
 
 
-async def books(conn: Any) -> list[dict[str, Any]]:
-    """The books with a current version, for section reading's tool description:
-    an untagged library has no subject to list, but it has books."""
-    cur = await conn.execute(
-        """
-        SELECT b.id, b.title, b.pages FROM library_books b
-        JOIN rag_file_contents fc ON fc.file_id = b.id AND fc.workspace_id = %s
-        ORDER BY b.title
-        """,
-        (WORKSPACE,),
-    )
-    return [dict(row) for row in await cur.fetchall()]
-
-
-async def browse_subject(subject_id: str) -> dict[str, Any]:
-    """One subject with its topics and their tagged-excerpt counts.
-
-    Subjects and topics are separate catalogs whose ids may coincide (the
-    loader refuses new collisions, but the reader never guesses), so the
-    tool dispatches here on the ``subject`` argument, never on lookup order.
-    """
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            "SELECT id, label, aliases, area FROM library_subjects WHERE id = %s",
-            (subject_id,),
-        )
-        subject = await cur.fetchone()
-        if subject is None:
-            raise ValueError(
-                f"unknown subject id {subject_id!r}; subject ids are the ones "
-                "listed in the browse_knowledge description"
-            )
-        cur = await conn.execute(
-            f"""
-            WITH held AS (
-              SELECT t.id, count(DISTINCT (e.content_id, e.id)) AS excerpts
-              FROM ({_current_eligible()}) e
-              CROSS JOIN unnest(e.topic_ids) AS topic_id
-              JOIN library_topics t ON t.id = topic_id
-              WHERE t.subject_id = %(subject)s GROUP BY t.id
-            )
-            SELECT t.id, t.label, t.aliases, t.scope, coalesce(held.excerpts, 0) AS excerpts
-            FROM library_topics t LEFT JOIN held ON held.id = t.id
-            WHERE t.subject_id = %(subject)s ORDER BY t.label
-            """,
-            {
-                "ws": WORKSPACE,
-                "subject": subject_id,
-                "min_confidence": cfg.library_tag_min_confidence,
-            },
-        )
-        topics = [dict(row) for row in await cur.fetchall()]
-    return {"subject": dict(subject), "topics": topics}
-
-
-async def known_topics(topic_ids: list[str]) -> set[str]:
-    """Which of these topic ids the library holds, in one query."""
-    if not topic_ids:
-        return set()
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            "SELECT id FROM library_topics WHERE id = ANY(%s)", (topic_ids,)
-        )
-        return {row["id"] for row in await cur.fetchall()}
-
-
 @dataclass
 class Excerpt:
     id: str
@@ -357,11 +288,11 @@ class Excerpt:
 @dataclass
 class SearchResult:
     excerpts: list[Excerpt]
-    topics: list[str]
+    subject: str | None
     roles: list[str]
-    # When topics and roles filtered everything out: verified excerpts on the
-    # same topics by role, so the caller can relax on purpose rather than
-    # guess. Without topics the counts are the whole library's and say nothing
+    # When a subject and roles filtered everything out: the subject's verified
+    # excerpts by role, so the caller can relax on purpose rather than guess.
+    # Without a subject the counts are the whole library's and say nothing
     # about the query, so they are not computed.
     available_roles: dict[str, int] | None = None
 
@@ -389,65 +320,12 @@ class ExcerptRead:
     following: Excerpt | None = None
 
 
-@dataclass
-class SectionRead:
-    """One run of a book section, its chunks from ``start`` in chunk order.
-
-    ``first``/``last`` and the pages span the run (``run`` of ``runs``;
-    ``next_run`` is the first chunk of the run after it); ``chunks`` carry
-    their excerpt ids, and ``figures`` (with their page) lie on the pages
-    those chunks cover.
-    """
-
-    book_id: str
-    title: str
-    version: int
-    section: str
-    first: int
-    last: int
-    page_first: int | None
-    page_last: int | None
-    run: int
-    runs: int
-    next_run: int | None
-    start: int
-    chunks: list[dict[str, Any]]
-    next_start: int | None
-    figures: list[dict[str, Any]] = field(default_factory=list)
-    # The chunks' excerpts by id, for their reviewed scope.
-    excerpts: dict[str, Excerpt] = field(default_factory=dict)
-
-
-@dataclass
-class BookOutline:
-    book_id: str
-    title: str
-    version: int
-    pages: int
-    # {path, runs, page_first, page_last, chunks} in reading order.
-    sections: list[dict[str, Any]]
-
-
-@dataclass
-class BrowseResult:
-    topic: dict[str, Any]
-    by_role: dict[str, int]
-    by_book: dict[str, int]
-    total: int
-    page: int
-    page_size: int
-    items: list[Excerpt]
-
-
-def _validate_facets(
-    topics: list[str] | None, roles: list[str] | None
-) -> tuple[list[str], list[str]]:
-    topics = [t for t in (topics or []) if isinstance(t, str) and t]
+def _validate_roles(roles: list[str] | None) -> list[str]:
     roles = [r for r in (roles or []) if isinstance(r, str) and r]
     unknown = [r for r in roles if r not in ROLES]
     if unknown:
         raise ValueError(f"unknown roles {unknown}; roles are {', '.join(ROLES)}")
-    return topics, roles
+    return roles
 
 
 async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
@@ -506,23 +384,21 @@ async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
 async def search(
     query: str,
     *,
-    topics: list[str] | None = None,
+    subject: str | None = None,
     roles: list[str] | None = None,
-    book: str | None = None,
-    section: str | None = None,
     top_k: int | None = None,
     candidates: int | None = None,
     vector: list[float] | None = None,
 ) -> SearchResult:
     """Excerpt-level hybrid search restricted to verified tags.
 
-    ``book`` keeps one book (books are the library's files); ``section`` keeps
-    that section path and the paths under it. The fused chunks are reranked
+    ``subject`` keeps excerpts carrying any of that subject's topics. The
+    fused chunks are reranked
     (``search.rerank``) before they fold into excerpts, one per book section.
     ``vector`` bypasses query embedding; evaluations and tests use it to skip
     that provider call.
     """
-    topics, roles = _validate_facets(topics, roles)
+    roles = _validate_roles(roles)
     top_k = top_k or cfg.search_top_k
     candidates = candidates or cfg.search_candidates
     db = await pool()
@@ -545,33 +421,30 @@ async def search(
             )
             vectors = await models.embed([models.format_query(query, spec)], spec=spec)
             if not vectors:
-                return SearchResult([], topics, roles)
+                return SearchResult([], subject, roles)
             vector = vectors[0]
         rows = await store.hybrid_search(
             workspace_id=WORKSPACE,
             vector=vector,
             terms=search_query_terms(query),
-            file_ids=[book] if book else None,
+            file_ids=None,
             candidates=candidates,
             pin=pin,
             conn=conn,
             chunk_filter=_search_filter(),
             chunk_filter_params={
                 "min_confidence": cfg.library_tag_min_confidence,
-                "no_topics": not topics,
-                "topics": topics,
+                "no_subject": not subject,
+                "subject": subject or "",
                 "no_roles": not roles,
                 "roles": roles,
-                "no_section": not section,
-                "section": section or "",
-                "section_under": _under(section or ""),
             },
         )
         if not rows:
             available = (
-                await _available_roles(conn, topics) if roles and topics else None
+                await _available_roles(conn, subject) if roles and subject else None
             )
-            return SearchResult([], topics, roles, available)
+            return SearchResult([], subject, roles, available)
     # No pooled connection is held while the reranker runs.
     rows, _ = await rerank(query, rows)
     async with db.connection() as conn:
@@ -612,7 +485,7 @@ async def search(
         excerpt.hit_regions = store.decode_regions(row.get("regions"))
         excerpt.score = float(row.get("score") or 0.0)
         result.append(excerpt)
-    return SearchResult(result, topics, roles)
+    return SearchResult(result, subject, roles)
 
 
 async def _chunk_excerpts(conn: Any, chunk_ids: list[str]) -> dict[str, str]:
@@ -623,7 +496,7 @@ async def _chunk_excerpts(conn: Any, chunk_ids: list[str]) -> dict[str, str]:
     return {row["id"]: row["excerpt_id"] for row in await cur.fetchall()}
 
 
-async def _available_roles(conn: Any, topics: list[str]) -> dict[str, int]:
+async def _available_roles(conn: Any, subject: str) -> dict[str, int]:
     cur = await conn.execute(
         f"""
         SELECT role, count(DISTINCT (e.content_id, e.id)) AS n
@@ -631,15 +504,13 @@ async def _available_roles(conn: Any, topics: list[str]) -> dict[str, int]:
         JOIN rag_file_contents fc
           ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
         CROSS JOIN unnest(e.roles) AS role
-        WHERE {_eligible()}
-          AND (%(no_topics)s OR e.topic_ids && %(topics)s::text[])
+        WHERE {_eligible()} AND {_IN_SUBJECT}
         GROUP BY role ORDER BY role
         """,
         {
             "ws": WORKSPACE,
             "min_confidence": cfg.library_tag_min_confidence,
-            "no_topics": not topics,
-            "topics": topics,
+            "subject": subject,
         },
     )
     return {row["role"]: int(row["n"]) for row in await cur.fetchall()}
@@ -742,255 +613,6 @@ async def read_excerpt(
         figures=figures,
         previous=neighbours.get("previous"),
         following=neighbours.get("following"),
-    )
-
-
-async def _current_book(conn: Any, book_id: str) -> dict[str, Any]:
-    cur = await conn.execute(
-        """
-        SELECT b.title, b.version, b.pages, fc.content_id FROM library_books b
-        JOIN rag_file_contents fc ON fc.file_id = b.id AND fc.workspace_id = %s
-        WHERE b.id = %s
-        """,
-        (WORKSPACE, book_id),
-    )
-    book = await cur.fetchone()
-    if book is None:
-        raise ValueError(f"unknown book id {book_id!r}")
-    return dict(book)
-
-
-async def outline(book_id: str) -> BookOutline:
-    """A book's sections in reading order, two heading levels deep."""
-    db = await pool()
-    async with db.connection() as conn:
-        book = await _current_book(conn, book_id)
-        cur = await conn.execute(
-            """
-            SELECT chunk_idx, section_path, page_start, page_end
-            FROM library_chunks WHERE content_id = %s ORDER BY chunk_idx
-            """,
-            (book["content_id"],),
-        )
-        chunks = [dict(row) for row in await cur.fetchall()]
-    return BookOutline(
-        book_id=book_id,
-        title=book["title"],
-        version=int(book["version"]),
-        pages=int(book["pages"]),
-        sections=_fold_sections(chunks),
-    )
-
-
-OUTLINE_DEPTH = 2
-# Chunks of other paths a section may enclose and stay one run: a captioned
-# table, whose path is its caption, stays inside its section.
-RUN_GAP = 2
-
-
-def _runs(indexes: list[int]) -> list[tuple[int, int]]:
-    """Ascending chunk indexes as (first, last) runs; a gap of at most
-    ``RUN_GAP`` chunks joins two runs, a larger one separates them."""
-    runs: list[list[int]] = []
-    for i in indexes:
-        if runs and i - runs[-1][1] - 1 <= RUN_GAP:
-            runs[-1][1] = i
-        else:
-            runs.append([i, i])
-    return [(first, last) for first, last in runs]
-
-
-def _fold_sections(chunks: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The outline: each path cut to two heading levels, with what a section
-    read of it covers (its chunks and those under it, in runs): its pages and
-    the chunks of all its runs, so a line's count is what reading it costs.
-    Ordered by first chunk; text before the first heading has no path a read
-    can name and is left out."""
-    matched: dict[str, list[dict[str, Any]]] = {}
-    for chunk in chunks:
-        parts = chunk["section_path"].split(" › ")
-        if parts != [""]:
-            matched.setdefault(" › ".join(parts[:OUTLINE_DEPTH]), [])
-    for chunk in chunks:
-        parts = chunk["section_path"].split(" › ")
-        for key in {" › ".join(parts[:d]) for d in range(1, OUTLINE_DEPTH + 1)}:
-            if key in matched:
-                matched[key].append(chunk)
-    sections = []
-    for path, under in matched.items():
-        runs = _runs([c["chunk_idx"] for c in under])
-        paged = [c for c in under if c["page_start"] is not None]
-        sections.append(
-            {
-                "path": path,
-                "runs": runs,
-                "page_first": min((c["page_start"] for c in paged), default=None),
-                "page_last": max(
-                    (c["page_end"] or c["page_start"] for c in paged), default=None
-                ),
-                "chunks": sum(last - first + 1 for first, last in runs),
-            }
-        )
-    return sorted(sections, key=lambda s: s["runs"][0][0])
-
-
-def page_span(first: int | None, last: int | None) -> str:
-    if first is None:
-        return "no page"
-    return f"page {first}" if last in (None, first) else f"pages {first}-{last}"
-
-
-def outline_line(section: dict[str, Any]) -> str:
-    """One outline line: the path exactly as read_knowledge.section takes it."""
-    return (
-        f"- section={json.dumps(section['path'], ensure_ascii=False)}: "
-        f"{page_span(section['page_first'], section['page_last'])}, "
-        f"{section['chunks']} chunks"
-    )
-
-
-def _normalised(path: str) -> str:
-    """A section path with "›", ">" or "/" between levels as one separator
-    and whitespace collapsed, so a model's "Ch 2/2.1 Events" finds
-    "Ch 2 › 2.1 Events"."""
-    return " ".join(re.sub(r"\s*[›>/]\s*", " › ", path).split())
-
-
-def _closest(sections: list[dict[str, Any]], wanted: str, n: int = 3) -> list[str]:
-    """The ``n`` outline lines sharing the most leading words with ``wanted``
-    (already normalised), ties in reading order."""
-
-    def shared(section: dict[str, Any]) -> int:
-        count = 0
-        for a, b in zip(
-            _normalised(section["path"]).split(), wanted.split(), strict=False
-        ):
-            if a.lower() != b.lower():
-                break
-            count += 1
-        return count
-
-    ranked = sorted(sections, key=shared, reverse=True)[:n]
-    return [outline_line(s) for s in ranked]
-
-
-SECTION_CHUNKS = 24
-
-
-async def read_section(
-    book_id: str, section: str, *, start: int | None = None, count: int = SECTION_CHUNKS
-) -> SectionRead:
-    """One run of a book section in chunk order, subsections included.
-
-    A section's chunks (its path and the paths under it, compared with the
-    level separator normalised, ``_normalised``) form runs (``_runs``): a
-    captioned table between them stays inside, while a path that recurs
-    through a chapter, such as its exercises, is several runs. ``start``
-    picks the run that holds it, or the first run after it when it falls
-    between runs (the first run when omitted); only a start past the last run
-    is refused. A path that matches nothing is refused with the book's three
-    closest outline lines.
-    """
-    if start is not None and start < 0:
-        raise ValueError("start must be a chunk index of 0 or more")
-    if not 1 <= count <= SECTION_CHUNKS:
-        raise ValueError(f"count must be between 1 and {SECTION_CHUNKS}")
-    db = await pool()
-    async with db.connection() as conn:
-        book = await _current_book(conn, book_id)
-        cur = await conn.execute(
-            """
-            SELECT chunk_idx, section_path, page_start, page_end FROM library_chunks
-            WHERE content_id = %s ORDER BY chunk_idx
-            """,
-            (book["content_id"],),
-        )
-        chunks = [dict(row) for row in await cur.fetchall()]
-        wanted = _normalised(section)
-        matched = [
-            c
-            for c in chunks
-            if (path := _normalised(c["section_path"])) == wanted
-            or path.startswith(wanted + " › ")
-        ]
-        if not matched:
-            raise ValueError(
-                f"book {book_id} has no section {section!r}; its closest outline "
-                "lines:\n" + "\n".join(_closest(_fold_sections(chunks), wanted))
-            )
-        runs = _runs([c["chunk_idx"] for c in matched])
-        at = (
-            0
-            if start is None
-            else next((i for i, (_, last) in enumerate(runs) if start <= last), None)
-        )
-        if at is None:
-            raise ValueError(
-                f"chunk {start} is past section {section!r}, whose runs are "
-                + ", ".join(f"{first}-{last}" for first, last in runs)
-            )
-        first, last = runs[at]
-        begin = first if start is None else max(start, first)
-        paged = [
-            c
-            for c in matched
-            if first <= c["chunk_idx"] <= last and c["page_start"] is not None
-        ]
-        cur = await conn.execute(
-            """
-            SELECT id, chunk_idx, section_path, text, page_start, page_end, excerpt_id
-            FROM library_chunks
-            WHERE content_id = %s AND chunk_idx BETWEEN %s AND %s
-            ORDER BY chunk_idx LIMIT %s
-            """,
-            (book["content_id"], begin, last, count + 1),
-        )
-        rows = [dict(row) for row in await cur.fetchall()]
-        more = len(rows) > count
-        rows = rows[:count]
-        excerpts = await _excerpts(
-            conn, list(dict.fromkeys(r["excerpt_id"] for r in rows))
-        )
-        pages = sorted(
-            {
-                page
-                for row in rows
-                if row["page_start"] is not None
-                for page in range(
-                    row["page_start"], (row["page_end"] or row["page_start"]) + 1
-                )
-            }
-        )
-        figures = []
-        if pages:
-            cur = await conn.execute(
-                """
-                SELECT f.id, f.label, f.description, f.credit, f.page
-                FROM library_figures f
-                WHERE f.content_id = %s AND f.page = ANY(%s)
-                  AND NOT f.excluded AND NOT f.decorative AND f.bbox <> %s::int[]
-                ORDER BY f.page, f.block_index
-                """,
-                (book["content_id"], pages, WHOLE_PAGE),
-            )
-            figures = [dict(row) for row in await cur.fetchall()]
-    return SectionRead(
-        book_id=book_id,
-        title=book["title"],
-        version=int(book["version"]),
-        section=section,
-        first=first,
-        last=last,
-        page_first=min((c["page_start"] for c in paged), default=None),
-        page_last=max((c["page_end"] or c["page_start"] for c in paged), default=None),
-        run=at + 1,
-        runs=len(runs),
-        next_run=runs[at + 1][0] if at + 1 < len(runs) else None,
-        start=begin,
-        chunks=rows,
-        next_start=rows[-1]["chunk_idx"] + 1 if more else None,
-        figures=figures,
-        excerpts=excerpts,
     )
 
 
@@ -1158,64 +780,3 @@ async def provenance(excerpt_ids: list[str]) -> list[dict[str, Any]]:
         )
         book["excerptIds"].append(row["excerpt_id"])
     return list(books.values())
-
-
-async def browse(topic: str, *, page: int = 1, page_size: int = 20) -> BrowseResult:
-    """One topic's verified counts by role and by book, then a page of excerpts."""
-    if page < 1 or not 1 <= page_size <= 50:
-        raise ValueError("page must be at least 1 and page_size between 1 and 50")
-    db = await pool()
-    async with db.connection() as conn:
-        cur = await conn.execute(
-            "SELECT id, label, aliases, scope FROM library_topics WHERE id = %s",
-            (topic,),
-        )
-        found = await cur.fetchone()
-        if found is None:
-            raise ValueError(
-                f"unknown topic id {topic!r}; topic ids come from browsing a subject"
-            )
-        by_role = await _available_roles(conn, [topic])
-        cur = await conn.execute(
-            f"""
-            SELECT e.book_id, count(*) AS n FROM library_excerpts e
-            JOIN rag_file_contents fc
-              ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
-            WHERE {_eligible()} AND e.topic_ids && %(topics)s::text[]
-            GROUP BY e.book_id ORDER BY e.book_id
-            """,
-            {
-                "ws": WORKSPACE,
-                "min_confidence": cfg.library_tag_min_confidence,
-                "topics": [topic],
-            },
-        )
-        by_book = {row["book_id"]: int(row["n"]) for row in await cur.fetchall()}
-        cur = await conn.execute(
-            f"""
-            SELECT e.id FROM library_excerpts e
-            JOIN rag_file_contents fc
-              ON fc.content_id = e.content_id AND fc.workspace_id = %(ws)s
-            WHERE {_eligible()} AND e.topic_ids && %(topics)s::text[]
-            ORDER BY e.book_id, e.pages[1], e.id
-            LIMIT %(limit)s OFFSET %(offset)s
-            """,
-            {
-                "ws": WORKSPACE,
-                "min_confidence": cfg.library_tag_min_confidence,
-                "topics": [topic],
-                "limit": page_size,
-                "offset": (page - 1) * page_size,
-            },
-        )
-        ids = [row["id"] for row in await cur.fetchall()]
-        excerpts = await _excerpts(conn, ids)
-    return BrowseResult(
-        topic=dict(found),
-        by_role=by_role,
-        by_book=by_book,
-        total=sum(by_book.values()),
-        page=page,
-        page_size=page_size,
-        items=[excerpts[i] for i in ids],
-    )

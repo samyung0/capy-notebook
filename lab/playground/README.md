@@ -147,7 +147,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `answer.citations` | `as_is` (production numbering), `renumber` (markers rewritten to 1, 2, … in first-appearance order while streaming; the final list holds only the passages used) or `structured` (the answer is JSON: claims with the passages that ground each; the playground writes the prose and numbers) |
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the library rules. The addon is appended either way |
 | `library_rules` | `null` keeps production's library rules; a string replaces them. Sent only with Library on, before the answer format (or last when a replaced `system_prompt` dropped it) |
-| `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `browse_knowledge` still receives the live subject catalog |
+| `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_knowledge` still receives the live subject list |
 | `skills` | Map of skill names (`editing`, `workspace_building`, `deck`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text; an applied text ignores the Library switch, which adds library rules to production's `editing` and `workspace_building` |
 | `skill_addons` | Map of skill names to text appended to what `read_skill` returns (after any `skills` replacement), so a teaching variant rides on production's current text; seen in the config JSON and each call's full context |
 | `library` | The per-turn Library switch (default on): the shared library is a source and its tools are offered |
@@ -156,7 +156,6 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `preference_text` | `field=value` (`writingStyle=brief`, `mainFormat=note`, `visualAids=more`, `knowledgeChecks=questions`, `=cards` or `=off`) to the line that value adds to the turn context, in place of `pipeline/prompts/preferences.py`'s; edited in the Preference wording panel. The study preferences carry the style of notes and decks (Epo 2026-10-14), so this is where that style is tuned. A turn sends only the lines of its own `study_preferences` values |
 | `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
 | `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
-| `library_flow` | Reshapes the library tools for an experiment. `null` keeps production's; `browse_first` leaves `browse_knowledge` only its `subject` argument (a subject's topics with counts); `search_subject` gives `search_knowledge` a `subject` id in place of `topics` (filtering by every topic of that subject), removes `browse_knowledge` and moves its subject list into search's description. Arguments are checked against the reshaped schema, and result lines naming a removed argument are reworded. Configs `flow-browse-first` and `flow-search-subject` pair each with matching `library_rules` |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
 | `capture.require_seen_page` | Refuse captures of pages no retrieved passage has shown |
@@ -370,44 +369,21 @@ judged against the saved runs.
 
 The 2026-10-06 intake and retrieval comparison
 (`bench/rag/reports/2026-10-06-intake-retrieval-comparison-plan.md`, protocol
-`bench/rag/intake/fixtures/protocol.json`) runs its arms through three
-configs. Each is `chat.json` with decks off; `intake-b.json` and
-`intake-c.json` replace the library rules (`library_rules`) with the
-section-reading variant: production's scope and applicability lines verbatim,
-with the search and read workflow lines replaced (locate by search or a book's
-outline, read the needed sections in book order, take examples and practice
-from the same section or chapter in one book's notation, name the book and
-pages; no topic or role filters). `intake-a.json` keeps production's rules.
+`bench/rag/intake/fixtures/protocol.json`) ran three arms; their results
+are in `bench/rag/reports/2026-10-07-intake-retrieval-comparison.md`. Arms B
+and C read books by section behind `CAPY_LIBRARY_SECTION_TOOLS`, which
+contract v28 removed with `browse_knowledge` (2026-10-14), so only arm A's
+config, `intake-a.json` (`chat.json` with decks off), still runs; the
+2026-10-14 library-flow runs used it as production
+(`bench/rag/reports/2026-10-14-library-flow.md`). `CAPY_LIBRARY_REQUIRE_TAGS=0`
+(arm B's untagged library) still makes untagged excerpts searchable. Each run
+uses its own playground process on its own port (the process runs one turn at
+a time); a variable set in the shell wins over `.env.local`.
 
-Everything else an arm changes is process environment, so each arm runs in
-its own playground process on its own port (the process runs one turn at a
-time). A variable set in the shell wins over `.env.local`.
-
-| Arm | Config | `CAPY_LIBRARY_SECTION_TOOLS` | `CAPY_LIBRARY_REQUIRE_TAGS` | `LIBRARY_DATABASE_URL` |
-| --- | --- | --- | --- | --- |
-| A | `intake-a` | `0` (default) | `1` (default) | the live library (`.env.local`, else the tunnel's 15433) |
-| B | `intake-b` | `1` | `0`: its excerpts are untagged | the scratch library `intake-eval-scratch` on 127.0.0.1:15445 |
-| C | `intake-c` | `1` | `1` (default) | the live library |
-
-With `CAPY_LIBRARY_SECTION_TOOLS=1`, `browse_knowledge(book, page)` lists a
-book's outline, 120 lines a page, and `read_knowledge(book, section)` reads one
-run of a section in order (a path that recurs through a chapter is several
-runs; the header names the next; "/" or ">" between levels reads as "›", a
-start between runs moves to the next run, and a path that matches nothing is
-refused with the three closest outline lines), with each reviewed excerpt's scope (printed
-errors included) where it begins and the figures on the shown pages
-(`openwiki/agentic-retrieval.md`, Knowledge library). When no subject holds a
-tagged excerpt, as in arm B's untagged scratch library, the turn keeps the
-library because it holds current books, and the `browse_knowledge`
-description lists them (id, title, pages); a library with subjects (arms A
-and C) lists no books. With `0` the offered schemas, description and
-admission are production's. Both flags take only `0` or `1`.
-
-```powershell
-$env:CAPY_LIBRARY_SECTION_TOOLS = "1"; $env:CAPY_LIBRARY_REQUIRE_TAGS = "0"; $env:LIBRARY_DATABASE_URL = "<scratch library URL>"
-& "$env:USERPROFILE\.local\bin\uv.exe" run --with pymupdf==1.28.2 python lab/playground/scripts/playground.py --target lab --port 8767
+```bash
+uv run --with pymupdf==1.28.2 python lab/playground/scripts/playground.py --target lab --port 8767
 # in another terminal
-& "$env:USERPROFILE\.local\bin\uv.exe" run python bench/rag/intake/scripts/run_requests.py --arm B --url http://127.0.0.1:8767 --library-url "<scratch library URL>"
+uv run --project pipeline python bench/rag/intake/scripts/run_requests.py --arm A --url http://127.0.0.1:8767 --library-url "<library URL>"
 ```
 
 `run_requests.py` posts every frozen request (refused if

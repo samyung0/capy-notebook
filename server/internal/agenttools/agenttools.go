@@ -79,7 +79,10 @@ import (
 // read_question or copy_questions; the learner's bank keeps its own copy.
 // v27: add_question_media takes a library figure, {"type": "figure", "id",
 // "caption"?}, stored as the quiz's own image (Epo 2026-10-13).
-const ContractVersion = 27
+// v28: search_knowledge takes a subject id instead of topics, book and
+// section; browse_knowledge and section reading (read_knowledge's book and
+// section) are gone (Epo 2026-10-14).
+const ContractVersion = 28
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -644,9 +647,7 @@ func Definitions() []Definition {
 				"of one book each. A hit is a selection aid; read_knowledge reads the excerpt.",
 			InputSchema: obj(map[string]any{
 				"query":   str(""),
-				"topics":  idList("topic_id values from a browse_knowledge subject; omit for a direct search.", 0, 8),
-				"book":    str("A book id from a result header: search only that book."),
-				"section": str("A section path from a result: search only that section and the ones under it."),
+				"subject": str("A subject id listed below: search only its excerpts."),
 				"roles": map[string]any{
 					"type":        "array",
 					"maxItems":    6,
@@ -661,34 +662,18 @@ func Definitions() []Definition {
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),
 		chatTool(Definition{
-			Name:      "browse_knowledge",
-			Retention: RetainNone,
-			Description: "List what the library holds: a subject listed below for its topics " +
-				"with excerpt counts, or a topic for its excerpts by role and book.",
-			InputSchema: obj(map[string]any{
-				"subject": str("A subject id listed below."),
-				"topic":   str("A topic_id from a subject browse."),
-				"book":    str("A book id: its outline of section paths with pages."),
-				"page":    map[string]any{"type": "integer", "minimum": 1, "default": 1},
-			}),
-			Concurrency:        "read",
-			RequiredOperations: []Operation{OpLibraryRead},
-		}),
-		chatTool(Definition{
 			Name:      "read_knowledge",
 			Retention: RetainUsedExcerpts,
 			Description: "Read an excerpt's reviewed notes and source chunks in order from a " +
 				"chunk index; the notes and scope come on its first page.",
 			InputSchema: obj(map[string]any{
 				"excerpt_id": str(""),
-				"book":       str("With section, instead of excerpt_id: the book to read a section of."),
-				"section":    str("A section path from the book's outline: read it in order, subsections included."),
 				"start":      map[string]any{"type": "integer", "minimum": 0, "default": 0},
 				"count": map[string]any{
-					"type": "integer", "minimum": 1, "maximum": 24,
-					"description": "Chunks per page: at most and by default 12 of an excerpt, 24 of a section.",
+					"type": "integer", "minimum": 1, "maximum": 12, "default": 12,
+					"description": "Chunks per page, at most 12.",
 				},
-			}),
+			}, "excerpt_id"),
 			Concurrency:        "read",
 			RequiredOperations: []Operation{OpLibraryRead},
 		}),

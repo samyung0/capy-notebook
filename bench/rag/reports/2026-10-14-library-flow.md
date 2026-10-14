@@ -69,3 +69,18 @@ pairwise judges (`bench/rag/intake/scripts/materials_judge.py`, which still
 reads `run["ledger"]`) on production against search by subject before
 relying on it for quality. Section reading still offers nothing the excerpt
 flow lacks.
+
+## Decision (Epo, 2026-10-14)
+
+Shipped before any quality check, in contract v28:
+
+- `search_knowledge` takes an optional `subject` from the list in its
+  description instead of `topics`, `book` and `section`;
+- `browse_knowledge` is removed;
+- search cards no longer list topic ids;
+- section reading (the v17 question) is removed with
+  `CAPY_LIBRARY_SECTION_TOOLS`.
+
+The caveat Epo named: without browsing, the agent sees less of a book's
+structure. Consistency within a book, and the flow of a build that makes
+dozens of materials, may get worse. Epo is checking this in the playground.
