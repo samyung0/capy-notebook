@@ -35,6 +35,7 @@ from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
 from ..generated.limits import QUESTION_DESCRIPTION_MAX, QUESTION_METADATA_MAX
 from ..prompts import preferences
+from ..prompts.sources import source_block
 from . import capture, contract, deck, library, pending, questions, skills, store
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
@@ -747,13 +748,15 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     blocks = []
     for excerpt in result.excerpts:
         blocks.append(
-            "\n".join(
-                [
-                    _excerpt_head(excerpt),
-                    _excerpt_facets(excerpt),
-                    _excerpt_scope(excerpt),
-                    excerpt.hit_text,
-                ]
+            source_block(
+                "\n".join(
+                    [
+                        _excerpt_head(excerpt),
+                        _excerpt_facets(excerpt),
+                        _excerpt_scope(excerpt),
+                        excerpt.hit_text,
+                    ]
+                )
             )
         )
     return _result(
@@ -856,7 +859,7 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             for chunk, text in zip(read.chunks[:n], texts, strict=False)
         )
         return (
-            f"{head}\n\n{body}" + _excerpt_figures(read.figures),
+            source_block(f"{head}\n\n{body}" + _excerpt_figures(read.figures)),
             _tail(read.chunks, n, read.next_start, end),
         )
 
@@ -1406,7 +1409,8 @@ _NUMBER = re.compile(r"(?<![\w.])(\d+\.\d+|\d{2,}(?:,\d{3})*)(?![\w])")
 _READ_LINE = re.compile(
     r"^(\[exc_|- \[exc_|roles:|teaches:|scope:|chunks \d+-\d+ of this excerpt"
     r"|(Previous|Next) in this book:|Source context|Excerpts on this page:"
-    r"|\[p\. \d+(-\d+)?\]$|\((next start|page cut|end of)\b|.* \(book \S+, version \d+\), section )"
+    r"|\[p\. \d+(-\d+)?\]$|\((next start|page cut|end of)\b|.* \(book \S+, version \d+\), section "
+    r"|</?source>$)"
 )
 _READ_PREFIX = re.compile(r"\(chunk \d+\) |Full reviewed notes: ")
 # A slide's SVG counts by its text: no tags, attributes, styles or scripts.
@@ -1912,7 +1916,8 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
         shown = ctx.shown_quizzes.setdefault(rid, {})
-    return _result(_render_inspection(body, shown))
+    text = _render_inspection(body, shown)
+    return _result(source_block(text) if kind == "source_file" else text)
 
 
 # How much of a missed block's current text a refused edit shows.
@@ -2657,7 +2662,9 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
     parts: list[str] = []
     if numbered and result.paged:
         body = "\n\n".join(
-            f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.text}"
+            source_block(
+                f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.text}"
+            )
             for number, passage in numbered
         )
         parts.extend([body, result.text_parts[0]])

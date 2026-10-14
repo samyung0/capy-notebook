@@ -394,6 +394,8 @@ def inject_images(
 
     Every tool result of one assistant step must stay contiguous, so the images
     ride in one user message placed after the last tool message of that step.
+    Each image is a page of a source, so it sits in a <source> block
+    (prompts/sources.py) after its label.
     """
     if not images:
         return messages
@@ -409,8 +411,9 @@ def inject_images(
                 {"type": "text", "text": "Images from the tool calls above:"}
             ]
             for label, url in pending:
-                content.append({"type": "text", "text": label})
+                content.append({"type": "text", "text": f"{label}\n<source>"})
                 content.append(image_part(url, provider_slug))
+                content.append({"type": "text", "text": "</source>"})
             out.append({"role": "user", "content": content})
             pending = []
     return out

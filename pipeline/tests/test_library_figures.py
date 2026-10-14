@@ -241,10 +241,12 @@ async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):
         "(chunk 0) Residuals.\n\nFigures:\n"
         "- fig_2: Figure 8.2 — A line. (credit: CC BY 4.0)\n"
         "- fig_3: Figure 8.3\n"
-        "- fig_1\n\n(end of excerpt)"
+        "- fig_1\n</source>\n\n(end of excerpt)"
     )
     bare = (await tools._read_knowledge({"excerpt_id": "e_2"}, ctx)).text()
-    assert "Figures:" not in bare and bare.endswith("Residuals.\n\n(end of excerpt)")
+    assert "Figures:" not in bare and bare.endswith(
+        "Residuals.\n</source>\n\n(end of excerpt)"
+    )
 
 
 # ------------------------------------------------------------ figures in notes

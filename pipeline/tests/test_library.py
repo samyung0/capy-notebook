@@ -343,7 +343,7 @@ async def test_the_last_page_of_an_excerpt_names_its_neighbours_in_the_book(
         )
     ).text()
     assert text.endswith(
-        "(chunk 2) Worked example continued: extrapolation warning\n\n"
+        "(chunk 2) Worked example continued: extrapolation warning\n</source>\n\n"
         "(end of excerpt)\n"
         "Previous in this book: [e_intro] Ch 8 › 8.1 Fitting (pages 1)\n"
         "Next in this book: [e_shaky] Ch 8 › 8.3 Unverified (pages 1)"
