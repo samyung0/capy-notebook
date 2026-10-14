@@ -1321,8 +1321,10 @@ class Turn:
             "cfg": (cfg.search_top_k, cfg.search_per_file_cap),
         }
 
-        def system_prompt(locale, *, library=False):
-            return effective_prompt(c, saved["system_prompt"](locale), library=library)
+        def system_prompt(locale, *, library=False, writes=True):
+            return effective_prompt(
+                c, saved["system_prompt"](locale, writes=writes), library=library
+            )
 
         def schemas_for(ctx_):
             schemas = turn_tools(c, saved["schemas_for"](ctx_))
