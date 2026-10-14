@@ -50,6 +50,23 @@ Licence policy (decision of 2026-09-19, applied verbatim by
 > licence evidence URL or PDF page recorded in the manifest; reject NC, ND,
 > GFDL, ODbL, unknown licences and free-to-read pages without a licence.
 
+Inside an admitted book (decisions of 2026-09-29 to 2026-10-15):
+
+- Whole works reprinted inside the book and credited only to their author, or
+  under another licence, are withheld behind the reversible per-work switch;
+  short attributed quotations the book discusses stay. A short quoted message
+  the book discusses stays even when it may be complete (a 96-word email was
+  kept); long whole works are withheld.
+- Text reproduced under single-use or limited permission is withheld with its
+  images, not only the images (permission-only planning cards).
+- When an NC or ND adaptation credit sits at chapter level with no section
+  map, the whole chapter it covers is withheld, not estimated sections.
+- An image credited to a person or organisation with no licence or
+  restriction stated falls under the book's own licence ("except where
+  otherwise noted") and stays. Images credited NC, ND, permission-only, all
+  rights reserved, or to a stock site (Pixabay, iStock and the like) are
+  excluded.
+
 Queue claims use indexed host activity lookups inside atomic updates. A busy
 database returns HTTP 503 from dashboard actions; manual rejection runs outside
 the event loop so it does not block other requests.
