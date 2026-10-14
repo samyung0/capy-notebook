@@ -1435,6 +1435,14 @@ fn refuse<T>(what: impl Into<String>) -> Result<T, String> {
     Err(format!("a quiz cannot hold {}", what.into()))
 }
 
+/// A figure link (an image's or a graph's `{url}`) a live quiz room admits:
+/// blank while its upload is pending, else one a stored question keeps
+/// (hosted under `BANK_ASSETS_URL`, `Policy::hosted`).
+fn figure_url(url: &str) -> bool {
+    url.is_empty()
+        || (url.encode_utf16().count() <= q::QUESTION_ASSET_URL_MAX && Policy::quiz().hosted(url))
+}
+
 fn one_any(content: &ItemContent) -> Option<&Any> {
     match content {
         ItemContent::Any(values) if values.len() == 1 => values.first(),
@@ -1557,11 +1565,11 @@ fn block_shape(
             Some(Any::Map(image))
                 if image.len() == 1
                     && (matches!(image.get("assetId"), Some(Any::String(id)) if id.chars().count() <= q::QUESTION_ID_MAX)
-                        || matches!(image.get("url"), Some(Any::String(url)) if url.encode_utf16().count() <= q::QUESTION_ASSET_URL_MAX)) =>
+                        || matches!(image.get("url"), Some(Any::String(url)) if figure_url(url))) =>
             {
                 tally.value(content)
             }
-            _ => return refuse("an image that is not {assetId} or {url}"),
+            _ => return refuse("an image that is not {assetId} or a hosted {url}"),
         },
         // A chart, plot or graph is one value, written at its dialog's Done
         // (D8); its caps depend on the block's type, read after the walk.
@@ -1957,7 +1965,15 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
             .clone()
             .or_else(|| held.as_ref().and_then(|block| any_at(txn, block, "value")));
         if let (Some(kind), Some(value @ Any::Map(_))) = (kind, value) {
-            notes::questions::figure_caps(&kind, &any_json(&value)).or_else(refuse)?;
+            let value = any_json(&value);
+            notes::questions::figure_caps(&kind, &value).or_else(refuse)?;
+            if kind == "graph"
+                && value["image"]["url"]
+                    .as_str()
+                    .is_some_and(|url| !figure_url(url))
+            {
+                return refuse("a graph image that is not a hosted {url}");
+            }
         }
     }
     // A text, a list or the quiz's part counts that may pass a cap send the

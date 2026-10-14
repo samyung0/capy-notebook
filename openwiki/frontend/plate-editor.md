@@ -1498,7 +1498,11 @@ accepted texts to `QUIZ_OPEN_ANSWER_MAX`. A list's count
 is bounded like a text's length (held plus added against its cap): only an
 update that may pass a cap copies the room for the exact check, whose walk the
 step counter counts (`Walk::Exact`). An image block waiting for its upload
-(blank) is structure; it only leaves its question incomplete.
+(blank) is structure; it only leaves its question incomplete. Live quiz rooms
+accept only hosted question images: an image names its uploaded `{assetId}`,
+and an image's or a graph's `{url}` is blank or one a stored question keeps
+(`figure_url`, `Policy::hosted`: under `BANK_ASSETS_URL`, a copied bank
+figure).
 
 `QuestionDialog` edits a live question (`live` prop): its outline, part and
 block editors write through `writeQuestion`

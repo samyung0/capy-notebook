@@ -277,7 +277,8 @@ way, as an asset of the quiz (see agentic-retrieval.md, Question tools); the wor
 pays for a workspace quiz's images, the quiz owner for a standalone quiz's. A question copied from the bank (Copy to quiz) keeps its
 bank `{ url }` figures in the quiz: they are immutable, so the quiz links to
 them rather than copying them, and the Go validator accepts a quiz image or
-graph URL only under `BANK_ASSETS_URL` (`questions.QuizBankAssetsURL`). Each
+graph URL only under `BANK_ASSETS_URL` (`questions.QuizBankAssetsURL`), as do
+the collaboration service's store and live quiz room admission. Each
 copied question's sources become a credit in the quiz's provenance under the
 question id, shown under that question rather than in a footer (see
 [agentic-retrieval.md](agentic-retrieval.md), Question bank). Answer

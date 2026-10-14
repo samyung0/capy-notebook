@@ -867,6 +867,58 @@ fn a_blank_image_block_is_admitted_and_leaves_its_question_incomplete() {
     );
 }
 
+/// Live quiz rooms accept only hosted question images, as a stored question
+/// keeps them: an image or a graph whose `{url}` is not under the quiz figure
+/// host (`BANK_ASSETS_URL`, unset here) is refused at admission; an uploaded
+/// asset and the blank image waiting for its upload are admitted. Fails if
+/// admission takes any URL again.
+#[test]
+fn a_live_quiz_admits_only_hosted_question_images() {
+    let questions = fixtures();
+    let (question, _) = part_of(&questions, "boolean");
+    let elsewhere = "https://images.example.invalid/a.png";
+    let image = |doc: &Doc, image: Value| {
+        let stem = map_in(doc, &["questions", &question, "stem"]);
+        let mut txn = doc.transact_mut();
+        let block = stem.insert(&mut txn, "bimg", MapPrelim::default());
+        block.insert(&mut txn, "order", items::order::after(None).as_str());
+        block.insert(&mut txn, "type", "image");
+        block.insert(
+            &mut txn,
+            "image",
+            serde_json::from_value::<Any>(image).unwrap(),
+        );
+    };
+    refused(
+        Kind::Quiz,
+        |doc| image(doc, json!({ "url": elsewhere })),
+        "an image that is not {assetId} or a hosted {url}",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            let stem = map_in(doc, &["questions", &question, "stem"]);
+            let mut txn = doc.transact_mut();
+            let block = stem.insert(&mut txn, "bgraph", MapPrelim::default());
+            block.insert(&mut txn, "order", items::order::after(None).as_str());
+            block.insert(&mut txn, "type", "graph");
+            let value = json!({ "image": { "url": elsewhere }, "width": 10, "height": 10 });
+            block.insert(
+                &mut txn,
+                "value",
+                serde_json::from_value::<Any>(value).unwrap(),
+            );
+        },
+        "a graph image that is not a hosted {url}",
+    );
+    for kept in [json!({ "assetId": "ea_upload" }), json!({ "url": "" })] {
+        let (content, _, client, _) = rooms(&questions);
+        image(&client, kept);
+        let mut check = validator(Kind::Quiz, &content);
+        accepted(&mut check, &content, &client);
+    }
+}
+
 /// REVIEW1 S2: a structural edit (Add option) on a large quiz takes the
 /// counted bound, not a copy and a walk of the whole quiz: no exact check,
 /// and the work follows the touched list.
