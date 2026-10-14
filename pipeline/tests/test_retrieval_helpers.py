@@ -761,7 +761,9 @@ def test_turn_context_renders_open_file_preferences_and_reads():
 
     empty = turn_context.message(_library_ctx())["content"]
     assert "Open: nothing." in empty and "Library excerpts" not in empty
-    assert "a quiz of 5 questions." in empty, "default preferences: quiz less"
+    assert "a quiz of 5 questions; make no flashcards unless asked." in empty, (
+        "default preferences: quiz less, flashcards off said off"
+    )
     assert "a note explains each chapter" in empty
     assert "knowledge check of at most 2 questions" in empty
 

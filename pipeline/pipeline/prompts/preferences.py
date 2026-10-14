@@ -64,13 +64,19 @@ def merged(saved: dict[str, Any] | None) -> dict[str, Any]:
 def lines(saved: dict[str, Any] | None) -> list[str]:
     """One instruction per preference, saved values over defaults."""
     p = merged(saved)
-    practice = [
-        f"a quiz of {COUNT[p['quiz']]} questions" if p["quiz"] in COUNT else "",
-        f"a set of {COUNT[p['flashcards']]} flashcards"
-        if p["flashcards"] in COUNT
-        else "",
-    ]
-    practice = [item for item in practice if item]
+    # Each item on gets its count; an item off is said off, or the model adds
+    # it anyway (a default build made flashcards, 2026-10-14).
+    items = {
+        "quiz": ("a quiz of {} questions", "quizzes"),
+        "flashcards": ("a set of {} flashcards", "flashcards"),
+    }
+    on = [made.format(COUNT[p[k]]) for k, (made, _) in items.items() if p[k] in COUNT]
+    off = [name for k, (_, name) in items.items() if p[k] not in COUNT]
+    if not on:
+        practice = "Build no quizzes or flashcards unless asked."
+    else:
+        practice = f"Practise each chapter with {' and '.join(on)}"
+        practice += f"; make no {' or '.join(off)} unless asked." if off else "."
     checks = "off"
     if p["knowledgeChecks"]:
         cards = LEVEL.get(p["flashcards"], 0) > LEVEL.get(p["quiz"], 0)
@@ -78,11 +84,7 @@ def lines(saved: dict[str, Any] | None) -> list[str]:
     return [
         MAIN_FORMAT.get(p["mainFormat"], MAIN_FORMAT["note"]),
         WRITING.get(p["writingStyle"], WRITING["normal"]),
-        (
-            f"Practise each chapter with {' and '.join(practice)}."
-            if practice
-            else "Build no practice unless asked."
-        ),
+        practice,
         CHECKS[checks],
         VISUALS.get(p["visualAids"], VISUALS["more"]),
     ]
