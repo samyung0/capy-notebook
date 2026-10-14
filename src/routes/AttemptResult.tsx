@@ -86,19 +86,6 @@ export default function AttemptResult() {
     <PanelWithInvertedRadius
       header={
         <QuizPageHeader
-          actions={
-            attempt.materialId && (
-              <UnderlineLink accent asChild>
-                <Link
-                  params={{ quizId: attempt.materialId }}
-                  preload="intent"
-                  to="/quizzes/$quizId/attempt"
-                >
-                  {m.quiz_redo()}
-                </Link>
-              </UnderlineLink>
-            )
-          }
           meta={[
             new Date(attempt.takenAt).toLocaleDateString(getLocale(), {
               day: 'numeric',
@@ -128,6 +115,20 @@ export default function AttemptResult() {
       }
     >
       <TabContent>
+        {/* In the gap under the header, flush with the content's right edge. */}
+        {attempt.materialId && (
+          <div className="-mt-2 mb-3 flex justify-end sm:-mt-5">
+            <UnderlineLink accent asChild>
+              <Link
+                params={{ quizId: attempt.materialId }}
+                preload="intent"
+                to="/quizzes/$quizId/attempt"
+              >
+                {m.quiz_redo()}
+              </Link>
+            </UnderlineLink>
+          </div>
+        )}
         {hasBreakdown ? (
           <>
             <QuizScore

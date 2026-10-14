@@ -90,10 +90,10 @@ export function ResultSquares({
     (outcome) => [outcome, wording[outcome](counts[outcome])] as const
   );
   return (
-    <div>
+    <div className="py-2">
       <ol
         aria-label={m.quiz_question_results()}
-        className="flex flex-wrap gap-1.5"
+        className="flex flex-wrap gap-x-1.5 gap-y-2.5"
       >
         {results.map((result) => {
           const outcome = outcomeOf(result);
@@ -124,7 +124,7 @@ export function ResultSquares({
           );
         })}
       </ol>
-      <div className="mt-2.5 flex flex-wrap gap-x-3.5 gap-y-1 text-fg-secondary text-sm">
+      <div className="mt-4 flex flex-wrap gap-x-3.5 gap-y-1 text-fg-secondary text-sm">
         {legend.map(
           ([outcome, text]) =>
             counts[outcome] > 0 && (

@@ -4,12 +4,19 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { ListUsageEventsDir } from './listUsageEventsDir.ts';
+import type { ListUsageEventsSort } from './listUsageEventsSort.ts';
 
 export type ListUsageEventsParams = {
+sort?: ListUsageEventsSort;
+dir?: ListUsageEventsDir;
 /**
  * @minimum 1
  * @maximum 20
  */
 limit?: number;
+/**
+ * The previous page's next, from the same sort
+ */
 before?: string;
 };

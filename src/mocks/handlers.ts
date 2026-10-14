@@ -496,6 +496,7 @@ const MOCK_USAGE_EVENTS = Array.from({ length: 45 }, (_, i) => {
     units: llm ? 0 : 1,
   };
 });
+type MockUsageEvent = (typeof MOCK_USAGE_EVENTS)[number];
 
 /** A Huma error carrying a machine code, as the gateway sends it. */
 const codeError = (status: number, code: string) =>
@@ -3141,11 +3142,26 @@ export const handlers = [
   ),
   http.get('/api/usage/events', async ({ request }) => {
     // Enough rows for three pages; the cursor is just the next offset here.
-    const before = new URL(request.url).searchParams.get('before');
+    const search = new URL(request.url).searchParams;
+    const before = search.get('before');
     const start = before ? Number(before) : 0;
-    const page = MOCK_USAGE_EVENTS.slice(start, start + 20);
-    const next =
-      start + 20 < MOCK_USAGE_EVENTS.length ? String(start + 20) : undefined;
+    const keys: Record<string, (e: MockUsageEvent) => number | string> = {
+      credits: (e) => e.creditMicros,
+      date: (e) => e.createdAt,
+      model: (e) => `${e.providerSlug}/${e.modelSlug}`.toLowerCase(),
+      tokens: (e) => e.inputTokens + e.outputTokens,
+    };
+    const key = keys[search.get('sort') ?? 'date'];
+    const sign = search.get('dir') === 'asc' ? 1 : -1;
+    const sorted = key
+      ? [...MOCK_USAGE_EVENTS].sort((a, b) => {
+          const x = key(a);
+          const y = key(b);
+          return (x < y ? -1 : x > y ? 1 : 0) * sign;
+        })
+      : MOCK_USAGE_EVENTS;
+    const page = sorted.slice(start, start + 20);
+    const next = start + 20 < sorted.length ? String(start + 20) : undefined;
     return HttpResponse.json({ items: page, next });
   }),
   http.get('/api/billing/invoices', async () =>

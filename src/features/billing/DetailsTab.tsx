@@ -1,29 +1,47 @@
 import { useRef, useState } from 'react';
 import { listUsageEventsQueryLimitMax as PAGE_SIZE } from '@/api/gen/validators';
 import { useUsageEvents } from '@/api/hooks';
+import type { UsageEventParams, UsageEventSort } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
+import type { ColumnSort } from '@/components/app/SortHeader';
 import { TabHeader } from '@/components/app/tabPanel';
 import { ErrorAction } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { getLocale, m } from '@/i18n';
 import { describeError } from '@/lib/errors';
-import { BillingTable, BillingTableSkeleton } from './BillingTable';
+import {
+  type BillingColumn,
+  BillingTable,
+  BillingTableSkeleton,
+} from './BillingTable';
 import { formatCredits } from './format';
 import { areaOf, kindLabel } from './labels';
 
-// A function so labels follow the current locale.
-const columns = () => [
-  { id: 'date', label: m.billing_col_date(), muted: true },
+// A function so labels follow the current locale. Area and Resource do not
+// sort: the server would order their keys, not the translated labels.
+const columns = (): BillingColumn<UsageEventSort>[] => [
+  { id: 'date', label: m.billing_col_date(), muted: true, sort: 'date' },
   { id: 'area', label: m.billing_col_area() },
   { id: 'resource', label: m.billing_col_resource() },
-  { id: 'model', label: m.billing_col_model() },
-  { id: 'tokens', label: m.billing_col_tokens(), muted: true },
-  { align: 'right' as const, id: 'credits', label: m.billing_col_credits() },
+  { clamp: true, id: 'model', label: m.billing_col_model(), sort: 'model' },
+  {
+    id: 'tokens',
+    label: m.billing_col_tokens(),
+    muted: true,
+    sort: 'tokens',
+  },
+  {
+    align: 'right',
+    id: 'credits',
+    label: m.billing_col_credits(),
+    sort: 'credits',
+  },
 ];
 
 /** Ledger rows a page at a time. Pages already fetched stay cached, so
  * going back never refetches. */
 export function DetailsTab() {
+  const [params, setParams] = useState<UsageEventParams>({});
   const {
     data,
     error,
@@ -32,9 +50,22 @@ export function DetailsTab() {
     isError,
     isFetchingNextPage,
     isPending,
+    isPlaceholderData,
     refetch,
-  } = useUsageEvents();
+  } = useUsageEvents(params);
   const [page, setPage] = useState(0);
+  const sorting: ColumnSort<UsageEventSort> = {
+    ascending: params.dir === 'asc',
+    ascendingFirst: ['model'],
+    onSortChange: (sort, ascending) => {
+      setParams({
+        dir: ascending ? 'asc' : undefined,
+        sort: sort === 'date' ? undefined : sort,
+      });
+      setPage(0);
+    },
+    sort: params.sort ?? 'date',
+  };
   const topRef = useRef<HTMLDivElement>(null);
   // Paging from the footer should land on the new page's first row.
   const show = (next: number) => {
@@ -95,6 +126,7 @@ export function DetailsTab() {
           },
           key: `${ev.createdAt}-${ev.kind}-${i}`,
         }))}
+        sorting={sorting}
       />
       <div className="flex items-center justify-between pt-4">
         <span className="t-meta text-fg-muted">
@@ -114,7 +146,9 @@ export function DetailsTab() {
           />
           <IconButton
             disabled={
-              isFetchingNextPage || (page + 1 >= pages.length && !hasNextPage)
+              isPlaceholderData ||
+              isFetchingNextPage ||
+              (page + 1 >= pages.length && !hasNextPage)
             }
             icon="navigationForward"
             label={m.action_next()}

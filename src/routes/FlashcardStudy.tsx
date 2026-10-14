@@ -22,7 +22,7 @@ import { userToast } from '@/components/ui/userToast';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
 import { StudyBody } from '@/features/flashcards/StudyBody';
 import type { FlashcardContent } from '@/features/materials/blocks';
-import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/crumbs';
+import { blockHomeCrumb } from '@/features/quizzes/crumbs';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
@@ -157,10 +157,7 @@ function Study({ setId }: { setId: string }) {
       }
       provenance={set.provenance}
       topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
-      trail={[
-        blockHomeCrumb(set),
-        blockKindCrumb(m.editor_flashcards(), 'flashcards'),
-      ]}
+      trail={[blockHomeCrumb(set)]}
     />
   );
 }

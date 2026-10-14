@@ -398,7 +398,8 @@ export const qk = {
   thinking: ['thinking'] as const,
   trash: (wsId?: string) => ['trash', wsId ?? 'all'] as const,
   usage: ['usage'] as const,
-  usageEvents: ['usage', 'events'] as const,
+  usageEvents: (params?: unknown) =>
+    ['usage', 'events', params ?? null] as const,
   workspace: (id: string) => ['workspace', id] as const,
   workspaceCollaborators: (id: string) =>
     ['workspace', id, 'collaborators'] as const,

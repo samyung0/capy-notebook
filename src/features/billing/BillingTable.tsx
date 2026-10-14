@@ -51,12 +51,15 @@ export function BillingTable<S extends string = string>({
                 }
                 className={cn(
                   't-meta whitespace-nowrap py-2.5 pr-4 font-medium text-fg-muted',
-                  c.align === 'right' && 'pr-0 text-right'
+                  c.align === 'right' && 'pr-0 text-right',
+                  // Room for the sort button's outset, so it never scrolls.
+                  c.align === 'right' && sorting && c.sort && 'pr-1'
                 )}
                 key={c.id}
               >
                 {sorting && c.sort ? (
                   <SortHeader
+                    fit
                     label={c.label}
                     sorting={sorting}
                     value={c.sort}

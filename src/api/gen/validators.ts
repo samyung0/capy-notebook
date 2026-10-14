@@ -5549,16 +5549,20 @@ export const GetUsageResponse = zod.object({
 
 
 /**
- * @summary Usage events, newest first
+ * @summary Usage events, sorted, newest first by default
  */
+export const listUsageEventsQuerySortDefault = `date`;
+export const listUsageEventsQueryDirDefault = `desc`;
 export const listUsageEventsQueryLimitDefault = 20;
 export const listUsageEventsQueryLimitMax = 20;
 
 
 
 export const ListUsageEventsQueryParams = zod.object({
+  "sort": zod.enum(['date', 'model', 'tokens', 'credits']).default(listUsageEventsQuerySortDefault),
+  "dir": zod.enum(['asc', 'desc']).default(listUsageEventsQueryDirDefault),
   "limit": zod.int().min(1).max(listUsageEventsQueryLimitMax).default(listUsageEventsQueryLimitDefault),
-  "before": zod.string().optional()
+  "before": zod.string().optional().describe('The previous page\'s next, from the same sort')
 })
 
 export const ListUsageEventsResponse = zod.object({

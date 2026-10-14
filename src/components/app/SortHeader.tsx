@@ -66,16 +66,21 @@ export function SortHeader<S extends string>({
   label,
   value,
   sorting,
+  fit,
 }: {
   label: string;
   value: S;
   sorting: ColumnSort<S>;
+  /** Size the column to the whole label instead of truncating it, for tables
+   * that scroll sideways. */
+  fit?: boolean;
 }) {
   const direction = sortDirection(sorting, value);
   return (
     <button
       className={cn(
-        '-mx-1 -my-1 inline-flex max-w-full cursor-pointer items-center gap-2.5 rounded-button px-1 py-1 [text-transform:inherit] hover:text-fg focus-visible:outline-2 focus-visible:outline-action',
+        '-mx-1 -my-1 inline-flex cursor-pointer items-center gap-4 rounded-button px-1 py-1 [text-transform:inherit] hover:text-fg focus-visible:outline-2 focus-visible:outline-action',
+        !fit && 'max-w-full',
         direction && 'text-fg'
       )}
       onClick={() =>
@@ -88,7 +93,7 @@ export function SortHeader<S extends string>({
       }
       type="button"
     >
-      <span className="min-w-0 truncate">{label}</span>
+      <span className={cn(!fit && 'min-w-0 truncate')}>{label}</span>
       <SortChevrons direction={direction} />
     </button>
   );

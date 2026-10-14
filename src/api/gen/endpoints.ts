@@ -7308,7 +7308,7 @@ export const getListUsageEventsUrl = (params?: ListUsageEventsParams,) => {
 }
 
 /**
- * @summary Usage events, newest first
+ * @summary Usage events, sorted, newest first by default
  */
 export const listUsageEvents = async (params?: ListUsageEventsParams, options?: RequestInit): Promise<listUsageEventsResponse> => {
 

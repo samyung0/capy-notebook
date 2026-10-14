@@ -173,6 +173,10 @@ portaled `FloatingBlockToolbar` (Edit, move, duplicate or remove), which never
 shifts layout and flips above a block cut off at the bottom; Enter edits. From `md` the dialog is a fixed
 88dvh and each column scrolls on its own; phones show sticky Outline and Body
 tabs, and a row click switches to Body first.
+Each part's worked solution is always listed in the outline (its Worked
+solution row is a 36px header, not a toggle) and shown in the body under the
+part's answer, both below a `wavy-rule` line; the body's line reads "Hidden
+until checked", since learners only get the solution after checking.
 Its title names the question ("Edit question 10"). Rows the app names take
 an accent of their own (Answer rows `tint-accent-1`, Worked solution
 `tint-accent-2`), and the row ⋮ has no tooltip (`ToolbarButton tooltip={false}`),

@@ -16,7 +16,7 @@ import { Button } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import type { LearnerQuestion } from '@/features/questions/types';
 import { AttemptBody } from '@/features/quizzes/AttemptBody';
-import { blockHomeCrumb, blockKindCrumb } from '@/features/quizzes/crumbs';
+import { blockHomeCrumb } from '@/features/quizzes/crumbs';
 import { useLiveQuizQuestions } from '@/features/quizzes/liveQuizReads';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
@@ -143,7 +143,7 @@ function Attempt({ quizId }: { quizId: string }) {
       provenance={quiz.provenance}
       questions={questions}
       topBar={<TopInsetBar className="hidden shrink-0 xl:flex" />}
-      trail={[blockHomeCrumb(quiz), blockKindCrumb(m.quiz_quizzes(), 'quiz')]}
+      trail={[blockHomeCrumb(quiz)]}
     />
   );
 }

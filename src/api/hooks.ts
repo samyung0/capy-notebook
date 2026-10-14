@@ -2,6 +2,7 @@ import type { QueryClient, QueryKey } from '@tanstack/react-query';
 import {
   focusManager,
   type InfiniteData,
+  keepPreviousData,
   queryOptions,
   useInfiniteQuery,
   useMutation,
@@ -128,6 +129,7 @@ import type {
   UpsertLLMCredentialReq,
   URLResp,
   UsageEventPage,
+  UsageEventParams,
   UsageReport,
   User,
   WireMessage,
@@ -668,18 +670,19 @@ export const usageQuery = () =>
 export const useUsage = (options?: QueryUiOptions) =>
   useQuery({ ...usageQuery(), meta: queryMeta(options) });
 
-/** Detailed usage: this actor's ledger rows, newest first, one page per fetch.
- * Secondary query, so the tab renders its own error state. */
-export const useUsageEvents = () =>
+/** Detailed usage: this actor's ledger rows, newest first unless sorted, one
+ * page per fetch. Secondary query, so the tab renders its own error state. */
+export const useUsageEvents = (params: UsageEventParams = {}) =>
   useInfiniteQuery({
     getNextPageParam: (last: UsageEventPage) => last.next || undefined,
     initialPageParam: '',
     meta: { errorBoundary: false },
+    placeholderData: keepPreviousData,
     queryFn: ({ pageParam }) =>
       api.get<UsageEventPage>(
-        `/usage/events${pageParam ? `?before=${encodeURIComponent(pageParam)}` : ''}`
+        `/usage/events${listSearch({ before: pageParam, dir: params.dir, sort: params.sort }, '')}`
       ),
-    queryKey: qk.usageEvents,
+    queryKey: qk.usageEvents(params),
   });
 
 /** Stripe invoices, read live by the gateway. Secondary query. */
@@ -1024,8 +1027,13 @@ export const ownedFilesQuery = (params: FileListParams = {}) => ({
   queryKey: qk.ownedFiles(params),
 });
 /** Files of every workspace the caller owns, newest first by default. */
+// The sorted and filtered lists keep showing the rows they have while a new
+// sort or filter loads; only a list with nothing to show yet draws skeletons.
 export const useOwnedFiles = (params: FileListParams = {}) =>
-  useInfiniteQuery(ownedFilesQuery(params));
+  useInfiniteQuery({
+    ...ownedFilesQuery(params),
+    placeholderData: keepPreviousData,
+  });
 
 /** The dashboard recents: newest files across every workspace the caller is
  * a member of. The first page covers the card, which shows 20 items. */
@@ -1615,7 +1623,10 @@ export const ownedMaterialsQuery = (params: MaterialListParams = {}) => ({
 /** Notes, quizzes and flashcard sets the caller owns, standalone or in their
  * own workspaces; the Create page's list. */
 export const useOwnedMaterials = (params: MaterialListParams = {}) =>
-  useInfiniteQuery(ownedMaterialsQuery(params));
+  useInfiniteQuery({
+    ...ownedMaterialsQuery(params),
+    placeholderData: keepPreviousData,
+  });
 /** The dashboard recents: newest top-level materials of every kind across
  * member workspaces, plus the caller's standalone ones. */
 export const recentMaterialsQuery = () => ({
@@ -2088,7 +2099,10 @@ export const attemptsQuery = (params: AttemptParams = {}) => ({
   queryKey: qk.attempts(params),
 });
 export const useAttempts = (params: AttemptParams = {}) =>
-  useInfiniteQuery(attemptsQuery(params));
+  useInfiniteQuery({
+    ...attemptsQuery(params),
+    placeholderData: keepPreviousData,
+  });
 
 export const attemptQuery = (id: string) =>
   queryOptions({
@@ -2407,7 +2421,10 @@ export const pastReviewsQuery = (params: PastReviewParams = {}) => ({
   queryKey: qk.pastReviews(params),
 });
 export const usePastReviews = (params: PastReviewParams = {}) =>
-  useInfiniteQuery(pastReviewsQuery(params));
+  useInfiniteQuery({
+    ...pastReviewsQuery(params),
+    placeholderData: keepPreviousData,
+  });
 
 /** Learning → Progress: workspaces in progress and finished, the leading
  * one's items; `lead` asks for that listed workspace's map instead. */

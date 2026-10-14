@@ -1010,51 +1010,100 @@ func (s *Store) UserUsageReport(ctx context.Context, userID string) (UsageReport
 
 const usageEventPageMax = 20
 
-// ListUsageEvents keyset-pages this actor's ledger rows newest first for the
-// Detailed usage tab. before is the opaque Next of the previous page.
-func (s *Store) ListUsageEvents(ctx context.Context, userID string, limit int, before string) (UsageEventPage, error) {
+// usageEventSorts are Detailed usage's sortable columns: the expression each
+// sorts by and its SQL type, so the cursor's text key casts back.
+var usageEventSorts = map[string]struct{ expr, typ string }{
+	"date":    {"created_at", "timestamptz"},
+	"model":   {"lower(catalog_provider_slug || '/' || catalog_model_slug)", "text"},
+	"tokens":  {"input_tokens + output_tokens", "bigint"},
+	"credits": {"credit_micros", "bigint"},
+}
+
+// UsageEventParams sorts and pages ListUsageEvents. Before is the opaque Next
+// of the previous page in the same sort.
+type UsageEventParams struct {
+	Sort      string
+	Ascending bool
+	Limit     int
+	Before    string
+}
+
+// ListUsageEvents keyset-pages this actor's ledger rows for the Detailed
+// usage tab, by the sort column then (created_at, id) in the same direction,
+// so rows charged while the user pages never shift a page.
+func (s *Store) ListUsageEvents(ctx context.Context, userID string, p UsageEventParams) (UsageEventPage, error) {
 	page := UsageEventPage{Items: []UsageEventView{}}
 	if userID == "" {
 		return page, ErrNotFound
 	}
+	sort, ok := usageEventSorts[p.Sort]
+	if !ok {
+		sort = usageEventSorts["date"]
+	}
+	limit := p.Limit
 	if limit <= 0 || limit > usageEventPageMax {
 		limit = usageEventPageMax
 	}
-	var cursorAt *time.Time
+	var cursorKey *string
+	var cursorAt time.Time
 	var cursorID int64
-	if before != "" {
-		raw, err := base64.RawURLEncoding.DecodeString(before)
-		at, id, ok := strings.Cut(string(raw), "|")
-		parsedAt, atErr := time.Parse(time.RFC3339Nano, at)
-		parsedID, idErr := strconv.ParseInt(id, 10, 64)
-		if err != nil || !ok || atErr != nil || idErr != nil {
+	if p.Before != "" {
+		raw, err := base64.RawURLEncoding.DecodeString(p.Before)
+		// The key goes last: a model name may hold the separator.
+		parts := strings.SplitN(string(raw), "|", 3)
+		if err != nil || len(parts) != 3 {
 			return page, ErrInvalidCursor
 		}
-		cursorAt, cursorID = &parsedAt, parsedID
+		parsedAt, atErr := time.Parse(time.RFC3339Nano, parts[0])
+		parsedID, idErr := strconv.ParseInt(parts[1], 10, 64)
+		key := parts[2]
+		var keyErr error
+		switch sort.typ {
+		case "bigint":
+			_, keyErr = strconv.ParseInt(key, 10, 64)
+		case "timestamptz":
+			_, keyErr = time.Parse(time.RFC3339Nano, key)
+		}
+		if atErr != nil || idErr != nil || keyErr != nil {
+			return page, ErrInvalidCursor
+		}
+		cursorKey, cursorAt, cursorID = &key, parsedAt, parsedID
 	}
-	rows, err := s.pool.Query(ctx, `
+	dir, cmp := "DESC", "<"
+	if p.Ascending {
+		dir, cmp = "ASC", ">"
+	}
+	// The key is read back as text; timestamps in RFC 3339 so they parse.
+	keyText := "(" + sort.expr + ")::text"
+	if sort.typ == "timestamptz" {
+		keyText = `to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`
+	}
+	rows, err := s.pool.Query(ctx, fmt.Sprintf(`
 		SELECT id, created_at, kind, surface, catalog_provider_slug, catalog_model_slug,
-		       input_tokens, output_tokens, units, unit, credit_micros
+		       input_tokens, output_tokens, units, unit, credit_micros, %[4]s AS sort_key
 		FROM usage_events
 		WHERE actor_user_id = $1
-		  AND ($2::timestamptz IS NULL OR (created_at, id) < ($2::timestamptz, $3::bigint))
-		ORDER BY created_at DESC, id DESC
-		LIMIT $4`, userID, cursorAt, cursorID, limit+1)
+		  AND ($2::text IS NULL OR (%[1]s, created_at, id) %[3]s ($2::text::%[5]s, $3::timestamptz, $4::bigint))
+		ORDER BY %[1]s %[2]s, created_at %[2]s, id %[2]s
+		LIMIT $5`, sort.expr, dir, cmp, keyText, sort.typ), userID, cursorKey, cursorAt, cursorID, limit+1)
 	if err != nil {
 		return page, err
 	}
 	defer rows.Close()
 	var ids []int64
+	var keys []string
 	for rows.Next() {
 		var id int64
+		var key string
 		var ev UsageEventView
 		if err := rows.Scan(
 			&id, &ev.CreatedAt, &ev.Kind, &ev.Surface, &ev.ProviderSlug, &ev.ModelSlug,
-			&ev.InputTokens, &ev.OutputTokens, &ev.Units, &ev.Unit, &ev.CreditMicros,
+			&ev.InputTokens, &ev.OutputTokens, &ev.Units, &ev.Unit, &ev.CreditMicros, &key,
 		); err != nil {
 			return page, err
 		}
 		ids = append(ids, id)
+		keys = append(keys, key)
 		page.Items = append(page.Items, ev)
 	}
 	if err := rows.Err(); err != nil {
@@ -1063,8 +1112,9 @@ func (s *Store) ListUsageEvents(ctx context.Context, userID string, limit int, b
 	if len(page.Items) > limit {
 		last := page.Items[limit-1]
 		page.Items = page.Items[:limit]
-		page.Next = base64.RawURLEncoding.EncodeToString(
-			[]byte(last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" + strconv.FormatInt(ids[limit-1], 10)))
+		page.Next = base64.RawURLEncoding.EncodeToString([]byte(
+			last.CreatedAt.UTC().Format(time.RFC3339Nano) + "|" +
+				strconv.FormatInt(ids[limit-1], 10) + "|" + keys[limit-1]))
 	}
 	return page, nil
 }

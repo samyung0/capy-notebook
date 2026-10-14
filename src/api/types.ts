@@ -385,6 +385,11 @@ export interface AttemptParams {
   sort?: AttemptSort;
   workspaceIds?: string[];
 }
+export type UsageEventSort = ListUsageEventsSort;
+export interface UsageEventParams {
+  dir?: 'asc';
+  sort?: UsageEventSort;
+}
 export type PastReviewSort = ListPastReviewsSort;
 export type PastReviewHas = 'quiz' | 'flashcards';
 export interface PastReviewParams {
@@ -529,6 +534,7 @@ import type {
   ListOwnedFilesSort,
   ListOwnedMaterialsSort,
   ListPastReviewsSort,
+  ListUsageEventsSort,
 } from './gen/model';
 
 /* ---------------- Generate (request options, not wire response types) ----------------

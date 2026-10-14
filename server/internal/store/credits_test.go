@@ -299,7 +299,7 @@ func TestRerankSettlesAtZeroCreditsUnderTheRerankerRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Detailed usage renders each row's kind and providerSlug/modelSlug.
-	page, err := s.ListUsageEvents(ctx, userID, 0, "")
+	page, err := s.ListUsageEvents(ctx, userID, UsageEventParams{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -323,11 +323,11 @@ func TestListUsageEventsPagesNewestFirst(t *testing.T) {
 		($1, 'llm', 'generate', 3, '2026-09-02T00:00:00Z')`, userID); err != nil {
 		t.Fatal(err)
 	}
-	first, err := s.ListUsageEvents(ctx, userID, 2, "")
+	first, err := s.ListUsageEvents(ctx, userID, UsageEventParams{Limit: 2})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.ListUsageEvents(ctx, userID, 2, first.Next)
+	second, err := s.ListUsageEvents(ctx, userID, UsageEventParams{Limit: 2, Before: first.Next})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,8 +338,54 @@ func TestListUsageEventsPagesNewestFirst(t *testing.T) {
 	if fmt.Sprint(got) != "[3 2 1]" || first.Next == "" || second.Next != "" {
 		t.Fatalf("pages = %v, next %q then %q", got, first.Next, second.Next)
 	}
-	if _, err := s.ListUsageEvents(ctx, userID, 2, "not-a-cursor"); !errors.Is(err, ErrInvalidCursor) {
+	if _, err := s.ListUsageEvents(ctx, userID, UsageEventParams{Limit: 2, Before: "not-a-cursor"}); !errors.Is(err, ErrInvalidCursor) {
 		t.Fatalf("bad cursor error = %v", err)
+	}
+}
+
+func TestListUsageEventsPagesBySortColumn(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	// Equal token counts tie-break on created_at in the same direction.
+	if _, err := s.pool.Exec(ctx, `
+		INSERT INTO usage_events (actor_user_id, kind, surface, input_tokens, output_tokens,
+			catalog_provider_slug, catalog_model_slug, credit_micros, created_at) VALUES
+		($1, 'llm', 'chat', 10, 5, 'zai', 'glm|5', 1, '2026-09-01T00:00:00Z'),
+		($1, 'llm', 'chat', 100, 0, 'deepinfra', 'qwen', 2, '2026-09-02T00:00:00Z'),
+		($1, 'llm', 'chat', 15, 0, 'anthropic', 'claude', 3, '2026-09-03T00:00:00Z')`, userID); err != nil {
+		t.Fatal(err)
+	}
+	walk := func(sort string, ascending bool) string {
+		var got []int64
+		before := ""
+		for {
+			page, err := s.ListUsageEvents(ctx, userID, UsageEventParams{Sort: sort, Ascending: ascending, Limit: 1, Before: before})
+			if err != nil {
+				t.Fatalf("%s: %v", sort, err)
+			}
+			for _, ev := range page.Items {
+				got = append(got, ev.CreditMicros)
+			}
+			if before = page.Next; before == "" {
+				return fmt.Sprint(got)
+			}
+		}
+	}
+	for _, c := range []struct {
+		sort      string
+		ascending bool
+		want      string
+	}{
+		{"tokens", false, "[2 3 1]"},
+		{"tokens", true, "[1 3 2]"},
+		{"model", true, "[3 2 1]"},
+		{"credits", false, "[3 2 1]"},
+		{"date", true, "[1 2 3]"},
+	} {
+		if got := walk(c.sort, c.ascending); got != c.want {
+			t.Fatalf("%s asc=%v = %s, want %s", c.sort, c.ascending, got, c.want)
+		}
 	}
 }
 
@@ -852,7 +898,7 @@ func TestUserUsageReportScopesToActorAndGroupsCurrentPeriod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	page, err := s.ListUsageEvents(ctx, userID, 0, "")
+	page, err := s.ListUsageEvents(ctx, userID, UsageEventParams{})
 	if err != nil {
 		t.Fatal(err)
 	}

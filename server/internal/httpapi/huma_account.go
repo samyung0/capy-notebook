@@ -63,8 +63,10 @@ type usageOutput struct {
 	Body apimodel.UsageReport
 }
 type usageEventsInput struct {
+	Sort   string `query:"sort" enum:"date,model,tokens,credits" default:"date"`
+	Dir    string `query:"dir" enum:"asc,desc" default:"desc"`
 	Limit  int    `query:"limit" default:"20" minimum:"1" maximum:"20"`
-	Before string `query:"before"`
+	Before string `query:"before" doc:"The previous page's next, from the same sort"`
 }
 type usageEventsOutput struct {
 	Body apimodel.UsageEventPage
@@ -125,7 +127,7 @@ func (a *api) registerBillingIntegrations(api huma.API) {
 	const tag = "Billing & integrations"
 	reg(api, http.MethodGet, "/api/billing", "getBilling", tag, "Billing info", http.StatusOK, a.getBilling)
 	reg(api, http.MethodGet, "/api/usage", "getUsage", tag, "Current-period AI usage", http.StatusOK, a.getUsage)
-	reg(api, http.MethodGet, "/api/usage/events", "listUsageEvents", tag, "Usage events, newest first", http.StatusOK, a.listUsageEvents)
+	reg(api, http.MethodGet, "/api/usage/events", "listUsageEvents", tag, "Usage events, sorted, newest first by default", http.StatusOK, a.listUsageEvents)
 	reg(api, http.MethodGet, "/api/billing/invoices", "listInvoices", tag, "Stripe invoices", http.StatusOK, a.listInvoices)
 	reg(api, http.MethodPost, "/api/billing/checkout", "billingCheckout", tag, "Start checkout", http.StatusOK, a.billingCheckout)
 	reg(api, http.MethodPost, "/api/billing/portal", "billingPortal", tag, "Open billing portal", http.StatusOK, a.billingPortal)
@@ -309,7 +311,9 @@ func (a *api) getUsage(ctx context.Context, _ *struct{}) (*usageOutput, error) {
 }
 
 func (a *api) listUsageEvents(ctx context.Context, in *usageEventsInput) (*usageEventsOutput, error) {
-	page, err := a.s.ListUsageEvents(ctx, userID(ctx), in.Limit, in.Before)
+	page, err := a.s.ListUsageEvents(ctx, userID(ctx), store.UsageEventParams{
+		Sort: in.Sort, Ascending: in.Dir == "asc", Limit: in.Limit, Before: in.Before,
+	})
 	if err != nil {
 		return nil, hErr(err)
 	}

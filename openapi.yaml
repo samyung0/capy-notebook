@@ -10492,6 +10492,26 @@ paths:
       parameters:
         - explode: false
           in: query
+          name: sort
+          schema:
+            default: date
+            enum:
+              - date
+              - model
+              - tokens
+              - credits
+            type: string
+        - explode: false
+          in: query
+          name: dir
+          schema:
+            default: desc
+            enum:
+              - asc
+              - desc
+            type: string
+        - explode: false
+          in: query
           name: limit
           schema:
             default: 20
@@ -10499,10 +10519,12 @@ paths:
             maximum: 20
             minimum: 1
             type: integer
-        - explode: false
+        - description: The previous page's next, from the same sort
+          explode: false
           in: query
           name: before
           schema:
+            description: The previous page's next, from the same sort
             type: string
       responses:
         "200":
@@ -10517,7 +10539,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Usage events, newest first
+      summary: Usage events, sorted, newest first by default
       tags:
         - Billing & integrations
   /api/workspace-invites/{token}/accept:

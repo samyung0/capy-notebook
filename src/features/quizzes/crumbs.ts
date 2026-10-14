@@ -19,12 +19,3 @@ export const blockHomeCrumb = (block: {
         label: m.files_tab_blocks(),
         link: linkOptions({ search: { tab: 'blocks' }, to: '/files' }),
       };
-
-/** The Blocks tab filtered to one kind, e.g. every quiz. */
-export const blockKindCrumb = (
-  label: string,
-  kind: 'quiz' | 'flashcards'
-): Crumb => ({
-  label,
-  link: linkOptions({ search: { kind, tab: 'blocks' }, to: '/files' }),
-});
