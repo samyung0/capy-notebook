@@ -1046,10 +1046,17 @@ export async function quizImageOnPick(run: UatRun, quizId: string) {
   await dialog
     .getByRole('textbox', { name: m.question_ui_description() })
     .fill('Field photo');
-  // No Save: back to the question, then the dialog closes with Esc.
+  // No Save: back to the question, where the new block stays selected under
+  // its floating toolbar. Esc closes the toolbar, then a second Esc the dialog.
   await dialog
     .getByRole('button', { name: m.question_ui_back_to_question() })
     .click();
+  const blockActions = page.getByRole('toolbar', {
+    name: m.question_ui_block_actions(),
+  });
+  await expect(blockActions).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(blockActions).toBeHidden();
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   const [uploaded] = await materialAssets(run, quizId);

@@ -143,7 +143,8 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   );
   const finishedQuiz = await quiz(run, workspaceId, 'Finished quiz');
   const set = await cards(run, workspaceId);
-  const nextQuiz = await quiz(run, workspaceId, 'Next quiz');
+  const nextTitle = 'Next quiz';
+  const nextQuiz = await quiz(run, workspaceId, nextTitle);
   const chapter = object(
     await api(
       run.owner,
@@ -221,13 +222,20 @@ test('study progress: a file read, a quiz finished, a set studied, Continue and 
   ).toBeVisible();
 
   // Continue opens the first item that is not done: the quiz not yet taken.
+  // The tab first paints the last visit's progress (the persisted query
+  // cache) while it refetches, so wait for the row to name that quiz.
   await page.goto(`${run.env.appUrl}/workspaces/${workspaceId}`);
   await page
     .getByRole('tab', { exact: true, name: m.workspace_tab_study() })
     .click();
-  await page
-    .getByRole('button', { exact: true, name: m.study_continue() })
-    .click();
+  const continueButton = page.getByRole('button', {
+    exact: true,
+    name: m.study_continue(),
+  });
+  await expect(
+    continueButton.locator('xpath=..').getByText(nextTitle, { exact: true })
+  ).toBeVisible();
+  await continueButton.click();
   await expect(page).toHaveURL(new RegExp(`[?&]material=${nextQuiz}(&|$)`));
 
   // A review session from the Study tab over the card and the question.
