@@ -20,6 +20,7 @@ import {
 } from '@openuidev/react-lang';
 import { z } from 'zod/v4';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
+import { CHART_KINDS, type ChartKind } from '@/features/questions/types';
 
 /** Shown passage numbers ([n] in the tool results) grounding a block. */
 const passages = z.array(z.number().int()).optional();
@@ -112,15 +113,6 @@ export interface TableProps {
   passages?: number[];
   rows: unknown[];
 }
-export const chartKinds = [
-  'bar',
-  'hbar',
-  'line',
-  'area',
-  'pie',
-  'stacked',
-] as const;
-export type ChartKind = (typeof chartKinds)[number];
 export interface ChartProps {
   illustrative?: boolean;
   kind: ChartKind;
@@ -277,7 +269,7 @@ export function buildLibrary(render: Renderers) {
       'A chart over labelled categories: bar, hbar (horizontal), line, area, pie or stacked (one bar split into parts). Put the unit in the title, e.g. "Revenue (USD)". xTitle names the categories and yTitle the values; pie and stacked have no axes, so leave both out. Cite passages for sourced values, or write null and set illustrative=true for made-up example numbers.',
     name: 'Chart',
     props: z.object({
-      kind: z.enum(chartKinds),
+      kind: z.enum(CHART_KINDS),
       title: z.string(),
       labels: z.array(z.string()),
       series: z.array(Series.ref),

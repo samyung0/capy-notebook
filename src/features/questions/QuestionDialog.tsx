@@ -2,6 +2,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
+import * as limits from '@/api/limits.generated';
 import { FloatingBlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -335,6 +336,20 @@ function QuestionDialogSession({
     setDraft(changeBlocks(draft, location, blocks));
     setSelected({ kind: 'block', location: { ...location, index: target } });
   };
+  // Where Add puts a block: after the selected one, or in the selected section.
+  const addSection = (): BlockSection =>
+    selected?.kind === 'block'
+      ? selected.location
+      : selected
+        ? { partId: selected.partId, solution: selected.kind === 'solution' }
+        : {};
+  const addFull = (type: AddableBlock | 'part') =>
+    type === 'part'
+      ? draft.parts.length >=
+        (policy === 'bank'
+          ? limits.QUESTION_PARTS_MAX
+          : limits.QUIZ_QUESTION_PARTS_MAX)
+      : sectionBlocks(draft, addSection()).length >= limits.QUESTION_BLOCKS_MAX;
   const add = (type: AddableBlock | 'part') => {
     setAddOpen(false);
     if (type === 'part') {
@@ -353,12 +368,7 @@ function QuestionDialogSession({
       setEditing({ kind: 'part', part });
       return;
     }
-    const section: BlockSection =
-      selected?.kind === 'block'
-        ? selected.location
-        : selected
-          ? { partId: selected.partId, solution: selected.kind === 'solution' }
-          : {};
+    const section = addSection();
     const blocks = [...sectionBlocks(draft, section)];
     const index =
       selected?.kind === 'block' ? selected.location.index + 1 : blocks.length;
@@ -673,8 +683,9 @@ function QuestionDialogSession({
           )}
         </button>
         <Popover>
-          {/* The file panel's hover actions: a faded backing over the text. */}
-          <div className="scroll-fade-x absolute top-0.5 right-0.5 animate-none! bg-overlay pl-3 transition-opacity ease-(--motion-ease-smooth-out) [--scroll-fade-on:1] [--scroll-fade-start:12px] group-hover:bg-surface-hover-bg has-data-[state=open]:opacity-100 md:opacity-0 md:has-focus-visible:opacity-100 md:group-hover:opacity-100">
+          {/* The file panel's hover actions: a faded backing over the text,
+              the row's full height so a second line never shows below it. */}
+          <div className="scroll-fade-x absolute inset-y-0 right-0 animate-none! rounded-r-button bg-overlay pt-0.5 pr-0.5 pl-3 transition-opacity ease-(--motion-ease-smooth-out) [--scroll-fade-on:1] [--scroll-fade-start:12px] group-hover:bg-surface-hover-bg has-data-[state=open]:opacity-100 md:opacity-0 md:has-focus-visible:opacity-100 md:group-hover:opacity-100">
             <PopoverTrigger asChild>
               <ToolbarButton
                 className="hover:bg-transparent"
@@ -1078,6 +1089,7 @@ function QuestionDialogSession({
               <div className="space-y-5">
                 <AnswerEditor
                   answer={shown.part.answer}
+                  bank={policy === 'bank'}
                   onChange={(answer) =>
                     editPart(withAnswer(shown.part, answer))
                   }
@@ -1088,6 +1100,11 @@ function QuestionDialogSession({
                     label={m.question_ui_scheme_marks({
                       marks: marksLabel(shown.part.marks),
                     })}
+                    max={
+                      policy === 'bank'
+                        ? limits.QUESTION_MARKSCHEME_MAX
+                        : limits.QUIZ_MARKSCHEME_MAX
+                    }
                     onChange={(markscheme) =>
                       editPart({
                         ...shown.part,
@@ -1152,6 +1169,7 @@ function QuestionDialogSession({
                       ] as const
                     ).map((type) => (
                       <MenuItem
+                        disabled={addFull(type)}
                         icon={<Icon name={blockIcons[type]} />}
                         key={type}
                         label={blockLabels[type]()}

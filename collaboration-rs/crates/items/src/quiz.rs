@@ -1395,8 +1395,16 @@ fn a_string(content: &ItemContent, cap: usize) -> bool {
     matches!(one_any(content), Some(Any::String(value)) if value.chars().count() <= cap)
 }
 
-fn a_number(content: &ItemContent) -> bool {
-    matches!(one_any(content), Some(Any::Number(value)) if value.is_finite())
+/// A label or an attribution: metadata, measured in UTF-16 units as the
+/// question schema measures it.
+fn a_meta(content: &ItemContent) -> bool {
+    matches!(one_any(content), Some(Any::String(value)) if value.encode_utf16().count() <= q::QUESTION_METADATA_MAX)
+}
+
+/// An image's width or height: whole pixels, 1 to the image bound.
+fn image_size(content: &ItemContent) -> bool {
+    matches!(one_any(content), Some(Any::Number(value))
+        if value.fract() == 0.0 && (1.0..=q::QUESTION_IMAGE_DIMENSION_MAX).contains(value))
 }
 
 fn a_bool(content: &ItemContent) -> bool {
@@ -1419,7 +1427,13 @@ struct Tally {
     added: HashMap<Vec<Arc<str>>, u64>,
     /// Answer types the update sets to `open`.
     open: u64,
+    /// A block's type and figure value the update writes, by the block's
+    /// path: a chart, plot or graph is checked against its kind's caps.
+    figures: HashMap<Vec<Arc<str>>, Figure>,
 }
+
+/// A block's type and its figure value, as an update writes them.
+type Figure = (Option<String>, Option<Any>);
 
 impl Tally {
     fn structure(&mut self, bytes: u64) {
@@ -1431,6 +1445,11 @@ impl Tally {
     /// length (held plus added against the list's cap, REVIEW1 S2).
     fn entry(&mut self, path: &[Arc<str>], bytes: u64) {
         self.structure(bytes);
+        self.count(path);
+    }
+
+    /// One more entry in the list at `path`, held plus added against its cap.
+    fn count(&mut self, path: &[Arc<str>]) {
         *self.added.entry(path.to_vec()).or_default() += 1;
     }
 
@@ -1451,26 +1470,34 @@ fn block_shape(
 ) -> Result<(), String> {
     match (rest, key) {
         ([], Some("order")) if order_key(content) => tally.value(content),
-        ([], Some("type")) if one_of(content, BLOCK_TYPES) => tally.value(content),
-        ([], Some("label" | "attribution")) if a_string(content, q::QUESTION_TEXT_MAX) => {
-            tally.value(content)
+        ([], Some("type")) if one_of(content, BLOCK_TYPES) => {
+            if let Some(Any::String(kind)) = one_any(content) {
+                tally.figures.entry(path.to_vec()).or_default().0 = Some(kind.to_string());
+            }
+            tally.value(content);
         }
+        ([], Some("label" | "attribution")) if a_meta(content) => tally.value(content),
         ([], Some("header")) if a_bool(content) => tally.value(content),
-        ([], Some("width" | "height")) if a_number(content) => tally.value(content),
+        ([], Some("width" | "height")) if image_size(content) => tally.value(content),
         // An image waiting for its upload is structure, not a refused value
         // (D4, REVIEW1 M3): blank, it only leaves the question incomplete.
         ([], Some("image")) => match one_any(content) {
             Some(Any::Map(image))
                 if image.len() == 1
-                    && matches!(image.get("assetId").or(image.get("url")), Some(Any::String(value)) if value.len() <= q::QUESTION_ASSET_URL_MAX) =>
+                    && (matches!(image.get("assetId"), Some(Any::String(id)) if id.chars().count() <= q::QUESTION_ID_MAX)
+                        || matches!(image.get("url"), Some(Any::String(url)) if url.encode_utf16().count() <= q::QUESTION_ASSET_URL_MAX)) =>
             {
                 tally.value(content)
             }
             _ => return refuse("an image that is not {assetId} or {url}"),
         },
-        // A chart, plot or graph is one value, written at its dialog's Done (D8).
+        // A chart, plot or graph is one value, written at its dialog's Done
+        // (D8); its caps depend on the block's type, read after the walk.
         ([], Some("value")) => match one_any(content) {
-            Some(Any::Map(_)) => tally.value(content),
+            Some(value @ Any::Map(_)) => {
+                tally.figures.entry(path.to_vec()).or_default().1 = Some(value.clone());
+                tally.value(content);
+            }
             _ => return refuse("a chart, plot or graph that is not one value"),
         },
         ([], Some("text" | "description")) if is_text(content) => tally.structure(32),
@@ -1644,6 +1671,11 @@ fn keys_shape(
     match (path, key) {
         ([K], Some(id)) => new_entry(content, id, full, tally),
         ([K, _], Some("type")) if one_of(content, ANSWER_TYPES) => {
+            // Open answers hold shorter accepted texts: the exact check reads
+            // them against the type the update leaves.
+            if one_of(content, &["open"]) {
+                tally.growth.over_cap = true;
+            }
             tally.value(content);
             Ok(())
         }
@@ -1657,6 +1689,7 @@ fn keys_shape(
         ([K, _, "correct"], Some(option)) if valid_id(option) => match one_any(content) {
             Some(Any::Bool(true)) => {
                 tally.value(content);
+                tally.count(full);
                 Ok(())
             }
             _ => refuse("a tick that is not true"),
@@ -1673,6 +1706,7 @@ fn keys_shape(
         ([K, _, "pairs"], Some(left)) if valid_id(left) => match one_any(content) {
             Some(Any::String(option)) if valid_id(option) => {
                 tally.value(content);
+                tally.count(full);
                 Ok(())
             }
             _ => refuse("a pair that does not name an option"),
@@ -1728,10 +1762,15 @@ fn list_cap(path: &[&str]) -> Option<usize> {
         [R, _, "stem"] | [R, _, "parts", _, "blocks"] | [K, _, "solution"] => {
             q::QUESTION_BLOCKS_MAX
         }
+        [R] => q::QUIZ_PARTS_MAX,
         [R, _, "parts"] => q::QUIZ_QUESTION_PARTS_MAX,
         [R, _, "parts", _, "answer", "options" | "left"] => q::QUESTION_ANSWERS_MAX,
         [K] => q::QUIZ_PARTS_MAX * 2,
-        [K, _, "accepted" | "hints" | "options" | "items"] => q::QUESTION_ANSWERS_MAX,
+        [
+            K,
+            _,
+            "accepted" | "hints" | "options" | "items" | "correct" | "pairs",
+        ] => q::QUESTION_ANSWERS_MAX,
         [K, _, "markscheme"] => q::QUIZ_MARKSCHEME_MAX,
         [K, _, "gaps"] | [K, _, "gaps", _] => q::QUESTION_ANSWERS_MAX,
         _ => return None,
@@ -1813,6 +1852,7 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
         typed: HashMap::new(),
         added: HashMap::new(),
         open: 0,
+        figures: HashMap::new(),
     };
     for item in incoming.items() {
         step(Walk::Content);
@@ -1831,6 +1871,20 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
         };
         let keys: Vec<&str> = path.iter().map(|k| &**k).collect();
         shape(&keys, key.as_deref(), content, &path, &mut tally)?;
+    }
+    // A figure is checked whole, its type or value read from the block when
+    // the update writes only the other.
+    for (path, (kind, value)) in &tally.figures {
+        let held = map_by_path(txn, path);
+        let kind = kind
+            .clone()
+            .or_else(|| held.as_ref().and_then(|block| str_at(txn, block, "type")));
+        let value = value
+            .clone()
+            .or_else(|| held.as_ref().and_then(|block| any_at(txn, block, "value")));
+        if let (Some(kind), Some(value @ Any::Map(_))) = (kind, value) {
+            notes::questions::figure_caps(&kind, &any_json(&value)).or_else(refuse)?;
+        }
     }
     // A text, a list or the quiz's part counts that may pass a cap send the
     // update to the exact check; the held count is read only for what the
@@ -1917,8 +1971,28 @@ fn check_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Result<(), String>
                 "a question text",
             )?;
         }
-        if let Some(label) = str_at(txn, &block.map, "label") {
-            check_text(&label, q::QUESTION_TEXT_MAX, "a label")?;
+        for field in ["label", "attribution"] {
+            if let Some(meta) = str_at(txn, &block.map, field)
+                && meta.encode_utf16().count() > q::QUESTION_METADATA_MAX
+            {
+                return Err(format!(
+                    "a {field} holds at most {} characters",
+                    q::QUESTION_METADATA_MAX
+                ));
+            }
+        }
+        for field in ["width", "height"] {
+            if let Some(size) = num_at(txn, &block.map, field)
+                && !(size.fract() == 0.0 && (1.0..=q::QUESTION_IMAGE_DIMENSION_MAX).contains(&size))
+            {
+                return Err(format!("an image's {field} is out of range"));
+            }
+        }
+        if let (Some(kind), Some(value @ Any::Map(_))) = (
+            str_at(txn, &block.map, "type"),
+            any_at(txn, &block.map, "value"),
+        ) {
+            notes::questions::figure_caps(&kind, &any_json(&value))?;
         }
         let rows = map_at(txn, &block.map, "rows").map_or(0, |m| m.len(txn) as usize);
         let columns = map_at(txn, &block.map, "columns").map_or(0, |m| m.len(txn) as usize);
@@ -1959,6 +2033,7 @@ fn check_list<T: ReadTxn>(
 pub fn check_content_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
     let root = txn.get_map(QUESTIONS_ROOT);
     let questions = ordered(txn, root.as_ref());
+    check_count(questions.len(), q::QUIZ_PARTS_MAX, "a quiz's questions")?;
     let (mut parts, mut open) = (0usize, 0usize);
     for question in &questions {
         check_blocks(txn, map_at(txn, &question.map, "stem").as_ref())?;
@@ -2022,6 +2097,15 @@ pub fn check_keys_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
             accepted_cap,
             "accepted answers",
         )?;
+        for list in ["correct", "pairs"] {
+            if let Some(map) = map_at(txn, &key, list) {
+                check_count(
+                    map.len(txn) as usize,
+                    q::QUESTION_ANSWERS_MAX,
+                    "an answer list",
+                )?;
+            }
+        }
         for list in ["hints", "options", "items"] {
             check_list(
                 txn,

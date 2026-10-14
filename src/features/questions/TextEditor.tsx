@@ -1,4 +1,3 @@
-import { EquationPlugin, InlineEquationPlugin } from '@platejs/math/react';
 import {
   ParagraphPlugin,
   Plate,
@@ -14,6 +13,10 @@ import { Icon } from '@/components/ui/Icon';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { MathPreview } from '@/features/materials/MathPreview';
+import {
+  EquationPlugin,
+  InlineEquationPlugin,
+} from '@/features/notes/equationPlugins';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';

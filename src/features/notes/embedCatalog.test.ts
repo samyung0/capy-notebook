@@ -1,15 +1,17 @@
 /* The browser against the embed catalog (openwiki/embeds.md): the read-only
-   plugin kit knows every element type with the catalog's void and inline
-   flags, chat has each embed's component, and every embed's fence converts
+   plugin kit and the live editor know every element type with the catalog's
+   void and inline flags, chat has each embed's component, and every embed's fence converts
    to its element and back. */
 import { readFileSync } from 'node:fs';
 import { serializeMd } from '@platejs/markdown';
-import { createSlateEditor } from 'platejs';
+import { createSlateEditor, type SlateEditor } from 'platejs';
+import { createPlateEditor } from 'platejs/react';
 import { describe, expect, it } from 'vitest';
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { StaticMaterialKit } from '@/features/materials/staticPlugins';
 import { noteMarkdownPlugin } from './markdown';
 import { markdownToDocument } from './markdownConvert';
+import { buildPlugins } from './plugins';
 
 function question(name: string) {
   const file = new URL(
@@ -31,30 +33,54 @@ const bodies: Record<string, string> = {
   quiz: 'questions: []',
 };
 
+const flags = (node: { isInline?: boolean; isVoid?: boolean }) =>
+  `${node.isVoid ? 'void' : 'block'}${node.isInline ? ' inline' : ''}`;
+
+/** Each element type an editor's plugins register, with its flags. */
+function elementFlags(editor: SlateEditor) {
+  const kit: Record<string, string> = {};
+  for (const plugin of Object.values(editor.plugins))
+    if (plugin.node.isElement)
+      kit[plugin.node.type ?? plugin.key] = flags(plugin.node);
+  return kit;
+}
+
+const catalogFlags = Object.fromEntries(
+  EMBED_CATALOG.elements.map((element) => [
+    element.type,
+    flags({
+      isInline: 'inline' in element && element.inline,
+      isVoid: 'void' in element && element.void,
+    }),
+  ])
+);
+
 describe('the embed catalog', () => {
   const editor = createSlateEditor({
     plugins: [...StaticMaterialKit, noteMarkdownPlugin],
   });
 
   it('is what the read-only plugin kit knows', () => {
-    const flags = (node: { isInline?: boolean; isVoid?: boolean }) =>
-      `${node.isVoid ? 'void' : 'block'}${node.isInline ? ' inline' : ''}`;
-    const kit = new Map<string, string>();
-    for (const plugin of Object.values(editor.plugins)) {
-      if (plugin.node.isElement)
-        kit.set(plugin.node.type ?? plugin.key, flags(plugin.node));
-    }
-    const catalog = new Map<string, string>(
-      EMBED_CATALOG.elements.map((element) => [
-        element.type,
-        flags({
-          isInline: 'inline' in element && element.inline,
-          isVoid: 'void' in element && element.void,
-        }),
-      ])
-    );
-    expect(Object.fromEntries(kit)).toEqual(Object.fromEntries(catalog));
+    expect(elementFlags(editor)).toEqual(catalogFlags);
   });
+
+  it.each([true, false])(
+    'is what the live editor knows (AI plugins %s)',
+    (allowExternalAssets) => {
+      const live = createPlateEditor({
+        plugins: buildPlugins({
+          allowExternalAssets,
+          currentUserId: null,
+          discussions: [],
+          onSave: () => {},
+          workspaceId: 'w',
+        }),
+      });
+      // The editor draws a Mermaid block as a void, its caption an input
+      // field (blocks/elements.tsx); the stored node holds the caption child.
+      expect(elementFlags(live)).toEqual({ ...catalogFlags, mermaid: 'void' });
+    }
+  );
 
   it('names chat components the chat library has', () => {
     const file = new URL(

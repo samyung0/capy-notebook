@@ -11,8 +11,8 @@ use std::collections::HashSet;
 use serde_json::{Map, Value};
 
 use crate::catalog::{
-    self, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES, HTML_EMBED_MAX_COUNT,
-    MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
+    self, BLOCK_CAPTION_MAX, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES,
+    HTML_EMBED_MAX_COUNT, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
 };
 use crate::questions::{self, Policy, js_trim};
 
@@ -361,8 +361,16 @@ fn validate_html_embed(node: &Node, depth: usize) -> Check {
             html.len()
         ));
     }
-    if node.get("caption").is_some_and(|t| !t.is_string()) {
-        return fail("interactive caption must be a string");
+    match node.get("caption") {
+        Some(Value::String(caption)) if caption.chars().count() > BLOCK_CAPTION_MAX => {
+            return fail(format!(
+                "interactive caption is over {BLOCK_CAPTION_MAX} characters"
+            ));
+        }
+        Some(caption) if !caption.is_string() => {
+            return fail("interactive caption must be a string");
+        }
+        _ => {}
     }
     for key in node.keys() {
         if !matches!(

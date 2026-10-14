@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/embeds"
 	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
@@ -120,6 +121,7 @@ func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
 	for name, value := range map[string][]map[string]any{
 		"eleventh block": append(doc.Value, embed("e10", "<p>x</p>")),
 		"oversized html": {embed("e0", strings.Repeat("x", HTMLEmbedMaxBytes+1))},
+		"long caption":   {{"type": HTMLEmbedType, "id": "e0", "html": "", "caption": strings.Repeat("c", embeds.BlockCaptionMax+1), "children": []any{textLeaf("")}}},
 		"nested block":   {{"type": "callout", "id": "c", "children": []any{embed("e0", "")}}},
 		"extra field":    {{"type": HTMLEmbedType, "id": "e0", "html": "", "src": "https://x", "children": []any{textLeaf("")}}},
 	} {

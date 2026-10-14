@@ -11,10 +11,10 @@
      cards: [ ... ]
      ```
 
-   The payload is YAML (JSON parses too). The fence bodies are read by the
-   note editor's fence import (blocks/dialogContext.tsx) and the MSW mock, which
-   derives the typed quiz and card views the UI expects; writing them is
-   blocks/shared.ts's.
+   The payload is YAML (JSON parses too). `parseEmbeddedFence` reads a note's
+   fences for agent writes (notes/markdownConvert.ts), paste and import
+   (notes/pendingRefs.ts); the MSW mock derives the typed quiz and card views
+   the UI expects; writing them is blocks/shared.ts's.
    ============================================================ */
 import YAML from 'yaml';
 import type { Question } from '@/api/types';
@@ -85,7 +85,48 @@ export function parseQuizFenceBody(body: string): QuizBlock {
   return parseQuizYaml(body);
 }
 
-/** Parse a raw ```flashcards fence body (used by the Plate renderer). */
-export function parseFlashcardsFenceBody(body: string): FlashcardsBlock {
-  return parseFlashcardsYaml(body);
+/** A quiz or flashcard set to create under a note from its fence. */
+export type EmbeddedDraft =
+  | { kind: 'quiz'; questions: unknown[] }
+  | { kind: 'flashcards'; cards: { back: string; front: string }[] };
+
+/** Read a ```quiz or ```flashcards fence body, the one reading for agent
+ * writes, paste and import: a non-empty questions list, or cards each with a
+ * front and a back. Throws saying what is wrong; the questions themselves are
+ * checked where the row is created. */
+export function parseEmbeddedFence(
+  kind: EmbeddedDraft['kind'],
+  body: string
+): EmbeddedDraft {
+  let parsed: unknown;
+  try {
+    parsed = YAML.parse(body);
+  } catch (error) {
+    throw new Error(`is not YAML: ${(error as Error).message}`, {
+      cause: error,
+    });
+  }
+  const doc = (parsed ?? {}) as { cards?: unknown; questions?: unknown };
+  if (kind === 'quiz') {
+    if (!Array.isArray(doc.questions) || doc.questions.length === 0)
+      throw new Error('needs a non-empty questions list');
+    return { kind, questions: doc.questions };
+  }
+  const cards = doc.cards;
+  if (
+    !Array.isArray(cards) ||
+    cards.length === 0 ||
+    !cards.every(
+      (card) =>
+        typeof card?.front === 'string' &&
+        card.front.trim() &&
+        typeof card?.back === 'string' &&
+        card.back.trim()
+    )
+  )
+    throw new Error('needs cards, each with a front and a back');
+  return {
+    cards: cards.map((card) => ({ back: card.back, front: card.front })),
+    kind,
+  };
 }

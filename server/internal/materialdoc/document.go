@@ -748,8 +748,12 @@ func validateHTMLEmbed(node map[string]any, depth int) error {
 		return fmt.Errorf("interactive html is %d bytes, over %d", len(html), HTMLEmbedMaxBytes)
 	}
 	if caption, ok := node["caption"]; ok {
-		if _, ok := caption.(string); !ok {
+		text, ok := caption.(string)
+		if !ok {
 			return errors.New("interactive caption must be a string")
+		}
+		if utf8.RuneCountInString(text) > embeds.BlockCaptionMax {
+			return fmt.Errorf("interactive caption is over %d characters", embeds.BlockCaptionMax)
 		}
 	}
 	for key := range node {

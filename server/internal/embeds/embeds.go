@@ -26,6 +26,8 @@ const (
 	// HTMLEmbedMaxCount the interactive blocks of one document.
 	HTMLEmbedMaxBytes = 64 << 10
 	HTMLEmbedMaxCount = 10
+	// BlockCaptionMax bounds an interactive block's caption (characters).
+	BlockCaptionMax = 300
 	// A resizable block stores its width as a whole percentage in this range.
 	MediaWidthMin = 20
 	MediaWidthMax = 100
@@ -396,6 +398,7 @@ func Limits() []Limit {
 	out := []Limit{
 		{"HTML_EMBED_MAX_BYTES", HTMLEmbedMaxBytes},
 		{"HTML_EMBED_MAX_COUNT", HTMLEmbedMaxCount},
+		{"BLOCK_CAPTION_MAX", BlockCaptionMax},
 		{"MEDIA_WIDTH_MIN", MediaWidthMin},
 		{"MEDIA_WIDTH_MAX", MediaWidthMax},
 		{"CARD_FRONT_MAX", fieldlimits.CardFront},

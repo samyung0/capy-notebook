@@ -6,6 +6,7 @@ import { useMe } from '@/api/hooks';
 import type { Material, Provenance } from '@/api/types';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
+import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { useItemRoom } from '@/features/collaboration/itemRoom';
 import {
@@ -19,7 +20,10 @@ import {
   useYText,
 } from '@/features/collaboration/yText';
 import { FileLoading } from '@/features/files/FileStates';
-import type { MaterialDocument } from '@/features/materials/document';
+import {
+  BLOCK_CAPTION_MAX,
+  type MaterialDocument,
+} from '@/features/materials/document';
 import {
   blockSource,
   type LiveMermaid,
@@ -50,6 +54,7 @@ import { registerLiveNote } from '@/features/notes/liveNoteHandover';
 import { MERMAID_CAPTION_CLASS } from '@/features/notes/nodeStyles';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 
 /**
  * Edit mode of a standalone mindmap or diagram, without Plate (Epo
@@ -265,17 +270,25 @@ function LiveDiagram({
             />
           </MediaFrame>
           {live.caption && (
-            <input
-              aria-label={m.editor_caption_add()}
-              className={cn(
-                MERMAID_CAPTION_CLASS,
-                'mt-0 block w-full bg-transparent outline-none placeholder:text-placeholder'
-              )}
-              onChange={caption.onChange}
-              placeholder={m.editor_caption_placeholder()}
-              ref={caption.ref}
-              value={caption.value}
-            />
+            <div className="flex items-baseline gap-2">
+              <input
+                aria-label={m.editor_caption_add()}
+                className={cn(
+                  MERMAID_CAPTION_CLASS,
+                  'mt-0 block min-w-0 flex-1 bg-transparent outline-none placeholder:text-placeholder'
+                )}
+                maxLength={BLOCK_CAPTION_MAX}
+                onChange={caption.onChange}
+                placeholder={m.editor_caption_placeholder()}
+                ref={caption.ref}
+                value={caption.value}
+              />
+              <CharCount
+                className="shrink-0"
+                max={BLOCK_CAPTION_MAX}
+                value={textLength(caption.value)}
+              />
+            </div>
           )}
           <MaterialAttributionFooter inline provenance={provenance} />
         </div>

@@ -20,11 +20,11 @@ pub use crate::catalog::{
     QUESTION_ANSWERS_MAX, QUESTION_ASSET_URL_MAX, QUESTION_BLOCKS_MAX, QUESTION_CHART_LABELS_MAX,
     QUESTION_CHART_SERIES_MAX, QUESTION_GRAPH_ELEMENTS_MAX, QUESTION_GRAPH_POLYGON_MAX,
     QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX,
-    QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_MARKS_MAX,
-    QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX, QUESTION_SVG_BYTES_MAX,
-    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_UNIT_MAX,
-    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
-    QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
+    QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX,
+    QUESTION_SVG_BYTES_MAX, QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX,
+    QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX,
+    QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -163,10 +163,10 @@ fn identifier(value: &Value, what: &str) -> Result<String, String> {
     Ok(raw.to_owned())
 }
 
-/// `meta`: a string of at most 1000 UTF-16 units.
+/// `meta`: a string of at most QUESTION_METADATA_MAX UTF-16 units.
 fn meta(value: &Value, what: &str) -> Check {
     match value.as_str() {
-        Some(raw) if utf16_len(raw) <= 1000 => Ok(()),
+        Some(raw) if utf16_len(raw) <= QUESTION_METADATA_MAX => Ok(()),
         Some(_) => fail(format!("{what}: too long")),
         None => fail(format!("{what}: expected a string")),
     }
@@ -793,6 +793,121 @@ fn figure(value: &Value, graph: bool) -> Result<(&'static str, String), String> 
         return Ok(("assetId", identifier(&map["assetId"], what)?));
     }
     fail(format!("{what}: invalid input"))
+}
+
+/* ------------------------------------------------------- figure sizes */
+
+/// A metadata string (a title, a name, a label) past its cap.
+fn cap_meta(map: &Map<String, Value>, key: &str, what: &str) -> Check {
+    match map.get(key).and_then(Value::as_str) {
+        Some(raw) if utf16_len(raw) > QUESTION_METADATA_MAX => {
+            fail(format!("{what}: {key} too long"))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A question text past its cap.
+fn cap_text(value: Option<&Value>, what: &str) -> Check {
+    match value.and_then(Value::as_str) {
+        Some(raw) if code_points(raw) > QUESTION_TEXT_MAX => {
+            fail(format!("{what}: Text is too long."))
+        }
+        _ => Ok(()),
+    }
+}
+
+/// A list's items, refused past `max`; anything else is no list.
+fn cap_list<'a>(value: Option<&'a Value>, max: usize, what: &str) -> Result<&'a [Value], String> {
+    match value.and_then(Value::as_array) {
+        Some(items) if items.len() > max => fail(format!("{what}: too many items")),
+        Some(items) => Ok(items),
+        None => Ok(&[]),
+    }
+}
+
+fn objects(items: &[Value]) -> impl Iterator<Item = &Map<String, Value>> {
+    items.iter().filter_map(Value::as_object)
+}
+
+/// A chart's, plot's or graph's sizes only: every text, list and image within
+/// its cap. A live quiz keeps an unfinished figure (an empty title, no labels
+/// yet), so nothing here asks for a field or a value's form; `block` does
+/// that for a finished one. `value` is the block without its `type`.
+pub fn figure_caps(kind: &str, value: &Value) -> Check {
+    let what = kind;
+    let Some(map) = value.as_object() else {
+        return Ok(());
+    };
+    match kind {
+        "chart" => {
+            for key in ["title", "xTitle", "yTitle"] {
+                cap_meta(map, key, what)?;
+            }
+            for label in cap_list(map.get("labels"), QUESTION_CHART_LABELS_MAX, what)? {
+                cap_text(Some(label), what)?;
+            }
+            for series in objects(cap_list(
+                map.get("series"),
+                QUESTION_CHART_SERIES_MAX,
+                what,
+            )?) {
+                cap_meta(series, "name", what)?;
+                cap_list(series.get("values"), QUESTION_CHART_LABELS_MAX, what)?;
+            }
+        }
+        "plot" => {
+            for key in ["title", "xTitle", "yTitle", "unit"] {
+                cap_meta(map, key, what)?;
+            }
+            for curve in objects(cap_list(map.get("series"), QUESTION_PLOT_SERIES_MAX, what)?) {
+                cap_meta(curve, "name", what)?;
+                cap_list(curve.get("points"), QUESTION_PLOT_POINTS_MAX, what)?;
+            }
+            for key in ["lines", "marks"] {
+                for mark in objects(cap_list(map.get(key), QUESTION_PLOT_MARKS_MAX, what)?) {
+                    cap_meta(mark, "label", what)?;
+                }
+            }
+        }
+        "graph" => {
+            cap_meta(map, "attribution", what)?;
+            cap_text(map.get("description"), what)?;
+            for element in objects(cap_list(
+                map.get("elements"),
+                QUESTION_GRAPH_ELEMENTS_MAX,
+                what,
+            )?) {
+                if let Some(term) = element.get("term").and_then(Value::as_str)
+                    && utf16_len(term) > QUESTION_GRAPH_TERM_MAX
+                {
+                    return fail("Use a supported mathematical expression.");
+                }
+                cap_meta(element, "name", what)?;
+                cap_meta(element, "label", what)?;
+                cap_text(element.get("text"), what)?;
+                cap_list(element.get("points"), QUESTION_GRAPH_POLYGON_MAX, what)?;
+            }
+            if let Some(image) = map.get("image").and_then(Value::as_object) {
+                if image
+                    .get("svg")
+                    .and_then(Value::as_str)
+                    .is_some_and(|svg| svg.len() > QUESTION_SVG_BYTES_MAX)
+                {
+                    return fail("Graph SVG contains unsupported content.");
+                }
+                if image
+                    .get("url")
+                    .and_then(Value::as_str)
+                    .is_some_and(|url| utf16_len(url) > QUESTION_ASSET_URL_MAX)
+                {
+                    return fail(format!("{what}: too long"));
+                }
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// One part as the schema leaves it.

@@ -1,11 +1,16 @@
 import type { Descendant } from 'platejs';
 import { createPlatePlugin } from 'platejs/react';
+import { userToast } from '@/components/ui/userToast';
+import { parseEmbeddedFence } from '@/features/materials/blocks';
 import {
   isMaterialRefElement,
   type MaterialRefKind,
   materialRefNode,
 } from '@/features/materials/document';
-import { noteBlockDialogs } from './blocks/dialogContext';
+import { validateQuestions } from '@/features/questions/validation';
+import { m } from '@/i18n';
+import { errorCopy } from '@/lib/errors';
+import { type NoteEmbedDraft, noteBlockDialogs } from './blocks/dialogContext';
 import { holdInsertPlace, type NoteEditorInstance } from './insertEditorNode';
 
 /* Imported markdown's quiz and flashcards fences become references only once
@@ -71,14 +76,40 @@ export const pendingRefsPlugin = createPlatePlugin({
   },
 }));
 
+/** A fence body as the draft its row is created from. One that does not
+ * read is dropped with a toast saying so; a refused create toasts as any
+ * failed mutation does. */
+function fenceDraft(kind: MaterialRefKind, body: string): NoteEmbedDraft {
+  try {
+    const draft = parseEmbeddedFence(kind, body);
+    return draft.kind === 'quiz'
+      ? { kind: draft.kind, questions: validateQuestions(draft.questions) }
+      : draft;
+  } catch (cause) {
+    userToast({
+      description: errorCopy(
+        cause,
+        kind === 'quiz'
+          ? m.editor_quiz_fence_invalid()
+          : m.editor_flashcards_fence_invalid()
+      ),
+      title:
+        kind === 'quiz'
+          ? m.editor_quiz_not_added()
+          : m.editor_flashcards_not_added(),
+      variant: 'warning',
+    });
+    throw cause;
+  }
+}
+
 /** Imported nodes with their fences as rows under the open note. */
 export function resolveImported(nodes: Descendant[]) {
   const dialogs = noteBlockDialogs();
-  return resolvePendingRefs(
-    nodes,
+  return resolvePendingRefs(nodes, (kind, body) =>
     dialogs
-      ? dialogs.createEmbedded
-      : () => Promise.reject(new Error('No note editor is open'))
+      ? dialogs.createEmbedded(fenceDraft(kind, body))
+      : Promise.reject(new Error('No note editor is open'))
   );
 }
 

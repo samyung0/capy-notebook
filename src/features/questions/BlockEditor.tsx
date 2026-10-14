@@ -16,7 +16,12 @@ import { Field, FieldInput, SelectField } from './editorFields';
 import { GraphEditor } from './GraphEditor';
 import { QuestionBlockView } from './QuestionView';
 import { TextEditor } from './TextEditor';
-import type { ChartBlock, QuestionBlock } from './types';
+import {
+  CHART_KINDS,
+  type ChartBlock,
+  type ChartKind,
+  type QuestionBlock,
+} from './types';
 
 /** Bank uploads return a public URL; quiz uploads return a workspace editor asset. */
 export type UploadQuestionAsset = (
@@ -30,7 +35,7 @@ const chartLabels = {
   line: m.question_ui_line_chart,
   pie: m.question_ui_pie_chart,
   stacked: m.question_ui_stacked_chart,
-};
+} satisfies Record<ChartKind, () => string>;
 
 function ChartEditor({
   block,
@@ -59,12 +64,13 @@ function ChartEditor({
                       xTitle: undefined,
                       yTitle: undefined,
                     }
-                  : { ...block, kind: kind as ChartBlock['kind'] }
+                  : { ...block, kind: kind as ChartKind }
               )
             }
-            options={(
-              ['bar', 'hbar', 'line', 'area', 'pie', 'stacked'] as const
-            ).map((kind) => ({ label: chartLabels[kind](), value: kind }))}
+            options={CHART_KINDS.map((kind) => ({
+              label: chartLabels[kind](),
+              value: kind,
+            }))}
             value={block.kind}
           />
           <Field
@@ -75,6 +81,7 @@ function ChartEditor({
             label={m.question_ui_title()}
           >
             <FieldInput
+              maxLength={limits.QUESTION_METADATA_MAX}
               onChange={(event) =>
                 onChange({ ...block, title: event.target.value })
               }
@@ -97,6 +104,7 @@ function ChartEditor({
                   }
                 >
                   <FieldInput
+                    maxLength={limits.QUESTION_METADATA_MAX}
                     onChange={(event) =>
                       onChange({ ...block, [key]: event.target.value })
                     }
@@ -124,6 +132,7 @@ function ChartEditor({
                           number: i + 1,
                         })}
                         className="py-1.5 text-sm"
+                        maxLength={limits.QUESTION_METADATA_MAX}
                         onChange={(event) =>
                           onChange({
                             ...block,
@@ -169,6 +178,7 @@ function ChartEditor({
                           number: row + 1,
                         })}
                         className="py-1.5 text-sm"
+                        maxLength={limits.QUESTION_TEXT_MAX}
                         onChange={(event) =>
                           onChange({
                             ...block,
@@ -221,10 +231,12 @@ function ChartEditor({
               </tbody>
             </table>
           </div>
-          <div className="space-y-1">
+          <div className="space-y-3">
             <div className="-ml-4 flex flex-wrap gap-2">
               <Button
-                disabled={block.labels.length >= 50}
+                disabled={
+                  block.labels.length >= limits.QUESTION_CHART_LABELS_MAX
+                }
                 iconLeft="plus"
                 onClick={() =>
                   onChange({
@@ -245,7 +257,9 @@ function ChartEditor({
               {!single && (
                 <>
                   <Button
-                    disabled={block.series.length >= 8}
+                    disabled={
+                      block.series.length >= limits.QUESTION_CHART_SERIES_MAX
+                    }
                     iconLeft="plus"
                     onClick={() =>
                       onChange({
@@ -508,7 +522,7 @@ export function BlockEditor({
         </ToolbarGroup>
         <ToolbarGroup>
           <ToolbarButton
-            disabled={block.rows.length >= 30}
+            disabled={block.rows.length >= limits.QUESTION_TABLE_ROWS_MAX}
             label={m.question_ui_add_row()}
             onClick={() =>
               onChange({
@@ -532,7 +546,7 @@ export function BlockEditor({
             R−
           </ToolbarButton>
           <ToolbarButton
-            disabled={columns >= 10}
+            disabled={columns >= limits.QUESTION_TABLE_COLUMNS_MAX}
             label={m.question_ui_add_column()}
             onClick={() =>
               onChange({

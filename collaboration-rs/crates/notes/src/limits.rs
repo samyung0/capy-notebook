@@ -354,7 +354,7 @@ const VALUE_KEYS: [&str; 8] = [
 /// Whether the store takes `value` under `key` on an element of type `kind`
 /// (`material::assert_canonical`): a reference names an item kind, a video
 /// is a YouTube id, a resizable block's width is one the handles write, an
-/// interactive block's html fits and its caption is a string, a figure's
+/// interactive block's html and caption fit, a figure's
 /// block is a valid question block of its type, a Mermaid source is a string
 /// (or its shared text).
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
@@ -367,7 +367,9 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         (crate::material::HTML_EMBED_TYPE, "html", Any::String(html)) => {
             html.len() <= catalog::HTML_EMBED_MAX_BYTES
         }
-        (crate::material::HTML_EMBED_TYPE, "caption", value) => matches!(value, Any::String(_)),
+        (crate::material::HTML_EMBED_TYPE, "caption", value) => {
+            matches!(value, Any::String(caption) if caption.chars().count() <= catalog::BLOCK_CAPTION_MAX)
+        }
         ("chart" | "plot" | "graph", "block", value) => json::any_to_value(value)
             .is_ok_and(|block| crate::material::figure_block(kind, &block).is_ok()),
         (plate::SHARED_TEXT_ELEMENT, plate::SHARED_TEXT_KEY, value) => {

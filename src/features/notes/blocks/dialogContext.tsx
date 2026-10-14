@@ -10,15 +10,8 @@ import {
   useState,
 } from 'react';
 import { useCreateEmbeddedMaterial } from '@/api/hooks';
-import type { Material } from '@/api/types';
-import {
-  parseFlashcardsFenceBody,
-  parseQuizFenceBody,
-} from '@/features/materials/blocks';
-import {
-  type MaterialRefKind,
-  materialRefNode,
-} from '@/features/materials/document';
+import type { Material, Question } from '@/api/types';
+import { materialRefNode } from '@/features/materials/document';
 import { holdInsertPlace, type NoteEditorInstance } from '../insertEditorNode';
 import { YouTubeDialog } from '../YouTubeDialog';
 import type { NoteVisualBlock } from './VisualBlockDialog';
@@ -28,14 +21,13 @@ const VisualBlockDialog = lazy(() => import('./VisualBlockDialog'));
 type SaveYouTubeFn = (videoId: string) => void;
 
 export interface NoteBlockDialogsApi {
-  /** Create the embedded quiz or flashcard set a fence body describes. */
-  createEmbedded: (kind: MaterialRefKind, code: string) => Promise<Material>;
+  /** Create an embedded quiz or flashcard set under the note. */
+  createEmbedded: (draft: NoteEmbedDraft) => Promise<Material>;
   /** Create the row first, then insert its reference block where the caret
    * was when the command ran. */
   insertEmbedded: (
     editor: NoteEditorInstance,
-    kind: MaterialRefKind,
-    code: string
+    draft: NoteEmbedDraft
   ) => Promise<void>;
   /** The note this editor is bound to; embedded materials are created under it. */
   noteId: string;
@@ -46,23 +38,10 @@ export interface NoteBlockDialogsApi {
   openYouTube: (initialUrl: string | undefined, onSave: SaveYouTubeFn) => void;
 }
 
-/** Turn a fence body into the create request for its kind. */
-export function embeddedDraftFromFence(kind: MaterialRefKind, code: string) {
-  if (kind === 'quiz') {
-    const block = parseQuizFenceBody(code);
-    return {
-      kind,
-      questions: block.questions,
-    };
-  }
-  return {
-    cards: parseFlashcardsFenceBody(code).cards.map((card) => ({
-      back: card.back,
-      front: card.front,
-    })),
-    kind,
-  };
-}
+/** An embedded quiz or flashcard set to create under the note. */
+export type NoteEmbedDraft =
+  | { kind: 'quiz'; questions: Question[] }
+  | { kind: 'flashcards'; cards: { back: string; front: string }[] };
 
 const Ctx = createContext<NoteBlockDialogsApi | null>(null);
 
@@ -108,18 +87,17 @@ export function NoteBlockDialogsProvider({
   );
 
   const createEmbedded = useCallback(
-    (kind: MaterialRefKind, code: string) =>
-      createEmbeddedMaterial({ noteId, ...embeddedDraftFromFence(kind, code) }),
+    (draft: NoteEmbedDraft) => createEmbeddedMaterial({ ...draft, noteId }),
     [createEmbeddedMaterial, noteId]
   );
   // The new block is authored in place: Edit mode shows its editor. It goes
   // where the command ran, whatever the user did during the round trip.
   const insertEmbedded = useCallback(
-    async (editor: NoteEditorInstance, kind: MaterialRefKind, code: string) => {
+    async (editor: NoteEditorInstance, draft: NoteEmbedDraft) => {
       const place = holdInsertPlace(editor);
       try {
-        const material = await createEmbedded(kind, code);
-        place.insert(materialRefNode(material.id, kind));
+        const material = await createEmbedded(draft);
+        place.insert(materialRefNode(material.id, draft.kind));
       } finally {
         place.release();
       }

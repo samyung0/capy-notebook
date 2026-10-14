@@ -464,7 +464,14 @@ deserializes as a pending reference (`materialId: ''` plus the fence body in
 note reaches every reader (live-items REVIEW5). A paste or a toolbar import
 holding fences creates their rows first and then inserts the blocks naming
 them where the paste or import ran (`notes/pendingRefs.ts`, the held place of
-`holdInsertPlace`); a fence whose row cannot be created is left out. The
+`holdInsertPlace`). Every fence is read by one parser,
+`parseEmbeddedFence` (`materials/blocks.ts`), the agent's markdown included: a
+quiz needs at least one question and a set needs cards each with a front and a
+back (a pasted quiz's questions are checked too, `validateQuestions`). A fence
+that does not read is left out with a warning toast naming the kind; one
+whose create is refused is left out under the mutation's own error toast. The
+slash commands' new empty quiz and one-blank-card set pass their drafts to
+`insertEmbedded` without a fence. The
 collaboration server refuses an update that writes `pending` or leaves a
 reference without its material id or below the top level, the store check refuses one (logged with the room's name, so with the note), Go refuses a
 note write holding one, and a stored note holding one is served by
@@ -517,7 +524,10 @@ failed font load draws in the fallback font. In edit mode the hover toolbar has
 theme, caption, edit, copy and delete. A resized diagram stretches
 past its natural width. The
 caption is typed in a field under the diagram (at most 300 characters, a
-silent `maxLength`, `BLOCK_CAPTION_MAX`) that rewrites the
+`maxLength` with the x/cap counter beside it from 90%, the catalog's
+`BLOCK_CAPTION_MAX`; a mindmap or diagram file's caption field is the same; by decision the servers
+bound it only by the document's limits, like any note text, Epo 2026-10-14)
+that rewrites the
 `mermaid_caption` text with `voids: true`. The node stays void, so a DOM
 selection inside it maps to the caption element; `fixMermaidSelection` moves
 such points onto the caption text. The edit dialog shows source beside a live
@@ -609,8 +619,10 @@ paste goes through rewrites HTML inside fences; see `markdownImport.ts`). A
 fence that is not YAML, has no html, has html over 64 KB, or is the eleventh
 is refused by name. Go
 `materialdoc`, the collaboration validator and the browser's
-`isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes) and a document at 10
-such blocks, and refuse any other field. Retrieval skips the block like
+`isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes), `caption` at
+`BLOCK_CAPTION_MAX` (300 characters; Go `materialdoc`, the collaboration
+store and room admission) and a document at 10 such blocks, and refuse any
+other field. Retrieval skips the block like
 mermaid. There is no insert command; people edit the snippet through the
 source dialog.
 
@@ -1460,9 +1472,17 @@ in use. The two documents count together against the material's limits: each
 room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
 projection over a limit unless it shrank. Admission checks structure, value
 caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
-units, labels, whole marks, list and table counts, parts per question and per
-quiz, open parts, marking items. Everything the store's check refuses is
-refused at admission, so a store never discards a room for it. A list's count
+units, labels and attributions (`QUESTION_METADATA_MAX`), image sizes and
+ids, whole marks, list and table counts, questions, parts per question and per
+quiz, open parts, marking items, ticks and matching pairs, and each chart,
+plot and graph value against its kind's caps (`notes::questions::figure_caps`,
+sizes only: an unfinished figure is admitted; the block's type and value are
+read from the update or the held block, whichever writes them). Nothing past a
+limit is stored (Epo 2026-10-14): the question dialog's inputs stop at each
+limit and its Add buttons at each count, and everything the store's check
+refuses is refused at admission, so a store never discards a room for it. An
+answer turned `open` sends its update to the exact check, which holds its
+accepted texts to `QUIZ_OPEN_ANSWER_MAX`. A list's count
 is bounded like a text's length (held plus added against its cap): only an
 update that may pass a cap copies the room for the exact check, whose walk the
 step counter counts (`Walk::Exact`). An image block waiting for its upload
@@ -1927,7 +1947,10 @@ MathPreview mounts inert, read-only MathLive fields without keyboard/menu contro
 using the same fonts and layout as editing and a spoken-math accessible label. This
 preserves native placeholders, accents and fractions in notes, question editors and
 question/quiz views. KaTeX remains confined to export figures, where empty slots map
-to `\square`; saved editable formulas retain their original placeholders.
+to `\square`; saved editable formulas retain their original placeholders. The
+editors declare the equation nodes and their `$…$`/`$$` input rules in
+`notes/equationPlugins.ts` (copied from @platejs/math 53's `MathRules`) rather
+than importing @platejs/math, whose entries import KaTeX and its stylesheet.
 A display formula wider than its column keeps its size and scrolls sideways in
 MathPreview's own box (question views, question-editor and note equation
 previews, note View); the inert field leaves wheel and touch to that box, which

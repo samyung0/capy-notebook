@@ -1,3 +1,5 @@
+import { EMBED_CATALOG } from '@/api/embeds.generated';
+
 export const QUESTION_TYPES = [
   'mcq',
   'multi',
@@ -13,9 +15,23 @@ export type QuestionType = (typeof QUESTION_TYPES)[number];
 export type CognitiveLevel = 'recall' | 'application' | 'analysis';
 
 export type TextBlock = { type: 'text'; text: string; label?: string };
+type ChartEmbed = Extract<
+  (typeof EMBED_CATALOG.embeds)[number],
+  { kind: 'chart' }
+>;
+/** The chart kinds, from the embed catalog's chart schema. */
+export const CHART_KINDS = (() => {
+  const embed = EMBED_CATALOG.embeds.find(
+    (e): e is ChartEmbed => e.kind === 'chart'
+  );
+  if (!embed) throw new Error('The embed catalog has no chart.');
+  return embed.schema.properties.kind.enum;
+})();
+export type ChartKind = (typeof CHART_KINDS)[number];
+
 export type ChartBlock = {
   type: 'chart';
-  kind: 'bar' | 'hbar' | 'line' | 'area' | 'pie' | 'stacked';
+  kind: ChartKind;
   title: string;
   labels: string[];
   series: { name: string; values: number[] }[];

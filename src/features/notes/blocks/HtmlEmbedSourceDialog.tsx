@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useForm } from 'react-hook-form';
+import { useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
@@ -11,6 +11,7 @@ import {
   htmlBytes,
 } from '@/features/materials/document';
 import { m } from '@/i18n';
+import { textLength } from '@/lib/textLength';
 
 /** An interactive block's caption and snippet. Editors save changes (within the
  * 64 KB cap); without `onSave` it only shows the source. */
@@ -26,6 +27,7 @@ export default function HtmlEmbedSourceDialog({
   onClose: () => void;
 }) {
   const {
+    control,
     register,
     handleSubmit,
     formState: { errors },
@@ -33,7 +35,12 @@ export default function HtmlEmbedSourceDialog({
     defaultValues: { caption: caption ?? '', html },
     resolver: zodResolver(
       z.object({
-        caption: z.string().trim(),
+        caption: z
+          .string()
+          .trim()
+          .refine((value) => textLength(value) <= BLOCK_CAPTION_MAX, {
+            message: m.generate_name_too_long({ max: BLOCK_CAPTION_MAX }),
+          }),
         html: z
           .string()
           .trim()
@@ -44,6 +51,7 @@ export default function HtmlEmbedSourceDialog({
       })
     ),
   });
+  const captionText = useWatch({ control, name: 'caption' });
   return (
     <SimpleDialog
       footer={
@@ -86,6 +94,7 @@ export default function HtmlEmbedSourceDialog({
     >
       {onSave && (
         <InputField
+          count={{ max: BLOCK_CAPTION_MAX, value: textLength(captionText) }}
           error={errors.caption}
           id="html-embed-caption"
           label={m.html_embed_caption()}

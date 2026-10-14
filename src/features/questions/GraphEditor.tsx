@@ -118,7 +118,9 @@ export function GraphEditor({
     );
   const remove = (key: string) =>
     commit(latest.current.rows.filter((row) => row.key !== key));
-  const order = [...rows.map((row) => row.key), draftKey];
+  // Each row is one element: a full graph offers no new row.
+  const full = rows.length >= limits.QUESTION_GRAPH_ELEMENTS_MAX;
+  const order = [...rows.map((row) => row.key), ...(full ? [] : [draftKey])];
   const focus = (key: string | undefined) => {
     if (key) fields.current.get(key)?.focus();
   };
@@ -222,6 +224,7 @@ export function GraphEditor({
           </ol>
           <Button
             className="-mt-1.5 -ml-4 self-start"
+            disabled={full}
             iconLeft="plus"
             onClick={() => {
               const [left, top, right, bottom] = value.board.bbox;
@@ -321,6 +324,7 @@ export function GraphEditor({
                 label={m.question_ui_attribution()}
               >
                 <FieldInput
+                  maxLength={limits.QUESTION_METADATA_MAX}
                   onChange={(event) =>
                     onChange({
                       ...value,
@@ -341,6 +345,7 @@ export function GraphEditor({
               label={m.question_ui_description()}
             >
               <FieldInput
+                maxLength={limits.QUESTION_TEXT_MAX}
                 onChange={(event) =>
                   onChange({ ...value, description: event.target.value })
                 }
@@ -542,7 +547,7 @@ function RowErrorIcon({ message }: { message: string }) {
   return (
     <Tooltip>
       <TooltipTrigger
-        className="grid size-8 place-items-center rounded-button text-solid-error outline-none focus-visible:ring-2 focus-visible:ring-focus"
+        className="grid size-8 place-items-center rounded-button text-solid-error outline-none focus-visible:ring-2 focus-visible:ring-action"
         render={<span role="img" />}
         tabIndex={0}
       >
@@ -643,6 +648,7 @@ function StyleMenu({
             label={m.question_ui_label()}
           >
             <FieldInput
+              maxLength={limits.QUESTION_METADATA_MAX}
               onChange={(event) => {
                 const next = event.target.value;
                 onChange({

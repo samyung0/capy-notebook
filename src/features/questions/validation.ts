@@ -3,7 +3,7 @@ import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
 import { quantityValuePattern } from './quantity';
-import { gapNumbers, type Question } from './types';
+import { CHART_KINDS, gapNumbers, type Question } from './types';
 
 const letterStart = /^[A-Za-z]/;
 const svgStart = /^\s*<svg[\s>]/;
@@ -236,7 +236,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
   z
     .strictObject({
       gridlines: z.enum(['normal', 'fine']).optional(),
-      kind: z.enum(['bar', 'hbar', 'line', 'area', 'pie', 'stacked']),
+      kind: z.enum(CHART_KINDS),
       labels: z.array(text).min(1).max(limits.QUESTION_CHART_LABELS_MAX),
       series: z
         .array(

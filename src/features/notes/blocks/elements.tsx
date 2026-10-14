@@ -18,6 +18,7 @@ import {
 import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { ContentSwap } from '@/components/ui/ContentSwap';
+import { CharCount } from '@/components/ui/Input';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
@@ -59,6 +60,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { QuestionView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { textLength } from '@/lib/textLength';
 import { useOptionalEditorRuntime } from '../EditorRuntime';
 import {
   FLASHCARD_BACK_CLASS,
@@ -649,30 +651,37 @@ export function MermaidElement(props: PlateElementProps) {
         {readOnly
           ? caption.trim() && <p className={MERMAID_CAPTION_CLASS}>{caption}</p>
           : (captioning || caption) && (
-              <input
-                aria-label={m.editor_caption_add()}
-                className={cn(
-                  MERMAID_CAPTION_CLASS,
-                  'block w-full bg-transparent outline-none placeholder:text-placeholder'
-                )}
-                maxLength={BLOCK_CAPTION_MAX}
-                onBlur={() => setCaptioning(false)}
-                onChange={(event) => {
-                  const at = locate();
-                  if (at) setMermaidCaption(editor, at, event.target.value);
-                }}
-                onKeyDown={(event) => {
-                  // Keep editor shortcuts (Backspace, Enter, marks) out of the field.
-                  event.stopPropagation();
-                  if (event.key === 'Enter' || event.key === 'Escape') {
-                    event.preventDefault();
-                    event.currentTarget.blur();
-                  }
-                }}
-                placeholder={m.editor_caption_placeholder()}
-                ref={captionRef}
-                value={caption}
-              />
+              <div className="flex items-baseline gap-2">
+                <input
+                  aria-label={m.editor_caption_add()}
+                  className={cn(
+                    MERMAID_CAPTION_CLASS,
+                    'block min-w-0 flex-1 bg-transparent outline-none placeholder:text-placeholder'
+                  )}
+                  maxLength={BLOCK_CAPTION_MAX}
+                  onBlur={() => setCaptioning(false)}
+                  onChange={(event) => {
+                    const at = locate();
+                    if (at) setMermaidCaption(editor, at, event.target.value);
+                  }}
+                  onKeyDown={(event) => {
+                    // Keep editor shortcuts (Backspace, Enter, marks) out of the field.
+                    event.stopPropagation();
+                    if (event.key === 'Enter' || event.key === 'Escape') {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  placeholder={m.editor_caption_placeholder()}
+                  ref={captionRef}
+                  value={caption}
+                />
+                <CharCount
+                  className="shrink-0"
+                  max={BLOCK_CAPTION_MAX}
+                  value={textLength(caption)}
+                />
+              </div>
             )}
       </div>
       {/* Slate's void spacer is already invisible; display:none would leave

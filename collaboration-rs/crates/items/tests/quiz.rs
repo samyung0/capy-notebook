@@ -571,7 +571,7 @@ fn values_past_their_caps_are_refused_at_admission() {
         |doc| {
             let stem = map_in(doc, &["questions", &question, "stem"]);
             let block = stem.insert(&mut doc.transact_mut(), "b9", MapPrelim::default());
-            block.insert(&mut doc.transact_mut(), "label", "l".repeat(12_001));
+            block.insert(&mut doc.transact_mut(), "label", "l".repeat(1_001));
         },
         "outside its shape",
     );
@@ -597,10 +597,117 @@ fn values_past_their_caps_are_refused_at_admission() {
     )
     .insert(&mut client.transact_mut(), "unit", "m".repeat(100));
     map_in(&client, &part).insert(&mut client.transact_mut(), "marks", 20.0);
+    let stem = map_in(&client, &["questions", &question, "stem"]);
+    let block = stem.insert(&mut client.transact_mut(), "b9", MapPrelim::default());
+    block.insert(&mut client.transact_mut(), "order", "a5");
+    block.insert(&mut client.transact_mut(), "type", "text");
+    block.insert(&mut client.transact_mut(), "label", "l".repeat(1_000));
     let mut check = validator(Kind::Quiz, &content);
     accepted(&mut check, &content, &client);
     assert!(items::quiz::check_content_caps(&content.transact()).is_ok());
     let _ = open_question;
+}
+
+/// A chart, plot or graph past its kind's caps is refused as it arrives,
+/// whether the update writes its value, its type or both; an unfinished one
+/// (D4) is admitted.
+#[test]
+fn figures_past_their_caps_are_refused_at_admission() {
+    let questions = fixtures();
+    let (question, _) = part_of(&questions, "boolean");
+    let figure = |doc: &Doc, kind: &str, value: Value| {
+        let stem = map_in(doc, &["questions", &question, "stem"]);
+        let block = stem.insert(&mut doc.transact_mut(), "b9", MapPrelim::default());
+        block.insert(&mut doc.transact_mut(), "order", "a5");
+        block.insert(&mut doc.transact_mut(), "type", kind);
+        let value: Any = serde_json::from_value(value).unwrap();
+        block.insert(&mut doc.transact_mut(), "value", value);
+    };
+    refused(
+        Kind::Quiz,
+        |doc| figure(doc, "chart", json!({ "title": "t".repeat(1_001) })),
+        "title too long",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| figure(doc, "chart", json!({ "labels": vec!["a"; 51] })),
+        "too many items",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| figure(doc, "plot", json!({ "series": vec![json!({}); 5] })),
+        "too many items",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            let term = "x+".repeat(100) + "x";
+            figure(
+                doc,
+                "graph",
+                json!({ "elements": [{ "type": "functiongraph", "term": term }] }),
+            )
+        },
+        "supported mathematical expression",
+    );
+    // A chart's value retyped as a plot is checked as a plot.
+    let (content, _, client, _) = rooms(&questions);
+    figure(&client, "chart", json!({ "series": vec![json!({}); 6] }));
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    map_in(&client, &["questions", &question, "stem", "b9"]).insert(
+        &mut client.transact_mut(),
+        "type",
+        "plot",
+    );
+    let (result, _) = admit(&mut check, &content, &diff(&client, &content));
+    assert!(
+        matches!(result, Err(Refusal::Shape(ref m)) if m.contains("too many items")),
+        "{result:?}"
+    );
+    // Unfinished, admitted and kept by the store's caps.
+    let (content, _, client, _) = rooms(&questions);
+    figure(
+        &client,
+        "chart",
+        json!({ "title": "", "labels": [], "series": [] }),
+    );
+    let mut check = validator(Kind::Quiz, &content);
+    accepted(&mut check, &content, &client);
+    assert!(items::quiz::check_content_caps(&content.transact()).is_ok());
+}
+
+/// Accepted answers turned open are held to the open bound in the update
+/// that turns them; ticks are counted like any answer list.
+#[test]
+fn answer_keys_past_their_caps_are_refused() {
+    let questions = fixtures();
+    let (_, short) = part_of(&questions, "short");
+    refused(
+        Kind::QuizKeys,
+        |doc| {
+            let accepted = map_in(doc, &["keys", &short, "accepted"]);
+            let first = first_key(&accepted, doc);
+            text_in(doc, &["keys", &short, "accepted", &first], "text").insert(
+                &mut doc.transact_mut(),
+                0,
+                &"a".repeat(5_001),
+            );
+            map_in(doc, &["keys", &short]).insert(&mut doc.transact_mut(), "type", "open");
+        },
+        "accepted answers",
+    );
+    let (_, multi) = part_of(&questions, "multi");
+    refused(
+        Kind::QuizKeys,
+        |doc| {
+            let correct = map_in(doc, &["keys", &multi, "correct"]);
+            for i in 0..101 {
+                correct.insert(&mut doc.transact_mut(), format!("t{i}"), true);
+            }
+        },
+        "an answer list",
+    );
 }
 
 #[test]

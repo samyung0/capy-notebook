@@ -107,9 +107,8 @@ export interface HtmlEmbedElement extends MaterialElement {
 export const HTML_EMBED_TYPE = 'html_embed';
 export const HTML_EMBED_MAX_BYTES = EMBED_CATALOG.limits.HTML_EMBED_MAX_BYTES;
 export const HTML_EMBED_MAX_COUNT = EMBED_CATALOG.limits.HTML_EMBED_MAX_COUNT;
-/** The HTML embed and inline Mermaid captions' silent input bound (frontend
- * only; the embed catalog has no caption limit). */
-export const BLOCK_CAPTION_MAX = 300;
+/** An HTML embed's caption, and the inline Mermaid caption's input bound. */
+export const BLOCK_CAPTION_MAX = EMBED_CATALOG.limits.BLOCK_CAPTION_MAX;
 
 export function htmlBytes(html: string): number {
   return new TextEncoder().encode(html).length;

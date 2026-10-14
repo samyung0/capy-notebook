@@ -102,30 +102,26 @@ Fixed with the Go and browser catalog tests (see Progress): the missing
 `RESIZABLE_TYPES`' `diagram` and `mindmap`, list cards labelling mindmaps and
 diagrams "Note", `blocks.ts`' unused fence writers, `MermaidBlockLabel.ts`,
 Go's `image`, `toggle` and `details` leftovers and Go's `pending` on a
-resolved reference. Open:
+resolved reference. Fixed in the Rust round: `inspect_document` prints a
+plot's `block`, Rust keeps one media list (`material::MEDIA_TYPES`), and
+`pending` is refused on any reference in Go and Rust alike. Open:
 
-- `inspect_document` prints a chart's or graph's `block` but not a plot's
-  (`collaboration-rs/crates/notes/src/edit.rs:1375`).
-- Two media-type lists in Rust: `edit.rs:189` (8 types, adds `video`,
-  `media_embed`, `youtube`, `excalidraw`) and `material.rs:24` (4).
 - **Footnotes** (decided 2026-10-14: text on import). A reference is its
   label in superscript, a definition its paragraphs led by that label; the
   catalog no longer lists `footnoteReference`/`footnoteDefinition`.
 - **Card images in fences** (decided 2026-10-14: dropped). No fence ever
   carries one (agents write fronts and backs, export flattens a set to text,
   Copy moves the block), and a hand-written one names another document's
-  asset. `markdownConvert.ts` `draft()` and `dialogContext.tsx`
-  `embeddedDraftFromFence` still convert a fence twice: merge them when either
-  is next touched.
+  asset. Agent writes, paste and import read a fence with one parser,
+  `parseEmbeddedFence` (merged 2026-10-14).
 - The notes markdown corpus (`collaboration-rs/crates/notes/tests/corpus`) has
   no chart, plot or graph fence; it is a frozen Node oracle, so new cases go in
   by hand.
 - The note format never mentions a ```` ```graph ```` fence while the
   converter accepts one (paste and export round trips); intended, but the
   catalog should say so.
-- Chart kinds are listed four times in TS (`questions/types.ts`,
-  `questions/validation.ts`, `chat/schema.ts`, `BlockEditor.tsx`) and
-  `openui.py` keeps its own `_SKIPPED_PROPS`.
+- `openui.py` keeps its own `_SKIPPED_PROPS` (TS chart kinds are one
+  `CHART_KINDS` read from the catalog since 2026-10-14).
 
 ## Decisions (Epo, 2026-10-13)
 
@@ -191,9 +187,7 @@ from inspect at `edit.rs:1375`). Add these catalog fields and test them:
   diagram Views stay static. Intended for now; the catalog's surfaces field
   should say so.
 
-Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
-`edit.rs`'s media_embed, youtube, excalidraw, which are not node types); align
-`validateMaterialRef` with Rust on `pending`.
+These drift items were fixed in the Rust round (see Drift above).
 
 ## Work split
 
@@ -275,4 +269,15 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   of dropping unknown blocks. Left: duplicate top-level ids and a few
   crafted-only shapes are caught at load, not admission (`openwiki/embeds.md`);
   a test keeping the live editor's element types inside the catalog (embeds
-  side).
+  side, landed 2026-10-14 in `embedCatalog.test.ts`).
+- **Nothing past a limit is stored** (Epo 2026-10-14, done on the Mac with
+  the PC session inactive; the work split is unchanged): the live quiz room
+  checks chart, plot and graph values against their kind's caps at admission
+  and in the store (`notes::questions::figure_caps`, sizes only), labels and
+  attributions against `QUESTION_METADATA_MAX`, image sizes and ids, the
+  question, tick and matching-pair counts, and an answer turned open against
+  the open bound; an interactive block's caption has a catalog limit,
+  `BLOCK_CAPTION_MAX`, enforced by Go, the store and admission. **Mermaid
+  caption limit** (decided 2026-10-14, `human/frontend/plate-editor.md`): the
+  input stops at 300 on the user side only; the servers bound it by the
+  document's limits, a deliberate exception.

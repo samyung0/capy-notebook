@@ -226,7 +226,7 @@ export function CardDialog({
               {m.editor_card_back()}
             </InputTitle>
             <Textarea
-              className="max-h-none min-h-42"
+              className="max-h-88 min-h-42"
               id="card-back"
               maxLength={MAX_BACK}
               onChange={back.onChange}

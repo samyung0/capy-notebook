@@ -124,6 +124,7 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   `mermaid` for mindmap and diagram, none for a note) and whether it is an
   item (quiz, flashcards).
 - **`limits`**: `HTML_EMBED_MAX_BYTES`, `HTML_EMBED_MAX_COUNT`,
+  `BLOCK_CAPTION_MAX` (an interactive block's caption),
   `MEDIA_WIDTH_MIN`/`MAX`, `CARD_FRONT_MAX`/`CARD_BACK_MAX` and the question
   bounds (`fieldlimits.QuestionBounds`). The notes and items crates read
   them there, with no copy of their own. The Rust file declares each as a

@@ -160,6 +160,7 @@ export function StringList({
         </div>
       ))}
       <Button
+        disabled={values.length >= limits.QUESTION_ANSWERS_MAX}
         iconLeft="plus"
         onClick={() => onChange([...values, ''])}
         size="sm"
@@ -180,10 +181,13 @@ export const markOptions = Array.from(
 export function MarkschemeList({
   label,
   items,
+  max,
   onChange,
 }: {
   label: string;
   items: MarkItem[];
+  /** Marking items a part holds at most (a quiz's bound is lower). */
+  max: number;
   onChange: (items: MarkItem[]) => void;
 }) {
   const update = (index: number, change: Partial<MarkItem>) =>
@@ -232,6 +236,7 @@ export function MarkschemeList({
         </div>
       ))}
       <Button
+        disabled={items.length >= max}
         iconLeft="plus"
         onClick={() => onChange([...items, { marks: 1, text: '' }])}
         size="sm"
@@ -275,9 +280,12 @@ export function emptyAnswer(type: QuestionType): QuestionAnswer {
 
 export function AnswerEditor({
   answer,
+  bank,
   onChange,
 }: {
   answer: QuestionAnswer;
+  /** A bank question: open answers take the bank's longer text bound. */
+  bank: boolean;
   onChange: (answer: QuestionAnswer) => void;
 }) {
   return (
@@ -344,6 +352,7 @@ export function AnswerEditor({
             </div>
           ))}
           <Button
+            disabled={answer.options.length >= limits.QUESTION_ANSWERS_MAX}
             iconLeft="plus"
             onClick={() =>
               onChange({ ...answer, options: [...answer.options, ''] })
@@ -373,7 +382,7 @@ export function AnswerEditor({
         <StringList
           label={m.question_ui_accepted_answers()}
           maxLength={
-            answer.type === 'open'
+            answer.type === 'open' && !bank
               ? limits.QUIZ_OPEN_ANSWER_MAX
               : limits.QUESTION_TEXT_MAX
           }
@@ -437,6 +446,7 @@ export function AnswerEditor({
             </div>
           ))}
           <Button
+            disabled={answer.accepted.length >= limits.QUESTION_ANSWERS_MAX}
             iconLeft="plus"
             onClick={() =>
               onChange({ ...answer, accepted: [...answer.accepted, ['']] })
@@ -531,6 +541,7 @@ export function AnswerEditor({
             </div>
           ))}
           <Button
+            disabled={answer.pairs.length >= limits.QUESTION_ANSWERS_MAX}
             iconLeft="plus"
             onClick={() =>
               onChange({

@@ -473,7 +473,8 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
     },
     run: (editor, dialogs) => {
       if (insideContainer(editor)) return;
-      if (dialogs) void dialogs.insertEmbedded(editor, 'quiz', 'questions: []');
+      if (dialogs)
+        void dialogs.insertEmbedded(editor, { kind: 'quiz', questions: [] });
     },
     widget: 'quiz',
   },
@@ -491,11 +492,10 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
       if (insideContainer(editor)) return;
       // A set holds at least one card; the edit page drops a blank one on save.
       if (dialogs)
-        void dialogs.insertEmbedded(
-          editor,
-          'flashcards',
-          'cards:\n  - front: ""\n    back: ""\n'
-        );
+        void dialogs.insertEmbedded(editor, {
+          cards: [{ back: '', front: '' }],
+          kind: 'flashcards',
+        });
     },
     widget: 'flashcards',
   },

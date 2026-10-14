@@ -64,8 +64,6 @@ import {
   useTodoListElement,
   useTodoListElementState,
 } from '@platejs/list/react';
-import { MathRules } from '@platejs/math';
-import { EquationPlugin, InlineEquationPlugin } from '@platejs/math/react';
 import {
   AudioPlugin,
   FilePlugin,
@@ -123,6 +121,12 @@ import {
   buildCollaborationPlugins,
   collaborationTrailingBlockPlugin,
 } from './collaborationPlugins';
+import {
+  EquationPlugin,
+  equationRule,
+  InlineEquationPlugin,
+  inlineEquationRule,
+} from './equationPlugins';
 import { LinkFloatingToolbar } from './LinkFloatingToolbar';
 import { MediaPlaceholderElement, YouTubeEmbedElement } from './MediaNodes';
 import { MentionInputElement } from './MentionInput';
@@ -588,12 +592,8 @@ export const MaterialKit: AnyPlugin[] = [
   CalloutPlugin,
   ColumnPlugin,
   ColumnItemPlugin,
-  InlineEquationPlugin.configure({
-    inputRules: [MathRules.markdown({ variant: '$' })],
-  }),
-  EquationPlugin.configure({
-    inputRules: [MathRules.markdown({ on: 'break', variant: '$$' })],
-  }),
+  InlineEquationPlugin.configure({ inputRules: [inlineEquationRule] }),
+  EquationPlugin.configure({ inputRules: [equationRule] }),
   MentionPlugin.configure({
     options: { triggerPreviousCharPattern: /^$|^[\s"']$/ },
   }),
