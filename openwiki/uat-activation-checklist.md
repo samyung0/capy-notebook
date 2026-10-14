@@ -255,7 +255,8 @@ Clerk development instance. Point a local gateway at the UAT database only with
   `[Report Only]` image message and `capy-web` gets no image report. Script
   reports from the SPA are expected at first (it is how we learn what the
   app needs); collect them for the Editor session rather than treating them
-  as failures. The note journey already fails on any console error on the
+  as failures. A `script-src` report with `eval` from Zod's chunk is not
+  expected: the SPA sets Zod to `jitless` first. The note journey already fails on any console error on the
   shared note page. The Sentry scrubbing rule (runbook §5 step 9) is in place
   before this deploy.
 - The script policy on the Worker's pages (runbook §2.4): `curl -s -o
@@ -267,7 +268,8 @@ Clerk development instance. Point a local gateway at the UAT database only with
   `/array/{key}/config.js` paths, with no `'unsafe-inline'`, no
   `'unsafe-eval'` and no `sha256-` hash, then `script-src-attr 'none'`,
   `frame-src https://uat.capy-embed.pages.dev https://www.youtube-nocookie.com`,
-  `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`. Web
+  `form-action 'self'`, `frame-ancestors 'self'`, `object-src 'none'` and
+  `base-uri 'none'`. Web
   Analytics' automatic beacon, Zaraz and Rocket Loader are off on the zone
   (runbook §2). Signed out, open a shared note
   with a formula, a diagram, an embedded quiz, an interactive block and a

@@ -41,6 +41,7 @@ const locked = (policy: string | null) => {
   const found = directives(policy);
   return {
     'base-uri': found['base-uri'],
+    'frame-ancestors': found['frame-ancestors'],
     'object-src': found['object-src'],
     'script-src-attr': found['script-src-attr'],
     scriptsNamed:
@@ -52,6 +53,7 @@ const locked = (policy: string | null) => {
 };
 const LOCKED = {
   'base-uri': ["'none'"],
+  'frame-ancestors': ["'self'"],
   'object-src': ["'none'"],
   'script-src-attr': ["'none'"],
   scriptsNamed: true,
@@ -100,12 +102,13 @@ const answer = (data: unknown) =>
 
 // Security regression (human deployment-runbook 2026-10-15 page scripts):
 // pages the site Worker renders run scripts only from the app and named
-// hosts, never inline or from an attribute.
+// hosts, never inline or from an attribute, and only the app frames them.
 describe('enforced script policy', () => {
   it('names the app, Clerk and this PostHog project for scripts, and only embed and YouTube frames', () => {
     expect(directives(pagePolicy(DEPLOYED))).toEqual({
       'base-uri': ["'none'"],
       'form-action': ["'self'"],
+      'frame-ancestors': ["'self'"],
       'frame-src': [
         'https://uat.capy-embed.pages.dev',
         'https://www.youtube-nocookie.com',

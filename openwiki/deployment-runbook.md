@@ -1027,15 +1027,18 @@ Two content security policies, both built once per SPA build by
     `'unsafe-eval'`: the Worker adds the SHA-256 of each inline script its
     own template holds (a build's templates hold none, Vite bundles them; the
     dev server's carry React's refresh preamble), so markup a render writes
-    into the page never runs. The share page script sets Zod to `jitless` first
-    (`src/share/jitless.ts`), so Zod never probes `new Function`;
+    into the page never runs. The SPA's and the share pages' scripts set Zod
+    to `jitless` first (`src/lib/zodJitless.ts`), so Zod never probes
+    `new Function` (the summary and error pages' script builds no schema);
   - `script-src-attr 'none'` (no event-handler attributes),
     `worker-src 'self' blob:` (clerk-js's timer worker),
     `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
     MathLive and Mermaid write style attributes),
     `frame-src` `VITE_EMBED_ORIGIN` and `https://www.youtube-nocookie.com`,
     `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`;
-  - no `frame-ancestors`: who may frame the pages is unchanged.
+  - `frame-ancestors 'self'`: only the app may frame these pages, and
+    nothing in it does today, so an outside site (an LMS, a blog) cannot
+    embed a shared quiz or note.
 
   The SPA gets the same `script-src` report-only, inside its image header,
   plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and

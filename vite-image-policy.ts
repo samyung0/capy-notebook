@@ -96,9 +96,9 @@ function scriptSources(env: Env): string[] {
  * Worker adds the hash of each inline script its own template carries,
  * workers/site/handler.ts), workers also from `blob:` (clerk-js's timers),
  * frames only for interactive blocks and YouTube, forms posting only to the
- * app, no plugins and no `<base>`. Styles stay open to inline: the Worker
- * inlines the page's CSS, and MathLive and Mermaid write style attributes.
- * Framing is unchanged (no `frame-ancestors`).
+ * app, framed only by the app, no plugins and no `<base>`. Styles stay open
+ * to inline: the Worker inlines the page's CSS, and MathLive and Mermaid
+ * write style attributes.
  */
 export function pagePolicy(env: Env): string {
   const frames = [
@@ -112,6 +112,7 @@ export function pagePolicy(env: Env): string {
     "style-src 'self' 'unsafe-inline'",
     `frame-src ${frames.join(' ')}`,
     "form-action 'self'",
+    "frame-ancestors 'self'",
     "object-src 'none'",
     "base-uri 'none'",
   ]);

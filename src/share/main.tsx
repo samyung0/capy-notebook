@@ -1,4 +1,4 @@
-import './jitless';
+import '@/lib/zodJitless';
 import { bindPublicChrome } from '@/components/app/publicChrome';
 import { scrollToTocHeading } from '@/features/materials/scrollToTocHeading';
 import {
