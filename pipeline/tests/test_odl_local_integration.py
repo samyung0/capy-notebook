@@ -173,7 +173,7 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
     assert measurements[-1]["receipt_id"] == artifact["fingerprint"]
     assert len(measurements) == 1
 
-    # Both the client spool hit and the HTTP server hit preserve creator ownership.
+    # The parser serves the cached bundle to both; only its creator gets the receipt.
     for identity, expected_receipts in ((request_id, 2), (request_id + "-other", 2)):
         cached, key, fingerprint = await asyncio.to_thread(
             parser_client.parse_to_bundle,

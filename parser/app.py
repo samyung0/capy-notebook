@@ -16,9 +16,12 @@ parse deadline or OOM-killed is quarantined by fingerprint and only its parse
 child is replaced; one with a page past its OCR limit is quarantined the same
 way.
 
-The API process never opens a source with MuPDF: an admission process counts a
-PDF's pages, and the parse children do the rest. Children answer in JSON and
-plain files, never pickle.
+The API process opens no source with MuPDF: an admission process counts a
+PDF's pages and the parse children parse. The one file a child wrote that it
+opens with MuPDF is the parsed PDF whose result asks for Office page evidence
+after OCR (``_merge_ocr``); that step leaves with the OCR stage. Children answer
+in JSON and plain files, never pickle. The API serves a cached bundle only as
+it wrote it, and no other process of the parser user can read its memory.
 """
 
 from __future__ import annotations
@@ -127,11 +130,16 @@ OCR_OOM_SCORE_ADJ = 500
 # row, with no page answered in between, restart the whole parser.
 OCR_DEATH_LIMIT = 3
 # The admission process counts one PDF's pages within this time and address
-# space; past either, the document goes to a parse child uncounted and its
-# deadline and OOM handling apply. A 26 MiB, 610-page textbook counts in 9 ms
-# (150 ms with its cross-reference table rebuilt) at a VmPeak under 140 MiB.
-ADMISSION_TIMEOUT_S = 30
+# space; past either, the document goes to a parse child uncounted, which
+# checks the page cap itself under its deadline and OOM handling. A 26 MiB,
+# 610-page textbook counts in 9 ms (150 ms with its cross-reference table
+# rebuilt) at a VmPeak under 140 MiB.
+ADMISSION_TIMEOUT_S = 10
 ADMISSION_MAX_BYTES = 1 << 30
+# A child's answer on its pipe: status, small payloads, one page's OCR lines.
+# A longer one ends that child.
+MESSAGE_MAX_BYTES = 1 << 24
+PR_SET_DUMPABLE = 4
 SHARED_DIR = Path(
     os.environ.get("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
 ).resolve()
@@ -252,7 +260,7 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
     stage: the parsed PDF goes to ``ocr_path`` and ``_merge_ocr`` finishes the
     result. Without it (bench scripts) OCR runs here.
     """
-    from odl.document import normalize_document
+    from odl.document import normalize_document, pdf_page_count
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     normalized = normalize_document(document.data, document.name, WORK_DIR)
@@ -260,11 +268,9 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
         from odl.capture import capture_page
 
         return capture_page(normalized.data, **document.capture)
-    if normalized.preview_pdf is not None:
-        from odl.document import pdf_page_count
-
-        # Office pages exist only after LibreOffice; PDFs were counted at admission.
-        _check_page_count(pdf_page_count(normalized.data))
+    # Every document: admission counts only what starts like a PDF, and Office
+    # pages exist only after LibreOffice.
+    _check_page_count(pdf_page_count(normalized.data))
     from odl.refine import parse_pdf
 
     work = Path(tempfile.mkdtemp(prefix="doc-", dir=WORK_DIR))
@@ -361,6 +367,17 @@ def _release_memory() -> None:
         ctypes.CDLL("libc.so.6").malloc_trim(0)
     except (OSError, AttributeError):
         pass  # Not glibc (macOS development).
+
+
+def _make_undumpable() -> None:
+    """No other process of the parser user may trace the API or read its
+    memory and environment (children start dumpable again on exec)."""
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+    except OSError:
+        return  # Not glibc (macOS development).
+    if libc.prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_DUMPABLE) failed")
 
 
 def _set_oom_score_adj(value: int) -> None:
@@ -559,9 +576,16 @@ class _Child:
         if self._responses is None:
             raise ParserRuntimeFailure(f"{self._name} is not running")
         try:
-            message = await asyncio.to_thread(self._responses.recv_bytes)
-        except (EOFError, OSError) as exc:
+            message = await asyncio.to_thread(
+                self._responses.recv_bytes, MESSAGE_MAX_BYTES
+            )
+        except EOFError as exc:
             raise await self._exited() from exc
+        except OSError as exc:
+            # An answer over the limit leaves the pipe mid-message: end the
+            # child, which is replaced before its next use.
+            self.terminate()
+            raise ParserRuntimeFailure(f"{self._name} sent an invalid answer") from exc
         return json.loads(message)
 
     def terminate(self) -> None:
@@ -684,6 +708,9 @@ def _read_worker_result(path: Path) -> dict[str, Any]:
     parts = []
     with path.open("rb") as result_file:
         left = os.fstat(result_file.fileno()).st_size
+        # A larger result could not become a bundle anyway.
+        if left > MAX_ARTIFACT_EXPANDED_BYTES:
+            raise ValueError("parser child returned an oversized result file")
         for _ in range(1 + len(_RESULT_BYTES)):
             size = int.from_bytes(result_file.read(8), "big")
             left -= 8 + size
@@ -853,6 +880,10 @@ class ParserRuntime:
         self._queue.clear()
         _schedule_restart_backstop()
 
+    def _ocr_backlog(self) -> int:
+        """Text-less pages handed to the OCR stage and not yet read."""
+        return sum(doc.work.ocr_pages for doc in self._ocr_docs)
+
     async def page_count(self, data: bytes) -> int:
         """A PDF source's page count from the admission process, or 0: an
         Office source (its parse child counts after LibreOffice), or a PDF the
@@ -897,6 +928,10 @@ class ParserRuntime:
         async with self._condition:
             if self.active_jobs >= QUEUE_DEPTH:
                 raise ParserCapacity("parser document queue is full")
+            # Until the OCR rework: no parse starts while the OCR stage is
+            # full, so the handoff check below rarely drops a finished parse.
+            if document.capture is None and self._ocr_backlog() >= OCR_PAGE_CAP:
+                raise ParserCapacity("parser OCR backlog is full")
             self.active_jobs += 1
             work = _QueuedDocument(document, time.perf_counter(), loop.create_future())
             work.future.add_done_callback(lambda _: self._finished(work))
@@ -993,10 +1028,7 @@ class ParserRuntime:
                 )
             )
             return False
-        if (
-            sum(doc.work.ocr_pages for doc in self._ocr_docs) + len(pages)
-            > OCR_PAGE_CAP
-        ):
+        if self._ocr_backlog() + len(pages) > OCR_PAGE_CAP:
             work.future.set_exception(ParserCapacity("parser OCR backlog is full"))
             return False
         work.ocr_pages = len(pages)
@@ -1163,7 +1195,7 @@ class ParserRuntime:
             "queued_jobs": len(self._queue),
             "executing_jobs": len(executing),
             "ocr_stage_jobs": len(self._ocr_docs),
-            "ocr_queued_pages": sum(doc.work.ocr_pages for doc in self._ocr_docs),
+            "ocr_queued_pages": self._ocr_backlog(),
             "oldest_active_job_s": round(max(0.0, oldest_active_s), 3),
             "oldest_queued_job_s": round(oldest_queued_s, 3),
             "last_job_completed_age_s": last_completed_age_s,
@@ -1197,6 +1229,7 @@ _artifact_tasks_lock = asyncio.Lock()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    _make_undumpable()
     (SHARED_DIR / "sources").mkdir(parents=True, exist_ok=True)
     (SHARED_DIR / "artifacts").mkdir(parents=True, exist_ok=True)
     (SHARED_DIR / "quarantine").mkdir(parents=True, exist_ok=True)
@@ -1427,22 +1460,37 @@ def _read_source(key: str, expected_sha256: str) -> bytes:
     return bytes(body)
 
 
+# Each bundle this process published, by fingerprint: its digest and its
+# creator's receipt. The spool is served only as this process wrote it; any
+# other file there (after a restart, every one) is deleted and parsed again.
+_published: dict[str, tuple[str, str, dict[str, Any]]] = {}
+
+
+def _record_bundle(
+    fingerprint: str, digest: str, request_id: str, measurements: dict[str, Any]
+) -> None:
+    for known in list(_published):  # Entries leave with their files.
+        if not _shared_path(f"artifacts/{known}.zip", "artifacts").exists():
+            _published.pop(known, None)
+    _published[fingerprint] = (digest, request_id, dict(measurements))
+
+
 def _artifact_descriptor(key: str, fingerprint: str) -> dict[str, Any] | None:
     path = _shared_path(key, "artifacts")
+    published = _published.get(fingerprint)
     try:
         size = path.stat().st_size
     except FileNotFoundError:
         return None
-    if size <= 0 or size > MAX_ARTIFACT_BYTES:
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
-        return None
     digest = hashlib.sha256()
-    with path.open("rb") as artifact:
-        while chunk := artifact.read(1024 * 1024):
-            digest.update(chunk)
+    if 0 < size <= MAX_ARTIFACT_BYTES:
+        with path.open("rb") as artifact:
+            while chunk := artifact.read(1024 * 1024):
+                digest.update(chunk)
+    if published is None or published[0] != digest.hexdigest():
+        _published.pop(fingerprint, None)
+        _unlink(path)
+        return None
     path.touch()
     return {
         "key": key,
@@ -1454,38 +1502,12 @@ def _artifact_descriptor(key: str, fingerprint: str) -> dict[str, Any] | None:
     }
 
 
-def _artifact_receipt(
-    key: str, fingerprint: str, source_sha256: str, request_id: str
-) -> dict[str, Any]:
-    """Recover the creating job's receipt from an atomically published bundle
-    of the same source bytes."""
-    if not request_id:
+def _artifact_receipt(fingerprint: str, request_id: str) -> dict[str, Any]:
+    """The creating job's receipt for a bundle this process published."""
+    published = _published.get(fingerprint)
+    if not request_id or published is None or published[1] != request_id:
         return {}
-    path = _shared_path(key, "artifacts")
-    try:
-        with zipfile.ZipFile(path) as archive:
-            info = archive.getinfo("manifest.json")
-            if info.file_size <= 0 or info.file_size > 64 << 10:
-                return {}
-            manifest = json.loads(archive.read(info))
-    except (FileNotFoundError, KeyError, OSError, ValueError, zipfile.BadZipFile):
-        return {}
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("schema") != ARTIFACT_SCHEMA
-        or manifest.get("source_fingerprint") != fingerprint
-        or manifest.get("source_sha256") != source_sha256
-    ):
-        return {}
-    receipt = manifest.get("parse_receipt")
-    if (
-        not isinstance(receipt, dict)
-        or receipt.get("id") != fingerprint
-        or receipt.get("request_id") != request_id
-        or not isinstance(receipt.get("measurements"), dict)
-    ):
-        return {}
-    return {"_receipt_id": fingerprint, **receipt["measurements"]}
+    return {"_receipt_id": fingerprint, **published[2]}
 
 
 def _quarantine_key(fingerprint: str) -> str:
@@ -1738,9 +1760,7 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
         if cached := await asyncio.to_thread(
             _artifact_descriptor, output_key, fingerprint
         ):
-            receipt = await asyncio.to_thread(
-                _artifact_receipt, output_key, fingerprint, source_sha256, request_id
-            )
+            receipt = _artifact_receipt(fingerprint, request_id)
             return JSONResponse({"artifact": cached, **receipt}, status_code=200)
         if quarantined := await asyncio.to_thread(_quarantine, fingerprint):
             reason = str(quarantined.get("reason") or "parse_hard_timeout")
@@ -1847,6 +1867,8 @@ async def _produce_artifact(
             measurements,
         )
         digest = hashlib.sha256(bundle).hexdigest()
+        # Recorded first: a request seeing the file sees its record too.
+        _record_bundle(fingerprint, digest, request_id, measurements)
         started = time.perf_counter()
         await asyncio.to_thread(_write_artifact, output_key, bundle)
         write_ms = round((time.perf_counter() - started) * 1000)

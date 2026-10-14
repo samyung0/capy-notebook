@@ -16,8 +16,10 @@ Artifacts are addressed by a fingerprint over the source object, route, parser
 version, and artifact schema. A ZIP lives from publication until the ingest
 continuation that consumed it finishes; meanwhile a retry of the creating job
 recovers it with its receipt, and a concurrent job for identical bytes reuses
-it without one. Whether cached or fresh, a ZIP is used only when its manifest
-names the SHA-256 of the source this job sent; otherwise it counts as missing.
+it without one, both through the parser, which serves a cached ZIP only as it
+wrote it. This client reads a private copy whose SHA-256 is the one the parser
+answered, never the spool file, and uses it only when its manifest names the
+SHA-256 of the source this job sent; otherwise the ZIP counts as missing.
 Database donors independently reuse indexed content; otherwise the retained
 source is parsed again.
 """
@@ -28,9 +30,11 @@ import hashlib
 import json
 import logging
 import shutil
+import tempfile
 import time
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
+from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -169,72 +173,6 @@ def _shared_path(key: str) -> Path:
     return path
 
 
-def _artifact_receipt(
-    path: Path, fingerprint: str, source_sha256: str, request_id: str
-) -> dict[str, Any]:
-    if not request_id:
-        return {}
-    try:
-        with zipfile.ZipFile(path) as archive:
-            info = archive.getinfo("manifest.json")
-            if info.file_size <= 0 or info.file_size > 64 << 10:
-                return {}
-            manifest = json.loads(archive.read(info))
-    except (KeyError, OSError, ValueError, zipfile.BadZipFile):
-        return {}
-    if (
-        not isinstance(manifest, dict)
-        or manifest.get("schema") != ARTIFACT_SCHEMA
-        or manifest.get("source_fingerprint") != fingerprint
-        or manifest.get("source_sha256") != source_sha256
-    ):
-        return {}
-    receipt = manifest.get("parse_receipt")
-    if (
-        not isinstance(receipt, dict)
-        or receipt.get("id") != fingerprint
-        or receipt.get("request_id") != request_id
-        or not isinstance(receipt.get("measurements"), dict)
-    ):
-        return {}
-    return {"_receipt_id": fingerprint, **receipt["measurements"]}
-
-
-def _local_artifact(
-    key: str, fingerprint: str, source_sha256: str, request_id: str
-) -> tuple[dict[str, Any], dict[str, Any]] | None:
-    path = _shared_path(key)
-    try:
-        size = path.stat().st_size
-    except FileNotFoundError:
-        return None
-    if size <= 0 or size > cfg.parse_artifact_max_bytes:
-        log.warning(
-            "discarding invalid local parse artifact key=%s bytes=%s", key, size
-        )
-        try:
-            path.unlink()
-        except FileNotFoundError:
-            pass
-        return None
-    digest = _sha256_file(path)
-    try:
-        path.touch()
-    except OSError:
-        log.debug("could not touch local parse artifact %s", key, exc_info=True)
-    return (
-        {
-            "key": key,
-            "size": size,
-            "sha256": digest,
-            "fingerprint": fingerprint,
-            "source_sha256": source_sha256,
-            "cached": True,
-        },
-        _artifact_receipt(path, fingerprint, source_sha256, request_id),
-    )
-
-
 def _local_quarantine(fingerprint: str) -> tuple[str, str] | None:
     path = _shared_path(f"quarantine/{fingerprint}.json")
     try:
@@ -277,14 +215,6 @@ def _request_artifact(
 
     artifact_key, fingerprint = artifact_identity(descriptor)
     source_sha256 = str(descriptor["source_sha256"])
-    cached = _local_artifact(artifact_key, fingerprint, source_sha256, request_id)
-    if cached is not None:
-        artifact, receipt = cached
-        _record_measurement(receipt)
-        log.info(
-            "parse artifact cache hit key=%s bytes=%s", artifact_key, artifact["size"]
-        )
-        return artifact
     if quarantine := _local_quarantine(fingerprint):
         _raise_quarantine(quarantine)
     endpoint = _endpoint()
@@ -311,19 +241,11 @@ def _request_artifact(
             timeout=cfg.parser_timeout,
         )
     except requests.RequestException:
-        # The parser publishes before sending JSON. If the connection died
-        # after that atomic rename, recover the creator-owned receipt now —
-        # especially on the job's final allowed attempt.
-        recovered = _local_artifact(
-            artifact_key, fingerprint, source_sha256, request_id
-        )
-        if recovered is None:
-            if quarantine := _local_quarantine(fingerprint):
-                _raise_quarantine(quarantine)
-            raise
-        artifact, receipt = recovered
-        _record_measurement(receipt)
-        return artifact
+        # A lost answer is retried: the parser serves the bundle it published
+        # to the job's next attempt, with its receipt.
+        if quarantine := _local_quarantine(fingerprint):
+            _raise_quarantine(quarantine)
+        raise
     try:
         payload = resp.json()
     except (TypeError, ValueError):
@@ -379,14 +301,6 @@ def _request_artifact(
         payload.get("_queue_ms"),
     )
     return artifact
-
-
-def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        while chunk := handle.read(1024 * 1024):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _entry_limit(info: zipfile.ZipInfo) -> int:
@@ -456,31 +370,48 @@ def _check_manifest(
         raise ParserClientError("parsed artifact source mismatch")
 
 
-def _validate_artifact_path(
-    archive_path: Path,
-    artifact: Mapping[str, Any],
-    version: str,
-    *,
-    office: bool,
-) -> None:
-    """Verify bounds, checksum, identity, and required bundle contents."""
+@contextmanager
+def _private_copy(artifact: Mapping[str, Any]) -> Iterator[Path]:
+    """The bundle copied out of the shared spool into this process's own
+    temporary directory, hashed while copied. Only a copy with the size and
+    SHA-256 the parser answered is read; the spool file never is."""
     try:
         declared_size = int(artifact.get("size") or 0)
     except (TypeError, ValueError) as exc:
         raise ParserClientError("parsed artifact has an invalid size") from exc
     if declared_size <= 0 or declared_size > cfg.parse_artifact_max_bytes:
         raise ParserClientError("parsed artifact exceeds configured byte limit")
-    try:
-        actual_size = archive_path.stat().st_size
-    except FileNotFoundError as exc:
-        raise ParserClientError("parsed artifact is missing from shared spool") from exc
-    if actual_size != declared_size:
-        raise ParserClientError("parsed artifact size mismatch")
-    digest = _sha256_file(archive_path)
-    expected = str(artifact.get("sha256") or "")
-    if not expected or digest != expected:
-        raise ParserClientError("parsed artifact checksum mismatch")
+    source = _shared_path(str(artifact.get("key") or ""))
+    with tempfile.TemporaryDirectory(prefix="capy_bundle_") as directory:
+        copy = Path(directory) / "bundle.zip"
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with source.open("rb") as src, copy.open("wb") as dst:
+                while size <= declared_size and (chunk := src.read(1024 * 1024)):
+                    size += len(chunk)
+                    digest.update(chunk)
+                    dst.write(chunk)
+        except FileNotFoundError as exc:
+            raise ParserClientError(
+                "parsed artifact is missing from shared spool"
+            ) from exc
+        if size != declared_size:
+            raise ParserClientError("parsed artifact size mismatch")
+        expected = str(artifact.get("sha256") or "")
+        if not expected or digest.hexdigest() != expected:
+            raise ParserClientError("parsed artifact checksum mismatch")
+        yield copy
 
+
+def _validate_bundle(
+    archive_path: Path,
+    artifact: Mapping[str, Any],
+    version: str,
+    *,
+    office: bool,
+) -> None:
+    """Verify a private copy's bounds, identity, and required contents."""
     with zipfile.ZipFile(archive_path) as archive:
         _validated_entries(archive)
         _check_manifest(json.loads(archive.read("manifest.json")), artifact, version)
@@ -541,24 +472,10 @@ def _extract(
     *,
     office: bool = False,
 ) -> None:
-    archive_path = _shared_path(str(artifact["key"]))
-    _validate_artifact_path(
-        archive_path,
-        artifact,
-        version,
-        office=office,
-    )
-    with zipfile.ZipFile(archive_path) as archive:
-        infos = _validated_entries(archive)
-        manifest_info = archive.getinfo("manifest.json")
-        _read_entry(archive, manifest_info, raw_dir / "manifest.json")
-        _check_manifest(
-            json.loads((raw_dir / "manifest.json").read_text(encoding="utf-8")),
-            artifact,
-            version,
-        )
-        for info in infos:
-            if info.filename != "manifest.json":
+    with _private_copy(artifact) as bundle:
+        _validate_bundle(bundle, artifact, version, office=office)
+        with zipfile.ZipFile(bundle) as archive:
+            for info in _validated_entries(archive):
                 _read_entry(archive, info, raw_dir / info.filename)
 
 
@@ -584,14 +501,9 @@ def validate_artifact(
     version = parser_version(route)
     if str(artifact.get("version") or "") != version:
         raise ParserClientError("parsed artifact handoff has an unexpected version")
-    local_path = _shared_path(str(artifact.get("key") or ""))
     try:
-        _validate_artifact_path(
-            local_path,
-            artifact,
-            version,
-            office=office,
-        )
+        with _private_copy(artifact) as bundle:
+            _validate_bundle(bundle, artifact, version, office=office)
     except (ParserClientError, OSError, ValueError, zipfile.BadZipFile):
         # A fingerprint-addressed local cache entry that fails full validation
         # must not poison the job's second parse attempt. Remove only this exact
@@ -639,9 +551,10 @@ def extract_artifact(
 
 def artifact_entry(artifact: Mapping[str, Any], name: str) -> bytes | None:
     """One optional bundle entry (``parsed.pdf``, ``page1.png``), or None when
-    the bundle has none. Read after ``extract_artifact`` verified the same
-    bundle in this job, within the same per-entry byte limit."""
-    with zipfile.ZipFile(_shared_path(str(artifact["key"]))) as archive:
+    the bundle has none. Read from a private copy with the digest
+    ``extract_artifact`` verified in this job, within the same per-entry byte
+    limit."""
+    with _private_copy(artifact) as bundle, zipfile.ZipFile(bundle) as archive:
         for info in _validated_entries(archive):
             if info.filename == name:
                 with archive.open(info) as entry:

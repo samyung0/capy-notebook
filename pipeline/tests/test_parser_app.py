@@ -621,12 +621,18 @@ async def test_the_handoff_caps_the_ocr_backlog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Text-less pages are counted by the parse child: one document over the
-    cap is refused, one that would lift the unread pages past it waits."""
+    cap is refused, one that would lift the unread pages past it is answered
+    429, and while the OCR stage is full no parse starts (a capture still
+    does)."""
     monkeypatch.setattr(parser_app, "OCR_PAGE_CAP", 5)
     read = asyncio.Event()
     scanned = {"huge.pdf": 6, "four.pdf": 4, "two.pdf": 2, "one.pdf": 1}
+    parsed: list[str] = []
 
     async def handler(document):
+        parsed.append(document.name)
+        if document.capture is not None:
+            return {"jpeg": "", "box": [0, 0, 1000, 1000], "size": [1, 1]}
         return _scan(document.name, scanned[document.name])
 
     async def ocr(_child, _pdf, _page_idx):
@@ -644,10 +650,15 @@ async def test_the_handoff_caps_the_ocr_backlog(
             await runtime.parse(parser_app.Document(b"", "two.pdf"))
         fits = asyncio.create_task(runtime.parse(parser_app.Document(b"", "one.pdf")))
         await _until(lambda: runtime.health()["ocr_queued_pages"] == 5)
+        with pytest.raises(parser_app.ParserCapacity, match="OCR backlog"):
+            await runtime.parse(parser_app.Document(b"", "native.pdf"))
+        capture = {"page": 1, "bbox": None, "max_edge": 100}
+        await runtime.parse(parser_app.Document(b"", "deck.pptx", capture=capture))
         read.set()
         await asyncio.gather(held, fits)
     finally:
         await runtime.close()
+    assert "native.pdf" not in parsed and "deck.pptx" in parsed
     assert runtime.active_jobs == 0
     assert not list(parser_app.WORK_DIR.glob("transfer-*"))
 
@@ -918,6 +929,82 @@ async def test_child_errors_keep_the_kind_the_api_classifies(error, kind) -> Non
     writer.close()
 
 
+@pytest.mark.asyncio
+async def test_an_answer_over_the_pipe_limit_ends_the_child(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(parser_app, "MESSAGE_MAX_BYTES", 16)
+    child = parser_app._Child(_record_unpickled, name="test child")
+    ended: list[str] = []
+    monkeypatch.setattr(child, "terminate", lambda: ended.append("terminated"))
+    reader, writer = multiprocessing.Pipe(duplex=False)
+    child._responses = reader
+    writer.send_bytes(b'["ok", "' + b"x" * 16 + b'"]')
+    with pytest.raises(parser_app.ParserRuntimeFailure, match="invalid answer"):
+        await child.recv()
+    assert ended == ["terminated"]
+    reader.close()
+    writer.close()
+
+
+def test_a_result_file_is_refused_when_truncated_or_oversized(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    path = tmp_path / "transfer.result"
+    parser_app._write_worker_result(path, {**_result(), "_parsed_pdf": b"%PDF-1.7"})
+    whole = path.read_bytes()
+    path.write_bytes(whole[:-3])
+    with pytest.raises(ValueError, match="invalid result file"):
+        parser_app._read_worker_result(path)
+
+    path.write_bytes(whole)
+    monkeypatch.setattr(parser_app, "MAX_ARTIFACT_EXPANDED_BYTES", len(whole) - 1)
+    with pytest.raises(ValueError, match="oversized result file"):
+        parser_app._read_worker_result(path)
+
+
+@pytest.mark.asyncio
+async def test_a_count_that_fails_admits_uncounted_and_keeps_the_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def count(_child, _pdf):
+        raise RuntimeError("FzErrorFormat: no objects found")
+
+    runtime, _, _ = _runtime(monkeypatch, None, count=count)
+    counter = runtime._admission
+    await runtime.start()
+    try:
+        assert await runtime.page_count(b"%PDF-1.7 broken") == 0
+        assert (counter.terminations, counter.starts) == (0, 1)
+    finally:
+        await runtime.close()
+    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="prctl is Linux")
+@pytest.mark.asyncio
+async def test_the_api_process_is_not_dumpable_once_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Children run as the same user; none may trace the API or read its
+    memory and environment."""
+    import ctypes
+
+    libc = ctypes.CDLL("libc.so.6")
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+
+    async def nothing() -> None:
+        pass
+
+    monkeypatch.setattr(parser_app.runtime, "start", nothing)
+    monkeypatch.setattr(parser_app.runtime, "close", nothing)
+    try:
+        async with parser_app.lifespan(parser_app.app):
+            assert libc.prctl(3, 0, 0, 0, 0) == 0  # PR_GET_DUMPABLE
+    finally:
+        libc.prctl(parser_app.PR_SET_DUMPABLE, 1, 0, 0, 0)
+
+
 def test_a_parse_result_file_round_trips_blocks_and_bytes(tmp_path: Path) -> None:
     result = {
         **_result(2, ocr=[1]),
@@ -967,6 +1054,32 @@ async def test_page_cap_refuses_pdfs_at_admission_and_office_after_conversion(
     )
     with pytest.raises(parser_app.ParseTooManyPages, match="3 pages"):
         parser_app.run_document(parser_app.Document(b"PK", "deck.pptx"))
+
+
+@pytest.mark.parametrize(
+    "prefix", [b"\x00", b"\xef\xbb\xbf", b"garbage line\n"], ids=["nul", "bom", "text"]
+)
+def test_the_parse_child_checks_the_page_cap_of_every_document(
+    monkeypatch: pytest.MonkeyPatch, prefix: bytes
+) -> None:
+    """A PDF that admission does not count (its bytes do not start like a
+    PDF) is still refused over the cap, before the parse."""
+    import pymupdf
+    from odl import refine
+
+    monkeypatch.setattr(parser_app, "MAX_PAGES", 2)
+
+    def parsed(*_args, **_kwargs):
+        raise AssertionError("parsed past the page cap")
+
+    monkeypatch.setattr(refine, "parse_pdf", parsed)
+    with pymupdf.open() as document:
+        for _ in range(3):
+            document.new_page()
+        data = prefix + document.tobytes()
+    assert not data.lstrip().startswith(b"%PDF")
+    with pytest.raises(parser_app.ParseTooManyPages, match="3 pages"):
+        parser_app.run_document(parser_app.Document(data, "long.pdf"))
 
 
 def test_startup_empties_the_work_dir() -> None:
@@ -1192,22 +1305,42 @@ def test_artifact_write_is_local_atomic_and_path_bounded(
         parser_app._write_artifact("artifacts/../../outside", b"bad")
 
 
-def test_a_cached_bundle_returns_its_receipt_only_for_the_same_source_bytes(
+def test_a_cached_bundle_is_served_only_as_this_process_wrote_it(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The spool is served from the API's own record: the bundle it published,
+    unchanged, with its creator's receipt. A changed file, or any file after a
+    restart, is deleted so the document is parsed again."""
     monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
-    parser_app._write_artifact(
-        "artifacts/fp.zip",
-        parser_app._bundle_bytes(
-            {"content_list": []}, "fp", "aa" * 32, "job-1", {"_page_count": 3}
-        ),
+    monkeypatch.setattr(parser_app, "_published", {})
+    key, path = "artifacts/fp.zip", tmp_path / "artifacts" / "fp.zip"
+    bundle = parser_app._bundle_bytes(
+        {"content_list": []}, "fp", "aa" * 32, "job-1", {"_page_count": 3}
     )
+    parser_app._record_bundle(
+        "fp", hashlib.sha256(bundle).hexdigest(), "job-1", {"_page_count": 3}
+    )
+    parser_app._write_artifact(key, bundle)
 
-    receipt = parser_app._artifact_receipt("artifacts/fp.zip", "fp", "aa" * 32, "job-1")
-    assert receipt == {"_receipt_id": "fp", "_page_count": 3}
-    assert (
-        parser_app._artifact_receipt("artifacts/fp.zip", "fp", "bb" * 32, "job-1") == {}
-    )
+    cached = parser_app._artifact_descriptor(key, "fp")
+    assert cached["sha256"] == hashlib.sha256(bundle).hexdigest()
+    assert parser_app._artifact_receipt("fp", "job-1") == {
+        "_receipt_id": "fp",
+        "_page_count": 3,
+    }
+    assert parser_app._artifact_receipt("fp", "another-job") == {}
+
+    parser_app._write_artifact(key, bundle + b"changed")
+    assert parser_app._artifact_descriptor(key, "fp") is None
+    assert not path.exists()
+    assert parser_app._artifact_receipt("fp", "job-1") == {}
+
+    # A restart forgets what was published.
+    parser_app._record_bundle("fp", hashlib.sha256(bundle).hexdigest(), "job-1", {})
+    parser_app._write_artifact(key, bundle)
+    monkeypatch.setattr(parser_app, "_published", {})
+    assert parser_app._artifact_descriptor(key, "fp") is None
+    assert not path.exists()
 
 
 def test_bundle_rejects_content_beyond_configured_budget(

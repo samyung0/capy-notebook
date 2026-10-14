@@ -829,18 +829,22 @@ of the parsed PDF's text-less pages (admission counts none). A document with
 more than `CAPY_PARSE_OCR_PAGE_CAP` (500) is refused with the terminal
 `parse_too_many_scanned_pages`; one that would lift the unread pages in the OCR
 stage past the cap is answered `429 parser_capacity`, its parse dropped, and
-the coordinator's capacity wait sends it again later. Before the OCR stage such
-documents timed out at about 320 scanned pages.
+the coordinator's capacity wait sends it again later. Until the OCR rework, no
+new parse starts while the OCR stage holds the cap's worth of unread pages
+(`429` before the parse; a page capture still runs), so a finished parse is
+rarely dropped. Before the OCR stage such documents timed out at about 320
+scanned pages.
 
 Admission refuses a PDF with more than `CAPY_PARSE_MAX_PAGES` (1,400) pages
 with the terminal `parse_too_many_pages` before it takes a parse child. The API
-process never opens a source with MuPDF: a spawned admission process
+process opens no source with MuPDF: a spawned admission process
 (`oom_score_adj` 1000, a 1 GiB address-space limit) reads only the page tree,
 one file at a time, in milliseconds (a 610-page textbook in 9 ms, 150 ms with
-its cross-reference table rebuilt). A count that fails or takes over 30 s
-admits the PDF uncounted (a stuck count also replaces the process), and the
-parse child's deadline and OOM handling apply to it. An Office source is
-checked in its parse child right after LibreOffice, before the Java run. The
+its cross-reference table rebuilt). A count that fails or takes over 10 s
+admits the PDF uncounted (a stuck count also replaces the process). The parse
+child counts every document's pages again before the Java run, since admission
+counts only bytes that start like a PDF and an Office source has pages only
+after LibreOffice. The
 coordinator maps both page codes to an input limit (`scanned_page_limit`,
 `page_limit`) carrying the parser's reason (no quarantine, no retry): the file
 ends ready and unindexed, see Ingest limits below. The API serves the same two env
@@ -906,10 +910,16 @@ process group inside it) with Linux `oom_score_adj` 1000 and a work directory
 Mode-0600 temporary files carry the source, the result (JSON, then the
 repaired PDF and page-image bytes, each after its length) and, for the OCR
 stage, the parsed PDF; small pipe messages carry only status, paths and the
-text-less page list. Children answer in JSON, and the API never unpickles
-anything a child writes. The errors it classifies (a Java timeout or kill, a
-failed LibreOffice conversion, a format mismatch, the page cap) keep their kind
-by name; any other arrives as a runtime error naming its type. A handed-off document's blocks stay in its result file
+text-less page list. Children answer in JSON (an answer over 16 MiB ends that
+child), and the API never unpickles anything a child writes; it refuses a
+result file larger than a bundle may expand to. The errors it classifies (a
+Java timeout or kill, a failed LibreOffice conversion, a format mismatch, the
+page cap) keep their kind by name; any other arrives as a runtime error naming
+its type. The one file a child wrote that the API opens with MuPDF is the
+parsed PDF whose result asks for Office page evidence after OCR
+(`_merge_ocr`); that step goes away with the OCR rework. The API process makes
+itself non-dumpable at startup, so no other process of the parser user can
+trace it or read its memory and environment. A handed-off document's blocks stay in its result file
 until the OCR stage finishes. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
 1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work
@@ -970,7 +980,8 @@ discarding the temporary conversion, preserving downstream confidence/heading ch
 
 After the coordinator verifies the local ZIP's size, checksum, archive bounds,
 manifest identity (schema, parser release, source fingerprint and the SHA-256
-of the source bytes it sent), content list, refinement, and Office evidence, it atomically
+of the source bytes it sent), content list, refinement, and Office evidence on
+its own private copy of the ZIP, it atomically
 enqueues the ingest continuation with that local descriptor. No document parse
 output is uploaded to B2. Ready database donors reuse indexed chunks and
 compatible embeddings independently of the local artifact. When neither a usable
@@ -983,10 +994,18 @@ continuation's retries and provider or capacity waits, and the continuation
 deletes it once its job row is terminal: after committed success (indexing,
 identical-content reuse, donor reuse or source publication), terminal failure,
 supersession, or final lease reaping. Before that, a retry of the creating
-parse job finds it and recovers its receipt, and a concurrent job for identical
-bytes reuses it without one. A bundle found this way passes the same checks as
-a fresh one: if its manifest names other source bytes it counts as missing, is
-deleted with its receipt unused, and the job parses again. Because the key is fingerprint-addressed, the
+parse job gets it from the parser with its receipt, and a concurrent job for
+identical bytes gets it without one. The parser serves a cached ZIP only as it
+wrote it: it keeps each published ZIP's digest and receipt in memory and
+deletes and parses again anything else in the spool, including every ZIP after
+it restarts. The coordinator never reads the spool file itself: it copies the
+ZIP into its own temporary directory, hashes the copy against the parser's
+answer and reads only that copy. A ZIP whose manifest names other source bytes
+counts as missing, is deleted, and the job parses again. The source SHA-256
+binds a bundle to the bytes it was parsed from; it is not a check against a
+parse child itself. A parse child still serves one document after another, and
+one child per document, which waits on its cost measurement, is the step that
+keeps documents apart. Because the key is fingerprint-addressed, the
 deletion skips a bundle another pending or running job still names; that job
 deletes it when it finishes. A bundle deleted under a concurrent job anyway
 takes the one-time return to parsing above.

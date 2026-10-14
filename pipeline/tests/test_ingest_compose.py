@@ -1,7 +1,8 @@
 """The ingest-host compose files: the parser reads untrusted documents, so it
 runs with no capabilities, no privilege gain and a read-only root (small tmpfs
 mounts, a disk-backed work volume), the Parser budget runs the image the same
-way, and the deploy can supply every variable the files require."""
+way, the deploy can supply every variable the files require, and the host
+lets a process trace only its own descendants."""
 
 from __future__ import annotations
 
@@ -83,3 +84,18 @@ def test_every_required_variable_is_required_by_the_manifest(
         if not targets & set(manifest.get(key, {}).get("required_for", []))
     }
     assert missing == set()
+
+
+def test_the_ingest_host_lets_a_process_trace_only_its_descendants() -> None:
+    """The parser's children run as the same user as its API process."""
+    playbook = yaml.safe_load(
+        (DEPLOY / "ansible" / "ingest-host" / "playbook.yml").read_text()
+    )
+    settings = {
+        task["ansible.posix.sysctl"]["name"]: task["ansible.posix.sysctl"]
+        for play in playbook
+        for task in play["tasks"]
+        if "ansible.posix.sysctl" in task
+    }
+    assert settings["kernel.yama.ptrace_scope"]["value"] == "1"
+    assert settings["kernel.yama.ptrace_scope"]["state"] == "present"

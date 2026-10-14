@@ -149,6 +149,16 @@
         enabled: true
         state: started
 
+    # The parser's children run as the same user as its API process; with
+    # scope 1 a process can trace only its own descendants.
+    - name: Restrict ptrace to descendants
+      ansible.posix.sysctl:
+        name: kernel.yama.ptrace_scope
+        value: "1"
+        sysctl_file: /etc/sysctl.d/60-capy-ptrace.conf
+        state: present
+        reload: true
+
     - name: Enable automatic security updates
       ansible.builtin.copy:
         dest: /etc/apt/apt.conf.d/20auto-upgrades

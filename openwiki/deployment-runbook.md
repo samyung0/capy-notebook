@@ -1567,8 +1567,9 @@ child). A document with text-less pages then frees its child and waits in the
 OCR stage, where one OCR process reads one page per waiting document per turn.
 Depth 8 counts both stages plus waiting documents; one more concurrent request
 gets `429`, and so does a parsed document whose text-less pages would lift the
-OCR stage's unread pages past 500 at the handoff. The coordinator re-pends
-either as a capacity wait. A separate admission process counts each PDF's pages
+OCR stage's unread pages past 500 at the handoff; while the OCR stage holds 500
+unread pages no new parse starts. The coordinator re-pends each as a capacity
+wait. A separate admission process counts each PDF's pages
 before it is queued (about 80 MiB resident, a 1 GiB address-space limit), so
 the API process never opens a source. A document with
 more than 500 text-less pages fails as `parse_too_many_scanned_pages`
@@ -1834,8 +1835,15 @@ the host:
   baked into the image, the Java and LibreOffice steps run locally, and the
   parser sends no Sentry events. If `PARSER_PORT` ever moves off 8091, change
   the template in the same release or the nonprod healthcheck fails.
+- **Process isolation.** The parser's API process makes itself non-dumpable
+  at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
+  same user, can neither trace it nor read its memory or environment. The
+  playbook also sets `kernel.yama.ptrace_scope=1`
+  (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
+  descendants. Check it with `sysctl kernel.yama.ptrace_scope` after applying
+  the playbook.
 
-Apply the host rule with the provisioning playbook (see the
+Apply the host rules with the provisioning playbook (see the
 [ingest-host README](../deploy/ansible/ingest-host/README.md) for the inventory):
 
 ```bash
