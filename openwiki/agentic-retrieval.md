@@ -3159,6 +3159,13 @@ they back (Streamdown's root is `display: contents` so that paragraph can run
 inline); tables and charts put their sources under the block, and the
 message's sources are neutral badges under the model name.
 The prompt reserves `AskUser` for required user input and excludes simple follow-up questions.
+GLM sometimes calls `AskUser` as a tool instead of writing it in the answer
+(6 of 156 playground runs on 2026-10-14, against 3 written correctly). The
+agent loop (`agent.ask_user_answer`) runs nothing then and ends the turn on
+that question: the answer is the response's prose as `Md` followed by
+`AskUser(question, choices)` (choices sent as JSON text are read as a list),
+so the panel below shows it as usual. A call with no question is refused as
+an unknown tool.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,

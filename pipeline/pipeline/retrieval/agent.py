@@ -653,6 +653,9 @@ async def _run_turn(
 
         calls = assembled.tool_calls
         text = assembled.text.strip()
+        asked = None if renderer.answer_shaped else ask_user_answer(calls, text)
+        if asked is not None:
+            calls, text = [], asked
         state = accounting.current()
         exhausted = bool(state and state.credits_exhausted)
         # A tools-off call ends the turn: once a write has landed there is no
@@ -749,7 +752,11 @@ async def _run_turn(
         if text:
             if not started:
                 yield events.phase("answering")
-            if not renderer.raw:
+            if asked is not None:
+                # The question replaces the held-back prose as a whole program.
+                renderer = LangRenderer(lambda: len(ctx.citations))
+                renderer.push(asked)
+            elif not renderer.raw:
                 # No deltas reached us (a non-streaming adapter); render whole.
                 renderer.push(assembled.text)
             tail = renderer.finish()
@@ -832,6 +839,39 @@ async def _run_turn(
         done["usage"] = usage.as_dict()
         done["tokenCount"] = usage.input_tokens + usage.output_tokens
     yield done
+
+
+# The answer component the model sometimes calls as a tool (GLM, 2026-10-14).
+ASK_USER = "AskUser"
+
+
+def ask_user_answer(calls: list[ToolCall], prose: str) -> str | None:
+    """A response that calls AskUser as a tool meant to end the turn on that
+    question: the answer program with its prose and the AskUser component, or
+    None when no such call carries a question (Epo 2026-10-14)."""
+    call = next((c for c in calls if c.name == ASK_USER), None)
+    if call is None:
+        return None
+    try:
+        args = json.loads(call.arguments or "{}")
+    except json.JSONDecodeError:
+        return None
+    question = args.get("question") if isinstance(args, dict) else None
+    if not isinstance(question, str) or not question.strip():
+        return None
+    choices = args.get("choices")
+    if isinstance(choices, str):  # sent as JSON text inside the arguments
+        try:
+            choices = json.loads(choices)
+        except json.JSONDecodeError:
+            choices = [choices]
+    choices = (
+        [str(c) for c in choices if str(c).strip()] if isinstance(choices, list) else []
+    )
+    ask = f"ask = AskUser({json.dumps(question.strip(), ensure_ascii=False)}, {json.dumps(choices, ensure_ascii=False)})"
+    if not prose:
+        return f"root = Answer([ask])\n{ask}"
+    return f"root = Answer([intro, ask])\nintro = Md({json.dumps(prose, ensure_ascii=False)})\n{ask}"
 
 
 def _append_turn_context(
