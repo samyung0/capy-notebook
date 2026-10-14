@@ -1838,10 +1838,14 @@ async def _gateway_read(
 
 
 def _render_inspection(
-    body: dict[str, Any], shown: dict[str, tuple[str, str]] | None = None
+    body: dict[str, Any],
+    shown: dict[str, tuple[str, str]] | None = None,
+    *,
+    source: bool = False,
 ) -> str:
     """An inspection as the model reads it; an embedded quiz block shows as the
-    quiz fence an edit writes, recorded in ``shown``."""
+    quiz fence an edit writes, recorded in ``shown``. A source file's content
+    sits in one source block, the next start after it."""
     supported = list(body.get("supportedOperations") or [])
     if body.get("materialKind") == "quiz":
         supported.append("(add or replace questions with add_questions)")
@@ -1879,6 +1883,8 @@ def _render_inspection(
         lines.append(f"{line.get('start')}: {line.get('text')}")
     for entry in body.get("entries") or []:
         lines.append(f"[{entry.get('id')}] {entry.get('label')}: {entry.get('value')}")
+    if source:
+        lines = [source_block("\n".join(lines))]
     if body.get("nextStart") is not None:
         lines.append(f"(next start = {body['nextStart']} of {body.get('total')})")
     return "\n".join(head + lines)
@@ -1916,8 +1922,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
         shown = ctx.shown_quizzes.setdefault(rid, {})
-    text = _render_inspection(body, shown)
-    return _result(source_block(text) if kind == "source_file" else text)
+    return _result(_render_inspection(body, shown, source=kind == "source_file"))
 
 
 # How much of a missed block's current text a refused edit shows.
@@ -2045,6 +2050,12 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         "target": {"kind": kind, "id": rid},
         "commands": commands,
     }
+
+    def explain(details: dict[str, Any]) -> str:
+        # A source's text as it reads now sits in a source block.
+        text = _missed_target(details, ctx.seen_blocks.get(rid, {}))
+        return source_block(text) if text and kind == "source_file" else text
+
     if books:
         # Go merges these books into the target's existing provenance by id.
         payload["provenance"] = {"books": books}
@@ -2057,7 +2068,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         ctx,
         failure="edit the document",
         timeout=60 if images else 10,
-        explain=lambda details: _missed_target(details, ctx.seen_blocks.get(rid, {})),
+        explain=explain,
     )
     if result.effects:
         # This turn's own view: drop cached outlines and re-read the exact
@@ -2686,9 +2697,14 @@ TOOL_RESULT_MAX_TOKENS = 8192
 
 
 def limit_tool_result(text: str) -> str:
-    """Bound stored tool output while making truncation visible to the model."""
+    """Bound stored tool output while making truncation visible to the model.
+    A clip inside a source block closes the block, so the notice stays outside."""
     if estimate_tokens(text) <= TOOL_RESULT_MAX_TOKENS:
         return text
     marker = "\n\n[Tool output truncated. Narrow the request or continue reading.]"
-    room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(marker))
-    return clip_to_tokens(text, room) + marker
+    close = "\n</source>"
+    room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(close + marker))
+    clipped = clip_to_tokens(text, room)
+    if clipped.rfind("<source>") > clipped.rfind("</source>"):
+        clipped += close
+    return clipped + marker

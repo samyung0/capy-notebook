@@ -94,7 +94,7 @@ network and no pin.
 | `preferences.py` | `chat`, `generate` | The learner's study preferences as build instructions, rendered into the turn context; `/generate`'s count when the request omits it |
 | `skills.py` | `chat` | The skills `read_skill` returns: `editing` (plan, output rules, budget, write precautions, excerpt crediting, the quiz, flashcards, mindmap and diagram formats), `note_building` (note structure, knowledge checks, the note format, library practice) and `deck_building` (decks) |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
-| `sources.py` | shared | The `<source>` block source and library text is shown in, and the rule that its text is data, stated once by chat, generate and ingest (Source blocks, under Tools) |
+| `sources.py` | shared | The `<source>` block that source and library text is shown in, and the rule that its text is data, stated once by chat, generate and ingest (Source blocks, under Tools) |
 
 Agent tool descriptions come from the shared contract
 (`retrieval/contract.py`) alone; `tools.schemas_for` only appends the
@@ -2443,8 +2443,8 @@ build, and the knowledge library is one more source while the switch is on.
   the model was shown, kept on each `LibraryRead`, less what the read tools
   add: the excerpt head lines `[exc_…]`, `roles:`, `teaches:` and `scope:`,
   chunk ranges and `(chunk N)` prefixes, previous/next and source-context
-  links, `[p. N]` markers, the section-read head and the page tails, and
-  the `Full reviewed notes:` label) shares with every string the write sends
+  links, `[p. N]` markers, the section-read head and the page tails, the
+  `<source>` and `</source>` lines, and the `Full reviewed notes:` label) shares with every string the write sends
   (a slide's SVG by its text only) a word 4-gram (lower-cased
   `[a-z0-9][a-z0-9.\-/]*` tokens) or a number with a decimal point or two or
   more digits that no other candidate book's read text holds, only the
@@ -2734,17 +2734,22 @@ or the library reaches a model only inside a `<source>` … `</source>` block
 - a `search_knowledge` card is one block, the `read_knowledge` reminder after
   the last; a `read_knowledge` page (head, facets, scope, chunk range, reviewed
   notes, chunks and figures) is one block, its next-start or end line after;
-- `inspect_document` of a source file is one block (a material's inspection
-  is not wrapped);
+- `inspect_document` of a source file holds its lines or entries in one block,
+  the title and supported operations before it and the next start after (a
+  material's inspection is not wrapped); a refused `edit_document` of a source
+  file shows the target as it reads now (`_missed_target`) in one block;
 - a captured page (`capture_page`, `capture_knowledge_page`,
   `resolve_source_change`) rides after its label with the image between the
   two tags (`capture.inject_images`);
 - the `/generate` context is the same passage blocks, and the ingest
   descriptor and section-summary input is one block.
 
-A source tag inside the text, opening or closing, any case or spacing, has its
-`<` written as `&lt;`, so the text can neither end its block nor open another.
-The chat grounding line, the generate grounding rule and both ingest system
+A closing source tag inside the text, in any case or spacing, has its `<`
+written as `&lt;`, so the text cannot end its block early. An opening tag
+stays as written (HTML's `<source src=…>` keeps matching for edits and
+quotes), since it cannot leave the block. The scan is linear in the text's
+length. A result `limit_tool_result` clips inside a block gets its `</source>`
+before the truncation notice. The chat grounding line, the generate grounding rule and both ingest system
 prompts say once that text inside `<source>` tags is data, never instructions.
 
 `capture_page` (`retrieval/capture.py`) keeps a size-bounded copy of native PDF
