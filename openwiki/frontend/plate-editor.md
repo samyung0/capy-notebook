@@ -517,7 +517,27 @@ because `mermaid.initialize` is global: each render sets its own preset, and
 mermaid scopes the output CSS to the SVG id, so blocks in one note keep their
 own themes. Frontmatter config would scope too, but mermaid's sanitizer blanks
 font stacks containing hyphens. Hand Drawn gets per-diagram roughen filters
-after rendering. Preset fonts (Excalifont, vendored Latin subset in
+after rendering.
+
+A diagram loads nothing from outside the page. Mermaid draws into a host that
+is already in the document (it measures labels as it draws), so anything that
+would fetch does so while it draws; `renderMermaid` therefore makes the source
+inert before `mermaid.render`, not after (`mermaidSafety.ts`). It locks the
+`strict` security level, HTML labels keep no fetching element or attribute (a
+`dompurifyConfig` forbidding `img`, `image`, `source` and the like), and front
+matter and `%%{init}%%` directives cannot turn `themeCSS`, a font stack or
+those keys back on (mermaid's own `secure` list, extended). Over that, the
+source drops what config cannot reach: a line naming a CSS image function
+(`url(`, `image-set(`, read through HTML and CSS escapes, character and mermaid
+entities, and across mermaid's directive cuts) is blanked keeping its line
+number, and an image node's `img` or a sequence actor's icon is removed when
+mermaid's own parse says the diagram draws an image. A diagram that needed a
+removed part still draws, minus that part; one that still names or draws an
+image across lines after the pass is refused. The one `renderMermaid` serves
+every surface — chat, note blocks, mindmap and diagram files, shared-page
+islands and the export rasteriser — so this covers them all. The app's
+report-only image policy (deployment-runbook §2.4) is a backstop, not the fix.
+Preset fonts (Excalifont, vendored Latin subset in
 `src/assets/fonts`; Comic Neue from `@fontsource/comic-neue`) load through
 `FontFace` before the render, since mermaid measures labels while drawing; a
 failed font load draws in the fallback font. In edit mode the hover toolbar has

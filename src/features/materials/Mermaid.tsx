@@ -4,6 +4,11 @@ import { cn } from '@/lib/cn';
 import { type MermaidFailure, mermaidFailure } from './mermaidError';
 import type { MermaidFont } from './mermaidPresets';
 import {
+  MERMAID_SECURITY,
+  withoutImageFunctions,
+  withoutImages,
+} from './mermaidSafety';
+import {
   MERMAID_THEME_SWATCH,
   type MermaidTheme,
   mermaidTheme,
@@ -62,13 +67,19 @@ export function renderMermaid(
     const preset = MERMAID_PRESETS[mermaidTheme(theme)];
     await Promise.all((preset.fonts ?? []).map(loadFont));
     mermaid.initialize({
-      securityLevel: 'strict',
       startOnLoad: false,
       ...preset.config,
+      ...MERMAID_SECURITY,
     });
+    // Mermaid draws into the live page, so nothing that loads a file may
+    // reach it (mermaidSafety.ts).
+    const source = await withoutImages(
+      mermaid,
+      withoutImageFunctions(code.trim())
+    );
     // A fresh id each time: mermaid removes any element that already has it.
     const id = `mmd-${++renderSeq}`;
-    let { svg } = await mermaid.render(id, code.trim(), container);
+    let { svg } = await mermaid.render(id, source, container);
     if (preset.roughen) {
       svg = svg
         .replaceAll('url(#roughen', `url(#${id}-roughen`)
@@ -204,7 +215,7 @@ export function Mermaid({
         className,
         MERMAID_TEXT_CLASS
       )}
-      // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (securityLevel: strict)
+      // eslint-disable-next-line react/no-danger -- mermaid returns sanitized SVG (MERMAID_SECURITY)
       dangerouslySetInnerHTML={{ __html: result.svg }}
       ref={containerRef}
       style={
