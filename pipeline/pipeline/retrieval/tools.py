@@ -33,7 +33,7 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
-from ..generated.limits import QUESTION_METADATA_MAX
+from ..generated.limits import QUESTION_DESCRIPTION_MAX, QUESTION_METADATA_MAX
 from . import capture, contract, deck, library, pending, questions, skills, store
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
@@ -2487,10 +2487,22 @@ async def write_media(
         [figure], shown = list(checked[0].values()), checked[1]
         caption = " ".join(str(media.get("caption") or "").split())
         shown_with = figure_caption(caption, figure)
+        # The image's description (alt text, what grading reads) is the
+        # caption, else the printed label; Go caps it outside the bank.
+        described = len(caption or " ".join(figure.label.split()))
         if not (caption or figure.label.strip()):
             found.call.append(
                 f"media.caption: figure {figure.id} has no printed label; say in a "
                 "few words what it shows"
+            )
+        elif described > QUESTION_DESCRIPTION_MAX:
+            found.call.append(
+                f"media.caption: expected at most {QUESTION_DESCRIPTION_MAX} "
+                f"characters; sent {described}"
+                if caption
+                else f"media.caption: figure {figure.id}'s printed label is "
+                f"{described} characters, over {QUESTION_DESCRIPTION_MAX}; send a "
+                "shorter caption"
             )
         elif len(shown_with) > QUESTION_METADATA_MAX:
             found.call.append(

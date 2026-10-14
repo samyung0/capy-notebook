@@ -2909,7 +2909,9 @@ written one) is checked against the contract's `mediaBlocks`. A library
 figure (contract v27) is checked and credited as a note's is
 (`tools.library_figures`: shown by the library, boxed apart from its page,
 listed by an excerpt this turn read, whose book joins the quiz's
-provenance), needs a `caption` when it has no printed label, and is rendered
+provenance), needs a `caption` when it has no printed label, refuses a
+caption (or, without one, a printed label) over the 500-character image
+description cap (`QUESTION_DESCRIPTION_MAX`), and is rendered
 like a note figure (`tools.render_figure`). It becomes an image block,
 `{type: "image", image: {assetId: "figure:<id>"}, width, height,
 description, attribution}` (`questions.figure_block`): the pixel size of the

@@ -495,6 +495,13 @@ async def test_a_library_figure_goes_after_the_question_text(monkeypatch):
         {**args, "media": {"type": "figure", "id": "fig_9"}}, ctx, store
     )
     assert unknown.refused and "fig_9 is not a library figure" in unknown.text()
+    long = await tools.write_media(
+        {**args, "media": {"type": "figure", "id": "fig_1", "caption": "x" * 501}},
+        ctx,
+        store,
+    )
+    assert long.refused and "expected at most 500 characters; sent 501" in long.detail
+    credited.clear()
     # A blank caption is absent: the printed label stands in.
     added = await tools.write_media(
         {**args, "media": {"type": "figure", "id": "fig_1", "caption": "null"}},
