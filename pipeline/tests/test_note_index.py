@@ -93,8 +93,8 @@ def _admit(workspace, material_id: str) -> str:
     return job_id
 
 
-async def _run(workspace, job_id: str) -> dict:
-    """Claim the job like the worker loop and run it, failure handling included."""
+def _claim(workspace, job_id: str) -> dict:
+    """Claim the job like the worker loop."""
     with workspace._connect() as conn:
         conn.execute(
             "UPDATE jobs SET not_before=now()+interval '7 days' WHERE status='pending' AND id<>%s",
@@ -113,6 +113,12 @@ async def _run(workspace, job_id: str) -> dict:
             release_sha="test-release",
         )
         conn.commit()
+    return job
+
+
+async def _run(workspace, job_id: str) -> dict:
+    """Claim the job and run it, failure handling included."""
+    job = _claim(workspace, job_id)
     token = telemetry.begin_job(job)
     try:
         await worker.process_ingest_job(job)
@@ -296,3 +302,24 @@ async def test_an_edit_embeds_only_its_chunk_and_a_failure_keeps_the_index(
         (workspace.id,),
     ) == [(0,)]
     assert _note_state(workspace, material_id) == (None, "embedding refused", True)
+
+
+def test_the_lease_reaper_parks_a_note_whose_worker_died(workspace):
+    material_id = _note(workspace)
+    job_id = _admit(workspace, material_id)
+    _claim(workspace, job_id)
+    with workspace._connect() as conn:
+        conn.execute(
+            "UPDATE jobs SET lease_expires_at=now()-interval '1 second' WHERE id=%s",
+            (job_id,),
+        )
+    with db.connect() as conn, conn.cursor() as cur:
+        db.reclaim_expired_leases(
+            cur, max_attempts={"ingest": 1}, backoff_base_s={"ingest": 30}
+        )
+        conn.commit()
+
+    assert _rows(workspace, "SELECT status FROM jobs WHERE id=%s", (job_id,)) == [
+        ("failed",)
+    ]
+    assert _note_state(workspace, material_id) == (None, "lease expired", True)

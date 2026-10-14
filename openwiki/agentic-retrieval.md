@@ -3243,9 +3243,15 @@ When the job ends, whatever ended it (the worker, the lease reaper,
 account-deletion request), the `jobs_release_note_index` trigger (migration
 0082) releases the note. A done job clears `index_job_id` and `index_error`;
 an edit made while it ran leaves the note dirty, so it is due again. A failed
-job parks the note: it stays dirty with `index_error` set (the job's error) and
-counts in `pendingNotes`, and nothing admits it again until its next edit
-clears the error. There is no automatic re-admission or backoff.
+job parks the note: it stays dirty with `index_error` set (the job's error, or
+`index job failed` when it has none) and counts in `pendingNotes`, and nothing
+admits it again until its next edit clears the error. The one wait before that
+is a busy embedding provider: like a file's job, a note job that finds it busy
+re-pends without spending an attempt (up to 5 waits, `PROVIDER_WAITS_MAX`;
+Retry-After or 30 s doubling) and fails only after that; otherwise there is no
+automatic re-admission or backoff. A note parked by a lifecycle cancellation
+(an account-deletion request, a suspension) stays parked after the account is
+restored or unsuspended, until an edit.
 
 The ingest worker branches on `materialId`: it fetches the note's
 markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`

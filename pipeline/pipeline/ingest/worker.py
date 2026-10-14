@@ -1011,7 +1011,9 @@ def _yield_for_capacity(
     """Give the slot back to the queue. File stays pending; attempt is undone.
 
     A provider that stayed busy is the same wait with its own counter, so the
-    worker can cap how often one job comes back for the same model.
+    worker can cap how often one job comes back for the same model. A note
+    index job (no ``file_id``) keeps its note's job pointer and sends no
+    progress.
     """
     attempt = int(job.get("attempts") or 1)
     payload = job.get("payload") or {}
@@ -1024,7 +1026,8 @@ def _yield_for_capacity(
             )
         else:
             db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
-        db.set_file_status(cur, file_id, "pending")
+        if file_id:
+            db.set_file_status(cur, file_id, "pending")
         cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
         row = cur.fetchone()
         db.finish_job_attempt(
@@ -1037,14 +1040,15 @@ def _yield_for_capacity(
             next_retry_at=row[0] if row else None,
         )
         conn.commit()
-    _publish_progress(
-        workspace_id,
-        file_id,
-        "queued",
-        5,
-        status="pending",
-        message=f"{name}: {message}",
-    )
+    if file_id:
+        _publish_progress(
+            workspace_id,
+            file_id,
+            "queued",
+            5,
+            status="pending",
+            message=f"{name}: {message}",
+        )
     log.info("ingest %s %s", name, message)
 
 
@@ -2512,16 +2516,25 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
             # the logical file points at B.
             exc = superseded
             error_category, error_code, _provider_status = telemetry.classify_error(exc)
-    if isinstance(exc, elitellm.ProviderBusy) and job_type == "ingest" and fid and ws:
+    if (
+        isinstance(exc, elitellm.ProviderBusy)
+        and job_type == "ingest"
+        and (fid or payload.get("materialId"))
+        and ws
+    ):
         # The in-call busy budget is spent. Re-pend without spending an attempt
-        # until the per-job cap, then fail the file as busy.
+        # until the per-job cap, then fail the file (or park the note) as busy.
         waits = int(job.get("provider_waits") or 0)
         if waits < PROVIDER_WAITS_MAX:
-            name = await asyncio.to_thread(_read_name, str(fid))
+            name = (
+                await asyncio.to_thread(_read_name, str(fid))
+                if fid
+                else str(payload["materialId"])
+            )
             await asyncio.to_thread(
                 _yield_for_capacity,
                 job,
-                str(fid),
+                str(fid or ""),
                 str(ws),
                 name,
                 int(payload.get("sourceRevision") or 0),

@@ -20,5 +20,5 @@ CREATE TRIGGER jobs_release_note_index
   AFTER UPDATE OF status ON jobs
   FOR EACH ROW
   WHEN (NEW.status IN ('done', 'failed') AND OLD.status IS DISTINCT FROM NEW.status
-    AND NEW.payload ? 'materialId')
+    AND NEW.type = 'ingest' AND NEW.payload ? 'materialId')
   EXECUTE FUNCTION release_note_index_job();

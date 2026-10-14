@@ -1767,7 +1767,7 @@ class _NoteCursor:
             self.result = ("u_owner",)
         elif "FROM users" in statement:
             self.result = self.accounts
-        elif "cancel_pipeline_jobs" in statement:
+        elif "cancel_pipeline_jobs" in statement or "SELECT 1 FROM jobs" in statement:
             self.result = (1,)
         else:
             self.result = None
@@ -1808,6 +1808,53 @@ async def test_a_retryable_note_failure_requeues(monkeypatch):
 
     assert cur.ran("UPDATE jobs SET status='pending'")
     assert not cur.ran("cancel_pipeline_jobs")
+
+
+@pytest.mark.parametrize("waits", [0, "cap"])
+async def test_a_busy_provider_repends_a_note_job_until_the_cap(monkeypatch, waits):
+    from pipeline import elitellm
+    from pipeline.jobs import PROVIDER_WAITS_MAX
+
+    cur = _NoteCursor()
+    published: list = []
+    monkeypatch.setattr(worker.db, "connect", lambda: cur)
+    monkeypatch.setattr(
+        worker.progress, "publish", lambda *a, **_k: published.append(a)
+    )
+    monkeypatch.setattr(worker.obs, "capture_error", lambda *_a, **_k: None)
+    busy = elitellm.ProviderBusy(
+        "slow down", status_code=429, retry_after=12, provider_retry_after=12
+    )
+    job = {
+        "id": "job_1",
+        "type": "ingest",
+        "attempts": 1,
+        "provider_waits": PROVIDER_WAITS_MAX if waits == "cap" else waits,
+        "payload": _NOTE_PAYLOAD,
+    }
+
+    await worker._handle_job_failure(job, busy)
+
+    repended = waits != "cap"
+    # The attempt is handed back and the wait counted; no file or progress.
+    assert cur.ran("provider_waits=provider_waits+1") is repended
+    assert cur.ran("attempts=GREATEST(attempts-1, 0)") is repended
+    # Past the cap the job fails, and migration 0082 parks the note.
+    assert cur.ran("UPDATE jobs SET status=%s") is not repended
+    assert not cur.ran("UPDATE files") and published == []
+
+
+def test_the_claim_fence_loses_a_note_job_whose_note_changed():
+    def fence(material_id):
+        return worker.db.lock_pipeline_claim_boundary(
+            _NoteCursor(),
+            job_id="job_1",
+            attempt=1,
+            payload={**_NOTE_PAYLOAD, "materialId": material_id},
+        )
+
+    assert fence("mat_1") == "current"
+    assert fence("mat_2") == "lost"
 
 
 def test_provider_admission_binds_a_note_job_to_its_note():
