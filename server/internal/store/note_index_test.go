@@ -112,10 +112,11 @@ func TestNoteIndexDirtyMarkAndJobAdmission(t *testing.T) {
 	}
 }
 
-// Every way a note index job ends releases the note through migration 0082's
-// trigger on jobs: a failed job parks it (dirty, index_error, counted in
-// pendingNotes) until its next edit, and a done job clears the job and the
-// error but keeps a dirty mark an edit set while it ran.
+// Every way a note index job ends releases the note through the trigger on
+// jobs (migrations 0082 and 0083). A job that failed with no edit since its
+// admission parks the note (dirty, index_error, counted in pendingNotes) until
+// its next edit; an edit made while the job ran keeps the note due, whether
+// the job failed or finished, so it is admitted again.
 func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
@@ -136,23 +137,26 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	cancelPipelineJob := func(jobID, _ string) error {
+		_, err := s.pool.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'failed','lifecycle','account_deletion','account deletion requested')`, jobID)
+		return err
+	}
 	for _, tc := range []struct {
 		name   string
 		end    func(jobID, ownerID string) error
-		failed bool
+		edited bool // an edit lands while the job runs
+		parked bool
 	}{
-		{"cancel_pipeline_jobs", func(jobID, _ string) error {
-			_, err := s.pool.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'failed','lifecycle','account_deletion','account deletion requested')`, jobID)
-			return err
-		}, true},
+		{"cancel_pipeline_jobs", cancelPipelineJob, false, true},
 		{"cancel_user_async_work", func(_, ownerID string) error {
 			_, err := s.pool.Exec(ctx, `SELECT cancel_user_async_work($1)`, ownerID)
 			return err
-		}, true},
-		{"done", func(jobID, _ string) error {
+		}, false, true},
+		{"failed_after_an_edit", cancelPipelineJob, true, false},
+		{"done_after_an_edit", func(jobID, _ string) error {
 			_, err := s.pool.Exec(ctx, `UPDATE jobs SET status='done' WHERE id=$1`, jobID)
 			return err
-		}, false},
+		}, true, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ownerID := newBlobTestUser(t, s, "u_note_release")
@@ -171,14 +175,14 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !tc.failed {
+			if tc.edited {
 				edit(t, note.ID, ownerID, "edited while indexing")
 			}
 			if err := tc.end(jobID, ownerID); err != nil {
 				t.Fatal(err)
 			}
 			dirty, job, indexErr := noteIndexState(t, s, note.ID)
-			if job != nil || !dirty || (indexErr != nil) != tc.failed {
+			if job != nil || !dirty || (indexErr != nil) != tc.parked {
 				t.Fatalf("released note state: dirty=%v job=%v err=%v", dirty, job, indexErr)
 			}
 			stats, err := s.WorkspaceStats(ctx, ownerID, ws.ID)
@@ -188,15 +192,14 @@ func TestNoteIndexJobEndReleasesTheNote(t *testing.T) {
 			if stats.PendingNotes != 1 {
 				t.Fatalf("pendingNotes = %d, want the released note counted", stats.PendingNotes)
 			}
-			if !tc.failed {
-				return
+			if tc.parked {
+				if _, err := s.RequestMaterialIndex(ctx, note.ID); !errors.Is(err, ErrConflict) {
+					t.Fatalf("a parked note waits for its next edit, got %v", err)
+				}
+				edit(t, note.ID, ownerID, "edited after the failure")
 			}
-			if _, err := s.RequestMaterialIndex(ctx, note.ID); !errors.Is(err, ErrConflict) {
-				t.Fatalf("a parked note waits for its next edit, got %v", err)
-			}
-			edit(t, note.ID, ownerID, "edited after the failure")
 			if next, err := s.RequestMaterialIndex(ctx, note.ID); err != nil || next == jobID {
-				t.Fatalf("an edit re-admits a parked note: job=%s err=%v", next, err)
+				t.Fatalf("a due note is admitted again: job=%s err=%v", next, err)
 			}
 		})
 	}

@@ -3252,11 +3252,14 @@ off, dirty notes wait until it is on again.
 When the job ends, whatever ended it (the worker, the lease reaper,
 `cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
 account-deletion request), the `jobs_release_note_index` trigger (migration
-0082) releases the note. A done job clears `index_job_id` and `index_error`;
-an edit made while it ran leaves the note dirty, so it is due again. A failed
-job parks the note: it stays dirty with `index_error` set (the job's error, or
-`index job failed` when it has none) and counts in `pendingNotes`, and nothing
-admits it again until its next edit clears the error. The one wait before that
+0082, its function replaced by 0083) releases the note. Admission clears the
+dirty mark, so a mark present when the job ends means an edit landed while it
+ran: whether the job finished or failed, the note is then left dirty with no
+error and is due again. A done job clears `index_job_id` and `index_error`. A
+job that failed with no edit since its admission parks the note: it stays
+dirty with `index_error` set (the job's error, or `index job failed` when it
+has none) and counts in `pendingNotes`, and nothing admits it again until its
+next edit clears the error. The one wait before that
 is a busy embedding provider: like a file's job, a note job that finds it busy
 re-pends without spending an attempt (up to 5 waits, `PROVIDER_WAITS_MAX`;
 Retry-After or 30 s doubling) and fails only after that; otherwise there is no
