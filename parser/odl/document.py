@@ -44,6 +44,12 @@ _REGISTRY = (
 )
 
 
+class SourceUnreadable(ValueError):
+    """The source fails on every attempt: corrupt, password-protected,
+    unsupported, or refused by LibreOffice. The parse answers it at once
+    instead of spending the job's retry."""
+
+
 @dataclass(frozen=True)
 class NormalizedDocument:
     data: bytes
@@ -60,7 +66,7 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
     if suffix == ".pdf":
         return NormalizedDocument(data, name or "document.pdf", "pdf")
     if suffix not in OFFICE_SUFFIXES:
-        raise ValueError("document parsing supports PDF and Office files")
+        raise SourceUnreadable("document parsing supports PDF and Office files")
 
     # The profile lives in the job directory, so it goes with the job.
     with tempfile.TemporaryDirectory(prefix="capy_office_") as tmp_name:
@@ -104,11 +110,11 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
         rendered = tmp / "source.pdf"
         if process.returncode != 0 or not rendered.is_file():
             detail = (stderr or stdout or "conversion failed").strip()
-            raise RuntimeError(
+            raise SourceUnreadable(
                 f"LibreOffice could not convert {suffix}: {detail[:500]}"
             )
         if rendered.stat().st_size > OFFICE_PREVIEW_MAX_BYTES:
-            raise RuntimeError(
+            raise SourceUnreadable(
                 "LibreOffice PDF exceeds the "
                 f"{OFFICE_PREVIEW_MAX_BYTES}-byte preview limit"
             )
@@ -122,5 +128,15 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
 
 
 def pdf_page_count(data: bytes) -> int:
-    with pymupdf.open(stream=data, filetype="pdf") as document:
+    """Pages of a PDF the parse can read. An owner-password-only PDF opens and
+    counts; one that needs a password to open does not."""
+    try:
+        document = pymupdf.open(stream=data, filetype="pdf")
+    except Exception as exc:  # MuPDF raises several types for broken bytes
+        raise SourceUnreadable(f"the file is not a readable PDF: {exc}") from exc
+    with document:
+        if document.needs_pass:
+            raise SourceUnreadable("the PDF is password-protected")
+        if not len(document):
+            raise SourceUnreadable("the PDF has no pages")
         return len(document)

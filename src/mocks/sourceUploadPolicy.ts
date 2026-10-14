@@ -100,7 +100,6 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
     text: kind === 'txt' || kind === 'md' || kind === 'json',
   })),
   maxBytes: PLAN_LIMITS.free.sourceFileMaxBytes,
-  ocrParsePageCreditMicros: 1_000_000,
   parseModes: [
     {
       extensions: parseExtensions,
@@ -115,4 +114,5 @@ export const sourceUploadPolicy: SourceUploadPolicy = {
       mode: 'none',
     },
   ],
+  vlmIngestPageCreditMicros: 1_000_000,
 };

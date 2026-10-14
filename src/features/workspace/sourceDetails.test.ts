@@ -4,6 +4,7 @@ import { m } from '@/i18n';
 import { sourceUploadPolicy } from '@/mocks/sourceUploadPolicy';
 import {
   aggregateSourceAnalysis,
+  analysisFailurePatch,
   initialAnalysisStatus,
   remoteSourceAnalysisInput,
   sourceAnalysisBlocksSubmit,
@@ -272,13 +273,34 @@ describe('fast-parse page limits', () => {
     expect(sourceAnalysisBlocksSubmit(office, sourceUploadPolicy)).toBe(false);
   });
 
+  it('adds a password-protected PDF without parsing and says so', () => {
+    const locked = {
+      ...analyzed('pdf', 0),
+      ...analysisFailurePatch('password_protected'),
+      analysisResult: undefined,
+    };
+    expect(locked.parseMode).toBe('none');
+    expect(locked.analysisStatus).toBe('idle');
+    expect(sourceAnalysisBlocksSubmit(locked, sourceUploadPolicy)).toBe(false);
+    const issue = sourceAnalysisIssue(locked, sourceUploadPolicy);
+    expect(issue).toEqual({ code: 'password_protected' });
+    expect(issue && sourceAnalysisIssueMessage(issue, sourceUploadPolicy)).toBe(
+      m.source_analysis_password_protected()
+    );
+
+    // Any other failure keeps the fast-parse row and holds submit.
+    const damaged = {
+      ...analyzed('pdf', 0),
+      ...analysisFailurePatch('unreadable'),
+    };
+    expect(damaged.parseMode).toBe('fast');
+    expect(damaged.analysisStatus).toBe('error');
+    expect(sourceAnalysisBlocksSubmit(damaged, sourceUploadPolicy)).toBe(true);
+  });
+
   it('gives each failure its own message with the policy limits', () => {
     const failed = (
-      analysisError:
-        | 'password_protected'
-        | 'unreadable'
-        | 'too_many_pages'
-        | 'failed'
+      analysisError: 'unreadable' | 'too_many_pages' | 'failed'
     ) =>
       sourceAnalysisIssue(
         { ...analyzed('pdf', 0), analysisError, analysisStatus: 'error' },
@@ -287,9 +309,6 @@ describe('fast-parse page limits', () => {
     const message = (issue: ReturnType<typeof failed>) =>
       issue ? sourceAnalysisIssueMessage(issue, sourceUploadPolicy) : null;
 
-    expect(message(failed('password_protected'))).toBe(
-      m.source_analysis_password_protected()
-    );
     expect(message(failed('unreadable'))).toBe(m.source_analysis_unreadable());
     expect(message(failed('too_many_pages'))).toBe(
       m.source_analysis_too_many_pages({ max: 1400 })

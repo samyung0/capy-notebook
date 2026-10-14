@@ -293,7 +293,7 @@ async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, c
         return None
 
     async def _chunks(**_values):
-        return ["chunk"]
+        return ["chunk"], []
 
     async def _attach(**_values):
         return {"content_id": "rgc_1", "ready": True}

@@ -847,6 +847,15 @@ the browser checks both caps before upload (see
 [frontend/office-files.md](frontend/office-files.md)), and the parser stays
 authoritative for files that bypass it.
 
+A source that fails the same way on every attempt answers `422
+parse_unreadable` (no quarantine): an unsupported format, a PDF MuPDF cannot
+open, has no pages or needs a password to open (an owner-password-only PDF
+parses), a LibreOffice conversion that exits non-zero or leaves no PDF, and a
+converted PDF over `CAPY_OFFICE_PREVIEW_MAX_BYTES`. The worker fails the file
+without the automatic retry, as it does for a parse that yields no indexable
+content. A LibreOffice timeout, a Java crash and an OCR process death keep the
+one retry.
+
 The parse stage has a 900-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
 that starts when a document leaves the queue, before LibreOffice normalisation
 of an Office source and the Java run, and ends at the handoff; queue wait does

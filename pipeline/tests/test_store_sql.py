@@ -870,9 +870,7 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
                 parse_ocr_pages=1,
                 parse_cpu_milliseconds=1200,
                 parse_elapsed_milliseconds=2000,
-                credit_micros=db.credits_for_parse_pages(
-                    2, 1, digital_rate=31_000_000, ocr_rate=52_000_000
-                ),
+                credit_micros=db.credits_for_parse_pages(2, 1, digital_rate=31_000_000),
                 reservation_id=reservation_id,
                 idempotency_key=idempotency_key,
             )
@@ -895,9 +893,9 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
             "SELECT used_micros FROM user_credits WHERE user_id = %s",
             (workspace.user_id,),
         ).fetchone()[0]
-        assert event == (1, 2, 1, 1200, 83_000_000)
+        assert event == (1, 2, 1, 1200, 31_000_000)
         assert status == "settled"
-        assert used_after - used_before == 83_000_000
+        assert used_after - used_before == 31_000_000
         conn.execute(
             "DELETE FROM usage_events WHERE idempotency_key = %s",
             (idempotency_key,),

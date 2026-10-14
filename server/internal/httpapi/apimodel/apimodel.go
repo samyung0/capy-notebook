@@ -184,7 +184,7 @@ type SourceUploadPolicy struct {
 	MaxBytes                     int64                         `json:"maxBytes"`
 	AllowNoExtension             bool                          `json:"allowNoExtension"`
 	DigitalParsePageCreditMicros int64                         `json:"digitalParsePageCreditMicros"`
-	OCRParsePageCreditMicros     int64                         `json:"ocrParsePageCreditMicros"`
+	VLMIngestPageCreditMicros    int64                         `json:"vlmIngestPageCreditMicros"`
 }
 
 type Material struct {

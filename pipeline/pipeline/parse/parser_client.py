@@ -75,6 +75,11 @@ class ParserTooManyPagesError(ParserClientError):
     """The document has more pages than the parser reads (CAPY_PARSE_MAX_PAGES)."""
 
 
+class ParserUnreadableError(ParserClientError):
+    """The source fails on every attempt (corrupt, password-protected,
+    unsupported, or refused by LibreOffice)."""
+
+
 class ParserCapacityError(ParserClientError):
     """The parser's bounded local document queue is full."""
 
@@ -327,6 +332,8 @@ def _request_artifact(
                 raise ParserTooManyScannedPagesError(str(detail))
             if payload.get("code") == "parse_too_many_pages":
                 raise ParserTooManyPagesError(str(detail))
+            if payload.get("code") == "parse_unreadable":
+                raise ParserUnreadableError(str(detail))
         if (
             resp.status_code == 429
             and isinstance(payload, dict)

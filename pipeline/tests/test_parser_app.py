@@ -932,13 +932,20 @@ async def test_artifact_request_rejects_a_foreign_parser_version() -> None:
 
 
 @pytest.mark.asyncio
-async def test_hard_timeout_response_carries_its_code(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (parser_app.ParseHardTimeout("too slow"), "parse_hard_timeout"),
+        (parser_app.SourceUnreadable("not a PDF"), "parse_unreadable"),
+    ],
+)
+async def test_terminal_failures_carry_their_code(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, code: str
 ) -> None:
-    async def timed_out(_document):
-        raise parser_app.ParseHardTimeout("too slow")
+    async def failed(_document):
+        raise error
 
-    monkeypatch.setattr(parser_app, "_run", timed_out)
+    monkeypatch.setattr(parser_app, "_run", failed)
     payload, status = await parser_app._produce_artifact(
         {
             "output_key": "artifacts/fp.zip",
@@ -950,7 +957,7 @@ async def test_hard_timeout_response_carries_its_code(
     )
 
     assert status == 422
-    assert payload["code"] == "parse_hard_timeout"
+    assert payload["code"] == code
 
 
 @pytest.mark.asyncio

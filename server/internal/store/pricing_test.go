@@ -57,12 +57,3 @@ func TestEmbeddingRatesFailsWithoutRegistry(t *testing.T) {
 		t.Fatal("nil registry must fail")
 	}
 }
-
-func TestCreditsForParsePagesUsesOCRRateInsteadOfAddingBoth(t *testing.T) {
-	if got := CreditsForParsePages(3, 1, 31_000_000, 52_000_000); got != 114_000_000 {
-		t.Fatalf("CreditsForParsePages(3, 1) = %d, want 114000000", got)
-	}
-	if got := CreditsForParsePages(1, 9, 31_000_000, 52_000_000); got != 52_000_000 {
-		t.Fatalf("CreditsForParsePages clamps OCR pages: %d", got)
-	}
-}

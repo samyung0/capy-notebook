@@ -374,9 +374,10 @@ def test_oom_response_is_terminally_classified(monkeypatch, parser_url):
     [
         ("parse_too_many_scanned_pages", "ParserTooManyScannedPagesError"),
         ("parse_too_many_pages", "ParserTooManyPagesError"),
+        ("parse_unreadable", "ParserUnreadableError"),
     ],
 )
-def test_page_limits_are_their_own_terminal_errors(
+def test_input_failures_are_their_own_terminal_errors(
     monkeypatch, parser_url, code, error
 ):
     _stub_request(monkeypatch, _Resp(422, {"code": code, "detail": "1500 pages"}))

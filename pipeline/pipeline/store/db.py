@@ -1530,12 +1530,12 @@ def workspace_owner_user_id(cur, workspace_id: str) -> str | None:
     return row[0] if row else None
 
 
-def credits_for_parse_pages(
-    pages: int, ocr_pages: int, *, digital_rate: int, ocr_rate: int
-) -> int:
+def credits_for_parse_pages(pages: int, vlm_pages: int, *, digital_rate: int) -> int:
+    """The parse charges pages with a text layer; a text-less page is charged
+    when the VLM reads it (``vlm_ingest_page``), not here."""
     pages = max(0, int(pages))
-    ocr_pages = min(pages, max(0, int(ocr_pages)))
-    return (pages - ocr_pages) * int(digital_rate) + ocr_pages * int(ocr_rate)
+    vlm_pages = min(pages, max(0, int(vlm_pages)))
+    return (pages - vlm_pages) * int(digital_rate)
 
 
 def record_usage_event(

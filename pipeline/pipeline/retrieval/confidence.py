@@ -6,9 +6,8 @@ agent has a reason to call ``capture_page``. Ported from the playground's
 ``chunk_quality.py``.
 
 What it cannot see: reading-order or cell-association errors when every word
-is present. An OCR text layer counts as a text layer, so a page RapidOCR
-handled would score by agreement with itself; those pages carry a fixed 0.5
-and their own reason instead.
+is present. A page the VLM read has no text layer to agree with; it scores
+1.0 (developer decision 2026-10-15) and carries no reason.
 """
 
 from __future__ import annotations
@@ -22,8 +21,9 @@ import pymupdf
 
 from .chunking import Chunk
 
-OCR_REASON = "page text came from OCR"
-OCR_SCORE = 0.5
+# The ``_recovery`` mark of a block the ingest worker's VLM read.
+VLM_RECOVERY = "vlm-page"
+VLM_SCORE = 1.0
 TEXT_LAYER_CHARS = 40
 
 _CJK = re.compile(r"[぀-ヿ㐀-鿿가-힯]")
@@ -57,10 +57,10 @@ def table_consistency(text: str) -> float | None:
 
 
 def score_chunk(
-    text: str, page_texts: list[str], coverage: float | None, *, ocr_page: bool = False
+    text: str, page_texts: list[str], coverage: float | None, *, vlm_page: bool = False
 ) -> tuple[float, list[str]]:
-    if ocr_page:
-        return OCR_SCORE, [OCR_REASON]
+    if vlm_page:
+        return VLM_SCORE, []
     reasons: list[str] = []
     text_layer = any(len(p.strip()) >= TEXT_LAYER_CHARS for p in page_texts)
     if not text_layer:
@@ -86,13 +86,13 @@ def score_chunk(
     return round(score, 3), reasons
 
 
-def ocr_pages(content_list: list[dict]) -> set[int]:
-    """1-based pages whose text the parser's RapidOCR stage produced."""
+def vlm_pages(content_list: list[dict]) -> set[int]:
+    """1-based pages whose text the ingest worker's VLM read."""
     return {
         int(block["page_idx"]) + 1
         for block in content_list
         if isinstance(block, dict)
-        and block.get("_recovery") == "rapidocr-line"
+        and block.get("_recovery") == VLM_RECOVERY
         and isinstance(block.get("page_idx"), int)
     }
 
@@ -106,7 +106,7 @@ def score_chunks(
     chunks: list[Chunk],
     pdf: Path,
     *,
-    ocr: set[int] = frozenset(),
+    vlm: set[int] = frozenset(),
     page_texts: list[str] | None = None,
 ) -> None:
     """Fill ``confidence`` and ``confidence_reasons`` on every paged chunk in place."""
@@ -130,5 +130,5 @@ def score_chunks(
             chunk.text,
             [page_texts[p - 1] for p in span],
             min(covs) if covs else None,
-            ocr_page=any(p in ocr for p in span),
+            vlm_page=any(p in vlm for p in span),
         )

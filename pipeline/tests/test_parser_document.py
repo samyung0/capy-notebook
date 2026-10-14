@@ -196,3 +196,22 @@ def test_timeout_kills_the_whole_process_group(
     while _running(helper) and time.monotonic() < deadline:
         time.sleep(0.05)
     assert not _running(helper)
+
+
+def test_unreadable_pdfs_are_refused_and_owner_locked_ones_open() -> None:
+    with pymupdf.open() as blank:
+        blank.new_page()
+        plain = blank.tobytes()
+        locked = blank.tobytes(
+            encryption=pymupdf.PDF_ENCRYPT_AES_256, user_pw="open", owner_pw="own"
+        )
+        owner_only = blank.tobytes(
+            encryption=pymupdf.PDF_ENCRYPT_AES_256, owner_pw="own"
+        )
+
+    assert document.pdf_page_count(plain) == 1
+    assert document.pdf_page_count(owner_only) == 1
+    with pytest.raises(document.SourceUnreadable, match="password"):
+        document.pdf_page_count(locked)
+    with pytest.raises(document.SourceUnreadable, match="not a readable PDF"):
+        document.pdf_page_count(b"%PDF-1.7 truncated")

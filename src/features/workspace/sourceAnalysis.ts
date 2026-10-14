@@ -78,7 +78,7 @@ export class SourceAnalysisError extends Error {
 
 export interface ParsePageRates {
   digitalPageRateMicros: number;
-  ocrPageRateMicros: number;
+  vlmPageRateMicros: number;
 }
 
 export function calculateParseCreditMicros(
@@ -92,7 +92,7 @@ export function calculateParseCreditMicros(
   );
   return (
     (pages - ocrPages) * Math.max(0, rates.digitalPageRateMicros) +
-    ocrPages * Math.max(0, rates.ocrPageRateMicros)
+    ocrPages * Math.max(0, rates.vlmPageRateMicros)
   );
 }
 

@@ -8,7 +8,7 @@ import json
 import logging
 import secrets
 from collections.abc import Awaitable, Callable
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 
 from ..jobs import TerminalError
 from ..retrieval import models, store
@@ -180,12 +180,20 @@ async def caption(
     file_id: str,
     image_sha256: str,
     data_url: str | Callable[[], Awaitable[str | None]],
-    prompt: str,
+    prompt: str = "",
+    read: Callable[[str], Awaitable[str | None]] | None = None,
+    exclusive: bool = True,
 ) -> tuple[str, str, int, bool]:
     """Caption the image a standalone image file's ingest job holds, reusing an
     eligible caption first. Runs in the file's ordinary ingest job (bound by
-    ``db.bind_source_refresh``)."""
-    async with _lock(file_id, image_sha256):
+    ``db.bind_source_refresh``).
+
+    ``read`` replaces the standalone-image caption call; the VLM page read of a
+    text-less document page uses it, keyed by a digest of its own. Page reads
+    pass ``exclusive=False``: the lock holds a pooled connection for the whole
+    model call, and a file's pages run several at once against a small pool,
+    while two uploads racing on one page only read it twice."""
+    async with _lock(file_id, image_sha256) if exclusive else nullcontext():
         try:
             cached = await lookup(file_id, image_sha256)
         except TerminalError:
@@ -199,7 +207,10 @@ async def caption(
         url = await data_url() if callable(data_url) else data_url
         if not url:
             return "", "", 0, False
-        text = (await models.caption_image(url, prompt)).strip()
+        text = (
+            (await read(url)) if read else await models.caption_image(url, prompt)
+        ) or ""
+        text = text.strip()
         if not text:
             return "", "", 0, False
         raw = json.dumps(

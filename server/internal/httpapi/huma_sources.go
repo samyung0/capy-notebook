@@ -100,7 +100,7 @@ func (a *api) getSourceUploadPolicy(
 	}
 	rates, err := a.s.ActiveResourceRates(ctx, []string{
 		store.ResourceDigitalParsePage,
-		store.ResourceOCRParsePage,
+		store.ResourceVLMIngestPage,
 	})
 	if err != nil {
 		return nil, hErr(err)
@@ -117,7 +117,7 @@ func (a *api) getSourceUploadPolicy(
 			MaxBytes:                     maxBytes,
 			AllowNoExtension:             true,
 			DigitalParsePageCreditMicros: rates[store.ResourceDigitalParsePage].CreditMicrosPerUnit,
-			OCRParsePageCreditMicros:     rates[store.ResourceOCRParsePage].CreditMicrosPerUnit,
+			VLMIngestPageCreditMicros:    rates[store.ResourceVLMIngestPage].CreditMicrosPerUnit,
 		},
 	}, nil
 }

@@ -363,7 +363,7 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
                 "version": 1,
                 "creditMicrosPerUnit": 31_000_000,
             },
-            worker._RESOURCE_OCR_PAGE: {
+            worker._RESOURCE_VLM_PAGE: {
                 "version": 1,
                 "creditMicrosPerUnit": 52_000_000,
             },
@@ -387,7 +387,8 @@ def test_ingest_closes_the_actor_reservation_after_page_billing(monkeypatch):
     assert billed[0]["units"] == 2
     assert billed[0]["parse_ocr_pages"] == 1
     assert billed[0]["parse_cpu_milliseconds"] == 1250
-    assert billed[0]["credit_micros"] == 83_000_000
+    # The text-less page is charged when the VLM reads it, not by the parse.
+    assert billed[0]["credit_micros"] == 31_000_000
     assert billed[0]["idempotency_key"] == "parse:job_1:1"
     assert settled == ["cr_1"]
 
@@ -403,7 +404,7 @@ def test_parser_receipt_uses_fingerprint_idempotency(monkeypatch):
                 "version": 1,
                 "creditMicrosPerUnit": 31_000_000,
             },
-            worker._RESOURCE_OCR_PAGE: {
+            worker._RESOURCE_VLM_PAGE: {
                 "version": 1,
                 "creditMicrosPerUnit": 52_000_000,
             },
@@ -443,8 +444,35 @@ def test_finish_fail_closes_reservation_from_recorded_spend(monkeypatch):
     assert closed == ["cr_fail"]
 
 
-def test_parse_page_rates_are_worst_case_and_ocr_replaces_digital_rate():
-    rates = {"digital_rate": 31_000_000, "ocr_rate": 52_000_000}
-    assert db.credits_for_parse_pages(1, 0, **rates) == 31_000_000
-    assert db.credits_for_parse_pages(1, 1, **rates) == 52_000_000
-    assert db.credits_for_parse_pages(3, 1, **rates) == 114_000_000
+def test_parse_charges_only_text_layer_pages():
+    assert db.credits_for_parse_pages(1, 0, digital_rate=31_000_000) == 31_000_000
+    assert db.credits_for_parse_pages(1, 1, digital_rate=31_000_000) == 0
+    assert db.credits_for_parse_pages(3, 1, digital_rate=31_000_000) == 62_000_000
+
+
+def test_unread_vlm_pages_end_the_file_failed_with_its_pages_indexed(monkeypatch):
+    calls: list[tuple] = []
+    monkeypatch.setattr(db, "connect", lambda: _Conn())
+    monkeypatch.setattr(db, "source_refresh_for", lambda _file_id: None)
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: False)
+    monkeypatch.setattr(db, "ingest_accounts_active", lambda *_a, **_k: True)
+    monkeypatch.setattr(db, "settle_credit_reservation", lambda *_a: None)
+    monkeypatch.setattr(db, "finish_job_attempt", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        db, "set_file_status", lambda _cur, _f, status: calls.append(("status", status))
+    )
+    monkeypatch.setattr(
+        db, "set_file_indexed", lambda _cur, _f, ok: calls.append(("indexed", ok))
+    )
+    monkeypatch.setattr(
+        db,
+        "set_job",
+        lambda _cur, _j, status, error=None: calls.append((status, error)),
+    )
+    worker.obs.start_usage()
+    assert worker._finish_ok("f_1", "job_1", unread_pages=[4, 9])
+    assert ("status", "failed") in calls and ("indexed", True) in calls
+    assert (
+        "done",
+        "2 pages could not be read (p. 4, 9); retry processing reads them again",
+    ) in calls

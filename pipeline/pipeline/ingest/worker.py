@@ -19,7 +19,9 @@ Run: ``python -m pipeline.ingest.worker``
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextvars
+import hashlib
 import json
 import logging
 import os
@@ -56,9 +58,9 @@ from ..jobs import (
     provider_wait_backoff_s,
 )
 from ..parse import caption_cache, parser_client
-from ..retrieval import accounting, indexing, store
+from ..retrieval import accounting, indexing, models, store
 from ..retrieval.chunking import CHUNKER_VERSION, Chunk, chunk_markdown
-from ..retrieval.confidence import ocr_pages, score_chunks
+from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
@@ -68,10 +70,10 @@ from . import plan as ingest_plan
 log = logging.getLogger("capy.worker")
 
 _RESOURCE_DIGITAL_PAGE = "digital_parse_page"
-_RESOURCE_OCR_PAGE = "ocr_parse_page"
+_RESOURCE_VLM_PAGE = "vlm_ingest_page"
 _REQUIRED_RESOURCE_RATES = {
     _RESOURCE_DIGITAL_PAGE,
-    _RESOURCE_OCR_PAGE,
+    _RESOURCE_VLM_PAGE,
 }
 # A job that found the parser or a provider full re-pends after this long.
 YIELD_BACKOFF_S = 2
@@ -451,7 +453,10 @@ def _finish_ok(
     source_revision: int | None = None,
     source_etag: str = "",
     parse_fee: bool = True,
+    unread_pages: list[int] | None = None,
 ) -> bool:
+    """Commit a finished ingest. With ``unread_pages`` the file ends failed
+    with its readable pages indexed, so Retry processing reads the rest."""
     refresh = db.source_refresh_for(file_id)
     if refresh is not None:
         return _finish_source_refresh(file_id, job_id, content_hash)
@@ -490,7 +495,7 @@ def _finish_ok(
                     charged=parse_fee,
                 )
                 db.settle_credit_reservation(cur, reservation_id)
-                db.set_file_status(cur, file_id, "ready")
+                db.set_file_status(cur, file_id, "failed" if unread_pages else "ready")
                 db.set_file_indexed(cur, file_id, indexed)
                 if content_hash is not None:
                     db.set_file_content_hash(cur, file_id, content_hash)
@@ -498,7 +503,12 @@ def _finish_ok(
                     r"UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL AND (kind='pdf' OR lower(name) ~ '\.(docx|xlsx|pptx)$') AND parse_mode='fast'",
                     (file_id,),
                 )
-                db.set_job(cur, job_id, "done")
+                db.set_job(
+                    cur,
+                    job_id,
+                    "done",
+                    _unread_note(unread_pages) if unread_pages else None,
+                )
                 db.finish_job_attempt(
                     cur,
                     attempt_id=telemetry.current_attempt_id(),
@@ -729,6 +739,36 @@ def _notify_ingest_terminal(
             indexed=False,
         )
     log.info("ingest %s failed terminally: %s", name, error)
+
+
+def _unread_note(pages: list[int]) -> str:
+    shown = ", ".join(str(page) for page in pages[:20])
+    more = f" and {len(pages) - 20} more" if len(pages) > 20 else ""
+    return f"{len(pages)} pages could not be read (p. {shown}{more}); retry processing reads them again"
+
+
+def _publish_done(
+    ws: str, file_id: str, unread: list[int], note: str | None = None
+) -> None:
+    """The terminal progress event: ready, or failed with the pages the VLM
+    left unread while the rest stays indexed."""
+    if unread:
+        _publish_progress(
+            ws,
+            file_id,
+            "failed",
+            100,
+            status="failed",
+            message=_unread_note(unread),
+            indexed=True,
+        )
+        return
+    if note is None:
+        _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
+    else:
+        _publish_progress(
+            ws, file_id, "done", 100, status="ready", message=note, indexed=True
+        )
 
 
 def _read_name(file_id: str) -> str:
@@ -1144,7 +1184,6 @@ def _record_parse_usage_tx(
             usage.pages,
             usage.ocr_pages,
             digital_rate=_rate(_RESOURCE_DIGITAL_PAGE)["creditMicrosPerUnit"],
-            ocr_rate=_rate(_RESOURCE_OCR_PAGE)["creditMicrosPerUnit"],
         )
         if charged
         else 0,
@@ -1167,7 +1206,7 @@ def _record_parse_usage_tx(
             "sourceFormat": usage.source_format,
             "parseReceiptId": usage.receipt_id,
             "digitalPageRate": _rate(_RESOURCE_DIGITAL_PAGE),
-            "ocrPageRate": _rate(_RESOURCE_OCR_PAGE),
+            "vlmPageRate": _rate(_RESOURCE_VLM_PAGE),
         },
     )
 
@@ -1336,6 +1375,8 @@ async def _ensure_document_artifact(
             "this file hit a terminal parser resource limit and is "
             "quarantined for the current parser version"
         ) from exc
+    except parser_client.ParserUnreadableError as exc:
+        raise TerminalError(f"this file cannot be parsed: {exc}") from exc
     except parser_client.ParserCapacityError as exc:
         # The parser's bounded queue answered 429; the job re-pends without
         # spending an attempt.
@@ -1368,8 +1409,9 @@ async def _chunks_for(
     file_id: str,
     source_sha256: str,
     job_id: str | None = None,
-) -> list[Chunk]:
-    """Parse one source into chunks."""
+) -> tuple[list[Chunk], list[int]]:
+    """Parse one source into chunks, and the 1-based pages the VLM left
+    unread."""
     source_revision = int(payload.get("sourceRevision") or 0)
     source_etag = str(payload.get("sourceETag") or "")
 
@@ -1388,7 +1430,7 @@ async def _chunks_for(
         _set_stage("text_normalization")
         text = await asyncio.to_thread(_read_text, local_path)
         _publish_progress(ws, file_id, "indexing", 40, status="processing")
-        return chunk_markdown(text)
+        return chunk_markdown(text), []
 
     direct = {
         ingest_plan.IMAGE_CAPTION: "image",
@@ -1460,8 +1502,8 @@ async def _chunks_for(
         if direct == "tabular":
             # Every row carries its own headers, so a table chunks with no
             # overlap: a carried row would only repeat in the next chunk.
-            return chunk_markdown(text, overlap_tokens=0)
-        return chunk_markdown(text)
+            return chunk_markdown(text, overlap_tokens=0), []
+        return chunk_markdown(text), []
 
     if processing_plan.route != ingest_plan.DOCUMENT_PARSE:
         raise TerminalError(f"unsupported processing route {processing_plan.route!r}")
@@ -1480,14 +1522,78 @@ async def _chunks_for(
             office=processing_plan.office,
         )
         _publish_progress(ws, file_id, "indexing", 45)
+        _set_stage("vlm_pages")
+        content_list, unread = await _read_vlm_pages(content_list, raw_dir, file_id)
         _set_stage("chunking")
         chunks = await asyncio.to_thread(
             _page_chunks, content_list, raw_dir, Path(local_path or "")
         )
         _publish_progress(ws, file_id, "indexing", 55)
-        return chunks
+        return chunks, unread
     finally:
         shutil.rmtree(raw_dir, ignore_errors=True)
+
+
+# One job reads this many pages at once; two jobs then share the VLM gate
+# (models.VLM_PAGE_CAPACITY, 20) without waiting long at it.
+VLM_PAGES_PER_JOB = 10
+
+
+async def _read_vlm_pages(
+    content_list: list[dict], raw_dir: Path, file_id: str
+) -> tuple[list[dict], list[int]]:
+    """Read the bundle's text-less page renders (``vlm/<page>.jpg``) with the
+    VLM. Each read page becomes one text block after that page's own blocks;
+    returns the blocks and the 1-based pages left unread. A page read before
+    for this file, or an eligible donor, comes from the caption cache free."""
+    renders = sorted(raw_dir.glob("vlm/*.jpg"), key=lambda path: int(path.stem))
+    if not renders:
+        return content_list, []
+    rate = int(_rate(_RESOURCE_VLM_PAGE)["creditMicrosPerUnit"])
+    limit = asyncio.Semaphore(VLM_PAGES_PER_JOB)
+
+    async def read(path: Path) -> tuple[int, str]:
+        jpeg = await asyncio.to_thread(path.read_bytes)
+        url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
+        async with limit:
+            text, *_ = await caption_cache.caption(
+                file_id=file_id,
+                image_sha256=hashlib.sha256(b"vlm-page\0" + jpeg).hexdigest(),
+                data_url=url,
+                read=lambda data_url: models.read_page(data_url, credit_micros=rate),
+                exclusive=False,
+            )
+        return int(path.stem), text
+
+    tasks = [asyncio.ensure_future(read(path)) for path in renders]
+    try:
+        results = await asyncio.gather(*tasks)
+    except BaseException:
+        # A busy provider re-pends the job; the pages already read are cached.
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        raise
+    blocks = list(content_list)
+    unread = []
+    for page_idx, text in results:
+        if not text:
+            unread.append(page_idx + 1)
+            continue
+        after = max(
+            (i for i, b in enumerate(blocks) if int(b.get("page_idx", -1)) <= page_idx),
+            default=-1,
+        )
+        blocks.insert(
+            after + 1,
+            {
+                "type": "text",
+                "text": text,
+                "page_idx": page_idx,
+                "_recovery": VLM_RECOVERY,
+            },
+        )
+    return blocks, unread
 
 
 def _page_chunks(
@@ -1512,7 +1618,7 @@ def _page_chunks(
         score_chunks(
             chunks,
             source_pdf,
-            ocr=ocr_pages(content_list),
+            vlm=vlm_pages(content_list),
             page_texts=evidence["page_texts"],
         )
         return chunks
@@ -1521,7 +1627,7 @@ def _page_chunks(
     if not page_pdf.is_file():
         raise RetryableError("page-model PDF for the parsed document is missing")
     chunks = retain_headings(content_list, page_pdf, chunks)
-    score_chunks(chunks, page_pdf, ocr=ocr_pages(content_list))
+    score_chunks(chunks, page_pdf, vlm=vlm_pages(content_list))
     return chunks
 
 
@@ -2150,7 +2256,7 @@ async def _process_ingest_job(
             "ingest stopped because an account is suspended or deleting"
         )
     try:
-        chunks = await _chunks_for(
+        chunks, unread = await _chunks_for(
             payload=payload,
             name=name,
             processing_plan=processing_plan,
@@ -2190,7 +2296,10 @@ async def _process_ingest_job(
     if not chunks and not (
         payload.get("sourceRefresh") is True and payload.get("format") == "text"
     ):
-        raise RetryableError("parse produced no indexable content")
+        if unread:
+            raise TerminalError(_unread_note(unread))
+        # The same artifact chunks the same way on every attempt.
+        raise TerminalError("parse produced no indexable content")
     telemetry.record(chunks_created=len(chunks))
 
     digest = indexing.content_hash(chunks)
@@ -2237,12 +2346,11 @@ async def _process_ingest_job(
             source_revision=source_revision,
             source_etag=source_etag,
             parse_fee=_parse_fee(payload),
+            unread_pages=unread,
         )
         if not committed:
             return
-        _publish_progress(
-            ws, file_id, "done", 100, status="ready", message=note, indexed=True
-        )
+        _publish_done(ws, file_id, unread, note)
         await _capture_thumbnail(
             payload, ws, file_id, processing_plan, local_path, source_sha256
         )
@@ -2286,10 +2394,11 @@ async def _process_ingest_job(
         source_revision=source_revision,
         source_etag=source_etag,
         parse_fee=_parse_fee(payload),
+        unread_pages=unread,
     )
     if not committed:
         return
-    _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
+    _publish_done(ws, file_id, unread)
     await _capture_thumbnail(
         payload, ws, file_id, processing_plan, local_path, source_sha256
     )

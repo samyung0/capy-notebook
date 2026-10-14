@@ -700,7 +700,11 @@
     },
     "RELACE_API_KEY": {
       "kind": "secret",
-      "targets": ["coolify", "ingest-production", "ingest-queue", "ops"]
+      "targets": ["coolify", "ops"]
+    },
+    "RELACE_INGEST_API_KEY": {
+      "kind": "secret",
+      "targets": ["ingest-queue"]
     },
     "RELEASE_SHA": {
       "kind": "variable",

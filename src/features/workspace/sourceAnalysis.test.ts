@@ -106,11 +106,11 @@ describe('source analysis classification', () => {
     });
   });
 
-  it('prices OCR pages instead of adding both rates', () => {
+  it('prices text-less pages at the VLM rate instead of adding both rates', () => {
     expect(
       calculateParseCreditMicros(
         { ocrPageCount: 2, pageCount: 5 },
-        { digitalPageRateMicros: 31, ocrPageRateMicros: 52 }
+        { digitalPageRateMicros: 31, vlmPageRateMicros: 52 }
       )
     ).toBe(197);
   });

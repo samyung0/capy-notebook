@@ -24,6 +24,7 @@ from typing import Any
 
 from .. import elitellm, obs, registry
 from ..config import cfg
+from ..prompts.captioning import VLM_PAGE_PROMPT
 from ..prompts.retrieval import qwen3_query
 from ..registry import ModelConfig
 from . import accounting, capture
@@ -94,6 +95,7 @@ async def _tracked_call(
     context: accounting.ContextComposition | None = None,
     spec: ModelConfig | None = None,
     deadline: float | None = None,
+    capacity: tuple[str, int] | None = None,
 ):
     call_id = accounting.new_call_id()
     await accounting.open_call(
@@ -104,6 +106,7 @@ async def _tracked_call(
         context=context,
         spec=spec,
         deadline=deadline,
+        capacity=capacity,
     )
     try:
         yield call_id
@@ -911,6 +914,79 @@ async def stream_text(
             )
 
 
+# VLM page reads have a gate of their own, apart from the captioning model's
+# ingest share: at most 20 in flight across every worker.
+VLM_PAGE_CAPACITY = ("vlm_page", 20)
+# A page is about 460 output tokens; the cap ends a degenerate loop early.
+VLM_PAGE_MAX_TOKENS = 2_000
+
+
+async def read_page(data_url: str, *, credit_micros: int) -> str | None:
+    """Read one text-less page with the captioning-slot VLM.
+
+    A busy provider waits under the ingest policy and, past its budget, raises
+    ProviderBusy so the job re-pends. Any other failure, an empty answer or one
+    cut off at the output cap gets one more read; after that the page is
+    unread (None). Only a usable read is charged, at ``credit_micros``.
+    """
+    spec = registry.captioning_spec()
+    thinking = elitellm.resolve_thinking(spec, reasoning=False)
+    messages = [
+        {"role": "system", "content": VLM_PAGE_PROMPT},
+        {
+            "role": "user",
+            "content": [{"type": "image_url", "image_url": {"url": data_url}}],
+        },
+    ]
+    context = measure_request_context(messages, model=spec, reasoning=False)
+
+    async def _one(deadline: float) -> str | None:
+        async with _tracked_call(
+            kind=accounting.KIND_LLM,
+            purpose="vlm_page",
+            thinking=thinking,
+            context=context,
+            spec=spec,
+            deadline=deadline,
+            capacity=VLM_PAGE_CAPACITY,
+        ) as call_id:
+            resp = await elitellm.complete(
+                spec, messages, reasoning=False, max_tokens=VLM_PAGE_MAX_TOKENS
+            )
+            obs.record_completion(spec.provider_slug, _record_name(spec), resp)
+            message = elitellm.message_from_response(resp)
+            text = (getattr(message, "content", "") or "").strip()
+            choices = getattr(resp, "choices", None) or []
+            finish = getattr(choices[0], "finish_reason", None) if choices else None
+            read = text if text and finish != "length" else None
+            await accounting.settle(
+                call_id=call_id,
+                kind=accounting.KIND_LLM,
+                purpose="vlm_page",
+                thinking=thinking,
+                spec=spec,
+                usage=extract_usage(
+                    getattr(resp, "usage", None), provider=spec.provider_slug
+                ),
+                credit_micros=credit_micros if read else 0,
+            )
+            return read
+
+    for _ in range(2):
+        try:
+            read = await _call_with_retry(_one)
+        except asyncio.CancelledError:
+            raise
+        except (accounting.SettlementError, elitellm.ProviderBusy):
+            raise
+        except Exception:
+            log.warning("VLM page read failed", exc_info=True)
+            continue
+        if read:
+            return read
+    return None
+
+
 async def caption_image(data_url: str, prompt: str) -> str:
     """Describe a standalone image upload so it becomes searchable text.
 
@@ -920,14 +996,14 @@ async def caption_image(data_url: str, prompt: str) -> str:
     """
     spec = registry.captioning_spec()
     caption_thinking = elitellm.resolve_thinking(spec, reasoning=False)
+    # The prompt rides as the system message: Relace refuses an image with no
+    # conversation context (no system prompt, tools or earlier turns).
     messages = [
+        {"role": "system", "content": prompt},
         {
             "role": "user",
-            "content": [
-                {"type": "text", "text": prompt},
-                {"type": "image_url", "image_url": {"url": data_url}},
-            ],
-        }
+            "content": [{"type": "image_url", "image_url": {"url": data_url}}],
+        },
     ]
     context = measure_request_context(messages, model=spec, reasoning=False)
 

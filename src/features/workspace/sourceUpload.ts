@@ -3,6 +3,8 @@ import type { FileKind, SourceUploadPolicy } from '@/api/types';
 import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import { m } from '@/i18n';
 
+import type { SourceAnalysisErrorCode } from './sourceAnalysis';
+
 export type ParseMode = 'fast' | 'none';
 
 const PARSING_MODES = ['fast'] as const;
@@ -40,8 +42,9 @@ export function parseModeIssues(
   file: Pick<File, 'name' | 'size'>,
   kind: FileKind,
   policy: SourceUploadPolicy,
-  /** The browser analysis found more pages than the mode's maxPages. */
-  tooManyPages = false
+  /** The browser analysis failure that rules parsing out: more pages than
+   * the mode's maxPages, or a PDF that needs a password to open. */
+  analysisError?: SourceAnalysisErrorCode
 ): Record<ParsingMode, string | null> {
   if (isTextKind(kind, policy)) return { fast: null };
   const ext = extensionWithDot(file.name);
@@ -55,7 +58,12 @@ export function parseModeIssues(
     if (file.size > rule.maxBytes) {
       return `over ${Math.round(rule.maxBytes / 1024 / 1024)} MB`;
     }
-    if (tooManyPages) return m.source_parse_over_pages({ max: rule.maxPages });
+    if (analysisError === 'too_many_pages') {
+      return m.source_parse_over_pages({ max: rule.maxPages });
+    }
+    if (analysisError === 'password_protected') {
+      return m.source_parse_password_protected();
+    }
     return null;
   };
   return { fast: issueFor('fast') };

@@ -29,13 +29,13 @@ const (
 
 const (
 	ResourceDigitalParsePage = "digital_parse_page"
-	ResourceOCRParsePage     = "ocr_parse_page"
+	ResourceVLMIngestPage    = "vlm_ingest_page"
 	ResourceEmailMessage     = "email_message"
 )
 
 var ingestResourceKeys = []string{
 	ResourceDigitalParsePage,
-	ResourceOCRParsePage,
+	ResourceVLMIngestPage,
 }
 
 type ResourceRate struct {
@@ -149,17 +149,4 @@ func CreditsForTokens(rates TokenRates, kind string, inputTokens, outputTokens, 
 		return uncached*rates.MicrosPerInputToken + cached*rates.MicrosPerCachedInputToken + outputTokens*rates.MicrosPerInputToken
 	}
 	return uncached*rates.MicrosPerInputToken + cached*rates.MicrosPerCachedInputToken + outputTokens*rates.MicrosPerOutputToken
-}
-
-func CreditsForParsePages(pages, ocrPages, digitalRate, ocrRate int64) int64 {
-	if pages <= 0 {
-		return 0
-	}
-	if ocrPages < 0 {
-		ocrPages = 0
-	}
-	if ocrPages > pages {
-		ocrPages = pages
-	}
-	return (pages-ocrPages)*digitalRate + ocrPages*ocrRate
 }

@@ -59,8 +59,24 @@ describe('source upload policy', () => {
       'none'
     );
     expect(
-      parseModeIssues(file('book.pdf'), 'pdf', sourceUploadPolicy, true)
+      parseModeIssues(
+        file('book.pdf'),
+        'pdf',
+        sourceUploadPolicy,
+        'too_many_pages'
+      )
     ).toEqual({ fast: m.source_parse_over_pages({ max: 1400 }) });
+    expect(
+      parseModeIssues(
+        file('locked.pdf'),
+        'pdf',
+        sourceUploadPolicy,
+        'password_protected'
+      )
+    ).toEqual({ fast: m.source_parse_password_protected() });
+    expect(
+      parseModeIssues(file('book.pdf'), 'pdf', sourceUploadPolicy, 'unreadable')
+    ).toEqual({ fast: null });
   });
 });
 

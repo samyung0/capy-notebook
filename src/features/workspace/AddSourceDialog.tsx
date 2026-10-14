@@ -99,6 +99,7 @@ import {
 } from './sourceAnalysis';
 import {
   aggregateSourceAnalysis,
+  analysisFailurePatch,
   initialAnalysisStatus,
   remoteSourceAnalysisInput,
   type SourceAnalysisStatus,
@@ -237,7 +238,7 @@ function ParseModeSelect({
     { name: pending.name, size: pending.sizeBytes },
     pending.kind,
     policy,
-    pending.analysisError === 'too_many_pages'
+    pending.analysisError
   );
   return (
     <Select
@@ -262,7 +263,8 @@ function ParseModeSelect({
   );
 }
 
-/** A fast-parse row's analysis failure, refusal or OCR warning. */
+/** A fast-parse row's analysis failure, refusal or OCR warning, or the
+ * notice that a password-protected PDF is added without parsing. */
 function SourceAnalysisNote({
   policy,
   source,
@@ -274,12 +276,13 @@ function SourceAnalysisNote({
   if (!issue) return null;
   return (
     <p
-      className={cn(
-        't-meta',
-        issue.code === 'scanned_pages_warning'
-          ? 'text-tint-warning-fg'
-          : 'text-tint-error-fg'
-      )}
+      className={cn('t-meta', {
+        'text-fg-muted': issue.code === 'password_protected',
+        'text-tint-error-fg':
+          issue.code !== 'password_protected' &&
+          issue.code !== 'scanned_pages_warning',
+        'text-tint-warning-fg': issue.code === 'scanned_pages_warning',
+      })}
     >
       {sourceAnalysisIssueMessage(issue, policy)}
     </p>
@@ -350,7 +353,7 @@ function setConnectResume(
 }
 
 /** Expected cost of one source at the policy rates: fast-parsed documents
- * by digital/OCR page count, everything else free. */
+ * by text-layer and vision-read page count, everything else free. */
 function sourceCreditEstimate(
   source: Pick<PendingSource, 'analysisResult' | 'parseMode'>,
   uploadPolicy: SourceUploadPolicy
@@ -358,7 +361,7 @@ function sourceCreditEstimate(
   if (source.parseMode !== 'fast' || !source.analysisResult) return 0;
   return calculateParseCreditMicros(source.analysisResult, {
     digitalPageRateMicros: uploadPolicy.digitalParsePageCreditMicros,
-    ocrPageRateMicros: uploadPolicy.ocrParsePageCreditMicros,
+    vlmPageRateMicros: uploadPolicy.vlmIngestPageCreditMicros,
   });
 }
 
@@ -450,10 +453,10 @@ function useSourceBatch(
         (error) => {
           if (error instanceof SourceAnalysisCancelledError) return;
           patchSource(source.key, {
-            analysisError:
-              error instanceof SourceAnalysisError ? error.code : 'failed',
+            ...analysisFailurePatch(
+              error instanceof SourceAnalysisError ? error.code : 'failed'
+            ),
             analysisProgress: undefined,
-            analysisStatus: 'error',
           });
         }
       );

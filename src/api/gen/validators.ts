@@ -5232,14 +5232,14 @@ export const GetSourceUploadPolicyResponse = zod.object({
   "text": zod.boolean()
 })),
   "maxBytes": zod.int(),
-  "ocrParsePageCreditMicros": zod.int(),
   "parseModes": zod.array(zod.object({
   "extensions": zod.array(zod.string()),
   "maxBytes": zod.int(),
   "maxOcrPages": zod.int().optional(),
   "maxPages": zod.int().optional(),
   "mode": zod.enum(['fast', 'none'])
-}))
+})),
+  "vlmIngestPageCreditMicros": zod.int()
 })
 
 

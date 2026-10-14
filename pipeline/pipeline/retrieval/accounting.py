@@ -273,6 +273,7 @@ async def open_call(
     provider: str = "",
     model: str = "",
     deadline: float | None = None,
+    capacity: tuple[str, int] | None = None,
 ) -> None:
     """Insert the pending row before the provider HTTP call.
 
@@ -322,6 +323,7 @@ async def open_call(
                 admission_mode,
                 state.job_attempt_id,
                 state.job_stage,
+                capacity,
             )
         )
         try:
@@ -433,17 +435,22 @@ def _open_call_sync(
     admission_mode: str | None = None,
     job_attempt_id: int | None = None,
     job_stage: str = "",
+    capacity: tuple[str, int] | None = None,
 ) -> bool:
-    """Take the capacity lease and insert the row atomically. False when full."""
+    """Take the capacity lease and insert the row atomically. False when full.
+
+    ``capacity`` (lease key, limit) replaces the model's own row for a call
+    with a gate of its own, such as the VLM page read."""
     from ..store import db
 
     with db.connect() as conn:
         with conn.cursor() as cur:
-            lease = (
-                model_capacity(cur, provider, model, admission_mode)
-                if admission_mode is not None
-                else None
-            )
+            if admission_mode is None:
+                lease = None
+            elif capacity is not None:
+                lease = capacity
+            else:
+                lease = model_capacity(cur, provider, model, admission_mode)
             if lease is not None:
                 # Unlocked look first: a full gate returns without touching
                 # the session or call rows, and without the model-wide lock.
@@ -538,7 +545,10 @@ async def settle(
     thinking: str,
     spec: ModelConfig,
     usage: NormalizedUsage,
+    credit_micros: int | None = None,
 ) -> RequestAccounting | None:
+    """``credit_micros`` replaces token pricing for an ingest call billed per
+    unit (a VLM page read)."""
     state = current()
     if state is None:
         return None
@@ -553,6 +563,7 @@ async def settle(
                 thinking,
                 spec,
                 usage,
+                credit_micros,
                 deadline=state.receipt_deadlines.get(call_id),
             )
         )
@@ -686,19 +697,21 @@ def _settle_ingest_call_sync(
     thinking: str,
     spec: ModelConfig,
     usage: NormalizedUsage,
+    credit_micros: int | None = None,
 ) -> None:
     """LLM calls made by ingest (summaries, standalone image captions) bill
-    their tokens; the only per-unit ingest rates are parsed pages."""
+    their tokens; a VLM page read bills its page rate instead."""
     from .. import registry
     from ..store import db
 
-    credit_micros = registry.credits_for_tokens(
-        spec,
-        kind,
-        usage.input_tokens,
-        usage.output_tokens,
-        usage.cached_read_tokens,
-    )
+    if credit_micros is None:
+        credit_micros = registry.credits_for_tokens(
+            spec,
+            kind,
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cached_read_tokens,
+        )
     with db.connect() as conn:
         with conn.cursor() as cur:
             result = db.settle_ingest_provider_call(

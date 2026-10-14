@@ -298,3 +298,71 @@ async def test_caption_retries_transient_failures_too(monkeypatch, sleeps, inges
         == "a chart"
     )
     assert calls == 3 and len(sleeps) == 2
+
+
+async def test_vlm_page_rereads_a_cut_off_page_once_and_charges_only_a_usable_read(
+    monkeypatch, sleeps, ingest_mode
+):
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+    finishes = iter(["length", "stop"])
+    opened: list = []
+    charged: list = []
+
+    async def open_call(*_args, **kwargs):
+        opened.append(kwargs["capacity"])
+
+    async def settle(**kwargs):
+        charged.append(kwargs["credit_micros"])
+
+    async def complete(_spec, _messages, **kwargs):
+        assert kwargs["max_tokens"] == models.VLM_PAGE_MAX_TOKENS
+        return elitellm.chat_response(
+            {"role": "assistant", "content": "page text"},
+            finish_reason=next(finishes),
+            usage={"prompt_tokens": 1, "completion_tokens": 1},
+        )
+
+    monkeypatch.setattr(models.accounting, "open_call", open_call)
+    monkeypatch.setattr(models.accounting, "settle", settle)
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    read = await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1_000)
+    assert read == "page text"
+    assert opened == [models.VLM_PAGE_CAPACITY] * 2
+    assert charged == [0, 1_000]
+
+
+async def test_vlm_page_is_unread_after_two_failed_reads(
+    monkeypatch, sleeps, ingest_mode
+):
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+    calls = 0
+
+    async def complete(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise RuntimeError("connection reset")
+        return elitellm.chat_response(
+            {"role": "assistant", "content": ""},
+            finish_reason="stop",
+            usage={"prompt_tokens": 1, "completion_tokens": 0},
+        )
+
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    assert (
+        await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1) is None
+    )
+    assert calls == 2
+
+
+async def test_vlm_page_busy_past_the_budget_re_pends_the_job(
+    monkeypatch, sleeps, ingest_mode
+):
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+
+    async def complete(*_args, **_kwargs):
+        raise _busy()
+
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    with pytest.raises(elitellm.ProviderBusy):
+        await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1)

@@ -483,6 +483,7 @@ async def test_open_call_forwards_numeric_context_before_provider_call(monkeypat
                 None,
                 None,
                 "",
+                None,
             ),
         )
     ]
@@ -627,6 +628,7 @@ async def test_ingest_settlement_stays_per_call_and_local(monkeypatch):
                 "instant",
                 _spec(),
                 usage,
+                None,
             ),
         )
     ]

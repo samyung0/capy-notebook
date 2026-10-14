@@ -15,6 +15,6 @@ export interface SourceUploadPolicy {
   digitalParsePageCreditMicros: number;
   kinds: SourceUploadKindPolicy[];
   maxBytes: number;
-  ocrParsePageCreditMicros: number;
   parseModes: SourceUploadParseModePolicy[];
+  vlmIngestPageCreditMicros: number;
 }

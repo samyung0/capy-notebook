@@ -4,6 +4,7 @@ source fencing, donor reuse, provider admission and ingest retry handling.
 
 from __future__ import annotations
 
+import base64
 import io
 import json
 from pathlib import Path
@@ -299,7 +300,7 @@ def _ingest_payload(**overrides):
                 "unit": "page",
                 "creditMicrosPerUnit": 1_000_000,
             },
-            "ocr_parse_page": {
+            "vlm_ingest_page": {
                 "version": 2,
                 "unit": "page",
                 "creditMicrosPerUnit": 1_000_000,
@@ -811,7 +812,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
     monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
-    chunks = await worker._chunks_for(
+    chunks, unread = await worker._chunks_for(
         payload={"blobPath": "sources/notes.md"},
         name="notes.md",
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="md"),
@@ -822,7 +823,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
         source_sha256="aa" * 32,
     )
 
-    assert chunks == ["# Notes"]
+    assert chunks == ["# Notes"] and unread == []
     assert parse_stub["descriptor"] is None
     assert parse_stub["chunked"] is None
 
@@ -831,7 +832,7 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
     monkeypatch.setattr(worker, "_read_text", lambda _p: '{"topic": "osmosis"}')
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
-    chunks = await worker._chunks_for(
+    chunks, _unread = await worker._chunks_for(
         payload={"blobPath": "sources/data.json"},
         name="data.json",
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="json"),
@@ -889,7 +890,7 @@ async def test_a_table_chunks_without_overlap(parse_stub, monkeypatch, tmp_path)
         encoding="utf-8",
     )
 
-    chunks = await worker._chunks_for(
+    chunks, _unread = await worker._chunks_for(
         payload={"blobPath": "sources/grades.csv"},
         name="grades.csv",
         processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),
@@ -945,7 +946,7 @@ def test_page_chunks_apply_the_bundle_furniture_and_prefer_the_repaired_pdf(
         seen["headings"] = pdf
         return chunks
 
-    def _score(chunks, pdf, *, ocr):
+    def _score(chunks, pdf, *, vlm):
         seen["confidence"] = pdf
 
     monkeypatch.setattr(worker, "retain_headings", _retain)
@@ -1967,3 +1968,44 @@ async def test_a_failed_note_index_abandons_its_content_claim(monkeypatch):
     with pytest.raises(TerminalError):
         await worker._process_material_index_bound(job)
     assert abandoned == ["rgc_new"]
+
+
+async def test_vlm_pages_join_their_page_and_unread_ones_are_reported(
+    monkeypatch, tmp_path: Path
+):
+    (tmp_path / "vlm").mkdir()
+    for page in (1, 3, 10):
+        (tmp_path / "vlm" / f"{page}.jpg").write_bytes(str(page).encode())
+    texts = {1: "Scanned page two", 10: "Page eleven"}
+
+    async def caption(*, data_url: str, exclusive: bool, **_kwargs):
+        assert exclusive is False
+        page = int(base64.b64decode(data_url.split(",", 1)[1]))
+        return texts.get(page, ""), "", 0, False
+
+    monkeypatch.setattr(worker.caption_cache, "caption", caption)
+    token = worker._resource_rates.set(
+        {worker._RESOURCE_VLM_PAGE: {"version": 1, "creditMicrosPerUnit": 1_000_000}}
+    )
+    try:
+        blocks, unread = await worker._read_vlm_pages(
+            [
+                {"type": "text", "text": "one", "page_idx": 0},
+                {"type": "text", "text": "two figure", "page_idx": 1},
+                {"type": "text", "text": "three", "page_idx": 2},
+            ],
+            tmp_path,
+            "f_1",
+        )
+    finally:
+        worker._resource_rates.reset(token)
+
+    assert [(b["page_idx"], b["text"]) for b in blocks] == [
+        (0, "one"),
+        (1, "two figure"),
+        (1, "Scanned page two"),
+        (2, "three"),
+        (10, "Page eleven"),
+    ]
+    assert blocks[2]["_recovery"] == worker.VLM_RECOVERY
+    assert unread == [4]

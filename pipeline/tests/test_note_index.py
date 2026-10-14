@@ -74,7 +74,7 @@ def _admit(workspace, material_id: str) -> str:
         "captioningProviderSlug": captioning.provider_slug,
         "captioningModelSlug": captioning.model_slug,
         "captioningModelVersion": captioning.version,
-        "resourceRates": {"digital_parse_page": rate, "ocr_parse_page": rate},
+        "resourceRates": {"digital_parse_page": rate, "vlm_ingest_page": rate},
     }
     with workspace._connect() as conn:
         conn.execute(

@@ -130,15 +130,16 @@ func TestMigrateRejectsEditedChecksum(t *testing.T) {
 	}
 }
 
-// The page-rate and default-pin files are the two forward migrations that
-// write seed state; re-applying their bodies must leave the database as it is.
+// The page-rate, default-pin and VLM page-rate files are the forward
+// migrations that write seed state; re-applying their bodies must leave the
+// database as it is.
 func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 	s := openMigrateTestStore(t)
 	ctx := context.Background()
 	if err := s.Migrate(ctx); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql"} {
+	for _, name := range []string{"0008_parse_page_rates.sql", "0009_default_chat_model.sql", "0084_vlm_ingest_page.sql"} {
 		body, err := migrations.FS.ReadFile(name)
 		if err != nil {
 			t.Fatal(err)
@@ -154,7 +155,7 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	for _, key := range []string{"digital_parse_page", "ocr_parse_page"} {
+	for key, want := range map[string]int{"digital_parse_page": 2, "vlm_ingest_page": 1} {
 		var version int
 		var micros int64
 		err := s.pool.QueryRow(ctx,
@@ -163,8 +164,8 @@ func TestForwardSeedMigrationsAreRerunnable(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: exactly one active row expected: %v", key, err)
 		}
-		if version != 2 || micros != 1_000_000 {
-			t.Fatalf("%s active row = v%d %d micros, want v2 1000000", key, version, micros)
+		if version != want || micros != 1_000_000 {
+			t.Fatalf("%s active row = v%d %d micros, want v%d 1000000", key, version, micros, want)
 		}
 	}
 	var captionActive int

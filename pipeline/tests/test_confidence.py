@@ -37,16 +37,14 @@ def test_score_rewards_agreement_and_flags_drift_tables_and_coverage() -> None:
     assert mixed == 1.0
 
 
-def test_ocr_routed_pages_score_a_fixed_half() -> None:
-    assert confidence.score_chunk("whatever", [PAGE], 1.0, ocr_page=True) == (
-        0.5,
-        ["page text came from OCR"],
-    )
+def test_vlm_read_pages_score_full_confidence() -> None:
+    # A VLM page has no text layer to agree with; it scores 1.0 by decision.
+    assert confidence.score_chunk("whatever", [""], None, vlm_page=True) == (1.0, [])
     blocks = [
         {"type": "text", "text": "native", "page_idx": 0},
-        {"type": "text", "text": "line", "page_idx": 3, "_recovery": "rapidocr-line"},
+        {"type": "text", "text": "page", "page_idx": 3, "_recovery": "vlm-page"},
     ]
-    assert confidence.ocr_pages(blocks) == {4}
+    assert confidence.vlm_pages(blocks) == {4}
 
 
 def test_score_chunks_reads_the_pdf_once_per_file(tmp_path: Path) -> None:
@@ -66,11 +64,9 @@ def test_score_chunks_reads_the_pdf_once_per_file(tmp_path: Path) -> None:
         Chunk(text="invented words nowhere on the page", page_start=2, page_end=2),
         Chunk(text="no page model"),
     ]
-    confidence.score_chunks(chunks, path, ocr={2})
+    confidence.score_chunks(chunks, path, vlm={2})
     assert chunks[0].confidence == 1.0 and chunks[0].confidence_reasons == []
-    assert chunks[1].confidence == 0.5 and chunks[1].confidence_reasons == [
-        "page text came from OCR"
-    ]
+    assert chunks[1].confidence == 1.0 and chunks[1].confidence_reasons == []
     assert chunks[2].confidence is None and chunks[2].confidence_reasons == []
 
 
@@ -225,7 +221,7 @@ def test_font_repaired_pdf_scores_like_the_lab(tmp_path: Path) -> None:
     repaired_path = tmp_path / "parsed.pdf"
     repaired_path.write_bytes(repaired)
     unrepaired = copy.deepcopy(chunks)
-    confidence.score_chunks(unrepaired, fixture / "source.pdf", ocr=set())
-    confidence.score_chunks(chunks, repaired_path, ocr=set())
+    confidence.score_chunks(unrepaired, fixture / "source.pdf", vlm=set())
+    confidence.score_chunks(chunks, repaired_path, vlm=set())
     assert all(c.confidence < 0.9 for c in unrepaired)
     assert all(c.confidence >= 0.98 and not c.confidence_reasons for c in chunks)

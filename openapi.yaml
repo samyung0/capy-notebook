@@ -5332,13 +5332,13 @@ components:
         maxBytes:
           format: int64
           type: integer
-        ocrParsePageCreditMicros:
-          format: int64
-          type: integer
         parseModes:
           items:
             $ref: "#/components/schemas/SourceUploadParseModePolicy"
           type: array
+        vlmIngestPageCreditMicros:
+          format: int64
+          type: integer
       required:
         - kinds
         - parseModes
@@ -5346,7 +5346,7 @@ components:
         - maxBytes
         - allowNoExtension
         - digitalParsePageCreditMicros
-        - ocrParsePageCreditMicros
+        - vlmIngestPageCreditMicros
       type: object
     SourceUploadReservation:
       additionalProperties: false

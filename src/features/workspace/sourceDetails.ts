@@ -35,15 +35,32 @@ export type SourceAnalysisIssue =
       ocrPages: number;
     };
 
-/** What the row says about a fast-parse source's analysis. Failures come from
- * the worker. The OCR bands derive from the policy's maxOcrPages because the
- * browser count is an estimate: a PDF over 105% of the cap is refused, one
- * from 95% warns and uploads (the parser refuses it if it really is over).
- * Office estimates miss slide-master text, so they only ever warn. */
+/** The row patch for a failed analysis. A PDF that needs a password to open
+ * can only be stored, so its row switches to no parsing instead of failing. */
+export function analysisFailurePatch(
+  code: SourceAnalysisErrorCode
+): Pick<AnalyzedSource, 'analysisError' | 'analysisStatus'> &
+  Partial<Pick<AnalyzedSource, 'parseMode'>> {
+  if (code === 'password_protected') {
+    return { analysisError: code, analysisStatus: 'idle', parseMode: 'none' };
+  }
+  return { analysisError: code, analysisStatus: 'error' };
+}
+
+/** What the row says about a source's analysis. Failures come from the
+ * worker and concern fast-parse rows only, except a password-protected PDF,
+ * whose row is held at no parsing and says so. The OCR bands derive from the
+ * policy's maxOcrPages because the browser count is an estimate: a PDF over
+ * 105% of the cap is refused, one from 95% warns and uploads (the parser
+ * refuses it if it really is over). Office estimates miss slide-master text,
+ * so they only ever warn. */
 export function sourceAnalysisIssue(
   source: AnalyzedSource,
   policy: Pick<SourceUploadPolicy, 'parseModes'>
 ): SourceAnalysisIssue | null {
+  if (source.analysisError === 'password_protected') {
+    return { code: 'password_protected' };
+  }
   if (source.parseMode !== 'fast') return null;
   if (source.analysisStatus === 'error') {
     if (!source.analysisInput) return { code: 'unsupported' };

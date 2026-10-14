@@ -1734,10 +1734,13 @@ The estimate feeds the dialog summary and the page limits, both from
 `source-upload-policy` (`parseModes[fast].maxPages` 1,400 and `maxOcrPages`
 1,000, the parser's own env values). Every reserved fast-parse source carries
 an estimate, so a failed analysis keeps Add disabled until the row is removed
-or switched to no parsing. The row names the failure: a user-password PDF (an
-owner-password-only PDF opens and passes), a damaged file, more pages than
-`maxPages` (fast parsing is also disabled in the row's mode menu), or the
-generic message for a transport error or a browser safety limit. A PDF whose
+or switched to no parsing. The row names the failure: a damaged file, more
+pages than `maxPages` (fast parsing is also disabled in the row's mode menu),
+or the generic message for a transport error or a browser safety limit. A PDF
+that needs a password to open (an owner-password-only PDF opens and passes) is
+not a failure: its row switches to no parsing, fast parsing is disabled in its
+mode menu, and a muted notice says it is added without parsing; the parser
+refuses one that arrives anyway as `parse_unreadable`. A PDF whose
 text-less count is above 105% of `maxOcrPages` is refused; from 95% up to that
 it warns and uploads, since the count can be off by a few pages and the parser
 refuses the file at admission if it really is over. Office OCR estimates miss

@@ -47,6 +47,7 @@ from typing import Any, NoReturn
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from odl.document import SourceUnreadable
 from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
@@ -247,11 +248,13 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
         from odl.capture import capture_page
 
         return capture_page(normalized.data, **document.capture)
-    if normalized.preview_pdf is not None:
-        from odl.document import pdf_page_count
+    from odl.document import pdf_page_count
 
-        # Office pages exist only after LibreOffice; PDFs were counted at admission.
-        _check_page_count(pdf_page_count(normalized.data))
+    # Office pages exist only after LibreOffice; PDFs were counted at admission,
+    # where a broken PDF counts as zero, so this read refuses it.
+    pages = pdf_page_count(normalized.data)
+    if normalized.preview_pdf is not None:
+        _check_page_count(pages)
     from odl.refine import parse_pdf
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
@@ -1495,6 +1498,8 @@ def _failure_response(
         code, status = "parse_too_many_pages", 422
     elif isinstance(exc, ParseOOM):
         code, status = "parse_oom", 422
+    elif isinstance(exc, SourceUnreadable):
+        code, status = "parse_unreadable", 422
     elif isinstance(exc, ParserRuntimeFailure):
         code, status = "parser_runtime_failed", 503
     else:
@@ -1759,6 +1764,15 @@ async def _produce_artifact(
         return (
             {
                 "code": "parse_too_many_pages",
+                "detail": str(exc),
+                "source_fingerprint": fingerprint,
+            },
+            422,
+        )
+    except SourceUnreadable as exc:
+        return (
+            {
+                "code": "parse_unreadable",
                 "detail": str(exc),
                 "source_fingerprint": fingerprint,
             },
