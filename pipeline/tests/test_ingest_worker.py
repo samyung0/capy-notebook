@@ -1271,7 +1271,14 @@ async def test_a_full_parse_queue_puts_the_job_back_without_burning_an_attempt(
     worker._cleanup_payload_source(job["payload"])
 
 
-async def test_confirmed_parser_oom_is_terminal(monkeypatch):
+@pytest.mark.parametrize(
+    ("error", "message"),
+    [
+        (parser_client.ParserOOMError("memory exhausted"), "terminal parser resource"),
+        (parser_client.ParserFormatMismatchError("not a .docx"), "not a .docx"),
+    ],
+)
+async def test_terminal_parser_answers_fail_without_retry(monkeypatch, error, message):
     from pipeline.jobs import TerminalError
 
     monkeypatch.setattr(worker, "_set_file_status", lambda *_a: None)
@@ -1279,12 +1286,10 @@ async def test_confirmed_parser_oom_is_terminal(monkeypatch):
     monkeypatch.setattr(
         worker.parser_client,
         "ensure_artifact",
-        lambda *_a: (_ for _ in ()).throw(
-            parser_client.ParserOOMError("memory exhausted")
-        ),
+        lambda *_a: (_ for _ in ()).throw(error),
     )
 
-    with pytest.raises(TerminalError, match="terminal parser resource limit"):
+    with pytest.raises(TerminalError, match=message):
         await worker._ensure_document_artifact(
             job={"id": "job_parse", "attempts": 1},
             payload=_ingest_payload(),

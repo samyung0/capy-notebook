@@ -1,3 +1,4 @@
+import './lib/zodJitless';
 import './lib/openuiDevtools';
 import { QueryClientProvider } from '@tanstack/react-query';
 import {

@@ -47,7 +47,11 @@ from typing import Any, NoReturn
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from odl.document import SourceUnreadable
+from odl.document import (
+    OfficeConversionFailed,
+    OfficeFormatMismatch,
+    SourceUnreadable,
+)
 from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
@@ -243,7 +247,8 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
     """
     from odl.document import normalize_document
 
-    normalized = normalize_document(document.data, document.name)
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    normalized = normalize_document(document.data, document.name, WORK_DIR)
     if document.capture is not None:
         from odl.capture import capture_page
 
@@ -257,7 +262,6 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
         _check_page_count(pages)
     from odl.refine import parse_pdf
 
-    WORK_DIR.mkdir(parents=True, exist_ok=True)
     work = Path(tempfile.mkdtemp(prefix="doc-", dir=WORK_DIR))
     try:
         output = parse_pdf(
@@ -620,14 +624,11 @@ def _read_worker_result(path: Path) -> dict[str, Any]:
 
 
 def _clear_work_dir() -> None:
-    """Startup removes what an earlier parser process abandoned."""
+    """Startup empties the work dir (no child runs yet): what an earlier parser
+    process abandoned, and the temporary files of anything using TMPDIR."""
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    for path in (
-        *WORK_DIR.glob("doc-*"),
-        *WORK_DIR.glob("slot-*"),
-        *WORK_DIR.glob("transfer-*"),
-    ):
-        if path.is_dir():
+    for path in WORK_DIR.iterdir():
+        if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path, ignore_errors=True)
         else:
             _unlink(path)
@@ -915,7 +916,9 @@ class ParserRuntime:
         # The kernel kills the process with the highest oom_score, so a
         # document whose child, or Java inside it, died by SIGKILL while the
         # cgroup's oom_kill count rose is the one that was using the memory.
-        killed = isinstance(exc, JavaKilled) or (
+        # LibreOffice's launcher hides the signal its soffice.bin died by, so
+        # any failed conversion counts the same way.
+        killed = isinstance(exc, (JavaKilled, OfficeConversionFailed)) or (
             isinstance(exc, _ChildExited) and exc.exitcode == -signal.SIGKILL
         )
         if killed and _cgroup_event_value("oom_kill") > work.oom_kills:
@@ -1498,6 +1501,8 @@ def _failure_response(
         code, status = "parse_too_many_pages", 422
     elif isinstance(exc, ParseOOM):
         code, status = "parse_oom", 422
+    elif isinstance(exc, OfficeFormatMismatch):
+        code, status = "parse_format_mismatch", 422
     elif isinstance(exc, SourceUnreadable):
         code, status = "parse_unreadable", 422
     elif isinstance(exc, ParserRuntimeFailure):
@@ -1764,6 +1769,15 @@ async def _produce_artifact(
         return (
             {
                 "code": "parse_too_many_pages",
+                "detail": str(exc),
+                "source_fingerprint": fingerprint,
+            },
+            422,
+        )
+    except OfficeFormatMismatch as exc:
+        return (
+            {
+                "code": "parse_format_mismatch",
                 "detail": str(exc),
                 "source_fingerprint": fingerprint,
             },

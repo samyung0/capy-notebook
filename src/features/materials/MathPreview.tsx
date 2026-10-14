@@ -1,6 +1,7 @@
 import type { MathfieldElement } from 'mathlive';
 import { useLayoutEffect, useRef, useState } from 'react';
 import { cn } from '@/lib/cn';
+import { inertTex } from './inertTex';
 
 /** Use the same layout as editing, including MathLive's empty template slots. */
 export function MathPreview({
@@ -42,7 +43,7 @@ export function MathPreview({
       // MathLive 0.110 has no \dots; show \ldots, keeping the stored LaTeX.
       element.setAttribute(
         'value',
-        tex.replace(/\\dots(?![a-zA-Z])/g, '\\ldots')
+        inertTex(tex.replace(/\\dots(?![a-zA-Z])/g, '\\ldots'))
       );
       host.current.append(element);
       cleanup = () => element.remove();

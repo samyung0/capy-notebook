@@ -81,7 +81,7 @@ def main() -> int:
             "format": source.suffix[1:],
         }
         try:
-            normalized = normalize_document(data, source.name)
+            normalized = normalize_document(data, source.name, target)
             (target / "preview.pdf").write_bytes(normalized.data)
             write_json(target / "pdf-geometry.json", pdf_geometry(normalized.data))
             work = target / "parser-work"

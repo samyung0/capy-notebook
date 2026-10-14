@@ -815,6 +815,11 @@ Skip all security rules for:
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
 
+**Keep script injection off on the app zone:** Web Analytics' automatic
+beacon (`static.cloudflareinsights.com`), Zaraz and Rocket Loader each add a
+script to every page, which the public pages' script policy (§2.4) blocks
+with a console error.
+
 **Cache rules:** bypass cache for `api.capynotebook.com`, `collab.capynotebook.com`, and
 `ops.capynotebook.com` entirely. A cached SSE or WebSocket response breaks
 streaming. Cached operator responses can disclose one operator's data to
@@ -997,33 +1002,67 @@ is a loopback `http` origin (`vite-embed.ts`), with the headers from
 runs on `localhost`; another port alone would be the same site. The Playwright
 configs serve their own frame on `localhost` next to the app's `127.0.0.1`.
 
-### 2.4 App image policy (report-only)
+### 2.4 App page policies
 
-The SPA's pages and the pages the site Worker renders are sent with
-`Content-Security-Policy-Report-Only: img-src …`, listing the only places a
-page may draw an image or CSS `url()` from: `'self'`, `data:`, `blob:`, the
-environment's bucket, the `BANK_ASSETS_URL` base, `https://img.clerk.com`
-(avatars) and `https://i.ytimg.com` (YouTube posters). Go's own HTML behind
-`/api/*` (the unsubscribe page) has no images and no policy.
-`vite-image-policy.ts` builds the value once per SPA build and sends it two
-ways:
+Two content security policies, both built once per SPA build by
+`vite-image-policy.ts` from configuration the deploy already has:
+
+- **Images, report-only, everywhere.** The SPA's pages and the pages the site
+  Worker renders are sent with `Content-Security-Policy-Report-Only` listing
+  the only places a page may draw an image or CSS `url()` from: `'self'`,
+  `data:`, `blob:`, the environment's bucket, the `BANK_ASSETS_URL` base,
+  `https://img.clerk.com` (avatars) and `https://i.ytimg.com` (YouTube
+  posters). It stays report-only.
+- **Scripts, enforced on the Worker's pages.** The share, summary and error
+  pages the site Worker renders are also sent with an enforced
+  `Content-Security-Policy` (`pagePolicy`):
+  - `script-src` names only `'self'`, Clerk's packages on its frontend API
+    (`https://{host}/npm/@clerk/`, the host decoded from
+    `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain host fails the
+    build; shared quizzes and flashcard sets load clerk-js from it) and this
+    PostHog project's script assets (`/static/` and
+    `/array/{VITE_POSTHOG_KEY}/config.js` on the host posthog-js loads them
+    from, `src/lib/posthogHost.ts`: `https://{eu|us}-assets.i.posthog.com` for
+    PostHog Cloud, the proxy itself otherwise). No `'unsafe-inline'` and no
+    `'unsafe-eval'`: the Worker adds the SHA-256 of each inline script its
+    own template holds (a build's templates hold none, Vite bundles them; the
+    dev server's carry React's refresh preamble), so markup a render writes
+    into the page never runs. The SPA's and the share pages' scripts set Zod
+    to `jitless` first (`src/lib/zodJitless.ts`), so Zod never probes
+    `new Function` (the summary and error pages' script builds no schema);
+  - `script-src-attr 'none'` (no event-handler attributes),
+    `worker-src 'self' blob:` (clerk-js's timer worker),
+    `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
+    MathLive and Mermaid write style attributes),
+    `frame-src` `VITE_EMBED_ORIGIN` and `https://www.youtube-nocookie.com`,
+    `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`;
+  - `frame-ancestors 'self'`: only the app may frame these pages, and
+    nothing in it does today, so an outside site (an LMS, a blog) cannot
+    embed a shared quiz or note.
+
+  The SPA gets the same `script-src` report-only, inside its image header,
+  plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
+  `https://apis.google.com` (the Drive picker), to learn what the app itself
+  would need before anything there is enforced.
+
+Go's own HTML behind `/api/*` (the unsubscribe page) has no images and no
+policy. The values reach the pages two ways:
 
 - Workers Assets serves the SPA's HTML, so the client build appends a `/*`
-  rule to `dist/_headers` (after `public/_headers`). With
-  `html_handling: "none"`, every SPA page, `/` included, is the
-  single-page-application fallback, so the whole SPA's policy rests on
+  rule to `dist/_headers` (after `public/_headers`) with the report-only
+  `appPolicy`. With `html_handling: "none"`, every SPA page, `/` included, is
+  the single-page-application fallback, so the whole SPA's policy rests on
   Workers Assets applying `_headers` to that fallback, which only a deployed
   check can see (UAT checklist §7). If it does not, the fallback plan is to
   run the site Worker first on every path but the static files
   (`run_worker_first` with exclusions such as `!/assets/*`) and set the
   header there, at the cost of one Worker call per page load.
 - Worker responses get no `_headers`, so the share, summary and error pages
-  the site Worker renders read the same value from the share renderer bundle
-  (`IMAGE_POLICY`, `src/share/server.tsx`) and set it in
+  the site Worker renders read both values from the share renderer bundle
+  (`IMAGE_POLICY` and `PAGE_POLICY`, `src/share/server.tsx`) and set them in
   `workers/site/handler.ts`, on GET and HEAD alike.
 
-Nothing is set by hand. The hosts come from configuration the deploy already
-has:
+Nothing is set by hand. The hosts come from configuration:
 
 - the bucket from `B2_BUCKET` and `B2_ENDPOINT`, addressed like Go's
   presigner: `https://{bucket}.{endpoint host}`, or the bucket's path on the
@@ -1032,8 +1071,11 @@ has:
 - the bank from `VITE_BANK_ASSETS_URL`, which `scripts/env/config.py` builds
   from `BANK_ASSETS_URL`: its origin, or its path on the host when the base
   has one (a shared host such as `f003.backblazeb2.com/file/…`);
-- reports go to the `capy-web` Sentry project's security endpoint, derived
-  from `VITE_SENTRY_DSN` and tagged with `VITE_APP_ENV`
+- Clerk, PostHog and the embed frame from the variables the SPA build already
+  reads (`VITE_CLERK_PUBLISHABLE_KEY`, `VITE_POSTHOG_KEY`,
+  `VITE_POSTHOG_HOST`, `VITE_EMBED_ORIGIN`);
+- reports from both policies go to the `capy-web` Sentry project's security
+  endpoint, derived from `VITE_SENTRY_DSN` and tagged with `VITE_APP_ENV`
   (`https://{host}/api/{project}/security/?sentry_key=…&sentry_environment=…`).
 
 A `uat` or `production` build (`VITE_APP_ENV`) fails when `B2_BUCKET`,
@@ -1043,11 +1085,14 @@ policy without a DSN only logs to the browser console. Each report carries the
 page's full path, so a report from a shared page includes its link token;
 Sentry scrubs those paths (§5 step 9).
 
-A new image host goes into `imagePolicy` (and its test) before any page uses
-it. To enforce, send the same value as `Content-Security-Policy` in both places
-once UAT shows no reports from the app's own pages. The HTML embed frame, the
-Office runtime and Ops keep their own policies (§2.3, `workers/office/_headers`,
-the Ops application below).
+A new image host goes into `imageSources` (and its test) before any page uses
+it; a new script or frame host on a public page goes into `scriptSources` or
+`pagePolicy` (and `workers/site/scriptPolicy.test.ts`) first, never as
+`'unsafe-inline'` or `'unsafe-eval'`. A blocked script shows in the console as
+`Refused to load the script` or `Refused to execute inline script`, and as a
+`capy-web` security report. The HTML embed frame, the Office runtime and Ops
+keep their own policies (§2.3, `workers/office/_headers`, the Ops application
+below).
 
 ---
 
@@ -1244,7 +1289,7 @@ re-embedding stays on the parse path and is handled later by ingest.
    behind the client-side `ignoreErrors`.
 7. Set a spend cap. Default sampling can burn a month's quota in a day during
    an incident, which is exactly when reporting must not stop.
-8. The app's image policy (§2.4) reports to `capy-web`'s security endpoint,
+8. The app's page policies (§2.4) report to `capy-web`'s security endpoint,
    tagged by environment. Keep the project's default ignored sources for CSP
    reports on (Settings → Security Headers: browser extensions and local
    schemes), so extensions that inject images do not file reports. A report
@@ -1559,9 +1604,9 @@ connections (two sync and two async each). A coordinator timeout durably
 requeues its claim and exits that child; the supervisor replaces only that
 child. If the kernel kills a coordinator child, its lease expires and follows
 the same one-retry rule. This differs from a parser OOM: when a parse child or
-its JVM dies by SIGKILL while the parser cgroup's `oom_kill` count rises, the
-parser writes a `parse_oom` marker for that child's document and respawns only
-that child. Parse children run at `oom_score_adj` 1000, the OCR process at 500
+its JVM dies by SIGKILL, or its LibreOffice conversion fails, while the parser
+cgroup's `oom_kill` count rises, the parser writes a `parse_oom` marker for
+that child's document and respawns only that child. Parse children run at `oom_score_adj` 1000, the OCR process at 500
 and the API at 0, so the kernel picks a parse child first.
 
 `restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
@@ -1742,10 +1787,18 @@ snapshot and requires an operator maintenance window.
 The parser converts untrusted Office uploads with LibreOffice (7.4.7 from
 Debian bookworm in `parser/Dockerfile`, out of upstream support, so security
 fixes come only from Debian). A document can link images or text from a URL or
-a local file, so the conversion is fenced twice:
+a local file, so the conversion is fenced in the image, the container and on
+the host:
 
-- **In the parser image.** `parser/odl/document.py` gives every conversion a
-  fresh LibreOffice profile in the job's temporary directory. Its
+- **In the parser image.** `parser/odl/document.py` converts an Office file
+  only from the container its suffix names (ZIP for `.docx/.xlsx/.pptx`, OLE2
+  for `.doc/.xls/.ppt`) and through that format's pinned import filter
+  (`--infilter`), never LibreOffice's own type detection; other bytes are
+  refused before LibreOffice starts, as the terminal `422 parse_format_mismatch`
+  (the coordinator fails the file without a retry). Every conversion gets a
+  fresh LibreOffice profile in a job directory under the parse child's slot
+  directory, which is also LibreOffice's `TMPDIR`, so a killed conversion's
+  files go when the slot is wiped. Its
   `registrymodifications.xcu` blocks links from documents outside trusted
   locations (there are none), disables macros at the highest security level and
   sets Writer and Calc link updates to never. A conversion that exceeds
@@ -1754,6 +1807,23 @@ a local file, so the conversion is fenced twice:
   Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
   convert through this one function. It ships with the parser image; nothing to
   apply by hand.
+- **In the container.** Both ingest compose files run the parser with
+  `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp
+  profile and `read_only: true`. Its writable places are a 64 MiB tmpfs HOME
+  (`/run/capy-parser/home`, also the parser user's passwd home, which Java
+  reads), a 64 MiB tmpfs `/tmp` (only the JVM's perf data: Java's
+  `java.io.tmpdir` is the document's output directory), the `parse_spool`
+  volume and the disk-backed `parser_work` volume at `/run/capy-parser/work`
+  (slot directories, transfers, Office jobs, and the image's `TMPDIR`, so
+  spooled uploads stay off RAM; startup empties it). The release script runs
+  `parse-spool-init` before every candidate parser, not only at bootstrap, so
+  the volumes get their directories and owner (uid 10001) from init rather
+  than from the image. The Parser budget workflow runs the image under the
+  same flags. `pipeline/tests/test_ingest_compose.py` keeps both files and the
+  budget's `docker run` to this and checks that every `${VAR:?}` they use is
+  required by `deploy/env-manifest.json` for that deploy target. After a
+  release, `docker exec "$parser" stat -c %u /run/capy-parser/work` prints
+  `10001`.
 - **On the host.** `deploy/ansible/ingest-host/templates/nftables.conf.j2`
   rejects every new outbound connection from uid 10001 (the `parser` user)
   except TCP to 8090 (production) and 8091 (nonprod) over loopback. Both
@@ -2626,8 +2696,8 @@ Clerk: its browser bundle and API calls, `img.clerk.com` avatars, the worker it
 spawns, and the Cloudflare challenge frame bot protection renders at sign-in.
 The origin comes from decoding `VITE_CLERK_PUBLISHABLE_KEY`, so it follows the
 environment; an unreadable key leaves the policy at `'self'` and the dashboard
-reports that Clerk failed to load. The SPA sends only a report-only image
-policy (§2.4), which is why the same Clerk setup works there without
+reports that Clerk failed to load. The SPA's policies are report-only
+(§2.4), which is why the same Clerk setup works there without
 configuration.
 
 Every hostname a stack publishes on the shared `coolify` network has to be

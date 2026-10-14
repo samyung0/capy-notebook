@@ -22,7 +22,9 @@ or silently correct a source-authored mathematical or programming mistake.
 
 Remove repeated text only when the inspected page establishes that extraction
 duplicated it. Repeated examples across books or intentionally repeated source
-material are outside this repair task.
+material are outside this repair task. Consecutive chunks overlap by design: a
+chunk may open with the previous chunk's closing text, carried as retrieval
+context. That overlap is not an extraction defect; leave it as it is.
 
 Use the normal review artifact with full replacement tags for the assigned IDs,
 plus `base_corpus_sha256`, `source_pdf_path` and `source_repairs`. The corpus hash

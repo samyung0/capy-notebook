@@ -3,7 +3,12 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import type { ResolvedConfig } from 'vite';
 import { describe, expect, it } from 'vitest';
-import { imagePolicy, imagePolicyHeaders } from '../../vite-image-policy';
+import {
+  appPolicy,
+  imagePolicy,
+  pagePolicy,
+  policyHeaders,
+} from '../../vite-image-policy';
 
 const DEPLOYED = {
   B2_BUCKET: 'capy-notebook-uat',
@@ -81,13 +86,15 @@ describe('image-source policy', () => {
     );
   });
 
-  it('adds the policy to the built _headers and to the share renderer', () => {
+  it('adds the policies to the built _headers and to the share renderer', () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'image-policy-'));
     writeFileSync(path.join(outDir, '_headers'), '/icons/*\n  X-Kept: yes\n');
-    const policy = imagePolicy(DEPLOYED);
-    const plugin = imagePolicyHeaders(policy);
+    const plugin = policyHeaders(DEPLOYED);
     const config = plugin.config as () => { define: Record<string, string> };
-    expect(config().define.__CAPY_IMAGE_POLICY__).toBe(JSON.stringify(policy));
+    expect(config().define).toEqual({
+      __CAPY_IMAGE_POLICY__: JSON.stringify(imagePolicy(DEPLOYED)),
+      __CAPY_PAGE_POLICY__: JSON.stringify(pagePolicy(DEPLOYED)),
+    });
     const resolved = plugin.configResolved as (config: ResolvedConfig) => void;
     resolved({
       build: { outDir, ssr: false },
@@ -98,7 +105,7 @@ describe('image-source policy', () => {
     const headers = readFileSync(path.join(outDir, '_headers'), 'utf8');
     expect(headers).toContain('/icons/*\n  X-Kept: yes\n');
     expect(headers).toContain(
-      `/*\n  Content-Security-Policy-Report-Only: ${policy}\n`
+      `/*\n  Content-Security-Policy-Report-Only: ${appPolicy(DEPLOYED)}\n`
     );
   });
 });

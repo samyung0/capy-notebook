@@ -72,7 +72,7 @@ def main() -> int:
                     raise ValueError("Source differs from the original parse input")
                 old_pdf = (baseline / "preview.pdf").read_bytes()
                 started = time.monotonic()
-                normalized = normalize_document(data, source.name)
+                normalized = normalize_document(data, source.name, target)
                 record["conversion_seconds"] = time.monotonic() - started
                 new_pdf = normalized.data
                 (target / "regenerated.pdf").write_bytes(new_pdf)

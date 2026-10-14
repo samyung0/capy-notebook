@@ -75,6 +75,10 @@ class ParserTooManyPagesError(ParserClientError):
     """The document has more pages than the parser reads (CAPY_PARSE_MAX_PAGES)."""
 
 
+class ParserFormatMismatchError(ParserClientError):
+    """The Office file's bytes are not the format its name says."""
+
+
 class ParserUnreadableError(ParserClientError):
     """The source fails on every attempt (corrupt, password-protected,
     unsupported, or refused by LibreOffice)."""
@@ -332,6 +336,8 @@ def _request_artifact(
                 raise ParserTooManyScannedPagesError(str(detail))
             if payload.get("code") == "parse_too_many_pages":
                 raise ParserTooManyPagesError(str(detail))
+            if payload.get("code") == "parse_format_mismatch":
+                raise ParserFormatMismatchError(str(detail))
             if payload.get("code") == "parse_unreadable":
                 raise ParserUnreadableError(str(detail))
         if (

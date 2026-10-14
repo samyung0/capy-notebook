@@ -41,3 +41,31 @@ describe('Prose math', () => {
     expect(html).toContain('\\frac{a}{');
   });
 });
+
+const IMAGE_LOAD = /<img|<source|rel="preload"/;
+const CHART_LINK =
+  /<a [^>]*href="https:\/\/example.test\/a.png"[^>]*>chart<\/a>/;
+const RAW_LINK = /<a [^>]*href="https:\/\/example.test\/b.png"[^>]*>raw<\/a>/;
+const LINKED_IMAGE =
+  /<a [^>]*href="https:\/\/example.test\/d"[^>]*>linked<\/a>/;
+
+// Security regression: an answer draws images only as links.
+it('draws an image in an answer as a link to it', () => {
+  const html = renderToStaticMarkup(
+    <Prose
+      text={[
+        '![chart](https://example.test/a.png)',
+        '<img src="https://example.test/b.png" alt="raw">',
+        '<picture><source srcset="https://example.test/c.png"></picture>',
+        '[![linked](https://example.test/d.png)](https://example.test/d)',
+      ].join('\n\n')}
+    />
+  );
+  expect(html).not.toMatch(IMAGE_LOAD);
+  expect(html).not.toContain('c.png');
+  expect(html).toMatch(CHART_LINK);
+  expect(html).toMatch(RAW_LINK);
+  // A linked image is its link's text, not a link inside a link.
+  expect(html).toMatch(LINKED_IMAGE);
+  expect(html).not.toContain('d.png');
+});

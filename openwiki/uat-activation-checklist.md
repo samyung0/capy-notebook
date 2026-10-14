@@ -239,21 +239,44 @@ Clerk development instance. Point a local gateway at the UAT database only with
   `/share/notes/…` page. Set up in
   [deployment-runbook.md §2.3](deployment-runbook.md#23-interactive-block-frame).
 - The app's image policy
-  ([deployment runbook §2.4](deployment-runbook.md#24-app-image-policy-report-only)):
+  ([deployment runbook §2.4](deployment-runbook.md#24-app-page-policies)):
   `curl -sI` on `/`, on a deep link such as `/workspaces/x`, on a `/w/…`
-  summary and on a `/share/notes/…` page each return the same
+  summary and on a `/share/notes/…` page each return
   `Content-Security-Policy-Report-Only: img-src 'self' data: blob: …`, naming
   the UAT bucket host, the bank asset base, `https://img.clerk.com`,
   `https://i.ytimg.com` and a `report-uri` on the Sentry security endpoint
-  with `sentry_environment=uat`. If `/` and the deep link lack it while the
-  summary has it, Workers Assets does not apply `_headers` to the SPA
-  fallback: tell the Editor session (runbook §2.4 has the fallback plan).
-  Then open a workspace with a PDF, an image source, a note with images, a
-  YouTube block, a diagram and a bank-copied quiz, and the same note shared
-  signed out: the console shows no `[Report Only]` message and `capy-web`
-  gets no security report. The note journey already fails on any console
-  error on the shared note page. The Sentry scrubbing rule (runbook §5
-  step 9) is in place before this deploy.
+  with `sentry_environment=uat`. On `/` and the deep link the same header
+  also carries `script-src 'self' https://clerk.uat.capynotebook.com/npm/@clerk/ …`. If
+  `/` and the deep link lack it while the summary has it, Workers Assets does
+  not apply `_headers` to the SPA fallback: tell the Editor session (runbook
+  §2.4 has the fallback plan). Then open a workspace with a PDF, an image
+  source, a note with images, a YouTube block, a diagram and a bank-copied
+  quiz, and the same note shared signed out: the console shows no
+  `[Report Only]` image message and `capy-web` gets no image report. Script
+  reports from the SPA are expected at first (it is how we learn what the
+  app needs); collect them for the Editor session rather than treating them
+  as failures. A `script-src` report with `eval` from Zod's chunk is not
+  expected: the SPA sets Zod to `jitless` first. The note journey already fails on any console error on the
+  shared note page. The Sentry scrubbing rule (runbook §5 step 9) is in place
+  before this deploy.
+- The script policy on the Worker's pages (runbook §2.4): `curl -s -o
+  /dev/null -D -` on a `/share/notes/…`, a `/share/quizzes/…`, a `/w/…`
+  summary and a missing `/w/x` returns an enforced `Content-Security-Policy`
+  whose `script-src` is `'self'`,
+  `https://clerk.uat.capynotebook.com/npm/@clerk/` and, when UAT has a
+  PostHog key, the `eu-assets.i.posthog.com` `/static/` and
+  `/array/{key}/config.js` paths, with no `'unsafe-inline'`, no
+  `'unsafe-eval'` and no `sha256-` hash, then `script-src-attr 'none'`,
+  `frame-src https://uat.capy-embed.pages.dev https://www.youtube-nocookie.com`,
+  `form-action 'self'`, `frame-ancestors 'self'`, `object-src 'none'` and
+  `base-uri 'none'`. Web
+  Analytics' automatic beacon, Zaraz and Rocket Loader are off on the zone
+  (runbook §2). Signed out, open a shared note
+  with a formula, a diagram, an embedded quiz, an interactive block and a
+  YouTube block (play it), a shared quiz and a shared flashcard set (Clerk
+  loads on those two), and a summary: each comes to life, and the console
+  shows no `Refused to` message. A `Refused to` message names what the
+  policy blocked: send it, with the URL, to the Editor session.
 - `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in UAT's Coolify variables and
   blank in production's (the renderer refuses a production value). Without it
   the Office refusal journey's publication is never held and the journey fails.
@@ -264,6 +287,13 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - Backend `X-Capy-Release`, SPA `capy-release` and all selected ingest container
   revision labels match the release. The state's `active` agrees, `current`
   resolves to its snapshot and `pending` is absent after success.
+- The nonprod parser runs hardened and owns its work volume (set up in
+  [deployment-runbook.md §7.4](deployment-runbook.md#74-parser-egress-and-libreoffice-conversion)):
+  on the ingest host, with `parser` the container id from §7.4,
+  `docker exec "$parser" stat -c %u /run/capy-parser/work` prints `10001`,
+  `docker exec "$parser" grep NoNewPrivs /proc/1/status` prints `1`, and
+  `docker inspect --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}}' "$parser"`
+  prints `true [ALL]`.
 - An ingest-only run verifies the already deployed backend SHA. An unfinished
   Coolify job leaves recovery pending rather than resuming incompatible workers.
 - Local UI plus UAT still renders the same summary through Vite. Full-local

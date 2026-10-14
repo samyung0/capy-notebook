@@ -1029,6 +1029,14 @@ readers see it. Decide when it runs (on save or on first view by someone
 else), what a flagged block shows instead (a notice), and who
 pays for the call.
 
+Epo, 2026-10-15: the screening also checks that a snippet sends nothing it
+holds or reads out of its frame: no navigating its own frame to another site,
+no URLs built from page or reader content, no peer connections. Chat
+interactives load like note blocks meanwhile (no click-to-run), and this
+screening covers both. A cheap deterministic pre-check can run before Jev
+(absolute URLs outside the frame's CDN allowlist, `location`, `window.open`,
+`RTCPeerConnection`); a block that fails either is shown as a notice.
+
 ### Review session polish
 
 Epo, 2026-10-04: the end-of-session summary and the size of questions in a

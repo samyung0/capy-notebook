@@ -125,6 +125,10 @@ The important boundaries are:
   exception: its script runs only in a sandboxed frame on a separate site whose
   CSP allows no request but scripts, stylesheets and fonts from four public
   CDNs, and never during export.
+- The share, summary and error pages the site Worker renders enforce a script
+  policy: scripts only from the app and named hosts, never inline, from an
+  event-handler attribute or through eval, and only the app may frame them
+  (`vite-image-policy.ts` `pagePolicy`, `workers/site/handler.ts`).
 - Model instructions found in user files or retrieved material never acquire
   tool, authorization, billing, or operator authority.
 

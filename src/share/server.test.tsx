@@ -10,6 +10,11 @@ const TEMPLATE =
   '<html lang="en"><head><!--capy-share-head--></head><body><!--capy-share-body--></body></html>';
 const text = (value: string) => ({ text: value });
 const STATE = /id="share-state">(.*?)<\/script>/;
+/** The host inside a fetching or navigating attribute (a meta description that
+ * quotes the source as text is harmless). */
+const EVIL_IN_ATTRIBUTE =
+  /(?:style|src|srcset|href|poster|background)="[^"]*evil\.test/i;
+const EVENT_HANDLER = /<[^>]*\son[a-z]+\s*=/i;
 const JSON_LD = /<script type="application\/ld\+json">(.*?)<\/script>/;
 const IMAGE_PRELOAD = /<link rel="preload" as="image"[^>]*\/>/g;
 const REACT_ID = /_(?:s\d+-)?R_[0-9a-z]+_/g;
@@ -139,6 +144,44 @@ describe('renderSharePage', () => {
       dateModified: '2026-10-04T10:00:00Z',
       name: 'Cells',
     });
+  });
+
+  // Security regression: a shared note's formula is rendered with no event
+  // handler and no paint/background fetch (inertTex draws the HTML commands as
+  // text; the tripwire is the backstop).
+  const formulaPage = (texExpression: string) =>
+    renderSharePage({
+      canonical: 'https://app.example.test/share/notes/mat_note.sig',
+      page: {
+        kind: 'notes',
+        note: {
+          ...note,
+          content: {
+            schemaVersion: MATERIAL_SCHEMA_VERSION,
+            value: [
+              {
+                children: [text('')],
+                id: 'eq',
+                texExpression,
+                type: 'equation',
+              },
+            ],
+          },
+        } as AnonymousNote,
+        token: 'mat_note.sig',
+      },
+      template: TEMPLATE,
+    });
+
+  it('renders a formula with no handler or fetch', () => {
+    const page = formulaPage(
+      '\\htmlStyle{background:url(https://evil.test/a)}{x}'
+    );
+    expect(page).toContain('class="ML__latex"');
+    // The command's URL never reaches an attribute value or an event handler;
+    // it draws as plain text, and the page's own CSS keeps its `url(`.
+    expect(page).not.toMatch(EVIL_IN_ATTRIBUTE);
+    expect(page).not.toMatch(EVENT_HANDLER);
   });
 
   it('hands the browser only what its islands need', () => {

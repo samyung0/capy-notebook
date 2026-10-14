@@ -914,8 +914,9 @@ OCR stage, the parsed PDF; small pipe messages carry only status, paths and the
 text-less page list. A handed-off document's blocks stay in its result file
 until the OCR stage finishes. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
-1.4 GiB of retained heap back to about 0.55 GiB. Startup removes abandoned
-transfer, document and slot files. Cancelling an executing caller leaves the
+1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work
+directory: abandoned transfer, document and slot files, and the temporary
+files of anything using `TMPDIR`, which the image points there. Cancelling an executing caller leaves the
 runtime-owned future, admission slot and deadline active. Cancelling waiting
 work removes it from the queue.
 
@@ -925,10 +926,17 @@ value when that document started. The kernel picks the process with the highest
 `oom_score` (the largest parse child or JVM), so that document is the one using
 the memory; with several slots it can be a large document rather than the one
 whose allocation tipped the cgroup over. It gets a `parse_oom` quarantine
-marker, its child is respawned, and the other documents continue. A SIGKILL
-without a counted OOM kill, a LibreOffice process killed inside a conversion
-(its launcher hides the signal), or any other child crash is a
-`parser_runtime_failed` with one ordinary retry. A completed artifact takes
+marker, its child is respawned, and the other documents continue. LibreOffice's
+launcher hides the signal its `soffice.bin` died by, so any failed conversion
+while the count rose is that document's `parse_oom` too; without a counted OOM
+kill it stays an ordinary failure. The window is the whole conversion (up to
+180 s), so a conversion that fails for another reason (a damaged file) while
+another process in the cgroup is OOM-killed is quarantined as `parse_oom` as
+well; such a file would fail its retry anyway. A SIGKILL without a counted OOM kill, or any
+other child crash, is a `parser_runtime_failed` with one ordinary retry. An
+Office file whose bytes are not its suffix's container (ZIP for OOXML, OLE2 for
+the legacy formats) is refused before LibreOffice as the terminal
+`parse_format_mismatch`; the coordinator fails the file without a retry. A completed artifact takes
 precedence over a late marker. Hard timeout and OOM markers are terminal
 without a retry. Only a process-wide failure (repeated OCR deaths, or a
 runtime task that cannot continue) marks `/healthz` failed and exits so Docker
@@ -3231,7 +3239,9 @@ program answer through `@openuidev/react-lang`'s `Renderer` and the
 Capy-owned components in `chat/blocks/` (prose through Streamdown with
 `$…$`/`$$…$$` math drawn by KaTeX, which loads with the first formula; a
 single `$` follows Pandoc's rule so prices stay text, and a formula KaTeX
-cannot read shows its source; tabs,
+cannot read shows its source; a Markdown or HTML image is drawn as a link to
+its URL, showing its alt text (inside a link, as that link's text), and a
+`<picture>` source as nothing, so an answer loads no picture from a URL; tabs,
 steps, accordions, callouts, label/value rows, cards, tables, SVG charts
 themed by `--chart-1..6`, plots (`Plot` with `Curve`, `RefLine` and `Point`
 marks, mapped onto the shared `plot` question block and drawn by `PlotChart`;

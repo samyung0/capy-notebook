@@ -221,8 +221,8 @@ importers:
         specifier: ^3.3.0
         version: 3.3.0
       mathlive:
-        specifier: 0.110.0
-        version: 0.110.0
+        specifier: 0.111.1
+        version: 0.111.1
       mermaid:
         specifier: ^11.16.0
         version: 11.16.1
@@ -795,12 +795,6 @@ packages:
     resolution:
       {
         integrity: sha512-mTvWz9rnQwx1U3h0XPTHaX7bgfkpipLLTQyjlC2cdhQpQEuoLT0AGzoydeoq2NxfEVv6fWOOETcSbb2nptleyw==,
-      }
-
-  "@arnog/colors@0.5.0":
-    resolution:
-      {
-        integrity: sha512-NB7yqrO7qvInsqJdqz6C6mDU+2oiKmbBbk3czMS0E7KkGxLRy538tEHCsB5TKqmaxxXpi6/U120TnGl8NsDePg==,
       }
 
   "@azure/msal-browser@5.19.0":
@@ -1415,13 +1409,6 @@ packages:
       }
     peerDependencies:
       commander: ~15.0.0
-
-  "@cortex-js/compute-engine@0.58.0":
-    resolution:
-      {
-        integrity: sha512-N0+vXjVZfKwJS7ZIGvq41mojI55m5TrdDXveAXzNjzjZ9iNiNrdEzXL2EmrcP+9GCWCwTonrEeZWAIG78f3INg==,
-      }
-    engines: { node: ">=21.7.3", npm: ">=10.5.0" }
 
   "@cspotcode/source-map-support@0.8.1":
     resolution:
@@ -8064,13 +8051,6 @@ packages:
         integrity: sha512-4hm4VPpIecmlg59CHXnRDnqGplJFrbLG4aFEl5vl6cK1u76ws3LLvX7ikFnTDl5vo39sjWD6AaDPYodJp/NNHg==,
       }
 
-  complex-esm@2.1.1-esm1:
-    resolution:
-      {
-        integrity: sha512-IShBEWHILB9s7MnfyevqNGxV0A1cfcSnewL/4uPFiSxkcQL4Mm3FxJ0pXMtCXuWLjYz3lRRyk6OfkeDZcjD6nw==,
-      }
-    engines: { node: ">=16.14.2", npm: ">=8.5.0" }
-
   compute-scroll-into-view@3.1.1:
     resolution:
       {
@@ -10832,10 +10812,10 @@ packages:
       }
     engines: { node: ">= 0.4" }
 
-  mathlive@0.110.0:
+  mathlive@0.111.1:
     resolution:
       {
-        integrity: sha512-UOpJsQ6h1eeN0xZULGTl1MwUB/lZLCDuzKeHvKEh7Zra8U/rtgDNrssj5PZdJtBTIV48AfEhtv6rv47AeMOxJA==,
+        integrity: sha512-RVaC7NO02Lmx3ZNUxOHR2xCRpcvTfBb2BtdgV60cTanAMufaUkWcPPB2VxChcsNeL+0rTQKqOPDYxXLPOXJI+A==,
       }
 
   mdast-util-find-and-replace@3.0.2:
@@ -14666,8 +14646,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  "@arnog/colors@0.5.0": {}
-
   "@azure/msal-browser@5.19.0":
     dependencies:
       "@azure/msal-common": 16.13.0
@@ -15114,12 +15092,6 @@ snapshots:
   "@commander-js/extra-typings@15.0.0(commander@15.0.0)":
     dependencies:
       commander: 15.0.0
-
-  "@cortex-js/compute-engine@0.58.0":
-    dependencies:
-      "@arnog/colors": 0.5.0
-      complex-esm: 2.1.1-esm1
-      decimal.js: 10.6.0
 
   "@cspotcode/source-map-support@0.8.1":
     dependencies:
@@ -19736,8 +19708,6 @@ snapshots:
 
   compare-versions@6.1.1: {}
 
-  complex-esm@2.1.1-esm1: {}
-
   compute-scroll-into-view@3.1.1: {}
 
   confbox@0.2.4: {}
@@ -21355,9 +21325,7 @@ snapshots:
 
   math-intrinsics@1.1.0: {}
 
-  mathlive@0.110.0:
-    dependencies:
-      "@cortex-js/compute-engine": 0.58.0
+  mathlive@0.111.1: {}
 
   mdast-util-find-and-replace@3.0.2:
     dependencies:

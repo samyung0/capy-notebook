@@ -70,6 +70,9 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         "java",
         f"-Xmx{JVM_MAX_HEAP}",
         "-Djava.awt.headless=true",
+        # The JVM ignores TMPDIR: keep its temporary files on the work volume,
+        # not the small RAM-backed /tmp.
+        f"-Djava.io.tmpdir={out_dir}",
         "-cp",
         os.pathsep.join([str(jar_path()), str(ENTRY_JAR)]),
         "capy.odl.CapyMain",

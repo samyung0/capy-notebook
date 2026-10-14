@@ -1,4 +1,10 @@
-import { type ComponentProps, type ReactNode, useMemo } from 'react';
+import {
+  type ComponentProps,
+  createContext,
+  type ReactNode,
+  useContext,
+  useMemo,
+} from 'react';
 import { Streamdown } from 'streamdown';
 import { Icon } from '@/components/ui/Icon';
 import {
@@ -46,17 +52,31 @@ function Heading({ children }: { children?: ReactNode }) {
   );
 }
 
-const components = {
-  a: ({ children, href }: ComponentProps<'a'>) => (
+/** Inside a link, where an image is drawn as its alt text alone. */
+const InLink = createContext(false);
+
+function Link({ children, href }: ComponentProps<'a'>) {
+  return (
     <a
       className="text-link underline underline-offset-3 hover:text-link-hover"
       href={href}
       rel="noopener noreferrer"
       target="_blank"
     >
-      {children}
+      <InLink value>{children}</InLink>
     </a>
-  ),
+  );
+}
+
+/** An answer draws no picture from a URL: an image becomes a link to it, as
+ * in agent-written notes (inside a link, its alt text). */
+function Image({ alt, src }: ComponentProps<'img'>) {
+  const label = alt || src;
+  return useContext(InLink) ? label : <Link href={src}>{label}</Link>;
+}
+
+const components = {
+  a: Link,
   blockquote: ({ children }: { children?: ReactNode }) => (
     <blockquote className="border-line border-l-2 pl-2.5 text-fg-secondary">
       {children}
@@ -71,6 +91,7 @@ const components = {
   h4: ({ children }: { children?: ReactNode }) => (
     <h4 className="font-semibold text-sm">{children}</h4>
   ),
+  img: Image,
   li: ({ children }: { children?: ReactNode }) => (
     <li className="[&+li]:mt-0.5 [&>p]:inline">{children}</li>
   ),
@@ -79,6 +100,8 @@ const components = {
       {children}
     </ol>
   ),
+  // A `<picture>` source loads nothing.
+  source: () => null,
   span: MathSpan,
   ul: ({ children }: { children?: ReactNode }) => (
     <ul className="ml-5 list-outside list-disc whitespace-normal">

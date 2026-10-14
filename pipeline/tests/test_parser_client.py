@@ -369,6 +369,15 @@ def test_oom_response_is_terminally_classified(monkeypatch, parser_url):
         parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
 
+def test_format_mismatch_response_is_its_own_terminal_error(monkeypatch, parser_url):
+    _stub_request(
+        monkeypatch,
+        _Resp(422, {"code": "parse_format_mismatch", "detail": "not a .docx"}),
+    )
+    with pytest.raises(parser_client.ParserFormatMismatchError, match="not a .docx"):
+        parser_client._request_artifact(_descriptor(), "doc.docx", "job-1")
+
+
 @pytest.mark.parametrize(
     ("code", "error"),
     [
