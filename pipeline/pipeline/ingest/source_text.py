@@ -13,6 +13,7 @@ import csv
 import io
 import math
 import mimetypes
+import re
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -33,6 +34,11 @@ from ..retrieval.chunking import estimate_tokens
 _TABULAR_MAX_COLUMNS = 1_000
 _TABULAR_MAX_FIELD_CHARS = 8 << 20
 _TABULAR_MAX_TOKENS = 1_000_000
+# Whitespace runs in a cell, line breaks inside quoted cells included, become
+# one space, so each row stays one line. Only runs that aren't already a single
+# space match: re.sub keeps every match's segment until it joins them, so a cell
+# of ordinary single-spaced text then allocates nothing per word.
+_WHITESPACE = re.compile(r"\s{2,}|[^\S ]")
 
 
 def extension(name: str) -> str:
@@ -196,10 +202,8 @@ def tabular_text(path: str, name: str) -> str:
         if has_header
         else [f"Column {index + 1}" for index in range(width)]
     )
-    # Whitespace runs, line breaks inside quoted cells included, become one
-    # space, so each row stays one line.
     headers = [
-        (" ".join(headers[index].split()) if index < len(headers) else "")
+        (_WHITESPACE.sub(" ", headers[index]).strip() if index < len(headers) else "")
         or f"Column {index + 1}"
         for index in range(width)
     ]
@@ -209,13 +213,17 @@ def tabular_text(path: str, name: str) -> str:
 
     def append(line: str) -> None:
         nonlocal tokens
-        tokens += estimate_tokens(line)
-        if tokens > _TABULAR_MAX_TOKENS:
-            raise InputLimitError(
-                "tabular_text_limit",
-                "delimited table exceeds the searchable-text limit",
-            )
-        parts.append(line)
+        # A character costs at least a quarter token, so a line whose length
+        # alone passes the cap is refused before the slower estimate.
+        if tokens + len(line) // 4 <= _TABULAR_MAX_TOKENS:
+            tokens += estimate_tokens(line)
+            if tokens <= _TABULAR_MAX_TOKENS:
+                parts.append(line)
+                return
+        raise InputLimitError(
+            "tabular_text_limit",
+            "delimited table exceeds the searchable-text limit",
+        )
 
     append("Columns: " + " | ".join(headers))
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as source:
@@ -225,7 +233,7 @@ def tabular_text(path: str, name: str) -> str:
         for row_number, row in enumerate(reader, start=2 if has_header else 1):
             values = []
             for index, raw_value in enumerate(row):
-                value = " ".join(raw_value.split())
+                value = _WHITESPACE.sub(" ", raw_value).strip()
                 if value:
                     values.append(f"{headers[index]}={value}")
             if values:

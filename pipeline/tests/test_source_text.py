@@ -11,16 +11,17 @@ from pipeline.retrieval import chunking
 def test_tabular_text_preserves_headers_values_and_formulas(tmp_path) -> None:
     source = tmp_path / "grades.csv"
     source.write_text(
-        'Student,Score,Formula\nAda,98,"=B2/100"\nLin,87,"=B3/100"\n',
+        'Student," Final \t score ",Formula\nAda,98,"=B2/100"\nLin,87,"=B3/100"\n',
         encoding="utf-8",
     )
 
     text = source_text.tabular_text(str(source), source.name)
 
+    # Whitespace runs in a header collapse like a cell's.
     assert text.split("\n\n") == [
-        "Columns: Student | Score | Formula",
-        "Row 2: Student=Ada | Score=98 | Formula==B2/100",
-        "Row 3: Student=Lin | Score=87 | Formula==B3/100",
+        "Columns: Student | Final score | Formula",
+        "Row 2: Student=Ada | Final score=98 | Formula==B2/100",
+        "Row 3: Student=Lin | Final score=87 | Formula==B3/100",
     ]
 
     # A line break inside a quoted cell must not split its row.
@@ -84,6 +85,26 @@ def test_tabular_text_caps_the_estimated_tokens_of_its_projection(
     ) as error:
         source_text.tabular_text(str(source), source.name)
     assert error.value.code == "tabular_text_limit"
+
+
+def test_tabular_text_refuses_a_line_whose_length_passes_the_cap_unestimated(
+    monkeypatch, tmp_path
+) -> None:
+    source = tmp_path / "wide.csv"
+    source.write_text("Student,Notes\nAda," + "x" * 400 + "\n", encoding="utf-8")
+    monkeypatch.setattr(source_text, "_TABULAR_MAX_TOKENS", 50)
+    estimated: list[str] = []
+    estimate = source_text.estimate_tokens
+    monkeypatch.setattr(
+        source_text,
+        "estimate_tokens",
+        lambda line: estimated.append(line) or estimate(line),
+    )
+
+    with pytest.raises(source_text.TerminalError, match="searchable-text limit"):
+        source_text.tabular_text(str(source), source.name)
+    assert estimated
+    assert all("x" * 400 not in line for line in estimated)
 
 
 @pytest.mark.asyncio
