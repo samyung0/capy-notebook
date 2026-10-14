@@ -2307,6 +2307,11 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
                     "total": 3,
                 },
             ),
+            refused(
+                "invalid_input",
+                "expected text occurs 2 times; include more context",
+                block("b1", "alpha delta"),
+            ),
         ]
     )
     _gateway(monkeypatch, post=lambda url, **kwargs: next(answers))
@@ -2342,6 +2347,9 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
         "The material's blocks now, with the start of each:\n[b1] (p) alpha delta\n"
         "… 2 more; inspect_document pages through them"
     )
+    # An ambiguous expected text comes back with its block too.
+    twice = await edit(5, "b1", "a", "b")
+    assert twice.text().endswith("Block b1 (p) now reads:\nalpha delta")
 
 
 async def test_a_write_naming_unread_excerpts_credits_them(monkeypatch):

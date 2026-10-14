@@ -313,15 +313,33 @@ fn block_listing(editor: &Editor) -> Value {
     json!({ "blocks": blocks, "total": editor.root.children.len() })
 }
 
-/// A stale expectation's refusal carries the block as it reads now.
+/// [block_listing] of an inspection: a material rebuilt since the agent read
+/// it refuses with its blocks as they are now, as a gone id does.
+pub fn listing(blocks: &[InspectedBlock]) -> Value {
+    let listed: Vec<Value> = blocks
+        .iter()
+        .take(LISTED_BLOCKS)
+        .map(|block| {
+            json!({
+                "id": block.id,
+                "text": slice16(&block.text, 0, LISTED_PREVIEW),
+                "type": block.kind,
+            })
+        })
+        .collect();
+    json!({ "blocks": listed, "total": blocks.len() })
+}
+
+/// A refused span (stale, or an expected text that occurs more than once)
+/// carries the block as it reads now, so the retry needs no inspect.
 fn with_current(error: EditError, block: &Value, text: &str) -> EditError {
     match error {
         EditError::Edit {
-            code: StaleTarget,
+            code,
             message,
             details: None,
         } => EditError::Edit {
-            code: StaleTarget,
+            code,
             message,
             details: Some(current_block(block, text.to_owned())),
         },
@@ -1126,7 +1144,13 @@ fn run_command(
             let (node, index) = require_parent(editor, node_type)?;
             let current = node.get(property).and_then(Value::as_str).unwrap_or("");
             if current != expected_value {
-                return edit(StaleTarget, format!("{node_type}.{property} changed"));
+                // The value as it is now (a diagram's source), as a stale
+                // block carries its text.
+                return edit_with(
+                    StaleTarget,
+                    format!("{node_type}.{property} changed"),
+                    current_block(&node, current.to_owned()),
+                );
             }
             let props = Map::from_iter([(property.clone(), Value::String(value.clone()))]);
             editor.set_nodes_at(vec![index], &props)?;

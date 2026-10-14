@@ -253,7 +253,19 @@ pub async fn inspect_material(
     app: &Shared,
     request: &DocumentRequest,
 ) -> Result<Value, DocumentError> {
-    let (room, material_id, schema) = material_room(request)?;
+    let (_, material_id, schema) = material_room(request)?;
+    let blocks = material_blocks(app, &material_id, schema).await?;
+    Ok(json!({ "blocks": blocks, "roomSchema": schema }))
+}
+
+/// A material's blocks in the room of `schema`, as [inspect_material] shows
+/// them.
+async fn material_blocks(
+    app: &Shared,
+    material_id: &str,
+    schema: i64,
+) -> Result<Vec<notes::edit::InspectedBlock>, DocumentError> {
+    let room = format!("material:{material_id}:schema:{schema}");
     let mut client = app
         .db
         .get()
@@ -286,13 +298,13 @@ pub async fn inspect_material(
                     "the material was rebuilt since it was opened",
                 ));
             }
-            let rows: Vec<Vec<u8>> = note_store::rows(&tx, &material_id, None)
+            let rows: Vec<Vec<u8>> = note_store::rows(&tx, material_id, None)
                 .await?
                 .into_iter()
                 .map(|(_, row)| row)
                 .collect();
             if kind == "quiz" {
-                keys = Some(quiz_keys(&tx, &material_id).await?);
+                keys = Some(quiz_keys(&tx, material_id).await?);
             }
             (row.get::<_, Vec<u8>>("state"), rows)
         }
@@ -337,7 +349,7 @@ pub async fn inspect_material(
             key_rows.extend(live_state(app, &keys_room).await);
         }
     }
-    let blocks = tokio::task::spawn_blocking(move || -> Result<Value, DocumentError> {
+    tokio::task::spawn_blocking(move || -> Result<_, DocumentError> {
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &base, &rows)
             .map_err(|error| DocumentError::Unknown(error.to_string()))?;
@@ -368,12 +380,10 @@ pub async fn inspect_material(
                 plate
             }
         };
-        let blocks = notes::edit::inspect_material(&doc.transact())?;
-        Ok(serde_json::to_value(blocks).unwrap_or(Value::Null))
+        Ok(notes::edit::inspect_material(&doc.transact())?)
     })
     .await
-    .map_err(|error| DocumentError::Unknown(error.to_string()))??;
-    Ok(json!({ "blocks": blocks, "roomSchema": schema }))
+    .map_err(|error| DocumentError::Unknown(error.to_string()))?
 }
 
 /// This instance's live copy of `room`, when it has the room loaded.
@@ -607,7 +617,10 @@ fn compute(
             notes::edit::apply_material_commands(&mut txn, &root, &commands)?
         };
         let value = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
-        notes::material::assert_canonical(&value, &kind).map_err(|error| unknown(error.0))?;
+        // A whole note the check refuses (an 11th interactive block across
+        // it) is a refusal naming the rule, as for a live item.
+        notes::material::assert_canonical(&value, &kind)
+            .map_err(|error| DocumentError::edit("invalid_input", error.to_string()))?;
         let metrics = notes::limits::measure_value(&value);
         if let Some(code) = notes::limits::limit_code(&metrics)
             && !notes::limits::recovers(&metrics, Some(&previous))
@@ -775,11 +788,21 @@ pub async fn edit_material(
             "material not found",
         ));
     };
-    if i64::from(current.get::<_, i32>("room_schema")) != schema {
-        return Err(DocumentError::edit(
-            "stale_target",
-            "the material was rebuilt since it was inspected",
-        ));
+    let rebuilt = i64::from(current.get::<_, i32>("room_schema"));
+    if rebuilt != schema {
+        // Its blocks as they are now, as a gone block's refusal lists them,
+        // so the retry needs no inspect; read after the lock is let go. The
+        // refusal stands without them when they cannot be read.
+        drop(tx);
+        drop(client);
+        return Err(DocumentError::Edit {
+            code: "stale_target".into(),
+            message: "the material was rebuilt since it was inspected".into(),
+            details: material_blocks(app, &material_id, rebuilt)
+                .await
+                .ok()
+                .map(|blocks| notes::edit::listing(&blocks)),
+        });
     }
     let base: Vec<u8> = current.get("state");
     let kind: String = current.get("kind");
@@ -1322,7 +1345,36 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{DocumentError, Scratch, compute_quiz};
+    use super::{DocumentError, Model, Scratch, compute, compute_quiz};
+
+    /// A note edit whose result the whole-note check refuses (here an 11th
+    /// interactive block across the note) is an `invalid_input` refusal
+    /// naming the rule, not an unknown outcome the agent cannot act on.
+    #[test]
+    fn a_note_the_whole_note_check_refuses_is_refused_naming_the_rule() {
+        let embed = |id: &str| json!({ "type": "html_embed", "id": id, "html": "<p>x</p>", "children": [{ "text": "" }] });
+        let value: Vec<_> = (0..10).map(|i| embed(&format!("e{i}"))).collect();
+        let insert = notes::edit::DocumentCommand::InsertBlock {
+            after_block_id: Some("e9".into()),
+            blocks: vec![embed("e10")],
+        };
+        let refusal = compute(
+            Model::Note.state_from_value(&value),
+            Vec::new(),
+            None,
+            "note".into(),
+            vec![insert],
+            None,
+            None,
+        )
+        .err();
+        assert!(
+            matches!(&refusal, Some(DocumentError::Edit { code, message, .. })
+                if code == "invalid_input"
+                    && message == "invalid material document: 11 interactive blocks over 10"),
+            "{refusal:?}"
+        );
+    }
 
     /// A server write of a quiz (an agent edit, the save API) whose documents
     /// hold a block kind its rooms do not admit is refused, so no rebuilt

@@ -622,7 +622,8 @@ collaboration service's converter builds the same node, reading the agent's
 note as plain Markdown so the snippet keeps every character (the MDX pass a
 paste goes through rewrites HTML inside fences; see `markdownImport.ts`). A
 fence that is not YAML, has no html, has html over 64 KB, or is the eleventh
-is refused by name. Go
+is refused by name, as is an agent edit that would leave the note with an
+eleventh (`invalid_input`, the collaboration service's whole-note check). Go
 `materialdoc`, the collaboration validator and the browser's
 `isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes), `caption` at
 `BLOCK_CAPTION_MAX` (300 characters; Go `materialdoc`, the collaboration
@@ -1760,7 +1761,9 @@ commands through a headless Slate editor
 (`collaboration-rs/crates/notes/src/edit.rs`), stores the
 inverse and item-run guards of the edited nodes, then fans the committed delta
 into the live room as a `service-edit` update; the projection runs on the same
-commit.
+commit. A refused edit names its reason and, where the agent can retry, the
+target as it reads now (see [agentic-retrieval](../agentic-retrieval.md#tools),
+Tools).
 A removed flashcard's review state stays in `review_states`, ignored until an
 Undo brings the card back. The chat result card shows the effect with an Undo
 button (`available`, `undone`, `unavailable`) fed by the receipt's `undo` ref.

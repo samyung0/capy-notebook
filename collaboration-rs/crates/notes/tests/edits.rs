@@ -135,7 +135,18 @@ fn replay_step(
         _ => Ok(step["ok"].clone()),
     };
     tally.steps += 1;
-    let ours = outcome_json(&result);
+    let mut ours = outcome_json(&result);
+    // Every refused span carries its block (2026-10-14); Node's ambiguous
+    // and empty expected texts carried none.
+    if !text_source
+        && step["error"].get("details").is_none()
+        && ours["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("expected"))
+        && let Some(error) = ours["error"].as_object_mut()
+    {
+        error.remove("details");
+    }
     let theirs = if step.get("ok").is_some() {
         json!({ "ok": step["ok"] })
     } else if step.get("error").is_some() {
@@ -249,6 +260,62 @@ fn a_listing_preview_cut_inside_an_emoji_keeps_it_whole() {
     let preview = details["blocks"][0]["text"].as_str().unwrap();
     assert_eq!(preview, kept);
     assert_eq!(preview.encode_utf16().count(), 81);
+    // An inspection lists the same way (a material rebuilt since it was read).
+    let blocks = edit::inspect_material(&doc.transact()).unwrap();
+    assert_eq!(edit::listing(&blocks), details);
+}
+
+/// Refusals the agent retries carry the target as it reads now (2026-10-14):
+/// an expected text that occurs more than once comes with its block, and a
+/// stale `set_mermaid` (a set_property) with the source the diagram holds.
+#[test]
+fn ambiguous_spans_and_stale_properties_carry_the_current_target() {
+    let refusal = |value: Value, command: DocumentCommand| {
+        let doc = common::doc(&notes::slate_yjs::state_from_value(&[value], 3), 4);
+        let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+        match edit::apply_material_commands(&mut doc.transact_mut(), &root, &[command]) {
+            Err(EditError::Edit {
+                code,
+                message,
+                details,
+            }) => (json!(code), message, details),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    };
+    let text = "the cell and the cell wall";
+    assert_eq!(
+        refusal(
+            json!({ "type": "p", "id": "b1", "children": [{ "text": text }] }),
+            DocumentCommand::ReplaceText {
+                block_id: Some("b1".into()),
+                expected_text: "the cell".into(),
+                text: "a cell".into(),
+                offset: None,
+            },
+        ),
+        (
+            json!("invalid_input"),
+            "expected text occurs 2 times; include more context".to_owned(),
+            Some(json!({ "block": { "id": "b1", "text": text, "type": "p" } })),
+        )
+    );
+    let source = "graph TD\n  A --> B";
+    assert_eq!(
+        refusal(
+            json!({ "type": "mermaid", "id": "m1", "source": source, "children": [{ "text": "" }] }),
+            DocumentCommand::SetProperty {
+                node_type: "mermaid".into(),
+                property: "source".into(),
+                expected_value: "graph TD\n  A".into(),
+                value: "graph LR\n  A --> C".into(),
+            },
+        ),
+        (
+            json!("stale_target"),
+            "mermaid.source changed".to_owned(),
+            Some(json!({ "block": { "id": "m1", "text": source, "type": "mermaid" } })),
+        )
+    );
 }
 
 /// A library figure arrives as an `img` naming the editor asset Go stored for

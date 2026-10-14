@@ -2847,7 +2847,9 @@ code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 The model reads only the message and any help text, so each refusal names its
 reason (2026-10-14): a create by someone who lost the editor role is refused
 as `lifecycle_rejected`, a note edit whose converted blocks fail the document
-check as `invalid_input` naming the rule, a source edit whose checkpoint would
+check as `invalid_input` naming the rule, as does one whose whole result fails
+the collaboration service's note check (an eleventh interactive block across
+the note; `compute` in `collaboration-rs/crates/server/src/edits.rs`), a source edit whose checkpoint would
 be over its byte limit (authority 413) as `quota_rejected`, and the
 authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
 `undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). A
@@ -3076,9 +3078,13 @@ missed target comes back as it is now, in the refusal's `details`, which Go
 passes through unchanged and the pipeline gives the model only
 (`ToolResult.detail`; the stored error stays the short message): a
 `stale_target` from `replace_text`, `remove_block` or `replace_block` carries
-the block's current text (shown up to 2,000 characters), and an id that is
-gone carries the material's first 60 blocks with an 80-character preview and
-the total. The pipeline keeps what this turn last inspected or wrote of each
+the block's current text (shown up to 2,000 characters), as does every other
+refused `replace_text` span (an expected text occurring more than once, an
+empty or overlong one; 2026-10-14), a stale `set_mermaid` carries the source
+the diagram holds as its block's text, and an id that is gone carries the
+material's first 60 blocks with an 80-character preview and the total, as
+does an edit of a material rebuilt since it was read (its room schema moved,
+`edit::listing`). A text source's span refusals carry nothing yet. The pipeline keeps what this turn last inspected or wrote of each
 block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
 adds "changed since you last saw it" when the block differs. An insert whose
 `after_block_id` is gone is not refused (decision 2026-10-09): when the same

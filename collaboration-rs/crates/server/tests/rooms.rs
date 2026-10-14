@@ -1107,6 +1107,43 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
     assert_eq!(view["blocks"][0]["text"], "replaced", "{view}");
 }
 
+/// An edit of a material rebuilt since the agent read it (its room schema
+/// moved) refuses with the blocks as they are now, as a gone block's refusal
+/// lists them, so the agent retries without an inspect.
+#[tokio::test]
+async fn an_edit_of_a_rebuilt_material_lists_its_blocks() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "hello world").await;
+    let edit = |operation: &str| {
+        serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": "hello", "text": "hi" }],
+            "operation": { "id": format!("{operation}_{material}"), "requestHash": operation },
+            "room": format!("material:{material}:schema:1"),
+            "target": { "id": material, "kind": "material" },
+        })
+    };
+    let (status, receipt) = internal(server.port, "/internal/documents/edit", &edit("op1")).await;
+    assert_eq!(status, 200, "{receipt}");
+    db(&env)
+        .await
+        .execute(
+            "UPDATE material_yjs_documents SET room_schema=2 WHERE material_id=$1",
+            &[&material],
+        )
+        .await
+        .expect("rebuild");
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &edit("op2")).await;
+    assert_eq!(status, 409, "{refusal}");
+    assert_eq!(refusal["code"], "stale_target", "{refusal}");
+    assert_eq!(
+        refusal["details"],
+        serde_json::json!({ "blocks": [{ "id": "b1", "text": "hi world", "type": "p" }], "total": 1 }),
+        "{refusal}"
+    );
+}
+
 /// Nothing stores while a test runs: typing stays in the live room.
 const UNSAVED: [(&str, &str); 4] = [
     ("COLLABORATION_DEBOUNCE_MS", "60000"),
