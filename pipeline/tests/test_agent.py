@@ -3379,3 +3379,48 @@ def test_the_scripted_tools_switch_is_true_or_unset_and_uat_only():
         flag(key, {key: "true", "SENTRY_ENVIRONMENT": "production"})
     with pytest.raises(ValueError, match="true or unset"):
         flag(key, {key: "1", "SENTRY_ENVIRONMENT": "uat"})
+
+
+async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypatch):
+    """GLM sometimes calls the AskUser answer component as a tool. The turn
+    ends on the question it meant, its prose before it, and nothing runs."""
+    from pipeline.retrieval import openui
+
+    stream, seen = _script_stream(
+        [
+            _assembled(
+                "One quick question before I build your chapter:",
+                [
+                    _call(
+                        "AskUser",
+                        json.dumps(
+                            {
+                                "question": "Where should we start?",
+                                "choices": '["Beginner", "I code already"]',
+                            }
+                        ),
+                    )
+                ],
+            )
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    ran: list[str] = []
+
+    async def _run(name, _args, _ctx):
+        ran.append(name)
+        return ToolResult(text_parts=["no"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("I want to learn java", ToolContext(workspace_id="ws_1"))
+    done = events[-1]
+    assert done["type"] == "done" and not ran and len(seen) == 1
+    program = openui.parse(done["answer"], strict=True)
+    asks = [c for c in openui.walk(program) if c.name == "AskUser"]
+    assert [(c.prop("question"), c.prop("choices")) for c in asks] == [
+        ("Where should we start?", ["Beginner", "I code already"])
+    ]
+    assert "One quick question" in openui.to_text(program)
+    assert agent.ask_user_answer([_call("AskUser", "{}")], "x") is None, (
+        "no question, no answer"
+    )
