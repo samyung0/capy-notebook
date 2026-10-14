@@ -480,6 +480,13 @@ Compacting at publication would move the lineage (epoch) every time a text
 file auto-publishes, so it is deferred; if history ever matters, compact past
 a size threshold while the room is empty, as the Office rebuild does.
 
+A quiz holding a block this version cannot read (its rooms load read-only)
+is never rebuilt, since the rebuild would drop the block. Compaction checks
+that before taking the lease, so the quiz's readers stay connected, and each
+instance then leaves the quiz out of its candidate query until it restarts,
+so such quizzes cannot hold the head of the oldest-first queue (Epo
+2026-10-15).
+
 Compaction takes a Redis eviction lease so every collaboration instance
 flushes, closes clients, and unloads the room; rebuilds a fresh Y.Doc from
 the projected Plate `materials.content` (a quiz instead from its own content

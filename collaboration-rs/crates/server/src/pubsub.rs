@@ -485,10 +485,14 @@ async fn with_lease<T, F: std::future::Future<Output = Result<T, String>>>(
 /// compaction interval.
 pub async fn run_compaction(app: Shared) {
     let mut tick = tokio::time::interval(app.config.compaction_interval);
+    // Quizzes holding a block this version cannot read: their rooms are
+    // read-only, so they stay that way until a version that reads the block
+    // replaces this process.
+    let mut unrebuildable = Vec::new();
     tick.tick().await;
     loop {
         tick.tick().await;
-        if let Err(error) = compact_idle(&app).await {
+        if let Err(error) = compact_idle(&app, &mut unrebuildable).await {
             app.stats
                 .store_failures
                 .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -497,7 +501,7 @@ pub async fn run_compaction(app: Shared) {
     }
 }
 
-async fn compact_idle(app: &Shared) -> Result<(), String> {
+async fn compact_idle(app: &Shared, unrebuildable: &mut Vec<String>) -> Result<(), String> {
     let config = &app.config;
     let candidates = note_store::compaction_candidates(
         &app.db,
@@ -505,12 +509,28 @@ async fn compact_idle(app: &Shared) -> Result<(), String> {
         config.compaction_floor_bytes as i64,
         config.compaction_multiplier as i64,
         config.compaction_max_rooms as i64,
+        unrebuildable,
     )
     .await
     .map_err(|error| error.to_string())?;
-    for (material_id, schema, bytes) in candidates {
+    for note_store::Candidate {
+        material_id,
+        schema,
+        bytes,
+        kind,
+    } in candidates
+    {
         let room = format!("material:{material_id}:schema:{schema}");
         if app.rooms.get(&room).is_some() {
+            continue;
+        }
+        // Checked before the lease, whose eviction would close the readers.
+        if kind == "quiz"
+            && !note_store::quiz_rebuildable(&app.db, &material_id)
+                .await
+                .map_err(|error| error.to_string())?
+        {
+            unrebuildable.push(material_id);
             continue;
         }
         let compacted = with_lease(app, &room, || async {

@@ -569,36 +569,46 @@ pub async fn durable(pool: &Pool, material_id: &str) -> Result<Option<Durable>, 
     }))
 }
 
+/// A lineage compaction candidate.
+pub struct Candidate {
+    pub material_id: String,
+    pub schema: i64,
+    pub bytes: i64,
+    pub kind: String,
+}
+
 /// Idle rooms whose stored bytes (base + log) passed
 /// `max(floor, materials.size_bytes × multiplier)` and whose projection is
-/// current: lineage compaction candidates, oldest first.
+/// current: lineage compaction candidates, oldest first, less `skip` (quizzes
+/// found unrebuildable, which would otherwise hold the head of the queue).
 pub async fn compaction_candidates(
     pool: &Pool,
     idle_seconds: f64,
     floor: i64,
     multiplier: i64,
     limit: i64,
-) -> Result<Vec<(String, i64, i64)>, StoreError> {
+    skip: &[String],
+) -> Result<Vec<Candidate>, StoreError> {
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT d.material_id, d.room_schema, (octet_length(d.state) + d.log_bytes)::bigint AS bytes
+            "SELECT d.material_id, d.room_schema, (octet_length(d.state) + d.log_bytes)::bigint AS bytes, m.kind
              FROM material_yjs_documents d JOIN materials m ON m.id=d.material_id
              WHERE d.updated_at < now() - make_interval(secs => $1)
                AND d.projected_version = d.stored_version
                AND octet_length(d.state) + d.log_bytes >= GREATEST($2, m.size_bytes * $3)
+               AND NOT d.material_id = ANY($5)
              ORDER BY d.updated_at LIMIT $4",
-            &[&idle_seconds, &floor, &multiplier, &limit],
+            &[&idle_seconds, &floor, &multiplier, &limit, &skip],
         )
         .await?;
     Ok(rows
         .iter()
-        .map(|row| {
-            (
-                row.get("material_id"),
-                i64::from(row.get::<_, i32>("room_schema")),
-                row.get("bytes"),
-            )
+        .map(|row| Candidate {
+            material_id: row.get("material_id"),
+            schema: i64::from(row.get::<_, i32>("room_schema")),
+            bytes: row.get("bytes"),
+            kind: row.get("kind"),
         })
         .collect())
 }
@@ -606,27 +616,87 @@ pub async fn compaction_candidates(
 /// A quiz's content and keys states.
 type QuizStates = (Vec<u8>, Vec<u8>);
 
-/// A quiz's two documents rebuilt from what they hold (base and log each):
-/// every question as typed with its keys, complete or not, since the
-/// projection keeps only the complete ones (Epo 2026-10-14). `None` when
-/// either holds a block this version cannot read, which the rebuild would drop.
-fn rebuilt_quiz(
+/// A quiz's two documents replayed from their base and log each.
+fn replayed_quiz(
     content: (&[u8], &[Vec<u8>]),
     keys: (&[u8], &[Vec<u8>]),
-) -> Result<Option<QuizStates>, StoreError> {
-    use yrs::Transact;
+) -> Result<(yrs::Doc, yrs::Doc), StoreError> {
     let replay = |(base, rows): (&[u8], &[Vec<u8>])| {
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, base, rows).map_err(|error| StoreError::Other(error.to_string()))?;
         Ok::<_, StoreError>(doc)
     };
-    let (content, keys) = (replay(content)?, replay(keys)?);
-    let (content, keys) = (content.transact(), keys.transact());
-    if items::quiz::holds_unknown_block(&content) || items::quiz::holds_unknown_block(&keys) {
+    Ok((replay(content)?, replay(keys)?))
+}
+
+/// Whether neither document holds a block this version cannot read, which a
+/// rebuild would drop.
+fn readable_quiz(content: &yrs::Doc, keys: &yrs::Doc) -> bool {
+    use yrs::Transact;
+    !items::quiz::holds_unknown_block(&content.transact())
+        && !items::quiz::holds_unknown_block(&keys.transact())
+}
+
+/// A quiz's two documents rebuilt from what they hold (base and log each):
+/// every question as typed with its keys, complete or not, since the
+/// projection keeps only the complete ones (Epo 2026-10-14). `None` when
+/// either holds a block this version cannot read ([readable_quiz]).
+fn rebuilt_quiz(
+    content: (&[u8], &[Vec<u8>]),
+    keys: (&[u8], &[Vec<u8>]),
+) -> Result<Option<QuizStates>, StoreError> {
+    use yrs::Transact;
+    let (content, keys) = replayed_quiz(content, keys)?;
+    if !readable_quiz(&content, &keys) {
         return Ok(None);
     }
-    let value = items::quiz::editor_value(&content, &keys);
+    let value = items::quiz::editor_value(&content.transact(), &keys.transact());
     Ok(Some(items::quiz::states_from_value(&value, 0)))
+}
+
+/// A quiz's content and keys logs through `stored` and its keys base, read
+/// with `lock` (` FOR UPDATE` or empty) on the keys row.
+async fn quiz_logs(
+    tx: &Transaction<'_>,
+    material_id: &str,
+    stored: i64,
+    lock: &str,
+) -> Result<(Vec<Vec<u8>>, Vec<u8>, Vec<Vec<u8>>), StoreError> {
+    let updates = |rows: Vec<(i64, Vec<u8>)>| rows.into_iter().map(|(_, update)| update).collect();
+    let log = updates(rows(tx, material_id, Some(stored)).await?);
+    let found = tx
+        .query(
+            &format!("SELECT state FROM material_yjs_keys WHERE material_id=$1{lock}"),
+            &[&material_id],
+        )
+        .await?;
+    let Some(keys) = found.first() else {
+        return Err(StoreError::Other("quiz keys document missing".into()));
+    };
+    let key_log = updates(doc_rows(tx, Doc::Keys, material_id, Some(stored)).await?);
+    Ok((log, keys.get("state"), key_log))
+}
+
+/// Whether compaction could rebuild this quiz now ([readable_quiz]), read
+/// without locks or the eviction lease so its readers stay connected when it
+/// cannot. A missing document counts as rebuildable: [compact] decides.
+pub async fn quiz_rebuildable(pool: &Pool, material_id: &str) -> Result<bool, StoreError> {
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+    let found = tx
+        .query(
+            "SELECT stored_version, state FROM material_yjs_documents WHERE material_id=$1",
+            &[&material_id],
+        )
+        .await?;
+    let Some(row) = found.first() else {
+        return Ok(true);
+    };
+    let base: Vec<u8> = row.get("state");
+    let (log, key_base, key_log) =
+        quiz_logs(&tx, material_id, row.get("stored_version"), "").await?;
+    let (content, keys) = replayed_quiz((&base, &log), (&key_base, &key_log))?;
+    Ok(readable_quiz(&content, &keys))
 }
 
 /// Lineage compaction: rebuilds the document under the next room schema
@@ -669,26 +739,7 @@ pub async fn compact(
     let kind: String = content.get("kind");
     let (state, keys) = if kind == "quiz" {
         let base: Vec<u8> = row.get("state");
-        let log: Vec<Vec<u8>> = rows(&tx, material_id, Some(stored))
-            .await?
-            .into_iter()
-            .map(|(_, update)| update)
-            .collect();
-        let found = tx
-            .query(
-                "SELECT state FROM material_yjs_keys WHERE material_id=$1 FOR UPDATE",
-                &[&material_id],
-            )
-            .await?;
-        let Some(keys) = found.first() else {
-            return Err(StoreError::Other("quiz keys document missing".into()));
-        };
-        let key_base: Vec<u8> = keys.get("state");
-        let key_log: Vec<Vec<u8>> = doc_rows(&tx, Doc::Keys, material_id, Some(stored))
-            .await?
-            .into_iter()
-            .map(|(_, update)| update)
-            .collect();
+        let (log, key_base, key_log) = quiz_logs(&tx, material_id, stored, " FOR UPDATE").await?;
         match rebuilt_quiz((&base, &log), (&key_base, &key_log))? {
             Some((content, keys)) => (content, Some(keys)),
             None => return Ok(None),
