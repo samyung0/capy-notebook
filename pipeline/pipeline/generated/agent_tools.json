@@ -1,5 +1,5 @@
 {
-  "version": 26,
+  "version": 27,
   "operations": [
     "source.read",
     "material.read",
@@ -667,7 +667,7 @@
     {
       "name": "add_question_media",
       "version": 1,
-      "description": "Add a chart or plot to one quiz question, shown after its text; library figures go into notes only. Example: {\"quiz_id\": \"mat_1\", \"question_id\": \"q_3f9a1c2b7e\", \"media\": {\"type\": \"plot\", \"title\": \"Action potential\", \"xTitle\": \"Time (ms)\", \"yTitle\": \"Membrane potential (mV)\", \"series\": [{\"name\": \"Vm\", \"points\": [[0, -70], [1, 30], [2, -80], [4, -70]]}]}}",
+      "description": "Add a chart, a plot or a library figure to one quiz question, shown after its text. A figure is one read_knowledge listed this turn: {\"type\": \"figure\", \"id\": \"\u003cfigure id\u003e\", \"caption\": \"what it shows\"}; the question shows it with its printed credit and the quiz credits its book. Example: {\"quiz_id\": \"mat_1\", \"question_id\": \"q_3f9a1c2b7e\", \"media\": {\"type\": \"plot\", \"title\": \"Action potential\", \"xTitle\": \"Time (ms)\", \"yTitle\": \"Membrane potential (mV)\", \"series\": [{\"name\": \"Vm\", \"points\": [[0, -70], [1, 30], [2, -80], [4, -70]]}]}}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -682,7 +682,7 @@
           },
           "media": {
             "additionalProperties": true,
-            "description": "A note's chart or plot fence JSON.",
+            "description": "A note's chart or plot fence JSON, or a library figure.",
             "type": "object"
           },
           "question_id": {
@@ -1356,7 +1356,7 @@
     }
   ],
   "formats": {
-    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
+    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check of a few items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
   },
   "mediaBlocks": {
     "chart": {

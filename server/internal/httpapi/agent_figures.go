@@ -4,19 +4,23 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"slices"
+	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 // agentFigure is a library figure an agent placed in a note
-// (`![caption](figure:<id>)`), rendered by the retrieval service from the
-// book's PDF: a crop of the figure's box as a JPEG. The note stores it as its
-// own editor asset, like an image a user uploads.
+// (`![caption](figure:<id>)`) or after a quiz question's text, rendered by the
+// retrieval service from the book's PDF: a crop of the figure's box as a JPEG.
+// The note or quiz stores it as its own editor asset, like an image a user
+// uploads.
 type agentFigure struct {
 	ID    string `json:"id"`
 	Image []byte `json:"image"`
@@ -80,6 +84,53 @@ func (f *agentFigures) resolve(content string) (string, error) {
 	return materialdoc.ResolveFigureRefs(content, f.assets)
 }
 
+// resolveQuizCommands points the figure images (assetId `figure:<id>`, from
+// add_question_media) in a quiz edit's questions at their assets, the quiz's
+// own like an uploaded quiz image, and records which figures they use. A
+// figure the request did not render is refused naming it.
+func (f *agentFigures) resolveQuizCommands(raw []json.RawMessage) ([]json.RawMessage, error) {
+	out := make([]json.RawMessage, len(raw))
+	for i, item := range raw {
+		out[i] = item
+		var command map[string]any
+		if err := json.Unmarshal(item, &command); err != nil {
+			return nil, refusal(agenttools.ErrInvalidInput, "invalid command: %v", err)
+		}
+		question, _ := command["question"].(map[string]any)
+		if question == nil {
+			continue
+		}
+		ids := questions.AssetIDs(question)
+		idMap := make(map[string]string, len(ids))
+		figures := false
+		for _, id := range ids {
+			ref, ok := strings.CutPrefix(id, materialdoc.FigureRefPrefix)
+			if !ok {
+				idMap[id] = id
+				continue
+			}
+			asset, ok := f.assets[ref]
+			if !ok {
+				return nil, refusal(agenttools.ErrInvalidInput, "figure %s was not rendered for this write", ref)
+			}
+			idMap[id], figures = asset.ID, true
+			if !slices.Contains(f.used, ref) {
+				f.used = append(f.used, ref)
+			}
+		}
+		if !figures {
+			continue
+		}
+		questions.RewriteAssetIDs(question, idMap)
+		encoded, err := json.Marshal(command)
+		if err != nil {
+			return nil, err
+		}
+		out[i] = encoded
+	}
+	return out, nil
+}
+
 // put checks each used figure against the payer's image cap and writes its
 // object. On error nothing is left behind; otherwise the caller deletes the
 // returned objects of assets it did not insert (deleteAgentAssets).
@@ -111,8 +162,8 @@ func (a *api) putAgentFigures(ctx context.Context, f *agentFigures, imageMaxByte
 	return assets, nil
 }
 
-// ensureFigureAssets stores an edit's figures as assets of the note it edits,
-// under the note's payer's image cap and quota, and returns the ids of the
+// ensureFigureAssets stores an edit's figures as assets of the note or quiz it
+// edits, under its payer's image cap and quota, and returns the ids of the
 // assets it added (a retried edit adds none).
 func (a *api) ensureFigureAssets(ctx context.Context, req internalDocumentsEditReq, f *agentFigures) ([]string, error) {
 	_, imageMaxBytes, err := a.s.EditorAssetMaterial(ctx, req.Target.ID)

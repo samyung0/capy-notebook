@@ -11,5 +11,4 @@ export type StudyPreferencesMainFormat = typeof StudyPreferencesMainFormat[keyof
 export const StudyPreferencesMainFormat = {
   note: 'note',
   deck: 'deck',
-  auto: 'auto',
 } as const;

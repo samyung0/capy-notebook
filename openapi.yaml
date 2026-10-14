@@ -5404,37 +5404,25 @@ components:
           format: uri
           readOnly: true
           type: string
-        explainerStyle:
+        flashcards:
           enum:
-            - brief
-            - standard
-            - detailed
+            - more
+            - less
+            - "off"
           type: string
-        flashcardsPerChapter:
-          format: int64
-          maximum: 100
-          minimum: 1
-          type: integer
+        knowledgeChecks:
+          type: boolean
         mainFormat:
           enum:
             - note
             - deck
-            - auto
           type: string
-        miniChecks:
-          type: boolean
-        practice:
+        quiz:
           enum:
-            - none
-            - quiz
-            - flashcards
-            - both
+            - more
+            - less
+            - "off"
           type: string
-        quizLength:
-          format: int64
-          maximum: 50
-          minimum: 1
-          type: integer
         reviewFocus:
           enum:
             - balanced
@@ -5460,6 +5448,12 @@ components:
           enum:
             - fewer
             - more
+          type: string
+        writingStyle:
+          enum:
+            - brief
+            - normal
+            - verbose
           type: string
       type: object
     StudySummary:

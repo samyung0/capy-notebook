@@ -14,7 +14,7 @@ it('refetches only after the last overlapping optimistic save settles', async ()
     defaultOptions: { mutations: { retry: false } },
   });
   client.setQueryData(qk.me, {
-    studyPreferences: { quizLength: 8 },
+    studyPreferences: { writingStyle: 'normal' },
   } as User);
   const pending: (() => void)[] = [];
   vi.spyOn(api, 'patch').mockImplementation(
@@ -32,20 +32,20 @@ it('refetches only after the last overlapping optimistic save settles', async ()
     createElement(QueryClientProvider, { client }, createElement(Probe))
   );
   if (!save) throw new Error('Mutation was not initialized');
-  const quizLength = () =>
-    client.getQueryData<User>(qk.me)?.studyPreferences?.quizLength;
+  const writingStyle = () =>
+    client.getQueryData<User>(qk.me)?.studyPreferences?.writingStyle;
 
   try {
-    const first = save({ quizLength: 10 });
-    const second = save({ quizLength: 15 });
+    const first = save({ writingStyle: 'brief' });
+    const second = save({ writingStyle: 'verbose' });
     await vi.waitFor(() => expect(pending).toHaveLength(1));
-    expect(quizLength()).toBe(15);
+    expect(writingStyle()).toBe('verbose');
 
     pending[0]();
     await first;
     // The second save is still in flight, so its optimistic value stays.
     expect(client.getQueryState(qk.me)?.isInvalidated).toBe(false);
-    expect(quizLength()).toBe(15);
+    expect(writingStyle()).toBe('verbose');
 
     await vi.waitFor(() => expect(pending).toHaveLength(2));
     pending[1]();

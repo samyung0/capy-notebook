@@ -1,0 +1,35 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {
+    "mainFormat": "deck"
+  },
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": true
+  },
+  "skill_addons": {
+    "deck": "How to teach on slides (decks are read alone, with no speaker):\n- Title every content slide with a full-sentence claim, at most two lines, that the student could quote as the takeaway, not a topic label.\n- The body is that claim's evidence: a captured figure, a diagram drawn from shapes, numbered worked steps, a chart or an equation. Bullets only for parallel items, at most four.\n- One explanation band of at most 40 words says what to notice in the evidence and why it supports the claim, without repeating the visual's labels.\n- Labels sit on or beside the parts they name; no legends.\n- One claim per slide; a claim needing two pieces of evidence gets two slides.\n- No decoration: every shape and colour marks something the claim depends on.\n- The cover asks the chapter's question; the last content slide answers it and lists the claims to keep.\n- Each create_deck brief gives the claim, the evidence and its source."
+  },
+  "_note": "D1 assertion-evidence for reading alone (Alley)"
+}

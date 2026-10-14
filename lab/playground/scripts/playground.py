@@ -22,8 +22,10 @@ import subprocess
 import sys
 import time
 import uuid
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import yaml
 
@@ -79,6 +81,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # study_preferences: the learner's saved preferences; missing fields take
     # the defaults in pipeline/prompts/preferences.py.
     "study_preferences": {},
+    # preference_text: a field=value name (writingStyle=brief) to the line
+    # that value adds to the turn context, in place of preferences.py's.
+    "preference_text": {},
     # study_progress: null leaves read_study_progress unoffered; a dict is the
     # fixture it returns, shaped like /api/internal/study-progress.
     "study_progress": None,
@@ -106,6 +111,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # A skill's text replaces what read_skill returns for it; the system prompt
     # and the other skills keep production's.
     "skills": {},
+    # Text appended to a skill as read_skill returns it (after any replacement
+    # above): a teaching variant on top of production's current text.
+    "skill_addons": {},
     # null offers what production offers; a list narrows it for an experiment.
     "tools": None,
     # library_flow reshapes the library tools for an experiment: null keeps
@@ -176,6 +184,20 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         for name, text in texts.items()
     ):
         raise HTTPException(400, "skills must map known skill names to text")
+    addons = out["skill_addons"]
+    if not isinstance(addons, dict) or any(
+        name not in skills.SKILLS or not isinstance(text, str)
+        for name, text in addons.items()
+    ):
+        raise HTTPException(400, "skill_addons must map known skill names to text")
+    wording = out["preference_text"]
+    if not isinstance(wording, dict) or any(
+        name not in preference_texts() or not isinstance(text, str)
+        for name, text in wording.items()
+    ):
+        raise HTTPException(
+            400, "preference_text must map field=value names (preferences.py) to text"
+        )
     if out["tools"] is not None and (
         not isinstance(out["tools"], list)
         or any(name not in known for name in out["tools"])
@@ -423,11 +445,47 @@ def skill_texts(c: dict[str, Any], *, library: bool) -> dict[str, str]:
 
 
 def skill_text(c: dict[str, Any], name: str, *, library: bool) -> str | None:
-    """What read_skill returns here: the config's text, else production's."""
+    """What read_skill returns here: the config's text, else production's,
+    then the config's addon."""
     offered = skill_texts(c, library=library)
     if name not in offered:
         return None
-    return c["skills"].get(name, offered[name])
+    text = c["skills"].get(name, offered[name])
+    addon = c["skill_addons"].get(name)
+    return f"{text}\n\n{addon}" if addon else text
+
+
+# Each study preference's wording table in pipeline/prompts/preferences.py.
+PREFERENCE_TABLES = {
+    "mainFormat": "MAIN_FORMAT",
+    "writingStyle": "WRITING",
+    "visualAids": "VISUALS",
+    "knowledgeChecks": "CHECKS",
+}
+
+
+def preference_texts() -> dict[str, str]:
+    """Production's turn-context line for each preference value, as field=value."""
+    from pipeline.prompts import preferences
+
+    return {
+        f"{field}={value}": text
+        for field, table in PREFERENCE_TABLES.items()
+        for value, text in getattr(preferences, table).items()
+    }
+
+
+@contextmanager
+def preference_wording(c: dict[str, Any]):
+    """The config's preference_text in place of production's lines for one turn."""
+    from pipeline.prompts import preferences
+
+    with ExitStack() as stack:
+        for name, text in c["preference_text"].items():
+            field, value = name.split("=", 1)
+            table = getattr(preferences, PREFERENCE_TABLES[field])
+            stack.enter_context(patch.dict(table, {value: text}))
+        yield
 
 
 def material_id(assistant_message_id: str, call_id: str) -> str:
@@ -561,6 +619,11 @@ async def save_figures(state: dict[str, Any], figures) -> dict[str, Any]:
     images = await figures.render()
     if not isinstance(images, dict):
         return images
+    return keep_images(state, images)
+
+
+def keep_images(state: dict[str, Any], images: dict[str, bytes]) -> dict[str, Any]:
+    """Rendered figures by id under the run's assets/, as a material records them."""
     saved = {}
     for ref, image in images.items():
         path = state["run_dir"] / "assets" / f"{ref}.jpg"
@@ -1056,7 +1119,7 @@ async def questions_locally(
         write_material(state, record)
         return receipt("created", record)
 
-    async def edit(quiz_id, commands, books):
+    async def edit(quiz_id, commands, books, images):
         record = record_of(quiz_id)
         updated = apply_question_commands(record["questions"], commands)
         problem = await check_quiz(updated)
@@ -1064,6 +1127,9 @@ async def questions_locally(
             return tools._refused(f"Could not edit the quiz: {problem}")
         record["questions"] = updated
         record["edits"].extend(commands)
+        # A figure keeps its figure:<id> asset here; the preview reads its file.
+        if images:
+            record["figures"] = {**record.get("figures", {}), **keep_images(state, images)}
         record["size"] = material_size("quiz", record)
         if books:
             existing = (record["provenance"] or {}).get("books") or []
@@ -1892,22 +1958,23 @@ class Turn:
                 yield event
 
         try:
-            async for raw_event in agent.run_agent(
-                query=self.question,
-                ctx=ctx,
-                history=self.history,
-                model=spec,
-                locale=c["locale"],
-                checkpoint=self.checkpoint,
-            ):
-                for extra in state["extra"]:
-                    recorded.append(extra)
-                    yield extra
-                state["extra"].clear()
-                async for event in shaped(raw_event):
-                    if event.get("type") != "block_delta":
-                        recorded.append(event)
-                    yield event
+            with preference_wording(c):
+                async for raw_event in agent.run_agent(
+                    query=self.question,
+                    ctx=ctx,
+                    history=self.history,
+                    model=spec,
+                    locale=c["locale"],
+                    checkpoint=self.checkpoint,
+                ):
+                    for extra in state["extra"]:
+                        recorded.append(extra)
+                        yield extra
+                    state["extra"].clear()
+                    async for event in shaped(raw_event):
+                        if event.get("type") != "block_delta":
+                            recorded.append(event)
+                        yield event
         except Exception as exc:  # noqa: BLE001 - keep the failed turn on disk
             event = {
                 "type": "error",
@@ -2009,6 +2076,7 @@ def build_app(target: str):
     # A running turn temporarily patches prompts and schemas with its own config.
     production_schemas = tools.schemas_for
     production_prompt = chat_prompts.system_prompt
+    production_preferences = preference_texts()
 
     async def library_summary() -> dict[str, Any] | None:
         """What Library turns read: the live library's current books, their
@@ -2058,6 +2126,8 @@ def build_app(target: str):
         quality = sorted(p.name for p in (LOCAL / "quality").glob(f"{target}-*.json"))
         return {
             "target": target,
+            # Where runs keep their files, for paths a reader opens in Finder.
+            "local": str(LOCAL),
             "configs": sorted(p.stem for p in CONFIGS.glob("*.json")),
             "defaults": DEFAULT_CONFIG,
             "models": models,
@@ -2164,6 +2234,7 @@ def build_app(target: str):
             "full_prompt": effective_prompt(c, production_prompt(c["locale"])),
             "tools": turn_tools(c, production_schemas(ctx)),
             "skills": skill_texts(c, library=ctx.library),
+            "preferences": production_preferences,
             "tool_prompts": {
                 s["function"]["name"]: tool_prompt(s["function"])
                 for s in turn_tools({**c, "tool_descriptions": {}}, production_schemas(ctx))
@@ -2464,7 +2535,8 @@ def check_questions() -> None:
 
 def check_figures() -> None:
     """A note placing a library figure keeps its render under the run's
-    assets/ and records it for the preview; an edit adds its own."""
+    assets/ and records it for the preview; an edit adds its own, and a quiz
+    question takes one through add_question_media as an image block."""
     from dataclasses import replace
     from tempfile import TemporaryDirectory
     from unittest.mock import patch
@@ -2505,6 +2577,27 @@ def check_figures() -> None:
             ctx, state,
         )
         assert not edited.refused and set(note["figures"]) == {"fig_1", "fig_2"}, edited.text()
+        ctx.assistant_message_id = "m1"
+        made = await questions_locally(
+            "add_questions",
+            {"title": "Q", "_tool_call_id": "c3", "questions": [
+                {"question": "Which?", "options": ["a", "b"], "correct": "a"}]},
+            ctx, state, "m1",
+        )
+        assert not made.refused, made.text()
+        quiz = state["materials"][-1]
+        placed = await questions_locally(
+            "add_question_media",
+            {"quiz_id": quiz["id"], "question_id": quiz["questions"][0]["id"],
+             "media": {"type": "figure", "id": "fig_3"}, "_tool_call_id": "c4"},
+            ctx, state, "m1",
+        )
+        assert not placed.refused, placed.text()
+        image = quiz["questions"][0]["parts"][0]["blocks"][-1]
+        assert image == {"type": "image", "image": {"assetId": "figure:fig_3"}, "width": 1,
+                         "height": 1, "description": "Figure 1",
+                         "attribution": "Figure 1 (CC BY 4.0)"}, image
+        assert set(quiz["figures"]) == {"fig_3"}
 
     with (
         TemporaryDirectory() as tmp,
@@ -2585,6 +2678,28 @@ def check_flows() -> None:
     assert set(search["function"]["parameters"]["properties"]) == {"query", "subject"}
     assert search["function"]["description"] == 's' + SEARCH_SUBJECTS + '- "math" (10 excerpts)'
     assert flow_tools(merged({}), schemas()) == schemas()
+
+
+def check_preferences() -> None:
+    """skill_addons follow a skill's text; preference_text replaces one value's
+    turn-context line for a turn only, and names outside preferences.py are
+    refused."""
+    from pipeline.prompts import preferences
+
+    c = merged({"skill_addons": {"editing": "Addon."}})
+    assert skill_text(c, "editing", library=False).endswith("\n\nAddon.")
+    production = preferences.lines({"writingStyle": "brief"})
+    with preference_wording(merged({"preference_text": {"writingStyle=brief": "Short."}})):
+        assert preferences.lines({"writingStyle": "brief"}) == [
+            *production[:1], "Short.", *production[2:]
+        ]
+    assert preferences.lines({"writingStyle": "brief"}) == production
+    try:
+        merged({"preference_text": {"writingStyle=terse": "x"}})
+    except HTTPException:
+        pass
+    else:
+        raise AssertionError("an unknown preference value was accepted")
 
 
 def check() -> None:
@@ -2682,6 +2797,7 @@ def check() -> None:
     check_figures()
     check_edits()
     check_flows()
+    check_preferences()
     # Preview requests must not inherit the monkeypatches of an active turn.
     from tempfile import TemporaryDirectory
     from unittest.mock import AsyncMock, patch

@@ -1,7 +1,8 @@
 # Decks
 
-A deck is the chat agent's brief, lecture-like main explainer, next to the
-note (`human/agentic-retrieval.md`, 2026-10-05). It is made the
+A deck is one of the chat agent's two main explainers, next to the note
+(`human/agentic-retrieval.md`, 2026-10-05); the study preferences say how
+either explains (2026-10-14). It is made the
 [ppt-master](https://github.com/hugohe3/ppt-master) way, its Quick route: the
 model writes each slide as SVG, ppt-master's checker refuses a slide whose text
 leaves its module or the canvas, and its exporter compiles the slides into a
@@ -127,13 +128,15 @@ its own shape, so a sentence wrapped over lines is several targets and a longer
 replacement does not reflow into the next line's box. An edit of the deck is a
 source-file edit: no `excerpt_ids`, and its provenance is unchanged.
 
-## Main format preference
+## Output files preference
 
-`studyPreferences.mainFormat`: `note`, `deck` or `auto` (unset is `auto`),
-saved in Settings → Customizations (`StudyPreferencesSection.tsx`). It reaches
-the model as the first study-preference line of the turn context
-(`prompts/preferences.py` `MAIN_FORMAT`): auto describes both formats and
-leans to a deck for brief explainers and a note for detailed ones.
+`studyPreferences.mainFormat`: `note` (Capy Note, the default) or `deck`
+(PowerPoint), shown as Output files in Settings → Study
+(`StudyPreferencesSection.tsx`). There is no automatic choice: a deck can be
+dense too, so how much either explains is the writing style's job (Epo
+2026-10-14). It reaches the model as the first study-preference line of the
+turn context (`prompts/preferences.py` `MAIN_FORMAT`), which also lets the
+agent make other files when the request or a chapter needs them.
 
 ## Not used yet
 

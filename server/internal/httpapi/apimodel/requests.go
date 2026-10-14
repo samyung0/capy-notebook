@@ -252,9 +252,9 @@ type CreateFlashcardSetReq struct {
 }
 
 // GenerateReq is the body for POST /api/workspaces/{id}/generate.
-// kind is required; levels is optional. An omitted count takes the requester's
-// study preference for the kind (quiz length, flashcards per chapter) in the
-// pipeline. detail, diagramType, and types have explicit defaults so
+// kind is required; levels is optional. count is required for a quiz or a
+// flashcard set (the panel's More or Less) and never read from the study
+// preferences. detail, diagramType, and types have explicit defaults so
 // OpenAPI/orval capture them; the handler does not invent values after the gate.
 type GenerateReq struct {
 	Kind        store.GenerateKind           `json:"kind"`

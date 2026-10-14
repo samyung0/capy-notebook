@@ -139,11 +139,10 @@ are optional. Levels are optional metadata and the unenforced timer was removed.
 The chat agent does not write this format (Epo 2026-10-13). It writes a
 multiple-choice question with one correct option, a short answer with an
 optional unit, or an open question with marks and a markscheme, and adds a
-chart or plot to a question separately; the retrieval service expands
-each into one paper-layout question with one part, 1 mark for a simple one
-and the explanation as its solution (see
-[agentic-retrieval.md](agentic-retrieval.md), Question tools). Questions it
-copies from the bank keep every answer type.
+chart, a plot or a library figure to a question separately; the retrieval
+service expands each into one paper-layout question with one part, 1 mark
+for a simple one and the explanation as its solution (see
+[agentic-retrieval.md](agentic-retrieval.md), Question tools).
 
 Quiz materials remain Plate/Yjs documents. A void `quiz_question` node stores
 the question as an attribute, with the same ID and one empty text leaf. Part
@@ -237,7 +236,9 @@ URL, and quiz images use `{ assetId }`, a private editor asset of the quiz
 resolved to signed URLs at render and export time and follow editor-asset
 cloning: a clone copies the asset rows, rewrites the ids, drops images whose
 asset was not copied, and drops a question whose part loses all content. Uploads
-go through the quiz's material route and name the quiz; the workspace owner
+go through the quiz's material route and name the quiz, and a library
+figure the chat agent places with `add_question_media` is stored the same
+way, as an asset of the quiz (see agentic-retrieval.md, Question tools); the workspace owner
 pays for a workspace quiz's images, the quiz owner for a standalone quiz's. A question copied from the bank (Copy to quiz) keeps its
 bank `{ url }` figures in the quiz: they are immutable, so the quiz links to
 them rather than copying them, and the Go validator accepts a quiz image or

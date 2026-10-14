@@ -1,0 +1,35 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {
+    "mainFormat": "deck"
+  },
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": true
+  },
+  "skill_addons": {
+    "deck": "How to teach on slides (decks are read alone, with no speaker):\n- Each slide is one step in a build. Start from ground the student already has (an everyday case, an earlier result, a number from the excerpt), with no new terms.\n- Next, the puzzle: what that ground cannot yet explain or solve.\n- Then one building block per slide, only what the next step needs. Name a term after the student has seen the thing it names, with its plain meaning on that slide.\n- A procedure or proof gets a worked demonstration: every step in order with its reason, earlier steps kept visible.\n- A misconception slide puts the wrong belief and the right account side by side and says why the wrong one is tempting.\n- An analogy is labelled as one and says where it stops matching.\n- Close on the opening case seen the new way, then a why or what-if check slide with the answer on the next slide.\n- Title slides in plain words as the idea."
+  },
+  "_note": "D2 build-up (adapted from ppt-master science-explainer and workshop-teaching, MIT)"
+}

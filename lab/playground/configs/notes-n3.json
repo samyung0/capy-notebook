@@ -1,0 +1,35 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {
+    "mainFormat": "note"
+  },
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": true
+  },
+  "skill_addons": {
+    "workspace_building": "How to explain in a note:\n- Open each section with a why or how question, or a puzzling fact from the excerpt, then a case the student already knows.\n- Answer it plainly within the next three lines, before any detail.\n- Build in steps of two or three lines, each saying why it follows from the last; put a diagram, plot or figure between steps where it shows the mechanism.\n- After each key fact, one sentence linking it to something the student already knows.\n- Name the common misconception and why it is tempting.\n- Return to the opening question at the end of the section, then one what-if question that changes one condition, in a ```quiz or ```flashcards fence (its answer stays hidden until tried)."
+  },
+  "_note": "N3 question first (prequestions, elaborative interrogation)"
+}

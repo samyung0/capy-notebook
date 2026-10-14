@@ -205,14 +205,13 @@ img.capture {
       <span class="muted">materials are written as JSON files under the run</span>
     </div>
     <div class="row">
-      <label>Explainer <select id="prefExplainer"><option>brief</option><option>standard</option><option>detailed</option></select></label>
-      <label>Practice <select id="prefPractice"><option>none</option><option>quiz</option><option>flashcards</option><option>both</option></select></label>
-      <label>Questions <input id="prefQuiz" type="number" min="1" max="50" style="width:4em"></label>
-      <label>Cards <input id="prefCards" type="number" min="1" max="100" style="width:4em"></label>
-      <label><input id="prefChecks" type="checkbox"> Mini checks</label>
+      <label>Output <select id="prefMain"><option>note</option><option>deck</option></select></label>
+      <label>Writing <select id="prefWriting"><option>brief</option><option>normal</option><option>verbose</option></select></label>
+      <label>Quiz <select id="prefQuiz"><option>more</option><option>less</option><option>off</option></select></label>
+      <label>Flashcards <select id="prefCards"><option>more</option><option>less</option><option>off</option></select></label>
       <label>Visuals <select id="prefVisuals"><option>fewer</option><option>more</option></select></label>
+      <label><input id="prefChecks" type="checkbox"> Knowledge checks</label>
       <label><input id="decks" type="checkbox"> Decks</label>
-      <label>Main <select id="prefMain"><option>auto</option><option>note</option><option>deck</option></select></label>
     </div>
     <textarea id="json" spellcheck="false"></textarea>
     <div class="muted">
@@ -309,7 +308,30 @@ img.capture {
         Apply writes this text into <code>skills</code>; the system prompt and
         the other skills keep their production text. Reset restores this
         skill's production text. Production's editing and workspace_building
-        texts follow the Library switch; an applied text does not.
+        texts follow the Library switch; an applied text does not. A config's
+        <code>skill_addons</code> text is appended to the skill when it is read
+        (not shown here; see it in the config JSON or a call's full context).
+      </p>
+    </details>
+    <details id="preferenceTexts">
+      <summary>Preference wording</summary>
+      <label>Preference <select id="prefTextName"></select></label>
+      <textarea
+        id="prefText"
+        disabled
+        aria-label="Preference wording"
+        spellcheck="false"
+      ></textarea>
+      <div class="row">
+        <button id="applyPrefText" type="button" disabled>Apply wording</button>
+        <button id="resetPrefText" type="button" disabled>Reset wording</button>
+        <span class="muted" id="prefTextStatus" role="status"></span>
+      </div>
+      <p class="muted">
+        The line each study preference value adds to the turn context
+        (<code>pipeline/prompts/preferences.py</code>); a turn sends only the
+        lines of the config's own preference values. Apply writes this text
+        into <code>preference_text</code>. Reset restores production's line.
       </p>
     </details>
     <details>
@@ -343,6 +365,7 @@ img.capture {
   </div>
   <p id="materialMeta" class="muted"></p>
   <p><a id="materialDownload" hidden download>Download .pptx</a></p>
+  <p id="materialPath" class="muted" hidden></p>
   <iframe id="materialPreview" title="Preview as the app shows it"></iframe>
   <details id="materialRaw">
     <summary>Raw text</summary>
@@ -389,6 +412,14 @@ const editors = {
     ids: ['skillName', 'skillPrompt', 'applySkillPrompt', 'resetSkillPrompt', 'skillPromptStatus'],
     applied: 'Custom skill applied',
     production: 'Production skill',
+    texts: {},
+    drafts: {},
+  },
+  preference: {
+    key: 'preference_text',
+    ids: ['prefTextName', 'prefText', 'applyPrefText', 'resetPrefText', 'prefTextStatus'],
+    applied: 'Custom wording applied',
+    production: 'Production wording',
     texts: {},
     drafts: {},
   },
@@ -468,11 +499,10 @@ function setConfig(c, resetDrafts = false) {
   $('workspaces').value = c.workspace_id || state.defaults.workspace_id;
   $('library').checked = c.library !== false;
   const prefs = { ...PREF_DEFAULTS, ...(c.study_preferences || {}) };
-  $('prefExplainer').value = prefs.explainerStyle;
-  $('prefPractice').value = prefs.practice;
-  $('prefQuiz').value = prefs.quizLength;
-  $('prefCards').value = prefs.flashcardsPerChapter;
-  $('prefChecks').checked = !!prefs.miniChecks;
+  $('prefWriting').value = prefs.writingStyle;
+  $('prefQuiz').value = prefs.quiz;
+  $('prefCards').value = prefs.flashcards;
+  $('prefChecks').checked = !!prefs.knowledgeChecks;
   $('prefVisuals').value = prefs.visualAids;
   $('prefMain').value = prefs.mainFormat;
   $('decks').checked = c.decks?.offer !== false;
@@ -503,6 +533,7 @@ function setConfig(c, resetDrafts = false) {
       $('toolsJson').textContent = JSON.stringify(p.tools, null, 2);
       fillEditor(editors.tool, p.tool_prompts);
       fillEditor(editors.skill, p.skills || {});
+      fillEditor(editors.preference, p.preferences || {});
     })
     .catch((e) => {
       if (version === previewVersion)
@@ -570,13 +601,12 @@ $('workspaces').onchange = () => {
 };
 // Mirrors pipeline/prompts/preferences.py DEFAULTS.
 const PREF_DEFAULTS = {
-  explainerStyle: 'standard',
-  flashcardsPerChapter: 15,
-  mainFormat: 'auto',
-  miniChecks: true,
-  practice: 'quiz',
-  quizLength: 8,
+  flashcards: 'off',
+  knowledgeChecks: true,
+  mainFormat: 'note',
+  quiz: 'less',
   visualAids: 'more',
+  writingStyle: 'normal',
 };
 $('library').onchange = () => {
   const c = currentConfig();
@@ -591,17 +621,16 @@ $('openFile').onchange = () => {
     : null;
   setConfig(c);
 };
-for (const id of ['prefExplainer', 'prefPractice', 'prefQuiz', 'prefCards', 'prefChecks', 'prefVisuals', 'prefMain'])
+for (const id of ['prefMain', 'prefWriting', 'prefQuiz', 'prefCards', 'prefVisuals', 'prefChecks'])
   $(id).onchange = () => {
     const c = currentConfig();
     c.study_preferences = {
-      explainerStyle: $('prefExplainer').value,
-      flashcardsPerChapter: Number($('prefCards').value),
+      flashcards: $('prefCards').value,
+      knowledgeChecks: $('prefChecks').checked,
       mainFormat: $('prefMain').value,
-      miniChecks: $('prefChecks').checked,
-      practice: $('prefPractice').value,
-      quizLength: Number($('prefQuiz').value),
+      quiz: $('prefQuiz').value,
       visualAids: $('prefVisuals').value,
+      writingStyle: $('prefWriting').value,
     };
     setConfig(c);
   };
@@ -860,6 +889,8 @@ $('materials').onclick = (event) => {
   $('materialJson').textContent = JSON.stringify(m, null, 2);
   $('materialDownload').hidden = !m.pptx;
   if (m.pptx) $('materialDownload').href = `/api/${m.pptx}`;
+  $('materialPath').hidden = !m.pptx;
+  $('materialPath').textContent = m.pptx ? `${state.local}/${m.pptx}` : '';
   // The preview reads the saved file, so it needs the run that wrote it.
   const preview = m.run
     ? `/preview/?run=${encodeURIComponent(m.run)}&id=${encodeURIComponent(m.id)}`

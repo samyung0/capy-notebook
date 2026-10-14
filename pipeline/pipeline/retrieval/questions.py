@@ -12,9 +12,9 @@ shapes, the fields telling them apart:
 - open: question, marks, markscheme [{text, marks}] adding up to marks,
   model_answer, hints?, explanation?
 
-add_questions takes a list of them, and add_question_media puts a chart or
-plot after one question's text. A note's ```quiz fence holds a YAML list of
-the same items.
+add_questions takes a list of them, and add_question_media puts a chart, a
+plot or a library figure after one question's text. A note's ```quiz fence
+holds a YAML list of the same items.
 
 Every problem of a call is named at once, with its path, what was expected and
 what was sent; a structural mistake also gets the shape to copy. add_questions
@@ -114,7 +114,7 @@ EXPECTED = {
     "text": "what earns the marks",
     "quiz_id": "the id of the quiz to add to (add_questions' result gives a new quiz's id)",
     "question_id": "the question's id",
-    "media": "a chart or plot block",
+    "media": "a chart, a plot or a library figure",
 }
 # Fields the server fills: the old question format's.
 SERVER_FILLED = {"id", "stem", "parts", "layout", "labels", "level", "points"}
@@ -200,8 +200,8 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
         return "the server fills it; send only the fields of the shape"
     if key in MEDIA_KEYS:
         return (
-            "add a chart or plot with add_question_media once the question "
-            "is added; library figures go into notes only"
+            "add a chart, plot or library figure with add_question_media once "
+            "the question is added"
         )
     if key == "type":
         return "the fields say the kind; drop type"
@@ -325,17 +325,17 @@ def _schema_problems(
 
 
 def _blanks(value: Any, path: str) -> list[str]:
-    """Text that is only whitespace, and library figures, which go into notes
-    only."""
+    """Text that is only whitespace, and library figures in the text, which go
+    after the question's text through add_question_media."""
     if isinstance(value, str):
         if not value.strip():
             return [f"{path}: expected text; sent blank"]
         if FIGURE.search(value):
             return [
                 (
-                    f"{path}: library figures go into notes only, not quiz questions; "
-                    "describe the figure in words, or add a chart or plot with "
-                    "add_question_media"
+                    f"{path}: a library figure goes after the question's text, not "
+                    'inside it: add_question_media with {"type": "figure", "id": ...} '
+                    "once the question is added"
                 )
             ]
         return []
@@ -623,7 +623,11 @@ def drop_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
     if isinstance(clean.get("questions"), list):
         clean["questions"] = [drop_question_blanks(q) for q in clean["questions"]]
     media = clean.get("media")
-    if isinstance(media, dict):
+    if isinstance(media, dict) and media.get("type") == "figure":
+        clean["media"] = {
+            k: v for k, v in media.items() if k != "caption" or not contract.blank(v)
+        }
+    elif isinstance(media, dict):
         block = contract.MEDIA_BLOCKS.get(str(media.get("type")), {})
         clean["media"] = contract.drop_blanks(block, media)
     return clean
@@ -804,19 +808,52 @@ def _media_problems(args: dict[str, Any]) -> list[str]:
     if not isinstance(media, dict):
         return problems
     kind = media.get("type")
+    if kind == "figure":
+        return problems + _figure_problems(media)
     if kind not in _MEDIA:
-        figure = (
-            " (library figures go into notes only)"
-            if kind in ("figure", "image")
-            else ""
-        )
         return problems + [
-            f'media.type: expected "chart" or "plot"{figure}; sent {_sent(kind)}'
+            f'media.type: expected "chart", "plot" or "figure"; sent {_sent(kind)}'
         ]
     problems += _schema_problems(_MEDIA[kind], media, "media", None, fence=False)
     if kind == "chart":
         problems += _chart_problems(media)
     return problems
+
+
+def _figure_problems(figure: dict[str, Any]) -> list[str]:
+    """A library figure is its id and an optional caption."""
+    problems = [
+        f"media.{key}: a figure takes only id and caption; sent {_sent(figure[key])}"
+        for key in figure
+        if key not in ("type", "id", "caption")
+    ]
+    if not isinstance(figure.get("id"), str) or not figure["id"].strip():
+        problems.append(
+            "media.id: expected the id of a figure read_knowledge listed this turn; "
+            f"sent {_sent(figure.get('id'))}"
+        )
+    if "caption" in figure and not isinstance(figure["caption"], str):
+        problems.append(
+            f"media.caption: expected text; sent {_sent(figure['caption'])}"
+        )
+    return problems
+
+
+def figure_block(
+    figure_id: str, size: tuple[int, int], description: str, caption: str
+) -> dict[str, Any]:
+    """A library figure as the question format's image block. Go stores the
+    rendered crop as the quiz's own asset in place of ``figure:<id>``; the
+    description is its alt text (and what grading reads), the caption with the
+    printed credit is shown under it."""
+    return {
+        "type": "image",
+        "image": {"assetId": f"figure:{figure_id}"},
+        "width": size[0],
+        "height": size[1],
+        "description": description,
+        "attribution": caption,
+    }
 
 
 def _chart_problems(chart: dict[str, Any]) -> list[str]:

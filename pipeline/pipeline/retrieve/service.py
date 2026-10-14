@@ -25,7 +25,6 @@ from .. import elitellm, obs, registry, use_compatible_event_loop
 from ..config import cfg
 from ..generated.limits import CHAT_CHARACTER_LIMIT
 from ..prompts import generate as generate_prompts
-from ..prompts import preferences
 from ..retrieval import (
     accounting,
     compact,
@@ -278,7 +277,8 @@ def _reset_accounting(token) -> None:
 class GenerateReq(LLMPin):
     workspaceId: str
     kind: str  # flashcards | quiz | mindmap | diagram
-    # Omitted, the requester's study preference for the kind sets it.
+    # The panel's More or Less; required for a quiz or flashcard set (Go
+    # refuses one without it), never taken from the study preferences.
     count: int | None = Field(default=None, ge=1, le=50)
     levels: list[str] | None = None
     types: list[str] = Field(min_length=1)
@@ -287,8 +287,6 @@ class GenerateReq(LLMPin):
     chapters: list[str] | None = None
     fileIds: list[str] | None = None
     locale: str | None = None
-    # The requester's saved study preferences; missing fields take defaults.
-    studyPreferences: dict | None = None
     spendSessionId: str = ""
 
 
@@ -296,8 +294,10 @@ _VALID_LEVELS = {"recall", "application", "analysis"}
 
 
 def _count(req: GenerateReq) -> int:
-    """The panel's count, else the requester's study preference for the kind."""
-    return req.count or preferences.generate_count(req.kind, req.studyPreferences)
+    """The panel's count for a quiz or flashcard set."""
+    if not req.count:
+        raise ValueError(f"a {req.kind} needs a count")
+    return req.count
 
 
 def _cognitive_levels(req: GenerateReq) -> list[str]:

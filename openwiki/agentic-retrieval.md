@@ -2362,8 +2362,8 @@ build, and the knowledge library is one more source while the switch is on.
   or retained in full, or omit them and the write credits the reads since the
   last write; Write guard, below). `workspace_building`, for
   new materials: the plan (survey, propose the plan before building more than
-  one item, build a single item directly), output rules (one main explainer note per chapter, mindmaps, diagrams
-  and interactive blocks inside it, quizzes and flashcards standalone in the
+  one item, build a single item directly), output rules (one main explainer per chapter, a note or a deck as the
+  main format says, mindmaps, diagrams and interactive blocks inside a note, quizzes and flashcards standalone in the
   chapter they practise, study preferences, grow a long note by appending
   sections), the note format (`Formats` in the contract:
   `noteMarkdownDescription`), which question tool writes what (Question
@@ -2403,9 +2403,11 @@ build, and the knowledge library is one more source while the switch is on.
   (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`), lists
   every workspace chapter in order with its id (`store.workspace_chapters`,
   loaded once per turn; at most 20, `MaxChaptersPerWorkspace` in Go) so "chapter
-  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: main format, explainer style,
-  practice per chapter, quiz length, flashcards per chapter, mini checks and
-  visual aids, saved values over `DEFAULTS`), and one line per library excerpt
+  2" resolves without a tool call, lists the study preferences (`prompts/preferences.py`: output files (a note
+  or a deck per chapter), writing style, quiz and flashcards each more (10),
+  less (5) or off, visual aids, and knowledge checks, at most 2 questions or,
+  when flashcards is set higher than quiz, 3 cards, saved values over
+  `DEFAULTS`), and one line per library excerpt
   read for this message. Until the turn's first successful write it adds the
   responses left in the turn, this one included, that the last has tools off
   and that a successful write lifts this limit; after it, the responses left
@@ -2676,7 +2678,9 @@ build, and the knowledge library is one more source while the switch is on.
   retried edit reuses its assets, and a refused edit trashes the ones its
   note does not reference (`DiscardAgentAssets`). From then on they are
   ordinary note images (pruning, trash, children pass, clones, quota).
-  Request identity covers each figure's id and image digest.
+  Request identity covers each figure's id and image digest. A quiz question
+  takes a library figure through `add_question_media` instead (Question
+  tools, below), with the same checks (`tools.library_figures`) and render.
 - **Answer.** A build turn ends like any turn: an OpenUI Lang answer
   (`LangRenderer`) listing the materials made, cited under the usual rules. The
   attribution the user sees for library content is the provenance footer on
@@ -2718,7 +2722,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard); a material with provenance is grounded in the library and does not require indexed workspace content. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
 | `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
-| `add_question_media` | yes | A chart or plot block after one question's text (`quiz_id`, `question_id`, `media`); library figures are refused (notes only) |
+| `add_question_media` | yes | A chart, a plot or a library figure (`{"type": "figure", "id", "caption"?}`, one read this turn) after one question's text (`quiz_id`, `question_id`, `media`); a figure becomes an image block whose asset is the quiz's own (Question tools, below) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
 | `list_trashed_files` | none | Trash of the workspace, owner only |
@@ -2901,9 +2905,25 @@ and `replace_question` for an item with `replaces`. `add_question_media`
 reads the question the same way, appends the block after the stem or, with
 no stem, after the part's text, and writes it back with `replace_question`;
 its media (a chart or plot; graphs were dropped on 2026-10-13, no run had
-written one) is checked against the contract's `mediaBlocks`, and a library
-figure is refused (it would need Go to store figure assets for a quiz edit).
-Go's validator stays the backstop. Every problem of a call is named at once,
+written one) is checked against the contract's `mediaBlocks`. A library
+figure (contract v27) is checked and credited as a note's is
+(`tools.library_figures`: shown by the library, boxed apart from its page,
+listed by an excerpt this turn read, whose book joins the quiz's
+provenance), needs a `caption` when it has no printed label, and is rendered
+like a note figure (`tools.render_figure`). It becomes an image block,
+`{type: "image", image: {assetId: "figure:<id>"}, width, height,
+description, attribution}` (`questions.figure_block`): the pixel size of the
+crop, the caption or printed label as the alt text grading reads, and the
+caption with the printed credit (`tools.figure_caption`) as the attribution
+shown under it. The edit carries the crop as `figures`, and Go
+(`agentFigures.resolveQuizCommands`) points each `figure:<id>` asset id in a
+quiz edit's questions at an editor asset of the quiz, stored and discarded
+as a note's figures are; a `figure:` id the request did not render is
+refused, so the agent's quiz edits store only real asset ids (the
+question validator accepts any asset id string; no other agent path can
+carry a figure: add_questions items take no media and a `figure:` image in
+question text is refused). Go's validator
+stays the backstop. Every problem of a call is named at once,
 as `path: expected …; sent …` (`questions[2].correct: expected one of the
 options, copied exactly: "In", "Out"; sent "in"`), with targeted hints for
 the usual mistakes (a markscheme or marks on a simple question, `fixedUnit`,
@@ -3072,14 +3092,11 @@ is fixed, and the gateway must persist a parseable artifact.
    `chat` slot; migration `0044` merged the generate slot into chat) and
    forwards that exact pin; the browser `model` field is ignored. An unresolvable preference
    fails as `model_unavailable`.
-   Go also forwards the requester's `studyPreferences`, as chat turns get
-   them. An omitted `count` takes the preference for the kind
-   (`prompts/preferences.py` `generate_count`: quiz length for a quiz,
-   flashcards per chapter for a set, unset fields at their defaults of 8 and
-   15); a count picked in the Add file dialog's generate panel wins. `/generate`
-   makes no notes, so explainer style, mini checks and visual aids do not
-   apply, and its other options (types, levels, mindmap detail, diagram type)
-   map to no preference.
+   `/generate` never reads the study preferences (Epo 2026-10-14: people
+   open the panel to customize what they generate). A quiz or flashcard set
+   takes the panel's amount as `count`, Less 5 or More 10 (Less picked
+   first); Go refuses one without a count before reserving credits, and the
+   pipeline's `_count` refuses it too.
 2. One `produce` call receives the bounded, evenly sampled context. There is no
    unused map-reduce branch. `produce` appends a language rule from the gateway's `locale` so quiz copy,
    flashcard text, and diagram labels match the user's Settings language.

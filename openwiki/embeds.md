@@ -113,9 +113,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   its own rooms, which a note references through `material_ref` with
   `refKind` set to the kind; Go owns its access, trash, clone, share, assets
   and quota. Chart, plot and graph are question blocks too
-  (`questionBlock`); chart and plot are what `add_question_media` writes
+  (`questionBlock`); chart and plot are the embeds `add_question_media` writes
   (`questionMedia`), and their `schema` is the JSON Schema the agent
-  contract's `mediaBlocks` carries. Names are one word per kind in each
+  contract's `mediaBlocks` carries (the tool's library figure becomes an
+  `image` block, which is no embed). Names are one word per kind in each
   layer's casing (Epo 2026-10-13; agent contract v24). `rules` is what the
   agent is told about a kind wherever it writes one: the HTML embed's rules
   are quoted by the note format (`Formats.note`) and by chat's `HtmlEmbed`

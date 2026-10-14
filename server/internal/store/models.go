@@ -38,15 +38,16 @@ type User struct {
 // (todo-learning.md, 1.4). Zero values are unset, so the pipeline's defaults
 // apply to them.
 type StudyPreferences struct {
-	ExplainerStyle       string `json:"explainerStyle,omitempty" enum:"brief,standard,detailed"`
-	Practice             string `json:"practice,omitempty" enum:"none,quiz,flashcards,both"`
-	QuizLength           int    `json:"quizLength,omitempty" minimum:"1" maximum:"50"`
-	FlashcardsPerChapter int    `json:"flashcardsPerChapter,omitempty" minimum:"1" maximum:"100"`
-	MiniChecks           *bool  `json:"miniChecks,omitempty"`
-	VisualAids           string `json:"visualAids,omitempty" enum:"fewer,more"`
-	// MainFormat is each chapter's main explainer; auto lets the agent choose
-	// from the explainer style.
-	MainFormat string `json:"mainFormat,omitempty" enum:"note,deck,auto"`
+	// MainFormat is the output file that explains each chapter (Capy Note or
+	// Powerpoint); the agent still makes other files when needed.
+	MainFormat   string `json:"mainFormat,omitempty" enum:"note,deck"`
+	WritingStyle string `json:"writingStyle,omitempty" enum:"brief,normal,verbose"`
+	// How much of each practice item a chapter gets (more 10, less 5).
+	Quiz       string `json:"quiz,omitempty" enum:"more,less,off"`
+	Flashcards string `json:"flashcards,omitempty" enum:"more,less,off"`
+	VisualAids string `json:"visualAids,omitempty" enum:"fewer,more"`
+	// KnowledgeChecks are a Capy Note's small checks of questions or cards.
+	KnowledgeChecks *bool `json:"knowledgeChecks,omitempty"`
 	// Review sessions (human/study-progress.md, 2026-10-10): items per
 	// session (default 20), which items reviews draw from (default both) and
 	// which mode suggestions favour (default balanced). The chat ignores them.
