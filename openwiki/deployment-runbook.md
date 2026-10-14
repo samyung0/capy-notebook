@@ -2368,7 +2368,7 @@ nothing; share and comment mentions are in-app only.
 
 | Template | Sent when | Opt-out |
 | --- | --- | --- |
-| `welcome` | the starter workspace is provisioned, once per account | none |
+| `welcome` | the starter workspace is provisioned, once per account; skipped for Clerk test addresses (`+clerk_test@`, the UAT journey actors and seeds) | none |
 | `workspace-invite`, `workspace-invite-accepted` | an owner invites someone; the invitee accepts (to the owner) | workspace invitations |
 | `subscription-started` | a Pro subscription first entitles, once per subscription | billing |
 | `subscription-cancelled` | cancel-at-period-end turns on, once per period end | billing |

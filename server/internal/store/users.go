@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -533,8 +534,9 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 	}
 	// Provisioning runs once per account on the server, so it is where the
 	// welcome mail starts; onboarding's Confirm and Skip are client-only.
+	// Clerk test addresses (UAT journeys and seeds) get none, saving quota.
 	toEmail := ""
-	if email != nil {
+	if email != nil && !strings.Contains(strings.ToLower(*email), "+clerk_test@") {
 		toEmail = *email
 	}
 	if _, err := EnqueueEmailTx(ctx, tx, EmailOutboxParams{
