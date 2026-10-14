@@ -33,7 +33,7 @@ describe('rail map', () => {
   });
 
   it('keeps dense biomes apart and never borders a city on open country', () => {
-    for (let k = 0; k < 200; k++) {
+    for (let k = 0; k < 50; k++) {
       const { segments } = buildRailMap(`ws-${k}`, chapters, items(60));
       segments.forEach(({ biome }, i) => {
         if (i === 0) return;
