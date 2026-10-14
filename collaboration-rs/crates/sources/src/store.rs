@@ -1232,7 +1232,21 @@ impl Sources {
                 None,
                 None,
             )
-            .await?;
+            .await
+            .inspect_err(|error| {
+                // A refused claim records nothing (a refresh-failure needs the
+                // lease), and its job may hold an export slot: report it.
+                if error.status() == Some(409) {
+                    crate::observe::capture(
+                        &format!("source refresh claim refused: {error}"),
+                        &[
+                            ("stage", "source_refresh_claim"),
+                            ("file_id", file_id),
+                            ("job_id", job_id),
+                        ],
+                    );
+                }
+            })?;
         let mut publishing = false;
         let result: Result<(), SourceError> = async {
             let base = self
@@ -1505,10 +1519,7 @@ impl Sources {
             }
         }
         let jobs = client
-            .query(
-                "SELECT j.id,c.file_id,COALESCE((j.payload->>'exportOnly')::boolean,false) AND COALESCE(j.payload->>'paidBy','')<>'system' AS handoff FROM jobs j JOIN source_refresh_candidates c ON c.job_id=j.id WHERE j.type='source_refresh' AND (j.status='pending' OR (j.status='running' AND j.lease_expires_at<now())) ORDER BY j.created_at LIMIT 2",
-                &[],
-            )
+            .query(crate::refresh::EXPORT_JOBS_SQL, &[])
             .await
             .map_err(db_error)?;
         for job in jobs {

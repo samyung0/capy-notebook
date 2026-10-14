@@ -444,10 +444,10 @@ and the job retries. The check does not verify formatting, which is accepted: DO
 visual effects are left out because an export writes some formatting its own
 way, and PPTX visual effects (shape geometry, layout, text formatting) are
 compared only by their count and operation, since they carry no values. UAT reproduces a refusal deterministically: with
-`COLLABORATION_UAT_PUBLICATION_HOLD=true`, a publication waits after its
-capture, before the handoff, while its file's name contains `[hold-publication]`
-(at most 60 s, then it fails with 503), so the refusal journey can save an edit
-in between; the deferred publication then completes and its rebuild refuses
+`COLLABORATION_UAT_PUBLICATION_HOLD=true`, a publication (text or Office)
+waits after its capture, before it reads the latest save, while its file's name
+contains `[hold-publication]` (at most 60 s, then it fails with 503), so a
+journey can save an edit in between; the deferred publication then completes and its rebuild refuses
 that edit ([deployment runbook](../deployment-runbook.md) §12.2).
 
 Every DOCX page and column break is a story unit in every story (body, block
@@ -2104,7 +2104,19 @@ again (`POST /internal/collaboration/files/{id}/epoch-reset`, an epoch that
 already moved on is left alone). A client that missed the discard then sees
 a new epoch and opens recovery instead of resyncing the thrown-away state;
 a fully saved one sees the newer-version banner. A refresh captured under the
-old epoch is superseded, as after any epoch change.
+old epoch could never be claimed or published again, so the reset cancels it
+as superseded in the same transaction (`ResetSourceEpoch`, before the epoch
+moves): its job, candidate, provider session and reserved credits close, no
+`refresh_error` is recorded and the saved edits are due again. An exporter
+still running finds its candidate gone at its next step, and its failure report
+parks nothing. A restore from the trash (a new epoch too) does the same for a
+refresh the trash's cancellation skipped or a maintenance one, and clears the
+`refresh_error` the trash's cancellation left (`source deleted`), so the
+restored file's saved edits queue again without another edit; any other error
+stays (Epo 2026-10-14). Office and text alike. The collaboration service
+reports a refused claim (409) to Sentry (`source_refresh_claim`) instead of
+dropping it: nothing else records it, and a job left claimable would hold one
+of the export pass's two slots.
 
 Office automatic refresh starts only after a prior successful parse, at least
 3,000 trimmed net-change tokens or saved changes left unedited for 7 days, and
@@ -2214,8 +2226,9 @@ selection tracking and IME composition support. The editable document is exposed
 only after its first collaboration sync supplies the authoritative seed. It stays
 available across ordinary disconnects so mounted offline edits retain their drafts.
 Newlines and BOM are retained;
-invalid UTF-8 fails explicitly. Text refresh batches every 15 seconds even
-while typing continues. Its published checkpoint may lag the current document,
+invalid UTF-8 fails explicitly. A text source refreshes once its saves have
+paused 30 seconds (the note projection's idle; Epo 2026-10-14), not while
+typing continues. Its published checkpoint may lag the current document,
 with exact residual edits retained in the same Y.Text lineage and Undo history.
 The text preview follows that current shared text after Done, including remote
 edits; publication metadata does not replace a mounted editor's newer state.

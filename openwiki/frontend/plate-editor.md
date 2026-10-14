@@ -1309,8 +1309,8 @@ metrics without reading the content back. On the 2 MB load-test note the
 handler's CPU went from ~140 ms to ~30 ms. Its body read deadline is 15 s,
 the collaboration service's own timeout for the call, instead of Huma's 5 s.
 Rows where `projected_version < stored_version` and no instance holds the room
-are projected by the server's 5 s pending scan once they have been idle that
-long.
+are projected by the server's 5 s pending scan once they have been idle 30 s
+(the same `COLLABORATION_PROJECTION_IDLE_MS`).
 Binary persistence and projection have separate failure boundaries. Once a Yjs
 version commits, a projection outage does not enqueue that snapshot as a failed
 store or advance `stored_version` again. The lag scanner projects the committed

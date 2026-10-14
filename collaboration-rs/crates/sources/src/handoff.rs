@@ -705,6 +705,11 @@ impl Handoff {
 
     /// A finalized candidate's publication (`POST /internal/source-refresh/publish`).
     pub async fn publish(self: &Arc<Self>, input: &SourcePublish) -> Result<Value, SourceError> {
+        // Text and Office alike. Editors stay writable during the hold: their
+        // saves land after the capture, and the session is read after it.
+        if self.publication_hold {
+            self.hold(&input.file_id).await?;
+        }
         let session = self.sources.current(&input.file_id).await?;
         let publication = input.publication();
         let gateway = self.sources.gateway();
@@ -787,10 +792,6 @@ impl Handoff {
             return Err(SourceError::Other(
                 "Source publication could not be committed".into(),
             ));
-        }
-        // Editors stay writable during the hold: their saves land after the capture.
-        if self.publication_hold {
-            self.hold(&input.file_id).await?;
         }
         let client = self
             .sources

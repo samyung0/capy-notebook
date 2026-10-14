@@ -3353,15 +3353,19 @@ tokens in `effectTokens`. Office requires a successful prior parse and 60
 seconds idle, and is due at 3,000 net tokens or once saved changes have had no
 edit for 7 days; the scheduler query (`OFFICE_REFRESH_*`) and Go admission
 (`officeRefresh*`) hold the same constants, and the Go store tests run the
-scheduler's SQL from `sourceDocuments.ts` against them. Text batches every 15
-seconds without a minimum or indefinite typing delay. The scheduler, like Go
+scheduler's SQL from `collaboration-rs/crates/sources/src/refresh.rs` against
+them. A text source is due once its saves have paused 30 seconds (Go's
+`textRefreshIdle`, the note projection's idle; Epo 2026-10-14), so it
+re-indexes after a pause rather than every few seconds while someone types. The
+scheduler, like Go
 admission, skips a change list worth no tokens, except an Office list of moves
 only, which publishes through the 7-day rule, and takes files oldest first by the
 later of `last_edited_at` and `last_refresh_requested_at`. A refused automatic
 admission stores `refresh_error` and the scheduler skips the file until its
 next save, except a 429 (the owner at the concurrent ingest-job limit), which
 stamps `last_refresh_requested_at` instead so the file retries behind the other
-due files. A file has one running candidate and one
+due files. Each 5 s pass then claims and exports the two oldest claimable
+refreshes (`EXPORT_JOBS_SQL`). A file has one running candidate and one
 coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
 state intact and exposes manual processing.
@@ -3375,7 +3379,12 @@ indexing) or failed (`refresh_error`). A maintenance republish is left out.
 back out of the queue (`CancelSourceRefresh`: the job is superseded, its
 reservation released and `desired_manual` cleared); a claimed refresh answers
 `processing_started` and runs to the end. The edits stay, so automatic
-processing may queue them again; the switches turn that off.
+processing may queue them again; the switches turn that off. An epoch reset or
+a restore from the trash supersedes the refresh captured under the old epoch,
+claimed or not, so none is left to fail its claim forever and hold an export
+slot; a restore also clears the `source deleted` error the trash left, so the
+restored file's saved edits queue again
+([Office files](frontend/office-files.md)).
 
 Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway

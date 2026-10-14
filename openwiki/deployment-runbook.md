@@ -2133,8 +2133,9 @@ authentication strategy.
    `OPS_INGEST_UAT_DATABASE_URL` unset. The standalone Ops renderer requires the
    primary environment to match the deployment target (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
    and browser build variables. Set `COLLABORATION_UAT_PUBLICATION_HOLD=true`
-   for the Office refusal journey: collaboration then holds a publication after
-   its capture, before the handoff, while its file's name contains
+   for the Office refusal journey: collaboration then holds a publication (text
+   or Office) after its capture, before it reads the latest save, while its
+   file's name contains
    `[hold-publication]` (at most 60 s, then that publication fails with 503
    and the ingest worker retries it once). The journey sets and clears the
    marker through the file rename API, so it holds only files its actor can

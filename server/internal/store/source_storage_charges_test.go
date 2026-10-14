@@ -184,7 +184,7 @@ func TestTextPublicationChargesPublishedTextOnce(t *testing.T) {
 	}
 	publish := func(size int64, capture, later string) {
 		t.Helper()
-		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_refresh_requested_at=now()-interval '16 seconds' WHERE file_id=$1`, file.ID); err != nil {
+		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at=now()-interval '31 seconds' WHERE file_id=$1`, file.ID); err != nil {
 			t.Fatal(err)
 		}
 		job, err := s.RequestSourceRefresh(ctx, owner, file.ID, true)
