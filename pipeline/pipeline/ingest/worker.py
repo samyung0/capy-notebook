@@ -1457,6 +1457,10 @@ async def _chunks_for(
                     str(payload.get("actorUserId") or ""),
                 )
         _publish_progress(ws, file_id, "indexing", 50, status="processing")
+        if direct == "tabular":
+            # Every row carries its own headers, so a table chunks with no
+            # overlap: a carried row would only repeat in the next chunk.
+            return chunk_markdown(text, overlap_tokens=0)
         return chunk_markdown(text)
 
     if processing_plan.route != ingest_plan.DOCUMENT_PARSE:

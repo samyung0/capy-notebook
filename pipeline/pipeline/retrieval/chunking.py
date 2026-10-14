@@ -348,12 +348,17 @@ def _push_heading(stack: list[tuple[int, str]], level: int, title: str) -> None:
     stack.append((level, title))
 
 
-def _pack(blocks: list[_Block], section_path: str) -> list[Chunk]:
+def _pack(
+    blocks: list[_Block], section_path: str, overlap_tokens: int | None = None
+) -> list[Chunk]:
     """Pack consecutive blocks of one section into token-bounded chunks.
 
     Blocks are never split unless a single block exceeds the target on its own,
     so a table or a paragraph stays whole and its bbox stays meaningful.
+    ``overlap_tokens`` defaults to ``CAPY_CHUNK_OVERLAP_TOKENS``.
     """
+    if overlap_tokens is None:
+        overlap_tokens = cfg.chunk_overlap_tokens
     chunks: list[Chunk] = []
     current: list[_Block] = []
     size = 0
@@ -373,7 +378,7 @@ def _pack(blocks: list[_Block], section_path: str) -> list[Chunk]:
         carry: list[_Block] = []
         carried = 0
         for blk in reversed(current):
-            if carried >= cfg.chunk_overlap_tokens:
+            if carried >= overlap_tokens:
                 break
             carry.insert(0, blk)
             carried += estimate_tokens(blk.text)
@@ -744,7 +749,7 @@ def _as_list(value: Any) -> list[str]:
     return []
 
 
-def chunk_markdown(text: str) -> list[Chunk]:
+def chunk_markdown(text: str, *, overlap_tokens: int | None = None) -> list[Chunk]:
     """Chunk markdown by heading, with no page model."""
     stack: list[tuple[int, str]] = []
     pending: list[_Block] = []
@@ -752,7 +757,7 @@ def chunk_markdown(text: str) -> list[Chunk]:
 
     def flush_section() -> None:
         if pending:
-            chunks.extend(_pack(list(pending), _section_path(stack)))
+            chunks.extend(_pack(list(pending), _section_path(stack), overlap_tokens))
             pending.clear()
 
     paragraph: list[str] = []

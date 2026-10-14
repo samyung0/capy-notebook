@@ -579,3 +579,4 @@ Rows are one paragraph each (`CAPY_TABULAR_TEXT_VERSION` v2) and `_split_long`
 is linear. 10k rows now chunk in about 3 s. Epo picked 1–3: the 1,000-column
 cap stays, and the projection is capped at about 1M estimated tokens
 (`tabular_text_limit`, stored and not indexed, with the too-large detail).
+Tables chunk with no overlap.

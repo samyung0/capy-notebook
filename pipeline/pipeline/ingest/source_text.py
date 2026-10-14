@@ -29,8 +29,9 @@ from ..retrieval.chunking import estimate_tokens
 # bound on its columns) are counted as its lines reach the reader, and a row
 # over the cap is refused before it is parsed. Repeating headers make the
 # searchable projection several times the source, so its estimated tokens are
-# capped while it is built, before anything is chunked or embedded: about
-# 3,000 chunks, roughly a 1,400-page PDF.
+# capped while it is built, before anything is chunked or embedded. With no
+# overlap that is 2,500 to 5,000 chunks (2,700 for 11 short columns, one chunk
+# per row once a row passes half a chunk), roughly a 1,400-page PDF or more.
 _TABULAR_MAX_COLUMNS = 1_000
 _TABULAR_MAX_FIELD_CHARS = 8 << 20
 _TABULAR_MAX_TOKENS = 1_000_000

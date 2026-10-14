@@ -874,6 +874,38 @@ async def test_a_table_over_the_token_cap_is_refused_before_chunking(
     assert chunked == []
 
 
+async def test_a_table_chunks_without_overlap(parse_stub, monkeypatch, tmp_path):
+    """Each row carries its own headers, so the delimited route never repeats
+    a row in the next chunk, whatever overlap prose uses."""
+    monkeypatch.setattr(worker.cfg, "chunk_tokens", 400)
+    monkeypatch.setattr(worker.cfg, "chunk_overlap_tokens", 50)
+    source = tmp_path / "grades.csv"
+    source.write_text(
+        "Student,Course,Teacher,Grade\n"
+        + "".join(
+            f"Student {n},Biology {n % 7},Teacher {n % 5},{n % 100}\n"
+            for n in range(500)
+        ),
+        encoding="utf-8",
+    )
+
+    chunks = await worker._chunks_for(
+        payload={"blobPath": "sources/grades.csv"},
+        name="grades.csv",
+        processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),
+        local_path=str(source),
+        source_key="sources/source-1",
+        ws="ws_1",
+        file_id="f_1",
+        source_sha256="aa" * 32,
+    )
+
+    text = worker.source_text.tabular_text(str(source), source.name)
+    rows = [block for chunk in chunks for block in chunk.text.split("\n\n")]
+    assert rows == text.split("\n\n")
+    assert len(chunks) == len(worker.chunk_markdown(text, overlap_tokens=0))
+
+
 async def test_pdf_chunking_reads_the_spooled_source(parse_stub):
     """The heading and confidence passes measure the PDF the parser saw."""
     await _run()

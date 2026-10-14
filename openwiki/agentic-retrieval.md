@@ -1104,12 +1104,18 @@ performs the planned work:
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
   row text with explicit field names (`Row N: Header=value | …`), one paragraph
   per row, so the chunker packs whole rows and never splits a table-sized
-  block. Whitespace inside a cell, line breaks included, collapses to one
-  space. Formulas remain literal source values. A row stops before it is
-  parsed when it holds 1,000 or more raw delimiters (quoted ones count too),
-  and rendering stops once the row text passes about 1M estimated tokens
-  (about 3,000 chunks), before anything is chunked or embedded (see Ingest
-  limits). `CAPY_TABULAR_TEXT_VERSION` (v2) names this row text in the
+  block. Tables chunk with no overlap (`chunk_markdown(…, overlap_tokens=0)`):
+  every row carries its own headers, so a carried row would only repeat. A
+  row longer than the chunk budget is still cut by `_split_long`, and its
+  tail chunk has no `Row N` label.
+  Whitespace inside a cell, line breaks included, collapses to one space.
+  Formulas remain literal source values. A row stops before it is parsed
+  when it holds 1,000 or more raw delimiters (quoted ones count too), and
+  rendering stops once the row text passes about 1M estimated tokens, before
+  anything is chunked or embedded (see Ingest limits). A table at the cap is
+  2,500 to 5,000 chunks: about 2,700 for 11 short columns, and one chunk per
+  row once a row passes half the 400-token budget.
+  `CAPY_TABULAR_TEXT_VERSION` (v2) names this row text in the
   pipeline identity, so after a bump an upload or reprocess chunks the table
   again instead of reusing a donor's old chunks; tables already indexed keep
   theirs until they are reprocessed.
@@ -1252,8 +1258,8 @@ raise it to `high` or `max`.
 `pipeline/retrieval/chunking.py`:
 
 - Groups blocks under the heading hierarchy (`text_level` or markdown `#`).
-- Packs by estimated-token budget (`CAPY_CHUNK_TOKENS` 400, overlap 50, min 40;
-  `estimate_tokens` counts ~4 Latin characters or 1 CJK character per token)
+- Packs by estimated-token budget (`CAPY_CHUNK_TOKENS` 400, overlap 50 except
+  0 for CSV/TSV tables, min 40; `estimate_tokens` counts ~4 Latin characters or 1 CJK character per token)
   without splitting a block unless one block alone exceeds the target. Packing
   by characters made a Chinese chunk carry ~4x the tokens of an English one,
   so five CJK hits alone filled the tool-output cap. A block over the target

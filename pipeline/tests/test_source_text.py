@@ -36,7 +36,6 @@ def test_tabular_rows_are_packed_whole_with_one_block_per_row(
     monkeypatch, tmp_path
 ) -> None:
     monkeypatch.setattr(chunking.cfg, "chunk_tokens", 80)
-    monkeypatch.setattr(chunking.cfg, "chunk_overlap_tokens", 0)
     source = tmp_path / "scores.csv"
     # Every row renders to 29 characters (8 tokens): the padding shrinks as the
     # row number grows.
@@ -48,7 +47,8 @@ def test_tabular_rows_are_packed_whole_with_one_block_per_row(
 
     text = source_text.tabular_text(str(source), source.name)
     blocks = text.split("\n\n")
-    chunks = chunking.chunk_markdown(text)
+    # Tables chunk with no overlap, as the delimited route does.
+    chunks = chunking.chunk_markdown(text, overlap_tokens=0)
 
     assert len(blocks) == 1001
     assert blocks[1] == "Row 2: Score=1 | Note=xxxxxxx"
