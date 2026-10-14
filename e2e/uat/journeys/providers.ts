@@ -277,9 +277,10 @@ export async function cleanupStripeTestClock(
 // (workers/uat-inbox), which keeps each message for a day.
 const UAT_INBOX = 'https://uat-inbox.capynotebook.com';
 
-const expectedSubjects: Record<string, string> = {
+// The subject names the deletion date (server/internal/mail/copy_gen.go).
+const expectedSubjects: Record<string, RegExp> = {
   'account-deletion-requested':
-    'Your Capy Notebook account deletion is scheduled',
+    /^Your Capy Notebook account will be deleted on \d{1,2} [A-Z][a-z]{2} \d{4}$/,
 };
 
 export async function verifyOutboxDelivery(
@@ -339,7 +340,7 @@ export async function verifyOutboxDelivery(
   const message = messages[0];
   expect(message.to).toBe(email.toLowerCase());
   if (expectedSubjects[template])
-    expect(message.subject).toBe(expectedSubjects[template]);
+    expect(message.subject).toMatch(expectedSubjects[template]);
   expect(String(message.from)).toMatch(/@uat\.capynotebook\.com$/);
   if (!(message.subject && (message.html || message.text)))
     throw new Error('Inbox message has no subject or content');

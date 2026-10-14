@@ -643,19 +643,6 @@ for scale, `mermaid.core` is 150.7 KB before any diagram chunk.
   the note before the next insert worked around it. Epo suspects the ongoing
   Plate editor work; recheck once that lands.
 
-## Note block text caps (2026-10-09)
-
-- The input length pass (titled fields show `72/80` from 90%, untitled fields
-  get a silent `maxLength`) skipped the note blocks because the Plate editor
-  is being reworked. When it lands, give these the silent treatment, no
-  counter, frontend only since they live in the note document:
-  - HTML embed caption (`notes/blocks/HtmlEmbedSourceDialog.tsx`) and the
-    inline Mermaid caption (`notes/blocks/elements.tsx`): 300 characters.
-  - Mermaid source (`notes/blocks/MermaidSourceDialog.tsx`): the same 64 KiB
-    byte bound as the HTML embed source (`HTML_EMBED_MAX_BYTES`), with its
-    existing error message.
-- Today only the 2 MiB document cap bounds them.
-
 ## Agent writes to notes and Office files (2026-10-09)
 
 - Test the chat agent's writes end to end against notes and Office sources,
@@ -689,20 +676,19 @@ for scale, `mermaid.core` is 150.7 KB before any diagram chunk.
   marker is worth it, or wait for per-block attribution (the Rust server work
   may be the place for it).
 
-## Image size cap in Office files (2026-10-09)
+## Queued 2026-10-13 (from the Rust round)
 
-- Every other image upload is moving to a byte cap by plan (2 MiB Free,
-  5 MiB Pro, from `plan_limits`): under the cap the file goes in as is, over
-  it the browser shrinks it first (`src/features/quizzes/quizImage.ts`, to be
-  generalised). Office was left alone because of the ongoing work there.
-- Today an inserted image goes into the file at its original size with no
-  limit. DOCX reads the picked file into a data URL and only caps the display
-  width at 612 px (`insertImageFile` in
-  `vendor/betteroffice/packages/docx-react/src/components/DocxEditor/hooks/useFileIO.ts`);
-  PPTX gets the raw bytes from Capy's Insert › Image (`api.insertImage` in
-  `src/office-runtime/PptxEditorHost.tsx`). Check paste and drop too, in case
-  they take another path.
-- To do: apply the same cap before the bytes reach the document, using the
-  plan of whoever pays for the file. Shrink to JPEG (opaque) or PNG
-  (transparent), never WebP: older Word, PowerPoint, LibreOffice and Google
-  Docs imports cannot open WebP inside DOCX/PPTX.
+- **Text publishing without the swap** (Epo: later). A text source publishes
+  through the Office path: export to a new file version, re-ingest, then a new
+  epoch over the published file once the room empties. Office needs that (its
+  editing state is a delta over seed(base)); text does not, since its Y.Text is
+  the whole document: publishing could write the current text to the file and
+  reindex, keeping editing in the same epoch. The swap now doubles as history
+  compaction for text, so compaction would need its own idle trigger.
+- **Server-side check on Office image bytes** (Epo: later): the Rust server
+  refuses an Office edit that adds an image over the payer's cap, so the 2/5 MiB
+  cap holds against a modified client (the browser enforces it today).
+- **PPTX Edit gives screen readers no slide text**, unlike the DOCX and XLSX
+  editors (found by the agent-writes e2e, 2026-10-13).
+- **`[@Name](mention:id)` in agent markdown becomes a link with an empty URL**
+  (Go does not check link URLs; the note format offers no mentions).

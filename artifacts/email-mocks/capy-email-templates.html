@@ -1,0 +1,454 @@
+<title>Capy Email Templates</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fustat:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: a review sheet. Overview table first, then one row per email: facts on the left, the rendered email on the right. */
+:root {
+  --bg: #f4f4f2;
+  --panel: #ffffff;
+  --fg: #222222;
+  --muted: #62625d;
+  --line: #deded8;
+  --accent: #6c5bc9;
+  --chip-restyled-bg: #ece6f6; --chip-restyled-fg: #4b3c9e;
+  --chip-new-bg: #e6f7d8; --chip-new-fg: #2f5c12;
+  --chip-clerk-bg: #e7eef8; --chip-clerk-fg: #234b7d;
+  --chip-warn-bg: #fbefd7; --chip-warn-fg: #7a4a06;
+  --seg-on-bg: #222222; --seg-on-fg: #ffffff;
+  --stage: #e9e9e5;
+  --font-display: "Fustat", "Segoe UI", -apple-system, Helvetica, Arial, sans-serif;
+  --font-body: "Fustat", "Segoe UI", -apple-system, Helvetica, Arial, "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151b; --panel: #1a1f27; --fg: #e8eaee; --muted: #a2a8b3; --line: #2e3542; --accent: #b5a1f8;
+    --chip-restyled-bg: #2f2a4d; --chip-restyled-fg: #cfc3ff;
+    --chip-new-bg: #23361a; --chip-new-fg: #bfe8a0;
+    --chip-clerk-bg: #1f2e42; --chip-clerk-fg: #b4cdf0;
+    --chip-warn-bg: #3d2f14; --chip-warn-fg: #f2cf8a;
+    --seg-on-bg: #e8eaee; --seg-on-fg: #12151b;
+    --stage: #0d1015;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #12151b; --panel: #1a1f27; --fg: #e8eaee; --muted: #a2a8b3; --line: #2e3542; --accent: #b5a1f8;
+  --chip-restyled-bg: #2f2a4d; --chip-restyled-fg: #cfc3ff;
+  --chip-new-bg: #23361a; --chip-new-fg: #bfe8a0;
+  --chip-clerk-bg: #1f2e42; --chip-clerk-fg: #b4cdf0;
+  --chip-warn-bg: #3d2f14; --chip-warn-fg: #f2cf8a;
+  --seg-on-bg: #e8eaee; --seg-on-fg: #12151b;
+  --stage: #0d1015;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55; }
+.wrap { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+h1.page { font-family: var(--font-display); font-size: 30px; line-height: 1.15; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 8px; text-wrap: balance; }
+.lede { color: var(--muted); max-width: 70ch; margin: 0 0 20px; }
+h2.group { font-family: var(--font-display); font-size: 21px; font-weight: 700; margin: 48px 0 4px; letter-spacing: -0.01em; }
+.group-note { color: var(--muted); margin: 0 0 18px; max-width: 75ch; }
+a { color: var(--accent); }
+
+.bar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); border-bottom: 1px solid var(--line); padding-block: 10px; margin-bottom: 24px; display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); }
+.seg button { font: inherit; font-size: 13px; font-weight: 600; border: 0; background: transparent; color: var(--fg); padding: 6px 12px; cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--seg-on-bg); color: var(--seg-on-fg); }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.bar-label { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.bar .ctl { display: flex; align-items: center; gap: 8px; }
+.jump { display: flex; flex-wrap: wrap; gap: 6px; font-size: 13px; }
+@media (max-width: 700px) { .jump { display: none; } }
+.jump a { text-decoration: none; padding: 3px 8px; border-radius: 6px; border: 1px solid var(--line); color: var(--fg); background: var(--panel); }
+
+.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+table.ov { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 760px; }
+table.ov th, table.ov td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+table.ov th { font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); font-weight: 600; }
+table.ov tr:last-child td { border-bottom: 0; }
+table.ov td a { color: var(--fg); font-weight: 600; text-decoration: none; }
+
+.chip { display: inline-block; font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 999px; white-space: nowrap; }
+.chip.restyled { background: var(--chip-restyled-bg); color: var(--chip-restyled-fg); }
+.chip.new { background: var(--chip-new-bg); color: var(--chip-new-fg); }
+.chip.clerk { background: var(--chip-clerk-bg); color: var(--chip-clerk-fg); }
+.chip.warn { background: var(--chip-warn-bg); color: var(--chip-warn-fg); }
+
+.mail { display: grid; grid-template-columns: minmax(0, 280px) minmax(0, 1fr); gap: 20px; padding: 20px; margin-bottom: 20px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; scroll-margin-top: 70px; }
+@media (max-width: 860px) { .mail { grid-template-columns: minmax(0, 1fr); padding: 14px; } }
+.meta { min-width: 0; }
+.meta h3 { font-family: var(--font-display); font-size: 18px; font-weight: 700; margin: 0 0 6px; }
+.meta .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+.meta dl { margin: 0; display: grid; gap: 10px; font-size: 13.5px; }
+.meta dt { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; }
+.meta dd { margin: 2px 0 0; }
+.meta ul { margin: 2px 0 0; padding-left: 18px; }
+.meta li { margin-bottom: 4px; }
+.meta code { font-family: var(--font-mono); font-size: 12px; }
+
+.stage { min-width: 0; background: var(--stage); border-radius: 10px; padding: 16px; display: flex; justify-content: center; }
+.frame { width: 100%; max-width: 640px; transition: max-width .2s ease; }
+body.phone .frame { max-width: 375px; }
+@media (prefers-reduced-motion: reduce) { .frame { transition: none; } }
+
+.note-card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+.note-card ul, .note-card ol { margin: 8px 0 0; padding-left: 20px; }
+.note-card li { margin-bottom: 8px; }
+.note-card h3 { font-family: var(--font-display); margin: 0 0 4px; font-size: 18px; }
+.decisions li b { font-weight: 700; }
+</style>
+
+<div class="wrap">
+  <h1 class="page">Capy email templates</h1>
+  <p class="lede">Every email a Capy Notebook user can receive, restyled to match the app: the logo, the classroom theme's dark buttons and purple accent, and the app's font. Sample data uses made-up people (Alex Chen invites Mia Wong) and the date 14 Oct 2026. Clerk templates are mocks of what we would paste into the Clerk dashboard.</p>
+
+  <div class="bar" role="toolbar" aria-label="Preview options">
+    <div class="ctl"><span class="bar-label" id="lang-label">Language</span>
+      <div class="seg" role="group" aria-labelledby="lang-label">
+        <button id="lang-en" type="button" aria-pressed="true" data-lang="en">English</button>
+        <button id="lang-zh" type="button" aria-pressed="false" data-lang="zh">中文</button>
+      </div>
+    </div>
+    <div class="ctl"><span class="bar-label" id="width-label">Width</span>
+      <div class="seg" role="group" aria-labelledby="width-label">
+        <button id="w-desktop" type="button" aria-pressed="true" data-width="desktop">Desktop</button>
+        <button id="w-phone" type="button" aria-pressed="false" data-width="phone">Phone 375</button>
+      </div>
+    </div>
+    <nav class="jump" id="jump" aria-label="Jump to email"></nav>
+  </div>
+
+  <h2 class="group" style="margin-top:0">Overview</h2>
+  <p class="group-note">Our mail goes through Cloudflare Email Service: Workers Paid includes 3,000 emails a month for the whole account, UAT and production together, then $0.35 per 1,000. Clerk and Stripe send from their own systems, so their mail costs us nothing.</p>
+  <div class="table-wrap"><table class="ov" id="overview"><thead><tr><th>Email</th><th>Status</th><th>Sent by</th><th>Can opt out</th><th>Expected volume</th></tr></thead><tbody></tbody></table></div>
+
+  <h2 class="group">Capy sends: existing, restyled</h2>
+  <p class="group-note">These six exist today. Besides the new look, the copy now uses data the payload already carries but the templates ignored: the role, the deletion date, storage used and the buffer's end date.</p>
+  <div id="g-restyled"></div>
+
+  <h2 class="group">Capy sends: new</h2>
+  <p class="group-note">Welcome, invitation accepted, Pro started and Pro cancelled. Share and comment mentions stay in-app only.</p>
+  <div id="g-new"></div>
+
+  <h2 class="group">Clerk sends</h2>
+  <p class="group-note">Clerk keeps sending these, so they never use our quota. Clerk lets anyone edit templates on a development instance, but editing them on staging or production instances needs a paid Clerk plan. Clerk's editor uses its own block markup (Revolvapp), so these mocks get rebuilt in that editor. Each template has one language. The first two are confirmed from our sign-up and reset code. The last two are Clerk notices that may or may not be turned on; check the dashboard.</p>
+  <div id="g-clerk"></div>
+
+  <h2 class="group" id="stripe">Stripe sends</h2>
+  <div class="note-card">
+    <h3>Receipts and payment problems</h3>
+    <p style="margin:0">Stripe can send receipts, failed-payment notices and card-expiry reminders for us. They don't use our quota. Turn them on under Settings → Customer emails, then set the look under Settings → Branding:</p>
+    <ul>
+      <li>Icon and logo: the Capy mark (the same PNG the emails will use).</li>
+      <li>Brand colour <code>#222222</code> (buttons), accent <code>#8c7bd9</code>.</li>
+      <li>The Pro started email above says Stripe sends the receipt, so that copy depends on receipts being on.</li>
+    </ul>
+  </div>
+
+  <h2 class="group">Decisions before building</h2>
+  <div class="note-card decisions">
+    <ol>
+      <li><b>Office maintenance (decided).</b> The email went to every account once per upgrade; the <code>--reminder</code> run was already in-app only. It now goes only to owners and editors of a workspace with an Office file edited in the last 30 days, and everyone still gets the in-app notices.</li>
+      <li><b>Clerk paid plan.</b> Restyling Clerk mail on UAT and production needs a paid Clerk plan. Without one, only the development instance gets the new look.</li>
+      <li><b>When welcome sends.</b> Suggest after onboarding finishes rather than on Clerk's <code>user.created</code> webhook, so we have the person's name and language. One email per sign-up.</li>
+      <li><b>Pro cancelled shows usage only when it matters.</b> The "You use 640 MB now" line should only show for accounts over 100 MB. The Maily build rejects conditional blocks today, so this needs either two template variants or Go <code>{{if}}</code> support in the build.</li>
+      <li><b>Logo hosting.</b> Gmail doesn't render SVG, so the mark needs a PNG at a stable public URL (for example on the app host) before these ship.</li>
+      <li><b>Pro ending.</b> No separate "Pro has ended" email: accounts over the Free limit already get the over-quota email, and everyone else was told the date when they cancelled.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+(function () {
+  // Email palette: fixed light colours, as real email clients render them.
+  var C = {
+    page: '#f3f3f0', card: '#ffffff', border: '#e3e3de', ink: '#222222', body: '#3a3a37', muted: '#6e6e68', link: '#5a4bc2',
+    tones: {
+      info: ['#f3f0fb', '#e2dbf6'], good: ['#effae6', '#d5eec1'], warn: ['#fdf5e4', '#f0e0bd'], danger: ['#fdf0ef', '#f2d4d1'], plain: ['#f6f6f3', '#e8e8e3']
+    }
+  };
+  var FONT = "'Fustat','Segoe UI',-apple-system,Helvetica,Arial,'PingFang SC','Microsoft YaHei',sans-serif";
+  var LOGO = '<svg width="36" height="36" viewBox="0 0 64 64" aria-hidden="true" style="display:block"><rect fill="#222222" height="64" rx="18" width="64"/><rect fill="#ffffff" height="6" rx="3" width="24" x="20" y="18"/><rect fill="#aef07f" height="6" rx="3" width="17" x="20" y="29"/><rect fill="#ffffff" height="6" rx="3" width="24" x="20" y="40"/><circle cx="44" cy="32" fill="#8c7bd9" r="3.4"/></svg>';
+
+  function p(t, small) {
+    return '<p style="margin:0 0 16px;font-size:' + (small ? '13.5px' : '15px') + ';line-height:' + (small ? '21px' : '24px') + ';color:' + (small ? C.muted : C.body) + '">' + t + '</p>';
+  }
+  function box(tone, inner, title) {
+    var t = C.tones[tone];
+    return '<div style="margin:0 0 20px;background:' + t[0] + ';border:1px solid ' + t[1] + ';border-radius:10px;padding:14px 16px">' +
+      (title ? '<div style="font-size:13px;font-weight:700;color:' + C.ink + ';margin:0 0 8px">' + title + '</div>' : '') + inner + '</div>';
+  }
+  function rows(list) {
+    return '<table role="presentation" width="100%" style="border-collapse:collapse">' + list.map(function (r, i) {
+      var pad = i === list.length - 1 ? '0' : '8px';
+      return '<tr><td style="padding:0 12px ' + pad + ' 0;font-size:13.5px;line-height:20px;color:' + C.muted + ';vertical-align:top;width:42%">' + r[0] +
+        '</td><td style="padding:0 0 ' + pad + ';font-size:14px;line-height:20px;color:' + C.ink + ';font-weight:600;vertical-align:top">' + r[1] + '</td></tr>';
+    }).join('') + '</table>';
+  }
+  function list(items, ordered) {
+    var tag = ordered ? 'ol' : 'ul';
+    return '<' + tag + ' style="margin:0;padding-left:20px;color:' + C.body + ';font-size:14.5px;line-height:23px">' +
+      items.map(function (x) { return '<li style="margin:0 0 6px">' + x + '</li>'; }).join('') + '</' + tag + '>';
+  }
+  var B = {
+    h: function (t) { return '<h1 style="margin:0 0 14px;font-size:24px;line-height:31px;font-weight:800;color:' + C.ink + ';letter-spacing:-0.01em">' + t + '</h1>'; },
+    p: function (t) { return p(t); },
+    small: function (t) { return p(t, true); },
+    btn: function (t) { return '<div style="margin:4px 0 22px"><a href="#" style="display:inline-block;background:#222222;color:#ffffff;font-weight:700;font-size:15px;line-height:20px;padding:12px 20px;border-radius:8px;text-decoration:none">' + t + '</a></div>'; },
+    rows: function (tone, r, title) { return box(tone, rows(r), title); },
+    listbox: function (tone, items, title) { return box(tone, list(items), title); },
+    ol: function (items) { return '<div style="margin:0 0 18px">' + list(items, true) + '</div>'; },
+    code: function (c) { return '<div style="margin:0 0 20px;background:#f6f6f3;border:1px solid #e8e8e3;border-radius:10px;padding:18px 16px;text-align:center;font-family:\'JetBrains Mono\',Consolas,monospace;font-size:32px;line-height:36px;font-weight:500;letter-spacing:0.28em;color:#222222">' + c + '</div>'; },
+    link: function (label, url) { return p(label + ' <a href="#" style="color:' + C.link + ';word-break:break-all">' + url + '</a>', true); },
+    cols: function (a, b) {
+      function col(c, tone) { var t = C.tones[tone]; return '<div style="flex:1 1 200px;min-width:0;background:' + t[0] + ';border:1px solid ' + t[1] + ';border-radius:10px;padding:12px 14px"><div style="font-size:13px;font-weight:700;color:' + C.ink + ';margin:0 0 6px">' + c[0] + '</div>' + list(c[1]) + '</div>'; }
+      return '<div style="display:flex;flex-wrap:wrap;gap:10px;margin:0 0 20px">' + col(a, 'good') + col(b, 'danger') + '</div>';
+    }
+  };
+
+  function renderEmail(m, lang) {
+    var c = (lang === 'zh' && m.zh) ? m.zh : m.en;
+    var fallbackNote = (lang === 'zh' && !m.zh) ? '<div style="font-size:12px;color:#7a4a06;background:#fbefd7;padding:6px 10px;border-radius:6px;margin:0 0 10px">Clerk templates have one language, so this shows in English.</div>' : '';
+    var body = c.body.map(function (b) { return B[b[0]].apply(null, b.slice(1)); }).join('');
+    var footer = c.footer.map(function (f, i) {
+      return '<p style="margin:0 0 ' + (i === c.footer.length - 1 ? '0' : '8px') + ';font-size:12.5px;line-height:19px;color:' + C.muted + '">' + f + '</p>';
+    }).join('');
+    var head = '<div style="background:#ffffff;border:1px solid ' + C.border + ';border-radius:10px 10px 0 0;padding:12px 16px;font-size:13px;line-height:20px;color:#3a3a37;font-family:' + FONT + '">' +
+      '<div><span style="color:' + C.muted + '">From</span>&nbsp; ' + c.from + '</div>' +
+      '<div><span style="color:' + C.muted + '">To</span>&nbsp; ' + c.to + '</div>' +
+      '<div style="font-size:15px;font-weight:700;color:#222222;margin-top:6px">' + c.subject + '</div>' +
+      '<div style="color:' + C.muted + '">' + c.preview + '</div></div>';
+    var canvas = '<div style="background:' + C.page + ';border:1px solid ' + C.border + ';border-top:0;border-radius:0 0 10px 10px;padding:28px 12px;font-family:' + FONT + '">' +
+      '<div style="max-width:560px;margin:0 auto;background:' + C.card + ';border:1px solid ' + C.border + ';border-radius:14px;padding:28px 28px 24px">' +
+      '<div style="display:flex;align-items:center;gap:10px;margin:0 0 24px">' + LOGO + '<span style="font-size:16px;font-weight:800;color:#222222;letter-spacing:-0.01em">Capy Notebook</span></div>' +
+      body +
+      '<div style="border-top:1px solid ' + C.border + ';margin:8px 0 16px"></div>' + footer +
+      '</div></div>';
+    return fallbackNote + head + canvas;
+  }
+
+  var CAPY_FROM = 'Capy Notebook &lt;notifications@capynotebook.com&gt;';
+  var CLERK_FROM = 'Capy Notebook &lt;noreply@capynotebook.com&gt; (via Clerk)';
+  var STOP_INVITES = { en: '<a href="#" style="color:#5a4bc2">Stop workspace invitation emails</a>', zh: '<a href="#" style="color:#5a4bc2">不再接收工作区邀请邮件</a>' };
+  var STOP_BILLING = { en: '<a href="#" style="color:#5a4bc2">Stop billing emails</a>', zh: '<a href="#" style="color:#5a4bc2">不再接收账单邮件</a>' };
+
+  var MAILS = [
+    // ---------- existing, restyled ----------
+    { id: 'workspace-invite', group: 'restyled', title: 'Workspace invitation', status: ['restyled', 'Restyled'], by: 'Capy',
+      when: 'Someone invites this email address to a workspace.', optout: 'Yes: workspace invitations', volume: '1 per invite',
+      notes: ['Payload gains <code>inviterName</code>.', 'Uses <code>role</code>, which the payload already sends.', 'Subject names the inviter instead of only the workspace.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Alex Chen invited you to Biology on Capy Notebook', preview: 'Join the workspace to study its files together.',
+        body: [['h', 'Join Biology on Capy Notebook'], ['p', '<b>Alex Chen</b> invited you to the <b>Biology</b> workspace. Once you join, you can edit its files and notes.'],
+          ['rows', 'info', [['Workspace', 'Biology'], ['Access', 'Can edit'], ['Invited by', 'Alex Chen']]], ['btn', 'View invitation'],
+          ['link', 'Button not working? Open this link:', 'https://app.capynotebook.com/workspace-invites/8f2c41d0e9']],
+        footer: ['You got this email because Alex Chen invited mia@example.com to a Capy Notebook workspace. If you weren\'t expecting it, you can ignore it.', STOP_INVITES.en] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Alex Chen 邀请你加入 Capy Notebook 工作区 Biology', preview: '加入工作区，一起学习其中的文件。',
+        body: [['h', '加入 Capy Notebook 工作区 Biology'], ['p', '<b>Alex Chen</b> 邀请你加入 <b>Biology</b> 工作区。加入后，你可以编辑其中的文件和笔记。'],
+          ['rows', 'info', [['工作区', 'Biology'], ['权限', '可编辑'], ['邀请人', 'Alex Chen']]], ['btn', '查看邀请'],
+          ['link', '按钮无法使用？请打开此链接：', 'https://app.capynotebook.com/workspace-invites/8f2c41d0e9']],
+        footer: ['你收到这封邮件是因为 Alex Chen 邀请 mia@example.com 加入 Capy Notebook 工作区。如果你没有预料到这封邀请，可以忽略此邮件。', STOP_INVITES.zh] } },
+
+    { id: 'account-deletion-requested', group: 'restyled', title: 'Account deletion scheduled', status: ['restyled', 'Restyled'], by: 'Capy',
+      when: 'The user asks to delete their account.', optout: 'No: required notice', volume: '1 per deletion request',
+      notes: ['Shows the deletion date: format <code>purgeAfter</code>, which the payload already has.', 'Drops the "Manage email preferences" link. The account is locked, so the link leads nowhere.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Your Capy Notebook account will be deleted on 13 Nov 2026', preview: 'Contact support before then if this was a mistake.',
+        body: [['h', 'Your account is scheduled for deletion'], ['p', 'We received your request to delete your Capy Notebook account. Your account is locked now. On the date below it will be permanently deleted with all of its workspaces, files, materials and study data.'],
+          ['rows', 'danger', [['Deletion date', '13 Nov 2026'], ['Days left', '30']]],
+          ['p', 'Changed your mind? Contact support before 13 Nov 2026 and we can restore your account. After that date nothing can be recovered.'], ['btn', 'Contact support']],
+        footer: ['You got this email because someone asked to delete the Capy Notebook account for mia@example.com. If that wasn\'t you, contact support right away.'] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: '你的 Capy Notebook 账户将于 2026年11月13日删除', preview: '如果这是误操作，请在此之前联系支持。',
+        body: [['h', '你的账户已安排删除'], ['p', '我们已收到你删除 Capy Notebook 账户的请求。你的账户现已锁定，并将在下方日期连同所有工作区、文件、资料和学习数据被永久删除。'],
+          ['rows', 'danger', [['删除日期', '2026年11月13日'], ['剩余天数', '30 天']]],
+          ['p', '改变主意了？请在 2026年11月13日前联系支持，我们可以为你恢复账户。过了这个日期，所有内容都无法恢复。'], ['btn', '联系支持']],
+        footer: ['你收到这封邮件是因为有人请求删除 mia@example.com 的 Capy Notebook 账户。如果不是你本人操作，请立即联系支持。'] } },
+
+    { id: 'account-deletion-cancelled', group: 'restyled', title: 'Account restored', status: ['restyled', 'Restyled'], by: 'Capy',
+      when: 'Support cancels a pending deletion.', optout: 'No: required notice', volume: 'Rare: support action',
+      notes: ['Button opens the app instead of Settings: <code>OpenURL</code> becomes <code>/workspaces</code>.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Your Capy Notebook account is active again', preview: 'Nothing was deleted. You can sign in as usual.',
+        body: [['h', 'Your account is active again'], ['p', 'Support cancelled the deletion of your Capy Notebook account. Nothing was deleted, and you can sign in and pick up where you left off.'], ['btn', 'Open Capy Notebook']],
+        footer: ['You got this email because support restored the Capy Notebook account for mia@example.com.'] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: '你的 Capy Notebook 账户已恢复', preview: '没有任何内容被删除，你可以照常登录。',
+        body: [['h', '你的账户已恢复'], ['p', '支持已取消删除你的 Capy Notebook 账户。没有任何内容被删除，你可以登录并从上次停下的地方继续。'], ['btn', '打开 Capy Notebook']],
+        footer: ['你收到这封邮件是因为支持恢复了 mia@example.com 的 Capy Notebook 账户。'] } },
+
+    { id: 'subscription-over-quota', group: 'restyled', title: 'Over the Free storage limit', status: ['restyled', 'Restyled'], by: 'Capy',
+      when: 'A Pro period lapses and storage is over 100 MB. The 14-day buffer starts.', optout: 'Yes: billing', volume: '1 per lapse, only for accounts over 100 MB',
+      notes: ['Formats <code>storageUsedBytes</code>, <code>storageLimitBytes</code> and <code>graceEndsAt</code>, which the payload already sends.', 'The old copy said "you have a buffer period to free up space". Editing is actually paused during the buffer, so the copy now says so.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Free up space in Capy Notebook by 28 Oct', preview: 'Your Pro plan ended and your files are over the Free limit. Nothing has been deleted.',
+        body: [['h', 'Your files are over the Free storage limit'], ['p', 'Your Pro plan has ended, and your files use more than the 100 MB the Free plan includes. Nothing has been deleted.'],
+          ['rows', 'warn', [['Storage used', '640 MB'], ['Free plan limit', '100 MB'], ['Free up space by', '28 Oct 2026']]],
+          ['p', 'Until then you can read, download, organize and delete your files, but uploads and edits are paused in the workspaces you pay for. If you\'re still over the limit on 28 Oct, your account becomes read-only.'],
+          ['btn', 'Renew Pro'], ['small', 'Prefer to stay on Free? Delete files you no longer need until you\'re under 100 MB.']],
+        footer: ['You got this email because the Pro plan on mia@example.com ended.', STOP_BILLING.en] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: '请在 10月28日前释放 Capy Notebook 存储空间', preview: '你的 Pro 计划已结束，文件超过免费额度。目前没有删除任何内容。',
+        body: [['h', '你的文件超过了免费存储额度'], ['p', '你的 Pro 计划已结束，而你的文件超过了免费计划包含的 100 MB。目前没有删除任何内容。'],
+          ['rows', 'warn', [['已用存储', '640 MB'], ['免费计划额度', '100 MB'], ['释放空间截止', '2026年10月28日']]],
+          ['p', '在此之前，你可以阅读、下载、整理和删除文件，但在由你付费的工作区中，上传和编辑会暂停。如果 10月28日 时仍超出额度，你的账户将变为只读。'],
+          ['btn', '续订 Pro'], ['small', '想继续使用免费计划？删除不再需要的文件，直到用量低于 100 MB。']],
+        footer: ['你收到这封邮件是因为 mia@example.com 的 Pro 计划已结束。', STOP_BILLING.zh] } },
+
+    { id: 'subscription-frozen', group: 'restyled', title: 'Account read-only', status: ['restyled', 'Restyled'], by: 'Capy',
+      when: 'The 14-day buffer ends and storage is still over 100 MB.', optout: 'Yes: billing', volume: '1 per freeze',
+      notes: ['Lists what still works and what is paused, from the access table in the authorization doc.', 'Says plainly that members of workspaces this account pays for can\'t edit either.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Your Capy Notebook account is read-only', preview: 'Free up space or renew Pro to edit again.',
+        body: [['h', 'Your account is read-only'], ['p', 'Your 14-day buffer ended on 28 Oct 2026, and your files still use more than the Free plan\'s 100 MB. Your account stays read-only until you\'re back under the limit.'],
+          ['cols', ['Still works', ['Reading and downloading files', 'Deleting files to free up space', 'Workspace chat, quizzes and reviews', 'Billing and account settings']],
+            ['Paused', ['Uploading and creating files', 'Editing notes, files and comments', 'Members\' edits in workspaces you pay for']]],
+          ['rows', 'plain', [['Storage used', '640 MB'], ['Free plan limit', '100 MB']]],
+          ['btn', 'Renew Pro'], ['small', 'Or delete files until you\'re under 100 MB. Nothing is deleted for you.']],
+        footer: ['You got this email because the storage buffer on mia@example.com ended.', STOP_BILLING.en] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: '你的 Capy Notebook 账户已变为只读', preview: '释放空间或续订 Pro 即可再次编辑。',
+        body: [['h', '你的账户已变为只读'], ['p', '你的 14 天缓冲期已于 2026年10月28日结束，而你的文件仍超过免费计划的 100 MB。在用量回到额度以内之前，你的账户将保持只读。'],
+          ['cols', ['仍可使用', ['阅读和下载文件', '删除文件以释放空间', '工作区聊天、测验和复习', '账单和账户设置']],
+            ['已暂停', ['上传和创建文件', '编辑笔记、文件和评论', '由你付费的工作区中其他成员的编辑']]],
+          ['rows', 'plain', [['已用存储', '640 MB'], ['免费计划额度', '100 MB']]],
+          ['btn', '续订 Pro'], ['small', '也可以删除文件，直到用量低于 100 MB。我们不会替你删除任何内容。']],
+        footer: ['你收到这封邮件是因为 mia@example.com 的存储缓冲期已结束。', STOP_BILLING.zh] } },
+
+    { id: 'office-maintenance', group: 'restyled', title: 'Office upgrade notice', status: ['warn', 'Restyled, quota risk'], by: 'Capy',
+      when: 'An operator runs <code>office-maintenance announce</code>. The <code>--reminder</code> run is in-app only.', optout: 'No: service notice', volume: 'Once per upgrade, recent Office editors only',
+      notes: ['See decision 1: limit to recent Office editors and use an in-app banner for everyone else.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Office editing in Capy Notebook pauses for an upgrade', preview: 'Word, PowerPoint and Excel files stay readable during the upgrade.',
+        body: [['h', 'Office editing pauses for an upgrade'], ['rows', 'info', [['Starts', '18 Oct 2026, 02:00 UTC'], ['Lasts', 'About 4 hours']]],
+          ['p', 'While we upgrade the Office editor, you can\'t edit Word, PowerPoint or Excel files. You can still open and read them, your saved edits are kept, and everything else in Capy Notebook works as usual.'], ['btn', 'Open Capy Notebook']],
+        footer: ['This is a service notice about Capy Notebook\'s Office editor.'] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Capy Notebook 的 Office 编辑将因升级暂停', preview: '升级期间，Word、PowerPoint 和 Excel 文件仍可阅读。',
+        body: [['h', 'Office 编辑将因升级暂停'], ['rows', 'info', [['开始时间', '2026年10月18日 02:00 (UTC)'], ['持续时间', '约 4 小时']]],
+          ['p', '升级 Office 编辑器期间，你无法编辑 Word、PowerPoint 和 Excel 文件。你仍可打开和阅读这些文件，已保存的编辑会保留，Capy Notebook 的其他功能照常可用。'], ['btn', '打开 Capy Notebook']],
+        footer: ['这是关于 Capy Notebook Office 编辑器的服务通知。'] } },
+
+    // ---------- new ----------
+    { id: 'welcome', group: 'new', title: 'Welcome', status: ['new', 'New'], by: 'Capy',
+      when: 'Onboarding finishes for a new account.', optout: 'No: sent once', volume: '1 per sign-up',
+      notes: ['New template. Enqueued when onboarding completes, so the name and language are known.', 'Heading drops the name when it is empty.', 'Plan numbers come from <code>plan_limits</code>.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Welcome to Capy Notebook', preview: 'Three steps to your first study session.',
+        body: [['h', 'Welcome to Capy Notebook, Mia'], ['p', 'Capy Notebook turns your own files into a place to study. Here\'s how to get started:'],
+          ['ol', ['<b>Create a workspace</b> for a course or topic.', '<b>Add your files</b>: PDFs, slides, documents or your own notes.', '<b>Study with them</b>: ask questions and get answers that cite your files, practise with quizzes, and review what you missed.']],
+          ['rows', 'info', [['Storage', '100 MB'], ['AI credits', '1,000 a month'], ['Workspaces you own', 'Up to 10']], 'You\'re on the Free plan'], ['btn', 'Open Capy Notebook']],
+        footer: ['You got this email because you created a Capy Notebook account with mia@example.com.'] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: '欢迎使用 Capy Notebook', preview: '三步开始你的第一次学习。',
+        body: [['h', '欢迎使用 Capy Notebook，Mia'], ['p', 'Capy Notebook 把你自己的文件变成学习空间。从这里开始：'],
+          ['ol', ['<b>创建工作区</b>，对应一门课程或一个主题。', '<b>添加文件</b>：PDF、幻灯片、文档或你自己的笔记。', '<b>用它们学习</b>：提问并获得引用你文件的回答，用测验练习，并复习答错的内容。']],
+          ['rows', 'info', [['存储空间', '100 MB'], ['AI 额度', '每月 1,000'], ['可拥有工作区', '最多 10 个']], '你正在使用免费计划'], ['btn', '打开 Capy Notebook']],
+        footer: ['你收到这封邮件是因为你使用 mia@example.com 创建了 Capy Notebook 账户。'] } },
+
+    { id: 'workspace-invite-accepted', group: 'new', title: 'Invitation accepted', status: ['new', 'New'], by: 'Capy',
+      when: 'Someone accepts an invitation. Sent to the person who invited them.', optout: 'Yes: workspace invitations', volume: '1 per accepted invite',
+      notes: ['New template, plus a matching in-app notification kind (<code>workspace_invite_accepted</code>).', 'Uses the same opt-out as invitations, so there are no new settings.'],
+      en: { from: CAPY_FROM, to: 'alex@example.com', subject: 'Mia Wong joined Biology', preview: 'They accepted your invitation and can now edit.',
+        body: [['h', 'Mia Wong joined Biology'], ['p', '<b>Mia Wong</b> accepted your invitation to <b>Biology</b>. They can now edit its files and notes.'],
+          ['rows', 'good', [['Member', 'Mia Wong · mia@example.com'], ['Access', 'Can edit']]], ['btn', 'Open Biology']],
+        footer: ['You got this email because you invited Mia Wong to Biology.', STOP_INVITES.en] },
+      zh: { from: CAPY_FROM, to: 'alex@example.com', subject: 'Mia Wong 已加入 Biology', preview: '对方已接受你的邀请，现在可以编辑。',
+        body: [['h', 'Mia Wong 已加入 Biology'], ['p', '<b>Mia Wong</b> 已接受你加入 <b>Biology</b> 的邀请，现在可以编辑其中的文件和笔记。'],
+          ['rows', 'good', [['成员', 'Mia Wong · mia@example.com'], ['权限', '可编辑']]], ['btn', '打开 Biology']],
+        footer: ['你收到这封邮件是因为你邀请了 Mia Wong 加入 Biology。', STOP_INVITES.zh] } },
+
+    { id: 'subscription-started', group: 'new', title: 'Pro started', status: ['new', 'New'], by: 'Capy',
+      when: 'The first paid Pro period starts (checkout completed).', optout: 'Yes: billing', volume: '1 per new subscription',
+      notes: ['New template. Enqueued from the Stripe webhook when a subscription first becomes active, keyed by subscription ID so a renewal never resends it.', 'No price shown: Stripe\'s receipt carries the amount and tax.'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'You\'re on Capy Notebook Pro', preview: 'Your Pro plan is active. Here\'s what changed.',
+        body: [['h', 'Welcome to Pro'], ['p', 'Thanks for subscribing. Your Pro plan is active now, and these limits apply to your account:'],
+          ['rows', 'good', [['Storage', '1 GB <span style="color:#6e6e68;font-weight:400">(was 100 MB)</span>'], ['AI credits', '20,000 a month <span style="color:#6e6e68;font-weight:400">(was 1,000)</span>'], ['Workspaces you own', 'Up to 50'], ['Largest file', '30 MB'], ['Version history', '30 days per file'], ['Renews on', '14 Nov 2026']]],
+          ['p', 'Stripe emails your receipt separately. You can change or cancel your plan any time in Billing.'], ['btn', 'Open Billing']],
+        footer: ['You got this email because mia@example.com subscribed to Capy Notebook Pro.', STOP_BILLING.en] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: '你已升级到 Capy Notebook Pro', preview: '你的 Pro 计划已生效，以下是变化。',
+        body: [['h', '欢迎升级到 Pro'], ['p', '感谢订阅。你的 Pro 计划现已生效，账户将适用以下额度：'],
+          ['rows', 'good', [['存储空间', '1 GB <span style="color:#6e6e68;font-weight:400">（原 100 MB）</span>'], ['AI 额度', '每月 20,000 <span style="color:#6e6e68;font-weight:400">（原 1,000）</span>'], ['可拥有工作区', '最多 50 个'], ['单个文件上限', '30 MB'], ['版本历史', '每个文件 30 天'], ['续订日期', '2026年11月14日']]],
+          ['p', 'Stripe 会另行发送收据。你可以随时在“账单”中更改或取消计划。'], ['btn', '打开账单']],
+        footer: ['你收到这封邮件是因为 mia@example.com 订阅了 Capy Notebook Pro。', STOP_BILLING.zh] } },
+
+    { id: 'subscription-cancelled', group: 'new', title: 'Pro cancelled', status: ['new', 'New'], by: 'Capy',
+      when: 'The user cancels and Pro is set to end at the period end.', optout: 'Yes: billing', volume: '1 per cancellation',
+      notes: ['New template. Enqueued when <code>cancel_at_period_end</code> turns on. If they undo the cancellation, nothing more is sent.', 'Warns that history beyond 3 days is deleted on downgrade, which can\'t be undone.', 'The storage line shows only when over 100 MB (decision 4).'],
+      en: { from: CAPY_FROM, to: 'mia@example.com', subject: 'Your Capy Notebook Pro plan ends on 14 Nov 2026', preview: 'You keep Pro until then. Here\'s what changes after.',
+        body: [['h', 'Your Pro plan ends on 14 Nov'], ['p', 'You cancelled Capy Notebook Pro. You keep everything Pro includes until 14 Nov 2026, then your account moves to the Free plan.'],
+          ['listbox', 'warn', ['Storage limit drops to 100 MB. You use 640 MB now.', 'AI credits drop to 1,000 a month.', 'Version history keeps 3 days per file. Older versions are deleted and can\'t be restored.'], 'What changes on 14 Nov'],
+          ['p', 'If your files are still over 100 MB then, you get 14 days to free up space before your account becomes read-only.'], ['btn', 'Keep Pro']],
+        footer: ['You got this email because the Pro plan on mia@example.com was cancelled.', STOP_BILLING.en] },
+      zh: { from: CAPY_FROM, to: 'mia@example.com', subject: '你的 Capy Notebook Pro 计划将于 2026年11月14日结束', preview: '在此之前你仍可使用 Pro，以下是之后的变化。',
+        body: [['h', '你的 Pro 计划将于 11月14日结束'], ['p', '你已取消 Capy Notebook Pro。在 2026年11月14日之前，你仍可使用 Pro 的全部功能，之后账户将转为免费计划。'],
+          ['listbox', 'warn', ['存储额度降为 100 MB，你目前已使用 640 MB。', 'AI 额度降为每月 1,000。', '版本历史每个文件只保留 3 天，更早的版本将被删除且无法恢复。'], '11月14日起的变化'],
+          ['p', '如果届时文件仍超过 100 MB，你将有 14 天释放空间，之后账户将变为只读。'], ['btn', '保留 Pro']],
+        footer: ['你收到这封邮件是因为 mia@example.com 的 Pro 计划已被取消。', STOP_BILLING.zh] } },
+
+    // ---------- Clerk ----------
+    { id: 'clerk-verification-code', group: 'clerk', title: 'Sign-up code', status: ['clerk', 'Clerk'], by: 'Clerk',
+      when: 'Sign-up with email and password (<code>signUp.verifications.sendEmailCode</code>).', optout: 'No', volume: 'Clerk\'s mail, not our quota',
+      notes: ['Rebuild in Clerk\'s editor. Use its code variable from the variable picker in place of the sample code.', 'Logo: Clerk\'s <code>{{> app_logo}}</code> partial with the Capy mark uploaded as the app logo.'],
+      en: { from: CLERK_FROM, to: 'mia@example.com', subject: '482913 is your Capy Notebook code', preview: 'Enter it to finish creating your account.',
+        body: [['h', 'Confirm your email'], ['p', 'Enter this code in Capy Notebook to finish creating your account.'], ['code', '482913'],
+          ['small', 'The code expires in 10 minutes. If you didn\'t try to create an account, you can ignore this email.']],
+        footer: ['Sent to mia@example.com by Capy Notebook.'] } },
+
+    { id: 'clerk-reset-password-code', group: 'clerk', title: 'Password reset code', status: ['clerk', 'Clerk'], by: 'Clerk',
+      when: 'Forgot password (<code>signIn.resetPasswordEmailCode.sendCode</code>).', optout: 'No', volume: 'Clerk\'s mail, not our quota',
+      notes: ['Same layout as the sign-up code so the two feel like one family.'],
+      en: { from: CLERK_FROM, to: 'mia@example.com', subject: '482913 is your password reset code', preview: 'Enter it to choose a new password.',
+        body: [['h', 'Reset your password'], ['p', 'Enter this code in Capy Notebook to choose a new password.'], ['code', '482913'],
+          ['small', 'The code expires in 10 minutes. If you didn\'t ask to reset your password, ignore this email. Your password stays the same.']],
+        footer: ['Sent to mia@example.com by Capy Notebook.'] } },
+
+    { id: 'clerk-password-changed', group: 'clerk', title: 'Password changed', status: ['clerk', 'Clerk, if on'], by: 'Clerk',
+      when: 'The password changes, including after a reset.', optout: 'No', volume: 'Clerk\'s mail, not our quota',
+      notes: ['A Clerk notice; check whether it is turned on in the dashboard.'],
+      en: { from: CLERK_FROM, to: 'mia@example.com', subject: 'Your Capy Notebook password was changed', preview: 'If this wasn\'t you, reset your password now.',
+        body: [['h', 'Your password was changed'], ['p', 'The password for your Capy Notebook account <b>mia@example.com</b> was just changed.'],
+          ['p', 'If this was you, there\'s nothing to do. If it wasn\'t, reset your password now and contact support.'], ['btn', 'Reset password']],
+        footer: ['Sent to mia@example.com by Capy Notebook.'] } },
+
+    { id: 'clerk-new-sign-in', group: 'clerk', title: 'New sign-in', status: ['clerk', 'Clerk, if on'], by: 'Clerk',
+      when: 'A sign-in from a new device.', optout: 'No', volume: 'Clerk\'s mail, not our quota',
+      notes: ['A Clerk notice; check whether it is turned on and which device fields its template offers.'],
+      en: { from: CLERK_FROM, to: 'mia@example.com', subject: 'New sign-in to your Capy Notebook account', preview: 'Chrome on Windows, Hong Kong.',
+        body: [['h', 'New sign-in to your account'], ['rows', 'plain', [['Device', 'Chrome on Windows'], ['Location', 'Hong Kong'], ['Time', '14 Oct 2026, 09:12 UTC']]],
+          ['p', 'If this was you, there\'s nothing to do. If not, change your password now and sign out of other devices from your account settings.'], ['btn', 'Review account']],
+        footer: ['Sent to mia@example.com by Capy Notebook.'] } }
+  ];
+
+  var lang = 'en';
+
+  function metaHtml(m) {
+    return '<div class="meta"><h3>' + m.title + '</h3><div class="chips"><span class="chip ' + m.status[0] + '">' + m.status[1] + '</span></div><dl>' +
+      '<div><dt>Template</dt><dd><code>' + m.id + '</code></dd></div>' +
+      '<div><dt>Sends when</dt><dd>' + m.when + '</dd></div>' +
+      '<div><dt>Can opt out</dt><dd>' + m.optout + '</dd></div>' +
+      '<div><dt>Volume</dt><dd>' + m.volume + '</dd></div>' +
+      '<div><dt>Build notes</dt><dd><ul>' + m.notes.map(function (n) { return '<li>' + n + '</li>'; }).join('') + '</ul></dd></div></dl></div>';
+  }
+
+  function render() {
+    ['restyled', 'new', 'clerk'].forEach(function (g) {
+      document.getElementById('g-' + g).innerHTML = MAILS.filter(function (m) { return m.group === g; }).map(function (m) {
+        return '<section class="mail" id="' + m.id + '">' + metaHtml(m) + '<div class="stage"><div class="frame">' + renderEmail(m, lang) + '</div></div></section>';
+      }).join('');
+    });
+  }
+
+  document.querySelector('#overview tbody').innerHTML = MAILS.map(function (m) {
+    return '<tr><td><a href="#' + m.id + '">' + m.title + '</a></td><td><span class="chip ' + m.status[0] + '">' + m.status[1] + '</span></td><td>' + m.by + '</td><td>' + m.optout + '</td><td>' + m.volume + '</td></tr>';
+  }).join('') + '<tr><td><a href="#stripe">Receipts, failed payments</a></td><td><span class="chip clerk">Stripe</span></td><td>Stripe</td><td>No</td><td>Stripe\'s mail, not our quota</td></tr>';
+
+  document.getElementById('jump').innerHTML = MAILS.map(function (m) { return '<a href="#' + m.id + '">' + m.title + '</a>'; }).join('');
+
+  document.querySelectorAll('[data-lang]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      lang = b.getAttribute('data-lang');
+      document.querySelectorAll('[data-lang]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      render();
+    });
+  });
+  document.querySelectorAll('[data-width]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.body.classList.toggle('phone', b.getAttribute('data-width') === 'phone');
+      document.querySelectorAll('[data-width]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+    });
+  });
+
+  document.addEventListener('click', function (e) { var a = e.target.closest('.frame a'); if (a) e.preventDefault(); });
+  render();
+})();
+</script>

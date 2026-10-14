@@ -108,7 +108,6 @@ import {
 import { createElement } from 'react';
 import { DndProvider } from 'react-dnd';
 import { HTML5Backend } from 'react-dnd-html5-backend';
-import { FootnotePlugins } from '@/features/materials/footnotePlugins';
 import { m } from '@/i18n';
 import { editorAiEnabled } from '@/lib/features';
 import { openAiMenu } from './ai/aiMenuState';
@@ -615,7 +614,6 @@ export const MaterialKit: AnyPlugin[] = [
     },
   }),
   ...customBlockPlugins,
-  ...FootnotePlugins,
   DocxPlugin,
   JuicePlugin,
   noteMarkdownPlugin,

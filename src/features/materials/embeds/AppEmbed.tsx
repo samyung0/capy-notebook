@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Material } from '@/api/types';
+import { FileBanner } from '@/components/banners/FileBanner';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
@@ -19,6 +20,7 @@ import {
 } from '@/features/quizzes/liveQuizRooms';
 import { QuizForm, QuizRecovery } from '@/features/quizzes/QuizForm';
 import { QuizQuestionList } from '@/features/quizzes/QuizPage';
+import { m } from '@/i18n';
 import { EmbedLoading, type EmbedProps, EmbedUnavailable } from './EmbedView';
 
 /* A note's embedded quiz or flashcard set inside the app, read through the
@@ -46,14 +48,25 @@ const setCards = (material: Material) =>
     ) ?? { children: [], id: '', type: 'flashcards' }
   );
 
+/** A reference names one of the embed catalog's item kinds; another fails
+ * loudly instead of drawing as some other kind (AppEmbed.test.tsx). */
+function unknownKind(refKind: never): never {
+  throw new Error(`No embed for the material kind ${String(refKind)}`);
+}
+
 export function AppEmbedView({ materialId, refKind, ownerId }: OwnedProps) {
-  return refKind === 'quiz' ? (
-    <QuizView materialId={materialId} ownerId={ownerId} />
-  ) : (
-    <SetGate materialId={materialId} ownerId={ownerId}>
-      {(material) => <LiveSetStudy material={material} />}
-    </SetGate>
-  );
+  switch (refKind) {
+    case 'quiz':
+      return <QuizView materialId={materialId} ownerId={ownerId} />;
+    case 'flashcards':
+      return (
+        <SetGate materialId={materialId} ownerId={ownerId}>
+          {(material) => <LiveSetStudy material={material} />}
+        </SetGate>
+      );
+    default:
+      return unknownKind(refKind);
+  }
 }
 
 /** A set in a note's View: its room joins while the block is near the
@@ -108,25 +121,32 @@ export function AppEmbedEdit({
   /** Removing the last question or card removes the block instead. */
   onEmpty: () => void;
 }) {
-  return refKind === 'quiz' ? (
-    <QuizGate materialId={materialId} ownerId={ownerId}>
-      {(quiz) => (
-        <>
-          <EmbedQuizEditor onEmpty={onEmpty} quizId={materialId} />
-          <SourcesLine className="mt-3" provenance={quiz.provenance} />
-        </>
-      )}
-    </QuizGate>
-  ) : (
-    <SetGate materialId={materialId} ownerId={ownerId}>
-      {(material) => (
-        <>
-          <LiveSetEdit materialId={materialId} onEmpty={onEmpty} />
-          <SourcesLine className="mt-3" provenance={material.provenance} />
-        </>
-      )}
-    </SetGate>
-  );
+  switch (refKind) {
+    case 'quiz':
+      return (
+        <QuizGate materialId={materialId} ownerId={ownerId}>
+          {(quiz) => (
+            <>
+              <EmbedQuizEditor onEmpty={onEmpty} quizId={materialId} />
+              <SourcesLine className="mt-3" provenance={quiz.provenance} />
+            </>
+          )}
+        </QuizGate>
+      );
+    case 'flashcards':
+      return (
+        <SetGate materialId={materialId} ownerId={ownerId}>
+          {(material) => (
+            <>
+              <LiveSetEdit materialId={materialId} onEmpty={onEmpty} />
+              <SourcesLine className="mt-3" provenance={material.provenance} />
+            </>
+          )}
+        </SetGate>
+      );
+    default:
+      return unknownKind(refKind);
+  }
 }
 
 function QuizGate({
@@ -244,6 +264,15 @@ function EmbedQuizEditor({
         <EmbedUnavailable />
       ) : rooms.recovery ? (
         <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
+      ) : rooms.ready && rooms.access === 'read' ? (
+        // A room read-only for this writer (a block this version cannot
+        // edit, a frozen account) shows the questions to read.
+        <div className="grid gap-4">
+          {rooms.readOnlyCode === 'unsupported_block' && (
+            <FileBanner message={m.editor_unsupported_block_strip()} />
+          )}
+          <QuizQuestionList disabled questions={questions} />
+        </div>
       ) : rooms.ready && rooms.content && rooms.keys ? (
         <div className="grid gap-4">
           {rooms.offline && <SaveBanner state={rooms.offline} />}

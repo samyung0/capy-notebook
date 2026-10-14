@@ -222,6 +222,18 @@ async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
     )
     .await
     .unwrap();
+    // A text save's preview goes to the file; an Office save has none.
+    if !text && body["preview"].is_string() {
+        return refuse(422, "invalid_checkpoint");
+    }
+    if let Some(preview) = body["preview"].as_str() {
+        txn.execute(
+            "UPDATE files SET preview=jsonb_build_object('text',$2::text) WHERE id=$1",
+            &[&id, &preview],
+        )
+        .await
+        .unwrap();
+    }
     txn.commit().await.unwrap();
     axum::Json(json!({ "checkpoint": next })).into_response()
 }
@@ -491,6 +503,40 @@ async fn a_text_room_appends_rows_reloads_and_folds() {
     let folded = text_doc(102);
     h.sources.load(&room, &h.user, &folded).await.unwrap();
     assert_eq!(text(&folded), "Xhello\nYworld\n");
+}
+
+// Every text save carries the opening characters the file's list card
+// shows, read as ingest reads them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_text_save_carries_the_files_opening_characters() {
+    let h = harness().await;
+    let room = h
+        .file("text", "notes.md", "\u{feff}hello\r\nworld".as_bytes())
+        .await;
+    let preview = || async {
+        let client = h.fake.db.get().await.unwrap();
+        let row = client
+            .query_one("SELECT preview FROM files WHERE id=$1", &[&room.file_id])
+            .await
+            .unwrap();
+        row.get::<_, Option<Value>>(0)
+    };
+    let doc = text_doc(100);
+    h.sources.load(&room, &h.user, &doc).await.unwrap();
+    let mut durable = doc.transact().state_vector();
+    type_into(&doc, 7, 1, "X");
+    save_text(&h, &room, &doc, &mut durable).await.unwrap();
+    assert_eq!(preview().await, Some(json!({ "text": "Xhello\nworld" })));
+    // Past the first 600 characters the preview holds still.
+    type_into(&doc, 8, 14, &"y".repeat(700));
+    save_text(&h, &room, &doc, &mut durable).await.unwrap();
+    let text = preview().await.unwrap()["text"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(text.chars().count(), 600);
+    assert!(text.starts_with("Xhello\nworldyyy"));
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

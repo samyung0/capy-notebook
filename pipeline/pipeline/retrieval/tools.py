@@ -91,6 +91,9 @@ class LibraryRead:
     # earlier turn whose write used it: a write naming no excerpts credits the
     # reads that are not.
     credited: bool = False
+    # The read's result as the model was shown it, which a write naming no
+    # excerpts is matched against (_matching).
+    text: str = ""
 
 
 @dataclass
@@ -102,22 +105,33 @@ class LibraryReads:
     reads: list[LibraryRead] = field(default_factory=list)
 
     def note(
-        self, excerpt_id: str, start: int, section: str, *, retained: bool = False
+        self,
+        excerpt_id: str,
+        start: int,
+        section: str,
+        *,
+        retained: bool = False,
+        text: str = "",
     ) -> None:
-        """Record one read. Reading a recorded position again makes it new for
-        the next write; a retained excerpt comes in already credited."""
+        """Record one read with the text it showed. Reading a recorded position
+        again makes it new for the next write; a retained excerpt comes in
+        already credited."""
         for read in self.reads:
             if (read.excerpt_id, read.start) == (excerpt_id, start):
                 read.credited = read.credited and retained
+                read.text = text or read.text
                 return
-        self.reads.append(LibraryRead(excerpt_id, start, section, credited=retained))
+        self.reads.append(
+            LibraryRead(excerpt_id, start, section, credited=retained, text=text)
+        )
 
     def ids(self) -> set[str]:
         return {read.excerpt_id for read in self.reads}
 
     def uncredited(self) -> list[str]:
-        """What a write naming no excerpts is credited with: the excerpts read
-        since the last write that landed, or every one when none are new."""
+        """What a write naming no excerpts may be credited with: the excerpts
+        read since the last write that landed, or every one when none are new
+        (narrowed by _matching)."""
         fresh = [read for read in self.reads if not read.credited]
         return list(dict.fromkeys(read.excerpt_id for read in fresh or self.reads))
 
@@ -1017,7 +1031,7 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
 
     _, text = _fitting(page, len(read.chunks))
     ctx.library_reads.note(
-        read.excerpt.id, start, _short_section(read.excerpt.section_path)
+        read.excerpt.id, start, _short_section(read.excerpt.section_path), text=text
     )
     return _result(text)
 
@@ -1115,7 +1129,10 @@ async def _read_section(
         firsts.setdefault(chunk["excerpt_id"], chunk)
     for excerpt_id, chunk in firsts.items():
         ctx.library_reads.note(
-            excerpt_id, chunk["chunk_idx"], _short_section(chunk["section_path"])
+            excerpt_id,
+            chunk["chunk_idx"],
+            _short_section(chunk["section_path"]),
+            text=text,
         )
     return _result(text)
 
@@ -1306,7 +1323,7 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     )
     if result.effects:
         landed(ctx, credited)
-    return figures.noted(result)
+    return with_repairs(figures.noted(result), fences)
 
 
 async def _material_scope(
@@ -1382,6 +1399,14 @@ def _also(result: ToolResult, found: questions.Check) -> ToolResult:
         return result
     listing = "Also fix these before sending it again:\n" + found.listing()
     return replace(result, detail="\n\n".join(p for p in (listing, result.detail) if p))
+
+
+def with_repairs(result: ToolResult, found: questions.Check) -> ToolResult:
+    """A landed note write names the fence slips the pipeline repaired, one
+    line each, so the model stops repeating them."""
+    if found.notes and result.effects:
+        result.text_parts.extend(found.notes)
+    return result
 
 
 # ------------------------------------------------------------ note figures
@@ -1539,8 +1564,9 @@ async def write_sources(
     Returns the provenance books (one entry per source book) and the excerpts
     they come from. Named excerpts must have been read this turn or be retained
     in full; a write naming none is credited with the excerpts read since the
-    last write that landed, or every one read when none are new, and a turn
-    with no library reads credits nothing. ``figures`` are the excerpts listing
+    last write that landed (every one read when none are new), narrowed to the
+    books its text matches when any does (_matching), and a turn with no
+    library reads credits nothing. ``figures`` are the excerpts listing
     the note figures the write places, credited with it. Shared with the
     playground's local write stubs, so the rules have one implementation.
     ``material`` is false for an edit of the user's own source file, which
@@ -1565,14 +1591,110 @@ async def write_sources(
     unread = [e for e in excerpt_ids if e not in read]
     if unread:
         return await _carry_excerpts(ctx, unread)
-    named = excerpt_ids or ctx.library_reads.uncredited()
-    credited = list(dict.fromkeys([*named, *(figures or [])]))
-    if not credited:
+    candidates = [] if excerpt_ids else ctx.library_reads.uncredited()
+    wanted = list(dict.fromkeys([*(excerpt_ids or candidates), *(figures or [])]))
+    if not wanted:
         return [], []
     try:
-        return await library.provenance(credited), credited
+        books = await library.provenance(wanted)
     except ValueError as exc:
         return _refused(f"{tool}: {exc}")
+    if not candidates:
+        return books, wanted
+    kept = {*_matching(ctx, books, candidates, args), *(figures or [])}
+    books = [
+        {**book, "excerptIds": [e for e in book["excerptIds"] if e in kept]}
+        for book in books
+    ]
+    return [b for b in books if b["excerptIds"]], [e for e in wanted if e in kept]
+
+
+# What ties a write to a book it read (Epo 2026-10-13, measured on that day's
+# runs): a shared word 4-gram or example number. Lines and prefixes the read
+# tools add (an excerpt's head: title, roles, teaches, scope; chunk ranges,
+# links, page markers, page and run tails) are the library's, not the book's.
+_WORD = re.compile(r"[a-z0-9][a-z0-9.\-/]*")
+_NUMBER = re.compile(r"(?<![\w.])(\d+\.\d+|\d{2,}(?:,\d{3})*)(?![\w])")
+_READ_LINE = re.compile(
+    r"^(\[exc_|- \[exc_|roles:|teaches:|scope:|chunks \d+-\d+ of this excerpt"
+    r"|(Previous|Next) in this book:|Source context|Excerpts on this page:"
+    r"|\[p\. \d+(-\d+)?\]$|\((next start|page cut|end of)\b|.* \(book \S+, version \d+\), section )"
+)
+_READ_PREFIX = re.compile(r"\(chunk \d+\) |Full reviewed notes: ")
+# A slide's SVG counts by its text: no tags, attributes, styles or scripts.
+_SVG_CODE = re.compile(r"<(style|script)\b.*?</\1>|<[^>]*>", re.DOTALL)
+
+
+def _marks(text: str) -> set[str]:
+    """A text's word 4-grams and its numbers with a decimal point or two or
+    more digits."""
+    words = _WORD.findall(text.lower())
+    grams = {" ".join(words[i : i + 4]) for i in range(len(words) - 3)}
+    return grams | set(_NUMBER.findall(text))
+
+
+def _strings(value: Any) -> list[str]:
+    """Every string a write sends, internal arguments left out."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [
+            s
+            for k, v in value.items()
+            if not str(k).startswith("_")
+            for s in _strings(v)
+        ]
+    if isinstance(value, list):
+        return [s for v in value for s in _strings(v)]
+    return []
+
+
+def _book_text(text: str) -> str:
+    """A read result less the lines and prefixes the read tools add."""
+    return "\n".join(
+        _READ_PREFIX.sub("", line)
+        for line in text.splitlines()
+        if not _READ_LINE.match(line)
+    )
+
+
+def _matching(
+    ctx: ToolContext,
+    books: list[dict[str, Any]],
+    candidates: list[str],
+    args: dict[str, Any],
+) -> list[str]:
+    """What a write naming no excerpts is credited with: of the candidates (the
+    excerpts read since the last write, LibraryReads.uncredited), those of
+    each book whose read text shares with the write a mark (``_marks``) that
+    no other candidate book's read text holds, and every candidate when no
+    book does, so a write is never credited less than before (Epo
+    2026-10-13: only 68% of the books the whole read set credited were
+    used)."""
+    by_book = {
+        book["id"]: [e for e in book["excerptIds"] if e in candidates] for book in books
+    }
+    marks = {
+        book: _marks(
+            "\n".join(
+                _book_text(read.text)
+                for read in ctx.library_reads.reads
+                if read.excerpt_id in ids
+            )
+        )
+        for book, ids in by_book.items()
+    }
+    if isinstance(args.get("svg"), str):
+        args = {**args, "svg": _SVG_CODE.sub(" ", args["svg"])}
+    written = _marks("\n".join(_strings(args)))
+    matched = [
+        excerpt_id
+        for book, ids in by_book.items()
+        if (marks[book] - set().union(*(m for b, m in marks.items() if b != book)))
+        & written
+        for excerpt_id in ids
+    ]
+    return matched or candidates
 
 
 def landed(ctx: ToolContext, excerpt_ids: list[str]) -> None:
@@ -1607,7 +1729,9 @@ async def _carry_excerpts(ctx: ToolContext, unread: list[str]) -> ToolResult:
             left.append(excerpt_id)
             continue
         read = scratch.library_reads.reads[0]
-        ctx.library_reads.note(read.excerpt_id, read.start, read.section)
+        ctx.library_reads.note(
+            read.excerpt_id, read.start, read.section, text=read.text
+        )
         ctx.library_evidence.observe(
             "read_knowledge",
             {"excerpt_id": excerpt_id},
@@ -2168,7 +2292,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         else:
             landed(ctx, credited)
             _saw_edit(ctx.seen_blocks.get(rid, {}), commands)
-    return figures.noted(result)
+    return with_repairs(figures.noted(result), fences)
 
 
 async def _read_skill(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -2371,18 +2495,18 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
 
 
 async def write_questions(
-    name: str, args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
+    args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
 ) -> ToolResult:
-    """add_questions and add_open_question: check every argument at once, save
-    the valid questions in a new quiz or an existing one, and name the ones
-    left out with how to resend them (retrieval/questions.py)."""
+    """add_questions: check every argument at once, save the valid questions
+    in a new quiz or an existing one, and name the ones left out with how to
+    resend them (retrieval/questions.py)."""
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
-        return _refused(f"{name} needs its tool-call and assistant message ids.")
-    clean = questions.drop_nulls(
-        {k: v for k, v in args.items() if not k.startswith("_")}
+        return _refused("add_questions needs its tool-call and assistant message ids.")
+    clean = questions.drop_blanks(
+        "add_questions", {k: v for k, v in args.items() if not k.startswith("_")}
     )
-    found = questions.check(name, clean)
+    found = questions.check(clean)
     quiz_id = clean.get("quiz_id")
     quiz: list[dict[str, Any]] | None = None
     if isinstance(quiz_id, str) and quiz_id and not clean.get("title"):
@@ -2391,7 +2515,7 @@ async def write_questions(
             return _also(loaded, found)
         quiz = loaded[1]
         questions.check_ids(found, clean, quiz)
-    prepared = await write_sources(ctx, name, clean)
+    prepared = await write_sources(ctx, "add_questions", clean)
     if isinstance(prepared, ToolResult):
         return _also(prepared, found)
     if found.call or not found.valid:
@@ -2423,8 +2547,8 @@ async def write_media(
         return _refused(
             "add_question_media needs its tool-call and assistant message ids."
         )
-    clean = questions.drop_nulls(
-        {k: v for k, v in args.items() if not k.startswith("_")}
+    clean = questions.drop_blanks(
+        "add_question_media", {k: v for k, v in args.items() if not k.startswith("_")}
     )
     found = questions.media_check(clean)
     quiz_id, qid = clean.get("quiz_id"), clean.get("question_id")
@@ -2466,12 +2590,7 @@ async def write_media(
 
 async def _add_questions(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     quizzes = _gateway_quizzes(ctx, str(args.get("_tool_call_id") or ""))
-    return await write_questions("add_questions", args, ctx, quizzes)
-
-
-async def _add_open_question(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
-    quizzes = _gateway_quizzes(ctx, str(args.get("_tool_call_id") or ""))
-    return await write_questions("add_open_question", args, ctx, quizzes)
+    return await write_questions(args, ctx, quizzes)
 
 
 async def _add_question_media(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
@@ -2662,7 +2781,6 @@ _register("read_document", _read_document)
 _register("capture_page", _capture_page)
 _register("create_material", _create_material)
 _register("add_questions", _add_questions)
-_register("add_open_question", _add_open_question)
 _register("add_question_media", _add_question_media)
 _register("resolve_source_change", _resolve_source_change)
 _register("inspect_document", _inspect_document)
@@ -2821,6 +2939,20 @@ def mutates(name: str) -> bool:
     return bool(spec and spec.mutates)
 
 
+def without_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """The call with its blank optional arguments left out (contract.drop_blanks;
+    Epo 2026-10-13: blank means absent). The question tools leave out blanks
+    per question kind in their handlers (questions.drop_blanks)."""
+    definition = contract.definition(name)
+    if definition is None or name in contract.HANDLER_CHECKED:
+        return args
+    own = {k: v for k, v in args.items() if not k.startswith("_")}
+    return {
+        **contract.drop_blanks(definition["inputSchema"], own),
+        **{k: v for k, v in args.items() if k.startswith("_")},
+    }
+
+
 async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     spec = REGISTRY.get(name)
     if spec is None:
@@ -2831,6 +2963,7 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         return _refused(
             f"{name} is unavailable for this user.", code="lifecycle_rejected"
         )
+    args = without_blanks(name, args)
     problem = contract.validate_args(
         name, {k: v for k, v in args.items() if not k.startswith("_")}
     )

@@ -1,7 +1,12 @@
 import { QueryClient, QueryObserver } from '@tanstack/react-query';
 import { afterEach, expect, it, vi } from 'vitest';
 import { api, qk } from './client';
-import { filesQuery, materialsQuery, useEventStream } from './hooks';
+import {
+  filesQuery,
+  materialsQuery,
+  useEventStream,
+  workspacesQuery,
+} from './hooks';
 import type { SourceFile } from './types';
 
 const state = vi.hoisted(() => ({
@@ -79,19 +84,30 @@ function fakeStreamFetch() {
   return { fetchStream, requests, send, streams };
 }
 
-it('authenticates every connection, reconciles on connect, and applies stream events', async () => {
+it('authenticates every connection, reconciles on connect, applies stream events, and retries failed reads after a fault', async () => {
   vi.useFakeTimers();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   state.client = client;
   let serverFiles = [pending];
+  // The dashboard's list failed while the server was down.
+  let workspacesDown = true;
   const get = vi
     .spyOn(api, 'get')
-    .mockImplementation(
-      async <T>(path: string) =>
-        (path.endsWith('/materials') ? [] : serverFiles) as T
-    );
+    .mockImplementation(async <T>(path: string) => {
+      if (path.startsWith('/workspaces?')) {
+        if (workspacesDown) throw new Error('server down');
+        return [] as T;
+      }
+      return (path.endsWith('/materials') ? [] : serverFiles) as T;
+    });
+  const workspaceListReads = () =>
+    get.mock.calls.filter(([path]) => path.startsWith('/workspaces?')).length;
+  const workspaces = new QueryObserver(client, {
+    ...workspacesQuery({ sort: 'accessed' }),
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   const files = new QueryObserver(client, {
     ...filesQuery(pending.workspaceId),
     staleTime: Number.POSITIVE_INFINITY,
@@ -103,14 +119,17 @@ it('authenticates every connection, reconciles on connect, and applies stream ev
   const unsubscribe = [
     files.subscribe(() => {}),
     materials.subscribe(() => {}),
+    workspaces.subscribe(() => {}),
   ];
-  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3));
   const { fetchStream, requests, send, streams } = fakeStreamFetch();
   useEventStream(pending.workspaceId);
   const cleanup = state.effects.at(-1)?.();
   try {
-    // Connecting refetches both workspace lists.
-    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(4));
+    // Connecting refetches both workspace lists; a first connect is no
+    // recovery, so the failed read stays failed.
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(5));
+    expect(workspaceListReads()).toBe(1);
     expect(requests[0].url).toContain('/stream?workspace=ws_stream');
     expect(requests[0].init.headers).toMatchObject({
       Authorization: 'Bearer token-1',
@@ -146,6 +165,7 @@ it('authenticates every connection, reconciles on connect, and applies stream ev
     expect(client.getQueryData(qk.eventStream)).toEqual({
       status: 'connected',
     });
+    expect(workspaceListReads()).toBe(1);
 
     // A failed connect marks the stream disconnected and backs off.
     fetchStream.mockRejectedValueOnce(new TypeError('network'));
@@ -156,11 +176,17 @@ it('authenticates every connection, reconciles on connect, and applies stream ev
         status: 'disconnected',
       })
     );
+    workspacesDown = false;
     await vi.advanceTimersByTimeAsync(1000);
     await vi.waitFor(() => expect(fetchStream).toHaveBeenCalledTimes(4));
     expect(client.getQueryData(qk.eventStream)).toEqual({
       status: 'connected',
     });
+    // Back from the fault: the failed read is retried and recovers.
+    await vi.waitFor(() =>
+      expect(workspaces.getCurrentResult().status).toBe('success')
+    );
+    expect(workspaceListReads()).toBe(2);
   } finally {
     cleanup?.();
     for (const stop of unsubscribe) stop();

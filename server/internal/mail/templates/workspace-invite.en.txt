@@ -1,18 +1,17 @@
-Capy Notebook
+JOIN {{.WorkspaceName}} ON CAPY NOTEBOOK
 
+{{.InviterName}} invited you to the {{.WorkspaceName}} workspace.
 
-YOU HAVE A WORKSPACE INVITATION
-
-Hello,
-
-You have been invited to join {{.WorkspaceName}} on Capy Notebook.
+Workspace: {{.WorkspaceName}}
+Access: {{.Access}}
+Invited by: {{.InviterName}}
 
 View invitation {{.InviteURL}}
 
-Open this link if the button does not work: {{.InviteURL}}
+Button not working? Open this link: {{.InviteURL}}
 
 ----------------------------------------
 
-You received this message because a Capy Notebook workspace invited you.
+You got this email because {{.InviterName}} invited you to a Capy Notebook workspace. If you weren't expecting it, you can ignore it.
 
-Manage product email preferences {{.UnsubscribeURL}}
+Stop workspace invitation emails {{.UnsubscribeURL}}

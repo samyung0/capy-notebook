@@ -1,0 +1,21 @@
+YOUR PRO PLAN ENDS ON {{.EndsOn}}
+
+You cancelled Capy Notebook Pro. You keep everything Pro includes until {{.EndsOn}}, then your account moves to the Free plan.
+
+What changes on {{.EndsOn}}
+
+ * Storage limit drops to 100 MB. You use {{.StorageUsed}} now.
+
+ * AI credits drop to 1,000 a month.
+
+ * Largest file drops to 10 MB.
+
+If your files are still over 100 MB then, you get 14 days to free up space before your account becomes read-only.
+
+Manage subscription {{.OpenURL}}
+
+----------------------------------------
+
+You got this email because you cancelled Capy Notebook Pro.
+
+Stop billing emails {{.UnsubscribeURL}}

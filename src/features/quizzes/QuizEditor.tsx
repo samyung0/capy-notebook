@@ -1,6 +1,7 @@
 import { useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
+import { FileBanner } from '@/components/banners/FileBanner';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import {
@@ -54,6 +55,9 @@ export function QuizEditor({
       ) : rooms.ready ? (
         rooms.access !== 'write' || rooms.offline === 'offline-limit' ? (
           <div className="grid gap-6">
+            {rooms.readOnlyCode === 'unsupported_block' && (
+              <FileBanner message={m.editor_unsupported_block_strip()} />
+            )}
             {rooms.offline && <SaveBanner state={rooms.offline} />}
             <QuizQuestionList
               disabled

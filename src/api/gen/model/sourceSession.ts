@@ -17,6 +17,7 @@ export interface SourceSession {
   epoch: number;
   fileId: string;
   format: SourceSessionFormat;
+  imageMaxBytes?: number;
   indexedCheckpoint: number;
   netTokens: number;
   pendingEffects: unknown;
@@ -34,5 +35,6 @@ export interface SourceSession {
   stateRows?: string[] | null;
   /** @nullable */
   stateSeedSHA256: string | null;
+  thumbnailStale?: boolean;
   workspaceId: string;
 }

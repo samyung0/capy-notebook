@@ -258,6 +258,7 @@ pub struct App {
     pub health: crate::health::Health,
     pub unplaced: crate::incidents::UnplacedOnce,
     pub projection_failures: crate::projection::Failures,
+    pub projection_refused: crate::projection::Refused,
     pub pubsub: crate::pubsub::Waiters,
     pub next_connection: AtomicU64,
     /// Channel ids the source handoff names (one per room join).

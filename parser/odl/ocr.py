@@ -16,7 +16,7 @@ from pathlib import Path
 import pymupdf
 from PIL import Image
 
-from . import layout
+from . import layout, page_text
 
 TEXTLESS_CHARS = 40
 MAX_EDGE, THREADS, TEXT_SCORE = 2560, 4, 0.5
@@ -31,10 +31,13 @@ _reader = None
 
 
 def textless_pages(document: pymupdf.Document) -> list[int]:
+    # The plain text holds every character a stage's read kept, so a page
+    # with enough of them needs no second read.
     return [
         page.number
         for page in document
-        if len(page.get_text().strip()) < TEXTLESS_CHARS
+        if page_text.kept_characters(page) < TEXTLESS_CHARS
+        and len(page.get_text().strip()) < TEXTLESS_CHARS
     ]
 
 

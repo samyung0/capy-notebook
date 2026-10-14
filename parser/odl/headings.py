@@ -918,7 +918,7 @@ def promote_capitals(blocks: list[dict], document: pymupdf.Document) -> list[dic
 def source_headings(blocks: list[dict], pdf: Path) -> dict[int, dict]:
     evidence: dict[int, dict] = {}
     with pymupdf.open(pdf) as document:
-        page_lines: dict[int, list] = {}
+        page_lines: dict[int, list] = {}  # the current page's only
         for index, block in enumerate(blocks):
             if block.get("type") != "text" or len(block.get("bbox", [])) != 4:
                 continue
@@ -930,6 +930,8 @@ def source_headings(blocks: list[dict], pdf: Path) -> dict[int, dict]:
             if page.rotation:
                 continue
             if page_index not in page_lines:
+                # A page met again is rebuilt from the page store, identically.
+                page_lines.clear()
                 page_lines[page_index] = [
                     line
                     for group in page_text.page_dict(page)["blocks"]

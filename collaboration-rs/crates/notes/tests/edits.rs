@@ -293,6 +293,36 @@ fn an_edit_inserts_a_figure_image_and_no_other_media() {
     }
 }
 
+/// The Undo of an edit that placed a library figure removes it again (the
+/// children pass then lets its asset go), while an edit itself still may not
+/// remove a block holding media.
+#[test]
+fn undo_removes_the_figure_its_edit_inserted() {
+    let value = vec![json!({ "type": "p", "id": "b1", "children": [{ "text": "intro" }] })];
+    let doc = common::doc(&notes::slate_yjs::state_from_value(&value, 3), 4);
+    let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+    let figure = json!({
+        "assetId": "ea_figure", "caption": [{ "text": "A leaf" }],
+        "children": [{ "text": "" }], "id": "f1", "type": "img",
+    });
+    let outcome = edit::apply_material_commands(
+        &mut doc.transact_mut(),
+        &root,
+        &[DocumentCommand::InsertBlock {
+            after_block_id: Some("b1".into()),
+            blocks: vec![figure],
+        }],
+    )
+    .unwrap();
+    let refused = edit::apply_material_commands(&mut doc.transact_mut(), &root, &outcome.inverse);
+    assert!(
+        matches!(&refused, Err(EditError::Edit { message, .. }) if message == "blocks holding media cannot be removed by an edit"),
+        "{refused:?}"
+    );
+    edit::undo_material_commands(&mut doc.transact_mut(), &root, &outcome.inverse).unwrap();
+    assert_eq!(plate::value(&doc.transact()).unwrap(), value);
+}
+
 #[test]
 fn inspect_matches_the_node_server() {
     let corpus = common::load("inspect");

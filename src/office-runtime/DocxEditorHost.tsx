@@ -54,6 +54,7 @@ export function DocxEditorHost({
   onSave,
   onThumbnailer,
   onZoomChange,
+  prepareImage,
   readOnly,
 }: {
   bytes: Uint8Array;
@@ -77,6 +78,8 @@ export function DocxEditorHost({
   onSave: () => void;
   onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
+  /** Shrinks an inserted image to the payer's plan cap. */
+  prepareImage: (file: File) => Promise<File>;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -170,6 +173,7 @@ export function DocxEditorHost({
         }}
         onShowRulerChange={setRulerShown}
         pinchZoom={compact}
+        prepareImage={prepareImage}
         readOnly={readOnly}
         ref={editorRef}
         showFileOpen={false}

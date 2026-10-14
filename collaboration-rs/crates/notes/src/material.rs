@@ -1,27 +1,29 @@
 //! Canonical material document validation (`collaboration/src/materialDocument.ts`,
 //! kept in sync with Go `server/internal/materialdoc/document.go`): the store
 //! runs it before writing authoritative state so Go can always project it.
-//! The checks and their order, and the messages, are the TS ones.
+//! The checks and their order, and the messages, are the TS ones, plus what
+//! Go took from the embed catalog (`crate::catalog`, Epo 2026-10-13): its key
+//! rules on every element it lists, and every element listed for the
+//! material kind, so a type it does not list is refused.
 
 use std::collections::HashSet;
 
 use serde_json::{Map, Value};
 
+use crate::catalog::{
+    self, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES, HTML_EMBED_MAX_COUNT,
+    MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
+};
 use crate::questions::{self, Policy, js_trim};
 
 pub const DEPTH_CEILING: usize = 1024;
 /// The interactive HTML block: a top-level void with one snippet.
 pub const HTML_EMBED_TYPE: &str = "html_embed";
-pub const HTML_EMBED_MAX_BYTES: usize = 64 * 1024;
-pub const HTML_EMBED_MAX_COUNT: usize = 10;
 /// The void block a note stores for an embedded quiz or flashcard set.
 pub const MATERIAL_REF_TYPE: &str = "material_ref";
-/// A card's front and back, in characters as Go counts them (runes): Go's
-/// `fieldlimits.CardFront` and `CardBack`, which a Go test reads here.
-pub const CARD_FRONT_MAX: usize = 4_000;
-pub const CARD_BACK_MAX: usize = 2_000;
 /// Media blocks name their file: an asset id, never a URL (Epo, 2026-10-10).
-pub const MEDIA_TYPES: [&str; 4] = ["img", "image", "audio", "file"];
+/// The catalog's elements that require `assetId`.
+pub const MEDIA_TYPES: [&str; 3] = ["img", "audio", "file"];
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid material document: {0}")]
@@ -249,37 +251,85 @@ fn validate_diagram(node: &Node) -> Check {
     Ok(())
 }
 
+/// A resizable block's width, exactly what the resize handles write: a whole
+/// percentage from the catalog's `MEDIA_WIDTH_MIN` to `MEDIA_WIDTH_MAX`
+/// (`^(?:[2-9][0-9]|100)%$`, Epo, 2026-10-08).
+pub fn valid_width(width: &str) -> bool {
+    width.strip_suffix('%').is_some_and(|n| {
+        !n.starts_with('0')
+            && n.bytes().all(|b| b.is_ascii_digit())
+            && n.parse::<usize>()
+                .is_ok_and(|n| (MEDIA_WIDTH_MIN..=MEDIA_WIDTH_MAX).contains(&n))
+    })
+}
+
 /// `validateMediaWidth` (plate-2 3a87184d): the one optional `width` of a
-/// resizable block (image, YouTube video, Mermaid, chart, graph), exactly
-/// what the resize handles write, `^(?:[2-9][0-9]|100)%$` (Epo, 2026-10-08).
+/// resizable block (image, YouTube video, Mermaid, chart, graph).
 fn validate_width(node: &Node) -> Check {
     let valid = match node.get("width") {
         None => true,
-        Some(Value::String(width)) => width.strip_suffix('%').is_some_and(|n| {
-            !n.starts_with('0')
-                && n.bytes().all(|b| b.is_ascii_digit())
-                && n.parse::<u32>().is_ok_and(|n| (20..=100).contains(&n))
-        }),
+        Some(Value::String(width)) => valid_width(width),
         Some(_) => false,
     };
     if valid {
         Ok(())
     } else {
-        fail("width must be a whole percentage from 20 to 100")
+        fail(format!(
+            "width must be a whole percentage from {MEDIA_WIDTH_MIN} to {MEDIA_WIDTH_MAX}"
+        ))
+    }
+}
+
+/// A YouTube video id: 11 characters of `[A-Za-z0-9_-]`.
+pub fn youtube_id(id: &str) -> bool {
+    id.len() == 11
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+}
+
+/// A chart, plot or graph node's `block`: a question block of the node's
+/// type, valid as a question block, a graph drawn from its own SVG.
+pub fn figure_block(kind: &str, block: &Value) -> Check {
+    let typed = block
+        .as_object()
+        .is_some_and(|b| b.get("type").and_then(Value::as_str) == Some(kind));
+    if !typed {
+        return fail("embed block type must match node type");
+    }
+    let parsed = questions::block(block).map_err(ValidationError)?;
+    if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
+        // The TS raises this inside its try and re-wraps the message.
+        return fail("invalid material document: note graphs require inline SVG");
+    }
+    Ok(())
+}
+
+/// "chart, plot and graph": the catalog's figure elements (one question
+/// block under `block`), as Go's messages name them.
+fn figures() -> String {
+    let names: Vec<&str> = catalog::ELEMENTS
+        .iter()
+        .filter(|element| element.required.contains(&"block"))
+        .map(|element| element.name)
+        .collect();
+    match names.split_last() {
+        Some((last, rest)) if !rest.is_empty() => format!("{} and {last}", rest.join(", ")),
+        _ => names.concat(),
     }
 }
 
 fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
     if depth != 0 {
-        return fail("chart and graph embeds must be top-level blocks");
+        return fail(format!("{} embeds must be top-level blocks", figures()));
     }
     require_id(node)?;
     if !empty_leaf(&children(node)) {
-        return fail("chart and graph embeds require one empty text leaf");
+        return fail(format!("{} embeds require one empty text leaf", figures()));
     }
-    let block = node.get("block");
+    let block = node.get("block").unwrap_or(&Value::Null);
     let typed = block
-        .and_then(Value::as_object)
+        .as_object()
         .is_some_and(|b| b.get("type").and_then(Value::as_str) == Some(kind));
     if !typed {
         return fail("embed block type must match node type");
@@ -291,12 +341,7 @@ fn validate_embed(node: &Node, kind: &str, depth: usize) -> Check {
         return fail("unexpected embed field");
     }
     validate_width(node)?;
-    let parsed = questions::block(block.unwrap_or(&Value::Null)).map_err(ValidationError)?;
-    if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
-        // The TS raises this inside its try and re-wraps the message.
-        return fail("invalid material document: note graphs require inline SVG");
-    }
-    Ok(())
+    figure_block(kind, block)
 }
 
 fn validate_html_embed(node: &Node, depth: usize) -> Check {
@@ -344,10 +389,13 @@ fn validate_material_ref(node: &Node) -> Check {
     if node.contains_key("pending") {
         return fail("material reference carries an imported fence body");
     }
-    if !matches!(
-        node.get("refKind").and_then(Value::as_str),
-        Some("quiz" | "flashcards")
-    ) {
+    // The catalog's item kinds (Go's `refKinds`).
+    let item = node
+        .get("refKind")
+        .and_then(Value::as_str)
+        .and_then(catalog::material_kind)
+        .is_some_and(|kind| kind.item);
+    if !item {
         return fail("refKind must be quiz or flashcards");
     }
     let leaves = children(node);
@@ -355,40 +403,6 @@ fn validate_material_ref(node: &Node) -> Check {
         return fail("material reference carries one empty text leaf");
     }
     Ok(())
-}
-
-/// A stored note's value with each reference still carrying an imported fence
-/// body (`pending`, no row yet) as an empty paragraph with its id, as a room
-/// seeds from it: content stored before fences were resolved ahead of
-/// insertion may hold one, whose body holds the answer keys, and a room
-/// reaches every reader (live-items REVIEW5). None when there is none.
-pub fn without_pending_refs(value: &[Value]) -> Option<Vec<Value>> {
-    let pending = |node: &Value| {
-        node.get("type").and_then(Value::as_str) == Some(MATERIAL_REF_TYPE)
-            && (node.get("pending").is_some()
-                || node
-                    .get("materialId")
-                    .and_then(Value::as_str)
-                    .is_none_or(|id| js_trim(id).is_empty()))
-    };
-    if !value.iter().any(pending) {
-        return None;
-    }
-    Some(
-        value
-            .iter()
-            .map(|node| {
-                if !pending(node) {
-                    return node.clone();
-                }
-                serde_json::json!({
-                    "type": "p",
-                    "id": node.get("id").cloned().unwrap_or(Value::Null),
-                    "children": [{ "text": "" }],
-                })
-            })
-            .collect(),
-    )
 }
 
 fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
@@ -429,13 +443,50 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
     if !has_text_descendant(node) {
         return fail("element must contain a text descendant");
     }
+    // A type the catalog does not list is refused by the placement walk
+    // (`placement`), as Go's `validateKind` refuses it.
+    let Some(element) = catalog::element(kind) else {
+        return Ok(());
+    };
+    validate_element(node, kind, depth, policy)?;
+    validate_catalog_keys(node, element, depth)
+}
+
+/// The embed catalog's key rules for an element it lists, after the
+/// element's own checks (Go's `validateCatalogKeys`): top-level placement,
+/// required keys, keys it never carries (null counts as absent) and its
+/// closed field set.
+fn validate_catalog_keys(node: &Node, element: &catalog::Element, depth: usize) -> Check {
+    let name = element.name;
+    if element.top_level && depth != 0 {
+        return fail(format!("{name} must be a top-level block"));
+    }
+    for key in element.required {
+        if node.get(*key).is_none_or(Value::is_null) {
+            return fail(format!("{name} requires {key}"));
+        }
+    }
+    for key in element.forbidden {
+        if node.get(*key).is_some_and(|value| !value.is_null()) {
+            return fail(format!("{name} cannot carry {key}"));
+        }
+    }
+    if let Some(fields) = element.fields
+        && let Some(key) = node.keys().find(|key| !fields.contains(&key.as_str()))
+    {
+        return fail(format!("unexpected {name} field {key}"));
+    }
+    Ok(())
+}
+
+/// One element's own values (Go's `validateElement`).
+fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> Check {
     match kind {
         "quiz" => validate_quiz(node),
         "chart" | "plot" | "graph" => validate_embed(node, kind, depth),
         "quiz_question" => validate_quiz_question(node, policy),
         HTML_EMBED_TYPE => validate_html_embed(node, depth),
         "flashcard_front" | "flashcard_back" | "mermaid_caption" => validate_text_element(node),
-        "quiz_prompt" | "quiz_option" | "quiz_explanation" => fail("obsolete quiz child node"),
         "flashcards" => validate_flashcards(node),
         "flashcard" => validate_flashcard(node),
         "mermaid" => validate_diagram(node),
@@ -443,22 +494,17 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
             validate_media(node, kind)?;
             validate_width(node)
         }
-        "image" | "audio" | "file" => validate_media(node, kind),
+        "audio" | "file" => validate_media(node, kind),
         MATERIAL_REF_TYPE => validate_material_ref(node),
         "video" => {
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {
                 return fail("video provider must be youtube");
             }
-            let valid = node
+            if !node
                 .get("videoId")
                 .and_then(Value::as_str)
-                .is_some_and(|id| {
-                    id.len() == 11
-                        && id
-                            .bytes()
-                            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
-                });
-            if !valid {
+                .is_some_and(youtube_id)
+            {
                 return fail("videoId must be a valid YouTube video ID");
             }
             for key in ["assetId", "url", "src"] {
@@ -478,20 +524,27 @@ fn contains_type(nodes: &[&Node], kind: &str) -> bool {
     })
 }
 
-/// Notes keep study blocks in their own rows: no inline quiz/flashcards, and a
-/// reference only as a top-level block.
-fn validate_note_references(nodes: &[&Node]) -> Check {
-    for inline in ["quiz", "flashcards"] {
-        if contains_type(nodes, inline) {
-            return fail(format!("note cannot contain an inline {inline} block"));
+/// Every element is one the embed catalog lists, in a material kind it lists
+/// for it (Go's `validateKind`): study blocks live in their own rows, so a
+/// note holds a quiz or a set only through a reference, and only a note holds
+/// a reference. Refuses the first element in document order that is not.
+fn placement(nodes: &[&Node], kind: &str) -> Check {
+    for node in nodes {
+        if let Some(name) = node.get("type").and_then(Value::as_str) {
+            match catalog::element(name) {
+                None => {
+                    return fail(format!(
+                        "unknown element type {}",
+                        stringify(node.get("type"))
+                    ));
+                }
+                Some(element) if !element.materials.contains(&kind) => {
+                    return fail(format!("a {kind} cannot hold a {name} block"));
+                }
+                Some(_) => {}
+            }
         }
-    }
-    for (index, node) in nodes.iter().enumerate() {
-        if contains_type(&children(node), MATERIAL_REF_TYPE) {
-            return fail(format!(
-                "value[{index}]: material reference must be a top-level block"
-            ));
-        }
+        placement(&children(node), kind)?;
     }
     Ok(())
 }
@@ -592,18 +645,17 @@ pub fn assert_canonical_with(value: &[Value], kind: &str, policy: &Policy) -> Ch
         }
     }
 
-    let required: &[&str] = match kind {
-        "quiz" => &["quiz"],
-        "flashcards" => &["flashcards"],
-        "mindmap" | "diagram" => &["mermaid"],
-        "note" => return validate_note_references(&nodes),
-        _ => return Ok(()),
+    let Some(material) = catalog::material_kind(kind) else {
+        return fail(format!(
+            "unknown material kind {}",
+            crate::json::stringify(&Value::String(kind.into()))
+        ));
     };
-    if !required.iter().any(|t| contains_type(&nodes, t)) {
+    placement(&nodes, kind)?;
+    if let Some(required) = material.requires
+        && !contains_type(&nodes, required)
+    {
         return fail(format!("{kind} element is required"));
-    }
-    if contains_type(&nodes, MATERIAL_REF_TYPE) {
-        return fail(format!("{kind} cannot contain a material reference"));
     }
     Ok(())
 }

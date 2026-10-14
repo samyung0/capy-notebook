@@ -438,6 +438,7 @@ export async function runJourney(
     'chapters-load': scenarioPath,
     'collaboration-token': `${scenarioPath}?material=${scenarioNote}&mode=edit`,
     'credentials-load': '/settings?tab=llm',
+    'dashboard-lists': '/',
     'deletion-check': '/settings?tab=danger',
     'deletion-transfer-required': '/settings?tab=danger',
     explore: '/explore',
@@ -915,9 +916,11 @@ export async function runJourney(
       await go('/');
       fail();
       (await ui.element('button[aria-label*="notification" i]')).click();
-      if (id === 'notification-save')
+      if (id === 'notification-save') {
         await ui.click(m.notifications_mark_all_read());
-      return 'This notification request currently has no local error display.';
+        return 'Marking read currently has no local error display.';
+      }
+      return;
     case 'deletion-submit':
       await go('/settings?tab=danger');
       await ui.click(m.action_delete());
@@ -930,7 +933,7 @@ export async function runJourney(
       fail();
       await ui.click(m.search_placeholder());
       await ui.fill('input[placeholder]', 'scenario');
-      return 'Search currently suppresses its request error.';
+      return;
     case 'conversations-load':
       fail();
       await go(scenarioPath);

@@ -1,7 +1,8 @@
 #![allow(clippy::unwrap_used)] // Tests panic on a broken corpus.
 //! Agent markdown through the embedded import against the Node server's
 //! converter on the same sources (synthetic constructs and the repository's
-//! own markdown pages): the same document and drafts, or the same error.
+//! own markdown pages): the same document and drafts, or the same error, but
+//! for the sources whose conversion changed on purpose since ([changed]).
 //! Generated ids are random on both sides and compared by first occurrence.
 //!
 //! Needs the bundle: `node markdown/build.mjs` (or NOTES_MARKDOWN_BUNDLE
@@ -43,6 +44,25 @@ fn normalize(value: &mut Value, ids: &mut HashMap<String, String>) {
     }
 }
 
+/// Sources whose conversion changed on purpose after the Node server was
+/// frozen, each checked on its own instead: footnotes become text
+/// (Epo 2026-10-14), a reference its label in superscript.
+fn changed(name: &str, ours: &Value) -> Option<Result<(), String>> {
+    match name {
+        "footnotes" => {
+            let printed = ours.to_string();
+            Some(
+                if !printed.contains("footnote") && printed.contains(r#""superscript":true"#) {
+                    Ok(())
+                } else {
+                    Err(format!("{name}: footnotes kept as elements: {printed}"))
+                },
+            )
+        }
+        _ => None,
+    }
+}
+
 #[test]
 fn markdown_matches_the_node_server() {
     let started = Instant::now();
@@ -66,6 +86,10 @@ fn markdown_matches_the_node_server() {
             Err(error) => panic!("{name}: {error}"),
         };
         let mut ours = ours;
+        if let Some(checked) = changed(name, &ours) {
+            failures.extend(checked.err());
+            continue;
+        }
         normalize(&mut ours, &mut HashMap::new());
         normalize(&mut expected, &mut HashMap::new());
         if ours != expected {

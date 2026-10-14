@@ -36,6 +36,24 @@ describe('shrinkPlan', () => {
   });
 });
 
+describe('shrinkPlan for an Office file', () => {
+  const max = 2 * 1024 * 1024;
+  const plan = (size: number, type: string, animated = false) =>
+    shrinkPlan({ size, type }, animated, max, true);
+  it('takes PNG, JPEG and GIF within the cap as they are', () => {
+    for (const type of ['image/png', 'image/jpeg', 'image/gif'])
+      expect(plan(max, type, type === 'image/gif')).toBe('upload');
+  });
+  it('re-encodes every other type, within the cap or not', () => {
+    for (const type of ['image/webp', 'image/avif', 'image/bmp', ''])
+      for (const size of [100, max + 1])
+        expect(plan(size, type)).toBe('shrink');
+  });
+  it('still refuses a larger animated GIF', () => {
+    expect(plan(max + 1, 'image/gif', true)).toBe('too_large');
+  });
+});
+
 describe('fitSize', () => {
   it('caps the long side at 2000 px and keeps the ratio', () => {
     expect(fitSize(4000, 3000)).toEqual({ height: 1500, width: 2000 });

@@ -51,8 +51,8 @@ func validateAs(kind string, nodes []map[string]any) error {
 
 // catalogDocuments are valid documents of every material kind that together
 // hold every element type: the every-block note (shared with the
-// collaboration server and the UAT journey) plus the transient, footnote and
-// newer elements it does not carry, a quiz, a card set and a mindmap.
+// collaboration server and the UAT journey) plus the transient and newer
+// elements it does not carry, a quiz, a card set and a mindmap.
 func catalogDocuments(t *testing.T) map[string][]map[string]any {
 	t.Helper()
 	raw, err := os.ReadFile("testdata/every-block-note.json")
@@ -85,14 +85,6 @@ func catalogDocuments(t *testing.T) map[string][]map[string]any {
 	extra := []map[string]any{
 		{"type": "plot", "id": "cat_plot", "block": plot, "children": leaf},
 		{"type": "placeholder", "id": "cat_upload", "mediaType": "img", "children": leaf},
-		{"type": "p", "id": "cat_footnote", "children": []any{
-			textLeaf("Cited"),
-			map[string]any{"type": "footnoteReference", "identifier": "1", "children": leaf},
-			textLeaf("."),
-		}},
-		{"type": "footnoteDefinition", "id": "cat_note", "identifier": "1", "children": []any{
-			map[string]any{"type": "p", "children": []any{textLeaf("The note.")}},
-		}},
 		{"type": "p", "id": "cat_inputs", "children": []any{
 			textLeaf("Ask "),
 			map[string]any{"type": "mention_input", "trigger": "@", "children": leaf},

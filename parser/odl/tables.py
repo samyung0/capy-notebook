@@ -14,7 +14,6 @@ import pymupdf
 
 from . import context, geometry, page_text, source_grid
 from .adapter import odl_content_list
-from .source_text import RAW_FLAGS
 from .table_html import table_html
 
 VALUE = geometry.NUMBER
@@ -828,7 +827,7 @@ def removed_coverage(
         )
         for b in blocks
     ]
-    for block in page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]:
+    for block in page_text.page_raw(page)["blocks"]:
         for line in block.get("lines", []):
             for span in line["spans"]:
                 text = "".join(c["c"] for c in span["chars"])

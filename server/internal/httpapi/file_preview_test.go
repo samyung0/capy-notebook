@@ -185,3 +185,72 @@ func TestSourceSessionViewTrimsStateToUnpublishedEdits(t *testing.T) {
 		t.Fatalf("editor session = %d body=%s", full.Code, full.Body.String())
 	}
 }
+
+// Office inserts shrink images to the plan cap of the workspace owner, who
+// pays for the file, whatever the editor's own plan: only the editor read
+// carries it. The editor read also says when the file's card is older than
+// its saved document.
+func TestSourceSessionEditorCarriesTheOwnersImageCap(t *testing.T) {
+	ctx := context.Background()
+	st := openAccessTestStoreForPreview(t)
+	memory := blob.NewMemory()
+	owner, editor := "u_image_cap_owner", "u_image_cap_editor"
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users(id,name,email,plan_tier) VALUES($1,'Cap Owner','cap-owner@example.test','free'),($2,'Cap Editor','cap-editor@example.test','pro')`, owner, editor); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id IN ($1,$2)`, owner, editor)
+	})
+	handler := httpapi.New(st, memory, nil, nil, "opendataloader", httpapi.Config{
+		AuthDisabled: true,
+		E2EAuth:      true,
+		E2ESecret:    "e2e-test-secret",
+		E2EUserIDs:   []string{editor},
+	})
+	workspace, err := st.CreateWorkspace(ctx, owner, store.WorkspaceCreate{Name: "Image cap", Tags: []store.TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.DeleteWorkspace(context.Background(), owner, workspace.ID) })
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO workspace_members(workspace_id,user_id,role) VALUES($1,$2,'editor')`, workspace.ID, editor); err != nil {
+		t.Fatal(err)
+	}
+	file, err := uploadSource(ctx, st, workspace.ID, owner, "plan.docx", 100, "sources/plan.docx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := memory.Put("sources/plan.docx", bytes.NewReader([]byte("PK-source"))); err != nil {
+		t.Fatal(err)
+	}
+	session := func(query string) string {
+		res := doReq(t, handler, http.MethodGet, "/api/files/"+file.ID+"/source-session"+query, editor, nil)
+		if res.Code != http.StatusOK {
+			t.Fatalf("source session%s = %d body=%s", query, res.Code, res.Body.String())
+		}
+		return res.Body.String()
+	}
+	if body := session(""); !strings.Contains(body, `"imageMaxBytes":2097152`) {
+		t.Fatalf("editor of a Free owner's file: %s", body)
+	}
+	if body := session("?view=true"); strings.Contains(body, "imageMaxBytes") {
+		t.Fatalf("view read carries the image cap: %s", body)
+	}
+	if _, err := st.Pool().Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, owner); err != nil {
+		t.Fatal(err)
+	}
+	if body := session(""); !strings.Contains(body, `"imageMaxBytes":5242880`) {
+		t.Fatalf("editor of a Pro owner's file: %s", body)
+	}
+	if body := session(""); strings.Contains(body, "thumbnailStale") {
+		t.Fatalf("a file without saved changes reads stale: %s", body)
+	}
+	if _, err := st.Pool().Exec(ctx, `UPDATE source_documents SET state_seed_sha256=repeat('a',64), log_rows=1 WHERE file_id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	if body := session(""); !strings.Contains(body, `"thumbnailStale":true`) {
+		t.Fatalf("a saved change over ingest's card: %s", body)
+	}
+	if body := session("?view=true"); strings.Contains(body, "thumbnailStale") {
+		t.Fatalf("view read carries the stale card: %s", body)
+	}
+}

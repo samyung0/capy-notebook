@@ -1,45 +1,35 @@
 {
   "schemaVersion": 1,
-  "subject": "Your Capy Notebook account deletion was cancelled",
-  "preview": "Your account has been reactivated.",
+  "subject": "Your Capy Notebook account is active again",
+  "preview": "Nothing was deleted. You can sign in as usual.",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
+            "text": "Your account is active again"
           }
         ]
       },
       {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "Account reactivated" }]
-      },
-      {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "Hello," }]
-      },
-      {
         "type": "paragraph",
         "content": [
           {
             "type": "text",
-            "text": "Support cancelled your Capy Notebook account deletion request. Your account is active again."
+            "text": "Support cancelled the deletion of your Capy Notebook account. Nothing was deleted, and you can sign in and pick up where you left off."
           }
         ]
       },
       {
         "type": "button",
         "attrs": {
-          "text": "Open Settings",
+          "text": "Open Capy Notebook",
           "url": "OpenURL",
           "isUrlVariable": true,
           "alignment": "left",
@@ -47,33 +37,15 @@
           "borderRadius": "smooth"
         }
       },
-      { "type": "horizontalRule" },
       {
-        "type": "footer",
-        "content": [
-          {
-            "type": "text",
-            "text": "You received this message because support cancelled your Capy Notebook account deletion request."
-          }
-        ]
+        "type": "horizontalRule"
       },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "marks": [
-              {
-                "type": "link",
-                "attrs": {
-                  "href": "UnsubscribeURL",
-                  "isUrlVariable": true,
-                  "target": "_blank",
-                  "rel": "noopener noreferrer nofollow"
-                }
-              }
-            ],
-            "text": "Manage product email preferences"
+            "text": "You got this email because support restored your Capy Notebook account."
           }
         ]
       }

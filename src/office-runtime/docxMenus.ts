@@ -83,7 +83,6 @@ const ICONS: Record<string, IconName> = {
   'insert-link': 'link',
   'insert-table': 'table',
   'insert-toc': 'tableOfContents',
-  'page-setup': 'settings',
   redo: 'redo',
   save: 'cloudSync',
   'table-properties': 'table',
@@ -91,6 +90,13 @@ const ICONS: Record<string, IconName> = {
   'update-toc': 'refresh',
   zoom: 'zoomIn',
 };
+
+/**
+ * Editor commands Capy leaves out until they save: page setup and watermarks
+ * change only the open editor's copy, outside the shared state Capy saves
+ * (Epo 2026-10-13).
+ */
+const UNSAVED = new Set(['page-setup', 'insert-watermark']);
 
 function withIcons(entries: HostMenuEntry[]): OfficeMenuEntry[] {
   return entries.map((entry) => {
@@ -146,7 +152,11 @@ export function editorMenus(
   locale: OfficeLocale
 ): OfficeMenu[] {
   return menus.map((menu) => {
-    const items = withIcons(menu.items);
+    const items = withIcons(
+      menu.items.filter(
+        (entry) => entry.kind !== 'item' || !UNSAVED.has(entry.id)
+      )
+    );
     if (menu.id !== 'file') return { ...menu, items };
     // Capy saves itself (the checkpoint), as Ctrl/Cmd+S does.
     const save = items.findIndex(
@@ -155,7 +165,7 @@ export function editorMenus(
     const saveItem = items[save];
     if (saveItem?.kind === 'item')
       items[save] = { ...saveItem, id: OFFICE_HOST_COMMANDS.save };
-    // As the mock: Save | Download ▸ | Page setup, Print.
+    // As the mock: Save | Download ▸ | Print.
     items.splice(save + 1, 0, { kind: 'separator' }, downloadMenu(locale), {
       kind: 'separator',
     });

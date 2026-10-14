@@ -15,6 +15,7 @@ use ydoc::guards::{GuardRun, guards_equal, range_guard};
 use yrs::branch::{Branch, BranchPtr};
 use yrs::{GetString, ReadTxn, Text, TextRef, TransactionMut};
 
+use crate::catalog;
 use crate::material::MATERIAL_REF_TYPE;
 use crate::plate;
 use crate::slate::editor::{Editor, EditorError, Point};
@@ -186,16 +187,12 @@ pub struct EditOutcome {
     pub relocated: Option<Vec<Relocation>>,
 }
 
-const MEDIA_TYPES: [&str; 8] = [
-    "img",
-    "image",
-    "video",
-    "audio",
-    "file",
-    "media_embed",
-    "youtube",
-    "excalidraw",
-];
+/// A media block an agent's edit cannot write: an uploaded file
+/// ([crate::material::MEDIA_TYPES]) or an embedded video (the catalog's
+/// elements that require or forbid `assetId`).
+pub fn media_type(kind: &str) -> bool {
+    kind == "video" || crate::material::MEDIA_TYPES.contains(&kind)
+}
 pub const MAX_TEXT_EDIT_CHARS: usize = 200_000;
 
 fn stable_id(node: &Value) -> String {
@@ -225,7 +222,7 @@ pub(crate) fn js_string(value: Option<&Value>) -> String {
 }
 
 fn has_media(node: &Value) -> bool {
-    MEDIA_TYPES.contains(&js_string(node.get("type")).as_str())
+    media_type(&js_string(node.get("type")))
         || node.get("assetId").is_some()
         || node
             .get("children")
@@ -492,9 +489,7 @@ fn inserts_media(node: &Value) -> bool {
             .is_some_and(|id| !id.is_empty())
         && node.get("url").is_none()
         && node.get("src").is_none();
-    (!named_image
-        && (MEDIA_TYPES.contains(&js_string(node.get("type")).as_str())
-            || node.get("assetId").is_some()))
+    (!named_image && (media_type(&js_string(node.get("type"))) || node.get("assetId").is_some()))
         || node
             .get("children")
             .and_then(Value::as_array)
@@ -728,12 +723,35 @@ pub fn apply_material_commands(
     root: &TextRef,
     commands: &[DocumentCommand],
 ) -> Result<EditOutcome, EditError> {
+    material_commands(txn, root, commands, false)
+}
+
+/// An Undo's inverse commands (its guards verified first): as an edit, except
+/// that it removes the media blocks its edit inserted, a library figure
+/// (`figure:<id>`) the agent placed, which an edit itself may not remove.
+pub fn undo_material_commands(
+    txn: &mut TransactionMut,
+    root: &TextRef,
+    commands: &[DocumentCommand],
+) -> Result<EditOutcome, EditError> {
+    material_commands(txn, root, commands, true)
+}
+
+fn material_commands(
+    txn: &mut TransactionMut,
+    root: &TextRef,
+    commands: &[DocumentCommand],
+    undo: bool,
+) -> Result<EditOutcome, EditError> {
     if commands.is_empty() {
         return edit(InvalidInput, "no commands");
     }
     let y_root = BranchPtr::from(root.as_ref() as &Branch);
     let mut editor = Editor::open(txn, y_root)?;
-    let mut run = Run::default();
+    let mut run = Run {
+        undo,
+        ..Run::default()
+    };
     run_commands(&mut editor, commands, &mut run)?;
     // Guards describe the committed state. A node a later command removed
     // needs no guard of its own: that removal left a gap guard over it.
@@ -771,12 +789,14 @@ pub fn apply_material_commands(
 /// What a call's commands leave behind: their inverse, the guards to read
 /// once they all ran, the inserts that landed away from a gone anchor, and
 /// the blocks the call removed (by id: the ids that stood before each).
+/// `undo` marks an Undo's inverse.
 #[derive(Default)]
 struct Run {
     inverse: Vec<DocumentCommand>,
     pending: Vec<Pending>,
     relocated: Vec<Relocation>,
     removed: HashMap<String, Vec<String>>,
+    undo: bool,
 }
 
 fn run_commands(
@@ -813,6 +833,7 @@ fn run_command(
         pending,
         relocated,
         removed,
+        undo,
     } = run;
     match command {
         DocumentCommand::ReplaceText {
@@ -930,7 +951,7 @@ fn run_command(
                     current_block(&block, text),
                 );
             }
-            if has_media(&block) {
+            if has_media(&block) && !*undo {
                 return edit(
                     UnsupportedOperation,
                     "blocks holding media cannot be removed by an edit",
@@ -1372,7 +1393,8 @@ pub fn inspect_material<T: ReadTxn>(txn: &T) -> Result<Vec<InspectedBlock>, Edit
                         .collect::<Map<String, Value>>(),
                 )
             };
-            if kind == "chart" || kind == "graph" {
+            // A figure (chart, plot, graph) prints its question block.
+            if catalog::element(&kind).is_some_and(|element| element.required.contains(&"block")) {
                 let printed = block
                     .get("block")
                     .map(crate::json::stringify)

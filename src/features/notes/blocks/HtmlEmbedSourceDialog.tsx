@@ -5,7 +5,11 @@ import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Input, InputError, InputField } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/TextArea';
-import { HTML_EMBED_MAX_BYTES, htmlBytes } from '@/features/materials/document';
+import {
+  BLOCK_CAPTION_MAX,
+  HTML_EMBED_MAX_BYTES,
+  htmlBytes,
+} from '@/features/materials/document';
 import { m } from '@/i18n';
 
 /** An interactive block's caption and snippet. Editors save changes (within the
@@ -86,7 +90,11 @@ export default function HtmlEmbedSourceDialog({
           id="html-embed-caption"
           label={m.html_embed_caption()}
         >
-          <Input id="html-embed-caption" {...register('caption')} />
+          <Input
+            id="html-embed-caption"
+            maxLength={BLOCK_CAPTION_MAX}
+            {...register('caption')}
+          />
         </InputField>
       )}
       <Textarea

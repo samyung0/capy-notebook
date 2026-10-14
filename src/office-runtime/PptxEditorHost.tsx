@@ -1,3 +1,4 @@
+import { EquationTextError } from '@betteroffice/pptx';
 import { analyzeOpenPresentation } from '@betteroffice/pptx/viewer';
 import {
   type PptxCommandState,
@@ -8,6 +9,7 @@ import { useEffect, useRef, useState } from 'react';
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeNotice,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
@@ -48,6 +50,7 @@ export function PptxEditorHost({
   onAnalysis,
   onError,
   onMenus,
+  onNotice,
   onAskPresenter,
   onPendingChange,
   onPresentingChange,
@@ -55,6 +58,7 @@ export function PptxEditorHost({
   onSave,
   onThumbnailer,
   onZoomChange,
+  prepareImage,
   readOnly,
 }: {
   bytes: Uint8Array;
@@ -71,6 +75,8 @@ export function PptxEditorHost({
   onAnalysis: (analysis: OfficeAnalysis) => void;
   onError: (error: Error) => void;
   onMenus: OfficeMenuReporter;
+  /** A refusal (typing into an equation), shown once by the host. */
+  onNotice: (notice: OfficeNotice) => void;
   /** Asks Capy for Presenter view's notes window, from a click in the show. */
   onAskPresenter: () => void;
   onPendingChange: (pending: boolean) => void;
@@ -79,6 +85,8 @@ export function PptxEditorHost({
   onSave: () => void;
   onThumbnailer: (thumbnailer: OfficeThumbnailer | null) => void;
   onZoomChange: (zoom: OfficeZoom) => void;
+  /** Shrinks an inserted image to the payer's plan cap. */
+  prepareImage: (file: File) => Promise<File>;
   /** Recovery: selection and copy only. */
   readOnly: boolean;
 }) {
@@ -121,7 +129,7 @@ export function PptxEditorHost({
             void file
               .arrayBuffer()
               .then((buffer) =>
-                api.insertImage(new Uint8Array(buffer), file.name)
+                api.insertImage(new Uint8Array(buffer), file.name, file.type)
               )
               // The editor reports its own insert failures.
               .catch(() => {});
@@ -234,7 +242,12 @@ export function PptxEditorHost({
         initialZoom={initialZoom}
         notesWindow={presenter.notes}
         onCommandState={setCommandState}
-        onError={onError}
+        // Typing into an equation is refused: a notice, not a failure.
+        onError={(error) =>
+          error instanceof EquationTextError
+            ? onNotice('equation-text')
+            : onError(error)
+        }
         // The deck the editor already holds: no second snapshot from the engine.
         onFirstPaint={(snapshot) =>
           onAnalysis(analyzeOpenPresentation({ snapshot: () => snapshot }))
@@ -255,6 +268,7 @@ export function PptxEditorHost({
         onSpeakerNotesChange={(visible) =>
           writeViewToggle('speakerNotes', visible)
         }
+        prepareImage={prepareImage}
         readOnly={readOnly}
         // Present is a header action and Capy has no PPTX agent proposals.
         showFontPicker={!narrow}

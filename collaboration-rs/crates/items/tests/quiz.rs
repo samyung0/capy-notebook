@@ -214,6 +214,61 @@ fn every_fixture_round_trips_through_both_documents() {
     }
 }
 
+/// The live quiz's block kinds against the embed catalog (todo-embeds.md):
+/// the room admits every question block the catalog lists, and the shared
+/// fixtures hold a block of every kind it admits, so the round trip above
+/// reads each one back: a kind added without a reader fails here instead of
+/// vanishing from the room's projection, as plot once did.
+#[test]
+fn every_admitted_block_kind_round_trips() {
+    for embed in notes::catalog::EMBEDS.iter().filter(|e| e.question_block) {
+        assert!(
+            quiz::BLOCK_TYPES.contains(&embed.kind),
+            "a live quiz refuses the catalog's {} block",
+            embed.kind
+        );
+    }
+    let questions = fixtures();
+    let mut held = std::collections::BTreeSet::new();
+    for question in &questions {
+        let parts = question["parts"].as_array().unwrap();
+        let lists = std::iter::once(&question["stem"])
+            .chain(parts.iter().map(|part| &part["blocks"]))
+            .chain(parts.iter().map(|part| &part["solution"]));
+        for block in lists.filter_map(Value::as_array).flatten() {
+            held.insert(block["type"].as_str().unwrap().to_owned());
+        }
+    }
+    let admitted: std::collections::BTreeSet<String> = quiz::BLOCK_TYPES
+        .iter()
+        .map(|kind| (*kind).to_owned())
+        .collect();
+    assert_eq!(held, admitted);
+    let (content, keys, _, _) = rooms(&questions);
+    assert_eq!(projected(&content, &keys), questions);
+    assert!(!quiz::holds_unknown_block(&content.transact()));
+    assert!(!quiz::holds_unknown_block(&keys.transact()));
+}
+
+/// A stored quiz holding a block kind the room does not admit (a newer
+/// version wrote it), in a stem or a solution, is found in the document it
+/// seeds, so the room loads read-only (Epo 2026-10-13) instead of dropping the
+/// block from what it reads. Fails if the check misses either document.
+#[test]
+fn a_seeded_unknown_block_kind_is_found() {
+    let timeline = json!({ "type": "timeline", "events": ["Mitosis"] });
+    let mut in_stem = fixtures()[0].clone();
+    in_stem["stem"] = json!([timeline]);
+    let (content, keys, _, _) = rooms(&[in_stem]);
+    assert!(quiz::holds_unknown_block(&content.transact()));
+    assert!(!quiz::holds_unknown_block(&keys.transact()));
+    let mut in_solution = fixtures()[0].clone();
+    in_solution["parts"][0]["solution"] = json!([timeline]);
+    let (content, keys, _, _) = rooms(&[in_solution]);
+    assert!(!quiz::holds_unknown_block(&content.transact()));
+    assert!(quiz::holds_unknown_block(&keys.transact()));
+}
+
 #[test]
 fn an_incomplete_question_stays_out_of_the_projection() {
     let questions = fixtures();

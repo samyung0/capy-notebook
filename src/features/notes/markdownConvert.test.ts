@@ -113,6 +113,30 @@ describe('markdownToDocument', () => {
     ).toThrow('fence 1 (flashcards) needs cards');
   });
 
+  it('turns footnotes into superscript labels', () => {
+    const { value } = markdownToDocument(
+      "Mitochondria make the cell's ATP[^1].\n\n[^1]: About 30 to 32 per glucose."
+    );
+    expect(value).toMatchObject([
+      {
+        children: [
+          { text: "Mitochondria make the cell's ATP" },
+          { superscript: true, text: '1' },
+          { text: '.' },
+        ],
+        type: 'p',
+      },
+      {
+        children: [
+          { superscript: true, text: '1' },
+          { text: ' ' },
+          { text: 'About 30 to 32 per glucose.' },
+        ],
+        type: 'p',
+      },
+    ]);
+  });
+
   it('keeps a library figure as its reference and turns other images into links', () => {
     const { document } = convertAgentMarkdown(
       [

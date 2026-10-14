@@ -39,6 +39,10 @@ pub const MAX_UNPLACED_STEPS: u32 = 2;
 pub const NOTE_MAX_SYNC_BYTES: usize = 4 * 1024 * 1024;
 /// The largest awareness entry a room keeps and relays.
 pub const MAX_AWARENESS_ENTRY: usize = 64 * 1024;
+/// Why a note room holding a block the embed catalog does not list refuses
+/// every writer (Epo 2026-10-13): the browser shows it for the
+/// `unsupported_block` code.
+pub const UNSUPPORTED_BLOCK: &str = "this document has a block this version can't edit";
 /// Failed stores retry after 5 s, doubling to 60 s.
 const RETRY_FIRST: Duration = Duration::from_secs(5);
 const RETRY_MAX: Duration = Duration::from_secs(60);
@@ -223,6 +227,11 @@ struct Note {
     /// A quiz room: the metrics last sent to the other document's room.
     metrics_sent: Option<notes::limits::Metrics>,
     validator: crate::model::RoomValidator,
+    /// The stored document is one the store would refuse, or a quiz either
+    /// of whose documents holds a block kind its rooms do not admit
+    /// (`Model::stored`): it stays readable and no writer edits it until it
+    /// is fixed (Epo 2026-10-13).
+    unlisted: bool,
     durable_metrics: Option<notes::limits::Metrics>,
     stored_version: i64,
     projected_version: i64,
@@ -444,7 +453,8 @@ async fn load(
                 loaded.projected_version,
                 loaded.log_bytes,
             );
-            let (doc, durable, metrics) =
+            let material_kind = kind.clone();
+            let (doc, durable, metrics, mut refused) =
                 tokio::task::spawn_blocking(move || -> Result<_, String> {
                     let scratch = ydoc::scratch_doc();
                     ydoc::replay(&scratch, &loaded.base, &loaded.rows)
@@ -463,28 +473,43 @@ async fn load(
                     model.assert_roots(&txn)?;
                     markers::contributors_in(&txn).map_err(|error| error.to_string())?;
                     let metrics = model.measure(&txn)?;
+                    let refused = model.stored(&material_kind, &txn)?;
                     let durable = ydoc::Durable::of(&txn);
                     drop(txn);
-                    Ok((doc, durable, metrics))
+                    Ok((doc, durable, metrics, refused))
                 })
                 .await
                 .map_err(|error| error.to_string())??;
             // A quiz's other document as stored: its metrics count with this
-            // one's, and the content room's readers get the keys' items.
-            let mut validator = model.validator(metrics);
+            // one's, the content room's readers get the keys' items, and a
+            // block this version cannot read in either makes both rooms
+            // read-only (a save in one would rebuild the quiz without it).
+            let mut validator = model.validator(&kind, metrics);
             let mut reader = None;
             if model.quiz() {
                 let other = match doc_kind {
                     note_store::Doc::Content => note_store::Doc::Keys,
                     note_store::Doc::Keys => note_store::Doc::Content,
                 };
-                let (peer, parts) = peer_state(app, material_id, *schema, other).await?;
+                let (peer, parts, peer_unlisted) =
+                    peer_state(app, material_id, *schema, other).await?;
                 validator.set_peer(peer);
+                if peer_unlisted && refused.is_none() {
+                    refused = Some(crate::model::UNKNOWN_QUIZ_BLOCK.to_owned());
+                }
                 if doc_kind == note_store::Doc::Content {
                     let mut lists = items::quiz::ReaderLists::default();
                     lists.follow(&parts, &mut random_pick);
                     reader = Some(lists);
                 }
+            }
+            // Operators see which rooms load read-only, and why (R2-L1).
+            if let Some(reason) = &refused {
+                log(
+                    Level::Warn,
+                    "room loads read-only",
+                    json!({ "reason": reason, "room": name.to_string() }),
+                );
             }
             let note = Note {
                 material_id: material_id.clone(),
@@ -494,6 +519,7 @@ async fn load(
                 // the first update takes the growth bound instead of copying
                 // and measuring a near-limit note on the room task (~55 ms).
                 validator,
+                unlisted: refused.is_some(),
                 model,
                 doc: doc_kind,
                 items_sent: None,
@@ -567,7 +593,7 @@ async fn peer_state(
     material_id: &str,
     schema: i64,
     doc: note_store::Doc,
-) -> Result<(notes::limits::Metrics, Vec<items::quiz::ItemsPart>), String> {
+) -> Result<(notes::limits::Metrics, Vec<items::quiz::ItemsPart>, bool), String> {
     let loaded = note_store::load(&app.db, material_id, schema, doc)
         .await
         .map_err(|error| error.to_string())?;
@@ -575,14 +601,17 @@ async fn peer_state(
         let scratch = ydoc::scratch_doc();
         ydoc::replay(&scratch, &loaded.base, &loaded.rows).map_err(|error| error.to_string())?;
         let txn = scratch.transact();
+        let unlisted = items::quiz::holds_unknown_block(&txn);
         Ok(match doc {
             note_store::Doc::Keys => (
                 notes::limits::measure_value(&items::Kind::QuizKeys.document_value(&txn)),
                 items::quiz::item_parts(&txn),
+                unlisted,
             ),
             note_store::Doc::Content => (
                 notes::limits::measure_value(&items::Kind::Quiz.document_value(&txn)),
                 Vec::new(),
+                unlisted,
             ),
         })
     })
@@ -1285,7 +1314,9 @@ impl Room {
         let room = self.name.clone();
         tokio::spawn(async move {
             match peer_state(&app, &material_id, schema, other).await {
-                Ok((metrics, parts)) => {
+                // Admission and service edits refuse a block kind the room does not
+                // admit, so the peer gains none after the load.
+                Ok((metrics, parts, _)) => {
                     let _ = handle.tx.send(RoomCmd::PeerStored(metrics, parts)).await;
                 }
                 Err(error) => {
@@ -1535,7 +1566,10 @@ impl Room {
         if self.app.evictions.blocks(&self.name, false) {
             return Err("collaboration room is being reset".into());
         }
-        let read_only = context.access == Access::Read;
+        // A writer of a document holding a block this version cannot edit
+        // joins read-only and hears why.
+        let unsupported = context.access == Access::Write && self.unsupported().is_some();
+        let read_only = context.access == Access::Read || unsupported;
         // A writer joining after the maintenance pause ended takes edits again.
         if let Kindly::Source(source) = &mut self.kind
             && !read_only
@@ -1564,6 +1598,9 @@ impl Room {
                 acks: 0,
             },
         );
+        if unsupported && let Some(notice) = self.unsupported() {
+            self.send(key, Kind::Stateless, &protocol::text(&notice));
+        }
         let sv = self.doc.transact().state_vector();
         use yrs::updates::encoder::Encode;
         self.send(key, Kind::Sync, &sync::encode(sync::STEP1, &sv.encode_v1()));
@@ -1583,6 +1620,18 @@ impl Room {
             self.send(key, Kind::Stateless, &protocol::text(&message));
         }
         Ok(())
+    }
+
+    /// The `room-read-only` notice of a material room holding a block this
+    /// version cannot read; none for any other room.
+    fn unsupported(&self) -> Option<String> {
+        match &self.kind {
+            Kindly::Note(note) if note.unlisted => Some(
+                json!({ "code": "unsupported_block", "room": self.name, "type": "room-read-only" })
+                    .to_string(),
+            ),
+            _ => None,
+        }
     }
 
     fn leave(&mut self, key: MemberKey) {
@@ -1857,6 +1906,15 @@ impl Room {
             self.ack(writer);
             return Outcome::Admitted;
         }
+        // A document holding a block this version cannot edit stays as it is
+        // (a writer whose access came back after it joined, a draft).
+        if changes && let Some(notice) = self.unsupported() {
+            return Outcome::Refused {
+                payloads: vec![notice],
+                reason: UNSUPPORTED_BLOCK.into(),
+                class: Class::Permission,
+            };
+        }
         // A writer that slipped past the maintenance pause: it goes read-only
         // (or to recovery with unsent changes) and its update is refused.
         if let Kindly::Source(source) = &self.kind
@@ -1888,7 +1946,16 @@ impl Room {
         // socket keeps its thread. A note update touching a media block's
         // attributes is checked on a copy of the room (REVIEW5 M1).
         let heavy = match &self.kind {
-            Kindly::Note(_) => notes::limits::heavy(&self.doc.transact(), &update, bytes.len()),
+            // The note scan reads Plate content; an item room's admission
+            // copies only past its own bound.
+            Kindly::Note(note) if note.model == crate::model::Model::Note => {
+                notes::limits::heavy(&self.doc.transact(), &update, bytes.len(), &note.kind)
+            }
+            Kindly::Note(_) => !ydoc::applies_inline(
+                &self.doc.transact(),
+                &ydoc::Incoming::new(&update),
+                bytes.len(),
+            ),
             Kindly::Source(source) => {
                 !ydoc::applies_inline(
                     &self.doc.transact(),

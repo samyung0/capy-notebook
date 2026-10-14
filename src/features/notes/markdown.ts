@@ -4,7 +4,12 @@
    embeddable blocks (quiz / flashcards / mermaid / html-embed) round-trip through the
    existing fenced-code format used by the Go backend and the read-only renderer.
    ============================================================ */
-import { MarkdownPlugin, remarkMdx } from '@platejs/markdown';
+import {
+  convertNodesDeserialize,
+  MarkdownPlugin,
+  remarkMdx,
+} from '@platejs/markdown';
+import { KEYS } from 'platejs';
 import remarkEmoji from 'remark-emoji';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -18,6 +23,10 @@ import {
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type AnyNode = any;
+
+/** A footnote's label as written (`[^Note]` keeps its case). */
+const footnoteLabel = (node: AnyNode): string =>
+  String(node.label ?? node.identifier ?? '');
 
 function serializeCustomBlock(lang: string) {
   return (node: AnyNode) => ({
@@ -57,6 +66,33 @@ export const noteMarkdownPlugin = MarkdownPlugin.configure({
         },
       },
       flashcards: { serialize: serializeCustomBlock('flashcards') },
+      // Footnotes become text (Epo 2026-10-14): no block draws them, so a
+      // reference is its label in superscript and a definition its blocks,
+      // the first led by that label.
+      footnoteDefinition: {
+        deserialize: (node: AnyNode, deco: AnyNode, options: AnyNode) => {
+          const label = { superscript: true, text: footnoteLabel(node) };
+          const blocks: AnyNode[] = convertNodesDeserialize(
+            node.children,
+            deco,
+            options
+          );
+          const [first, ...rest] = blocks;
+          if (first?.type === KEYS.p)
+            return [
+              { ...first, children: [label, { text: ' ' }, ...first.children] },
+              ...rest,
+            ];
+          return [{ children: [label], type: KEYS.p }, ...blocks];
+        },
+      },
+      footnoteReference: {
+        deserialize: (node: AnyNode, deco: AnyNode) => ({
+          ...deco,
+          superscript: true,
+          text: footnoteLabel(node),
+        }),
+      },
       graph: { serialize: serializeCustomBlock('graph') },
       html_embed: { serialize: serializeCustomBlock(HTML_EMBED_LANG) },
       // Export resolves references into inline blocks first

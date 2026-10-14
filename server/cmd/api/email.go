@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"net/url"
 	"strings"
 	"time"
@@ -144,69 +145,21 @@ func sendOutboxEmail(
 	}
 	defer guard.Rollback()
 
-	var data map[string]any
-	if err := json.Unmarshal(item.Payload, &data); err != nil {
+	var payload map[string]any
+	if err := json.Unmarshal(item.Payload, &payload); err != nil {
 		_ = guard.MarkFailed(ctx, fmt.Errorf("decode payload: %w", err))
 		return err
 	}
-	if data == nil {
-		data = map[string]any{}
-	}
-
 	locale := item.Locale
 	if locale != "zh" {
 		locale = "en"
 	}
-	// Promote camelCase JSON payload fields into the PascalCase names the
-	// Go templates expect.
-	if v := stringValue(data, "workspaceName"); v != "" {
-		data["WorkspaceName"] = v
-	}
-	if v := data["graceDays"]; v != nil {
-		data["GraceDays"] = v
-	}
-	if v := data["hours"]; v != nil {
-		data["Hours"] = v
-	}
-	if startsAt, err := time.Parse(time.RFC3339, stringValue(data, "startsAt")); err == nil {
-		data["StartsAt"] = maintenanceTime(startsAt, locale)
-	}
-	data["InviteURL"] = appURL + stringValue(data, "invitePath")
-	data["OpenURL"] = appURL + "/workspaces"
-	switch item.Template {
-	case "account-deletion-requested":
-		// Account is locked; Settings is unreachable. Point at the marketing
-		// site / app root where support contact lives.
-		data["OpenURL"] = appURL
-	case "account-deletion-cancelled":
-		data["OpenURL"] = appURL + "/settings"
-	case "subscription-over-quota", "subscription-frozen":
-		data["OpenURL"] = appURL + "/billing?tab=subscription"
-	default:
-		if workspaceID := stringValue(data, "workspaceId"); workspaceID != "" {
-			data["OpenURL"] = appURL + "/workspaces/" + url.PathEscape(workspaceID)
-		}
-	}
-
-	category := ""
-	switch item.Template {
-	case "workspace-invite":
-		category = "workspace_invite"
-	case "subscription-over-quota", "subscription-frozen":
-		category = "billing"
-	}
-	// Lifecycle mail (account deletion) is non-optional: no unsubscribe token.
-	unsubscribeURL := appURL + "/settings?tab=notifications"
+	category := emailCategory(item.Template)
+	token := ""
 	if category != "" {
-		if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {
-			unsubscribeURL += "?unsubscribe=" + url.QueryEscape(token)
-			data["UnsubscribeURL"] = appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(token)
-		} else {
-			data["UnsubscribeURL"] = unsubscribeURL
-		}
-	} else {
-		data["UnsubscribeURL"] = unsubscribeURL
+		token = mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category)
 	}
+	data := emailTemplateData(item.Template, locale, payload, appURL, token)
 
 	subject, html, text, err := mail.Render(item.Template, locale, data)
 	if err != nil {
@@ -214,12 +167,10 @@ func sendOutboxEmail(
 		return err
 	}
 	headers := map[string]string{}
-	if category != "" {
-		if token := mail.UnsubscribeToken(unsubscribeSecret, item.UserID, category); token != "" {
-			listURL := appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(token)
-			headers["List-Unsubscribe"] = "<" + listURL + ">"
-			headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
-		}
+	if token != "" {
+		listURL := appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(token)
+		headers["List-Unsubscribe"] = "<" + listURL + ">"
+		headers["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
 	}
 
 	sendCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
@@ -256,6 +207,117 @@ func retryAfterForEmail(err error) time.Duration {
 		return time.Minute
 	}
 	return 0
+}
+
+// emailCategory is the opt-out category a template sends under. Lifecycle and
+// service mail has none, so it carries no unsubscribe token.
+func emailCategory(template string) string {
+	switch template {
+	case "workspace-invite", "workspace-invite-accepted":
+		return "workspace_invite"
+	case "subscription-over-quota", "subscription-frozen",
+		"subscription-started", "subscription-cancelled":
+		return "billing"
+	}
+	return ""
+}
+
+// emailTemplateData turns an outbox payload (camelCase JSON) into the
+// PascalCase fields the Go templates read, formatting dates, sizes and roles
+// for the recipient's locale.
+func emailTemplateData(template, locale string, payload map[string]any, appURL, unsubscribeToken string) map[string]any {
+	data := map[string]any{}
+	for key, field := range map[string]string{
+		"workspaceName": "WorkspaceName",
+		"inviterName":   "InviterName",
+		"memberName":    "MemberName",
+	} {
+		if v := stringValue(payload, key); v != "" {
+			data[field] = v
+		}
+	}
+	for key, field := range map[string]string{"graceDays": "GraceDays", "hours": "Hours"} {
+		if v := payload[key]; v != nil {
+			data[field] = v
+		}
+	}
+	for key, field := range map[string]string{
+		"purgeAfter":  "DeletionDate",
+		"graceEndsAt": "GraceEndsAt",
+	} {
+		if t, err := time.Parse(time.RFC3339Nano, stringValue(payload, key)); err == nil {
+			data[field] = emailDate(t, locale)
+		}
+	}
+	// One period end reads "renews on" or "ends on" depending on the template.
+	if t, err := time.Parse(time.RFC3339Nano, stringValue(payload, "periodEnd")); err == nil {
+		data["RenewsOn"] = emailDate(t, locale)
+		data["EndsOn"] = emailDate(t, locale)
+	}
+	for key, field := range map[string]string{
+		"storageUsedBytes":  "StorageUsed",
+		"storageLimitBytes": "StorageLimit",
+	} {
+		if v, ok := payload[key].(float64); ok {
+			data[field] = emailMegabytes(v)
+		}
+	}
+	if role := stringValue(payload, "role"); role != "" {
+		data["Access"] = emailAccess(role, locale)
+	}
+	if startsAt, err := time.Parse(time.RFC3339, stringValue(payload, "startsAt")); err == nil {
+		data["StartsAt"] = maintenanceTime(startsAt, locale)
+	}
+
+	data["InviteURL"] = appURL + stringValue(payload, "invitePath")
+	data["OpenURL"] = appURL + "/workspaces"
+	switch template {
+	case "account-deletion-requested":
+		// Account is locked; Settings is unreachable. Point at the marketing
+		// site / app root where support contact lives.
+		data["OpenURL"] = appURL
+	case "subscription-over-quota", "subscription-frozen",
+		"subscription-started", "subscription-cancelled":
+		data["OpenURL"] = appURL + "/billing?tab=subscription"
+	default:
+		if workspaceID := stringValue(payload, "workspaceId"); workspaceID != "" {
+			data["OpenURL"] = appURL + "/workspaces/" + url.PathEscape(workspaceID)
+		}
+	}
+
+	data["UnsubscribeURL"] = appURL + "/settings?tab=notifications"
+	if unsubscribeToken != "" {
+		data["UnsubscribeURL"] = appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(unsubscribeToken)
+	}
+	return data
+}
+
+func emailDate(t time.Time, locale string) string {
+	t = t.UTC()
+	if locale == "zh" {
+		return t.Format("2006年1月2日")
+	}
+	return t.Format("2 Jan 2006")
+}
+
+// emailMegabytes writes whole decimal megabytes like the dashboard meter,
+// rounding usage up so an account just over a limit never reads as at it.
+func emailMegabytes(bytes float64) string {
+	return fmt.Sprintf("%d MB", int64(math.Ceil(bytes/1e6)))
+}
+
+func emailAccess(role, locale string) string {
+	edit := role == "editor" || role == "owner"
+	switch {
+	case locale == "zh" && edit:
+		return "可编辑"
+	case locale == "zh":
+		return "可查看"
+	case edit:
+		return "Can edit"
+	default:
+		return "Can view"
+	}
 }
 
 func stringValue(data map[string]any, key string) string {

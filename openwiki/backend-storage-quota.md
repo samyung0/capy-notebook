@@ -49,8 +49,9 @@ plan makes startup fail.
 
 The frontend intentionally has no plan-catalog endpoint. Product copy uses the
 explicit snapshot in `src/features/billing/planLimits.ts`; changing a displayed
-limit requires updating that file and the affected Paraglide translations along
-with the SQL seed. APIs may still return a requester's effective current value,
+limit requires updating that file, the affected Paraglide translations and the
+`welcome`, `subscription-started` and `subscription-cancelled` email templates
+along with the SQL seed. APIs may still return a requester's effective current value,
 such as workspace `filesLimit`, upload-policy `maxBytes`, and billing counters.
 
 Subscription projection remains owned by the Stripe lifecycle code. Request
@@ -316,7 +317,26 @@ reserved; the material response carries it as `imageMaxBytes`. The browser
 uploads an image under the cap unchanged and shrinks a larger one first
 (`src/lib/fitImage.ts`, called from `uploadEditorAsset`: long side to 2000 px,
 WebP at falling quality, JPEG or PNG where the browser has no WebP encoder,
-animated GIFs refused). Quizzes and flashcard sets edit live (Epo
+animated GIFs refused). An image inserted into a DOCX or PPTX file takes the
+same cap from the plan of the workspace owner, who pays for the file: the
+Office edit session (`GET /api/files/{id}/source-session`, Office formats)
+carries it as `imageMaxBytes`, the edit `load` hands it to the Office runtime,
+and the editors' `prepareImage` hook fits the picked file before its bytes
+reach the document (`fitImage` with `office`, Epo 2026-10-13). Older Word,
+PowerPoint, LibreOffice and Google Docs imports open only PNG, JPEG and GIF
+inside DOCX/PPTX, so only those go in as they are when under the cap; every
+other type (WebP, AVIF, BMP, …) is re-encoded whatever its size, and a shrunk
+image is JPEG when opaque or PNG when transparent, never WebP. A transparent
+image still over the cap as PNG at 2000 px is drawn at 1400 px, then 1000 px,
+before it is refused. A refused image (an animated GIF over the cap, or a PNG
+that fits at no step) leaves the document as it was and Capy shows the "image
+too large" notice (the runtime's `image-too-large` notice); one the browser
+cannot decode to re-encode (TIFF, HEIC or SVG in Chrome) is refused the same way
+with "This image type can't be inserted." (`image-type`). DOCX picture
+watermarks take the same path. The check is the browser's only: the
+collaboration server does not read image sizes (a server check is queued for
+later).
+Quizzes and flashcard sets edit live (Epo
 2026-10-10, D6): a picked image is shrunk and uploads at once, and the block
 or card takes its asset id (`quizImageUpload` in
 `src/features/quizzes/QuizForm.tsx`, `src/features/flashcards/CardDialog.tsx`;

@@ -110,6 +110,14 @@ function systemCopy(data: AppNotification['data']) {
         body: m.notification_system_deletion_cancelled_body(),
         title: m.notification_system_deletion_cancelled_title(),
       };
+    case 'workspace_invite_accepted':
+      return {
+        body: m.notification_system_invite_accepted_body({
+          memberName: dataString(data, 'memberName'),
+          workspaceName: dataString(data, 'workspaceName'),
+        }),
+        title: m.notification_system_invite_accepted_title(),
+      };
   }
   return { body: '', title: m.notifications_title() };
 }

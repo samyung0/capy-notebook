@@ -1,5 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { keepsFocus, openRequestedPresenter } from './useOfficeRuntime';
+import { m } from '@/i18n';
+import {
+  keepsFocus,
+  officeNotices,
+  openRequestedPresenter,
+} from './useOfficeRuntime';
 
 // Capy's vitest has no DOM, so these elements are outside any dialog or menu
 // (`closest` finds nothing); the e2e checks an open menu.
@@ -74,5 +79,34 @@ describe('a presenter window the frame asks for', () => {
       openRequestedPresenter(menus, id, open);
     openRequestedPresenter(null, 'view.presenterView', open);
     expect(open).not.toHaveBeenCalled();
+  });
+});
+
+describe('the notices a frame shows', () => {
+  it('toasts a notice once per frame, and again in a new frame', () => {
+    const toast = vi.fn();
+    const notices = officeNotices(toast);
+    for (let key = 0; key < 3; key += 1)
+      notices.show('equation-text', 2_097_152);
+    expect(toast).toHaveBeenCalledTimes(1);
+    expect(toast).toHaveBeenCalledWith(m.files_office_equation_text());
+    notices.frame();
+    notices.show('equation-text', 2_097_152);
+    expect(toast).toHaveBeenCalledTimes(2);
+  });
+
+  it('toasts every refused image, naming the session cap for its size', () => {
+    const toast = vi.fn();
+    const notices = officeNotices(toast);
+    for (let pick = 0; pick < 2; pick += 1) {
+      notices.show('image-too-large', 2_097_152);
+      notices.show('image-type', 2_097_152);
+    }
+    expect(toast.mock.calls).toEqual([
+      [m.image_too_large({ limit: '2 MB' })],
+      [m.image_unreadable()],
+      [m.image_too_large({ limit: '2 MB' })],
+      [m.image_unreadable()],
+    ]);
   });
 });

@@ -21,7 +21,7 @@ fn room(state: &[u8]) -> Doc {
 /// The validator as the room task holds it: its bound seeded by a first
 /// admission.
 fn validator(room: &Doc) -> Validator {
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     let nothing = room
         .transact()
         .encode_state_as_update_v1(&room.transact().state_vector());

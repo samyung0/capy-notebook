@@ -95,3 +95,53 @@ func TestThumbnailCaptureRaisesOneTreeEvent(t *testing.T) {
 	case <-time.After(300 * time.Millisecond):
 	}
 }
+
+// An Office file's card is stale once a saved change is newer than its last
+// accepted capture, less ThumbnailStaleSlack (a capture claimed just after a
+// change may not hold it); with no capture yet (ingest's render of the
+// upload), once any change is saved. An open session without a saved change
+// is not.
+func TestThumbnailStaleFollowsTheLastSavedChange(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "stale_owner")
+	_, file := sourceTestFile(t, s, owner, "plan.docx", "doc")
+	stale := func(want bool, what string) {
+		t.Helper()
+		if got, err := s.ThumbnailStale(ctx, file.ID); err != nil || got != want {
+			t.Fatalf("%s: stale = %v %v, want %v", what, got, err, want)
+		}
+	}
+	stale(false, "never opened")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	stale(false, "opened, nothing saved")
+	save := func() {
+		t.Helper()
+		if _, err := s.SaveSourceCheckpoint(ctx, file.ID, sourceTestSave(doc, owner, "state-"+uid("s"))); err != nil {
+			t.Fatal(err)
+		}
+		var err error
+		if doc, err = s.SourceSession(ctx, owner, file.ID); err != nil {
+			t.Fatal(err)
+		}
+	}
+	save()
+	stale(true, "no capture, a saved change")
+	// A capture claimed now, `after` the last saved change.
+	captured := func(after time.Duration) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `UPDATE files SET thumbnail_captured_at = now() WHERE id = $1`, file.ID); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at = now() - make_interval(secs => $2)
+			WHERE file_id = $1`, file.ID, after.Seconds()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	captured(ThumbnailStaleSlack - time.Second)
+	stale(true, "captured within the slack after the last change")
+	captured(ThumbnailStaleSlack + time.Second)
+	stale(false, "captured past the slack after the last change")
+	save()
+	stale(true, "a change saved after the capture")
+}

@@ -8,6 +8,12 @@ import type { MermaidTheme } from './mermaidThemes';
  * block, its source a Y.Text attribute (shape A, Epo 2026-10-10) and its
  * caption the text of its `mermaid_caption` child. */
 
+/** The element whose key is held as shared text, and that key: the embed
+ * catalog's one `sharedText` entry, as the slate-yjs patch and the
+ * collaboration server hold it (liveCatalog.test.ts). */
+export const SHARED_TEXT_ELEMENT = 'mermaid';
+export const SHARED_TEXT_KEY = 'source';
+
 /** A source the room still holds as a string turns into a text under this
  * origin, outside every Undo. */
 const UPGRADE = Symbol('mermaid-source-upgrade');
@@ -31,7 +37,7 @@ export function readMermaid(doc: Y.Doc): LiveMermaid | null {
     const block = op.insert;
     if (
       !(block instanceof Y.XmlText) ||
-      block.getAttribute('type') !== 'mermaid'
+      block.getAttribute('type') !== SHARED_TEXT_ELEMENT
     )
       continue;
     const [first] = block.toDelta() as { insert: unknown }[];
@@ -39,7 +45,7 @@ export function readMermaid(doc: Y.Doc): LiveMermaid | null {
       block,
       caption: first?.insert instanceof Y.XmlText ? first.insert : null,
       id: String(block.getAttribute('id') ?? ''),
-      source: block.getAttribute('source') as Y.Text | string,
+      source: block.getAttribute(SHARED_TEXT_KEY) as Y.Text | string,
       theme: block.getAttribute('theme') as MermaidTheme | undefined,
       width: block.getAttribute('width') as string | undefined,
     };
@@ -88,10 +94,10 @@ export function useMermaid(doc: Y.Doc | null | undefined): LiveMermaid | null {
 /** A `mermaid` block's source text, made one first (outside Undo) when the
  * room still holds a string. */
 export function blockSource(block: Y.XmlText): Y.Text {
-  const held: unknown = block.getAttribute('source');
+  const held: unknown = block.getAttribute(SHARED_TEXT_KEY);
   if (held instanceof Y.Text) return held;
   const text = new Y.Text(typeof held === 'string' ? held : '');
-  const apply = () => block.setAttribute('source', text as never);
+  const apply = () => block.setAttribute(SHARED_TEXT_KEY, text as never);
   if (block.doc) block.doc.transact(apply, UPGRADE);
   else apply();
   return text;

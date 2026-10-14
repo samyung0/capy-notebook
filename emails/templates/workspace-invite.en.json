@@ -1,38 +1,20 @@
 {
   "schemaVersion": 1,
-  "subject": "You're invited to join {{.WorkspaceName}} on Capy Notebook",
-  "preview": "You have a new Capy Notebook workspace invitation.",
+  "subject": "{{.InviterName}} invited you to {{.WorkspaceName}} on Capy Notebook",
+  "preview": "Join the workspace to study its files together.",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
-          }
-        ]
-      },
-      {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [
-          { "type": "text", "text": "You have a workspace invitation" }
-        ]
-      },
-      {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "Hello," }]
-      },
-      {
-        "type": "paragraph",
-        "content": [
-          { "type": "text", "text": "You have been invited to join " },
+            "text": "Join "
+          },
           {
             "type": "variable",
             "attrs": {
@@ -41,7 +23,127 @@
               "required": true
             }
           },
-          { "type": "text", "text": " on Capy Notebook." }
+          {
+            "type": "text",
+            "text": " on Capy Notebook"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "InviterName",
+              "label": "Inviter name",
+              "required": true
+            },
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "text": " invited you to the "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "WorkspaceName",
+              "label": "Workspace name",
+              "required": true
+            },
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
+          },
+          {
+            "type": "text",
+            "text": " workspace."
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#f3f0fb",
+          "borderColor": "#e2dbf6",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Workspace: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "WorkspaceName",
+                  "label": "Workspace name",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Access: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "Access",
+                  "label": "Access",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Invited by: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "InviterName",
+                  "label": "Inviter name",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
         ]
       },
       {
@@ -60,7 +162,7 @@
         "content": [
           {
             "type": "text",
-            "text": "Open this link if the button does not work: "
+            "text": "Button not working? Open this link: "
           },
           {
             "type": "variable",
@@ -83,13 +185,27 @@
           }
         ]
       },
-      { "type": "horizontalRule" },
+      {
+        "type": "horizontalRule"
+      },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "text": "You received this message because a Capy Notebook workspace invited you."
+            "text": "You got this email because "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "InviterName",
+              "label": "Inviter name",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " invited you to a Capy Notebook workspace. If you weren't expecting it, you can ignore it."
           }
         ]
       },
@@ -98,6 +214,7 @@
         "content": [
           {
             "type": "text",
+            "text": "Stop workspace invitation emails",
             "marks": [
               {
                 "type": "link",
@@ -108,8 +225,7 @@
                   "rel": "noopener noreferrer nofollow"
                 }
               }
-            ],
-            "text": "Manage product email preferences"
+            ]
           }
         ]
       }

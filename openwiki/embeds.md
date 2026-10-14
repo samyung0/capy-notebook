@@ -9,7 +9,7 @@ that handles it. The **embed catalog** lists all of it in one place:
 
 | File | For |
 | --- | --- |
-| `pipeline/pipeline/generated/embeds.json` | the pipeline (package data) |
+| `pipeline/pipeline/generated/embeds.json` | the pipeline (package data, read by `retrieval/embeds.py`) |
 | `src/api/embeds.generated.ts` | the browser (`EMBED_CATALOG`, typed by its literal values) |
 | `collaboration-rs/crates/notes/src/catalog.rs` | the collaboration server (`notes::catalog`) |
 
@@ -23,10 +23,9 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
 
 - **`elements`**: every element type a stored document or a room may hold,
   including Plate's transient ones (a media `placeholder` while it uploads,
-  `mention_input` and `slash_input` while typing) and the markdown import's
-  footnotes (`footnoteReference`, `footnoteDefinition`; no block renders them
-  yet, so the read-only kit and the editor register only their flags,
-  `footnotePlugins.ts`). For each: `void`,
+  `mention_input` and `slash_input` while typing). Markdown footnotes are not
+  elements: the import turns them into text (see the note imports section of
+  `frontend/plate-editor.md`). For each: `void`,
   `inline`, `topLevel` (only a top-level block), `required` keys besides
   `type` and `children`, `fields` (the closed key set, when there is one),
   `forbidden` keys, `sharedText` keys (held as a Y.Text so typing merges;
@@ -46,7 +45,55 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   (`validateCatalogKeys`, `followsCatalog`), and Go's `ValidateKind` refuses
   an element in a material kind the catalog does not list for it. The
   browser's import keeps a reference's `pending` fence body until the row
-  exists; the store refuses one.
+  exists; the store refuses one. The collaboration server's store
+  (`notes::material::assert_canonical`) applies the same rules as Go: each
+  element's own checks, then the catalog's key rules, then every element
+  placed by its material kinds, a type it does not list refused (`unknown
+  element type`), and its messages are Go's ("chart, plot and graph"). Room
+  admission (`notes::limits`) refuses, as the update arrives, what that
+  store would refuse, so one writer's update is lost instead of the room's
+  unsaved state, except the cases listed after: a block given a type the catalog
+  does not list for the room's material kind (`may_hold`: a reference goes
+  into a note, not a mindmap or diagram), or a top-level-only block (a
+  reference, a figure, an interactive block) below the top level; a key the
+  catalog forbids its element; a key outside a closed element's `fields`
+  (written on a chart, plot, graph or html_embed, or held by a block retyped
+  to one, whatever `type` the update writes beside it, which may lose Yjs's
+  conflict order: checked on a copy of the room, as media are); a value the
+  store refuses (a reference's `refKind`, a video's provider and id, a
+  width, an interactive block's html size and caption, a figure's `block`, a
+  Mermaid source); an eleventh interactive block (counted on the copy when
+  an update makes one); or an element left without a key it requires
+  (`OWN_KEYS`: the catalog's `required`, less the top-level `id` every block
+  needs and a media block's `assetId`, which the media check reads). Not
+  checked yet, each written only by a crafted update and refused at the
+  store: two top-level blocks given one `id` (checking it would read every
+  top-level id per update that makes a block, about 10,000 lookups per Enter
+  in a near-limit note), text inside a void block, a Mermaid block's caption
+  child removed or holding an element, a material kind's required element
+  deleted (a diagram's `mermaid`), and the obsolete `suggestion` and element
+  `text` keys. At load the room runs the store's whole check once, on
+  the background step that measures it: a note, mindmap or diagram the store
+  would refuse (a type the catalog does not list, or not for this kind, a
+  closed element's extra key, a reference without its row, duplicate ids,
+  ...), or a quiz either of whose documents holds a question block kind its
+  rooms do not admit, loads read-only: every writer joins read-only and
+  hears `room-read-only` with `code: unsupported_block`, its updates and
+  drafts are refused (`permission`), a note or diagram editor drops to View
+  under a strip saying "This document has a block this version of Capy
+  can't edit" (`CenterContent`) and a quiz editor shows its questions to
+  read under the same strip, an unreadable block drawn as the unsupported
+  notice (`liveQuiz.ts`, which never writes over it); readers join as usual,
+  and no projection or service edit rebuilds such a quiz (a refused
+  projection is logged once and not retried while the stored version
+  stays). The load logs why a room is read-only, once, with its name
+  (`room loads read-only`, the store's reason). A stored note
+  whose reference still carries an imported fence body (`pending`, the
+  quiz's answer keys) is not served at
+  all: its room refuses to load, as Go's reads refuse it (`Model::stored`). Only `mermaid.source` is shared
+  text: the server holds it as `plate::SHARED_TEXT_KEY` on
+  `SHARED_TEXT_ELEMENT`, the browser as `liveMermaid.ts`'s constants and in
+  the `@slate-yjs/core` patch.
 - **`embeds`**: the rich kinds, with their name per layer, storage class,
   where they render (`surfaces`) and who edits them (`edit.user` surfaces,
   `edit.agent` tools):
@@ -78,7 +125,8 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   item (quiz, flashcards).
 - **`limits`**: `HTML_EMBED_MAX_BYTES`, `HTML_EMBED_MAX_COUNT`,
   `MEDIA_WIDTH_MIN`/`MAX`, `CARD_FRONT_MAX`/`CARD_BACK_MAX` and the question
-  bounds (`fieldlimits.QuestionBounds`). The Rust file declares each as a
+  bounds (`fieldlimits.QuestionBounds`). The notes and items crates read
+  them there, with no copy of their own. The Rust file declares each as a
   constant (`QUESTION_IMAGE_DIMENSION_MAX` and `QUESTION_MARKS_MAX` as `f64`).
 
 ## Adding an element or an embed kind
@@ -92,4 +140,15 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
    every-block note and a document of each material kind: add a sample of a
    new element there), `src/features/notes/embedCatalog.test.ts` (the
    read-only plugin kit, chat's component for each kind, and each kind's
-   fence in and out: add a fence body for a new kind), and the collaboration server's tests (todo-embeds.md).
+   fence in and out: add a fence body for a new kind), the collaboration
+   server's `collaboration-rs/crates/notes/tests/catalog.rs` (the store and
+   room admission over a document of each material kind, the shared-text
+   key, the media types, inspect per embed kind, reference kinds, each
+   kind's required element, Go's figure messages: add a sample of a new
+   element to its `documents()`) and the items crate's
+   (`item_kinds_are_the_catalogs`, `every_admitted_block_kind_round_trips`),
+   and the live browser layer's: `src/features/collaboration/liveCatalog.test.ts`
+   (the shared-text key through the slate-yjs patch, each item kind's
+   read), `liveQuiz.test.ts` (every question block written and read back;
+   an unknown one throws), `pendingRefs.test.ts` and `AppEmbed.test.tsx`
+   (each item kind drawn as itself; an unknown one throws).

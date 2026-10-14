@@ -1112,22 +1112,69 @@ def test_recovered_table_block_carries_spans_and_citation_box() -> None:
     assert block["bbox"][1] < 100 / 800 * 1000
 
 
-def test_page_text_reads_each_page_once_within_its_budget(tmp_path, monkeypatch):
+def test_page_text_extracts_each_page_once_and_rebuilds_mupdf_dicts(
+    tmp_path, monkeypatch
+):
     path = tmp_path / "two.pdf"
     document = pymupdf.open()
-    for words in ("one two three", "four five six seven"):
-        document.new_page().insert_text((72, 72), words)
+    page = document.new_page()
+    page.insert_text((72, 72), "one two", fontname="helv")
+    page.insert_text((140, 72), "three", fontname="tiro", fontsize=9)
+    page.insert_text((72, 300), "turned", rotate=90)
+    document.new_page().insert_text(
+        (72, 72), "four five six seven eight nine ten eleven twelve thirteen"
+    )
     document.save(path)
-    monkeypatch.setattr(page_text, "SPAN_BUDGET", 1)  # room for the first page
+    original = pymupdf.Page.get_text
+    reads = []
+
+    def counted(self, *args, **kwargs):
+        reads.append(self.number)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pymupdf.Page, "get_text", counted)
     with pymupdf.open(path) as document, page_text.session(path):
-        first, second = document[0], document[1]
-        assert page_text.page_dict(first) is page_text.page_dict(first)
-        assert page_text.page_dict(second) is not page_text.page_dict(second)
-        assert page_text.page_dict(second) == second.get_text(
-            "dict", flags=page_text.TEXT_FLAGS
-        )
-    with pymupdf.open(path) as document:  # outside a session nothing is kept
-        assert page_text.page_dict(document[0]) is not page_text.page_dict(document[0])
+        for page in document:
+            for _ in range(2):  # key for key, float for float, every time
+                assert repr(page_text.page_dict(page)) == repr(
+                    original(page, "dict", flags=page_text.TEXT_FLAGS)
+                )
+                assert repr(page_text.page_raw(page)) == repr(
+                    original(page, "rawdict", flags=page_text.TEXT_FLAGS)
+                )
+        assert reads == [0, 1]
+        # Plain text holds every kept character: page 1's 48 need no read.
+        assert ocr.textless_pages(document) == [0]
+        assert reads == [0, 1, 0]
+    assert page_text._session is None  # nothing outlives the parse
+    with pymupdf.open(path) as document:  # outside a session, MuPDF reads it
+        page_text.page_dict(document[0])
+    assert reads == [0, 1, 0, 0]
+
+
+def test_page_text_reads_pages_past_the_budget_from_mupdf(tmp_path, monkeypatch):
+    path = tmp_path / "two.pdf"
+    document = pymupdf.open()
+    for text in ("first page", "second page"):
+        document.new_page().insert_text((72, 72), text)
+    document.save(path)
+    original = pymupdf.Page.get_text
+    reads = []
+
+    def counted(self, *args, **kwargs):
+        reads.append(self.number)
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(pymupdf.Page, "get_text", counted)
+    monkeypatch.setattr(page_text, "CHAR_BUDGET", 1)
+    with pymupdf.open(path) as document, page_text.session(path):
+        for page in document:
+            for _ in range(2):
+                assert repr(page_text.page_dict(page)) == repr(
+                    original(page, "dict", flags=page_text.TEXT_FLAGS)
+                )
+    # The first page spends the budget; the second is read on each call.
+    assert reads == [0, 1, 1]
 
 
 def _joined_page(lines: list[tuple[str, float]], fontname: str = "helv"):

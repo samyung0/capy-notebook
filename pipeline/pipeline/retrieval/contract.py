@@ -15,7 +15,7 @@ from typing import Any
 
 from jsonschema import Draft202012Validator, ValidationError
 
-SUPPORTED_VERSION = 24
+SUPPORTED_VERSION = 25
 
 
 def _load() -> dict[str, Any]:
@@ -46,9 +46,7 @@ MEDIA_BLOCKS: dict[str, dict[str, Any]] = CONTRACT["mediaBlocks"]
 # Tools whose handlers check every argument themselves, naming each problem at
 # once with its path, and save the valid questions of a call
 # (retrieval/questions.py).
-HANDLER_CHECKED = frozenset(
-    {"add_questions", "add_open_question", "add_question_media"}
-)
+HANDLER_CHECKED = frozenset({"add_questions", "add_question_media"})
 
 _validators: dict[str, Draft202012Validator] = {}
 for _name, _definition in DEFINITIONS.items():
@@ -65,6 +63,47 @@ for _name, _definition in DEFINITIONS.items():
 
 def definition(name: str) -> dict[str, Any] | None:
     return DEFINITIONS.get(name)
+
+
+def blank(value: Any) -> bool:
+    """A value the model sent for nothing: null, blank text, the text "null"
+    or "~" (YAML's null, read as text in a fence), an empty list or an empty
+    object."""
+    if isinstance(value, str):
+        return value.strip().lower() in ("", "null", "~")
+    return value is None or value == [] or value == {}
+
+
+def drop_blanks(schema: dict[str, Any], value: Any) -> Any:
+    """``value`` without the blank properties ``schema`` does not require, at
+    any depth the schema describes (properties, array items, and an edit
+    command's variant by its type). Blank means absent (Epo 2026-10-13); a
+    required property is kept as sent, so its own check still names it."""
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        return [drop_blanks(schema["items"], v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    if "oneOf" in schema:
+        variant = next(
+            (
+                v
+                for v in schema["oneOf"]
+                if v.get("properties", {}).get("type", {}).get("const")
+                == value.get("type")
+            ),
+            None,
+        )
+        if variant is None:
+            return value
+        schema = variant
+    if "properties" not in schema:
+        return value
+    required = set(schema.get("required", ()))
+    return {
+        k: drop_blanks(schema["properties"].get(k, {}), v)
+        for k, v in value.items()
+        if k in required or not blank(v)
+    }
 
 
 def validate_args(name: str, args: dict[str, Any]) -> str | None:

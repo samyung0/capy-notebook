@@ -1,6 +1,8 @@
 import type { Descendant } from 'platejs';
 import { expect, it } from 'vitest';
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import {
+  MATERIAL_REF_TYPE,
   type MaterialRefKind,
   materialRefNode,
 } from '@/features/materials/document';
@@ -47,4 +49,35 @@ it('points every fence at its new row, nested ones too, and drops a failed one',
   expect(resolved[2]).toMatchObject({
     children: [{ children: [{ materialId: 'row_2', type: 'material_ref' }] }],
   });
+});
+
+/* The key a fence body waits under is the one the embed catalog forbids on a
+ * stored reference (the store and the room refuse it), and nothing resolved
+ * carries a key the catalog forbids its element. */
+it('leaves no key the embed catalog forbids', async () => {
+  const forbidden = new Map<string, readonly string[]>(
+    EMBED_CATALOG.elements.map((element) => [
+      element.type,
+      'forbidden' in element ? element.forbidden : [],
+    ])
+  );
+  const reference = materialRefNode('', 'quiz', 'questions: []');
+  expect(
+    Object.keys(reference).filter((key) =>
+      forbidden.get(MATERIAL_REF_TYPE)?.includes(key)
+    )
+  ).toEqual(['pending']);
+  const resolved = await resolvePendingRefs(
+    [reference] as unknown as Descendant[],
+    async () => ({ id: 'row' })
+  );
+  const carried = (node: Record<string, unknown>): string[] => [
+    ...Object.keys(node).filter((key) =>
+      forbidden.get(String(node.type))?.includes(key)
+    ),
+    ...((node.children as Record<string, unknown>[] | undefined) ?? []).flatMap(
+      carried
+    ),
+  ];
+  expect(resolved.flatMap((node) => carried(node as never))).toEqual([]);
 });

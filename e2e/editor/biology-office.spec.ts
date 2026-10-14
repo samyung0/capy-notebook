@@ -1078,7 +1078,7 @@ test.describe('DOCX on a phone', () => {
       );
       if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
       iframe.contentWindow.postMessage(
-        { citation: { quote: text }, type: 'set-citation', version: 9 },
+        { citation: { quote: text }, type: 'set-citation', version: 10 },
         new URL(iframe.src).origin
       );
     }, quote);
@@ -1463,7 +1463,7 @@ test('a PPTX citation on a zoomed slide scrolls into view', async ({
         {
           citation: { quote: 'UAT_RUN_MARKER' },
           type: 'set-citation',
-          version: 9,
+          version: 10,
         },
         new URL(iframe.src).origin
       );
@@ -1623,7 +1623,7 @@ for (const [format, text] of [
         );
         if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
         iframe.contentWindow.postMessage(
-          { id, type: 'menu-command', version: 9 },
+          { id, type: 'menu-command', version: 10 },
           new URL(iframe.src).origin
         );
       },
@@ -1789,7 +1789,7 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
         );
         if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
         iframe.contentWindow.postMessage(
-          { canEdit, type: 'set-capabilities', version: 9 },
+          { canEdit, type: 'set-capabilities', version: 10 },
           new URL(iframe.src).origin
         );
       }, canEdit);
@@ -1977,7 +1977,7 @@ test('a view-only XLSX viewer still selects and copies a cell after canEdit:fals
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 9 },
+      { canEdit: false, type: 'set-capabilities', version: 10 },
       new URL(iframe.src).origin
     );
   });
@@ -2193,7 +2193,7 @@ test('DOCX View › Show ruler is remembered, edit mode only, and stays usable w
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 9 },
+      { canEdit: false, type: 'set-capabilities', version: 10 },
       new URL(iframe.src).origin
     );
   });
@@ -2310,7 +2310,7 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
     );
     if (!iframe?.contentWindow) throw new Error('Missing Office runtime');
     iframe.contentWindow.postMessage(
-      { canEdit: false, type: 'set-capabilities', version: 9 },
+      { canEdit: false, type: 'set-capabilities', version: 10 },
       new URL(iframe.src).origin
     );
   });

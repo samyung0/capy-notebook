@@ -26,13 +26,17 @@ describe('office host protocol', () => {
 
     expect(isOfficeHostMessage({ ...load, mode: 'view' })).toBe(true);
     expect(isOfficeHostMessage({ ...load, mode: 'edit' })).toBe(false);
-    expect(
-      isOfficeHostMessage({
-        ...load,
-        collaboration: { epoch: 1, initialUpdate: new ArrayBuffer(2) },
-        mode: 'edit',
-      })
-    ).toBe(true);
+    const edit = {
+      ...load,
+      collaboration: { epoch: 1, initialUpdate: new ArrayBuffer(2) },
+      mode: 'edit',
+    };
+    expect(isOfficeHostMessage({ ...edit, imageMaxBytes: 2_097_152 })).toBe(
+      true
+    );
+    // An editor always knows the payer's image cap.
+    for (const imageMaxBytes of [undefined, 0, -1, 1.5, '2097152'])
+      expect(isOfficeHostMessage({ ...edit, imageMaxBytes })).toBe(false);
     expect(isOfficeHostMessage(load)).toBe(false);
   });
 
@@ -286,6 +290,16 @@ describe('office host protocol', () => {
     expect(isOfficeRuntimeMessage(rendered([{ ...page, bytes: 'png' }]))).toBe(
       false
     );
+    // A refusal is a notice, not the runtime's error.
+    const notice = (value: unknown) => ({
+      notice: value,
+      revision: 1,
+      type: 'notice',
+      version: OFFICE_PROTOCOL_VERSION,
+    });
+    for (const value of ['equation-text', 'image-too-large', 'image-type'])
+      expect(isOfficeRuntimeMessage(notice(value))).toBe(true);
+    expect(isOfficeRuntimeMessage(notice('anything'))).toBe(false);
     // A failed render is its own reply, not the runtime's error.
     expect(
       isOfficeRuntimeMessage({

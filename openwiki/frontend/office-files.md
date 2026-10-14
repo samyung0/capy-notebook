@@ -89,6 +89,12 @@ Until parser-tolerant XLSX binding lands, any change under `crates/xlsx-parse`,
 `crates/xlsx-model` or `crates/betteroffice-xlsx` counts as seed-changing for
 XLSX: a room binds to a fingerprint of the whole parse, which four golden
 workbooks cannot vouch for.
+The pin bringing the fork's capy/parity-docx work is seed-changing for DOCX
+bases that hold SmartArt or `w:ruby`: a phonetic guide becomes one unit
+carrying its run's marks, a drawn SmartArt shape carries its source XML, and
+a SmartArt frame the parser cannot draw becomes a raw unit. The goldens hold
+neither, so the seed check on each environment decides whether DOCX joins the
+reset.
 
 ## Browser loading model
 
@@ -301,7 +307,18 @@ changed, over the fingerprinted source that every open requires:
   package, resolved at lowering; an inserted image keeps its data URL until the
   next publication rebases it into a reference. Charts and drawings the model
   cannot draw (`w:pict`, `w:object`, `mc:AlternateContent`) travel as raw XML
-  and export unchanged until edited. A comment range covers the same content
+  and export unchanged until edited, as do SmartArt frames (drawn from their
+  diagram parts) and phonetic guides (`w:ruby`, shown as their base text in
+  their run's formatting, one unit the caret steps over, the run's `w:rPr`
+  saved with them). The bullet and number buttons write the two `w:num` ids
+  after the source's, and the export defines each id a list paragraph uses
+  that the numbering lacks as the kind the editor shows (`listIsBullet`), in
+  the numbering part its relationship names (written afresh when missing or
+  holding no element; a part in another encoding or with another root refuses
+  the save rather than lose its definitions), and with either button id the
+  other, so lists rebased across a publication keep their kind (Epo
+  2026-10-13). A `w:num` with no abstract numbering draws no list.
+  A comment range covers the same content
   from one publication to the next within the story it opened in: the seed
   gives each unit inside a range to every comment open there (another
   comment's reference mark only when the range goes on past it), and the
@@ -335,9 +352,24 @@ changed, over the fingerprinted source that every open requires:
   fails explicitly when the result does not reproduce the latest workbook. An
   array formula keeps its `t="array"` range only while its anchor cell still
   holds its original content; otherwise it saves as a single-cell formula.
+  A row or column insert or delete also moves note and threaded-comment
+  references, note shapes (VML), picture anchors and protected ranges (whole
+  rows and columns too); a note or thread on a deleted cell goes with it, and
+  a protected range deleted whole is dropped. A note drawing that is not
+  well-formed XML is written back unchanged while its notes move, so Excel
+  may show a moved note's box at its old cell; a comments part that cannot
+  be parsed fails the save.
 - PPTX keeps no parsed package or media in Yjs: both come from the source
   package. Inserted pictures stay binary on their shape until a publication
   writes them into the package. Comments live in `pptx:comments`.
+  Objects the editor does not model (charts, SmartArt, video, audio,
+  equations) keep their markup, parts and relationships on an edited slide.
+  Deleting an animated shape, a video or audio drops, in one linear pass, its
+  time nodes, the triggers it was, what waited on them and orphaned build
+  entries, and `p:timing` once nothing is left. An equation (math in
+  `mc:Choice`, its picture in `mc:Fallback`) moves in both branches and
+  refuses text edits with `EquationTextError`, which the runtime reports as
+  the `equation-text` notice.
 
 A publication rebases the edits saved after its capture onto seed(export) in
 every format (`rebaseOffice` in `vendor/betteroffice/shared/office-checkpoint.ts`),
@@ -807,7 +839,24 @@ waits for the editor's replica, as the old Save button did. A click sends
 `menu-command` {id, value?}; an item's parameter rides in its id after a colon
 ("zoom:125"), `value` carries only the grid's "<rows>x<cols>". Items marked
 `pick: 'image'` open Capy's own file picker, because a click in the host gives
-the frame no user activation, and the file goes over as `menu-file`. For the
+the frame no user activation, and the file goes over as `menu-file`. Every
+inserted image (that file, one picked from the editor's own toolbar button, or
+a DOCX picture watermark) passes the editor's `prepareImage` first: the runtime
+shrinks one over the payer's plan image cap, which the edit `load` carries as
+`imageMaxBytes` (protocol v10; an edit session without one fails with the file
+error instead of loading), and re-encodes any type but PNG, JPEG and GIF, to
+JPEG or PNG (`fitImage` with `office`;
+[backend-storage-quota.md](../backend-storage-quota.md)). An image it cannot fit
+or decode reaches the runtime through the editor's `onError` as an
+`ImageTooLargeError` or `ImageUnreadableError`; the runtime sends a `notice`
+(`image-too-large` or `image-type`, beside parity-px's `equation-text`)
+instead of `error`, and Capy shows a toast for each pick, leaving the document
+and the editor as they were (the PPTX editor treats a `prepareImage` refusal
+as it does `EquationTextError`: no error box of its own). While it
+prepares, DOCX reports pending input and ignores another pick, as PPTX reports
+its pending insert; when the picture lands, an editor takes the focus back only
+if its frame still has it, so a slow shrink leaves a Capy menu, the chat box or
+a dialog the user moved to alone. For the
 same reason items marked `fullscreen` (and a header action marked so) go over
 with the click's full-screen permission, and items marked `popup: 'presenter'`
 have Capy open the PPTX presenter window first (`officeCommandNeeds`, see PPTX
@@ -954,16 +1003,21 @@ the font picker and the size box are hidden. The row scrolls sideways: a
 vertical mouse wheel scrolls it, and an edge with more to scroll fades
 (`data-scroll-start`/`-end`, so it needs no scroll-driven animations). The DOCX
 menus (`hostMenus.tsx` in the fork, Capy's icons and File › Download and Print
-added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Page setup,
-Print), Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
+added in `docxMenus.ts`) are File (Save, Download ▸ Word document, Print),
+Edit (Undo, Redo, Select all, Delete, Find and replace), View (Show
 ruler ✓, Show document outline ✓, Show comments ✓, Zoom ▸), Insert (Image, Table ▸, Link,
-Comment, Watermark, Break ▸, Table of contents, and Update table of contents
+Comment, Break ▸, Table of contents, and Update table of contents
 while the document has one) and Format (Text ▸, Paragraph styles ▸, Align &
 indent ▸, Line spacing ▸, Bullets & numbering ▸, Text direction ▸, Table ▸
 and Image options in context, Clear formatting). Placeholders that do nothing
 stay hidden: Line spacing's empty Paragraph spacing heading. Cut, Copy and
 Paste are left out of the menus (a host click cannot reach the frame's
-clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too).
+clipboard). Find and replace works in edit mode only (Ctrl/Cmd+F and H too),
+over body paragraphs only (not tables, headers, footers or notes). The fork's
+Page setup and Watermark commands are left out of the menus (Epo 2026-10-13):
+they change only the open editor's document model, outside the Yjs state Capy
+saves, so neither would reach the saved file or co-editors; the ruler's margin
+drags still change the open copy only (DOCX parity checklist).
 
 Format › Table ▸ (Google Docs' place) has Vertical alignment ▸
 Top/Middle/Bottom and Table alignment ▸ Left/Center/Right (radio items ticked

@@ -1,16 +1,14 @@
-Capy Notebook
+YOUR ACCOUNT IS SCHEDULED FOR DELETION
 
+We received your request to delete your Capy Notebook account. Your account is locked now. On the date below it will be permanently deleted with all of its workspaces, files, materials and study data.
 
-ACCOUNT DELETION SCHEDULED
+Deletion date: {{.DeletionDate}}
+Days left: {{.GraceDays}}
 
-Hello,
-
-We received your request to delete your Capy Notebook account. Deletion proceeds in {{.GraceDays}} days. At that point, your account and all of its workspaces, files, materials, and other data will be permanently deleted. If this was a mistake, contact support before then.
+Changed your mind? Contact support before {{.DeletionDate}} and we can restore your account. After that date nothing can be recovered.
 
 Contact support {{.OpenURL}}
 
 ----------------------------------------
 
-You received this message because you requested account deletion on Capy Notebook.
-
-Manage product email preferences {{.UnsubscribeURL}}
+You got this email because someone asked to delete your Capy Notebook account. If that wasn't you, contact support right away.

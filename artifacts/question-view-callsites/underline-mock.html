@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Underline Question Mock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400..800&display=swap" rel="stylesheet">
+<style>
+/* Tokens copied from classroom.css: mocha (dark) and latte (light). */
+:root[data-theme="dark"] {
+  --page: #0d1219; --card: #161d27; --field: #121821; --hover: #1a222d;
+  --fg: #e6e9ef; --fg2: #c0c8d4; --muted: #9aa4b3;
+  --line: #323e52; --line-strong: #3a4657; --overlay: #1d2633; --overlay-line: #3f4d64;
+  --accent: #b5a1f8; --accent-fg: #c8b8fa; --accent-bg: #31334b;
+  --ok: #a6e3a1; --ok-fg: #a6e3a1; --ok-bg: #2e3f3c;
+  --bad: #f38ba8; --bad-fg: #f38ba8; --bad-bg: #3c303d;
+  --btn: #cdd4de; --btn-fg: #0d1219; --on-solid: #0d1219;
+}
+:root[data-theme="light"] {
+  --page: #f7f7f7; --card: #ffffff; --field: #ffffff; --hover: #e6e9ea;
+  --fg: #222222; --fg2: #4b4b4b; --muted: #6b6b6b;
+  --line: #d6d6d6; --line-strong: #afafaf; --overlay: #ffffff; --overlay-line: #d6d6d6;
+  --accent: #8c7bd9; --accent-fg: #5b4aa8; --accent-bg: #ece6f6;
+  --ok: #7bd9ab; --ok-fg: #2f7d56; --ok-bg: #e7f6ee;
+  --bad: #f35a71; --bad-fg: #b8475a; --bad-bg: #fdeaec;
+  --btn: #222222; --btn-fg: #ffffff; --on-solid: #ffffff;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--page); color: var(--fg);
+  font: 500 0.925rem/1.45 "Fustat", system-ui, sans-serif;
+}
+.wrap { max-width: 1180px; margin: 0 auto; padding: 32px 16px 80px; }
+header.top { display: flex; justify-content: space-between; align-items: start; gap: 16px; margin-bottom: 8px; }
+h1 { font-size: 1.75rem; font-weight: 800; margin: 0 0 4px; }
+.lede { color: var(--fg2); margin: 0 0 24px; max-width: 70ch; }
+.toggle { border: 1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 12px; padding: 8px 14px; font: inherit; cursor: pointer; }
+.checklist { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 28px; padding: 0; list-style: none; color: var(--muted); font-size: .825rem; }
+.checklist a { color: var(--fg2); }
+
+section.type { background: var(--card); border-radius: 18px; padding: 22px 24px 26px; margin-bottom: 18px; }
+.type > h2 { font-size: 1.125rem; font-weight: 700; margin: 0; }
+.type > .meta { color: var(--muted); font-size: .825rem; margin: 2px 0 18px; }
+.cols { display: grid; gap: 28px; }
+@media (min-width: 900px) { .cols { grid-template-columns: 1fr 1fr; gap: 40px; } }
+.state { color: var(--muted); font-size: .6875rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; margin: 0 0 12px; }
+.q { display: grid; grid-template-columns: 28px 1fr auto; column-gap: 8px; row-gap: 12px; margin-bottom: 26px; }
+.q:last-child { margin-bottom: 0; }
+.q .n { font-weight: 700; }
+.q .stem { grid-column: 2; }
+.q .marks { color: var(--muted); font-size: .75rem; white-space: nowrap; }
+.q .marks.ok { color: var(--ok-fg); font-weight: 700; }
+.q .marks.bad { color: var(--bad-fg); font-weight: 700; }
+.q .marks.part { color: #f9e2af; font-weight: 700; }
+:root[data-theme="light"] .q .marks.part { color: #9a6b12; }
+.q .ans { grid-column: 2 / -1; min-width: 0; }
+.note { grid-column: 2 / -1; color: var(--muted); font-size: .78rem; margin-top: -4px; }
+
+/* ---------- Underline choice rows (mcq, multi, boolean) ---------- */
+.choices { display: grid; column-gap: 28px; }
+@container (min-width: 0) {}
+.choices.two { grid-template-columns: 1fr; }
+@media (min-width: 560px) { .choices.two { grid-template-columns: 1fr 1fr; } }
+.opt {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  min-height: 44px; padding: 8px 2px; text-align: left;
+  background: none; border: 0; border-bottom: 1px solid var(--line);
+  color: var(--fg); font: inherit; cursor: pointer;
+  transition: border-color .12s, color .12s;
+}
+.opt:hover, .opt.hover { border-bottom-color: var(--line-strong); background: linear-gradient(to top, var(--hover), transparent 70%); }
+.key {
+  flex: none; display: grid; place-items: center; width: 22px; height: 22px;
+  border-radius: 6px; color: var(--muted); font-size: .8rem; font-weight: 700;
+}
+.opt .txt { flex: 1; min-width: 0; }
+.tag { flex: none; font-size: .75rem; font-weight: 700; white-space: nowrap; }
+/* selected while answering */
+.opt.sel { border-bottom: 2px solid var(--accent); padding-bottom: 7px; color: var(--accent-fg); }
+.opt.sel .key { background: var(--accent); color: var(--on-solid); }
+/* checked */
+.opt.checked { cursor: default; background: none; }
+.opt.checked.dim .txt { color: var(--muted); }
+.opt.right { border-bottom: 2px solid var(--ok); padding-bottom: 7px; }
+.opt.right .key { background: var(--ok); color: var(--on-solid); }
+.opt.right .tag { color: var(--ok-fg); }
+.opt.wrong { border-bottom: 2px solid var(--bad); padding-bottom: 7px; }
+.opt.wrong .key { background: var(--bad); color: var(--on-solid); }
+.opt.wrong .tag { color: var(--bad-fg); }
+.opt.missed { border-bottom: 2px dashed var(--ok); padding-bottom: 7px; }
+.opt.missed .key { color: var(--ok-fg); box-shadow: inset 0 0 0 1.5px var(--ok); }
+.opt.missed .tag { color: var(--ok-fg); }
+
+/* boolean: two underline tabs side by side */
+.bool { display: grid; grid-template-columns: 1fr 1fr; column-gap: 28px; }
+.bool .opt { justify-content: center; font-weight: 600; }
+.bool .opt .key { display: none; }
+/* Checked rows read like choice rows: marker, label, then the tag on the right. */
+.bool .opt.checked { justify-content: flex-start; }
+.bool .opt.checked .key { display: grid; }
+.bool .opt.checked > span:nth-child(2) { flex: 1; }
+
+/* ---------- Underline text fields ---------- */
+.field { display: flex; align-items: center; gap: 12px; }
+.uline {
+  position: relative; flex: 1; min-width: 0; display: flex; align-items: center;
+  border-bottom: 1px solid var(--line-strong);
+}
+.uline input, .uline textarea {
+  flex: 1; min-width: 0; background: transparent; border: 0; outline: 0;
+  color: var(--fg); font: inherit; padding: 9px 2px 8px;
+}
+.uline input::placeholder, .uline textarea::placeholder { color: var(--muted); }
+.uline:focus-within, .uline.focus { border-bottom: 2px solid var(--accent); }
+.uline:focus-within input, .uline.focus input { padding-bottom: 7px; }
+.uline.ok { border-bottom: 2px solid var(--ok); }
+.uline.bad { border-bottom: 2px solid var(--bad); }
+.uline.ok input, .uline.bad input { padding-bottom: 7px; color: var(--fg); }
+.uline.err { border-bottom: 2px solid var(--bad); }
+.mark-icon { flex: none; display: grid; place-items: center; width: 20px; height: 20px; border-radius: 6px; color: var(--on-solid); font-size: 12px; font-weight: 800; margin-left: 6px; }
+.mark-icon.ok { background: var(--ok); }
+.mark-icon.bad { background: var(--bad); }
+.unit { color: var(--fg2); flex: none; }
+.accepted { margin-top: 8px; font-size: .875rem; }
+.accepted b { color: var(--ok-fg); font-size: .75rem; margin-right: 6px; }
+.err-text { color: var(--bad-fg); font-size: .8rem; margin-top: 6px; }
+.solution { margin-top: 8px; color: var(--fg2); font-size: .85rem; }
+.solution::before { content: "▸ "; }
+
+/* open answer: ruled lines, like an exam paper */
+.ruled { border-bottom: 0; }
+.ruled textarea {
+  resize: vertical; min-height: calc(1.9em * 3 + 4px); line-height: 1.9em; padding: 0 2px;
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(1.9em - 1px), var(--line) calc(1.9em - 1px), var(--line) 1.9em);
+  background-attachment: local;
+}
+.ruled.focus textarea, .ruled:focus-within textarea {
+  background-image: repeating-linear-gradient(to bottom, transparent 0, transparent calc(1.9em - 1px), var(--line-strong) calc(1.9em - 1px), var(--line-strong) 1.9em);
+}
+.ruled:focus-within, .ruled.focus { border-bottom: 0; }
+.count { text-align: right; color: var(--muted); font-size: .75rem; margin-top: 4px; }
+.scheme { margin-top: 10px; display: grid; gap: 4px; font-size: .85rem; }
+.scheme div { display: flex; justify-content: space-between; gap: 12px; }
+.scheme .s-ok { color: var(--ok-fg); font-weight: 700; white-space: nowrap; }
+.scheme .s-part { color: #f9e2af; font-weight: 700; white-space: nowrap; }
+:root[data-theme="light"] .scheme .s-part { color: #9a6b12; }
+.scheme .s-bad { color: var(--bad-fg); font-weight: 700; white-space: nowrap; }
+
+/* gaps: blanks inside the sentence, normal line height */
+.gaps { line-height: 2.1; }
+/* A gap grows with what is typed: a hidden copy of the value (data-value,
+   set on every change) sizes the cell, and the input fills it. Works in every
+   browser, unlike field-sizing. Capped at the line width, so a long answer
+   wraps to its own line and scrolls inside the field instead of overflowing. */
+.gaps { overflow-wrap: anywhere; }
+.gap {
+  display: inline-grid; max-width: 100%; min-width: 7ch; margin: 0 4px; vertical-align: baseline;
+  border-bottom: 1px solid var(--line-strong);
+}
+.gap::after {
+  content: attr(data-value) " "; grid-area: 1 / 1; visibility: hidden; white-space: pre;
+  overflow: hidden; padding: 0 2px; line-height: 1.45; font-weight: 500;
+}
+.gap input { grid-area: 1 / 1; width: 100%; min-width: 0; background: transparent; border: 0; outline: 0; color: var(--fg); font: inherit; text-align: center; padding: 0 2px; line-height: 1.45; text-overflow: ellipsis; }
+.gap-tail { white-space: nowrap; }
+.gap-tail .gap { max-width: calc(100% - 1.5ch); }
+.gap-num { font-size: .65rem; color: var(--muted); vertical-align: super; margin-left: 2px; }
+.key-section { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--line); }
+.key-section h4 { margin: 0 0 6px; font-size: .75rem; font-weight: 700; color: var(--ok-fg); }
+.key-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.key-list li { display: flex; gap: 12px; align-items: baseline; min-height: 30px; padding: 4px 2px; }
+.key-list .key { height: auto; }
+.key-list .was { margin-left: auto; color: var(--muted); font-size: .75rem; white-space: nowrap; }
+
+.gap input::placeholder { color: var(--muted); font-size: .75rem; }
+.gap:focus-within, .gap.focus { border-bottom: 2px solid var(--accent); }
+.gap.ok { border-bottom: 2px solid var(--ok); }
+.gap.bad { border-bottom: 2px solid var(--bad); }
+.gap.bad input:not(:placeholder-shown) { color: var(--bad-fg); text-decoration: line-through; text-decoration-thickness: 1px; }
+
+/* matching */
+.match { display: grid; gap: 16px; }
+@media (min-width: 1000px) { .match.side { grid-template-columns: 1.1fr 1fr; gap: 24px; } }
+.mopts { display: grid; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.mopts li { display: flex; gap: 12px; align-items: baseline; }
+.mopts .key { height: auto; }
+.mrows { display: grid; list-style: none; margin: 0; padding: 0; }
+.mrow { display: flex; align-items: center; gap: 12px; min-height: 44px; }
+.mrow .txt { flex: 1; min-width: 0; }
+.pick {
+  position: relative; flex: none; display: inline-flex; align-items: center; justify-content: space-between; gap: 6px;
+  width: 64px; padding: 6px 2px 5px 6px; background: none; border: 0; border-bottom: 1px solid var(--line-strong);
+  color: var(--fg); font: inherit; font-weight: 700; cursor: pointer;
+}
+.pick .chev { color: var(--muted); font-size: .7rem; }
+.pick.empty { color: var(--muted); font-weight: 500; }
+.pick.open, .pick:focus-visible { border-bottom: 2px solid var(--accent); padding-bottom: 4px; outline: 0; }
+.pick.filled { color: var(--accent-fg); }
+.pick.ok { border-bottom: 2px solid var(--ok); color: var(--ok-fg); cursor: default; padding-bottom: 4px; }
+.pick.bad { border-bottom: 2px solid var(--bad); color: var(--bad-fg); cursor: default; padding-bottom: 4px; }
+.pick.ok .chev, .pick.bad .chev { display: none; }
+.fix { color: var(--ok-fg); font-size: .75rem; font-weight: 700; white-space: nowrap; min-width: 72px; }
+.menu {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 2; width: 260px;
+  background: var(--overlay); border: 1px solid var(--overlay-line); border-radius: 12px; padding: 4px;
+  box-shadow: 0 10px 30px rgb(0 0 0 / .25); text-align: left; font-weight: 500;
+}
+.menu div { display: flex; gap: 10px; padding: 6px 8px; border-radius: 8px; font-size: .85rem; color: var(--fg); }
+.menu div b { color: var(--muted); }
+.menu div.active { background: var(--hover); }
+
+/* ordering */
+.order { display: grid; }
+.orow { display: flex; align-items: center; gap: 12px; min-height: 44px; padding: 4px 0 4px 2px; border-bottom: 1px solid var(--line); }
+.orow .txt { flex: 1; min-width: 0; }
+.orow .arrows { display: flex; gap: 2px; }
+.orow .arrows button { width: 28px; height: 28px; border: 0; background: none; color: var(--muted); border-radius: 8px; cursor: pointer; font-size: .8rem; }
+.orow .arrows button:hover { background: var(--hover); color: var(--fg); }
+.orow .arrows button:disabled { opacity: .35; cursor: default; background: none; }
+.orow.ok { border-bottom: 2px solid var(--ok); }
+.orow.ok .key { color: var(--ok-fg); }
+.orow.bad { border-bottom: 2px solid var(--bad); }
+.orow.bad .key { color: var(--bad-fg); }
+.orow.bad .tag { color: var(--bad-fg); }
+
+
+/* Matching: options stay listed on top; each item picks a letter in a row of
+   underline buttons, beside the item on wide screens and under it on phones. */
+.mrow2 { display: grid; grid-template-columns: auto 1fr; align-items: center; column-gap: 12px; row-gap: 2px; padding: 6px 0; }
+.mrow2 .txt { min-width: 0; }
+.letters { grid-column: 1 / -1; padding-left: 34px; display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Review session: Skip beside Check / the ratings. */
+.session-foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 18px; }
+.session-foot .from { color: var(--muted); font-size: .8rem; }
+.session-foot .actions { display: flex; gap: 8px; margin-left: auto; }
+.btn { border-radius: 12px; padding: 9px 16px; font: inherit; font-weight: 600; cursor: pointer; min-height: 40px; }
+.btn.primary { background: var(--btn); color: var(--btn-fg); border: 0; }
+.btn.lg-r { border-radius: 18px; }
+.btn.outline { background: none; color: var(--fg); border: 1px solid var(--line-strong); }
+.navrow { display: flex; justify-content: flex-end; gap: 8px; margin-top: 28px; }
+/* Button size="sm" variant="outline": 30px tall, 12px radius, like the avatar buttons. */
+.btn-sm { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 16px; border-radius: 12px; border: 1px solid var(--line-strong); background: none; color: var(--fg); font: inherit; font-size: .875rem; font-weight: 600; cursor: pointer; }
+.btn-sm:hover { background: var(--hover); }
+.btn-sm:disabled { opacity: .5; cursor: default; background: none; }
+.rates.done span { opacity: .35; }
+.rates.done span.chosen { opacity: 1; box-shadow: inset 0 0 0 2px currentColor; }
+/* Review summary, in the topic summary's style. */
+.sum { max-width: 760px; }
+.crumb { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: .85rem; margin-bottom: 14px; }
+.crumb b { color: var(--fg2); font-weight: 500; }
+.sum-head { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; }
+.sum-head h3 { font-size: 1.75rem; font-weight: 800; margin: 0; }
+.ulink { color: var(--accent-fg); text-decoration: underline; text-underline-offset: 4px; font-weight: 600; white-space: nowrap; display: inline-flex; gap: 6px; align-items: center; }
+.ulink.plain { color: var(--fg); }
+.sum .meta2 { color: var(--muted); font-size: .825rem; margin: 6px 0 16px; }
+.big { font-size: 2rem; font-weight: 800; }
+.big small { font-size: .85rem; font-weight: 600; color: var(--fg2); margin-left: 6px; }
+.sq { display: flex; flex-wrap: wrap; gap: 4px; margin: 10px 0 8px; }
+.sq span, .chip { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: .65rem; font-weight: 700; color: #1d2633; }
+.s-ok { background: var(--ok); } .s-part { background: #f9e2af; } .s-bad { background: var(--bad); }
+.s-skip { background: transparent !important; color: var(--muted) !important; box-shadow: inset 0 0 0 1.5px var(--line-strong); }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; color: var(--fg2); font-size: .8rem; }
+.legend i { display: inline-block; width: 8px; height: 8px; border-radius: 99px; margin-right: 5px; }
+.sum h4 { color: var(--muted); font-size: .8rem; font-weight: 600; margin: 26px 0 0; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.trow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.trow .mini { display: flex; gap: 3px; } .trow .mini span { width: 10px; height: 10px; border-radius: 3px; }
+.trow .lab { display: flex; gap: 14px; align-items: center; min-width: 0; }
+.trow .lab b { font-weight: 500; min-width: 110px; }
+.trow .val { color: var(--fg2); font-size: .82rem; white-space: nowrap; }
+.look { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.look .t { min-width: 0; } .look .t div { font-size: .9rem; } .look .t span { color: var(--muted); font-size: .78rem; }
+.look .r { display: flex; gap: 14px; align-items: center; font-size: .82rem; color: var(--fg2); white-space: nowrap; }
+.more { display: flex; gap: 8px; align-items: center; color: var(--muted); font-size: .8rem; padding: 12px 0; }
+.next { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.next span { display: block; color: var(--muted); font-size: .78rem; }
+@media (max-width: 559px) { .trow .lab b { min-width: 0; } .trow .lab { flex-wrap: wrap; gap: 4px 10px; } .look .r .sc { display: none; } .sum-head h3 { font-size: 1.5rem; } }
+.left { color: var(--muted); font-size: .8rem; text-align: right; margin-bottom: 10px; }
+.card { border: 1px solid var(--line); border-radius: 18px; min-height: 200px; display: grid; place-items: center; padding: 20px; font-weight: 700; font-size: 1.05rem; }
+.rates { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 12px; }
+.rates span { text-align: center; padding: 9px 0; border-radius: 12px; font-size: .85rem; font-weight: 600; }
+.r1 { background: var(--bad-bg); color: var(--bad-fg); } .r2 { background: #423c2e; color: #f9e2af; } .r3 { background: #2a374b; color: #89b4fa; } .r4 { background: var(--ok-bg); color: var(--ok-fg); }
+:root[data-theme="light"] .r2 { background: #fbf3dd; color: #8a6412; } :root[data-theme="light"] .r3 { background: #e6eefc; color: #2f5fb3; }
+.endcard { text-align: center; padding: 26px 12px; }
+.endcard b { display: block; font-size: 1.375rem; margin-bottom: 6px; }
+.endcard p { color: var(--fg2); margin: 0 0 16px; }
+/* Wider screens keep the underlined dropdown; phones get the letter rows. */
+
+.letter {
+  width: 40px; height: 40px; display: grid; place-items: center; background: none; border: 0;
+  border-bottom: 1px solid var(--line-strong); color: var(--muted); font: inherit; font-weight: 700; cursor: pointer;
+}
+.letter:hover { color: var(--fg); border-bottom-color: var(--fg2); }
+.letter.sel { color: var(--accent-fg); border-bottom: 2px solid var(--accent); }
+.letter.checked { cursor: default; }
+.letter.right { color: var(--ok-fg); border-bottom: 2px solid var(--ok); }
+.letter.wrong { color: var(--bad-fg); border-bottom: 2px solid var(--bad); }
+.letter.missed { color: var(--ok-fg); border-bottom: 2px dashed var(--ok); }
+.letter.dim { opacity: .45; }
+.mrows2 { list-style: none; margin: 0; padding: 0; display: grid; }
+.mrows2 .none { grid-column: 1 / -1; padding-left: 34px; color: var(--muted); font-size: .75rem; }
+/* Wider screens keep the underlined dropdown; phones get the letter rows. */
+.ans .phone-only { display: none; }
+@media (max-width: 559px) { .ans .phone-only { display: grid; } .ans .wide-only { display: none; } }
+
+
+/* Phones: answers use the full width under the number, cards get the 16px gutter. */
+@media (max-width: 559px) {
+  section.type { padding: 18px 16px 22px; border-radius: 16px; }
+  .q { grid-template-columns: auto 1fr auto; }
+  .q .n { min-width: 22px; }
+  .q .ans, .note { grid-column: 1 / -1; }
+  .q .solution { grid-column: 1 / -1 !important; }
+  .mrow .fix { min-width: 0; }
+  /* True/False stacks like multiple choice does on phones, in both states. */
+  .bool { grid-template-columns: 1fr; }
+  .bool .opt { justify-content: flex-start; }
+  .bool .opt > span:nth-child(2) { flex: 1; }
+  /* Touch: arrows grow to a 40px target. */
+  .orow .arrows button { width: 40px; height: 40px; }
+
+}
+footer.notes { color: var(--fg2); font-size: .85rem; max-width: 80ch; }
+footer.notes li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <h1>Underline answer variant</h1>
+      <p class="lede">Every answer type the schema allows (<code>mcq</code>, <code>multi</code>, <code>boolean</code>, <code>short</code>, <code>short</code> + unit, <code>open</code>, <code>gaps</code>, <code>matching</code>, <code>ordering</code>), each in the answering and the checked state. Boxes become a single bottom rule; state is carried by the rule's weight and colour plus the key badge.</p>
+    </div>
+    <button class="toggle" id="theme" type="button">Light theme</button>
+  </header>
+  <ul class="checklist">
+    <li><a href="#mcq">1 Multiple choice</a></li><li><a href="#multi">2 Multiple answers</a></li><li><a href="#bool">3 True / False</a></li>
+    <li><a href="#short">4 Short answer</a></li><li><a href="#unit">5 Short + unit</a></li><li><a href="#open">6 Open answer</a></li>
+    <li><a href="#gaps">7 Fill in the gaps</a></li><li><a href="#matching">8 Matching</a></li><li><a href="#ordering">9 Ordering</a></li><li><a href="#skip">10 Previous / Next</a></li><li><a href="#summary">11 Review summary</a></li>
+  </ul>
+
+  <!-- 1 MCQ -->
+  <section class="type" id="mcq">
+    <h2>1 · Multiple choice</h2><p class="meta">mcq · square letter badge, two-column grid on wide answer areas, one column on phones</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">1.</span><div class="stem">Which organelle produces most of the ATP during aerobic respiration?</div><span class="marks">1 mark</span>
+          <div class="ans choices two">
+            <button class="opt hover"><span class="key">A</span><span class="txt">Nucleus</span></button>
+            <button class="opt sel"><span class="key">B</span><span class="txt">Mitochondria</span></button>
+            <button class="opt"><span class="key">C</span><span class="txt">Golgi apparatus</span></button>
+            <button class="opt"><span class="key">D</span><span class="txt">Ribosome</span></button>
+          </div>
+          <p class="note">A is hovered, B is selected.</p>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">1.</span><div class="stem">Which organelle produces most of the ATP during aerobic respiration?</div><span class="marks bad">0 / 1</span>
+          <div class="ans choices two">
+            <button class="opt checked wrong"><span class="key">✕</span><span class="txt">Nucleus</span><span class="tag">Your answer</span></button>
+            <button class="opt checked missed"><span class="key">B</span><span class="txt">Mitochondria</span><span class="tag">Correct answer</span></button>
+            <button class="opt checked dim"><span class="key">C</span><span class="txt">Golgi apparatus</span></button>
+            <button class="opt checked dim"><span class="key">D</span><span class="txt">Ribosome</span></button>
+          </div>
+          <div class="solution" style="grid-column:2/-1">Worked solution</div>
+        </div>
+        <div class="q"><span class="n">1.</span><div class="stem">Same question, answered right.</div><span class="marks ok">1 / 1</span>
+          <div class="ans choices two">
+            <button class="opt checked dim"><span class="key">A</span><span class="txt">Nucleus</span></button>
+            <button class="opt checked right"><span class="key">✓</span><span class="txt">Mitochondria</span><span class="tag">Your answer</span></button>
+            <button class="opt checked dim"><span class="key">C</span><span class="txt">Golgi apparatus</span></button>
+            <button class="opt checked dim"><span class="key">D</span><span class="txt">Ribosome</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 MULTI -->
+  <section class="type" id="multi">
+    <h2>2 · Multiple answers</h2><p class="meta">multi · same rows as multiple choice; the stem says how many to pick</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">3.</span><div class="stem">Select all the membrane-bound organelles. Two answers are correct.</div><span class="marks">2 marks</span>
+          <div class="ans choices two multi">
+            <button class="opt sel"><span class="key">A</span><span class="txt">Ribosome</span></button>
+            <button class="opt sel"><span class="key">B</span><span class="txt">Nucleus</span></button>
+            <button class="opt"><span class="key">C</span><span class="txt">Mitochondria</span></button>
+            <button class="opt"><span class="key">D</span><span class="txt">Cytosol</span></button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">3.</span><div class="stem">Select all the membrane-bound organelles. Two answers are correct.</div><span class="marks bad">0 / 2</span>
+          <div class="ans choices two multi">
+            <button class="opt checked wrong"><span class="key">✕</span><span class="txt">Ribosome</span><span class="tag">Your answer</span></button>
+            <button class="opt checked right"><span class="key">✓</span><span class="txt">Nucleus</span><span class="tag">Your answer</span></button>
+            <button class="opt checked missed"><span class="key">C</span><span class="txt">Mitochondria</span><span class="tag">Correct answer</span></button>
+            <button class="opt checked dim"><span class="key">D</span><span class="txt">Cytosol</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 BOOLEAN -->
+  <section class="type" id="bool">
+    <h2>3 · True / False</h2><p class="meta">boolean · side by side on wide screens, stacked on phones; checked tags sit on the right like multiple choice</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">2.</span><div class="stem">The cell membrane is a phospholipid bilayer.</div><span class="marks">1 mark</span>
+          <div class="ans bool">
+            <button class="opt sel"><span class="key"></span><span>True</span></button>
+            <button class="opt"><span class="key"></span><span>False</span></button>
+          </div>
+        </div>
+        <div class="q"><span class="n">2.</span><div class="stem">Nothing picked yet.</div><span class="marks">1 mark</span>
+          <div class="ans bool">
+            <button class="opt"><span class="key"></span><span>True</span></button>
+            <button class="opt"><span class="key"></span><span>False</span></button>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">8.</span><div class="stem">Ribosomes are membrane-bound organelles.</div><span class="marks bad">0 / 1</span>
+          <div class="ans bool">
+            <button class="opt checked wrong"><span class="key">✕</span><span>True</span><span class="tag">Your answer</span></button>
+            <button class="opt checked missed"><span class="key">✓</span><span>False</span><span class="tag">Correct answer</span></button>
+          </div>
+        </div>
+        <div class="q"><span class="n">10c.</span><div class="stem">Not answered, then checked.</div><span class="marks bad">0 / 1</span>
+          <div class="ans bool">
+            <button class="opt checked dim"><span class="key"></span><span>True</span></button>
+            <button class="opt checked missed"><span class="key">✓</span><span>False</span><span class="tag">Correct answer</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 SHORT -->
+  <section class="type" id="short">
+    <h2>4 · Short answer</h2><p class="meta">short · single line</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">4.</span><div class="stem">Name the process responsible for the net movement of water into its cells.</div><span class="marks">1 mark</span>
+          <div class="ans"><div class="field"><label class="uline"><input placeholder="Type your answer" aria-label="Your answer"></label></div></div>
+        </div>
+        <div class="q"><span class="n">4.</span><div class="stem">Focused, typing.</div><span class="marks">1 mark</span>
+          <div class="ans"><div class="field"><label class="uline focus"><input value="osmo" aria-label="Your answer"></label></div></div>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">4.</span><div class="stem">Name the process responsible for the net movement of water into its cells.</div><span class="marks ok">1 / 1</span>
+          <div class="ans"><div class="field"><label class="uline ok"><input value="osmosis" disabled><span class="mark-icon ok">✓</span></label></div>
+            <div class="accepted"><b>Accepted answers</b>osmosis</div><div class="solution">Worked solution</div></div>
+        </div>
+        <div class="q"><span class="n">4.</span><div class="stem">Wrong answer.</div><span class="marks bad">0 / 1</span>
+          <div class="ans"><div class="field"><label class="uline bad"><input value="diffusion" disabled><span class="mark-icon bad">✕</span></label></div>
+            <div class="accepted"><b>Accepted answers</b>osmosis</div></div>
+        </div>
+        <div class="q"><span class="n">4.</span><div class="stem">Left empty, then checked.</div><span class="marks bad">0 / 1</span>
+          <div class="ans"><div class="field"><label class="uline bad"><input placeholder="Not answered" disabled><span class="mark-icon bad">✕</span></label></div>
+            <div class="accepted"><b>Accepted answers</b>osmosis</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 SHORT + UNIT -->
+  <section class="type" id="unit">
+    <h2>5 · Short answer with a unit</h2><p class="meta">short + unit · the unit sits after the rule; includes the value-only error</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">9.</span><div class="stem">Calculate its surface-area-to-volume ratio. Enter the value only; the unit is provided.</div><span class="marks">3 marks</span>
+          <div class="ans"><div class="field"><label class="uline"><input placeholder="Type your answer"></label><span class="unit">µm⁻¹</span></div></div>
+        </div>
+        <div class="q"><span class="n">9.</span><div class="stem">Typed a unit into the field.</div><span class="marks">3 marks</span>
+          <div class="ans"><div class="field"><label class="uline err"><input value="3 um"></label><span class="unit">µm⁻¹</span></div>
+            <div class="err-text">Enter the value only; the unit µm⁻¹ is already given.</div></div>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">9.</span><div class="stem">Calculate its surface-area-to-volume ratio.</div><span class="marks ok">3 / 3</span>
+          <div class="ans"><div class="field"><label class="uline ok"><input value="24/8" disabled><span class="mark-icon ok">✓</span></label><span class="unit">µm⁻¹</span></div>
+            <div class="accepted"><b>Accepted answers</b>3 µm⁻¹; 24/8 µm⁻¹</div></div>
+        </div>
+        <div class="q"><span class="n">10b.</span><div class="stem">Calculate the increase in oxygen production.</div><span class="marks bad">0 / 1</span>
+          <div class="ans"><div class="field"><label class="uline bad"><input value="6" disabled><span class="mark-icon bad">✕</span></label><span class="unit">µmol/min</span></div>
+            <div class="accepted"><b>Accepted answers</b>4 µmol/min</div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6 OPEN -->
+  <section class="type" id="open">
+    <h2>6 · Open answer</h2><p class="meta">open · ruled lines like exam paper instead of a box; grows with the text</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">10a.</span><div class="stem">Explain why the low-CO₂ curve levels off, and use the comparison to identify a limiting factor.</div><span class="marks">[4]</span>
+          <div class="ans"><label class="uline ruled"><textarea placeholder="Type your answer" rows="3"></textarea></label><div class="count">0 / 4000</div></div>
+        </div>
+        <div class="q"><span class="n">10a.</span><div class="stem">Focused, typing.</div><span class="marks">[4]</span>
+          <div class="ans"><label class="uline ruled focus"><textarea rows="3">The rate stays at 6 because extra light no longer increases photosynthesis, so something else</textarea></label><div class="count">96 / 4000</div></div>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">10a.</span><div class="stem">Explain why the low-CO₂ curve levels off, and use the comparison to identify a limiting factor.</div><span class="marks part">1.5 / 4</span>
+          <div class="ans"><label class="uline ruled"><textarea rows="2" disabled>The rate stays at 6 because extra light no longer increases photosynthesis.</textarea></label>
+            <div class="solution">Marking scheme and worked solution</div>
+            <div class="scheme">
+              <div><span>Describes the low-CO₂ plateau at 6 µmol/min from light intensity 200 onward.</span><span class="s-ok">✓ 1/1</span></div>
+              <div><span>Explains that additional light no longer increases the rate.</span><span class="s-part">— 0.5/1</span></div>
+              <div><span>Uses the higher rate at higher CO₂ as evidence that CO₂ is limiting.</span><span class="s-bad">✕ 0/2</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7 GAPS -->
+  <section class="type" id="gaps">
+    <h2>7 · Fill in the gaps</h2><p class="meta">gaps · blanks grow with what is typed; the correct answers move to their own list under the text</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">11.</span><div class="stem">Complete the summary below. Write one word in each gap.</div><span class="marks">3 marks</span>
+          <div class="ans gaps">
+            Aerobic respiration takes place mainly in the <span class="gap-tail"><span class="gap " data-value="mitochondria"><input size="1" placeholder="1" value="mitochondria"></span>.</span> There, the energy stored in <span class="gap focus" data-value="gluc"><input size="1" placeholder="2" value="gluc"></span> is released step by step and captured in <span class="gap-tail"><span class="gap " data-value=""><input size="1" placeholder="3"></span>,</span> which the cell spends on its work.
+          </div>
+        </div>
+        <div class="q"><span class="n">12.</span><div class="stem">Stress case: a long answer, and an unbroken string, in a narrow column.</div><span class="marks">2 marks</span>
+          <div class="ans gaps">
+            The enzyme <span class="gap " data-value="ATP synthase, which is embedded in the inner mitochondrial membrane and driven by the proton gradient"><input size="1" placeholder="1" value="ATP synthase, which is embedded in the inner mitochondrial membrane and driven by the proton gradient"></span> makes ATP, and the chemical name is <span class="gap-tail"><span class="gap " data-value="adenosine-5-triphosphate-tetrasodium-salt-hydrate-xyz"><input size="1" placeholder="2" value="adenosine-5-triphosphate-tetrasodium-salt-hydrate-xyz"></span>.</span>
+          </div>
+          <p class="note">The blank stops at the line width and wraps to its own line; the rest of the text scrolls inside the field.</p>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">11.</span><div class="stem">Complete the summary below. Write one word in each gap.</div><span class="marks part">2 / 3</span>
+          <div class="ans">
+            <div class="gaps">Aerobic respiration takes place mainly in the <span class="gap-tail"><span class="gap ok" data-value="mitochondria"><input size="1" value="mitochondria" disabled></span><sup class="gap-num">1</sup>.</span> There, the energy stored in <span class="gap ok" data-value="glucose"><input size="1" value="glucose" disabled></span><sup class="gap-num">2</sup> is released step by step and captured in <span class="gap-tail"><span class="gap bad" data-value="NADH"><input size="1" value="NADH" disabled></span><sup class="gap-num">3</sup>,</span> which the cell spends on its work.</div>
+            <div class="key-section"><h4>Correct answers</h4>
+              <ol class="key-list">
+                <li class="kept"><span class="key">1</span><span class="txt">mitochondria / mitochondrion</span></li>
+                <li class="kept"><span class="key">2</span><span class="txt">glucose</span></li>
+                <li class="fixed"><span class="key">3</span><span class="txt">ATP</span><span class="was">you wrote NADH</span></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+        <div class="q"><span class="n">11.</span><div class="stem">Gaps left empty, then checked.</div><span class="marks bad">0 / 3</span>
+          <div class="ans">
+            <div class="gaps">Aerobic respiration takes place mainly in the <span class="gap-tail"><span class="gap bad" data-value=""><input size="1" disabled></span><sup class="gap-num">1</sup>.</span> There, the energy stored in <span class="gap bad" data-value=""><input size="1" disabled></span><sup class="gap-num">2</sup> is released step by step and captured in <span class="gap-tail"><span class="gap bad" data-value=""><input size="1" disabled></span><sup class="gap-num">3</sup>,</span> which the cell spends on its work.</div>
+            <div class="key-section"><h4>Correct answers</h4>
+              <ol class="key-list">
+                <li class="fixed"><span class="key">1</span><span class="txt">mitochondria / mitochondrion</span><span class="was">not answered</span></li>
+                <li class="fixed"><span class="key">2</span><span class="txt">glucose</span><span class="was">not answered</span></li>
+                <li class="fixed"><span class="key">3</span><span class="txt">ATP</span><span class="was">not answered</span></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8 MATCHING -->
+  <section class="type" id="matching">
+    <h2>8 · Matching</h2><p class="meta">matching · underlined dropdown on wider screens; on phones each item picks from a row of letter buttons under it, with the options listed above</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">6.</span><div class="stem">Match each structure to its function. An option may be used more than once.</div><span class="marks">4 marks</span>
+          <div class="ans match"><ol class="mopts"><li><span class="key">A</span>Stores DNA</li><li><span class="key">B</span>Makes ATP using a proton gradient</li><li><span class="key">C</span>Builds proteins</li><li><span class="key">D</span>Packages proteins for secretion</li></ol><ol class="mrows wide-only">
+              <li class="mrow"><span class="key">1</span><span class="txt">Nucleus</span><button class="pick filled">A <span class="chev">▾</span></button></li>
+              <li class="mrow"><span class="key">2</span><span class="txt">Mitochondrion</span>
+                <button class="pick empty open">– <span class="chev">▴</span>
+                  <span class="menu"><div><b>A.</b>Stores DNA</div><div class="active"><b>B.</b>Makes ATP using a proton gradient</div><div><b>C.</b>Builds proteins</div><div><b>D.</b>Packages proteins for secretion</div></span>
+                </button></li>
+              <li class="mrow"><span class="key">3</span><span class="txt">Ribosome</span><button class="pick empty">– <span class="chev">▾</span></button></li>
+              <li class="mrow"><span class="key">4</span><span class="txt">Chloroplast</span><button class="pick empty">– <span class="chev">▾</span></button></li>
+            </ol><ol class="mrows2 phone-only"><li class="mrow2"><span class="key">1</span><span class="txt">Nucleus</span><span class="letters" role="group" aria-label="Nucleus"><button class="letter sel" aria-pressed="true">A</button><button class="letter" aria-pressed="false">B</button><button class="letter" aria-pressed="false">C</button><button class="letter" aria-pressed="false">D</button></span></li><li class="mrow2"><span class="key">2</span><span class="txt">Mitochondrion</span><span class="letters" role="group" aria-label="Mitochondrion"><button class="letter" aria-pressed="false">A</button><button class="letter sel" aria-pressed="true">B</button><button class="letter" aria-pressed="false">C</button><button class="letter" aria-pressed="false">D</button></span></li><li class="mrow2"><span class="key">3</span><span class="txt">Ribosome</span><span class="letters" role="group" aria-label="Ribosome"><button class="letter" aria-pressed="false">A</button><button class="letter" aria-pressed="false">B</button><button class="letter" aria-pressed="false">C</button><button class="letter" aria-pressed="false">D</button></span></li><li class="mrow2"><span class="key">4</span><span class="txt">Chloroplast</span><span class="letters" role="group" aria-label="Chloroplast"><button class="letter" aria-pressed="false">A</button><button class="letter" aria-pressed="false">B</button><button class="letter" aria-pressed="false">C</button><button class="letter" aria-pressed="false">D</button></span></li></ol></div>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">6.</span><div class="stem">Match each structure to its function. An option may be used more than once.</div><span class="marks part">1 / 4</span>
+          <div class="ans match"><ol class="mopts"><li><span class="key">A</span>Stores DNA</li><li><span class="key">B</span>Makes ATP using a proton gradient</li><li><span class="key">C</span>Builds proteins</li><li><span class="key">D</span>Packages proteins for secretion</li></ol><ol class="mrows wide-only">
+              <li class="mrow"><span class="key">1</span><span class="txt">Nucleus</span><span class="fix">Correct: A</span><span class="pick bad">B</span></li>
+              <li class="mrow"><span class="key">2</span><span class="txt">Mitochondrion</span><span class="fix">Correct: B</span><span class="pick bad">A</span></li>
+              <li class="mrow"><span class="key">3</span><span class="txt">Ribosome</span><span class="fix"></span><span class="pick ok">C</span></li>
+              <li class="mrow"><span class="key">4</span><span class="txt">Chloroplast</span><span class="fix">Correct: B</span><span class="pick bad">–</span></li>
+            </ol><ol class="mrows2 phone-only"><li class="mrow2"><span class="key">1</span><span class="txt">Nucleus</span><span class="letters" role="group" aria-label="Nucleus"><button class="letter checked missed" disabled>A</button><button class="letter checked wrong" disabled>B</button><button class="letter checked dim" disabled>C</button><button class="letter checked dim" disabled>D</button></span></li><li class="mrow2"><span class="key">2</span><span class="txt">Mitochondrion</span><span class="letters" role="group" aria-label="Mitochondrion"><button class="letter checked wrong" disabled>A</button><button class="letter checked missed" disabled>B</button><button class="letter checked dim" disabled>C</button><button class="letter checked dim" disabled>D</button></span></li><li class="mrow2"><span class="key">3</span><span class="txt">Ribosome</span><span class="letters" role="group" aria-label="Ribosome"><button class="letter checked dim" disabled>A</button><button class="letter checked dim" disabled>B</button><button class="letter checked right" disabled>C</button><button class="letter checked dim" disabled>D</button></span></li><li class="mrow2"><span class="key">4</span><span class="txt">Chloroplast</span><span class="letters" role="group" aria-label="Chloroplast"><button class="letter checked dim" disabled>A</button><button class="letter checked missed" disabled>B</button><button class="letter checked dim" disabled>C</button><button class="letter checked dim" disabled>D</button></span></li></ol>
+            <p class="note phone-only" style="margin:8px 0 0">Phones: red is your pick, dashed green the correct letter. Chloroplast was left empty.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9 ORDERING -->
+  <section class="type" id="ordering">
+    <h2>9 · Ordering</h2><p class="meta">ordering · rows separated by rules, arrows stay ghost buttons; the correct order is its own list after checking</p>
+    <div class="cols">
+      <div>
+        <p class="state">Answering</p>
+        <div class="q"><span class="n">5.</span><div class="stem">Order the path of a secreted protein.</div><span class="marks">3 marks</span>
+          <div class="ans order">
+            <div class="orow"><span class="key">1</span><span class="txt">Ribosome</span><span class="arrows"><button disabled>▲</button><button>▼</button></span></div>
+            <div class="orow"><span class="key">2</span><span class="txt">Rough ER</span><span class="arrows"><button>▲</button><button>▼</button></span></div>
+            <div class="orow"><span class="key">3</span><span class="txt">Golgi apparatus</span><span class="arrows"><button>▲</button><button>▼</button></span></div>
+            <div class="orow"><span class="key">4</span><span class="txt">Cell membrane</span><span class="arrows"><button>▲</button><button>▼</button></span></div>
+            <div class="orow"><span class="key">5</span><span class="txt">Vesicle</span><span class="arrows"><button>▲</button><button disabled>▼</button></span></div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="state">Checked</p>
+        <div class="q"><span class="n">5.</span><div class="stem">Order the path of a secreted protein.</div><span class="marks bad">0 / 3</span>
+          <div class="ans order">
+            <div class="orow ok"><span class="key">1</span><span class="txt">Ribosome</span></div>
+            <div class="orow ok"><span class="key">2</span><span class="txt">Rough ER</span></div>
+            <div class="orow ok"><span class="key">3</span><span class="txt">Golgi apparatus</span></div>
+            <div class="orow bad"><span class="key">4</span><span class="txt">Cell membrane</span></div>
+            <div class="orow bad"><span class="key">5</span><span class="txt">Vesicle</span></div>
+            <div class="key-section"><h4>Correct order</h4>
+              <ol class="key-list">
+                <li class="kept"><span class="key">1</span><span class="txt">Ribosome</span></li>
+                <li class="kept"><span class="key">2</span><span class="txt">Rough ER</span></li>
+                <li class="kept"><span class="key">3</span><span class="txt">Golgi apparatus</span></li>
+                <li class="fixed"><span class="key">4</span><span class="txt">Vesicle</span><span class="was">you put 5th</span></li>
+                <li class="fixed"><span class="key">5</span><span class="txt">Cell membrane</span><span class="was">you put 4th</span></li>
+              </ol>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 10 SKIP -->
+  <section class="type" id="skip">
+    <h2>10 · One item at a time: Previous / Next</h2><p class="meta">Every view that shows items one by one (review sessions, the flashcard study page, note embeds, shared sets, Quick review) gets the same small Previous / Next pair. Next skips without rating and sends the item to the end; Previous shows the item before it.</p>
+    <div class="cols">
+      <div>
+        <p class="state">Review session · question</p>
+        <p class="left">Item 3 of 12</p>
+        <div class="q"><span class="n">4.</span><div class="stem">Name the process responsible for the net movement of water into its cells.</div><span class="marks">1 mark</span>
+          <div class="ans"><div class="field"><label class="uline"><input placeholder="Type your answer"></label></div></div>
+        </div>
+        <div class="session-foot"><span class="from">From Cell biology basics</span><span class="actions"><button class="btn primary lg-r">Check</button></span></div>
+        <div class="navrow"><button class="btn-sm"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><path d="M5.5 8H14"/></svg>Previous</button><button class="btn-sm">Next<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></button></div>
+        <p class="state" style="margin-top:28px">Previous, on an item already checked</p>
+        <p class="left">Item 2 of 12</p>
+        <div class="q"><span class="n">4.</span><div class="stem">Name the process responsible for the net movement of water into its cells.</div><span class="marks ok">1 / 1</span>
+          <div class="ans"><div class="field"><label class="uline ok"><input value="osmosis" disabled><span class="mark-icon ok">✓</span></label></div><div class="accepted"><b>Accepted answers</b>osmosis</div></div>
+        </div>
+        <div class="navrow"><button class="btn-sm"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><path d="M5.5 8H14"/></svg>Previous</button><button class="btn-sm">Next<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></button></div>
+        <p class="note" style="margin-top:8px">Read only: it was rated when checked, so Previous never checks it again. An item that was skipped stays open: going back to it, the learner can still answer and check it.</p>
+      </div>
+      <div>
+        <p class="state">Flashcard · study page, note embed, shared set, review session</p>
+        <p class="left" style="text-align:center">Card 1 of 2</p>
+        <div class="card">What does ATP stand for?</div>
+        <div class="navrow"><button class="btn-sm" disabled><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><path d="M5.5 8H14"/></svg>Previous</button><button class="btn-sm">Next<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></button></div>
+        <p class="state" style="margin-top:28px">Flipped</p>
+        <div class="card">Adenosine triphosphate</div>
+        <div class="rates"><span class="r1">Again</span><span class="r2">Hard</span><span class="r3">Good</span><span class="r4">Easy</span></div>
+        <div class="navrow"><button class="btn-sm"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><path d="M5.5 8H14"/></svg>Previous</button><button class="btn-sm">Next<svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></button></div>
+        <p class="state" style="margin-top:28px">Previous, on a card already rated</p>
+        <div class="card">Adenosine triphosphate</div>
+        <div class="rates done"><span class="r1">Again</span><span class="r2">Hard</span><span class="r3 chosen">Good</span><span class="r4">Easy</span></div>
+        <p class="note" style="margin:8px 0 0">The rating given stays marked and the others are disabled, so no second rating is recorded.</p>
+        <div class="navrow"><button class="btn-sm"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><path d="M5.5 8H14"/></svg>Previous</button><button class="btn-sm">Next<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></button></div>
+        <p class="state" style="margin-top:28px">Previous, on a card that was skipped</p>
+        <div class="card">Lysosome</div>
+        <p class="note" style="margin:8px 0 0">Skipped items were never rated, so they flip and rate as usual.</p>
+        <div class="navrow"><button class="btn-sm"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><path d="M5.5 8H14"/></svg>Previous</button><button class="btn-sm">Next<svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></button></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 11 REVIEW SUMMARY -->
+  <section class="type" id="summary">
+    <h2>11 · Review summary</h2><p class="meta">The last item opens this straight away, in the topic summary's style. Questions score by marks, cards by rating (Good and Easy green, Hard amber, Again red); skipped items are outlined and count toward nothing.</p>
+    <div class="sum">
+      <div class="crumb"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="3.5" cy="8" r="2"/><path d="M5.5 8H14"/></svg><span>Learning</span> / <b>Review</b></div>
+      <div class="sum-head"><h3>Biology 101</h3><span class="ulink">Review more <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></span></div>
+      <p class="meta2">Reviewed Oct 10 · 12 items · Tricky</p>
+      <div class="big">10<small>reviewed</small><small>2 skipped</small></div>
+      <div class="sq"><span class="s-ok">1</span><span class="s-ok">2</span><span class="s-bad">3</span><span class="s-ok">4</span><span class="s-part">5</span><span class="s-skip">6</span><span class="s-ok">7</span><span class="s-ok">8</span><span class="s-part">9</span><span class="s-ok">10</span><span class="s-skip">11</span><span class="s-bad">12</span></div>
+      <div class="legend"><span><i class="s-ok"></i>6 right or Good/Easy</span><span><i class="s-part"></i>2 partial or Hard</span><span><i class="s-bad"></i>2 wrong or Again</span><span><i class="s-skip"></i>2 skipped</span></div>
+      <h4>By kind</h4>
+      <div class="trow"><span class="lab"><b>Questions</b><span class="mini"><span class="s-ok"></span><span class="s-bad"></span><span class="s-part"></span><span class="s-skip"></span><span class="s-ok"></span><span class="s-bad"></span></span></span><span class="val">3.5 / 6 marks</span></div>
+      <div class="trow"><span class="lab"><b>Flashcards</b><span class="mini"><span class="s-ok"></span><span class="s-ok"></span><span class="s-ok"></span><span class="s-part"></span><span class="s-skip"></span><span class="s-ok"></span></span></span><span class="val">4 Good · 1 Hard</span></div>
+      <h4>Worth another look</h4>
+      <div class="look"><span class="chip s-bad">3</span><span class="t"><div>Name the process responsible for the net movement of water into its cells.</div><span>Short answer · 1 mark · Cell biology basics</span></span><span class="r"><span class="sc">0 / 1</span><span class="ulink plain">Open <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></span></span></div>
+      <div class="look"><span class="chip s-part">5</span><span class="t"><div>Explain why the low-CO₂ curve levels off.</div><span>Written · 4 marks · Cell biology basics</span></span><span class="r"><span class="sc">1.5 / 4</span><span class="ulink plain">Open <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></span></span></div>
+      <div class="look"><span class="chip s-part">9</span><span class="t"><div>Golgi apparatus</div><span>Flashcard · Cell organelles</span></span><span class="r"><span class="sc">Hard</span><span class="ulink plain">Open <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></span></span></div>
+      <div class="look"><span class="chip s-bad">12</span><span class="t"><div>Order the path of a secreted protein.</div><span>Ordering · 3 marks · Cell biology basics</span></span><span class="r"><span class="sc">0 / 3</span><span class="ulink plain">Open <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></span></span></div>
+      <div class="more">Skipped <span class="chip s-skip">6</span><span class="chip s-skip">11</span></div>
+      <h4>Next suggestion</h4>
+      <div class="next"><div>Spanish A2<span>Fading · 12 of 40 items worth a refresher</span></div><span class="ulink plain">Start <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M2 8h8.5"/><circle cx="12.5" cy="8" r="2"/></svg></span></div>
+    </div>
+  </section>
+
+  <footer class="notes">
+    <p><b>Notes on the mock</b></p>
+    <ul>
+      <li>Row heights stay at 44px, so hit targets don't shrink when the box goes away.</li>
+      <li>Checked colours stay on the rule and the key badge only. The tinted fills are gone; "missed" is a dashed green rule, so it reads differently from "your answer, right".</li>
+      <li>Skipping records nothing for review: no rating, no history entry. A quiz question left wholly blank scores 0 marks but is not rated either; a question with an ordering part is never blank.</li>
+      <li>Read-only previews (question editor, dialog) would use the answering look with nothing selected.</li>
+      <li>Matching on phones has no dropdown or sheet: the options are listed once above the items, and the page scrolls if they are long.</li>
+    </ul>
+  </footer>
+</div>
+<script>
+const btn = document.getElementById('theme');
+const root = document.documentElement;
+const sync = () => { btn.textContent = root.dataset.theme === 'dark' ? 'Light theme' : 'Dark theme'; };
+btn.addEventListener('click', () => { root.dataset.theme = root.dataset.theme === 'dark' ? 'light' : 'dark'; sync(); });
+// Answering columns are clickable for a feel of the interaction.
+document.querySelectorAll('.cols > div:first-child .choices, .cols > div:first-child .bool').forEach((group) => {
+  const multi = group.classList.contains('multi');
+  group.querySelectorAll('.opt').forEach((opt) => opt.addEventListener('click', () => {
+    if (!multi) group.querySelectorAll('.opt').forEach((o) => o !== opt && o.classList.remove('sel'));
+    opt.classList.toggle('sel');
+    opt.classList.remove('hover');
+  }));
+});
+// Gaps: the hidden copy of the value sizes the blank (see .gap::after).
+document.querySelectorAll('.gap input').forEach((input) => input.addEventListener('input', () => { input.parentElement.dataset.value = input.value; }));
+sync();
+</script>
+</body>
+</html>

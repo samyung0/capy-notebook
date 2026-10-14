@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pymupdf
 
-RAW_FLAGS = pymupdf.TEXTFLAGS_RAWDICT & ~pymupdf.TEXT_PRESERVE_IMAGES
+from . import page_text
 
 
 def compact(text: str) -> str:
@@ -205,7 +205,7 @@ def repair_text(
                 # glyphs (a revisited page is read again, identically).
                 cache.clear()
                 traces.clear()
-                cache[page_index] = page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]
+                cache[page_index] = page_text.page_raw(page)["blocks"]
             groups = cache[page_index]
             if repeat:
                 area = rect_for(block, page)
@@ -269,7 +269,7 @@ def join_split_ligatures(blocks: list[dict], pdf: Path) -> tuple[list[dict], int
                 continue
             if page_index not in cache:
                 cache.clear()  # Only the current page, as in repair_text.
-                cache[page_index] = page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]
+                cache[page_index] = page_text.page_raw(page)["blocks"]
             area = rect_for(block, page)
             proven: Counter = Counter()
             for group in cache[page_index]:

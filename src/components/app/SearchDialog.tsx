@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { searchQueryQMax } from '@/api/gen/validators';
 import { useSearch } from '@/api/hooks';
 import type { SearchKind, SearchResult } from '@/api/types';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
@@ -48,9 +49,12 @@ export function SearchDialog({
 }) {
   const [q, setQ] = useState('');
   const debounced = useDebounced(q, 400);
-  const { data, fetchStatus, isFetching } = useSearch(debounced, {
-    errorBoundary: false,
-  });
+  const { data, fetchStatus, isError, isFetching, refetch } = useSearch(
+    debounced,
+    {
+      errorBoundary: false,
+    }
+  );
   const navigate = useNavigate();
   const query = debounced.trim();
   const results = data?.filter(visibleSearchResult);
@@ -102,6 +106,14 @@ export function SearchDialog({
               <QueryPausedState />
             ) : isFetching ? (
               <SkeletonList className="px-1" count={5} rowHeight={48} />
+            ) : query && !data && isError ? (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <InlineErrorState
+                  className="-translate-y-1/2"
+                  message={m.search_error()}
+                  onRetry={() => void refetch()}
+                />
+              </div>
             ) : query ? (
               results?.length ? (
                 results.map((r) => {

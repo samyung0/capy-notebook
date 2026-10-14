@@ -6,6 +6,7 @@ import {
   EditorSaveStatus,
   EditorStatusStoreContext,
 } from '@/features/materials/CenterContentHeader';
+import { HTML_EMBED_MAX_BYTES } from '@/features/materials/document';
 import {
   MERMAID_TYPING_DELAY_MS,
   Mermaid,
@@ -39,6 +40,8 @@ export default function MermaidSourceDialog({
   const [code, setCode] = useState(() => text.toString());
   // The preview keeps the last diagram that parsed; the error shows in the source.
   const [failure, setFailure] = useState<MermaidFailure | null>(null);
+  // An edit past the HTML embed source's 64 KB bound was refused.
+  const [tooLarge, setTooLarge] = useState(false);
   const [history] = useState(editorHistory);
   const status = useContext(EditorStatusStoreContext);
   return (
@@ -60,12 +63,22 @@ export default function MermaidSourceDialog({
             className="h-72 rounded-card border border-line bg-field"
             errorLine={failure?.line ?? null}
             label={m.editor_mermaid_source()}
-            onChange={setCode}
+            maxBytes={HTML_EMBED_MAX_BYTES}
+            onChange={(next) => {
+              setCode(next);
+              setTooLarge(false);
+            }}
+            onRefused={() => setTooLarge(true)}
             onView={history.attach}
             origin={DIALOG_EDIT}
             text={text}
             value={code}
           />
+          {tooLarge && (
+            <p className="mt-1 font-semibold text-solid-error text-xs">
+              {m.html_embed_too_large()}
+            </p>
+          )}
           {/* A blamed line is marked in the source instead. */}
           {failure && failure.line == null && (
             <p className="mt-1 font-semibold text-solid-error text-xs">

@@ -681,7 +681,7 @@ async def test_a_library_edit_sends_provenance(monkeypatch):
             "resource": {"kind": "material", "id": "mat_note", "title": "Regression"},
         },
     )
-    ctx.library_reads.note("e_2", 0, "8.2")
+    ctx.library_reads.note("e_2", 0, "8.2", text="Residuals are observed minus fitted.")
 
     result = await tools._edit_document(
         {
@@ -690,7 +690,7 @@ async def test_a_library_edit_sends_provenance(monkeypatch):
                 {
                     "type": "insert_markdown",
                     "after_block_id": None,
-                    "markdown": "Residuals",
+                    "markdown": "Residuals are observed minus fitted values.",
                 }
             ],
             "_tool_call_id": "call_9",
@@ -702,6 +702,84 @@ async def test_a_library_edit_sends_provenance(monkeypatch):
     assert sent[0]["provenance"]["books"][0]["excerptIds"] == ["e_2"], (
         "naming none credits the reads since the last write"
     )
+
+
+async def test_a_write_naming_no_excerpts_credits_the_books_its_text_matches(
+    monkeypatch,
+):
+    """Of the excerpts read since the last write, a book is credited when its
+    read text shares with the write a word 4-gram, or a number with a decimal
+    point or two digits, that no other read book holds (Epo 2026-10-13); what
+    the read tools add (head lines, chunk prefixes, links) and a slide's SVG
+    markup do not count, and a write matching no book credits every candidate,
+    as before. Named excerpts are credited as before; provenance is read once
+    per write."""
+    ctx = _library_ctx(monkeypatch)
+    book_of = {"e_stats": "ahss", "e_seeds": "botany"}
+    asked: list[list[str]] = []
+
+    async def _provenance(excerpt_ids):
+        asked.append(list(excerpt_ids))
+        books: dict[str, list[str]] = {}
+        for excerpt_id in excerpt_ids:
+            books.setdefault(book_of[excerpt_id], []).append(excerpt_id)
+        return [{"id": book, "excerptIds": ids} for book, ids in books.items()]
+
+    monkeypatch.setattr(tools.library, "provenance", _provenance)
+    ctx.library_reads.note(
+        "e_stats",
+        0,
+        "8.1",
+        text="[exc_stats] Statistics — 8.1\nchunks 3-4 of this excerpt, from 3\n"
+        "(chunk 3) A sample of 40 seeds had a mean mass of 2.45 g, and the line "
+        "of best fit passes the means.\nNext in this book: [exc_more] 8.2 "
+        "(pages 12, 13)",
+    )
+    ctx.library_reads.note(
+        "e_seeds",
+        0,
+        "3.2",
+        text="[exc_seeds] Botany — 3.2\nscope: germination at 75.5 percent\n"
+        "(chunk 7) Seeds need water and warmth; the line of best fit passes "
+        "the means. Plant 80 seeds per tray.",
+    )
+
+    async def credited(tool: str, args: dict) -> list[str]:
+        out = await tools.write_sources(ctx, tool, args)
+        assert isinstance(out, tuple)
+        assert [e for book in out[0] for e in book["excerptIds"]] == out[1]
+        return out[1]
+
+    def note(content: str) -> dict:
+        return {"kind": "note", "content": content}
+
+    # 40 and 2.45 are the statistics read's alone; 75.5 is only in the other
+    # read's scope line, and the shared 4-grams belong to both.
+    assert await credited(
+        "create_material",
+        note(
+            "Of 40 seeds, 75.5 percent germinated; the mean mass was 2.45 g, and "
+            "the line of best fit passes the means."
+        ),
+    ) == ["e_stats"]
+    # 12 and 13 are only in the statistics read's link line.
+    assert await credited(
+        "create_material", note("Seeds need water and warmth, see pages 12 and 13.")
+    ) == ["e_seeds"]
+    # The slide's 80 is an attribute, not its text.
+    slide = '<svg width="1280"><text x="80" y="40">Mean mass 2.45 g</text></svg>'
+    assert await credited(
+        "write_slide", {"deck_id": "d", "slide": 1, "svg": slide}
+    ) == ["e_stats"]
+    assert await credited("create_material", note("Photosynthesis needs light.")) == [
+        "e_stats",
+        "e_seeds",
+    ], "no book matches: every candidate, as before"
+    assert len(asked) == 4, "one provenance read per write"
+    named = await tools.write_sources(
+        ctx, "create_material", {"kind": "note", "excerpt_ids": ["e_seeds"]}
+    )
+    assert isinstance(named, tuple) and named[1] == ["e_seeds"]
 
 
 async def test_an_edit_of_a_source_file_carries_no_provenance(monkeypatch):
@@ -2242,8 +2320,9 @@ async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
     texts = {"e_1": "excerpt e_1 full text", "e_2": "long " * 12_000}
 
     async def _read(args, scratch):
-        scratch.library_reads.note(args["excerpt_id"], 0, "8.1")
-        return ToolResult(text_parts=[texts[args["excerpt_id"]]])
+        text = texts[args["excerpt_id"]]
+        scratch.library_reads.note(args["excerpt_id"], 0, "8.1", text=text)
+        return ToolResult(text_parts=[text])
 
     async def _provenance(excerpt_ids):
         return [_book(*excerpt_ids)]
@@ -2261,6 +2340,8 @@ async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
     assert refused.text().endswith("\n\nexcerpt e_1 full text")
     assert ctx.library_reads.ids() == {"e_1"}
     assert ctx.library_evidence.fresh[("e_1", 0)].text == "excerpt e_1 full text"
+    # The carried read keeps its text for automatic credit.
+    assert ctx.library_reads.reads[0].text == "excerpt e_1 full text"
     assert await tools.write_sources(
         ctx, "create_material", {**args, "excerpt_ids": ["e_1"]}
     ) == ([_book("e_1")], ["e_1"])
@@ -2304,6 +2385,55 @@ def test_argument_errors_name_the_fields_without_echoing_the_command():
     assert problem({**note, "after_block_id": 3}).endswith(
         "invalid after_block_id (must be string or null)"
     )
+
+
+async def test_blank_optional_arguments_are_left_out_before_checking(monkeypatch):
+    """Blank means absent (null, "", "null", [] or {}) where the schema does
+    not require the property, into an edit command's variant; a required one
+    is kept as sent, so replace_text's empty text still deletes. Seen in the
+    2026-10-13 runs: target_id null, create_material scope []."""
+    edit = {
+        "target": {"kind": "material", "id": "mat_1"},
+        "commands": [
+            {
+                "type": "replace_text",
+                "target_id": None,
+                "expected_text": "a",
+                "text": "",
+            },
+            {"type": "insert_markdown", "after_block_id": None, "markdown": "x"},
+        ],
+        "excerpt_ids": [],
+        "_tool_call_id": "c1",
+    }
+    assert tools.without_blanks("edit_document", edit) == {
+        "target": {"kind": "material", "id": "mat_1"},
+        "commands": [
+            {"type": "replace_text", "expected_text": "a", "text": ""},
+            {"type": "insert_markdown", "after_block_id": None, "markdown": "x"},
+        ],
+        "_tool_call_id": "c1",
+    }
+    assert tools.without_blanks(
+        "create_material", {"kind": "note", "scope": [], "title": "null", "cards": {}}
+    ) == {"kind": "note"}
+
+    # Dispatch hands the handler the cleaned arguments.
+    seen = {}
+
+    async def handler(args, _ctx):
+        seen.update(args)
+        return tools._result("ok")
+
+    monkeypatch.setitem(
+        tools.REGISTRY, "search_workspace", tools.ToolSpec("search_workspace", handler)
+    )
+    result = await tools.run(
+        "search_workspace",
+        {"query": "q", "file_ids": [], "_tool_call_id": "c1"},
+        _owner_ctx(),
+    )
+    assert not result.refused and seen == {"query": "q", "_tool_call_id": "c1"}
 
 
 # ------------------------------------------------------------ program answers
@@ -3117,6 +3247,7 @@ async def test_a_retained_excerpt_is_credited_only_when_nothing_new_was_read(
     ]
     ctx.library_evidence.activate(replayed, ctx.library_reads)
     assert ctx.library_reads.uncredited() == ["a"], "nothing new: the retained one"
+    assert ctx.library_reads.reads[0].text == "A text", "kept for automatic credit"
     ctx.library_reads.note("b", 0, "S")
     assert ctx.library_reads.uncredited() == ["b"]
 

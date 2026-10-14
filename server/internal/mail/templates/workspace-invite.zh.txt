@@ -1,18 +1,17 @@
-Capy Notebook
+加入 CAPY NOTEBOOK 工作区 {{.WorkspaceName}}
 
+{{.InviterName}} 邀请你加入 {{.WorkspaceName}} 工作区。
 
-你有一个工作区邀请
-
-你好，
-
-你已受邀加入 Capy Notebook 工作区 {{.WorkspaceName}}。
+工作区：{{.WorkspaceName}}
+权限：{{.Access}}
+邀请人：{{.InviterName}}
 
 查看邀请 {{.InviteURL}}
 
-如果按钮无法使用，请打开此链接：{{.InviteURL}}
+按钮无法使用？请打开此链接：{{.InviteURL}}
 
 ----------------------------------------
 
-你收到这封邮件是因为有人邀请你加入 Capy Notebook 工作区。
+你收到这封邮件是因为 {{.InviterName}} 邀请你加入 Capy Notebook 工作区。如果你没有预料到这封邀请，可以忽略此邮件。
 
-管理产品邮件偏好 {{.UnsubscribeURL}}
+不再接收工作区邀请邮件 {{.UnsubscribeURL}}

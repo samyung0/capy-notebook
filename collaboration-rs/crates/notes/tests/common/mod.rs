@@ -109,7 +109,7 @@ impl Room {
         let previous = notes::limits::measure(&doc.transact()).unwrap();
         Room {
             doc,
-            validator: Validator::default(),
+            validator: Validator::new("note"),
             previous,
             checked: 0,
             same_growth: 0,
@@ -151,7 +151,7 @@ impl Room {
         // content the validator did not admit.
         let tightened = outcome["accepted"].as_bool() == Some(true)
             && matches!(&admitted, Err(Refusal::Content(what))
-                if *what == notes::limits::MISSING_KEY || *what == notes::limits::NESTED_REFERENCE);
+                if *what == notes::limits::MISSING_KEY || *what == notes::limits::NESTED_BLOCK);
         if tightened {
             self.tightened += 1;
             self.validator.invalidate();

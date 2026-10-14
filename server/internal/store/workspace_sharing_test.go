@@ -423,6 +423,54 @@ func TestWorkspaceMembershipNotificationsAndNoOpRoleChange(t *testing.T) {
 	}
 }
 
+// The invite email names the inviter; accepting tells the inviter in-app and
+// by email, once.
+func TestAcceptedInviteNotifiesInviter(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	ws, err := s.CreateWorkspace(ctx, "u_owner", WorkspaceCreate{Name: "Accepted " + uid("name"), Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.DeleteWorkspace(ctx, "u_owner", ws.ID) })
+	invitee := newBlobTestUser(t, s, "u_accepts")
+
+	inviteID, _ := workspaceInviteToken(t, s, ctx, ws.ID, invitee, invitee, RoleEditor)
+	var inviterName, ownerName string
+	if err := s.pool.QueryRow(ctx, `SELECT o.payload->>'inviterName', u.name
+		FROM email_outbox o, users u
+		WHERE o.template='workspace-invite' AND o.payload->>'inviteId'=$1 AND u.id='u_owner'`,
+		inviteID).Scan(&inviterName, &ownerName); err != nil {
+		t.Fatal(err)
+	}
+	if inviterName != ownerName {
+		t.Fatalf("invite payload inviterName=%q, want %q", inviterName, ownerName)
+	}
+
+	accepted, err := s.AcceptWorkspaceInviteWithResult(ctx, inviteID, invitee)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := accepted.InviterNotification
+	if n == nil || n.UserID != "u_owner" || n.Href != "/workspaces/"+ws.ID {
+		t.Fatalf("inviter notification = %#v", n)
+	}
+	var data map[string]any
+	if err := json.Unmarshal(n.Data, &data); err != nil ||
+		data["code"] != "workspace_invite_accepted" || data["memberName"] != "Blob Test" {
+		t.Fatalf("inviter notification data = %s", n.Data)
+	}
+	var mails int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_outbox
+		WHERE template='workspace-invite-accepted' AND idempotency_key=$1`,
+		"workspace-invite-accepted:"+inviteID).Scan(&mails); err != nil {
+		t.Fatal(err)
+	}
+	if mails != 1 {
+		t.Fatalf("invite accepted emails = %d, want 1", mails)
+	}
+}
+
 func TestEmailLessInviteeGetsInAppMembershipEventsWithoutEmail(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

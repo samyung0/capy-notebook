@@ -127,6 +127,8 @@ def test_schema_migrates_an_existing_library_and_old_inserts_still_work(
 
 
 async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
+    """Nor a figure boxed as the whole page: the builder found its caption but
+    not its drawing, and a note write refuses it (note_figures)."""
     insert = (
         "INSERT INTO library_figures (content_id,id,book_id,page,bbox,space,"
         "geometry_kind,block_index,original_caption,original_footnote,section_path,"
@@ -148,6 +150,9 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
                 False,
             ),
             (CURRENT, "fig_band", 5, 1, False, "", "", "", True),
+            (CURRENT, "fig_page", 5, 2, False, "A page.", "Figure 8.4", "", False),
+            (CURRENT, "fig_p1", 1, 0, False, "A line.", "Figure 8.0", "", False),
+            (CURRENT, "fig_p1_page", 1, 1, False, "A page.", "Figure 8.5", "", False),
             (
                 CURRENT,
                 "fig_nc",
@@ -163,7 +168,11 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
         ]:
             conn.execute(insert, params)
         conn.execute(
-            "UPDATE library_excerpts SET figure_ids='{fig_1,fig_2,fig_band,fig_nc}' "
+            "UPDATE library_figures SET bbox='{0,0,1000,1000}' "
+            "WHERE id IN ('fig_page', 'fig_p1_page')"
+        )
+        conn.execute(
+            "UPDATE library_excerpts SET figure_ids='{fig_1,fig_2,fig_band,fig_nc,fig_page}' "
             "WHERE id='e_intro'"
         )
     read = await library.read_excerpt("e_intro")
@@ -189,9 +198,14 @@ async def test_decorative_and_excluded_figures_never_reach_a_model(library_db):
     ]
     assert "figures: fig_1, fig_2" in outputs[0] and "- fig_2: Figure 8.2" in outputs[0]
     for text in outputs:
-        assert "fig_band" not in text and "fig_nc" not in text
+        assert (
+            "fig_band" not in text and "fig_nc" not in text and "fig_page" not in text
+        )
     found = await library.search("regression", vector=test_library._unit_vector(0))
     assert found.excerpts[0].figure_ids == ["fig_1", "fig_2"]
+    # A section read lists its pages' figures the same way (8.1 is page 1).
+    section = await library.read_section("ahss", "Ch 8 › 8.1 Fitting")
+    assert [f["id"] for f in section.figures] == ["fig_p1"]
 
 
 async def test_read_knowledge_lists_figures_after_the_text(monkeypatch):

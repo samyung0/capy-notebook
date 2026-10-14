@@ -23,7 +23,7 @@ export function MermaidMaterialView({
     node?.children[0].children.map((leaf) => leaf.text).join('') ?? '';
   return (
     <MaterialRenderProvider value={material}>
-      <div className="mx-auto w-full px-5 pt-4 pb-36 text-base sm:px-10 md:max-w-3xl">
+      <div className="mx-auto w-full px-3 pt-4 pb-36 text-base sm:px-10 md:max-w-3xl">
         <StandaloneMaterialTitle kinds={['mindmap', 'diagram']} />
         {node && (
           <div className="my-3">

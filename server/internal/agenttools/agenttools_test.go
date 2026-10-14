@@ -148,7 +148,7 @@ func TestQuestionsAreWrittenThroughTheQuestionTools(t *testing.T) {
 			t.Fatalf("edit_document still offers %s", tag)
 		}
 	}
-	for _, name := range []string{"add_questions", "add_open_question", "add_question_media"} {
+	for _, name := range []string{"add_questions", "add_question_media"} {
 		if def := Lookup(name); def == nil || !def.Mutates || def.Retention != RetainFull {
 			t.Fatalf("%s = %+v", name, def)
 		}
@@ -161,7 +161,7 @@ func TestQuestionsAreWrittenThroughTheQuestionTools(t *testing.T) {
 	}
 }
 
-// The questions the retrieval service expands from the three shapes
+// The questions the retrieval service expands from the three kinds
 // (pipeline/tests/test_questions.py checks it writes exactly these) make a quiz
 // the validator accepts.
 func TestExpandedQuestionsAreValid(t *testing.T) {

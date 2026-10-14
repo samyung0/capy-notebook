@@ -1,16 +1,34 @@
-Capy Notebook
+YOUR ACCOUNT IS READ-ONLY
 
+Your storage buffer ended on {{.GraceEndsAt}}, and your files still use more than the Free plan's {{.StorageLimit}}. Your account stays read-only until you're back under the limit.
 
-ACCOUNT FROZEN
+Still works
 
-Hello,
+ * Viewing and downloading files
 
-Your storage buffer has expired and your account is read-only. Viewing, downloading and deleting still work. Free up space or resubscribe to edit again.
+ * Deleting files to free up space
+
+ * Workspace chat, quizzes and reviews
+
+ * Billing and account settings
+
+Paused
+
+ * Uploading and creating files
+
+ * Editing notes, files and comments
+
+ * Members' edits in workspaces you pay for
+
+Storage used: {{.StorageUsed}}
+Free plan limit: {{.StorageLimit}}
 
 Manage subscription {{.OpenURL}}
 
+Or delete files until you're under {{.StorageLimit}}. Nothing is deleted for you.
+
 ----------------------------------------
 
-You received this message because your Capy Notebook account was frozen after the storage buffer expired.
+You got this email because the storage buffer on your Capy Notebook account ended.
 
-Manage product email preferences {{.UnsubscribeURL}}
+Stop billing emails {{.UnsubscribeURL}}

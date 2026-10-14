@@ -1,38 +1,246 @@
 {
   "schemaVersion": 1,
-  "subject": "你的 Capy Notebook 账户已被冻结",
-  "preview": "账户现为只读，请释放空间或重新订阅。",
+  "subject": "你的 Capy Notebook 账户已变为只读",
+  "preview": "释放空间或重新订阅即可再次编辑。",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
+            "text": "你的账户已变为只读"
           }
         ]
       },
       {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "账户已冻结" }]
-      },
-      {
         "type": "paragraph",
-        "content": [{ "type": "text", "text": "你好，" }]
+        "content": [
+          {
+            "type": "text",
+            "text": "你的存储缓冲期已于 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "GraceEndsAt",
+              "label": "Buffer ends",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 结束，而你的文件仍超过免费计划的 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": "。在用量回到额度以内之前，你的账户将保持只读。"
+          }
+        ]
       },
       {
         "type": "paragraph",
         "content": [
           {
             "type": "text",
-            "text": "存储缓冲期已结束，你的账户现为只读。查看、下载和删除仍可使用。释放空间或重新订阅后即可再次编辑。"
+            "text": "仍可使用",
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "bulletList",
+        "content": [
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "查看和下载文件"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "删除文件以释放空间"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "工作区聊天、测验和复习"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "账单和账户设置"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "已暂停",
+            "marks": [
+              {
+                "type": "bold"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "bulletList",
+        "content": [
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "上传和创建文件"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "编辑笔记、文件和评论"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "listItem",
+            "content": [
+              {
+                "type": "paragraph",
+                "content": [
+                  {
+                    "type": "text",
+                    "text": "由你付费的工作区中其他成员的编辑"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#f6f6f3",
+          "borderColor": "#e8e8e3",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "已用存储："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageUsed",
+                  "label": "Storage used",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "免费计划额度："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageLimit",
+                  "label": "Storage limit",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
           }
         ]
       },
@@ -47,13 +255,36 @@
           "borderRadius": "smooth"
         }
       },
-      { "type": "horizontalRule" },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "也可以删除文件，直到用量低于 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": "。我们不会替你删除任何内容。"
+          }
+        ]
+      },
+      {
+        "type": "horizontalRule"
+      },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为存储缓冲期结束后你的 Capy Notebook 账户被冻结。"
+            "text": "你收到这封邮件是因为你的 Capy Notebook 账户存储缓冲期已结束。"
           }
         ]
       },
@@ -62,6 +293,7 @@
         "content": [
           {
             "type": "text",
+            "text": "不再接收账单邮件",
             "marks": [
               {
                 "type": "link",
@@ -72,8 +304,7 @@
                   "rel": "noopener noreferrer nofollow"
                 }
               }
-            ],
-            "text": "管理产品邮件偏好"
+            ]
           }
         ]
       }

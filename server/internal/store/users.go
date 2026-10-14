@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -461,10 +462,11 @@ func (s *Store) UpsertUserFromWebhook(ctx context.Context, id, name, email, avat
 	return err
 }
 
-// CreateDefaultWorkspace provisions a starter workspace once. It uses the same
-// user-row lock as every owned-workspace insert, then makes the empty check,
-// insert, and completion marker one transaction. The durable marker lets a
-// failed first attempt retry without recreating a workspace the user deletes.
+// CreateDefaultWorkspace provisions a starter workspace once and queues the
+// welcome email. It uses the same user-row lock as every owned-workspace
+// insert, then makes the empty check, insert, completion marker and email one
+// transaction. The durable marker lets a failed first attempt retry without
+// recreating a workspace the user deletes.
 func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -494,8 +496,10 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 	}
 
 	var provisioned bool
-	if err := tx.QueryRow(ctx, `SELECT starter_workspace_provisioned_at IS NOT NULL
-		FROM users WHERE id=$1`, userID).Scan(&provisioned); err != nil {
+	var email *string
+	var locale string
+	if err := tx.QueryRow(ctx, `SELECT starter_workspace_provisioned_at IS NOT NULL, email, locale
+		FROM users WHERE id=$1`, userID).Scan(&provisioned, &email, &locale); err != nil {
 		if isNoRows(err) {
 			return ErrNotFound
 		}
@@ -526,6 +530,23 @@ func (s *Store) CreateDefaultWorkspace(ctx context.Context, userID string) error
 	if _, err := tx.Exec(ctx, `UPDATE users SET
 		starter_workspace_provisioned_at=COALESCE(starter_workspace_provisioned_at,now()),
 		updated_at=now() WHERE id=$1`, userID); err != nil {
+		return err
+	}
+	// Provisioning runs once per account on the server, so it is where the
+	// welcome mail starts; onboarding's Confirm and Skip are client-only.
+	// Clerk test addresses (UAT journeys and seeds) get none, saving quota.
+	toEmail := ""
+	if email != nil && !strings.Contains(strings.ToLower(*email), "+clerk_test@") {
+		toEmail = *email
+	}
+	if _, err := EnqueueEmailTx(ctx, tx, EmailOutboxParams{
+		UserID:         userID,
+		ToEmail:        toEmail,
+		Template:       "welcome",
+		Locale:         locale,
+		IdempotencyKey: "welcome:" + userID,
+		Category:       "lifecycle",
+	}); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

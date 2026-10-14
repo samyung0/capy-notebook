@@ -37,6 +37,7 @@ from ..config import cfg
 from ..jobs import TerminalError
 from . import models, store
 from .chunking import search_query_terms
+from .deck import WHOLE_PAGE
 from .knowledge_metadata import RetrievalMetadata
 from .search import rerank
 
@@ -380,7 +381,8 @@ class ExcerptRead:
     first: int
     last: int
     # The excerpt's figures a model may pick (id, label, description, credit);
-    # decorative and excluded ones are left out.
+    # decorative and excluded ones and those boxed as the whole page are left
+    # out.
     figures: list[dict[str, Any]] = field(default_factory=list)
     # On the excerpt's last page: the excerpts before and after it in the book.
     previous: Excerpt | None = None
@@ -450,8 +452,9 @@ def _validate_facets(
 
 async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
     """Excerpts of the books' current versions only, by id. Their figure ids
-    leave out decorative and excluded figures, which a model never picks, and
-    their context links come with section paths and pages."""
+    leave out decorative and excluded figures and those boxed as the whole
+    page, which a model never picks, and their context links come with
+    section paths and pages."""
     if not ids:
         return {}
     cur = await conn.execute(
@@ -463,7 +466,7 @@ async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
                  WHERE NOT EXISTS (
                    SELECT 1 FROM library_figures f
                    WHERE f.content_id = e.content_id AND f.id = u.id
-                     AND (f.excluded OR f.decorative))
+                     AND (f.excluded OR f.decorative OR f.bbox = %s::int[]))
                  ORDER BY u.n) AS figure_ids,
                (SELECT coalesce(jsonb_agg(jsonb_build_object(
                          'id', u.id, 'section_path', l.section_path, 'pages', l.pages)
@@ -478,7 +481,7 @@ async def _excerpts(conn: Any, ids: list[str]) -> dict[str, Excerpt]:
         JOIN library_books b ON b.id = e.book_id
         WHERE e.id = ANY(%s)
         """,
-        (WORKSPACE, ids),
+        (WHOLE_PAGE, WORKSPACE, ids),
     )
     out = {}
     for row in await cur.fetchall():
@@ -695,10 +698,10 @@ async def read_excerpt(
                 JOIN library_figures f
                   ON f.content_id = fc.content_id AND f.id = ANY(%s)
                 WHERE fc.file_id = %s AND fc.workspace_id = %s
-                  AND NOT f.excluded AND NOT f.decorative
+                  AND NOT f.excluded AND NOT f.decorative AND f.bbox <> %s::int[]
                 ORDER BY f.page, f.block_index
                 """,
-                (excerpt.figure_ids, excerpt.book_id, WORKSPACE),
+                (excerpt.figure_ids, excerpt.book_id, WORKSPACE, WHOLE_PAGE),
             )
             figures = [dict(row) for row in await cur.fetchall()]
         more = len(rows) > count
@@ -965,10 +968,10 @@ async def read_section(
                 SELECT f.id, f.label, f.description, f.credit, f.page
                 FROM library_figures f
                 WHERE f.content_id = %s AND f.page = ANY(%s)
-                  AND NOT f.excluded AND NOT f.decorative
+                  AND NOT f.excluded AND NOT f.decorative AND f.bbox <> %s::int[]
                 ORDER BY f.page, f.block_index
                 """,
-                (book["content_id"], pages),
+                (book["content_id"], pages, WHOLE_PAGE),
             )
             figures = [dict(row) for row in await cur.fetchall()]
     return SectionRead(

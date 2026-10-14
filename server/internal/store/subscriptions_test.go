@@ -1211,3 +1211,39 @@ func TestSubscriptionUpsertRejectsOwnerChange(t *testing.T) {
 		t.Fatalf("conflicting upsert projected second user to %s", tier)
 	}
 }
+
+// Pro started goes out once per subscription, renewals included; Pro
+// cancelled once per period end, redeliveries included.
+func TestSubscriptionMailIsSentOncePerEvent(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := newBlobTestUser(t, s, "sub_mail")
+	mails := func(template string) int {
+		t.Helper()
+		var n int
+		if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_outbox
+			WHERE user_id=$1 AND template=$2`, user, template).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	sub := proSubscription(user, uid("sub"), 1000)
+	renewed := sub
+	nextEnd := proPeriodEnd.AddDate(0, 1, 0)
+	renewed.CurrentPeriodEnd = &nextEnd
+	renewed.StripeEventCreated = 2000
+	cancelled := renewed
+	cancelled.CancelAtPeriodEnd = true
+	cancelled.StripeEventCreated = 3000
+	redelivered := cancelled
+	redelivered.StripeEventCreated = 3001
+	for _, event := range []Subscription{sub, renewed, cancelled, redelivered} {
+		if err := s.UpsertSubscription(ctx, event); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if started, ended := mails("subscription-started"), mails("subscription-cancelled"); started != 1 || ended != 1 {
+		t.Fatalf("started=%d cancelled=%d, want 1 and 1", started, ended)
+	}
+}

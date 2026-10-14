@@ -1,6 +1,7 @@
-"""Agent-written questions: the three small shapes, every problem named with
-its path, what was expected and what was sent, add_questions saving its valid
-questions, and a note's quiz fences (retrieval/questions.py)."""
+"""Agent-written questions: the three small shapes in one add_questions call,
+every problem named with its path, what was expected and what was sent,
+add_questions saving its valid questions, and a note's quiz fences
+(retrieval/questions.py)."""
 
 from __future__ import annotations
 
@@ -98,7 +99,6 @@ def test_the_shapes_expand_into_the_question_format_go_accepts():
 
 def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
     found = questions.check(
-        "add_questions",
         {
             "quiz_id": "mat_1",
             "questions": [
@@ -106,7 +106,7 @@ def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
                 {**MCQ, "markscheme": [{"text": "a", "marks": 1}]},
                 {
                     "question": "Resting potential?",
-                    "accepted": ["-70 mV"],
+                    "accepted": ["about -70"],
                     "fixedUnit": "mV",
                     "unit": "mV",
                 },
@@ -120,12 +120,12 @@ def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
         (
             '- questions[1].markscheme: unknown field, sent [{"text": "a", "marks": 1}]; a '
             "multiple-choice or short-answer question has no markscheme; a written answer "
-            "marked on one is add_open_question"
+            "marked on one is an open question"
         ),
         '- questions[2].fixedUnit: unknown field, sent "mV"; the field is unit',
         (
             "- questions[2].accepted[0]: expected a plain number because unit is set "
-            '(like "9.8", "-70" or "3/4"); sent "-70 mV"'
+            '(like "9.8", "-70" or "3/4"); sent "about -70"'
         ),
         (
             "- questions[3].correct: expected text, the correct option copied exactly "
@@ -142,7 +142,6 @@ def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
 
 def test_the_correct_option_and_an_open_questions_marks_are_checked():
     found = questions.check(
-        "add_questions",
         {"title": "T", "questions": [{**MCQ, "correct": "sodium"}, {"question": "?"}]},
     )
     assert found.items[0].problems == [
@@ -154,25 +153,33 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
     assert found.items[0].structural is False
     assert found.items[1].problems == [
         (
-            "questions[1]: expected a multiple-choice question (options and correct) or a "
-            "short answer (accepted); sent the fields question"
+            "questions[1]: expected a multiple-choice question (options and correct), a "
+            "short answer (accepted) or an open question (marks, markscheme, "
+            "model_answer); sent the fields question"
         )
     ]
+    unsure = {k: v for k, v in OPEN.items() if k != "model_answer"}
     opened = questions.check(
-        "add_open_question",
-        {
-            "quiz_id": "mat_1",
-            **{k: v for k, v in OPEN.items() if k != "model_answer"},
-            "marks": 3,
-        },
+        {"quiz_id": "mat_1", "questions": [{**unsure, "marks": 3}]}
     )
-    assert opened.call == [
-        "model_answer: missing; expected a full-marks answer",
-        "markscheme: expected item marks adding up to marks (3); sent items adding up to 2",
+    assert opened.call == [] and opened.items[0].problems == [
+        "questions[0].model_answer: missing; expected a full-marks answer",
+        (
+            "questions[0].markscheme: expected item marks adding up to marks (3); sent "
+            "items adding up to 2"
+        ),
     ]
-    # An open question can start a quiz (title) like add_questions.
-    assert questions.check("add_open_question", {**OPEN, "title": "T"}).call == []
-    both = questions.check("add_open_question", {**OPEN, "title": "T", "quiz_id": "q"})
+    # An open question carrying options is still open: options is named, and
+    # the open shape is the one to copy.
+    stray = questions.check({"title": "T", "questions": [{**OPEN, "options": ["a"]}]})
+    assert stray.listing().splitlines() == [
+        (
+            '- questions[0].options: unknown field, sent ["a"]; an open question has no '
+            "options; multiple choice is its own question, worth 1 mark"
+        ),
+        questions.SHAPES["open"],
+    ]
+    both = questions.check({"questions": [OPEN], "title": "T", "quiz_id": "q"})
     assert both.call == [
         (
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
@@ -180,7 +187,7 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
         )
     ]
     # Every place problem at once, not the first of them.
-    placed = questions.check("add_questions", {"questions": [MCQ], "chapter_id": "ch"})
+    placed = questions.check({"questions": [MCQ], "chapter_id": "ch"})
     assert placed.call == [
         (
             "quiz_id, title: expected exactly one, quiz_id to add to a quiz or title to "
@@ -193,13 +200,71 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
     ]
 
 
-def test_a_null_field_is_left_out():
-    """GLM fills fields that do not apply with null (a live run sent accepted:
-    null on every multiple-choice question); the call drops them first."""
-    sent = {"title": "T", "questions": [{**MCQ, "accepted": None, "explanation": None}]}
-    found = questions.check("add_questions", questions.drop_nulls(sent))
-    assert found.call == [] and found.items[0].problems == []
-    assert found.items[0].kind == "mcq"
+def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
+    """Blank means absent (null, "", "null", [] or {}): the 2026-10-13 runs
+    sent accepted: [] on multiple choice, unit: "", back: "", quiz_id: "" and
+    "null". A field the question's kind needs stays, so it keeps its own
+    message; an unknown field with content is still refused."""
+    sent = {
+        "title": "T",
+        "quiz_id": "null",
+        "chapter_id": "",
+        "questions": [
+            {**MCQ, "accepted": [], "unit": "", "explanation": None, "back": ""},
+            {**SHORT, "accepted": [], "options": None},
+            {**MCQ, "back": "Sodium"},
+        ],
+    }
+    clean = questions.drop_blanks("add_questions", sent)
+    mcq = {k: v for k, v in MCQ.items() if k != "explanation"}
+    assert clean == {
+        "title": "T",
+        "questions": [mcq, {**SHORT, "accepted": []}, {**MCQ, "back": "Sodium"}],
+    }
+    found = questions.check(clean)
+    assert found.call == [] and [i.kind for i in found.items] == ["mcq", "short", "mcq"]
+    assert [i.problems for i in found.items] == [
+        [],
+        ["questions[1].accepted: expected at least 1 items; sent 0"],
+        ['questions[2].back: unknown field, sent "Sodium"'],
+    ]
+    # A quiz fence's question too, and media by its block's schema.
+    assert questions.drop_question_blanks({**OPEN, "hints": [], "unit": "null"}) == {
+        k: v for k, v in OPEN.items() if k != "hints"
+    }
+    # YAML's ~ (null) reads as text in a fence; it is blank too.
+    assert questions.drop_question_blanks({**SHORT, "unit": "~"}) == {
+        k: v for k, v in SHORT.items() if k != "unit"
+    }
+    media = {
+        "quiz_id": "q",
+        "question_id": "q1",
+        "media": {**CHART, "title": "", "xTitle": ""},
+    }
+    assert questions.drop_blanks("add_question_media", media)["media"] == {
+        **CHART,
+        "title": "",
+    }
+
+
+def test_an_accepted_answer_written_with_its_unit_keeps_the_number():
+    found = questions.check(
+        {
+            "title": "T",
+            "questions": [
+                {"question": "Rate?", "accepted": ["5%", "5 %", "5"], "unit": "%"},
+                {**SHORT, "accepted": ["-70mV", "about -70 mV"]},
+            ],
+        },
+    )
+    assert found.items[0].problems == [] and found.items[0].value["accepted"] == ["5"]
+    assert found.items[1].value["accepted"] == ["-70", "about -70 mV"]
+    assert found.items[1].problems == [
+        (
+            "questions[1].accepted[1]: expected a plain number because unit is set "
+            '(like "9.8", "-70" or "3/4"); sent "about -70 mV"'
+        )
+    ]
 
 
 def _ctx(monkeypatch) -> ToolContext:
@@ -251,16 +316,18 @@ def _store(quiz: list[dict], written: list) -> QuizStore:
 
 async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkeypatch):
     """The valid questions land after the quiz's last question, in order; the
-    left-out one is named for resending in its place."""
+    left-out one is named for resending in its place. A chapter_id beside
+    quiz_id is ignored and said so."""
     ctx = _ctx(monkeypatch)
     written: list = []
     store = _store([{"id": "q_old", "stem": [], "parts": []}], written)
     args = {
         "quiz_id": "mat_q",
+        "chapter_id": "ch_1",
         "questions": [MCQ, {**SHORT, "accepted": ["minus seventy"]}, SHORT],
         "_tool_call_id": "call_1",
     }
-    result = await tools.write_questions("add_questions", args, ctx, store)
+    result = await tools.write_questions(args, ctx, store)
 
     assert result.outcome == "succeeded"
     [(kind, commands)] = written
@@ -279,10 +346,10 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
         "- questions[1].accepted[0]: expected a plain number because unit is set"
         in text
     )
+    assert text.endswith("chapter_id ignored: quiz mat_q keeps its chapter.")
 
     # Nothing valid: nothing is written and every problem comes back at once.
     refused = await tools.write_questions(
-        "add_questions",
         {**args, "questions": [{"question": "?", "options": ["a"], "correct": "b"}]},
         ctx,
         store,
@@ -295,28 +362,59 @@ async def test_add_questions_saves_the_valid_questions_and_names_the_rest(monkey
     assert "- questions[0].options: expected at least 2 items; sent 1" in refused.text()
 
 
-async def test_a_new_quiz_takes_its_first_questions(monkeypatch):
+async def test_a_new_quiz_takes_its_first_questions_of_every_kind(monkeypatch):
     ctx = _ctx(monkeypatch)
     written: list = []
+    store = _store([], written)
     result = await tools.write_questions(
-        "add_questions",
-        {
-            "title": "Neurons",
-            "questions": [MCQ, SHORT],
-            "_tool_call_id": "c",
-        },
+        {"title": "Neurons", "questions": [MCQ, SHORT, OPEN], "_tool_call_id": "c"},
         ctx,
-        _store([], written),
+        store,
     )
     assert result.outcome == "succeeded"
     [(kind, made)] = written
     assert kind == "create" and [q["parts"][0]["answer"]["type"] for q in made] == [
         "mcq",
         "short",
+        "open",
     ]
+    assert [q["parts"][0]["marks"] for q in made] == [1, 1, 2]
     assert result.text().startswith(
-        "Created quiz 'Neurons' (id mat_new) with 2 question(s):"
+        "Created quiz 'Neurons' (id mat_new) with 3 question(s):"
     )
+
+    # A quiz may start with open questions only.
+    written.clear()
+    second = {**OPEN, "question": "Why is conduction faster in myelinated axons?"}
+    result = await tools.write_questions(
+        {"title": "Essays", "questions": [OPEN, second], "_tool_call_id": "d"},
+        ctx,
+        store,
+    )
+    assert result.outcome == "succeeded", result.text()
+    [(_, made)] = written
+    assert [q["parts"][0]["answer"]["type"] for q in made] == ["open", "open"]
+
+
+async def test_an_open_question_whose_marks_do_not_add_up_is_left_out(monkeypatch):
+    ctx = _ctx(monkeypatch)
+    written: list = []
+    result = await tools.write_questions(
+        {
+            "quiz_id": "mat_q",
+            "questions": [{**OPEN, "marks": 3}, MCQ],
+            "_tool_call_id": "c",
+        },
+        ctx,
+        _store([{"id": "q_old", "stem": [], "parts": []}], written),
+    )
+    assert result.outcome == "succeeded"
+    [(_, [command])] = written
+    assert command["question"]["parts"][0]["answer"]["type"] == "mcq"
+    assert (
+        "- questions[0].markscheme: expected item marks adding up to marks (3); sent "
+        "items adding up to 2"
+    ) in result.text()
 
 
 async def test_media_goes_after_the_question_text(monkeypatch):
@@ -401,12 +499,147 @@ def test_a_note_quiz_fence_takes_the_same_shapes():
     assert "A quiz fence lists its questions in YAML, in these shapes:" in listing
 
 
+def _fenced(markdown: str) -> tuple[str, questions.Check]:
+    [text], found = questions.note_fences(
+        [markdown], lambda _: "content", iter(["q_a", "q_b"]).__next__
+    )
+    return text, found
+
+
+def test_chart_and_plot_fences_are_repaired_where_they_mean_one_thing():
+    """A plot written as YAML (4 runs), a missing type (2) and a chart kind as
+    a chart fence's type (1) become the JSON the converter reads, each named
+    in one line; a body that is not a mapping stays as written."""
+    plot_yaml = (
+        "- item\n  ```plot\n  title: Vm\n  xTitle: t\n  yTitle: V\n"
+        "  series:\n    - name: a\n      points: [[0, 1], [1, 2]]\n  ```\n"
+    )
+    text, found = _fenced(plot_yaml)
+    assert text == (
+        '- item\n  ```plot\n  {"type":"plot","title":"Vm","xTitle":"t","yTitle":"V",'
+        '"series":[{"name":"a","points":[[0,1],[1,2]]}]}\n  ```\n'
+    )
+    assert found.notes == [
+        'Repaired content plot fence 1: read it from YAML; a plot fence is JSON; added "type": "plot".'
+    ]
+    chart = {k: v for k, v in CHART.items() if k != "kind"}
+    text, found = _fenced(f"```chart\n{json.dumps({**chart, 'type': 'bar'})}\n```\n")
+    assert json.loads(text.split("\n")[1]) == CHART
+    assert found.notes == [
+        'Repaired content chart fence 1: "type": "bar" is a chart kind, so it went to kind.'
+    ]
+    text, found = _fenced(f"```chart\n{json.dumps(CHART)}\n```\n")
+    assert json.loads(text.split("\n")[1]) == CHART and found.notes == []
+    # Left as written, for the converter's error: a body that is not a mapping,
+    # one meant as JSON ({) that is not, and YAML whose escapes made control or
+    # separator characters (\a of $\alpha$, \P of $\Phi$).
+    for kept in (
+        "```plot\n- 1\n- 2\n```\n",
+        '```chart\n{"type": "chart", "title": "Decay for $\\alpha = 0.5$"}\n```\n',
+        '```plot\ntitle: "Decay for $\\alpha$"\nseries: []\n```\n',
+        '```plot\ntitle: "$\\Phi$"\nseries: []\n```\n',
+    ):
+        assert _fenced(kept) == (kept, questions.Check(questions.FENCE)), kept
+
+
+def test_quiz_and_flashcards_yaml_is_repaired_only_after_a_parse_failure():
+    """Trailing commas, LaTeX backslashes in double quotes and unquoted values
+    holding ": " (all seen on 2026-10-13) are repaired once a fence fails to
+    parse and named in one line; a fence that parses is never touched, and one
+    that still fails reports its first error."""
+    quiz = (
+        "```quiz\nquestions:\n"
+        '  - question: "Which is $\\hat{y} = a + bx$?"\n'
+        '    options: ["the fit", "the data"],\n'
+        "    correct: the fit\n"
+        "    explanation: Short the 5 V source; the two 10 Ω resistors are then "
+        "in parallel: 10 ∥ 10 = 5 Ω.\n"
+        "```\n"
+    )
+    text, found = _fenced(quiz)
+    assert not found.problems()
+    [question] = json.loads(text.split("\n")[1])["questions"]
+    part = question["parts"][0]
+    assert part["blocks"][0]["text"] == "Which is $\\hat{y} = a + bx$?"
+    assert part["solution"][0]["text"].endswith("in parallel: 10 ∥ 10 = 5 Ω.")
+    assert found.notes == [
+        (
+            "Repaired content quiz fence 1 (trailing commas, values holding ': ' "
+            "quoted, LaTeX backslashes); a YAML line ends without a comma; quote a "
+            'YAML value holding ": "; in YAML double quotes write \\\\ for a '
+            "backslash."
+        )
+    ]
+
+    cards = (
+        "```flashcards\ncards:\n"
+        '  - front: Binomial or normal: "how many of 40 seeds germinate?"\n'
+        "    back: Binomial\n    hint: count\n```\n"
+    )
+    text, found = _fenced(cards)
+    assert json.loads(text.split("\n")[1]) == {
+        "cards": [
+            {
+                "front": 'Binomial or normal: "how many of 40 seeds germinate?"',
+                "back": "Binomial",
+                "hint": "count",
+            }
+        ]
+    }
+    assert found.notes[0].startswith(
+        "Repaired content flashcards fence 1 (values holding ': ' quoted)"
+    )
+
+    # Once a fence fails, a comment stays a comment, a quoted phrase inside a
+    # plain value keeps its literal backslash, and flow-list items are fixed.
+    repaired = (
+        "```quiz\nquestions:\n"
+        '  - question: Evaluate "$\\sin x$" at 0\n'
+        '    options: ["$\\alpha$", "$\\beta$"],\n'
+        '    correct: "$\\alpha$"\n'
+        "  - question: g?\n    accepted:\n      - 9.8  # rounded\n      - 9.81\n"
+        "```\n"
+    )
+    text, found = _fenced(repaired)
+    assert not found.problems(), found.problems()
+    first, second = json.loads(text.split("\n")[1])["questions"]
+    assert first["parts"][0]["blocks"][0]["text"] == 'Evaluate "$\\sin x$" at 0'
+    assert sorted(first["parts"][0]["answer"]["options"]) == ["$\\alpha$", "$\\beta$"]
+    assert second["parts"][0]["answer"]["accepted"] == ["9.8", "9.81"]
+    # A body that opens as JSON keeps the commas that end its lines.
+    assert questions._repair_yaml('{"a": [1],\n "b": "$\\x$"}\n') == (
+        '{"a": [1],\n "b": "$\\x$"}\n',
+        [],
+    )
+    # A longer fence holding a shorter one is passed over whole: the quiz after
+    # a python fence closed by four backticks is still expanded.
+    longer = "```python\nx = 1\n````\n\n```quiz\nquestions:\n  - question: Q?\n    options: [A, B]\n    correct: A\n```\n"
+    text, found = _fenced(longer)
+    assert '"correct": [' in text and not found.problems()
+
+    # Parses as written: a plain value keeps its backslash, nothing is noted.
+    plain = "```quiz\nquestions:\n  - question: Is $\\hat{y}$ the fit?\n    options: [Yes, No]\n    correct: Yes\n```\n"
+    text, found = _fenced(plain)
+    assert '"text": "Is $\\\\hat{y}$ the fit?"' in text and found.notes == []
+    # Still broken: the first error, not the repaired body's, and the fence as
+    # written. The trailing comma is repaired; the unclosed quote is not.
+    broken = (
+        "```quiz\nquestions:\n  - question: Q?\n    options: [a, b],\n"
+        '    correct: a\n    explanation: "unclosed\n```\n'
+    )
+    text, found = _fenced(broken)
+    assert text == broken and found.call[0].startswith(
+        "content quiz fence 1: expected YAML; while parsing a block mapping"
+    ), found.call
+    cards_broken = "```flashcards\ncards:\n  - front: a\n```\n"
+    assert _fenced(cards_broken)[0] == cards_broken
+
+
 async def test_a_refused_write_also_names_its_question_problems(monkeypatch):
     """An excerpt refusal carries the call's question problems too, so one
     resend fixes both."""
     ctx = _ctx(monkeypatch)
     result = await tools.write_questions(
-        "add_questions",
         {
             "title": "T",
             "questions": [{**MCQ, "correct": "x"}],

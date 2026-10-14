@@ -40,7 +40,6 @@ WRITES = (
     "edit_document",
     "copy_questions",
     "add_questions",
-    "add_open_question",
     "add_question_media",
 )
 # A quiz fence in a note, as the playground's check_note reads it.

@@ -64,6 +64,10 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 	if key == target.Key {
 		return &Empty{}, nil
 	}
+	// Before the claim: a capture that cannot be stored takes no interval.
+	if a.blob == nil {
+		return nil, huma.Error503ServiceUnavailable("thumbnail storage is not configured")
+	}
 	if err := a.s.ClaimThumbnailCapture(ctx, in.ID); errors.Is(err, store.ErrThumbnailTooSoon) {
 		return nil, &huma.ErrorModel{
 			Status: http.StatusTooManyRequests,
@@ -73,9 +77,6 @@ func (a *api) captureFileThumbnail(ctx context.Context, in *captureThumbnailInpu
 		}
 	} else if err != nil {
 		return nil, hErr(err)
-	}
-	if a.blob == nil {
-		return nil, huma.Error503ServiceUnavailable("thumbnail storage is not configured")
 	}
 	if err := a.blob.PutObjectOnce(ctx, key, in.RawBody, "image/webp", thumbnailCacheControl); err != nil {
 		obs.Log(ctx).Warn("thumbnail capture upload failed", "file_id", in.ID, "error", err)

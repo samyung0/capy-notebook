@@ -6,6 +6,8 @@ import {
   type DrawnThumbnail,
   MAX_UPLOAD_BYTES,
   NOT_DRAWN_YET,
+  openedOn,
+  ThumbnailUploadRefused,
   UPLOAD_AFTER_MS,
   UPLOAD_WITHIN_MS,
   uploadThumbnail,
@@ -231,6 +233,133 @@ describe('thumbnail capture scheduling', () => {
     expect(console.warn).not.toHaveBeenCalled();
   });
 
+  it('captures a stale card once on open, and nothing for a fresh one', async () => {
+    const stale = setup();
+    stale.capture.opened(true);
+    // A frame restart within the same open counts for nothing.
+    stale.capture.opened(true);
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    stale.capture.leave();
+    expect(stale.draw).toHaveBeenCalledTimes(1);
+    expect(stale.upload).toHaveBeenCalledExactlyOnceWith(...sent(false));
+
+    const fresh = setup();
+    fresh.capture.opened(false);
+    fresh.capture.opened(true);
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    fresh.capture.leave();
+    expect(fresh.draw).not.toHaveBeenCalled();
+    expect(fresh.upload).not.toHaveBeenCalled();
+  });
+
+  it('counts a stale session once, though the editor opens again on it', async () => {
+    const seen = new WeakSet<object>();
+    const session = { thumbnailStale: true };
+    const first = setup();
+    openedOn(first.capture, session, seen);
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(first.upload).toHaveBeenCalledOnce();
+    // View and back: a new editor on the same session read.
+    first.capture.dispose();
+    const again = setup();
+    openedOn(again.capture, session, seen);
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    expect(again.upload).not.toHaveBeenCalled();
+    // A new read that is stale again counts.
+    const next = setup();
+    openedOn(next.capture, { thumbnailStale: true }, seen);
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(next.upload).toHaveBeenCalledOnce();
+  });
+
+  it('a stale open the editor may not capture yet goes with the idle upload', async () => {
+    const { capture, state, upload } = setup({ allowed: false });
+    capture.opened(true);
+    await vi.advanceTimersByTimeAsync(DRAW_AFTER_MS);
+    expect(upload).not.toHaveBeenCalled();
+    state.allowed = true;
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(upload).toHaveBeenCalledExactlyOnceWith(...sent(false));
+  });
+
+  it('ends a stale open refused as too soon, with nothing of its own to send', async () => {
+    const { capture, upload } = setup();
+    upload.mockRejectedValueOnce(new ThumbnailUploadRefused(429));
+    capture.opened(true);
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    capture.leave();
+    expect(upload).toHaveBeenCalledTimes(1);
+
+    // With a local edit in the cycle, the refused capture still goes again.
+    const edited = setup();
+    edited.upload.mockRejectedValueOnce(new ThumbnailUploadRefused(429));
+    edited.capture.opened(true);
+    edited.capture.edited();
+    await vi.advanceTimersByTimeAsync(UPLOAD_WITHIN_MS);
+    edited.capture.leave();
+    expect(edited.upload).toHaveBeenCalledTimes(2);
+  });
+
+  it('never sends a drawing an update from elsewhere came after', async () => {
+    let drawing = 0;
+    const draw = vi.fn(async () => ({
+      bytes: new ArrayBuffer(++drawing),
+      headers: {},
+    }));
+    const { capture, upload } = setup({ draw });
+    capture.edited();
+    await vi.advanceTimersByTimeAsync(DRAW_AFTER_MS);
+    expect(draw).toHaveBeenCalledTimes(1);
+    // The agent edits; then the user leaves the file.
+    capture.remote();
+    capture.leave();
+    expect(upload).not.toHaveBeenCalled();
+    // A pending idle upload draws again first.
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(draw).toHaveBeenCalledTimes(2);
+    expect(upload).toHaveBeenCalledOnce();
+    expect(upload.mock.calls[0]?.[0].bytes.byteLength).toBe(2);
+  });
+
+  it('drops a drawing an update from elsewhere reached during the draw', async () => {
+    let finish: (value: DrawnThumbnail) => void = () => {};
+    const draw = vi.fn(
+      () =>
+        new Promise<DrawnThumbnail>((resolve) => {
+          finish = resolve;
+        })
+    );
+    const { capture, upload } = setup({ draw });
+    capture.edited();
+    await vi.advanceTimersByTimeAsync(DRAW_AFTER_MS);
+    capture.remote();
+    finish(drawn);
+    await vi.advanceTimersByTimeAsync(0);
+    capture.leave();
+    expect(upload).not.toHaveBeenCalled();
+  });
+
+  it('keeps no drawing after a refused upload once an update from elsewhere came', async () => {
+    let refuse: (error: Error) => void = () => {};
+    const { capture, draw, upload } = setup();
+    upload.mockImplementationOnce(
+      () =>
+        new Promise<void>((_, reject) => {
+          refuse = reject;
+        })
+    );
+    capture.edited();
+    await vi.advanceTimersByTimeAsync(UPLOAD_AFTER_MS);
+    expect(upload).toHaveBeenCalledTimes(1);
+    capture.remote();
+    refuse(new Error('429'));
+    await vi.advanceTimersByTimeAsync(0);
+    // Leaving would have sent the refused drawing again; it is stale now.
+    capture.leave();
+    expect(draw).toHaveBeenCalledTimes(1);
+    expect(upload).toHaveBeenCalledTimes(1);
+  });
+
   it('drops everything once disposed', async () => {
     const { capture, draw, upload } = setup();
     capture.edited();
@@ -313,6 +442,8 @@ describe('thumbnail upload', () => {
       'fetch',
       vi.fn(async () => new Response(null, { status: 429 }))
     );
-    await expect(uploadThumbnail('f_1', drawn, false)).rejects.toThrow('429');
+    await expect(uploadThumbnail('f_1', drawn, false)).rejects.toEqual(
+      new ThumbnailUploadRefused(429)
+    );
   });
 });

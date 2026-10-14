@@ -24,8 +24,11 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// A case the Rust store refuses where the Node server accepted (or refused
 /// for another reason), by the rules it took from Go and the browser at the
 /// cutover: Go's card limits and image shape, media naming their asset
-/// (Epo, 2026-10-10), `diagram`/`mindmap` no longer node types, and a
-/// reference never keeping an imported fence body (live-items REVIEW5).
+/// (Epo, 2026-10-10), `diagram`/`mindmap` no longer node types, a
+/// reference never keeping an imported fence body (live-items REVIEW5), and
+/// the embed catalog (Epo 2026-10-13): a type or material kind it does not
+/// list, an element in a material kind it does not list it for, and Go's
+/// wording for figures.
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -54,6 +57,10 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         || message.ends_with("requires an assetId")
         || message.ends_with("cannot contain url")
         || message.ends_with("cannot contain src")
+        || message.starts_with("unknown element type")
+        || message.starts_with("unknown material kind")
+        || message.contains(" cannot hold a ")
+        || message.starts_with("chart, plot and graph embeds")
         || value.as_array().is_some_and(|nodes| {
             nodes
                 .iter()
@@ -233,8 +240,8 @@ fn set(card: Value) -> Result<(), String> {
 #[test]
 fn a_card_holds_what_go_projects() {
     // Astral characters count once, as Go's runes.
-    let front = "\u{1F600}".repeat(material::CARD_FRONT_MAX);
-    let back = "\u{1F600}".repeat(material::CARD_BACK_MAX);
+    let front = "\u{1F600}".repeat(notes::catalog::CARD_FRONT_MAX);
+    let back = "\u{1F600}".repeat(notes::catalog::CARD_BACK_MAX);
     set(card(
         &front,
         &back,
@@ -270,7 +277,7 @@ fn a_card_holds_what_go_projects() {
 #[test]
 fn a_media_block_names_its_asset() {
     let note = |node: Value| material::assert_canonical(&[node], "note").map_err(|error| error.0);
-    for kind in ["img", "image", "audio", "file"] {
+    for kind in material::MEDIA_TYPES {
         let node = |extra: Value| {
             let mut node = json!({ "children": [{ "text": "" }], "id": "m1", "type": kind });
             for (key, value) in extra.as_object().unwrap() {
@@ -300,7 +307,7 @@ fn a_media_block_names_its_asset() {
 }
 
 /// `diagram` and `mindmap` are material kinds, not node types: their
-/// material holds a `mermaid` block.
+/// material holds a `mermaid` block, and the catalog lists no such element.
 #[test]
 fn diagram_and_mindmap_are_not_node_types() {
     let block = |kind: &str| {
@@ -317,7 +324,7 @@ fn diagram_and_mindmap_are_not_node_types() {
             material::assert_canonical(&[block(kind)], kind)
                 .unwrap_err()
                 .0,
-            format!("{kind} element is required")
+            format!("unknown element type \"{kind}\"")
         );
     }
 }

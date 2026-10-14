@@ -1,38 +1,139 @@
 {
   "schemaVersion": 1,
-  "subject": "Your Capy Notebook storage is over the free limit",
-  "preview": "Your subscription lapsed and storage is over the free limit.",
+  "subject": "Free up space in Capy Notebook by {{.GraceEndsAt}}",
+  "preview": "Your Pro plan ended and your files are over the Free limit. Nothing has been deleted.",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
+            "text": "Your files are over the Free storage limit"
           }
         ]
       },
       {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "Storage over free limit" }]
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Your Pro plan has ended, and your files use more than the "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " the Free plan includes. Nothing has been deleted."
+          }
+        ]
       },
       {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "Hello," }]
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#fdf5e4",
+          "borderColor": "#f0e0bd",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Storage used: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageUsed",
+                  "label": "Storage used",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Free plan limit: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageLimit",
+                  "label": "Storage limit",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Free up space by: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "GraceEndsAt",
+                  "label": "Buffer ends",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "type": "paragraph",
         "content": [
           {
             "type": "text",
-            "text": "Your subscription has lapsed and your storage is over the free plan limit. You have a buffer period to free up space. No content has been deleted yet."
+            "text": "Until then you can read, download, organize and delete your files, but uploads and edits are paused in the workspaces you pay for. If you're still over the limit on "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "GraceEndsAt",
+              "label": "Buffer ends",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": ", your account becomes read-only."
           }
         ]
       },
@@ -47,13 +148,36 @@
           "borderRadius": "smooth"
         }
       },
-      { "type": "horizontalRule" },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Prefer to stay on Free? Delete files you no longer need until you're under "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": "."
+          }
+        ]
+      },
+      {
+        "type": "horizontalRule"
+      },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "text": "You received this message because your Capy Notebook subscription and storage limits changed."
+            "text": "You got this email because your Capy Notebook Pro plan ended."
           }
         ]
       },
@@ -62,6 +186,7 @@
         "content": [
           {
             "type": "text",
+            "text": "Stop billing emails",
             "marks": [
               {
                 "type": "link",
@@ -72,8 +197,7 @@
                   "rel": "noopener noreferrer nofollow"
                 }
               }
-            ],
-            "text": "Manage product email preferences"
+            ]
           }
         ]
       }

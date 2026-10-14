@@ -1,50 +1,107 @@
 {
   "schemaVersion": 1,
-  "subject": "Your Capy Notebook account deletion is scheduled",
-  "preview": "Your account is scheduled for deletion.",
+  "subject": "Your Capy Notebook account will be deleted on {{.DeletionDate}}",
+  "preview": "Contact support before then if this was a mistake.",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
+            "text": "Your account is scheduled for deletion"
           }
         ]
       },
       {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "Account deletion scheduled" }]
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "We received your request to delete your Capy Notebook account. Your account is locked now. On the date below it will be permanently deleted with all of its workspaces, files, materials and study data."
+          }
+        ]
       },
       {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "Hello," }]
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#fdf0ef",
+          "borderColor": "#f2d4d1",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "Deletion date: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "DeletionDate",
+                  "label": "Deletion date",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "Days left: "
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "GraceDays",
+                  "label": "Grace days",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "type": "paragraph",
         "content": [
           {
             "type": "text",
-            "text": "We received your request to delete your Capy Notebook account. Deletion proceeds in "
+            "text": "Changed your mind? Contact support before "
           },
           {
             "type": "variable",
             "attrs": {
-              "id": "GraceDays",
-              "label": "Grace period days",
+              "id": "DeletionDate",
+              "label": "Deletion date",
               "required": true
             }
           },
           {
             "type": "text",
-            "text": " days. At that point, your account and all of its workspaces, files, materials, and other data will be permanently deleted. If this was a mistake, contact support before then."
+            "text": " and we can restore your account. After that date nothing can be recovered."
           }
         ]
       },
@@ -59,33 +116,15 @@
           "borderRadius": "smooth"
         }
       },
-      { "type": "horizontalRule" },
       {
-        "type": "footer",
-        "content": [
-          {
-            "type": "text",
-            "text": "You received this message because you requested account deletion on Capy Notebook."
-          }
-        ]
+        "type": "horizontalRule"
       },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "marks": [
-              {
-                "type": "link",
-                "attrs": {
-                  "href": "UnsubscribeURL",
-                  "isUrlVariable": true,
-                  "target": "_blank",
-                  "rel": "noopener noreferrer nofollow"
-                }
-              }
-            ],
-            "text": "Manage product email preferences"
+            "text": "You got this email because someone asked to delete your Capy Notebook account. If that wasn't you, contact support right away."
           }
         ]
       }

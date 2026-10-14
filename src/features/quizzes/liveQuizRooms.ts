@@ -9,6 +9,7 @@ import {
   useItemRoom,
 } from '@/features/collaboration/itemRoom';
 import { pairedUndo, type UndoTarget } from '@/features/collaboration/undo';
+import type { ReadOnlyCode } from '@/features/notes/collaborationEvents';
 import type { Question } from '@/features/questions/types';
 import { readQuestions } from './liveQuiz';
 
@@ -31,6 +32,8 @@ export interface QuizRooms {
   keys: ItemRoom | null;
   /** The offline banner (the worse of the two rooms'). */
   offline: ItemRoomSnapshot['offline'];
+  /** Why the content room is read-only for this writer, when it said. */
+  readOnlyCode: ReadOnlyCode | null;
   /** Both documents hold their rooms' state (editable). */
   ready: boolean;
   /** Stored edits that cannot join a room, shown for copying until Reload
@@ -106,6 +109,7 @@ export function useQuizRooms(
     content: content.room,
     keys: wantKeys ? keys.room : null,
     offline: offline ?? null,
+    readOnlyCode: content.snapshot.readOnlyCode,
     ready,
     recovery,
     status: wantKeys

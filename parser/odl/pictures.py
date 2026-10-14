@@ -40,7 +40,6 @@ REPEAT_PAGES = 5
 MIN_SIDE_PT = 1.0
 SUBTLE_ASPECT = 0.01
 PLACEHOLDER = "[formula]"
-TEXT_FLAGS = pymupdf.TEXTFLAGS_DICT & ~pymupdf.TEXT_PRESERVE_IMAGES
 CAPTION = re.compile(
     r"^\s*(figure|fig\.?|table|chart|graph|exhibit|diagram|abb\.?|figura|図|表)\s*[\dIVXA-Z]",
     re.IGNORECASE,
@@ -179,6 +178,7 @@ def _image_digests(
                 by_object[xref] = pymupdf.Pixmap(document, xref).digest.hex()
             except (RuntimeError, ValueError):
                 by_object[xref] = None
+            _drop_decoded()
         if xref is not None and by_object[xref]:
             digests[index] = by_object[xref]
         else:
@@ -190,6 +190,7 @@ def _image_digests(
             for info in page.get_image_info(hashes=True)
             if info.get("digest")
         ]
+        _drop_decoded()
         # ODL's box is the image's placement: an exact key (the first image in
         # page order, as the best share would pick) answers almost every
         # picture; the rest search the cells they cover.
@@ -217,6 +218,13 @@ def _image_digests(
             if best and union_share(best) >= 0.5:
                 digests[index] = best[1]
     return digests
+
+
+def _drop_decoded() -> None:
+    """Empty MuPDF's store, where decoding just left the image(s): it fills to
+    256 MiB (120 page scans do) under the parse's peak, and the persistent
+    child keeps it after the document; nothing reads the images again."""
+    pymupdf.TOOLS.store_shrink(100)
 
 
 def empty_table(block: dict) -> bool:

@@ -70,7 +70,10 @@ import * as db from './db';
 import { uid } from './db';
 import { editorAssetHandlers } from './editorAssets';
 import { questionBankHandlers } from './questionBank';
-import { scenarioSourceSession } from './scenarioFixtures';
+import {
+  clearMockThumbnailStale,
+  scenarioSourceSession,
+} from './scenarioFixtures';
 import { studyHandlers } from './study';
 
 /** Query parsing shared by the owner-scoped list mocks; the cursor is an offset. */
@@ -1820,6 +1823,7 @@ export const handlers = [
     f.thumbnailUrl = URL.createObjectURL(
       new Blob([bytes], { type: 'image/webp' })
     );
+    clearMockThumbnailStale(f.id);
     return new HttpResponse(null, { status: 204 });
   }),
   http.delete('/api/files/:id', async ({ params }) => {

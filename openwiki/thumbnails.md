@@ -10,8 +10,15 @@ and `human/backend-storage-quota.md` (2026-10-11).
 
 Ingest renders file thumbnails (phase 1). Edited Office files are captured in
 the browser and posted to Go ([Browser captures](#browser-captures): PPTX and
-XLSX in phase 2a, DOCX in phase 2b). Agent-edit captures come later (see the
-end).
+XLSX in phase 2a, DOCX in phase 2b), and so is a file whose card is older than
+its saved document when an editor opens it, which covers an agent's edits and
+an Undo ([On open](#browser-captures)). A text source's preview follows each
+save ([Text previews on save](#text-previews-on-save)).
+
+No server draws Office pages after edits (Epo 2026-10-14): users open Office
+files in the browser anyway, a server capture costs about as much as
+reprocessing the file, and a deck the agent creates is a new file whose parse
+job renders its page 1.
 
 ## Storage and lifecycle
 
@@ -102,7 +109,7 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 | ----- | --------- |
 | PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the ingest encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). A bundle without the image (an older parser, a failed render) means no thumbnail |
 | Image (`image_caption`) | Pillow: first frame, EXIF orientation, shrunk to 200 px wide and cut at 400 px before it is converted and flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
-| Text (`raw_text`) and CSV/TSV (`delimited_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters of the source (a text-mode read, never cut mid-character; NUL removed). Cards draw text and code as monospace lines, and a CSV or TSV (kind `sheet`) as a small table: its first 8 rows and 5 columns, the first row the header, tab-separated when the first line has a tab, quoted cells kept whole |
+| Text (`raw_text`) and CSV/TSV (`delimited_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters of the source (a text-mode read, never cut mid-character; NUL removed), for an untouched upload; once the file has saved edits its saves write it ([Text previews on save](#text-previews-on-save)). Cards draw text and code as monospace lines, and a CSV or TSV (kind `sheet`) as a small table: its first 8 rows and 5 columns, the first row the header, tab-separated when the first line has a tab, quoted cells kept whole |
 | Store-only, audio | none |
 
 - The image is WebP, quality 60, 200 px wide (narrower images are not
@@ -207,6 +214,8 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
   cannot both pass; a capture inside the interval gets `429`
   (`thumbnail_too_soon`) before anything is written. Per user, 60 captures an
   hour through the Redis limiter (`ratelimit` class `thumbnail`, Epo's number).
+- Without a bucket a capture is refused (`503`) before it claims the
+  interval, so the next one, once storage is back, is not refused as too soon.
 - Then the B2 put (`Cache-Control: public, max-age=31536000, immutable`,
   `blob.Store.PutObjectOnce`) and `SetFileThumbnail`: the key change releases the
   old key through the phase 1 triggers; a file trashed or deleted meanwhile
@@ -242,6 +251,34 @@ success ([handler](../server/internal/httpapi/huma_thumbnails.go)):
 - An upload needs the room to have every edit (the session reads `saved`) and
   the user to be able to edit (not paused, handoff, recovery or offline at its
   bound). Remote edits start nothing: the peer who edits captures.
+- An update from elsewhere (another editor, the agent, an Undo: any update to
+  the room's document not from this frame) drops a capture drawn before it
+  (`remote`), so the next upload draws again: leaving after it sends nothing,
+  an update during a drawing discards that drawing, and a refused upload's
+  drawing is kept for the next upload only while no update came after it.
+  Without this, an open editor's drawing from before an agent's edit could
+  land after it (review round 2 H1b).
+- **On open.** The editor read of the source session
+  (`GET /api/files/{id}/source-session`, not the view read) carries
+  `thumbnailStale` when the card is older than the saved document
+  (`ThumbnailStale`, Epo 2026-10-14): a saved change (`source_documents` with
+  a stored state or rows) whose `last_edited_at`, which every checkpoint sets
+  (an editor's save, an agent's edit, an Undo), is newer than 5 s before
+  `thumbnail_captured_at` (`ThumbnailStaleSlack`: a capture claimed just
+  after a change may have been drawn before an agent's update reached that
+  browser; the slack costs at most one extra capture on a later open), or any
+  saved change while there is no capture yet (the card is ingest's render of
+  the upload). Once the editor's replica holds the document
+  (`collaboration-ready`), such an open counts as one change (`opened`): drawn
+  and uploaded at once when the editor may, else by the cycle's idle upload or
+  leaving, once per session read (`openedOn`: a frame restart, or closing for
+  View and editing again on the same session, adds nothing). The editor-only rule,
+  the WebP checks and the 60 s interval apply as to any capture, and nothing
+  retries. When several editors open the file, one claim wins; a loser whose
+  cycle holds only the stale open (no local edit) ends it on its `429`
+  instead of sending again at 60 s or on leaving. This covers an agent's
+  edits, an Undo from a chat card and edits whose browser closed before
+  capturing.
 - An upload due while the room is still saving (or editing is paused) waits:
   the 60-second upload stays pending when the 10-minute mark finds the room
   saving.
@@ -320,16 +357,40 @@ Sources: [endpoint test](../server/internal/httpapi/thumbnail_capture_test.go),
 [runtime test](../src/office-runtime/thumbnail.test.ts),
 [e2e](../e2e/editor/thumbnail-capture.spec.ts).
 
-## Phase 2
+## Text previews on save
 
-- Captures after an agent's `edit_document` on Office files: queued
-  2026-10-11 to the Rust harness session, which implements them and checks
-  their cost in its performance round. Epo's design: once per finished agent
-  response (Go's `FinalizeAssistantMessage` has the turn's edited files),
-  only when page 1 may have changed (XLSX a cell in the first sheet's capture
-  area, PPTX slide 1, DOCX always), export the live state and render page 1 on
-  the ingest host, whether or not the file is open in a browser.
-- Text previews after edits in a workspace with auto-process off: the preview
-  is written by ingest, so it waits for the next refresh. Queued with the
-  above: the source checkpoint save carries the opening text and Go writes
-  `files.preview`, as materials do on every write.
+`files.preview {text}` of a text, code, CSV or TSV source follows every save
+of its room, not only the next ingest (a workspace with auto-process off kept
+the upload's text). The save path owns it (Epo 2026-10-13): once the file has
+saved edits (a stored state or rows), ingest writes no text preview, and fills
+it only for an untouched upload. Ingest locks the file row first and checks in
+a statement of its own after it: a save locks that row before it writes its
+state, so an ingest that waited on a first save sees it and leaves the save's
+preview. The collaboration server reads the opening 600 characters
+as ingest reads them (a UTF-8-sig text-mode read: a leading BOM dropped,
+`\r\n` and `\r` read as `\n`, NUL removed; `Preview` in
+[`text.rs`](../collaboration-rs/crates/sources/src/text.rs)), walking the
+room's text only as far as the preview needs, and sends them with every text
+checkpoint (`preview`), a direct agent edit's included. `SaveSourceCheckpoint`
+reads the stored preview with the row lock it already takes and writes the new
+one in the checkpoint's transaction only when it changed: an unchanged preview
+costs no statement and raises no tree event; a changed one refetches open
+lists, at most once per save (5 to 30 s apart while someone types). An Office
+save carries none, and a preview of more than 600 characters, with NUL or
+invalid UTF-8 refuses the save. Deploy the API before the collaboration
+server, or with it: an older API refuses `preview` (422), which the
+collaboration server reads as permanent
+([runbook](deployment-runbook.md#0-release-flow-and-branch-policy)).
+
+Measured on the developer PC (2026-10-13, interleaved, three runs): the
+preview adds 5-10 µs to a text save's effects from the change (0.01-0.03 ms
+in all for a 1-30 MiB file); in Go an unchanged preview costs nothing
+measurable and a changed one about 1 ms (the file row rewritten) on a 12-15 ms
+local checkpoint.
+
+Sources: [store test](../server/internal/store/source_documents_test.go)
+(`TestTextSavesWriteTheFilePreview`),
+[parity test](../collaboration-rs/crates/sources/src/text.rs),
+[ingest tests](../pipeline/tests/test_thumbnail.py)
+(`test_ingest_writes_a_text_preview_only_for_an_untouched_upload`,
+`test_an_ingest_waiting_on_a_first_save_keeps_the_saves_preview`).

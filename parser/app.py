@@ -272,6 +272,7 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
         "_source_format": normalized.source_format,
         "_parse_lane": "ocr" if output.ocr_pages else "digital",
         "_phases": output.phases,
+        "_stages": output.stages,
         "_repaired_fonts": output.repaired_fonts,
         "_furniture": output.furniture,
     }
@@ -349,8 +350,13 @@ def _admission_pages(data: bytes) -> tuple[int, int]:
 def _release_memory() -> None:
     """Hand the heap a finished unit of work freed back to the kernel.
 
-    glibc keeps freed arenas (about 0.8 GiB after a large document) otherwise.
+    glibc keeps freed arenas (about 0.8 GiB after a large document) otherwise,
+    and MuPDF's store keeps decoded images and fonts (up to 256 MiB) of
+    documents already closed.
     """
+    import pymupdf
+
+    pymupdf.TOOLS.store_shrink(100)
     gc.collect()
     try:
         ctypes.CDLL("libc.so.6").malloc_trim(0)
@@ -1179,6 +1185,10 @@ def _measurements(
         "_parse_method": "odl-refined",
         "_source_format": str(result.get("_source_format") or ""),
         "_phases": {k: round(float(v), 3) for k, v in phases.items()},
+        # Seconds per refinement stage, for profiles; not part of the bill.
+        "_stages": {
+            k: round(float(v), 3) for k, v in (result.get("_stages") or {}).items()
+        },
     }
     values.update(
         {f"_parser_{key}": value for key, value in _process_tree_memory().items()}
@@ -1584,6 +1594,7 @@ async def file_parse(request: Request) -> JSONResponse:
     result.pop("_parsed_pdf", None)
     result.pop("_page_image", None)
     result.pop("_phases", None)
+    result.pop("_stages", None)
     result["_server_parse_s"] = round(measurements["_server_parse_ms"] / 1000, 3)
     return JSONResponse(result)
 

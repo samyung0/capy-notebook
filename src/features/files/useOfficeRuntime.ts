@@ -7,6 +7,7 @@ import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { imageLimit } from '@/lib/fitImage';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useTheme } from '@/theme/theme';
 import { useFileMode } from './FileModeControl';
@@ -27,6 +28,7 @@ import {
   type OfficeFormat,
   type OfficeHostMessage,
   type OfficeMode,
+  type OfficeNotice,
   type OfficeRenderedPage,
   type OfficeZoom,
 } from './officeProtocol';
@@ -40,6 +42,7 @@ import {
   canEncodeWebp,
   createThumbnailCapture,
   NOT_DRAWN_YET,
+  openedOn,
   type ThumbnailCapture,
   uploadThumbnail,
 } from './thumbnailCapture';
@@ -154,6 +157,9 @@ export function useOfficeRuntime({
   // The zoom the file was last shown at, kept (not stored) while it stays
   // open: the next frame, for View or Edit or after a reload, opens at it.
   const zoomRef = useRef<OfficeZoom | undefined>(undefined);
+  const [notices] = useState(() =>
+    officeNotices((title) => userToast({ title }))
+  );
   const publishedRevision = useRef(revision);
   const initializedFrame = useRef(-1);
   // The source document the frame was loaded with: a frame still showing an
@@ -382,7 +388,15 @@ export function useOfficeRuntime({
             initialUpdate: Y.encodeStateAsUpdate(source.doc!).slice().buffer,
           }
         : undefined;
+    const imageMaxBytes =
+      mode === 'edit' ? source.session!.imageMaxBytes : undefined;
     initializedFrame.current = frameGeneration;
+    // An Office edit session always names the payer's image cap; without one
+    // the editor cannot open, so it fails here instead of hanging.
+    if (mode === 'edit' && !(imageMaxBytes && imageMaxBytes > 0)) {
+      setError(m.error_file_body());
+      return;
+    }
     frameDoc.current = mode === 'edit' ? source.doc! : null;
     post(
       {
@@ -395,6 +409,7 @@ export function useOfficeRuntime({
         collaboration,
         fileName: file.name,
         format,
+        imageMaxBytes,
         mode,
         revision: revisionRef.current,
         type: 'load',
@@ -454,6 +469,8 @@ export function useOfficeRuntime({
     const epoch = source.session.epoch;
     const send = (update: Uint8Array, origin: unknown) => {
       if (origin === SOURCE_IFRAME_ORIGIN) return;
+      // Not this editor's own edit: a capture drawn before it is stale.
+      captureRef.current?.remote();
       const bytes = update.slice().buffer;
       post({ bytes, epoch, type: 'update', version: OFFICE_PROTOCOL_VERSION }, [
         bytes,
@@ -499,6 +516,7 @@ export function useOfficeRuntime({
       const message = event.data,
         active = sourceRef.current;
       if (message.type === 'initialized') {
+        notices.frame();
         setReplicaReady(false);
         setMenus(null);
         setPresenting(false);
@@ -556,6 +574,13 @@ export function useOfficeRuntime({
         setAnalysis(message.analysis);
         // Edit frames report ready too (for their timings); their errors stay.
         if (modeRef.current === 'view') setError(null);
+        return;
+      }
+      if (message.type === 'notice') {
+        // Notices come from an edit frame, which loads only with the payer's
+        // image cap; without one (no edit session) there is nothing to word.
+        const imageMaxBytes = active.session?.imageMaxBytes;
+        if (imageMaxBytes) notices.show(message.notice, imageMaxBytes);
         return;
       }
       if (message.type === 'error') {
@@ -652,13 +677,24 @@ export function useOfficeRuntime({
     [post]
   );
 
+  // Once the editor holds the document, a card older than it (Go's
+  // `thumbnailStale`) is captured, once per session read.
+  const held = replicaReady ? source.session : null;
+  const heldRef = useRef(held);
+  heldRef.current = held;
+  const staleSeen = useRef(new WeakSet<object>());
+  useEffect(() => {
+    if (held && captureRef.current)
+      openedOn(captureRef.current, held, staleSeen.current);
+  }, [held]);
+
   // Browsers that cannot encode WebP (Safari) capture nothing.
   useEffect(() => {
     if (mode !== 'edit') return;
     let cancelled = false;
     void canEncodeWebp().then((supported) => {
       if (!supported || cancelled) return;
-      captureRef.current = createThumbnailCapture({
+      const capture = createThumbnailCapture({
         allowed: () => captureAllowed.current(),
         draw: async () => {
           const [rendered, headers] = await Promise.all([
@@ -674,6 +710,9 @@ export function useOfficeRuntime({
         upload: (drawn, keepalive) =>
           uploadThumbnail(file.id, drawn, keepalive),
       });
+      captureRef.current = capture;
+      if (heldRef.current)
+        openedOn(capture, heldRef.current, staleSeen.current);
     });
     const leave = () => captureRef.current?.leave();
     const hidden = () => {
@@ -883,6 +922,40 @@ function saveBlob(blob: Blob, name: string) {
   anchor.download = name;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Each notice's toast: a new notice needs its entry here. */
+const OFFICE_NOTICE_TOASTS: Record<
+  OfficeNotice,
+  { once: boolean; title: (imageMaxBytes: number) => string }
+> = {
+  // A refused keystroke repeats on every key: once per frame.
+  'equation-text': { once: true, title: () => m.files_office_equation_text() },
+  // Each refused image is its own pick: every time.
+  'image-too-large': {
+    once: false,
+    title: (imageMaxBytes) =>
+      m.image_too_large({ limit: imageLimit(imageMaxBytes) }),
+  },
+  'image-type': { once: false, title: () => m.image_unreadable() },
+};
+
+/**
+ * The notices a frame shows, each as its entry says: a `once` notice once per
+ * frame (a new frame starts over), the others every time. `imageMaxBytes` is
+ * the edit session's image cap, which the size notice names.
+ */
+export function officeNotices(toast: (title: string) => void) {
+  const shown = new Set<OfficeNotice>();
+  return {
+    frame: () => shown.clear(),
+    show: (notice: OfficeNotice, imageMaxBytes: number) => {
+      const { once, title } = OFFICE_NOTICE_TOASTS[notice];
+      if (once && shown.has(notice)) return;
+      shown.add(notice);
+      toast(title(imageMaxBytes));
+    },
+  };
 }
 
 /**

@@ -44,7 +44,7 @@ type thumbnailHarness struct {
 
 func openThumbnailHarness(t *testing.T) thumbnailHarness {
 	t.Helper()
-	return openThumbnailHarnessWith(t, nil)
+	return openThumbnailHarnessWith(t, blob.NewMemory())
 }
 
 // failingPuts is a bucket whose puts fail after writing, as a put whose answer
@@ -56,7 +56,7 @@ func (f failingPuts) PutObjectOnce(ctx context.Context, key string, body []byte,
 	return errors.New("the bucket did not answer")
 }
 
-// openThumbnailHarnessWith serves captures into bucket (a memory one when nil).
+// openThumbnailHarnessWith serves captures into bucket (none when nil).
 func openThumbnailHarnessWith(t *testing.T, bucket blob.Store) thumbnailHarness {
 	t.Helper()
 	ctx := context.Background()
@@ -70,10 +70,7 @@ func openThumbnailHarnessWith(t *testing.T, bucket blob.Store) thumbnailHarness 
 		t.Fatal(err)
 	}
 	st.SetModelRegistry(reg)
-	blobs := blob.NewMemory()
-	if bucket == nil {
-		bucket = blobs
-	}
+	blobs, _ := bucket.(*blob.Memory)
 	h := httpapi.New(st, bucket, nil, nil, "docling", httpapi.Config{
 		AuthDisabled:  true,
 		E2EAuth:       true,
@@ -293,4 +290,21 @@ func TestThumbnailCaptureQueuesAFailedPut(t *testing.T) {
 	t.Cleanup(func() {
 		_, _ = th.st.Pool().Exec(context.Background(), `DELETE FROM pending_blob_deletions WHERE object_path=$1`, key)
 	})
+}
+
+// Without a bucket a capture is refused before it claims the interval, so the
+// next capture once storage is back is not refused as too soon.
+func TestThumbnailCaptureWithoutABucketClaimsNothing(t *testing.T) {
+	th := openThumbnailHarnessWith(t, nil)
+	th.file(t, "f_capture_no_bucket", "ws_e2e_private", "deck.pptx", "slides")
+
+	expectStatus(t, th.post(t, "u_editor", "f_capture_no_bucket", webpCapture), http.StatusServiceUnavailable, "no bucket")
+	var claimed bool
+	if err := th.st.Pool().QueryRow(context.Background(),
+		`SELECT thumbnail_captured_at IS NOT NULL FROM files WHERE id=$1`, "f_capture_no_bucket").Scan(&claimed); err != nil {
+		t.Fatal(err)
+	}
+	if claimed {
+		t.Fatal("a capture with nowhere to go claimed the interval")
+	}
 }

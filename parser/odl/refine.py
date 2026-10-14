@@ -12,6 +12,7 @@ text layer.
 
 from __future__ import annotations
 
+import functools
 import json
 import time
 from dataclasses import dataclass, field
@@ -53,6 +54,8 @@ class ParseOutput:
     ocr_pages: list[int]
     page_count: int
     phases: dict[str, float] = field(default_factory=dict)
+    # Seconds per structure and repair stage ("module.function"), for profiles.
+    stages: dict[str, float] = field(default_factory=dict)
     repaired_fonts: int = 0
     # Frozen before table recovery (furniture.py); the chunker must not infer
     # recurrence again on the replaced list.
@@ -111,56 +114,63 @@ def parse_pdf(
     else:
         phases["java"] = time.perf_counter() - started
 
+    stages: dict[str, float] = {}
+    step = functools.partial(_timed, stages)
     started = time.perf_counter()
     with pymupdf.open(pdf) as document, page_text.session(pdf):
         if native.get("number of pages") != len(document):
             raise ValueError("OpenDataLoader page count does not match the PDF")
-        native, _ = styles.annotate(document, native)
-        blocks = odl_content_list(
+        native, _ = step(styles.annotate)(document, native)
+        blocks = step(odl_content_list)(
             native,
             [{"width": p.rect.width, "height": p.rect.height} for p in document],
         )
-        blocks = pictures.classify(blocks, document, java.image_objects(native_dir))
-        blocks = pictures.add_vector_figures(blocks, document)
-        blocks, reordered = order.repair(blocks)
-        blocks = order.move_rotated_labels(blocks, reordered, pdf)
-        blocks = order.split_continuations(blocks, reordered, pdf)
-        eligible = {page.number for page in document if hidden.hidden_text_layer(page)}
-        blocks = hidden.recover_hidden_ocr_order(blocks, eligible)
-        blocks = headings.rewrite(blocks, headings.source_headings(blocks, pdf))
-        blocks = headings.correct_roles(blocks, document)
+        blocks = step(pictures.classify)(
+            blocks, document, java.image_objects(native_dir)
+        )
+        blocks = step(pictures.add_vector_figures)(blocks, document)
+        blocks, reordered = step(order.repair)(blocks)
+        blocks = step(order.move_rotated_labels)(blocks, reordered, pdf)
+        blocks = step(order.split_continuations)(blocks, reordered, pdf)
+        hidden_layer = step(hidden.hidden_text_layer)
+        eligible = {page.number for page in document if hidden_layer(page)}
+        blocks = step(hidden.recover_hidden_ocr_order)(blocks, eligible)
+        blocks = step(headings.rewrite)(
+            blocks, step(headings.source_headings)(blocks, pdf)
+        )
+        blocks = step(headings.correct_roles)(blocks, document)
         phases["structure"] = time.perf_counter() - started
 
         started = time.perf_counter()
-        blocks = context.contextualize(blocks)
-        blocks, _ = tables.mark_footer_tables(blocks, native)
-        blocks, _ = lists.repair_list_geometry(blocks, native, pdf)
-        blocks, _ = source_text.repair_text(blocks, pdf, paragraphs=True)
-        blocks, _ = lists.repair_lists(blocks, pdf)
-        blocks, _ = exponents.restore_exponents(blocks, pdf)
-        blocks = scripts.restore_structure(blocks, document)
-        blocks, _ = columns.repair_columns(blocks, pdf)
+        blocks = step(context.contextualize)(blocks)
+        blocks, _ = step(tables.mark_footer_tables)(blocks, native)
+        blocks, _ = step(lists.repair_list_geometry)(blocks, native, pdf)
+        blocks, _ = step(source_text.repair_text)(blocks, pdf, paragraphs=True)
+        blocks, _ = step(lists.repair_lists)(blocks, pdf)
+        blocks, _ = step(exponents.restore_exponents)(blocks, pdf)
+        blocks = step(scripts.restore_structure)(blocks, document)
+        blocks, _ = step(columns.repair_columns)(blocks, pdf)
         # Before furniture is frozen, so a repeated line keeps one text key.
-        blocks, _ = source_text.join_split_ligatures(blocks, pdf)
-        blocks = joins.repair_joins(blocks, document)
-        blocks = furniture.mark_page_numbers(blocks, document)
+        blocks, _ = step(source_text.join_split_ligatures)(blocks, pdf)
+        blocks = step(joins.repair_joins)(blocks, document)
+        blocks = step(furniture.mark_page_numbers)(blocks, document)
         # Headings ODL folded into list items, before levels are settled.
-        blocks = list_headings.split_headings(blocks, document)
-        blocks = layout_headings.recall_headings(blocks, document)
+        blocks = step(list_headings.split_headings)(blocks, document)
+        blocks = step(layout_headings.recall_headings)(blocks, document)
         # Heading levels once roles, folios and heading text are settled.
-        blocks = levels.demote_fragments(blocks, document)
-        blocks = levels.demote_contents_lines(blocks, document)
-        blocks = outline_levels.relevel(blocks, document)
-        blocks = outline_levels.mark_book_titles(blocks, document)
-        furniture_texts = furniture.repeated_across_pages(blocks)
-        blocks, _ = tables.recover_tables(blocks, document)
+        blocks = step(levels.demote_fragments)(blocks, document)
+        blocks = step(levels.demote_contents_lines)(blocks, document)
+        blocks = step(outline_levels.relevel)(blocks, document)
+        blocks = step(outline_levels.mark_book_titles)(blocks, document)
+        furniture_texts = step(furniture.repeated_across_pages)(blocks)
+        blocks, _ = step(tables.recover_tables)(blocks, document)
         # Empty tables carry nothing once recovery had its chance to fill them.
         blocks = [b for b in blocks if not pictures.empty_table(b)]
-        blocks = pictures.place_inline(blocks, document)
-        blocks = pictures.attach_captions(blocks)
-        blocks = fonts.compose_negations(blocks)
+        blocks = step(pictures.place_inline)(blocks, document)
+        blocks = step(pictures.attach_captions)(blocks)
+        blocks = step(fonts.compose_negations)(blocks)
         # Last heading stage: levels become stack depths, paths unchanged.
-        blocks = outline_levels.depth_levels(blocks)
+        blocks = step(outline_levels.depth_levels)(blocks)
         phases["repairs"] = time.perf_counter() - started
 
         started = time.perf_counter()
@@ -176,10 +186,25 @@ def parse_pdf(
         ocr_pages=ocr_pages,
         page_count=page_count,
         phases=phases,
+        stages=stages,
         repaired_fonts=repaired_fonts,
         furniture=furniture_texts,
         parsed_pdf=repaired if repaired != data else None,
     )
+
+
+def _timed(stages: dict[str, float], stage):
+    """``stage`` with its seconds added to ``stages`` under its module and name."""
+    name = f"{stage.__module__.rsplit('.', 1)[-1]}.{stage.__name__}"
+
+    def call(*args, **kwargs):
+        started = time.perf_counter()
+        try:
+            return stage(*args, **kwargs)
+        finally:
+            stages[name] = stages.get(name, 0.0) + time.perf_counter() - started
+
+    return call
 
 
 def dump(blocks: list[dict]) -> str:

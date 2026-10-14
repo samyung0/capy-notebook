@@ -205,15 +205,28 @@ func TestDrainRepublishesOldestAndLeavesExportOnly(t *testing.T) {
 	}
 }
 
-// Every active account hears once per start (week notice with email, day
-// reminder in-app only); suspended accounts are skipped.
+// Every active account hears once per start (week notice, day reminder); the
+// week notice's email goes only to editors of recently edited Office files.
+// Suspended accounts are skipped.
 func TestAnnounceOfficeMaintenance(t *testing.T) {
 	s := maintenanceTestStore(t)
 	ctx := context.Background()
-	user := newBlobTestUser(t, s, "announce_user")
+	editor := newBlobTestUser(t, s, "announce_editor")
+	stale := newBlobTestUser(t, s, "announce_stale")
+	reader := newBlobTestUser(t, s, "announce_reader")
 	suspended := newBlobTestUser(t, s, "announce_suspended")
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET email=id||'@example.test' WHERE id=ANY($1)`, []string{user, suspended}); err != nil {
+	users := []string{editor, stale, reader, suspended}
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET email=id||'@example.test' WHERE id=ANY($1)`, users); err != nil {
 		t.Fatal(err)
+	}
+	for _, owner := range []string{editor, stale, suspended} {
+		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+		sourceTestSeed(t, s, owner, file.ID)
+		if owner == stale {
+			if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at=now()-interval '40 days' WHERE file_id=$1`, file.ID); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),suspended_reason='test' WHERE id=$1`, suspended); err != nil {
 		t.Fatal(err)
@@ -233,11 +246,13 @@ func TestAnnounceOfficeMaintenance(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if n, m := counts(user); n != 2 || m != 1 {
-		t.Fatalf("active account: %d notices, %d emails; want 2 and 1", n, m)
-	}
-	if n, m := counts(suspended); n != 0 || m != 0 {
-		t.Fatalf("suspended account: %d notices, %d emails", n, m)
+	for _, want := range []struct {
+		id            string
+		notices, mail int
+	}{{editor, 2, 1}, {stale, 2, 0}, {reader, 2, 0}, {suspended, 0, 0}} {
+		if n, m := counts(want.id); n != want.notices || m != want.mail {
+			t.Fatalf("%s: %d notices, %d emails; want %d and %d", want.id, n, m, want.notices, want.mail)
+		}
 	}
 }
 

@@ -57,7 +57,6 @@ import { common, createLowlight } from 'lowlight';
 import { BaseParagraphPlugin, createSlatePlugin, KEYS } from 'platejs';
 import { createElement } from 'react';
 import { FONT_SIZE_NODE_PROPS } from '@/features/notes/nodeStyles';
-import { FootnotePlugins } from './footnotePlugins';
 import { UnsupportedBlockNotice } from './UnsupportedBlock';
 
 // Plugin-derived types are intentionally wider than Plate's base tuple.
@@ -137,7 +136,6 @@ const StaticTransientPlugins = [
       type: 'slash_input',
     },
   }),
-  ...FootnotePlugins,
 ];
 /** A notice under any element the embed catalog does not list. */
 const UnsupportedBlockPlugin = createSlatePlugin({

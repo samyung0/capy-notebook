@@ -19,7 +19,8 @@
     propose DIR [DIR ...]
         Budgets from several runs: the slowest run plus 25%, for review.
     compare BASE CANDIDATE
-        Per-fixture time and memory deltas between two runs.
+        Per-fixture time and memory deltas between two runs, and whether each
+        fixture's output is the same (SHA-256 of its content_list.json).
 
 Execution time excludes queue wait; it is what the 900 s document deadline
 bounds (OCR pages are bounded per page instead).
@@ -123,6 +124,12 @@ def generate(spec: dict, base: Path, path: Path) -> None:
         out.save(path, garbage=3, deflate=True, no_new_id=True)
 
 
+def content_sha256(blocks: list[dict]) -> str:
+    """The SHA-256 of the artifact's content_list.json bytes (as app.py writes them)."""
+    data = json.dumps(blocks, ensure_ascii=False, separators=(",", ":")).encode()
+    return hashlib.sha256(data).hexdigest()
+
+
 def content_stats(blocks: list[dict]) -> dict:
     """Coarse output size, so a fast build that drops content is visible."""
     chars = 0
@@ -184,7 +191,11 @@ def run_service(args, fixtures: list[dict], out: Path) -> list[dict]:
         artifact = spool / body["output_key"]
         if status == 200 and artifact.exists():
             with zipfile.ZipFile(artifact) as archive:
-                stats = content_stats(json.loads(archive.read("content_list.json")))
+                content = archive.read("content_list.json")
+            stats = {
+                **content_stats(json.loads(content)),
+                "content_sha256": hashlib.sha256(content).hexdigest(),
+            }
         (spool / key).unlink(missing_ok=True)
         artifact.unlink(missing_ok=True)
         queue = (payload.get("_queue_ms") or 0) / 1000
@@ -201,6 +212,7 @@ def run_service(args, fixtures: list[dict], out: Path) -> list[dict]:
                 "page_count": payload.get("_page_count"),
                 "ocr_pages": payload.get("_ocr_page_count"),
                 "phases": payload.get("_phases"),
+                "stages": payload.get("_stages"),
                 # Anonymous memory is what the parser holds; the cgroup total
                 # also counts reclaimable page cache from reading the fixtures.
                 "peak_gib": window.get("peak_anon_gib"),
@@ -231,7 +243,8 @@ result = run_document(Document(data, Path(sys.argv[2]).name))
 elapsed = time.perf_counter() - started
 json.dump({"elapsed": elapsed, "page_count": result.get("_page_count"),
            "ocr_pages": len(result.get("_ocr_pages") or []), "phases": result.get("_phases"),
-           "content_list": result.get("content_list") or []}, open(sys.argv[3], "w"))
+           "stages": result.get("_stages"), "content_list": result.get("content_list") or []},
+          open(sys.argv[3], "w"))
 """
 
 
@@ -319,8 +332,10 @@ def run_inprocess(args, fixtures: list[dict], out: Path) -> list[dict]:
                     "page_count": body["page_count"],
                     "ocr_pages": body["ocr_pages"],
                     "phases": {k: round(v, 3) for k, v in (body["phases"] or {}).items()},
+                    "stages": {k: round(v, 3) for k, v in (body["stages"] or {}).items()},
                     "peak_gib": round(peak / GIB, 2),
                     **content_stats(body["content_list"]),
+                    "content_sha256": content_sha256(body["content_list"]),
                 }
             )
         print(json.dumps(results[-1]), flush=True)
@@ -434,26 +449,30 @@ def compare(args) -> None:
     print(
         f"{next(iter(base.values()))['parser_version']} -> {next(iter(candidate.values()))['parser_version']}\n"
     )
-    print("| Fixture | Base s | Candidate s | Δ | Base GiB | Candidate GiB | Blocks | Text chars |")
-    print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |")
+    print(
+        "| Fixture | Base s | Candidate s | Δ | Base GiB | Candidate GiB | Blocks | Text chars | Output |"
+    )
+    print("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |")
     totals = [0.0, 0.0]
     for fixture in manifest()["fixtures"]:
         a, b = base.get(fixture["id"]), candidate.get(fixture["id"])
         if not a or not b or a["status"] != 200 or b["status"] != 200:
             print(
-                f"| {fixture['id']} | {a and a.get('execution_s')} | {b and b.get('execution_s')} | — | | | | |"
+                f"| {fixture['id']} | {a and a.get('execution_s')} | {b and b.get('execution_s')} | — | | | | | |"
             )
             continue
+        hashes = a.get("content_sha256"), b.get("content_sha256")
+        output = "—" if None in hashes else "same" if hashes[0] == hashes[1] else "differs"
         totals[0] += a["execution_s"]
         totals[1] += b["execution_s"]
         delta = (b["execution_s"] - a["execution_s"]) / max(a["execution_s"], 0.01)
         print(
             f"| {fixture['id']} | {a['execution_s']} | {b['execution_s']} | {delta:+.0%} "
             f"| {a['peak_gib']} | {b['peak_gib']} | {a['blocks']} → {b['blocks']} "
-            f"| {a['text_chars']} → {b['text_chars']} |"
+            f"| {a['text_chars']} → {b['text_chars']} | {output} |"
         )
     print(
-        f"| **total** | {totals[0]:.1f} | {totals[1]:.1f} | {(totals[1] - totals[0]) / max(totals[0], 0.01):+.0%} | | | | |"
+        f"| **total** | {totals[0]:.1f} | {totals[1]:.1f} | {(totals[1] - totals[0]) / max(totals[0], 0.01):+.0%} | | | | | |"
     )
 
 

@@ -27,7 +27,7 @@ use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
 use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate, SourceSession};
 use crate::text::{TEXT_ROOT, TextSave, TextWindow, full_text_effects, text_doc, text_seed};
-use crate::{MAX_SOURCE_STATE_BYTES, SourceError, SourceFormat, SourceRoom};
+use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceFormat, SourceRoom};
 
 const BASE_CACHE_BYTES: u64 = 128 << 20;
 const SEED_CACHE_BYTES: u64 = 64 << 20;
@@ -145,7 +145,7 @@ mod opt_base64 {
     }
 }
 
-/// An editable view of a durable source (agent reads).
+/// An editable view of a source as its editors see it (agent reads).
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SourceInspection {
@@ -577,6 +577,17 @@ impl Sources {
         base: &[u8],
         sha: &str,
     ) -> Result<Vec<u8>, SourceError> {
+        let layers = self.durable_layers(session, base, sha).await?;
+        whole(session.format, layers).await
+    }
+
+    /// The stored document as the updates that make it, seed first.
+    async fn durable_layers(
+        &self,
+        session: &SourceSession,
+        base: &[u8],
+        sha: &str,
+    ) -> Result<Vec<Vec<u8>>, SourceError> {
         let stored = self.stored(&session.file_id, None).await?;
         if stored.epoch != session.epoch {
             return Err(SourceError::epoch_changed());
@@ -584,7 +595,7 @@ impl Sources {
         let (_, layers) = self
             .layers(session.format, base, sha, &stored, None)
             .await?;
-        whole(session.format, layers).await
+        Ok(layers)
     }
 
     /// An Office capture stored as its change over seed(base) (`state` NULL:
@@ -823,6 +834,7 @@ impl Sources {
                 base_source_sha256: seed_report.0,
                 seed_bytes: seed_report.1,
                 operation: None,
+                preview: text.as_ref().map(|text| text.preview.clone()),
             };
             let result: Result<CheckpointSaved, SourceError> = self
                 .gateway
@@ -1108,15 +1120,29 @@ impl Sources {
         self.gateway.session(file_id, &owner).await
     }
 
-    /// Editable view of the durable source: the text, or the Office entries.
-    pub async fn inspect(
+    /// Editable view of the source as its editors see it now: the text, or
+    /// the Office entries, of the stored document with this replica's live
+    /// room merged in (unsaved typing), as an edit reads it. `live` answers
+    /// the room's state, or None when no room is loaded (then the read is
+    /// the stored document and loads nothing more).
+    pub async fn inspect<F>(
         &self,
         file_id: &str,
         actor: &str,
-    ) -> Result<SourceInspection, SourceError> {
+        live: F,
+    ) -> Result<SourceInspection, SourceError>
+    where
+        F: FnOnce(String) -> BoxFuture<Option<Vec<u8>>>,
+    {
         let session = self.gateway.session(file_id, actor).await?;
         let (base, sha) = self.bound_base(&session).await?;
-        let state = self.durable_state(&session, &base, &sha).await?;
+        let mut layers = self.durable_layers(&session, &base, &sha).await?;
+        let room = SourceRoom {
+            file_id: file_id.to_owned(),
+            epoch: session.epoch,
+        };
+        layers.extend(live(room.name()).await);
+        let state = whole(session.format, layers).await?;
         let mut inspection = SourceInspection {
             access: session.access.clone(),
             checkpoint: session.checkpoint,

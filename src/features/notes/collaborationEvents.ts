@@ -13,6 +13,17 @@ export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
 export const COLLABORATION_NOT_FOUND_REASON = 'collaboration-not-found';
 export const COLLABORATION_FORBIDDEN_REASON = 'collaboration-forbidden';
 
+/** Why a room is read-only for this writer, when the room says: the stored
+ * document holds a block this version cannot edit (Epo 2026-10-13). */
+export type ReadOnlyCode = 'unsupported_block';
+
+/** The code of a `room-read-only` notice; none for a plain one. */
+export function readOnlyCode(
+  raw: Record<string, unknown>
+): ReadOnlyCode | undefined {
+  return raw.code === 'unsupported_block' ? raw.code : undefined;
+}
+
 export interface MaterialDocumentStats {
   contentBytes: number;
   maxDepth: number;
@@ -56,8 +67,9 @@ export type CollaborationEvent =
       room?: string;
       type: 'compaction-complete' | 'compaction-evict';
     }
-  /** The room turned read-only for this writer (a frozen account). */
-  | { room: string; type: 'room-read-only' }
+  /** The room turned read-only for this writer (a frozen account; `code`:
+   * a block this version cannot edit). */
+  | { code?: ReadOnlyCode; room: string; type: 'room-read-only' }
   /** The children pass kept these ids as the note's own (some just left the
    * trash): blocks waiting on one load it again. */
   | { assetIds: string[]; materialIds: string[]; type: 'children-ready' }
@@ -143,10 +155,11 @@ export function parseCollaborationEvent(
     case 'comments-invalidated':
     case 'projection-updated':
       return materialId ? { materialId, type: raw.type } : null;
-    case 'room-read-only':
-      return typeof raw.room === 'string'
-        ? { room: raw.room, type: 'room-read-only' }
-        : null;
+    case 'room-read-only': {
+      if (typeof raw.room !== 'string') return null;
+      const code = readOnlyCode(raw);
+      return { room: raw.room, type: 'room-read-only', ...(code && { code }) };
+    }
     case 'children-ready': {
       const ids = (value: unknown) =>
         Array.isArray(value)

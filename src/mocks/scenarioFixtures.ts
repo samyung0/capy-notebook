@@ -1,4 +1,5 @@
 import type { Question, SourceFile, SourceSession } from '@/api/types';
+import { PLAN_LIMITS } from '@/features/billing/planLimits';
 import {
   createMaterialDocument,
   flashcardsNode,
@@ -246,6 +247,17 @@ export function prepareScenarioOffice(
   );
 }
 
+/** A card the mock marks older than its saved document (Go's
+ * `thumbnailStale`), set in sessionStorage by the capture e2e; a capture of
+ * the file clears it. */
+const thumbnailStaleKey = (fileId: string) =>
+  `capy.mock.thumbnailStale.${fileId}`;
+
+export function clearMockThumbnailStale(fileId: string) {
+  if (typeof sessionStorage !== 'undefined')
+    sessionStorage.removeItem(thumbnailStaleKey(fileId));
+}
+
 export async function scenarioSourceSession(
   fileId: string
 ): Promise<SourceSession | null> {
@@ -281,6 +293,9 @@ export async function scenarioSourceSession(
     epoch: seed.epoch,
     fileId,
     format: seed.format,
+    // The Free cap, as the mock materials carry.
+    imageMaxBytes:
+      seed.format === 'text' ? undefined : PLAN_LIMITS.free.imageMaxBytes,
     indexedCheckpoint: 0,
     netTokens: 0,
     pendingEffects: null,
@@ -289,6 +304,12 @@ export async function scenarioSourceSession(
     sourceURL: seed.sourceURL,
     state: sourceRoomState(room),
     stateSeedSHA256: null,
+    thumbnailStale:
+      seed.format !== 'text' &&
+      typeof sessionStorage !== 'undefined' &&
+      sessionStorage.getItem(thumbnailStaleKey(fileId)) === 'true'
+        ? true
+        : undefined,
     workspaceId: file.workspaceId,
   };
 }

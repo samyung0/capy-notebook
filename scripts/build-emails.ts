@@ -21,6 +21,7 @@ const sourceDir = join(projectRoot, 'emails', 'templates');
 const mailDir = join(projectRoot, 'server', 'internal', 'mail');
 const templateDir = join(mailDir, 'templates');
 const TRAILING_WHITESPACE_PATTERN = /[ \t]+$/gm;
+const UPPERCASED_PLACEHOLDER_PATTERN = /\{\{\.([A-Z0-9]+)\}\}/g;
 
 async function readSource(templateId: string, locale: EmailLocale) {
   const file = join(sourceDir, `${templateId}.${locale}.json`);
@@ -45,13 +46,24 @@ async function renderSource(
   renderer.setTheme(emailRendererTheme);
   renderer.setVariableFormatter(({ variable }) => `{{.${variable}}}`);
 
+  // The plain-text renderer uppercases headings, placeholders included; Go
+  // template field names are case-sensitive, so restore them.
+  const names = new Map(
+    definition.variables.map(({ name }) => [name.toUpperCase(), name])
+  );
+  const text = (await renderer.render({ plainText: true })).replace(
+    UPPERCASED_PLACEHOLDER_PATTERN,
+    (placeholder, name: string) => {
+      const original = names.get(name);
+      return original ? `{{.${original}}}` : placeholder;
+    }
+  );
+
   return {
     html: (await renderer.render())
       .replace(TRAILING_WHITESPACE_PATTERN, '')
       .trim(),
-    text: (await renderer.render({ plainText: true }))
-      .replace(TRAILING_WHITESPACE_PATTERN, '')
-      .trim(),
+    text: text.replace(TRAILING_WHITESPACE_PATTERN, '').trim(),
   };
 }
 

@@ -46,7 +46,7 @@ fn typed_mermaid_source_keystrokes_stay_on_the_bound() {
     let before = source_chars(&plate::value(&doc.transact()).unwrap());
     let keys = updates(&fixture("nested.updates.bin"));
     assert_eq!(keys.len(), 77);
-    let mut validator = Validator::default();
+    let mut validator = Validator::new("note");
     for (n, update) in keys.iter().enumerate() {
         let admitted = validator.admit_bytes(&doc, update);
         assert!(

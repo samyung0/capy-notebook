@@ -2146,6 +2146,7 @@ export const GetSourceSessionResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
@@ -2160,6 +2161,7 @@ export const GetSourceSessionResponse = zod.object({
   "state": zod.string().nullable(),
   "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
+  "thumbnailStale": zod.boolean().optional(),
   "workspaceId": zod.string()
 })
 
@@ -7260,6 +7262,7 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
@@ -7274,6 +7277,7 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "state": zod.string().nullable(),
   "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
+  "thumbnailStale": zod.boolean().optional(),
   "workspaceId": zod.string()
 })
 
@@ -7322,6 +7326,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "undoOf": zod.string().optional()
 }).optional(),
   "pendingEffects": zod.unknown(),
+  "preview": zod.string().optional(),
   "seedBytes": zod.int().min(checkpointSourceDocumentBodySeedBytesMin).optional(),
   "stateSeedSHA256": zod.string().optional(),
   "update": zod.string()
@@ -7434,6 +7439,7 @@ export const PublishSourceRefreshResponse = zod.object({
   "epoch": zod.int(),
   "fileId": zod.string(),
   "format": zod.enum(['docx', 'xlsx', 'pptx', 'text']),
+  "imageMaxBytes": zod.int().optional(),
   "indexedCheckpoint": zod.int(),
   "netTokens": zod.int(),
   "pendingEffects": zod.unknown(),
@@ -7448,6 +7454,7 @@ export const PublishSourceRefreshResponse = zod.object({
   "state": zod.string().nullable(),
   "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
+  "thumbnailStale": zod.boolean().optional(),
   "workspaceId": zod.string()
 })
 

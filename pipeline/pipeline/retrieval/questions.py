@@ -1,8 +1,9 @@
-"""Agent-written quiz questions (Epo 2026-10-13).
+"""Agent-written quiz questions (Epo 2026-10-13; one tool for every kind
+since 2026-10-14).
 
 The chat agent never writes the question format itself
 (openwiki/question-bank.md, Shared question format). It writes three small
-shapes:
+shapes, the fields telling them apart:
 
 - multiple choice: question, options, correct (one option, copied exactly),
   explanation?
@@ -11,15 +12,17 @@ shapes:
 - open: question, marks, markscheme [{text, marks}] adding up to marks,
   model_answer, hints?, explanation?
 
-add_questions takes a list of the first two, add_open_question one open
-question, and add_question_media puts a chart or plot after one
-question's text. A note's ```quiz fence holds a YAML list of all three.
+add_questions takes a list of them, and add_question_media puts a chart or
+plot after one question's text. A note's ```quiz fence holds a YAML list of
+the same items.
 
 Every problem of a call is named at once, with its path, what was expected and
 what was sent; a structural mistake also gets the shape to copy. add_questions
 saves the valid questions of a call and names only the rest.
 
-Fields sent as null are left out before checking (Epo 2026-10-13: leniency
+Blank fields (null, blank text, "null", [] or {}) are left out before
+checking unless the question's kind needs them, and an accepted answer written
+with its unit ("5%" with unit "%") keeps the number (Epo 2026-10-13: leniency
 the agent need not be told about). The server fills the rest: ids, one part
 per question, 1 mark for a simple question, multiple-choice options in an
 order shuffled by the question id (the model tends to put the answer first),
@@ -31,12 +34,13 @@ questions unchanged.
 
 from __future__ import annotations
 
+import contextlib
 import copy
 import hashlib
-import itertools
 import json
 import random
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -44,7 +48,7 @@ from typing import Any
 import yaml
 from jsonschema import Draft202012Validator, ValidationError
 
-from . import contract
+from . import contract, embeds
 
 
 def _schema(name: str) -> dict[str, Any]:
@@ -52,32 +56,7 @@ def _schema(name: str) -> dict[str, Any]:
 
 
 _ADD = Draft202012Validator(_schema("add_questions"))
-_OPEN_TOOL = Draft202012Validator(_schema("add_open_question"))
 _MEDIA_TOOL = Draft202012Validator(_schema("add_question_media"))
-_SIMPLE = Draft202012Validator(
-    _schema("add_questions")["properties"]["questions"]["items"]
-)
-OPEN_FIELDS = (
-    "question",
-    "marks",
-    "markscheme",
-    "model_answer",
-    "hints",
-    "explanation",
-)
-# An open question in a note's quiz fence: add_open_question's question fields.
-_OPEN = Draft202012Validator(
-    {
-        "type": "object",
-        "additionalProperties": False,
-        "properties": {
-            k: _schema("add_open_question")["properties"][k] for k in OPEN_FIELDS
-        },
-        "required": [
-            k for k in _schema("add_open_question")["required"] if k in OPEN_FIELDS
-        ],
-    }
-)
 _MEDIA = {
     kind: Draft202012Validator(schema) for kind, schema in contract.MEDIA_BLOCKS.items()
 }
@@ -86,9 +65,34 @@ _MEDIA = {
 FIELDS = {
     "mcq": {"question", "options", "correct", "explanation", "replaces"},
     "short": {"question", "accepted", "unit", "explanation", "replaces"},
-    "open": {*OPEN_FIELDS, "replaces"},
+    "open": {
+        "question",
+        "marks",
+        "markscheme",
+        "model_answer",
+        "hints",
+        "explanation",
+        "replaces",
+    },
 }
-NEEDS = {"mcq": ("options", "correct"), "short": ("accepted",), "open": ()}
+NEEDS = {
+    "mcq": ("options", "correct"),
+    "short": ("accepted",),
+    "open": ("marks", "markscheme", "model_answer"),
+}
+# Each kind's check: the add_questions item narrowed to the kind's fields, so
+# another kind's field is named as unknown with what to do instead.
+_ITEM = _schema("add_questions")["properties"]["questions"]["items"]
+_KINDS = {
+    kind: Draft202012Validator(
+        {
+            **_ITEM,
+            "properties": {k: v for k, v in _ITEM["properties"].items() if k in fields},
+            "required": ["question", *NEEDS[kind]],
+        }
+    )
+    for kind, fields in FIELDS.items()
+}
 SHAPES = {
     "mcq": 'A multiple-choice question: {"question": "…", "options": ["…", "…"], '
     '"correct": "<one of the options, copied exactly>", "explanation": "…"}',
@@ -114,7 +118,9 @@ EXPECTED = {
 }
 # Fields the server fills: the old question format's.
 SERVER_FILLED = {"id", "stem", "parts", "layout", "labels", "level", "points"}
-MEDIA_KEYS = {"media", "chart", "plot", "graph", "image", "figure", "table"}
+# Fields that try to put a figure in a question: the catalog's question-block
+# kinds and the other names a model reaches for.
+MEDIA_KEYS = {"media", "image", "figure", "table", *embeds.QUESTION_BLOCK_KINDS}
 
 # A value with a unit: a number or a fraction (questions.quantityPattern).
 _NUMBER = r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?"
@@ -184,7 +190,6 @@ def _unknown(path: str, key: str, value: Any, kind: str | None, *, fence: bool) 
 
 def _hint(key: str, kind: str | None, *, fence: bool) -> str:
     """Why a field does not belong, and what does."""
-    open_one = "an open question" if fence else "add_open_question"
     if key in ("fixedUnit", "fixed_unit", "units"):
         return "the field is unit"
     if key == "solution":
@@ -203,11 +208,16 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
     if key in ("title", "chapter_id"):
         return "title and chapter_id go on the call, not on a question"
     if key == "replaces":
-        return "a quiz fence writes new questions; rewrite one with add_open_question"
+        return (
+            "a quiz fence writes new questions; rewrite one with add_questions"
+            if fence
+            else ""
+        )
     if kind == "open":
         if key in ("options", "correct"):
             return (
-                "an open question has no options; multiple choice goes in add_questions"
+                "an open question has no options; multiple choice is its own "
+                "question, worth 1 mark"
             )
         if key == "accepted":
             return "an open question's full-marks answer is model_answer"
@@ -223,15 +233,15 @@ def _hint(key: str, kind: str | None, *, fence: bool) -> str:
     if key == "markscheme":
         return (
             "a multiple-choice or short-answer question has no markscheme; a written "
-            f"answer marked on one is {open_one}"
+            "answer marked on one is an open question"
         )
     if key == "marks":
         return (
             "a multiple-choice or short-answer question is worth 1 mark; a question "
-            f"worth more is {open_one}"
+            "worth more is an open question"
         )
     if key in ("model_answer", "hints"):
-        return f"only an open question has {key} ({open_one})"
+        return f"only an open question has {key}"
     if key in ("accepted", "unit"):
         return "a multiple-choice question names its answer in correct"
     if key in ("options", "correct"):
@@ -397,13 +407,16 @@ def _quantity(value: str) -> bool:
     return not slash or mantissa.strip("+-.0") != ""
 
 
-def kind_of(item: dict[str, Any], *, fence: bool) -> str | None:
-    """The shape an item is written in, from its fields."""
+def kind_of(item: dict[str, Any]) -> str | None:
+    """The shape an item is written in, from its fields: an item with all of
+    an open question's needs is open whatever else it carries."""
+    if all(k in item for k in NEEDS["open"]):
+        return "open"
     if "options" in item or "correct" in item:
         return "mcq"
     if "accepted" in item or "unit" in item:
         return "short"
-    if fence and item.keys() & {"marks", "markscheme", "model_answer", "hints"}:
+    if item.keys() & {"marks", "markscheme", "model_answer", "hints"}:
         return "open"
     return None
 
@@ -437,51 +450,52 @@ def check_item(item: Any, index: int, path: str, *, fence: bool) -> Item:
             [f"{path}: expected a question object; sent {_sent(item)}"],
             True,
         )
-    kind = kind_of(item, fence=fence)
+    kind = kind_of(item)
     if kind is None:
-        kinds = (
-            "a multiple-choice question (options and correct), a short answer "
-            "(accepted) or an open question (marks, markscheme, model_answer)"
-            if fence
-            else "a multiple-choice question (options and correct) or a short "
-            "answer (accepted)"
-        )
         sent = ", ".join(sorted(item)) or "none"
-        problems = [f"{path}: expected {kinds}; sent the fields {sent}"]
+        problems = [
+            (
+                f"{path}: expected a multiple-choice question (options and correct), "
+                "a short answer (accepted) or an open question (marks, markscheme, "
+                f"model_answer); sent the fields {sent}"
+            )
+        ]
         problems += [
             f"{_at(path, [k])}: {hint}"
             for k in item
             if k != "question" and (hint := _hint(k, None, fence=fence))
         ]
         return Item(index, path, None, item, problems, True)
-    validator = _OPEN if kind == "open" else _SIMPLE
-    # Fields of the other simple kind are named once, below, not type-checked.
-    foreign = {
-        k
-        for k in item
-        if k in FIELDS["mcq"] | FIELDS["short"] and k not in FIELDS[kind]
-    }
-
-    def skip(p: list[Any]) -> bool:
-        return bool(p) and p[0] in foreign
-
-    problems = _schema_problems(validator, item, path, kind, fence=fence, skip=skip)
-    missing = [k for k in NEEDS[kind] if k not in item]
-    structural = bool(foreign or missing) or any(
-        e.validator in STRUCTURAL and not skip(list(e.absolute_path))
-        for e in validator.iter_errors(item)
-    )
-    problems += [
-        _unknown(path, k, item[k], kind, fence=fence) for k in item if k in foreign
-    ]
-    problems += [f"{_at(path, [k])}: missing; expected {EXPECTED[k]}" for k in missing]
+    validator = _KINDS[kind]
+    problems = _schema_problems(validator, item, path, kind, fence=fence)
+    structural = any(e.validator in STRUCTURAL for e in validator.iter_errors(item))
     if fence and "replaces" in item:
         problems.append(
             f"{path}.replaces: a quiz fence writes new questions; rewrite one with "
-            "add_questions or add_open_question"
+            "add_questions"
         )
+    if kind == "short":
+        item = _without_unit(item)
     problems += _semantic(kind, item, path)
     return Item(index, path, kind, item, problems, structural)
+
+
+def _without_unit(item: dict[str, Any]) -> dict[str, Any]:
+    """A short answer's accepted answers written as the number followed by its
+    unit ("5%" with unit "%") keep the number; repeats are dropped."""
+    unit, accepted = item.get("unit"), item.get("accepted")
+    if not isinstance(unit, str) or not unit.strip() or not isinstance(accepted, list):
+        return item
+    unit = unit.strip()
+    out: list[Any] = []
+    for answer in accepted:
+        if isinstance(answer, str):
+            number = answer.strip().removesuffix(unit).rstrip()
+            if number != answer.strip() and _quantity(number):
+                answer = number
+        if answer not in out:
+            out.append(answer)
+    return {**item, "accepted": out}
 
 
 def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
@@ -555,6 +569,9 @@ class Check:
     name: str
     call: list[str] = field(default_factory=list)
     items: list[Item] = field(default_factory=list)
+    # What the pipeline repaired or ignored, one line each for the success
+    # result, so the model stops repeating the slip.
+    notes: list[str] = field(default_factory=list)
 
     @property
     def valid(self) -> list[Item]:
@@ -569,11 +586,10 @@ class Check:
 
     def listing(self) -> str:
         """Every problem, then the shape to copy for each kind written wrong."""
-        unknown = ["mcq", "short", "open"] if self.name == FENCE else ["mcq", "short"]
         kinds: list[str] = []
         for item in self.items:
             if item.structural:
-                for kind in [item.kind] if item.kind else unknown:
+                for kind in [item.kind] if item.kind else SHAPES:
                     if kind not in kinds:
                         kinds.append(kind)
         shapes = [SHAPES[k] for k in kinds]
@@ -584,14 +600,31 @@ class Check:
         return "\n".join([*(f"- {p}" for p in self.problems()), *shapes])
 
 
-def drop_nulls(value: Any) -> Any:
-    """The value without object fields sent as null, at any depth: a null field
-    is one the model meant to leave out."""
-    if isinstance(value, dict):
-        return {k: drop_nulls(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [drop_nulls(v) for v in value]
-    return value
+def drop_blanks(name: str, args: dict[str, Any]) -> dict[str, Any]:
+    """A question call without its blank fields (contract.blank): the call's
+    unless its tool requires them, each question's unless its kind needs them,
+    and media's unless its block requires them."""
+    required = _schema(name).get("required", ())
+    clean = {k: v for k, v in args.items() if k in required or not contract.blank(v)}
+    if isinstance(clean.get("questions"), list):
+        clean["questions"] = [drop_question_blanks(q) for q in clean["questions"]]
+    media = clean.get("media")
+    if isinstance(media, dict):
+        block = contract.MEDIA_BLOCKS.get(str(media.get("type")), {})
+        clean["media"] = contract.drop_blanks(block, media)
+    return clean
+
+
+def drop_question_blanks(item: Any) -> Any:
+    """A question without its blank fields, except the question and the fields
+    its kind needs (the kind read from the fields that are not blank), so a
+    blank answer still gets its own message."""
+    if not isinstance(item, dict):
+        return item
+    filled = {k: v for k, v in item.items() if not contract.blank(v)}
+    kind = kind_of(filled) or kind_of(item)
+    keep = {"question", *(NEEDS[kind] if kind else ())}
+    return {k: v for k, v in item.items() if k in keep or not contract.blank(v)}
 
 
 def _target_problems(args: dict[str, Any]) -> list[str]:
@@ -608,7 +641,7 @@ def _target_problems(args: dict[str, Any]) -> list[str]:
         problems.append(
             "after_question_id: places questions in an existing quiz; it goes with quiz_id"
         )
-    if "chapter_id" in args and not title:
+    if "chapter_id" in args and not title and not quiz_id:
         problems.append(
             "chapter_id: files a new quiz, so it goes with title; adding to a quiz "
             "takes quiz_id alone"
@@ -616,38 +649,29 @@ def _target_problems(args: dict[str, Any]) -> list[str]:
     return problems
 
 
-def check(name: str, args: dict[str, Any]) -> Check:
-    """Every problem of an add_questions or add_open_question call that needs
-    no quiz to see."""
-    result = Check(name)
-    if name == "add_questions":
-        result.call = _schema_problems(
-            _ADD,
-            args,
-            "",
-            None,
-            fence=False,
-            skip=lambda p: len(p) > 1 and p[0] == "questions",
-        )
-        questions = args.get("questions")
-        for i, value in enumerate(questions if isinstance(questions, list) else []):
-            item = check_item(value, i, f"questions[{i}]", fence=False)
-            if args.get("title") and isinstance(value, dict) and "replaces" in value:
-                item.problems.append(
-                    f"{item.path}.replaces: a new quiz has no question to replace"
-                )
-            result.items.append(item)
-        result.call += _target_problems(args)
-    else:
-        result.call = _schema_problems(_OPEN_TOOL, args, "", "open", fence=False)
-        result.call += _semantic("open", args, "")
-        result.call += _target_problems(args)
-        if args.get("title") and "replaces" in args:
-            result.call.append("replaces: a new quiz has no question to replace")
-        structural = any(
-            e.validator in STRUCTURAL for e in _OPEN_TOOL.iter_errors(args)
-        )
-        result.items.append(Item(0, "", "open", args, structural=structural))
+def check(args: dict[str, Any]) -> Check:
+    """Every problem of an add_questions call that needs no quiz to see."""
+    result = Check("add_questions")
+    result.call = _schema_problems(
+        _ADD,
+        args,
+        "",
+        None,
+        fence=False,
+        skip=lambda p: len(p) > 1 and p[0] == "questions",
+    )
+    questions = args.get("questions")
+    for i, value in enumerate(questions if isinstance(questions, list) else []):
+        item = check_item(value, i, f"questions[{i}]", fence=False)
+        if args.get("title") and isinstance(value, dict) and "replaces" in value:
+            item.problems.append(
+                f"{item.path}.replaces: a new quiz has no question to replace"
+            )
+        result.items.append(item)
+    result.call += _target_problems(args)
+    quiz_id = args.get("quiz_id")
+    if quiz_id and "chapter_id" in args and not args.get("title"):
+        result.notes.append(f"chapter_id ignored: quiz {quiz_id} keeps its chapter.")
     return result
 
 
@@ -683,15 +707,15 @@ def check_ids(check_: Check, args: dict[str, Any], quiz: list[dict[str, Any]]) -
         replaces = value.get("replaces")
         if not isinstance(replaces, str):
             continue
-        where = f"{item.path}.replaces" if item.path else "replaces"
-        target = check_.call if check_.name == "add_open_question" else item.problems
         if replaces not in ids:
-            target.append(
-                f"{where}: expected a question id of this quiz ({listed}); sent {_sent(replaces)}"
+            item.problems.append(
+                f"{item.path}.replaces: expected a question id of this quiz ({listed}); "
+                f"sent {_sent(replaces)}"
             )
         elif replaces in seen:
-            target.append(
-                f"{where}: {replaces} is already rewritten by an earlier question of this call"
+            item.problems.append(
+                f"{item.path}.replaces: {replaces} is already rewritten by an earlier "
+                "question of this call"
             )
         seen.add(replaces)
 
@@ -851,6 +875,7 @@ def result_text(
         lines.append(check_.listing())
     elif not created:
         lines.append("The user can undo this from the chat result.")
+    lines.extend(check_.notes)
     return "\n".join(lines)
 
 
@@ -868,10 +893,16 @@ def refusal(check_: Check) -> tuple[str, str]:
 
 # ---------------------------------------------------------------- note fences
 
-QUIZ_FENCE = re.compile(
-    r"^(?P<indent>[ \t]*)(?P<fence>`{3,}|~{3,})quiz[ \t]*\n(?P<body>.*?)^(?P=indent)(?P=fence)[ \t]*$",
+# A fenced block with a language; it closes on a run of the opening's
+# character at least as long as the opening's, so a longer fence holding a
+# shorter one is consumed whole.
+NOTE_FENCE = re.compile(
+    r"^(?P<indent>[ \t]*)(?P<fence>(?P<char>[`~])(?P=char){2,})(?P<lang>[\w-]+)[ \t]*\n"
+    r"(?P<body>.*?)^(?P=indent)(?P=fence)(?P=char)*[ \t]*$",
     re.MULTILINE | re.DOTALL,
 )
+# A chart fence whose type names a chart kind means that kind.
+_CHART_KINDS = contract.MEDIA_BLOCKS["chart"]["properties"]["kind"]["enum"]
 
 
 def _whole_numbers(value: Any) -> Any:
@@ -894,35 +925,54 @@ def note_fences(
     texts: list[str], where: Callable[[int], str], new_id: Callable[[], str]
 ) -> tuple[list[str], Check]:
     """A note write's markdown texts with each ```quiz fence's questions
-    expanded into the question format, and every problem in them. ``where``
-    names the i-th text in a problem's path."""
+    expanded into the question format, each ```flashcards, ```chart and
+    ```plot fence's body repaired where it can mean one thing and re-emitted
+    as JSON, and every problem in them. ``where`` names the i-th text in a
+    problem's path. Agent writes only: the editor, paste and the converter
+    stay strict (Epo 2026-10-13)."""
     found = Check(FENCE)
     out = []
     for n, markdown in enumerate(texts):
-        label, fences = where(n), itertools.count(1)
-        out.append(
-            QUIZ_FENCE.sub(
-                lambda m, label=label, fences=fences: _fence(
-                    m, f"{label} quiz fence {next(fences)}", found, new_id
-                ),
-                markdown,
-            )
-        )
+        label, counts = where(n), Counter[str]()
+
+        def repaired(
+            match: re.Match[str], label: str = label, counts: Counter[str] = counts
+        ) -> str:
+            lang = match["lang"]
+            counts[lang] += 1
+            at = f"{label} {lang} fence {counts[lang]}"
+            if lang == "quiz":
+                return _fence(match, at, found, new_id)
+            if lang == "flashcards":
+                body = _cards(_body(match), at, found)
+            elif lang in contract.MEDIA_BLOCKS:
+                body = _media(lang, _body(match), at, found)
+            else:
+                return match[0]
+            return match[0] if body is None else _emit(match, body)
+
+        out.append(NOTE_FENCE.sub(repaired, markdown))
     return out, found
+
+
+def _body(match: re.Match[str]) -> str:
+    indent = match["indent"]
+    return "".join(
+        line.removeprefix(indent) for line in match["body"].splitlines(keepends=True)
+    )
+
+
+def _emit(match: re.Match[str], body: str) -> str:
+    indent, fence = match["indent"], match["fence"]
+    return f"{indent}{fence}{match['lang']}\n{indent}{body}\n{indent}{fence}"
 
 
 def _fence(
     match: re.Match[str], at: str, found: Check, new_id: Callable[[], str]
 ) -> str:
     """One quiz fence expanded, or left as written with its problems noted."""
-    indent = match["indent"]
-    body = "".join(
-        line.removeprefix(indent) for line in match["body"].splitlines(keepends=True)
-    )
     try:
-        # BaseLoader keeps every scalar as written (no Yes/No booleans, no 0.50
-        # turned into 0.5) and builds no objects.
-        data = yaml.load(body, Loader=yaml.BaseLoader)
+        data, fixed = _yaml(_body(match))
     except yaml.YAMLError as exc:
         found.call.append(f"{at}: expected YAML; {str(exc).splitlines()[0]}")
         return match[0]
@@ -933,13 +983,220 @@ def _fence(
         )
         return match[0]
     checked = [
-        check_item(_whole_numbers(v), i, f"{at} questions[{i}]", fence=True)
+        check_item(
+            _whole_numbers(drop_question_blanks(v)),
+            i,
+            f"{at} questions[{i}]",
+            fence=True,
+        )
         for i, v in enumerate(items)
     ]
     found.items.extend(checked)
     if any(item.problems for item in checked):
         return match[0]
+    if fixed:
+        found.notes.append(_repair_note(at, fixed))
     questions = [expand(i.kind or "open", i.value, new_id()) for i in checked]
-    payload = json.dumps({"questions": questions}, ensure_ascii=False)
-    fence = match["fence"]
-    return f"{indent}{fence}quiz\n{indent}{payload}\n{indent}{fence}"
+    return _emit(match, json.dumps({"questions": questions}, ensure_ascii=False))
+
+
+def _cards(body: str, at: str, found: Check) -> str | None:
+    """A flashcards fence's body as JSON (which the converter's YAML reader
+    takes) once it holds cards with a front and a back each, other card fields
+    kept as sent; None leaves the fence as written for the converter to name
+    its problem."""
+    try:
+        data, fixed = _yaml(body)
+    except yaml.YAMLError:
+        return None
+    cards = data.get("cards") if isinstance(data, dict) else None
+    if (
+        not isinstance(cards, list)
+        or not cards
+        or not all(
+            isinstance(card, dict)
+            and all(
+                isinstance(card.get(k), str) and card[k].strip()
+                for k in ("front", "back")
+            )
+            for card in cards
+        )
+    ):
+        return None
+    if fixed:
+        found.notes.append(_repair_note(at, fixed))
+    return json.dumps(data, ensure_ascii=False)
+
+
+def _media(lang: str, body: str, at: str, found: Check) -> str | None:
+    """A chart or plot fence's body as compact JSON: read as YAML when it is
+    not JSON and does not open as JSON ({), its type set to the fence's name
+    when missing, and a chart kind sent as a chart fence's type moved to kind.
+    None leaves the fence as written for the converter to name its problem,
+    as for YAML whose escapes made control characters ("$\\alpha$")."""
+    fixed = []
+    try:
+        data = json.loads(body)
+    except ValueError:
+        if body.lstrip().startswith("{"):
+            return None
+        try:
+            data = yaml.safe_load(body)
+        except yaml.YAMLError:
+            return None
+        if any(_CONTROL.search(text) for text in _texts(data)):
+            return None
+        fixed.append(f"read it from YAML; a {lang} fence is JSON")
+    if not isinstance(data, dict):
+        return None
+    if "type" not in data:
+        data = {"type": lang, **data}
+        fixed.append(f'added "type": "{lang}"')
+    elif lang == "chart" and data["type"] in _CHART_KINDS and "kind" not in data:
+        fixed.append(f'"type": "{data["type"]}" is a chart kind, so it went to kind')
+        data = {**data, "type": "chart", "kind": data["type"]}
+    if fixed:
+        found.notes.append(f"Repaired {at}: {'; '.join(fixed)}.")
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
+# C0 controls other than tab and newline, NEL and the Unicode line and
+# paragraph separators: what YAML escapes such as \a, \N, \L and \P make.
+_CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x85\u2028\u2029]")
+
+
+def _texts(value: Any) -> list[str]:
+    """Every key and string in a parsed body."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        return [t for k, v in value.items() for t in (str(k), *_texts(v))]
+    if isinstance(value, list):
+        return [t for v in value for t in _texts(v)]
+    return []
+
+
+# Repairs tried on a quiz or flashcards fence only after it fails to parse,
+# with what the model should write instead.
+_REPAIRS = {
+    "trailing commas": "a YAML line ends without a comma",
+    "values holding ': ' quoted": 'quote a YAML value holding ": "',
+    "LaTeX backslashes": "in YAML double quotes write \\\\ for a backslash",
+}
+_TRAILING_COMMA = re.compile(r"([\]}])[ \t]*,[ \t]*$", re.MULTILINE)
+# A single-line value after a text key; a list item.
+_TEXT_VALUE = re.compile(
+    r"^(?P<lead>[ \t]*(?:-[ \t]+)?(?:question|explanation|correct|model_answer"
+    r"|text|front|back):[ \t]+)(?P<value>\S.*?)[ \t]*$"
+)
+_LIST_KEY = re.compile(r"^(?P<lead>[ \t]*(?:-[ \t]+)?)(?:options|accepted):[ \t]*$")
+_LIST_ITEM = re.compile(r"^(?P<lead>(?P<dash>[ \t]*)-[ \t]+)(?P<value>\S.*?)[ \t]*$")
+# Where a value starts: after a key or a list item's dash.
+_VALUE = re.compile(r"^(?P<lead>[ \t]*(?:-[ \t]+)?(?:[\w-]+:[ \t]+)?)(?P<value>.*)$")
+_DOUBLE_QUOTED = re.compile(r'"(?:[^"\\\n]|\\.)*"')
+_FLOW_PLAIN = re.compile(r"[^,\]]*")
+_ESCAPE = re.compile(r"\\(.)")
+
+
+def _yaml(body: str) -> tuple[Any, list[str]]:
+    """A quiz or flashcards fence's body read with BaseLoader, which keeps
+    every scalar as written (no Yes/No booleans, no 0.50 turned into 0.5) and
+    builds no objects. When that fails, it is read once more after the repairs
+    that change it, named in the result; when that fails too, the first error
+    is raised."""
+    try:
+        return yaml.load(body, Loader=yaml.BaseLoader), []
+    except yaml.YAMLError:
+        text, fixed = _repair_yaml(body)
+        if fixed:
+            with contextlib.suppress(yaml.YAMLError):
+                return yaml.load(text, Loader=yaml.BaseLoader), fixed
+        raise
+
+
+def _repair_yaml(body: str) -> tuple[str, list[str]]:
+    """The body with trailing commas after a closing ] or } removed (not in a
+    JSON body, whose commas end lines), a plain value holding ": " after a text
+    key or as an options/accepted item quoted, and a backslash before a letter
+    doubled in a double-quoted value (LaTeX); with the names of the repairs
+    that changed it."""
+    fixed = []
+    json_body = body.lstrip().startswith(("{", "["))
+    text = body if json_body else _TRAILING_COMMA.sub(r"\1", body)
+    if text != body:
+        fixed.append("trailing commas")
+    lines, under = [], None  # under: the column of an options/accepted key
+    for line in text.split("\n"):
+        item = _LIST_ITEM.match(line)
+        if under is not None and item and len(item["dash"]) >= under:
+            line = _quoted(item)
+        else:
+            key = _LIST_KEY.match(line)
+            if key:
+                under = len(key["lead"])
+            elif line.strip():
+                under = None
+            value = _TEXT_VALUE.match(line)
+            line = _quoted(value) if value else line
+        lines.append(line)
+    quoted = "\n".join(lines)
+    if quoted != text:
+        fixed.append("values holding ': ' quoted")
+    escaped = "\n".join(_escaped(line) for line in quoted.split("\n"))
+    if escaped != quoted:
+        fixed.append("LaTeX backslashes")
+    return escaped, fixed
+
+
+def _escaped(line: str) -> str:
+    """The line with a backslash before a letter doubled in the double-quoted
+    scalars that open its value (after a key or a dash) or are items of a flow
+    list there; a quoted phrase inside a plain or single-quoted scalar is left
+    alone, its backslashes being literal already."""
+    match = _VALUE.match(line)
+    lead, value = match["lead"], match["value"]
+    if not lead.strip():
+        return line
+    spans = []
+    if value.startswith('"'):
+        spans.append(_DOUBLE_QUOTED.match(value))
+    elif value.startswith("["):
+        at = 1
+        while at < len(value):
+            while at < len(value) and value[at] in " \t":
+                at += 1
+            span = _DOUBLE_QUOTED.match(value, at) or _FLOW_PLAIN.match(value, at)
+            if span.re is _DOUBLE_QUOTED:
+                spans.append(span)
+            at = span.end()
+            if at >= len(value) or value[at] != ",":
+                break
+            at += 1
+    out, at = [], 0
+    for span in spans:
+        if span is not None:
+            out += [value[at : span.start()], _ESCAPE.sub(_double, span[0])]
+            at = span.end()
+    return lead + "".join(out) + value[at:]
+
+
+def _double(escape: re.Match[str]) -> str:
+    letter = escape[1]
+    return "\\\\" + letter if letter.isascii() and letter.isalpha() else escape[0]
+
+
+def _quoted(match: re.Match[str]) -> str:
+    """A plain value holding ": " in double quotes; any other as is. (" #" is
+    not quoted: on a line that parses it starts a comment.)"""
+    value = match["value"]
+    if value[0] in "\"'|>[{" or ": " not in value:
+        return match.string
+    return match["lead"] + json.dumps(value, ensure_ascii=False)
+
+
+def _repair_note(at: str, fixed: list[str]) -> str:
+    return (
+        f"Repaired {at} ({', '.join(fixed)}); "
+        + "; ".join(_REPAIRS[f] for f in fixed)
+        + "."
+    )

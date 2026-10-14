@@ -8,6 +8,11 @@ use notes::limits::Metrics;
 use serde_json::Value;
 use yrs::ReadTxn;
 
+/// Why a quiz room loads read-only: one of its documents holds a question
+/// block kind the room does not admit.
+pub const UNKNOWN_QUIZ_BLOCK: &str =
+    "a quiz document holds a question block kind the room does not admit";
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Model {
     Note,
@@ -51,6 +56,35 @@ impl Model {
         }
     }
 
+    /// How the room serves its stored document of material kind `kind` (Epo
+    /// 2026-10-13): one holding a reference's imported fence body (the quiz's
+    /// answer keys) is refused, as Go's reads refuse it, so no reader receives
+    /// it; one the store would refuse (a type the embed catalog does not
+    /// list, or not for this kind, a closed element's extra key, a reference
+    /// without its row, ...) or, in this quiz document, a question block kind
+    /// the room does not admit, loads read-only: the reason, which the load
+    /// logs (every save would otherwise be refused and discard the room's
+    /// edits). One projection and one store check per load, never per update.
+    pub fn stored<T: ReadTxn>(self, kind: &str, txn: &T) -> Result<Option<String>, String> {
+        match self {
+            Model::Note => {
+                if notes::plate::holds_pending_reference(txn) {
+                    return Err("a material reference carries an imported fence body".into());
+                }
+                Ok(match notes::plate::value(txn) {
+                    Ok(value) => notes::material::assert_canonical(&value, kind)
+                        .err()
+                        .map(|error| error.to_string()),
+                    Err(error) => Some(error.to_string()),
+                })
+            }
+            Model::Item(items::Kind::Quiz | items::Kind::QuizKeys) => {
+                Ok(items::quiz::holds_unknown_block(txn).then(|| UNKNOWN_QUIZ_BLOCK.to_owned()))
+            }
+            Model::Item(items::Kind::Flashcards) => Ok(None),
+        }
+    }
+
     pub fn measure<T: ReadTxn>(self, txn: &T) -> Result<Metrics, String> {
         match self {
             Model::Note => notes::limits::measure(txn).map_err(|error| error.to_string()),
@@ -58,25 +92,22 @@ impl Model {
         }
     }
 
-    /// The document seeded from `materials.content`'s value (a note without
-    /// a reference's imported fence body: `notes::material::without_pending_refs`).
+    /// The document seeded from `materials.content`'s value, as it is (one
+    /// a room may not serve is refused at load: [Model::stored]).
     pub fn state_from_value(self, value: &[Value]) -> Vec<u8> {
         match self {
-            Model::Note => match notes::material::without_pending_refs(value) {
-                Some(value) => notes::slate_yjs::state_from_value(&value, 0),
-                None => notes::slate_yjs::state_from_value(value, 0),
-            },
+            Model::Note => notes::slate_yjs::state_from_value(value, 0),
             Model::Item(kind) => kind.state_from_value(value, 0),
         }
     }
 
-    /// The room's admission for this document.
-    pub fn validator(self, metrics: Metrics) -> RoomValidator {
+    /// The room's admission for this document, of material kind `kind`.
+    pub fn validator(self, kind: &str, metrics: Metrics) -> RoomValidator {
         match self {
             Model::Note => RoomValidator::Note(notes::limits::Validator {
                 bound: Some(metrics),
                 metrics: Some(metrics),
-                ..Default::default()
+                ..notes::limits::Validator::new(kind)
             }),
             Model::Item(kind) => RoomValidator::Item(items::Validator::new(kind, Some(metrics))),
         }
@@ -157,31 +188,120 @@ mod tests {
 
     use super::Model;
 
-    /// Security regression (live-items REVIEW5): a note stored with a
-    /// reference still carrying an imported fence body (the quiz's answer
-    /// keys) seeds its room, which every reader joins, with an empty
-    /// paragraph of the same id in its place. Fails if the seed keeps it.
-    #[test]
-    fn a_note_seeds_without_a_pending_fence_body() {
-        let value = [
-            json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] }),
-            json!({
-                "type": "material_ref", "id": "fence", "materialId": "", "refKind": "quiz",
-                "pending": "answer: SECRET", "children": [{ "text": "" }],
-            }),
-        ];
+    fn note_stored(kind: &str, value: &[serde_json::Value]) -> Result<Option<String>, String> {
         let doc = ydoc::scratch_doc();
         ydoc::replay(
             &doc,
-            &Model::Note.state_from_value(&value),
+            &Model::Note.state_from_value(value),
             &[] as &[Vec<u8>],
         )
         .unwrap();
-        let seeded = Model::Note.value(&doc.transact()).unwrap();
-        assert_eq!(seeded[0]["id"], "body");
+        Model::Note.stored(kind, &doc.transact())
+    }
+
+    /// Security regression (live-items REVIEW5): a note stored with a
+    /// reference still carrying an imported fence body (the quiz's answer
+    /// keys) is never served: its room refuses to load, so no reader joins
+    /// it (Go's reads refuse it too). Fails if the room serves the fence body.
+    #[test]
+    fn a_stored_fence_body_is_never_served() {
+        let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
+        let fence = json!({
+            "type": "material_ref", "id": "fence", "materialId": "", "refKind": "quiz",
+            "pending": "answer: SECRET", "children": [{ "text": "" }],
+        });
+        assert!(note_stored("note", &[body.clone(), fence]).is_err());
+        assert_eq!(note_stored("note", &[body]), Ok(None));
+    }
+
+    /// A stored Plate document the store would refuse loads read-only
+    /// (decision 5), whatever the reason: a type the catalog does not list, a
+    /// type it lists for another material kind, a closed element's extra key,
+    /// a reference without its row; and the store's reason comes back for the
+    /// load to log (R2-L1). Fails if any loads writable, where every save
+    /// would be refused and discard the room's edits.
+    #[test]
+    fn a_stored_document_the_store_refuses_loads_read_only() {
+        let body = json!({ "type": "p", "id": "body", "children": [{ "text": "Body" }] });
+        let leaf = json!([{ "text": "" }]);
+        let reference = |id: &str| json!({ "type": "material_ref", "id": "r", "materialId": id, "refKind": "quiz", "children": leaf });
+        let map = json!({ "type": "mermaid", "id": "m", "source": "mindmap", "children": [
+            { "type": "mermaid_caption", "children": [{ "text": "" }] },
+        ] });
+        let read_only = [
+            (
+                "note",
+                json!({ "type": "timeline", "id": "t", "children": leaf }),
+                "unknown element type",
+            ),
+            (
+                "note",
+                json!({ "type": "html_embed", "id": "h", "html": "<b>x</b>", "title": "old", "children": leaf }),
+                "unexpected interactive field title",
+            ),
+            ("note", reference(""), "materialId is required"),
+            (
+                "mindmap",
+                reference("mat_quiz"),
+                "a mindmap cannot hold a material_ref block",
+            ),
+        ];
+        for (kind, node, reason) in read_only {
+            let value = if kind == "mindmap" {
+                [map.clone(), node.clone()]
+            } else {
+                [body.clone(), node.clone()]
+            };
+            let stored = note_stored(kind, &value).unwrap();
+            assert!(
+                stored
+                    .as_deref()
+                    .is_some_and(|stored| stored.contains(reason)),
+                "{kind}: {node}: {stored:?}"
+            );
+        }
         assert_eq!(
-            seeded[1],
-            json!({ "type": "p", "id": "fence", "children": [{ "text": "" }] })
+            note_stored("note", &[body.clone(), reference("mat_quiz")]),
+            Ok(None)
+        );
+        assert_eq!(note_stored("mindmap", &[map]), Ok(None));
+    }
+
+    /// A stored quiz holding a block kind its rooms do not admit loads its
+    /// room read-only instead of a save dropping the block; the room of the
+    /// other document learns it from that document at load (`room::load`,
+    /// tested in `tests/rooms.rs`). Fails if the quiz room loads writable.
+    #[test]
+    fn a_quiz_with_an_unknown_block_kind_loads_read_only() {
+        let question = |stem: serde_json::Value| {
+            json!({
+                "id": "q1", "labels": "letters", "layout": "paper", "stem": stem,
+                "parts": [{
+                    "id": "q1:part:1", "marks": 1, "solution": [],
+                    "blocks": [{ "type": "text", "text": "True?" }],
+                    "answer": { "type": "boolean", "correct": true },
+                }],
+            })
+        };
+        let quiz = |stem: serde_json::Value| {
+            [json!({ "type": "quiz", "id": "quiz", "children": [{
+                "type": "quiz_question", "id": "q1", "question": question(stem),
+                "children": [{ "text": "" }],
+            }] })]
+        };
+        let stored = |stem: serde_json::Value| {
+            let doc = ydoc::scratch_doc();
+            let (content, _) = items::quiz::states_from_value(&quiz(stem), 0);
+            ydoc::replay(&doc, &content, &[] as &[Vec<u8>]).unwrap();
+            Model::Item(items::Kind::Quiz).stored("quiz", &doc.transact())
+        };
+        assert_eq!(
+            stored(json!([{ "type": "timeline", "events": [] }])),
+            Ok(Some(super::UNKNOWN_QUIZ_BLOCK.to_owned()))
+        );
+        assert_eq!(
+            stored(json!([{ "type": "text", "text": "Stem" }])),
+            Ok(None)
         );
     }
 }

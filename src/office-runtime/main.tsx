@@ -18,6 +18,7 @@ import {
   type OfficeHostMessage,
   type OfficeLocale,
   type OfficeMode,
+  type OfficeNotice,
   type OfficeRuntimePayload,
   type OfficeZoom,
 } from '@/features/files/officeProtocol';
@@ -26,6 +27,11 @@ import {
   presenterTokenFromUrl,
 } from '@/features/files/officeRuntimeConfig';
 import { m, setLocale } from '@/i18n';
+import {
+  fitImage,
+  ImageTooLargeError,
+  ImageUnreadableError,
+} from '@/lib/fitImage';
 import { THEMES } from '@/theme/theme';
 import { useBottomInset } from './bottomInset';
 import { exportCheckpoint } from './exportCheckpoint';
@@ -81,6 +87,8 @@ interface LoadedFile {
   epoch?: number;
   fileName: string;
   format: OfficeFormat;
+  /** Edit loads only: the payer's plan image cap. */
+  imageMaxBytes?: number;
   initialUpdate?: Uint8Array;
   revision: number;
   /** Where the viewer or editor opens; the format's default without. */
@@ -296,6 +304,14 @@ function OfficeRuntime() {
         : null,
     [file?.initialUpdate, reportReplica]
   );
+  // An inserted image over the payer's plan cap is shrunk first, and one
+  // older Office apps cannot open is re-encoded; every edit load carries the
+  // cap (officeProtocol).
+  const imageMaxBytes = file?.imageMaxBytes;
+  const prepareImage = useCallback(
+    (image: File) => fitImage(image, imageMaxBytes!, { office: true }),
+    [imageMaxBytes]
+  );
 
   useEffect(() => {
     let failScenarioExport = false;
@@ -369,6 +385,7 @@ function OfficeRuntime() {
           epoch: message.collaboration?.epoch,
           fileName: message.fileName,
           format: message.format,
+          imageMaxBytes: message.imageMaxBytes,
           initialUpdate: message.collaboration
             ? new Uint8Array(message.collaboration.initialUpdate)
             : undefined,
@@ -536,11 +553,29 @@ function OfficeRuntime() {
   const reportError = useCallback(
     (value: Error) => {
       if (runtimeRevision === undefined) return;
+      // A refused image leaves the document as it was: a notice for Capy.
+      const notice =
+        value instanceof ImageTooLargeError
+          ? 'image-too-large'
+          : value instanceof ImageUnreadableError
+            ? 'image-type'
+            : null;
+      if (notice) {
+        post({ notice, revision: runtimeRevision, type: 'notice' });
+        return;
+      }
       post({
         message: value.message,
         revision: runtimeRevision,
         type: 'error',
       });
+    },
+    [runtimeRevision]
+  );
+  const reportNotice = useCallback(
+    (notice: OfficeNotice) => {
+      if (runtimeRevision === undefined) return;
+      post({ notice, revision: runtimeRevision, type: 'notice' });
     },
     [runtimeRevision]
   );
@@ -666,6 +701,7 @@ function OfficeRuntime() {
               onSave={save}
               onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
+              prepareImage={prepareImage}
               readOnly={readOnly}
             />
           ) : file.format === 'xlsx' ? (
@@ -701,12 +737,14 @@ function OfficeRuntime() {
               onExporter={reportExporter}
               onFlusher={reportFlusher}
               onMenus={reportMenus}
+              onNotice={reportNotice}
               onPendingChange={reportHostPending}
               onPresentingChange={reportPresenting}
               onRenderer={reportRenderer}
               onSave={save}
               onThumbnailer={reportThumbnailer}
               onZoomChange={reportZoom}
+              prepareImage={prepareImage}
               readOnly={readOnly}
             />
           )

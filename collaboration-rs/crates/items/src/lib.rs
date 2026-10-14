@@ -219,3 +219,23 @@ pub fn check_value(
     }
     Ok(metrics)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::Kind;
+
+    /// The item kinds are the embed catalog's (`materialKinds` marked
+    /// `item`): such a material gets an item room, any other a Plate room,
+    /// and an item room checks its projection as its own material kind.
+    #[test]
+    fn item_kinds_are_the_catalogs() {
+        for material in notes::catalog::MATERIAL_KINDS {
+            let item = Kind::of_material(material.kind);
+            assert_eq!(item.is_some(), material.item, "{}", material.kind);
+            if let Some(item) = item {
+                assert_eq!(item.material_kind(), material.kind);
+            }
+        }
+        assert_eq!(Kind::QuizKeys.material_kind(), "quiz");
+    }
+}

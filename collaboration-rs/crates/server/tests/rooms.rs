@@ -618,6 +618,85 @@ async fn a_read_only_channel_that_writes_is_closed() {
     assert!(String::from_utf8_lossy(&closed).contains("read-only"));
 }
 
+/// Decision 5 (Epo 2026-10-13): a stored note holding a block the embed
+/// catalog does not list stays readable while no writer edits it. A writer
+/// joins read-only and hears why (`room-read-only` with the code the browser
+/// shows), a draft and an update from it are refused, and a reader reads the
+/// note. Fails if the room loads such a note writable.
+#[tokio::test]
+async fn a_note_holding_a_block_this_version_cannot_edit_loads_read_only() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "kept").await;
+    let content = serde_json::json!({ "schemaVersion": 1, "value": [
+        { "type": "p", "id": "b1", "children": [{ "text": "kept" }] },
+        { "type": "toggle", "id": "t1", "children": [{ "text": "Later" }] },
+    ] });
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET content = $2 WHERE id = $1",
+            &[&material, &content],
+        )
+        .await
+        .expect("content");
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &write).await, 0);
+    let (notice, _) = writer.stateless("room-read-only").await;
+    assert_eq!(notice["code"], "unsupported_block", "{notice}");
+    assert!(writer.settle(|c| c.block_text() == "kept").await);
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&write),
+        Some(ORIGIN),
+        drafted(&writer.doc, typed_into_note("!")),
+    )
+    .await;
+    assert_eq!(answer["class"], "permission", "{status} {answer}");
+    writer.type_text("!").await;
+    let closed = writer.until(4).await.expect("closed");
+    assert!(String::from_utf8_lossy(&closed).contains("read-only"));
+    let mut reader = Client::open(server.port).await;
+    assert_eq!(reader.joined(&room, &token(&room, &user, "read")).await, 0);
+    assert!(reader.settle(|c| c.block_text() == "kept").await);
+}
+
+/// Security regression (live-items REVIEW5, now failing closed as Go does):
+/// a stored note whose reference still carries an imported fence body (the
+/// quiz's answer keys) is never served. A reader's join is refused and no
+/// frame it receives holds the body. Fails if the room strips nothing and
+/// loads it.
+#[tokio::test]
+async fn a_stored_fence_body_is_never_served() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "kept").await;
+    let content = serde_json::json!({ "schemaVersion": 1, "value": [
+        { "type": "p", "id": "b1", "children": [{ "text": "kept" }] },
+        { "type": "material_ref", "id": "f1", "materialId": "", "refKind": "quiz",
+          "pending": "answer: SECRET-KEY", "children": [{ "text": "" }] },
+    ] });
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET content = $2 WHERE id = $1",
+            &[&material, &content],
+        )
+        .await
+        .expect("content");
+    let room = format!("material:{material}:schema:1");
+    let mut reader = Client::open(server.port).await;
+    reader.join(&room, &token(&room, &user, "read")).await;
+    assert!(reader.until(2).await.is_some(), "the join is refused");
+    assert!(
+        !String::from_utf8_lossy(&reader.received).contains("SECRET-KEY"),
+        "a frame holds the fence body"
+    );
+}
+
 /// Security regression: a writer may not write the contributor markers the
 /// server keeps in the document (who edited is the server's record).
 #[tokio::test]
@@ -1017,7 +1096,7 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
         "{}",
         client.block_text()
     );
-    // The inspect view reads the stored rows.
+    // The inspect view reads the stored rows and the live room.
     let inspect = serde_json::json!({
         "actorUserId": user,
         "room": room,
@@ -1026,6 +1105,82 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
     let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
     assert_eq!(status, 200, "{view}");
     assert_eq!(view["blocks"][0]["text"], "replaced", "{view}");
+}
+
+/// Nothing stores while a test runs: typing stays in the live room.
+const UNSAVED: [(&str, &str); 4] = [
+    ("COLLABORATION_DEBOUNCE_MS", "60000"),
+    ("COLLABORATION_MAX_DEBOUNCE_MS", "60000"),
+    ("COLLABORATION_SOURCE_DEBOUNCE_MS", "60000"),
+    ("COLLABORATION_SOURCE_MAX_DEBOUNCE_MS", "60000"),
+];
+
+/// The agent's read sees what the editors see (Epo 2026-10-13): a writer's
+/// unsaved typing is in the inspect view, the live room merged into the
+/// stored rows as an edit reads them. A replica holding no room (a second
+/// server process) reads the stored document alone. Fails with the merge
+/// removed from `inspect_material`.
+#[tokio::test]
+async fn an_agent_read_of_a_note_shows_unsaved_typing_and_the_stored_note_without_a_room() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &UNSAVED).await;
+    let other = start_configured(&env, env.api.as_deref(), &UNSAVED).await;
+    let (user, material) = note(&env, "hello world").await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == "hello world").await);
+    client.type_text(" live").await;
+    client.until(6).await.expect("ack");
+
+    let inspect = serde_json::json!({
+        "actorUserId": user,
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+    });
+    let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["blocks"][0]["text"], "hello world live", "{view}");
+    let (status, view) = internal(other.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["blocks"][0]["text"], "hello world", "{view}");
+}
+
+/// The same for a source: the inspect view of a text source holds a
+/// writer's unsaved typing; a replica with no room reads the stored text.
+/// Fails with the merge removed from `Sources::inspect`.
+#[tokio::test]
+async fn an_agent_read_of_a_source_shows_unsaved_typing_and_the_stored_text_without_a_room() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_configured(&env, Some(&gateway.url), &UNSAVED).await;
+    let other = start_configured(&env, Some(&gateway.url), &UNSAVED).await;
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let mut a = Client::open(server.port).await;
+    assert_eq!(a.joined(&room, &token(&room, &user, "write")).await, 1);
+    assert!(a.settle(|c| source_text(c) == "hello").await);
+    let before = a.doc.transact().state_vector();
+    {
+        let text = a.doc.get_or_insert_text("source");
+        let mut txn = a.doc.transact_mut();
+        let end = text.len(&txn);
+        text.insert(&mut txn, end, " live");
+    }
+    let update = a.doc.transact().encode_state_as_update_v1(&before);
+    a.send(5, &sync(2, &update)).await;
+    a.until(6).await.expect("ack");
+
+    let inspect = serde_json::json!({
+        "actorUserId": user,
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (status, view) = internal(server.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["text"], "hello live", "{view}");
+    let (status, view) = internal(other.port, "/internal/documents/inspect", &inspect).await;
+    assert_eq!(status, 200, "{view}");
+    assert_eq!(view["text"], "hello", "{view}");
 }
 
 // ------------------------------------------------------------ source rooms
@@ -1143,6 +1298,15 @@ async fn gateway_post(
     )
     .await
     .expect("checkpoint");
+    // A text save's list-card text, as Go writes it.
+    if let Some(preview) = body["preview"].as_str() {
+        txn.execute(
+            "UPDATE files SET preview=jsonb_build_object('text',$2::text) WHERE id=$1",
+            &[&id, &preview],
+        )
+        .await
+        .expect("preview");
+    }
     txn.commit().await.expect("commit");
     axum::Json(serde_json::json!({ "checkpoint": next })).into_response()
 }
@@ -1288,6 +1452,14 @@ async fn a_clean_source_room_answers_a_checkpoint_request_after_a_reload() {
         .await
         .expect("the edit's receipt");
     assert_eq!(saved["checkpoint"], 1);
+    // The save carried the file's list-card text.
+    let preview: Option<serde_json::Value> = db(&env)
+        .await
+        .query_one("SELECT preview FROM files WHERE id=$1", &[&file])
+        .await
+        .expect("file")
+        .get(0);
+    assert_eq!(preview, Some(serde_json::json!({ "text": "hello world" })));
     drop(a);
     tokio::time::sleep(Duration::from_millis(1500)).await;
 
@@ -2571,6 +2743,41 @@ fn map_at(doc: &Doc, path: &[&str]) -> Option<yrs::MapRef> {
         };
     }
     Some(map)
+}
+
+/// Decision 5 for quizzes (review M1): a stored quiz whose stem holds a block
+/// kind its rooms do not admit loads both rooms read-only, the keys room
+/// too though its own document holds no such block, so no save rebuilds the
+/// quiz without it. Fails if either room takes a writer.
+#[tokio::test]
+async fn a_quiz_holding_a_block_this_version_cannot_read_loads_both_rooms_read_only() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    db(&env)
+        .await
+        .execute(
+            "UPDATE materials SET content = jsonb_set(content,
+               '{value,0,children,0,question,stem}', '[{\"type\":\"timeline\",\"events\":[]}]')
+             WHERE id = $1",
+            &[&quiz],
+        )
+        .await
+        .expect("content");
+    for room in [
+        format!("keys:{quiz}:schema:1"),
+        format!("material:{quiz}:schema:1"),
+    ] {
+        let mut writer = Client::open(server.port).await;
+        assert_eq!(
+            writer.joined(&room, &token(&room, &owner, "write")).await,
+            0,
+            "{room}"
+        );
+        let (notice, _) = writer.stateless("room-read-only").await;
+        assert_eq!(notice["code"], "unsupported_block", "{room}: {notice}");
+    }
 }
 
 #[tokio::test]

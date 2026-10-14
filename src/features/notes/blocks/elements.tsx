@@ -22,6 +22,7 @@ import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
 import {
+  BLOCK_CAPTION_MAX,
   type FlashcardElement as FlashcardNode,
   type HtmlEmbedElement as HtmlEmbedNode,
   type MaterialElement,
@@ -654,6 +655,7 @@ export function MermaidElement(props: PlateElementProps) {
                   MERMAID_CAPTION_CLASS,
                   'block w-full bg-transparent outline-none placeholder:text-placeholder'
                 )}
+                maxLength={BLOCK_CAPTION_MAX}
                 onBlur={() => setCaptioning(false)}
                 onChange={(event) => {
                   const at = locate();

@@ -1,38 +1,139 @@
 {
   "schemaVersion": 1,
-  "subject": "你的 Capy Notebook 存储已超过免费额度",
-  "preview": "订阅已失效，且存储超过免费额度。",
+  "subject": "请在 {{.GraceEndsAt}} 前释放 Capy Notebook 存储空间",
+  "preview": "你的 Pro 计划已结束，文件超过免费额度。目前没有删除任何内容。",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
+            "text": "你的文件超过了免费存储额度"
           }
         ]
       },
       {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "存储超过免费额度" }]
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "你的 Pro 计划已结束，而你的文件超过了免费计划包含的 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": "。目前没有删除任何内容。"
+          }
+        ]
       },
       {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "你好，" }]
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#fdf5e4",
+          "borderColor": "#f0e0bd",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "已用存储："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageUsed",
+                  "label": "Storage used",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "免费计划额度："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "StorageLimit",
+                  "label": "Storage limit",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "释放空间截止："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "GraceEndsAt",
+                  "label": "Buffer ends",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "type": "paragraph",
         "content": [
           {
             "type": "text",
-            "text": "你的订阅已失效，且存储用量超过免费计划限额。你仍有一段缓冲期可释放空间。目前尚未删除任何内容。"
+            "text": "在此之前，你可以阅读、下载、整理和删除文件，但在由你付费的工作区中，上传和编辑会暂停。如果 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "GraceEndsAt",
+              "label": "Buffer ends",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 时仍超出额度，你的账户将变为只读。"
           }
         ]
       },
@@ -47,13 +148,36 @@
           "borderRadius": "smooth"
         }
       },
-      { "type": "horizontalRule" },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "想继续使用免费计划？删除不再需要的文件，直到用量低于 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "StorageLimit",
+              "label": "Storage limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": "。"
+          }
+        ]
+      },
+      {
+        "type": "horizontalRule"
+      },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "text": "你收到这封邮件是因为 Capy Notebook 订阅与存储限额发生了变化。"
+            "text": "你收到这封邮件是因为你的 Capy Notebook Pro 计划已结束。"
           }
         ]
       },
@@ -62,6 +186,7 @@
         "content": [
           {
             "type": "text",
+            "text": "不再接收账单邮件",
             "marks": [
               {
                 "type": "link",
@@ -72,8 +197,7 @@
                   "rel": "noopener noreferrer nofollow"
                 }
               }
-            ],
-            "text": "管理产品邮件偏好"
+            ]
           }
         ]
       }

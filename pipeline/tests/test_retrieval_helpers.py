@@ -666,7 +666,8 @@ async def test_a_write_credits_named_excerpts_or_the_reads_since_the_last_write(
 ):
     """Named excerpts are credited as named. A write naming none credits what
     was read since the last write that landed, or everything read when nothing
-    is new; with no reads it credits nothing and asks for nothing."""
+    is new, of the books its text matches (all of them when it matches none);
+    with no reads it credits nothing and asks for nothing."""
 
     async def provenance(ids):
         return [{"id": "book", "excerptIds": list(ids)}]
@@ -674,27 +675,30 @@ async def test_a_write_credits_named_excerpts_or_the_reads_since_the_last_write(
     monkeypatch.setattr(tools.library, "provenance", provenance)
     ctx = _library_ctx()
     reads = ctx.library_reads
+    write = {"content": "The slope was 2.45."}
 
     assert await tools.write_sources(ctx, "create_material", {}) == ([], [])
 
-    reads.note("e_1", 0, "8.1")
-    reads.note("e_2", 0, "8.2")
+    for n in (1, 2):
+        reads.note(f"e_{n}", 0, f"8.{n}", text="(chunk 3) A slope of 2.45.")
     named = await tools.write_sources(ctx, "create_material", {"excerpt_ids": ["e_2"]})
     assert named == ([{"id": "book", "excerptIds": ["e_2"]}], ["e_2"])
-    _, credited = await tools.write_sources(ctx, "create_material", {})
+    _, credited = await tools.write_sources(ctx, "create_material", write)
     assert credited == ["e_1", "e_2"]
     tools.landed(ctx, credited)
 
-    reads.note("e_3", 0, "8.3")
-    _, credited = await tools.write_sources(ctx, "add_questions", {})
+    reads.note("e_3", 0, "8.3", text="(chunk 9) A slope of 2.45 again.")
+    _, credited = await tools.write_sources(ctx, "add_questions", write)
     assert credited == ["e_3"], "only what was read since the last write"
     tools.landed(ctx, credited)
 
-    _, credited = await tools.write_sources(ctx, "add_questions", {})
+    _, credited = await tools.write_sources(ctx, "add_questions", write)
     assert credited == ["e_1", "e_2", "e_3"], "nothing new: everything read"
+    _, credited = await tools.write_sources(ctx, "add_questions", {"content": "x"})
+    assert credited == ["e_1", "e_2", "e_3"], "matching no book: every candidate"
     # Reading an excerpt again makes it new for the next write.
     reads.note("e_1", 0, "8.1")
-    assert (await tools.write_sources(ctx, "create_material", {}))[1] == ["e_1"]
+    assert (await tools.write_sources(ctx, "create_material", write))[1] == ["e_1"]
     # What a write credited is retained for later turns, named or not.
     assert ctx.library_evidence.used == {"e_1", "e_2", "e_3"}
 

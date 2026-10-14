@@ -1,50 +1,116 @@
 {
   "schemaVersion": 1,
-  "subject": "你的 Capy Notebook 账户删除已安排",
-  "preview": "你的账户已安排删除。",
+  "subject": "你的 Capy Notebook 账户将于 {{.DeletionDate}} 删除",
+  "preview": "如果这是误操作，请在此之前联系支持。",
   "content": {
     "type": "doc",
     "content": [
       {
-        "type": "paragraph",
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
         "content": [
           {
             "type": "text",
-            "marks": [
-              { "type": "bold" },
-              { "type": "textStyle", "attrs": { "color": "#5e5cdb" } }
-            ],
-            "text": "Capy Notebook"
+            "text": "你的账户已安排删除"
           }
         ]
       },
       {
-        "type": "heading",
-        "attrs": { "level": 1 },
-        "content": [{ "type": "text", "text": "账户删除已安排" }]
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "我们已收到你删除 Capy Notebook 账户的请求。你的账户现已锁定，并将在下方日期连同所有工作区、文件、资料和学习数据被永久删除。"
+          }
+        ]
       },
       {
-        "type": "paragraph",
-        "content": [{ "type": "text", "text": "你好，" }]
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#fdf0ef",
+          "borderColor": "#f2d4d1",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "删除日期："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "DeletionDate",
+                  "label": "Deletion date",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "hardBreak"
+              },
+              {
+                "type": "text",
+                "text": "剩余天数："
+              },
+              {
+                "type": "variable",
+                "attrs": {
+                  "id": "GraceDays",
+                  "label": "Grace days",
+                  "required": true
+                },
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              },
+              {
+                "type": "text",
+                "text": " 天",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
       },
       {
         "type": "paragraph",
         "content": [
           {
             "type": "text",
-            "text": "我们已收到你删除 Capy Notebook 账户的请求。删除将在 "
+            "text": "改变主意了？请在 "
           },
           {
             "type": "variable",
             "attrs": {
-              "id": "GraceDays",
-              "label": "宽限天数",
+              "id": "DeletionDate",
+              "label": "Deletion date",
               "required": true
             }
           },
           {
             "type": "text",
-            "text": " 天后执行。届时你的账户及其所有工作区、文件、资料和其他数据将被永久删除。如需取消，请在此之前联系支持。"
+            "text": " 前联系支持，我们可以为你恢复账户。过了这个日期，所有内容都无法恢复。"
           }
         ]
       },
@@ -59,33 +125,15 @@
           "borderRadius": "smooth"
         }
       },
-      { "type": "horizontalRule" },
       {
-        "type": "footer",
-        "content": [
-          {
-            "type": "text",
-            "text": "你收到这封邮件是因为你请求删除 Capy Notebook 账户。"
-          }
-        ]
+        "type": "horizontalRule"
       },
       {
         "type": "footer",
         "content": [
           {
             "type": "text",
-            "marks": [
-              {
-                "type": "link",
-                "attrs": {
-                  "href": "UnsubscribeURL",
-                  "isUrlVariable": true,
-                  "target": "_blank",
-                  "rel": "noopener noreferrer nofollow"
-                }
-              }
-            ],
-            "text": "管理产品邮件偏好"
+            "text": "你收到这封邮件是因为有人请求删除你的 Capy Notebook 账户。如果不是你本人操作，请立即联系支持。"
           }
         ]
       }

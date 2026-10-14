@@ -468,6 +468,241 @@ was HEAD's parser (v13); the candidate was the working tree (v14).
     the set stays blind.
 - **This set is spent.**
 
+## Update: blind holdout gate on general PDFs, v13 → v14
+
+The third gate, run after v14 was committed. Both earlier sets leaned on
+textbooks, so this one has none: 31 new public PDFs (1,442 pages).
+- 6 papers and reports, 4 financial or statistical documents
+- 3 datasheets and guides, 2 legal documents
+- 3 forms and form instructions, 2 slide decks
+- a newsletter, a menu, minutes, an exam paper, a CV template and an invoice
+  template
+- 2 scans
+- 7 non-English documents
+
+They come from 12 producers. The set has no poster, magazine, contract
+template or real Excel export (those downloads failed). 30 documents and 86
+pages were graded.
+
+| Element | n | v13 | v14 | Win/tie/loss | Difference [95% CI] |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Formulas | 47 | 0.35 | 0.38 | 3/44/0 | +0.03 [+0.00, +0.05] |
+| Tables | 46 | 0.61 | 0.61 | 0/46/0 | +0.00 |
+| Figures | 41 | 0.77 | 0.79 | 3/37/1 | +0.02 [−0.03, +0.12] |
+| Headings | 178 | 0.49 | 0.58 | 19/158/1 | +0.10 [+0.02, +0.18] |
+| Section paths | 86 | 0.40 | 0.47 | 10/74/2 | +0.06 [+0.01, +0.14] |
+| Text | 86 | 0.65 | 0.69 | 9/76/1 | +0.05 [+0.00, +0.10] |
+
+- **False tables:** 36 → 5.
+- **False headings:** 31 → 39. Most of the rise is one layout-heavy
+  Japanese pamphlet, where heading recall promotes callout and diagram text;
+  three other documents add a few.
+- **Documents:** 10 better, 19 the same, 1 worse. The worse one is a fillable
+  tax form: a worksheet heading is merged into a garbled line, so the page
+  falls under the wrong section.
+- **Crashes:** v13 1 (the same bad-xref font repair), v14 0.
+- **Time, v14/v13 on the busy Mac:** total 1.14, median 1.11, max 3.11. CI
+  shows the same direction in the repair phase; see the budget note below.
+- **Verdict:** passes. The two regressions (recall on callout-heavy layouts
+  and the form heading) are left undiagnosed, so the set stays blind. A fix
+  gets its own new set.
+
+## Update: v14 budget runs, memory held after a parse
+
+The three CI runs for the budgets (38373923950, 38374340206, 38374345259)
+passed the v13 budgets. Against v13's CI run:
+- **Faster:** the textbook took 226 s and now takes 117 s.
+- **More memory, kept after a large document:**
+
+  | Fixture | v13 | v14 |
+  | --- | ---: | ---: |
+  | logic-1016p | 2.35 GiB | 2.97 GiB |
+  | limit-1400p | 2.47 GiB | 3.15 GiB |
+  | scan-120p | 2.39 GiB | 3.48 GiB |
+
+  The small office fixtures that run after the scan each held +0.9 to
+  +1.0 GiB, so the persistent parse child keeps the memory once the scan is
+  done.
+
+Two causes, both fixed with byte-identical output on every PDF fixture:
+- **MuPDF's store** kept every image `pictures._image_digests` decoded, up
+  to its 256 MiB limit, after the document closed. The store is now emptied
+  after each decode (`_drop_decoded`) and after each document and OCR page
+  (`app._release_memory`). scan-120p now peaks at 70 MiB in that stage.
+- **`scripts.py`'s caches** held whole block texts, which kept the
+  allocator's arenas from being released. The stage now clears them.
+
+In-process, back to back, on the Mac, memory left in the child after a
+document went from 583 → 209 MiB after limit-1400p (v13 150) and from
+553 → 164 MiB after the next small document (v13 104).
+
+The budgets come from three CI runs with this fix (38403202496,
+38403274864 and 38403279475): the slowest of the three plus 25%. They were
+signed off on 2026-10-13.
+
+| Fixture | v13 | v14 |
+| --- | ---: | ---: |
+| scan-120p | 2.39 GiB | 2.12 GiB |
+| limit-1400p | 2.47 GiB | 2.21 GiB |
+| docx-handbook after the scan | 1.86 GiB | 1.45 GiB |
+
+Time budgets that change:
+- textbook-26mib: 283.7 → 134.2 s
+- pptx-84-slides: 34.2 → 19.7 s
+- logic-1016p: 116.1 → 146.6 s
+- limit-1400p: 145.4 → 168.6 s
+- xlsx-gradebook: 31.0 → 54.7 s
+
+The three slower ones are the repair-phase cost below.
+
+**Not fixed: the repair phase on books past the page-cache budget.**
+limit-1400p's repairs went from 13 s (v13) to 49 s in CI. The 100k-span
+cache fills within the first ~190 pages, so the four new stages each
+extract the other ~1,200 pages again:
+
+| Stage | Time |
+| --- | ---: |
+| `scripts` | 17.6 s |
+| `layout_headings` | 9.5 s |
+| `joins` | 6.3 s |
+| `list_headings` | 4.9 s |
+
+Of that, 21 s is extraction. Two ways to win it back:
+- a larger `SPAN_BUDGET`, about 1 MiB per thousand spans per worker;
+- one shared page loop for joins, list headings and heading recall.
+
+## Update: speed, extract once (2026-10-14)
+
+This follows up "Not fixed" above and the single-engine research (option c1:
+keep both engines, interpret each page once in Python). Output is unchanged.
+
+**What changed:**
+
+- **One extraction per page** (`page_text.py`). The first stage that reads a
+  page takes MuPDF's `rawdict` and keeps it until the parse ends, in columns:
+  - integer arrays for blocks, lines and spans (numbers, flags, writing mode,
+    style index, where each one ends);
+  - float32 arrays for boxes, points, directions and sizes (MuPDF's values are
+    C floats, so they round-trip exactly);
+  - the characters as one string;
+  - the document's styles (font, flags, colour, ascender and the rest),
+    shared by index.
+- **Stages read rebuilt dicts.** `page_dict` and `page_raw` rebuild MuPDF's
+  `dict` and `rawdict` from the columns, key for key. They do it 18× and 3.5×
+  faster than MuPDF (0.4 and 2 ms a page), so no stage calls `get_text` for
+  them any more. Words are kept the same way.
+- **The 100,000-span budget is replaced by a 6M-character budget.** Every
+  page of every corpus book is kept. The 1,400-page book needs 74 MiB, where
+  the dicts would need about 400 MiB, and the densest book would keep about 4M
+  characters at the page cap. Past the budget (about 200 MiB), pages are read
+  from MuPDF on each call as before, so a pathological file can't grow every
+  parse child.
+- **Fewer plain-text reads.** Text-less page detection reads plain text only
+  for pages with fewer than 40 kept non-space characters. Plain text holds
+  every kept character, so the answer is the same.
+- **Heading evidence holds less.** `headings.source_headings` now keeps only
+  the current page's lines instead of every page's. A page met again is
+  rebuilt identically. This had been the parse's memory peak.
+- **Per-stage timings.** `refine` records seconds per stage in
+  `ParseOutput.stages`, and the parse receipt carries them as `_stages`, next
+  to `_phases`. They are kept separate from `_phases` because
+  `_execution_ms` sums `_phases` and must stay flat.
+- **Budget runs.** `budget.py` records `content_sha256` (of the artifact's
+  `content_list.json`) and `stages`. `compare` adds an Output column showing
+  same or differs.
+
+**MuPDF readers, before and after.** Counts are calls on the 1,400-page book,
+then over all 57 documents (11,753 pages):
+
+| Reader | Used by | 1,400 pp. before → after | 57 documents before → after |
+| --- | --- | ---: | ---: |
+| `get_text("dict")` | heading evidence and roles, joins, list and layout headings, picture triage, furniture, reading order, tables | 6,163 → 0 | 28,345 → 0 |
+| `get_text("rawdict")` | glyph repairs, lists, formula structure, column continuations, exponents, table coverage; now also the store | 1,821 → 1,400 | 8,803 → 11,751 |
+| `get_text()` (plain) | text-less pages | 1,400 → 35 | 11,753 → 414 |
+| `get_text("words")` | picture triage, cell styles | 112 → 112 | 3,632 → 3,128 |
+| `get_texttrace` | hidden layer and watermarks (already once per page), column continuations, overprints | 1,400 → 1,400 | 11,833 → 11,833 |
+| `get_cdrawings` / `get_drawings` | vector figures, layout headings, formula bars, table rules, cell styles | 4,070 / 1,493, unchanged | 31,257 / 12,665, unchanged |
+| `get_image_info` | layout headings, hidden layer, picture digests | 744, unchanged | 5,169, unchanged |
+| **all readers** | | **17,203 → 9,254** | **113,839 → 76,599** |
+
+`get_drawings` calls `get_cdrawings` itself, so the cdrawings counts include
+those calls.
+
+**Output identity.** Byte-identical content list, furniture and OCR page list
+after each of the seven steps:
+
+1. dict reads;
+2. glyph repairs;
+3. formula structure;
+4. continuations, exponents and tables;
+5. text-less pages;
+6. words;
+7. compact arrays and the heading-evidence memory.
+
+Every step was checked on all 57 documents: the 14 budget fixtures, with the
+three Office files converted once, plus the 43 other development documents of
+this round. That includes dense CJK (the Chinese curriculum guide, the MEXT
+white paper), table-heavy (Federal Reserve statements, EIA, the gradebook) and
+figure-heavy (textbook, vector drawings, inline images) documents.
+
+A separate check rebuilt `dict`, `rawdict` and words for every one of the
+11,753 pages. Each was equal to MuPDF's own output by `repr`, so key order and
+every float matched too.
+
+**Time and memory.** M1, in-process, OCR deferred as in the service, Java
+output cached. Base and candidate ran alternately; figures are medians of
+three rounds. "Refinement" is the structure, repair and text-less stages,
+without font repair or Java. Peak and kept memory are the parse process's own
+footprint above its start; the JVM runs before refinement, in its own
+process. Under the shared machine's load, wall times varied by up to ±40% (five
+earlier wall-clock rounds pointed the same way but spread too widely to
+quote); CPU times varied by under 10%.
+
+| Document | Refinement CPU s | Refinement wall s | Peak MiB | Kept after release MiB | Store MiB |
+| --- | --- | --- | --- | --- | ---: |
+| limit-1400p | 68.2 → 46.0 (−33%) | 68.5 → 46.7 | 586 → 476 | 142 → 85 | 74 |
+| logic-1016p | 57.2 → 36.3 (−37%) | 57.5 → 36.7 | 526 → 418 | 156 → 85 | 64 |
+| textbook-26mib | 79.8 → 51.0 (−36%) | 83.0 → 51.5 | 355 → 318 | 113 → 82 | 39 |
+| xlsx-gradebook | 26.5 → 21.5 (−19%) | 28.4 → 21.7 | 374 → 278 | 84 → 29 | 31 |
+| math-worked | 8.6 → 7.9 (−8%) | 8.6 → 7.9 | 96 → 83 | 51 → 23 | 10 |
+
+Where the 1,400-page book's 22 CPU seconds came from:
+
+| Stage | Before s | After s |
+| --- | ---: | ---: |
+| formula structure (`scripts`) | 14.8 | 10.6 |
+| heading roles | 9.3 | 5.2 |
+| heading recall | 8.8 | 3.8 |
+| line joins | 5.7 | 1.5 |
+| list headings | 4.4 | 1.5 |
+| text-less pages | 2.1 | 0.0 |
+| heading evidence (now does the extraction) | 6.6 | 8.4 |
+
+- **Store size.** The densest document is the 608-page anthology: 9.7 MiB per
+  100 pages, about 135 MiB at the 1,400-page cap. The store costs about 28
+  bytes per character and 36 per span. It would reach 300 MiB only at about
+  8,000 characters on every page of a 1,400-page book.
+- **Memory peak.** It was set by heading evidence holding every page's lines.
+  With the store alone, that peak rose by 30 MiB on the 1,400-page book.
+  Keeping only the current page's lines turned it into a 110 MiB drop.
+
+**Not done:**
+
+- **Drawings are still read about three times per page**: vector figures,
+  table rules (`get_drawings`), layout headings, formula bars and cell styles.
+  That is 3 to 4 s on the textbook. Path lists can be very large on vector
+  documents, so keeping them would need a compact path store; that is the
+  next candidate if drawings matter.
+- **Other readers are unchanged.** The text trace was already read once per
+  page. Image placements and picture renders still come from MuPDF.
+- **Python now dominates.** On the 1,400-page book the rules take about
+  33 of the 46 CPU seconds. `scripts` alone takes 10.6 s and the store
+  extraction 9 s. These are the research's c3 (hot spots), c4 (extract
+  alongside Java) and c5 (reuse admission's text-less count).
+- **The repaired PDF differs between runs** only in its trailer `/ID`, which
+  MuPDF's save regenerates. Content hashes are the stable identity key, not
+  the bytes of `parsed.pdf`.
+
 ## 4. Next steps, in order
 
 1. ~~Running header and footer furniture~~: done, see the update above.
@@ -496,3 +731,7 @@ was HEAD's parser (v13); the candidate was the working tree (v14).
   repo; the review JSON is summarised above.
 - Profile: `cProfile` over `odl.refine.parse_pdf`, run on the budget fixtures
   with the shipped parser venv.
+- Extract once: a scratch harness ran `refine.parse_pdf` per document with
+  Java's output cached and compared SHA-256 of the content list, furniture
+  and OCR pages; it is not kept. `budget.py compare` now gives the same
+  identity check on the budget fixtures.

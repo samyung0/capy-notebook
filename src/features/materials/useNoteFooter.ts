@@ -1,4 +1,4 @@
-import { skipToken, useQueries } from '@tanstack/react-query';
+import { type QueryKey, skipToken, useQueries } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { qk } from '@/api/client';
 import type { Material, Provenance } from '@/api/types';
@@ -8,15 +8,30 @@ import {
 } from '@/features/materials/document';
 import { noteFooterProvenance } from './footerUnion';
 
+/** The query an embedded material's block reads it under (AppEmbed), for
+ * each item kind of the embed catalog (liveCatalog.test.ts). */
+export const EMBED_READ_KEYS: Record<
+  MaterialRefKind,
+  (id: string) => QueryKey
+> = {
+  flashcards: qk.material,
+  quiz: qk.quiz,
+};
+
 /** The quizzes and flashcard sets a note's blocks embed, in document order, as
  * one string ("kind:id kind:id"): equal strings mean the same embeds, so a
- * caller can keep one across edits that change nothing of them. */
+ * caller can keep one across edits that change nothing of them. A reference
+ * of a kind this version has no read for (a newer version wrote it; the
+ * note's room is then read-only) has no credits here. */
 export function embedKey(
   value: readonly { type?: unknown; materialId?: unknown; refKind?: unknown }[]
 ) {
   return value
     .flatMap((node) =>
-      node.type === MATERIAL_REF_TYPE && typeof node.materialId === 'string'
+      node.type === MATERIAL_REF_TYPE &&
+      typeof node.materialId === 'string' &&
+      typeof node.refKind === 'string' &&
+      Object.hasOwn(EMBED_READ_KEYS, node.refKind)
         ? [`${node.refKind}:${node.materialId}`]
         : []
     )
@@ -51,8 +66,7 @@ export function useNoteFooter(
     combine: (results) => results,
     queries: refs.map((ref) => ({
       queryFn: skipToken,
-      // The keys the embed's block reads it under (AppEmbed).
-      queryKey: ref.kind === 'quiz' ? qk.quiz(ref.id) : qk.material(ref.id),
+      queryKey: EMBED_READ_KEYS[ref.kind](ref.id),
       select: (data: { provenance?: Provenance }) => data.provenance,
     })),
   });

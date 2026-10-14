@@ -88,7 +88,12 @@ other failure without data goes to the boundary with its normal copy and Retry.
 
 The owning component must then destructure and render the relevant query error
 state. Destructuring is required so TanStack Query's tracked-property proxy
-subscribes to those fields.
+subscribes to those fields. A list that fails without data must never fall
+through to its empty state ("No workspaces yet" reads as data loss after a
+redeploy): a large region renders `ErrorState` `variant="panel"` with Retry
+(the dashboard workspaces), a small one `InlineErrorState`, one muted line and
+Retry (the dashboard recents card, the notification list, search results).
+Filter and picker options may stay silently empty.
 
 Query metadata is shared by observers of the same key. A secondary consumer
 must preserve the primary consumer's error policy. The ingest hook takes the
@@ -282,7 +287,13 @@ reconnect) drops the note or source editor to view mode under a grey strip
 reading "This file is read-only now" and discards its unsaved edits (a source
 also clears its local drafts without ever reporting Saved, and shows its
 latest saved state through the viewer's session); what was saved before
-stays. Network and other failures keep the source recovery path.
+stays. Network and other failures keep the source recovery path. A note,
+mindmap or diagram whose stored document the store would refuse (a block
+the embed catalog does not list, ...), or a quiz holding a block kind its
+rooms do not admit, joins its writers read-only with `code:
+unsupported_block`, and the strip reads "This document has a block this
+version of Capy can't edit, so it opens read-only" (a quiz editor shows its
+questions to read under it; openwiki/embeds.md).
 The frozen copy says the account is read-only, that viewing, downloading and
 deleting still work, and to free up space or resubscribe to edit again. The
 full copy, and the dashboard grace card's, says files are view-only and
@@ -358,7 +369,9 @@ per kind, so one ingest's several writes cost one refetch; a hidden tab only
 marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
 notification list, the unread count, and the file, material and chapter
-lists. There is no polling while disconnected; the workspace lists keep only
+lists. A connection that succeeds after a failed attempt (a redeploy, a
+dropped network) also refetches every active query in error, so the error
+states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
 `refetchOnWindowFocus`. A list read carries the client-only `ingestPct` over
 for rows still ingesting, and one that finds a ready or failed file
 invalidates its cached detail if that detail still says pending or
@@ -448,8 +461,9 @@ See the [coverage audit](msw-scenarios-audit.md) for those limits.
 
 ## Stable test selectors
 
-- Error surface: `[data-error-surface="page"]` or
-  `[data-error-surface="panel"]`, also carrying `role="alert"`.
+- Error surface: `[data-error-surface="page"]`,
+  `[data-error-surface="panel"]` or `[data-error-surface="inline"]`, also
+  carrying `role="alert"`.
 - Offline/reconnecting status: `[data-connection-status="offline"]` or
   `[data-connection-status="reconnecting"]`.
 - Non-disclosing shared-resource state:
@@ -650,7 +664,14 @@ audio and PDF failures. Manual retry refreshes signed links and restarts only
 the preview, even when the URL is unchanged. CSV/text retries retain their
 `SourceTextView` session. Office retry is view-only and reloads the source
 session, bytes and iframe. The Office iframe reports errors to the host,
-which owns error presentation; recoverable errors keep editors mounted.
+which owns error presentation; recoverable errors keep editors mounted. A
+refusal is a `notice` message instead, and the editor shows nothing of its
+own. The host shows each notice's message as a default toast from one table
+(`officeNotices`): typing into a PPTX equation (`equation-text`) once per
+frame, since it repeats on every key; an inserted image over the payer's plan
+cap (`image-too-large`, worded with the cap the edit session loaded) or of a
+type the browser cannot decode (`image-type`), which leaves the document as it
+was, on every pick.
 PDF annotation-load failures use `userToast` with Retry to refetch private marks
 without reloading the PDF. The file viewer reports the request failure even
 while PDF bytes are loading or the PDF cannot render. Repeated failures reuse one toast per file; recovery

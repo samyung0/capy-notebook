@@ -714,14 +714,22 @@ placement) answers almost every picture: a 3,311-page manual has pages with
 17,561 inline-image pictures, which an all-pairs overlap search turned into
 hours.
 
-Speed (same output). Inside `parse_pdf`, `page_text.session` keeps each page's
-`get_text("dict")` and words for the nine stages that read them, up to 100,000
-spans (about 90 MiB; pages past it are read again), and keeps only the facts two
-stages need from the text trace. ODL writes JSON only, with no image files
-(above). On the budget fixtures the Python stages are 11–38% faster with the
-cache, and the figure-heavy textbook's whole parse falls from 189 s to 87 s,
-its Java step from 127 s to 8 s. ODL's `--threads` gave identical output and no
-speed, so it stays at 1.
+Speed (same output). Inside `parse_pdf`, `page_text.session` extracts each
+page's text once: the first stage to read a page takes MuPDF's `rawdict` and
+keeps it for the rest of the parse in columns (integer and float32 arrays, the
+characters as one string, styles shared by index; 74 MiB for the 1,400-page
+budget book, all of it dropped when the session ends; past 6M kept characters,
+about 200 MiB, pages are read from MuPDF on each call). `page_dict` and
+`page_raw` rebuild MuPDF's `dict` and `rawdict` from it key for key, and
+`page_words` keeps words the same way, so every stage reads the page without
+MuPDF. Text-less page detection reads plain text only for pages whose kept
+characters fall short of its 40. Only the facts two stages need from the text
+trace are kept; drawings and image placements are still read from MuPDF where
+a stage needs them. `ParseOutput.stages` (the receipt's `_stages`) records
+the seconds of each stage. ODL writes JSON only, with no image files (above):
+the figure-heavy textbook's whole parse fell from 189 s to 87 s, its Java step
+from 127 s to 8 s. ODL's `--threads` gave identical output and no speed, so it
+stays at 1.
 
 Heading roles need source evidence: the PDF spans whose centre lies in the
 heading's box must spell its text. Only when they do not is a second test
@@ -1150,9 +1158,10 @@ would renumber them. Figure changes on a repaired book go through
 publishes them to `library_figures.label`, `description`, `credit` and
 `decorative`. Decorative figures add nothing to the search text; excluded
 figures keep their note there. `read_knowledge` lists the excerpt's figures
-after its text, leaving out decorative and excluded ones, so a model can pick
-one before capturing its page; the `figures:` ids that read, search and browse
-print leave the same figures out. In the intake cleanup, `intake.py
+after its text, leaving out decorative and excluded ones and those boxed as
+the whole page (`deck.WHOLE_PAGE`, which a note write refuses), so a model can
+pick one before capturing its page; the `figures:` ids that read, search and
+browse print leave the same figures out. In the intake cleanup, `intake.py
 figure-notes` applies a book's `figures.json` after `exclude-figures`, then
 rebuilds every chunk's search text (chunk text, excerpts and `content_hash`
 unchanged), so a figure-only cleanup republishes correct search text. It backs
@@ -2428,9 +2437,25 @@ build, and the knowledge library is one more source while the switch is on.
   tools and the deck tools), `excerpt_ids` is optional. Named excerpts are the
   write's sources: each must have been read through `read_knowledge` this turn
   or be retained as full, revalidated text in the request. A write naming none
-  is credited with the excerpts read since the last write that landed, or with
-  every excerpt read this turn when none are new (a second item written from
-  the same reading); a turn with no library reads credits nothing and needs
+  draws its candidates from the excerpts read since the last write that
+  landed, or every excerpt read this turn when none are new (a second item
+  written from the same reading), grouped by book. When any candidate book's read text (the result
+  the model was shown, kept on each `LibraryRead`, less what the read tools
+  add: the excerpt head lines `[exc_…]`, `roles:`, `teaches:` and `scope:`,
+  chunk ranges and `(chunk N)` prefixes, previous/next and source-context
+  links, `[p. N]` markers, the section-read head and the page tails, and
+  the `Full reviewed notes:` label) shares with every string the write sends
+  (a slide's SVG by its text only) a word 4-gram (lower-cased
+  `[a-z0-9][a-z0-9.\-/]*` tokens) or a number with a decimal point or two or
+  more digits that no other candidate book's read text holds, only the
+  matching books' candidates are credited; when none does, every candidate
+  is, as before (`tools._matching`, Epo 2026-10-13: on that day's runs only
+  68% of the books the whole read set credited were used; this rule kept 86%
+  precision and dropped 2 of 129 used books, while named excerpts were 95%
+  used). So a write that read the library always carries a book, which
+  `_material_scope` relies on to accept a library-only material in a
+  workspace with nothing indexed. Only the credited excerpts are retained for
+  later turns; a turn with no library reads credits nothing and needs
   nothing. An excerpt retained from an earlier turn's write counts as read but
   enters already credited, so it is credited again only when nothing new was
   read; reading a credited excerpt again makes it new. Note figures add the
@@ -2640,7 +2665,8 @@ build, and the knowledge library is one more source while the switch is on.
   there), one whose record is the whole page (`[0, 0, 1000, 1000]`: the
   builder found its caption but not its drawing, 13,442 of the 102,724 shown
   figures in 117 of 174 books on 2026-10-13; nothing is rendered, the model is
-  told to place another figure or describe it), one no excerpt lists, or one none of whose excerpts this turn read
+  told to place another figure or describe it; the figure lists the read
+  tools print leave these out, so the refusal is a backstop), one no excerpt lists, or one none of whose excerpts this turn read
   (`read_knowledge` it first; the same read set excerpt_ids use). An accepted
   figure's read excerpt joins the excerpts the write credits, so its book enters
   the provenance (and the note footer) exactly as a named excerpt does, and
@@ -2717,8 +2743,7 @@ build, and the knowledge library is one more source while the switch is on.
 | `capture_page` | none | Renders a cited page (or a 0-1000 `bbox` on it) of a parsed PDF or Office source, or an uploaded image as its single page 1, as a JPEG for the model; refused unless a shown passage cites that page, and for text or store-only sources (`unsupported_format`); no per-turn cap; adds no citation |
 | `create_material` | yes | Scoped POST/GET Go `/api/internal/materials` with a deterministic operation id; notes, flashcard sets, mindmaps and diagrams (a quiz is created by `add_questions`). Optional `chapter_id` files the material in that chapter (Go refuses a chapter of another workspace). Optional `excerpt_ids` (max 32) resolve through `library.provenance` into the material's durable attribution record, and omitted ones are the excerpts read since the last write (see Write guard); a material with provenance is grounded in the library and does not require indexed workspace content. The note fence format (mermaid, chart and plot JSON, quiz, flashcards and `html-embed` fences; `noteMarkdownDescription` in `agenttools.go`) is in the materials skill, which must be read first (see Skills). A quiz fence lists its questions in the question tools' small shapes (Question tools, below), which the pipeline expands into the question format before the write leaves it. Go converts a note's markdown through the collaboration service's `/internal/markdown/convert` (the editor's own markdown import, bundled by `collaboration-rs/crates/notes/markdown/build.mjs` from `src/features/notes/markdownConvert.ts` and run in the server's V8), so it gets the nodes a paste would, except that it reads plain Markdown without MDX: Plate's MDX pass rewrote HTML inside fences (`class` to `className`, script text quoted), dropped `{…}` from prose, and on a parse error kept only the text before the note's first `<`, which lost every block after it and refused notes as "An html-embed fence needs html"; without MDX, HTML in prose stays text and a line indented four spaces is a code block. Each quiz or flashcards fence becomes an embedded row created in the note's transaction, its id derived from the tool call (`ChatMaterialID(message, call/embedded/n)`), and the reference points at it (`materialdoc.ResolvePendingRefs`); a fence that does not parse is refused as `invalid_input` naming it, and a converter outage refuses the write. `html-embed` fences become interactive `html_embed` blocks (64 KB, at most 10 per note; see [plate-editor.md](frontend/plate-editor.md)). `![caption](figure:<id>)` images become the note's own editor assets (Figures in notes, above) |
 | `inspect_document` | none | Plate blocks with stable ids and their text with inline math as `$tex$` and display math as `$$tex$$` (the text expected texts match), text-source lines, or Office paragraphs/cells with target ids, paged by `start`/`count`; a note's `material_ref` block carries the embedded quiz/flashcards `materialId` and `refKind` (a pending reference with no id yet is shown as not yet created), and that id inspects and edits like any material (it stays out of `list_sources` and the index, and `trash_file` refuses it) |
-| `add_questions` | yes | Multiple-choice (one correct option) and short-answer questions, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
-| `add_open_question` | yes | One open question (`question`, `marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints` and `explanation`) into a quiz by `quiz_id`, or a new quiz by `title` (optional `chapter_id`), placed like `add_questions`, with an optional `replaces` |
+| `add_questions` | yes | Multiple-choice (one correct option), short-answer and open questions (`marks`, `markscheme` items adding up to `marks`, `model_answer`, optional `hints`), told apart by their fields, up to 20 a call, into a quiz by `quiz_id` (a note's embedded quiz too) after `after_question_id` or at the end, or into a new quiz they create (`title`, optional `chapter_id`); an item with `replaces` rewrites that question in place. Valid questions are saved and the rest named for resending (Question tools, below). `excerpt_ids` as `create_material` |
 | `add_question_media` | yes | A chart or plot block after one question's text (`quiz_id`, `question_id`, `media`); library figures are refused (notes only) |
 | `edit_document` | yes | Bounded commands against one material or source (`/api/internal/documents/edit`); returns a receipt with an Undo ref. A refusal names the wrong fields or carries the missed target as it is now, and an insert whose anchor block is gone lands elsewhere and says where (see Direct edits). A material target follows the same `excerpt_ids` rule as `create_material`, and its books are appended to the material's stored provenance in the same transaction as the edit; a source target takes none and may not carry provenance |
 | `trash_file` | yes | Moves one source file or material into the 30-day trash (`/api/internal/trash`) |
@@ -2823,7 +2848,9 @@ adds `mediaBlocks` (the chart, plot and graph schemas media is checked
 against, not shown to the model) and puts the small shapes in quiz fences.
 Version 22 (2026-10-13) drops the build ledger: no `create_ledger` and no
 `todo` on any write tool, and `excerpt_ids` says it is optional (Write guard,
-above). Go and the pipeline deploy together. `cmd/openapi -agent-tools`
+above). Version 25 (2026-10-14) removes `add_open_question`: `add_questions`
+items take open questions too, and a quiz fence takes exactly its items. Go
+and the pipeline deploy together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
 tools, while the same Go types reach TypeScript through the OpenAPI schema.
@@ -2861,16 +2888,22 @@ code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 **Question tools.** The agent never writes the question format (Epo
 2026-10-13). It writes three small shapes, which `retrieval/questions.py`
 checks and expands: multiple choice (`question`, `options`, `correct`, one
-option copied exactly, optional `explanation`) and short answer (`question`,
+option copied exactly, optional `explanation`), short answer (`question`,
 `accepted`, optional `unit`, with which `accepted` holds plain numbers,
-optional `explanation`), told apart by their fields, through `add_questions`;
-and open (`question`, `marks`, `markscheme` of `{text, marks}` adding up to
-`marks`, `model_answer`, optional `hints` and `explanation`) through
-`add_open_question`. A note's ```quiz fence holds a YAML list of all three (read
+optional `explanation`) and open (`question`, `marks`, `markscheme` of
+`{text, marks}` adding up to `marks`, `model_answer`, optional `hints` and
+`explanation`), all through `add_questions` and told apart by their fields
+(an item with `marks`, `markscheme` and `model_answer` is open whatever else
+it carries, and the extra field is named). Open questions had their own tool
+until 2026-10-14: GLM fills tool arguments in alphabetical order, so that
+tool's `question` and `quiz_id` came last, after three long text fields, and
+arrived scrambled on 9 of its 41 playground calls (15 refused), while
+`add_questions`' items, objects in one array, were never scrambled in 149. A
+note's ```quiz fence holds a YAML list of the same items (read
 with PyYAML's `BaseLoader`, so answers keep their text as written), expanded
 before `create_material` or `edit_document` leaves the pipeline. The pipeline
-drops fields sent as null before checking them (Epo 2026-10-13: tool leniency)
-and fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
+drops blank fields before checking them (agent write leniency, below) and
+fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
 retried call sends the same payload) with one part `<id>-a`, 1 mark for a
 simple question, multiple-choice options shuffled in an order seeded by the
 question id (the model wrote the answer first in 2 of 4 runs; the order is
@@ -2879,7 +2912,7 @@ solution, an empty solution without one (only bank parts need one); there are
 no parts, no other answer types and no layout choice. The expanded questions
 go through the unchanged gateway routes: a new quiz through
 `/api/internal/materials` (an empty quiz is refused there, so a quiz is
-created with its first questions, by `title` on either question tool), an existing one through
+created with its first questions, by `title`), an existing one through
 `/api/internal/documents/edit` as `add_question` commands chained after
 `after_question_id` or the quiz's last question (read with
 `/api/internal/documents/inspect`, since a null anchor inserts at the start)
@@ -2899,6 +2932,44 @@ shape to copy. `add_questions` saves its valid questions and names the
 others for resending, with the quiz id and the `after_question_id` that keeps
 their place. An excerpt or figure refusal carries the call's question
 problems too.
+
+**Agent write leniency** (Epo 2026-10-13, after the 2026-10-13 ledger runs'
+45 refused writes). The pipeline repairs an agent write's payload only where
+it can mean one thing and keeps refusing everything else with the same
+messages; the editor, paste and the collaboration server's converter stay
+strict, and the schemas the model sees do not change. Blank means absent:
+`tools.run` drops a property sent as null, blank text, `"null"`, `"~"`, `[]` or `{}`
+where the tool's `inputSchema` does not require it (`contract.drop_blanks`,
+walking properties, array items and an edit command's variant by its type;
+the handler gets the cleaned arguments), so `replace_text`'s required empty
+`text` still deletes. The question tools and a note's quiz fences drop blanks
+per question (`questions.drop_blanks`, `drop_question_blanks`) except the fields the
+question's kind needs, so `accepted: []` on a short answer keeps its message
+while it vanishes from a multiple-choice question. A short answer's accepted
+answer written with its unit (`"5%"` with unit `%`) keeps the number, and a
+`chapter_id` beside `quiz_id` is ignored with a result line (`quiz_id` with
+`title` stays refused: it may mean a new quiz). In note markdown
+(`questions.note_fences`, for `create_material` and `insert_markdown` /
+`replace_block`), a ```` ```chart ```` or ```` ```plot ```` body that is not
+JSON and does not open with `{` is read as YAML (unless YAML's escapes made
+control or separator characters of it, as `"$\alpha$"` would; then it stays
+as written), a missing `type` becomes the fence's name, a chart
+kind sent as a chart fence's `type` moves to `kind`, and the body goes on as
+compact JSON; a ```` ```flashcards ```` body is pre-parsed like a quiz fence
+(cards with a front and a back each, re-emitted as JSON, other card fields
+kept); a quiz or flashcards body that fails to parse is read once more after
+three repairs (a trailing comma after `]` or `}`, except in a body that
+opens as JSON; a backslash before a letter doubled for LaTeX in a
+double-quoted value, one that opens the value after a key or a dash or is
+an item of a flow list there, never a quoted phrase inside a plain scalar; a
+plain text value or options/accepted item holding `": "` quoted, while
+`" #"` is left alone as it starts a comment on a line that parses), and when
+that fails too the original error is reported as before. A fence closes on
+a run of its opening character at least as long as its opening, so a longer
+fence holding a quiz fence is passed over whole. Each format repair adds one line to the success
+result naming the fence and the slip, so the model stops repeating it; a body
+that cannot be repaired stays as written for the converter's error. The
+playground's write stubs run the same code.
 
 **Direct edits.** `edit_document` commands are normalized by Go
 (`replace_text`, `replace_block`, `insert_markdown`, `remove_block`,
@@ -2944,7 +3015,17 @@ its stable id at Undo time. A gap whose anchor the same call also removed is
 guarded after the nearest surviving block, a node the same call inserted and
 removed needs no guard of its own, and no guard reaches past its neighbours,
 so a deletion two blocks away or a keystroke beside a span keeps the Undo. Undo refuses with `stale_target`
-when its target changed, and stays valid when nearby content changed. A material
+when its target changed, and stays valid when nearby content changed. An
+edit may not remove or replace a block holding media, but the Undo of an
+edit that inserted a library figure removes it again
+(`undo_material_commands`); its asset follows the removed-block trash
+rule.
+`inspect_document` reads what the editors see (Epo 2026-10-13): the
+stored state with this replica's live room merged in, a quiz's keys room
+too, as an edit reads it (`inspect_material` in
+`collaboration-rs/crates/server/src/edits.rs`, `Sources::inspect` for text
+and the Office entries); with no room loaded it reads the stored state and
+loads nothing more. A material
 inverse plus guards above 256 KB refuses the edit as `quota_rejected`. Office
 edits run in the collaboration server's Office engine processes (the fork's
 `office-service`: inspect, apply commands, locate targets), which return the

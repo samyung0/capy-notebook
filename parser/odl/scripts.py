@@ -40,8 +40,7 @@ from dataclasses import dataclass, field
 
 import pymupdf
 
-from .page_text import kept_or_room, page_dict
-from .source_text import RAW_FLAGS
+from .page_text import page_dict, page_raw
 
 SLOT_TYPES = {"text", "list", "equation"}
 SCRIPT_RATIO = 0.85  # a script glyph is at most this fraction of its base size
@@ -240,17 +239,6 @@ def _glyphs(raw: dict) -> list[list[Glyph]]:
             if row:
                 lines.append(row)
     return lines
-
-
-def _spans_text(raw: dict) -> dict:
-    """A rawdict read as a dict: each span gets its text from its characters
-    (the flags are the same, so the spans are). The rawdict is this stage's
-    own, so the text is set in place."""
-    for block in raw["blocks"]:
-        for line in block.get("lines", []):
-            for span in line["spans"]:
-                span["text"] = "".join(c["c"] for c in span["chars"])
-    return raw
 
 
 def _needs_page(text: dict) -> tuple[bool, bool]:
@@ -1134,6 +1122,10 @@ def restore_structure(blocks: list[dict], document: pymupdf.Document) -> list[di
         edited, dropped = _restore_page(blocks, indexes, page, page_index)
         replaced.update(dropped)
         _commit(revised, edited, replaced)
+    # The caches hold whole block texts and their index tuples; kept past this
+    # stage they pin the allocator's arenas in the persistent parse child.
+    for cache in (_norm_char, _compact, _charset):
+        cache.cache_clear()
     if not replaced:
         return revised
     out = []
@@ -1150,19 +1142,11 @@ def _restore_page(
 ) -> tuple[dict[int, dict], dict[int, list[dict] | None]]:
     """One page: the blocks it edits in place, and those it replaces or drops."""
     replaced: dict[int, list[dict] | None] = {}
-    # The shared dict while the page cache has it or room for it; past the
-    # cache's budget one rawdict read serves as both.
-    raw = None
-    if kept_or_room(page):
-        text = page_dict(page)
-    else:
-        raw = page.get_text("rawdict", flags=RAW_FLAGS)
-        text = _spans_text(raw)
-    scripts, stacked = _needs_page(text)
+    scripts, stacked = _needs_page(page_dict(page))
     bars, strokes = _segments(page) if stacked else ([], _Strokes([]))
     if not scripts and not bars:
         return {}, {}
-    lines = _glyphs(raw or page.get_text("rawdict", flags=RAW_FLAGS))
+    lines = _glyphs(page_raw(page))
     glyphs = [g for line in lines for g in line]
     if bars:
         by_y = sorted(glyphs, key=lambda g: g.cy)

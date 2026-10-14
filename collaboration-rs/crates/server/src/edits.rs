@@ -246,13 +246,14 @@ fn material_room(request: &DocumentRequest) -> Result<(String, String, i64), Doc
     }
 }
 
-/// `inspectMaterialDocument`: the durable document's blocks (no room, no
-/// bootstrap write).
+/// `inspectMaterialDocument`: the blocks as the editors see them now, the
+/// stored document with this replica's live rooms merged in (unsaved
+/// typing), as an edit reads it; no room load, no bootstrap write.
 pub async fn inspect_material(
     app: &Shared,
     request: &DocumentRequest,
 ) -> Result<Value, DocumentError> {
-    let (_, material_id, schema) = material_room(request)?;
+    let (room, material_id, schema) = material_room(request)?;
     let mut client = app
         .db
         .get()
@@ -271,12 +272,13 @@ pub async fn inspect_material(
             &[&material_id],
         )
         .await?;
+    let stored = !found.is_empty();
     let mut kind = found
         .first()
         .map(|row| row.get::<_, String>("kind"))
         .unwrap_or_default();
     let mut keys: Option<(Vec<u8>, Vec<Vec<u8>>)> = None;
-    let (base, rows) = match found.first() {
+    let (base, mut rows) = match found.first() {
         Some(row) => {
             if i64::from(row.get::<_, i32>("room_schema")) != schema {
                 return Err(DocumentError::edit(
@@ -325,6 +327,16 @@ pub async fn inspect_material(
         }
     };
     tx.commit().await?;
+    // A live room's state replays after the rows. A room stores its document
+    // when it loads, so only a stored one can have a room; with none loaded,
+    // this reads nothing more.
+    if stored {
+        rows.extend(live_state(app, &room).await);
+        if let Some((_, key_rows)) = &mut keys {
+            let keys_room = format!("keys:{material_id}:schema:{schema}");
+            key_rows.extend(live_state(app, &keys_room).await);
+        }
+    }
     let blocks = tokio::task::spawn_blocking(move || -> Result<Value, DocumentError> {
         let doc = ydoc::scratch_doc();
         ydoc::replay(&doc, &base, &rows)
@@ -526,6 +538,15 @@ fn compute_quiz(
     {
         return Err(DocumentError::Quota(code.as_str().into()));
     }
+    // A block this version cannot read would leave the rebuilt quiz.
+    if items::quiz::holds_unknown_block(&content.doc.transact())
+        || items::quiz::holds_unknown_block(&keys.doc.transact())
+    {
+        return Err(DocumentError::edit(
+            "unsupported_operation",
+            "this quiz has a block this version can't edit",
+        ));
+    }
     let value = items::quiz::value(&content.doc.transact(), &keys.doc.transact());
     let asset_ids = Some(items::quiz::asset_ids(
         &content.doc.transact(),
@@ -578,10 +599,13 @@ fn compute(
         let previous = notes::limits::measure_value(
             &notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?,
         );
-        if let Some(guards) = &guards {
+        // Guards come with an Undo only.
+        let outcome = if let Some(guards) = &guards {
             notes::edit::verify_material_guards(&mut txn, &root, guards)?;
-        }
-        let outcome = notes::edit::apply_material_commands(&mut txn, &root, &commands)?;
+            notes::edit::undo_material_commands(&mut txn, &root, &commands)?
+        } else {
+            notes::edit::apply_material_commands(&mut txn, &root, &commands)?
+        };
         let value = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
         notes::material::assert_canonical(&value, &kind).map_err(|error| unknown(error.0))?;
         let metrics = notes::limits::measure_value(&value);
@@ -1210,9 +1234,12 @@ pub async fn source_request(
     undo: Option<Undo>,
 ) -> Result<Value, DocumentError> {
     if inspect {
+        let rooms = app.clone();
         let inspection = app
             .sources
-            .inspect(&request.target.id, &request.actor_user_id)
+            .inspect(&request.target.id, &request.actor_user_id, move |room| {
+                Box::pin(async move { live_state(&rooms, &room).await })
+            })
             .await?;
         return Ok(serde_json::to_value(inspection).unwrap_or(Value::Null));
     }
@@ -1287,4 +1314,44 @@ pub async fn document(app: &Shared, path: &str, body: &[u8]) -> Result<Value, Do
         return inspect_material(app, &request).await;
     }
     edit_material(app, &request, undo).await
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use serde_json::json;
+
+    use super::{DocumentError, Scratch, compute_quiz};
+
+    /// A server write of a quiz (an agent edit, the save API) whose documents
+    /// hold a block kind its rooms do not admit is refused, so no rebuilt
+    /// quiz drops the block (review M1). Fails if the quiz is rebuilt.
+    #[test]
+    fn a_quiz_holding_an_unknown_block_is_not_rebuilt() {
+        let rebuilt = |stem: serde_json::Value| {
+            let value = [json!({ "type": "quiz", "id": "quiz", "children": [{
+                "type": "quiz_question", "id": "q1", "children": [{ "text": "" }],
+                "question": {
+                    "id": "q1", "labels": "letters", "layout": "paper", "stem": stem,
+                    "parts": [{
+                        "id": "q1:part:1", "marks": 1, "solution": [],
+                        "blocks": [{ "type": "text", "text": "True?" }],
+                        "answer": { "type": "boolean", "correct": true },
+                    }],
+                },
+            }] })];
+            let (content, keys) = items::quiz::states_from_value(&value, 0);
+            let content = Scratch::new(&content, &[], None).unwrap();
+            let keys = Scratch::new(&keys, &[], None).unwrap();
+            compute_quiz(&content, &keys, |_, _| {
+                Ok(notes::edit::EditOutcome::default())
+            })
+        };
+        assert!(matches!(
+            rebuilt(json!([{ "type": "timeline", "events": [] }])),
+            Err(DocumentError::Edit { code, .. }) if code == "unsupported_operation"
+        ));
+        assert!(rebuilt(json!([{ "type": "text", "text": "Stem" }])).is_ok());
+    }
 }

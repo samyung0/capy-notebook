@@ -38,6 +38,14 @@ const sent: Pick<AppNotification, 'data' | 'kind'>[] = [
   { data: { code: 'account_deletion_cancelled' }, kind: 'system' },
   {
     data: {
+      code: 'workspace_invite_accepted',
+      memberName: 'Mia',
+      workspaceName: 'Bio',
+    },
+    kind: 'system',
+  },
+  {
+    data: {
       code: 'office_maintenance',
       hours: 4,
       reminder: false,

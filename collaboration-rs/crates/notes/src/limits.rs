@@ -14,8 +14,8 @@ use yrs::types::TypeRef;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, ReadTxn, Update};
 
-use crate::json;
 use crate::plate::{self, Insert, ProjectionError};
+use crate::{catalog, json};
 
 // IMPORTANT: keep in sync with src/lib/const.ts and Go materialdoc.
 pub const MAX_CONTENT_BYTES: u64 = 2 * 1024 * 1024;
@@ -275,10 +275,12 @@ struct Written {
 }
 
 /// Each type's keys the store requires besides `type` (and `id` at the top
-/// level): `material::assert_canonical`.
-const OWN_KEYS: [(&str, &[&str]); 8] = [
-    ("quiz_question", &["question", "id"]),
-    ("mermaid", &["source"]),
+/// level): `material::assert_canonical`, the embed catalog's `required` of
+/// the elements a Plate room holds, less a media block's `assetId`
+/// ([on_candidate] checks it).
+pub const OWN_KEYS: [(&str, &[&str]); 7] = [
+    // Not a top-level block only, so its id is its own key.
+    ("mermaid", &["id", "source"]),
     ("chart", &["block"]),
     ("plot", &["block"]),
     ("graph", &["block"]),
@@ -301,26 +303,115 @@ fn own_keys(kind: Option<&Any>) -> &'static [&'static str] {
     }
 }
 
-/// Whether some element may need `key`: an update that writes or deletes
-/// only other keys leaves every required key as it was.
+/// Whether a document of material kind `material` may hold an element of
+/// type `kind`: the embed catalog lists it for that kind. The store refuses
+/// any other (Epo 2026-10-13).
+pub fn may_hold(material: &str, kind: &str) -> bool {
+    catalog::element(kind).is_some_and(|element| element.materials.contains(&material))
+}
+
+/// Whether some Plate document (a note, mindmap or diagram) may hold the
+/// element: the catalog lists it for a material kind that is not an item.
+fn plate_element(element: &catalog::Element) -> bool {
+    element
+        .materials
+        .iter()
+        .any(|material| catalog::material_kind(material).is_some_and(|kind| !kind.item))
+}
+
+/// The closed key set of an element of type `kind`, when it has one (chart,
+/// plot, graph, html_embed).
+fn closed_fields(kind: &str) -> Option<&'static [&'static str]> {
+    catalog::element(kind).and_then(|element| element.fields)
+}
+
+/// The keys the catalog forbids on an element of type `kind` (none for a
+/// type it does not list).
+fn forbidden_keys(kind: Option<&Any>) -> &'static [&'static str] {
+    match kind {
+        Some(Any::String(kind)) => catalog::element(kind).map_or(&[], |element| element.forbidden),
+        _ => &[],
+    }
+}
+
+/// Every key the catalog forbids on an element a Plate room holds.
+static FORBIDDEN: std::sync::LazyLock<Vec<&'static str>> = std::sync::LazyLock::new(|| {
+    let mut keys: Vec<&'static str> = catalog::ELEMENTS
+        .iter()
+        .filter(|element| plate_element(element))
+        .flat_map(|element| element.forbidden.iter().copied())
+        .collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys
+});
+
+/// The keys whose value the store checks beyond its presence ([value_ok]).
+const VALUE_KEYS: [&str; 8] = [
+    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source",
+];
+
+/// Whether the store takes `value` under `key` on an element of type `kind`
+/// (`material::assert_canonical`): a reference names an item kind, a video
+/// is a YouTube id, a resizable block's width is one the handles write, an
+/// interactive block's html fits and its caption is a string, a figure's
+/// block is a valid question block of its type, a Mermaid source is a string
+/// (or its shared text).
+fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
+    match (kind, key, value) {
+        (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
+            catalog::material_kind(item).is_some_and(|item| item.item)
+        }
+        ("video", "provider", Any::String(provider)) => &**provider == "youtube",
+        ("video", "videoId", Any::String(id)) => crate::material::youtube_id(id),
+        (crate::material::HTML_EMBED_TYPE, "html", Any::String(html)) => {
+            html.len() <= catalog::HTML_EMBED_MAX_BYTES
+        }
+        (crate::material::HTML_EMBED_TYPE, "caption", value) => matches!(value, Any::String(_)),
+        ("chart" | "plot" | "graph", "block", value) => json::any_to_value(value)
+            .is_ok_and(|block| crate::material::figure_block(kind, &block).is_ok()),
+        (plate::SHARED_TEXT_ELEMENT, plate::SHARED_TEXT_KEY, value) => {
+            matches!(value, Any::String(_))
+        }
+        (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
+            matches!(value, Any::String(width) if crate::material::valid_width(width))
+        }
+        (crate::material::MATERIAL_REF_TYPE, "refKind", _)
+        | ("video", "provider" | "videoId", _)
+        | (crate::material::HTML_EMBED_TYPE, "html", _) => false,
+        _ => true,
+    }
+}
+
+/// Whether some element may need `key`, may not carry it, or may not carry
+/// a value of it: an update that writes or deletes only other keys leaves
+/// every required, forbidden and checked key as it was.
 fn guarded(key: &str) -> bool {
-    key == "type" || key == "id" || OWN_KEYS.iter().any(|(_, keys)| keys.contains(&key))
+    key == "type"
+        || key == "id"
+        || OWN_KEYS.iter().any(|(_, keys)| keys.contains(&key))
+        || VALUE_KEYS.contains(&key)
+        || FORBIDDEN.contains(&key)
 }
 
 /// What a note may hold: its texts strings, formats and element texts, every
 /// attribute, mark or marker entry a plain value, except a `mermaid` block's
 /// `source`, which may be a text of strings alone (shape A, Epo 2026-10-10:
 /// no formats, embeds or attributes in it, on no other key or element). Only
-/// what the room does not hold yet counts (Yjs skips the rest). Returns the
-/// elements whose media
-/// attributes the update sets or deletes (`type` to a media type, `assetId`,
-/// `url`, `src`), for [media_assets] to check on the result, less those the
-/// room shows are not media: held, of a non-media `type` the update leaves
-/// alone (REVIEW5 M1: a `src` on a paragraph needs no copy of the room).
+/// what the room does not hold yet counts (Yjs skips the rest). Every
+/// element `type` is one the catalog lists for `material`, the room's kind.
+/// Returns the elements [on_candidate] checks on the result: those whose
+/// media attributes the update sets or deletes (`type` to a media type,
+/// `assetId`, `url`, `src`), less those the room shows are not media: held,
+/// of a non-media `type` the update leaves alone (REVIEW5 M1: a `src` on a
+/// paragraph needs no copy of the room); and those it makes a closed element
+/// (chart, plot, graph, html_embed) or gives a key outside a held closed
+/// element's fields (a width on a chart needs no copy).
 fn plain_content<T: ReadTxn>(
     txn: &T,
     incoming: &ydoc::Incoming,
     shape: &mut Shape,
+    material: &str,
 ) -> Result<HashSet<BranchID>, Refusal> {
     fn plain(value: &Any) -> bool {
         match value {
@@ -411,6 +502,9 @@ fn plain_content<T: ReadTxn>(
     };
     let mut media = HashSet::new();
     let mut typed = HashSet::new();
+    // Elements made closed, and the other keys the update writes per element.
+    let mut closed: HashSet<BranchID> = HashSet::new();
+    let mut keyed: HashMap<BranchID, Vec<Arc<str>>> = HashMap::new();
     // Elements given a source text, and the `type` values the update writes
     // per element (whether each is `mermaid`).
     let mut holders: HashSet<BranchID> = HashSet::new();
@@ -494,14 +588,27 @@ fn plain_content<T: ReadTxn>(
                     if crate::material::MEDIA_TYPES.contains(&&**kind))
             };
             if &**key == "type" {
+                // A type the catalog lists for this material kind, nothing
+                // else (Epo 2026-10-13): the store refuses any other.
+                if let Some(Any::String(kind)) = values.last() {
+                    if !may_hold(material, kind) {
+                        return Err(Refusal::Content(UNLISTED_TYPE));
+                    }
+                    if closed_fields(kind).is_some() {
+                        closed.insert(parent.clone());
+                    }
+                }
                 typed.insert(parent.clone());
                 types.entry(parent.clone()).or_default().push(matches!(
                     values.last(),
-                    Some(Any::String(kind)) if &**kind == MERMAID
+                    Some(Any::String(kind)) if &**kind == plate::SHARED_TEXT_ELEMENT
                 ));
             }
             if matches!(&**key, "assetId" | "url" | "src") || (&**key == "type" && media_type()) {
                 media.insert(parent.clone());
+            }
+            if &**key != "type" && matches!(parent, BranchID::Nested(_)) {
+                keyed.entry(parent.clone()).or_default().push(key.clone());
             }
         }
     }
@@ -516,7 +623,7 @@ fn plain_content<T: ReadTxn>(
         ydoc::steps::step(ydoc::steps::Walk::Content);
         let mermaid = match types.get(element) {
             Some(written) => written.iter().all(|m| *m),
-            None => held_type(txn, element).as_deref() == Some(MERMAID),
+            None => held_type(txn, element).as_deref() == Some(plate::SHARED_TEXT_ELEMENT),
         };
         if !mermaid {
             return Err(Refusal::Content("a Mermaid source outside a mermaid block"));
@@ -559,6 +666,17 @@ fn plain_content<T: ReadTxn>(
             }
         }
     }
+    // A held closed element given a key outside its fields, whatever `type`
+    // the update writes too: a written type may lose Yjs's conflict order,
+    // so the copy decides.
+    for (element, keys) in &keyed {
+        let outside = held_type(txn, element)
+            .and_then(|kind| closed_fields(&kind))
+            .is_some_and(|fields| keys.iter().any(|key| !fields.contains(&&**key)));
+        if outside {
+            closed.insert(element.clone());
+        }
+    }
     media.retain(|id| {
         typed.contains(id)
             || held_branch(txn, id).is_none_or(|branch| {
@@ -571,10 +689,9 @@ fn plain_content<T: ReadTxn>(
                     })
             })
     });
+    media.extend(closed);
     Ok(media)
 }
-
-const MERMAID: &str = "mermaid";
 
 /// The `type` a held element has, if the room holds it.
 fn held_type<T: ReadTxn>(txn: &T, element: &BranchID) -> Option<String> {
@@ -604,15 +721,16 @@ fn held_source<T: ReadTxn>(txn: &T, incoming: &ydoc::Incoming, element: &BranchI
 /// Whether admitting `update` takes the room's thread off the async workers
 /// (`block_in_place`): a large update ([ydoc::applies_inline]), or one that
 /// [Validator::admit] checks on a copy of the room: it touches a media
-/// block's attributes (REVIEW5 M1), or writes a required key that Yjs's
-/// conflict order places (REVIEW5 R2b).
-pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize) -> bool {
+/// block's attributes (REVIEW5 M1) or a closed element's keys, or writes a
+/// required key that Yjs's conflict order places (REVIEW5 R2b). `material`
+/// is the room's material kind.
+pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize, material: &str) -> bool {
     let incoming = ydoc::Incoming::new(update);
     if !ydoc::applies_inline(txn, &incoming, bytes) {
         return true;
     }
     let mut shape = Shape::default();
-    plain_content(txn, &incoming, &mut shape).is_ok_and(|media| {
+    plain_content(txn, &incoming, &mut shape, material).is_ok_and(|media| {
         !media.is_empty() || matches!(required_keys(txn, &incoming, &shape, None), Ok(true))
     })
 }
@@ -620,8 +738,20 @@ pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize) -> bool {
 /// [Refusal::Content] for an update that leaves an element without a key the
 /// store requires ([required_keys]).
 pub const MISSING_KEY: &str = "an element without a key it requires";
-/// A material reference below the top level, which the store refuses.
-pub const NESTED_REFERENCE: &str = "a material reference below the top level";
+/// A top-level-only block (a reference, a figure, an interactive block)
+/// below the top level, which the store refuses.
+pub const NESTED_BLOCK: &str = "a top-level block below the top level";
+/// [Refusal::Content] for a value the store refuses ([value_ok]).
+pub const BAD_VALUE: &str = "an element with a value it cannot hold";
+/// [Refusal::Content] for more interactive blocks than a document holds.
+pub const TOO_MANY_EMBEDS: &str = "more interactive blocks than a document holds";
+/// [Refusal::Content] for an element given a key the catalog forbids it.
+pub const FORBIDDEN_KEY: &str = "an element with a key it never carries";
+/// [Refusal::Content] for a block type the catalog does not list for the
+/// room's material kind ([may_hold]).
+pub const UNLISTED_TYPE: &str = "a block type the embed catalog does not list for it";
+/// [Refusal::Content] for a closed element with a key outside its fields.
+pub const UNEXPECTED_KEY: &str = "an element with a key outside its fields";
 /// The key a markdown fence's body sat under on a reference without its row.
 const PENDING_KEY: &str = "pending";
 
@@ -796,14 +926,16 @@ fn required_keys<T: ReadTxn>(
             let Some(kind) = after("type") else {
                 return Ok(true);
             };
-            // A reference sits at the top level only, as the store requires
-            // (live-items REVIEW5 R2): one this update creates or retypes
-            // below it is refused.
+            // A top-level-only block (a reference, a figure, an interactive
+            // block) sits at the top level, as the store requires (live-items
+            // REVIEW5 R2): one this update creates or retypes below it is
+            // refused.
             if !top
                 && (created || retyped)
-                && matches!(&kind, Some(Any::String(kind)) if &**kind == crate::material::MATERIAL_REF_TYPE)
+                && matches!(&kind, Some(Any::String(kind))
+                    if catalog::element(kind).is_some_and(|element| element.top_level))
             {
-                return Err(Refusal::Content(NESTED_REFERENCE));
+                return Err(Refusal::Content(NESTED_BLOCK));
             }
             let own = own_keys(kind.as_ref());
             let mut required = vec!["type"];
@@ -831,6 +963,37 @@ fn required_keys<T: ReadTxn>(
                     return Err(Refusal::Content(MISSING_KEY));
                 }
             }
+            // Nor a key the catalog forbids it: one this update writes, or
+            // one a block it creates or retypes holds.
+            for key in forbidden_keys(kind.as_ref()) {
+                let value = match after(key) {
+                    Some(value) => value,
+                    None => return Ok(true),
+                };
+                let wrote = written.is_some_and(|keys| keys.contains_key(*key));
+                if (created || retyped || wrote) && holds(key, value.as_ref()) {
+                    return Err(Refusal::Content(FORBIDDEN_KEY));
+                }
+            }
+            // Nor a value the store refuses: one this update writes, or one
+            // a block it creates or retypes holds.
+            if let Some(Any::String(name)) = &kind {
+                for key in VALUE_KEYS {
+                    let wrote = written.is_some_and(|keys| keys.contains_key(key));
+                    if !(created || retyped || wrote) {
+                        continue;
+                    }
+                    let value = match after(key) {
+                        Some(value) => value,
+                        None => return Ok(true),
+                    };
+                    if let Some(value) = value.filter(|value| !matches!(value, Any::Undefined))
+                        && !value_ok(name, key, &value)
+                    {
+                        return Err(Refusal::Content(BAD_VALUE));
+                    }
+                }
+            }
             Ok(false)
         };
         if check(&resolved)? {
@@ -853,14 +1016,16 @@ fn required_keys<T: ReadTxn>(
     Ok(copy_needed)
 }
 
-/// Media blocks name their file (Epo, 2026-10-10): an `img`, `image`,
-/// `audio` or `file` element the update touched carries a non-empty
-/// `assetId` and no `url` or `src` in `candidate`, the room with the update
-/// applied. Refused here, when the update arrives, so only this writer's
+/// The elements [plain_content] named, read in `candidate`, the room with the
+/// update applied. Media blocks name their file (Epo, 2026-10-10): an `img`,
+/// `audio` or `file` element carries a non-empty `assetId` and no `url` or
+/// `src`. A closed element (chart, plot, graph, html_embed) carries only its
+/// fields. Refused here, when the update arrives, so only this writer's
 /// update is lost; the store's check would discard the room.
-fn media_assets(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(), Refusal> {
+fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(), Refusal> {
     use yrs::Transact;
     let txn = candidate.transact();
+    let mut embeds_counted = false;
     for id in touched {
         let Some(branch) = id.get_branch(&txn) else {
             continue;
@@ -869,6 +1034,25 @@ fn media_assets(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
             continue;
         }
         let attributes: HashMap<Arc<str>, Any> = plate::properties(&branch)?.into_iter().collect();
+        if let Some(Any::String(kind)) = attributes.get("type")
+            && let Some(fields) = closed_fields(kind)
+            && attributes
+                .iter()
+                .any(|(key, value)| !matches!(value, Any::Undefined) && !fields.contains(&&**key))
+        {
+            return Err(Refusal::Content(UNEXPECTED_KEY));
+        }
+        // An interactive block made: the document's top level holds at most
+        // `HTML_EMBED_MAX_COUNT`, counted once on the copy.
+        if !embeds_counted
+            && matches!(attributes.get("type"), Some(Any::String(kind))
+                if &**kind == crate::material::HTML_EMBED_TYPE)
+        {
+            embeds_counted = true;
+            if top_level_embeds(&txn)? > catalog::HTML_EMBED_MAX_COUNT {
+                return Err(Refusal::Content(TOO_MANY_EMBEDS));
+            }
+        }
         let media = matches!(attributes.get("type"), Some(Any::String(kind))
             if crate::material::MEDIA_TYPES.contains(&&**kind));
         if !media {
@@ -886,6 +1070,26 @@ fn media_assets(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
         }
     }
     Ok(())
+}
+
+/// The interactive blocks at a document's top level.
+fn top_level_embeds<T: ReadTxn>(txn: &T) -> Result<usize, Refusal> {
+    let Some(root) = plate::content_root(txn) else {
+        return Ok(0);
+    };
+    let mut count = 0;
+    for op in plate::insert_delta(&root)? {
+        if let Insert::Element(element) = op.insert {
+            let kind = plate::properties(&element)?
+                .into_iter()
+                .find(|(key, _)| &**key == "type");
+            if matches!(kind, Some((_, Any::String(kind))) if &*kind == crate::material::HTML_EMBED_TYPE)
+            {
+                count += 1;
+            }
+        }
+    }
+    Ok(count)
 }
 
 /// The room with `update` applied, on a copy.
@@ -910,13 +1114,16 @@ fn candidate_of<T: ReadTxn>(txn: &T, update: &Update) -> Result<yrs::Doc, Refusa
 /// bound holds only while every content change is an update `admit` checked
 /// against the room as it was; the server calls `invalidate` for any other
 /// (a service edit, a children pass, a reload).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Validator {
+    /// The room's material kind (`note`, `mindmap`, `diagram`): the element
+    /// types it may hold.
+    pub material: String,
     pub bound: Option<Metrics>,
     pub metrics: Option<Metrics>,
     /// Exact measurements taken (a copy of the room each).
     pub exact_checks: u64,
-    /// Copies of the room taken for the media check alone.
+    /// Copies of the room taken for the media and closed-field checks alone.
     pub media_copies: u64,
     /// Copies of the room taken to read required keys whose entries Yjs's
     /// conflict order places ([required_keys]).
@@ -924,6 +1131,19 @@ pub struct Validator {
 }
 
 impl Validator {
+    /// A room's admission for a document of material kind `material`, with no
+    /// metrics yet (the first update measures exactly).
+    pub fn new(material: &str) -> Validator {
+        Validator {
+            material: material.to_owned(),
+            bound: None,
+            metrics: None,
+            exact_checks: 0,
+            media_copies: 0,
+            key_copies: 0,
+        }
+    }
+
     /// Checks a writer's update (decoded once by the server) against `doc`
     /// before the server applies it: the bound when it fits, else an exact
     /// measure of a candidate copy. Rejecting after the fact is not an
@@ -946,7 +1166,7 @@ impl Validator {
         // keeps its reason.
         let mut shape = Shape::default();
         if keeps_roots {
-            let media = plain_content(&txn, &incoming, &mut shape)?;
+            let media = plain_content(&txn, &incoming, &mut shape, &self.material)?;
             if !media.is_empty() {
                 // Rare (an image inserted, a file named): the room is copied
                 // only when inspect did not already.
@@ -957,7 +1177,7 @@ impl Validator {
                         candidate_of(&txn, update)?
                     }
                 };
-                media_assets(&candidate, &media)?;
+                on_candidate(&candidate, &media)?;
                 trial = Some(candidate);
             }
         }

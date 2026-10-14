@@ -25,6 +25,7 @@ export interface SourceCheckpoint {
   netTokens: number;
   operation?: SourceCheckpointOperation;
   pendingEffects: unknown;
+  preview?: string;
   /** @minimum 0 */
   seedBytes?: number;
   stateSeedSHA256?: string;

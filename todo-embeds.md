@@ -108,16 +108,15 @@ resolved reference. Open:
   (`collaboration-rs/crates/notes/src/edit.rs:1375`).
 - Two media-type lists in Rust: `edit.rs:189` (8 types, adds `video`,
   `media_embed`, `youtube`, `excalidraw`) and `material.rs:24` (4).
-- **Footnotes (decision needed).** Markdown import reads `[^1]` as
-  `footnoteReference` (inline void) and `footnoteDefinition` elements, which
-  notes already stored; the catalog lists them so nothing changes, but no
-  editor or View renders them: a reference draws nothing and a definition
-  shows its paragraphs. Render a reference as its number, or turn footnotes
-  into text on import.
-- `markdownConvert.ts` `draft()` and `dialogContext.tsx`
-  `embeddedDraftFromFence` turn a fence into a create request twice; both drop
-  card images. Needs a decision before merging them: a card image's asset id
-  in a pasted fence belongs to another document, so dropping it may be right.
+- **Footnotes** (decided 2026-10-14: text on import). A reference is its
+  label in superscript, a definition its paragraphs led by that label; the
+  catalog no longer lists `footnoteReference`/`footnoteDefinition`.
+- **Card images in fences** (decided 2026-10-14: dropped). No fence ever
+  carries one (agents write fronts and backs, export flattens a set to text,
+  Copy moves the block), and a hand-written one names another document's
+  asset. `markdownConvert.ts` `draft()` and `dialogContext.tsx`
+  `embeddedDraftFromFence` still convert a fence twice: merge them when either
+  is next touched.
 - The notes markdown corpus (`collaboration-rs/crates/notes/tests/corpus`) has
   no chart, plot or graph fence; it is a frozen Node oracle, so new cases go in
   by hand.
@@ -254,6 +253,26 @@ Drift to add above: inspect prints a plot's `block`; one Rust media list (drop
   `HtmlEmbed` description. Old UAT chat answers naming `Diagram` or
   `Interactive` still render, without those blocks: the parser drops an
   unknown component and marks the answer as having a gap.
-- Not done yet on this side: the Python lists (after the pipeline session's
-  agent-leniency branch lands, which touches `contract.py`, `tools.py` and
-  `questions.py`).
+- **Python against the catalog** (2026-10-14): `retrieval/embeds.py` loads
+  `generated/embeds.json`; `questions.py`'s `MEDIA_KEYS` takes the catalog's
+  question-block kinds (`_MEDIA`, the chart kinds and the fence repair already
+  read the contract's media schemas, which Go builds from the catalog).
+  `pipeline/tests/test_embeds.py` checks the media schemas are the catalog's
+  question media and that the note format describes every kind the agent
+  writes in notes. The embeds side of the split is done; what is left is the
+  Rust session's live-layer items.
+- **Rust collaboration server and live layer** (2026-10-14, the Rust
+  session's column): the notes and items crates read limits and kind facts
+  from `notes::catalog` (set-equality tests in `notes/tests/catalog.rs` and
+  the items crate). The store refuses unlisted types, and room admission
+  refuses whatever the store would refuse (closed fields, the room's material
+  kind, top-level-only blocks, the 11th HTML embed, value checks). A stored
+  document the store would refuse loads read-only for everyone
+  (`unsupported_block`, strip in the note, mindmap/diagram and quiz editors),
+  with the reason logged once at load. A quiz room goes read-only when either
+  of its documents holds an unknown block. A stored pending reference refuses
+  to load (its fence body holds answer keys). The live TS layer throws instead
+  of dropping unknown blocks. Left: duplicate top-level ids and a few
+  crafted-only shapes are caught at load, not admission (`openwiki/embeds.md`);
+  a test keeping the live editor's element types inside the catalog (embeds
+  side).

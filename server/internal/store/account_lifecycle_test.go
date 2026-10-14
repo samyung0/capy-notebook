@@ -385,6 +385,31 @@ func TestStarterWorkspaceProvisioningIsDurableAndOneTime(t *testing.T) {
 	if workspaces != 0 {
 		t.Fatalf("deleted starter workspace was recreated: count=%d", workspaces)
 	}
+	var welcomes int
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_outbox
+		WHERE user_id=$1 AND template='welcome'`, userID).Scan(&welcomes); err != nil {
+		t.Fatal(err)
+	}
+	if welcomes != 1 {
+		t.Fatalf("welcome emails = %d, want one per account", welcomes)
+	}
+
+	// Clerk test addresses (UAT journey actors) are provisioned without one.
+	testActor := newBlobTestUser(t, s, "u_starter_clerk_test")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET email='journeys+run+clerk_test@inbox.example.test'
+		WHERE id=$1`, testActor); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CreateDefaultWorkspace(ctx, testActor); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_outbox
+		WHERE user_id=$1 AND template='welcome'`, testActor).Scan(&welcomes); err != nil {
+		t.Fatal(err)
+	}
+	if welcomes != 0 {
+		t.Fatalf("Clerk test address got %d welcome emails", welcomes)
+	}
 }
 
 func TestStarterWorkspaceDoesNotRaceOrdinaryCreation(t *testing.T) {

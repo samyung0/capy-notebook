@@ -9,7 +9,8 @@ from pathlib import Path
 
 import pymupdf
 
-from .source_text import RAW_FLAGS, center_inside, compact, rect_for, source_text
+from . import page_text
+from .source_text import center_inside, compact, rect_for, source_text
 
 
 def canonical(text: str) -> str:
@@ -27,7 +28,7 @@ def _text(block: dict) -> str:
 
 
 def _source_page(page: pymupdf.Page):
-    groups = page.get_text("rawdict", flags=RAW_FLAGS)["blocks"]
+    groups = page_text.page_raw(page)["blocks"]
     glyphs = []
     for span in page.get_texttrace():
         if span["type"] == 3 or span["opacity"] < 0.99 or span["dir"][0] < 0.99:

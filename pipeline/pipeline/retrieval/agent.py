@@ -64,7 +64,6 @@ WRITE_TOOLS = frozenset(
     {
         "create_material",
         "add_questions",
-        "add_open_question",
         "add_question_media",
         "edit_document",
         "copy_questions",
@@ -119,7 +118,7 @@ def _describe(name: str, args: dict[str, Any]) -> str:
         return detail
     if name == "create_material":
         return str(args.get("kind") or "")
-    if name in ("add_questions", "add_open_question"):
+    if name == "add_questions":
         return str(args.get("title") or args.get("quiz_id") or "")
     if name == "add_question_media":
         return str(args.get("question_id") or "")

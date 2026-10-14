@@ -26,8 +26,8 @@ pub const ROOT: &str = "cards";
 pub const BLOCK_ID: &str = "flashcards";
 /// Card fronts and backs, in characters: the card save API's 4,000 and the
 /// decided 2,000-character back (human/frontend/plate-editor.md 2026-10-06).
-pub const MAX_FRONT: usize = notes::material::CARD_FRONT_MAX;
-pub const MAX_BACK: usize = notes::material::CARD_BACK_MAX;
+pub const MAX_FRONT: usize = notes::catalog::CARD_FRONT_MAX;
+pub const MAX_BACK: usize = notes::catalog::CARD_BACK_MAX;
 const MAX_ID: usize = 128;
 /// JSON a new card adds besides its id and texts:
 /// `{"type":"flashcard","id":"","children":[{"type":"flashcard_front","children":[{"text":""}]},…back…]},`

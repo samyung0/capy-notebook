@@ -280,8 +280,11 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
 }
 
 /// The attribute that may hold a text instead of a string: a `mermaid`
-/// block's source (shape A; the admit allows it on `mermaid` alone).
+/// block's source (shape A; the admit allows it on `mermaid` alone). The
+/// embed catalog's only shared-text key (`sharedText`).
 pub const SHARED_TEXT_KEY: &str = "source";
+/// The one element type holding [SHARED_TEXT_KEY] as a text.
+pub const SHARED_TEXT_ELEMENT: &str = "mermaid";
 
 /// The string of a source text: strings only, no formats or embeds.
 pub fn shared_text(branch: &Branch) -> Result<String, ProjectionError> {
@@ -403,6 +406,55 @@ pub fn value<T: ReadTxn>(txn: &T) -> Result<Vec<Value>, ProjectionError> {
         Some(root) => children(&root),
         None => Ok(vec![leaf("", &[])?]),
     }
+}
+
+/// Whether `visit` holds for some element of the document (a Y.XmlText),
+/// walked with an explicit stack.
+fn any_element<T: ReadTxn>(txn: &T, mut visit: impl FnMut(BranchPtr) -> bool) -> bool {
+    let mut stack: Vec<BranchPtr> = content_root(txn).into_iter().collect();
+    while let Some(branch) = stack.pop() {
+        let mut next = branch.start();
+        while let Some(item) = next {
+            next = item.right();
+            if item.is_deleted() {
+                continue;
+            }
+            let Some(element) = xml_text(item) else {
+                continue;
+            };
+            if visit(element) {
+                return true;
+            }
+            stack.push(element);
+        }
+    }
+    false
+}
+
+/// An element's live string attribute `key`.
+fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
+    let entry = element
+        .entry_item(key)
+        .filter(|entry| !entry.is_deleted())?;
+    match entry.content() {
+        ItemContent::Any(values) => match values.last() {
+            Some(Any::String(value)) => Some(value.to_string()),
+            _ => None,
+        },
+        _ => None,
+    }
+}
+
+/// Whether a material reference carries an imported fence body (`pending`,
+/// the quiz's answer keys), which no stored document may hold: its room
+/// refuses to load, so no reader receives it, as Go's reads refuse it.
+pub fn holds_pending_reference<T: ReadTxn>(txn: &T) -> bool {
+    any_element(txn, |element| {
+        string_attribute(element, "type").as_deref() == Some(crate::material::MATERIAL_REF_TYPE)
+            && element
+                .entry_item("pending")
+                .is_some_and(|entry| !entry.is_deleted())
+    })
 }
 
 /// `materials.content`: `{"schemaVersion":1,"value":[...]}`.

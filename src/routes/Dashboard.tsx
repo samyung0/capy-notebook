@@ -2,10 +2,11 @@ import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
 import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
+import { ErrorState } from '@/components/app/ErrorState';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import DashboardBanner from '@/components/banners/DashboardBanner';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
@@ -13,6 +14,7 @@ import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { describeError } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -27,7 +29,7 @@ const SLIDER_CLASS =
 const SLIDE_CLASS = 'w-[85%] shrink-0 snap-start sm:w-75';
 
 function WorkspacesSection() {
-  const { data, fetchStatus, isLoading } = useWorkspaces(
+  const { data, error, fetchStatus, isLoading, refetch } = useWorkspaces(
     { sort: 'accessed' },
     { errorBoundary: false }
   );
@@ -61,6 +63,19 @@ function WorkspacesSection() {
             />
           ))}
         </div>
+      ) : !data && error ? (
+        <ErrorState
+          {...describeError(error)}
+          action={
+            <ErrorAction
+              iconLeftClassName="me-1"
+              onClick={() => void refetch()}
+            >
+              {m.error_action_retry()}
+            </ErrorAction>
+          }
+          variant="panel"
+        />
       ) : !recent || recent.length === 0 ? (
         <div
           // The skeleton row's height, so the empty state sits in its middle.

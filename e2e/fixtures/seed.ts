@@ -12,6 +12,10 @@ export const users = {
 } as const;
 
 export const seed = {
+  agentWorkspace: {
+    assistantMessageId: 'msg_e2e_agent',
+    id: 'ws_e2e_agent',
+  },
   commentNote: {
     body: 'Comment on this selected sentence',
     id: 'note_e2e_comment',

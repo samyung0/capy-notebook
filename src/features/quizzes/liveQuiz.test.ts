@@ -1,13 +1,17 @@
+import { readFileSync } from 'node:fs';
 import { expect, it } from 'vitest';
 import * as Y from 'yjs';
+import { EMBED_CATALOG } from '@/api/embeds.generated';
 import { pairedUndo } from '@/features/collaboration/undo';
 import { LOCAL_EDIT } from '@/features/collaboration/yText';
 import { exampleQuestions } from '@/features/questions/questionFixtures';
-import type { Question } from '@/features/questions/types';
+import type { Question, QuestionBlock } from '@/features/questions/types';
+import { m } from '@/i18n';
 import {
   applyReaderMessage,
   itemParts,
   keysScope,
+  questionsScope,
   readLearnerQuestions,
   readQuestions,
   seedQuiz,
@@ -222,4 +226,68 @@ it('applies pushed lists: a full one replaces, a partial one changes named parts
   ]);
   lists = applyReaderMessage(lists, { full: true, parts: { m: matching } });
   expect([...lists.keys()]).toEqual(['m']);
+});
+
+/* The live quiz against the embed catalog (openwiki/embeds.md): every
+   question block the catalog lists is written and read back, for editors and
+   learners, and a block type the room holds but this reader does not know
+   fails loudly instead of vanishing (and being deleted at the next save), as
+   plot once did. */
+function fixtureBlocks(name: string): QuestionBlock[] {
+  const file = new URL(
+    `../../../server/internal/questions/testdata/${name}.json`,
+    import.meta.url
+  );
+  return JSON.parse(readFileSync(file, 'utf8')).question.stem;
+}
+
+it('writes and reads back every question block the embed catalog lists', () => {
+  const samples = new Map(
+    [...fixtureBlocks('rich-blocks'), ...fixtureBlocks('plot')].map((block) => [
+      block.type as string,
+      block,
+    ])
+  );
+  const kinds = EMBED_CATALOG.embeds
+    .filter((embed) => 'questionBlock' in embed && embed.questionBlock)
+    .map((embed) => embed.kind);
+  expect(kinds.length).toBeGreaterThan(0);
+  const blocks = kinds.map((kind) => {
+    const block = samples.get(kind);
+    expect(block, `a ${kind} block in the shared fixtures`).toBeDefined();
+    return block as QuestionBlock;
+  });
+  const question = { ...rich, id: 'catalog', stem: blocks };
+  const content = new Y.Doc();
+  const keys = new Y.Doc();
+  seedQuiz(content, keys, [question]);
+  expect(readQuestions(content, keys)[0].stem).toEqual(blocks);
+  expect(readLearnerQuestions(content)[0].stem).toEqual(blocks);
+  // Rewritten in place, as a save does.
+  writeQuestion(content, keys, { ...question, stem: [...blocks].reverse() });
+  expect(readQuestions(content, keys)[0].stem).toEqual([...blocks].reverse());
+});
+
+// A block of a kind this version has no reader for (its rooms are read-only,
+// decision 5) shows as the unsupported notice in its place, for editors and
+// learners, and no save writes over it or drops it.
+it('shows a block type it has no reader for as the notice and never writes over it', () => {
+  const { content, keys } = quiz();
+  const question = questions[0];
+  const stem = questionsScope(content).get(question.id)?.get('stem') as
+    | Y.Map<Y.Map<unknown>>
+    | undefined;
+  expect(stem).toBeInstanceOf(Y.Map);
+  const entry = new Y.Map<unknown>();
+  stem?.set('b_future', entry);
+  entry.set('order', 'a0');
+  entry.set('type', 'timeline');
+  const notice = { text: m.material_unsupported_block(), type: 'text' };
+  expect(readQuestions(content, keys)[0].stem[0]).toEqual(notice);
+  expect(readLearnerQuestions(content)[0].stem[0]).toEqual(notice);
+  const edited = readQuestions(content, keys)[0];
+  expect(() =>
+    writeQuestion(content, keys, { ...edited, stem: edited.stem.slice(1) })
+  ).toThrow('cannot edit');
+  expect(stem?.get('b_future')?.get('type')).toBe('timeline');
 });

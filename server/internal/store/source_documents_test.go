@@ -1493,3 +1493,72 @@ func TestSourceCheckpointConflictKinds(t *testing.T) {
 		t.Fatalf("invalid input: %v", err)
 	}
 }
+
+// A text save writes the file's list-card text with the checkpoint (an
+// unchanged one writes nothing, so it raises no tree event); a save without
+// one leaves it, and an Office save or a preview no card would take is
+// refused.
+func TestTextSavesWriteTheFilePreview(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "preview_owner")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	save := func(preview *string) error {
+		in := sourceTestSave(doc, owner, "state-"+uid("s"))
+		in.Preview = preview
+		if _, err := s.SaveSourceCheckpoint(ctx, file.ID, in); err != nil {
+			return err
+		}
+		var err error
+		doc, err = s.SourceSession(ctx, owner, file.ID)
+		return err
+	}
+	read := func() (preview *string, version int64) {
+		t.Helper()
+		if err := s.pool.QueryRow(ctx, `SELECT preview->>'text', xmin::text::bigint FROM files WHERE id=$1`, file.ID).Scan(&preview, &version); err != nil {
+			t.Fatal(err)
+		}
+		return preview, version
+	}
+	text := func(s string) *string { return &s }
+
+	if err := save(text("hello\nworld")); err != nil {
+		t.Fatal(err)
+	}
+	preview, version := read()
+	if preview == nil || *preview != "hello\nworld" {
+		t.Fatalf("preview = %v", preview)
+	}
+	if err := save(text("hello\nworld")); err != nil {
+		t.Fatal(err)
+	}
+	if _, again := read(); again != version {
+		t.Fatalf("an unchanged preview rewrote the file row (%d -> %d)", version, again)
+	}
+	if err := save(nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := save(text("héllo 😀")); err != nil {
+		t.Fatal(err)
+	}
+	if preview, _ := read(); preview == nil || *preview != "héllo 😀" {
+		t.Fatalf("preview = %v", preview)
+	}
+	for _, bad := range []string{strings.Repeat("é", 601), "nul\x00", "\xff"} {
+		if err := save(&bad); !errors.Is(err, ErrInvalidCheckpoint) {
+			t.Fatalf("preview %q saved: %v", bad[:min(len(bad), 8)], err)
+		}
+	}
+	if preview, _ := read(); *preview != "héllo 😀" {
+		t.Fatalf("a refused save changed the preview to %q", *preview)
+	}
+
+	_, office := sourceTestFile(t, s, owner, "plan.docx", "doc")
+	officeDoc := sourceTestSeed(t, s, owner, office.ID)
+	in := sourceTestSave(officeDoc, owner, "state")
+	in.Preview = text("text")
+	if _, err := s.SaveSourceCheckpoint(ctx, office.ID, in); !errors.Is(err, ErrInvalidCheckpoint) {
+		t.Fatalf("an Office save took a preview: %v", err)
+	}
+}

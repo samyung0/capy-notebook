@@ -265,28 +265,6 @@ export const EMBED_CATALOG = {
       ]
     },
     {
-      "type": "footnoteReference",
-      "void": true,
-      "inline": true,
-      "materials": [
-        "note",
-        "quiz",
-        "flashcards",
-        "mindmap",
-        "diagram"
-      ]
-    },
-    {
-      "type": "footnoteDefinition",
-      "materials": [
-        "note",
-        "quiz",
-        "flashcards",
-        "mindmap",
-        "diagram"
-      ]
-    },
-    {
       "type": "img",
       "void": true,
       "required": [
@@ -994,7 +972,6 @@ export const EMBED_CATALOG = {
           "create_material",
           "edit_document",
           "add_questions",
-          "add_open_question",
           "add_question_media"
         ]
       }
