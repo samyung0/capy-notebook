@@ -105,6 +105,56 @@ func testB2(t *testing.T, pathStyle bool) *B2 {
 	return store
 }
 
+// Security regression (human authorization 2026-10-14 read link headers): a
+// read link's type and disposition come from the key's extension, not the
+// uploader: only PDF, raster images and audio open in place; HTML, SVG and
+// anything unknown download.
+func TestPresignGetTypesAndDispositionFollowTheExtension(t *testing.T) {
+	store := testB2(t, false)
+	for _, tc := range []struct{ key, contentType, disposition string }{
+		{"sources/blob_1.html", "application/octet-stream", "attachment"},
+		{"sources/blob_1.HTM", "application/octet-stream", "attachment"},
+		{"sources/blob_1.svg", "image/svg+xml", "attachment"},
+		{"sources/blob_1.xml", "application/octet-stream", "attachment"},
+		{"sources/blob_1", "application/octet-stream", "attachment"},
+		{"sources/blob_1.pdf", "application/pdf", "inline"},
+		{"editor-assets/asset_1/blob_1.PNG", "image/png", "inline"},
+		{"editor-assets/asset_1/blob_1.m4a", "audio/mp4", "inline"},
+	} {
+		for _, sign := range []func(string) (string, error){
+			func(key string) (string, error) { return store.PresignGet(t.Context(), key) },
+			func(key string) (string, error) {
+				signed, err := store.PresignGetWithExpiry(t.Context(), key)
+				return signed.URL, err
+			},
+		} {
+			signed, err := sign(tc.key)
+			if err != nil {
+				t.Fatalf("%s: %v", tc.key, err)
+			}
+			u, err := url.Parse(signed)
+			if err != nil {
+				t.Fatal(err)
+			}
+			q := u.Query()
+			if got := q.Get("response-content-type"); got != tc.contentType {
+				t.Errorf("%s: response-content-type = %q, want %q", tc.key, got, tc.contentType)
+			}
+			if got := q.Get("response-content-disposition"); got != tc.disposition {
+				t.Errorf("%s: response-content-disposition = %q, want %q", tc.key, got, tc.disposition)
+			}
+		}
+	}
+	// The hour-stable thumbnail link stays as it was: no overrides.
+	stable, err := store.PresignStableGet(t.Context(), "thumbs/f_1/abc.webp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(stable, "response-") {
+		t.Errorf("stable link carries response overrides: %s", stable)
+	}
+}
+
 // Thumbnail links are signed per list row; the browser caches them only while
 // the URL stays byte-identical, so it must not change within an hour.
 func TestPresignStableGetIsStableWithinTheHour(t *testing.T) {

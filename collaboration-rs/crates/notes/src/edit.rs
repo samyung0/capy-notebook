@@ -313,20 +313,69 @@ fn block_listing(editor: &Editor) -> Value {
     json!({ "blocks": blocks, "total": editor.root.children.len() })
 }
 
-/// A stale expectation's refusal carries the block as it reads now.
+/// [block_listing] of an inspection: a material rebuilt since the agent read
+/// it refuses with its blocks as they are now, as a gone id does.
+pub fn listing(blocks: &[InspectedBlock]) -> Value {
+    let listed: Vec<Value> = blocks
+        .iter()
+        .take(LISTED_BLOCKS)
+        .map(|block| {
+            json!({
+                "id": block.id,
+                "text": slice16(&block.text, 0, LISTED_PREVIEW),
+                "type": block.kind,
+            })
+        })
+        .collect();
+    json!({ "blocks": listed, "total": blocks.len() })
+}
+
+/// A refused span on a material (stale, or an expected text that occurs more
+/// than once) carries its block as it reads now, so the retry needs no
+/// inspect.
 fn with_current(error: EditError, block: &Value, text: &str) -> EditError {
     match error {
-        EditError::Edit {
-            code: StaleTarget,
-            message,
-            details: None,
-        } => EditError::Edit {
-            code: StaleTarget,
+        EditError::Edit { code, message, .. } => EditError::Edit {
+            code,
             message,
             details: Some(current_block(block, text.to_owned())),
         },
         other => other,
     }
+}
+
+/// How many lines an ambiguous span lists, and how many characters of each.
+const LISTED_LINES: usize = 20;
+const LISTED_LINE_CHARS: usize = 1000;
+
+/// An expected text that occurs more than once: the lines its occurrences
+/// start in, each once and at most [LISTED_LINES], as inspect pages a text
+/// source (`start`, the line's UTF-16 offset; its text without the newline,
+/// cut after [LISTED_LINE_CHARS] characters with a trailing `…`), so the
+/// retry can add context and the refusal stays small (Epo 2026-10-14).
+fn occurrence_lines(text: &str, expected: &str) -> Value {
+    let mut lines = Vec::new();
+    // The end of the last line listed, and the UTF-16 offset counted so far.
+    let (mut listed_end, mut counted, mut units) = (0, 0, 0);
+    for (at, _) in text.match_indices(expected) {
+        if at < listed_end {
+            continue;
+        }
+        if lines.len() == LISTED_LINES {
+            break;
+        }
+        let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+        listed_end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+        units += len16(&text[counted..start]);
+        counted = start;
+        let line = &text[start..listed_end];
+        let shown = match line.char_indices().nth(LISTED_LINE_CHARS) {
+            Some((cut, _)) => format!("{}…", &line[..cut]),
+            None => line.to_owned(),
+        };
+        lines.push(json!({ "start": units, "text": shown }));
+    }
+    json!({ "lines": lines })
 }
 
 /// UTF-16 positions of the non-overlapping occurrences of `needle`.
@@ -559,9 +608,10 @@ fn resolve_span(
     match found.len() {
         0 => edit(StaleTarget, "expected text was not found in the target"),
         1 => Ok((found[0], length)),
-        n => edit(
+        n => edit_with(
             InvalidInput,
             format!("expected text occurs {n} times; include more context"),
+            occurrence_lines(current, expected),
         ),
     }
 }
@@ -1126,7 +1176,13 @@ fn run_command(
             let (node, index) = require_parent(editor, node_type)?;
             let current = node.get(property).and_then(Value::as_str).unwrap_or("");
             if current != expected_value {
-                return edit(StaleTarget, format!("{node_type}.{property} changed"));
+                // The value as it is now (a diagram's source), as a stale
+                // block carries its text.
+                return edit_with(
+                    StaleTarget,
+                    format!("{node_type}.{property} changed"),
+                    current_block(&node, current.to_owned()),
+                );
             }
             let props = Map::from_iter([(property.clone(), Value::String(value.clone()))]);
             editor.set_nodes_at(vec![index], &props)?;

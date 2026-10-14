@@ -410,7 +410,15 @@ func (s *Store) RestoreTrashed(ctx context.Context, ownerID string, kind agentto
 		// Fresh incarnation: buffered old-epoch or old-schema edits cannot merge
 		// into the restored resource. The trash transition already evicted rooms.
 		if kind == agenttools.KindSourceFile {
-			if _, err := tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1, updated_at=now() WHERE file_id=$1`, id); err != nil {
+			// A refresh the trash's cancellation skipped, or a maintenance one,
+			// was captured under the old epoch: superseded, as by an epoch reset
+			// (job before document row).
+			if _, err := tx.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY(SELECT job_id FROM source_refresh_candidates WHERE file_id=$1),'superseded','superseded','source_superseded','Editing moved to a new epoch')`, id); err != nil {
+				return nil, err
+			}
+			// The error the trash's cancellation left (cancel_file_pipeline_jobs_for)
+			// goes, so the saved edits are due again; any other stays.
+			if _, err := tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1, refresh_error=NULLIF(refresh_error,'source deleted'), updated_at=now() WHERE file_id=$1`, id); err != nil {
 				return nil, err
 			}
 			// The saved rows move with the state they belong to.

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { IMAGE_POLICY } from 'capy-share-render';
 import { describe, expect, it, vi } from 'vitest';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '../../src/lib/shareLink';
 import { handleSiteRequest } from './handler';
@@ -32,6 +33,7 @@ const SHARED = await sharePath(DEV_SHARE_LINK_SECRET, 'ws_0123456789');
 const request = (path = SHARED, init?: RequestInit) =>
   new Request(`https://app.example.test${path}`, init);
 const PRIVATE_CONTENT = /PRIVATE BODY|u_secret|capy-summary-body/;
+const IMAGE_SOURCES = /^img-src 'self' data: blob: /;
 
 const upstream = (data: unknown = summary) =>
   vi.fn<typeof fetch>().mockResolvedValue(Response.json(data));
@@ -48,6 +50,12 @@ describe('public workspace SSR', () => {
     const html = await response.text();
     expect(response.status).toBe(200);
     expect(response.headers.get('Cache-Control')).toBe(SHARED_CACHE);
+    // Security regression (human deployment-runbook 2026-10-14 image
+    // sources): rendered pages carry the app's image policy.
+    expect(IMAGE_POLICY).toMatch(IMAGE_SOURCES);
+    expect(response.headers.get('Content-Security-Policy-Report-Only')).toBe(
+      IMAGE_POLICY
+    );
     expect(html).toContain('<h1>Biology</h1>');
     expect(html).toContain('src="/icons/waves-03.svg"');
     expect(html).toContain('<p class="summary-byline">Mia</p>');
@@ -138,6 +146,9 @@ describe('public workspace SSR', () => {
       expect(response.status).toBe(404);
       expect(response.headers.get('Cache-Control')).toBe('no-store');
       expect(response.headers.get('X-Robots-Tag')).toBe('noindex, nofollow');
+      expect(response.headers.get('Content-Security-Policy-Report-Only')).toBe(
+        IMAGE_POLICY
+      );
       const html = await response.text();
       expect(html).toContain('Page not found');
       expect(html).toContain('data-error-surface="page"');
@@ -192,6 +203,17 @@ describe('public workspace SSR', () => {
     );
     expect(head.status).toBe(200);
     expect(await head.text()).toBe('');
+    // An error page's HEAD carries the same headers as its GET.
+    const missing = await handleSiteRequest(
+      request('/w/ws_0123456789', { method: 'HEAD' }),
+      env,
+      upstream()
+    );
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toBe('');
+    expect(missing.headers.get('Content-Security-Policy-Report-Only')).toBe(
+      IMAGE_POLICY
+    );
     const chinese = await handleSiteRequest(
       new Request(`https://app.example.test${SHARED}?lang=zh`, {
         headers: { 'Accept-Language': 'zh-CN' },

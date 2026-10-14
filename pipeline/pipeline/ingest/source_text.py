@@ -13,6 +13,7 @@ import csv
 import io
 import math
 import mimetypes
+import re
 import warnings
 from collections.abc import Iterator
 from pathlib import Path
@@ -20,17 +21,25 @@ from pathlib import Path
 from ..config import cfg
 from ..jobs import InputLimitError, RetryableError, TerminalError
 from ..prompts.captioning import IMAGE_PROMPT
+from ..retrieval.chunking import estimate_tokens
 
 # csv.reader streams rows, but it builds a whole row before its width can be
 # read: one 30 MiB row of short fields peaks above 500 MiB, and the widest row
 # sets the header list. So each row's raw delimiters (quoted ones too, an upper
 # bound on its columns) are counted as its lines reach the reader, and a row
-# over the cap is refused before it is parsed. Repeating long headers can
-# still make the searchable projection much larger than the source, so that is
-# bounded separately before the chunker sees it.
+# over the cap is refused before it is parsed. Repeating headers make the
+# searchable projection several times the source, so its estimated tokens are
+# capped while it is built, before anything is chunked or embedded. With no
+# overlap that is 2,500 to 5,000 chunks (2,700 for 11 short columns, one chunk
+# per row once a row passes half a chunk), roughly a 1,400-page PDF or more.
 _TABULAR_MAX_COLUMNS = 1_000
 _TABULAR_MAX_FIELD_CHARS = 8 << 20
-_TABULAR_MAX_OUTPUT_CHARS = 64 << 20
+_TABULAR_MAX_TOKENS = 1_000_000
+# Whitespace runs in a cell, line breaks inside quoted cells included, become
+# one space, so each row stays one line. Only runs that aren't already a single
+# space match: re.sub keeps every match's segment until it joins them, so a cell
+# of ordinary single-spaced text then allocates nothing per word.
+_WHITESPACE = re.compile(r"\s{2,}|[^\S ]")
 
 
 def extension(name: str) -> str:
@@ -195,24 +204,27 @@ def tabular_text(path: str, name: str) -> str:
         else [f"Column {index + 1}" for index in range(width)]
     )
     headers = [
-        (headers[index].strip() if index < len(headers) else "")
+        (_WHITESPACE.sub(" ", headers[index]).strip() if index < len(headers) else "")
         or f"Column {index + 1}"
         for index in range(width)
     ]
 
     parts: list[str] = []
-    output_chars = 0
+    tokens = 0
 
     def append(line: str) -> None:
-        nonlocal output_chars
-        extra = len(line) + (1 if parts else 0)
-        if output_chars + extra > _TABULAR_MAX_OUTPUT_CHARS:
-            raise InputLimitError(
-                "tabular_text_limit",
-                "delimited table exceeds the searchable-text limit",
-            )
-        parts.append(line)
-        output_chars += extra
+        nonlocal tokens
+        # A character costs at least a quarter token, so a line whose length
+        # alone passes the cap is refused before the slower estimate.
+        if tokens + len(line) // 4 <= _TABULAR_MAX_TOKENS:
+            tokens += estimate_tokens(line)
+            if tokens <= _TABULAR_MAX_TOKENS:
+                parts.append(line)
+                return
+        raise InputLimitError(
+            "tabular_text_limit",
+            "delimited table exceeds the searchable-text limit",
+        )
 
     append("Columns: " + " | ".join(headers))
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as source:
@@ -222,9 +234,11 @@ def tabular_text(path: str, name: str) -> str:
         for row_number, row in enumerate(reader, start=2 if has_header else 1):
             values = []
             for index, raw_value in enumerate(row):
-                value = raw_value.strip()
+                value = _WHITESPACE.sub(" ", raw_value).strip()
                 if value:
                     values.append(f"{headers[index]}={value}")
             if values:
                 append(f"Row {row_number}: " + " | ".join(values))
-    return "\n".join(parts)
+    # A blank line between rows makes each row its own paragraph, so the
+    # chunker packs whole rows and never splits one table-sized block.
+    return "\n\n".join(parts)

@@ -215,6 +215,30 @@ class ConfigTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "VITE_EMBED_ORIGIN is required"):
                 config.render(values, "production", temp, "a" * 40)
 
+    def test_render_gives_the_build_the_bucket_its_image_policy_names(self):
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+            B2_BUCKET="capy-notebook-uat",
+            B2_ENDPOINT="https://s3.us-west-004.backblazeb2.com",
+            B2_FORCE_PATH_STYLE="true",
+        )
+        with tempfile.TemporaryDirectory() as temp:
+            with contextlib.redirect_stdout(io.StringIO()):
+                config.render(values, "uat", temp, "a" * 40)
+            build = json.loads(Path(temp, "build.json").read_text())
+        self.assertEqual(
+            (build["B2_BUCKET"], build["B2_ENDPOINT"], build["B2_FORCE_PATH_STYLE"]),
+            ("capy-notebook-uat", "https://s3.us-west-004.backblazeb2.com", "true"),
+        )
+
     def test_coolify_payload_and_redacted_readback(self):
         secret = "never-disclose-this-value"
         values = {"POSTGRES_PASSWORD": secret, "OPENAI_API_KEY": ""}

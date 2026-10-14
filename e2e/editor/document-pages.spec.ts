@@ -25,6 +25,12 @@ async function makeNewest(
   );
 }
 
+/** Files and Blocks cards select on a click and open on a double click. */
+const openItem = (page: Page, name: string) =>
+  page
+    .getByRole('button', { exact: true, name: m.files_select_item({ name }) })
+    .dblclick();
+
 async function editPdf(page: Page) {
   await page.getByRole('button', { name: m.material_mode() }).click();
   await expect(page).toHaveURL(/mode=edit/);
@@ -38,7 +44,7 @@ test('Blocks and Files open the shared document page in View', async ({
   page,
 }) => {
   await page.goto('/files?tab=blocks');
-  await page.getByRole('link', { name: /Study journal 001/ }).click();
+  await openItem(page, 'Study journal 001');
   await expect(page).toHaveURL(/\/materials\/mat_pagination_1$/);
   await expect(
     page.getByRole('button', { name: m.material_mode() })
@@ -74,7 +80,7 @@ test('Blocks and Files open the shared document page in View', async ({
   await expect(page).toHaveURL(/\/files\?tab=blocks$/);
 
   await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
-  await page.getByRole('link', { name: /Organelles cheatsheet.md/ }).click();
+  await openItem(page, 'Organelles cheatsheet.md');
   await expect(page).toHaveURL(/\/files\/f_2$/);
   await expect(page.getByRole('dialog')).toHaveCount(0);
   const fileHeader = page
@@ -276,7 +282,7 @@ test('PDF tools persist private marks, undo restores IDs, and narrow tools scrol
   // Reopen through client navigation: MSW keeps marks, while component history resets.
   await makeNewest(page, { files: ['f_1'] });
   await page.getByRole('button', { exact: true, name: m.nav_files() }).click();
-  await page.getByRole('link', { name: /Cell structure.pdf/ }).click();
+  await openItem(page, 'Cell structure.pdf');
   await expect(
     page.getByRole('button', { name: m.material_mode() })
   ).toHaveAttribute('aria-pressed', 'true');
@@ -432,13 +438,13 @@ test('Blocks, Files and recent links use saved modes without reloading the app',
   const mode = page
     .getByTestId('content-header')
     .getByRole('button', { name: m.material_mode() });
-  await page.getByRole('link', { name: /Study journal 001/ }).click();
+  await openItem(page, 'Study journal 001');
   await expect(mode).toHaveAttribute('aria-pressed', 'true', {
     timeout: 30_000,
   });
   await makeNewest(page, { files: ['f_1'], materials: ['mat_e2e_editor'] });
   await page.getByRole('link', { exact: true, name: m.nav_files() }).click();
-  await page.getByRole('link', { name: /Cell structure.pdf/ }).click();
+  await openItem(page, 'Cell structure.pdf');
   await expect(mode).toHaveAttribute('aria-pressed', 'true');
   await page
     .getByRole('link', { exact: true, name: m.nav_dashboard() })

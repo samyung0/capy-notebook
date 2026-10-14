@@ -173,6 +173,10 @@ async function streamPage(
 const serverTiming = (start: number, api: number) =>
   `api;dur=${api}, total;dur=${Date.now() - start}`;
 
+/** Every page this Worker renders carries the app's image-source policy,
+ * report-only (vite-image-policy.ts); Worker responses get no `_headers`. */
+const IMAGE_POLICY_HEADER = 'Content-Security-Policy-Report-Only';
+
 const headers = (extra: HeadersInit = {}) => {
   const result = new Headers(extra);
   result.set('Cache-Control', 'no-store');
@@ -205,18 +209,17 @@ export async function handleSiteRequest(
         // Keep the existing self-contained error if the asset binding also fails.
       }
     }
-    // The renderer loads only when there is a body to render; a HEAD skips it.
-    const body =
-      request.method === 'HEAD'
-        ? null
-        : (await import('capy-share-render')).renderFailure(status, template);
-    return new Response(body, {
-      headers: headers({
-        'Content-Type': 'text/html; charset=utf-8',
-        'X-Robots-Tag': 'noindex, nofollow',
-      }),
-      status,
+    // A HEAD gets the page's headers, the image policy included, and no body.
+    const { IMAGE_POLICY, renderFailure } = await import('capy-share-render');
+    const failureHeaders = headers({
+      'Content-Type': 'text/html; charset=utf-8',
+      'X-Robots-Tag': 'noindex, nofollow',
     });
+    failureHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
+    return new Response(
+      request.method === 'HEAD' ? null : renderFailure(status, template),
+      { headers: failureHeaders, status }
+    );
   };
   const isSummary = url.pathname.startsWith('/w/');
   if (url.pathname === '/summary' || url.pathname === '/summary.html')
@@ -299,9 +302,8 @@ export async function handleSiteRequest(
         return failure(503);
       }
       const template = await boundedText(asset, 512 * 1024);
-      const { renderSharePagePieces, SHARE_TEMPLATE_MARKERS } = await import(
-        'capy-share-render'
-      );
+      const { IMAGE_POLICY, renderSharePagePieces, SHARE_TEMPLATE_MARKERS } =
+        await import('capy-share-render');
       if (!SHARE_TEMPLATE_MARKERS.every((marker) => template.includes(marker)))
         return failure(503);
       const page =
@@ -314,6 +316,7 @@ export async function handleSiteRequest(
         'Content-Type': 'text/html; charset=utf-8',
       });
       responseHeaders.set('Cache-Control', SHARED_CACHE);
+      responseHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
       if (data.privacy === 'link')
         responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
       const pieces = renderSharePagePieces({
@@ -355,7 +358,9 @@ export async function handleSiteRequest(
       await upstream.body?.cancel();
       return failure(503);
     }
-    const { renderSummary, summarySchema } = await import('capy-share-render');
+    const { IMAGE_POLICY, renderSummary, summarySchema } = await import(
+      'capy-share-render'
+    );
     const summary = summarySchema.parse(
       JSON.parse(await boundedText(upstream, 512 * 1024))
     );
@@ -366,6 +371,7 @@ export async function handleSiteRequest(
     // Workers Cache holds the render for five minutes (SHARED_CACHE). Failure
     // pages stay no-store so publishing takes effect at once.
     responseHeaders.set('Cache-Control', SHARED_CACHE);
+    responseHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
     if (summary.privacy === 'link')
       responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
     const asset = await env.ASSETS.fetch(

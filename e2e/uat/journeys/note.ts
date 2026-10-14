@@ -512,6 +512,14 @@ async function everyBlockValue() {
   ).value;
 }
 
+/** Text marks that only set an inline style. */
+const STYLE_MARKS = new Set([
+  'color',
+  'backgroundColor',
+  'fontSize',
+  'fontFamily',
+]);
+
 /** Element types and text marks anywhere in a material value. */
 function kinds(value: PlateNode[]) {
   const types = new Set<string>();
@@ -685,7 +693,10 @@ export async function sharedNote(
     for (const type of want.types)
       await expect(page.locator(`.slate-${type}`).first(), type).toBeAttached();
     // Leaf classes are kebab-case: backgroundColor → slate-background-color.
+    // Style marks render as inline styles with no leaf; the public read above
+    // already holds them, so styling itself is not asserted.
     for (const mark of want.marks) {
+      if (STYLE_MARKS.has(mark)) continue;
       const name = mark.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`);
       await expect(page.locator(`.slate-${name}`).first(), mark).toBeAttached();
     }

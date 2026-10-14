@@ -622,7 +622,8 @@ collaboration service's converter builds the same node, reading the agent's
 note as plain Markdown so the snippet keeps every character (the MDX pass a
 paste goes through rewrites HTML inside fences; see `markdownImport.ts`). A
 fence that is not YAML, has no html, has html over 64 KB, or is the eleventh
-is refused by name. Go
+is refused by name, as is an agent edit that would leave the note with an
+eleventh (`invalid_input`, the collaboration service's whole-note check). Go
 `materialdoc`, the collaboration validator and the browser's
 `isMaterialDocument` cap `html` at 64 KB (UTF-8 bytes), `caption` at
 `BLOCK_CAPTION_MAX` (300 characters; Go `materialdoc`, the collaboration
@@ -1309,8 +1310,8 @@ metrics without reading the content back. On the 2 MB load-test note the
 handler's CPU went from ~140 ms to ~30 ms. Its body read deadline is 15 s,
 the collaboration service's own timeout for the call, instead of Huma's 5 s.
 Rows where `projected_version < stored_version` and no instance holds the room
-are projected by the server's 5 s pending scan once they have been idle that
-long.
+are projected by the server's 5 s pending scan once they have been idle 30 s
+(the same `COLLABORATION_PROJECTION_IDLE_MS`).
 Binary persistence and projection have separate failure boundaries. Once a Yjs
 version commits, a projection outage does not enqueue that snapshot as a failed
 store or advance `stored_version` again. The lag scanner projects the committed
@@ -1500,7 +1501,11 @@ accepted texts to `QUIZ_OPEN_ANSWER_MAX`. A list's count
 is bounded like a text's length (held plus added against its cap): only an
 update that may pass a cap copies the room for the exact check, whose walk the
 step counter counts (`Walk::Exact`). An image block waiting for its upload
-(blank) is structure; it only leaves its question incomplete.
+(blank) is structure; it only leaves its question incomplete. Live quiz rooms
+accept only hosted question images: an image names its uploaded `{assetId}`,
+and an image's or a graph's `{url}` is blank or one a stored question keeps
+(`figure_url`, `Policy::hosted`: under `BANK_ASSETS_URL`, a copied bank
+figure).
 
 `QuestionDialog` edits a live question (`live` prop): its outline, part and
 block editors write through `writeQuestion`
@@ -1758,7 +1763,9 @@ commands through a headless Slate editor
 (`collaboration-rs/crates/notes/src/edit.rs`), stores the
 inverse and item-run guards of the edited nodes, then fans the committed delta
 into the live room as a `service-edit` update; the projection runs on the same
-commit.
+commit. A refused edit names its reason and, where the agent can retry, the
+target as it reads now (see [agentic-retrieval](../agentic-retrieval.md#tools),
+Tools).
 A removed flashcard's review state stays in `review_states`, ignored until an
 Undo brings the card back. The chat result card shows the effect with an Undo
 button (`available`, `undone`, `unavailable`) fed by the receipt's `undo` ref.

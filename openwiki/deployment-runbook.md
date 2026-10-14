@@ -997,6 +997,58 @@ is a loopback `http` origin (`vite-embed.ts`), with the headers from
 runs on `localhost`; another port alone would be the same site. The Playwright
 configs serve their own frame on `localhost` next to the app's `127.0.0.1`.
 
+### 2.4 App image policy (report-only)
+
+The SPA's pages and the pages the site Worker renders are sent with
+`Content-Security-Policy-Report-Only: img-src …`, listing the only places a
+page may draw an image or CSS `url()` from: `'self'`, `data:`, `blob:`, the
+environment's bucket, the `BANK_ASSETS_URL` base, `https://img.clerk.com`
+(avatars) and `https://i.ytimg.com` (YouTube posters). Go's own HTML behind
+`/api/*` (the unsubscribe page) has no images and no policy.
+`vite-image-policy.ts` builds the value once per SPA build and sends it two
+ways:
+
+- Workers Assets serves the SPA's HTML, so the client build appends a `/*`
+  rule to `dist/_headers` (after `public/_headers`). With
+  `html_handling: "none"`, every SPA page, `/` included, is the
+  single-page-application fallback, so the whole SPA's policy rests on
+  Workers Assets applying `_headers` to that fallback, which only a deployed
+  check can see (UAT checklist §7). If it does not, the fallback plan is to
+  run the site Worker first on every path but the static files
+  (`run_worker_first` with exclusions such as `!/assets/*`) and set the
+  header there, at the cost of one Worker call per page load.
+- Worker responses get no `_headers`, so the share, summary and error pages
+  the site Worker renders read the same value from the share renderer bundle
+  (`IMAGE_POLICY`, `src/share/server.tsx`) and set it in
+  `workers/site/handler.ts`, on GET and HEAD alike.
+
+Nothing is set by hand. The hosts come from configuration the deploy already
+has:
+
+- the bucket from `B2_BUCKET` and `B2_ENDPOINT`, addressed like Go's
+  presigner: `https://{bucket}.{endpoint host}`, or the bucket's path on the
+  endpoint when `B2_FORCE_PATH_STYLE=true`. The manifest gives these three to
+  the `build` target;
+- the bank from `VITE_BANK_ASSETS_URL`, which `scripts/env/config.py` builds
+  from `BANK_ASSETS_URL`: its origin, or its path on the host when the base
+  has one (a shared host such as `f003.backblazeb2.com/file/…`);
+- reports go to the `capy-web` Sentry project's security endpoint, derived
+  from `VITE_SENTRY_DSN` and tagged with `VITE_APP_ENV`
+  (`https://{host}/api/{project}/security/?sentry_key=…&sentry_environment=…`).
+
+A `uat` or `production` build (`VITE_APP_ENV`) fails when `B2_BUCKET`,
+`B2_ENDPOINT` or `VITE_SENTRY_DSN` is empty, so a deployed policy always names
+its bucket and reports somewhere. Local and e2e builds may leave them out; a
+policy without a DSN only logs to the browser console. Each report carries the
+page's full path, so a report from a shared page includes its link token;
+Sentry scrubs those paths (§5 step 9).
+
+A new image host goes into `imagePolicy` (and its test) before any page uses
+it. To enforce, send the same value as `Content-Security-Policy` in both places
+once UAT shows no reports from the app's own pages. The HTML embed frame, the
+Office runtime and Ops keep their own policies (§2.3, `workers/office/_headers`,
+the Ops application below).
+
 ---
 
 ## 3. Origin lockdown
@@ -1048,6 +1100,17 @@ Pick one:
 6. Leave file versioning off, or set versions to expire after 1 day. With
    versioning on, the blob reaper's deletes only hide objects and storage grows
    without bound.
+7. **Read links set the response headers.** A short-lived read link asks the
+   bucket for `response-content-type` and `response-content-disposition`
+   (`blob.ReadHeaders`): the type from the key's extension, `inline` for PDF,
+   raster images and audio, `attachment` for everything else. B2 has to
+   honour both overrides, or a file comes back with the type its uploader
+   declared. Check it after each deploy that changes `server/internal/blob`
+   ([UAT checklist §5](uat-activation-checklist.md#5-data-and-money)) with a
+   GET that prints only the headers, `curl -s -o /dev/null -D - "$url"`: the
+   link is signed for GET, so a HEAD (`curl -I`) is refused with a 403. The
+   bucket also appears in the app's image policy (§2.4), so `B2_BUCKET`,
+   `B2_ENDPOINT` and `B2_FORCE_PATH_STYLE` reach the SPA build too.
 
 Do **not** put a current-object B2 lifecycle rule on `captions/` or
 `derived-text/`. Their database references and the blob reaper own cleanup;
@@ -1181,6 +1244,20 @@ re-embedding stays on the parse path and is handled later by ingest.
    behind the client-side `ignoreErrors`.
 7. Set a spend cap. Default sampling can burn a month's quota in a day during
    an incident, which is exactly when reporting must not stop.
+8. The app's image policy (§2.4) reports to `capy-web`'s security endpoint,
+   tagged by environment. Keep the project's default ignored sources for CSP
+   reports on (Settings → Security Headers: browser extensions and local
+   schemes), so extensions that inject images do not file reports. A report
+   carries the full path of the page it came from, and on a shared page
+   (`/share/{kind}/{token}`, `/w/{id}.{signature}`) that path holds the
+   link's token.
+9. Scrub share-link tokens before Sentry stores them: Settings → Security &
+   Privacy → Advanced Data Scrubbing → Add Rule, method **Replace**, data
+   type **Regex Matches**, source `$string`, regex
+   `/(?:share|p)/(?:quizzes|flashcards|notes)/[^/?#\s"]+|/w/[^/?#\s"]+`.
+   Do it once per project that receives browser reports (`capy-web`), before
+   the first deploy that sends the policy; a report from a shared page should
+   then show `[Filtered]` where the path was.
 
 ---
 
@@ -2133,13 +2210,18 @@ authentication strategy.
    `OPS_INGEST_UAT_DATABASE_URL` unset. The standalone Ops renderer requires the
    primary environment to match the deployment target (§8). Use the UAT origins in `APP_URL`, CORS, collaboration, OAuth, Sentry,
    and browser build variables. Set `COLLABORATION_UAT_PUBLICATION_HOLD=true`
-   for the Office refusal journey: collaboration then holds a publication after
-   its capture, before the handoff, while its file's name contains
+   for the Office refusal journey: collaboration then holds a publication (text
+   or Office) after its capture, before it reads the latest save, while its
+   file's name contains
    `[hold-publication]` (at most 60 s, then that publication fails with 503
    and the ingest worker retries it once). The journey sets and clears the
    marker through the file rename API, so it holds only files its actor can
    edit. It is UAT-only: the manifest scopes it to `uat`, production renders
    it blank, and the renderer refuses a production value.
+   Set `RETRIEVAL_UAT_SCRIPTED_TOOLS=true` for the chat journey's scripted
+   tool turns (`openwiki/agentic-retrieval.md`, Configuration surface); it is
+   UAT-only in the same way, and retrieval refuses to start with it unless
+   `SENTRY_ENVIRONMENT=uat`.
 6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
    following the route and hostname transition order in §1. No summary storage service is needed.
@@ -2539,8 +2621,9 @@ Clerk: its browser bundle and API calls, `img.clerk.com` avatars, the worker it
 spawns, and the Cloudflare challenge frame bot protection renders at sign-in.
 The origin comes from decoding `VITE_CLERK_PUBLISHABLE_KEY`, so it follows the
 environment; an unreadable key leaves the policy at `'self'` and the dashboard
-reports that Clerk failed to load. The SPA sends no such policy, which is why
-the same Clerk setup works there without configuration.
+reports that Clerk failed to load. The SPA sends only a report-only image
+policy (§2.4), which is why the same Clerk setup works there without
+configuration.
 
 Every hostname a stack publishes on the shared `coolify` network has to be
 unique, because Coolify's own infrastructure containers claim bare service

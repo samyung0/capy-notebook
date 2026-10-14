@@ -119,10 +119,12 @@ the donor-reuse, content-reuse and indexed exits all reach it.
   replaced, trashed or deleted meanwhile takes nothing, and the new key is
   queued for deletion at once (`blob_enqueue_deletion`), as it is when the
   update fails after the B2 write.
-- A source refresh (an edited text or Office source) publishes and ingests
-  again, so the new bytes replace the thumbnail or text preview, unless an
-  editor's browser has captured the file
-  ([Ingest after a capture](#browser-captures)).
+- A source refresh of an edited Office source publishes and ingests again, so
+  the new bytes replace the thumbnail, unless an editor's browser has captured
+  the file ([Ingest after a capture](#browser-captures)). An edited text
+  source's preview follows its saves instead
+  ([Text previews on save](#text-previews-on-save)): its refresh leaves the
+  preview alone.
 - A PDF or Office file the parse job reused from identical indexed bytes (the
   donor path, `_reuse_donor` called from the parse job in
   `pipeline/ingest/worker.py`) has no bundle, so it takes the thumbnail key of

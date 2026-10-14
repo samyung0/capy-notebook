@@ -215,16 +215,16 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
       { arguments: {}, name: 'list_sources' },
       { arguments: { query: 'launch code' }, name: 'search_workspace' },
       { arguments: { name: 'editing' }, name: 'read_skill' },
-      { arguments: { name: 'workspace_building' }, name: 'read_skill' },
+      { arguments: { name: 'note_building' }, name: 'read_skill' },
     ],
     [
       { arguments: { file_id: pdf }, name: 'read_document' },
-      // The search showed the PDF's page 1, so it may be captured.
-      { arguments: { file_id: pdf, page: 1 }, name: 'capture_page' },
       { arguments: {}, name: 'read_study_progress' },
       { arguments: {}, name: 'list_trashed_files' },
     ],
     [
+      // read_document numbered the PDF's page 1 passage, so it may be captured.
+      { arguments: { file_id: pdf, page: 1 }, name: 'capture_page' },
       {
         arguments: { content: note, kind: 'note', title: 'Scripted note' },
         name: 'create_material',
@@ -286,7 +286,7 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
   const second = await scripted(page, [
     [
       { arguments: { name: 'editing' }, name: 'read_skill' },
-      { arguments: { name: 'workspace_building' }, name: 'read_skill' },
+      { arguments: { name: 'note_building' }, name: 'read_skill' },
       {
         arguments: { target: { id: noteId, kind: 'material' } },
         name: 'inspect_document',
@@ -308,14 +308,18 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
       },
       {
         arguments: {
-          marks: 1,
-          markscheme: [{ marks: 1, text: 'Names LARCH-17.' }],
-          model_answer: 'The PDF gives the launch code LARCH-17.',
-          question:
-            'Which launch code does the PDF give, and why does it matter?',
+          questions: [
+            {
+              marks: 1,
+              markscheme: [{ marks: 1, text: 'Names LARCH-17.' }],
+              model_answer: 'The PDF gives the launch code LARCH-17.',
+              question:
+                'Which launch code does the PDF give, and why does it matter?',
+            },
+          ],
           quiz_id: quizId,
         },
-        name: 'add_open_question',
+        name: 'add_questions',
       },
       {
         arguments: {

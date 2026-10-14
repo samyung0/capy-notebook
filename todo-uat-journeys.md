@@ -429,7 +429,7 @@ fixed yet.** The fix order and open questions are in "Fix plan" below.
 - **CSV limit**: see the next section. Every CSV save re-chunks the whole table
   at the 15 s text cadence, which adds to the quadratic-chunking risk.
 
-## Fix plan (recommended 2026-10-14; paused, needs Epo's go)
+## Fix plan (recommended 2026-10-14; Epo approved all recommendations 2026-10-14, `human/` df7c54f5)
 
 1. **Note indexing, pipeline (one ingest release):**
    - give `_pipeline_source_cancellation` a note branch (workspace and owner
@@ -470,8 +470,11 @@ fixed yet.** The fix order and open questions are in "Fix plan" below.
    `d.checkpoint>=c.checkpoint`, as the heartbeat check does. Test: attach with a
    newer checkpoint for docx, xlsx, pptx and text. Land it with J3, because
    rebasing rebuilds become common.
+   Progress 2026-10-14: steps 1, 2 and 4 landed (Editor `notes` track): note jobs pass the pipeline boundary, migration 0082 releases a note when its index job ends, the alias moves only when new content is ready, a busy provider re-pends a note job like a file's, F2 attaches after newer saves. Deploy: Go (0082) first, then ingest. The recovery SQL and its precondition are in `C:/WEB/capy-harness/2026-10-06-rust-round/wave-1014/REPORT-notes-r2.md`.
 5. **Restore** (Epo's call): clear `refresh_error` in `RestoreFromTrash`.
 6. **UAT hold covers text:** run the hold before the text branch.
+
+   Progress 2026-10-14: steps 3, 5 and 6 landed (Editor `refresh` track), plus the 30 s text idle window and the step 7 docs for refresh. Deploy: Go and the collaboration server, either order, no migration. J5 should allow about 90 s for the second automatic refresh (text is now due 30 s after the last save).
 7. **Docs:**
    - `agentic-retrieval.md`: notes have no Process (with auto process off they
      wait until it is on); the vector-reuse sentence; parked notes count; the
@@ -570,3 +573,10 @@ Findings:
 The column-cap change was committed to main with everything else on
 2026-10-14. **Don't deploy it to UAT/prod before finding 1 (chunking) is fixed**:
 without the old cell cap, a large CSV can hold the shared ingest host.
+
+Progress (2026-10-14, Editor session, branch `editor/csv`): finding 1 fixed.
+Rows are one paragraph each (`CAPY_TABULAR_TEXT_VERSION` v2) and `_split_long`
+is linear. 10k rows now chunk in about 3 s. Epo picked 1–3: the 1,000-column
+cap stays, and the projection is capped at about 1M estimated tokens
+(`tabular_text_limit`, stored and not indexed, with the too-large detail).
+Tables chunk with no overlap.

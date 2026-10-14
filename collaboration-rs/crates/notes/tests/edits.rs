@@ -135,7 +135,17 @@ fn replay_step(
         _ => Ok(step["ok"].clone()),
     };
     tally.steps += 1;
-    let ours = outcome_json(&result);
+    let mut ours = outcome_json(&result);
+    // Every refused material span carries its block and a text source's
+    // ambiguous one its lines (2026-10-14); Node's carried none.
+    if step["error"].get("details").is_none()
+        && ours["error"]["message"]
+            .as_str()
+            .is_some_and(|m| m.starts_with("expected"))
+        && let Some(error) = ours["error"].as_object_mut()
+    {
+        error.remove("details");
+    }
     let theirs = if step.get("ok").is_some() {
         json!({ "ok": step["ok"] })
     } else if step.get("error").is_some() {
@@ -249,6 +259,119 @@ fn a_listing_preview_cut_inside_an_emoji_keeps_it_whole() {
     let preview = details["blocks"][0]["text"].as_str().unwrap();
     assert_eq!(preview, kept);
     assert_eq!(preview.encode_utf16().count(), 81);
+    // An inspection lists the same way (a material rebuilt since it was read).
+    let blocks = edit::inspect_material(&doc.transact()).unwrap();
+    assert_eq!(edit::listing(&blocks), details);
+}
+
+/// Refusals the agent retries carry the target as it reads now (2026-10-14):
+/// an expected text that occurs more than once comes with its block, and a
+/// stale `set_mermaid` (a set_property) with the source the diagram holds.
+#[test]
+fn ambiguous_spans_and_stale_properties_carry_the_current_target() {
+    let refusal = |value: Value, command: DocumentCommand| {
+        let doc = common::doc(&notes::slate_yjs::state_from_value(&[value], 3), 4);
+        let root = doc.get_or_insert_text(plate::CONTENT_ROOT);
+        match edit::apply_material_commands(&mut doc.transact_mut(), &root, &[command]) {
+            Err(EditError::Edit {
+                code,
+                message,
+                details,
+            }) => (json!(code), message, details),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    };
+    let text = "the cell and the cell wall";
+    assert_eq!(
+        refusal(
+            json!({ "type": "p", "id": "b1", "children": [{ "text": text }] }),
+            DocumentCommand::ReplaceText {
+                block_id: Some("b1".into()),
+                expected_text: "the cell".into(),
+                text: "a cell".into(),
+                offset: None,
+            },
+        ),
+        (
+            json!("invalid_input"),
+            "expected text occurs 2 times; include more context".to_owned(),
+            Some(json!({ "block": { "id": "b1", "text": text, "type": "p" } })),
+        )
+    );
+    let source = "graph TD\n  A --> B";
+    assert_eq!(
+        refusal(
+            json!({ "type": "mermaid", "id": "m1", "source": source, "children": [{ "text": "" }] }),
+            DocumentCommand::SetProperty {
+                node_type: "mermaid".into(),
+                property: "source".into(),
+                expected_value: "graph TD\n  A".into(),
+                value: "graph LR\n  A --> C".into(),
+            },
+        ),
+        (
+            json!("stale_target"),
+            "mermaid.source changed".to_owned(),
+            Some(json!({ "block": { "id": "m1", "text": source, "type": "mermaid" } })),
+        )
+    );
+}
+
+/// A text source's expected text that occurs more than once comes back with
+/// the lines it occurs in (`start`, the line's UTF-16 offset, as inspect
+/// pages lines), each once and at most 20, a line's text cut after 1,000
+/// characters with a trailing `…`; one not found carries nothing (Epo
+/// 2026-10-14). A long line holding thousands of occurrences is listed once
+/// and cut, so the refusal stays small.
+#[test]
+fn an_ambiguous_text_source_span_lists_the_lines_it_occurs_in() {
+    use yrs::Text as _;
+    let refusal = |text: &str, expected: &str| {
+        let doc = yrs::Doc::new();
+        let root = doc.get_or_insert_text("source");
+        root.insert(&mut doc.transact_mut(), 0, text);
+        let command = DocumentCommand::ReplaceText {
+            block_id: None,
+            expected_text: expected.into(),
+            text: "x".into(),
+            offset: None,
+        };
+        match edit::apply_text_commands(&mut doc.transact_mut(), &root, &[command]) {
+            Err(EditError::Edit {
+                message, details, ..
+            }) => (message, details),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    };
+    let (message, details) = refusal("\u{1F600} cat\nthe cat and a cat\nend", "cat");
+    assert_eq!(
+        message,
+        "expected text occurs 3 times; include more context"
+    );
+    assert_eq!(
+        details,
+        Some(json!({ "lines": [
+            { "start": 0, "text": "\u{1F600} cat" },
+            { "start": 7, "text": "the cat and a cat" },
+        ] }))
+    );
+    let long = "\u{e9}cat ".repeat(5_000);
+    let (message, details) = refusal(&format!("{long}\nend cat"), "cat");
+    assert_eq!(
+        message,
+        "expected text occurs 5001 times; include more context"
+    );
+    assert_eq!(
+        details,
+        Some(json!({ "lines": [
+            { "start": 0, "text": format!("{}\u{2026}", "\u{e9}cat ".repeat(200)) },
+            { "start": 25_001, "text": "end cat" },
+        ] }))
+    );
+    let lines = refusal(&"cat\n".repeat(25), "cat").1.unwrap()["lines"].clone();
+    assert_eq!(lines.as_array().map(Vec::len), Some(20));
+    assert_eq!(lines[19], json!({ "start": 76, "text": "cat" }));
+    assert_eq!(refusal("a cat", "dog").1, None);
 }
 
 /// A library figure arrives as an `img` naming the editor asset Go stored for

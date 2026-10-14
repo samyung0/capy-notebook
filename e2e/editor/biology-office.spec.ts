@@ -921,10 +921,11 @@ test.describe('DOCX on a phone', () => {
     expect(narrow).toBeLessThan(816);
     await resize(page, 390);
     expect(await fitted(frame)).toBeGreaterThan(narrow);
-    // Landscape, then a desktop width: still fitted, at most 100%.
+    // Landscape, then a desktop width: still fitted, at most 100%. The right
+    // rail keeps at least 400px, so 100% needs a window wider than 1280px.
     await resize(page, 844, 390);
     expect(await fitted(frame)).toBeGreaterThan(narrow);
-    await resize(page, 1280, 800);
+    await resize(page, 1440, 900);
     expect(await fitted(frame)).toBe(816);
     await resize(page, 390);
     await fitted(frame);
@@ -2378,13 +2379,13 @@ test('below lg the tools button sits 8px above the sheet tabs, the slide strip a
   await expect.poll(async () => (await tools.boundingBox())?.y).toBe(closed);
 });
 
-test('Office toolbars take the note toolbar scale: 36px rows and 28px buttons in a phone-width frame, 40px and 32px from 640px', async ({
+test('Office toolbars take the note toolbar scale: 36px rows and 30px buttons in a phone-width frame, 40px and 32px from 640px', async ({
   page,
 }) => {
   test.setTimeout(180_000);
   for (const [width, row, button, icon] of [
-    [360, 36, 28, 14],
-    [768, 40, 32, 16],
+    [360, 36, 30, 18],
+    [768, 40, 32, 18],
   ] as const) {
     await page.setViewportSize({ height: 800, width });
     await page.goto('/workspaces/ws_bio?file=bio-office-xlsx&mode=edit');

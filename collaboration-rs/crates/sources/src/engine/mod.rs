@@ -122,6 +122,8 @@ struct OkAnswer {
 struct ErrorAnswer {
     kind: FailureKind,
     message: String,
+    #[serde(default)]
+    details: Option<Value>,
     usage: Usage,
 }
 
@@ -614,6 +616,7 @@ impl Supervisor {
             return EngineError::Refused(Failure {
                 kind: FailureKind::Engine,
                 message: format!("{message}; the same call crashed a new engine process again"),
+                details: None,
             });
         }
         self.shared.remember_crash(request);
@@ -658,6 +661,7 @@ impl Supervisor {
                     Err(EngineError::Refused(Failure {
                         kind: answer.kind,
                         message: answer.message,
+                        details: answer.details,
                     })),
                     answer.usage,
                 )

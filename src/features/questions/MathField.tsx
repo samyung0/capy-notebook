@@ -302,7 +302,7 @@ export function MathField({
         'relative inline-block max-w-full align-baseline outline-2 outline-action-accent -outline-offset-2 [&_math-field::part(container)]:min-h-0 [&_math-field::part(content)]:p-0 [&_math-field::part(menu-toggle)]:hidden [&_math-field::part(virtual-keyboard-toggle)]:hidden',
         !onControlsReady &&
           !displayMode &&
-          'z-10 -my-2 -mr-9 -ml-2 py-2 pr-9 pl-2',
+          'z-10 -my-2 -mr-10.5 -ml-2 py-2 pr-10.5 pl-2',
         displayMode
           ? 'block min-h-14 text-center [&_math-field::part(container)]:px-6 [&_math-field::part(container)]:py-4 [&_math-field::part(content)]:justify-center [&_math-field]:block'
           : '[&_math-field::part(container)]:p-0'

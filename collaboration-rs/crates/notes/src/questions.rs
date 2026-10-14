@@ -56,6 +56,13 @@ impl Policy {
         }
         .filter(|host| !host.is_empty())
     }
+
+    /// Whether a figure's `{url}` (an image's or a graph's) is one this
+    /// policy keeps: hosted under its figure host. Live quiz rooms admit the
+    /// same links a stored question keeps.
+    pub fn hosted(&self, url: &str) -> bool {
+        hosted_asset(js_trim(url), self.figure_host())
+    }
 }
 
 type Check = Result<(), String>;
@@ -1278,7 +1285,6 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
             "A question has at most {QUIZ_QUESTION_PARTS_MAX} parts."
         ));
     }
-    let host = policy.figure_host();
     for block in stem.iter().chain(
         parts
             .iter()
@@ -1289,7 +1295,7 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
             continue;
         }
         let refused = match &block.image {
-            Some(("url", url)) => !hosted_asset(url, host),
+            Some(("url", url)) => !policy.hosted(url),
             Some(("assetId", _)) => policy.bank,
             _ => false,
         };

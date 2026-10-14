@@ -25,8 +25,11 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
 use sources::engine::PoolConfig;
+use sources::handoff::{Handoff, PUBLICATION_HOLD_MARKER, SourcePublish};
 use sources::text::{TEXT_ROOT, text_doc};
-use sources::{Save, SourceError, SourceRoom, Sources, SourcesConfig};
+use sources::{
+    BoxFuture, Channel, ChannelId, Rooms, Save, SourceError, SourceRoom, Sources, SourcesConfig,
+};
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, ReadTxn, StateVector, Text, Transact, Update};
 
@@ -37,6 +40,7 @@ struct Fake {
     blobs: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     uploads: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     failures: Arc<Mutex<Vec<Value>>>,
+    published: Arc<Mutex<Vec<Value>>>,
 }
 
 fn refuse(status: u16, code: &str) -> Response {
@@ -158,6 +162,10 @@ async fn route_post(
         "refresh-failure" => {
             fake.failures.lock().unwrap().push(body);
             StatusCode::NO_CONTENT.into_response()
+        }
+        "publish" => {
+            fake.published.lock().unwrap().push(body);
+            axum::Json(json!({})).into_response()
         }
         _ => StatusCode::NOT_FOUND.into_response(),
     }
@@ -283,6 +291,7 @@ async fn harness() -> Harness {
         blobs: Arc::default(),
         uploads: Arc::default(),
         failures: Arc::default(),
+        published: Arc::default(),
     };
     let app = Router::new()
         .route(
@@ -856,4 +865,118 @@ async fn an_unloaded_room_forgets_only_its_own_record() {
     assert_eq!(h.sources.known_checkpoint(&room), Some(0));
     h.sources.forget(&room, second.generation).await;
     assert_eq!(h.sources.known_checkpoint(&room), None);
+}
+
+/// No room is loaded here: a text publication never touches one.
+struct NoRooms;
+
+impl Rooms for NoRooms {
+    fn broadcast(&self, _room: &str, _payload: String) {}
+    fn channels(&self, _room: &str) -> Vec<Channel> {
+        Vec::new()
+    }
+    fn loaded(&self, _room: &str) -> bool {
+        false
+    }
+    fn set_read_only(&self, _room: &str, _channel: ChannelId) {}
+    fn restore_access(&self, _room: &str) {}
+    fn close(&self, _room: &str, _channel: Option<ChannelId>, _code: Option<u16>, _reason: &str) {}
+    fn persist(&self, _room: &str) -> BoxFuture<Result<(), String>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn busy(&self, _room: &str, _writers_only: bool) -> bool {
+        false
+    }
+    fn unload(&self, _room: &str) -> BoxFuture<()> {
+        Box::pin(async {})
+    }
+}
+
+/// UAT's publication hold covers text (Epo 2026-10-14): a text publication
+/// waits while its file's name holds the marker, then measures what was
+/// saved meanwhile as its residual.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn the_uat_hold_holds_a_text_publication_and_keeps_the_save_made_meanwhile() {
+    let h = harness().await;
+    let room = h
+        .file(
+            "text",
+            &format!("notes {PUBLICATION_HOLD_MARKER}.md"),
+            b"one",
+        )
+        .await;
+    let doc = text_doc(100);
+    h.sources.load(&room, &h.user, &doc).await.unwrap();
+    let mut durable = doc.transact().state_vector();
+    type_into(&doc, 7, 3, " two");
+    save_text(&h, &room, &doc, &mut durable).await.unwrap();
+    // A refresh captured checkpoint 1 and exported it.
+    let job = unique("job");
+    let client = h.fake.db.get().await.unwrap();
+    client
+        .execute(
+            "INSERT INTO jobs (id,type,status,payload) VALUES ($1,'source_refresh','pending',jsonb_build_object('fileId',$2::text))",
+            &[&job, &room.file_id],
+        )
+        .await
+        .unwrap();
+    client
+        .execute(
+            "INSERT INTO source_refresh_candidates (file_id,job_id,epoch,checkpoint,lease_token) VALUES ($1,$2,1,1,'lease')",
+            &[&room.file_id, &job],
+        )
+        .await
+        .unwrap();
+    h.sources
+        .export_candidate(&room.file_id, &job, None)
+        .await
+        .unwrap();
+    let redis_url = std::env::var("SOURCES_TEST_REDIS_URL").expect("SOURCES_TEST_REDIS_URL");
+    let redis = redis::Client::open(redis_url)
+        .unwrap()
+        .get_connection_manager()
+        .await
+        .unwrap();
+    let handoff = Handoff::new(
+        unique("instance"),
+        redis,
+        h.sources.clone(),
+        Arc::new(NoRooms),
+        true,
+    );
+    let input: SourcePublish = serde_json::from_value(json!({
+        "attemptId": 1,
+        "checkpoint": 1,
+        "contentHash": "hash",
+        "contentId": "content",
+        "epoch": 1,
+        "fileId": room.file_id,
+        "jobId": job,
+        "leaseToken": "lease",
+        "sourceETag": "etag-1",
+    }))
+    .unwrap();
+    let publishing = tokio::spawn({
+        let handoff = handoff.clone();
+        async move { handoff.publish(&input).await }
+    });
+    // Held: an unheld publication would have reached the gateway by now.
+    tokio::time::sleep(Duration::from_millis(1500)).await;
+    assert!(h.fake.published.lock().unwrap().is_empty());
+    type_into(&doc, 7, 7, " three");
+    assert_eq!(save_text(&h, &room, &doc, &mut durable).await.unwrap(), 2);
+    client
+        .execute(
+            "UPDATE files SET name='notes.md' WHERE id=$1",
+            &[&room.file_id],
+        )
+        .await
+        .unwrap();
+    publishing.await.unwrap().unwrap();
+    let published = h.fake.published.lock().unwrap().clone();
+    assert_eq!(published.len(), 1, "{published:?}");
+    assert_eq!(published[0]["expectedLatestCheckpoint"], 2);
+    assert_eq!(published[0]["pendingEffects"][0]["after"], " three");
+    assert!(published[0]["netTokens"].as_i64().unwrap() > 0);
 }

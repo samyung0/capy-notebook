@@ -11,9 +11,11 @@ import (
 // note dirty when its content changes (see ProjectMaterialContent and
 // UpdateMaterial); the collaboration scheduler calls RequestMaterialIndex for
 // dirty notes that have been idle; the ingest worker fetches the note's text
-// through MaterialIndexText, writes rag_material_contents and clears
-// index_job_id when it is done. Standalone notes have no workspace and are
-// never indexed.
+// through MaterialIndexText and writes rag_material_contents. When the job
+// ends, the trigger on jobs (migrations 0082, 0083) clears index_job_id: a job
+// that failed with no edit since admission parks the note (dirty, index_error)
+// until its next edit, and an edit made while the job ran keeps it due.
+// Standalone notes have no workspace and are never indexed.
 
 // noteIndexDirtySQL is the SET fragment a content write appends: a workspace
 // note becomes dirty (keeping an earlier dirty mark) and forgets its last

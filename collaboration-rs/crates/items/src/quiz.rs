@@ -1441,6 +1441,14 @@ fn refuse<T>(what: impl Into<String>) -> Result<T, String> {
     Err(format!("a quiz cannot hold {}", what.into()))
 }
 
+/// A figure link (an image's or a graph's `{url}`) a live quiz room admits:
+/// blank while its upload is pending, else one a stored question keeps
+/// (hosted under the policy's figure host, `BANK_ASSETS_URL`).
+fn figure_url(url: &str, policy: &Policy) -> bool {
+    url.is_empty()
+        || (url.encode_utf16().count() <= q::QUESTION_ASSET_URL_MAX && policy.hosted(url))
+}
+
 fn one_any(content: &ItemContent) -> Option<&Any> {
     match content {
         ItemContent::Any(values) if values.len() == 1 => values.first(),
@@ -1497,7 +1505,9 @@ fn whole_marks(content: &ItemContent) -> bool {
 }
 
 /// What one update adds, which texts it types into and which lists it grows.
-struct Tally {
+struct Tally<'a> {
+    /// The figure host links must be under ([figure_url]).
+    policy: &'a Policy,
     growth: Growth,
     /// Full path of a text (its container keys) to the UTF-16 units added.
     typed: HashMap<Vec<Arc<str>>, u64>,
@@ -1513,7 +1523,7 @@ struct Tally {
 /// A block's type and its figure value, as an update writes them.
 type Figure = (Option<String>, Option<Any>);
 
-impl Tally {
+impl Tally<'_> {
     fn structure(&mut self, bytes: u64) {
         self.growth.bytes += bytes;
         self.growth.nodes += 1;
@@ -1563,11 +1573,11 @@ fn block_shape(
             Some(Any::Map(image))
                 if image.len() == 1
                     && (matches!(image.get("assetId"), Some(Any::String(id)) if id.chars().count() <= q::QUESTION_ID_MAX)
-                        || matches!(image.get("url"), Some(Any::String(url)) if url.encode_utf16().count() <= q::QUESTION_ASSET_URL_MAX)) =>
+                        || matches!(image.get("url"), Some(Any::String(url)) if figure_url(url, tally.policy))) =>
             {
                 tally.value(content)
             }
-            _ => return refuse("an image that is not {assetId} or {url}"),
+            _ => return refuse("an image that is not {assetId} or a hosted {url}"),
         },
         // A chart, plot or graph is one value, written at its dialog's Done
         // (D8); its caps depend on the block's type, read after the walk.
@@ -1922,10 +1932,16 @@ fn part_counts<T: ReadTxn>(txn: &T) -> (u64, u64) {
 /// content and its full path, tallied.
 type Shape = fn(&[&str], Option<&str>, &ItemContent, &[Arc<str>], &mut Tally) -> Result<(), String>;
 
-fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growth, String> {
+fn admit<T: ReadTxn>(
+    txn: &T,
+    incoming: &Incoming,
+    shape: Shape,
+    policy: &Policy,
+) -> Result<Growth, String> {
     let state = txn.state_vector();
     let mut locator = Locator::new(txn, incoming);
     let mut tally = Tally {
+        policy,
         growth: Growth::default(),
         typed: HashMap::new(),
         added: HashMap::new(),
@@ -1961,7 +1977,15 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
             .clone()
             .or_else(|| held.as_ref().and_then(|block| any_at(txn, block, "value")));
         if let (Some(kind), Some(value @ Any::Map(_))) = (kind, value) {
-            notes::questions::figure_caps(&kind, &any_json(&value)).or_else(refuse)?;
+            let value = any_json(&value);
+            notes::questions::figure_caps(&kind, &value).or_else(refuse)?;
+            if kind == "graph"
+                && value["image"]["url"]
+                    .as_str()
+                    .is_some_and(|url| !figure_url(url, policy))
+            {
+                return refuse("a graph image that is not a hosted {url}");
+            }
         }
     }
     // A text, a list or the quiz's part counts that may pass a cap send the
@@ -2009,13 +2033,21 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
 /// its shape and its value caps, and bounds what it adds: a text's length and
 /// a list's count are held plus added against their caps, and only one that
 /// may pass its cap goes to the exact check.
-pub fn admit_content<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Growth, String> {
-    admit(txn, incoming, content_shape)
+pub fn admit_content<T: ReadTxn>(
+    txn: &T,
+    incoming: &Incoming,
+    policy: &Policy,
+) -> Result<Growth, String> {
+    admit(txn, incoming, content_shape, policy)
 }
 
 /// The same for the keys document.
-pub fn admit_keys<T: ReadTxn>(txn: &T, incoming: &Incoming) -> Result<Growth, String> {
-    admit(txn, incoming, keys_shape)
+pub fn admit_keys<T: ReadTxn>(
+    txn: &T,
+    incoming: &Incoming,
+    policy: &Policy,
+) -> Result<Growth, String> {
+    admit(txn, incoming, keys_shape, policy)
 }
 
 fn chars(text: &str) -> usize {

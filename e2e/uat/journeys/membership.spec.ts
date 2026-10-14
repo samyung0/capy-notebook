@@ -237,7 +237,10 @@ test('membership: an editor demoted to viewer has open note and Office editors t
     'SELECT template FROM email_outbox WHERE user_id=%s OR to_email=%s',
     [member.id, member.email]
   );
-  assert(mail.every((row) => row.template === 'workspace-invite'));
+  assert.deepEqual(
+    mail.map((row) => row.template),
+    ['workspace-invite']
+  );
   const notifications = object(await api(member, '/api/notifications'))
     .items as unknown[];
   expect(

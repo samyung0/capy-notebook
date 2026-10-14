@@ -1012,7 +1012,7 @@ Indexing tab lists the change as failed.
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
-| `tabular_text_limit` | Characters of rendered CSV/TSV row text | 64 Mi | No |
+| `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |
 
 ### Provider source imports
 
@@ -1102,10 +1102,23 @@ performs the planned work:
   prompt asks for every visible label, table cell, number, unit, formula,
   diagram relationship, and uncertainty rather than a short visual summary;
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
-  row text with explicit field names. Formulas remain literal source values.
-  The file stops before parsing when it has more than 100,000 delimiter bytes
-  (counted in the raw bytes, so quoted delimiters count too), and while
-  rendering when the row text passes 64 Mi characters (see Ingest limits).
+  row text with explicit field names (`Row N: Header=value | …`), one paragraph
+  per row, so the chunker packs whole rows and never splits a table-sized
+  block. Tables chunk with no overlap (`chunk_markdown(…, overlap_tokens=0)`):
+  every row carries its own headers, so a carried row would only repeat. A
+  row longer than the chunk budget is still cut by `_split_long`, and its
+  tail chunk has no `Row N` label.
+  Whitespace inside a cell, line breaks included, collapses to one space.
+  Formulas remain literal source values. A row stops before it is parsed
+  when it holds 1,000 or more raw delimiters (quoted ones count too), and
+  rendering stops once the row text passes about 1M estimated tokens, before
+  anything is chunked or embedded (see Ingest limits). A table at the cap is
+  2,500 to 5,000 chunks: about 2,700 for 11 short columns, and one chunk per
+  row once a row passes half the 400-token budget.
+  `CAPY_TABULAR_TEXT_VERSION` (v2) names this row text in the
+  pipeline identity, so after a bump an upload or reprocess chunks the table
+  again instead of reusing a donor's old chunks; tables already indexed keep
+  theirs until they are reprocessed.
 
 Image captions use the containing-resource associations described below.
 
@@ -1245,11 +1258,15 @@ raise it to `high` or `max`.
 `pipeline/retrieval/chunking.py`:
 
 - Groups blocks under the heading hierarchy (`text_level` or markdown `#`).
-- Packs by estimated-token budget (`CAPY_CHUNK_TOKENS` 400, overlap 50, min 40;
-  `estimate_tokens` counts ~4 Latin characters or 1 CJK character per token)
+- Packs by estimated-token budget (`CAPY_CHUNK_TOKENS` 400, overlap 50 except
+  0 for CSV/TSV tables, min 40; `estimate_tokens` counts ~4 Latin characters or 1 CJK character per token)
   without splitting a block unless one block alone exceeds the target. Packing
   by characters made a Chinese chunk carry ~4x the tokens of an English one,
-  so five CJK hits alone filled the tool-output cap.
+  so five CJK hits alone filled the tool-output cap. A block over the target
+  is cut at the last sentence end or line break in each window (`_split_long`),
+  looking at most `4 × CAPY_CHUNK_TOKENS + 1` characters ahead, so the split is
+  linear in the block's length: it used to re-estimate and copy the whole
+  remainder per cut, quadratic on one long paragraph.
 - Flattens parser table HTML to one pipe-separated line per row
   (`flatten_table`): cell text and order survive, `rowspan`/`colspan`
   attributes and embedded `<img>` tags do not. On the lab corpus that markup
@@ -2847,7 +2864,9 @@ code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 The model reads only the message and any help text, so each refusal names its
 reason (2026-10-14): a create by someone who lost the editor role is refused
 as `lifecycle_rejected`, a note edit whose converted blocks fail the document
-check as `invalid_input` naming the rule, a source edit whose checkpoint would
+check as `invalid_input` naming the rule, as does one whose whole result fails
+the collaboration service's note check (an eleventh interactive block across
+the note; `compute` in `collaboration-rs/crates/server/src/edits.rs`), a source edit whose checkpoint would
 be over its byte limit (authority 413) as `quota_rejected`, and the
 authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
 `undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). A
@@ -3078,9 +3097,26 @@ missed target comes back as it is now, in the refusal's `details`, which Go
 passes through unchanged and the pipeline gives the model only
 (`ToolResult.detail`; the stored error stays the short message): a
 `stale_target` from `replace_text`, `remove_block` or `replace_block` carries
-the block's current text (shown up to 2,000 characters), and an id that is
-gone carries the material's first 60 blocks with an 80-character preview and
-the total. The pipeline keeps what this turn last inspected or wrote of each
+the block's current text (shown up to 2,000 characters), as does every other
+refused `replace_text` span (an expected text occurring more than once, an
+empty or overlong one; 2026-10-14), a stale `set_mermaid` carries the source
+the diagram holds as its block's text, and an id that is gone carries the
+material's first 60 blocks with an 80-character preview and the total, as
+does an edit of a material rebuilt since it was read (its room schema moved,
+`edit::listing`). A text source's expected text that occurs more than once
+carries `lines`, the lines its occurrences start in (`{start, text}`, the
+line's UTF-16 offset as `inspect_document` pages lines; each line once, at
+most 20, its text cut after 1,000 characters with a trailing `…`, so a
+refusal stays far below Go's 8 MiB read), and one not found carries nothing
+(Epo 2026-10-14;
+`occurrence_lines` in `crates/notes/src/edit.rs`, through the sources
+crate's refusal). A DOCX or PPTX `replace_text` whose expected text is not
+in the paragraph, occurs in it more than once, or is empty in a paragraph
+with text carries the paragraph in `details.block` (`type: "paragraph"`, its
+text as `inspect_document` shows it), and a stale XLSX `set_cell` carries
+the cell (`type: "cell"`, its inspect entry id and value) unless it is empty
+(Epo 2026-10-14, the fork's `office-service`, see
+[Office files](frontend/office-files.md)). The pipeline keeps what this turn last inspected or wrote of each
 block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
 adds "changed since you last saw it" when the block differs. An insert whose
 `after_block_id` is gone is not refused (decision 2026-10-09): when the same
@@ -3237,8 +3273,26 @@ inserts one `ingest` job carrying `materialId`, and records it in
 `index_job_id`; 409 means not due. A refusal a retry cannot fix (another
 4xx, such as exhausted credits) is parked in `index_error` and shows as
 `pendingNotes` in workspace settings until the note changes again; transient
-failures retry on the next tick. A job whose worker died is failed by the
-lease reaper, which parks the note the same way.
+failures retry on the next tick. Notes have no Process: with `auto_process`
+off, dirty notes wait until it is on again.
+
+When the job ends, whatever ended it (the worker, the lease reaper,
+`cancel_pipeline_jobs` from a lifecycle fence, `cancel_user_async_work` on an
+account-deletion request), the `jobs_release_note_index` trigger (migration
+0082, its function replaced by 0083) releases the note. Admission clears the
+dirty mark, so a mark present when the job ends means an edit landed while it
+ran: whether the job finished or failed, the note is then left dirty with no
+error and is due again. A done job clears `index_job_id` and `index_error`. A
+job that failed with no edit since its admission parks the note: it stays
+dirty with `index_error` set (the job's error, or `index job failed` when it
+has none) and counts in `pendingNotes`, and nothing admits it again until its
+next edit clears the error. The one wait before that
+is a busy embedding provider: like a file's job, a note job that finds it busy
+re-pends without spending an attempt (up to 5 waits, `PROVIDER_WAITS_MAX`;
+Retry-After or 30 s doubling) and fails only after that; otherwise there is no
+automatic re-admission or backoff. A note parked by a lifecycle cancellation
+(an account-deletion request, a suspension) stays parked after the account is
+restored or unsuspended, until an edit.
 
 The ingest worker branches on `materialId`: it fetches the note's
 markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`
@@ -3246,11 +3300,19 @@ markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId
 (`materialdoc.ExtractIndexText`: headings keep their level, list items their
 bullets, table rows their cells, code its fence; references, diagrams and
 media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
-so a note never shares a content row with a file of identical text, reuses
-vectors for unchanged chunk text from the note's previous content row (read
-before the alias moves), writes the content with no descriptor,
-and clears `index_job_id`. A 404 from Go (trashed,
-standalone, deleted) ends the job without work.
+so a note never shares a content row with a file of identical text, and
+claims a new content row without moving the alias. It reuses vectors for
+unchanged chunk text from the note's previous content row, which stays
+aliased and searchable while the job runs, and writes the content with no
+descriptor. `publish_material_content` then marks the new row ready and moves
+the alias in one transaction, and the orphan trigger drops the old row. A
+failed job abandons its claimed row, so the note keeps its previous index. The
+attempt records `chunks_created` and, in `details`, `chunks_embedded`. A 404
+from Go (trashed, standalone, deleted) ends the job without work. The job's
+source boundary (heartbeat, claim fence and provider admission,
+`_pipeline_source_cancellation`) is the workspace and its owner's account
+lifecycle; a note job has no file or revision, and one trashed mid-job still
+finishes (search hides it by `trashed_at`).
 
 Search runs one pool: the `scoped_files` CTE unions files and notes with a
 `kind` column, the per-resource cap counts a note like a file, and a note
@@ -3340,8 +3402,9 @@ candidate without changing the readable `files` row or `rag_file_contents` alias
 The workspace owner funds automatic refresh: provider calls only, since the
 parser page fee applies to a file's first parse (the job payload's `parseFee`;
 see observability-metering). One workspace switch, `auto_process` (default true, "Auto process edits"),
-gates every automatic Office reparse, text reindex and note index; off, edits
-wait for the owner's Process.
+gates every automatic Office reparse, text reindex and note index; off, file
+edits wait for the owner's Process, and notes, which have no Process, wait
+until the switch is on again.
 Office effects keep only the changed span plus 40 characters on each side
 (`trimEffect`; `…` marks a cut, and a cut never splits a surrogate pair), so net
 tokens count those excerpts. Net tokens measure editing, not context size: the
@@ -3355,15 +3418,19 @@ tokens in `effectTokens`. Office requires a successful prior parse and 60
 seconds idle, and is due at 3,000 net tokens or once saved changes have had no
 edit for 7 days; the scheduler query (`OFFICE_REFRESH_*`) and Go admission
 (`officeRefresh*`) hold the same constants, and the Go store tests run the
-scheduler's SQL from `sourceDocuments.ts` against them. Text batches every 15
-seconds without a minimum or indefinite typing delay. The scheduler, like Go
+scheduler's SQL from `collaboration-rs/crates/sources/src/refresh.rs` against
+them. A text source is due once its saves have paused 30 seconds (Go's
+`textRefreshIdle`, the note projection's idle; Epo 2026-10-14), so it
+re-indexes after a pause rather than every few seconds while someone types. The
+scheduler, like Go
 admission, skips a change list worth no tokens, except an Office list of moves
 only, which publishes through the 7-day rule, and takes files oldest first by the
 later of `last_edited_at` and `last_refresh_requested_at`. A refused automatic
 admission stores `refresh_error` and the scheduler skips the file until its
 next save, except a 429 (the owner at the concurrent ingest-job limit), which
 stamps `last_refresh_requested_at` instead so the file retries behind the other
-due files. A file has one running candidate and one
+due files. Each 5 s pass then claims and exports the two oldest claimable
+refreshes (`EXPORT_JOBS_SQL`). A file has one running candidate and one
 coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
 state intact and exposes manual processing.
@@ -3377,7 +3444,12 @@ indexing) or failed (`refresh_error`). A maintenance republish is left out.
 back out of the queue (`CancelSourceRefresh`: the job is superseded, its
 reservation released and `desired_manual` cleared); a claimed refresh answers
 `processing_started` and runs to the end. The edits stay, so automatic
-processing may queue them again; the switches turn that off.
+processing may queue them again; the switches turn that off. An epoch reset or
+a restore from the trash supersedes the refresh captured under the old epoch,
+claimed or not, so none is left to fail its claim forever and hold an export
+slot; a restore also clears the `source deleted` error the trash left, so the
+restored file's saved edits queue again
+([Office files](frontend/office-files.md)).
 
 Publication rechecks source epoch/base, current attempt/lease and candidate
 identity under the source lock. Collaboration passes the file ID in the gateway
@@ -3472,6 +3544,7 @@ current chunk, with full coverage in the large-document reduction path.
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
+| UAT scripted tool turns | `RETRIEVAL_UAT_SCRIPTED_TOOLS` | UAT only, exactly `true` or unset; a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`, and the renderer refuses it outside `uat`. With it on, a chat message starting `[uat-scripted-tools]` followed by JSON steps (`retrieval/scripted.py`) replaces the model's responses: each step's tool calls still run through `tools.run` with the role's operations, contract validation and the skills gate, and a string step is the answer. With it off the marker is plain text. The UAT chat journey uses it so tool coverage is deterministic and free. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.
 `pipeline.use_compatible_event_loop()` is called by both entrypoints and by the

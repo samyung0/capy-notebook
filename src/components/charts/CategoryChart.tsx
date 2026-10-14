@@ -1,5 +1,6 @@
 import type { ComponentType, ReactNode } from 'react';
 import type { ChartBlock } from '@/features/questions/types';
+import { EMPTY_VALUE } from './emptyValue';
 
 export type ChartData = Omit<ChartBlock, 'type'> & {
   illustrative?: boolean;
@@ -41,8 +42,6 @@ export const format = (value: number) =>
   Math.abs(value) >= 1000
     ? value.toLocaleString(undefined, { maximumFractionDigits: 0 })
     : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
-/** An empty chart cell (null) in text: tooltips and values tables. */
-export const EMPTY_VALUE = '–';
 
 /** A series' runs of consecutive values, empty cells breaking a line. */
 function runs(values: (number | null)[]) {

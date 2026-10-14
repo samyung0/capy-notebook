@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/models"
 	"github.com/samyung0/capy-notebook/server/migrations"
 )
@@ -307,9 +308,14 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		t.Fatalf("scheduler trigger %d/%s/%s differs from Go admission (err %v)", tokens, idle, stale, err)
 	}
 
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
 	owner := newBlobTestUser(t, s, "source_scheduler")
-	edited := func(netTokens int, ago, effects string) string {
-		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+	editedAs := func(name, kind string, netTokens int, ago, effects string) string {
+		_, file := sourceTestFile(t, s, owner, name, kind)
 		sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "edited-state")
 		if _, err := s.pool.Exec(ctx, `UPDATE files SET ever_parsed_successfully=true WHERE id=$1`, file.ID); err != nil {
 			t.Fatal(err)
@@ -318,6 +324,9 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 			t.Fatal(err)
 		}
 		return file.ID
+	}
+	edited := func(netTokens int, ago, effects string) string {
+		return editedAs("lesson.docx", "doc", netTokens, ago, effects)
 	}
 	due := edited(3000, "2 minutes", "")
 	// An empty change list (edits that only shifted entries): Go refuses it.
@@ -330,13 +339,20 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, failed); err != nil {
 		t.Fatal(err)
 	}
+	// Text is due once its saves pause 30 s (textRefreshIdle), however long
+	// ago its last refresh was requested.
+	textPaused := editedAs("notes.txt", "txt", 5, "31 seconds", "")
+	textTyping := editedAs("notes.txt", "txt", 5, "1 hour", "")
+	if _, err := s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at=now()-interval '20 seconds' WHERE file_id=$1`, textTyping); err != nil {
+		t.Fatal(err)
+	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
 	// Only this test's rows compete for the batch; the rollback restores the rest.
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited, failed}); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited, failed, textPaused, textTyping}); err != nil {
 		t.Fatal(err)
 	}
 	candidates := func() []string {
@@ -361,15 +377,25 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		}
 		return files
 	}
-	if got := candidates(); !slices.Equal(got, []string{reordered, unedited, due}) {
-		t.Fatalf("candidates %v, want the reordered file, the unedited one, then the due one", got)
+	if got := candidates(); !slices.Equal(got, []string{reordered, unedited, due, textPaused}) {
+		t.Fatalf("candidates %v, want the reordered file, the unedited one, the due one, then the paused text", got)
 	}
 	// A 429 (owner at the ingest-job limit) rotates the file behind the others.
 	if _, err = tx.Exec(ctx, deferSQL, unedited); err != nil {
 		t.Fatal(err)
 	}
-	if got := candidates(); !slices.Equal(got, []string{reordered, due, unedited}) {
+	if got := candidates(); !slices.Equal(got, []string{reordered, due, textPaused, unedited}) {
 		t.Fatalf("candidates after a 429 %v, want the refused file last", got)
+	}
+	if err = tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	// Go admission waits for the same pause.
+	if _, err = s.RequestSourceRefresh(ctx, owner, textTyping, true); !errors.Is(err, ErrConflict) {
+		t.Fatalf("automatic text refresh while saves continue: %v", err)
+	}
+	if _, err = s.RequestSourceRefresh(ctx, owner, textPaused, true); err != nil {
+		t.Fatalf("automatic text refresh after saves paused: %v", err)
 	}
 }
 
@@ -921,6 +947,232 @@ func TestSourceEpochResetKeepsTheSaveAndRetiresTheOldEpoch(t *testing.T) {
 	}
 }
 
+// An epoch reset or a restore from the trash supersedes the refresh captured
+// under the old epoch, Office and text alike (Epo 2026-10-14): the job, its
+// candidate and provider session close with no refresh_error, and the saved
+// edits are due again, so a new refresh captures the new epoch and is claimed.
+func TestSourceEpochResetSupersedesItsRefresh(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "epoch_reset_refresh")
+	edited := func(t *testing.T, name, kind string) SourceSession {
+		t.Helper()
+		_, file := sourceTestFile(t, s, owner, name, kind)
+		return sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "saved")
+	}
+	admitted := func(t *testing.T, doc SourceSession) string {
+		t.Helper()
+		job, err := s.RequestSourceRefresh(ctx, owner, doc.FileID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return job.JobID
+	}
+	reset := func(t *testing.T, doc SourceSession) {
+		t.Helper()
+		if moved, err := s.ResetSourceEpoch(ctx, doc.FileID, SourceEpochReset{Epoch: doc.Epoch}); err != nil || !moved {
+			t.Fatalf("reset moved=%v err=%v", moved, err)
+		}
+	}
+	superseded := func(t *testing.T, doc SourceSession, jobID string) {
+		t.Helper()
+		var status, detail, session string
+		var running, refreshError *string
+		var candidates int
+		if err := s.pool.QueryRow(ctx, `SELECT j.status,COALESCE(j.error,''),COALESCE(ps.status,''),d.running_job_id,d.refresh_error,(SELECT count(*) FROM source_refresh_candidates c WHERE c.file_id=d.file_id) FROM jobs j JOIN source_documents d ON d.file_id=j.payload->>'fileId' LEFT JOIN provider_sessions ps ON ps.id=j.payload->>'reservationId' WHERE j.id=$1`, jobID).Scan(&status, &detail, &session, &running, &refreshError, &candidates); err != nil {
+			t.Fatal(err)
+		}
+		if status != "failed" || detail != "Editing moved to a new epoch" || session != "released" || running != nil || refreshError != nil || candidates != 0 {
+			t.Fatalf("after the epoch moved: job %s %q, session %q, running %v, refresh_error %v, %d candidates", status, detail, session, running, refreshError, candidates)
+		}
+		next, err := s.RequestSourceRefresh(ctx, owner, doc.FileID, false)
+		if err != nil || next.JobID == jobID {
+			t.Fatalf("refresh after the epoch moved: %+v %v", next, err)
+		}
+		if candidate, err := s.ClaimSourceRefresh(ctx, doc.FileID, next.JobID); err != nil || candidate.Epoch != doc.Epoch+1 {
+			t.Fatalf("claim after the epoch moved: %+v %v", candidate, err)
+		}
+	}
+	for _, format := range []struct{ name, kind string }{{"lesson.docx", "doc"}, {"notes.txt", "txt"}} {
+		t.Run("queued "+format.name, func(t *testing.T) {
+			doc := edited(t, format.name, format.kind)
+			job := admitted(t, doc)
+			reset(t, doc)
+			superseded(t, doc, job)
+		})
+	}
+	t.Run("expired claim", func(t *testing.T) {
+		doc := edited(t, "lesson.docx", "doc")
+		job := admitted(t, doc)
+		if _, err := s.ClaimSourceRefresh(ctx, doc.FileID, job); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := s.pool.Exec(ctx, `UPDATE jobs SET lease_expires_at=now()-interval '1 second' WHERE id=$1`, job); err != nil {
+			t.Fatal(err)
+		}
+		reset(t, doc)
+		superseded(t, doc, job)
+	})
+	// The exporter still running learns at its next step; its failure report
+	// finds no candidate and parks nothing.
+	t.Run("live claim", func(t *testing.T) {
+		doc := edited(t, "lesson.docx", "doc")
+		job := admitted(t, doc)
+		candidate, err := s.ClaimSourceRefresh(ctx, doc.FileID, job)
+		if err != nil {
+			t.Fatal(err)
+		}
+		reset(t, doc)
+		if err = s.FailSourceRefresh(ctx, doc.FileID, job, candidate.LeaseToken, "Source candidate changed", false); !errors.Is(err, ErrConflict) {
+			t.Fatalf("the superseded exporter's failure: %v", err)
+		}
+		superseded(t, doc, job)
+	})
+	// A maintenance refresh of a trashed file, captured before the restore.
+	t.Run("restore", func(t *testing.T) {
+		doc := edited(t, "lesson.docx", "doc")
+		trashed, err := s.TrashFile(ctx, owner, doc.FileID, AgentOperation{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		job, err := s.requestSourceRefresh(ctx, owner, doc.FileID, false, models.PaidBySystem, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = s.RestoreTrashed(ctx, owner, agenttools.KindSourceFile, doc.FileID, trashed.Effect.TrashEpisodeID, AgentOperation{}); err != nil {
+			t.Fatal(err)
+		}
+		superseded(t, doc, job.JobID)
+	})
+}
+
+// Superseded refreshes leave the export queue: two stale jobs ahead of a
+// fresh one never fill both of the export pass's slots (the collaboration
+// service's EXPORT_JOBS_SQL, run verbatim).
+func TestStaleRefreshesNeverHoldTheExportQueue(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "stale_export_queue")
+	var docs []SourceSession
+	var jobs []string
+	for range 3 {
+		_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+		doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "saved")
+		job, err := s.RequestSourceRefresh(ctx, owner, file.ID, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		docs, jobs = append(docs, doc), append(jobs, job.JobID)
+	}
+	for _, doc := range docs[:2] {
+		if _, err = s.ResetSourceEpoch(ctx, doc.FileID, SourceEpochReset{Epoch: doc.Epoch}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	exportSQL := schedulerSource(t, `(?s)const EXPORT_JOBS_SQL: &str = "(.*?)";`)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	// Only this test's jobs compete for the slots; the rollback restores the rest.
+	if _, err = tx.Exec(ctx, `UPDATE jobs SET status='done' WHERE type='source_refresh' AND status IN ('pending','running') AND NOT id=ANY($1)`, jobs); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := tx.Query(ctx, exportSQL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var exported []string
+	for rows.Next() {
+		var job, file string
+		var handoff bool
+		if err = rows.Scan(&job, &file, &handoff); err != nil {
+			t.Fatal(err)
+		}
+		exported = append(exported, job)
+	}
+	if err = rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(exported, jobs[2:]) {
+		t.Fatalf("exported %v, want only the fresh refresh %s", exported, jobs[2])
+	}
+}
+
+// A restore clears the refresh_error the trash's cancellation left, so the
+// saved edits queue again without another edit; any other error stays
+// (Epo 2026-10-14).
+func TestRestoreClearsTheTrashsRefreshError(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "restore_refresh_error")
+	_, file := sourceTestFile(t, s, owner, "notes.txt", "txt")
+	sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "saved")
+	if _, err = s.RequestSourceRefresh(ctx, owner, file.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	refreshError := func() string {
+		t.Helper()
+		var detail *string
+		if err := s.pool.QueryRow(ctx, `SELECT refresh_error FROM source_documents WHERE file_id=$1`, file.ID).Scan(&detail); err != nil {
+			t.Fatal(err)
+		}
+		if detail == nil {
+			return ""
+		}
+		return *detail
+	}
+	trashAndRestore := func(want string) {
+		t.Helper()
+		trashed, err := s.TrashFile(ctx, owner, file.ID, AgentOperation{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := refreshError(); got != want {
+			t.Fatalf("trashed: refresh_error %q, want %q", got, want)
+		}
+		if _, err = s.RestoreTrashed(ctx, owner, agenttools.KindSourceFile, file.ID, trashed.Effect.TrashEpisodeID, AgentOperation{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The trash cancels the refresh in flight as failed.
+	trashAndRestore("source deleted")
+	if got := refreshError(); got != "" {
+		t.Fatalf("restored: refresh_error %q", got)
+	}
+	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at=now()-interval '31 seconds' WHERE file_id=$1`, file.ID); err != nil {
+		t.Fatal(err)
+	}
+	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, true)
+	if err != nil {
+		t.Fatalf("automatic refresh of the restored edits: %v", err)
+	}
+	if _, err = s.pool.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY[$1::text],'failed','source_refresh','source_refresh_failed','boom')`, job.JobID); err != nil {
+		t.Fatal(err)
+	}
+	trashAndRestore("boom")
+	if got := refreshError(); got != "boom" {
+		t.Fatalf("restore changed another refresh error: %q", got)
+	}
+}
+
 func TestPDFAnnotationsArePrivateAndBoundToSource(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -981,8 +1233,8 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	}
 	s.SetModelRegistry(reg)
 	doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "state-b")
-	// Text admission is periodic even while the last edit is recent.
-	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET last_refresh_requested_at=now()-interval '16 seconds' WHERE file_id=$1`, file.ID); err != nil {
+	// Text admission waits for saves to pause.
+	if _, err = s.pool.Exec(ctx, `UPDATE source_documents SET last_edited_at=now()-interval '31 seconds' WHERE file_id=$1`, file.ID); err != nil {
 		t.Fatal(err)
 	}
 	job, err := s.RequestSourceRefresh(ctx, owner, file.ID, true)

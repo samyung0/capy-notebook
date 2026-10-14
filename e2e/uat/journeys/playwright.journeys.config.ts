@@ -18,7 +18,6 @@ export default defineConfig({
   globalSetup: path.join(directory, 'preflight.ts'),
   globalTeardown: path.join(directory, 'cleanup.ts'),
   globalTimeout: 90 * 60_000,
-  maxFailures: 1,
   outputDir: path.join(directory, 'test-results'),
   projects: [{ name: 'uat-journeys-chromium', use: devices['Desktop Chrome'] }],
   reporter: 'list',

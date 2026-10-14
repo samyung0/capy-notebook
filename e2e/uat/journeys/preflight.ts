@@ -169,6 +169,7 @@ export default async function preflight() {
     'basic/notes.txt',
     'basic/digital.pdf',
     'basic/column-limit.csv',
+    'toc/report.docx',
     'rich-content/exchange-plan.docx',
     'rich-content/course-guide.xlsx',
     'rich-content/lecture.pptx',

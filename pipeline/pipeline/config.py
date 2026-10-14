@@ -253,7 +253,8 @@ class Config:
 
     # Shape of deterministic CSV/TSV row text. Bump to keep donor reuse honest
     # if header inference or row formatting changes.
-    tabular_text_version: str = _env("CAPY_TABULAR_TEXT_VERSION", "v1")
+    # v2: one paragraph per row; whitespace inside a cell collapsed to a space.
+    tabular_text_version: str = _env("CAPY_TABULAR_TEXT_VERSION", "v2")
 
 
 cfg = Config()

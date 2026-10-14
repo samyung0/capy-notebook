@@ -166,6 +166,19 @@ a different Clerk instance than the gateway's secret key.
 
 - Uploads land in the UAT bucket, not production. Check the bucket name in the
   Coolify variables against `deploy/.env.uat`.
+- B2 honours a read link's response overrides
+  ([deployment runbook §4](deployment-runbook.md#4-backblaze-b2) step 7). Upload
+  a `.html` file, a `.svg` and a PDF, and read the headers of the `url` that
+  `/api/files/{id}/links` returns for each with a GET,
+  `curl -s -o /dev/null -D - "$url"` (the link is signed for GET, so
+  `curl -I` gets a 403): the HTML answers
+  `Content-Type: application/octet-stream` and
+  `Content-Disposition: attachment`, the SVG `image/svg+xml` and `attachment`,
+  the PDF `application/pdf` and `inline`. The PDF, image and audio viewers
+  still open their files, and the SVG still shows in the image viewer.
+  Download original on the HTML file saves it instead of opening it. Any other
+  type or a missing disposition means B2 ignored the overrides: stop and tell
+  the Editor session.
 - `user_storage` moves after an upload and after a delete. Quota accounting is
   described in [`backend-storage-quota.md`](backend-storage-quota.md).
 - `APP_URL` is `https://app.uat.capynotebook.com`. Stripe returns and product email
@@ -225,9 +238,29 @@ Clerk development instance. Point a local gateway at the UAT database only with
   A note's interactive HTML block renders, in the app and on a signed-out
   `/share/notes/…` page. Set up in
   [deployment-runbook.md §2.3](deployment-runbook.md#23-interactive-block-frame).
+- The app's image policy
+  ([deployment runbook §2.4](deployment-runbook.md#24-app-image-policy-report-only)):
+  `curl -sI` on `/`, on a deep link such as `/workspaces/x`, on a `/w/…`
+  summary and on a `/share/notes/…` page each return the same
+  `Content-Security-Policy-Report-Only: img-src 'self' data: blob: …`, naming
+  the UAT bucket host, the bank asset base, `https://img.clerk.com`,
+  `https://i.ytimg.com` and a `report-uri` on the Sentry security endpoint
+  with `sentry_environment=uat`. If `/` and the deep link lack it while the
+  summary has it, Workers Assets does not apply `_headers` to the SPA
+  fallback: tell the Editor session (runbook §2.4 has the fallback plan).
+  Then open a workspace with a PDF, an image source, a note with images, a
+  YouTube block, a diagram and a bank-copied quiz, and the same note shared
+  signed out: the console shows no `[Report Only]` message and `capy-web`
+  gets no security report. The note journey already fails on any console
+  error on the shared note page. The Sentry scrubbing rule (runbook §5
+  step 9) is in place before this deploy.
 - `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in UAT's Coolify variables and
   blank in production's (the renderer refuses a production value). Without it
   the Office refusal journey's publication is never held and the journey fails.
+- `RETRIEVAL_UAT_SCRIPTED_TOOLS` is `true` in UAT's Coolify variables and blank
+  in production's, and the retrieval container is running (it refuses to start
+  with the switch unless `SENTRY_ENVIRONMENT=uat`). Without it the chat
+  journey's scripted turns reach the model and the journey fails.
 - Backend `X-Capy-Release`, SPA `capy-release` and all selected ingest container
   revision labels match the release. The state's `active` agrees, `current`
   resolves to its snapshot and `pending` is absent after success.

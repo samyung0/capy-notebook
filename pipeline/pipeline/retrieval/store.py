@@ -186,8 +186,12 @@ async def existing_content_vectors(
 async def attach_material_content(
     *, workspace_id: str, material_id: str, content_hash: str, claim_job_id: str
 ) -> dict[str, Any]:
-    """Attach a note to canonical workspace content, like attach_file_content
-    without a source revision: the note's projection is the only version."""
+    """Claim canonical workspace content for a note, like attach_file_content
+    without a source revision: the note's projection is the only version.
+
+    The alias moves now only onto content that is already ready. A new claim
+    is aliased by ``publish_material_content`` once it is ready, so the old
+    index keeps serving search and lends its vectors until then."""
     content_id = f"rgc_{secrets.token_hex(8)}"
     db = await pool()
     async with db.connection() as conn, conn.transaction():
@@ -226,25 +230,56 @@ async def attach_material_content(
             and row["claim_job_id"] == claim_job_id
         ):
             created = True
-        await conn.execute(
-            """
-            INSERT INTO rag_material_contents (material_id, workspace_id, content_id)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (material_id) DO UPDATE SET
-                workspace_id = EXCLUDED.workspace_id,
-                content_id = EXCLUDED.content_id
-            """,
-            (material_id, workspace_id, row["id"]),
-        )
+        ready = row["status"] == "ready"
+        if ready:
+            await _alias_material_content(conn, material_id, workspace_id, row["id"])
         return {
             "content_id": row["id"],
             "previous_content_id": previous["content_id"] if previous else None,
-            "ready": row["status"] == "ready",
+            "ready": ready,
             "created": created,
         }
 
 
+async def publish_material_content(
+    *, workspace_id: str, material_id: str, content_id: str, claim_job_id: str
+) -> None:
+    """Mark a note's claimed content ready and move its alias in one
+    transaction; the orphan trigger then drops the previous content."""
+    db = await pool()
+    async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """
+            UPDATE rag_contents
+            SET status = 'ready', claim_job_id = NULL, updated_at = now()
+            WHERE id = %s AND claim_job_id = %s
+            """,
+            (content_id, claim_job_id),
+        )
+        if not cur.rowcount:
+            raise RetryableError("content claim taken over")
+        await _alias_material_content(conn, material_id, workspace_id, content_id)
+
+
+async def _alias_material_content(
+    conn, material_id: str, workspace_id: str, content_id: str
+) -> None:
+    await conn.execute(
+        """
+        INSERT INTO rag_material_contents (material_id, workspace_id, content_id)
+        VALUES (%s, %s, %s)
+        ON CONFLICT (material_id) DO UPDATE SET
+            workspace_id = EXCLUDED.workspace_id,
+            content_id = EXCLUDED.content_id
+        """,
+        (material_id, workspace_id, content_id),
+    )
+
+
 async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
+    """Fence an attach to the live candidate. Saves made after the capture
+    stay pending against it (deferred publication), so a newer checkpoint
+    passes, as in the heartbeat's boundary fence."""
     file_id = refresh["fileId"]
     await conn.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (file_id,)
@@ -283,7 +318,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         WHERE c.file_id=%s AND c.job_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
           AND d.epoch=c.epoch AND d.running_job_id=c.job_id AND d.base_revision=f.revision AND f.revision=%s
           AND f.workspace_id=%s AND f.user_id=%s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
-          AND (d.format='text' OR d.checkpoint=c.checkpoint)
+          AND d.checkpoint>=c.checkpoint
           AND j.status='running' AND j.attempts=%s AND j.lease_expires_at>now()
         FOR UPDATE OF f,c,d,j""",
         (

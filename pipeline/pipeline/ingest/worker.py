@@ -1011,7 +1011,9 @@ def _yield_for_capacity(
     """Give the slot back to the queue. File stays pending; attempt is undone.
 
     A provider that stayed busy is the same wait with its own counter, so the
-    worker can cap how often one job comes back for the same model.
+    worker can cap how often one job comes back for the same model. A note
+    index job (no ``file_id``) keeps its note's job pointer and sends no
+    progress.
     """
     attempt = int(job.get("attempts") or 1)
     payload = job.get("payload") or {}
@@ -1024,7 +1026,8 @@ def _yield_for_capacity(
             )
         else:
             db.release_job_for_capacity(cur, job["id"], attempt, backoff_s=backoff_s)
-        db.set_file_status(cur, file_id, "pending")
+        if file_id:
+            db.set_file_status(cur, file_id, "pending")
         cur.execute("SELECT not_before FROM jobs WHERE id=%s", (job["id"],))
         row = cur.fetchone()
         db.finish_job_attempt(
@@ -1037,14 +1040,15 @@ def _yield_for_capacity(
             next_retry_at=row[0] if row else None,
         )
         conn.commit()
-    _publish_progress(
-        workspace_id,
-        file_id,
-        "queued",
-        5,
-        status="pending",
-        message=f"{name}: {message}",
-    )
+    if file_id:
+        _publish_progress(
+            workspace_id,
+            file_id,
+            "queued",
+            5,
+            status="pending",
+            message=f"{name}: {message}",
+        )
     log.info("ingest %s %s", name, message)
 
 
@@ -1453,6 +1457,10 @@ async def _chunks_for(
                     str(payload.get("actorUserId") or ""),
                 )
         _publish_progress(ws, file_id, "indexing", 50, status="processing")
+        if direct == "tabular":
+            # Every row carries its own headers, so a table chunks with no
+            # overlap: a carried row would only repeat in the next chunk.
+            return chunk_markdown(text, overlap_tokens=0)
         return chunk_markdown(text)
 
     if processing_plan.route != ingest_plan.DOCUMENT_PARSE:
@@ -1634,8 +1642,9 @@ async def _process_ingest_job_bound(job: dict) -> None:
 
 async def _process_material_index_bound(job: dict) -> None:
     """Index one workspace note: fetch its text from the gateway, chunk it like
-    a text file, embed the chunks that changed and attach the canonical content.
-    Notes get no parse stage, no summary and no page model."""
+    a text file, embed the chunks that changed and publish the canonical
+    content. Notes get no parse stage, no summary and no page model. A failed
+    claim is abandoned; the note keeps its previous index."""
     payload = job["payload"] or {}
     material_id = str(payload["materialId"])
     ws = str(payload["workspaceId"])
@@ -1664,7 +1673,7 @@ async def _process_material_index_bound(job: dict) -> None:
         note = await asyncio.to_thread(_fetch_material_text, material_id, ws)
         if note is None:
             # Trashed, standalone or gone: nothing to index, nothing to retry.
-            await asyncio.to_thread(_finish_material_index, job, material_id)
+            await asyncio.to_thread(_finish_material_index, job)
             return
         chunks = chunk_markdown(str(note.get("text") or ""))
         association = await store.attach_material_content(
@@ -1673,17 +1682,25 @@ async def _process_material_index_bound(job: dict) -> None:
             content_hash="note:" + indexing.content_hash(chunks),
             claim_job_id=job["id"],
         )
+        embedded = 0
         if not association["ready"]:
             if not association["created"]:
                 raise RetryableError("note content is being indexed by another job")
-            await indexing.index_material(
-                workspace_id=ws,
-                content_id=association["content_id"],
-                previous_content_id=association["previous_content_id"],
-                chunks=chunks,
-                claim_job_id=job["id"],
-            )
-        await asyncio.to_thread(_finish_material_index, job, material_id)
+            try:
+                result = await indexing.index_material(
+                    workspace_id=ws,
+                    material_id=material_id,
+                    content_id=association["content_id"],
+                    previous_content_id=association["previous_content_id"],
+                    chunks=chunks,
+                    claim_job_id=job["id"],
+                )
+            except BaseException:
+                await store.abandon_content(association["content_id"])
+                raise
+            embedded = result["embedded"]
+        telemetry.record(chunks_created=len(chunks), chunks_embedded=embedded)
+        await asyncio.to_thread(_finish_material_index, job)
     finally:
         if accounting_token is not None:
             accounting.reset(accounting_token)
@@ -1718,32 +1735,19 @@ def _fetch_material_text(material_id: str, workspace_id: str) -> dict | None:
     return body if isinstance(body, dict) else None
 
 
-def _finish_material_index(job: dict, material_id: str) -> None:
+def _finish_material_index(job: dict) -> None:
     attempt = int(job.get("attempts") or 1)
     with db.connect() as conn, conn.cursor() as cur:
         if _lost_claim(cur, job["id"], attempt):
             return
         db.settle_credit_reservation(cur, _reservation_id(job["payload"] or {}))
-        cur.execute(
-            "UPDATE materials SET index_job_id=NULL, index_error=NULL WHERE id=%s AND index_job_id=%s",
-            (material_id, job["id"]),
-        )
+        # Migration 0082's trigger releases the note when its job ends.
         db.set_job(cur, job["id"], "done")
         db.finish_job_attempt(
             cur,
             attempt_id=telemetry.current_attempt_id(),
             outcome="succeeded",
             snapshot=telemetry.snapshot(),
-        )
-        conn.commit()
-
-
-def _fail_material_index(job: dict, material_id: str, error: str) -> None:
-    """A terminal failure is parked on the note until its content changes."""
-    with db.connect() as conn, conn.cursor() as cur:
-        cur.execute(
-            "UPDATE materials SET index_job_id=NULL, index_error=%s WHERE id=%s AND index_job_id=%s",
-            (error[:500], material_id, job["id"]),
         )
         conn.commit()
 
@@ -2516,16 +2520,25 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
             # the logical file points at B.
             exc = superseded
             error_category, error_code, _provider_status = telemetry.classify_error(exc)
-    if isinstance(exc, elitellm.ProviderBusy) and job_type == "ingest" and fid and ws:
+    if (
+        isinstance(exc, elitellm.ProviderBusy)
+        and job_type == "ingest"
+        and (fid or payload.get("materialId"))
+        and ws
+    ):
         # The in-call busy budget is spent. Re-pend without spending an attempt
-        # until the per-job cap, then fail the file as busy.
+        # until the per-job cap, then fail the file (or park the note) as busy.
         waits = int(job.get("provider_waits") or 0)
         if waits < PROVIDER_WAITS_MAX:
-            name = await asyncio.to_thread(_read_name, str(fid))
+            name = (
+                await asyncio.to_thread(_read_name, str(fid))
+                if fid
+                else str(payload["materialId"])
+            )
             await asyncio.to_thread(
                 _yield_for_capacity,
                 job,
-                str(fid),
+                str(fid or ""),
                 str(ws),
                 name,
                 int(payload.get("sourceRevision") or 0),
@@ -2545,10 +2558,6 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
         and is_retryable(exc)
         and attempts < policy.max_attempts
     )
-    if payload.get("materialId") and not retry:
-        await asyncio.to_thread(
-            _fail_material_index, job, str(payload["materialId"]), str(exc)
-        )
     if job_type == "parse":
         await asyncio.to_thread(
             _record_parse_attempt,

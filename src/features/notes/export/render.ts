@@ -4,7 +4,7 @@ const CSS_VALUE = /^[\w\s#(),.%'-]+$/;
 const HEADING = /^h[1-6]$/;
 
 import type { QuestionBlock } from '@/api/types';
-import { EMPTY_VALUE } from '@/components/charts/CategoryChart';
+import { EMPTY_VALUE } from '@/components/charts/emptyValue';
 import type {
   MaterialElement,
   MaterialNode,

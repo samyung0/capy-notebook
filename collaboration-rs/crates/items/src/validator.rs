@@ -3,6 +3,7 @@
 //! update past a cap or a limit is applied to a copy and checked exactly.
 
 use notes::limits::{LimitCode, Metrics, limit_code};
+use notes::questions::Policy;
 use yrs::updates::encoder::Encode;
 use yrs::{ReadTxn, StateVector, Transact, Update};
 
@@ -39,6 +40,8 @@ pub struct Validator {
     pub peer: Option<Metrics>,
     /// Exact checks taken (a copy of the room each).
     pub exact_checks: u64,
+    /// The quiz figure host (`BANK_ASSETS_URL`) a figure link must be under.
+    pub policy: Policy,
 }
 
 impl Validator {
@@ -50,6 +53,7 @@ impl Validator {
             metrics,
             peer: None,
             exact_checks: 0,
+            policy: Policy::quiz(),
         }
     }
 
@@ -63,7 +67,7 @@ impl Validator {
         }
         let growth = self
             .kind
-            .admit_shapes(&txn, &incoming)
+            .admit_shapes(&txn, &incoming, &self.policy)
             .map_err(Refusal::Shape)?;
         if let Some(bound) = self.bound
             && !growth.over_cap

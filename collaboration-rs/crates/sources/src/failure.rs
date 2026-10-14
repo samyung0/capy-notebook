@@ -49,9 +49,14 @@ pub enum SourceError {
     #[error("source room is waiting out a failed save; saved on its next retry")]
     Backoff,
     /// An agent edit refused (`EditError`): the gateway answers 409 with its
-    /// code (`stale_target`, `invalid_input`, ...).
+    /// code (`stale_target`, `invalid_input`, ...) and, for a missed target,
+    /// what it reads now.
     #[error("{message}")]
-    Edit { code: String, message: String },
+    Edit {
+        code: String,
+        message: String,
+        details: Option<serde_json::Value>,
+    },
     /// Anything else (network, timeouts, the database): slow.
     #[error("{0}")]
     Other(String),
@@ -289,6 +294,7 @@ mod tests {
             SourceError::Engine(EngineError::Refused(Failure {
                 kind: FailureKind::Edit,
                 message: "stale_target: changed".into(),
+                details: None,
             })),
             request(413, None),
             request(422, None),

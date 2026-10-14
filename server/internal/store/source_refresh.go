@@ -736,8 +736,9 @@ type SourceEpochReset struct {
 // refused for good, an access discard). The room name carries the epoch, so a
 // client still holding the thrown-away state cannot resync it: it sees a new
 // epoch and opens its edits read-only instead. An epoch that already moved on
-// is left alone (moved is false). A refresh captured under the old epoch is
-// superseded, as after any epoch change.
+// is left alone (moved is false). A refresh captured under the old epoch could
+// never be claimed or published again, so it is superseded: no refresh_error,
+// and the saved edits are due again.
 func (s *Store) ResetSourceEpoch(ctx context.Context, fileID string, in SourceEpochReset) (moved bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -745,6 +746,11 @@ func (s *Store) ResetSourceEpoch(ctx context.Context, fileID string, in SourceEp
 	}
 	defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1,0))`, fileID); err != nil {
+		return false, err
+	}
+	// Before the epoch moves, so the job is locked ahead of the document row,
+	// as account deletion's cancellation locks them.
+	if _, err = tx.Exec(ctx, `SELECT cancel_pipeline_jobs(ARRAY(SELECT c.job_id FROM source_refresh_candidates c JOIN source_documents d ON d.file_id=c.file_id AND d.epoch=c.epoch WHERE c.file_id=$1 AND c.epoch=$2),'superseded','superseded','source_superseded','Editing moved to a new epoch')`, fileID, in.Epoch); err != nil {
 		return false, err
 	}
 	tag, err := tx.Exec(ctx, `UPDATE source_documents SET epoch=epoch+1,updated_at=now() WHERE file_id=$1 AND epoch=$2`, fileID, in.Epoch)

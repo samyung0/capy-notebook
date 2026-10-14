@@ -847,6 +847,65 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
     assert parse_stub["chunked"] is None
 
 
+async def test_a_table_over_the_token_cap_is_refused_before_chunking(
+    parse_stub, monkeypatch, tmp_path
+):
+    """The cap is checked while the rows are projected, so a table over it
+    never reaches the chunker and never spends on embeddings."""
+    source = tmp_path / "scores.csv"
+    source.write_text("Student,Score\n" + "Ada,98\n" * 50, encoding="utf-8")
+    monkeypatch.setattr(worker.source_text, "_TABULAR_MAX_TOKENS", 100)
+    chunked: list[str] = []
+    monkeypatch.setattr(worker, "chunk_markdown", chunked.append)
+
+    with pytest.raises(worker.InputLimitError) as error:
+        await worker._chunks_for(
+            payload={"blobPath": "sources/scores.csv"},
+            name="scores.csv",
+            processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),
+            local_path=str(source),
+            source_key="sources/source-1",
+            ws="ws_1",
+            file_id="f_1",
+            source_sha256="aa" * 32,
+        )
+
+    assert error.value.code == "tabular_text_limit"
+    assert chunked == []
+
+
+async def test_a_table_chunks_without_overlap(parse_stub, monkeypatch, tmp_path):
+    """Each row carries its own headers, so the delimited route never repeats
+    a row in the next chunk, whatever overlap prose uses."""
+    monkeypatch.setattr(worker.cfg, "chunk_tokens", 400)
+    monkeypatch.setattr(worker.cfg, "chunk_overlap_tokens", 50)
+    source = tmp_path / "grades.csv"
+    source.write_text(
+        "Student,Course,Teacher,Grade\n"
+        + "".join(
+            f"Student {n},Biology {n % 7},Teacher {n % 5},{n % 100}\n"
+            for n in range(500)
+        ),
+        encoding="utf-8",
+    )
+
+    chunks = await worker._chunks_for(
+        payload={"blobPath": "sources/grades.csv"},
+        name="grades.csv",
+        processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),
+        local_path=str(source),
+        source_key="sources/source-1",
+        ws="ws_1",
+        file_id="f_1",
+        source_sha256="aa" * 32,
+    )
+
+    text = worker.source_text.tabular_text(str(source), source.name)
+    rows = [block for chunk in chunks for block in chunk.text.split("\n\n")]
+    assert rows == text.split("\n\n")
+    assert len(chunks) == len(worker.chunk_markdown(text, overlap_tokens=0))
+
+
 async def test_pdf_chunking_reads_the_spooled_source(parse_stub):
     """The heading and confidence passes measure the PDF the parser saw."""
     await _run()
@@ -1711,3 +1770,200 @@ async def test_completed_source_publication_retry_skips_providers_and_processing
     monkeypatch.setattr(worker, "_workspace_embedding_spec", no_processing)
     monkeypatch.setattr(worker, "_process_ingest_job", no_processing)
     await worker._process_ingest_job_bound(job)
+
+
+# The keys Go's RequestMaterialIndex writes for a note index job.
+_NOTE_PAYLOAD = {
+    "actorUserId": "u_owner",
+    "automatic": True,
+    "materialId": "mat_1",
+    "reservationId": "cr_1",
+    "resourceRates": _ingest_payload()["resourceRates"],
+    "revision": 3,
+    "workspaceId": "ws_1",
+}
+
+
+class _NoteCursor:
+    """Answers the source boundary's reads for one live note job claim."""
+
+    rowcount = 1
+
+    def __init__(self, accounts=None, locked_payload=None):
+        self.accounts = accounts or [("u_owner", None, None, None)]
+        self.locked_payload = locked_payload or _NOTE_PAYLOAD
+        self.calls: list[str] = []
+        self.result = None
+        self.connection = self
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def cursor(self):
+        return self
+
+    def commit(self):
+        return None
+
+    def execute(self, query, _params=()):
+        statement = " ".join(query.split())
+        self.calls.append(statement)
+        if "FROM ingest_job_attempts a JOIN jobs j" in statement:
+            self.result = ("job_1", _NOTE_PAYLOAD)
+        elif (
+            "SELECT type, status, attempts, lease_expires_at > now(), payload"
+            in statement
+        ):
+            self.result = ("ingest", "running", 1, True, self.locked_payload)
+        elif "SELECT job_id, attempt, job_type, status" in statement:
+            self.result = ("job_1", 1, "ingest", "running")
+        elif "SELECT type, payload FROM jobs" in statement:
+            self.result = ("ingest", _NOTE_PAYLOAD)
+        elif "FROM workspaces WHERE id=" in statement:
+            self.result = ("u_owner",)
+        elif "FROM users" in statement:
+            self.result = self.accounts
+        elif "cancel_pipeline_jobs" in statement or "SELECT 1 FROM jobs" in statement:
+            self.result = (1,)
+        else:
+            self.result = None
+        return self
+
+    def fetchone(self):
+        return self.result
+
+    def fetchall(self):
+        return self.result
+
+    def ran(self, needle: str) -> bool:
+        return any(needle in statement for statement in self.calls)
+
+
+@pytest.mark.parametrize(
+    ("accounts", "renewed"),
+    [([("u_owner", None, None, None)], True), ([("u_owner", None, None, 1)], False)],
+    ids=["live", "owner-deleting"],
+)
+def test_heartbeat_fences_a_note_job_on_its_owner_not_a_file(accounts, renewed):
+    cur = _NoteCursor(accounts)
+
+    assert worker.db.heartbeat_job(cur, "job_1", 180, 1) is renewed
+    assert not cur.ran("FROM files")
+    assert cur.ran("UPDATE jobs SET locked_at") is renewed
+    assert cur.ran("cancel_pipeline_jobs") is not renewed
+
+
+async def test_a_retryable_note_failure_requeues(monkeypatch):
+    from pipeline.jobs import RetryableError
+
+    cur = _NoteCursor()
+    monkeypatch.setattr(worker.db, "connect", lambda: cur)
+    job = {"id": "job_1", "type": "ingest", "attempts": 1, "payload": _NOTE_PAYLOAD}
+
+    await worker._handle_job_failure(job, RetryableError("embedding timed out"))
+
+    assert cur.ran("UPDATE jobs SET status='pending'")
+    assert not cur.ran("cancel_pipeline_jobs")
+
+
+@pytest.mark.parametrize("waits", [0, "cap"])
+async def test_a_busy_provider_repends_a_note_job_until_the_cap(monkeypatch, waits):
+    from pipeline import elitellm
+    from pipeline.jobs import PROVIDER_WAITS_MAX
+
+    cur = _NoteCursor()
+    published: list = []
+    monkeypatch.setattr(worker.db, "connect", lambda: cur)
+    monkeypatch.setattr(
+        worker.progress, "publish", lambda *a, **_k: published.append(a)
+    )
+    monkeypatch.setattr(worker.obs, "capture_error", lambda *_a, **_k: None)
+    busy = elitellm.ProviderBusy(
+        "slow down", status_code=429, retry_after=12, provider_retry_after=12
+    )
+    job = {
+        "id": "job_1",
+        "type": "ingest",
+        "attempts": 1,
+        "provider_waits": PROVIDER_WAITS_MAX if waits == "cap" else waits,
+        "payload": _NOTE_PAYLOAD,
+    }
+
+    await worker._handle_job_failure(job, busy)
+
+    repended = waits != "cap"
+    # The attempt is handed back and the wait counted; no file or progress.
+    assert cur.ran("provider_waits=provider_waits+1") is repended
+    assert cur.ran("attempts=GREATEST(attempts-1, 0)") is repended
+    # Past the cap the job fails, and migration 0082 parks the note.
+    assert cur.ran("UPDATE jobs SET status=%s") is not repended
+    assert not cur.ran("UPDATE files") and published == []
+
+
+def test_the_claim_fence_loses_a_note_job_whose_note_changed():
+    def fence(material_id):
+        return worker.db.lock_pipeline_claim_boundary(
+            _NoteCursor(),
+            job_id="job_1",
+            attempt=1,
+            payload={**_NOTE_PAYLOAD, "materialId": material_id},
+        )
+
+    assert fence("mat_1") == "current"
+    assert fence("mat_2") == "lost"
+
+
+def test_provider_admission_binds_a_note_job_to_its_note():
+    def admit(cur):
+        worker.db._lock_ingest_provider_boundary(
+            cur,
+            session_id="cr_1",
+            job_attempt_id=7,
+            expected_actor="u_owner",
+            expected_workspace="ws_1",
+        )
+
+    admit(_NoteCursor())
+    with pytest.raises(RuntimeError, match="does not match its session"):
+        admit(_NoteCursor(locked_payload={**_NOTE_PAYLOAD, "materialId": "mat_2"}))
+
+
+async def test_a_failed_note_index_abandons_its_content_claim(monkeypatch):
+    from pipeline.jobs import TerminalError
+
+    abandoned: list[str] = []
+
+    async def attach(**_kwargs):
+        return {
+            "content_id": "rgc_new",
+            "previous_content_id": "rgc_old",
+            "ready": False,
+            "created": True,
+        }
+
+    async def refuse(**_kwargs):
+        raise TerminalError("embedding refused")
+
+    async def abandon(content_id):
+        abandoned.append(content_id)
+
+    async def embedding_spec(_ws):
+        return object()
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", embedding_spec)
+    monkeypatch.setattr(worker.registry, "pins_from_payload", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.accounting, "bind_ingest", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        worker, "_fetch_material_text", lambda *_a: {"text": "# Cells\n\nbody"}
+    )
+    monkeypatch.setattr(worker.store, "attach_material_content", attach)
+    monkeypatch.setattr(worker.indexing, "index_material", refuse)
+    monkeypatch.setattr(worker.store, "abandon_content", abandon)
+    job = {"id": "job_1", "type": "ingest", "attempts": 1, "payload": _NOTE_PAYLOAD}
+
+    with pytest.raises(TerminalError):
+        await worker._process_material_index_bound(job)
+    assert abandoned == ["rgc_new"]

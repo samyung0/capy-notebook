@@ -139,9 +139,15 @@ limit by definition) fails this check exactly like an active account at 100%.
 Deletions and shrinks do not go through that gate; they adjust
 counters/triggers for accounting only.
 
-Reconciliation locks the counter plus authoritative resource rows, recomputes
-both counters from files / ready assets / materials, and deletes the folded
-delta rows.
+Reconciliation (`reconcileStorageUserTx`) locks the counter row and the
+owner's files, editor assets, materials and pending upload sessions, recounts
+used bytes from files, `source_documents.storage_bytes`, ready editor assets,
+materials and `agent_edit_inverses` and reserved bytes from pending uploads
+(`storageRecountSQL`), and deletes the folded delta rows. Two known gaps, fix
+deferred: it locks no `source_documents` or `agent_edit_inverses` row, so a
+save committing between its delta read and the recount is counted twice until
+the next run; and its `storage_counter_drift` report compares the counter
+without the pending deltas, so it reports drift whenever deltas are pending.
 
 Accounting helpers no-op when the owner user row is already gone, because
 foreign-key cascades can fire resource delete triggers after the user is
@@ -244,10 +250,13 @@ transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
 
 A collaborative source is charged its source bytes (`files.size_bytes`) plus
-the generated `source_documents.storage_bytes` (migration 0054): its serialized
-pending effects (an empty list costs nothing, so opening a file charges only
-its source), plus its stored editing state beyond what the file's bytes already
-hold (migration 0043 dropped the stored baseline; it derives from the base).
+the generated `source_documents.storage_bytes` (migration 0075, which added
+the unfolded update rows to 0054's rule): its serialized pending effects (an
+empty list costs nothing, so opening a file charges only its source), plus its
+stored editing state and unfolded rows (`log_bytes`) beyond what the file's
+bytes already hold (migration 0043 dropped the stored baseline; it derives from
+the base). Below, "state" means the stored state plus `log_bytes`; a fold
+moves bytes from the rows into the state.
 Edits a publication captured are charged once, in the file:
 
 - An Office state is charged as stored: the change over seed(base) that the

@@ -615,6 +615,9 @@ def _pipeline_source_cancellation(
     same order. The job row comes afterward; provider admission then locks its
     exact attempt. This prevents lifecycle deletion/publish from forming a
     file-to-user or job-to-workspace cycle with a worker.
+
+    A note index job (``materialId``) has no file or revision: its boundary is
+    the workspace and its owner's account lifecycle.
     """
     payload = source_boundary_payload(payload)
     if payload.get("sourceRefresh") is True:
@@ -625,9 +628,10 @@ def _pipeline_source_cancellation(
     if file_lock not in {"SHARE", "UPDATE"}:
         raise ValueError("invalid pipeline file lock")
     file_id = str(payload.get("fileId") or "")
+    material_id = str(payload.get("materialId") or "")
     workspace_id = str(payload.get("workspaceId") or "")
     try:
-        source_revision = int(payload["sourceRevision"])
+        source_revision = None if material_id else int(payload["sourceRevision"])
     except (KeyError, TypeError, ValueError):
         return (
             "superseded",
@@ -636,7 +640,7 @@ def _pipeline_source_cancellation(
             "ingest source identity is invalid",
         )
     source_etag = str(payload.get("sourceETag") or "")
-    if not file_id or not workspace_id:
+    if not (file_id or material_id) or not workspace_id:
         return (
             "failed",
             "lifecycle",
@@ -723,6 +727,9 @@ def _pipeline_source_cancellation(
                 "workspace_access_revoked",
                 "workspace editor access was revoked",
             )
+    if material_id:
+        # A note trashed mid-job still finishes; search hides it by trashed_at.
+        return None
 
     cur.execute(
         f"""
@@ -927,6 +934,7 @@ def lock_pipeline_claim_boundary(
     identity_keys = (
         "actorUserId",
         "fileId",
+        "materialId",
         "reservationId",
         "sourceETag",
         "sourceRevision",
@@ -1215,13 +1223,6 @@ def reclaim_expired_leases(
             file_failed = fail_pipeline_file_if_current(cur, payload)
             discard_source_candidate(cur, payload, job_id, note, stale=False)
             close_credit_reservation(cur, str(payload.get("reservationId") or ""))
-            if payload.get("materialId"):
-                # A note index job that died is parked on the note like any
-                # other terminal failure; the next content change retries it.
-                cur.execute(
-                    "UPDATE materials SET index_job_id=NULL, index_error=%s WHERE id=%s AND index_job_id=%s",
-                    (note[:500], str(payload["materialId"]), job_id),
-                )
         cur.execute(
             """
             UPDATE ingest_job_attempts SET
@@ -1685,8 +1686,9 @@ def _lock_ingest_provider_boundary(
     payload = preliminary[1] if preliminary is not None else None
     payload = payload if isinstance(payload, dict) else {}
     file_id = str(payload.get("fileId") or "")
-    if not file_id:
-        raise RuntimeError("ingest provider call has no source file")
+    material_id = str(payload.get("materialId") or "")
+    if not file_id and not material_id:
+        raise RuntimeError("ingest provider call has no source file or note")
     cancellation = _pipeline_source_cancellation(cur, payload, file_lock="SHARE")
     if cancellation is not None:
         raise RuntimeError(cancellation[3])
@@ -1730,10 +1732,13 @@ def _lock_ingest_provider_boundary(
         attempt_status,
     ) = locked_attempt
     payload = payload if isinstance(payload, dict) else {}
-    try:
-        payload_revision = int(payload["sourceRevision"])
-    except (KeyError, TypeError, ValueError) as exc:
-        raise RuntimeError("ingest provider source identity is invalid") from exc
+    # The source revision was validated under the file lock above. Parsing it
+    # here still rejects malformed payloads before opening provider state.
+    if not material_id:
+        try:
+            int(payload["sourceRevision"])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise RuntimeError("ingest provider source identity is invalid") from exc
 
     if (
         attempt_status != "running"
@@ -1750,11 +1755,9 @@ def _lock_ingest_provider_boundary(
         or str(payload.get("actorUserId") or "") != expected_actor
         or str(payload.get("workspaceId") or "") != expected_workspace
         or str(payload.get("fileId") or "") != file_id
+        or str(payload.get("materialId") or "") != material_id
     ):
         raise RuntimeError("ingest provider job identity does not match its session")
-    # The source revision was validated under the file lock above. Parsing it
-    # here still rejects malformed payloads before opening provider state.
-    del payload_revision
 
 
 def open_provider_call(
