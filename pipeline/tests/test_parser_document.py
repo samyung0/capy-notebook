@@ -179,21 +179,26 @@ def _running(pid: int) -> bool:
 
 
 @pytest.mark.parametrize(
-    ("name", "data"),
+    ("name", "data", "detail"),
     [
-        ("notes.docx", b"{\\rtf1\\ansi text}"),
-        ("notes.docx", OLE + bytes(8)),
-        ("sheet.xls", ZIP + bytes(8)),
+        ("notes.docx", b"{\\rtf1\\ansi text}", r"not a \.docx document$"),
+        # Encrypted OOXML is an OLE2 container.
+        ("notes.docx", OLE + bytes(8), "password-protected"),
+        ("sheet.xls", ZIP + bytes(8), r"not a \.xls document$"),
     ],
 )
 def test_bytes_of_another_format_are_refused_before_libreoffice(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, data: bytes
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    data: bytes,
+    detail: str,
 ) -> None:
     def started(*_args, **_kwargs):
         raise AssertionError("LibreOffice started")
 
     monkeypatch.setattr(document.subprocess, "Popen", started)
-    with pytest.raises(document.OfficeFormatMismatch):
+    with pytest.raises(document.OfficeFormatMismatch, match=detail):
         document.normalize_document(data, name, tmp_path)
 
 

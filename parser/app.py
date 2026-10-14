@@ -618,14 +618,11 @@ def _read_worker_result(path: Path) -> dict[str, Any]:
 
 
 def _clear_work_dir() -> None:
-    """Startup removes what an earlier parser process abandoned."""
+    """Startup empties the work dir (no child runs yet): what an earlier parser
+    process abandoned, and the temporary files of anything using TMPDIR."""
     WORK_DIR.mkdir(parents=True, exist_ok=True)
-    for path in (
-        *WORK_DIR.glob("doc-*"),
-        *WORK_DIR.glob("slot-*"),
-        *WORK_DIR.glob("transfer-*"),
-    ):
-        if path.is_dir():
+    for path in WORK_DIR.iterdir():
+        if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path, ignore_errors=True)
         else:
             _unlink(path)

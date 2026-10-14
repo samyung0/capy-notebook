@@ -44,6 +44,8 @@ RUN pip install --no-cache-dir --require-hashes -r parser/requirements.txt
 
 COPY --from=odl-entry --chmod=644 /build/capy-odl.jar /opt/capy-odl/capy-odl.jar
 ENV CAPY_ODL_ENTRY_JAR=/opt/capy-odl/capy-odl.jar
+# Some builders give the directory COPY creates the file's --chmod mode.
+RUN chmod 755 /opt/capy-odl
 
 # RapidOCR PP-OCRv6 small detector/recogniser and the mobile angle classifier,
 # the exact files the September 2026 lab runs used (rapidocr 3.9.2's own hosts).

@@ -810,6 +810,18 @@ async def test_page_cap_refuses_pdfs_at_admission_and_office_after_conversion(
         parser_app.run_document(parser_app.Document(b"PK", "deck.pptx"))
 
 
+def test_startup_empties_the_work_dir() -> None:
+    work = parser_app.WORK_DIR
+    (work / "doc-1").mkdir(parents=True)
+    (work / "doc-1" / "document.pdf").write_bytes(b"%PDF")
+    for name in ("transfer-1.result", ".ses", "mat-debug-10.log"):
+        (work / name).write_bytes(b"")
+
+    parser_app._clear_work_dir()
+
+    assert list(work.iterdir()) == []
+
+
 def test_receipt_keeps_the_metering_keys_and_counts_ocr_routed_pages() -> None:
     """Billing reads _page_count and _ocr_page_count; the other keys keep their
     names for usage_events and Ops even though documents are no longer sliced."""

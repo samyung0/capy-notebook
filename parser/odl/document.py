@@ -87,7 +87,10 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
         raise ValueError("document parsing supports PDF and Office files")
     magic, import_filter = _IMPORTS[suffix]
     if not data.startswith(magic):
-        raise OfficeFormatMismatch(f"the file's contents are not a {suffix} document")
+        detail = f"the file's contents are not a {suffix} document"
+        if magic == _ZIP and data.startswith(_OLE):
+            detail += " (password-protected files can't be read)"
+        raise OfficeFormatMismatch(detail)
 
     # The profile and LibreOffice's own temporary files live in the job
     # directory, so they go with the job.

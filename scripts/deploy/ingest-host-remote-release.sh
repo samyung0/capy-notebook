@@ -136,9 +136,9 @@ start_candidate_parser() {
   dc "$revision" config --quiet 2>/dev/null || die 'invalid candidate Compose configuration (details redacted)'
   dc "$revision" stop "${consumers[@]}"
   set_current "$(cd "$config" && pwd -P)"
-  if [[ "$(cat "$pending/previous")" == none ]]; then
-    dc "$revision" run --rm --no-deps parse-spool-init
-  fi
+  # Every release: the candidate's volumes get their directories and owner
+  # (uid 10001) from init, never from the image. It is idempotent.
+  dc "$revision" run --rm --no-deps parse-spool-init
   dc "$revision" up -d --no-build --no-deps parser
 }
 rollback() {

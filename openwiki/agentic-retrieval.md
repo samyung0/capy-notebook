@@ -905,8 +905,9 @@ OCR stage, the parsed PDF; small pipe messages carry only status, paths and the
 text-less page list. A handed-off document's blocks stay in its result file
 until the OCR stage finishes. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
-1.4 GiB of retained heap back to about 0.55 GiB. Startup removes abandoned
-transfer, document and slot files. Cancelling an executing caller leaves the
+1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work
+directory: abandoned transfer, document and slot files, and the temporary
+files of anything using `TMPDIR`, which the image points there. Cancelling an executing caller leaves the
 runtime-owned future, admission slot and deadline active. Cancelling waiting
 work removes it from the queue.
 
@@ -919,7 +920,10 @@ whose allocation tipped the cgroup over. It gets a `parse_oom` quarantine
 marker, its child is respawned, and the other documents continue. LibreOffice's
 launcher hides the signal its `soffice.bin` died by, so any failed conversion
 while the count rose is that document's `parse_oom` too; without a counted OOM
-kill it stays an ordinary failure. A SIGKILL without a counted OOM kill, or any
+kill it stays an ordinary failure. The window is the whole conversion (up to
+180 s), so a conversion that fails for another reason (a damaged file) while
+another process in the cgroup is OOM-killed is quarantined as `parse_oom` as
+well; such a file would fail its retry anyway. A SIGKILL without a counted OOM kill, or any
 other child crash, is a `parser_runtime_failed` with one ordinary retry. An
 Office file whose bytes are not its suffix's container (ZIP for OOXML, OLE2 for
 the legacy formats) is refused before LibreOffice as the terminal

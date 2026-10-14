@@ -192,6 +192,11 @@ class ReleaseTest(unittest.TestCase):
         data = self.state_data()
         self.assertEqual(data["running"], {"parser": CANDIDATE})
         self.assertTrue((self.state / "pending").exists())
+        # Init prepares the volumes on every release, not only at bootstrap.
+        self.assertIn(
+            ["run", "--rm", "--no-deps", "parse-spool-init"],
+            [call[-4:] for call in data["calls"] if call[0] == "compose"],
+        )
         self.assertTrue(
             all(
                 "--profile" in call and "uat" in call

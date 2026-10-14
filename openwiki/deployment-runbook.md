@@ -1761,14 +1761,19 @@ the host:
   `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp
   profile and `read_only: true`. Its writable places are a 64 MiB tmpfs HOME
   (`/run/capy-parser/home`, also the parser user's passwd home, which Java
-  reads), a 64 MiB tmpfs `/tmp` (JVM perf data, PDFBox's fallback), the
-  `parse_spool` volume and the disk-backed `parser_work` volume at
-  `/run/capy-parser/work` (slot directories, transfers, Office jobs, and the
-  image's `TMPDIR`, so spooled uploads stay off RAM). `parse-spool-init` hands
-  `parser_work` to uid 10001. The Parser budget workflow runs the image under
-  the same flags. `pipeline/tests/test_ingest_compose.py` keeps both files to
-  this and checks that every `${VAR:?}` they use is required by
-  `deploy/env-manifest.json` for that deploy target.
+  reads), a 64 MiB tmpfs `/tmp` (only the JVM's perf data: Java's
+  `java.io.tmpdir` is the document's output directory), the `parse_spool`
+  volume and the disk-backed `parser_work` volume at `/run/capy-parser/work`
+  (slot directories, transfers, Office jobs, and the image's `TMPDIR`, so
+  spooled uploads stay off RAM; startup empties it). The release script runs
+  `parse-spool-init` before every candidate parser, not only at bootstrap, so
+  the volumes get their directories and owner (uid 10001) from init rather
+  than from the image. The Parser budget workflow runs the image under the
+  same flags. `pipeline/tests/test_ingest_compose.py` keeps both files and the
+  budget's `docker run` to this and checks that every `${VAR:?}` they use is
+  required by `deploy/env-manifest.json` for that deploy target. After a
+  release, `docker exec "$parser" stat -c %u /run/capy-parser/work` prints
+  `10001`.
 - **On the host.** `deploy/ansible/ingest-host/templates/nftables.conf.j2`
   rejects every new outbound connection from uid 10001 (the `parser` user)
   except TCP to 8090 (production) and 8091 (nonprod) over loopback. Both

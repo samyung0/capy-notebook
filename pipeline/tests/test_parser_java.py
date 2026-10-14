@@ -37,6 +37,23 @@ def test_java_classifies_only_the_demonstrated_reader_failure(
     assert type(caught.value) is expected
 
 
+def test_java_keeps_its_temporary_files_in_the_output_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr(java, "jar_path", lambda: tmp_path / "parser.jar")
+    (tmp_path / "capy-odl.jar").write_bytes(b"")
+    monkeypatch.setattr(java, "ENTRY_JAR", tmp_path / "capy-odl.jar")
+    commands = []
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return subprocess.CompletedProcess(command, 1, "failed")
+
+    monkeypatch.setattr(java.subprocess, "run", run)
+    out_dir = tmp_path / "native"
+    with pytest.raises(RuntimeError):
+        java.run(tmp_path / "document.pdf", out_dir, timeout_s=60)
+    assert f"-Djava.io.tmpdir={out_dir}" in commands[0]
+
+
 @pytest.fixture
 def source(monkeypatch):
     monkeypatch.setattr(refine.fonts, "repair_fonts", lambda data: (data, 0))

@@ -264,6 +264,13 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - Backend `X-Capy-Release`, SPA `capy-release` and all selected ingest container
   revision labels match the release. The state's `active` agrees, `current`
   resolves to its snapshot and `pending` is absent after success.
+- The nonprod parser runs hardened and owns its work volume (set up in
+  [deployment-runbook.md §7.4](deployment-runbook.md#74-parser-egress-and-libreoffice-conversion)):
+  on the ingest host, with `parser` the container id from §7.4,
+  `docker exec "$parser" stat -c %u /run/capy-parser/work` prints `10001`,
+  `docker exec "$parser" grep NoNewPrivs /proc/1/status` prints `1`, and
+  `docker inspect --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.CapDrop}}' "$parser"`
+  prints `true [ALL]`.
 - An ingest-only run verifies the already deployed backend SHA. An unfinished
   Coolify job leaves recovery pending rather than resuming incompatible workers.
 - Local UI plus UAT still renders the same summary through Vite. Full-local
