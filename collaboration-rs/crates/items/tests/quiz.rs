@@ -12,6 +12,7 @@ use std::sync::Arc;
 use items::quiz::{self, ReaderLists};
 use items::{Admission, Kind, Refusal, Validator};
 use notes::edit::{DocumentCommand, EditError};
+use notes::questions::Policy;
 use serde_json::{Value, json};
 use yrs::branch::BranchPtr;
 use yrs::updates::decoder::Decode;
@@ -868,54 +869,68 @@ fn a_blank_image_block_is_admitted_and_leaves_its_question_incomplete() {
 }
 
 /// Live quiz rooms accept only hosted question images, as a stored question
-/// keeps them: an image or a graph whose `{url}` is not under the quiz figure
-/// host (`BANK_ASSETS_URL`, unset here) is refused at admission; an uploaded
-/// asset and the blank image waiting for its upload are admitted. Fails if
-/// admission takes any URL again.
+/// keeps them: with the quiz figure host set (`BANK_ASSETS_URL`), an image or
+/// a graph linking a URL under it is admitted, one linking anywhere else is
+/// refused at admission, and an uploaded asset and the blank image waiting
+/// for its upload are admitted. Fails if admission takes any URL again, or
+/// none under the host.
 #[test]
 fn a_live_quiz_admits_only_hosted_question_images() {
     let questions = fixtures();
     let (question, _) = part_of(&questions, "boolean");
-    let elsewhere = "https://images.example.invalid/a.png";
-    let image = |doc: &Doc, image: Value| {
+    let hosted = "https://assets.example.test/bank/q1/figure.png";
+    let elsewhere = "https://images.example.test/a.png";
+    let block = |doc: &Doc, kind: &str, key: &str, value: Value| {
         let stem = map_in(doc, &["questions", &question, "stem"]);
         let mut txn = doc.transact_mut();
-        let block = stem.insert(&mut txn, "bimg", MapPrelim::default());
+        let block = stem.insert(&mut txn, "bfig", MapPrelim::default());
         block.insert(&mut txn, "order", items::order::after(None).as_str());
-        block.insert(&mut txn, "type", "image");
-        block.insert(
-            &mut txn,
-            "image",
-            serde_json::from_value::<Any>(image).unwrap(),
-        );
+        block.insert(&mut txn, "type", kind);
+        block.insert(&mut txn, key, serde_json::from_value::<Any>(value).unwrap());
     };
-    refused(
-        Kind::Quiz,
-        |doc| image(doc, json!({ "url": elsewhere })),
-        "an image that is not {assetId} or a hosted {url}",
-    );
-    refused(
-        Kind::Quiz,
-        |doc| {
-            let stem = map_in(doc, &["questions", &question, "stem"]);
-            let mut txn = doc.transact_mut();
-            let block = stem.insert(&mut txn, "bgraph", MapPrelim::default());
-            block.insert(&mut txn, "order", items::order::after(None).as_str());
-            block.insert(&mut txn, "type", "graph");
-            let value = json!({ "image": { "url": elsewhere }, "width": 10, "height": 10 });
-            block.insert(
-                &mut txn,
-                "value",
-                serde_json::from_value::<Any>(value).unwrap(),
-            );
-        },
-        "a graph image that is not a hosted {url}",
-    );
-    for kept in [json!({ "assetId": "ea_upload" }), json!({ "url": "" })] {
+    let admitted = |kind: &str, key: &str, value: Value| {
         let (content, _, client, _) = rooms(&questions);
-        image(&client, kept);
+        block(&client, kind, key, value);
         let mut check = validator(Kind::Quiz, &content);
-        accepted(&mut check, &content, &client);
+        check.policy = Policy {
+            quiz_assets_url: Some("https://assets.example.test/bank".into()),
+            ..Policy::default()
+        };
+        admit(&mut check, &content, &diff(&client, &content)).0
+    };
+    let graph = |url: &str| json!({ "image": { "url": url }, "width": 10, "height": 10 });
+    for image in [
+        json!({ "assetId": "ea_upload" }),
+        json!({ "url": "" }),
+        json!({ "url": hosted }),
+    ] {
+        let result = admitted("image", "image", image.clone());
+        assert!(
+            matches!(result, Ok(Admission::Accepted)),
+            "{image}: {result:?}"
+        );
+    }
+    let result = admitted("graph", "value", graph(hosted));
+    assert!(matches!(result, Ok(Admission::Accepted)), "{result:?}");
+    for (kind, key, value, reason) in [
+        (
+            "image",
+            "image",
+            json!({ "url": elsewhere }),
+            "an image that is not {assetId} or a hosted {url}",
+        ),
+        (
+            "graph",
+            "value",
+            graph(elsewhere),
+            "a graph image that is not a hosted {url}",
+        ),
+    ] {
+        let result = admitted(kind, key, value);
+        assert!(
+            matches!(&result, Err(Refusal::Shape(m)) if m.contains(reason)),
+            "{kind}: {result:?}"
+        );
     }
 }
 

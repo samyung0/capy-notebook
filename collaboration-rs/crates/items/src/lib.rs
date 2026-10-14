@@ -106,15 +106,17 @@ impl Kind {
         }
     }
 
+    /// `policy`: the host a quiz's figure links must be under.
     pub fn admit_shapes<T: yrs::ReadTxn>(
         self,
         txn: &T,
         incoming: &ydoc::Incoming,
+        policy: &notes::questions::Policy,
     ) -> Result<Growth, String> {
         match self {
             Kind::Flashcards => flashcards::admit_shapes(txn, incoming),
-            Kind::Quiz => quiz::admit_content(txn, incoming),
-            Kind::QuizKeys => quiz::admit_keys(txn, incoming),
+            Kind::Quiz => quiz::admit_content(txn, incoming, policy),
+            Kind::QuizKeys => quiz::admit_keys(txn, incoming, policy),
         }
     }
 
