@@ -162,3 +162,93 @@ func TestAgentEditStoresFiguresBeforeTheirBlocks(t *testing.T) {
 		t.Fatalf("objects = %d, want the retry's second upload deleted", n)
 	}
 }
+
+// A library figure add_question_media places becomes the quiz's own image:
+// the question reaches the authority pointing at an asset of the quiz, and a
+// figure the request did not render is refused before anything is stored.
+func TestAgentQuizEditStoresItsFigureAsTheQuizImage(t *testing.T) {
+	h, st, mem := openInternalHTTPWithBlob(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	assetID := store.ChatAssetID(msgID, "call_quiz_fig/figure/fig_q")
+	var nodes []map[string]any
+	authority := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Commands []struct {
+				Node map[string]any `json:"node"`
+			} `json:"commands"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		nodes = append(nodes, body.Commands[0].Node)
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"code":"stale_target","message":"retry"}`))
+	}))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+
+	question := func(blocks ...map[string]any) map[string]any {
+		return map[string]any{
+			"id": "q1", "stem": []any{}, "layout": "paper", "labels": "letters",
+			"parts": []any{map[string]any{
+				"id": "q1:part:1", "marks": 1, "solution": []any{},
+				"blocks": append([]map[string]any{{"type": "text", "text": "Which organelle?"}}, blocks...),
+				"answer": map[string]any{"type": "mcq", "options": []string{"a", "b"}, "correct": []int{0}},
+			}},
+		}
+	}
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret, map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor", "assistantMessageId": msgID,
+		"toolCallId": "call_quiz_fig_create", "kind": "quiz", "title": "Cells " + msgID,
+		"questions": []any{question()},
+	})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	quizID := store.ChatMaterialID(msgID, "call_quiz_fig_create")
+	cleanupMaterial(t, st, quizID)
+	image := map[string]any{
+		"type": "image", "image": map[string]any{"assetId": "figure:fig_q"},
+		"width": 640, "height": 480, "description": "A cell", "attribution": "A cell (CC BY 4.0)",
+	}
+	edit := map[string]any{
+		"workspaceId": "ws_e2e_private", "userId": "u_editor",
+		"assistantMessageId": msgID, "toolCallId": "call_quiz_fig_unrendered",
+		"target":   map[string]any{"kind": "material", "id": quizID},
+		"commands": []map[string]any{{"type": "replace_question", "question_id": "q1", "question": question(image)}},
+	}
+
+	// A question that already shows an uploaded image keeps it beside the figure.
+	uploaded := map[string]any{
+		"type": "image", "image": map[string]any{"assetId": "asset_uploaded"},
+		"width": 10, "height": 10, "description": "An upload",
+	}
+	edit["commands"] = []map[string]any{{"type": "replace_question", "question_id": "q1", "question": question(uploaded, image)}}
+	rec = doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, edit)
+	if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "figure fig_q was not rendered") {
+		t.Fatalf("unrendered figure: status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(nodes) != 0 {
+		t.Fatalf("the unrendered figure reached the authority: %+v", nodes)
+	}
+
+	edit["toolCallId"] = "call_quiz_fig"
+	edit["figures"] = []map[string]any{{"id": "fig_q", "image": fakeJPEG(900)}}
+	doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, edit)
+	if len(nodes) != 1 {
+		t.Fatalf("authority calls = %d, want 1", len(nodes))
+	}
+	blocks := nodes[0]["question"].(map[string]any)["parts"].([]any)[0].(map[string]any)["blocks"].([]any)
+	if got := blocks[1].(map[string]any)["image"].(map[string]any)["assetId"]; got != "asset_uploaded" {
+		t.Fatalf("uploaded image asset = %v, want it kept", got)
+	}
+	if got := blocks[2].(map[string]any)["image"].(map[string]any)["assetId"]; got != assetID {
+		t.Fatalf("figure image asset = %v, want %s", got, assetID)
+	}
+	asset, err := st.GetEditorAsset(t.Context(), assetID)
+	if err != nil || asset.MaterialID != quizID || !asset.Trashed {
+		t.Fatalf("asset = %+v (%v), want the quiz's, trashed after the refusal", asset, err)
+	}
+	if n := assetObjects(t, mem, assetID); n != 1 {
+		t.Fatalf("objects = %d, want 1", n)
+	}
+}

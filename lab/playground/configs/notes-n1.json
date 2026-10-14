@@ -1,0 +1,35 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {
+    "mainFormat": "note"
+  },
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": true
+  },
+  "skill_addons": {
+    "workspace_building": "How to explain in a note:\n- Heading: the section's point in at most eight words, as a claim or as the question it answers.\n- Alternate text segments of two or three short lines with blocks (a library figure, chart, plot, mermaid diagram, table, numbered steps, interactive).\n- A block shows what words cannot: a shape, a change, a structure or a comparison. If removing it loses nothing, leave it out.\n- The line before a block says what to look at; the line after says what it means. Never restate its labels.\n- Labels go inside the block, next to what they name.\n- Bold a new term where it first appears and define it on that line; at most three per section.\n- One idea per section, at most about 120 words of prose; more sections rather than longer ones.\n- End each section with one why or what-if question in a ```quiz or ```flashcards fence (its answer stays hidden until tried)."
+  },
+  "_note": "N1 segmented multimedia (Mayer coherence, signalling, contiguity, segmenting)"
+}

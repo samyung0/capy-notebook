@@ -1,0 +1,35 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {
+    "mainFormat": "deck"
+  },
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": true
+  },
+  "skill_addons": {
+    "deck": "How to teach on slides (decks are read alone, with no speaker):\n- For each idea: (1) a claim slide with the rule in one sentence and the smallest example showing it; (2) a worked-example slide with the question, the givens and numbered steps, each with its reason in a few words; (3) a your-turn slide with a near-identical problem whose last step is blank, completed with its reason on the next slide.\n- Every three or four ideas, a check slide with two questions that need the ideas together, answers on the next slide.\n- Take examples and exercises from the library first. Never mix numbers from different examples; label new problems as new.\n- Name the common error beside the step where students make it.\n- An idea with no procedure gets one claim slide with a diagram.\n- Prefer fewer ideas with the full cycle to more ideas without practice."
+  },
+  "_note": "D3 example then practice (worked examples with fading)"
+}

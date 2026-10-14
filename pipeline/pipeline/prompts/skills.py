@@ -40,15 +40,15 @@ Plan:
 - Search where the need is: the workspace for the learner's own material, the library for textbook explanations, examples and exercises.
 
 What to build:
-- Each chapter gets one main explainer: a note for detailed, text-dense learning.
+- Each chapter gets one main explainer, a note or a deck as the main format says.
 - Mindmaps, diagrams and interactive blocks go inside the note where they help an idea. Create a standalone mindmap or diagram only when asked.
-- Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id in the turn context. A quiz or flashcards fence inside a note is a mini knowledge check.
+- Quizzes and flashcards are standalone materials filed in the chapter they practise, by its chapter_id in the turn context. A quiz or flashcards fence inside a note is a knowledge check.
 - Follow the study preferences in the turn context unless the request says otherwise.
 - Grow a long note section by section: create it with its first sections, then append each next section with one edit_document insert_markdown command rather than rewriting the note.
 
 Note format (create_material content, edit_document insert_markdown and replace_block): {note}
 
-Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_question_media puts a chart or plot under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
+Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; add_question_media puts a chart, a plot or a library figure under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
 
 Flashcards: cards, a list of {{front, back}}.
 
@@ -86,7 +86,7 @@ def deck(rules: str, style: str, style_text: str) -> str:
     """The deck skill: the method, the slide rules and the style with its
     reference slides (ppt-master's Quick route, openwiki/decks.md)."""
     return (
-        "How to make a slide deck, the brief or lecture-like main explainer.\n\n"
+        "How to make a slide deck, a chapter's main explainer.\n\n"
         "Plan:\n"
         "- Outline with create_deck: one title and brief per slide, in order, one slide per idea, "
         "8 to 20 per chapter, opening with a cover. A brief says the slide's audience move (what "

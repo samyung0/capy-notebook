@@ -3651,12 +3651,6 @@ export const UpdateMaterialSharingResponse = zod.object({
 /**
  * @summary Current user
  */
-export const getMeResponseStudyPreferencesFlashcardsPerChapterMax = 100;
-
-export const getMeResponseStudyPreferencesQuizLengthMax = 50;
-
-
-
 export const GetMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
@@ -3691,16 +3685,15 @@ export const GetMeResponse = zod.object({
   "streak": zod.int(),
   "studyPreferences": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
-  "flashcardsPerChapter": zod.int().min(1).max(getMeResponseStudyPreferencesFlashcardsPerChapterMax).optional(),
-  "mainFormat": zod.enum(['note', 'deck', 'auto']).optional(),
-  "miniChecks": zod.boolean().optional(),
-  "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
-  "quizLength": zod.int().min(1).max(getMeResponseStudyPreferencesQuizLengthMax).optional(),
+  "flashcards": zod.enum(['more', 'less', 'off']).optional(),
+  "knowledgeChecks": zod.boolean().optional(),
+  "mainFormat": zod.enum(['note', 'deck']).optional(),
+  "quiz": zod.enum(['more', 'less', 'off']).optional(),
   "reviewFocus": zod.enum(['balanced', 'tricky', 'fading', 'learned']).optional(),
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
-  "visualAids": zod.enum(['fewer', 'more']).optional()
+  "visualAids": zod.enum(['fewer', 'more']).optional(),
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
 }),
   "studyProgress": zod.boolean(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
@@ -3719,12 +3712,6 @@ export const UpdateMeBody = zod.object({
   "avatarIconId": zod.string().regex(updateMeBodyAvatarIconIdRegExp).optional().describe('Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection'),
   "name": zod.string().min(1).max(updateMeBodyNameMax).describe('Display name')
 })
-
-export const updateMeResponseStudyPreferencesFlashcardsPerChapterMax = 100;
-
-export const updateMeResponseStudyPreferencesQuizLengthMax = 50;
-
-
 
 export const UpdateMeResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -3760,16 +3747,15 @@ export const UpdateMeResponse = zod.object({
   "streak": zod.int(),
   "studyPreferences": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
-  "flashcardsPerChapter": zod.int().min(1).max(updateMeResponseStudyPreferencesFlashcardsPerChapterMax).optional(),
-  "mainFormat": zod.enum(['note', 'deck', 'auto']).optional(),
-  "miniChecks": zod.boolean().optional(),
-  "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
-  "quizLength": zod.int().min(1).max(updateMeResponseStudyPreferencesQuizLengthMax).optional(),
+  "flashcards": zod.enum(['more', 'less', 'off']).optional(),
+  "knowledgeChecks": zod.boolean().optional(),
+  "mainFormat": zod.enum(['note', 'deck']).optional(),
+  "quiz": zod.enum(['more', 'less', 'off']).optional(),
   "reviewFocus": zod.enum(['balanced', 'tricky', 'fading', 'learned']).optional(),
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
-  "visualAids": zod.enum(['fewer', 'more']).optional()
+  "visualAids": zod.enum(['fewer', 'more']).optional(),
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
 }),
   "studyProgress": zod.boolean(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
@@ -3862,23 +3848,16 @@ export const SetModelPrefsResponse = zod.void()
 /**
  * @summary Save study preferences
  */
-export const setStudyPreferencesBodyFlashcardsPerChapterMax = 100;
-
-export const setStudyPreferencesBodyQuizLengthMax = 50;
-
-
-
 export const SetStudyPreferencesBody = zod.object({
-  "explainerStyle": zod.enum(['brief', 'standard', 'detailed']).optional(),
-  "flashcardsPerChapter": zod.int().min(1).max(setStudyPreferencesBodyFlashcardsPerChapterMax).optional(),
-  "mainFormat": zod.enum(['note', 'deck', 'auto']).optional(),
-  "miniChecks": zod.boolean().optional(),
-  "practice": zod.enum(['none', 'quiz', 'flashcards', 'both']).optional(),
-  "quizLength": zod.int().min(1).max(setStudyPreferencesBodyQuizLengthMax).optional(),
+  "flashcards": zod.enum(['more', 'less', 'off']).optional(),
+  "knowledgeChecks": zod.boolean().optional(),
+  "mainFormat": zod.enum(['note', 'deck']).optional(),
+  "quiz": zod.enum(['more', 'less', 'off']).optional(),
   "reviewFocus": zod.enum(['balanced', 'tricky', 'fading', 'learned']).optional(),
   "reviewItems": zod.enum(['both', 'quiz', 'flashcards']).optional(),
   "reviewSize": zod.union([zod.literal(10),zod.literal(20),zod.literal(30),zod.literal(50)]).optional(),
-  "visualAids": zod.enum(['fewer', 'more']).optional()
+  "visualAids": zod.enum(['fewer', 'more']).optional(),
+  "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
 })
 
 export const SetStudyPreferencesResponse = zod.void()

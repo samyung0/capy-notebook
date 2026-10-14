@@ -32,6 +32,11 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 	if err := a.assertWorkspaceEditor(ctx, in.ID); err != nil {
 		return nil, hErr(err)
 	}
+	// The panel picks how many (Epo 2026-10-14: no study preference here).
+	if kind := in.Body.Kind.MaterialKind(); in.Body.Count == 0 &&
+		(kind == store.MaterialQuiz || kind == store.MaterialFlashcards) {
+		return nil, huma.Error400BadRequest("count is required for a quiz or a flashcard set")
+	}
 	// Refuse a frozen actor or owner, and an owner at its storage limit, before
 	// credits are reserved or spent; the material insert would refuse it anyway.
 	ownerID, err := a.s.WorkspaceOwnerID(ctx, in.ID)
@@ -106,7 +111,7 @@ func (a *api) generate(ctx context.Context, in *generateInput) (*generateOutput,
 
 type generateOpts struct {
 	Kind        store.MaterialKind
-	Count       int // 0 leaves it to the requester's study preference
+	Count       int // questions or cards; required for a quiz or flashcard set
 	Types       []string
 	Levels      []string
 	Chapters    []string
@@ -237,19 +242,12 @@ func (a *api) generateViaPipe(
 	if err != nil {
 		return nil, pipeUsage{}, err
 	}
-	// The requester's saved study preferences, as chat turns get them: the
-	// pipeline takes an omitted count from them.
-	prefs, err := a.s.StudyPreferencesOf(ctx, userID)
-	if err != nil {
-		return nil, pipeUsage{}, err
-	}
 	body := map[string]any{
 		"workspaceId": wsID, "kind": opts.Kind, "types": opts.Types, "levels": opts.Levels,
 		"chapters": chapterNames, "fileIds": fileIDs,
 		"detail": opts.Detail, "diagramType": opts.DiagramType,
-		"studyPreferences": prefs,
-		"locale":           a.userLocale(ctx, userID),
-		"spendSessionId":   spendSessionID,
+		"locale":         a.userLocale(ctx, userID),
+		"spendSessionId": spendSessionID,
 	}
 	if opts.Count > 0 {
 		body["count"] = opts.Count

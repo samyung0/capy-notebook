@@ -116,7 +116,9 @@ one, since it reads `materials/<id>.json`, which every write updates.
   second local origin, so there they stay blank; check them in a normal
   browser.
 - **Decks** show each written slide from its SVG (figures inlined) with its
-  brief, and the `.pptx` download once exported.
+  brief, and once exported the `.pptx` download and its path on this machine
+  (`lab/playground/local/runs/<run>/materials/<deck id>.pptx`), to open in
+  Finder or PowerPoint.
 - **Raw text** (the note, or quiz and card fields as saved, without guessing
   whether a legacy numeric answer is zero-based or one-based) and the saved
   JSON with provenance stay below the preview.
@@ -147,9 +149,11 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `library_rules` | `null` keeps production's library rules; a string replaces them. Sent only with Library on, before the answer format (or last when a replaced `system_prompt` dropped it) |
 | `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `browse_knowledge` still receives the live subject catalog |
 | `skills` | Map of skill names (`editing`, `workspace_building`, `deck`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text; an applied text ignores the Library switch, which adds library rules to production's `editing` and `workspace_building` |
+| `skill_addons` | Map of skill names to text appended to what `read_skill` returns (after any `skills` replacement), so a teaching variant rides on production's current text; seen in the config JSON and each call's full context |
 | `library` | The per-turn Library switch (default on): the shared library is a source and its tools are offered |
 | `open_resource` | What the learner has open, `{"id", "kind", "title"}` or `null`; the turn context names it |
 | `study_preferences` | The learner's saved preferences; missing fields take the defaults in `pipeline/prompts/preferences.py` |
+| `preference_text` | `field=value` (`writingStyle=brief`, `mainFormat=note`, `visualAids=more`, `knowledgeChecks=questions`, `=cards` or `=off`) to the line that value adds to the turn context, in place of `pipeline/prompts/preferences.py`'s; edited in the Preference wording panel. The study preferences carry the style of notes and decks (Epo 2026-10-14), so this is where that style is tuned. A turn sends only the lines of its own `study_preferences` values |
 | `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
 | `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
 | `library_flow` | Reshapes the library tools for an experiment. `null` keeps production's; `browse_first` leaves `browse_knowledge` only its `subject` argument (a subject's topics with counts); `search_subject` gives `search_knowledge` a `subject` id in place of `topics` (filtering by every topic of that subject), removes `browse_knowledge` and moves its subject list into search's description. Arguments are checked against the reshaped schema, and result lines naming a removed argument are reworded. Configs `flow-browse-first` and `flow-search-subject` pair each with matching `library_rules` |

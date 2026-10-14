@@ -4,33 +4,25 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { StudyPreferencesExplainerStyle } from './studyPreferencesExplainerStyle.ts';
+import type { StudyPreferencesFlashcards } from './studyPreferencesFlashcards.ts';
 import type { StudyPreferencesMainFormat } from './studyPreferencesMainFormat.ts';
-import type { StudyPreferencesPractice } from './studyPreferencesPractice.ts';
+import type { StudyPreferencesQuiz } from './studyPreferencesQuiz.ts';
 import type { StudyPreferencesReviewFocus } from './studyPreferencesReviewFocus.ts';
 import type { StudyPreferencesReviewItems } from './studyPreferencesReviewItems.ts';
 import type { StudyPreferencesReviewSize } from './studyPreferencesReviewSize.ts';
 import type { StudyPreferencesVisualAids } from './studyPreferencesVisualAids.ts';
+import type { StudyPreferencesWritingStyle } from './studyPreferencesWritingStyle.ts';
 
 export interface StudyPreferences {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  explainerStyle?: StudyPreferencesExplainerStyle;
-  /**
-     * @minimum 1
-     * @maximum 100
-     */
-  flashcardsPerChapter?: number;
+  flashcards?: StudyPreferencesFlashcards;
+  knowledgeChecks?: boolean;
   mainFormat?: StudyPreferencesMainFormat;
-  miniChecks?: boolean;
-  practice?: StudyPreferencesPractice;
-  /**
-     * @minimum 1
-     * @maximum 50
-     */
-  quizLength?: number;
+  quiz?: StudyPreferencesQuiz;
   reviewFocus?: StudyPreferencesReviewFocus;
   reviewItems?: StudyPreferencesReviewItems;
   reviewSize?: StudyPreferencesReviewSize;
   visualAids?: StudyPreferencesVisualAids;
+  writingStyle?: StudyPreferencesWritingStyle;
 }

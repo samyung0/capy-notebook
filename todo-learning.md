@@ -624,19 +624,20 @@ in `tools.schemas_for`.
 Rendered with the ledger message from the requester's saved preferences
 (phase 2 stores them; the playground edits them).
 
+Since 2026-10-14 (`human/agentic-retrieval.md`):
+
 | Field | Values | Default |
 |---|---|---|
-| Explainer style | brief, standard, detailed | standard |
-| Practice with each chapter | none, quiz, flashcards, both | quiz |
-| Quiz length | questions per chapter quiz | 8 |
-| Flashcards per chapter | count | 15 |
-| Mini knowledge checks in notes | on, off | on |
+| Output files | Capy Note, PowerPoint | Capy Note |
+| Writing style | brief, normal, verbose | normal |
+| Quiz | more (10), less (5), off | less |
+| Flashcards | more (10), less (5), off | off |
 | Visual aids in notes | fewer, more | more |
+| Knowledge checks in notes | on, off (at most 2 questions, or 3 cards when flashcards is set higher than quiz) | on |
 
-A small mapping in `prompts/` turns these into instructions ("detailed: a full
-note per chapter with worked examples; brief: a short note, key points first").
+A small mapping in `prompts/preferences.py` turns these into instructions.
 Language is the account locale (`prompts/locale.py`). The request overrides any
-field ("make it brief this time"). A main-format field arrives with decks.
+field ("make it brief this time").
 
 **1.5 Open file.** One prompt line: the file or material the learner has open
 (title and id), or none.

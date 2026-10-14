@@ -77,7 +77,9 @@ import (
 // fields deciding its kind, so a note's quiz fence takes exactly its items.
 // v26: the question-bank tools are gone (Epo 2026-10-14): no list_question_bank,
 // read_question or copy_questions; the learner's bank keeps its own copy.
-const ContractVersion = 26
+// v27: add_question_media takes a library figure, {"type": "figure", "id",
+// "caption"?}, stored as the quiz's own image (Epo 2026-10-13).
+const ContractVersion = 27
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -466,15 +468,15 @@ var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
 	noteFigureFences +
 	"```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and " +
-	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a mini check of 2 to 4 " +
-	"items; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
+	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check of a " +
+	"few items; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
 	"`html: |`), at most %d per note. ", embeds.HTMLEmbedMaxCount) + embeds.RulesOf("html_embed") +
 	" Use an interactive only where moving something teaches more than a diagram."
 
 // The agent writes questions in small shapes (Epo 2026-10-13): multiple-choice,
 // short-answer and open questions through add_questions (one tool since
-// 2026-10-14), and a chart or plot under a question through
-// add_question_media. The retrieval service checks every argument,
+// 2026-10-14), and a chart, a plot or a library figure under a question
+// through add_question_media. The retrieval service checks every argument,
 // naming each problem at once, and expands the shapes into the question format
 // (pipeline/retrieval/questions.py); the quiz validator stays the backstop.
 // The schemas stay lean because the model reads them on every call.
@@ -774,8 +776,10 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "add_question_media",
 			Retention: RetainFull,
-			Description: "Add a chart or plot to one quiz question, shown after its text; library " +
-				`figures go into notes only. Example: {"quiz_id": "mat_1", "question_id": "q_3f9a1c2b7e", ` +
+			Description: "Add a chart, a plot or a library figure to one quiz question, shown after " +
+				`its text. A figure is one read_knowledge listed this turn: {"type": "figure", "id": ` +
+				`"<figure id>", "caption": "what it shows"}; the question shows it with its printed ` +
+				`credit and the quiz credits its book. Example: {"quiz_id": "mat_1", "question_id": "q_3f9a1c2b7e", ` +
 				`"media": {"type": "plot", "title": "Action potential", "xTitle": "Time (ms)", "yTitle": ` +
 				`"Membrane potential (mV)", "series": [{"name": "Vm", "points": [[0, -70], [1, 30], ` +
 				`[2, -80], [4, -70]]}]}}`,
@@ -784,7 +788,7 @@ func Definitions() []Definition {
 				"question_id": str(""),
 				"media": map[string]any{
 					"type": "object", "additionalProperties": true,
-					"description": "A note's chart or plot fence JSON.",
+					"description": "A note's chart or plot fence JSON, or a library figure.",
 				},
 				"excerpt_ids": excerptIDs("Library excerpts the media was drawn from."),
 			}, "quiz_id", "question_id", "media"),

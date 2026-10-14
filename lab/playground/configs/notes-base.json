@@ -1,0 +1,31 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {
+    "mainFormat": "note"
+  },
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": true
+  }
+}

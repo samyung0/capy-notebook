@@ -739,9 +739,9 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     ctx = _library_ctx()
     ctx.open_resource = {"id": "f_1", "kind": "file", "title": "Cells.pdf"}
     ctx.study_preferences = {
-        "explainerStyle": "brief",
-        "practice": "both",
-        "quizLength": 5,
+        "writingStyle": "brief",
+        "quiz": "less",
+        "flashcards": "more",
         "mainFormat": "deck",
     }
     ctx.library_reads.note("e_1", 0, "Ch 8 > 8.1 Line fitting")
@@ -752,16 +752,20 @@ def test_turn_context_renders_open_file_preferences_and_reads():
 
     assert rendered["_kind"] == "turn_context"
     assert "Open: Cells.pdf (file f_1)." in body
-    assert "key points first" in body, "brief explainer"
-    assert "a deck for every chapter" in body
-    assert "a quiz of 5 questions and 15 flashcards" in body
+    assert "key points first" in body, "brief writing"
+    assert "a deck explains each chapter" in body
+    assert "a quiz of 5 questions and a set of 10 flashcards" in body
+    assert "knowledge check of at most 3 flashcards" in body, "cards set higher"
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
     empty = turn_context.message(_library_ctx())["content"]
     assert "Open: nothing." in empty and "Library excerpts" not in empty
-    assert "a quiz of 8 questions" in empty, "default preferences"
-    assert "brief leans deck, detailed leans note" in empty, "auto main format"
+    assert "a quiz of 5 questions; make no flashcards unless asked." in empty, (
+        "default preferences: quiz less, flashcards off said off"
+    )
+    assert "a note explains each chapter" in empty
+    assert "knowledge check of at most 2 questions" in empty
 
 
 # --------------------------------------------------------------- citations
@@ -1069,7 +1073,7 @@ async def test_generate_refuses_empty_indexed_scope_before_model(monkeypatch):
         await service._generate(req)
 
 
-async def test_generate_counts_default_to_the_study_preferences(monkeypatch):
+async def test_generate_takes_the_panels_count(monkeypatch):
     from pipeline.retrieve import service
 
     spec = ModelConfig(
@@ -1099,12 +1103,10 @@ async def test_generate_counts_default_to_the_study_preferences(monkeypatch):
             **extra,
         )
 
-    saved = {"quizLength": 20, "flashcardsPerChapter": 12}
-    # The panel's count wins; without one the saved preference, else its default.
-    assert service._count(req("quiz", studyPreferences=saved)) == 20
-    assert service._count(req("flashcards", studyPreferences=saved)) == 12
-    assert service._count(req("flashcards")) == 15
-    assert service._count(req("quiz", count=5, studyPreferences=saved)) == 5
+    # The panel's More or Less is the count; the study preferences never set it.
+    assert service._count(req("quiz", count=10)) == 10
+    with pytest.raises(ValueError, match="needs a count"):
+        service._count(req("flashcards"))
 
     asked: list[str] = []
 
@@ -1119,8 +1121,8 @@ async def test_generate_counts_default_to_the_study_preferences(monkeypatch):
     monkeypatch.setattr(service.models, "resolve_query_model", lambda *_a, **_k: spec)
     monkeypatch.setattr(service.workflows, "generation_context", _context)
     monkeypatch.setattr(service.workflows, "produce", _produce)
-    await service._generate(req("flashcards", studyPreferences=saved))
-    assert asked[0].startswith("Create 12 study flashcards")
+    await service._generate(req("flashcards", count=5))
+    assert asked[0].startswith("Create 5 study flashcards")
 
 
 @pytest.mark.parametrize("character", ["a", "光", "😀"])

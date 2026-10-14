@@ -346,8 +346,8 @@ type internalDocumentsEditReq struct {
 	// service from the excerpt ids the model named. It is appended to the
 	// material's stored record; absent for a workspace edit.
 	Provenance *store.Provenance `json:"provenance"`
-	// The library figures the commands' markdown places, rendered by the
-	// retrieval service; each becomes an editor asset of the note.
+	// The library figures the commands' markdown or questions place, rendered
+	// by the retrieval service; each becomes an editor asset of the note or quiz.
 	Figures []agentFigure `json:"figures"`
 }
 
@@ -406,7 +406,7 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	// record is merged with this edit's books before the authority writes it in
 	// the same transaction as the content.
 	var provenance *store.Provenance
-	// The rows insert_markdown created for the note's mini checks. They are
+	// The rows insert_markdown created for the note's knowledge checks. They are
 	// discarded unless the edit commits or its outcome is unknown, so a refused
 	// edit leaves no hidden rows behind.
 	var embedded []string
@@ -426,7 +426,7 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		}
 	}()
 	if len(req.Figures) > 0 && req.Target.Kind != agenttools.KindMaterial {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "only a note shows figures"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"code": "invalid_input", "message": "only a note or a quiz shows figures"})
 		return
 	}
 	switch req.Target.Kind {
@@ -438,8 +438,15 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 		}
 		var drafts []store.EmbeddedDraft
 		figures := newAgentFigures(req.AssistantMessageID, req.ToolCallID, req.Figures)
+		commands := req.Commands
+		if mt.Kind == "quiz" {
+			if commands, err = figures.resolveQuizCommands(commands); err != nil {
+				a.failDocument(w, err)
+				return
+			}
+		}
 		written, markdownCommands := 0, 0
-		normalized, err = normalizeMaterialCommands(string(mt.Kind), req.Commands, func(i int, markdown string) ([]any, error) {
+		normalized, err = normalizeMaterialCommands(string(mt.Kind), commands, func(i int, markdown string) ([]any, error) {
 			blocks, fences, err := a.noteBlocksFromMarkdown(ctx, req, i, markdown, figures)
 			drafts = append(drafts, fences...)
 			written += len(blocks)

@@ -134,20 +134,30 @@ function OptionRow({
   );
 }
 
-function CountRow({
+/** How many questions or cards: Less makes 5, More 10 (Epo 2026-10-14). */
+const AMOUNTS = [
+  { count: 5, label: m.generate_amount_less },
+  { count: 10, label: m.generate_amount_more },
+];
+
+function AmountRow({
   value,
   onChange,
 }: {
-  value?: number;
+  value: number;
   onChange: (n: number) => void;
 }) {
   return (
     <div className="flex items-center justify-between">
-      <p className="t-label text-fg-muted">{m.common_count()}</p>
+      <p className="t-label text-fg-muted">{m.generate_amount()}</p>
       <div className="flex items-center gap-2">
-        {[5, 10, 15, 20].map((n) => (
-          <Chip active={value === n} key={n} onClick={() => onChange(n)}>
-            {n}
+        {AMOUNTS.map(({ count, label }) => (
+          <Chip
+            active={value === count}
+            key={count}
+            onClick={() => onChange(count)}
+          >
+            {label({ count })}
           </Chip>
         ))}
       </div>
@@ -189,8 +199,7 @@ export function GenerateForm({
   const [title, setTitle] = useState(() =>
     nextGenerateTitle(mode, workspaceName, existingTitles)
   );
-  // Unpicked, the server uses the user's study preference for the kind.
-  const [count, setCount] = useState<number>();
+  const [count, setCount] = useState(5);
   const [types, setTypes] = useState<QuestionType[]>(['mcq', 'boolean']);
   const [detail, setDetail] = useState<'brief' | 'standard' | 'detailed'>(
     'standard'
@@ -208,13 +217,12 @@ export function GenerateForm({
     if (mode === 'quiz' && !types.length) return;
     const scope = {
       chapters: chapterScope,
-      count,
       fileIds: fileScope,
       title: title.trim(),
     };
     let opts: GenerateOptions;
-    if (mode === 'flashcards') opts = { kind: 'flashcards', ...scope };
-    else if (mode === 'quiz') opts = { kind: 'quiz', types, ...scope };
+    if (mode === 'flashcards') opts = { count, kind: 'flashcards', ...scope };
+    else if (mode === 'quiz') opts = { count, kind: 'quiz', types, ...scope };
     else if (mode === 'mindmap') opts = { detail, kind: 'mindmap', ...scope };
     else opts = { diagramType, kind: 'diagram', ...scope };
     await onGenerate(opts);
@@ -294,11 +302,11 @@ export function GenerateForm({
         </div>
 
         {mode === 'flashcards' && (
-          <CountRow onChange={setCount} value={count} />
+          <AmountRow onChange={setCount} value={count} />
         )}
         {mode === 'quiz' && (
           <>
-            <CountRow onChange={setCount} value={count} />
+            <AmountRow onChange={setCount} value={count} />
             <div className="flex flex-col gap-1.5">
               <p className="t-label text-fg-muted">
                 {m.generate_question_types()}

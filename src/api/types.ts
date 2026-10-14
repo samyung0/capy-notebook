@@ -540,16 +540,17 @@ export type GenerateKind = Exclude<MaterialKind, 'note'>;
 
 export interface GenerateScope {
   chapters: string[]; // chapter ids
-  /** Omitted, the server takes the user's study preference for the kind. */
-  count?: number;
   fileIds: string[]; // file ids
   levels?: CognitiveLevel[];
   title: string;
 }
+/** The panel's More (10) or Less (5); never the study preferences. */
 export interface GenerateFlashcardsOptions extends GenerateScope {
+  count: number;
   kind: 'flashcards';
 }
 export interface GenerateQuizOptions extends GenerateScope {
+  count: number;
   kind: 'quiz';
   types: QuestionType[];
 }

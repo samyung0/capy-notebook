@@ -17,31 +17,36 @@ import { m } from '@/i18n';
 
 /** What an unset field means; mirrors pipeline/pipeline/prompts/preferences.py. */
 const DEFAULTS: Required<Omit<StudyPreferences, '$schema'>> = {
-  explainerStyle: 'standard',
-  flashcardsPerChapter: 15,
-  mainFormat: 'auto',
-  miniChecks: true,
-  practice: 'quiz',
-  quizLength: 8,
+  flashcards: 'off',
+  knowledgeChecks: true,
+  mainFormat: 'note',
+  quiz: 'less',
   // Review defaults mirror reviewPrefsOf in server/internal/store/review_sessions.go.
   reviewFocus: 'balanced',
   reviewItems: 'both',
   reviewSize: 20,
   visualAids: 'more',
+  writingStyle: 'normal',
 };
 
 /** Fields saved as numbers. */
-const NUMERIC = new Set(['quizLength', 'flashcardsPerChapter', 'reviewSize']);
+const NUMERIC = new Set(['reviewSize']);
+
+/** A practice item's amount (pipeline/prompts/preferences.py COUNT). */
+const LEVELS: Choice[] = [
+  { label: m.study_pref_level_more, value: 'more' },
+  { label: m.study_pref_level_less, value: 'less' },
+  { label: m.study_pref_level_off, value: 'off' },
+];
 
 type Choice = { label: () => string; value: string };
 
 type Row = {
   field:
     | 'mainFormat'
-    | 'explainerStyle'
-    | 'practice'
-    | 'quizLength'
-    | 'flashcardsPerChapter'
+    | 'writingStyle'
+    | 'quiz'
+    | 'flashcards'
     | 'visualAids'
     | 'reviewSize'
     | 'reviewItems'
@@ -85,10 +90,10 @@ const REVIEW_ROWS: Row[] = [
   },
 ];
 
+/** What the chat builds (human/agentic-retrieval.md, 2026-10-14). */
 const ROWS: Row[] = [
   {
     choices: [
-      { label: m.study_pref_main_auto, value: 'auto' },
       { label: m.study_pref_main_note, value: 'note' },
       { label: m.study_pref_main_deck, value: 'deck' },
     ],
@@ -98,42 +103,25 @@ const ROWS: Row[] = [
   },
   {
     choices: [
-      { label: m.study_pref_explainer_brief, value: 'brief' },
-      { label: m.study_pref_explainer_standard, value: 'standard' },
-      { label: m.study_pref_explainer_detailed, value: 'detailed' },
+      { label: m.study_pref_writing_brief, value: 'brief' },
+      { label: m.study_pref_writing_normal, value: 'normal' },
+      { label: m.study_pref_writing_verbose, value: 'verbose' },
     ],
-    field: 'explainerStyle',
-    hint: m.study_pref_explainer_hint,
-    title: m.study_pref_explainer,
+    field: 'writingStyle',
+    hint: m.study_pref_writing_hint,
+    title: m.study_pref_writing,
   },
   {
-    choices: [
-      { label: m.study_pref_practice_none, value: 'none' },
-      { label: m.study_pref_practice_quiz, value: 'quiz' },
-      { label: m.study_pref_practice_flashcards, value: 'flashcards' },
-      { label: m.study_pref_practice_both, value: 'both' },
-    ],
-    field: 'practice',
-    hint: m.study_pref_practice_hint,
-    title: m.study_pref_practice,
+    choices: LEVELS,
+    field: 'quiz',
+    hint: m.study_pref_quiz_hint,
+    title: m.study_pref_quiz,
   },
   {
-    choices: [5, 8, 10, 15, 20].map((n) => ({
-      label: () => m.study_pref_questions_count({ count: n }),
-      value: String(n),
-    })),
-    field: 'quizLength',
-    hint: m.study_pref_quiz_length_hint,
-    title: m.study_pref_quiz_length,
-  },
-  {
-    choices: [10, 15, 20, 30].map((n) => ({
-      label: () => m.study_pref_cards_count({ count: n }),
-      value: String(n),
-    })),
-    field: 'flashcardsPerChapter',
-    hint: m.study_pref_cards_hint,
-    title: m.study_pref_cards,
+    choices: LEVELS,
+    field: 'flashcards',
+    hint: m.study_pref_flashcards_hint,
+    title: m.study_pref_flashcards,
   },
   {
     choices: [
@@ -197,18 +185,19 @@ export function StudyPreferencesSection() {
           description={m.study_prefs_hint()}
           title={m.study_prefs_title()}
         />
+        {ROWS.map(choiceRow)}
+        {/* Last: the least used (Epo 2026-10-14). */}
         <SettingRow
           hint={m.study_pref_checks_hint()}
           title={m.study_pref_checks()}
         >
           <Switch
             aria-label={m.study_pref_checks()}
-            checked={current.miniChecks}
+            checked={current.knowledgeChecks}
             disabled={!saved}
-            onCheckedChange={(checked) => set({ miniChecks: checked })}
+            onCheckedChange={(checked) => set({ knowledgeChecks: checked })}
           />
         </SettingRow>
-        {ROWS.map(choiceRow)}
       </div>
     </>
   );

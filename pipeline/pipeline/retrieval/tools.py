@@ -33,6 +33,7 @@ import requests
 from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
+from ..generated.limits import QUESTION_METADATA_MAX
 from . import capture, contract, deck, library, pending, questions, skills, store
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
@@ -1421,22 +1422,12 @@ class NoteFigures:
     links: int = 0
 
     async def render(self) -> dict[str, bytes] | ToolResult:
-        """Each figure's box on its page as a JPEG, as capture_knowledge_page
-        renders it: deterministic, so a retried write sends the same bytes."""
         images: dict[str, bytes] = {}
         for figure in self.figures.values():
-            try:
-                images[figure.id], _, _ = await capture.render_knowledge(
-                    figure.object_key,
-                    figure.bytes,
-                    figure.page,
-                    figure.bbox,
-                    cfg.capture_max_edge,
-                )
-            except capture.CaptureUnavailable as exc:
-                return _refused(f"figure {figure.id}: {exc}", code=exc.code)
-            except ValueError as exc:
-                return _refused(f"figure {figure.id}: {exc}")
+            rendered = await render_figure(figure)
+            if isinstance(rendered, ToolResult):
+                return rendered
+            images[figure.id] = rendered[0]
         return images
 
     def noted(self, result: ToolResult) -> ToolResult:
@@ -1448,28 +1439,48 @@ class NoteFigures:
         return result
 
 
-def _figure_caption(alt: str, figure: library.Figure) -> str:
-    """The caption the note shows: the model's text, else the printed label,
-    then the printed credit, escaped for the image's alt text."""
-    text = " ".join(re.sub(r"\\(.)", r"\1", alt).split()) or " ".join(
-        figure.label.split()
-    )
+async def render_figure(
+    figure: library.Figure,
+) -> tuple[bytes, tuple[int, int]] | ToolResult:
+    """A figure's box on its page as a JPEG with its size, as
+    capture_knowledge_page renders it: deterministic, so a retried write sends
+    the same bytes."""
+    try:
+        image, _, size = await capture.render_knowledge(
+            figure.object_key,
+            figure.bytes,
+            figure.page,
+            figure.bbox,
+            cfg.capture_max_edge,
+        )
+    except capture.CaptureUnavailable as exc:
+        return _refused(f"figure {figure.id}: {exc}", code=exc.code)
+    except ValueError as exc:
+        return _refused(f"figure {figure.id}: {exc}")
+    return image, size
+
+
+def figure_caption(text: str, figure: library.Figure) -> str:
+    """The caption a figure is shown with: the model's text, else the printed
+    label, then the printed credit."""
+    text = " ".join(text.split()) or " ".join(figure.label.split())
     credit = " ".join(figure.credit.split())
     if credit and credit not in text:
         text = f"{text} ({credit})" if text else credit
+    return text
+
+
+def _figure_caption(alt: str, figure: library.Figure) -> str:
+    """A note figure's caption, escaped for the image's alt text."""
+    text = figure_caption(re.sub(r"\\(.)", r"\1", alt), figure)
     return re.sub(r"([\\\[\]])", r"\\\1", text)
 
 
 async def note_figures(
     ctx: ToolContext, markdown: list[str]
 ) -> NoteFigures | ToolResult:
-    """Check the library figures a note write places and credit them, or refuse.
-
-    A figure must be one the library shows (not decorative, excluded or on a
-    withheld page), boxed apart from its page, and listed by an excerpt this
-    turn read, the rule
-    excerpt_ids follow. Shared with the playground's local writes.
-    """
+    """Check the library figures a note write places and credit them, or
+    refuse (library_figures). Shared with the playground's local writes."""
     links = sum(len(OTHER_IMAGE.findall(text)) for text in markdown)
     refs = list(
         dict.fromkeys(
@@ -1478,6 +1489,35 @@ async def note_figures(
     )
     if not refs:
         return NoteFigures(markdown=markdown, links=links)
+    checked = await library_figures(ctx, refs)
+    if isinstance(checked, ToolResult):
+        return checked
+    found, excerpts = checked
+
+    def caption(match: re.Match[str]) -> str:
+        figure = found[match.group(2)]
+        return f"![{_figure_caption(match.group(1), figure)}](figure:{figure.id})"
+
+    return NoteFigures(
+        markdown=[FIGURE_IMAGE.sub(caption, text) for text in markdown],
+        figures=found,
+        excerpt_ids=excerpts,
+        links=links,
+    )
+
+
+async def library_figures(
+    ctx: ToolContext, refs: list[str]
+) -> tuple[dict[str, library.Figure], list[str]] | ToolResult:
+    """The library figures a write places, by id, with an excerpt this turn
+    read that lists each (credited with the write), or a refusal naming every
+    figure it cannot show.
+
+    A figure must be one the library shows (not decorative, excluded or on a
+    withheld page), boxed apart from its page, and listed by an excerpt this
+    turn read, the rule excerpt_ids follow. Shared by notes, quiz questions
+    and the playground's local writes.
+    """
     if not ctx.library:
         return _refused(
             f"figure:{refs[0]} names a library figure, and the library is not a "
@@ -1512,17 +1552,7 @@ async def note_figures(
             excerpts.append(used[0])
     if problems:
         return _refused("Not applied: figure " + "; ".join(problems) + ".")
-
-    def caption(match: re.Match[str]) -> str:
-        figure = found[match.group(2)]
-        return f"![{_figure_caption(match.group(1), figure)}](figure:{figure.id})"
-
-    return NoteFigures(
-        markdown=[FIGURE_IMAGE.sub(caption, text) for text in markdown],
-        figures={ref: found[ref] for ref in refs},
-        excerpt_ids=list(dict.fromkeys(excerpts)),
-        links=links,
-    )
+    return {ref: found[ref] for ref in refs}, list(dict.fromkeys(excerpts))
 
 
 def _figure_images(images: dict[str, bytes]) -> list[dict[str, str]]:
@@ -2305,9 +2335,11 @@ class QuizStore:
         [dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]],
         Awaitable[ToolResult],
     ]
-    # Edit a quiz by id with edit commands, adding the books to its record.
+    # Edit a quiz by id with edit commands, adding the books to its record and
+    # storing the rendered library figures (by id) the commands place.
     edit: Callable[
-        [str, list[dict[str, Any]], list[dict[str, Any]]], Awaitable[ToolResult]
+        [str, list[dict[str, Any]], list[dict[str, Any]], dict[str, bytes]],
+        Awaitable[ToolResult],
     ]
 
 
@@ -2352,7 +2384,7 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
             ctx, call_id, args, resolved, books, {"kind": "quiz", "questions": written}
         )
 
-    async def edit(quiz_id, commands, books):
+    async def edit(quiz_id, commands, books, images):
         payload = {
             **_chat_context(ctx, call_id),
             "target": {"kind": "material", "id": quiz_id},
@@ -2360,12 +2392,16 @@ def _gateway_quizzes(ctx: ToolContext, call_id: str) -> QuizStore:
         }
         if books:
             payload["provenance"] = {"books": books}
+        if images:
+            payload["figures"] = _figure_images(images)
         return await _post_operation(
             "/api/internal/documents/edit",
             payload,
             operation_id(ctx.assistant_message_id, call_id),
             ctx,
             failure="edit the quiz",
+            # Go stores each figure in the bucket before the edit.
+            timeout=60 if images else 10,
         )
 
     return QuizStore(load, create, edit)
@@ -2405,7 +2441,7 @@ async def write_questions(
     if quiz is None:
         result = await quizzes.create(clean, built.questions, books)
     else:
-        result = await quizzes.edit(str(quiz_id), built.commands, books)
+        result = await quizzes.edit(str(quiz_id), built.commands, books, {})
     if not result.effects:
         return result
     landed(ctx, credited)
@@ -2417,8 +2453,9 @@ async def write_questions(
 async def write_media(
     args: dict[str, Any], ctx: ToolContext, quizzes: QuizStore
 ) -> ToolResult:
-    """add_question_media: the chart or plot goes after the question's
-    text, and the question is written back whole (replace_question)."""
+    """add_question_media: the chart, plot or library figure goes after the
+    question's text, and the question is written back whole (replace_question).
+    A figure is checked and credited as a note's is (library_figures)."""
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
         return _refused(
@@ -2439,19 +2476,52 @@ async def write_media(
             return _refused(
                 f"Quiz {quiz_id} is read-only for this user.", code="unavailable_target"
             )
-    prepared = await write_sources(ctx, "add_question_media", clean)
+    media = clean.get("media")
+    figure, shown, caption = None, [], ""
+    is_figure = isinstance(media, dict) and media.get("type") == "figure"
+    figure_id = media.get("id") if is_figure else None
+    if isinstance(figure_id, str) and figure_id.strip():
+        checked = await library_figures(ctx, [figure_id])
+        if isinstance(checked, ToolResult):
+            return _also(checked, found)
+        [figure], shown = list(checked[0].values()), checked[1]
+        caption = " ".join(str(media.get("caption") or "").split())
+        shown_with = figure_caption(caption, figure)
+        if not (caption or figure.label.strip()):
+            found.call.append(
+                f"media.caption: figure {figure.id} has no printed label; say in a "
+                "few words what it shows"
+            )
+        elif len(shown_with) > QUESTION_METADATA_MAX:
+            found.call.append(
+                f"media.caption: expected at most {QUESTION_METADATA_MAX} characters "
+                f"with the printed credit; sent {len(shown_with)}"
+            )
+    prepared = await write_sources(ctx, "add_question_media", clean, figures=shown)
     if isinstance(prepared, ToolResult):
         return _also(prepared, found)
     if found.call or question is None:
         summary, listing = questions.refusal(found)
         return _refused(summary, detail=listing)
     books, credited = prepared
+    images: dict[str, bytes] = {}
+    if figure is not None:
+        rendered = await render_figure(figure)
+        if isinstance(rendered, ToolResult):
+            return rendered
+        images[figure.id], size = rendered
+        media = questions.figure_block(
+            figure.id,
+            size,
+            " ".join((caption or figure.label).split()),
+            figure_caption(caption, figure),
+        )
     command = {
         "type": "replace_question",
         "question_id": qid,
-        "question": questions.with_media(question, clean["media"]),
+        "question": questions.with_media(question, media),
     }
-    result = await quizzes.edit(str(quiz_id), [command], books)
+    result = await quizzes.edit(str(quiz_id), [command], books, images)
     if result.effects:
         landed(ctx, credited)
         resource = result.effects[0].get("resource") or {}

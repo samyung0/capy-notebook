@@ -8,7 +8,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from pipeline.retrieval import questions, tools
+from pipeline.retrieval import library, questions, tools
 from pipeline.retrieval.tools import QuizStore, ToolContext, ToolResult
 
 # Go's agenttools test validates these as a quiz (TestExpandedQuestionsAreValid).
@@ -304,8 +304,10 @@ def _store(quiz: list[dict], written: list) -> QuizStore:
             }
         )
 
-    async def edit(quiz_id, commands, books):
+    async def edit(quiz_id, commands, books, images):
         written.append(("edit", commands))
+        if images:
+            written.append(("figures", images))
         return tools._receipt_result(
             {
                 "outcome": "succeeded",
@@ -444,7 +446,7 @@ async def test_media_goes_after_the_question_text(monkeypatch):
         {
             "quiz_id": "mat_q",
             "question_id": "q_9",
-            "media": {"type": "figure", "id": "fig_1"},
+            "media": {"type": "image", "url": "https://e.com/a.png"},
             "_tool_call_id": "d",
         },
         ctx,
@@ -452,12 +454,65 @@ async def test_media_goes_after_the_question_text(monkeypatch):
     )
     assert refused.refused
     assert refused.detail.splitlines() == [
-        (
-            '- media.type: expected "chart" or "plot" (library figures go into '
-            'notes only); sent "figure"'
-        ),
+        '- media.type: expected "chart", "plot" or "figure"; sent "image"',
         '- question_id: expected a question id of this quiz (q_1); sent "q_9"',
     ]
+
+
+async def test_a_library_figure_goes_after_the_question_text(monkeypatch):
+    """A figure read this turn becomes the question's image block: its crop
+    goes to Go to store as the quiz's own asset, its caption carries the
+    printed credit, and the excerpt listing it is credited."""
+    ctx = _ctx(monkeypatch)
+    ctx.library = True
+    ctx.library_reads.note("e_1", 0, "1.1")
+    figure = library.Figure(
+        id="fig_1", book_title="B", page=3, bbox=[0, 0, 500, 500],
+        label="Figure 2.1: A cell", credit="CC BY 4.0", decorative=False,
+        excluded=False, withheld=False, object_key="books/x.pdf", bytes=1,
+        excerpt_ids=["e_1"],
+    )  # fmt: skip
+    credited: list = []
+
+    async def figures(ids):
+        return {i: figure for i in ids if i == "fig_1"}
+
+    async def render(*_args):
+        return b"\xff\xd8\xffjpeg", [0, 0, 500, 500], (640, 480)
+
+    async def provenance(ids):
+        credited.extend(ids)
+        return [{"id": "b", "title": "B", "excerptIds": list(ids), "version": 1}]
+
+    monkeypatch.setattr(tools.library, "figures", figures)
+    monkeypatch.setattr(tools.library, "provenance", provenance)
+    monkeypatch.setattr(tools.capture, "render_knowledge", render)
+    written: list = []
+    store = _store([questions.expand("mcq", MCQ, "q_1")], written)
+    args = {"quiz_id": "mat_q", "question_id": "q_1", "_tool_call_id": "c"}
+
+    unknown = await tools.write_media(
+        {**args, "media": {"type": "figure", "id": "fig_9"}}, ctx, store
+    )
+    assert unknown.refused and "fig_9 is not a library figure" in unknown.text()
+    # A blank caption is absent: the printed label stands in.
+    added = await tools.write_media(
+        {**args, "media": {"type": "figure", "id": "fig_1", "caption": "null"}},
+        ctx,
+        store,
+    )
+    assert added.outcome == "succeeded", added.text()
+    [(_, [command]), (_, images)] = written
+    assert command["question"]["parts"][0]["blocks"][-1] == {
+        "type": "image",
+        "image": {"assetId": "figure:fig_1"},
+        "width": 640,
+        "height": 480,
+        "description": "Figure 2.1: A cell",
+        "attribution": "Figure 2.1: A cell (CC BY 4.0)",
+    }
+    assert images == {"fig_1": b"\xff\xd8\xffjpeg"}
+    assert credited == ["e_1"], "the figure's excerpt is credited without being named"
 
 
 def test_a_note_quiz_fence_takes_the_same_shapes():

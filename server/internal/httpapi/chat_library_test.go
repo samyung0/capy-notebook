@@ -114,12 +114,12 @@ func TestStreamSendsTheOpenResourceAndStudySwitch(t *testing.T) {
 	})
 	// Preferences are saved through the account route, then reach every turn.
 	rec := doAsUser(t, h, http.MethodPatch, "/api/me/study-preferences", "u_editor",
-		map[string]any{"explainerStyle": "brief", "quizLength": 5})
+		map[string]any{"writingStyle": "brief", "quiz": "less"})
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("save preferences: status = %d body=%s", rec.Code, rec.Body.String())
 	}
 	rec = doAsUser(t, h, http.MethodPatch, "/api/me/study-preferences", "u_editor",
-		map[string]any{"explainerStyle": "epic"})
+		map[string]any{"writingStyle": "epic"})
 	if rec.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("an unknown style was saved: status = %d body=%s", rec.Code, rec.Body.String())
 	}
@@ -148,7 +148,7 @@ func TestStreamSendsTheOpenResourceAndStudySwitch(t *testing.T) {
 		if string(body["studyProgress"]) != "true" {
 			t.Fatalf("turn %d studyProgress = %s", i, body["studyProgress"])
 		}
-		if got := string(body["studyPreferences"]); got != `{"explainerStyle":"brief","quizLength":5}` {
+		if got := string(body["studyPreferences"]); got != `{"writingStyle":"brief","quiz":"less"}` {
 			t.Fatalf("turn %d studyPreferences = %s", i, got)
 		}
 	}

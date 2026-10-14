@@ -2557,19 +2557,21 @@ export const handlers = [
     const wsId = String(params.id);
     const ws = db.workspaces.find((w) => w.id === wsId);
     if (!ws) return new HttpResponse(null, { status: 404 });
-    if (!opts.kind || (opts.count !== undefined && opts.count < 1)) {
+    const count = 'count' in opts ? opts.count : 0;
+    if (!opts.kind || ('count' in opts && count < 1)) {
       return HttpResponse.json(
         { message: 'kind is required and count at least 1' },
         { status: 400 }
       );
     }
-    // Like the server: an omitted count takes the saved study preference.
-    const prefs = db.user.studyPreferences;
-    const count =
-      opts.count ??
-      (opts.kind === 'quiz'
-        ? (prefs.quizLength ?? 8)
-        : (prefs.flashcardsPerChapter ?? 15));
+    // Like the server: a quiz or set takes the panel's count, never a study
+    // preference.
+    if ((opts.kind === 'quiz' || opts.kind === 'flashcards') && !count) {
+      return HttpResponse.json(
+        { message: 'count is required for a quiz or a flashcard set' },
+        { status: 400 }
+      );
+    }
     if (!GENERATE_KINDS.includes(opts.kind)) {
       return HttpResponse.json(
         { message: `unsupported generate kind "${opts.kind}"` },
