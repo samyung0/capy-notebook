@@ -99,6 +99,8 @@ UI redesign, which Epo is doing in its own session.
 
 ## Later
 
+- [ ] **Several correct options in a multiple-choice part** (Epo 2026-10-14): an mcq that accepts more than one option as correct, without becoming `multi`.
+
 - [x] **Learners on `/qb`** (2026-10-06): answering with reveal on check
       (ebd5bafe); progress keeps each learner's latest score per question
       (`bank_progress`, app migration 0056, no FSRS or review); the landing

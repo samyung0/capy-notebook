@@ -4,6 +4,7 @@ const CSS_VALUE = /^[\w\s#(),.%'-]+$/;
 const HEADING = /^h[1-6]$/;
 
 import type { QuestionBlock } from '@/api/types';
+import { EMPTY_VALUE } from '@/components/charts/CategoryChart';
 import type {
   MaterialElement,
   MaterialNode,
@@ -449,7 +450,7 @@ export async function renderExport(
           'svg' in block.image
             ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`
             : safeExportUrl(block.image.url);
-        return `${await picture({ source, type: 'image' }, block.description, html)}${html ? `<p>${escapeHtml(block.attribution || '')}</p>` : `\n\n${escapeMd(block.attribution || '')}\n\n`}`;
+        return `${await picture({ source, type: 'image' }, block.description ?? '', html)}${html ? `<p>${escapeHtml(block.attribution || '')}</p>` : `\n\n${escapeMd(block.attribution || '')}\n\n`}`;
       }
       const table = questionBlocks([
         {
@@ -470,7 +471,9 @@ export async function renderExport(
                   ['', ...block.series.map((series) => series.name)],
                   ...block.labels.map((label, i) => [
                     label,
-                    ...block.series.map((series) => String(series.values[i])),
+                    ...block.series.map((series) =>
+                      String(series.values[i] ?? EMPTY_VALUE)
+                    ),
                   ]),
                 ],
           type: 'table',

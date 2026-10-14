@@ -1,0 +1,62 @@
+{
+  "name": "chart-null-value",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "chart",
+        "kind": "bar",
+        "title": "Rainfall (mm)",
+        "labels": ["Jan", "Feb", "Mar"],
+        "series": [
+          {
+            "name": "2025",
+            "values": [40, null, 55]
+          },
+          {
+            "name": "2026",
+            "values": [null, null, null]
+          }
+        ]
+      },
+      {
+        "type": "chart",
+        "kind": "pie",
+        "title": "Votes",
+        "labels": ["Yes", "No", "Unsure"],
+        "series": [
+          {
+            "name": "Votes",
+            "values": [3, null, 1]
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "text": "Because."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

@@ -796,10 +796,53 @@ def build(
 
 
 def media_check(args: dict[str, Any]) -> Check:
-    """Every problem of an add_question_media call that needs no quiz to see."""
+    """Every problem of an add_question_media call that needs no quiz to see. A
+    chart is repaired first (``first_series``, ``pad_series``), each repair
+    named in the result."""
     found = Check("add_question_media")
+    media = args.get("media")
+    if isinstance(media, dict) and media.get("type") == "chart":
+        if first_series(media):
+            found.notes.append(f"media.series: {CUT_SERIES}.")
+        if pad_series(media):
+            found.notes.append(f"media.series: {PADDED_SERIES}.")
     found.call = _media_problems(args)
     return found
+
+
+CUT_SERIES = "a pie or stacked chart draws one series, so only the first was kept"
+PADDED_SERIES = (
+    "a series with fewer values than labels was padded with null, an empty cell "
+    "drawn as nothing"
+)
+
+
+def pad_series(chart: dict[str, Any]) -> bool:
+    """Pads each series short of its labels with null, in place: an empty cell
+    draws nothing (Epo 2026-10-14). A longer series stays a problem. True when
+    it padded any."""
+    labels, series = chart.get("labels"), chart.get("series")
+    if not isinstance(labels, list) or not isinstance(series, list):
+        return False
+    padded = False
+    for entry in series:
+        values = entry.get("values") if isinstance(entry, dict) else None
+        if isinstance(values, list) and len(values) < len(labels):
+            entry["values"] = [*values, *[None] * (len(labels) - len(values))]
+            padded = True
+    return padded
+
+
+def first_series(chart: dict[str, Any]) -> bool:
+    """Cuts a pie or stacked chart sent with several series to its first, in
+    place: those charts draw one (Epo 2026-10-14). True when it cut any."""
+    series = chart.get("series")
+    if chart.get("kind") not in ("pie", "stacked") or not isinstance(series, list):
+        return False
+    if len(series) < 2:
+        return False
+    chart["series"] = series[:1]
+    return True
 
 
 def _media_problems(args: dict[str, Any]) -> list[str]:
@@ -817,7 +860,24 @@ def _media_problems(args: dict[str, Any]) -> list[str]:
     problems += _schema_problems(_MEDIA[kind], media, "media", None, fence=False)
     if kind == "chart":
         problems += _chart_problems(media)
+    if kind == "plot":
+        problems += _plot_problems(media)
     return problems
+
+
+def _plot_problems(plot: dict[str, Any]) -> list[str]:
+    """A line's series need two points each, a scatter's one (the schema's)."""
+    series = plot.get("series")
+    if plot.get("kind") == "scatter" or not isinstance(series, list):
+        return []
+    return [
+        f"media.series[{i}].points: expected 2 or more points for a line; sent "
+        f"{len(s['points'])}"
+        for i, s in enumerate(series)
+        if isinstance(s, dict)
+        and isinstance(s.get("points"), list)
+        and len(s["points"]) < 2
+    ]
 
 
 def _figure_problems(figure: dict[str, Any]) -> list[str]:
@@ -857,8 +917,9 @@ def figure_block(
 
 
 def _chart_problems(chart: dict[str, Any]) -> list[str]:
-    """A chart's values line up with its labels; a pie or stacked chart has one
-    series of values 0 or more with a positive total."""
+    """A chart's values line up with its labels (a short series was padded);
+    a pie or stacked chart has one series of values 0 or more with a positive
+    total, empty cells (null) skipped."""
     labels, series = chart.get("labels"), chart.get("series")
     if not isinstance(labels, list) or not isinstance(series, list):
         return []
@@ -877,8 +938,11 @@ def _chart_problems(chart: dict[str, Any]) -> list[str]:
             )
         elif (
             isinstance(values[0], list)
-            and all(isinstance(v, int | float) for v in values[0])
-            and (any(v < 0 for v in values[0]) or not any(v > 0 for v in values[0]))
+            and all(isinstance(v, int | float | None) for v in values[0])
+            and (
+                any(v is not None and v < 0 for v in values[0])
+                or not any(v is not None and v > 0 for v in values[0])
+            )
         ):
             problems.append(
                 f"media.series[0].values: expected values of 0 or more with a positive "
@@ -1085,7 +1149,9 @@ def _cards(body: str, at: str, found: Check) -> str | None:
 def _media(lang: str, body: str, at: str, found: Check) -> str | None:
     """A chart or plot fence's body as compact JSON: read as YAML when it is
     not JSON and does not open as JSON ({), its type set to the fence's name
-    when missing, and a chart kind sent as a chart fence's type moved to kind.
+    when missing, a chart kind sent as a chart fence's type moved to kind, a
+    pie or stacked chart cut to its first series, and a short series padded
+    with null.
     None leaves the fence as written for the converter to name its problem,
     as for YAML whose escapes made control characters ("$\\alpha$")."""
     fixed = []
@@ -1109,6 +1175,10 @@ def _media(lang: str, body: str, at: str, found: Check) -> str | None:
     elif lang == "chart" and data["type"] in _CHART_KINDS and "kind" not in data:
         fixed.append(f'"type": "{data["type"]}" is a chart kind, so it went to kind')
         data = {**data, "type": "chart", "kind": data["type"]}
+    if lang == "chart" and first_series(data):
+        fixed.append(CUT_SERIES)
+    if lang == "chart" and pad_series(data):
+        fixed.append(PADDED_SERIES)
     if fixed:
         found.notes.append(f"Repaired {at}: {'; '.join(fixed)}.")
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)

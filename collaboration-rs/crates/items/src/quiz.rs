@@ -238,8 +238,12 @@ fn read_block<T: ReadTxn>(txn: &T, map: &MapRef) -> Option<Value> {
                 "image": any_at(txn, map, "image").map(|image| any_json(&image)).unwrap_or(json!({ "url": "" })),
                 "width": number(num_at(txn, map, "width").unwrap_or(1.0)),
                 "height": number(num_at(txn, map, "height").unwrap_or(1.0)),
-                "description": text_at(txn, map, "description"),
             });
+            // An image without a description holds an empty text (optional).
+            let description = text_at(txn, map, "description");
+            if !description.is_empty() {
+                block["description"] = json!(description);
+            }
             if let Some(attribution) = str_at(txn, map, "attribution") {
                 block["attribution"] = json!(attribution);
             }
@@ -554,6 +558,71 @@ fn quiz_block(children: Vec<Value>) -> Vec<Value> {
     vec![json!({ "type": "quiz", "id": BLOCK_ID, "children": children })]
 }
 
+/// The question without blanks, as `withoutBlanks` in the browser: empty text
+/// blocks, a blank short-answer unit, blank accepted answers and blank
+/// open-answer hints never leave it incomplete (no accepted answer left does),
+/// and the projection drops them; a blank figure description goes, and a
+/// chart series short of its labels takes nulls, an empty value being null
+/// (Epo 2026-10-14). A room's table is a grid, so its rows are always even.
+fn without_blanks(mut question: Value) -> Value {
+    let blank = |value: &Value| {
+        value
+            .as_str()
+            .is_some_and(|text| q::js_trim(text).is_empty())
+    };
+    let keep = |blocks: &mut Value| {
+        let Some(blocks) = blocks.as_array_mut() else {
+            return;
+        };
+        blocks.retain(|block| block["type"] != "text" || !blank(&block["text"]));
+        for block in blocks.iter_mut().filter_map(Value::as_object_mut) {
+            if block.get("description").is_some_and(blank) {
+                block.remove("description");
+            }
+            if block.get("type").and_then(Value::as_str) != Some("chart") {
+                continue;
+            }
+            let labels = block
+                .get("labels")
+                .and_then(Value::as_array)
+                .map_or(0, Vec::len);
+            let series = block.get_mut("series").and_then(Value::as_array_mut);
+            for values in series
+                .into_iter()
+                .flatten()
+                .filter_map(|series| series.get_mut("values").and_then(Value::as_array_mut))
+            {
+                if values.len() < labels {
+                    values.resize(labels, Value::Null);
+                }
+                for value in values.iter_mut().filter(|value| !value.is_number()) {
+                    *value = Value::Null;
+                }
+            }
+        }
+    };
+    keep(&mut question["stem"]);
+    if let Some(parts) = question["parts"].as_array_mut() {
+        for part in parts {
+            keep(&mut part["blocks"]);
+            keep(&mut part["solution"]);
+            if let Some(answer) = part["answer"].as_object_mut() {
+                if answer.get("unit").is_some_and(blank) {
+                    answer.remove("unit");
+                }
+                // Short and open answers' lists of texts; a gaps answer's
+                // accepted lists hold lists, which are never blank.
+                for key in ["accepted", "hints"] {
+                    if let Some(list) = answer.get_mut(key).and_then(Value::as_array_mut) {
+                        list.retain(|item| !blank(item));
+                    }
+                }
+            }
+        }
+    }
+    question
+}
+
 /// The Plate value the quiz projects to (`materials.content`): the complete
 /// questions only (each passes the strict validator, and the quiz's part and
 /// open-part bounds hold), so grading sees what a Save would have stored.
@@ -562,7 +631,10 @@ pub fn value<C: ReadTxn, K: ReadTxn>(content: &C, keys: &K) -> Vec<Value> {
     let policy = Policy::quiz();
     let (mut parts, mut open) = (0usize, 0usize);
     let mut children = Vec::new();
-    for question in questions_json(content, Some(&keys)) {
+    for question in questions_json(content, Some(&keys))
+        .into_iter()
+        .map(without_blanks)
+    {
         let Ok(checked) = q::validate_question(&question, &policy) else {
             continue;
         };

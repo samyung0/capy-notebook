@@ -1,4 +1,5 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
+import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
 
 export const QUESTION_TYPES = [
   'mcq',
@@ -34,7 +35,8 @@ export type ChartBlock = {
   kind: ChartKind;
   title: string;
   labels: string[];
-  series: { name: string; values: number[] }[];
+  /** One value per label; null draws nothing (an empty cell). */
+  series: { name: string; values: (number | null)[] }[];
   xTitle?: string;
   yTitle?: string;
   gridlines?: 'normal' | 'fine';
@@ -149,7 +151,8 @@ export type GraphBlock = {
   image: { url: string } | { svg: string };
   width: number;
   height: number;
-  description: string;
+  /** Alt text and grading text (optional). */
+  description?: string;
   attribution?: string;
 };
 export type TableBlock = { type: 'table'; header: boolean; rows: string[][] };
@@ -159,7 +162,8 @@ export type ImageBlock = {
   image: { url: string } | { assetId: string };
   width: number;
   height: number;
-  description: string;
+  /** Alt text and grading text (optional). */
+  description?: string;
   attribution?: string;
 };
 export type QuestionBlock =
@@ -266,6 +270,95 @@ export function blankQuestion(): Question {
       },
     ],
     stem: [],
+  };
+}
+
+/** An open part's marks from its marking items, capped at QUESTION_MARKS_MAX:
+ * the items stay as entered, so a total past the cap shows as a mismatch
+ * instead of a value the live room refuses (Epo 2026-10-14). */
+export function schemeMarks(items: MarkItem[]): number {
+  const total = items.reduce((sum, item) => sum + item.marks, 0);
+  return Math.min(QUESTION_MARKS_MAX, total);
+}
+
+/** A figure without a blank description: descriptions are optional. */
+function withoutBlankDescription<B extends { description?: string }>(
+  block: B
+): B {
+  if (block.description === undefined || block.description.trim()) return block;
+  const { description: _, ...rest } = block;
+  return rest as B;
+}
+
+/** A block without blanks: a blank description goes, a table's shorter rows
+ * take empty cells up to the longest (a longer row adds a column), and a
+ * chart series short of its labels takes nulls, an empty value (NaN) being
+ * null (Epo 2026-10-14). A series longer than its labels stays invalid. */
+export function blockWithoutBlanks(block: QuestionBlock): QuestionBlock {
+  switch (block.type) {
+    case 'text':
+      return block;
+    case 'table': {
+      const width = Math.max(0, ...block.rows.map((row) => row.length));
+      return {
+        ...block,
+        rows: block.rows.map((row) =>
+          Array.from({ length: width }, (_, i) => row[i] ?? '')
+        ),
+      };
+    }
+    case 'chart':
+      return withoutBlankDescription({
+        ...block,
+        series: block.series.map((series) => ({
+          ...series,
+          values: Array.from(
+            { length: Math.max(block.labels.length, series.values.length) },
+            (_, i) => {
+              const value = series.values[i];
+              return Number.isFinite(value) ? value : null;
+            }
+          ),
+        })),
+      });
+    default:
+      return withoutBlankDescription(block);
+  }
+}
+
+/** The question without blanks: empty text blocks, a blank short-answer unit,
+ * blank accepted answers and blank open-answer hints never leave it
+ * incomplete (no accepted answer left does), and saves and the quiz
+ * projection drop them, with every block as `blockWithoutBlanks` keeps it
+ * (Epo 2026-10-14). */
+export function withoutBlanks(question: Question): Question {
+  const keep = (blocks: QuestionBlock[]) =>
+    blocks
+      .filter((block) => block.type !== 'text' || block.text.trim())
+      .map(blockWithoutBlanks);
+  const filled = (values: string[]) => values.filter((value) => value.trim());
+  const answer = (answer: QuestionAnswer): QuestionAnswer => {
+    if (answer.type === 'short')
+      return answer.unit?.trim()
+        ? { ...answer, accepted: filled(answer.accepted) }
+        : { accepted: filled(answer.accepted), type: 'short' };
+    if (answer.type === 'open')
+      return {
+        ...answer,
+        accepted: filled(answer.accepted),
+        hints: filled(answer.hints),
+      };
+    return answer;
+  };
+  return {
+    ...question,
+    parts: question.parts.map((part) => ({
+      ...part,
+      answer: answer(part.answer),
+      blocks: keep(part.blocks),
+      solution: keep(part.solution),
+    })),
+    stem: keep(question.stem),
   };
 }
 

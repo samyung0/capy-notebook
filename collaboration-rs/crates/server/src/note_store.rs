@@ -603,9 +603,36 @@ pub async fn compaction_candidates(
         .collect())
 }
 
-/// Lineage compaction: rebuilds the document from its projection under the
-/// next room schema (fresh item identities, so earlier agent edits lose their
-/// Undo). `None` when the room moved or its projection lags.
+/// A quiz's content and keys states.
+type QuizStates = (Vec<u8>, Vec<u8>);
+
+/// A quiz's two documents rebuilt from what they hold (base and log each):
+/// every question as typed with its keys, complete or not, since the
+/// projection keeps only the complete ones (Epo 2026-10-14). `None` when
+/// either holds a block this version cannot read, which the rebuild would drop.
+fn rebuilt_quiz(
+    content: (&[u8], &[Vec<u8>]),
+    keys: (&[u8], &[Vec<u8>]),
+) -> Result<Option<QuizStates>, StoreError> {
+    use yrs::Transact;
+    let replay = |(base, rows): (&[u8], &[Vec<u8>])| {
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, base, rows).map_err(|error| StoreError::Other(error.to_string()))?;
+        Ok::<_, StoreError>(doc)
+    };
+    let (content, keys) = (replay(content)?, replay(keys)?);
+    let (content, keys) = (content.transact(), keys.transact());
+    if items::quiz::holds_unknown_block(&content) || items::quiz::holds_unknown_block(&keys) {
+        return Ok(None);
+    }
+    let value = items::quiz::editor_value(&content, &keys);
+    Ok(Some(items::quiz::states_from_value(&value, 0)))
+}
+
+/// Lineage compaction: rebuilds the document under the next room schema
+/// (fresh item identities, so earlier agent edits lose their Undo) from its
+/// projection, or a quiz from its own two documents ([rebuilt_quiz]). `None`
+/// when the room moved or its projection lags.
 pub async fn compact(
     pool: &Pool,
     material_id: &str,
@@ -616,7 +643,7 @@ pub async fn compact(
     access::lock_material(&tx, material_id).await?;
     let found = tx
         .query(
-            "SELECT room_schema, stored_version, projected_version FROM material_yjs_documents
+            "SELECT room_schema, stored_version, projected_version, state FROM material_yjs_documents
              WHERE material_id=$1 FOR UPDATE",
             &[&material_id],
         )
@@ -640,12 +667,35 @@ pub async fn compact(
         return Err(StoreError::Other("material not found".into()));
     };
     let kind: String = content.get("kind");
-    let content: Value = content.get("content");
-    let value = envelope_value(&content)?;
     let (state, keys) = if kind == "quiz" {
-        let (content, keys) = items::quiz::states_from_value(value, 0);
-        (content, Some(keys))
+        let base: Vec<u8> = row.get("state");
+        let log: Vec<Vec<u8>> = rows(&tx, material_id, Some(stored))
+            .await?
+            .into_iter()
+            .map(|(_, update)| update)
+            .collect();
+        let found = tx
+            .query(
+                "SELECT state FROM material_yjs_keys WHERE material_id=$1 FOR UPDATE",
+                &[&material_id],
+            )
+            .await?;
+        let Some(keys) = found.first() else {
+            return Err(StoreError::Other("quiz keys document missing".into()));
+        };
+        let key_base: Vec<u8> = keys.get("state");
+        let key_log: Vec<Vec<u8>> = doc_rows(&tx, Doc::Keys, material_id, Some(stored))
+            .await?
+            .into_iter()
+            .map(|(_, update)| update)
+            .collect();
+        match rebuilt_quiz((&base, &log), (&key_base, &key_log))? {
+            Some((content, keys)) => (content, Some(keys)),
+            None => return Ok(None),
+        }
     } else {
+        let content: Value = content.get("content");
+        let value = envelope_value(&content)?;
         (Model::of(&kind).state_from_value(value), None)
     };
     let next_schema = i32::try_from(schema + 1)
@@ -688,4 +738,80 @@ pub async fn compact(
         format!("material:{material_id}:schema:{next_schema}"),
         state.len() as i64,
     )))
+}
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used)]
+
+    use serde_json::{Value, json};
+    use yrs::{ReadTxn, StateVector, Transact};
+
+    use super::rebuilt_quiz;
+
+    fn question(id: &str, text: &str, answer: Value) -> Value {
+        json!({
+            "id": id, "labels": "letters", "layout": "paper", "stem": [],
+            "parts": [{
+                "id": format!("{id}p1"), "marks": 1,
+                "blocks": [{ "type": "text", "text": text }],
+                "answer": answer,
+                "solution": [{ "type": "text", "text": "" }],
+            }],
+        })
+    }
+
+    fn quiz(questions: &[Value]) -> Vec<Value> {
+        let children: Vec<Value> = questions
+            .iter()
+            .map(|q| json!({ "type": "quiz_question", "id": q["id"], "question": q, "children": [{ "text": "" }] }))
+            .collect();
+        vec![json!({ "type": "quiz", "id": "quiz", "children": children })]
+    }
+
+    fn doc(base: &[u8], rows: &[Vec<u8>]) -> yrs::Doc {
+        let doc = ydoc::scratch_doc();
+        ydoc::replay(&doc, base, rows).unwrap();
+        doc
+    }
+
+    /// Compaction keeps a quiz's incomplete questions and their keys (Epo
+    /// 2026-10-14): an mcq with no correct option, typed into the log after
+    /// the base, whose part text and solution are blank, survives the
+    /// rebuild with its options, while the projection drops it. Fails if the
+    /// rebuild reads from the projection or loses a blank block or a key.
+    #[test]
+    fn a_quiz_rebuild_keeps_its_incomplete_questions_and_their_keys() {
+        let complete = question("q1", "True?", json!({ "type": "boolean", "correct": true }));
+        let (base, key_base) =
+            items::quiz::states_from_value(&quiz(std::slice::from_ref(&complete)), 0);
+        let (content, keys) = (doc(&base, &[]), doc(&key_base, &[]));
+        let incomplete = question(
+            "q2",
+            "",
+            json!({ "type": "mcq", "options": ["", "Paris"], "correct": [] }),
+        );
+        let (before, key_before) = (
+            content.transact().state_vector(),
+            keys.transact().state_vector(),
+        );
+        {
+            let (mut content, mut keys) = (content.transact_mut(), keys.transact_mut());
+            items::quiz::set_questions(&mut content, &mut keys, &[complete, incomplete]).unwrap();
+        }
+        let typed = |doc: &yrs::Doc, since: &StateVector| doc.transact().encode_diff_v1(since);
+        let (row, key_row) = (typed(&content, &before), typed(&keys, &key_before));
+
+        let typed_value = items::quiz::editor_value(&content.transact(), &keys.transact());
+        let projected = items::quiz::value(&content.transact(), &keys.transact());
+        assert_eq!(items::quiz::questions_from_value(&projected).len(), 1);
+
+        let (state, key_state) = rebuilt_quiz((&base, &[row]), (&key_base, &[key_row]))
+            .unwrap()
+            .unwrap();
+        let (content, keys) = (doc(&state, &[]), doc(&key_state, &[]));
+        let rebuilt = items::quiz::editor_value(&content.transact(), &keys.transact());
+        assert_eq!(rebuilt, typed_value);
+        assert_eq!(items::quiz::questions_from_value(&rebuilt).len(), 2);
+    }
 }

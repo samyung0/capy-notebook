@@ -5,7 +5,8 @@
 //! and the bank-asset host rules. Outcomes match exactly; messages match
 //! except where zod raised the error (its message is its issue list), and
 //! except the rules the Rust store took from Go and the browser after the
-//! Node server was frozen ([tightened]).
+//! Node server was frozen ([tightened]) and the rules relaxed since
+//! ([loosened]).
 mod common;
 
 use notes::material;
@@ -68,6 +69,17 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
         })
 }
 
+/// A case the Rust store accepts where the Node server refused, by a rule
+/// relaxed after it was frozen: a figure without a description (Epo
+/// 2026-10-14).
+fn loosened(ours: &Result<(), String>, theirs: &Value) -> bool {
+    ours.is_ok()
+        && theirs["zod"] == true
+        && theirs["message"]
+            .as_str()
+            .is_some_and(|m| m.contains("\"description\"") && m.contains("received undefined"))
+}
+
 fn compare(at: &str, ours: Result<(), String>, theirs: &Value, failures: &mut Vec<String>) {
     let ok = theirs["ok"].as_bool().unwrap();
     match ours {
@@ -98,7 +110,7 @@ fn validation_matches_the_node_server() {
             failures.push(format!("{at}: the JS outcome disagrees with the fixture"));
         }
     }
-    let mut tightenings = 0;
+    let (mut tightenings, mut loosenings) = (0, 0);
     for case in corpus["cases"].as_array().unwrap() {
         let at = format!(
             "{} as {} (host {})",
@@ -115,6 +127,10 @@ fn validation_matches_the_node_server() {
             tightenings += 1;
             continue;
         }
+        if loosened(&ours, &case["outcome"]) {
+            loosenings += 1;
+            continue;
+        }
         compare(&at, ours, &case["outcome"], &mut failures);
     }
     let cases = corpus["cases"].as_array().unwrap();
@@ -124,7 +140,7 @@ fn validation_matches_the_node_server() {
         .filter(|c| c["outcome"]["zod"] == false)
         .count();
     eprintln!(
-        "{} question fixtures, {} material cases ({refused} refused, {messages} with the message compared, {tightenings} refused by the cutover's tightenings)",
+        "{} question fixtures, {} material cases ({refused} refused, {messages} with the message compared, {tightenings} refused by the cutover's tightenings, {loosenings} accepted by later loosenings)",
         corpus["questions"].as_array().unwrap().len(),
         cases.len()
     );
@@ -385,6 +401,12 @@ fn a_plot_validates_as_go_validates_it() {
     ];
     questions::block(&plot(|_| {})).unwrap();
     questions::block(&plot(|b| b["kind"] = json!("scatter"))).unwrap();
+    // A scatter shows a single point; a line needs two ("one point" below).
+    questions::block(&plot(|b| {
+        b["kind"] = json!("scatter");
+        b["series"] = json!([{ "name": "c", "points": [[0, 1]] }]);
+    }))
+    .unwrap();
     questions::block(&plot(|b| {
         b["series"] =
             json!([{ "name": "c", "points": (0..60).map(|x| json!([x, x])).collect::<Vec<_>>() }]);

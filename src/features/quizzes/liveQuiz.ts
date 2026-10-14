@@ -127,8 +127,10 @@ function readBlock(entry: YMap): QuestionBlock | null | typeof UNREADABLE {
     }
     case 'image': {
       const attribution = plain<string>(entry, 'attribution');
+      // An image without a description holds an empty text (optional).
+      const description = text(entry, 'description');
       return {
-        description: text(entry, 'description'),
+        ...(description ? { description } : {}),
         height: plain<number>(entry, 'height') ?? 1,
         image: plain<{ url: string } | { assetId: string }>(entry, 'image') ?? {
           url: '',
@@ -641,7 +643,7 @@ function writeBlockFields(entry: YMap, block: QuestionBlock) {
       setPlain(entry, 'image', block.image);
       setPlain(entry, 'width', block.width);
       setPlain(entry, 'height', block.height);
-      setText(entry, 'description', block.description);
+      setText(entry, 'description', block.description ?? '');
       setPlain(entry, 'attribution', block.attribution);
       return;
     case 'chart':

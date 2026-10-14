@@ -168,7 +168,8 @@ def blocks_to_text(blocks):
         if kind == "text":
             out.append("\n".join(x for x in (block.get("label"), block["text"]) if x))
         elif kind in ("image", "graph"):
-            out.append("[Figure: " + block["description"] + "]")
+            description = block.get("description")
+            out.append(f"[Figure: {description}]" if description else "[Figure]")
         elif kind == "table":
             out.append("\n".join(" | ".join(row) for row in block["rows"]))
         elif kind == "chart":
@@ -180,7 +181,7 @@ def blocks_to_text(blocks):
                     series["name"]
                     + ": "
                     + ", ".join(
-                        block["labels"][i] + "=" + js_number(v)
+                        block["labels"][i] + "=" + ("–" if v is None else js_number(v))
                         for i, v in enumerate(series["values"])
                     )
                     for series in block["series"]

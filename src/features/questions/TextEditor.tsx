@@ -90,6 +90,7 @@ export function TextEditor({
   onChange,
   compact = false,
   maxLength,
+  placeholder,
   toolbarTarget,
 }: {
   value: string;
@@ -97,6 +98,7 @@ export function TextEditor({
   compact?: boolean;
   /** Characters the text holds at most: an edit past it is taken back. */
   maxLength?: number;
+  placeholder?: string;
   toolbarTarget?: HTMLElement | null;
 }) {
   const accepted = useRef(value);
@@ -211,10 +213,13 @@ export function TextEditor({
         <PlateContent
           aria-label={m.question_ui_text_and_formulas()}
           autoFocus={compact}
+          // Slate sets an inline min-height while the placeholder shows;
+          // the box keeps its own.
           className={cn(
             'min-w-0 outline-none',
-            compact ? 'min-h-8 py-1' : 'min-h-40 p-3'
+            compact ? 'min-h-8! py-1' : 'min-h-40! p-3'
           )}
+          placeholder={placeholder}
           spellCheck={false}
         />
       </Plate>

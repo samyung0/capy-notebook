@@ -202,7 +202,16 @@ function ChartEditor({
                             number: row + 1,
                           })}
                           className="py-1.5 text-sm"
-                          onChange={(event) =>
+                          // Parts of a whole are never negative (Epo 2026-10-14).
+                          min={single ? 0 : undefined}
+                          onChange={(event) => {
+                            // An empty cell is null and draws nothing.
+                            const typed = event.target.valueAsNumber;
+                            const value = Number.isNaN(typed)
+                              ? null
+                              : single
+                                ? Math.max(0, typed)
+                                : typed;
                             onChange({
                               ...block,
                               series: block.series.map((item, i) =>
@@ -210,21 +219,15 @@ function ChartEditor({
                                   ? {
                                       ...item,
                                       values: item.values.map((number, j) =>
-                                        row === j
-                                          ? event.target.valueAsNumber
-                                          : number
+                                        row === j ? value : number
                                       ),
                                     }
                                   : item
                               ),
-                            })
-                          }
+                            });
+                          }}
                           type="number"
-                          value={
-                            Number.isFinite(series.values[row])
-                              ? series.values[row]
-                              : ''
-                          }
+                          value={series.values[row] ?? ''}
                           wrapperClassName="rounded-none border-0 bg-transparent px-2 focus-within:ring-1 focus-within:ring-action-accent focus-within:ring-inset"
                         />
                       </td>
@@ -247,7 +250,7 @@ function ChartEditor({
                     labels: [...block.labels, ''],
                     series: block.series.map((item) => ({
                       ...item,
-                      values: [...item.values, 0],
+                      values: [...item.values, null],
                     })),
                   })
                 }
@@ -269,7 +272,7 @@ function ChartEditor({
                         ...block,
                         series: [
                           ...block.series,
-                          { name: '', values: block.labels.map(() => 0) },
+                          { name: '', values: block.labels.map(() => null) },
                         ],
                       })
                     }
@@ -368,6 +371,7 @@ export function BlockEditor({
   uploadAsset,
   onBusyChange,
   onInvalidChange,
+  textPlaceholder,
 }: {
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
@@ -377,6 +381,8 @@ export function BlockEditor({
   onBusyChange?: (busy: boolean) => void;
   /** Graph rows that cannot be drawn; the dialog holds Save meanwhile. */
   onInvalidChange?: (invalid: boolean) => void;
+  /** What an empty text block shows, by where it sits. */
+  textPlaceholder?: string;
 }) {
   const [cell, setCell] = useState<string | null>(null);
   const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
@@ -391,6 +397,7 @@ export function BlockEditor({
         <TextEditor
           maxLength={limits.QUESTION_TEXT_MAX}
           onChange={(text) => onChange({ ...block, text })}
+          placeholder={textPlaceholder}
           value={block.text}
         />
         <div className="border-divider border-t pt-4">
@@ -504,7 +511,7 @@ export function BlockEditor({
             onChange={(event) =>
               onChange({ ...block, description: event.target.value })
             }
-            value={block.description}
+            value={block.description ?? ''}
           />
         </Field>
         <Field

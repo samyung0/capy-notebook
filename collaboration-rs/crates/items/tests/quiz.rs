@@ -289,6 +289,68 @@ fn an_incomplete_question_stays_out_of_the_projection() {
 }
 
 #[test]
+fn blanks_are_dropped_from_the_projection() {
+    let mut questions = fixtures();
+    let empty = json!({ "type": "text", "text": "  " });
+    // A blank paragraph in a body and a solution leaves the question complete.
+    let part = &mut questions[0]["parts"][0];
+    let body = part["blocks"].clone();
+    part["blocks"].as_array_mut().unwrap().push(empty.clone());
+    part["solution"].as_array_mut().unwrap().push(empty.clone());
+    // A part holding only blank text has no body: the question is incomplete.
+    questions[1]["parts"][0]["blocks"] = json!([empty]);
+    // A blank unit means no unit, and a blank hint or accepted answer none.
+    let of_type = |questions: &[Value], kind: &str| {
+        (2..questions.len())
+            .find(|&i| questions[i]["parts"][0]["answer"]["type"] == kind)
+            .unwrap()
+    };
+    let short = of_type(&questions, "short");
+    let open = of_type(&questions, "open");
+    questions[short]["parts"][0]["answer"]["unit"] = json!(" ");
+    let accepted = questions[short]["parts"][0]["answer"]["accepted"].clone();
+    questions[short]["parts"][0]["answer"]["accepted"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!(" "));
+    questions[open]["parts"][0]["answer"]["hints"] = json!(["", "Think of the area.", " "]);
+    // A chart series short of its labels takes nulls (empty cells), and a
+    // blank description goes.
+    let chart_at = |q: &Value| {
+        q["stem"]
+            .as_array()
+            .and_then(|stem| stem.iter().position(|b| b["type"] == "chart"))
+    };
+    let chart = (2..questions.len())
+        .find(|&i| chart_at(&questions[i]).is_some())
+        .unwrap();
+    let at = chart_at(&questions[chart]).unwrap();
+    let block = &mut questions[chart]["stem"][at];
+    let labels = block["labels"].as_array().unwrap().len();
+    block["series"][0]["values"] = json!([null]);
+    block["description"] = json!("  ");
+    let (content, keys, _, _) = rooms(&questions);
+    let projected = projected(&content, &keys);
+    assert_eq!(projected.len(), questions.len() - 1);
+    let find = |id: &Value| projected.iter().find(|q| &q["id"] == id).unwrap();
+    assert_eq!(find(&questions[0]["id"])["parts"][0]["blocks"], body);
+    assert!(!projected.iter().any(|q| q["id"] == questions[1]["id"]));
+    let answer = &find(&questions[short]["id"])["parts"][0]["answer"];
+    assert!(answer.get("unit").is_none());
+    assert_eq!(answer["accepted"], accepted);
+    let block = &find(&questions[chart]["id"])["stem"][at];
+    assert_eq!(
+        block["series"][0]["values"],
+        json!(vec![Value::Null; labels])
+    );
+    assert!(block.get("description").is_none());
+    assert_eq!(
+        find(&questions[open]["id"])["parts"][0]["answer"]["hints"],
+        json!(["Think of the area."])
+    );
+}
+
+#[test]
 fn two_editors_merge_an_option_and_its_correct_answer() {
     let questions = fixtures();
     let (content, keys, _, keys_b) = rooms(&questions);

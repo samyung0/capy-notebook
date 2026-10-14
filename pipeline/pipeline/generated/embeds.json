@@ -656,7 +656,7 @@
           },
           "labels": {
             "items": {
-              "minLength": 1,
+              "maxLength": 12000,
               "type": "string"
             },
             "maxItems": 50,
@@ -673,7 +673,10 @@
                 },
                 "values": {
                   "items": {
-                    "type": "number"
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   },
                   "type": "array"
                 }
@@ -821,7 +824,7 @@
                     "type": "array"
                   },
                   "maxItems": 60,
-                  "minItems": 2,
+                  "minItems": 1,
                   "type": "array"
                 }
               },

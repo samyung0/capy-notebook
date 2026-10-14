@@ -7,16 +7,19 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { InputError } from '@/components/ui/Input';
 import { BlockEditor } from '@/features/questions/BlockEditor';
 import { renderGraphSvg } from '@/features/questions/graph';
-import type {
-  ChartBlock,
-  GraphBlock,
-  QuestionBlock,
+import {
+  blockWithoutBlanks,
+  type ChartBlock,
+  type GraphBlock,
+  type QuestionBlock,
 } from '@/features/questions/types';
 import { questionBlockSchema } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 
 export type NoteVisualBlock = ChartBlock | GraphBlock;
+
+const blockResolver = zodResolver(z.object({ block: questionBlockSchema }));
 
 export default function VisualBlockDialog({
   block,
@@ -36,7 +39,14 @@ export default function VisualBlockDialog({
     formState: { errors, isSubmitting },
   } = useForm<{ block: QuestionBlock }>({
     defaultValues: { block: structuredClone(block) },
-    resolver: zodResolver(z.object({ block: questionBlockSchema })),
+    // Blanks (an empty chart value, a blank description) are dropped or
+    // filled on Save, as in the question dialog.
+    resolver: (values, context, options) =>
+      blockResolver(
+        { block: blockWithoutBlanks(values.block) },
+        context,
+        options
+      ),
   });
   const save = handleSubmit(async ({ block: draft }) => {
     try {

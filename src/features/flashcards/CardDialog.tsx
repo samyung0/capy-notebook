@@ -86,7 +86,7 @@ export function CardDialog({
       footer={
         <>
           <div className="mr-auto flex items-center gap-2">
-            <UndoButtons manager={undo} />
+            <UndoButtons footer manager={undo} />
             <LiveStatus status={status} />
           </div>
           {onRemove && (

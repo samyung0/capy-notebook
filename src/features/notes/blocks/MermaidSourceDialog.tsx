@@ -48,7 +48,7 @@ export default function MermaidSourceDialog({
     <SimpleDialog
       footer={
         <div className="mr-auto flex items-center gap-2">
-          <UndoButtons manager={history.target} />
+          <UndoButtons footer manager={history.target} />
           {status && <EditorSaveStatus layout="office" store={status} />}
         </div>
       }

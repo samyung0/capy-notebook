@@ -378,6 +378,11 @@ func validatePlot(b map[string]any, policy Policy) error {
 	if !ok {
 		return fail("invalid plot series")
 	}
+	// A scatter series needs one point, a line two (Epo 2026-10-14).
+	minPoints := 2
+	if b["kind"] == "scatter" {
+		minPoints = 1
+	}
 	for _, raw := range series {
 		s, err := obj(raw)
 		if err != nil {
@@ -386,7 +391,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 		if err := keys(s, "name points", ""); err != nil {
 			return err
 		}
-		points, ok := array(s["points"], 2, fieldlimits.QuestionPlotPoints)
+		points, ok := array(s["points"], minPoints, fieldlimits.QuestionPlotPoints)
 		if !str(s["name"], fieldlimits.QuestionMetadata, false) || !ok {
 			return fail("invalid plot curve")
 		}
@@ -477,8 +482,18 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if !optionalDescription(b, policy) {
 			return fail("invalid chart description")
 		}
-		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionMetadata, false) || !stringsArray(b["labels"], 1, fieldlimits.QuestionChartLabels, fieldlimits.QuestionText) {
+		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionMetadata, false) {
 			return fail("invalid chart")
+		}
+		// Category labels may be empty (Epo 2026-10-14).
+		labels, ok := array(b["labels"], 1, fieldlimits.QuestionChartLabels)
+		if !ok {
+			return fail("invalid chart labels")
+		}
+		for _, label := range labels {
+			if !str(label, fieldlimits.QuestionText, false) {
+				return fail("invalid chart label")
+			}
 		}
 		for _, key := range []string{"xTitle", "yTitle"} {
 			if !optionalString(b, key, fieldlimits.QuestionMetadata) {
@@ -510,7 +525,11 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			if !ok {
 				return fail("chart values must align with labels")
 			}
+			// null is an empty cell, drawn as nothing (Epo 2026-10-14).
 			for _, v := range values {
+				if v == nil {
+					continue
+				}
 				n, ok := num(v)
 				if !ok || ((b["kind"] == "pie" || b["kind"] == "stacked") && n < 0) {
 					return fail("invalid chart value")
@@ -532,7 +551,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			return err
 		}
 	case "image":
-		if err := keys(b, "type image width height description", "attribution"); err != nil {
+		if err := keys(b, "type image width height", "description attribution"); err != nil {
 			return err
 		}
 		if err := imageFields(b, policy); err != nil {
@@ -560,7 +579,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			}
 		}
 	case "graph":
-		if err := keys(b, "type board elements image width height description", "attribution"); err != nil {
+		if err := keys(b, "type board elements image width height", "description attribution"); err != nil {
 			return err
 		}
 		if err := imageFields(b, policy); err != nil {
@@ -611,7 +630,7 @@ func imageFields(b map[string]any, policy Policy) error {
 			return fail("invalid image dimensions")
 		}
 	}
-	if !str(b["description"], descriptionMax(policy), true) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
+	if !optionalDescription(b, policy) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
 		return fail("invalid image description")
 	}
 	return nil
@@ -626,8 +645,9 @@ func descriptionMax(policy Policy) int {
 	return fieldlimits.QuestionDescription
 }
 
-// optionalDescription: a chart's or plot's description, when it has one, is
-// a non-blank text within descriptionMax.
+// optionalDescription: a figure's description, when it has one, is a
+// non-blank text within descriptionMax (optional on every figure, Epo
+// 2026-10-14).
 func optionalDescription(b map[string]any, policy Policy) bool {
 	v, ok := b["description"]
 	return !ok || str(v, descriptionMax(policy), true)
@@ -1255,7 +1275,11 @@ func blocksText(blocks []any) string {
 			}
 			out = append(out, strings.Join(lines, "\n"))
 		case "image", "graph":
-			out = append(out, "[Figure: "+str("description")+"]")
+			if description := str("description"); description != "" {
+				out = append(out, "[Figure: "+description+"]")
+			} else {
+				out = append(out, "[Figure]")
+			}
 		case "table":
 			rows, _ := b["rows"].([]any)
 			lines := make([]string, 0, len(rows))
@@ -1279,8 +1303,11 @@ func blocksText(blocks []any) string {
 				pairs := make([]string, len(values))
 				for i, v := range values {
 					label, _ := labels[i].(string)
-					n, _ := num(v)
-					pairs[i] = label + "=" + strconv.FormatFloat(n, 'f', -1, 64)
+					if n, ok := num(v); ok {
+						pairs[i] = label + "=" + strconv.FormatFloat(n, 'f', -1, 64)
+					} else {
+						pairs[i] = label + "=–" // an empty cell
+					}
 				}
 				name, _ := s["name"].(string)
 				lines = append(lines, name+": "+strings.Join(pairs, ", "))

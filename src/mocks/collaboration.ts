@@ -34,6 +34,7 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
+import { withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import {
   itemParts,
@@ -1050,14 +1051,16 @@ function persistItem(room: Room) {
     const complete = readQuestions(
       docOf(contentName),
       docOf(peerName(contentName))
-    ).filter((question) => {
-      try {
-        validateQuestion(question);
-        return true;
-      } catch {
-        return false;
-      }
-    });
+    )
+      .map(withoutBlanks)
+      .filter((question) => {
+        try {
+          validateQuestion(question);
+          return true;
+        } catch {
+          return false;
+        }
+      });
     material.content = createMaterialDocument([
       quizNode({ questions: complete }, material.id),
     ]) as Material['content'];

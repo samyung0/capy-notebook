@@ -466,7 +466,10 @@ a size threshold while the room is empty, as the Office rebuild does.
 
 Compaction takes a Redis eviction lease so every collaboration instance
 flushes, closes clients, and unloads the room; rebuilds a fresh Y.Doc from
-the projected Plate `materials.content`; clears in-memory pending
+the projected Plate `materials.content` (a quiz instead from its own content
+and keys documents, every question as typed with its keys, since its
+projection holds only complete questions; Epo 2026-10-14; a flashcard set's
+projection leaves blank cards out, so they go); clears in-memory pending
 checkpoints; keeps `stored_version` / `projected_version` equal; and
 increments `room_schema`. Tokens, Redis events, service commands, and client
 Y.Docs bind to that epoch so a stale client cannot merge pre-compaction state

@@ -1,4 +1,4 @@
-import type { Question } from '@/features/questions/types';
+import { type Question, withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/errors';
@@ -17,7 +17,7 @@ export function incompleteLine(question: Question): string | null {
   if (unanswered)
     return m.quiz_incomplete({ reason: m.quiz_incomplete_correct() });
   try {
-    validateQuestion(question);
+    validateQuestion(withoutBlanks(question));
     return null;
   } catch (error) {
     return m.quiz_incomplete({

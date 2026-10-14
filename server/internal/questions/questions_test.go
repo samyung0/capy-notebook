@@ -151,15 +151,16 @@ func TestGradingTextIncludesStemEarlierPartsAndFigures(t *testing.T) {
 		"stem": []any{
 			map[string]any{"type": "text", "label": "Source A", "text": "Prices rose."},
 			map[string]any{"type": "image", "description": "A demand curve"},
-			map[string]any{"type": "chart", "title": "Sales (kg)", "labels": []any{"Jan", "Feb"},
-				"series": []any{map[string]any{"name": "Shop", "values": []any{1.5, 2.0}}}},
+			map[string]any{"type": "graph"},
+			map[string]any{"type": "chart", "title": "Sales (kg)", "labels": []any{"Jan", "Feb", "Mar"},
+				"series": []any{map[string]any{"name": "Shop", "values": []any{1.5, 2.0, nil}}}},
 		},
 		"parts": []any{
 			map[string]any{"blocks": []any{map[string]any{"type": "table", "rows": []any{[]any{"a", "b"}, []any{"c", "d"}}}}},
 			map[string]any{"blocks": []any{map[string]any{"type": "text", "text": "Explain."}}},
 		},
 	}
-	want := "Source A\nPrices rose.\n\n[Figure: A demand curve]\n\nSales (kg)\nShop: Jan=1.5, Feb=2\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
+	want := "Source A\nPrices rose.\n\n[Figure: A demand curve]\n\n[Figure]\n\nSales (kg)\nShop: Jan=1.5, Feb=2, Mar=–\n\nEarlier part 1: a | b\nc | d\n\nPart to grade: Explain."
 	if got := GradingText(q, 1); got != want {
 		t.Fatalf("GradingText =\n%q\nwant\n%q", got, want)
 	}

@@ -460,7 +460,7 @@ var noteFigureFences = fmt.Sprintf("```chart fences comparing labelled categorie
 	"```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a "+
 	"membrane potential over time, a titration curve) or a scatter of points, JSON "+
 	`{"type": "plot", "kind"?: "line"|"scatter" (default line), "title", "xTitle", "yTitle" (axis names with units), `+
-	`"series": 1 to %d [{"name", "points": [[x, y], ...] in x order for a line, 2 to %d}], `+
+	`"series": 1 to %d [{"name", "points": [[x, y], ...] in x order for a line, 2 to %d (1 or more for a scatter)}], `+
 	`"lines"?: [{"axis": "x"|"y", "value", "label"?}] dashed reference lines, `+
 	`"marks"?: [{"x", "y", "label"}] labelled points}; `,
 	fieldlimits.QuestionPlotSeries, fieldlimits.QuestionPlotPoints)

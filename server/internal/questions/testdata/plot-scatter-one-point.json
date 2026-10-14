@@ -1,0 +1,47 @@
+{
+  "name": "plot-scatter-one-point",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "plot",
+        "kind": "scatter",
+        "title": "One reading",
+        "xTitle": "t (s)",
+        "yTitle": "V (mV)",
+        "series": [
+          {
+            "name": "Vm",
+            "points": [[0, -70]]
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": ["alpha"]
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "text": "Because."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

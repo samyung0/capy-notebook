@@ -657,7 +657,7 @@ export const EMBED_CATALOG = {
           },
           "labels": {
             "items": {
-              "minLength": 1,
+              "maxLength": 12000,
               "type": "string"
             },
             "maxItems": 50,
@@ -674,7 +674,10 @@ export const EMBED_CATALOG = {
                 },
                 "values": {
                   "items": {
-                    "type": "number"
+                    "type": [
+                      "number",
+                      "null"
+                    ]
                   },
                   "type": "array"
                 }
@@ -822,7 +825,7 @@ export const EMBED_CATALOG = {
                     "type": "array"
                   },
                   "maxItems": 60,
-                  "minItems": 2,
+                  "minItems": 1,
                   "type": "array"
                 }
               },

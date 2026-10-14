@@ -192,7 +192,38 @@ question-editing previews. Read-only previews use the shared `MathPreview`
 component with matching fonts/layout and no keyboard or menu controls. `BlockToolbar`
 is shared by question blocks, note embeds, tables and columns.
 
-Charts reuse the SVG renderer extracted from ChatChart. Graphs store a bounded
+Charts reuse the SVG renderer extracted from ChatChart. A chart's category
+labels may be empty, each at most `QUESTION_TEXT_MAX` (every validator and the
+embed catalog's chart schema, Epo 2026-10-14); `CategoryChart` draws an empty
+label as no tick text. A pie or stacked chart holds one series of values 0 or
+more with a positive total among its non-empty values: the chart editor
+keeps one series and its value inputs stop at 0, and the pipeline cuts an
+agent's multi-series pie or stacked chart to its first series and pads an
+agent's short series with null, in `add_question_media` and in note chart
+fences (`first_series`, `pad_series` in
+`pipeline/pipeline/retrieval/questions.py`, each named in the result), while
+every validator still refuses several series and a negative value stays an
+error everywhere. A chart value may be null, an empty cell: the editor keeps
+an emptied cell (and a new row or series) null, every validator and the embed
+catalog's chart schema accept it, and it draws no bar, point or slice
+(`CategoryChart`; a line breaks there), showing as `–` in values tables, the
+export table and the grading text. Blanks are dropped or filled before a question is
+validated and stored (`withoutBlanks` in `types.ts` on every save and the
+incomplete line, `blockWithoutBlanks` for a note's chart or graph, Rust
+`without_blanks` in the live quiz projection): empty text blocks, a blank
+unit, blank hints and blank accepted answers (no accepted answer left leaves
+the part incomplete), and a blank figure description go; a table's shorter
+rows take empty cells up to the longest (a longer row adds a column with an
+empty header; a live room's table is a grid, always even); a chart series
+short of its labels takes nulls and an empty value (NaN) is null, while a
+series longer than its labels stays an error. The validators stay strict (even
+table rows, a value per label), so nothing uneven is stored (Epo
+2026-10-14). Image and graph descriptions are optional like chart and plot
+ones; a figure without one is `[Figure]` in the grading text and has empty
+alt text. An open part's marks are its marking items' total capped at
+`QUESTION_MARKS_MAX` (`schemeMarks`, live and staged alike): items past the
+cap stay as entered, so the live room admits the edit and the incomplete line
+names the mismatch. Graphs store a bounded
 JSXGraph recipe and a static rendering. Recipe elements are function graphs,
 points, lines, segments, circles, labels, angles (three points with the vertex
 in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
@@ -217,8 +248,8 @@ Implicit curves and inequalities are planned (`todo-graph.md`). Question charts 
 at about a graph's width with a centred title and never show a values table.
 A `plot` block holds numeric series over numeric axes: optional `kind` (`line`,
 the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4
-`series` of `{name, points: [[x, y], …]}` (2–60 finite points, drawn as straight
-segments in x order, or as dots for a scatter), and optional `lines`
+`series` of `{name, points: [[x, y], …]}` (2–60 finite points drawn as straight
+segments in x order, or 1–60 drawn as dots for a scatter, Epo 2026-10-14), and optional `lines`
 (`{axis: x|y, value, label?}`, dashed reference lines) and `marks`
 (`{x, y, label}`), at most 8 of each (`QUESTION_PLOT_*` in fieldlimits).
 `PlotChart` (beside `CategoryChart`, same frame, theme variables and ticks) draws
@@ -287,7 +318,8 @@ each marking item earns none, half or all of its marks from a zero/partial/full
 answer that is only a list of subject vocabulary earns 0 on every item. The
 part's award is the sum and the snapshot keeps `itemAwards`. The grading text
 is built in Go (`questions.GradingText`) from the stem, earlier parts and the
-part, with figures as their descriptions, tables and chart data. Requests carry
+part, with figures as their descriptions (`[Figure]` for one without), tables
+and chart data. Requests carry
 only part ids and answers; the server loads the scheme, so the endpoints cannot
 grade arbitrary text (see Answer keys and server grading below). Saving an open part in the quiz editor
 asks Jev whether grading it needs a calculation checked and warns the author

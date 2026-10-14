@@ -62,9 +62,9 @@ export function questionBlocks(blocks: QuestionBlock[]): MaterialValue {
       case 'image':
         return [
           element('img', [{ text: '' }], {
-            caption: [{ text: block.attribution || block.description }],
+            caption: [{ text: block.attribution || block.description || '' }],
             height: block.height,
-            name: block.description,
+            name: block.description ?? '',
             ...block.image,
             width: block.width,
           }),

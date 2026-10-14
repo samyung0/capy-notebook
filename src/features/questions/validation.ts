@@ -35,6 +35,13 @@ const text = z
   .refine((value) => [...value].length <= limits.QUESTION_TEXT_MAX, {
     error: () => m.question_validation_text_too_long(),
   });
+// A chart category label may be empty (Epo 2026-10-14).
+const label = z
+  .string()
+  .trim()
+  .refine((value) => [...value].length <= limits.QUESTION_TEXT_MAX, {
+    error: () => m.question_validation_text_too_long(),
+  });
 const identifier = z
   .string()
   .min(1)
@@ -243,13 +250,14 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       description: text.optional(),
       gridlines: z.enum(['normal', 'fine']).optional(),
       kind: z.enum(CHART_KINDS),
-      labels: z.array(text).min(1).max(limits.QUESTION_CHART_LABELS_MAX),
+      labels: z.array(label).min(1).max(limits.QUESTION_CHART_LABELS_MAX),
       series: z
         .array(
           z.strictObject({
             name: meta,
+            // null is an empty cell, drawn as nothing (Epo 2026-10-14).
             values: z
-              .array(finite)
+              .array(finite.nullable())
               .min(1)
               .max(limits.QUESTION_CHART_LABELS_MAX),
           })
@@ -267,49 +275,57 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
           code: 'custom',
           message: m.question_validation_series_values(),
         });
+      // Empty cells are skipped: the rest are nonnegative with a positive total.
       if (
         ['pie', 'stacked'].includes(v.kind) &&
         (v.series.length !== 1 ||
-          v.series[0].values.some((n) => n < 0) ||
-          !v.series[0].values.some((n) => n > 0))
+          v.series[0].values.some((n) => n !== null && n < 0) ||
+          !v.series[0].values.some((n) => n !== null && n > 0))
       )
         ctx.addIssue({
           code: 'custom',
           message: m.question_validation_pie_series(),
         });
     }),
-  z.strictObject({
-    description: text.optional(),
-    kind: z.enum(['line', 'scatter']).optional(),
-    lines: z
-      .array(
-        z.strictObject({
-          axis: z.enum(['x', 'y']),
-          label: meta.optional(),
-          value: finite,
-        })
-      )
-      .max(limits.QUESTION_PLOT_MARKS_MAX)
-      .optional(),
-    marks: z
-      .array(z.strictObject({ label: meta, x: finite, y: finite }))
-      .max(limits.QUESTION_PLOT_MARKS_MAX)
-      .optional(),
-    series: z
-      .array(
-        z.strictObject({
-          name: meta,
-          points: z.array(coords).min(2).max(limits.QUESTION_PLOT_POINTS_MAX),
-        })
-      )
-      .min(1)
-      .max(limits.QUESTION_PLOT_SERIES_MAX),
-    title: meta,
-    type: z.literal('plot'),
-    unit: meta.optional(),
-    xTitle: meta,
-    yTitle: meta,
-  }),
+  z
+    .strictObject({
+      description: text.optional(),
+      kind: z.enum(['line', 'scatter']).optional(),
+      lines: z
+        .array(
+          z.strictObject({
+            axis: z.enum(['x', 'y']),
+            label: meta.optional(),
+            value: finite,
+          })
+        )
+        .max(limits.QUESTION_PLOT_MARKS_MAX)
+        .optional(),
+      marks: z
+        .array(z.strictObject({ label: meta, x: finite, y: finite }))
+        .max(limits.QUESTION_PLOT_MARKS_MAX)
+        .optional(),
+      series: z
+        .array(
+          z.strictObject({
+            name: meta,
+            points: z.array(coords).min(1).max(limits.QUESTION_PLOT_POINTS_MAX),
+          })
+        )
+        .min(1)
+        .max(limits.QUESTION_PLOT_SERIES_MAX),
+      title: meta,
+      type: z.literal('plot'),
+      unit: meta.optional(),
+      xTitle: meta,
+      yTitle: meta,
+    })
+    // A scatter series needs one point, a line two (Epo 2026-10-14).
+    .refine(
+      (v) =>
+        v.kind === 'scatter' || v.series.every((s) => s.points.length >= 2),
+      { error: () => m.question_validation_plot_line_points() }
+    ),
   z.strictObject({
     image: z.union([
       z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
@@ -318,7 +334,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
     type: z.literal('image'),
     ...imageSize,
     attribution: meta.optional(),
-    description: text,
+    description: text.optional(),
   }),
   z
     .strictObject({
@@ -339,7 +355,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       type: z.literal('graph'),
       ...imageSize,
       attribution: meta.optional(),
-      description: text,
+      description: text.optional(),
     })
     .superRefine((v, ctx) => {
       const [left, top, right, bottom] = v.board.bbox;

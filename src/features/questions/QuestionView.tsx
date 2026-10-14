@@ -116,7 +116,7 @@ function Figure({
   return (
     <figure className="mx-auto w-fit max-w-full">
       <img
-        alt={block.description}
+        alt={block.description ?? ''}
         className={cn(
           'h-auto max-w-full',
           block.type === 'graph' && 'bg-white'

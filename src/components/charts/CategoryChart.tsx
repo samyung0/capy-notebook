@@ -41,6 +41,22 @@ export const format = (value: number) =>
   Math.abs(value) >= 1000
     ? value.toLocaleString(undefined, { maximumFractionDigits: 0 })
     : value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+/** An empty chart cell (null) in text: tooltips and values tables. */
+export const EMPTY_VALUE = '–';
+
+/** A series' runs of consecutive values, empty cells breaking a line. */
+function runs(values: (number | null)[]) {
+  const out: [number, number][][] = [];
+  let run: [number, number][] = [];
+  values.forEach((value, index) => {
+    if (value === null) {
+      if (run.length) out.push(run);
+      run = [];
+    } else run.push([index, value]);
+  });
+  if (run.length) out.push(run);
+  return out;
+}
 
 /** Rough SVG text width; good enough to keep labels inside their slot. */
 const textWidth = (text: string, size: number) => text.length * size * 0.5;
@@ -217,10 +233,11 @@ export function CategoryChart({
     columns: ['', ...legend],
     rows: labels.map((label, index) => [
       label,
-      ...series.map((s) => s.values[index]),
+      ...series.map((s) => s.values[index] ?? EMPTY_VALUE),
     ]),
   };
-  const all = series.flatMap((s) => s.values);
+  // Empty cells (null) draw nothing and leave the scale alone.
+  const all = series.flatMap((s) => s.values.filter((v) => v !== null));
   const frame = {
     illustrative: props.illustrative,
     legend,
@@ -319,6 +336,7 @@ export function CategoryChart({
                 </text>
                 {series.map((s, index) => {
                   const value = s.values[row];
+                  if (value === null) return null;
                   const y = row * rowHeight + 8 + index * 22;
                   const x0 = x(0);
                   const x1 = x(value);
@@ -343,25 +361,36 @@ export function CategoryChart({
 
   if (props.kind === 'pie' || props.kind === 'stacked') {
     const first = series[0];
-    const total = first.values.reduce(
-      (sum, value) => sum + Math.max(0, value),
+    // Empty cells are no slice; the rest share the total.
+    const total = first.values.reduce<number>(
+      (sum, value) => sum + Math.max(0, value ?? 0),
       0
     );
-    const slices = labels.map((label, index) => ({
-      label,
-      share: total ? Math.max(0, first.values[index]) / total : 0,
-      value: first.values[index],
-    }));
+    const slices = labels.map((label, index) => {
+      const value = first.values[index] ?? null;
+      return {
+        label,
+        share: total && value !== null ? Math.max(0, value) / total : 0,
+        value,
+      };
+    });
     const pieFrame = {
       ...frame,
       legend: labels,
       values: {
         columns: ['', first.name],
-        rows: labels.map((label, index) => [label, first.values[index]]),
+        rows: labels.map((label, index) => [
+          label,
+          first.values[index] ?? EMPTY_VALUE,
+        ]),
       },
     };
     if (props.kind === 'stacked') {
       let cursor = 0;
+      const last = slices.reduce(
+        (found, slice, index) => (slice.share > 0 ? index : found),
+        -1
+      );
       return (
         <Frame {...pieFrame}>
           <svg
@@ -372,11 +401,12 @@ export function CategoryChart({
             viewBox={`0 0 ${W} 28`}
           >
             {slices.map((slice, index) => {
+              if (slice.value === null) return null;
               const x = cursor * W;
               const width = Math.max(0, slice.share * W - 2);
               cursor += slice.share;
               // Only the data end, the far side of the last segment, is round.
-              const r = index === slices.length - 1 ? Math.min(4, width) : 0;
+              const r = index === last ? Math.min(4, width) : 0;
               return (
                 <path
                   d={`M${x},2 h${width - r} a${r},${r} 0 0 1 ${r},${r} v${24 - 2 * r} a${r},${r} 0 0 1 -${r},${r} H${x} Z`}
@@ -404,6 +434,7 @@ export function CategoryChart({
           viewBox="0 0 160 160"
         >
           {slices.map((slice, index) => {
+            if (slice.value === null) return null;
             const sweep = slice.share * 2 * Math.PI;
             const start = angle;
             angle += sweep;
@@ -503,63 +534,73 @@ export function CategoryChart({
                 );
                 const groupWidth = series.length * (width + 2) - 2;
                 return series.map((s, sIndex) => {
+                  const value = s.values[index];
+                  if (value === null) return null;
                   const x =
                     xCenter(index) - groupWidth / 2 + sIndex * (width + 2);
                   return (
                     <path
-                      d={bar(x, y(0), y(s.values[index]), width)}
+                      d={bar(x, y(0), y(value), width)}
                       fill={color(sIndex)}
                       key={`${index}-${sIndex}`}
                     >
-                      <title>{`${labels[index]} · ${s.name}: ${format(s.values[index])}`}</title>
+                      <title>{`${labels[index]} · ${s.name}: ${format(value)}`}</title>
                     </path>
                   );
                 });
               })
             : [
                 // Every fill goes under every line so no area hides a line.
+                // An empty cell breaks a line and its fill into runs.
                 props.kind === 'area' &&
-                  series.map((s, sIndex) => (
-                    <polygon
-                      fill={color(sIndex)}
-                      key={`fill-${sIndex}`}
-                      opacity={series.length > 1 ? 0.22 : 0.3}
-                      points={`${xCenter(0)},${y(0)} ${s.values.map((value, index) => `${xCenter(index)},${y(value)}`).join(' ')} ${xCenter(s.values.length - 1)},${y(0)}`}
-                    />
-                  )),
-                ...series.map((s, sIndex) => {
-                  const points = s.values.map(
-                    (value, index) => [xCenter(index), y(value)] as const
-                  );
-                  const line = points
-                    .map(([px, py]) => `${px},${py}`)
-                    .join(' ');
-                  return (
-                    <g key={sIndex}>
-                      <polyline
-                        fill="none"
-                        points={line}
-                        stroke={color(sIndex)}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                      />
-                      {points.map(([px, py], index) => (
-                        <circle
-                          className="stroke-surface"
-                          cx={px}
-                          cy={py}
+                  series.flatMap((s, sIndex) =>
+                    runs(s.values).map((run) => {
+                      const first = run[0][0];
+                      const last = run.at(-1)?.[0] ?? first;
+                      return (
+                        <polygon
                           fill={color(sIndex)}
-                          key={index}
-                          r={4}
+                          key={`fill-${sIndex}-${first}`}
+                          opacity={series.length > 1 ? 0.22 : 0.3}
+                          points={`${xCenter(first)},${y(0)} ${run.map(([index, value]) => `${xCenter(index)},${y(value)}`).join(' ')} ${xCenter(last)},${y(0)}`}
+                        />
+                      );
+                    })
+                  ),
+                ...series.map((s, sIndex) => (
+                  <g key={sIndex}>
+                    {runs(s.values).map((run) => (
+                      <g key={run[0][0]}>
+                        <polyline
+                          fill="none"
+                          points={run
+                            .map(
+                              ([index, value]) =>
+                                `${xCenter(index)},${y(value)}`
+                            )
+                            .join(' ')}
+                          stroke={color(sIndex)}
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                           strokeWidth={2}
-                        >
-                          <title>{`${labels[index]} · ${s.name}: ${format(s.values[index])}`}</title>
-                        </circle>
-                      ))}
-                    </g>
-                  );
-                }),
+                        />
+                        {run.map(([index, value]) => (
+                          <circle
+                            className="stroke-surface"
+                            cx={xCenter(index)}
+                            cy={y(value)}
+                            fill={color(sIndex)}
+                            key={index}
+                            r={4}
+                            strokeWidth={2}
+                          >
+                            <title>{`${labels[index]} · ${s.name}: ${format(value)}`}</title>
+                          </circle>
+                        ))}
+                      </g>
+                    ))}
+                  </g>
+                )),
               ]}
         </g>
       </svg>

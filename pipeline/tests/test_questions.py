@@ -442,6 +442,69 @@ async def test_media_goes_after_the_question_text(monkeypatch):
         "plot",
     ]
 
+    # A line needs two points; a scatter takes one.
+    point = {**PLOT, "series": [{"name": "Vm", "points": [[0, -70]]}]}
+    one = await tools.write_media(
+        {
+            "quiz_id": "mat_q",
+            "question_id": "q_1",
+            "media": point,
+            "_tool_call_id": "f",
+        },
+        ctx,
+        store,
+    )
+    assert one.refused and "expected 2 or more points for a line; sent 1" in one.detail
+    dot = await tools.write_media(
+        {
+            "quiz_id": "mat_q",
+            "question_id": "q_1",
+            "media": {**point, "kind": "scatter"},
+            "_tool_call_id": "g",
+        },
+        ctx,
+        store,
+    )
+    assert dot.outcome == "succeeded", dot.text()
+    # A stacked chart's extra series are cut, and the result says so.
+    stacked = {
+        **CHART,
+        "kind": "stacked",
+        "series": [*CHART["series"], {"name": "Inside", "values": [12, 140]}],
+    }
+    cut = await tools.write_media(
+        {
+            "quiz_id": "mat_q",
+            "question_id": "q_1",
+            "media": stacked,
+            "_tool_call_id": "e",
+        },
+        ctx,
+        store,
+    )
+    assert cut.outcome == "succeeded", cut.text()
+    assert (
+        written[-1][1][0]["question"]["parts"][0]["blocks"][-1]["series"]
+        == CHART["series"]
+    )
+    assert "only the first was kept" in cut.text()
+    # A series short of its labels is padded with null (an empty cell).
+    short = {**CHART, "series": [{"name": "Outside (mM)", "values": [145]}]}
+    padded = await tools.write_media(
+        {
+            "quiz_id": "mat_q",
+            "question_id": "q_1",
+            "media": short,
+            "_tool_call_id": "h",
+        },
+        ctx,
+        store,
+    )
+    assert padded.outcome == "succeeded", padded.text()
+    block = written[-1][1][0]["question"]["parts"][0]["blocks"][-1]
+    assert block["series"][0]["values"] == [145, None]
+    assert "padded with null" in padded.text()
+
     refused = await tools.write_media(
         {
             "quiz_id": "mat_q",
@@ -597,6 +660,21 @@ def test_chart_and_plot_fences_are_repaired_where_they_mean_one_thing():
     ]
     text, found = _fenced(f"```chart\n{json.dumps(CHART)}\n```\n")
     assert json.loads(text.split("\n")[1]) == CHART and found.notes == []
+    # A pie or stacked chart keeps its first series (Epo 2026-10-14).
+    inside = {"name": "Inside (mM)", "values": [12, 140]}
+    pie = {**CHART, "kind": "pie", "series": [*CHART["series"], inside]}
+    text, found = _fenced(f"```chart\n{json.dumps(pie)}\n```\n")
+    assert json.loads(text.split("\n")[1]) == {**CHART, "kind": "pie"}
+    assert found.notes == [
+        (
+            "Repaired content chart fence 1: a pie or stacked chart draws one "
+            "series, so only the first was kept."
+        )
+    ]
+    short = {**CHART, "series": [{"name": "Outside (mM)", "values": [145]}]}
+    text, found = _fenced(f"```chart\n{json.dumps(short)}\n```\n")
+    assert json.loads(text.split("\n")[1])["series"][0]["values"] == [145, None]
+    assert found.notes and "padded with null" in found.notes[0]
     # Left as written, for the converter's error: a body that is not a mapping,
     # one meant as JSON ({) that is not, and YAML whose escapes made control or
     # separator characters (\a of $\alpha$, \P of $\Phi$).

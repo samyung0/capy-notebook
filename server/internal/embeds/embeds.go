@@ -470,9 +470,10 @@ func chartSchema() map[string]any {
 		"type":   map[string]any{"const": "chart"},
 		"kind":   map[string]any{"enum": []string{"bar", "hbar", "line", "area", "pie", "stacked"}},
 		"title":  label,
-		"labels": list(1, fieldlimits.QuestionChartLabels, map[string]any{"type": "string", "minLength": 1}),
+		"labels": list(1, fieldlimits.QuestionChartLabels, map[string]any{"type": "string", "maxLength": fieldlimits.QuestionText}),
 		"series": list(1, fieldlimits.QuestionChartSeries, obj(map[string]any{
-			"name": label, "values": map[string]any{"type": "array", "items": number},
+			// null is an empty cell, drawn as nothing.
+			"name": label, "values": map[string]any{"type": "array", "items": map[string]any{"type": []string{"number", "null"}}},
 		}, "name", "values")),
 		"xTitle": label, "yTitle": label,
 		"gridlines": map[string]any{"enum": []string{"normal", "fine"}},
@@ -483,9 +484,10 @@ func plotSchema() map[string]any {
 	return obj(map[string]any{
 		"type": map[string]any{"const": "plot"}, "kind": map[string]any{"enum": []string{"line", "scatter"}},
 		"title": label, "xTitle": label, "yTitle": label, "unit": label,
+		// A scatter series needs one point, a line two (questions.ValidateBlock).
 		"series": list(1, fieldlimits.QuestionPlotSeries, obj(map[string]any{
 			"name":   label,
-			"points": list(2, fieldlimits.QuestionPlotPoints, list(2, 2, number)),
+			"points": list(1, fieldlimits.QuestionPlotPoints, list(2, 2, number)),
 		}, "name", "points")),
 		"lines": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
 			"axis": map[string]any{"enum": []string{"x", "y"}}, "value": number, "label": label,

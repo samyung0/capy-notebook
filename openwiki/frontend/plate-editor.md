@@ -597,10 +597,11 @@ has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 Chart, plot and graph nodes store their question block under `block`, an optional
 `width`, and a single empty text child; graphs export their SVG before saving.
 A figure's description shows under it as a muted caption (`MEDIA_CAPTION_CLASS`)
-and is the chart's or plot's accessible label: required on graphs (and
-images), optional on charts and plots (Epo 2026-10-14; the chart editor's
-Description field, no plot editor yet; the agent contract does not offer it),
-at most `QUESTION_DESCRIPTION_MAX` outside the bank.
+and is the figure's accessible label: optional on every figure, images and
+graphs included (Epo 2026-10-14; a blank one is dropped on Save; the chart
+editor's Description field, no plot editor yet; the agent contract does not
+offer it for charts and plots), at most `QUESTION_DESCRIPTION_MAX` outside the
+bank.
 Their Markdown fences (` ```chart `, ` ```plot `, ` ```graph `) hold that block's
 JSON (`customBlockNode` in `blocks/shared.ts`, checked by the shared question block
 schema, so a refused block fails the agent's write); the agent's note format
@@ -1467,12 +1468,18 @@ loaded (`PeerReload`). Both documents are stored beside each other
 (`material_yjs_keys`, `material_yjs_key_updates` for the keys) and every
 append of either takes the next `material_yjs_documents.stored_version`, so
 the projection's version and Go's rules about it are unchanged; the
-projection reads both documents at one version and keeps only the questions
-that pass the strict validator (D4), so grading (`POST /api/quizzes/{id}/
+projection reads both documents at one version, drops empty text blocks
+(stem, body, worked solution; Epo 2026-10-14) and keeps only the questions
+that then pass the strict validator (D4), so grading (`POST /api/quizzes/{id}/
 attempts` projects a lagging room first, D9) and fresh reads see what a Save
 would have stored. The projection also names every editor asset either
 document references (`assetIds`), so an image in an incomplete question stays
-in use. The two documents count together against the material's limits: each
+in use. Lineage compaction never rebuilds a quiz from that projection: it
+replays both stored documents and seeds fresh ones from every question as
+typed with its keys (`items::quiz::editor_value`, complete or not, blank
+blocks included; Epo 2026-10-14), and skips a quiz holding a block this
+version cannot read (`rebuilt_quiz` in
+`collaboration-rs/crates/server/src/note_store.rs`). The two documents count together against the material's limits: each
 room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
 projection over a limit unless it shrank. Admission checks structure, value
 caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
@@ -1509,8 +1516,10 @@ Redo sit beside the View switch, renaming goes through the item's Rename,
 Edit (ghost-hover) and Remove (danger-light) sit on a row under each question
 at the right, and an
 incomplete question shows a line under it saying what it lacks
-(`incomplete.ts`). Readers (the attempt page, the workspace quiz View, note
-embeds in View) paint the stored questions and then follow the content room
+(`incomplete.ts`); empty text blocks, a blank short-answer unit and blank
+open-answer hints never count against it, but a part needs one block with
+content. The bank dialog's Save drops them too (`withoutBlanks`). Readers
+(the attempt page, the workspace quiz View, note embeds in View) paint the stored questions and then follow the content room
 (`liveQuizReads.ts`); a learner's answer that no longer points at what a part
 holds (a removed option, a changed set of ordering items) is dropped (D9). The
 save API (`PATCH /api/quizzes/{id}/content`) takes no revision (D7): it

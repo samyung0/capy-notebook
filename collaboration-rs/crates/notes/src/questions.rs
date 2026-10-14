@@ -384,8 +384,7 @@ pub struct Block {
     pub text: Option<String>,
     /// `image.url` (trimmed), `image.assetId` or `image.svg`.
     pub image: Option<(&'static str, String)>,
-    /// A figure's description (trimmed): an image's or graph's, or a chart's
-    /// or plot's when it has one.
+    /// A figure's description (trimmed), when it has one.
     pub description: Option<String>,
 }
 
@@ -546,7 +545,8 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
     })
 }
 
-/// A chart's or plot's optional description: a non-blank text when present.
+/// A figure's optional description: a non-blank text when present (optional
+/// on every figure, Epo 2026-10-14).
 fn optional_description(map: &Map<String, Value>, what: &str) -> Result<Option<String>, String> {
     present(map, "description")
         .map(|v| text(v, what))
@@ -611,8 +611,8 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 &["bar", "hbar", "line", "area", "pie", "stacked"],
             )?;
             let labels = array(&map["labels"], what, 1, QUESTION_CHART_LABELS_MAX)?;
-            for label in labels {
-                text(label, what)?;
+            for entry in labels {
+                label(entry, what)?;
             }
             let series = array(&map["series"], what, 1, QUESTION_CHART_SERIES_MAX)?;
             let mut values_of = Vec::new();
@@ -621,9 +621,13 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 strict(entry_map, what, &["name", "values"], &[])?;
                 meta(&entry_map["name"], what)?;
                 let values = array(&entry_map["values"], what, 1, QUESTION_CHART_LABELS_MAX)?;
+                // null is an empty cell, drawn as nothing (Epo 2026-10-14).
                 let mut numbers = Vec::new();
                 for value in values {
-                    numbers.push(number(value, what)?);
+                    numbers.push(match value {
+                        Value::Null => None,
+                        value => Some(number(value, what)?),
+                    });
                 }
                 values_of.push(numbers);
             }
@@ -636,8 +640,8 @@ pub fn block(value: &Value) -> Result<Block, String> {
             }
             if matches!(chart, "pie" | "stacked")
                 && (values_of.len() != 1
-                    || values_of[0].iter().any(|n| *n < 0.0)
-                    || !values_of[0].iter().any(|n| *n > 0.0))
+                    || values_of[0].iter().flatten().any(|n| *n < 0.0)
+                    || !values_of[0].iter().flatten().any(|n| *n > 0.0))
             {
                 return fail(
                     "Pie and stacked charts need one nonnegative series with a positive total.",
@@ -663,6 +667,9 @@ pub fn block(value: &Value) -> Result<Block, String> {
             optional(map, "kind", |v| {
                 one_of(v, what, &["line", "scatter"]).map(|_| ())
             })?;
+            // A scatter series needs one point, a line two (Epo 2026-10-14).
+            let scatter = map.get("kind").and_then(Value::as_str) == Some("scatter");
+            let min_points = if scatter { 1 } else { 2 };
             for key in ["title", "xTitle", "yTitle"] {
                 meta(&map[key], what)?;
             }
@@ -671,7 +678,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 let curve = object(curve, what)?;
                 strict(curve, what, &["name", "points"], &[])?;
                 meta(&curve["name"], what)?;
-                for point in array(&curve["points"], what, 2, QUESTION_PLOT_POINTS_MAX)? {
+                for point in array(&curve["points"], what, min_points, QUESTION_PLOT_POINTS_MAX)? {
                     coords(point, what)?;
                 }
             }
@@ -706,34 +713,26 @@ pub fn block(value: &Value) -> Result<Block, String> {
             strict(
                 map,
                 what,
-                &["description", "height", "image", "type", "width"],
-                &["attribution"],
+                &["height", "image", "type", "width"],
+                &["attribution", "description"],
             )?;
             let image = figure(&map["image"], false)?;
             image_size(map, what)?;
             optional(map, "attribution", |v| meta(v, what))?;
-            let description = text(&map["description"], what)?;
+            let description = optional_description(map, what)?;
             Ok(Block {
                 kind: "image".into(),
                 text: None,
                 image: Some(image),
-                description: Some(description),
+                description,
             })
         }
         "graph" => {
             strict(
                 map,
                 what,
-                &[
-                    "board",
-                    "description",
-                    "elements",
-                    "height",
-                    "image",
-                    "type",
-                    "width",
-                ],
-                &["attribution"],
+                &["board", "elements", "height", "image", "type", "width"],
+                &["attribution", "description"],
             )?;
             let board = object(&map["board"], what)?;
             strict(board, what, &["axis", "bbox", "grid"], &[])?;
@@ -750,7 +749,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
             let image = figure(&map["image"], true)?;
             image_size(map, what)?;
             optional(map, "attribution", |v| meta(v, what))?;
-            let description = text(&map["description"], what)?;
+            let description = optional_description(map, what)?;
             let (left, top, right, bottom) = (bbox[0], bbox[1], bbox[2], bbox[3]);
             if left >= right || bottom >= top {
                 return fail("Graph bounds must have positive width and height.");
@@ -797,7 +796,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "graph".into(),
                 text: None,
                 image: Some(image),
-                description: Some(description),
+                description,
             })
         }
         _ => fail(format!("{what}: invalid type")),
@@ -865,6 +864,17 @@ fn cap_description(map: &Map<String, Value>, what: &str) -> Check {
         }
         _ => Ok(()),
     }
+}
+
+/// `label`: a chart category label, `text` that may be empty (Epo 2026-10-14).
+fn label(value: &Value, what: &str) -> Check {
+    let Some(raw) = value.as_str() else {
+        return fail(format!("{what}: expected a string"));
+    };
+    if code_points(js_trim(raw)) > QUESTION_TEXT_MAX {
+        return fail(format!("{what}: Text is too long."));
+    }
+    Ok(())
 }
 
 fn objects(items: &[Value]) -> impl Iterator<Item = &Map<String, Value>> {

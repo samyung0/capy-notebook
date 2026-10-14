@@ -53,6 +53,8 @@ import {
   type QuestionAnswer,
   type QuestionBlock,
   type QuestionPart,
+  schemeMarks,
+  withoutBlanks,
 } from './types';
 import { questionSchema, validateQuestion } from './validation';
 
@@ -93,11 +95,17 @@ const answerTitle = (part: QuestionPart) =>
     ? m.question_ui_answer_and_marking_scheme()
     : m.question_ui_answer_and_marks();
 
+const draftResolver = zodResolver(z.object({ draft: questionSchema }));
 const marksLabel = (count: number) =>
   count === 1 ? m.question_ui_one_mark() : m.question_ui_marks({ count });
-const blockSummary = (block: QuestionBlock) =>
+// An empty text block shows what it is for until the author types.
+const textPlaceholder = (section: BlockSection) =>
+  section.solution
+    ? m.question_ui_solution_placeholder()
+    : m.question_ui_question_placeholder();
+const blockSummary = (block: QuestionBlock, section: BlockSection) =>
   (block.type === 'text'
-    ? block.text
+    ? block.text.trim() || textPlaceholder(section)
     : block.type === 'chart' || block.type === 'plot'
       ? block.title
       : block.type === 'graph' || block.type === 'image'
@@ -145,7 +153,7 @@ export function newQuestionBlock(type: AddableBlock): QuestionBlock {
       return {
         kind: 'bar',
         labels: [''],
-        series: [{ name: '', values: [0] }],
+        series: [{ name: '', values: [null] }],
         title: '',
         type,
       };
@@ -233,7 +241,11 @@ function QuestionDialogSession({
     formState: { isSubmitting },
   } = useForm<{ draft: Question }>({
     defaultValues: { draft: structuredClone(question) },
-    resolver: zodResolver(z.object({ draft: questionSchema })),
+    // Blanks (empty text, a blank unit, hint or accepted answer, a blank
+    // description, short table rows or chart series) are dropped or filled on
+    // Save, so they never hold it up.
+    resolver: (values, context, options) =>
+      draftResolver({ draft: withoutBlanks(values.draft) }, context, options),
   });
   const staged = useWatch({ control, name: 'draft' });
   // Live: the question as the documents hold it now, and each change written
@@ -349,7 +361,10 @@ function QuestionDialogSession({
           ? limits.QUESTION_PARTS_MAX
           : limits.QUIZ_QUESTION_PARTS_MAX)
       : sectionBlocks(draft, addSection()).length >= limits.QUESTION_BLOCKS_MAX;
-  const add = (type: AddableBlock | 'part') => {
+  const add = (
+    type: AddableBlock | 'part',
+    section: BlockSection = addSection()
+  ) => {
     setAddOpen(false);
     if (type === 'part') {
       const part = blankQuestion().parts[0];
@@ -367,7 +382,6 @@ function QuestionDialogSession({
       setEditing({ kind: 'part', part });
       return;
     }
-    const section = addSection();
     const blocks = [...sectionBlocks(draft, section)];
     const index =
       selected?.kind === 'block' ? selected.location.index + 1 : blocks.length;
@@ -643,7 +657,13 @@ function QuestionDialogSession({
               item.kind === 'solution' && 'text-tint-accent-2-fg'
             )}
           >
-            <span className="line-clamp-2 min-w-0 break-words leading-tight">
+            <span
+              className={cn(
+                'line-clamp-2 min-w-0 break-words leading-tight',
+                // An empty text block's placeholder, not the author's words.
+                block?.type === 'text' && !block.text.trim() && 'text-fg-muted'
+              )}
+            >
               {block?.type === 'text' ? (
                 <TextView
                   className="whitespace-normal [&>span]:my-0 [&>span]:inline"
@@ -857,7 +877,13 @@ function QuestionDialogSession({
           </ToolbarButton>
         </ToolbarGroup>
       </>,
-      <QuestionBlockView block={block} />
+      block.type === 'text' && !block.text.trim() ? (
+        <p className="text-fg-muted leading-relaxed">
+          {textPlaceholder(section)}
+        </p>
+      ) : (
+        <QuestionBlockView block={block} />
+      )
     );
   };
   const previewAnswer = (part: QuestionPart, answer: ReactNode) =>
@@ -892,7 +918,7 @@ function QuestionDialogSession({
         live ? (
           <>
             <div className="mr-auto flex items-center gap-2">
-              {live.undo && <UndoButtons manager={live.undo} />}
+              {live.undo && <UndoButtons footer manager={live.undo} />}
               <LiveStatus status={live.status} />
             </div>
             {editing && (
@@ -1067,6 +1093,7 @@ function QuestionDialogSession({
                 onBusyChange={setSavingBlock}
                 onChange={(block) => editBlock(shown.location, block)}
                 onInvalidChange={setBlockInvalid}
+                textPlaceholder={textPlaceholder(shown.location)}
                 uploadAsset={uploadAsset}
               />
             ) : (
@@ -1092,10 +1119,7 @@ function QuestionDialogSession({
                     onChange={(markscheme) =>
                       editPart({
                         ...shown.part,
-                        marks: markscheme.reduce(
-                          (sum, item) => sum + item.marks,
-                          0
-                        ),
+                        marks: schemeMarks(markscheme),
                         markscheme,
                       })
                     }
@@ -1205,7 +1229,7 @@ function QuestionDialogSession({
               {draft.stem.map((block, index) =>
                 row(
                   { kind: 'block', location: { index } },
-                  blockSummary(block),
+                  blockSummary(block, {}),
                   { meta: blockLabels[block.type]() }
                 )
               )}
@@ -1227,7 +1251,7 @@ function QuestionDialogSession({
                           kind: 'block',
                           location: { index, partId: part.id },
                         },
-                        blockSummary(block),
+                        blockSummary(block, {}),
                         {
                           mark: index === 0 ? mark : undefined,
                           meta: blockLabels[block.type](),
@@ -1238,7 +1262,7 @@ function QuestionDialogSession({
                       mark: part.blocks.length ? undefined : mark,
                       meta: `${answerLabels[part.answer.type]()} · ${marksLabel(part.marks)}`,
                     })}
-                    {/* Learners only see what sits below the wave once they
+                    {/* Learners only see what sits between the waves once they
                         check their answer. */}
                     <div className="wavy-rule mx-2 my-2.5 text-line-strong md:mx-1" />
                     {row(
@@ -1255,17 +1279,18 @@ function QuestionDialogSession({
                             solution: true,
                           },
                         },
-                        blockSummary(block),
+                        blockSummary(block, { solution: true }),
                         { meta: blockLabels[block.type]() }
                       )
                     )}
+                    <div className="wavy-rule mx-2 my-2.5 text-line-strong md:mx-1" />
                   </div>
                 );
               })}
             </div>
             <div
               className={cn(
-                'min-w-0 px-1 pt-1 md:block md:min-h-0 md:overflow-y-auto md:overscroll-contain',
+                'min-w-0 px-1 pt-1 pb-10 md:block md:min-h-0 md:overflow-y-auto md:overscroll-contain',
                 mobileTab !== 'body' && 'hidden'
               )}
               ref={setBodyColumn}
@@ -1286,34 +1311,44 @@ function QuestionDialogSession({
                   const part = draft.parts.find((item) => item.id === partId);
                   if (!part) return answer;
                   // Editors see the worked solution, which learners only get
-                  // after checking, under the wave.
+                  // after checking, between the waves.
                   return (
                     <>
                       {previewAnswer(part, answer)}
-                      {part.solution.length > 0 && (
-                        <section
-                          className="mt-6 space-y-3"
-                          data-row-key={rowKey({ kind: 'solution', partId })}
-                        >
-                          <div className="flex items-center gap-2 font-medium text-fg-muted text-xs">
-                            <span className="wavy-rule flex-1 text-line-strong" />
-                            <Icon className="size-4" name="viewOff" />
-                            {m.question_ui_hidden_until_checked()}
-                            <span className="wavy-rule flex-1 text-line-strong" />
+                      <section
+                        className="mt-10 space-y-3"
+                        data-row-key={rowKey({ kind: 'solution', partId })}
+                      >
+                        <div className="mb-6 flex items-center gap-2 font-medium text-fg-muted text-xs">
+                          <span className="wavy-rule flex-1 text-line-strong" />
+                          <Icon className="size-4" name="viewOff" />
+                          {m.question_ui_hidden_until_checked()}
+                          <span className="wavy-rule flex-1 text-line-strong" />
+                        </div>
+                        <h4 className="font-semibold text-sm text-tint-accent-2-fg">
+                          {m.question_ui_worked_solution()}
+                        </h4>
+                        {part.solution.length === 0 && (
+                          <button
+                            className="block text-left text-fg-muted leading-relaxed hover:text-fg"
+                            onClick={() =>
+                              add('text', { partId, solution: true })
+                            }
+                            type="button"
+                          >
+                            {m.question_ui_solution_add()}
+                          </button>
+                        )}
+                        {part.solution.map((block, index) => (
+                          <div key={index}>
+                            {previewBlock(block, index, {
+                              partId,
+                              solution: true,
+                            })}
                           </div>
-                          <h4 className="font-semibold text-sm text-tint-accent-2-fg">
-                            {m.question_ui_worked_solution()}
-                          </h4>
-                          {part.solution.map((block, index) => (
-                            <div key={index}>
-                              {previewBlock(block, index, {
-                                partId,
-                                solution: true,
-                              })}
-                            </div>
-                          ))}
-                        </section>
-                      )}
+                        ))}
+                        <div className="wavy-rule mt-6 text-line-strong" />
+                      </section>
                     </>
                   );
                 }}

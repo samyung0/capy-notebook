@@ -2311,7 +2311,8 @@ async def write_media(
                 f"Added the {clean['media']['type']} to question {qid} of quiz "
                 f"'{resource.get('title')}' (id {resource.get('id')}), after its text. "
                 "The user can undo this from the chat result."
-            )
+            ),
+            *found.notes,
         ]
     return result
 

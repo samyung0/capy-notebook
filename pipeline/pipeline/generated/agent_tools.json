@@ -1295,7 +1295,7 @@
     }
   ],
   "formats": {
-    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check of a few items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
+    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60 (1 or more for a scatter)}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check of a few items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
   },
   "mediaBlocks": {
     "chart": {
@@ -1319,7 +1319,7 @@
         },
         "labels": {
           "items": {
-            "minLength": 1,
+            "maxLength": 12000,
             "type": "string"
           },
           "maxItems": 50,
@@ -1336,7 +1336,10 @@
               },
               "values": {
                 "items": {
-                  "type": "number"
+                  "type": [
+                    "number",
+                    "null"
+                  ]
                 },
                 "type": "array"
               }
@@ -1457,7 +1460,7 @@
                   "type": "array"
                 },
                 "maxItems": 60,
-                "minItems": 2,
+                "minItems": 1,
                 "type": "array"
               }
             },

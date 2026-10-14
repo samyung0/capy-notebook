@@ -352,7 +352,7 @@ export function GraphEditor({
                 onChange={(event) =>
                   onChange({ ...value, description: event.target.value })
                 }
-                value={value.description}
+                value={value.description ?? ''}
               />
             </Field>
           </div>

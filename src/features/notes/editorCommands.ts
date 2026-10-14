@@ -43,7 +43,7 @@ function newVisualBlock(type: 'chart' | 'graph'): NoteVisualBlock {
     ? {
         kind: 'bar',
         labels: [''],
-        series: [{ name: '', values: [0] }],
+        series: [{ name: '', values: [null] }],
         title: '',
         type,
       }
