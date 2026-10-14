@@ -14,12 +14,13 @@ import pytest
 from pipeline.parse import parser_client
 
 FAST_VERSION = parser_client.parser_version(parser_client.ROUTE_FAST)
+SOURCE_SHA256 = "aa" * 32
 
 
 def _descriptor(**overrides) -> dict:
     base = {
         "source_key": "sources/source-1",
-        "source_sha256": "aa" * 32,
+        "source_sha256": SOURCE_SHA256,
         "route": parser_client.ROUTE_FAST,
     }
     base.update(overrides)
@@ -37,6 +38,7 @@ def _artifact_zip(
     schema: str | None = None,
     receipt_request_id: str = "",
     measurements: dict | None = None,
+    source_sha256: str = SOURCE_SHA256,
 ) -> bytes:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as archive:
@@ -47,6 +49,7 @@ def _artifact_zip(
                     "schema": schema or parser_client.ARTIFACT_SCHEMA,
                     "parser_version": parser_version or FAST_VERSION,
                     "source_fingerprint": fingerprint,
+                    "source_sha256": source_sha256,
                     **(
                         {
                             "parse_receipt": {
@@ -132,7 +135,6 @@ def parser_url(monkeypatch):
 
 def _stub_request(monkeypatch, response) -> list[dict]:
     calls: list[dict] = []
-    monkeypatch.setattr(parser_client, "_local_artifact", lambda *_a: None)
 
     def _post(url, **kwargs):
         calls.append({"url": url, **kwargs})
@@ -142,87 +144,52 @@ def _stub_request(monkeypatch, response) -> list[dict]:
     return calls
 
 
-def test_a_local_cache_hit_never_calls_parser(tmp_path: Path, monkeypatch, parser_url):
+def _answer(key: str, blob: bytes, **artifact) -> _Resp:
+    return _Resp(
+        200,
+        {
+            "artifact": {
+                "key": key,
+                "size": len(blob),
+                "sha256": hashlib.sha256(blob).hexdigest(),
+                **artifact,
+            }
+        },
+    )
+
+
+def test_a_bundle_in_the_spool_is_used_only_through_the_parser(
+    tmp_path: Path, monkeypatch, parser_url
+):
+    """A bundle already in the spool is not trusted on its own: the parser
+    answers for it (it serves a cached bundle only as it wrote it)."""
     monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
     key, fingerprint = parser_client.artifact_identity(_descriptor())
-    path = parser_client._shared_path(key)
-    path.parent.mkdir(parents=True)
-    path.write_bytes(b"cached")
-    monkeypatch.setattr(
-        parser_client.requests,
-        "post",
-        lambda *_a, **_k: (_ for _ in ()).throw(
-            AssertionError("parser called on cache hit")
-        ),
-    )
+    blob = _artifact_zip(parser_client._shared_path(key), fingerprint=fingerprint)
+    calls = _stub_request(monkeypatch, _answer(key, blob, cached=True))
 
     artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
 
-    assert artifact["key"] == key
+    assert len(calls) == 1
+    assert artifact["key"] == key and artifact["cached"] is True
     assert artifact["fingerprint"] == fingerprint
-    assert artifact["sha256"] == hashlib.sha256(b"cached").hexdigest()
-    assert artifact["cached"] is True
+    assert artifact["source_sha256"] == SOURCE_SHA256
 
 
-def test_local_cache_replays_a_lost_receipt_only_to_its_creating_job(
+def test_a_lost_parser_answer_is_retried_not_read_from_the_spool(
     tmp_path: Path, monkeypatch, parser_url
 ):
     monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
     key, fingerprint = parser_client.artifact_identity(_descriptor())
-    _artifact_zip(
-        parser_client._shared_path(key),
-        fingerprint=fingerprint,
-        receipt_request_id="job-1",
-        measurements={
-            "_page_count": 4,
-            "_ocr_page_count": 1,
-            "_worker_cpu_ms": 3200,
-            "_server_parse_ms": 4100,
-        },
-    )
-    measured: list[dict] = []
-    monkeypatch.setattr(
-        parser_client.obs,
-        "record_parse_usage",
-        lambda **values: measured.append(values),
-    )
-
-    parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
-    parser_client._request_artifact(_descriptor(), "doc.pdf", "another-job")
-
-    assert len(measured) == 1
-    assert measured[0]["pages"] == 4
-    assert measured[0]["receipt_id"] == fingerprint
-
-
-def test_connection_loss_after_publication_recovers_receipt_immediately(
-    tmp_path: Path, monkeypatch, parser_url
-):
-    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
-    key, fingerprint = parser_client.artifact_identity(_descriptor())
-    measured: list[dict] = []
-    monkeypatch.setattr(
-        parser_client.obs,
-        "record_parse_usage",
-        lambda **values: measured.append(values),
-    )
 
     def _publish_then_disconnect(*_args, **_kwargs):
-        _artifact_zip(
-            parser_client._shared_path(key),
-            fingerprint=fingerprint,
-            receipt_request_id="job-final",
-            measurements={"_page_count": 2, "_server_parse_ms": 100},
-        )
+        _artifact_zip(parser_client._shared_path(key), fingerprint=fingerprint)
         raise parser_client.requests.ConnectionError("response lost")
 
     monkeypatch.setattr(parser_client.requests, "post", _publish_then_disconnect)
 
-    artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-final")
-
-    assert artifact["key"] == key
-    assert measured[0]["pages"] == 2
-    assert measured[0]["receipt_id"] == fingerprint
+    with pytest.raises(parser_client.requests.ConnectionError):
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-final")
 
 
 def test_local_hard_timeout_quarantine_fails_without_calling_parser(
@@ -478,6 +445,7 @@ def _install_artifact(monkeypatch, tmp_path: Path, **zip_kwargs) -> dict:
     return {
         "key": key,
         "fingerprint": fingerprint,
+        "source_sha256": SOURCE_SHA256,
         "size": len(blob),
         "sha256": hashlib.sha256(blob).hexdigest(),
     }
@@ -514,6 +482,7 @@ def test_invalid_local_bundle_is_removed_before_the_next_parse_attempt(
     path = parser_client._shared_path(key)
     path.parent.mkdir(parents=True)
     path.write_bytes(b"not a zip")
+    _stub_request(monkeypatch, _answer(key, b"not a zip", cached=True))
 
     artifact = parser_client.ensure_artifact(_descriptor(), "doc.pdf", "job-1")
     with pytest.raises(zipfile.BadZipFile):
@@ -685,6 +654,67 @@ def test_extract_rejects_checksum_size_and_expansion_mismatches(
         parser_client._extract(artifact, raw, FAST_VERSION)
 
 
+@pytest.mark.parametrize("cached", [True, False])
+def test_a_bundle_for_other_source_bytes_is_discarded_unused(
+    tmp_path: Path, monkeypatch, parser_url, cached: bool
+):
+    """Cached or fresh, a bundle whose manifest names another source's SHA-256
+    counts as missing: it is deleted before the handoff and the next attempt
+    parses again."""
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    path = parser_client._shared_path(key)
+    blob = _artifact_zip(path, fingerprint=fingerprint, source_sha256="bb" * 32)
+    _stub_request(monkeypatch, _answer(key, blob, cached=cached))
+
+    artifact = parser_client.ensure_artifact(_descriptor(), "doc.pdf", "job-1")
+    with pytest.raises(parser_client.ParserClientError, match="source mismatch"):
+        parser_client.validate_artifact(
+            artifact, route=parser_client.ROUTE_FAST, office=False
+        )
+    assert not path.exists()
+
+    # The continuation checks the same binding on the bundle it extracts.
+    _artifact_zip(path, fingerprint=fingerprint, source_sha256="bb" * 32)
+    with pytest.raises(parser_client.ParserClientError, match="source mismatch"):
+        parser_client._extract(artifact, tmp_path / "raw", FAST_VERSION)
+
+
+def test_the_coordinator_reads_only_its_private_copy_of_a_bundle(
+    tmp_path: Path, monkeypatch
+):
+    """Validation, extraction and entry reads open a private copy whose
+    SHA-256 is the parser's answer, never the shared spool file."""
+    artifact = _install_artifact(
+        monkeypatch, tmp_path, extra={"page1.png": b"\x89PNG\r\n\x1a\npage"}
+    )
+    artifact = {**artifact, "version": FAST_VERSION}
+    spool = tmp_path / "artifacts"
+    opened: list[Path] = []
+    zip_file = zipfile.ZipFile
+
+    class Recording(zip_file):
+        def __init__(self, file, *args, **kwargs):
+            opened.append(Path(file).resolve())
+            super().__init__(file, *args, **kwargs)
+
+    monkeypatch.setattr(zipfile, "ZipFile", Recording)
+
+    parser_client.validate_artifact(
+        artifact, route=parser_client.ROUTE_FAST, office=False
+    )
+    parser_client.extract_artifact(
+        artifact, tmp_path / "raw", route=parser_client.ROUTE_FAST, office=False
+    )
+    assert parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
+    assert opened and not any(spool.resolve() in path.parents for path in opened)
+
+    # A spool file that no longer has the answered digest is never read.
+    (spool / f"{artifact['fingerprint']}.zip").write_bytes(b"changed")
+    with pytest.raises(parser_client.ParserClientError, match="mismatch"):
+        parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
+
+
 def test_extract_rejects_stale_version_and_wrong_source(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
@@ -718,6 +748,7 @@ def test_parse_to_bundle_replaces_a_corrupt_cached_artifact(
         return {
             "key": key,
             "fingerprint": "fp",
+            "source_sha256": SOURCE_SHA256,
             "size": len(blob),
             "sha256": hashlib.sha256(blob).hexdigest(),
             "cached": calls == 1,

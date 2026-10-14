@@ -140,7 +140,7 @@ class Config:
     # One document request end to end: its wait for a parse child and its
     # parse, each bounded by CAPY_PARSE_DOCUMENT_TIMEOUT (900 s; with 8 queued
     # over 5 children one wait round), then the OCR stage, where round robin
-    # reads at most the CAPY_PARSE_OCR_PAGE_CAP (500) admitted pages before
+    # reads at most the CAPY_PARSE_OCR_PAGE_CAP (500) pages it holds before
     # this document's last one, at up to 5 s a page next to five 1,400-page
     # parses (4.8 s measured 2026-09-28 with four OCR threads): 2 x 900 + 500 x 5
     # + 120.

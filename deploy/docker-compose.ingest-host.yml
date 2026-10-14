@@ -83,8 +83,8 @@ services:
       # clock); a breach quarantines the fingerprint and replaces that child.
       CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-900}
       # OCR stage: each page's limit in the OCR process (queue wait is free),
-      # and the text-less pages admitted at once. A document with more than
-      # the cap fails as parse_too_many_scanned_pages.
+      # and the text-less pages it holds, checked at the handoff. A document
+      # with more than the cap fails as parse_too_many_scanned_pages.
       CAPY_PARSE_OCR_PAGE_TIMEOUT: ${CAPY_PARSE_OCR_PAGE_TIMEOUT:-60}
       CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:-500}
       # Pages per document; more fails as parse_too_many_pages. The API serves

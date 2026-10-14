@@ -1374,8 +1374,8 @@ those services start.
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
    Production limits are eight coordinator processes, five parse children
    (`CAPY_PARSE_WORKERS`) and one OCR process, parser depth 8
-   (`CAPY_PARSE_QUEUE_DEPTH`, both stages plus waiting) and 500 admitted
-   text-less pages (`CAPY_PARSE_OCR_PAGE_CAP`). `CAPY_PARSE_MAX_PAGES` (1,400)
+   (`CAPY_PARSE_QUEUE_DEPTH`, both stages plus waiting) and 500 text-less
+   pages in the OCR stage (`CAPY_PARSE_OCR_PAGE_CAP`). `CAPY_PARSE_MAX_PAGES` (1,400)
    caps pages per document. Both page caps are GitHub environment variables
    rendered to Coolify (the API serves them in the upload policy) and to the
    ingest host (the parser enforces them), so one value feeds both; the
@@ -1565,9 +1565,13 @@ underlying parser version has not changed.
 The parser parses five documents at once (`CAPY_PARSE_WORKERS`, one per parse
 child). A document with text-less pages then frees its child and waits in the
 OCR stage, where one OCR process reads one page per waiting document per turn.
-Depth 8 counts both stages plus waiting documents; one more concurrent request,
-or one whose text-less pages would lift the admitted backlog past 500, gets
-`429` and the coordinator re-pends the job as a capacity wait. A document with
+Depth 8 counts both stages plus waiting documents; one more concurrent request
+gets `429`, and so does a parsed document whose text-less pages would lift the
+OCR stage's unread pages past 500 at the handoff; while the OCR stage holds 500
+unread pages no new parse starts. The coordinator re-pends each as a capacity
+wait. A separate admission process counts each PDF's pages
+before it is queued (about 80 MiB resident, a 1 GiB address-space limit), so
+the API process never opens a source. A document with
 more than 500 text-less pages fails as `parse_too_many_scanned_pages`
 (terminal; it used to time out at about 320 scanned pages), and one with more
 than 1,400 pages as `parse_too_many_pages`. The OpenDataLoader accuracy record is the September 2026 series
@@ -1606,7 +1610,7 @@ child. If the kernel kills a coordinator child, its lease expires and follows
 the same one-retry rule. This differs from a parser OOM: when a parse child or
 its JVM dies by SIGKILL, or its LibreOffice conversion fails, while the parser
 cgroup's `oom_kill` count rises, the parser writes a `parse_oom` marker for
-that child's document and respawns only that child. Parse children run at `oom_score_adj` 1000, the OCR process at 500
+that child's document and respawns only that child. Parse children and the admission process run at `oom_score_adj` 1000, the OCR process at 500
 and the API at 0, so the kernel picks a parse child first.
 
 `restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
@@ -1836,8 +1840,15 @@ the host:
   baked into the image, the Java and LibreOffice steps run locally, and the
   parser sends no Sentry events. If `PARSER_PORT` ever moves off 8091, change
   the template in the same release or the nonprod healthcheck fails.
+- **Process isolation.** The parser's API process makes itself non-dumpable
+  at startup (`prctl(PR_SET_DUMPABLE, 0)`), so its children, which run as the
+  same user, can neither trace it nor read its memory or environment. The
+  playbook also sets `kernel.yama.ptrace_scope=1`
+  (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
+  descendants. Check it with `sysctl kernel.yama.ptrace_scope` after applying
+  the playbook.
 
-Apply the host rule with the provisioning playbook (see the
+Apply the host rules with the provisioning playbook (see the
 [ingest-host README](../deploy/ansible/ingest-host/README.md) for the inventory):
 
 ```bash
