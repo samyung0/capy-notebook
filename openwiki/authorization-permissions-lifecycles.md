@@ -395,8 +395,9 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   the disposition, so only opening a link in a tab changes: Download original
   and a note's file attachment save the file instead of showing it, while a
   note's PDF attachment still opens in the browser. Hour-stable thumbnail
-  links carry no overrides ([thumbnails.md](thumbnails.md)). The bank's public
-  figures are not presigned and keep their server-detected type.
+  links carry no overrides ([thumbnails.md](thumbnails.md)). The e2e stack's
+  blob server answers its links the same way. The bank's public figures are
+  not presigned and keep their server-detected type.
 
 Sources: [read link headers](../server/internal/blob/s3.go#L165),
 [chapter and file handlers](../server/internal/httpapi/huma_content.go#L54),

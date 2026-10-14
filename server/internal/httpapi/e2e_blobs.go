@@ -29,14 +29,15 @@ func e2eBlobs(store *blob.Memory) http.HandlerFunc {
 			w.WriteHeader(http.StatusOK)
 			return
 		}
-		data, contentType, ok := store.Object(path)
+		data, _, ok := store.Object(path)
 		if !ok {
 			http.NotFound(w, r)
 			return
 		}
-		if contentType != "" {
-			w.Header().Set("Content-Type", contentType)
-		}
+		// As the bucket answers a read link: typed by the key's extension.
+		contentType, disposition := blob.ReadHeaders(path)
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", disposition)
 		_, _ = w.Write(data)
 	}
 }

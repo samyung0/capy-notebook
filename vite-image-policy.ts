@@ -4,16 +4,30 @@ import type { Plugin } from 'vite';
 
 type Env = Record<string, string | undefined>;
 
+const TRAILING_SLASH = /\/+$/;
+
+/** What a deployed build's policy cannot leave out: its bucket and where it
+ * reports. */
+const DEPLOYED_NEEDS = ['B2_BUCKET', 'B2_ENDPOINT', 'VITE_SENTRY_DSN'];
+
 /**
  * The hosts the app's pages draw images from, as a report-only `img-src`
  * policy: the app itself, `data:` and `blob:` URLs, the environment's bucket
  * (addressed as Go's presigner addresses it, `B2_FORCE_PATH_STYLE`), the
  * bank's asset base, Clerk avatars and YouTube posters. Any other image or CSS
  * `url()` a page loads is reported to the browser Sentry project's security
- * endpoint when `VITE_SENTRY_DSN` is set. Enforcing it means sending the same
- * value as `Content-Security-Policy` once UAT reports stay empty.
+ * endpoint when `VITE_SENTRY_DSN` is set; a `uat` or `production` build
+ * without it or its bucket fails. Enforcing it means sending the same value
+ * as `Content-Security-Policy` once UAT reports stay empty.
  */
 export function imagePolicy(env: Env): string {
+  if (env.VITE_APP_ENV === 'uat' || env.VITE_APP_ENV === 'production') {
+    const missing = DEPLOYED_NEEDS.filter((key) => !env[key]);
+    if (missing.length)
+      throw new Error(
+        `The ${env.VITE_APP_ENV} image policy needs ${missing.join(', ')}.`
+      );
+  }
   const sources = ["'self'", 'data:', 'blob:'];
   if (env.B2_BUCKET && env.B2_ENDPOINT) {
     const endpoint = new URL(env.B2_ENDPOINT);
@@ -25,8 +39,12 @@ export function imagePolicy(env: Env): string {
         : `${endpoint.protocol}//${env.B2_BUCKET}.${endpoint.host}`
     );
   }
-  if (env.VITE_BANK_ASSETS_URL)
-    sources.push(new URL(env.VITE_BANK_ASSETS_URL).origin);
+  if (env.VITE_BANK_ASSETS_URL) {
+    // A base under a path (a shared host) allows only that path.
+    const bank = new URL(env.VITE_BANK_ASSETS_URL);
+    const base = bank.pathname.replace(TRAILING_SLASH, '');
+    sources.push(base ? `${bank.origin}${base}/` : bank.origin);
+  }
   sources.push('https://img.clerk.com', 'https://i.ytimg.com');
   const policy = `img-src ${sources.join(' ')}`;
   const report = sentrySecurityUrl(env.VITE_SENTRY_DSN, env.VITE_APP_ENV);
@@ -48,10 +66,10 @@ function sentrySecurityUrl(dsn?: string, environment?: string) {
 }
 
 /**
- * Sends `policy` report-only with every HTML page: the app's own (Workers
- * Assets serves them with `dist/_headers`, which the client build extends) and
- * the pages the site Worker renders, which read it from the share renderer
- * bundle as `IMAGE_POLICY` (src/share/server.tsx).
+ * Sends `policy` report-only with the SPA's pages (Workers Assets serves them
+ * with `dist/_headers`, which the client build extends) and the pages the
+ * site Worker renders, which read it from the share renderer bundle as
+ * `IMAGE_POLICY` (src/share/server.tsx).
  */
 export function imagePolicyHeaders(policy: string): Plugin {
   let headersFile: string | undefined;

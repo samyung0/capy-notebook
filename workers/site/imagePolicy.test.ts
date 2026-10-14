@@ -56,6 +56,31 @@ describe('image-source policy', () => {
     );
   });
 
+  it('names the bank base path when the base is under a path', () => {
+    const policy = directives(
+      imagePolicy({
+        ...DEPLOYED,
+        VITE_BANK_ASSETS_URL: 'https://f003.backblazeb2.com/file/bank-public/',
+      })
+    );
+    expect(policy['img-src']).toContain(
+      'https://f003.backblazeb2.com/file/bank-public/'
+    );
+    expect(policy['img-src']).not.toContain('https://f003.backblazeb2.com');
+  });
+
+  it('fails a deployed build that misses its bucket or report endpoint', () => {
+    for (const environment of ['uat', 'production'])
+      for (const key of ['B2_BUCKET', 'B2_ENDPOINT', 'VITE_SENTRY_DSN'])
+        expect(() =>
+          imagePolicy({ ...DEPLOYED, [key]: '', VITE_APP_ENV: environment })
+        ).toThrow(key);
+    // A local or e2e build has neither and still builds.
+    expect(imagePolicy({ VITE_APP_ENV: 'e2e' })).toBe(
+      "img-src 'self' data: blob: https://img.clerk.com https://i.ytimg.com"
+    );
+  });
+
   it('adds the policy to the built _headers and to the share renderer', () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'image-policy-'));
     writeFileSync(path.join(outDir, '_headers'), '/icons/*\n  X-Kept: yes\n');

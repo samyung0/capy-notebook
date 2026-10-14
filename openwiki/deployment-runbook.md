@@ -999,20 +999,28 @@ configs serve their own frame on `localhost` next to the app's `127.0.0.1`.
 
 ### 2.4 App image policy (report-only)
 
-Every HTML page of the app is sent with
+The SPA's pages and the pages the site Worker renders are sent with
 `Content-Security-Policy-Report-Only: img-src …`, listing the only places a
 page may draw an image or CSS `url()` from: `'self'`, `data:`, `blob:`, the
-environment's bucket, the `BANK_ASSETS_URL` origin, `https://img.clerk.com`
-(avatars, Clerk's UI) and `https://i.ytimg.com` (YouTube posters).
+environment's bucket, the `BANK_ASSETS_URL` base, `https://img.clerk.com`
+(avatars) and `https://i.ytimg.com` (YouTube posters). Go's own HTML behind
+`/api/*` (the unsubscribe page) has no images and no policy.
 `vite-image-policy.ts` builds the value once per SPA build and sends it two
 ways:
 
 - Workers Assets serves the SPA's HTML, so the client build appends a `/*`
-  rule to `dist/_headers` (after `public/_headers`).
+  rule to `dist/_headers` (after `public/_headers`). With
+  `html_handling: "none"`, every SPA page, `/` included, is the
+  single-page-application fallback, so the whole SPA's policy rests on
+  Workers Assets applying `_headers` to that fallback, which only a deployed
+  check can see (UAT checklist §7). If it does not, the fallback plan is to
+  run the site Worker first on every path but the static files
+  (`run_worker_first` with exclusions such as `!/assets/*`) and set the
+  header there, at the cost of one Worker call per page load.
 - Worker responses get no `_headers`, so the share, summary and error pages
   the site Worker renders read the same value from the share renderer bundle
   (`IMAGE_POLICY`, `src/share/server.tsx`) and set it in
-  `workers/site/handler.ts`.
+  `workers/site/handler.ts`, on GET and HEAD alike.
 
 Nothing is set by hand. The hosts come from configuration the deploy already
 has:
@@ -1022,12 +1030,18 @@ has:
   endpoint when `B2_FORCE_PATH_STYLE=true`. The manifest gives these three to
   the `build` target;
 - the bank from `VITE_BANK_ASSETS_URL`, which `scripts/env/config.py` builds
-  from `BANK_ASSETS_URL`;
+  from `BANK_ASSETS_URL`: its origin, or its path on the host when the base
+  has one (a shared host such as `f003.backblazeb2.com/file/…`);
 - reports go to the `capy-web` Sentry project's security endpoint, derived
   from `VITE_SENTRY_DSN` and tagged with `VITE_APP_ENV`
   (`https://{host}/api/{project}/security/?sentry_key=…&sentry_environment=…`).
-  Without a DSN the policy has no report endpoint and violations only reach
-  the browser console.
+
+A `uat` or `production` build (`VITE_APP_ENV`) fails when `B2_BUCKET`,
+`B2_ENDPOINT` or `VITE_SENTRY_DSN` is empty, so a deployed policy always names
+its bucket and reports somewhere. Local and e2e builds may leave them out; a
+policy without a DSN only logs to the browser console. Each report carries the
+page's full path, so a report from a shared page includes its link token;
+Sentry scrubs those paths (§5 step 9).
 
 A new image host goes into `imagePolicy` (and its test) before any page uses
 it. To enforce, send the same value as `Content-Security-Policy` in both places
@@ -1088,11 +1102,13 @@ Pick one:
    without bound.
 7. **Read links set the response headers.** A short-lived read link asks the
    bucket for `response-content-type` and `response-content-disposition`
-   (`blob.readHeaders`): the type from the key's extension, `inline` for PDF,
+   (`blob.ReadHeaders`): the type from the key's extension, `inline` for PDF,
    raster images and audio, `attachment` for everything else. B2 has to
    honour both overrides, or a file comes back with the type its uploader
    declared. Check it after each deploy that changes `server/internal/blob`
-   ([UAT checklist §5](uat-activation-checklist.md#5-data-and-money)). The
+   ([UAT checklist §5](uat-activation-checklist.md#5-data-and-money)) with a
+   GET that prints only the headers, `curl -s -o /dev/null -D - "$url"`: the
+   link is signed for GET, so a HEAD (`curl -I`) is refused with a 403. The
    bucket also appears in the app's image policy (§2.4), so `B2_BUCKET`,
    `B2_ENDPOINT` and `B2_FORCE_PATH_STYLE` reach the SPA build too.
 
@@ -1231,7 +1247,17 @@ re-embedding stays on the parse path and is handled later by ingest.
 8. The app's image policy (§2.4) reports to `capy-web`'s security endpoint,
    tagged by environment. Keep the project's default ignored sources for CSP
    reports on (Settings → Security Headers: browser extensions and local
-   schemes), so extensions that inject images do not file reports.
+   schemes), so extensions that inject images do not file reports. A report
+   carries the full path of the page it came from, and on a shared page
+   (`/share/{kind}/{token}`, `/w/{id}.{signature}`) that path holds the
+   link's token.
+9. Scrub share-link tokens before Sentry stores them: Settings → Security &
+   Privacy → Advanced Data Scrubbing → Add Rule, method **Replace**, data
+   type **Regex Matches**, source `$string`, regex
+   `/(?:share|p)/(?:quizzes|flashcards|notes)/[^/?#\s"]+|/w/[^/?#\s"]+`.
+   Do it once per project that receives browser reports (`capy-web`), before
+   the first deploy that sends the policy; a report from a shared page should
+   then show `[Filtered]` where the path was.
 
 ---
 

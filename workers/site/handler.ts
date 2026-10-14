@@ -209,19 +209,17 @@ export async function handleSiteRequest(
         // Keep the existing self-contained error if the asset binding also fails.
       }
     }
-    // The renderer loads only when there is a body to render; a HEAD skips it.
-    const renderer =
-      request.method === 'HEAD' ? undefined : await import('capy-share-render');
+    // A HEAD gets the page's headers, the image policy included, and no body.
+    const { IMAGE_POLICY, renderFailure } = await import('capy-share-render');
     const failureHeaders = headers({
       'Content-Type': 'text/html; charset=utf-8',
       'X-Robots-Tag': 'noindex, nofollow',
     });
-    if (renderer)
-      failureHeaders.set(IMAGE_POLICY_HEADER, renderer.IMAGE_POLICY);
-    return new Response(renderer?.renderFailure(status, template) ?? null, {
-      headers: failureHeaders,
-      status,
-    });
+    failureHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
+    return new Response(
+      request.method === 'HEAD' ? null : renderFailure(status, template),
+      { headers: failureHeaders, status }
+    );
   };
   const isSummary = url.pathname.startsWith('/w/');
   if (url.pathname === '/summary' || url.pathname === '/summary.html')

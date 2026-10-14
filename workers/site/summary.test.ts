@@ -203,6 +203,17 @@ describe('public workspace SSR', () => {
     );
     expect(head.status).toBe(200);
     expect(await head.text()).toBe('');
+    // An error page's HEAD carries the same headers as its GET.
+    const missing = await handleSiteRequest(
+      request('/w/ws_0123456789', { method: 'HEAD' }),
+      env,
+      upstream()
+    );
+    expect(missing.status).toBe(404);
+    expect(await missing.text()).toBe('');
+    expect(missing.headers.get('Content-Security-Policy-Report-Only')).toBe(
+      IMAGE_POLICY
+    );
     const chinese = await handleSiteRequest(
       new Request(`https://app.example.test${SHARED}?lang=zh`, {
         headers: { 'Accept-Language': 'zh-CN' },

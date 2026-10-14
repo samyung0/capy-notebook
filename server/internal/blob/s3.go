@@ -178,12 +178,12 @@ var inlineTypes = map[string]string{
 	".flac": "audio/flac", ".webm": "audio/webm",
 }
 
-// readHeaders is the type and disposition the bucket answers a short-lived
+// ReadHeaders is the type and disposition the bucket answers a short-lived
 // read link with, from the key's extension and never from the type the
 // uploader declared: inline types open in place, everything else downloads.
 // SVG keeps its type so <img> still draws it, and downloads when opened.
 // Hour-stable thumbnail links carry none of this (PresignStableGet).
-func readHeaders(key string) (contentType, disposition string) {
+func ReadHeaders(key string) (contentType, disposition string) {
 	ext := strings.ToLower(path.Ext(key))
 	if t, ok := inlineTypes[ext]; ok {
 		return t, "inline"
@@ -195,7 +195,7 @@ func readHeaders(key string) (contentType, disposition string) {
 }
 
 func (s *B2) PresignGetWithExpiry(ctx context.Context, key string) (PresignedGet, error) {
-	contentType, disposition := readHeaders(key)
+	contentType, disposition := ReadHeaders(key)
 	req, err := s.presign.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket:                     aws.String(s.bucket),
 		Key:                        aws.String(key),

@@ -55,9 +55,13 @@ func TestOnlyTheServedMemoryStoreServesItsObjects(t *testing.T) {
 	}
 	get := httptest.NewRecorder()
 	handler.ServeHTTP(get, httptest.NewRequest(http.MethodGet, link, nil))
+	// Answered as the bucket answers a read link (blob.ReadHeaders), whatever
+	// type the upload declared.
 	if get.Code != http.StatusOK || get.Body.String() != "hello" ||
-		get.Header().Get("Content-Type") != "text/markdown" {
-		t.Fatalf("get = %d %q %q", get.Code, get.Body.String(), get.Header().Get("Content-Type"))
+		get.Header().Get("Content-Type") != "application/octet-stream" ||
+		get.Header().Get("Content-Disposition") != "attachment" {
+		t.Fatalf("get = %d %q %q %q", get.Code, get.Body.String(),
+			get.Header().Get("Content-Type"), get.Header().Get("Content-Disposition"))
 	}
 
 	plain := blob.NewMemory()
