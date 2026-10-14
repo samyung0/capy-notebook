@@ -6,6 +6,7 @@ import {
   useNotifications,
   useUnreadNotificationCount,
 } from '@/api/hooks';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { SkeletonList } from '@/components/ui/feedback';
@@ -25,8 +26,15 @@ export function NotificationsBell() {
   // come from the unread count, which is all a closed bell shows.
   const [wanted, setWanted] = useState(false);
   if (open && !wanted) setWanted(true);
-  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isPending } =
-    useNotifications({ errorBoundary: false }, wanted);
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isError,
+    isFetchingNextPage,
+    isPending,
+    refetch,
+  } = useNotifications({ errorBoundary: false }, wanted);
   const { data: unreadCount } = useUnreadNotificationCount({
     errorBoundary: false,
   });
@@ -110,7 +118,14 @@ export function NotificationsBell() {
           </div>
           <div className="max-h-96 overflow-auto">
             {isPending && <SkeletonList className="p-2" count={3} />}
-            {!isPending && !notifications.length && (
+            {!data && isError && (
+              <InlineErrorState
+                className="px-4 py-6"
+                message={m.notifications_error()}
+                onRetry={() => void refetch()}
+              />
+            )}
+            {data && !notifications.length && (
               <div className="px-4 py-6 text-center text-fg-muted">
                 {m.notifications_empty()}
               </div>

@@ -168,7 +168,7 @@ export function RecentItemsCard() {
         )
       ) : missing.length ? (
         <InlineErrorState
-          className="px-1 pt-2 pb-4"
+          className="flex-1 justify-center px-1 pb-4"
           message={m.dashboard_recent_error()}
           onRetry={() => {
             for (const [, , refetch] of missing) void refetch();

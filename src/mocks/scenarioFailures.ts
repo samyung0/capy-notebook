@@ -619,6 +619,14 @@ export const failureScenarios = [
     status: 500,
   },
   {
+    // A redeploy as the dashboard opens: workspaces and recents.
+    id: 'dashboard-lists',
+    label: 'Dashboard lists GET 503',
+    method: 'get',
+    paths: ['/api/workspaces', '/api/files', '/api/materials'],
+    status: 503,
+  },
+  {
     id: 'notification-prefs-load',
     label: 'Notification preferences GET 500',
     method: 'get',

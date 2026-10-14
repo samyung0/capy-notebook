@@ -2,17 +2,19 @@ import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
 import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
+import { ErrorState } from '@/components/app/ErrorState';
 import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import DashboardBanner from '@/components/banners/DashboardBanner';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
 import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
+import { describeError } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -31,7 +33,7 @@ function Greeting() {
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
 function WorkspacesSection() {
-  const { data, fetchStatus, isLoading } = useWorkspaces(
+  const { data, error, fetchStatus, isLoading, refetch } = useWorkspaces(
     { sort: 'accessed' },
     { errorBoundary: false }
   );
@@ -39,7 +41,7 @@ function WorkspacesSection() {
   const hasMore = (data?.length ?? 0) > DASHBOARD_WORKSPACE_LIMIT;
   const revealRef = useLoadingReveal(isLoading);
   return (
-    <section>
+    <section className="flex flex-1 flex-col">
       <div className="mb-3 flex items-center justify-between sm:mt-3">
         <h2 className="t-large-card-title">{m.dashboard_workspaces()}</h2>
         <Button
@@ -58,6 +60,20 @@ function WorkspacesSection() {
         <QueryPausedState />
       ) : isLoading ? (
         <SkeletonCardGrid count={6} />
+      ) : !data && error ? (
+        <ErrorState
+          {...describeError(error)}
+          action={
+            <ErrorAction
+              iconLeftClassName="me-1"
+              onClick={() => void refetch()}
+            >
+              {m.error_action_retry()}
+            </ErrorAction>
+          }
+          className="flex-1"
+          variant="panel"
+        />
       ) : !recent || recent.length === 0 ? (
         <div
           className="mt-16 flex w-full flex-col items-center justify-center gap-4 text-center"
@@ -107,7 +123,7 @@ export default function Dashboard() {
     <div className="flex h-full min-h-full flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
       <Panel
         className="order-last min-h-0 flex-1 rounded-button lg:order-first lg:rounded-card-xl"
-        sectionClassName="gap-4 sm:gap-5 2xl:gap-6 p-4 sm:p-6"
+        sectionClassName="min-h-full gap-4 sm:gap-5 2xl:gap-6 p-4 sm:p-6"
       >
         <Greeting />
         {/* <CloudConnectBanner /> */}

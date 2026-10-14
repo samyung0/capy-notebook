@@ -88,7 +88,12 @@ other failure without data goes to the boundary with its normal copy and Retry.
 
 The owning component must then destructure and render the relevant query error
 state. Destructuring is required so TanStack Query's tracked-property proxy
-subscribes to those fields.
+subscribes to those fields. A list that fails without data must never fall
+through to its empty state ("No workspaces yet" reads as data loss after a
+redeploy): a large region renders `ErrorState` `variant="panel"` with Retry
+(the dashboard workspaces), a small one `InlineErrorState`, one muted line and
+Retry (the dashboard recents card, the notification list, search results).
+Filter and picker options may stay silently empty.
 
 Query metadata is shared by observers of the same key. A secondary consumer
 must preserve the primary consumer's error policy. The ingest hook takes the
@@ -365,7 +370,9 @@ per kind, so one ingest's several writes cost one refetch; a hidden tab only
 marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
 notification list, the unread count, and the file, material and chapter
-lists. There is no polling while disconnected; the workspace lists keep only
+lists. A connection that succeeds after a failed attempt (a redeploy, a
+dropped network) also refetches every active query in error, so the error
+states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
 `refetchOnWindowFocus`. A list read carries the client-only `ingestPct` over
 for rows still ingesting, and one that finds a ready or failed file
 invalidates its cached detail if that detail still says pending or
@@ -455,8 +462,9 @@ See the [coverage audit](msw-scenarios-audit.md) for those limits.
 
 ## Stable test selectors
 
-- Error surface: `[data-error-surface="page"]` or
-  `[data-error-surface="panel"]`, also carrying `role="alert"`.
+- Error surface: `[data-error-surface="page"]`,
+  `[data-error-surface="panel"]` or `[data-error-surface="inline"]`, also
+  carrying `role="alert"`.
 - Offline/reconnecting status: `[data-connection-status="offline"]` or
   `[data-connection-status="reconnecting"]`.
 - Non-disclosing shared-resource state:
