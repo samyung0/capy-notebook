@@ -81,9 +81,14 @@ COPY --chmod=644 parser/app.py ./parser/
 COPY --chmod=644 parser/odl/ ./parser/odl/
 RUN chmod 755 /app/parser/odl
 
-RUN useradd --create-home --uid 10001 parser \
+# Under read_only the HOME tmpfs is the user's only writable home, and Java
+# reads user.home from passwd, not $HOME.
+RUN useradd --home-dir /run/capy-parser/home --uid 10001 parser \
     && mkdir -p /run/capy-parser/home /run/capy-parser/work \
     && chown -R parser:parser /run/capy-parser
+# Python's temporary files (spooled uploads) go to the disk-backed work volume,
+# not the small RAM-backed /tmp the compose files mount.
+ENV TMPDIR=/run/capy-parser/work
 USER parser
 
 EXPOSE 8090

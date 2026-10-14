@@ -715,6 +715,18 @@ def test_picture_triage_drops_slivers_and_discards_repeats() -> None:
     ]
 
 
+def test_a_picture_mupdf_cannot_decode_falls_back_to_page_matching() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    rect = (60, 80, 180, 160)
+    _place_image(page, rect, 1)
+    xref = page.get_images()[-1][0]
+    document.xref_set_key(xref, "ColorSpace", "/NoSuchSpace")
+    block = {"type": "image", "page_idx": 0, "bbox": _grid(rect), "_native_id": 0}
+
+    assert pictures.classify([block], document, {0: xref}) == [block]
+
+
 def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
     document = pymupdf.open()
     page = document.new_page(width=600, height=800)

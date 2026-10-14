@@ -84,10 +84,11 @@ services:
       [
         "sh",
         "-c",
-        "mkdir -p /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine /var/lib/capy-parse/capacity && chown -R 10001:10001 /var/lib/capy-parse && chmod 2770 /var/lib/capy-parse /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine /var/lib/capy-parse/capacity",
+        "mkdir -p /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine /var/lib/capy-parse/capacity && chown -R 10001:10001 /var/lib/capy-parse && chmod 2770 /var/lib/capy-parse /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine /var/lib/capy-parse/capacity && chown 10001:10001 /run/capy-parser/work && chmod 0700 /run/capy-parser/work",
       ]
     volumes:
       - parse_spool:/var/lib/capy-parse
+      - parser_work:/run/capy-parser/work
     restart: "no"
 
   parser:
@@ -100,6 +101,17 @@ services:
     network_mode: host
     # Reaps the soffice.bin a conversion timeout kills (parser/odl/document.py).
     init: true
+    # The parser reads untrusted documents: no capabilities, no privilege gain,
+    # Docker's default seccomp profile and a read-only root. HOME and /tmp are
+    # small RAM tmpfs mounts; sources, conversions and temporary files use the
+    # disk-backed parser_work volume (the image sets TMPDIR to it).
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700
+      - /tmp:noexec,nosuid,nodev,size=64m
     environment:
       <<: *parser-env
       APP_ENV: production
@@ -121,6 +133,7 @@ services:
       ]
     volumes:
       - parse_spool:/var/lib/capy-parse
+      - parser_work:/run/capy-parser/work
     mem_limit: ${CAPY_INGEST_NONPROD_PARSER_MEMORY_LIMIT:-6g}
     memswap_limit: ${CAPY_INGEST_NONPROD_PARSER_MEMORY_SWAP_LIMIT:-8g}
     cpus: ${CAPY_INGEST_NONPROD_PARSER_CPUS:-2.0}
@@ -300,3 +313,5 @@ services:
 volumes:
   parse_spool:
     name: ${CAPY_INGEST_NONPROD_PARSE_SPOOL_VOLUME:-capy-ingest_nonprod_parse_spool}
+  # The parser's scratch; startup clears what a killed parser left.
+  parser_work:

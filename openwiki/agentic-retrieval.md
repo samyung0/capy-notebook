@@ -916,10 +916,14 @@ value when that document started. The kernel picks the process with the highest
 `oom_score` (the largest parse child or JVM), so that document is the one using
 the memory; with several slots it can be a large document rather than the one
 whose allocation tipped the cgroup over. It gets a `parse_oom` quarantine
-marker, its child is respawned, and the other documents continue. A SIGKILL
-without a counted OOM kill, a LibreOffice process killed inside a conversion
-(its launcher hides the signal), or any other child crash is a
-`parser_runtime_failed` with one ordinary retry. A completed artifact takes
+marker, its child is respawned, and the other documents continue. LibreOffice's
+launcher hides the signal its `soffice.bin` died by, so any failed conversion
+while the count rose is that document's `parse_oom` too; without a counted OOM
+kill it stays an ordinary failure. A SIGKILL without a counted OOM kill, or any
+other child crash, is a `parser_runtime_failed` with one ordinary retry. An
+Office file whose bytes are not its suffix's container (ZIP for OOXML, OLE2 for
+the legacy formats) is refused before LibreOffice as the terminal
+`parse_format_mismatch`; the coordinator fails the file without a retry. A completed artifact takes
 precedence over a late marker. Hard timeout and OOM markers are terminal
 without a retry. Only a process-wide failure (repeated OCR deaths, or a
 runtime task that cannot continue) marks `/healthz` failed and exits so Docker

@@ -176,7 +176,7 @@ def _image_digests(
         if xref is not None and xref not in by_object:
             try:
                 by_object[xref] = pymupdf.Pixmap(document, xref).digest.hex()
-            except (RuntimeError, ValueError):
+            except (pymupdf.mupdf.FzErrorBase, ValueError):
                 by_object[xref] = None
             _drop_decoded()
         if xref is not None and by_object[xref]:

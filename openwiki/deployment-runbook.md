@@ -1554,9 +1554,9 @@ connections (two sync and two async each). A coordinator timeout durably
 requeues its claim and exits that child; the supervisor replaces only that
 child. If the kernel kills a coordinator child, its lease expires and follows
 the same one-retry rule. This differs from a parser OOM: when a parse child or
-its JVM dies by SIGKILL while the parser cgroup's `oom_kill` count rises, the
-parser writes a `parse_oom` marker for that child's document and respawns only
-that child. Parse children run at `oom_score_adj` 1000, the OCR process at 500
+its JVM dies by SIGKILL, or its LibreOffice conversion fails, while the parser
+cgroup's `oom_kill` count rises, the parser writes a `parse_oom` marker for
+that child's document and respawns only that child. Parse children run at `oom_score_adj` 1000, the OCR process at 500
 and the API at 0, so the kernel picks a parse child first.
 
 `restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
@@ -1737,10 +1737,18 @@ snapshot and requires an operator maintenance window.
 The parser converts untrusted Office uploads with LibreOffice (7.4.7 from
 Debian bookworm in `parser/Dockerfile`, out of upstream support, so security
 fixes come only from Debian). A document can link images or text from a URL or
-a local file, so the conversion is fenced twice:
+a local file, so the conversion is fenced in the image, the container and on
+the host:
 
-- **In the parser image.** `parser/odl/document.py` gives every conversion a
-  fresh LibreOffice profile in the job's temporary directory. Its
+- **In the parser image.** `parser/odl/document.py` converts an Office file
+  only from the container its suffix names (ZIP for `.docx/.xlsx/.pptx`, OLE2
+  for `.doc/.xls/.ppt`) and through that format's pinned import filter
+  (`--infilter`), never LibreOffice's own type detection; other bytes are
+  refused before LibreOffice starts, as the terminal `422 parse_format_mismatch`
+  (the coordinator fails the file without a retry). Every conversion gets a
+  fresh LibreOffice profile in a job directory under the parse child's slot
+  directory, which is also LibreOffice's `TMPDIR`, so a killed conversion's
+  files go when the slot is wiped. Its
   `registrymodifications.xcu` blocks links from documents outside trusted
   locations (there are none), disables macros at the highest security level and
   sets Writer and Calc link updates to never. A conversion that exceeds
@@ -1749,6 +1757,18 @@ a local file, so the conversion is fenced twice:
   Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
   convert through this one function. It ships with the parser image; nothing to
   apply by hand.
+- **In the container.** Both ingest compose files run the parser with
+  `cap_drop: [ALL]`, `no-new-privileges:true`, Docker's default seccomp
+  profile and `read_only: true`. Its writable places are a 64 MiB tmpfs HOME
+  (`/run/capy-parser/home`, also the parser user's passwd home, which Java
+  reads), a 64 MiB tmpfs `/tmp` (JVM perf data, PDFBox's fallback), the
+  `parse_spool` volume and the disk-backed `parser_work` volume at
+  `/run/capy-parser/work` (slot directories, transfers, Office jobs, and the
+  image's `TMPDIR`, so spooled uploads stay off RAM). `parse-spool-init` hands
+  `parser_work` to uid 10001. The Parser budget workflow runs the image under
+  the same flags. `pipeline/tests/test_ingest_compose.py` keeps both files to
+  this and checks that every `${VAR:?}` they use is required by
+  `deploy/env-manifest.json` for that deploy target.
 - **On the host.** `deploy/ansible/ingest-host/templates/nftables.conf.j2`
   rejects every new outbound connection from uid 10001 (the `parser` user)
   except TCP to 8090 (production) and 8091 (nonprod) over loopback. Both

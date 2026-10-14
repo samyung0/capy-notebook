@@ -398,10 +398,14 @@ async def test_java_timeout_is_a_hard_timeout(
     [
         ("child", 1, "parse_oom"),
         ("java", 1, "parse_oom"),
+        # LibreOffice's launcher hides the kill: any failed conversion counts.
+        ("office", 1, "parse_oom"),
         # SIGKILL without a cgroup OOM kill, or an ordinary crash during one:
         # a runtime failure with the ordinary retry, nothing quarantined.
         ("child", 0, "runtime"),
         ("crash", 1, "runtime"),
+        # A failed conversion without one keeps its own error.
+        ("office", 0, "office"),
     ],
 )
 @pytest.mark.asyncio
@@ -424,6 +428,8 @@ async def test_oom_kill_is_attributed_to_the_document_whose_process_died(
         kills += oom_kills
         if death == "java":
             raise parser_app.JavaKilled("OpenDataLoader was killed")
+        if death == "office":
+            raise parser_app.OfficeConversionFailed("LibreOffice could not convert")
         raise parser_app._ChildExited("exited", -9 if death == "child" else 1)
 
     runtime, children, _ = _runtime(monkeypatch, handler, workers=2)
@@ -433,11 +439,11 @@ async def test_oom_kill_is_attributed_to_the_document_whose_process_died(
             runtime.parse(parser_app.Document(b"", "other.pdf", "other-fp"))
         )
         victim = runtime.parse(parser_app.Document(b"", "big.pdf", "big-fp"))
-        error = (
-            parser_app.ParseOOM
-            if expected == "parse_oom"
-            else parser_app.ParserRuntimeFailure
-        )
+        error = {
+            "parse_oom": parser_app.ParseOOM,
+            "runtime": parser_app.ParserRuntimeFailure,
+            "office": parser_app.OfficeConversionFailed,
+        }[expected]
         with pytest.raises(error):
             await victim
         release.set()
@@ -796,7 +802,7 @@ async def test_page_cap_refuses_pdfs_at_admission_and_office_after_conversion(
     monkeypatch.setattr(
         odl_document,
         "normalize_document",
-        lambda data, name: odl_document.NormalizedDocument(
+        lambda *_args: odl_document.NormalizedDocument(
             pdf, "deck.pdf", "pptx", preview_pdf=pdf
         ),
     )
@@ -931,14 +937,22 @@ async def test_artifact_request_rejects_a_foreign_parser_version() -> None:
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize(
+    ("error", "code"),
+    [
+        (parser_app.ParseHardTimeout("too slow"), "parse_hard_timeout"),
+        # Refused before LibreOffice; nothing to retry.
+        (parser_app.OfficeFormatMismatch("not a .docx"), "parse_format_mismatch"),
+    ],
+)
 @pytest.mark.asyncio
-async def test_hard_timeout_response_carries_its_code(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_terminal_failures_answer_422_with_their_code(
+    monkeypatch: pytest.MonkeyPatch, error: Exception, code: str
 ) -> None:
-    async def timed_out(_document):
-        raise parser_app.ParseHardTimeout("too slow")
+    async def failed(_document):
+        raise error
 
-    monkeypatch.setattr(parser_app, "_run", timed_out)
+    monkeypatch.setattr(parser_app, "_run", failed)
     payload, status = await parser_app._produce_artifact(
         {
             "output_key": "artifacts/fp.zip",
@@ -949,8 +963,10 @@ async def test_hard_timeout_response_carries_its_code(
         1,
     )
 
-    assert status == 422
-    assert payload["code"] == "parse_hard_timeout"
+    assert (status, payload["code"]) == (422, code)
+    # The multipart and capture routes answer the same.
+    response = parser_app._failure_response(error)
+    assert (response.status_code, json.loads(response.body)["code"]) == (422, code)
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,18 @@ from pathlib import Path
 
 import pymupdf
 
-OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
+_ZIP = b"PK\x03\x04"
+_OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
+# Each Office suffix converts only from its own container, through its own
+# LibreOffice import filter rather than LibreOffice's type detection.
+_IMPORTS = {
+    ".docx": (_ZIP, "MS Word 2007 XML"),
+    ".xlsx": (_ZIP, "Calc MS Excel 2007 XML"),
+    ".pptx": (_ZIP, "Impress MS PowerPoint 2007 XML"),
+    ".doc": (_OLE, "MS Word 97"),
+    ".xls": (_OLE, "MS Excel 97"),
+    ".ppt": (_OLE, "MS PowerPoint 97"),
+}
 OFFICE_PREVIEW_MAX_BYTES = int(
     os.environ.get("CAPY_OFFICE_PREVIEW_MAX_BYTES", str(128 << 20))
 )
@@ -44,6 +55,15 @@ _REGISTRY = (
 )
 
 
+class OfficeFormatMismatch(ValueError):
+    """The bytes are not the container the file's suffix names."""
+
+
+class OfficeConversionFailed(RuntimeError):
+    """LibreOffice ended without a PDF (the parse supervisor counts it as an OOM
+    kill when the cgroup's ``oom_kill`` count rose meanwhile)."""
+
+
 @dataclass(frozen=True)
 class NormalizedDocument:
     data: bytes
@@ -52,18 +72,26 @@ class NormalizedDocument:
     preview_pdf: bytes | None = None
 
 
-def normalize_document(data: bytes, name: str) -> NormalizedDocument:
-    """Return the PDF bytes the parser reads and the exact Office citation PDF."""
+def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocument:
+    """Return the PDF bytes the parser reads and the exact Office citation PDF.
+
+    The conversion's job directory sits in ``work_dir`` (the parse child's slot
+    directory, on disk), so a killed conversion's files go with the slot.
+    """
     suffix = Path(name).suffix.lower()
     if not suffix and data.lstrip().startswith(b"%PDF"):
         suffix = ".pdf"
     if suffix == ".pdf":
         return NormalizedDocument(data, name or "document.pdf", "pdf")
-    if suffix not in OFFICE_SUFFIXES:
+    if suffix not in _IMPORTS:
         raise ValueError("document parsing supports PDF and Office files")
+    magic, import_filter = _IMPORTS[suffix]
+    if not data.startswith(magic):
+        raise OfficeFormatMismatch(f"the file's contents are not a {suffix} document")
 
-    # The profile lives in the job directory, so it goes with the job.
-    with tempfile.TemporaryDirectory(prefix="capy_office_") as tmp_name:
+    # The profile and LibreOffice's own temporary files live in the job
+    # directory, so they go with the job.
+    with tempfile.TemporaryDirectory(prefix="capy_office_", dir=work_dir) as tmp_name:
         tmp = Path(tmp_name)
         source = tmp / f"source{suffix}"
         source.write_bytes(data)
@@ -81,6 +109,7 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
                 "--nodefault",
                 "--nolockcheck",
                 "--nofirststartwizard",
+                f"--infilter={import_filter}",
                 "--convert-to",
                 "pdf",
                 "--outdir",
@@ -90,6 +119,7 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            env={**os.environ, "TMPDIR": tmp_name},
             # Its own group for the timeout kill below, inside the parse
             # child's session so ending a parse child ends LibreOffice too.
             process_group=0,
@@ -104,7 +134,7 @@ def normalize_document(data: bytes, name: str) -> NormalizedDocument:
         rendered = tmp / "source.pdf"
         if process.returncode != 0 or not rendered.is_file():
             detail = (stderr or stdout or "conversion failed").strip()
-            raise RuntimeError(
+            raise OfficeConversionFailed(
                 f"LibreOffice could not convert {suffix}: {detail[:500]}"
             )
         if rendered.stat().st_size > OFFICE_PREVIEW_MAX_BYTES:

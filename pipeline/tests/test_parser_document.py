@@ -34,6 +34,11 @@ from odl import document
 needs_soffice = pytest.mark.skipif(
     not Path(document.SOFFICE).is_file(), reason="needs LibreOffice (parser image)"
 )
+needs_linux = pytest.mark.skipif(
+    sys.platform != "linux", reason="needs process groups and /proc"
+)
+ZIP = b"PK\x03\x04"
+OLE = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 
 _REL = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 _NAMESPACES = (
@@ -101,7 +106,7 @@ def _pdf_text(pdf: bytes) -> str:
 
 
 @needs_soffice
-def test_linked_image_is_not_fetched() -> None:
+def test_linked_image_is_not_fetched(tmp_path: Path) -> None:
     connections: list[tuple[str, int]] = []
 
     class Listener(http.server.ThreadingHTTPServer):
@@ -114,7 +119,9 @@ def test_linked_image_is_not_fetched() -> None:
     try:
         port = server.server_address[1]
         document.normalize_document(
-            _linked_image(f"http://127.0.0.1:{port}/linked.png"), "linked.docx"
+            _linked_image(f"http://127.0.0.1:{port}/linked.png"),
+            "linked.docx",
+            tmp_path,
         )
     finally:
         server.shutdown()
@@ -155,7 +162,7 @@ def test_includetext_does_not_read_a_local_file(tmp_path: Path) -> None:
     target.write_text("SECRET-FILE-TEXT")
 
     converted = document.normalize_document(
-        (tmp_path / "include.doc").read_bytes(), "include.doc"
+        (tmp_path / "include.doc").read_bytes(), "include.doc", tmp_path
     )
 
     text = _pdf_text(converted.data)
@@ -171,7 +178,66 @@ def _running(pid: int) -> bool:
     return stat.rsplit(")", 1)[1].split()[0] != "Z"
 
 
-@pytest.mark.skipif(sys.platform != "linux", reason="needs process groups and /proc")
+@pytest.mark.parametrize(
+    ("name", "data"),
+    [
+        ("notes.docx", b"{\\rtf1\\ansi text}"),
+        ("notes.docx", OLE + bytes(8)),
+        ("sheet.xls", ZIP + bytes(8)),
+    ],
+)
+def test_bytes_of_another_format_are_refused_before_libreoffice(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, data: bytes
+) -> None:
+    def started(*_args, **_kwargs):
+        raise AssertionError("LibreOffice started")
+
+    monkeypatch.setattr(document.subprocess, "Popen", started)
+    with pytest.raises(document.OfficeFormatMismatch):
+        document.normalize_document(data, name, tmp_path)
+
+
+@needs_linux
+@pytest.mark.parametrize(
+    ("name", "data", "infilter"),
+    [
+        ("notes.docx", ZIP, "MS Word 2007 XML"),
+        ("sheet.xlsx", ZIP, "Calc MS Excel 2007 XML"),
+        ("deck.pptx", ZIP, "Impress MS PowerPoint 2007 XML"),
+        ("notes.doc", OLE, "MS Word 97"),
+        ("sheet.xls", OLE, "MS Excel 97"),
+        ("deck.ppt", OLE, "MS PowerPoint 97"),
+    ],
+)
+def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    name: str,
+    data: bytes,
+    infilter: str,
+) -> None:
+    seen = tmp_path / "seen"
+    launcher = tmp_path / "soffice"
+    launcher.write_text(f'#!/bin/sh\nprintf "%s\\n" "$TMPDIR" "$@" > {seen}\nexit 1\n')
+    launcher.chmod(0o755)
+    monkeypatch.setattr(document, "SOFFICE", str(launcher))
+    work = tmp_path / "work"
+    work.mkdir()
+
+    with pytest.raises(document.OfficeConversionFailed):
+        document.normalize_document(data, name, work)
+
+    tmpdir, *argv = seen.read_text().splitlines()
+    assert f"--infilter={infilter}" in argv
+    # LibreOffice's temporary files and output share the job directory in the
+    # work dir, which goes with the job.
+    job = Path(tmpdir)
+    assert job.parent == work and job.name.startswith("capy_office_")
+    assert argv[argv.index("--outdir") + 1] == tmpdir
+    assert not job.exists()
+
+
+@needs_linux
 def test_timeout_kills_the_whole_process_group(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -189,7 +255,7 @@ def test_timeout_kills_the_whole_process_group(
     monkeypatch.setattr(document, "OFFICE_CONVERT_TIMEOUT_S", 1)
 
     with pytest.raises(subprocess.TimeoutExpired):
-        document.normalize_document(b"office", "slow.docx")
+        document.normalize_document(ZIP + b"office", "slow.docx", tmp_path)
 
     helper = int(helper_pid.read_text())
     deadline = time.monotonic() + 5

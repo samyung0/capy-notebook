@@ -1336,6 +1336,8 @@ async def _ensure_document_artifact(
             "this file hit a terminal parser resource limit and is "
             "quarantined for the current parser version"
         ) from exc
+    except parser_client.ParserFormatMismatchError as exc:
+        raise TerminalError(str(exc)) from exc
     except parser_client.ParserCapacityError as exc:
         # The parser's bounded queue answered 429; the job re-pends without
         # spending an attempt.
