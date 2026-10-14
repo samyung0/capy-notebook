@@ -470,6 +470,7 @@ fixed yet.** The fix order and open questions are in "Fix plan" below.
    `d.checkpoint>=c.checkpoint`, as the heartbeat check does. Test: attach with a
    newer checkpoint for docx, xlsx, pptx and text. Land it with J3, because
    rebasing rebuilds become common.
+   Progress 2026-10-14: steps 1, 2 and 4 landed (Editor `notes` track): note jobs pass the pipeline boundary, migration 0082 releases a note when its index job ends, the alias moves only when new content is ready, a busy provider re-pends a note job like a file's, F2 attaches after newer saves. Deploy: Go (0082) first, then ingest. The recovery SQL and its precondition are in `C:/WEB/capy-harness/2026-10-06-rust-round/wave-1014/REPORT-notes-r2.md`.
 5. **Restore** (Epo's call): clear `refresh_error` in `RestoreFromTrash`.
 6. **UAT hold covers text:** run the hold before the text branch.
 
