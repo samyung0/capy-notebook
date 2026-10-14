@@ -682,7 +682,8 @@ wrapper writes the snippet over itself, which fires a second `load`; a later
 wrapper's CSP), so the frame is replaced by a notice until the snippet
 changes. A theme change or a new snippet reloads the frame. Every frame
 loads with the note and stays loaded (at most 10 per note), so none vanishes,
-reloads or resizes while the reader scrolls. Opening a note with `?block=<id>`
+reloads or resizes while the reader scrolls. A chat answer's interactive
+(`ChatHtmlEmbed`) uses the same frame and also loads with the answer. Opening a note with `?block=<id>`
 scrolls that block into view once per page load. Exports never run the
 snippet (see Readable note exports).
 
@@ -1967,7 +1968,26 @@ before React replaces the editor with its preview.
 MathLive 0.110 does not perform that cleanup itself; leaving it open makes the
 next field's menu call `showPopover()` on a disconnected element.
 MathPreview mounts inert, read-only MathLive fields without keyboard/menu controls,
-using the same fonts and layout as editing and a spoken-math accessible label. This
+using the same fonts and layout as editing and a spoken-math accessible label.
+It and the shared note's server markup (`mathMarkup` in `src/share/server.tsx`)
+pass the LaTeX through `inertTex`, which draws MathLive's HTML commands
+(`\style`, `\htmlStyle`, `\class`, `\htmlClass`, `\cssId`, `\htmlId`,
+`\htmlData`, `\href`, `\url`, and `\csname`, which builds any command) as
+text, so a formula sets no style, class, id, data attribute, link or
+background/paint fetch of its own. Those commands are a MathLive feature and
+stay raw in every version. The other commands that take a CSS or SVG value
+(`\color`, `\colorbox`, `\bbox`, `\enclose`, `\fontfamily`, …) are MathLive's:
+its 0.111 strict-grammar validation drops an invalid colour, border,
+background or font family, and its `\enclose`/`\href`/`\htmlData` quoting
+fixes close the SVG overlay and attribute breakout, so those need nothing from
+`inertTex` (a pin below 0.111 would reopen that class, which an `inertTex`
+test guards). The stored LaTeX is unchanged. Share pages drop the markup into
+the DOM without a sanitizer, so `mathMarkup` also runs a cheap tripwire
+(`markupIsInert`, `mathTripwire.ts`): markup carrying an inline event handler
+or a `url()`/`image-set()` paint or background (after decoding character
+references) is shown as the escaped source instead. The app's report-only
+image policy (deployment-runbook.md §2.4) governs `img-src` only; SVG paint
+falls under `default-src`, so the policy is not the fix for this class. This
 preserves native placeholders, accents and fractions in notes, question editors and
 question/quiz views. KaTeX remains confined to export figures, where empty slots map
 to `\square`; saved editable formulas retain their original placeholders. The

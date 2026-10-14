@@ -225,6 +225,31 @@ test('text caret stays on the math baseline and physical arrow shortcuts survive
   ).toContainText('→');
 });
 
+// Security regression: a formula preview draws MathLive's HTML commands as
+// text.
+test('a formula preview draws HTML commands as text', async ({ page }) => {
+  const tex = String.raw`\cssId{capy-probe}{x}`;
+  const editor = await openEditorNote(
+    page,
+    'mat_note_bio_feature_matrix',
+    'Editor feature matrix'
+  );
+  const preview = editor
+    .getByRole('button', { exact: true, name: m.editor_equation() })
+    .last();
+  await preview.click();
+  const field = editor.locator('math-field:not([read-only])');
+  await field.evaluate(
+    (el, value) => (el as MathfieldElement).setValue(value),
+    tex
+  );
+  await expect(field).toHaveJSProperty('value', tex);
+  await field.press('Enter');
+  await expect(field).toHaveCount(0);
+  await expect(preview.locator('.ML__base')).toContainText('cssId');
+  await expect(page.locator('#capy-probe')).toHaveCount(0);
+});
+
 for (const kind of ['block', 'inline'] as const) {
   test(`${kind} formula keeps its layout and selection legible in a light app on a dark system`, async ({
     page,

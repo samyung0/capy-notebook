@@ -3,11 +3,13 @@ import { renderToString } from 'react-dom/server';
 import type { AnonymousNote } from '@/api/types';
 import { TooltipProvider } from '@/components/ui/Tooltip';
 import type { MaterialValue } from '@/features/materials/document';
+import { inertTex } from '@/features/materials/inertTex';
+import { markupIsInert } from '@/features/materials/mathTripwire';
 import { quizMeta } from '@/features/quizzes/QuizPage';
 import { m } from '@/i18n';
 // @ts-expect-error generated at build time by the Paraglide Vite plugin
 import { overwriteGetLocale } from '@/i18n/paraglide/runtime';
-import { jsonForHTML } from '@/lib/html';
+import { escapeHTML, jsonForHTML } from '@/lib/html';
 import { seoHead, snippet } from '@/lib/seoHead';
 import { SharedFlashcards } from './SharedFlashcards';
 import {
@@ -46,13 +48,18 @@ export type SharePage =
 // Public pages are English only, and a Worker has no browser to ask.
 overwriteGetLocale(() => 'en');
 
-/** MathLive's static layout, as the editor's read-only field draws it. */
-const mathMarkup = (tex: string, displayMode: boolean) =>
-  `<span class="text-[1.21em] leading-[1.2]">${convertLatexToMarkup(
+/** MathLive's static layout, as the editor's read-only field draws it. The
+ * markup goes into the page without a sanitizer, so a formula whose markup
+ * trips the tripwire (an event handler, or a paint/background fetch `inertTex`
+ * did not catch) is shown as its escaped source instead. */
+const mathMarkup = (tex: string, displayMode: boolean) => {
+  const markup = convertLatexToMarkup(
     // MathLive 0.110 has no \dots; show \ldots, keeping the stored LaTeX.
-    tex.replace(/\\dots(?![a-zA-Z])/g, '\\ldots'),
+    inertTex(tex.replace(/\\dots(?![a-zA-Z])/g, '\\ldots')),
     { defaultMode: displayMode ? 'math' : 'inline-math' }
-  )}</span>`;
+  );
+  return `<span class="text-[1.21em] leading-[1.2]">${markupIsInert(markup) ? markup : escapeHTML(tex)}</span>`;
+};
 
 const hasMath = (node: unknown): boolean =>
   typeof node === 'object' &&
