@@ -997,33 +997,62 @@ is a loopback `http` origin (`vite-embed.ts`), with the headers from
 runs on `localhost`; another port alone would be the same site. The Playwright
 configs serve their own frame on `localhost` next to the app's `127.0.0.1`.
 
-### 2.4 App image policy (report-only)
+### 2.4 App page policies
 
-The SPA's pages and the pages the site Worker renders are sent with
-`Content-Security-Policy-Report-Only: img-src …`, listing the only places a
-page may draw an image or CSS `url()` from: `'self'`, `data:`, `blob:`, the
-environment's bucket, the `BANK_ASSETS_URL` base, `https://img.clerk.com`
-(avatars) and `https://i.ytimg.com` (YouTube posters). Go's own HTML behind
-`/api/*` (the unsubscribe page) has no images and no policy.
-`vite-image-policy.ts` builds the value once per SPA build and sends it two
-ways:
+Two content security policies, both built once per SPA build by
+`vite-image-policy.ts` from configuration the deploy already has:
+
+- **Images, report-only, everywhere.** The SPA's pages and the pages the site
+  Worker renders are sent with `Content-Security-Policy-Report-Only` listing
+  the only places a page may draw an image or CSS `url()` from: `'self'`,
+  `data:`, `blob:`, the environment's bucket, the `BANK_ASSETS_URL` base,
+  `https://img.clerk.com` (avatars) and `https://i.ytimg.com` (YouTube
+  posters). It stays report-only.
+- **Scripts, enforced on the Worker's pages.** The share, summary and error
+  pages the site Worker renders are also sent with an enforced
+  `Content-Security-Policy` (`pagePolicy`):
+  - `script-src` names only `'self'`, the Clerk frontend API (decoded from
+    `VITE_CLERK_PUBLISHABLE_KEY`; shared quizzes and flashcard sets load
+    clerk-js from it) and this PostHog project's script assets
+    (`https://{region}-assets.i.posthog.com/static/` and
+    `…/array/{VITE_POSTHOG_KEY}/config.js`, or the proxy host when
+    `VITE_POSTHOG_HOST` is one). No `'unsafe-inline'` and no `'unsafe-eval'`:
+    the Worker adds the SHA-256 of each inline script its own template holds
+    (a build's templates hold none, Vite bundles them; the dev server's carry
+    React's refresh preamble), so markup a render writes into the page never
+    runs. The page scripts set Zod to `jitless` first
+    (`src/share/jitless.ts`), so Zod never probes `new Function`;
+  - `script-src-attr 'none'` (no event-handler attributes),
+    `worker-src 'self' blob:` (clerk-js's timer worker),
+    `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
+    MathLive and Mermaid write style attributes),
+    `frame-src` `VITE_EMBED_ORIGIN` and `https://www.youtube-nocookie.com`,
+    `object-src 'none'` and `base-uri 'none'`;
+  - no `frame-ancestors`: who may frame the pages is unchanged.
+
+  The SPA gets the same `script-src` report-only, inside its image header,
+  plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
+  `https://apis.google.com` (the Drive picker), to learn what the app itself
+  would need before anything there is enforced.
+
+Go's own HTML behind `/api/*` (the unsubscribe page) has no images and no
+policy. The values reach the pages two ways:
 
 - Workers Assets serves the SPA's HTML, so the client build appends a `/*`
-  rule to `dist/_headers` (after `public/_headers`). With
-  `html_handling: "none"`, every SPA page, `/` included, is the
-  single-page-application fallback, so the whole SPA's policy rests on
+  rule to `dist/_headers` (after `public/_headers`) with the report-only
+  `appPolicy`. With `html_handling: "none"`, every SPA page, `/` included, is
+  the single-page-application fallback, so the whole SPA's policy rests on
   Workers Assets applying `_headers` to that fallback, which only a deployed
   check can see (UAT checklist §7). If it does not, the fallback plan is to
   run the site Worker first on every path but the static files
   (`run_worker_first` with exclusions such as `!/assets/*`) and set the
   header there, at the cost of one Worker call per page load.
 - Worker responses get no `_headers`, so the share, summary and error pages
-  the site Worker renders read the same value from the share renderer bundle
-  (`IMAGE_POLICY`, `src/share/server.tsx`) and set it in
+  the site Worker renders read both values from the share renderer bundle
+  (`IMAGE_POLICY` and `PAGE_POLICY`, `src/share/server.tsx`) and set them in
   `workers/site/handler.ts`, on GET and HEAD alike.
 
-Nothing is set by hand. The hosts come from configuration the deploy already
-has:
+Nothing is set by hand. The hosts come from configuration:
 
 - the bucket from `B2_BUCKET` and `B2_ENDPOINT`, addressed like Go's
   presigner: `https://{bucket}.{endpoint host}`, or the bucket's path on the
@@ -1032,8 +1061,11 @@ has:
 - the bank from `VITE_BANK_ASSETS_URL`, which `scripts/env/config.py` builds
   from `BANK_ASSETS_URL`: its origin, or its path on the host when the base
   has one (a shared host such as `f003.backblazeb2.com/file/…`);
-- reports go to the `capy-web` Sentry project's security endpoint, derived
-  from `VITE_SENTRY_DSN` and tagged with `VITE_APP_ENV`
+- Clerk, PostHog and the embed frame from the variables the SPA build already
+  reads (`VITE_CLERK_PUBLISHABLE_KEY`, `VITE_POSTHOG_KEY`,
+  `VITE_POSTHOG_HOST`, `VITE_EMBED_ORIGIN`);
+- reports from both policies go to the `capy-web` Sentry project's security
+  endpoint, derived from `VITE_SENTRY_DSN` and tagged with `VITE_APP_ENV`
   (`https://{host}/api/{project}/security/?sentry_key=…&sentry_environment=…`).
 
 A `uat` or `production` build (`VITE_APP_ENV`) fails when `B2_BUCKET`,
@@ -1043,11 +1075,14 @@ policy without a DSN only logs to the browser console. Each report carries the
 page's full path, so a report from a shared page includes its link token;
 Sentry scrubs those paths (§5 step 9).
 
-A new image host goes into `imagePolicy` (and its test) before any page uses
-it. To enforce, send the same value as `Content-Security-Policy` in both places
-once UAT shows no reports from the app's own pages. The HTML embed frame, the
-Office runtime and Ops keep their own policies (§2.3, `workers/office/_headers`,
-the Ops application below).
+A new image host goes into `imageSources` (and its test) before any page uses
+it; a new script or frame host on a public page goes into `scriptSources` or
+`pagePolicy` (and `workers/site/scriptPolicy.test.ts`) first, never as
+`'unsafe-inline'` or `'unsafe-eval'`. A blocked script shows in the console as
+`Refused to load the script` or `Refused to execute inline script`, and as a
+`capy-web` security report. The HTML embed frame, the Office runtime and Ops
+keep their own policies (§2.3, `workers/office/_headers`, the Ops application
+below).
 
 ---
 
@@ -1244,7 +1279,7 @@ re-embedding stays on the parse path and is handled later by ingest.
    behind the client-side `ignoreErrors`.
 7. Set a spend cap. Default sampling can burn a month's quota in a day during
    an incident, which is exactly when reporting must not stop.
-8. The app's image policy (§2.4) reports to `capy-web`'s security endpoint,
+8. The app's page policies (§2.4) report to `capy-web`'s security endpoint,
    tagged by environment. Keep the project's default ignored sources for CSP
    reports on (Settings → Security Headers: browser extensions and local
    schemes), so extensions that inject images do not file reports. A report
@@ -2646,8 +2681,8 @@ Clerk: its browser bundle and API calls, `img.clerk.com` avatars, the worker it
 spawns, and the Cloudflare challenge frame bot protection renders at sign-in.
 The origin comes from decoding `VITE_CLERK_PUBLISHABLE_KEY`, so it follows the
 environment; an unreadable key leaves the policy at `'self'` and the dashboard
-reports that Clerk failed to load. The SPA sends only a report-only image
-policy (§2.4), which is why the same Clerk setup works there without
+reports that Clerk failed to load. The SPA's policies are report-only
+(§2.4), which is why the same Clerk setup works there without
 configuration.
 
 Every hostname a stack publishes on the shared `coolify` network has to be

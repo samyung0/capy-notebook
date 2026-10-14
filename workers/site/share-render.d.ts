@@ -29,4 +29,7 @@ declare module 'capy-share-render' {
   export function renderFailure(status: number, template?: string): string;
   /** The report-only image-source policy for every rendered page. */
   export const IMAGE_POLICY: string;
+  /** The enforced script policy for every rendered page, before the hashes
+   * of its template's inline scripts. */
+  export const PAGE_POLICY: string;
 }

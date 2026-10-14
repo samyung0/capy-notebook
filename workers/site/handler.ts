@@ -174,8 +174,35 @@ const serverTiming = (start: number, api: number) =>
   `api;dur=${api}, total;dur=${Date.now() - start}`;
 
 /** Every page this Worker renders carries the app's image-source policy,
- * report-only (vite-image-policy.ts); Worker responses get no `_headers`. */
+ * report-only, and its script policy, enforced (vite-image-policy.ts);
+ * Worker responses get no `_headers`. */
 const IMAGE_POLICY_HEADER = 'Content-Security-Policy-Report-Only';
+const PAGE_POLICY_HEADER = 'Content-Security-Policy';
+
+/** An inline script. A build's templates have none (Vite bundles them); the
+ * dev server's carry React's refresh preamble. */
+const INLINE_SCRIPT = /<script\b(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g;
+
+/** The script policy for a page rendered into `template`: the template's own
+ * inline scripts run by their hashes, so nothing the render writes into it
+ * can run inline. */
+async function allowTemplateScripts(
+  policy: string,
+  template = ''
+): Promise<string> {
+  const hashes = await Promise.all(
+    [...template.matchAll(INLINE_SCRIPT)].map(async ([, code]) => {
+      const digest = new Uint8Array(
+        await crypto.subtle.digest('SHA-256', new TextEncoder().encode(code))
+      );
+      return ` 'sha256-${btoa(String.fromCharCode(...digest))}'`;
+    })
+  );
+  return policy.replace(
+    "script-src 'self'",
+    (directive) => directive + hashes.join('')
+  );
+}
 
 const headers = (extra: HeadersInit = {}) => {
   const result = new Headers(extra);
@@ -209,13 +236,19 @@ export async function handleSiteRequest(
         // Keep the existing self-contained error if the asset binding also fails.
       }
     }
-    // A HEAD gets the page's headers, the image policy included, and no body.
-    const { IMAGE_POLICY, renderFailure } = await import('capy-share-render');
+    // A HEAD gets the page's headers, the policies included, and no body.
+    const { IMAGE_POLICY, PAGE_POLICY, renderFailure } = await import(
+      'capy-share-render'
+    );
     const failureHeaders = headers({
       'Content-Type': 'text/html; charset=utf-8',
       'X-Robots-Tag': 'noindex, nofollow',
     });
     failureHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
+    failureHeaders.set(
+      PAGE_POLICY_HEADER,
+      await allowTemplateScripts(PAGE_POLICY, template)
+    );
     return new Response(
       request.method === 'HEAD' ? null : renderFailure(status, template),
       { headers: failureHeaders, status }
@@ -302,8 +335,12 @@ export async function handleSiteRequest(
         return failure(503);
       }
       const template = await boundedText(asset, 512 * 1024);
-      const { IMAGE_POLICY, renderSharePagePieces, SHARE_TEMPLATE_MARKERS } =
-        await import('capy-share-render');
+      const {
+        IMAGE_POLICY,
+        PAGE_POLICY,
+        renderSharePagePieces,
+        SHARE_TEMPLATE_MARKERS,
+      } = await import('capy-share-render');
       if (!SHARE_TEMPLATE_MARKERS.every((marker) => template.includes(marker)))
         return failure(503);
       const page =
@@ -317,6 +354,10 @@ export async function handleSiteRequest(
       });
       responseHeaders.set('Cache-Control', SHARED_CACHE);
       responseHeaders.set(IMAGE_POLICY_HEADER, IMAGE_POLICY);
+      responseHeaders.set(
+        PAGE_POLICY_HEADER,
+        await allowTemplateScripts(PAGE_POLICY, template)
+      );
       if (data.privacy === 'link')
         responseHeaders.set('X-Robots-Tag', 'noindex, nofollow');
       const pieces = renderSharePagePieces({
@@ -358,9 +399,8 @@ export async function handleSiteRequest(
       await upstream.body?.cancel();
       return failure(503);
     }
-    const { IMAGE_POLICY, renderSummary, summarySchema } = await import(
-      'capy-share-render'
-    );
+    const { IMAGE_POLICY, PAGE_POLICY, renderSummary, summarySchema } =
+      await import('capy-share-render');
     const summary = summarySchema.parse(
       JSON.parse(await boundedText(upstream, 512 * 1024))
     );
@@ -387,6 +427,10 @@ export async function handleSiteRequest(
       !template.includes('<!--capy-summary-body-->')
     )
       return failure(503);
+    responseHeaders.set(
+      PAGE_POLICY_HEADER,
+      await allowTemplateScripts(PAGE_POLICY, template)
+    );
     const rendered = new Response(
       await inlineStylesheets(
         renderSummary(template, summary, id, url.pathname, appOrigin),
