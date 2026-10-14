@@ -9,6 +9,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import multiprocessing
 import os
 import pickle
 import sys
@@ -81,11 +82,14 @@ class FakeChild:
         """A parse child: the handler's result goes to the result file, and its
         ``_ocr_pages`` are what the stage hands to OCR."""
         result = await self._until_killed(self.handler(document))
-        result_path.write_bytes(pickle.dumps(result))
+        parser_app._write_worker_result(result_path, result)
         return result.get("_ocr_pages") or []
 
     async def page(self, pdf, page_idx):
         return await self._until_killed(self.handler(self, pdf, page_idx))
+
+    async def page_count(self, pdf):
+        return await self._until_killed(self.handler(self, pdf))
 
     def terminate(self) -> None:
         self.terminations += 1
@@ -101,6 +105,10 @@ async def _no_ocr(_child, _pdf, _page_idx):
     raise AssertionError("no OCR expected")
 
 
+async def _no_count(_child, _pdf):
+    raise AssertionError("no admission count expected")
+
+
 def _scan(name: str, pages: int) -> dict:
     """A parse result with ``pages`` text-less pages left for the OCR stage."""
     return {
@@ -113,12 +121,15 @@ def _scan(name: str, pages: int) -> dict:
     }
 
 
-def _runtime(monkeypatch, handler, *, workers=1, depth=4, ocr=_no_ocr):
+def _runtime(monkeypatch, handler, *, workers=1, depth=4, ocr=_no_ocr, count=_no_count):
     monkeypatch.setattr(parser_app, "PARSE_WORKERS", workers)
     monkeypatch.setattr(parser_app, "QUEUE_DEPTH", depth)
     children = [FakeChild(handler) for _ in range(workers)]
     reader = FakeChild(ocr)
-    runtime = parser_app.ParserRuntime(lambda index: children[index], lambda: reader)
+    counter = FakeChild(count)
+    runtime = parser_app.ParserRuntime(
+        lambda index: children[index], lambda: reader, lambda: counter
+    )
     return runtime, children, reader
 
 
@@ -161,8 +172,10 @@ async def test_parse_child_is_persistent_and_contains_document_errors(
     assert child is not None
     try:
         for name in ("first.txt", "second.txt"):
+            # Errors outside the API's own kinds arrive named by their type.
             with pytest.raises(
-                ValueError, match="document parsing supports PDF and Office files"
+                RuntimeError,
+                match="ValueError: document parsing supports PDF and Office files",
             ):
                 await runtime.parse(parser_app.Document(b"not a document", name))
             assert runtime.ready
@@ -476,9 +489,7 @@ async def test_handoff_frees_the_slot_and_merges_ocr_lines_in_page_order(
     runtime, _, _ = _runtime(monkeypatch, handler, ocr=ocr)
     await runtime.start()
     try:
-        scan = asyncio.create_task(
-            runtime.parse(parser_app.Document(b"", "scan.pdf"), ocr_pages=3)
-        )
+        scan = asyncio.create_task(runtime.parse(parser_app.Document(b"", "scan.pdf")))
         await _until(lambda: runtime.health()["ocr_stage_jobs"] == 1)
         # One worker: the native document parses while the scan waits for OCR.
         await runtime.parse(parser_app.Document(b"", "native.pdf"))
@@ -606,40 +617,39 @@ async def test_a_page_past_its_limit_quarantines_only_its_document(
 
 
 @pytest.mark.asyncio
-async def test_admission_caps_the_ocr_backlog(
+async def test_the_handoff_caps_the_ocr_backlog(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Text-less pages are counted by the parse child: one document over the
+    cap is refused, one that would lift the unread pages past it waits."""
     monkeypatch.setattr(parser_app, "OCR_PAGE_CAP", 5)
-    release = asyncio.Event()
+    read = asyncio.Event()
+    scanned = {"huge.pdf": 6, "four.pdf": 4, "two.pdf": 2, "one.pdf": 1}
 
     async def handler(document):
-        await release.wait()
-        # An Office source counts no pages on arrival: its parse finds 6.
-        return _scan("office", 6) if document.name == "deck.pptx" else _result()
+        return _scan(document.name, scanned[document.name])
 
-    runtime, _, _ = _runtime(monkeypatch, handler, workers=2, depth=8)
+    async def ocr(_child, _pdf, _page_idx):
+        await read.wait()
+        return []
+
+    runtime, _, _ = _runtime(monkeypatch, handler, workers=2, depth=8, ocr=ocr)
     await runtime.start()
     try:
-        with pytest.raises(parser_app.ParseTooManyScannedPages, match="at most 5"):
-            await runtime.parse(parser_app.Document(b"", "huge.pdf"), ocr_pages=6)
-        held = asyncio.create_task(
-            runtime.parse(parser_app.Document(b"", "four.pdf"), ocr_pages=4)
-        )
-        await _until(lambda: runtime.active_jobs == 1)
-        with pytest.raises(parser_app.ParserCapacity, match="OCR backlog"):
-            await runtime.parse(parser_app.Document(b"", "two.pdf"), ocr_pages=2)
-        fits = asyncio.create_task(
-            runtime.parse(parser_app.Document(b"", "one.pdf"), ocr_pages=1)
-        )
-        deck = asyncio.create_task(runtime.parse(parser_app.Document(b"", "deck.pptx")))
-        await _until(lambda: runtime.active_jobs == 3)
-        release.set()
-        await asyncio.gather(held, fits)
         with pytest.raises(parser_app.ParseTooManyScannedPages, match="6 pages"):
-            await deck
+            await runtime.parse(parser_app.Document(b"", "huge.pdf"))
+        held = asyncio.create_task(runtime.parse(parser_app.Document(b"", "four.pdf")))
+        await _until(lambda: runtime.health()["ocr_queued_pages"] == 4)
+        with pytest.raises(parser_app.ParserCapacity, match="OCR backlog"):
+            await runtime.parse(parser_app.Document(b"", "two.pdf"))
+        fits = asyncio.create_task(runtime.parse(parser_app.Document(b"", "one.pdf")))
+        await _until(lambda: runtime.health()["ocr_queued_pages"] == 5)
+        read.set()
+        await asyncio.gather(held, fits)
     finally:
         await runtime.close()
     assert runtime.active_jobs == 0
+    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
 
 
 @pytest.mark.asyncio
@@ -750,11 +760,10 @@ def test_merge_matches_reading_ocr_inside_parse_pdf(
     native = [{"type": "text", "text": "native", "page_idx": 0, "bbox": [0, 0, 1, 1]}]
     with pymupdf.open(pdf) as document:
         expected, pages = ocr.add_ocr_text(native, document)
-    result_path = tmp_path / "result.pickle"
-    result_path.write_bytes(
-        pickle.dumps(
-            {"content_list": native, "_ocr_pages": pages, "_evidence_pending": True}
-        )
+    result_path = tmp_path / "transfer.result"
+    parser_app._write_worker_result(
+        result_path,
+        {"content_list": native, "_ocr_pages": pages, "_evidence_pending": True},
     )
     read = {page: ocr.read_page(str(pdf), page) for page in reversed(pages)}
     merged = parser_app._merge_ocr(result_path, pdf, read)
@@ -762,16 +771,166 @@ def test_merge_matches_reading_ocr_inside_parse_pdf(
     assert merged["_page_evidence"] == page_evidence(pdf.read_bytes(), expected)
 
 
-def test_admission_counts_pages_and_uses_the_ocr_test(tmp_path: Path) -> None:
+def _three_page_pdf() -> bytes:
     import pymupdf
 
     with pymupdf.open() as document:
         document.new_page().insert_text((50, 50), "native text " * 8)
         document.new_page()
         document.new_page().insert_text((50, 50), "short")
-        data = document.tobytes()
-    assert parser_app._admission_pages(data) == (3, 2)
-    assert parser_app._admission_pages(b"PK\x03\x04 office zip") == (0, 0)
+        return document.tobytes()
+
+
+def test_admission_counts_pages_without_reading_page_content(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Admission reads the page tree only; the text-less count comes from the
+    parse child at the handoff."""
+    import pymupdf
+
+    def no_page_content(*_args, **_kwargs):
+        raise AssertionError("admission read page content")
+
+    pdf = tmp_path / "source.pdf"
+    pdf.write_bytes(_three_page_pdf())
+    monkeypatch.setattr(pymupdf.Document, "load_page", no_page_content)
+    monkeypatch.setattr(pymupdf.Page, "get_text", no_page_content)
+
+    assert parser_app._count_pdf_pages(str(pdf)) == 3
+
+
+@pytest.mark.asyncio
+async def test_admission_counts_pdf_pages_outside_the_api_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The API process opens no source with MuPDF: a spawned admission process
+    counts, and an Office source is counted after LibreOffice instead."""
+    import pymupdf
+
+    data = _three_page_pdf()
+
+    def not_in_the_api(*_args, **_kwargs):
+        raise AssertionError("MuPDF opened a source in the API process")
+
+    monkeypatch.setattr(pymupdf, "open", not_in_the_api)
+    monkeypatch.setattr(pymupdf, "Document", not_in_the_api)
+    runtime, _, _ = _runtime(monkeypatch, None)
+    runtime._admission = parser_app._AdmissionProcess()
+    await runtime.start()
+    try:
+        assert await runtime.page_count(data) == 3
+        assert await runtime.page_count(b"PK\x03\x04 office zip") == 0
+    finally:
+        await runtime.close()
+    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
+
+
+@pytest.mark.asyncio
+async def test_a_stuck_admission_count_admits_uncounted_and_replaces_the_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(parser_app, "ADMISSION_TIMEOUT_S", 0.05)
+    calls = 0
+
+    async def count(_child, _pdf):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            await asyncio.Event().wait()
+        return 3
+
+    runtime, _, _ = _runtime(monkeypatch, None, count=count)
+    counter = runtime._admission
+    await runtime.start()
+    try:
+        assert await runtime.page_count(b"%PDF-1.7 stuck") == 0
+        assert (counter.terminations, counter.starts) == (1, 1)
+        # The next count starts a fresh process; nothing is left in the pipe.
+        assert await runtime.page_count(b"%PDF-1.7 next") == 3
+        assert counter.starts == 2
+    finally:
+        await runtime.close()
+    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
+
+
+_UNPICKLED: list[str] = []
+
+
+def _record_unpickled(label: str) -> None:
+    _UNPICKLED.append(label)
+
+
+class _CallsOnLoad:
+    def __reduce__(self):
+        return (_record_unpickled, ("loaded",))
+
+
+@pytest.mark.asyncio
+async def test_child_answers_are_read_as_data_never_unpickled(tmp_path: Path) -> None:
+    """A parse, OCR or admission child's answer and a parse result file are
+    JSON and length-framed bytes; a pickle in either is refused unread."""
+    child = parser_app._Child(_record_unpickled, name="test child")
+    reader, writer = multiprocessing.Pipe(duplex=False)
+    child._responses = reader
+    writer.send(("ok", _CallsOnLoad()))
+    with pytest.raises(ValueError):
+        await child.recv()
+    reader.close()
+    writer.close()
+
+    result_path = tmp_path / "transfer.result"
+    result_path.write_bytes(pickle.dumps({"content_list": [], "x": _CallsOnLoad()}))
+    with pytest.raises(ValueError):
+        parser_app._read_worker_result(result_path)
+
+    assert _UNPICKLED == []
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        (parser_app.JavaTimeout("too slow"), parser_app.JavaTimeout),
+        (parser_app.JavaKilled("killed"), parser_app.JavaKilled),
+        (
+            parser_app.OfficeConversionFailed("no PDF"),
+            parser_app.OfficeConversionFailed,
+        ),
+        (
+            parser_app.OfficeFormatMismatch("not a .docx"),
+            parser_app.OfficeFormatMismatch,
+        ),
+        (parser_app.ParseTooManyPages("1500 pages"), parser_app.ParseTooManyPages),
+        (ValueError("broken PDF"), RuntimeError),
+    ],
+)
+@pytest.mark.asyncio
+async def test_child_errors_keep_the_kind_the_api_classifies(error, kind) -> None:
+    """Deadline, OOM and refusal handling tell child errors apart by kind;
+    any other error arrives as a RuntimeError naming its type."""
+    child = parser_app._Child(_record_unpickled, name="test child")
+    reader, writer = multiprocessing.Pipe(duplex=False)
+    child._responses = reader
+    parser_app._send_error(writer, error)
+    with pytest.raises(kind, match=str(error)) as raised:
+        parser_app._unwrap(await child.recv())
+    assert type(raised.value) is kind
+    reader.close()
+    writer.close()
+
+
+def test_a_parse_result_file_round_trips_blocks_and_bytes(tmp_path: Path) -> None:
+    result = {
+        **_result(2, ocr=[1]),
+        "_parsed_pdf": b"%PDF-1.7 repaired",
+        "_page_image": b"\x89PNG\r\n\x1a\nimage",
+    }
+    path = tmp_path / "transfer.result"
+    parser_app._write_worker_result(path, result)
+    assert parser_app._read_worker_result(path) == result
+
+    del result["_parsed_pdf"], result["_page_image"]
+    parser_app._write_worker_result(path, result)
+    assert parser_app._read_worker_result(path) == result
 
 
 @pytest.mark.asyncio
@@ -1033,6 +1192,24 @@ def test_artifact_write_is_local_atomic_and_path_bounded(
         parser_app._write_artifact("artifacts/../../outside", b"bad")
 
 
+def test_a_cached_bundle_returns_its_receipt_only_for_the_same_source_bytes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    parser_app._write_artifact(
+        "artifacts/fp.zip",
+        parser_app._bundle_bytes(
+            {"content_list": []}, "fp", "aa" * 32, "job-1", {"_page_count": 3}
+        ),
+    )
+
+    receipt = parser_app._artifact_receipt("artifacts/fp.zip", "fp", "aa" * 32, "job-1")
+    assert receipt == {"_receipt_id": "fp", "_page_count": 3}
+    assert (
+        parser_app._artifact_receipt("artifacts/fp.zip", "fp", "bb" * 32, "job-1") == {}
+    )
+
+
 def test_bundle_rejects_content_beyond_configured_budget(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1042,6 +1219,7 @@ def test_bundle_rejects_content_beyond_configured_budget(
         parser_app._bundle_bytes(
             {"content_list": [{"type": "text", "text": "x" * 128}]},
             "fp",
+            "aa" * 32,
             "job-1",
             {},
         )
@@ -1061,6 +1239,7 @@ def test_bundle_carries_only_what_ingest_reads() -> None:
             "_furniture": ["Running header", "p."],
         },
         "fp",
+        "aa" * 32,
         "job-1",
         {"_page_count": 3, "_server_parse_ms": 100},
     )
@@ -1083,6 +1262,7 @@ def test_bundle_carries_only_what_ingest_reads() -> None:
     assert manifest["schema"] == "capy-parser-bundle-v5"
     assert manifest["parser_version"] == parser_app.PARSER_VERSION
     assert manifest["source_fingerprint"] == "fp"
+    assert manifest["source_sha256"] == "aa" * 32
     assert manifest["parse_receipt"] == {
         "id": "fp",
         "request_id": "job-1",
@@ -1095,6 +1275,7 @@ def test_bundle_without_font_repair_carries_no_parsed_pdf() -> None:
     bundle = parser_app._bundle_bytes(
         {"content_list": [], "_furniture": []},
         "fp",
+        "aa" * 32,
         "job-1",
         {},
     )
@@ -1190,7 +1371,7 @@ def test_office_run_keeps_only_evidence_in_bundle(monkeypatch, tmp_path):
     result = parser_app.run_document(parser_app.Document(b"office", "example.docx"))
     assert result["_page_evidence"]["page_texts"][0].strip() == "Source text"
     assert "thumbnail" in result["_phases"]
-    bundle = parser_app._bundle_bytes(result, "fingerprint", "request", {})
+    bundle = parser_app._bundle_bytes(result, "fingerprint", "aa" * 32, "request", {})
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         assert not any(name.lower().endswith(".pdf") for name in archive.namelist())
         assert json.loads(archive.read("manifest.json"))["source_format"] == "docx"
@@ -1241,7 +1422,7 @@ def test_a_pdf_parse_bundles_page_one_from_its_repaired_bytes(monkeypatch, tmp_p
         ),
     )
     result = parser_app.run_document(parser_app.Document(b"%PDF", "lecture.pdf"))
-    bundle = parser_app._bundle_bytes(result, "fingerprint", "request", {})
+    bundle = parser_app._bundle_bytes(result, "fingerprint", "aa" * 32, "request", {})
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         page = archive.read("page1.png")
     with Image.open(io.BytesIO(page)) as image:
@@ -1288,7 +1469,7 @@ def test_a_failed_page_render_leaves_the_parse_and_bundle_intact(monkeypatch, tm
     monkeypatch.setattr(capture, "page_thumbnail", broken)
     result = parser_app.run_document(parser_app.Document(b"office", "deck.pptx"))
     assert "_page_image" not in result
-    bundle = parser_app._bundle_bytes(result, "fingerprint", "request", {})
+    bundle = parser_app._bundle_bytes(result, "fingerprint", "aa" * 32, "request", {})
     with zipfile.ZipFile(io.BytesIO(bundle)) as archive:
         assert "page1.png" not in archive.namelist()
 

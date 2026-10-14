@@ -24,8 +24,8 @@ import ctypes
 import gc
 import json
 import os
-import pickle
 import sys
+import tempfile
 import threading
 import time
 import tracemalloc
@@ -173,7 +173,10 @@ def main() -> None:
             )
             elapsed = time.perf_counter() - started
             held = rss()
-            pickled = len(pickle.dumps(result, protocol=pickle.HIGHEST_PROTOCOL))
+            # The file a parse child hands the API (JSON plus the PDF and PNG bytes).
+            with tempfile.NamedTemporaryFile() as transfer:
+                app._write_worker_result(Path(transfer.name), result)
+                result_file = Path(transfer.name).stat().st_size
             blocks = len(result["content_list"])
             result = None
             gc.collect()
@@ -188,7 +191,7 @@ def main() -> None:
                 "s": round(elapsed, 1),
                 "blocks": blocks,
                 "native_json_mib": mib(recorder.native_bytes),
-                "result_pickle_mib": mib(pickled),
+                "result_file_mib": mib(result_file),
                 "rss_process_start_mib": mib(start),
                 "rss_before_mib": mib(before),
                 "rss_peak_mib": mib(max(s["peak"] for s in recorder.steps)),

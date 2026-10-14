@@ -16,8 +16,10 @@ Artifacts are addressed by a fingerprint over the source object, route, parser
 version, and artifact schema. A ZIP lives from publication until the ingest
 continuation that consumed it finishes; meanwhile a retry of the creating job
 recovers it with its receipt, and a concurrent job for identical bytes reuses
-it without one. Database donors independently reuse indexed content; otherwise
-the retained source is parsed again.
+it without one. Whether cached or fresh, a ZIP is used only when its manifest
+names the SHA-256 of the source this job sent; otherwise it counts as missing.
+Database donors independently reuse indexed content; otherwise the retained
+source is parsed again.
 """
 
 from __future__ import annotations
@@ -167,7 +169,9 @@ def _shared_path(key: str) -> Path:
     return path
 
 
-def _artifact_receipt(path: Path, fingerprint: str, request_id: str) -> dict[str, Any]:
+def _artifact_receipt(
+    path: Path, fingerprint: str, source_sha256: str, request_id: str
+) -> dict[str, Any]:
     if not request_id:
         return {}
     try:
@@ -182,6 +186,7 @@ def _artifact_receipt(path: Path, fingerprint: str, request_id: str) -> dict[str
         not isinstance(manifest, dict)
         or manifest.get("schema") != ARTIFACT_SCHEMA
         or manifest.get("source_fingerprint") != fingerprint
+        or manifest.get("source_sha256") != source_sha256
     ):
         return {}
     receipt = manifest.get("parse_receipt")
@@ -196,7 +201,7 @@ def _artifact_receipt(path: Path, fingerprint: str, request_id: str) -> dict[str
 
 
 def _local_artifact(
-    key: str, fingerprint: str, request_id: str
+    key: str, fingerprint: str, source_sha256: str, request_id: str
 ) -> tuple[dict[str, Any], dict[str, Any]] | None:
     path = _shared_path(key)
     try:
@@ -223,9 +228,10 @@ def _local_artifact(
             "size": size,
             "sha256": digest,
             "fingerprint": fingerprint,
+            "source_sha256": source_sha256,
             "cached": True,
         },
-        _artifact_receipt(path, fingerprint, request_id),
+        _artifact_receipt(path, fingerprint, source_sha256, request_id),
     )
 
 
@@ -270,7 +276,8 @@ def _request_artifact(
     version = parser_version(route)
 
     artifact_key, fingerprint = artifact_identity(descriptor)
-    cached = _local_artifact(artifact_key, fingerprint, request_id)
+    source_sha256 = str(descriptor["source_sha256"])
+    cached = _local_artifact(artifact_key, fingerprint, source_sha256, request_id)
     if cached is not None:
         artifact, receipt = cached
         _record_measurement(receipt)
@@ -293,7 +300,7 @@ def _request_artifact(
             headers=headers,
             json={
                 "source_key": str(descriptor["source_key"]),
-                "source_sha256": str(descriptor["source_sha256"]),
+                "source_sha256": source_sha256,
                 "output_key": artifact_key,
                 "filename": upload_name,
                 "artifact_schema": ARTIFACT_SCHEMA,
@@ -307,7 +314,9 @@ def _request_artifact(
         # The parser publishes before sending JSON. If the connection died
         # after that atomic rename, recover the creator-owned receipt now —
         # especially on the job's final allowed attempt.
-        recovered = _local_artifact(artifact_key, fingerprint, request_id)
+        recovered = _local_artifact(
+            artifact_key, fingerprint, source_sha256, request_id
+        )
         if recovered is None:
             if quarantine := _local_quarantine(fingerprint):
                 _raise_quarantine(quarantine)
@@ -354,6 +363,7 @@ def _request_artifact(
     if not str(artifact.get("sha256") or ""):
         raise ParserClientError("parser returned no artifact checksum")
     artifact["fingerprint"] = fingerprint
+    artifact["source_sha256"] = source_sha256
     # Wall time remains useful for latency. Page counts, not CPU time, drive the
     # charge; host sampling captures the parser's resource use.
     parse_seconds = payload.get("_server_parse_s")
@@ -426,6 +436,26 @@ def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return infos
 
 
+def _check_manifest(
+    manifest: object, artifact: Mapping[str, Any], version: str
+) -> None:
+    """The bundle is this job's: its schema and parser release, and the
+    fingerprint and SHA-256 of the source bytes the job sent. Any mismatch
+    makes the bundle invalid, so it is discarded and parsed again."""
+    if not isinstance(manifest, dict):
+        raise ParserClientError("parsed artifact manifest is not an object")
+    if manifest.get("schema") != ARTIFACT_SCHEMA:
+        raise ParserClientError("unsupported parsed artifact schema")
+    if manifest.get("parser_version") != version:
+        raise ParserClientError("parsed artifact version mismatch")
+    fingerprint = str(artifact.get("fingerprint") or "")
+    source_sha256 = str(artifact.get("source_sha256") or "")
+    if (fingerprint and manifest.get("source_fingerprint") != fingerprint) or (
+        not source_sha256 or manifest.get("source_sha256") != source_sha256
+    ):
+        raise ParserClientError("parsed artifact source mismatch")
+
+
 def _validate_artifact_path(
     archive_path: Path,
     artifact: Mapping[str, Any],
@@ -453,16 +483,7 @@ def _validate_artifact_path(
 
     with zipfile.ZipFile(archive_path) as archive:
         _validated_entries(archive)
-        manifest = json.loads(archive.read("manifest.json"))
-        if not isinstance(manifest, dict):
-            raise ParserClientError("parsed artifact manifest is not an object")
-        if manifest.get("schema") != ARTIFACT_SCHEMA:
-            raise ParserClientError("unsupported parsed artifact schema")
-        if manifest.get("parser_version") != version:
-            raise ParserClientError("parsed artifact version mismatch")
-        fingerprint = str(artifact.get("fingerprint") or "")
-        if fingerprint and manifest.get("source_fingerprint") != fingerprint:
-            raise ParserClientError("parsed artifact source mismatch")
+        _check_manifest(json.loads(archive.read("manifest.json")), artifact, version)
         content_list = json.loads(archive.read("content_list.json"))
         if not isinstance(content_list, list):
             raise ParserClientError("content_list.json is not a list of blocks")
@@ -531,14 +552,11 @@ def _extract(
         infos = _validated_entries(archive)
         manifest_info = archive.getinfo("manifest.json")
         _read_entry(archive, manifest_info, raw_dir / "manifest.json")
-        manifest = json.loads((raw_dir / "manifest.json").read_text(encoding="utf-8"))
-        if manifest.get("schema") != ARTIFACT_SCHEMA:
-            raise ParserClientError("unsupported parsed artifact schema")
-        if manifest.get("parser_version") != version:
-            raise ParserClientError("parsed artifact version mismatch")
-        fingerprint = str(artifact.get("fingerprint") or "")
-        if fingerprint and manifest.get("source_fingerprint") != fingerprint:
-            raise ParserClientError("parsed artifact source mismatch")
+        _check_manifest(
+            json.loads((raw_dir / "manifest.json").read_text(encoding="utf-8")),
+            artifact,
+            version,
+        )
         for info in infos:
             if info.filename != "manifest.json":
                 _read_entry(archive, info, raw_dir / info.filename)

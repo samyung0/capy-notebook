@@ -26,7 +26,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
+| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); an admission process that counts a PDF's pages, five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -824,19 +824,22 @@ Eight coordinator children claim only parse rows and flip the file to
 `processing` when the parser accepts the request. While the parser runs, no
 ingest worker slot is occupied.
 
-Admission also caps the OCR backlog. On arrival the API counts a PDF source's
-text-less pages with the same test the parse uses; an Office source counts
-none until its parse (its PDF exists only after LibreOffice). A document whose
-count exceeds `CAPY_PARSE_OCR_PAGE_CAP` (500) is refused with the terminal
-`parse_too_many_scanned_pages`; one that would lift the admitted-but-unread
-pages past the cap waits as `429 parser_capacity`. At the handoff the parsed
-PDF's exact count replaces the estimate, and an Office or font-repaired
-document over the cap is refused with the same terminal code. Before the OCR stage
-such documents timed out at about 320 scanned pages.
+The OCR stage caps its backlog at the handoff, with the parse child's count
+of the parsed PDF's text-less pages (admission counts none). A document with
+more than `CAPY_PARSE_OCR_PAGE_CAP` (500) is refused with the terminal
+`parse_too_many_scanned_pages`; one that would lift the unread pages in the OCR
+stage past the cap is answered `429 parser_capacity`, its parse dropped, and
+the coordinator's capacity wait sends it again later. Before the OCR stage such
+documents timed out at about 320 scanned pages.
 
-Admission also refuses a PDF with more than `CAPY_PARSE_MAX_PAGES` (1,400)
-pages, counted from the uploaded bytes in the same pass, with the terminal
-`parse_too_many_pages` before it takes a parse child. An Office source is
+Admission refuses a PDF with more than `CAPY_PARSE_MAX_PAGES` (1,400) pages
+with the terminal `parse_too_many_pages` before it takes a parse child. The API
+process never opens a source with MuPDF: a spawned admission process
+(`oom_score_adj` 1000, a 1 GiB address-space limit) reads only the page tree,
+one file at a time, in milliseconds (a 610-page textbook in 9 ms, 150 ms with
+its cross-reference table rebuilt). A count that fails or takes over 30 s
+admits the PDF uncounted (a stuck count also replaces the process), and the
+parse child's deadline and OOM handling apply to it. An Office source is
 checked in its parse child right after LibreOffice, before the Java run. The
 coordinator maps both page codes to an input limit (`scanned_page_limit`,
 `page_limit`) carrying the parser's reason (no quarantine, no retry): the file
@@ -884,7 +887,7 @@ in between restart the whole parser.
 
 The whole-document parser request has a 4,420-second bound (`PARSER_TIMEOUT`:
 one wait for a parse child and the parse itself, 900 s each with eight admitted
-over five children, then at most the 500 admitted pages before the document's
+over five children, then at most the 500 pages the OCR stage holds before the document's
 last page at up to 5 s a page, the rate a 150-page scan kept next to five
 1,400-page book parses with four OCR threads (722 s, 4.8 s a page; 290 s alone),
 plus a 120 s margin)
@@ -900,9 +903,13 @@ persistent spawned parse child owns LibreOffice, Java and the repairs for one
 document at a time, in its own session (`setsid`; LibreOffice runs in its own
 process group inside it) with Linux `oom_score_adj` 1000 and a work directory
 `slot-N` under `CAPY_PARSE_WORK_DIR` that is wiped when the child is respawned.
-Mode-0600 temporary files carry the source, the pickled result and, for the
-OCR stage, the parsed PDF; small pipe messages carry only status, paths and the
-text-less page list. A handed-off document's blocks stay in its result file
+Mode-0600 temporary files carry the source, the result (JSON, then the
+repaired PDF and page-image bytes, each after its length) and, for the OCR
+stage, the parsed PDF; small pipe messages carry only status, paths and the
+text-less page list. Children answer in JSON, and the API never unpickles
+anything a child writes. The errors it classifies (a Java timeout or kill, a
+failed LibreOffice conversion, a format mismatch, the page cap) keep their kind
+by name; any other arrives as a runtime error naming its type. A handed-off document's blocks stay in its result file
 until the OCR stage finishes. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
 1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work
@@ -946,7 +953,8 @@ trusted SHA-256, writing a job-scoped source file into the shared volume.
 The parser reads that local key and atomically writes
 `artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
 file directly. That local atomic ZIP is the required parser-to-ingest handoff
-(`capy-parser-bundle-v5`: `manifest.json` with the receipt, `content_list.json`,
+(`capy-parser-bundle-v5`: `manifest.json` with the receipt and the SHA-256 of
+the source bytes parsed, `content_list.json`,
 `refinement.json` with frozen furniture and Office page evidence, and
 `parsed.pdf` only for repaired native PDF sources, and an optional
 `page1.png`, page 1 of the PDF the parse held, 200 px wide, for the file's
@@ -961,7 +969,8 @@ other entry. Office bundles contain no PDF. The parser freezes page text and vis
 discarding the temporary conversion, preserving downstream confidence/heading checks.
 
 After the coordinator verifies the local ZIP's size, checksum, archive bounds,
-manifest identity, content list, refinement, and Office evidence, it atomically
+manifest identity (schema, parser release, source fingerprint and the SHA-256
+of the source bytes it sent), content list, refinement, and Office evidence, it atomically
 enqueues the ingest continuation with that local descriptor. No document parse
 output is uploaded to B2. Ready database donors reuse indexed chunks and
 compatible embeddings independently of the local artifact. When neither a usable
@@ -975,7 +984,9 @@ deletes it once its job row is terminal: after committed success (indexing,
 identical-content reuse, donor reuse or source publication), terminal failure,
 supersession, or final lease reaping. Before that, a retry of the creating
 parse job finds it and recovers its receipt, and a concurrent job for identical
-bytes reuses it without one. Because the key is fingerprint-addressed, the
+bytes reuses it without one. A bundle found this way passes the same checks as
+a fresh one: if its manifest names other source bytes it counts as missing, is
+deleted with its receipt unused, and the job parses again. Because the key is fingerprint-addressed, the
 deletion skips a bundle another pending or running job still names; that job
 deletes it when it finishes. A bundle deleted under a concurrent job anyway
 takes the one-time return to parsing above.

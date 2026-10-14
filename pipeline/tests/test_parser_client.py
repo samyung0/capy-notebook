@@ -14,12 +14,13 @@ import pytest
 from pipeline.parse import parser_client
 
 FAST_VERSION = parser_client.parser_version(parser_client.ROUTE_FAST)
+SOURCE_SHA256 = "aa" * 32
 
 
 def _descriptor(**overrides) -> dict:
     base = {
         "source_key": "sources/source-1",
-        "source_sha256": "aa" * 32,
+        "source_sha256": SOURCE_SHA256,
         "route": parser_client.ROUTE_FAST,
     }
     base.update(overrides)
@@ -37,6 +38,7 @@ def _artifact_zip(
     schema: str | None = None,
     receipt_request_id: str = "",
     measurements: dict | None = None,
+    source_sha256: str = SOURCE_SHA256,
 ) -> bytes:
     path.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(path, "w") as archive:
@@ -47,6 +49,7 @@ def _artifact_zip(
                     "schema": schema or parser_client.ARTIFACT_SCHEMA,
                     "parser_version": parser_version or FAST_VERSION,
                     "source_fingerprint": fingerprint,
+                    "source_sha256": source_sha256,
                     **(
                         {
                             "parse_receipt": {
@@ -477,6 +480,7 @@ def _install_artifact(monkeypatch, tmp_path: Path, **zip_kwargs) -> dict:
     return {
         "key": key,
         "fingerprint": fingerprint,
+        "source_sha256": SOURCE_SHA256,
         "size": len(blob),
         "sha256": hashlib.sha256(blob).hexdigest(),
     }
@@ -684,6 +688,67 @@ def test_extract_rejects_checksum_size_and_expansion_mismatches(
         parser_client._extract(artifact, raw, FAST_VERSION)
 
 
+@pytest.mark.parametrize("cached", [True, False])
+def test_a_bundle_for_other_source_bytes_is_discarded_unused(
+    tmp_path: Path, monkeypatch, parser_url, cached: bool
+):
+    """Cached or fresh, a bundle whose manifest names another source's SHA-256
+    counts as missing: it is deleted before the handoff, its receipt is not
+    recorded, and the next attempt parses again."""
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    key, fingerprint = parser_client.artifact_identity(_descriptor())
+    path = parser_client._shared_path(key)
+    blob = _artifact_zip(
+        path,
+        fingerprint=fingerprint,
+        source_sha256="bb" * 32,
+        receipt_request_id="job-1",
+        measurements={"_page_count": 9},
+    )
+    measured: list[dict] = []
+    monkeypatch.setattr(
+        parser_client.obs,
+        "record_parse_usage",
+        lambda **values: measured.append(values),
+    )
+    if not cached:
+        _stub_request(
+            monkeypatch,
+            _Resp(
+                200,
+                {
+                    "artifact": {
+                        "key": key,
+                        "size": len(blob),
+                        "sha256": hashlib.sha256(blob).hexdigest(),
+                    }
+                },
+            ),
+        )
+
+    artifact = parser_client.ensure_artifact(_descriptor(), "doc.pdf", "job-1")
+    assert artifact.get("cached", False) is cached
+    with pytest.raises(parser_client.ParserClientError, match="source mismatch"):
+        parser_client.validate_artifact(
+            artifact, route=parser_client.ROUTE_FAST, office=False
+        )
+    assert not path.exists()
+    assert measured == []
+
+    # The continuation checks the same binding on the bundle it extracts.
+    _artifact_zip(path, fingerprint=fingerprint, source_sha256="bb" * 32)
+    with pytest.raises(parser_client.ParserClientError, match="source mismatch"):
+        parser_client._extract(
+            {
+                **artifact,
+                "size": path.stat().st_size,
+                "sha256": parser_client._sha256_file(path),
+            },
+            tmp_path / "raw",
+            FAST_VERSION,
+        )
+
+
 def test_extract_rejects_stale_version_and_wrong_source(tmp_path: Path, monkeypatch):
     raw = tmp_path / "raw"
     raw.mkdir()
@@ -717,6 +782,7 @@ def test_parse_to_bundle_replaces_a_corrupt_cached_artifact(
         return {
             "key": key,
             "fingerprint": "fp",
+            "source_sha256": SOURCE_SHA256,
             "size": len(blob),
             "sha256": hashlib.sha256(blob).hexdigest(),
             "cached": calls == 1,
