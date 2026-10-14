@@ -1472,8 +1472,9 @@ in use. The two documents count together against the material's limits: each
 room holds the other's metrics (`PeerMetrics`), and Go refuses a quiz
 projection over a limit unless it shrank. Admission checks structure, value
 caps and counts only (`collaboration-rs/crates/items/src/quiz.rs`): texts,
-units, labels and attributions (`QUESTION_METADATA_MAX`), image sizes and
-ids, whole marks, list and table counts, questions, parts per question and per
+units, labels and attributions (`QUESTION_METADATA_MAX`), image and graph
+descriptions (`QUESTION_DESCRIPTION_MAX`, 500 in quizzes and notes; the bank
+keeps `QUESTION_TEXT_MAX`, Epo 2026-10-14), image sizes and ids, whole marks, list and table counts, questions, parts per question and per
 quiz, open parts, marking items, ticks and matching pairs, and each chart,
 plot and graph value against its kind's caps (`notes::questions::figure_caps`,
 sizes only: an unfinished figure is admitted; the block's type and value are

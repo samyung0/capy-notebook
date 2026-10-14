@@ -3,7 +3,12 @@ import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
 import { quantityValuePattern } from './quantity';
-import { CHART_KINDS, gapNumbers, type Question } from './types';
+import {
+  CHART_KINDS,
+  gapNumbers,
+  type Question,
+  type QuestionBlock,
+} from './types';
 
 const letterStart = /^[A-Za-z]/;
 const svgStart = /^\s*<svg[\s>]/;
@@ -555,6 +560,8 @@ export function validateQuestion(
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
     if (block.type !== 'image' && block.type !== 'graph') continue;
+    if (!(policy.bank || descriptionFits(block)))
+      throw new CopyError(m.question_validation_text_too_long());
     // Bank figures must be hosted bank assets; quiz figures are editor assets,
     // or a copied bank question's link under the deployment's BANK_ASSETS_URL
     // (VITE_BANK_ASSETS_URL, scripts/env/config.py). Outside Vite (the site
@@ -574,6 +581,15 @@ export function validateQuestion(
       throw new CopyError(m.question_validation_upload_graphs());
   }
   return question;
+}
+
+/** An image's or graph's description within QUESTION_DESCRIPTION_MAX, the
+ * bound in quizzes and notes; bank questions take QUESTION_TEXT_MAX. */
+export function descriptionFits(block: QuestionBlock): boolean {
+  return (
+    (block.type !== 'image' && block.type !== 'graph') ||
+    [...block.description].length <= limits.QUESTION_DESCRIPTION_MAX
+  );
 }
 
 /** Open parts earn none, half or all of each item's marks, summing to `awarded`. */

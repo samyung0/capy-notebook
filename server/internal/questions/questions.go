@@ -529,7 +529,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if err := keys(b, "type image width height description", "attribution"); err != nil {
 			return err
 		}
-		if err := imageFields(b); err != nil {
+		if err := imageFields(b, policy); err != nil {
 			return err
 		}
 		im, err := obj(b["image"])
@@ -557,7 +557,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if err := keys(b, "type board elements image width height description", "attribution"); err != nil {
 			return err
 		}
-		if err := imageFields(b); err != nil {
+		if err := imageFields(b, policy); err != nil {
 			return err
 		}
 		if err := graph(b); err != nil {
@@ -598,14 +598,18 @@ func bankBase(policy Policy) string {
 	return QuizBankAssetsURL
 }
 
-func imageFields(b map[string]any) error {
+func imageFields(b map[string]any, policy Policy) error {
 	for _, key := range []string{"width", "height"} {
 		n, ok := num(b[key])
 		if !ok || n <= 0 || n > fieldlimits.QuestionImageDimension || n != math.Trunc(n) {
 			return fail("invalid image dimensions")
 		}
 	}
-	if !str(b["description"], fieldlimits.QuestionText, true) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
+	description := fieldlimits.QuestionDescription
+	if policy.Bank {
+		description = fieldlimits.QuestionText
+	}
+	if !str(b["description"], description, true) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
 		return fail("invalid image description")
 	}
 	return nil

@@ -298,6 +298,7 @@ pub fn figure_block(kind: &str, block: &Value) -> Check {
         return fail("embed block type must match node type");
     }
     let parsed = questions::block(block).map_err(ValidationError)?;
+    parsed.description_fits(false).map_err(ValidationError)?;
     if parsed.kind == "graph" && matches!(parsed.image, Some(("url", _))) {
         // The TS raises this inside its try and re-wraps the message.
         return fail("invalid material document: note graphs require inline SVG");

@@ -341,12 +341,15 @@ function ChartEditor({
 }
 
 export function BlockEditor({
+  bank,
   block,
   onChange,
   uploadAsset,
   onBusyChange,
   onInvalidChange,
 }: {
+  /** A bank question: figure descriptions take the bank's longer bound. */
+  bank?: boolean;
   block: QuestionBlock;
   onChange: (block: QuestionBlock) => void;
   uploadAsset?: UploadQuestionAsset;
@@ -358,6 +361,9 @@ export function BlockEditor({
   const [cellTools, setCellTools] = useState<HTMLDivElement | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const descriptionMax = bank
+    ? limits.QUESTION_TEXT_MAX
+    : limits.QUESTION_DESCRIPTION_MAX;
   if (block.type === 'text')
     return (
       <div className="space-y-3">
@@ -411,6 +417,7 @@ export function BlockEditor({
   if (block.type === 'graph')
     return (
       <GraphEditor
+        descriptionMax={descriptionMax}
         onChange={onChange}
         onInvalidChange={onInvalidChange}
         value={block}
@@ -460,13 +467,13 @@ export function BlockEditor({
         )}
         <Field
           count={{
-            max: limits.QUESTION_TEXT_MAX,
+            max: descriptionMax,
             value: textLength(block.description),
           }}
           label={m.question_ui_description()}
         >
           <FieldInput
-            maxLength={limits.QUESTION_TEXT_MAX}
+            maxLength={descriptionMax}
             onChange={(event) =>
               onChange({ ...block, description: event.target.value })
             }

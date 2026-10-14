@@ -56,10 +56,13 @@ function parsedRow(latex: string, ascii: string) {
 /** Desmos-style graph editor: typed rows on the left, the live board on the
  * right; phones stack the board on top. The board frames what Save exports. */
 export function GraphEditor({
+  descriptionMax,
   value,
   onChange,
   onInvalidChange,
 }: {
+  /** The description's bound: the bank's longer one or everyone else's. */
+  descriptionMax: number;
   value: GraphBlock;
   onChange: (value: GraphBlock) => void;
   /** Rows that cannot be drawn keep the dialog from saving. */
@@ -339,13 +342,13 @@ export function GraphEditor({
           <div className="translate-x-0.5">
             <Field
               count={{
-                max: limits.QUESTION_TEXT_MAX,
+                max: descriptionMax,
                 value: textLength(value.description),
               }}
               label={m.question_ui_description()}
             >
               <FieldInput
-                maxLength={limits.QUESTION_TEXT_MAX}
+                maxLength={descriptionMax}
                 onChange={(event) =>
                   onChange({ ...value, description: event.target.value })
                 }

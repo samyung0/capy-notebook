@@ -18,13 +18,14 @@ use serde_json::{Map, Value};
 // (Go `fieldlimits.QuestionBounds`).
 pub use crate::catalog::{
     QUESTION_ANSWERS_MAX, QUESTION_ASSET_URL_MAX, QUESTION_BLOCKS_MAX, QUESTION_CHART_LABELS_MAX,
-    QUESTION_CHART_SERIES_MAX, QUESTION_GRAPH_ELEMENTS_MAX, QUESTION_GRAPH_POLYGON_MAX,
-    QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX,
-    QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
-    QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX,
-    QUESTION_SVG_BYTES_MAX, QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX,
-    QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX,
-    QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_CHART_SERIES_MAX, QUESTION_DESCRIPTION_MAX, QUESTION_GRAPH_ELEMENTS_MAX,
+    QUESTION_GRAPH_POLYGON_MAX, QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX,
+    QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX, QUESTION_MARKS_MAX,
+    QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_MARKS_MAX,
+    QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX, QUESTION_SVG_BYTES_MAX,
+    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_UNIT_MAX,
+    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
+    QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -383,6 +384,21 @@ pub struct Block {
     pub text: Option<String>,
     /// `image.url` (trimmed), `image.assetId` or `image.svg`.
     pub image: Option<(&'static str, String)>,
+    /// An image's or graph's description (trimmed).
+    pub description: Option<String>,
+}
+
+impl Block {
+    /// The description within its bound: QUESTION_DESCRIPTION_MAX in
+    /// quizzes and notes, the bank's QUESTION_TEXT_MAX (`block` checked).
+    pub fn description_fits(&self, bank: bool) -> Check {
+        match &self.description {
+            Some(description) if !bank && code_points(description) > QUESTION_DESCRIPTION_MAX => {
+                fail("block: Text is too long.")
+            }
+            _ => Ok(()),
+        }
+    }
 }
 
 /// `graphElement`.
@@ -543,6 +559,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "text".into(),
                 text: Some(text),
                 image: None,
+                description: None,
             })
         }
         "table" => {
@@ -567,6 +584,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "table".into(),
                 text: None,
                 image: None,
+                description: None,
             })
         }
         "chart" => {
@@ -621,6 +639,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "chart".into(),
                 text: None,
                 image: None,
+                description: None,
             })
         }
         "plot" => {
@@ -672,6 +691,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "plot".into(),
                 text: None,
                 image: None,
+                description: None,
             })
         }
         "image" => {
@@ -684,11 +704,12 @@ pub fn block(value: &Value) -> Result<Block, String> {
             let image = figure(&map["image"], false)?;
             image_size(map, what)?;
             optional(map, "attribution", |v| meta(v, what))?;
-            text(&map["description"], what)?;
+            let description = text(&map["description"], what)?;
             Ok(Block {
                 kind: "image".into(),
                 text: None,
                 image: Some(image),
+                description: Some(description),
             })
         }
         "graph" => {
@@ -721,7 +742,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
             let image = figure(&map["image"], true)?;
             image_size(map, what)?;
             optional(map, "attribution", |v| meta(v, what))?;
-            text(&map["description"], what)?;
+            let description = text(&map["description"], what)?;
             let (left, top, right, bottom) = (bbox[0], bbox[1], bbox[2], bbox[3]);
             if left >= right || bottom >= top {
                 return fail("Graph bounds must have positive width and height.");
@@ -768,6 +789,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "graph".into(),
                 text: None,
                 image: Some(image),
+                description: Some(description),
             })
         }
         _ => fail(format!("{what}: invalid type")),
@@ -872,7 +894,13 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
         }
         "graph" => {
             cap_meta(map, "attribution", what)?;
-            cap_text(map.get("description"), what)?;
+            if map
+                .get("description")
+                .and_then(Value::as_str)
+                .is_some_and(|d| code_points(d) > QUESTION_DESCRIPTION_MAX)
+            {
+                return fail(format!("{what}: description too long"));
+            }
             for element in objects(cap_list(
                 map.get("elements"),
                 QUESTION_GRAPH_ELEMENTS_MAX,
@@ -1231,6 +1259,7 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
         if block.kind != "image" && block.kind != "graph" {
             continue;
         }
+        block.description_fits(policy.bank)?;
         let refused = match &block.image {
             Some(("url", url)) => !hosted_asset(url, host),
             Some(("assetId", _)) => policy.bank,

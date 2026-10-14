@@ -253,8 +253,8 @@ function QuestionDialogSession({
   );
   // The row an outline click asked to bring into view; `seq` repeats a click.
   const [reveal, setReveal] = useState<{ row: Row; seq: number } | null>(null);
-  // Runs after the click's render, once the Body tab or the worked solution
-  // holding the target is on screen.
+  // Runs after the click's render, once the Body tab holding the target is on
+  // screen.
   useEffect(() => {
     if (!reveal) return;
     const { row } = reveal;
@@ -280,7 +280,6 @@ function QuestionDialogSession({
   );
   const pending = isSubmitting || savingBlock || reloading;
   const [addOpen, setAddOpen] = useState(false);
-  const [expandedSolutions, setExpandedSolutions] = useState<string[]>([]);
 
   const changePart = (part: QuestionPart) =>
     setDraft({
@@ -580,8 +579,6 @@ function QuestionDialogSession({
       item.kind === 'block'
         ? sectionBlocks(draft, item.location)[item.location.index]
         : undefined;
-    const expanded =
-      item.kind === 'solution' && expandedSolutions.includes(item.partId);
     // Stem rows sit flush; a part's rows share the column its label sits in.
     const indented =
       labelled && (item.kind !== 'block' || !!item.location.partId);
@@ -619,22 +616,15 @@ function QuestionDialogSession({
         }}
       >
         <button
-          aria-expanded={item.kind === 'solution' ? expanded : undefined}
           className={cn(
             'grid w-full min-w-0 py-1.5 pr-9 pl-2 text-left text-sm md:pr-2',
-            indented ? 'grid-cols-[1.5rem_minmax(0,1fr)]' : 'grid-cols-1'
+            indented ? 'grid-cols-[1.5rem_minmax(0,1fr)]' : 'grid-cols-1',
+            // A header row: tall enough for its menu button.
+            item.kind === 'solution' && 'min-h-9 content-center'
           )}
           onClick={() => {
-            if (item.kind === 'solution') {
-              setExpandedSolutions((current) =>
-                expanded
-                  ? current.filter((id) => id !== item.partId)
-                  : [...current, item.partId]
-              );
-              return;
-            }
-            // Brings the block (or the part's answer) into view in the body;
-            // its editor opens from there.
+            // Brings the block (or the part's answer or worked solution) into
+            // view in the body; a block's editor opens from there.
             setSelected(item);
             setMobileTab('body');
             setReveal((current) => ({
@@ -650,16 +640,9 @@ function QuestionDialogSession({
             className={cn(
               'flex min-w-0 items-start gap-1.5',
               item.kind === 'part' && 'text-tint-accent-1-fg',
-              item.kind === 'solution' &&
-                '-translate-x-0.5 text-tint-accent-2-fg'
+              item.kind === 'solution' && 'text-tint-accent-2-fg'
             )}
           >
-            {item.kind === 'solution' && (
-              <Icon
-                className="mt-0.5 size-3 shrink-0"
-                name={expanded ? 'chevronDown' : 'chevronRight'}
-              />
-            )}
             <span className="line-clamp-2 min-w-0 break-words leading-tight">
               {block?.type === 'text' ? (
                 <TextView
@@ -1079,6 +1062,7 @@ function QuestionDialogSession({
             </h3>
             {shown.kind === 'block' ? (
               <BlockEditor
+                bank={policy === 'bank'}
                 block={shown.block}
                 onBusyChange={setSavingBlock}
                 onChange={(block) => editBlock(shown.location, block)}
@@ -1254,25 +1238,27 @@ function QuestionDialogSession({
                       mark: part.blocks.length ? undefined : mark,
                       meta: `${answerLabels[part.answer.type]()} · ${marksLabel(part.marks)}`,
                     })}
+                    {/* Learners only see what sits below the wave once they
+                        check their answer. */}
+                    <div className="wavy-rule mx-2 my-2.5 text-line-strong" />
                     {row(
                       { kind: 'solution', partId: part.id },
                       m.question_ui_worked_solution()
                     )}
-                    {expandedSolutions.includes(part.id) &&
-                      part.solution.map((block, index) =>
-                        row(
-                          {
-                            kind: 'block',
-                            location: {
-                              index,
-                              partId: part.id,
-                              solution: true,
-                            },
+                    {part.solution.map((block, index) =>
+                      row(
+                        {
+                          kind: 'block',
+                          location: {
+                            index,
+                            partId: part.id,
+                            solution: true,
                           },
-                          blockSummary(block),
-                          { meta: blockLabels[block.type]() }
-                        )
-                      )}
+                        },
+                        blockSummary(block),
+                        { meta: blockLabels[block.type]() }
+                      )
+                    )}
                   </div>
                 );
               })}
@@ -1298,26 +1284,43 @@ function QuestionDialogSession({
                 disabled
                 frameAnswer={(partId, answer) => {
                   const part = draft.parts.find((item) => item.id === partId);
-                  return part ? previewAnswer(part, answer) : answer;
+                  if (!part) return answer;
+                  // Editors see the worked solution, which learners only get
+                  // after checking, under the wave.
+                  return (
+                    <>
+                      {previewAnswer(part, answer)}
+                      {part.solution.length > 0 && (
+                        <section
+                          className="mt-6 space-y-3"
+                          data-row-key={rowKey({ kind: 'solution', partId })}
+                        >
+                          <div className="flex items-center gap-2 font-medium text-fg-muted text-xs">
+                            <span className="wavy-rule flex-1 text-line-strong" />
+                            <Icon className="size-4" name="viewOff" />
+                            {m.question_ui_hidden_until_checked()}
+                            <span className="wavy-rule flex-1 text-line-strong" />
+                          </div>
+                          <h4 className="font-semibold text-sm text-tint-accent-2-fg">
+                            {m.question_ui_worked_solution()}
+                          </h4>
+                          {part.solution.map((block, index) => (
+                            <div key={index}>
+                              {previewBlock(block, index, {
+                                partId,
+                                solution: true,
+                              })}
+                            </div>
+                          ))}
+                        </section>
+                      )}
+                    </>
+                  );
                 }}
                 question={draft}
                 questionNumber={questionNumber}
                 renderBlock={previewBlock}
               />
-              {selected?.kind === 'block' && selected.location.solution && (
-                <section className="mt-8">
-                  <h3 className="mb-4 font-semibold">
-                    {m.question_ui_worked_solution()}
-                  </h3>
-                  {sectionBlocks(draft, selected.location).map(
-                    (block, index) => (
-                      <div key={index}>
-                        {previewBlock(block, index, selected.location)}
-                      </div>
-                    )
-                  )}
-                </section>
-              )}
             </div>
           </div>
         )}

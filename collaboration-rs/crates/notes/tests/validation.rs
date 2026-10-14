@@ -423,3 +423,64 @@ fn a_plot_validates_as_go_validates_it() {
     embed(plot(|_| {})).unwrap();
     assert!(embed(plot(refused[0].1)).is_err());
 }
+
+/// An image's or graph's description holds QUESTION_DESCRIPTION_MAX in a
+/// quiz and a note, the bank's QUESTION_TEXT_MAX in the bank (Epo 2026-10-14).
+#[test]
+fn a_figure_description_holds_500_outside_the_bank() {
+    let max = questions::QUESTION_DESCRIPTION_MAX;
+    let question = |description: String, image: Value| {
+        json!({
+            "id": "q",
+            "labels": "letters",
+            "layout": "paper",
+            "parts": [{
+                "answer": { "correct": true, "type": "boolean" },
+                "blocks": [{ "text": "?", "type": "text" }],
+                "id": "p",
+                "marks": 1,
+                "solution": [{ "text": "Because.", "type": "text" }],
+            }],
+            "stem": [{
+                "description": description,
+                "height": 20,
+                "image": image,
+                "type": "image",
+                "width": 20,
+            }],
+        })
+    };
+    let quiz = Policy::default();
+    let asset = json!({ "assetId": "a1" });
+    questions::validate_question(&question("d".repeat(max), asset.clone()), &quiz).unwrap();
+    assert!(questions::validate_question(&question("d".repeat(max + 1), asset), &quiz).is_err());
+    let bank = Policy {
+        bank: true,
+        bank_assets_url: Some("https://bank.example/assets".into()),
+        ..Policy::default()
+    };
+    let hosted = json!({ "url": "https://bank.example/assets/a.png" });
+    questions::validate_question(&question("d".repeat(2 * max), hosted), &bank).unwrap();
+
+    let graph = |description: String| {
+        material::assert_canonical(
+            &[json!({
+                "block": {
+                    "board": { "axis": true, "bbox": [-5, 5, 5, -5], "grid": false },
+                    "description": description,
+                    "elements": [],
+                    "height": 190,
+                    "image": { "svg": "<svg xmlns=\"http://www.w3.org/2000/svg\"></svg>" },
+                    "type": "graph",
+                    "width": 320,
+                },
+                "children": [{ "text": "" }],
+                "id": "g1",
+                "type": "graph",
+            })],
+            "note",
+        )
+    };
+    graph("d".repeat(max)).unwrap();
+    assert!(graph("d".repeat(max + 1)).is_err());
+}

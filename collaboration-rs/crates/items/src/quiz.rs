@@ -1736,6 +1736,8 @@ fn text_cap(path: &[&str], open_part: bool) -> usize {
     match path {
         [KEYS_ROOT, _, "markscheme", _, "text"] => q::QUESTION_MARK_ITEM_MAX,
         [KEYS_ROOT, _, "accepted", _, "text"] if open_part => q::QUIZ_OPEN_ANSWER_MAX,
+        // An image block's description (a block's only text so named).
+        [.., "description"] => q::QUESTION_DESCRIPTION_MAX,
         _ => q::QUESTION_TEXT_MAX,
     }
 }
@@ -1964,13 +1966,16 @@ fn check_blocks<T: ReadTxn>(txn: &T, map: Option<&MapRef>) -> Result<(), String>
     let blocks = ordered(txn, map);
     check_count(blocks.len(), q::QUESTION_BLOCKS_MAX, "a section")?;
     for block in &blocks {
-        for field in ["text", "description"] {
-            check_text(
-                &text_at(txn, &block.map, field),
-                q::QUESTION_TEXT_MAX,
-                "a question text",
-            )?;
-        }
+        check_text(
+            &text_at(txn, &block.map, "text"),
+            q::QUESTION_TEXT_MAX,
+            "a question text",
+        )?;
+        check_text(
+            &text_at(txn, &block.map, "description"),
+            q::QUESTION_DESCRIPTION_MAX,
+            "a description",
+        )?;
         for field in ["label", "attribution"] {
             if let Some(meta) = str_at(txn, &block.map, field)
                 && meta.encode_utf16().count() > q::QUESTION_METADATA_MAX

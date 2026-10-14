@@ -1,6 +1,7 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { Question, QuestionBlock } from '@/api/types';
 import {
+  descriptionFits,
   questionBlockSchema,
   validateQuestion,
   validateQuestions,
@@ -253,7 +254,8 @@ function validateCustomElement(element: MaterialElement): boolean {
       return (
         result.success &&
         result.data.type === element.type &&
-        (result.data.type !== 'graph' || 'svg' in result.data.image)
+        (result.data.type !== 'graph' || 'svg' in result.data.image) &&
+        descriptionFits(result.data)
       );
     }
     case 'quiz': {

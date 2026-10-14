@@ -640,6 +640,26 @@ fn figures_past_their_caps_are_refused_at_admission() {
     );
     refused(
         Kind::Quiz,
+        |doc| figure(doc, "graph", json!({ "description": "d".repeat(501) })),
+        "description too long",
+    );
+    refused(
+        Kind::Quiz,
+        |doc| {
+            let stem = map_in(doc, &["questions", &question, "stem"]);
+            let block = stem.insert(&mut doc.transact_mut(), "b8", MapPrelim::default());
+            block.insert(&mut doc.transact_mut(), "order", "a6");
+            block.insert(&mut doc.transact_mut(), "type", "image");
+            block.insert(
+                &mut doc.transact_mut(),
+                "description",
+                TextPrelim::new("d".repeat(501)),
+            );
+        },
+        "a description holds at most 500",
+    );
+    refused(
+        Kind::Quiz,
         |doc| {
             let term = "x+".repeat(100) + "x";
             figure(

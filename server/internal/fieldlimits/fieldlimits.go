@@ -22,22 +22,25 @@ const (
 	ConversationTitle    = 60
 	ChatMessage          = 5_000
 	// Comment bounds the plain text of one note comment (its paragraphs joined).
-	Comment               = 3_000
-	LLMAPIKey             = 512
-	EventTitle            = 60
-	EventLocation         = 100
-	TaskTitle             = 80
-	LabelName             = 35
-	TagValue              = 35
-	Email                 = 254
-	UserName              = 60
-	PDFAnnotationText     = 2_000
-	QuestionCount         = 200
-	QuestionID            = 128
-	QuestionParts         = 26
-	QuestionBlocks        = 40
-	QuestionText          = 12_000
-	QuestionMetadata      = 1_000
+	Comment           = 3_000
+	LLMAPIKey         = 512
+	EventTitle        = 60
+	EventLocation     = 100
+	TaskTitle         = 80
+	LabelName         = 35
+	TagValue          = 35
+	Email             = 254
+	UserName          = 60
+	PDFAnnotationText = 2_000
+	QuestionCount     = 200
+	QuestionID        = 128
+	QuestionParts     = 26
+	QuestionBlocks    = 40
+	QuestionText      = 12_000
+	QuestionMetadata  = 1_000
+	// QuestionDescription bounds an image's or graph's description outside
+	// the bank (quizzes and notes); bank questions take QuestionText.
+	QuestionDescription   = 500
 	QuestionAnswers       = 100
 	QuestionMarkscheme    = 20
 	QuestionMarkItem      = 1_000
@@ -83,6 +86,7 @@ var QuestionBounds = map[string]int{
 	"QUESTION_BLOCKS_MAX":          QuestionBlocks,
 	"QUESTION_TEXT_MAX":            QuestionText,
 	"QUESTION_METADATA_MAX":        QuestionMetadata,
+	"QUESTION_DESCRIPTION_MAX":     QuestionDescription,
 	"QUESTION_ANSWERS_MAX":         QuestionAnswers,
 	"QUESTION_MARKSCHEME_MAX":      QuestionMarkscheme,
 	"QUESTION_MARK_ITEM_MAX":       QuestionMarkItem,

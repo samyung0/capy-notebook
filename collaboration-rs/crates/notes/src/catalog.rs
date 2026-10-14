@@ -17,6 +17,7 @@ pub const QUESTION_BLOCKS_MAX: usize = 40;
 pub const QUESTION_CHART_LABELS_MAX: usize = 50;
 pub const QUESTION_CHART_SERIES_MAX: usize = 8;
 pub const QUESTION_COUNT_MAX: usize = 200;
+pub const QUESTION_DESCRIPTION_MAX: usize = 500;
 pub const QUESTION_GRAPH_ELEMENTS_MAX: usize = 60;
 pub const QUESTION_GRAPH_POLYGON_MAX: usize = 12;
 pub const QUESTION_GRAPH_TERM_MAX: usize = 200;
