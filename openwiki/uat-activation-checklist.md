@@ -228,6 +228,10 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - `COLLABORATION_UAT_PUBLICATION_HOLD` is `true` in UAT's Coolify variables and
   blank in production's (the renderer refuses a production value). Without it
   the Office refusal journey's publication is never held and the journey fails.
+- `RETRIEVAL_UAT_SCRIPTED_TOOLS` is `true` in UAT's Coolify variables and blank
+  in production's, and the retrieval container is running (it refuses to start
+  with the switch unless `SENTRY_ENVIRONMENT=uat`). Without it the chat
+  journey's scripted turns reach the model and the journey fails.
 - Backend `X-Capy-Release`, SPA `capy-release` and all selected ingest container
   revision labels match the release. The state's `active` agrees, `current`
   resolves to its snapshot and `pending` is absent after success.

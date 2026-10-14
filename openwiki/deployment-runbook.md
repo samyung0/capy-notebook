@@ -2141,6 +2141,10 @@ authentication strategy.
    marker through the file rename API, so it holds only files its actor can
    edit. It is UAT-only: the manifest scopes it to `uat`, production renders
    it blank, and the renderer refuses a production value.
+   Set `RETRIEVAL_UAT_SCRIPTED_TOOLS=true` for the chat journey's scripted
+   tool turns (`openwiki/agentic-retrieval.md`, Configuration surface); it is
+   UAT-only in the same way, and retrieval refuses to start with it unless
+   `SENTRY_ENVIRONMENT=uat`.
 6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
    following the route and hostname transition order in §1. No summary storage service is needed.
