@@ -301,16 +301,18 @@ async def _run_turn(
 
     ctx.pending_sources = await pending.load(ctx.workspace_id, ctx.file_ids)
     prior = await evidence.history_turns(history, ctx)
+    schemas = tools.schemas_for(ctx)
     messages = chat_prompts.chat_messages(
         locale=locale,
         checkpoint=checkpoint,
         history=prior,
         query=query,
         library=ctx.library,
+        # A viewer is offered no write tool, and told so.
+        writes=any(s["function"]["name"] in skills.REQUIRES for s in schemas),
     )
     query_msg = messages[-1]
 
-    schemas = tools.schemas_for(ctx)
     _, pending_reserve, pending_omitted = pending.reserve(
         messages, ctx.pending_sources, spec, schemas
     )
@@ -374,6 +376,9 @@ async def _run_turn(
         terminal_call = terminal_pending
         terminal_pending = False
         building = writes > 0
+        # A turn that can write gets the build wording of the notices: writes
+        # are refused until the writing skill is in the request.
+        writing = building or skills.EDITING in skills.retained(messages)
         stall_limit = STALL_RESPONSES + WRITE_ERROR_GRACE * min(
             write_errors, WRITE_ERROR_GRACE_MAX
         )
@@ -427,14 +432,17 @@ async def _run_turn(
                 # gone; a refused write then has no response left to redo it.
                 allowance = (
                     f"\nResponses remaining this turn, this one included: {planning_cap - step}; "
-                    "the last has tools off. Write before then: a successful write "
-                    "lifts this limit."
+                    "the last has tools off."
+                ) + (
+                    " Write before then: a successful write lifts this limit."
+                    if writing
+                    else ""
                 )
             context_tokens = estimate_tokens(
                 str(
-                    turn_context.message(ctx, final=tools_off, allowance=allowance)[
-                        "content"
-                    ]
+                    turn_context.message(
+                        ctx, final=tools_off, allowance=allowance, writing=writing
+                    )["content"]
                 )
             )
             outside = image_tokens + context_tokens
@@ -481,7 +489,9 @@ async def _run_turn(
             ctx.skills_read = skills.retained(messages)
             _append_turn_context(
                 messages,
-                turn_context.message(ctx, final=tools_off, allowance=allowance),
+                turn_context.message(
+                    ctx, final=tools_off, allowance=allowance, writing=writing
+                ),
             )
             request_messages = capture.inject_images(
                 pending.inject(messages, pending_message),
@@ -754,11 +764,16 @@ async def _run_turn(
                 else step == planning_cap - 2
             )
             if last_with_tools:
+                notice = (
+                    LAST_TOOLS_NOTICE
+                    if writes or skills.EDITING in skills.retained(messages)
+                    else LAST_ANSWER_NOTICE
+                )
                 for message in messages[results_from:]:
                     if message.get("role") == "tool" and isinstance(
                         message.get("content"), str
                     ):
-                        message["content"] += LAST_TOOLS_NOTICE
+                        message["content"] += notice
             if exhausted and state and state.terminal_call_allowed:
                 terminal_pending = True
             continue
@@ -855,43 +870,64 @@ async def _run_turn(
     yield done
 
 
-# Under every tool result of the response before a turn's last one with tools.
+# Under every tool result of the response before a turn's last one with tools:
+# a turn that can write is told to write, one that cannot to answer.
 LAST_TOOLS_NOTICE = (
     "\n\nYour next response is the last one with tools in this turn. Write what "
     "you have now (create or edit the material), or the turn ends without it."
+)
+LAST_ANSWER_NOTICE = (
+    "\n\nYour next response is the last one with tools in this turn. Answer the "
+    "learner with what you have found."
 )
 
 # The answer component the model sometimes calls as a tool (GLM, 2026-10-14).
 ASK_USER = "AskUser"
 
 
+# The answer format's limit on questions (prompts/openui_lang.txt).
+ASK_USER_MAX = 3
+
+
 def ask_user_answer(calls: list[ToolCall], prose: str) -> str | None:
-    """A response that calls AskUser as a tool meant to end the turn on that
-    question: the answer program with its prose and the AskUser component, or
-    None when no such call carries a question (Epo 2026-10-14)."""
-    call = next((c for c in calls if c.name == ASK_USER), None)
-    if call is None:
-        return None
-    try:
-        args = json.loads(call.arguments or "{}")
-    except json.JSONDecodeError:
-        return None
-    question = args.get("question") if isinstance(args, dict) else None
-    if not isinstance(question, str) or not question.strip():
-        return None
-    choices = args.get("choices")
-    if isinstance(choices, str):  # sent as JSON text inside the arguments
+    """A response that calls AskUser as a tool meant to end the turn on its
+    questions: the answer program with its prose and one AskUser component per
+    call that carries a question, at most ASK_USER_MAX, or None when none does
+    (Epo 2026-10-14)."""
+    asks = []
+    for call in calls:
+        if call.name != ASK_USER or len(asks) == ASK_USER_MAX:
+            continue
         try:
-            choices = json.loads(choices)
+            args = json.loads(call.arguments or "{}")
         except json.JSONDecodeError:
-            choices = [choices]
-    choices = (
-        [str(c) for c in choices if str(c).strip()] if isinstance(choices, list) else []
-    )
-    ask = f"ask = AskUser({json.dumps(question.strip(), ensure_ascii=False)}, {json.dumps(choices, ensure_ascii=False)})"
-    if not prose:
-        return f"root = Answer([ask])\n{ask}"
-    return f"root = Answer([intro, ask])\nintro = Md({json.dumps(prose, ensure_ascii=False)})\n{ask}"
+            continue
+        question = args.get("question") if isinstance(args, dict) else None
+        if not isinstance(question, str) or not question.strip():
+            continue
+        choices = args.get("choices")
+        if isinstance(choices, str):  # sent as JSON text inside the arguments
+            try:
+                choices = json.loads(choices)
+            except json.JSONDecodeError:
+                choices = [choices]
+        choices = (
+            [str(c) for c in choices if str(c).strip()]
+            if isinstance(choices, list)
+            else []
+        )
+        asks.append(
+            f"AskUser({json.dumps(question.strip(), ensure_ascii=False)}, "
+            f"{json.dumps(choices, ensure_ascii=False)})"
+        )
+    if not asks:
+        return None
+    names = [f"ask{n}" for n in range(1, len(asks) + 1)]
+    lines = [f"{name} = {ask}" for name, ask in zip(names, asks, strict=True)]
+    if prose:
+        names.insert(0, "intro")
+        lines.insert(0, f"intro = Md({json.dumps(prose, ensure_ascii=False)})")
+    return f"root = Answer([{', '.join(names)}])\n" + "\n".join(lines)
 
 
 def _append_turn_context(

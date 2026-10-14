@@ -23,38 +23,43 @@ from . import contract, deck
 class Skill:
     when: str
     text: Callable[[bool], str]  # library on -> instructions
+    # The output-files preference (mainFormat) whose chapter explainers it writes.
+    builds: str | None = None
 
 
 EDITING = "editing"
-BUILDING = "workspace_building"
-DECK = "deck"
+NOTE_BUILDING = "note_building"
+DECK_BUILDING = "deck_building"
 SKILLS: dict[str, Skill] = {
     EDITING: Skill(
         prompts.EDITING_WHEN, lambda library: prompts.editing(library=library)
     ),
-    BUILDING: Skill(
-        prompts.BUILDING_WHEN,
-        lambda library: prompts.workspace_building(contract.FORMATS, library=library),
+    NOTE_BUILDING: Skill(
+        prompts.NOTE_BUILDING_WHEN,
+        lambda library: prompts.note_building(contract.FORMATS, library=library),
+        builds="note",
     ),
-    DECK: Skill(
-        prompts.DECK_WHEN,
-        lambda _library: prompts.deck(
+    DECK_BUILDING: Skill(
+        prompts.DECK_BUILDING_WHEN,
+        lambda _library: prompts.deck_building(
             prompts.deck_rules(deck.VIEWBOX),
             deck.DEFAULT_STYLE,
             deck.style_text(deck.DEFAULT_STYLE),
         ),
+        builds="deck",
     ),
 }
 
-# The skills each write needs. edit_document needs workspace_building only for
-# the commands that carry its formats.
+# The skills each write needs: editing for every write, note_building for note
+# markdown (a note created, or edit_document's commands that carry it),
+# deck_building for a deck.
 REQUIRES: dict[str, tuple[str, ...]] = {
-    "create_material": (EDITING, BUILDING),
-    "add_questions": (EDITING, BUILDING),
-    "add_question_media": (EDITING, BUILDING),
-    "edit_document": (EDITING, BUILDING),
-    "create_deck": (EDITING, DECK),
-    "write_slide": (EDITING, DECK),
+    "create_material": (EDITING, NOTE_BUILDING),
+    "add_questions": (EDITING,),
+    "add_question_media": (EDITING,),
+    "edit_document": (EDITING, NOTE_BUILDING),
+    "create_deck": (EDITING, DECK_BUILDING),
+    "write_slide": (EDITING, DECK_BUILDING),
 }
 FORMAT_COMMANDS = frozenset({"insert_markdown", "replace_block"})
 
@@ -64,11 +69,22 @@ _HEADER_LINE = re.compile(r"^# Skill: (\S+)$", re.MULTILINE)
 _CARRIED = "Not applied: this write needs the "
 
 
-def catalog(names: Iterable[str] = SKILLS) -> str:
-    """Appended to the read_skill description: the skills this turn offers."""
+def catalog(main_format: str, names: Iterable[str] = SKILLS) -> str:
+    """Appended to the read_skill description: the skills this turn offers,
+    the building skill of the output-files preference as the one for the
+    chapters and the other for a request that asks for its format."""
     return "\n\nSkills:\n" + "\n".join(
-        catalog_line(name, SKILLS[name].when) for name in names
+        catalog_line(name, when(name, main_format)) for name in names
     )
+
+
+def when(name: str, main_format: str) -> str:
+    skill = SKILLS[name]
+    if skill.builds is None:
+        return skill.when
+    if skill.builds == main_format:
+        return f"{skill.when}; the chapters' main explainers are {skill.builds}s"
+    return f"{skill.when}, only when the request asks for a {skill.builds}"
 
 
 def catalog_line(name: str, when: str) -> str:
@@ -102,11 +118,16 @@ def missing(
 ) -> list[str]:
     """The skills a write needs and has not read."""
     needs = requires.get(name, ())
-    if name == "edit_document" and not any(
-        isinstance(command, dict) and command.get("type") in FORMAT_COMMANDS
-        for command in args.get("commands") or []
-    ):
-        needs = tuple(n for n in needs if n != BUILDING)
+    note_markdown = (
+        args.get("kind") == "note"
+        if name == "create_material"
+        else any(
+            isinstance(command, dict) and command.get("type") in FORMAT_COMMANDS
+            for command in args.get("commands") or []
+        )
+    )
+    if name in ("create_material", "edit_document") and not note_markdown:
+        needs = tuple(n for n in needs if n != NOTE_BUILDING)
     return [n for n in needs if n not in read]
 
 

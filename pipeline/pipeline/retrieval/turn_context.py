@@ -17,11 +17,19 @@ from .tools import ToolContext
 
 HEADER = "Turn context (current at this step; a later one replaces it):"
 
+# The last response's notice, for a turn that can write (a write landed or the
+# writing skill is in the request; writes are refused without it) and for one
+# that only answers (Epo 2026-10-14).
 FINAL_NOTICE = (
     "\nTools are off for this response. Answer now: the materials made so far "
     "and what each covers, what is left of the request, and what the learner can "
     "ask next to continue."
 )
+FINAL_ANSWER_NOTICE = (
+    "\nTools are off for this response. Answer now with what you found, and say "
+    "what is still open."
+)
+UNSAVED_DECK = " A deck with slides left unwritten was not saved: say so."
 
 
 def _open_line(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
@@ -49,7 +57,7 @@ def _chapter_lines(chapters: list[dict[str, Any]]) -> list[str]:
 
 
 def message(
-    ctx: ToolContext, *, final: bool = False, allowance: str = ""
+    ctx: ToolContext, *, final: bool = False, allowance: str = "", writing: bool = True
 ) -> dict[str, Any]:
     lines = [
         HEADER,
@@ -66,8 +74,11 @@ def message(
     if sections:
         lines.append("\nLibrary excerpts read for this message:")
         lines.extend(f"- {eid} {section}" for eid, section in sections.items())
-    if final:
-        lines.append(FINAL_NOTICE)
+    if final and not writing:
+        lines.append(FINAL_ANSWER_NOTICE)
+    elif final:
+        unsaved = any(not record.get("file") for record in ctx.decks.values())
+        lines.append(FINAL_NOTICE + (UNSAVED_DECK if unsaved else ""))
     elif allowance:
         lines.append(allowance)
     return {"role": "user", "content": "\n".join(lines), "_kind": "turn_context"}

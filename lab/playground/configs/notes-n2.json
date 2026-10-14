@@ -25,11 +25,8 @@
   "answer": {
     "citations": "as_is"
   },
-  "decks": {
-    "offer": true
-  },
   "skill_addons": {
-    "workspace_building": "How to explain in a note:\n- Open with the point in one or two sentences, then the smallest concrete case.\n- For a procedure, calculation or proof: a worked example as numbered steps, each with why it is done in a few words; then a near-identical problem with the first steps done and the rest in a ```quiz or ```flashcards fence (its answer stays hidden until tried); then one problem that changes a feature, its answer hidden the same way.\n- Take worked examples from the library first; never splice numbers from different examples.\n- Write a misconception as: the belief, a plain statement that it is wrong, why it seems right, and what is true, with the evidence.\n- An analogy gets one sentence on where it stops matching. At most three new terms per section, each defined where it first appears.\n- A visual only for a shape, a change or a structure, labelled inside.\n- Checks ask the student to apply a step or explain why, not to recall a label."
+    "note_building": "How to explain in a note:\n- Open with the point in one or two sentences, then the smallest concrete case.\n- For a procedure, calculation or proof: a worked example as numbered steps, each with why it is done in a few words; then a near-identical problem with the first steps done and the rest in a ```quiz or ```flashcards fence (its answer stays hidden until tried); then one problem that changes a feature, its answer hidden the same way.\n- Take worked examples from the library first; never splice numbers from different examples.\n- Write a misconception as: the belief, a plain statement that it is wrong, why it seems right, and what is true, with the evidence.\n- An analogy gets one sentence on where it stops matching. At most three new terms per section, each defined where it first appears.\n- A visual only for a shape, a change or a structure, labelled inside.\n- Checks ask the student to apply a step or explain why, not to recall a label."
   },
   "_note": "N2 worked example, fading, refutation (cognitive load, refutation text)"
 }

@@ -24,8 +24,8 @@ Blank fields (null, blank text, "null", [] or {}) are left out before
 checking unless the question's kind needs them, and an accepted answer written
 with its unit ("5%" with unit "%") keeps the number (Epo 2026-10-13: leniency
 the agent need not be told about). The server fills the rest: ids, one part
-per question, 1 mark for a simple question, multiple-choice options in an
-order shuffled by the question id (the model tends to put the answer first),
+per question, 1 mark for a simple question (multiple-choice options keep
+the order written; the model is told to vary the correct one's position),
 layout paper, labels letters, and the worked solution from the
 explanation (empty without one: a quiz part's solution may be empty, only bank
 parts need one). The gateway routes and Go's validator take the expanded
@@ -38,7 +38,6 @@ import contextlib
 import copy
 import hashlib
 import json
-import random
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -494,22 +493,39 @@ def check_item(item: Any, index: int, path: str, *, fence: bool) -> Item:
     return Item(index, path, kind, item, problems, structural)
 
 
+# Words a model writes for a unit symbol after a number.
+UNIT_WORDS = {"%": ("percent", "per cent")}
+# A number grouped by thousands with commas ("129,400").
+THOUSANDS = re.compile(r"[+-]?\d{1,3}(?:,\d{3})+(?:\.\d+)?")
+
+
 def _without_unit(item: dict[str, Any]) -> dict[str, Any]:
     """A short answer's accepted answers written as the number followed by its
-    unit ("5%" with unit "%") keep the number; repeats are dropped."""
+    unit ("5%" or "5 percent" with unit "%") keep the number, with a Unicode
+    minus made "-" and thousands commas dropped (Epo 2026-10-14); repeats are
+    dropped."""
     unit, accepted = item.get("unit"), item.get("accepted")
     if not isinstance(unit, str) or not unit.strip() or not isinstance(accepted, list):
         return item
     unit = unit.strip()
     out: list[Any] = []
     for answer in accepted:
-        if isinstance(answer, str):
-            number = answer.strip().removesuffix(unit).rstrip()
-            if number != answer.strip() and _quantity(number):
+        if isinstance(answer, str) and not _quantity(answer):
+            number = _plain_number(answer, unit)
+            if _quantity(number):
                 answer = number
         if answer not in out:
             out.append(answer)
     return {**item, "accepted": out}
+
+
+def _plain_number(answer: str, unit: str) -> str:
+    text = answer.strip().replace("\u2212", "-")
+    for suffix in (unit, *UNIT_WORDS.get(unit, ())):
+        if text.lower().endswith(suffix.lower()):
+            text = text[: -len(suffix)].rstrip()
+            break
+    return text.replace(",", "") if THOUSANDS.fullmatch(text) else text
 
 
 def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
@@ -520,17 +536,11 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
         "blocks": [{"type": "text", "text": item["question"]}],
     }
     if kind == "mcq":
-        written = list(item["options"])
-        answer = [o.strip() for o in written].index(item["correct"].strip())
-        # Seeded by the id, so a retried call writes the same order.
-        order = list(range(len(written)))
-        random.Random(qid).shuffle(order)
-        options = [written[i] for i in order]
-        part["answer"] = {
-            "type": "mcq",
-            "options": options,
-            "correct": [order.index(answer)],
-        }
+        # In the order written: the model varies where the correct option sits
+        # (Epo 2026-10-14, a trial in place of the server's shuffle).
+        options = list(item["options"])
+        answer = [o.strip() for o in options].index(item["correct"].strip())
+        part["answer"] = {"type": "mcq", "options": options, "correct": [answer]}
         part["marks"] = 1
     elif kind == "short":
         part["answer"] = {"type": "short", "accepted": list(item["accepted"])}
@@ -556,6 +566,78 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
         "layout": "paper",
         "labels": "letters",
     }
+
+
+def authored(question: dict[str, Any]) -> dict[str, Any] | None:
+    """A stored question as the add_questions item a quiz fence takes (expand's
+    inverse), or None when it holds more than that form writes: a stem, more
+    parts, media or a non-text solution, another answer type."""
+    parts = question.get("parts") or []
+    if question.get("stem") or len(parts) != 1:
+        return None
+    part = parts[0]
+    blocks = part.get("blocks") or []
+    solution = part.get("solution") or []
+    if (
+        len(blocks) != 1
+        or blocks[0].get("type") != "text"
+        or any(b.get("type") != "text" for b in solution)
+    ):
+        return None
+    answer = part.get("answer") or {}
+    item: dict[str, Any] = {"question": str(blocks[0].get("text") or "")}
+    options, correct = answer.get("options") or [], answer.get("correct") or []
+    if (
+        answer.get("type") == "mcq"
+        and len(correct) == 1
+        and isinstance(correct[0], int)
+        and 0 <= correct[0] < len(options)
+    ):
+        item |= {"options": list(options), "correct": options[correct[0]]}
+    elif answer.get("type") == "short":
+        item["accepted"] = list(answer.get("accepted") or [])
+        if answer.get("unit"):
+            item["unit"] = answer["unit"]
+    elif answer.get("type") == "open":
+        item |= {
+            "marks": part.get("marks"),
+            "markscheme": [
+                {"text": i.get("text"), "marks": i.get("marks")}
+                for i in part.get("markscheme") or []
+            ],
+            "model_answer": (answer.get("accepted") or [""])[0],
+        }
+        if answer.get("hints"):
+            item["hints"] = list(answer["hints"])
+    else:
+        return None
+    if solution:
+        item["explanation"] = "\n\n".join(str(b.get("text") or "") for b in solution)
+    return item
+
+
+STORED_QUIZ_FENCE = re.compile(r"```quiz\n(?P<json>\{.*\})\n```", re.DOTALL)
+
+
+def quiz_fence_view(text: str) -> str | None:
+    """A note's embedded quiz block as inspect_document shows it: the quiz
+    fence an edit writes, its questions as add_questions items in YAML, so a
+    section rewritten from it lands (Epo 2026-10-14); None for a block that is
+    not a stored quiz fence or holds questions that form cannot write."""
+    match = STORED_QUIZ_FENCE.fullmatch(text.strip())
+    if match is None:
+        return None
+    try:
+        stored = json.loads(match["json"]).get("questions")
+    except (ValueError, AttributeError):
+        return None
+    items = [authored(q) for q in stored or [] if isinstance(q, dict)]
+    if not items or None in items or len(items) != len(stored):
+        return None
+    body = yaml.safe_dump(
+        {"questions": items}, allow_unicode=True, sort_keys=False, width=10_000
+    )
+    return f"```quiz\n{body}```"
 
 
 def preview(question: dict[str, Any]) -> str:
@@ -996,6 +1078,9 @@ def note_fences(
             at = f"{label} {lang} fence {counts[lang]}"
             if lang == "quiz":
                 return _fence(match, at, found, new_id)
+            if lang == "html-embed":
+                _html_embed(_body(match), at, found)
+                return match[0]
             if lang == "flashcards":
                 body = _cards(_body(match), at, found)
             elif lang in contract.MEDIA_BLOCKS:
@@ -1024,10 +1109,11 @@ def _fence(
     match: re.Match[str], at: str, found: Check, new_id: Callable[[], str]
 ) -> str:
     """One quiz fence expanded, or left as written with its problems noted."""
+    body = _body(match)
     try:
-        data, fixed = _yaml(_body(match))
+        data, fixed = _yaml(body)
     except yaml.YAMLError as exc:
-        found.call.append(f"{at}: expected YAML; {str(exc).splitlines()[0]}")
+        found.call.append(yaml_problem(at, body, exc))
         return match[0]
     items = data.get("questions") if isinstance(data, dict) else None
     if not isinstance(items, list) or not items:
@@ -1061,7 +1147,8 @@ def _cards(body: str, at: str, found: Check) -> str | None:
     its problem."""
     try:
         data, fixed = _yaml(body)
-    except yaml.YAMLError:
+    except yaml.YAMLError as exc:
+        found.call.append(yaml_problem(at, body, exc))
         return None
     cards = data.get("cards") if isinstance(data, dict) else None
     if (
@@ -1096,7 +1183,8 @@ def _media(lang: str, body: str, at: str, found: Check) -> str | None:
             return None
         try:
             data = yaml.safe_load(body)
-        except yaml.YAMLError:
+        except yaml.YAMLError as exc:
+            found.call.append(yaml_problem(at, body, exc))
             return None
         if any(_CONTROL.search(text) for text in _texts(data)):
             return None
@@ -1112,6 +1200,46 @@ def _media(lang: str, body: str, at: str, found: Check) -> str | None:
     if fixed:
         found.notes.append(f"Repaired {at}: {'; '.join(fixed)}.")
     return json.dumps(data, ensure_ascii=False, separators=(",", ":"), default=str)
+
+
+def _html_embed(body: str, at: str, found: Check) -> None:
+    """An html-embed fence the converter would refuse as not YAML, named here
+    with the parser's reason; the converter checks the rest."""
+    try:
+        data = yaml.load(body, Loader=yaml.BaseLoader)
+    except yaml.YAMLError as exc:
+        found.call.append(yaml_problem(at, body, exc))
+        return
+    if not isinstance(data, dict):
+        found.call.append(
+            f'{at}: expected a YAML mapping, caption: "…" and html: | on its own '
+            f"lines; sent {'a list' if isinstance(data, list) else 'text'}"
+        )
+
+
+# How much of the line a YAML error stopped on its refusal quotes.
+YAML_LINE_SHOWN = 120
+
+
+def yaml_problem(at: str, body: str, exc: yaml.YAMLError) -> str:
+    """A fence that is not YAML: the parser's reason, the line it stopped on,
+    and for a bad escape where LaTeX goes (Epo 2026-10-14)."""
+    problem = getattr(exc, "problem", None) or str(exc).splitlines()[0]
+    mark = getattr(exc, "problem_mark", None)
+    where = ""
+    if mark is not None:
+        lines = body.splitlines()
+        line = lines[mark.line].strip() if mark.line < len(lines) else ""
+        if len(line) > YAML_LINE_SHOWN:
+            line = line[:YAML_LINE_SHOWN] + "…"
+        where = f" on line {mark.line + 1}" + (f": {line}" if line else "")
+    hint = (
+        "; in double quotes a backslash starts an escape, so write LaTeX in single "
+        "quotes or a | block"
+        if "escape" in problem
+        else ""
+    )
+    return f"{at}: expected YAML; {problem}{where}{hint}"
 
 
 # C0 controls other than tab and newline, NEL and the Unicode line and
@@ -1171,9 +1299,9 @@ def _yaml(body: str) -> tuple[Any, list[str]]:
 def _repair_yaml(body: str) -> tuple[str, list[str]]:
     """The body with trailing commas after a closing ] or } removed (not in a
     JSON body, whose commas end lines), a plain value holding ": " after a text
-    key or as an options/accepted item quoted, and a backslash before a letter
-    doubled in a double-quoted value (LaTeX); with the names of the repairs
-    that changed it."""
+    key or as an options/accepted item quoted, and a backslash before anything
+    but a quote or a backslash doubled in a double-quoted value (LaTeX); with
+    the names of the repairs that changed it."""
     fixed = []
     json_body = body.lstrip().startswith(("{", "["))
     text = body if json_body else _TRAILING_COMMA.sub(r"\1", body)
@@ -1203,7 +1331,7 @@ def _repair_yaml(body: str) -> tuple[str, list[str]]:
 
 
 def _escaped(line: str) -> str:
-    """The line with a backslash before a letter doubled in the double-quoted
+    """The line with a LaTeX backslash doubled (_double) in the double-quoted
     scalars that open its value (after a key or a dash) or are items of a flow
     list there; a quoted phrase inside a plain or single-quoted scalar is left
     alone, its backslashes being literal already."""
@@ -1235,8 +1363,10 @@ def _escaped(line: str) -> str:
 
 
 def _double(escape: re.Match[str]) -> str:
-    letter = escape[1]
-    return "\\\\" + letter if letter.isascii() and letter.isalpha() else escape[0]
+    """A LaTeX backslash doubled: before a letter (\\frac, \\int) or a symbol
+    (\\, \\; \\{); an escaped quote or backslash stays a YAML escape."""
+    char = escape[1]
+    return escape[0] if char in '"\\' else "\\\\" + char
 
 
 def _quoted(match: re.Match[str]) -> str:

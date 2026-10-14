@@ -4099,6 +4099,11 @@ components:
     ResourceEffect:
       additionalProperties: false
       properties:
+        blockIds:
+          items:
+            type: string
+          nullable: true
+          type: array
         operation:
           enum:
             - created

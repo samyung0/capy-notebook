@@ -148,7 +148,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `system_prompt` / `prompt_addon` | `null` keeps the production prompt; a string replaces it, except the library rules. The addon is appended either way |
 | `library_rules` | `null` keeps production's library rules; a string replaces them. Sent only with Library on, before the answer format (or last when a replaced `system_prompt` dropped it) |
 | `tool_descriptions` | Map of tool names to replacement descriptions, for example `{"search_knowledge": "Find relevant excerpts."}`. Unspecified tools keep their production descriptions; `search_knowledge` still receives the live subject list |
-| `skills` | Map of skill names (`editing`, `workspace_building`, `deck`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text; an applied text ignores the Library switch, which adds library rules to production's `editing` and `workspace_building` |
+| `skills` | Map of skill names (`editing`, `note_building`, `deck_building`) to replacement text for what `read_skill` returns, edited in the Skills panel. The system prompt and the other skills keep production's text; an applied text ignores the Library switch, which adds library rules to production's `editing` and `note_building` |
 | `skill_addons` | Map of skill names to text appended to what `read_skill` returns (after any `skills` replacement), so a teaching variant rides on production's current text; seen in the config JSON and each call's full context |
 | `library` | The per-turn Library switch (default on): the shared library is a source and its tools are offered |
 | `open_resource` | What the learner has open, `{"id", "kind", "title"}` or `null`; the turn context names it |
@@ -186,7 +186,7 @@ the turn context message shows them to the model, with the workspace's
 chapters in order. Library tools require the header to show a configured
 library; a library that is down leaves the turn on the workspace. Build
 instructions are skills the model reads with `read_skill` (`editing`,
-`workspace_building` and `deck`, all production's); the write tools are refused until the
+`note_building` and `deck_building`, all production's); the write tools are refused until the
 skill's text is in the request. Without the library the writes offer no
 `excerpt_ids`.
 
@@ -324,7 +324,7 @@ Chat turns require thinking to be enabled. The turn endpoint rejects `instant` b
 
 `create_deck` and `write_slide` are production's (`openwiki/decks.md`), run
 here in process (`deck_locally` over `pipeline/retrieval/deck.py`). They follow
-ppt-master's Quick route. The `deck` skill (production's, read with
+ppt-master's Quick route. The `deck_building` skill (production's, read with
 `read_skill` before either tool) carries the method, the slide rules and the
 style (`pipeline/pipeline/prompts/deck_styles/`, default `editorial`) with its
 reference slides; `create_deck` takes an outline of titles and briefs;
@@ -333,15 +333,17 @@ reference slides; `create_deck` takes an outline of titles and briefs;
 slide is written the deck is exported with ppt-master's exporter to
 `materials/<id>.pptx`, closed by a Sources slide from its provenance, where
 the app would store it as a workspace file. Figures are this turn's bbox
-captures, referenced as `../images/p<page>.jpg`. ppt-master is cloned when the
+captures, referenced by capture number as `../images/c<n>.jpg`. ppt-master is cloned when the
 server starts (or `--check` runs) into `local/ppt-master` at
 `deck.PPT_MASTER_COMMIT`, and its scripts run under `uv` with their own
 dependencies. `DECKS.md` is the adoption guide: how ppt-master works, what we
 use, and how to add a style.
 
-The Decks checkbox writes `decks.offer`, and Main writes
-`study_preferences.mainFormat` (`note`, `deck` or `auto`), which reaches the
-model in the turn context's study preferences, as in production. Mocks:
+The deck tools are always offered, as in production (Epo 2026-10-14; the
+Decks checkbox and `decks.offer` are gone). Main writes
+`study_preferences.mainFormat` (`note` or `deck`), which reaches the model in
+the turn context's study preferences and picks which building skill
+`read_skill` offers for the chapters, as in production. Mocks:
 `artifacts/2026-10-04-deck-layouts.html`.
 
 When the agent withholds a response for carrying tool-call markup (reported as
@@ -373,7 +375,8 @@ The 2026-10-06 intake and retrieval comparison
 are in `bench/rag/reports/2026-10-07-intake-retrieval-comparison.md`. Arms B
 and C read books by section behind `CAPY_LIBRARY_SECTION_TOOLS`, which
 contract v28 removed with `browse_knowledge` (2026-10-14), so only arm A's
-config, `intake-a.json` (`chat.json` with decks off), still runs; the
+config, `intake-a.json` (`chat.json`, decks off until decks became always
+offered on 2026-10-14), still runs; the
 2026-10-14 library-flow runs used it as production
 (`bench/rag/reports/2026-10-14-library-flow.md`). `CAPY_LIBRARY_REQUIRE_TAGS=0`
 (arm B's untagged library) still makes untagged excerpts searchable. Each run

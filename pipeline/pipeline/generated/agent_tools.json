@@ -1,5 +1,5 @@
 {
-  "version": 28,
+  "version": 29,
   "operations": [
     "source.read",
     "material.read",
@@ -362,7 +362,7 @@
     {
       "name": "create_material",
       "version": 1,
-      "description": "Create a study material from content you wrote, in the formats the materials skill describes. A quiz is made with add_questions.",
+      "description": "Create a study material from content you wrote, in the formats the editing skill describes (a note: the note_building skill). A quiz is made with add_questions.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -460,7 +460,7 @@
     {
       "name": "add_questions",
       "version": 1,
-      "description": "Add questions to a quiz (quiz_id), or create a quiz with them (title). A question's fields make its kind: multiple choice (options, one correct) and short answer (accepted) are 1 mark each; an open question, answered in writing, has marks and a markscheme adding up to them, and a model_answer. The result lists each question's id. Example: {\"title\": \"Osmosis\", \"questions\": [{\"question\": \"Which way does water move when a red blood cell is put in pure water?\", \"options\": [\"Into the cell\", \"Out of the cell\"], \"correct\": \"Into the cell\", \"explanation\": \"From the higher water potential outside.\"}, {\"question\": \"What percentage of NaCl is normal saline?\", \"accepted\": [\"0.9\"], \"unit\": \"%\"}, {\"question\": \"Explain why the cell bursts.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}]}",
+      "description": "Add questions to a quiz (quiz_id), or create a quiz with them (title). A question's fields make its kind: multiple choice (options, one correct) and short answer (accepted) are 1 mark each; an open question, answered in writing, has marks and a markscheme adding up to them, and a model_answer. Options show in the order written, so vary which position holds the correct one. The result lists each question's id. Example: {\"title\": \"Osmosis\", \"questions\": [{\"question\": \"Which way does water move when a red blood cell is put in pure water?\", \"options\": [\"Into the cell\", \"Out of the cell\"], \"correct\": \"Into the cell\", \"explanation\": \"From the higher water potential outside.\"}, {\"question\": \"What percentage of NaCl is normal saline?\", \"accepted\": [\"0.9\"], \"unit\": \"%\"}, {\"question\": \"Explain why the cell bursts.\", \"marks\": 2, \"markscheme\": [{\"text\": \"Water enters by osmosis\", \"marks\": 1}, {\"text\": \"No cell wall resists the swelling\", \"marks\": 1}], \"model_answer\": \"Water enters by osmosis and, with no cell wall to resist it, the membrane ruptures.\"}]}",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -868,7 +868,7 @@
     {
       "name": "edit_document",
       "version": 1,
-      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math; no media or PDF edits. Quiz questions are added and replaced with the question tools.",
+      "description": "Edit the content of one inspected document: each command names a target and the exact text or value it expects, and one stale expectation refuses the whole call. Edits save directly, each with an Undo; replace_block rewrites a note block with formatting or math. Uploaded media and PDFs cannot be edited; a library figure placed in a note is removed only by the learner's Undo. Quiz questions are added and replaced with the question tools.",
       "inputSchema": {
         "additionalProperties": false,
         "properties": {
@@ -916,7 +916,7 @@
                       "type": "string"
                     },
                     "markdown": {
-                      "description": "The block's new content as note markdown in the materials skill's format.",
+                      "description": "The block's new content as note markdown in the note_building skill's format.",
                       "maxLength": 200000,
                       "type": "string"
                     },
@@ -936,14 +936,14 @@
                   "additionalProperties": false,
                   "properties": {
                     "after_block_id": {
-                      "description": "Insert after this block; null inserts at the start.",
+                      "description": "Insert after this block; \"end\" appends after the last block, null inserts at the start.",
                       "type": [
                         "string",
                         "null"
                       ]
                     },
                     "markdown": {
-                      "description": "Note markdown in the materials skill's format.",
+                      "description": "Note markdown in the note_building skill's format.",
                       "maxLength": 200000,
                       "type": "string"
                     },
@@ -1023,6 +1023,7 @@
                       "type": "string"
                     },
                     "card_id": {
+                      "description": "A side left out stays as it is.",
                       "minLength": 1,
                       "type": "string"
                     },
@@ -1295,7 +1296,7 @@
     }
   ],
   "formats": {
-    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check of a few items; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
+    "note": "Markdown. A mindmap or diagram is one ```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; ```chart fences comparing labelled categories, JSON {\"type\": \"chart\", \"kind\": \"bar\"|\"hbar\"|\"line\"|\"area\"|\"pie\"|\"stacked\", \"title\", \"labels\": [...], \"series\": [{\"name\", \"values\": one number per label}]} with any unit in the title; ```plot fences for numbers against numbers: curves of a quantity along a numeric axis (a membrane potential over time, a titration curve) or a scatter of points, JSON {\"type\": \"plot\", \"kind\"?: \"line\"|\"scatter\" (default line), \"title\", \"xTitle\", \"yTitle\" (axis names with units), \"series\": 1 to 4 [{\"name\", \"points\": [[x, y], ...] in x order for a line, 2 to 60}], \"lines\"?: [{\"axis\": \"x\"|\"y\", \"value\", \"label\"?}] dashed reference lines, \"marks\"?: [{\"x\", \"y\", \"label\"}] labelled points}; ```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and ```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check sized and placed as the study preferences say; and ```html-embed fences for an interactive (YAML: a quoted `caption`, `html: |`), at most 10 per note. The html is one small snippet under 64 KB: inline CSS and script; a library may load (script src, stylesheet link or module import) only from https://cdnjs.cloudflare.com, https://cdn.jsdelivr.net, https://esm.sh or https://unpkg.com at an exact version, and nothing else reaches the network (no other src or href, no fetch, no navigating the page); colours only from the provided variables --bg, --fg, --muted, --accent and --border so it follows the light and dark theme, height fitting its content with no vh or vw units. The frame already gives the body the page's font (--font), text colour, no margin and a transparent background, and form controls the accent colour, so style only what differs. Use an interactive only where moving something teaches more than a diagram."
   },
   "mediaBlocks": {
     "chart": {

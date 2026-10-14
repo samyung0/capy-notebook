@@ -80,15 +80,9 @@ def test_the_shapes_expand_into_the_question_format_go_accepts():
     assert expanded == json.loads(EXPANDED.read_text(encoding="utf-8"))
     mcq, short, open_ = expanded[:3]
     answer = mcq["parts"][0]["answer"]
-    # Options are shuffled by the question id: the same order on a retry, and
-    # the correct index follows the option.
-    assert sorted(answer["options"]) == sorted(MCQ["options"])
-    assert answer["options"][answer["correct"][0]] == "Sodium"
-    assert answer == questions.expand("mcq", MCQ, mcq["id"])["parts"][0]["answer"]
-    assert any(
-        questions.expand("mcq", MCQ, f"q_{n}")["parts"][0]["answer"]["correct"] != [0]
-        for n in range(8)
-    ), "the written first option does not stay first"
+    # Options keep the order written; the model varies the correct one's place
+    # (Epo 2026-10-14).
+    assert answer["options"] == MCQ["options"] and answer["correct"] == [0]
     assert mcq["parts"][0]["solution"] == [
         {"type": "text", "text": "Voltage-gated sodium channels open first."}
     ]
@@ -695,9 +689,13 @@ def test_quiz_and_flashcards_yaml_is_repaired_only_after_a_parse_failure():
         '    correct: a\n    explanation: "unclosed\n```\n'
     )
     text, found = _fenced(broken)
-    assert text == broken and found.call[0].startswith(
-        "content quiz fence 1: expected YAML; while parsing a block mapping"
-    ), found.call
+    # The parser's own reason and the line it stopped on (Epo 2026-10-14).
+    assert text == broken and found.call == [
+        (
+            "content quiz fence 1: expected YAML; expected <block end>, but found ',' "
+            "on line 3: options: [a, b],"
+        )
+    ], found.call
     cards_broken = "```flashcards\ncards:\n  - front: a\n```\n"
     assert _fenced(cards_broken)[0] == cards_broken
 
@@ -722,3 +720,75 @@ async def test_a_refused_write_also_names_its_question_problems(monkeypatch):
         "Also fix these before sending it again:\n- questions[0].correct"
         in result.detail
     )
+
+
+def test_numbers_with_a_unit_accept_commas_minus_signs_and_unit_words():
+    """Epo 2026-10-14: the three slips of that day's runs mean one number."""
+    item = {"question": "q", "accepted": ["129,400", "\u221213 V", "190 percent"]}
+    assert questions._without_unit({**item, "unit": "V"})["accepted"][1] == "-13"
+    assert questions._without_unit({**item, "unit": "%"})["accepted"][2] == "190"
+    assert (
+        questions._without_unit({**item, "unit": "people"})["accepted"][0] == "129400"
+    )
+    # A comma that is not a thousands group stays and is refused as before.
+    assert questions._without_unit({"accepted": ["1,5"], "unit": "m"})["accepted"] == [
+        "1,5"
+    ]
+
+
+def test_an_inspected_quiz_fence_reads_back_as_the_items_it_was_written_from():
+    """inspect_document shows a note's quiz as the fence an edit writes, so a
+    section copied from it lands (Epo 2026-10-14)."""
+    items = [MCQ, SHORT, OPEN]
+    stored = [
+        questions.expand(kind, item, f"q_{n}")
+        for n, (kind, item) in enumerate(zip(("mcq", "short", "open"), items))
+    ]
+    fence = "```quiz\n" + json.dumps({"questions": stored}) + "\n```"
+    view = questions.quiz_fence_view(fence)
+    ids = iter(f"q_{n}" for n in range(3))
+    [text], found = questions.note_fences(
+        [view + "\n"], lambda _: "content", ids.__next__
+    )
+    assert not found.problems(), found.problems()
+    again = json.loads(text.split("\n")[1])["questions"]
+    strip = lambda qs: [
+        {**q, "id": "", "parts": [{**q["parts"][0], "id": ""}]} for q in qs
+    ]
+    assert strip(again) == strip(stored)
+    # A question the fence form cannot write leaves the block as stored.
+    stored[0]["stem"] = [{"type": "text", "text": "Context"}]
+    assert (
+        questions.quiz_fence_view(
+            "```quiz\n" + json.dumps({"questions": stored}) + "\n```"
+        )
+        is None
+    )
+
+
+def test_a_fence_that_is_not_yaml_names_the_line_and_where_latex_goes():
+    # The escape is repaired, the unclosed quote is not: the first error shows.
+    broken = (
+        '```quiz\nquestions:\n  - question: "Is $\\int$ ok?"\n    accepted: ["1"]\n'
+        '    explanation: "unclosed\n```\n'
+    )
+    _, found = _fenced(broken)
+    assert found.call == [
+        (
+            "content quiz fence 1: expected YAML; found unknown escape character 'i' "
+            'on line 2: - question: "Is $\\int$ ok?"; in double quotes a backslash '
+            "starts an escape, so write LaTeX in single quotes or a | block"
+        )
+    ], found.call
+    # A LaTeX symbol escape is repaired like a letter one.
+    spaced = '```quiz\nquestions:\n  - question: "Is $t\\,e^t$ ok?"\n    accepted: ["1"]\n```\n'
+    _, found = _fenced(spaced)
+    assert not found.problems() and "LaTeX backslashes" in found.notes[0]
+    listed = "```html-embed\n- caption: x\n  html: |\n    <p>x</p>\n```\n"
+    _, found = _fenced(listed)
+    assert found.call == [
+        (
+            'content html-embed fence 1: expected a YAML mapping, caption: "…" and '
+            "html: | on its own lines; sent a list"
+        )
+    ]

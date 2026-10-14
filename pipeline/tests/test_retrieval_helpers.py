@@ -7,6 +7,8 @@ like a quality problem rather than a bug.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from pipeline.registry import ModelConfig
@@ -504,15 +506,20 @@ def test_turn_context_renders_open_file_preferences_and_reads():
     assert "key points first" in body, "brief writing"
     assert "a deck explains each chapter" in body
     assert "a quiz of 5 questions and a set of 10 flashcards" in body
-    assert "knowledge check of at most 3 flashcards" in body, "cards set higher"
+    # Knowledge checks are notes only: a deck's turn gets no check line.
+    assert "knowledge check" not in body, "deck main format"
+    ctx.study_preferences["mainFormat"] = "note"
+    noted = turn_context.message(ctx)["content"]
+    assert "knowledge check of at most 3 flashcards" in noted, "cards set higher"
+    assert "make no standalone" not in noted, "both practice items are on"
     assert body.count("- e_1 ") == 1, "one line per excerpt, not per read"
     assert turn_context.FINAL_NOTICE in turn_context.message(ctx, final=True)["content"]
 
     empty = turn_context.message(_library_ctx())["content"]
     assert "Open: nothing." in empty and "Library excerpts" not in empty
-    assert "a quiz of 5 questions; make no flashcards unless asked." in empty, (
-        "default preferences: quiz less, flashcards off said off"
-    )
+    assert (
+        "a quiz of 5 questions; make no standalone flashcards unless asked." in empty
+    ), "default preferences: quiz less, flashcards off said off"
     assert "a note explains each chapter" in empty
     assert "knowledge check of at most 2 questions" in empty
 
@@ -1231,14 +1238,21 @@ def test_one_prompt_adds_the_library_rules_only_with_library_on():
     on = chat_prompts.system_prompt("en", library=True)
 
     assert "Library (a source this turn)" in on and "Library (a source" not in off
+    # Without a write tool (a viewer) the model is told it cannot write.
+    assert chat_prompts.READ_ONLY_RULE in chat_prompts.system_prompt("en", writes=False)
+    assert chat_prompts.READ_ONLY_RULE not in off
     for prompt in (off, on):
         assert "read the skills for the work with read_skill" in prompt
-        assert "propose the plan" not in prompt, "workspace_building holds it"
+        assert "propose the plan" not in prompt
+        assert "lacks the learning scope or the learner's level" in prompt
         assert (
             f"Until its first successful write a turn has "
             f"{limits.PLANNING_RESPONSES} responses" in prompt
         )
-        assert f"after it, {limits.BUILD_TOOLS_PER_TURN} tool calls" in prompt
+        assert (
+            f"after it, up to {limits.BUILD_TOOLS_PER_TURN} tool calls in the whole turn"
+            in prompt
+        )
 
 
 def test_study_progress_is_offered_only_when_progress_is_on():
@@ -1277,4 +1291,56 @@ def test_study_progress_renders_states_quizzes_and_weak_chapters():
     assert "- Unfiled: 41% retained across 7" in text
     assert (
         tools.render_progress({}) == "No study progress recorded in this workspace yet."
+    )
+
+
+def test_inspect_shows_a_notes_quiz_as_its_fence_and_edits_expect_it_back():
+    """An embedded quiz shows as the fence an edit writes; an edit expecting that
+    text expects the stored one (Epo 2026-10-14)."""
+    from pipeline.retrieval import questions
+
+    item = {"question": "Which?", "options": ["A", "B"], "correct": "B"}
+    stored = (
+        "```quiz\n"
+        + json.dumps({"questions": [questions.expand("mcq", item, "q_1")]})
+        + "\n```"
+    )
+    shown: dict[str, tuple[str, str]] = {}
+    text = tools._render_inspection(
+        {
+            "title": "Note",
+            "format": "plate",
+            "supportedOperations": ["replace_block"],
+            "blocks": [{"id": "b3", "type": "quiz", "text": stored}],
+        },
+        shown,
+    )
+    view = shown["b3"][0]
+    assert view in text and "correct: B" in view and stored not in text
+    command = {"type": "replace_block", "block_id": "b3", "expected_text": view}
+    assert tools._stored_expectation(command, shown)["expected_text"] == stored
+    quiz = tools._render_inspection(
+        {
+            "title": "Quiz",
+            "materialKind": "quiz",
+            "supportedOperations": ["remove_question"],
+        }
+    )
+    assert (
+        "supported: remove_question, (add or replace questions with add_questions)"
+        in quiz
+    )
+
+
+def test_the_final_notice_says_an_unwritten_deck_was_not_saved():
+    from pipeline.retrieval import turn_context
+
+    ctx = ToolContext(workspace_id="ws")
+    ctx.decks["deck_1"] = {"id": "deck_1"}
+    body = turn_context.message(ctx, final=True)["content"]
+    assert turn_context.FINAL_NOTICE + turn_context.UNSAVED_DECK in body
+    ctx.decks["deck_1"]["file"] = "f_1"
+    assert (
+        turn_context.UNSAVED_DECK
+        not in turn_context.message(ctx, final=True)["content"]
     )

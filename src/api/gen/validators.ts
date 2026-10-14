@@ -976,6 +976,7 @@ export const UndoEditOperationResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
   "effect": zod.object({
+  "blockIds": zod.array(zod.string()).nullish(),
   "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
@@ -1077,6 +1078,7 @@ export const ListMessagesResponseItem = zod.object({
 }).optional(),
   "detail": zod.string().optional(),
   "effects": zod.array(zod.object({
+  "blockIds": zod.array(zod.string()).nullish(),
   "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
@@ -5443,6 +5445,7 @@ export const PurgeTrashedResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
   "effect": zod.object({
+  "blockIds": zod.array(zod.string()).nullish(),
   "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
@@ -5500,6 +5503,7 @@ export const RestoreTrashedResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
   "effect": zod.object({
+  "blockIds": zod.array(zod.string()).nullish(),
   "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),
@@ -7322,6 +7326,7 @@ export const CheckpointSourceDocumentResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
   "effect": zod.object({
+  "blockIds": zod.array(zod.string()).nullish(),
   "operation": zod.enum(['created', 'edited', 'edit_undone', 'trashed', 'restored']),
   "operationId": zod.string().optional(),
   "projectionPending": zod.boolean().optional(),

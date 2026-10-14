@@ -14,7 +14,15 @@ from PIL import Image
 
 from pipeline import config, obs
 from pipeline.registry import ModelConfig
-from pipeline.retrieval import accounting, agent, contract, pending, scripted, tools
+from pipeline.retrieval import (
+    accounting,
+    agent,
+    contract,
+    pending,
+    scripted,
+    skills,
+    tools,
+)
 from pipeline.retrieval.limits import TOOLS_PER_RESPONSE
 from pipeline.retrieval.search import Passage
 from pipeline.retrieval.stream import AssembledResponse, StreamEvent, ToolCall
@@ -963,7 +971,9 @@ async def test_a_turn_before_its_first_write_counts_its_responses_down(monkeypat
     ]
     assert "Responses remaining this turn, this one included: 2;" in contexts[0]
     assert "Responses remaining" not in contexts[1]
-    assert agent.turn_context.FINAL_NOTICE in contexts[1]
+    # A turn without the writing skill is asked for an answer, not a material.
+    assert "Write before then" not in contexts[0]
+    assert agent.turn_context.FINAL_ANSWER_NOTICE in contexts[1]
 
 
 async def test_a_tool_call_written_as_text_with_tools_off_ends_at_the_cap(monkeypatch):
@@ -2334,39 +2344,31 @@ async def test_a_missed_edit_target_comes_back_as_it_reads_now(monkeypatch):
     )
 
 
-async def test_a_write_naming_unread_excerpts_carries_their_text(monkeypatch):
-    """The write is refused, but the refusal reads the excerpts for it: those
-    that fit count as read (write guard and library evidence), so the resent
-    write passes; one that does not fit stays unread."""
+async def test_a_write_naming_unread_excerpts_credits_them(monkeypatch):
+    """Named excerpts are credited whether this turn read them or not (Epo
+    2026-10-14): no refusal sends the model back to read them."""
     ctx = ToolContext(workspace_id="ws", library=True)
-    texts = {"e_1": "excerpt e_1 full text", "e_2": "long " * 12_000}
-
-    async def _read(args, scratch):
-        text = texts[args["excerpt_id"]]
-        scratch.library_reads.note(args["excerpt_id"], 0, "8.1", text=text)
-        return ToolResult(text_parts=[text])
 
     async def _provenance(excerpt_ids):
         return [_book(*excerpt_ids)]
 
-    monkeypatch.setattr(tools, "_read_knowledge", _read)
     monkeypatch.setattr(tools.library, "provenance", _provenance)
     args = {"kind": "note", "content": "x", "excerpt_ids": ["e_1", "e_2"]}
-    refused = await tools.write_sources(ctx, "create_material", args)
-    assert isinstance(refused, ToolResult) and refused.refused
-    assert refused.error.startswith("Not applied: excerpts ['e_1'] had not been read")
-    assert (
-        "Excerpts ['e_2'] have no read or retained full text in this turn and did not fit here"
-        in refused.error
+    assert await tools.write_sources(ctx, "create_material", args) == (
+        [_book("e_1", "e_2")],
+        ["e_1", "e_2"],
     )
-    assert refused.text().endswith("\n\nexcerpt e_1 full text")
-    assert ctx.library_reads.ids() == {"e_1"}
-    assert ctx.library_evidence.fresh[("e_1", 0)].text == "excerpt e_1 full text"
-    # The carried read keeps its text for automatic credit.
-    assert ctx.library_reads.reads[0].text == "excerpt e_1 full text"
-    assert await tools.write_sources(
-        ctx, "create_material", {**args, "excerpt_ids": ["e_1"]}
-    ) == ([_book("e_1")], ["e_1"])
+
+
+def test_receipts_name_the_blocks_written_and_end_is_no_relocation():
+    body = _receipt("edited", "material", "mat_1")
+    body["effect"]["relocated"] = [{"anchor": "end", "after": "b9", "end": True}]
+    body["effect"]["blockIds"] = ["b10", "b11", "b12", "b13"]
+    text = tools._receipt_result(body).text()
+    assert "Block end" not in text and "It wrote 4 blocks, b10 to b13." in text
+    created = _receipt("created", "material", "mat_2")
+    created["effect"]["blockIds"] = ["b1", "b2"]
+    assert "It wrote blocks b1, b2." in tools._receipt_result(created).text()
 
 
 def test_an_edit_receipt_says_where_a_relocated_insert_landed():
@@ -3168,7 +3170,9 @@ async def test_material_excerpt_evidence_survives_only_as_current_full_text(
         for e in second
         if e["type"] == "tool_end" and e["callId"] == "edit"
     )
-    assert outcome == ("succeeded" if followup == "reuse" else "refused")
+    # A named excerpt is credited whether its text is retained or not (Epo
+    # 2026-10-14); only the replay depends on it.
+    assert outcome == "succeeded"
     replay = [
         m
         for m in seen[0]["messages"]
@@ -3387,15 +3391,28 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     assert agent.ask_user_answer([_call("AskUser", "{}")], "x") is None, (
         "no question, no answer"
     )
+    # Every AskUser call is a question, up to the format's three (Epo 2026-10-14).
+    many = [
+        _call("AskUser", json.dumps({"question": f"Q{n}?", "choices": []}), f"a{n}")
+        for n in range(1, 5)
+    ]
+    program = openui.parse(agent.ask_user_answer(many, ""), strict=True)
+    asked = [c.prop("question") for c in openui.walk(program) if c.name == "AskUser"]
+    assert asked == ["Q1?", "Q2?", "Q3?"]
 
 
-async def test_results_before_the_last_tools_response_say_write_now(monkeypatch):
+@pytest.mark.parametrize("writing", [True, False])
+async def test_results_before_the_last_tools_response_say_write_now(
+    monkeypatch, writing
+):
     """With 4 responses the last has tools off, so the third is the last with
-    tools: the results it reads (the second response's) carry the notice."""
+    tools: the results it reads (the second response's) carry the notice, to
+    write when the writing skill is in the request, else to answer."""
+    second = "read_skill" if writing else "list_sources"
     stream, seen = _script_stream(
         [
             _assembled("", [_call("list_sources", "{}", "a")]),
-            _assembled("", [_call("list_sources", "{}", "b")]),
+            _assembled("", [_call(second, '{"name": "editing"}', "b")]),
             _assembled("", [_call("list_sources", "{}", "c")]),
             _assembled(_answer(("done", []))),
         ]
@@ -3403,7 +3420,9 @@ async def test_results_before_the_last_tools_response_say_write_now(monkeypatch)
     monkeypatch.setattr(agent.models, "stream_agent_response", stream)
     monkeypatch.setattr(agent.cfg, "agent_max_steps", 4)
 
-    async def _run(_name, _args, _ctx):
+    async def _run(name, _args, _ctx):
+        if name == "read_skill":
+            return ToolResult(text_parts=[skills.render("editing", "instructions")])
         return ToolResult(text_parts=["sources"])
 
     monkeypatch.setattr(agent.tools, "run", _run)
@@ -3416,6 +3435,7 @@ async def test_results_before_the_last_tools_response_say_write_now(monkeypatch)
             if m.get("role") == "tool"
         }
 
-    assert agent.LAST_TOOLS_NOTICE not in results(seen[2])["a"]
-    assert results(seen[2])["b"].endswith(agent.LAST_TOOLS_NOTICE)
+    notice = agent.LAST_TOOLS_NOTICE if writing else agent.LAST_ANSWER_NOTICE
+    assert notice not in results(seen[2])["a"]
+    assert results(seen[2])["b"].endswith(notice)
     assert seen[3]["tools_off"]

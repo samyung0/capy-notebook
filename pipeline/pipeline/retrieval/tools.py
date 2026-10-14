@@ -34,6 +34,7 @@ from .. import obs
 from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
 from ..generated.limits import QUESTION_DESCRIPTION_MAX, QUESTION_METADATA_MAX
+from ..prompts import preferences
 from . import capture, contract, deck, library, pending, questions, skills, store
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
@@ -200,6 +201,10 @@ class ToolContext:
     # -> text), from inspect_document and its own replace_text edits, so a
     # refused edit can say its target changed since.
     seen_blocks: dict[str, dict[str, str]] = field(default_factory=dict)
+    # Embedded quiz blocks inspect_document showed as a quiz fence (material id
+    # -> block id -> (shown, stored text)): an edit expecting the shown text
+    # expects the stored one.
+    shown_quizzes: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -624,7 +629,7 @@ async def _capture_page(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     )
     numbers = "".join(f"[{i}]" for i in existing)
     return _result(
-        f"Captured {label}. The rendered image is attached to the next message; "
+        f"Captured {label} as capture {n}. The rendered image is attached to the next message; "
         "read it directly. This page is already in the evidence as "
         f"{numbers}; cite those numbers for what the capture shows."
     )
@@ -917,8 +922,8 @@ async def _capture_knowledge_page(args: dict[str, Any], ctx: ToolContext) -> Too
         capture.data_url(jpeg),
     )
     return _result(
-        f"Captured {label}. The rendered image is attached to the next message; "
-        "read it directly."
+        f"Captured {label} as capture {n}. The rendered image is attached to the next "
+        "message; read it directly."
     )
 
 
@@ -970,23 +975,42 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             else ""
         )
         text = (
-            f"Edited '{title}' (id {rid}).{pending_note}{_relocations(effect)} "
-            "The user can undo this edit from the chat result."
+            f"Edited '{title}' (id {rid}).{pending_note}{_relocations(effect)}"
+            f"{_block_ids(effect)} The user can undo this edit from the chat result."
         )
     elif operation == "edit_undone":
         text = f"Reversed the earlier edit of '{title}' (id {rid})."
     else:
         text = (
             f"Created {resource.get('materialKind')} '{title}' (id {rid}). "
-            "It is now in the workspace."
+            f"It is now in the workspace.{_block_ids(effect)}"
         )
     return ToolResult(text_parts=[text], effects=[effect])
+
+
+def _block_ids(effect: dict[str, Any]) -> str:
+    """The note blocks a create or edit wrote (Go's blockIds), so the next
+    section can follow them without an inspect."""
+    ids = [str(i) for i in effect.get("blockIds") or []]
+    if not ids:
+        return ""
+    if len(ids) <= 3:
+        return f" It wrote blocks {', '.join(ids)}."
+    return f" It wrote {len(ids)} blocks, {ids[0]} to {ids[-1]}."
+
+
+# after_block_id "end" appends after a note's last block: the collaboration
+# server lands an insert whose anchor no block holds at the end (Epo 2026-10-09
+# and 2026-10-14).
+END_ANCHOR = "end"
 
 
 def _relocations(effect: dict[str, Any]) -> str:
     """Where the edit's inserts whose anchor block was gone landed instead."""
     out = ""
     for moved in effect.get("relocated") or []:
+        if moved.get("anchor") == END_ANCHOR:
+            continue  # "end" lands at the end by design: no block holds that id
         after = moved.get("after")
         place = f"after block {after}" if after else "at the start"
         why = (
@@ -1330,8 +1354,8 @@ async def write_sources(
     """Check a write's library excerpts and resolve its provenance, or refuse.
 
     Returns the provenance books (one entry per source book) and the excerpts
-    they come from. Named excerpts must have been read this turn or be retained
-    in full; a write naming none is credited with the excerpts read since the
+    they come from. Named excerpts are credited, read or not (Epo 2026-10-14);
+    a write naming none is credited with the excerpts read since the
     last write that landed (every one read when none are new), narrowed to the
     books its text matches when any does (_matching), and a turn with no
     library reads credits nothing. ``figures`` are the excerpts listing
@@ -1355,10 +1379,6 @@ async def write_sources(
             "excerpt_ids name library excerpts, and the library is not a source this "
             "turn; workspace passages need none. Call it again without excerpt_ids."
         )
-    read = ctx.library_reads.ids()
-    unread = [e for e in excerpt_ids if e not in read]
-    if unread:
-        return await _carry_excerpts(ctx, unread)
     candidates = [] if excerpt_ids else ctx.library_reads.uncredited()
     wanted = list(dict.fromkeys([*(excerpt_ids or candidates), *(figures or [])]))
     if not wanted:
@@ -1471,59 +1491,6 @@ def landed(ctx: ToolContext, excerpt_ids: list[str]) -> None:
     turns (library_evidence.py)."""
     ctx.library_reads.credit()
     ctx.library_evidence.wrote(excerpt_ids)
-
-
-async def _carry_excerpts(ctx: ToolContext, unread: list[str]) -> ToolResult:
-    """Refuse a write naming excerpts this turn has not read, with their text.
-
-    Each is read here as read_knowledge reads it and counts as read from then
-    on (for the write guard and library evidence), so the model has seen its
-    full text before any write naming it is accepted, and the resent write
-    needs no read call. Excerpts are carried while the result fits the tool
-    output limit; one that does not fit or cannot be read stays unread.
-    """
-    shown: list[str] = []
-    left: list[str] = []
-    for excerpt_id in unread:
-        scratch = ToolContext(workspace_id=ctx.workspace_id, library=True)
-        result = await _read_knowledge({"excerpt_id": excerpt_id}, scratch)
-        text = limit_tool_result(result.text())
-        room = TOOL_RESULT_MAX_TOKENS - 200  # the refusal's own lines
-        if (
-            result.refused
-            or not scratch.library_reads.reads
-            or estimate_tokens("\n\n".join([*shown, text])) > room
-        ):
-            left.append(excerpt_id)
-            continue
-        read = scratch.library_reads.reads[0]
-        ctx.library_reads.note(
-            read.excerpt_id, read.start, read.section, text=read.text
-        )
-        ctx.library_evidence.observe(
-            "read_knowledge",
-            {"excerpt_id": excerpt_id},
-            result,
-            text,
-            ctx.library_reads,
-        )
-        shown.append(text)
-    carried = [e for e in unread if e not in left]
-    parts = []
-    if carried:
-        parts.append(
-            f"Not applied: excerpts {carried} had not been read in this turn. Their "
-            "text follows and now counts as read: check the write against it, drop "
-            "anything it does not support, and send the write again."
-        )
-    if left:
-        parts.append(
-            f"Excerpts {left} have no read or retained full text in this turn"
-            + (" and did not fit here" if carried else "")
-            + ": read_knowledge each of them before writing from it; workspace "
-            "passages need no excerpt_ids."
-        )
-    return _refused(" ".join(parts), detail="\n\n".join(shown))
 
 
 async def _post_operation(
@@ -1866,18 +1833,28 @@ async def _gateway_read(
     return body if isinstance(body, dict) else {}
 
 
-def _render_inspection(body: dict[str, Any]) -> str:
+def _render_inspection(
+    body: dict[str, Any], shown: dict[str, tuple[str, str]] | None = None
+) -> str:
+    """An inspection as the model reads it; an embedded quiz block shows as the
+    quiz fence an edit writes, recorded in ``shown``."""
+    supported = list(body.get("supportedOperations") or [])
+    if body.get("materialKind") == "quiz":
+        supported.append("(add or replace questions with add_questions)")
     head = [
         f"{body.get('title') or ''} format={body.get('format')}",
-        "supported: " + ", ".join(body.get("supportedOperations") or []),
+        "supported: " + ", ".join(supported),
     ]
     lines: list[str] = []
     for block in body.get("blocks") or []:
         props = block.get("properties") or {}
         flags = " [media]" if props.get("media") else ""
-        lines.append(
-            f"[{block.get('id')}] ({block.get('type')}){flags} {block.get('text') or ''}"
-        )
+        text = str(block.get("text") or "")
+        view = questions.quiz_fence_view(text) if block.get("type") == "quiz" else None
+        if view is not None and shown is not None:
+            shown[str(block.get("id"))] = (view, text)
+            text = view
+        lines.append(f"[{block.get('id')}] ({block.get('type')}){flags} {text}")
         for child in block.get("children") or []:
             lines.append(
                 f"    [{child.get('id')}] ({child.get('type')}) {child.get('text') or ''}"
@@ -1929,11 +1906,13 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     )
     if isinstance(body, ToolResult):
         return body
+    shown = None
     if kind == "material":
         seen = ctx.seen_blocks.setdefault(rid, {})
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
-    return _result(_render_inspection(body))
+        shown = ctx.shown_quizzes.setdefault(rid, {})
+    return _result(_render_inspection(body, shown))
 
 
 # How much of a missed block's current text a refused edit shows.
@@ -1992,6 +1971,17 @@ def _saw_edit(seen: dict[str, str], commands: list[dict[str, Any]]) -> None:
             seen.pop(str(command.get("block_id") or ""), None)
 
 
+def _stored_expectation(
+    command: dict[str, Any], shown: dict[str, tuple[str, str]]
+) -> dict[str, Any]:
+    """A command expecting an embedded quiz block's text as inspect_document
+    showed it (_render_inspection) expects the block's stored text."""
+    view = shown.get(str(command.get("block_id") or ""))
+    if view and str(command.get("expected_text") or "").strip() == view[0].strip():
+        return {**command, "expected_text": view[1]}
+    return command
+
+
 async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not _gateway_ready() or not ctx.user_id or not ctx.assistant_message_id:
         return _refused(
@@ -1999,7 +1989,10 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     call_id = str(args.get("_tool_call_id") or "")
     kind, rid = _target(args)
-    commands = list(args.get("commands") or [])
+    commands = [
+        _stored_expectation(c, ctx.shown_quizzes.get(rid, {}))
+        for c in args.get("commands") or []
+    ]
     # Note markdown may hold quiz fences and place library figures; a source
     # file takes neither.
     placing = [
@@ -2531,8 +2524,6 @@ def _offered(spec: ToolSpec, ctx: ToolContext) -> bool:
     if spec.name == KNOWLEDGE_CAPTURE:
         # Without the knowledge-base bucket there is nothing to render.
         return ctx.library and library.enabled() and bool(cfg.knowledge_base_b2_bucket)
-    if spec.name in DECK_TOOLS:
-        return deck.available()
     if spec.name in KNOWLEDGE_TOOLS:
         return ctx.library and library.enabled()
     if spec.name != "resolve_source_change":
@@ -2555,10 +2546,9 @@ def schemas_for(ctx: ToolContext) -> list[dict[str, Any]]:
         if _offered(spec, ctx)
     ]
     # The model maps the learner's words onto a subject from this list.
-    # The deck skill is listed only where its tools can run.
     extra = {
         "read_skill": skills.catalog(
-            n for n in skills.SKILLS if n != skills.DECK or deck.available()
+            preferences.merged(ctx.study_preferences)["mainFormat"]
         )
     }
     if ctx.library_catalog:

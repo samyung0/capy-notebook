@@ -252,7 +252,7 @@ func (a *api) bankCopyIntoQuiz(ctx context.Context, workspaceID, quizID string, 
 	if err != nil {
 		return hErr(err)
 	}
-	normalized, err := normalizeMaterialCommands("quiz", commands, nil)
+	normalized, err := normalizeMaterialCommands("quiz", commands, nil, nil)
 	if err != nil {
 		return documentHTTPError(err)
 	}

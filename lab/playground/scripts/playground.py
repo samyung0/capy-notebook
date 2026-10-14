@@ -56,7 +56,7 @@ RUNS = LOCAL / "runs"
 PREVIEW = LOCAL / "preview"
 PREVIEW_BUILD = "pnpm exec vite build --config lab/playground/preview/vite.config.ts"
 EMBED = REPO / "embed"
-SLIDE_FIGURE = re.compile(r"""href=(["'])\.\./images/(p\d+\.jpg)\1""")
+SLIDE_FIGURE = re.compile(r"""href=(["'])\.\./images/(c\d+\.jpg)\1""")
 # Production derives the write operations from the actor's role; the playground
 # grants an editor's, plus library.read when the Library switch is on.
 BUILD_OPERATIONS = frozenset(
@@ -87,9 +87,6 @@ DEFAULT_CONFIG: dict[str, Any] = {
     # study_progress: null leaves read_study_progress unoffered; a dict is the
     # fixture it returns, shaped like /api/internal/study-progress.
     "study_progress": None,
-    # decks: offer the deck tools (production's, run locally here: deck.py);
-    # the main explainer format is study_preferences.mainFormat.
-    "decks": {"offer": True},
     # transport: send this pin to another OpenAI-compatible endpoint instead of the
     # production route, e.g. {"url": ".../v1/chat/completions", "key_env": "RELACE_API_KEY",
     # "wire_model": "z-ai/glm-5.3-flash", "body": "zai"}. body picks the request builder.
@@ -315,36 +312,21 @@ def tools_off(kw: dict[str, Any]) -> bool:
 
 
 def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
-    """What a turn offers: production's tools, without the deck tools and the
-    deck skill when decks are off, with the configured descriptions."""
-    from pipeline.retrieval import skills
-
+    """What a turn offers: production's tools (the deck tools always, as
+    production offers them), with the configured descriptions."""
     out = [
         s
         for s in production
-        if (c["decks"]["offer"] or s["function"]["name"] not in deck.NAMES)
-        and (c["tools"] is None or s["function"]["name"] in c["tools"])
+        if c["tools"] is None or s["function"]["name"] in c["tools"]
     ]
-    schemas = configured_tools(c, out)
-    if not c["decks"]["offer"]:
-        line = "\n" + skills.catalog_line(skills.DECK, skills.SKILLS[skills.DECK].when)
-        for schema in schemas:
-            if schema["function"]["name"] == "read_skill":
-                schema["function"]["description"] = schema["function"][
-                    "description"
-                ].replace(line, "")
-    return schemas
+    return configured_tools(c, out)
 
 
 def skill_texts(c: dict[str, Any], *, library: bool) -> dict[str, str]:
-    """Production's text of each skill this config offers."""
+    """Production's text of each skill."""
     from pipeline.retrieval import skills
 
-    return {
-        name: skill.text(library)
-        for name, skill in skills.SKILLS.items()
-        if c["decks"]["offer"] or name != skills.DECK
-    }
+    return {name: skill.text(library) for name, skill in skills.SKILLS.items()}
 
 
 def skill_text(c: dict[str, Any], name: str, *, library: bool) -> str | None:
@@ -498,6 +480,8 @@ async def create_material_locally(
         "edits": [],
     }
     state["materials"].append(record)
+    # A note's blocks get their ids now, as the gateway's receipt lists them.
+    written = [t["id"] for t in inspected(record)] if kind == "note" else []
     write_material(state, record)
     result = tools._receipt_result(
         {
@@ -510,6 +494,7 @@ async def create_material_locally(
                     "title": title,
                     "materialKind": kind,
                 },
+                "blockIds": written,
             },
         }
     )
@@ -540,7 +525,7 @@ def keep_images(state: dict[str, Any], images: dict[str, bytes]) -> dict[str, An
 
 # What inspect_document offers per material kind (the gateway's materialOperations).
 OPERATIONS = {
-    "quiz": ["replace_question", "add_question", "remove_question"],
+    "quiz": ["remove_question"],
     "flashcards": ["replace_card", "add_card", "remove_card"],
     "mindmap": ["set_mermaid"],
     "diagram": ["set_mermaid"],
@@ -658,12 +643,15 @@ def inspect_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
     body = {
         "title": record["title"],
         "format": "plate",
+        "materialKind": record["kind"],
         "supportedOperations": OPERATIONS.get(record["kind"], NOTE_OPERATIONS),
         "blocks": shown,
         "total": len(targets),
         "nextStart": end if end < len(targets) else None,
     }
-    return tools._result(tools._render_inspection(body))
+    return tools._result(
+        tools._render_inspection(body, ctx.shown_quizzes.setdefault(rid, {}))
+    )
 
 
 def read_locally(args: dict[str, Any], state: dict[str, Any]):
@@ -703,6 +691,8 @@ def edited(record: dict[str, Any], commands: list[dict[str, Any]]) -> dict[str, 
 
 
 def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> str:
+    from pipeline.retrieval import tools
+
     kind, op = draft["kind"], command.get("type")
     offered = OPERATIONS.get(kind, NOTE_OPERATIONS)
     if op not in offered:
@@ -717,9 +707,10 @@ def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> st
     if op in ("insert_markdown", "add_card"):
         key = "after_card_id" if op == "add_card" else "after_block_id"
         after = command.get(key)
-        if after is not None and after not in ids:
+        end = op == "insert_markdown" and after == tools.END_ANCHOR
+        if after is not None and not end and after not in ids:
             return f"{where}.{key}: no {after} in this {kind}"
-        at = 0 if after is None else ids.index(after) + 1
+        at = len(ids) if end else 0 if after is None else ids.index(after) + 1
         if op == "add_card":
             new = [{"id": fresh_id(draft, "c"), "front": command["front"], "back": command["back"]}]
         else:
@@ -765,7 +756,10 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
             f"edit_document: {rid} is not a material this conversation created.",
             code="unavailable_target",
         )
-    commands = list(args.get("commands") or [])
+    commands = [
+        tools._stored_expectation(c, ctx.shown_quizzes.get(rid, {}))
+        for c in args.get("commands") or []
+    ]
     placing = [
         i
         for i, c in enumerate(commands)
@@ -793,6 +787,7 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
         return tools._refused(f"edit_document: {problem}")
     for i, markdown in zip(placing, figures.markdown, strict=True):
         commands[i] = {**commands[i], "markdown": markdown}
+    written: list[str] = []  # the note blocks the edit wrote, for the receipt
     if record["kind"] == "quiz":
         kept = apply_question_commands(record["questions"], commands)
         problem = await check_quiz(kept)
@@ -800,9 +795,13 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
             return tools._refused(f"edit_document: {problem}")
         draft = {"questions": kept}
     else:
+        before = {t["id"] for t in inspected(record)}
         draft = edited(record, commands)
         if isinstance(draft, str):
             return tools._refused(draft)
+        written = [
+            b["id"] for b in draft.get("blocks") or [] if b["id"] not in before
+        ]
     saved = await save_figures(state, figures)
     if isinstance(saved, tools.ToolResult):
         return saved
@@ -826,6 +825,7 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
                     "title": record["title"],
                     "materialKind": record["kind"],
                 },
+                "blockIds": written,
             },
         }
     )
@@ -884,22 +884,21 @@ async def deck_locally(
         if isinstance(prepared, tools.ToolResult):
             return prepared
         books, credited = prepared
-        # The model knows a capture by its page; a later capture of the same
-        # page wins. A whole page is refused: a slide shrinks it unreadable.
+        # The model knows a capture by its number in the turn, as production
+        # (deck.turn_figures). A whole page is refused: a slide shrinks it
+        # unreadable.
         captures, figures, excerpts = {}, {}, {}
-        for cap in state["captures"]:
-            page = cap["page"]
+        for n, cap in enumerate(state["captures"], 1):
             if not cap.get("bbox") or list(cap["bbox"]) == production_deck.WHOLE_PAGE:
-                captures[page] = (
-                    f"page {page} was captured whole; capture it again with a bbox "
+                captures[n] = (
+                    f"capture {n} is a whole page; capture it again with a bbox "
                     "around the figure"
                 )
                 continue
-            captures[page] = ""
-            figures[page] = (state["run_dir"].parent.parent / cap["image"]).read_bytes()
-            excerpts.pop(page, None)
+            captures[n] = ""
+            figures[n] = (state["run_dir"].parent.parent / cap["image"]).read_bytes()
             if cap.get("excerpt_id"):
-                excerpts[page] = cap["excerpt_id"]
+                excerpts[n] = cap["excerpt_id"]
         cropped = sorted(
             {excerpts[p] for p in deck.figure_pages(clean["svg"]) if p in excerpts}
         )
@@ -1969,7 +1968,7 @@ def build_app(target: str):
     # in production, so the offered tools match what a real turn would see.
     cfg.gateway_url = cfg.gateway_url or "http://playground.invalid"
     cfg.pipeline_secret = cfg.pipeline_secret or "playground"
-    # Production offers the deck tools only with ppt-master installed.
+    # Production's image holds ppt-master; here it is cloned on first use.
     deck.ensure_ppt_master()
     app = FastAPI(title="Capy agentic playground")
     resolver = PdfResolver(target)
@@ -2308,14 +2307,14 @@ def check_decks() -> None:
         record = state["materials"][0]
         rid = record["id"]
         assert "1. Tangent meets radius (to write)" in made.text()
-        assert "Reference slide toc" in skills.SKILLS[skills.DECK].text(False)
+        assert "Reference slide toc" in skills.SKILLS[skills.DECK_BUILDING].text(False)
         long = '<text x="64" y="300">' + "far too long for this box " * 8 + "</text>"
         for args, says in (
             ({"slide": 1, "svg": "<svg"}, "does not parse"),
             ({"slide": 1, "svg": slide().replace('viewBox="0 0 1280 720"', 'viewBox="0 0 800 600"')}, "viewBox must be"),
             ({"slide": 1, "svg": slide(lang="")}, "needs lang"),
             ({"slide": 1, "svg": slide(body=long, bounds="64 260 300 60")}, "refused by the checker"),
-            ({"slide": 1, "svg": slide(body='<image href="../images/p13.jpg" x="64" y="260" width="40" height="30"/>')}, "was not captured"),
+            ({"slide": 1, "svg": slide(body='<image href="../images/c13.jpg" x="64" y="260" width="40" height="30"/>')}, "was not made this turn"),
             ({"slide": 9, "svg": slide()}, "the deck has 2 slides"),
         ):
             refused = await deck_locally("write_slide", {"deck_id": rid, **args}, ctx, state, "m1")
@@ -2333,13 +2332,13 @@ def check_decks() -> None:
             state["captures"].append(
                 {"page": page, "bbox": bbox, "image": str(image.relative_to(run_dir.parent.parent))}
             )
-        figure = '<image href="../images/p{}.jpg" x="64" y="260" width="40" height="30" preserveAspectRatio="xMidYMid meet"/>'
-        whole = await deck_locally("write_slide", {"deck_id": rid, "slide": 2, "svg": slide(body=figure.format(12))}, ctx, state, "m1")
-        assert whole.refused and "captured whole" in whole.text(), whole.text()
-        done = await deck_locally("write_slide", {"deck_id": rid, "slide": 2, "svg": slide(body=figure.format(14))}, ctx, state, "m1")
+        figure = '<image href="../images/c{}.jpg" x="64" y="260" width="40" height="30" preserveAspectRatio="xMidYMid meet"/>'
+        whole = await deck_locally("write_slide", {"deck_id": rid, "slide": 2, "svg": slide(body=figure.format(1))}, ctx, state, "m1")
+        assert whole.refused and "capture 1 is a whole page" in whole.text(), whole.text()
+        done = await deck_locally("write_slide", {"deck_id": rid, "slide": 2, "svg": slide(body=figure.format(2))}, ctx, state, "m1")
         assert not done.refused and "the deck is exported" in done.text(), done.text()
         assert (run_dir.parent.parent / record["pptx"]).stat().st_size > 10_000
-        assert (run_dir / "materials" / rid / "images" / "p14.jpg").exists()
+        assert (run_dir / "materials" / rid / "images" / "c2.jpg").exists()
         # The exported PPTX is the document from now on.
         again = await deck_locally("write_slide", {"deck_id": rid, "slide": 1, "svg": slide()}, ctx, state, "m1")
         assert again.refused and "now the document" in again.text(), again.text()
@@ -2524,7 +2523,7 @@ def check_edits() -> None:
             {"kind": "note", "title": "T", "content": "# T\nIntro.\n\n- a\n- b", "_tool_call_id": "c1"},
             ctx, state, "m1",
         )
-        assert not made.refused, made.text()
+        assert not made.refused and "It wrote blocks b1, b2, b3." in made.text(), made.text()
         note = state["materials"][-1]
         target = {"kind": "material", "id": note["id"]}
         seen = inspect_locally({"target": target}, ctx, state).text()
@@ -2541,9 +2540,15 @@ def check_edits() -> None:
         assert refused.refused and "b2 now reads: Start." in refused.text(), refused.text()
         read = read_locally({"file_id": note["id"], "start": 1, "count": 2}, state).text()
         assert read == "Start.\n\nPart two.\n\n(next start = 3)", read
+        # "end" appends after the last block; the receipt names the new blocks.
+        end = [{"type": "insert_markdown", "after_block_id": "end", "markdown": "Last."}]
+        appended = await edit_material_locally({"target": target, "commands": end}, ctx, state)
+        assert note["content"].endswith("- c\n\nLast.") and "It wrote blocks b7." in appended.text(), (
+            appended.text()
+        )
         later = {"materials": [], "captures": [], "run_dir": run_dir.parent / "r2"}
         again = inspect_locally({"target": target, "start": 2, "count": 1}, ctx, later).text()
-        assert "[b4] (paragraph) Part two.\n(next start = 3 of 5)" in again, again
+        assert "[b4] (paragraph) Part two.\n(next start = 3 of 6)" in again, again
         cards = await create_material_locally(
             {"kind": "flashcards", "title": "C", "cards": [{"front": "a", "back": "b"}], "_tool_call_id": "c2"},
             ctx, state, "m1",
@@ -2627,18 +2632,19 @@ def check() -> None:
             assert exc.status_code == 400
         else:
             raise AssertionError(f"accepted invalid tool_descriptions: {invalid}")
-    # A skill's text replaces only that skill; deck is a skill only with decks on.
+    # A skill's text replaces only that skill.
     from pipeline.retrieval import skills
 
-    edited = merged({"skills": {"workspace_building": "my building"}})
-    assert skill_text(edited, "workspace_building", library=True) == "my building"
+    edited = merged({"skills": {"note_building": "my building"}})
+    assert skill_text(edited, "note_building", library=True) == "my building"
     assert skill_text(edited, "editing", library=True) != "my building"
-    assert skill_text(edited, "deck", library=True) == skills.SKILLS["deck"].text(True)
-    assert skill_text(merged({"decks": {"offer": False}}), "deck", library=True) is None
+    assert skill_text(edited, "deck_building", library=True) == skills.SKILLS[
+        "deck_building"
+    ].text(True)
     assert "Practice from the library" not in skill_text(
-        merged({}), "workspace_building", library=False
+        merged({}), "note_building", library=False
     )
-    for invalid in (None, {"unknown": "x"}, {"workspace_building": 1}):
+    for invalid in (None, {"unknown": "x"}, {"note_building": 1}):
         try:
             merged({"skills": invalid})
         except HTTPException as exc:
@@ -2715,8 +2721,8 @@ def check() -> None:
             ):
                 deck_dir = Path(directory) / "r1" / "materials"
                 (deck_dir / "d1" / "images").mkdir(parents=True)
-                (deck_dir / "d1" / "images" / "p3.jpg").write_bytes(b"jpeg")
-                slide = '<svg><image href="../images/p3.jpg"/></svg>'
+                (deck_dir / "d1" / "images" / "c3.jpg").write_bytes(b"jpeg")
+                slide = '<svg><image href="../images/c3.jpg"/></svg>'
                 (deck_dir / "d1.json").write_text(
                     json.dumps({"deck": {"slides": [{"svg": slide}]}})
                 )
@@ -2809,7 +2815,6 @@ def check() -> None:
                 "library": False,
                 "system_prompt": "",
                 "capture": {"addon": False},
-                "decks": {"offer": False},
             }
         )
         assert effective_prompt(bare, "production") == ""

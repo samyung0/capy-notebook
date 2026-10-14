@@ -13,24 +13,35 @@ _EDITOR = frozenset(
 
 async def test_read_skill_lists_the_skills_and_returns_the_formats():
     ctx = ToolContext(workspace_id="ws", user_id="u", operations=_EDITOR)
-    described = next(
-        s["function"]["description"]
-        for s in tools.schemas_for(ctx)
-        if s["function"]["name"] == "read_skill"
-    )
-    # The deck skill is listed only with ppt-master installed (test_deck.py).
-    for name, skill in skills.SKILLS.items():
-        assert (f"- {name}: {skill.when}." in described) == (name != skills.DECK)
 
-    text = (await tools._read_skill({"name": "workspace_building"}, ctx)).text()
-    assert text.startswith("# Skill: workspace_building\n")
-    assert contract.FORMATS["note"] in text and "add_questions" in text
+    def described() -> str:
+        return next(
+            s["function"]["description"]
+            for s in tools.schemas_for(ctx)
+            if s["function"]["name"] == "read_skill"
+        )
+
+    # The output-files preference's building skill is the chapters'; the
+    # other is for a request that asks for its format (Epo 2026-10-14).
+    listed = described()
+    assert f"- editing: {skills.SKILLS['editing'].when}." in listed
+    assert "main explainers are notes." in listed
+    assert "PowerPoint deck (create_deck, write_slide), only when the request" in listed
+    ctx.study_preferences = {"mainFormat": "deck"}
+    listed = described()
+    assert "main explainers are decks." in listed
+    assert "adding note sections, only when the request asks for a note" in listed
+
+    text = (await tools._read_skill({"name": "note_building"}, ctx)).text()
+    assert text.startswith("# Skill: note_building\n")
+    assert contract.FORMATS["note"] in text and "Quizzes: add_questions" not in text
     editing = (await tools._read_skill({"name": "editing"}, ctx)).text()
     assert "Budget:" in editing and "excerpt_ids are" not in editing
+    assert "add_questions" in editing and "Flashcards:" in editing
     ctx.library = True
     assert (
         "Practice from the library"
-        in (await tools._read_skill({"name": "workspace_building"}, ctx)).text()
+        in (await tools._read_skill({"name": "note_building"}, ctx)).text()
     )
     assert (
         "excerpt_ids are" in (await tools._read_skill({"name": "editing"}, ctx)).text()
@@ -46,13 +57,13 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
     assert refused.refused
     # The refusal carries both skills, which count as read once it is in the
     # request; only the short refusal is the error the chat stores.
-    assert refused.error == skills.refusal(["editing", "workspace_building"])
+    assert refused.error == skills.refusal(["editing", "note_building"])
     building = skills.render(
-        "workspace_building", skills.SKILLS["workspace_building"].text(False)
+        "note_building", skills.SKILLS["note_building"].text(False)
     )
     assert refused.text().endswith(building)
     carried = [{"role": "tool", "tool_call_id": "c0", "content": refused.text()}]
-    assert skills.retained(carried) == {"editing", "workspace_building"}
+    assert skills.retained(carried) == {"editing", "note_building"}
 
     read = skills.render("editing", "instructions")
     messages = [{"role": "tool", "tool_call_id": "c1", "content": read}]
@@ -65,7 +76,7 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
     # A plain edit needs the basics only; new note sections need the formats too.
     assert skills.missing("edit_document", {"commands": [fix]}, set()) == ["editing"]
     assert skills.missing("edit_document", {"commands": [note]}, {"editing"}) == [
-        "workspace_building"
+        "note_building"
     ]
     rewrite = {
         "type": "replace_block",
@@ -74,16 +85,20 @@ async def test_writes_need_the_skill_while_its_text_is_in_the_request(monkeypatc
         "markdown": "b",
     }
     assert skills.missing("edit_document", {"commands": [rewrite]}, {"editing"}) == [
-        "workspace_building"
+        "note_building"
     ]
     assert skills.missing("create_material", {}, set(skills.SKILLS)) == []
+    # Only a note needs note_building; a quiz or flashcards need editing alone.
+    cards = {"kind": "flashcards", "cards": []}
+    assert skills.missing("create_material", cards, set()) == ["editing"]
+    assert skills.missing("add_questions", {}, set()) == ["editing"]
 
 
 async def test_a_later_turn_replays_the_skills_an_earlier_turn_read():
     ctx = ToolContext(workspace_id="ws", user_id="u", operations=_EDITOR)
-    ctx.skills_read = {"editing", "workspace_building"}
+    ctx.skills_read = {"editing", "note_building"}
     saved = evidence.pack(ctx, [])
-    assert saved["skills"] == ["editing", "workspace_building"]
+    assert saved["skills"] == ["editing", "note_building"]
 
     def turn(n):
         return [
@@ -103,4 +118,4 @@ async def test_a_later_turn_replays_the_skills_an_earlier_turn_read():
     assert replayed[0]["content"] == skills.render(
         "editing", skills.SKILLS["editing"].text(False)
     )
-    assert skills.retained(history) == {"editing", "workspace_building"}
+    assert skills.retained(history) == {"editing", "note_building"}
