@@ -2275,6 +2275,25 @@ lost process is a slow failure, retried with backoff while the room stays
 editable, until five minutes pass without a successful save (see
 [error handling](error-handling.md#collaborative-source-failures)).
 
+An agent's `replace_text` on a DOCX or PPTX paragraph matches `expected_text`
+as a substring that occurs exactly once in the paragraph, counted as note
+edits count it (Epo, 2026-10-14; an empty one matches only an empty
+paragraph), and rewrites only the part of that occurrence the replacement
+changes, so the runs around it keep their formatting (a PPTX insertion takes
+the style of the character before it). An absent one is refused as
+`stale_target`; several occurrences, or an empty one in a paragraph with text,
+as `invalid_input`. Each refusal carries the paragraph as it reads now in
+`details.block` (`id`, `type: "paragraph"`, `text`), which crosses the engine
+process (`Failure.details`) and reaches the agent as a note block's does
+([agentic retrieval](../agentic-retrieval.md)). The Undo's inverse names the
+whole paragraph. The rule is `check_replacement` in the fork's
+`crates/office-service/src/common.rs` (`shared/office-checkpoint.ts`
+`checkReplacement` mirrors it). XLSX `set_cell` still compares the whole cell
+(its input or its shown value); refused as `stale_target`, it carries the cell
+as inspect lists it in `details.block` (the entry's `id`, `type: "cell"`, its
+`value` as `text`; Epo, 2026-10-14). An empty cell is not listed, so its
+refusal carries nothing.
+
 The collaboration server's documents run no yrs formatting cleanup: every
 room and every working document (folds, captures, saves, rebuilds, the size
 check) takes its options from `ydoc::doc_options` in

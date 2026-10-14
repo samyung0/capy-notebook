@@ -126,6 +126,47 @@ async fn office_calls_through_the_pool_equal_the_crate_in_process() {
     assert_eq!(save.replica_hits, 1);
 }
 
+/// A refused agent edit crosses the engine process with its details: the
+/// paragraph as it reads now (Epo 2026-10-14).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_refused_edit_keeps_its_details_through_the_pool() {
+    use sources::engine::{EngineError, FailureKind};
+    let pool = pool();
+    let base = fixture("e2e/fixtures/files/basic/lesson.docx");
+    let sha = office_service::sha256_hex(&base);
+    let on = On {
+        format: Format::Docx,
+        base: &base,
+        base_sha256: &sha,
+        room: None,
+    };
+    let seed = pool.seed(on).await.unwrap();
+    let entries = pool.inspect(on, &seed).await.unwrap();
+    let entry = entries.iter().find(|entry| entry.value.len() > 3).unwrap();
+    let refused = pool
+        .apply_commands(
+            on,
+            &seed,
+            &[Command::ReplaceText {
+                target_id: entry.id.clone(),
+                expected_text: "not in this paragraph".into(),
+                text: "x".into(),
+            }],
+        )
+        .await
+        .unwrap_err();
+    let EngineError::Refused(failure) = refused else {
+        panic!("{refused:?}")
+    };
+    assert_eq!(failure.kind, FailureKind::Edit);
+    assert_eq!(
+        failure.details,
+        Some(serde_json::json!({
+            "block": { "id": entry.id, "type": "paragraph", "text": entry.value }
+        }))
+    );
+}
+
 // seedCheck.test.ts: the seed check seeds each base once and reports every
 // changed seed.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

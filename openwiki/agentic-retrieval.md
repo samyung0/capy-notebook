@@ -3106,7 +3106,13 @@ carries `lines`, the line each occurrence starts in (`{start, text}`, the
 line's UTF-16 offset as `inspect_document` pages lines; one per occurrence,
 at most 20), and one not found carries nothing (Epo 2026-10-14;
 `occurrence_lines` in `crates/notes/src/edit.rs`, through the sources
-crate's refusal). The pipeline keeps what this turn last inspected or wrote of each
+crate's refusal). A DOCX or PPTX `replace_text` whose expected text is not
+in the paragraph, occurs in it more than once, or is empty in a paragraph
+with text carries the paragraph in `details.block` (`type: "paragraph"`, its
+text as `inspect_document` shows it), and a stale XLSX `set_cell` carries
+the cell (`type: "cell"`, its inspect entry id and value) unless it is empty
+(Epo 2026-10-14, the fork's `office-service`, see
+[Office files](frontend/office-files.md)). The pipeline keeps what this turn last inspected or wrote of each
 block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
 adds "changed since you last saw it" when the block differs. An insert whose
 `after_block_id` is gone is not refused (decision 2026-10-09): when the same

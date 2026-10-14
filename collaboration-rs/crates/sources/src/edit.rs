@@ -89,7 +89,7 @@ impl From<notes::edit::EditError> for SourceError {
 }
 
 /// `officeError`: an engine refusal of an agent edit crosses the process
-/// boundary as `<code>: message`.
+/// boundary as `<code>: message`, with its details.
 fn office_error(error: EngineError) -> SourceError {
     if let EngineError::Refused(failure) = &error
         && failure.kind == FailureKind::Edit
@@ -99,7 +99,11 @@ fn office_error(error: EngineError) -> SourceError {
             "invalid_input" | "stale_target" | "unavailable_target" | "unsupported_operation"
         )
     {
-        return edit_error(code, message);
+        return SourceError::Edit {
+            code: code.into(),
+            message: message.into(),
+            details: failure.details.clone(),
+        };
     }
     SourceError::Engine(error)
 }
@@ -521,14 +525,17 @@ mod tests {
     }
 
     #[test]
-    fn engine_edit_refusals_keep_their_code() {
+    fn engine_edit_refusals_keep_their_code_and_details() {
+        let block = json!({ "block": { "id": "p1", "type": "paragraph", "text": "now" } });
         let refused = EngineError::Refused(crate::engine::Failure {
             kind: FailureKind::Edit,
             message: "stale_target: the paragraph changed".into(),
+            details: Some(block.clone()),
         });
         assert!(matches!(
             office_error(refused),
-            SourceError::Edit { ref code, ref message, .. } if code == "stale_target" && message == "the paragraph changed"
+            SourceError::Edit { ref code, ref message, ref details }
+                if code == "stale_target" && message == "the paragraph changed" && details.as_ref() == Some(&block)
         ));
         let other = EngineError::Transient("Office engine process exited".into());
         assert!(matches!(office_error(other), SourceError::Engine(_)));

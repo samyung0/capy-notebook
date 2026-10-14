@@ -32,6 +32,8 @@ pub enum FailureKind {
 pub struct Failure {
     pub kind: FailureKind,
     pub message: String,
+    /// An edit refusal's target as it reads now (office-service `Error::Edit`).
+    pub details: Option<Value>,
 }
 
 impl Failure {
@@ -39,6 +41,7 @@ impl Failure {
         Self {
             kind: FailureKind::Invalid,
             message: message.into(),
+            details: None,
         }
     }
 }
@@ -84,6 +87,7 @@ fn serve_on_this_thread(mut call: impl FnMut(&Frame) -> Answer) -> io::Result<()
                     .map(|text| (*text).to_owned())
                     .or_else(|| panic.downcast_ref::<String>().cloned())
                     .unwrap_or_else(|| "unknown panic".into()),
+                details: None,
             })
         });
         let usage = json!({
@@ -104,6 +108,7 @@ fn serve_on_this_thread(mut call: impl FnMut(&Frame) -> Answer) -> io::Result<()
                 serde_json::to_vec(&json!({
                     "kind": failure.kind,
                     "message": failure.message,
+                    "details": failure.details,
                     "usage": usage,
                 }))?,
                 Vec::new(),

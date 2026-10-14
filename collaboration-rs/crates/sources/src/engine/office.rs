@@ -61,16 +61,17 @@ pub(super) fn replica_stats_json() -> Value {
 }
 
 fn failure(error: Error) -> Failure {
-    let kind = match error {
-        Error::Edit { .. } => FailureKind::Edit,
-        Error::Rebase(_) => FailureKind::Rebase,
-        Error::Invalid(_) => FailureKind::Invalid,
-        Error::Engine(_) => FailureKind::Engine,
-        Error::Panic(_) => FailureKind::Panic,
+    let (kind, details) = match &error {
+        Error::Edit { details, .. } => (FailureKind::Edit, details.clone()),
+        Error::Rebase(_) => (FailureKind::Rebase, None),
+        Error::Invalid(_) => (FailureKind::Invalid, None),
+        Error::Engine(_) => (FailureKind::Engine, None),
+        Error::Panic(_) => (FailureKind::Panic, None),
     };
     Failure {
         kind,
         message: error.to_string(),
+        details,
     }
 }
 

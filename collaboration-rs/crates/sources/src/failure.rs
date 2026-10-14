@@ -294,6 +294,7 @@ mod tests {
             SourceError::Engine(EngineError::Refused(Failure {
                 kind: FailureKind::Edit,
                 message: "stale_target: changed".into(),
+                details: None,
             })),
             request(413, None),
             request(422, None),
