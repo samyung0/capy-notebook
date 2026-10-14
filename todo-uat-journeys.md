@@ -18,7 +18,11 @@ and what to do next. Coverage itself is described in
   (2026-10-10, from `deploy/model-capacities.sql` and the 2026-09-26 bench).
   Prod has no Capy database yet; run that script at the first promotion.
 
-## Uncommitted in the working tree (check `git status` first)
+## Committed 2026-10-14, unreviewed (`7a8d7e7a`, merged and pushed as `3f99cf5e`)
+
+Everything below was committed together with other sessions' unfinished UI
+work from the shared tree. None of it has run on UAT; review before deploying.
+
 
 - `e2e/uat/journeys/membership.spec.ts` (new) plus its README and
   `openwiki/test-catalog.md` rows: invited editor → demoted to viewer (through
