@@ -7277,6 +7277,7 @@ export const BootstrapSourceDocumentResponse = zod.object({
   "state": zod.string().nullable(),
   "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
+  "thumbnailStale": zod.boolean().optional(),
   "workspaceId": zod.string()
 })
 
@@ -7453,6 +7454,7 @@ export const PublishSourceRefreshResponse = zod.object({
   "state": zod.string().nullable(),
   "stateRows": zod.array(zod.string()).nullish(),
   "stateSeedSHA256": zod.string().nullable(),
+  "thumbnailStale": zod.boolean().optional(),
   "workspaceId": zod.string()
 })
 

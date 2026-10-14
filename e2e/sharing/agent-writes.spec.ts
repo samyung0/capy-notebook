@@ -752,6 +752,9 @@ test.describe('agent writes to notes', () => {
           },
         ]),
         '```flashcards\ncards:\n  - front: Items salt marsh\n    back: Coastal grassland\n  - front: Items mudflat\n    back: Bare sediment\n```',
+        // A closing paragraph: an open editor appends an empty one after a
+        // trailing embed, which would change the note under the test.
+        'Items end.',
       ].join('\n\n')
     );
     const pages = [ownerPage, editorPage];
