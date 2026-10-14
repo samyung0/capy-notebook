@@ -1,7 +1,9 @@
 """Judge the materials the three arms built: per-claim fidelity and blind pairwise preference.
 
 Inputs are the run outputs `reports/local/2026-10-intake-eval/<arm>/<request>[-r2].json`
-written by run_requests.py. `fidelity` resolves each material's excerpt ids to
+written by run_requests.py; `--eval <dir> --arms base,x,y` judges another run
+folder (its arms are subfolders named by config, the first the baseline every
+other arm is paired with), such as `reports/local/2026-10-14-library-flow`. `fidelity` resolves each material's excerpt ids to
 book pages through the arm's library (scratch for B, live through the tunnel
 for A and C), renders those pages and asks the judge for a verdict on every
 checkable claim. `pairwise` shows the same request's materials from two arms
@@ -16,6 +18,8 @@ Claude Opus 5.5 at medium effort through the CLI. Both commands are resumable.
     uv run --project pipeline python bench/rag/intake/scripts/materials_judge.py chapters
     uv run --project pipeline python bench/rag/intake/scripts/materials_judge.py summary
     uv run --project pipeline python bench/rag/intake/scripts/materials_judge.py check [--delete]
+    uv run --project pipeline --with pymupdf==1.28.2 python bench/rag/intake/scripts/materials_judge.py fidelity \
+        --eval bench/rag/reports/local/2026-10-14-library-flow --arms intake-a,flow-search-subject
 
 With ``--pack`` (amendment 6) a judge command writes each pending call as a task
 file under judge/tasks/ instead of calling the CLI; the judge subagents
@@ -55,6 +59,16 @@ PAGE_CAP = 32
 TEXT_CAP = 40_000
 TRANSPORT = {"mode": "cli"}  # "pack": write task files for the judge subagents (amendment 6)
 TASKS = JUDGE / "tasks"
+
+
+def configure(eval_dir: Path, arms: list[str]) -> None:
+    """Point the judge at a run folder and its arms; the first arm is the
+    baseline every other arm is paired with. Arm "B" reads the scratch library."""
+    global EVAL, JUDGE, TASKS, ARMS, PAIRS
+    EVAL, ARMS = eval_dir.resolve(), tuple(arms)
+    JUDGE = EVAL / "judge"
+    TASKS = JUDGE / "tasks"
+    PAIRS = tuple((ARMS[0], a) for a in ARMS[1:])
 
 
 def write_verdict(verdict_path: Path, outcome: dict) -> None:
@@ -373,7 +387,8 @@ def material_costs(run: dict) -> tuple[list[dict], int]:
 def mechanical(output: dict) -> dict:
     runs = [run_record(t) for t in output["turns"]]
     costs = [material_costs(r) for r in runs]
-    todos = [t for r in runs for t in (r["ledger"].get("todos") or [])]
+    # Runs since the 2026-10-13 ledger removal carry none.
+    todos = [t for r in runs for t in ((r.get("ledger") or {}).get("todos") or [])]
     return {
         "materials_per_turn": [len(t.get("materials") or []) for t in output["turns"]],
         "materials_before_confirmation": len(output["turns"][0].get("materials") or []) if len(output["turns"]) > 1 else None,
@@ -540,7 +555,7 @@ def summary() -> None:
                     continue
                 run = run_record(t)
                 c["inspect_failures"] += sum(1 for x in run["calls"] if x["name"] == "inspect_document" and x.get("outcome") != "succeeded")
-                if (run.get("telemetry") or {}).get("planningRounds") == 8 and not (run["ledger"].get("todos") or []) and not run.get("materials"):
+                if (run.get("telemetry") or {}).get("planningRounds") == 8 and not ((run.get("ledger") or {}).get("todos") or []) and not run.get("materials"):
                     c["planning_cap_hits"] += 1
     print(json.dumps({"fidelity": fid, "pairwise": pairwise_tallies(JUDGE / "pairwise"), "second_rater": raters, "locator": loc, "chapters": chap, "counters": counters}, indent=1))
 
@@ -582,12 +597,17 @@ def main() -> None:
     parser.add_argument("command", choices=["fidelity", "pairwise", "locator", "chapters", "summary", "check"])
     parser.add_argument("--pack", action="store_true", help="write task files for the judge subagents instead of calling the CLI (amendment 6)")
     parser.add_argument("--delete", action="store_true", help="check: delete invalid verdicts")
-    parser.add_argument("--arm", choices=ARMS)
+    parser.add_argument("--eval", type=Path, default=EVAL, help="the run folder (default: the 2026-10-07 comparison)")
+    parser.add_argument("--arms", default=",".join(ARMS), help="comma-separated arm folders, baseline first")
+    parser.add_argument("--arm", help="one of --arms")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--seed", type=int, default=20261006)
     parser.add_argument("--model", default=MODEL, help="pairwise: the rater; a second model writes to judge/pairwise-<model>/")
     parser.add_argument("--sample", type=float, help="pairwise: rate only this seeded share of the pairs (the second rater's 0.2)")
     args = parser.parse_args()
+    configure(args.eval, args.arms.split(","))
+    if args.arm and args.arm not in ARMS:
+        parser.error(f"--arm must be one of {', '.join(ARMS)}")
     if args.pack:
         TRANSPORT["mode"] = "pack"
     if args.command == "check":
