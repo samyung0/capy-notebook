@@ -3230,7 +3230,9 @@ program answer through `@openuidev/react-lang`'s `Renderer` and the
 Capy-owned components in `chat/blocks/` (prose through Streamdown with
 `$…$`/`$$…$$` math drawn by KaTeX, which loads with the first formula; a
 single `$` follows Pandoc's rule so prices stay text, and a formula KaTeX
-cannot read shows its source; tabs,
+cannot read shows its source; a Markdown or HTML image is drawn as a link to
+its URL, showing its alt text (inside a link, as that link's text), and a
+`<picture>` source as nothing, so an answer loads no picture from a URL; tabs,
 steps, accordions, callouts, label/value rows, cards, tables, SVG charts
 themed by `--chart-1..6`, plots (`Plot` with `Curve`, `RefLine` and `Point`
 marks, mapped onto the shared `plot` question block and drawn by `PlotChart`;
