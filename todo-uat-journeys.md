@@ -429,7 +429,7 @@ fixed yet.** The fix order and open questions are in "Fix plan" below.
 - **CSV limit**: see the next section. Every CSV save re-chunks the whole table
   at the 15 s text cadence, which adds to the quadratic-chunking risk.
 
-## Fix plan (recommended 2026-10-14; paused, needs Epo's go)
+## Fix plan (recommended 2026-10-14; Epo approved all recommendations 2026-10-14, `human/` df7c54f5)
 
 1. **Note indexing, pipeline (one ingest release):**
    - give `_pipeline_source_cancellation` a note branch (workspace and owner
@@ -472,6 +472,8 @@ fixed yet.** The fix order and open questions are in "Fix plan" below.
    rebasing rebuilds become common.
 5. **Restore** (Epo's call): clear `refresh_error` in `RestoreFromTrash`.
 6. **UAT hold covers text:** run the hold before the text branch.
+
+   Progress 2026-10-14: steps 3, 5 and 6 landed (Editor `refresh` track), plus the 30 s text idle window and the step 7 docs for refresh. Deploy: Go and the collaboration server, either order, no migration. J5 should allow about 90 s for the second automatic refresh (text is now due 30 s after the last save).
 7. **Docs:**
    - `agentic-retrieval.md`: notes have no Process (with auto process off they
      wait until it is on); the vector-reuse sentence; parked notes count; the
