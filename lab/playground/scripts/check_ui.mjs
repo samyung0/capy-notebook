@@ -52,7 +52,7 @@ const resolvePreview = async (index, prompt) => {
     json: async () => ({
       prompt,
       tool_prompts: toolPrompts,
-      skills: { workspace_building: 'Production building' },
+      skills: { note_building: 'Production building' },
       library_rules: 'Production library rules',
       full_prompt: `${prompt}\n\n${config.library_rules ?? 'Production library rules'}`,
       tools: Object.entries(toolPrompts).map(([name, description]) => ({
@@ -125,13 +125,13 @@ assert.equal(
 assert.equal(element('toolPrompt').value, 'Production search');
 
 // A skill edit lands in skills by name and leaves the system prompt alone.
-element('skillName').value = 'workspace_building';
+element('skillName').value = 'note_building';
 element('skillName').onchange();
 assert.equal(element('skillPrompt').value, 'Production building');
 type('skillPrompt', 'My building skill');
 element('applySkillPrompt').onclick();
 assert.deepEqual(JSON.parse(element('json').value).skills, {
-  workspace_building: 'My building skill',
+  note_building: 'My building skill',
 });
 assert.equal(JSON.parse(element('json').value).system_prompt, null);
 await resolvePreview(8, 'Production prompt');

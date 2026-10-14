@@ -34,29 +34,35 @@ scripts), and compare a live deck with the previous commit's.
 ## The flow
 
 Offered to a turn holding `material.create` (owner and editors, the role set
-that may upload), with the gateway configured and ppt-master installed
-(`deck.available()`); the `read_skill` catalog lists the `deck` skill only
-then. Both tools mutate, so a response that calls one runs serially.
+that may upload) with the gateway configured, always (Epo 2026-10-14): the
+retrieval image holds ppt-master, and where it is missing a deck fails loudly
+(`deck._script`). Both tools mutate, so a response that calls one runs
+serially.
 
-1. **Skill.** `read_skill("deck")` returns the method (outline first, one slide
-   per call), the slide rules
+1. **Skill.** `read_skill("deck_building")` returns the method (outline first,
+   one slide per call, finish the deck in the turn that creates it: its slides
+   last only until the turn ends, and the final notice says an unfinished deck
+   was not saved), the slide rules
    (`prompts/skills.py` `deck_rules`) and the style with its reference slides
    (`prompts/deck_styles/editorial/`: `style.md`, `examples/*.svg`). Both deck
-   tools are refused until `editing` and `deck` are in the request
-   (`skills.REQUIRES`).
+   tools are refused until `editing` and `deck_building` are in the request
+   (`skills.REQUIRES`). The catalog words it as the chapters' skill when the
+   output files are PowerPoint, else as one for a request that asks for a deck.
 2. **`create_deck {title, slides[{title, brief}], chapter_id?, excerpt_ids?}`.**
    1 to 30 slides. The outline lives on the turn (`ToolContext.decks`, id
    `deck_` + sha256(message, call)[:12]); nothing is stored. `chapter_id` must
    be one of the turn's chapters. Its `excerpt_ids` follow a material
-   write's rule (`tools.write_sources`): named excerpts must have been read,
-   and omitted ones are the excerpts read since the last write, so each slide
+   write's rule (`tools.write_sources`): named excerpts are credited, and
+   omitted ones are the excerpts read since the last write, so each slide
    credits what was read for it. A deck write credits the reads but does not
    retain them for later turns.
 3. **`write_slide {deck_id, slide, svg, excerpt_ids?}`.** At most 40,000
    characters of SVG. Our checks first: the XML parses, the root is `<svg>`
    with `viewBox="0 0 1280 720"` and `lang`, and every `<image>` is
-   `../images/p<page>.jpg` for a page captured this turn with a bbox (a whole
-   page or an uncaptured page is refused). Then ppt-master's checker runs on
+   `../images/c<n>.jpg` for capture n of this turn, made with a bbox (a
+   capture's result names n; a whole page or a number no capture holds is
+   refused). Captures are numbered rather than named by page so page 4 of two
+   sources cannot collide (Epo 2026-10-14). Then ppt-master's checker runs on
    the slide alone in a temporary project, and up to six of its errors come
    back as the refusal. A passing slide is kept (writing it again replaces it)
    and counts as a landed write for the stall guard.
@@ -135,8 +141,11 @@ source-file edit: no `excerpt_ids`, and its provenance is unchanged.
 (`StudyPreferencesSection.tsx`). There is no automatic choice: a deck can be
 dense too, so how much either explains is the writing style's job (Epo
 2026-10-14). It reaches the model as the first study-preference line of the
-turn context (`prompts/preferences.py` `MAIN_FORMAT`), which also lets the
-agent make other files when the request or a chapter needs them.
+turn context (`prompts/preferences.py` `MAIN_FORMAT`), which also has the
+agent make other materials as the preferences and the chapter's teaching need
+say. With `deck` the knowledge-check line is left out (checks are notes only),
+and `read_skill`'s catalog offers `deck_building` for the chapters and
+`note_building` for a request that asks for a note.
 
 ## Not used yet
 

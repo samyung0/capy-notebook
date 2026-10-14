@@ -10,6 +10,8 @@ import type { ResourceRef } from './resourceRef.ts';
 import type { UndoRef } from './undoRef.ts';
 
 export interface ResourceEffect {
+  /** @nullable */
+  blockIds?: string[] | null;
   operation: ResourceEffectOperation;
   operationId?: string;
   projectionPending?: boolean;

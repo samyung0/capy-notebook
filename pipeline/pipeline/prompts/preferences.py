@@ -20,14 +20,16 @@ DEFAULTS: dict[str, Any] = {
 
 # The output file that explains each chapter: Settings' Capy Note or
 # Powerpoint (decks: openwiki/decks.md).
+# Other materials follow these preferences and what teaching the chapter
+# needs (Epo 2026-10-14).
 MAIN_FORMAT = {
     "note": (
-        "Output files: a note explains each chapter; make other files when the "
-        "request or a chapter needs them."
+        "Output files: a note explains each chapter; make other materials as these "
+        "preferences and what teaching the chapter needs say."
     ),
     "deck": (
-        "Output files: a deck explains each chapter; make other files when the "
-        "request or a chapter needs them."
+        "Output files: a deck explains each chapter; make other materials as these "
+        "preferences and what teaching the chapter needs say."
     ),
 }
 
@@ -44,7 +46,7 @@ VISUALS = {
 }
 
 # A note's knowledge checks: questions unless flashcards is set higher than
-# quiz (Epo 2026-10-14).
+# quiz (Epo 2026-10-14). Their size and placement are said here only.
 CHECKS = {
     "questions": "Close each note section with a knowledge check of at most 2 questions.",
     "cards": "Close each note section with a knowledge check of at most 3 flashcards.",
@@ -72,19 +74,25 @@ def lines(saved: dict[str, Any] | None) -> list[str]:
     }
     on = [made.format(COUNT[p[k]]) for k, (made, _) in items.items() if p[k] in COUNT]
     off = [name for k, (_, name) in items.items() if p[k] not in COUNT]
-    if not on:
-        practice = "Build no quizzes or flashcards unless asked."
-    else:
-        practice = f"Practise each chapter with {' and '.join(on)}"
-        practice += f"; make no {' or '.join(off)} unless asked." if off else "."
+    # Knowledge checks are notes only; a check is a quiz or flashcards fence, so
+    # with them on only standalone ones are off.
+    notes = p["mainFormat"] != "deck"
     checks = "off"
     if p["knowledgeChecks"]:
         cards = LEVEL.get(p["flashcards"], 0) > LEVEL.get(p["quiz"], 0)
         checks = "cards" if cards else "questions"
+    standalone = "standalone " if notes and checks != "off" else ""
+    if not on:
+        practice = f"Build no {standalone}quizzes or flashcards unless asked."
+    else:
+        practice = f"Practise each chapter with {' and '.join(on)}"
+        practice += (
+            f"; make no {standalone}{' or '.join(off)} unless asked." if off else "."
+        )
     return [
         MAIN_FORMAT.get(p["mainFormat"], MAIN_FORMAT["note"]),
         WRITING.get(p["writingStyle"], WRITING["normal"]),
         practice,
-        CHECKS[checks],
+        *([CHECKS[checks]] if notes else []),
         VISUALS.get(p["visualAids"], VISUALS["more"]),
     ]

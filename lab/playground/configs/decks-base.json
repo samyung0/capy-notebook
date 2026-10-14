@@ -24,8 +24,5 @@
   "prompt_addon": "",
   "answer": {
     "citations": "as_is"
-  },
-  "decks": {
-    "offer": true
   }
 }

@@ -273,7 +273,7 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		}
 		if !ok {
 			writeJSON(w, http.StatusBadRequest, map[string]string{
-				"code": "invalid_input", "message": "chapter_id is not a chapter of this workspace; list_sources shows them",
+				"code": "invalid_input", "message": "chapter_id is not a chapter of this workspace; the turn context lists them",
 			})
 			return
 		}
@@ -344,7 +344,27 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		a.fail(w, err)
 		return
 	}
+	if req.Kind == "note" && op.Effect != nil {
+		op.Effect.BlockIDs = topBlockIDs(content)
+	}
 	writeJSON(w, http.StatusOK, op)
+}
+
+// topBlockIDs are a note document's top-level block ids, in order.
+func topBlockIDs(content string) []string {
+	var doc struct {
+		Value []struct {
+			ID string `json:"id"`
+		} `json:"value"`
+	}
+	if json.Unmarshal([]byte(content), &doc) != nil {
+		return nil
+	}
+	ids := make([]string, 0, len(doc.Value))
+	for _, block := range doc.Value {
+		ids = append(ids, block.ID)
+	}
+	return ids
 }
 
 // convertAgentNote turns the agent's note markdown into the editor's document

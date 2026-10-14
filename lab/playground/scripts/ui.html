@@ -211,7 +211,6 @@ img.capture {
       <label>Flashcards <select id="prefCards"><option>more</option><option>less</option><option>off</option></select></label>
       <label>Visuals <select id="prefVisuals"><option>fewer</option><option>more</option></select></label>
       <label><input id="prefChecks" type="checkbox"> Knowledge checks</label>
-      <label><input id="decks" type="checkbox"> Decks</label>
     </div>
     <textarea id="json" spellcheck="false"></textarea>
     <div class="muted">
@@ -307,7 +306,7 @@ img.capture {
         What <code>read_skill</code> returns, for the skills this config offers.
         Apply writes this text into <code>skills</code>; the system prompt and
         the other skills keep their production text. Reset restores this
-        skill's production text. Production's editing and workspace_building
+        skill's production text. Production's editing and note_building
         texts follow the Library switch; an applied text does not. A config's
         <code>skill_addons</code> text is appended to the skill when it is read
         (not shown here; see it in the config JSON or a call's full context).
@@ -505,7 +504,6 @@ function setConfig(c, resetDrafts = false) {
   $('prefChecks').checked = !!prefs.knowledgeChecks;
   $('prefVisuals').value = prefs.visualAids;
   $('prefMain').value = prefs.mainFormat;
-  $('decks').checked = c.decks?.offer !== false;
   $('quality').textContent = state.quality_files.includes(
     `${state.target}-${c.workspace_id}.json`
   )
@@ -634,11 +632,6 @@ for (const id of ['prefMain', 'prefWriting', 'prefQuiz', 'prefCards', 'prefVisua
     };
     setConfig(c);
   };
-$('decks').onchange = () => {
-  const c = currentConfig();
-  c.decks = { offer: $('decks').checked };
-  setConfig(c);
-};
 $('clear').onclick = () => {
   if (active) active.abort();
   active = null;

@@ -54,17 +54,23 @@ DEFAULT_STYLE = "editorial"
 VIEWBOX = "0 0 1280 720"
 MAX_ERRORS = 6  # checker errors returned per refusal
 NS = "{http://www.w3.org/2000/svg}"
-IMAGE_HREF = re.compile(r"\.\./images/p(\d+)\.jpg")
+# A slide figure names the capture it shows, numbered as this turn made them
+# (pages of two sources may share a number).
+IMAGE_HREF = re.compile(r"\.\./images/c(\d+)\.jpg")
 WHOLE_PAGE = [0, 0, 1000, 1000]
 FILE_NAME_MAX = 120  # fieldlimits.FileName
 
 
 def available() -> bool:
-    """ppt-master is installed: the deck tools are offered only then."""
+    """ppt-master is installed. The deck tools are always offered (Epo
+    2026-10-14): the retrieval image holds it, and elsewhere a deck fails
+    loudly (_script)."""
     return (SKILL / "SKILL.md").exists()
 
 
 def _script(name: str, *args: str) -> subprocess.CompletedProcess[str]:
+    if not available():
+        raise RuntimeError(f"ppt-master is not installed at {SKILL}")
     return subprocess.run(
         [*PYTHON, str(SKILL / "scripts" / name), *args],
         capture_output=True,
@@ -230,37 +236,34 @@ def file_name(record: dict[str, Any]) -> str:
 def turn_figures(
     captures: list[dict[str, Any]], images: dict[str, tuple[str, str]]
 ) -> tuple[dict[int, str], dict[int, bytes], dict[int, str]]:
-    """This turn's captures as figures, keyed by page as the model names them
-    (a later capture of the same page wins): why each page cannot be a figure
-    (empty when it can), the JPEGs, and the library excerpt each came from.
-    A whole page is refused: a slide shrinks it unreadable."""
+    """This turn's captures as figures, keyed by capture number as the model
+    names them: why each cannot be a figure (empty when it can), the JPEGs,
+    and the library excerpt each came from. A whole page is refused: a slide
+    shrinks it unreadable."""
     problems: dict[int, str] = {}
     figures: dict[int, bytes] = {}
     excerpts: dict[int, str] = {}
-    for cap in captures:
-        page = int(cap["page"])
+    for n, cap in enumerate(captures, 1):
         bbox = cap.get("bbox")
         if not bbox or list(bbox) == WHOLE_PAGE:
-            problems[page] = (
-                f"page {page} was captured whole; capture it again with a bbox "
+            problems[n] = (
+                f"capture {n} is a whole page; capture it again with a bbox "
                 "around the figure"
             )
             continue
         _, url = images.get(cap["callId"], ("", ""))
         if not url:
-            problems[page] = f"page {page}'s capture is no longer available"
+            problems[n] = f"capture {n} is no longer available"
             continue
-        problems[page] = ""
-        figures[page] = base64.b64decode(url.split(",", 1)[1])
+        problems[n] = ""
+        figures[n] = base64.b64decode(url.split(",", 1)[1])
         if cap.get("excerptId"):
-            excerpts[page] = str(cap["excerptId"])
-        else:
-            excerpts.pop(page, None)
+            excerpts[n] = str(cap["excerptId"])
     return problems, figures, excerpts
 
 
 def figure_pages(svg: str) -> set[int]:
-    """The captured pages a slide embeds."""
+    """The captures a slide embeds, by number."""
     return {int(m.group(1)) for m in IMAGE_HREF.finditer(svg)}
 
 
@@ -275,7 +278,7 @@ def _file(n: int, title: str) -> str:
 def _local_problem(svg: str, captures: dict[int, str]) -> tuple[str, set[int]]:
     """What the checker cannot say: XML that does not parse, another canvas, no
     language, or a figure that is not a bbox capture from this turn. Returns the
-    pages used."""
+    captures used."""
     try:
         root = ET.fromstring(svg)
     except ET.ParseError as e:
@@ -291,9 +294,9 @@ def _local_problem(svg: str, captures: dict[int, str]) -> tuple[str, set[int]]:
         href = image.attrib.get("href", "")
         match = IMAGE_HREF.fullmatch(href)
         if not match:
-            return f'image href "{href}" must be ../images/p<page>.jpg', set()
+            return f'image href "{href}" must be ../images/c<capture>.jpg', set()
         page = int(match.group(1))
-        problem = captures.get(page, f"page {page} was not captured this turn")
+        problem = captures.get(page, f"capture {page} was not made this turn")
         if problem:
             return problem, set()
         pages.add(page)
@@ -308,8 +311,8 @@ def write(
     project: Path,
 ) -> str:
     """Check one slide alone and keep it; the problem, or empty. ``captures``
-    maps each page captured this turn to why it cannot be a figure, empty when
-    it can; ``figures`` holds those pages' images, placed in ``project``."""
+    maps each capture of this turn, by number, to why it cannot be a figure, empty when
+    it can; ``figures`` holds those captures' images, placed in ``project``."""
     slides = record["deck"]["slides"]
     n = args["slide"]
     if not 1 <= n <= len(slides):
@@ -338,7 +341,7 @@ def _place(project: Path, figures: dict[int, bytes]) -> None:
     if figures:
         (project / "images").mkdir(parents=True, exist_ok=True)
     for page, image in figures.items():
-        (project / "images" / f"p{page}.jpg").write_bytes(image)
+        (project / "images" / f"c{page}.jpg").write_bytes(image)
 
 
 def save(record: dict[str, Any], project: Path, pptx: Path) -> str:

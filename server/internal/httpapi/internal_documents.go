@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
@@ -306,7 +307,8 @@ func utf16Len(s string) int {
 func materialOperations(kind string) []string {
 	switch kind {
 	case "quiz":
-		return []string{"replace_question", "add_question", "remove_question"}
+		// add_questions adds and replaces questions; the model's edit removes.
+		return []string{"remove_question"}
 	case "flashcards":
 		return []string{"replace_card", "add_card", "remove_card"}
 	case "mindmap", "diagram":
@@ -412,6 +414,8 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	var embedded []string
 	// The figure assets the edit added, discarded on the same terms.
 	var assets []string
+	// The top-level blocks the edit's markdown became, for the receipt.
+	var blockIDs []string
 	discard := true
 	defer func() {
 		if discard && len(embedded) > 0 {
@@ -445,14 +449,27 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 				return
 			}
 		}
+		// A replace_card keeps the stored side it is not sent (Epo 2026-10-14).
+		var cards []materialdoc.Card
+		if mt.Kind == "flashcards" {
+			if cards, err = materialdoc.ExtractFlashcards(mt.Content); err != nil {
+				a.fail(w, err)
+				return
+			}
+		}
 		written, markdownCommands := 0, 0
 		normalized, err = normalizeMaterialCommands(string(mt.Kind), commands, func(i int, markdown string) ([]any, error) {
 			blocks, fences, err := a.noteBlocksFromMarkdown(ctx, req, i, markdown, figures)
 			drafts = append(drafts, fences...)
 			written += len(blocks)
 			markdownCommands++
+			for _, block := range blocks {
+				if id, ok := block.(map[string]any)["id"].(string); ok {
+					blockIDs = append(blockIDs, id)
+				}
+			}
 			return blocks, err
-		})
+		}, cards)
 		if err != nil {
 			a.failDocument(w, err)
 			return
@@ -544,6 +561,9 @@ func (a *api) editAgentDocument(w http.ResponseWriter, r *http.Request, req inte
 	if err != nil {
 		a.failDocument(w, err)
 		return
+	}
+	if receipt.Effect != nil {
+		receipt.Effect.BlockIDs = blockIDs
 	}
 	writeJSON(w, http.StatusOK, receipt)
 }
@@ -653,7 +673,10 @@ func documentRefusal(err error) error {
 //
 // insertMarkdown turns the markdown of the i-th command into the blocks to
 // insert; it is nil where no note is being edited.
-func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdown func(i int, markdown string) ([]any, error)) ([]json.RawMessage, error) {
+// normalizeMaterialCommands turns the model's commands into the authority's.
+// stored are a flashcard set's cards as saved, for a replace_card that leaves
+// a side out (the projection may lag a live edit by seconds).
+func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdown func(i int, markdown string) ([]any, error), stored []materialdoc.Card) ([]json.RawMessage, error) {
 	out := make([]json.RawMessage, 0, len(raw))
 	for i, item := range raw {
 		var c rawCommand
@@ -698,16 +721,32 @@ func normalizeMaterialCommands(kind string, raw []json.RawMessage, insertMarkdow
 			if kind != "flashcards" {
 				return nil, refusal(agenttools.ErrUnsupportedOperation, "%s only applies to flashcard sets", c.Type)
 			}
+			var card materialdoc.Card
+			if c.Type == "replace_card" {
+				i := slices.IndexFunc(stored, func(s materialdoc.Card) bool { return s.ID == c.CardID })
+				if i < 0 && (c.Front == nil || c.Back == nil) {
+					return nil, refusal(agenttools.ErrUnavailableTarget, "replace_card: no card %s in this set; send front and back", c.CardID)
+				}
+				if i >= 0 {
+					card = stored[i]
+				}
+				card.ID = c.CardID
+				if c.Front != nil {
+					card.Front = *c.Front
+				}
+				if c.Back != nil {
+					card.Back = *c.Back
+				}
+				c.Front, c.Back = &card.Front, &card.Back
+			}
 			if err := materialdoc.ValidateCardText(deref(c.Front), deref(c.Back)); err != nil {
 				return nil, refusal(agenttools.ErrInvalidInput, "%s: %v", c.Type, err)
 			}
 			switch c.Type {
 			case "replace_card":
-				if c.Front == nil || c.Back == nil {
-					return nil, refusal(agenttools.ErrInvalidInput, "replace_card needs front and back")
-				}
+				// The stored card's image stays: replace_card writes text only.
 				normalized = map[string]any{"type": "replace_child", "parentType": "flashcards", "nodeId": c.CardID,
-					"node": materialdoc.CardNode(materialdoc.Card{ID: c.CardID, Front: *c.Front, Back: *c.Back})}
+					"node": materialdoc.CardNode(card)}
 			case "add_card":
 				normalized = map[string]any{"type": "insert_child", "parentType": "flashcards", "afterNodeId": c.AfterCardID,
 					"node": materialdoc.CardNode(materialdoc.Card{Front: deref(c.Front), Back: deref(c.Back)})}

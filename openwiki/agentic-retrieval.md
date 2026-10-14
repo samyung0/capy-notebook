@@ -92,7 +92,7 @@ network and no pin.
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `preferences.py` | `chat`, `generate` | The learner's study preferences as build instructions, rendered into the turn context; `/generate`'s count when the request omits it |
-| `skills.py` | `chat` | The skills `read_skill` returns: `editing` (budget, write precautions, excerpt crediting) and `workspace_building` (plan, output rules, note format, which question tool writes what) |
+| `skills.py` | `chat` | The skills `read_skill` returns: `editing` (plan, output rules, budget, write precautions, excerpt crediting, the quiz, flashcards, mindmap and diagram formats), `note_building` (note structure, knowledge checks, the note format, library practice) and `deck_building` (decks) |
 | `locale.py` | shared | The account-locale rule appended by chat, generate, and editor |
 
 Agent tool descriptions come from the shared contract
@@ -2279,15 +2279,23 @@ build, and the knowledge library is one more source while the switch is on.
   excerpts)`); labels and aliases are omitted. `subject` takes one of those
   ids, and one the turn's catalog lacks is refused naming it before any
   search. Topic ids are never in a description or a search card.
-- **Prompt** (`prompts/chat.py`). `system_prompt(locale, library=...)` is one
+- **Prompt** (`prompts/chat.py`). `system_prompt(locale, library=..., writes=...)` is one
   prompt for every turn and stays lean: grounding rules; answer or build (a
   question gets an answer with citations, a request to learn, make, expand or
-  practise gets materials without asking first, a vague build request is asked
-  about with a default offered, and a write starts by reading its skills); and
-  the budget every turn shares (tool calls per response; the planning cap
-  until the first successful write, then the build budget's tool cap and stall
-  guard, in one sentence), with its numbers read from `retrieval/limits.py`. The
-  account-language, follow-references and capture rules follow. With Library
+  practise gets materials without asking whether to create them; the agent
+  asks first only when the request lacks the learning scope or the learner's
+  level, as "I want to learn physics" lacks both, offering a default, and
+  otherwise builds directly following the study preferences (Epo 2026-10-14,
+  in place of proposing a plan before building more than one item); a write
+  starts by reading its skills); and the budget every turn shares (tool calls
+  per response; the planning cap until the first successful write, then up to
+  the build budget's tool calls in the whole turn and the stall guard, more
+  after errored writes, in one sentence), with its numbers read from
+  `retrieval/limits.py`. The account-language, follow-references and capture
+  rules follow (the capture rule covers workspace sources; the library rules
+  say when a library page is captured), and a turn offered no write tool (a
+  viewer) gets `READ_ONLY_RULE`: answer, and say the workspace does not let it
+  build or edit. With Library
   on, `LIBRARY_RULES` is appended: search with the learner's subject or
   without one, a search hit is not a read, state applicability and gaps,
   relax a missed subject filter,
@@ -2308,19 +2316,28 @@ build, and the knowledge library is one more source while the switch is on.
   people's changes unless the learner asks otherwise, source files only when
   asked), with Library on the `excerpt_ids` rule (name excerpts read this turn
   or retained in full, or omit them and the write credits the reads since the
-  last write; Write guard, below). `workspace_building`, for
-  new materials: the plan (survey, propose the plan before building more than
-  one item, build a single item directly), output rules (one main explainer per chapter, a note or a deck as the
-  main format says, mindmaps, diagrams and interactive blocks inside a note, quizzes and flashcards standalone in the
-  chapter they practise, study preferences, grow a long note by appending
-  sections), the note format (`Formats` in the contract:
-  `noteMarkdownDescription`), which question tool writes what (Question
-  tools, below), and with Library on one primary excerpt and exercise
-  reuse. A write is refused until the skills it needs are in the request
-  (`skills.REQUIRES`, checked in `tools.run`): `create_material` and the
-  question tools need both;
-  `edit_document` `editing`, plus `workspace_building` when a command is
-  `insert_markdown` or `replace_block`. The refusal carries the missing
+  last write; Write guard, below). Since 2026-10-14 `editing` is the general
+  guideline for every write: it also holds the plan (survey, search where the
+  need is), the output rules (one main explainer per chapter, a note or a deck
+  as the output-files preference says; quizzes and flashcards standalone in
+  the chapter they practise; other materials as the study preferences and the
+  chapter's teaching need say), an example the sources lack labelled as
+  illustrative, which question tool writes what (Question tools, below;
+  options are shown shuffled, so never name one by its letter or position,
+  "all of the above" included), and the flashcards, mindmap and
+  diagram formats. `note_building` is a note's own: mindmaps, diagrams and
+  interactive blocks inside it as the preferences say, knowledge checks sized
+  and placed as the preferences say, growing a long note by appending
+  sections after block `"end"`, the note format (`Formats` in the contract:
+  `noteMarkdownDescription`), and with Library on one primary excerpt, figure
+  placement and exercise reuse (the text earlier skills carried, unchanged).
+  `read_skill`'s catalog (`skills.catalog`) words the building skill of the
+  output-files preference as the one for the chapters and the other as "only
+  when the request asks for" its format. A write is refused until the skills
+  it needs are in the request (`skills.REQUIRES`, checked in `tools.run`):
+  every write needs `editing`; `create_material` of a note and an
+  `edit_document` with an `insert_markdown` or `replace_block` command also
+  need `note_building`. The refusal carries the missing
   skills: a short error (`Not applied: this write needs the … skills, which
   follow and now count as read`, the text the chat stores) and, for the model
   only (`ToolResult.detail`), each skill's text under its `# Skill:` header.
@@ -2333,9 +2350,10 @@ build, and the knowledge library is one more source while the switch is on.
   replays each one with its current text as a `_kind: "skill"` message where it
   was first read, which `skills.retained` counts. A checkpoint that folds the
   history drops them, and the next write asks for a re-read. The third,
-  `deck`, is the method, slide rules and style for decks; `create_deck` and
-  `write_slide` need `editing` and `deck`, and it is listed only where
-  ppt-master is installed ([decks.md](decks.md)).
+  `deck_building`, is the method, slide rules and style for decks (a deck is
+  finished in the turn that creates it); `create_deck` and `write_slide` need
+  `editing` and `deck_building`, and both are always offered
+  ([decks.md](decks.md)).
 - **Turn context** (`retrieval/turn_context.py`). One user message, rebuilt
   before every model call and appended last (`_append_turn_context` in
   `agent.py`). Earlier copies stay where they were sent, so every request
@@ -2356,13 +2374,19 @@ build, and the knowledge library is one more source while the switch is on.
   less (5) or off, visual aids, and knowledge checks, at most 2 questions or,
   when flashcards is set higher than quiz, 3 cards, saved values over
   `DEFAULTS`), and one line per library excerpt
-  read for this message. Until the turn's first successful write it adds the
-  responses left in the turn, this one included, that the last has tools off
-  and that a successful write lifts this limit; after it, the responses left
-  without a successful write before the stall guard and the tool calls left.
-  Once tools are off it carries `FINAL_NOTICE`, which asks for the materials
-  made, what is left of the request and what the learner can ask next. The
-  message's private `_kind` is `turn_context`.
+  read for this message. With PowerPoint as the output files it leaves out the
+  knowledge-check line (notes only), and with checks on the practice line
+  rules out standalone quizzes and flashcards only. Until the turn's first
+  successful write it adds the responses left in the turn, this one included,
+  and that the last has tools off, plus, when the turn can write (the
+  `editing` skill is in the request; writes are refused without it), that a
+  successful write lifts this limit; after it, the responses left without a
+  successful write before the stall guard and the tool calls left. Once tools
+  are off it carries `FINAL_NOTICE`, which asks for the materials made, what
+  is left of the request and what the learner can ask next, and says a deck
+  with slides left unwritten was not saved; a turn that cannot write gets
+  `FINAL_ANSWER_NOTICE` instead (answer with what was found). The message's
+  private `_kind` is `turn_context`.
 - **Limits** (`retrieval/limits.py`). Every turn: four tool calls per response,
   one `search_workspace` per response and no capture cap. Until its first
   successful write a turn gets 12 responses (`PLANNING_RESPONSES`, lowered by
@@ -2384,13 +2408,17 @@ build, and the knowledge library is one more source while the switch is on.
   planning cap's second to last, or the stall guard one response short), every
   tool result of the current response ends with `agent.LAST_TOOLS_NOTICE`: the
   next response is the last chance to write before the turn ends (Epo
-  2026-10-14). The credit guard remains a separate platform billing cutoff;
+  2026-10-14); a turn that has written nothing and lacks the `editing` skill
+  gets `LAST_ANSWER_NOTICE` (answer with what was found) instead, so a
+  question turn is never told to create a material. The credit guard remains a separate platform billing cutoff;
   its silent terminal call reports `planning_cap`.
 - **Write guard** (`tools.write_sources`, shared with the playground). For a
   **material** target (`create_material`, `edit_document`, the three question
   tools and the deck tools), `excerpt_ids` is optional. Named excerpts are the
-  write's sources: each must have been read through `read_knowledge` this turn
-  or be retained as full, revalidated text in the request. A write naming none
+  write's sources and are credited whether this turn read them or not (Epo
+  2026-10-14: the refusal that sent the model back to read them cost 5 of 67
+  failed calls; no tool result tells the model to read an excerpt first; an
+  unknown id is still refused by `library.provenance`). A write naming none
   draws its candidates from the excerpts read since the last write that
   landed, or every excerpt read this turn when none are new (a second item
   written from the same reading), grouped by book. When any candidate book's read text (the result
@@ -2417,15 +2445,8 @@ build, and the knowledge library is one more source while the switch is on.
   on `ToolContext.library_reads` (`LibraryReads`, turn-only, never stored); a
   material write that lands calls `tools.landed`, which marks every read so
   far credited and hands the credited ids to library evidence, and a deck
-  write marks them credited without retaining them. A write naming excerpts
-  the turn has not read is refused, but the refusal reads them for it
-  (`tools._carry_excerpts`): each is read as `read_knowledge` reads it, while
-  the refusal stays within the tool output limit, and its text goes to the
-  model (`ToolResult.detail`, not the stored error). Those count as read for
-  the write guard and for library evidence from then on, so the resent write
-  needs no read call; one that does not fit or cannot be read stays unread and
-  the refusal says to `read_knowledge` it. The write itself is not applied, so
-  a write still cites only excerpts whose full text the model has seen. None
+  write marks them credited without retaining them. Text the model took from
+  search cards alone, never read, stays uncredited (Epo 2026-10-14). None
   of this reaches an `edit_document` on a **source file**: the learner's own
   file is not written from the library, so it carries no provenance to Go
   (which refuses a source edit that does), `excerpt_ids` on a source target is
@@ -2754,7 +2775,7 @@ apply to any build. Version 11 replaces `search_questions` with
 `list_question_bank`. Version 12 (2026-10-05) adds `read_skill`, shortens every
 tool description to what the schema cannot say, and moves the note and
 question formats out of the write tools into the contract's `formats`, which
-the materials skill quotes (`ContractVersion` in `agenttools.go`,
+the building skill quotes (`ContractVersion` in `agenttools.go`,
 `SUPPORTED_VERSION` in `retrieval/contract.py`). Version 13 adds
 `copy_questions`. Version 14 (2026-10-05) drops `fallback` from the
 `html-embed` fence: an interactive carries only `title` (`caption` since
@@ -2783,7 +2804,12 @@ Version 26 (2026-10-14) removes `list_question_bank`, `read_question` and
 `copy_questions` with their internal routes. Version 28 (2026-10-14) gives
 `search_knowledge` a `subject` id in place of `topics`, `book` and `section`,
 and removes `browse_knowledge` and section reading (`read_knowledge` takes an
-`excerpt_id` again). Go and the pipeline deploy
+`excerpt_id` again). Version 29 (2026-10-14) renames the skills (`editing`,
+`note_building`, `deck_building`), takes `after_block_id: "end"` on
+`insert_markdown`, lists the note blocks a create or edit wrote in
+`effect.blockIds` and keeps a `replace_card` side that is not sent; options
+stay shuffled, and `add_questions` and the editing skill say never to refer to
+an option by its letter or position. Go and the pipeline deploy
 together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
@@ -2857,8 +2883,10 @@ drops blank fields before checking them (agent write leniency, below) and
 fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
 retried call sends the same payload) with one part `<id>-a`, 1 mark for a
 simple question, multiple-choice options shuffled in an order seeded by the
-question id (the model wrote the answer first in 2 of 4 runs; the order is
-stable on a retry), layout `paper`, labels `letters`, and the explanation as the
+question id (stable on a retry; the model wrote the answer first in 2 of 4
+runs on 2026-10-13, and on 2026-10-14, told to vary it, still put it first or
+second in 45 of 48 questions), layout `paper`, labels `letters`, and the
+explanation as the
 solution, an empty solution without one (only bank parts need one); there are
 no parts, no other answer types and no layout choice. The expanded questions
 go through the unchanged gateway routes: a new quiz through
@@ -2915,7 +2943,9 @@ the handler gets the cleaned arguments), so `replace_text`'s required empty
 per question (`questions.drop_blanks`, `drop_question_blanks`) except the fields the
 question's kind needs, so `accepted: []` on a short answer keeps its message
 while it vanishes from a multiple-choice question. A short answer's accepted
-answer written with its unit (`"5%"` with unit `%`) keeps the number, and a
+answer written with its unit (`"5%"` or `"5 percent"` with unit `%`) keeps
+the number, a Unicode minus becomes `-` and thousands commas go (`"129,400"`;
+`"1,5"` stays refused), and a
 `chapter_id` beside `quiz_id` is ignored with a result line (`quiz_id` with
 `title` stays refused: it may mean a new quiz). In note markdown
 (`questions.note_fences`, for `create_material` and `insert_markdown` /
@@ -2928,12 +2958,18 @@ compact JSON; a ```` ```flashcards ```` body is pre-parsed like a quiz fence
 (cards with a front and a back each, re-emitted as JSON, other card fields
 kept); a quiz or flashcards body that fails to parse is read once more after
 three repairs (a trailing comma after `]` or `}`, except in a body that
-opens as JSON; a backslash before a letter doubled for LaTeX in a
-double-quoted value, one that opens the value after a key or a dash or is
+opens as JSON; a backslash before anything but a quote or a backslash
+doubled for LaTeX (`\frac`, `\,`) in a double-quoted value, one that opens
+the value after a key or a dash or is
 an item of a flow list there, never a quoted phrase inside a plain scalar; a
 plain text value or options/accepted item holding `": "` quoted, while
 `" #"` is left alone as it starts a comment on a line that parses), and when
-that fails too the original error is reported as before. A fence closes on
+that fails too the original error is reported with the parser's own reason
+and the line it stopped on, plus, for a bad escape, the hint to write LaTeX in
+single quotes or a `|` block (`questions.yaml_problem`, Epo 2026-10-14). A
+flashcards, chart or plot body that is not YAML, and an ```` ```html-embed ````
+body that is not a YAML mapping, are refused here the same way rather than
+by the converter. A fence closes on
 a run of its opening character at least as long as its opening, so a longer
 fence holding a quiz fence is passed over whole. Each format repair adds one line to the success
 result naming the fence and the slip, so the model stops repeating it; a body
@@ -2947,7 +2983,20 @@ playground's write stubs run the same code.
 DOCX and PPTX sources; `set_cell` for XLSX) and applied by the collaboration
 service on an isolated Y.Doc. The agent's `edit_document` schema offers
 `remove_question` but not `add_question` or `replace_question`, which only the
-question tools send. `insert_markdown` converts its markdown like a
+question tools send; inspecting a quiz lists `remove_question` and names
+`add_questions` for the rest. A `replace_card` keeps the side it is not sent
+and the card's image, from the set's stored document (`ExtractFlashcards`; a
+card the set does not hold needs both sides). `insert_markdown` after block
+`"end"` appends after the note's last block: no block holds that id, so the
+collaboration server lands it at the end (the gone-anchor rule, 2026-10-09)
+and the pipeline leaves that relocation out of the receipt. The receipt of a
+note create or edit lists the top-level blocks it wrote (`effect.blockIds`,
+"It wrote 5 blocks, b12 to b16."). inspect_document shows an embedded quiz
+block as the quiz fence an edit writes, its questions as `add_questions`
+items in YAML (`questions.quiz_fence_view`; a question that form cannot hold
+leaves the stored JSON), and an edit whose `expected_text` is that view
+expects the stored text (`tools._stored_expectation`), so a section rewritten
+from an inspection lands. `insert_markdown` converts its markdown like a
 created note and inserts the resulting blocks, and `replace_block` converts
 the same way and puts the blocks in place of one block; their fences' rows are
 created under the note once every command has converted and before the edit is
@@ -3130,10 +3179,11 @@ The prompt reserves `AskUser` for required user input and excludes simple follow
 GLM sometimes calls `AskUser` as a tool instead of writing it in the answer
 (6 of 156 playground runs on 2026-10-14, against 3 written correctly). The
 agent loop (`agent.ask_user_answer`) runs nothing then and ends the turn on
-that question: the answer is the response's prose as `Md` followed by
-`AskUser(question, choices)` (choices sent as JSON text are read as a list),
-so the panel below shows it as usual. A call with no question is refused as
-an unknown tool.
+its questions: the answer is the response's prose as `Md` followed by one
+`AskUser(question, choices)` per call that carries a question, at most three
+as the format allows (choices sent as JSON text are read as a list), so the
+panel below shows them as usual. A call with no question is refused as an
+unknown tool.
 `AskUser` blocks of the latest completed reply render nothing inline and
 replace the composer (`chat/QuestionBlock.tsx`, in the composer's frame):
 one question at a time, numbered choices, a "something else" field, Skip,

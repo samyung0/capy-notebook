@@ -82,7 +82,11 @@ import (
 // v28: search_knowledge takes a subject id instead of topics, book and
 // section; browse_knowledge and section reading (read_knowledge's book and
 // section) are gone (Epo 2026-10-14).
-const ContractVersion = 28
+// v29: the skills are editing, note_building and deck_building; insert_markdown
+// takes after_block_id "end"; create and edit receipts list the note blocks
+// they wrote (effect.blockIds); replace_card keeps a side it is not sent (Epo
+// 2026-10-14).
+const ContractVersion = 29
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -257,6 +261,9 @@ type ResourceEffect struct {
 	Undo              *UndoRef   `json:"undo,omitempty"`
 	// Relocated lists the edit's inserts whose anchor block was gone.
 	Relocated []Relocation `json:"relocated,omitempty"`
+	// BlockIDs are the top-level note blocks an agent create or edit wrote, in
+	// order, so the next section can follow them; absent on a replayed receipt.
+	BlockIDs []string `json:"blockIds,omitempty"`
 }
 
 // Relocation is an insert whose anchor block was gone and where it landed
@@ -278,7 +285,7 @@ type Contract struct {
 	EffectOperations []EffectOperation `json:"effectOperations"`
 	Tools            []Definition      `json:"tools"`
 	// Formats are the content formats the write tools validate, quoted by the
-	// materials skill rather than repeated in every tool description.
+	// note_building skill rather than repeated in every tool description.
 	Formats map[string]string `json:"formats"`
 	// MediaBlocks are the JSON Schemas add_question_media checks its media
 	// against; the model is not shown them.
@@ -416,11 +423,11 @@ func editCommandSchema() map[string]any {
 			variant("replace_block", map[string]any{
 				"block_id":      str(""),
 				"expected_text": text("The block's current text as inspect_document shows it."),
-				"markdown":      text("The block's new content as note markdown in the materials skill's format."),
+				"markdown":      text("The block's new content as note markdown in the note_building skill's format."),
 			}, "block_id", "expected_text", "markdown"),
 			variant("insert_markdown", map[string]any{
-				"after_block_id": map[string]any{"type": []string{"string", "null"}, "description": "Insert after this block; null inserts at the start."},
-				"markdown":       text("Note markdown in the materials skill's format."),
+				"after_block_id": map[string]any{"type": []string{"string", "null"}, "description": `Insert after this block; "end" appends after the last block, null inserts at the start.`},
+				"markdown":       text("Note markdown in the note_building skill's format."),
 			}, "after_block_id", "markdown"),
 			variant("remove_block", map[string]any{
 				"block_id":      str(""),
@@ -433,7 +440,7 @@ func editCommandSchema() map[string]any {
 				"value":          map[string]any{"type": "string", "description": "New value; prefix with = for a formula; empty clears."},
 			}, "sheet", "cell", "expected_value", "value"),
 			variant("replace_card", map[string]any{
-				"card_id": str(""),
+				"card_id": str("A side left out stays as it is."),
 				"front":   cardFront(),
 				"back":    cardBack(),
 			}, "card_id"),
@@ -471,8 +478,8 @@ var noteMarkdownDescription = "Markdown. A mindmap or diagram is one " +
 	"```mermaid fence. A note may also hold, where they help an idea: ```mermaid fences; " +
 	noteFigureFences +
 	"```quiz fences (YAML `questions:` list, each a question as add_questions takes it) and " +
-	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check of a " +
-	"few items; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
+	"```flashcards fences (YAML `cards:` list of `front`/`back`), each a knowledge check sized " +
+	"and placed as the study preferences say; and " + fmt.Sprintf("```html-embed fences for an interactive (YAML: a quoted `caption`, "+
 	"`html: |`), at most %d per note. ", embeds.HTMLEmbedMaxCount) + embeds.RulesOf("html_embed") +
 	" Use an interactive only where moving something teaches more than a diagram."
 
@@ -705,7 +712,7 @@ func Definitions() []Definition {
 			Name:      "create_material",
 			Retention: RetainFull,
 			Description: "Create a study material from content you wrote, in the formats the " +
-				"materials skill describes. A quiz is made with add_questions.",
+				"editing skill describes (a note: the note_building skill). A quiz is made with add_questions.",
 			InputSchema: obj(map[string]any{
 				"kind": map[string]any{
 					"type": "string",
@@ -738,7 +745,9 @@ func Definitions() []Definition {
 			Description: "Add questions to a quiz (quiz_id), or create a quiz with them (title). A " +
 				"question's fields make its kind: multiple choice (options, one correct) and short answer " +
 				"(accepted) are 1 mark each; an open question, answered in writing, has marks and a " +
-				"markscheme adding up to them, and a model_answer. The result lists each question's id. " +
+				"markscheme adding up to them, and a model_answer. Options are shown shuffled: never " +
+				`refer to one by its letter or position (A, B, "the first", "all of the above"). ` +
+				"The result lists each question's id. " +
 				`Example: {"title": "Osmosis", "questions": [{"question": "Which way does water move when ` +
 				`a red blood cell is put in pure water?", "options": ["Into the cell", "Out of the cell"], ` +
 				`"correct": "Into the cell", "explanation": "From the higher water potential outside."}, ` +
@@ -853,8 +862,9 @@ func Definitions() []Definition {
 			Description: "Edit the content of one inspected document: each command names a " +
 				"target and the exact text or value it expects, and one stale expectation refuses " +
 				"the whole call. Edits save directly, each with an Undo; replace_block rewrites a note " +
-				"block with formatting or math; no media or PDF edits. Quiz questions are added and " +
-				"replaced with the question tools.",
+				"block with formatting or math. Uploaded media and PDFs cannot be edited; a library " +
+				"figure placed in a note is removed only by the learner's Undo. Quiz questions are " +
+				"added and replaced with the question tools.",
 			InputSchema: obj(map[string]any{
 				"target": resourceTarget("The document to edit."),
 				"commands": map[string]any{

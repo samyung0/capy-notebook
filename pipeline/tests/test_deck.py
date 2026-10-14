@@ -29,9 +29,9 @@ def _slide(
     )
 
 
-def _figure(page: int) -> str:
+def _figure(n: int) -> str:
     return _slide(
-        f'<image href="../images/p{page}.jpg" x="64" y="260" width="40" height="30"/>'
+        f'<image href="../images/c{n}.jpg" x="64" y="260" width="40" height="30"/>'
     )
 
 
@@ -83,7 +83,7 @@ def decks(monkeypatch, tmp_path):
         operations=_EDITOR,
         assistant_message_id="m_1",
         chapters=[{"id": "ch_1", "name": "Circles"}],
-        skills_read={skills.EDITING, skills.DECK},
+        skills_read={skills.EDITING, skills.DECK_BUILDING},
         deck_dir=str(tmp_path),
     )
     return ctx, exports, posts
@@ -114,20 +114,17 @@ async def _write(ctx: ToolContext, rid: str, n: int, svg: str, call: str = ""):
     )
 
 
-async def test_deck_tools_need_ppt_master_and_the_deck_skill(monkeypatch):
+async def test_deck_tools_are_always_offered_and_need_the_deck_skill(monkeypatch):
     monkeypatch.setattr(tools, "_gateway_ready", lambda: True)
     ctx = ToolContext(workspace_id="ws", user_id="u", operations=_EDITOR)
-
-    def offered() -> tuple[set[str], str]:
-        schemas = {s["function"]["name"]: s for s in tools.schemas_for(ctx)}
-        return set(schemas), schemas["read_skill"]["function"]["description"]
-
+    # Offered without ppt-master too (Epo 2026-10-14); a deck then fails loudly.
     monkeypatch.setattr(deck, "available", lambda: False)
-    names, catalog = offered()
-    assert not names & set(tools.DECK_TOOLS) and "- deck:" not in catalog
+    schemas = {s["function"]["name"]: s for s in tools.schemas_for(ctx)}
+    assert {"create_deck", "write_slide"} <= set(schemas)
+    assert "- deck_building:" in schemas["read_skill"]["function"]["description"]
+    with pytest.raises(RuntimeError, match="ppt-master is not installed"):
+        deck.check(Path("."))
     monkeypatch.setattr(deck, "available", lambda: True)
-    names, catalog = offered()
-    assert set(tools.DECK_TOOLS) <= names and "- deck:" in catalog
 
     refused = await tools.run("create_deck", {"title": "t", "slides": []}, ctx)
     assert refused.refused and "arguments invalid" in refused.text()
@@ -135,8 +132,8 @@ async def test_deck_tools_need_ppt_master_and_the_deck_skill(monkeypatch):
     unread = await tools.run(
         "create_deck", {"title": "t", "slides": [{"title": "a", "brief": "b"}]}, ctx
     )
-    assert unread.error == skills.refusal([skills.DECK])
-    assert "\n\n# Skill: deck\n" in unread.text()
+    assert unread.error == skills.refusal([skills.DECK_BUILDING])
+    assert "\n\n# Skill: deck_building\n" in unread.text()
 
 
 async def test_checker_refusal_reaches_the_model_and_keeps_the_slide_unwritten(decks):
@@ -232,14 +229,15 @@ async def test_figures_are_this_turns_bbox_captures_and_credit_their_book(
         ctx.pending_images[call] = ("label", capture.data_url(jpeg))
     rid = await _outline(ctx, slides=1)
 
-    whole = await _write(ctx, rid, 1, _figure(12))
-    assert whole.refused and "captured whole" in whole.text()
-    missing = await _write(ctx, rid, 1, _figure(13))
-    assert missing.refused and "was not captured this turn" in missing.text()
+    # A figure names its capture by number: page 12 is capture 1, page 14 is 2.
+    whole = await _write(ctx, rid, 1, _figure(1))
+    assert whole.refused and "capture 1 is a whole page" in whole.text()
+    missing = await _write(ctx, rid, 1, _figure(3))
+    assert missing.refused and "capture 3 was not made this turn" in missing.text()
 
-    done = await _write(ctx, rid, 1, _figure(14))
+    done = await _write(ctx, rid, 1, _figure(2))
     assert not done.refused, done.text()
-    assert (Path(ctx.deck_dir) / rid / "images" / "p14.jpg").read_bytes() == jpeg
+    assert (Path(ctx.deck_dir) / rid / "images" / "c2.jpg").read_bytes() == jpeg
     # The crop's book is credited on the Sources slide and in the file's provenance.
     assert exports == [["01_slide_1.svg", "02_sources.svg"]]
     books = posts[0]["payload"]["provenance"]["books"]

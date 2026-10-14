@@ -36,10 +36,16 @@ Grounding:
 Answer or build:
 - A question gets an answer with citations.
 - A request to learn, make, expand or practise something gets materials. Do not ask whether to create them.
-- While a build request is vague, ask until you know the scope. Reuse what the learner already said, and offer a default they can accept rather than an open question.
+- Ask before building only when the request lacks the learning scope or the learner's level, as "I want to learn physics" lacks both: ask for what is missing, reuse what the learner already said, and offer a default they can accept rather than an open question. Otherwise build directly, following the study preferences.
 - Before writing to the workspace, read the skills for the work with read_skill.
 
-Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, {BUILD_TOOLS_PER_TURN} tool calls, and tools go off after {STALL_RESPONSES} responses in a row without a successful write."""
+Budget: at most {TOOLS_PER_RESPONSE} tool calls per response. Until its first successful write a turn has {PLANNING_RESPONSES} responses, the last without tools; after it, up to {BUILD_TOOLS_PER_TURN} tool calls in the whole turn, and tools go off after {STALL_RESPONSES} responses in a row without a successful write (more after errored writes)."""
+
+# For a learner who cannot write in the workspace: no write tool is offered.
+READ_ONLY_RULE = (
+    "You cannot write in this workspace: answer from the sources, and when asked "
+    "to build or edit a material, say that this workspace does not let you."
+)
 
 LIBRARY_RULES = """Library (a source this turn):
 - The shared library holds verified open textbooks. One excerpt is one section of one book.
@@ -61,7 +67,8 @@ CAPTURE_RULE = (
     "capture when their uncertain text matters to the answer. The captured image "
     "is the source of truth. If capture is unavailable or the detail is illegible, "
     "say it could not be verified instead of guessing. This rule applies to "
-    "sources with pages and to uploaded images, which are one page each; "
+    "workspace sources with pages and to uploaded images, which are one page each "
+    "(a library page: see the library rules); "
     "text-only sources and user-supplied values need no capture. `[formula]` in "
     "passage or material text marks a formula printed as a picture. When a "
     "question needs that formula, capture its page and read the formula there; "
@@ -84,13 +91,16 @@ LANG_RULE = (
 ).strip()
 
 
-def system_prompt(locale: str | None, *, library: bool = False) -> str:
+def system_prompt(
+    locale: str | None, *, library: bool = False, writes: bool = True
+) -> str:
     rules = "\n- ".join(
         (
             SYSTEM_PROMPT,
             response_language_rule(locale),
             FOLLOW_REFERENCES_RULE,
             CAPTURE_RULE,
+            *(() if writes else (READ_ONLY_RULE,)),
         )
     )
     if library:
@@ -121,12 +131,13 @@ def chat_messages(
     history: list[dict[str, Any]],
     query: str,
     library: bool = False,
+    writes: bool = True,
 ) -> list[dict[str, Any]]:
     """The whole chat request: system, folded memory, prior turns, this query.
 
     ``history`` is already filtered to persisted user/assistant turns.
     """
-    head = system_prompt(locale, library=library)
+    head = system_prompt(locale, library=library, writes=writes)
     messages: list[dict[str, Any]] = [{"role": "system", "content": head}]
     summary = str((checkpoint or {}).get("summary") or "")
     if summary:
