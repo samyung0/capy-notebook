@@ -343,7 +343,7 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
         ],
         ctx.pending_images,
     )
-    assert messages[-1]["content"][-1]["image_url"]["url"] == image_url
+    assert messages[-1]["content"][-2]["image_url"]["url"] == image_url
     raw_answer = (
         "root = Answer([a])\n"
         'a = Md("The violet observatory records the planet every night.", [2])\n'

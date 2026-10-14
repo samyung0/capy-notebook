@@ -35,6 +35,7 @@ from ..config import cfg
 from ..generated import MATERIAL_TITLE_MAX
 from ..generated.limits import QUESTION_DESCRIPTION_MAX, QUESTION_METADATA_MAX
 from ..prompts import preferences
+from ..prompts.sources import source_block
 from . import capture, contract, deck, library, pending, questions, skills, store
 from .chunking import clip_to_tokens, estimate_tokens, strip_carried
 from .library_evidence import LibraryEvidence
@@ -747,13 +748,15 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     blocks = []
     for excerpt in result.excerpts:
         blocks.append(
-            "\n".join(
-                [
-                    _excerpt_head(excerpt),
-                    _excerpt_facets(excerpt),
-                    _excerpt_scope(excerpt),
-                    excerpt.hit_text,
-                ]
+            source_block(
+                "\n".join(
+                    [
+                        _excerpt_head(excerpt),
+                        _excerpt_facets(excerpt),
+                        _excerpt_scope(excerpt),
+                        excerpt.hit_text,
+                    ]
+                )
             )
         )
     return _result(
@@ -856,7 +859,7 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             for chunk, text in zip(read.chunks[:n], texts, strict=False)
         )
         return (
-            f"{head}\n\n{body}" + _excerpt_figures(read.figures),
+            source_block(f"{head}\n\n{body}" + _excerpt_figures(read.figures)),
             _tail(read.chunks, n, read.next_start, end),
         )
 
@@ -1406,7 +1409,8 @@ _NUMBER = re.compile(r"(?<![\w.])(\d+\.\d+|\d{2,}(?:,\d{3})*)(?![\w])")
 _READ_LINE = re.compile(
     r"^(\[exc_|- \[exc_|roles:|teaches:|scope:|chunks \d+-\d+ of this excerpt"
     r"|(Previous|Next) in this book:|Source context|Excerpts on this page:"
-    r"|\[p\. \d+(-\d+)?\]$|\((next start|page cut|end of)\b|.* \(book \S+, version \d+\), section )"
+    r"|\[p\. \d+(-\d+)?\]$|\((next start|page cut|end of)\b|.* \(book \S+, version \d+\), section "
+    r"|</?source>$)"
 )
 _READ_PREFIX = re.compile(r"\(chunk \d+\) |Full reviewed notes: ")
 # A slide's SVG counts by its text: no tags, attributes, styles or scripts.
@@ -1834,10 +1838,14 @@ async def _gateway_read(
 
 
 def _render_inspection(
-    body: dict[str, Any], shown: dict[str, tuple[str, str]] | None = None
+    body: dict[str, Any],
+    shown: dict[str, tuple[str, str]] | None = None,
+    *,
+    source: bool = False,
 ) -> str:
     """An inspection as the model reads it; an embedded quiz block shows as the
-    quiz fence an edit writes, recorded in ``shown``."""
+    quiz fence an edit writes, recorded in ``shown``. A source file's content
+    sits in one source block, the next start after it."""
     supported = list(body.get("supportedOperations") or [])
     if body.get("materialKind") == "quiz":
         supported.append("(add or replace questions with add_questions)")
@@ -1875,6 +1883,8 @@ def _render_inspection(
         lines.append(f"{line.get('start')}: {line.get('text')}")
     for entry in body.get("entries") or []:
         lines.append(f"[{entry.get('id')}] {entry.get('label')}: {entry.get('value')}")
+    if source:
+        lines = [source_block("\n".join(lines))]
     if body.get("nextStart") is not None:
         lines.append(f"(next start = {body['nextStart']} of {body.get('total')})")
     return "\n".join(head + lines)
@@ -1912,7 +1922,7 @@ async def _inspect_document(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         for block in body.get("blocks") or []:
             seen[str(block.get("id"))] = str(block.get("text") or "")
         shown = ctx.shown_quizzes.setdefault(rid, {})
-    return _result(_render_inspection(body, shown))
+    return _result(_render_inspection(body, shown, source=kind == "source_file"))
 
 
 # How much of a missed block's current text a refused edit shows.
@@ -2040,6 +2050,12 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         "target": {"kind": kind, "id": rid},
         "commands": commands,
     }
+
+    def explain(details: dict[str, Any]) -> str:
+        # A source's text as it reads now sits in a source block.
+        text = _missed_target(details, ctx.seen_blocks.get(rid, {}))
+        return source_block(text) if text and kind == "source_file" else text
+
     if books:
         # Go merges these books into the target's existing provenance by id.
         payload["provenance"] = {"books": books}
@@ -2052,7 +2068,7 @@ async def _edit_document(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         ctx,
         failure="edit the document",
         timeout=60 if images else 10,
-        explain=lambda details: _missed_target(details, ctx.seen_blocks.get(rid, {})),
+        explain=explain,
     )
     if result.effects:
         # This turn's own view: drop cached outlines and re-read the exact
@@ -2657,7 +2673,9 @@ def render_result(result: ToolResult, numbered: list[tuple[int, Passage]]) -> st
     parts: list[str] = []
     if numbered and result.paged:
         body = "\n\n".join(
-            f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.text}"
+            source_block(
+                f"[{number}] {passage.location()} (chunk {passage.chunk_idx})\n{passage.text}"
+            )
             for number, passage in numbered
         )
         parts.extend([body, result.text_parts[0]])
@@ -2679,9 +2697,14 @@ TOOL_RESULT_MAX_TOKENS = 8192
 
 
 def limit_tool_result(text: str) -> str:
-    """Bound stored tool output while making truncation visible to the model."""
+    """Bound stored tool output while making truncation visible to the model.
+    A clip inside a source block closes the block, so the notice stays outside."""
     if estimate_tokens(text) <= TOOL_RESULT_MAX_TOKENS:
         return text
     marker = "\n\n[Tool output truncated. Narrow the request or continue reading.]"
-    room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(marker))
-    return clip_to_tokens(text, room) + marker
+    close = "\n</source>"
+    room = max(0, TOOL_RESULT_MAX_TOKENS - estimate_tokens(close + marker))
+    clipped = clip_to_tokens(text, room)
+    if clipped.rfind("<source>") > clipped.rfind("</source>"):
+        clipped += close
+    return clipped + marker

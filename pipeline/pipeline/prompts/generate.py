@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from ..generated import limits
 from .locale import response_language_rule
+from .sources import SOURCE_RULE
 
 # Mermaid header per diagram type. The prompt names the exact header so the
 # reply parses; an unknown type lets the model pick the diagram that fits.
@@ -43,7 +44,7 @@ def generate_messages(
         "Do not invent facts that are not in them. `[formula]` in a passage marks "
         "a formula printed as a picture: never copy it into a generated item, and "
         "skip items whose answer needs that formula. Follow the requested output "
-        "format exactly, with no commentary around it.\n"
+        f"format exactly, with no commentary around it. {SOURCE_RULE}\n"
         + response_language_rule(locale)
     )
     user = instruction

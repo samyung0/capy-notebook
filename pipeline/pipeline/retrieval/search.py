@@ -16,6 +16,7 @@ from typing import Any
 
 from .. import registry
 from ..config import cfg
+from ..prompts.sources import source_block
 from . import models, store
 from .chunking import search_query_terms
 from .lang import UND
@@ -104,7 +105,7 @@ class Passage:
         return header
 
     def as_context(self, index: int) -> str:
-        return f"[{index}] {self.location()}\n{self.text}"
+        return source_block(f"[{index}] {self.location()}\n{self.text}")
 
     def as_citation(self) -> dict[str, Any]:
         citation: dict[str, Any] = {

@@ -177,7 +177,7 @@ def test_images_ride_in_one_user_message_after_the_step_tool_results():
         "type": "text",
         "text": "Images from the tool calls above:",
     }
-    assert [p["type"] for p in parts[1:]] == ["text", "image_url", "text", "image_url"]
+    assert [p["type"] for p in parts[1:]] == ["text", "image_url", "text"] * 2
     assert parts[2]["image_url"]["url"] == "data:image/jpeg;base64,AA=="
     # The originals are untouched and a turn without captures is a no-op.
     assert messages[4]["role"] == "tool" and messages[5]["role"] == "assistant"
@@ -272,7 +272,7 @@ def test_context_measurement_counts_images_by_pixels_not_base64():
         {"k1": ("capture 1", capture.data_url(jpeg))},
         "anthropic",
     )
-    assert anthropic[-1]["content"][-1]["type"] == "image"
+    assert anthropic[-1]["content"][-2]["type"] == "image"
     assert capture.split_images(anthropic)[1] == expected_image
     captures = [
         {"callId": "k1", "estimatedImageTokens": 10},

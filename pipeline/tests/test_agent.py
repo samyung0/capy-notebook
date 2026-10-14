@@ -2641,7 +2641,7 @@ async def test_captured_images_ride_into_the_next_request_only(monkeypatch):
     roles = [m["role"] for m in seen[2]["messages"]]
     assert roles[-4:] == ["assistant", "tool", "user", "user"]
     image_message = seen[2]["messages"][-2]
-    assert image_message["content"][-1]["type"] == "image_url"
+    assert image_message["content"][-2]["type"] == "image_url"
     assert seen[1]["messages"][-2]["role"] == "tool"
     activity = events[-1]["activity"]
     capture_block = next(b for b in activity if b.get("name") == "capture_page")
