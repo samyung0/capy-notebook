@@ -240,6 +240,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
     }),
   z
     .strictObject({
+      description: text.optional(),
       gridlines: z.enum(['normal', 'fine']).optional(),
       kind: z.enum(CHART_KINDS),
       labels: z.array(text).min(1).max(limits.QUESTION_CHART_LABELS_MAX),
@@ -278,6 +279,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         });
     }),
   z.strictObject({
+    description: text.optional(),
     kind: z.enum(['line', 'scatter']).optional(),
     lines: z
       .array(
@@ -559,9 +561,9 @@ export function validateQuestion(
     ...question.stem,
     ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
   ]) {
-    if (block.type !== 'image' && block.type !== 'graph') continue;
     if (!(policy.bank || descriptionFits(block)))
       throw new CopyError(m.question_validation_text_too_long());
+    if (block.type !== 'image' && block.type !== 'graph') continue;
     // Bank figures must be hosted bank assets; quiz figures are editor assets,
     // or a copied bank question's link under the deployment's BANK_ASSETS_URL
     // (VITE_BANK_ASSETS_URL, scripts/env/config.py). Outside Vite (the site
@@ -583,12 +585,14 @@ export function validateQuestion(
   return question;
 }
 
-/** An image's or graph's description within QUESTION_DESCRIPTION_MAX, the
- * bound in quizzes and notes; bank questions take QUESTION_TEXT_MAX. */
+/** A figure's description within QUESTION_DESCRIPTION_MAX, the bound in
+ * quizzes and notes (a chart's or plot's is optional); bank questions take
+ * QUESTION_TEXT_MAX. */
 export function descriptionFits(block: QuestionBlock): boolean {
+  const description = 'description' in block ? block.description : undefined;
   return (
-    (block.type !== 'image' && block.type !== 'graph') ||
-    [...block.description].length <= limits.QUESTION_DESCRIPTION_MAX
+    description === undefined ||
+    [...description].length <= limits.QUESTION_DESCRIPTION_MAX
   );
 }
 

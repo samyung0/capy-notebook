@@ -40,9 +40,12 @@ const chartLabels = {
 function ChartEditor({
   block,
   onChange,
+  descriptionMax,
 }: {
   block: ChartBlock;
   onChange: (block: ChartBlock) => void;
+  /** The description's bound: the bank's longer one or everyone else's. */
+  descriptionMax: number;
 }) {
   const single = block.kind === 'pie' || block.kind === 'stacked';
   return (
@@ -326,6 +329,24 @@ function ChartEditor({
                 </Collapsible.Root>
               </>
             )}
+            <Field
+              count={{
+                max: descriptionMax,
+                value: textLength(block.description ?? ''),
+              }}
+              label={m.question_ui_description()}
+            >
+              <FieldInput
+                maxLength={descriptionMax}
+                onChange={(event) =>
+                  onChange({
+                    ...block,
+                    description: event.target.value || undefined,
+                  })
+                }
+                value={block.description ?? ''}
+              />
+            </Field>
           </div>
         </div>
         <div className="min-w-0">
@@ -411,7 +432,13 @@ export function BlockEditor({
       </div>
     );
   if (block.type === 'chart')
-    return <ChartEditor block={block} onChange={onChange} />;
+    return (
+      <ChartEditor
+        block={block}
+        descriptionMax={descriptionMax}
+        onChange={onChange}
+      />
+    );
   // Plots come from the agent and chat; the dialog shows them and can remove them.
   if (block.type === 'plot') return <QuestionBlockView block={block} />;
   if (block.type === 'graph')

@@ -252,6 +252,7 @@ export function CategoryChart({
     return (
       <Frame {...frame}>
         <svg
+          aria-label={props.description ?? props.title}
           className="w-full"
           role="img"
           style={authored ? { minWidth: W } : undefined}
@@ -364,6 +365,7 @@ export function CategoryChart({
       return (
         <Frame {...pieFrame}>
           <svg
+            aria-label={props.description ?? props.title}
             className="w-full"
             role="img"
             style={authored ? { minWidth: W } : undefined}
@@ -395,7 +397,12 @@ export function CategoryChart({
     let angle = -Math.PI / 2;
     return (
       <Frame {...pieFrame}>
-        <svg className="mx-auto w-40" role="img" viewBox="0 0 160 160">
+        <svg
+          aria-label={props.description ?? props.title}
+          className="mx-auto w-40"
+          role="img"
+          viewBox="0 0 160 160"
+        >
           {slices.map((slice, index) => {
             const sweep = slice.share * 2 * Math.PI;
             const start = angle;
@@ -446,6 +453,7 @@ export function CategoryChart({
   return (
     <Frame {...frame}>
       <svg
+        aria-label={props.description ?? props.title}
         className="w-full"
         role="img"
         style={authored ? { minWidth: W } : undefined}

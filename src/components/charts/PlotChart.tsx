@@ -104,7 +104,7 @@ export function PlotChart({
       }}
     >
       <svg
-        aria-label={data.title}
+        aria-label={data.description ?? data.title}
         className="w-full"
         role="img"
         viewBox={`0 0 ${W} ${H}`}

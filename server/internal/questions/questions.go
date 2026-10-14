@@ -356,9 +356,12 @@ func blocks(value any, policy Policy) error {
 // validatePlot checks a plot: one to four series of [x, y] points drawn as a
 // line or a scatter (kind), optional reference lines {axis x|y, value,
 // label?} and labelled points {x, y, label}.
-func validatePlot(b map[string]any) error {
-	if err := keys(b, "type title xTitle yTitle series", "kind unit lines marks"); err != nil {
+func validatePlot(b map[string]any, policy Policy) error {
+	if err := keys(b, "type title xTitle yTitle series", "kind unit lines marks description"); err != nil {
 		return err
+	}
+	if !optionalDescription(b, policy) {
+		return fail("invalid plot description")
 	}
 	if k, ok := b["kind"]; ok && !enum(k, "line scatter") {
 		return fail("invalid plot kind")
@@ -468,8 +471,11 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			width = len(cells)
 		}
 	case "chart":
-		if err := keys(b, "type kind title labels series", "xTitle yTitle gridlines"); err != nil {
+		if err := keys(b, "type kind title labels series", "xTitle yTitle gridlines description"); err != nil {
 			return err
+		}
+		if !optionalDescription(b, policy) {
+			return fail("invalid chart description")
 		}
 		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionMetadata, false) || !stringsArray(b["labels"], 1, fieldlimits.QuestionChartLabels, fieldlimits.QuestionText) {
 			return fail("invalid chart")
@@ -522,7 +528,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			}
 		}
 	case "plot":
-		if err := validatePlot(b); err != nil {
+		if err := validatePlot(b, policy); err != nil {
 			return err
 		}
 	case "image":
@@ -605,15 +611,28 @@ func imageFields(b map[string]any, policy Policy) error {
 			return fail("invalid image dimensions")
 		}
 	}
-	description := fieldlimits.QuestionDescription
-	if policy.Bank {
-		description = fieldlimits.QuestionText
-	}
-	if !str(b["description"], description, true) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
+	if !str(b["description"], descriptionMax(policy), true) || !optionalString(b, "attribution", fieldlimits.QuestionMetadata) {
 		return fail("invalid image description")
 	}
 	return nil
 }
+
+// descriptionMax bounds a figure's description: QuestionDescription in quizzes
+// and notes, the bank's QuestionText.
+func descriptionMax(policy Policy) int {
+	if policy.Bank {
+		return fieldlimits.QuestionText
+	}
+	return fieldlimits.QuestionDescription
+}
+
+// optionalDescription: a chart's or plot's description, when it has one, is
+// a non-blank text within descriptionMax.
+func optionalDescription(b map[string]any, policy Policy) bool {
+	v, ok := b["description"]
+	return !ok || str(v, descriptionMax(policy), true)
+}
+
 func assetURL(value any, base string) bool {
 	s, ok := value.(string)
 	if !ok || len(s) > fieldlimits.QuestionAssetURL {

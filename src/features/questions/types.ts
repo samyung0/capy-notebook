@@ -38,6 +38,8 @@ export type ChartBlock = {
   xTitle?: string;
   yTitle?: string;
   gridlines?: 'normal' | 'fine';
+  /** A caption in notes and the accessible label (optional). */
+  description?: string;
 };
 /** Series of [x, y] points over numeric axes: drawn as straight segments in
  * x order (`line`, the default) or as dots (`scatter`), with optional dashed
@@ -52,6 +54,8 @@ export type PlotBlock = {
   series: { name: string; points: [number, number][] }[];
   lines?: { axis: 'x' | 'y'; value: number; label?: string }[];
   marks?: { x: number; y: number; label: string }[];
+  /** A caption in notes and the accessible label (optional). */
+  description?: string;
 };
 export type GraphElement =
   | {

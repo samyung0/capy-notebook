@@ -595,8 +595,12 @@ same full-screen viewer images use, titled with the material; a diagram that
 has not drawn (a syntax error) opens nothing, in View, note blocks and Edit.
 
 Chart, plot and graph nodes store their question block under `block`, an optional
-`width`, and a single empty text child; graphs export their SVG before saving
-and show their description under the figure as a muted caption (`MEDIA_CAPTION_CLASS`).
+`width`, and a single empty text child; graphs export their SVG before saving.
+A figure's description shows under it as a muted caption (`MEDIA_CAPTION_CLASS`)
+and is the chart's or plot's accessible label: required on graphs (and
+images), optional on charts and plots (Epo 2026-10-14; the chart editor's
+Description field, no plot editor yet; the agent contract does not offer it),
+at most `QUESTION_DESCRIPTION_MAX` outside the bank.
 Their Markdown fences (` ```chart `, ` ```plot `, ` ```graph `) hold that block's
 JSON (`customBlockNode` in `blocks/shared.ts`, checked by the shared question block
 schema, so a refused block fails the agent's write); the agent's note format

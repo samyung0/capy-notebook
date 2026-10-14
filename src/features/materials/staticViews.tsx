@@ -196,11 +196,14 @@ export function FigureView({
           <QuestionBlockView block={block} />
         </div>
       </MediaFrame>
-      {/* A graph's description reads as its caption, like an image's. */}
-      {block.type === 'graph' && block.description && (
+      {/* A figure's description reads as its caption, like an image's. */}
+      {block.description && (
         <p
           className={MEDIA_CAPTION_CLASS}
-          style={{ width: width ?? block.width }}
+          style={{
+            width:
+              width ?? (block.type === 'graph' ? block.width : CHART_WIDTH),
+          }}
         >
           {block.description}
         </p>

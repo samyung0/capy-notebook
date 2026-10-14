@@ -384,7 +384,8 @@ pub struct Block {
     pub text: Option<String>,
     /// `image.url` (trimmed), `image.assetId` or `image.svg`.
     pub image: Option<(&'static str, String)>,
-    /// An image's or graph's description (trimmed).
+    /// A figure's description (trimmed): an image's or graph's, or a chart's
+    /// or plot's when it has one.
     pub description: Option<String>,
 }
 
@@ -545,6 +546,13 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
     })
 }
 
+/// A chart's or plot's optional description: a non-blank text when present.
+fn optional_description(map: &Map<String, Value>, what: &str) -> Result<Option<String>, String> {
+    present(map, "description")
+        .map(|v| text(v, what))
+        .transpose()
+}
+
 /// `questionBlockSchema`.
 pub fn block(value: &Value) -> Result<Block, String> {
     let what = "block";
@@ -592,7 +600,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 map,
                 what,
                 &["kind", "labels", "series", "title", "type"],
-                &["gridlines", "xTitle", "yTitle"],
+                &["description", "gridlines", "xTitle", "yTitle"],
             )?;
             optional(map, "gridlines", |v| {
                 one_of(v, what, &["normal", "fine"]).map(|_| ())
@@ -639,7 +647,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "chart".into(),
                 text: None,
                 image: None,
-                description: None,
+                description: optional_description(map, what)?,
             })
         }
         "plot" => {
@@ -650,7 +658,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 map,
                 what,
                 &["series", "title", "type", "xTitle", "yTitle"],
-                &["kind", "lines", "marks", "unit"],
+                &["description", "kind", "lines", "marks", "unit"],
             )?;
             optional(map, "kind", |v| {
                 one_of(v, what, &["line", "scatter"]).map(|_| ())
@@ -691,7 +699,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 kind: "plot".into(),
                 text: None,
                 image: None,
-                description: None,
+                description: optional_description(map, what)?,
             })
         }
         "image" => {
@@ -848,6 +856,17 @@ fn cap_list<'a>(value: Option<&'a Value>, max: usize, what: &str) -> Result<&'a 
     }
 }
 
+/// A figure's description past QUESTION_DESCRIPTION_MAX (a live quiz and a
+/// note; the bank's longer bound is checked on save).
+fn cap_description(map: &Map<String, Value>, what: &str) -> Check {
+    match map.get("description").and_then(Value::as_str) {
+        Some(d) if code_points(d) > QUESTION_DESCRIPTION_MAX => {
+            fail(format!("{what}: description too long"))
+        }
+        _ => Ok(()),
+    }
+}
+
 fn objects(items: &[Value]) -> impl Iterator<Item = &Map<String, Value>> {
     items.iter().filter_map(Value::as_object)
 }
@@ -863,6 +882,7 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
     };
     match kind {
         "chart" => {
+            cap_description(map, what)?;
             for key in ["title", "xTitle", "yTitle"] {
                 cap_meta(map, key, what)?;
             }
@@ -879,6 +899,7 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
             }
         }
         "plot" => {
+            cap_description(map, what)?;
             for key in ["title", "xTitle", "yTitle", "unit"] {
                 cap_meta(map, key, what)?;
             }
@@ -894,13 +915,7 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
         }
         "graph" => {
             cap_meta(map, "attribution", what)?;
-            if map
-                .get("description")
-                .and_then(Value::as_str)
-                .is_some_and(|d| code_points(d) > QUESTION_DESCRIPTION_MAX)
-            {
-                return fail(format!("{what}: description too long"));
-            }
+            cap_description(map, what)?;
             for element in objects(cap_list(
                 map.get("elements"),
                 QUESTION_GRAPH_ELEMENTS_MAX,
@@ -1256,10 +1271,10 @@ pub fn validate_question(value: &Value, policy: &Policy) -> Result<Question, Str
             .iter()
             .flat_map(|p| p.blocks.iter().chain(&p.solution)),
     ) {
+        block.description_fits(policy.bank)?;
         if block.kind != "image" && block.kind != "graph" {
             continue;
         }
-        block.description_fits(policy.bank)?;
         let refused = match &block.image {
             Some(("url", url)) => !hosted_asset(url, host),
             Some(("assetId", _)) => policy.bank,
