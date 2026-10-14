@@ -440,6 +440,17 @@ def test_oversized_block_is_split_at_a_sentence_boundary():
     assert chunks[0].text.rstrip().endswith(".")
 
 
+def test_oversized_block_split_keeps_all_text_in_budgeted_sentences(monkeypatch):
+    monkeypatch.setattr(chunking.cfg, "chunk_tokens", 40)
+    text = "A sentence about mitochondria. 线粒体产生能量。" * 200
+
+    pieces = chunking._split_long(text)
+
+    assert "".join(pieces).replace(" ", "") == text.replace(" ", "")
+    assert all(estimate_tokens(piece) <= 40 for piece in pieces)
+    assert all(piece.endswith((".", "。")) for piece in pieces)
+
+
 def test_indexed_text_prefixes_section_without_logical_file_name():
     chunk = chunk_markdown("# Cells\n\n" + "Mitochondria make ATP. " * 20)[0]
 

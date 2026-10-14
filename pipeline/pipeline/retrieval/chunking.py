@@ -416,11 +416,17 @@ def _pack(blocks: list[_Block], section_path: str) -> list[Chunk]:
 
 
 def _split_long(text: str) -> list[str]:
-    """Last-resort split of one oversized block, preferring sentence ends."""
+    """Last-resort split of one oversized block, preferring sentence ends.
+
+    Every character costs at least a quarter token, so a window never spans
+    more than ``4 * chunk_tokens`` characters, and one more decides whether the
+    rest still overflows. Looking only that far ahead keeps the split linear.
+    """
     pieces: list[str] = []
-    remaining = text
-    while estimate_tokens(remaining) > cfg.chunk_tokens:
-        window = clip_to_tokens(remaining, cfg.chunk_tokens)
+    start = 0
+    span = 4 * cfg.chunk_tokens + 1
+    while estimate_tokens(head := text[start : start + span]) > cfg.chunk_tokens:
+        window = clip_to_tokens(head, cfg.chunk_tokens)
         cut = max(
             window.rfind("。"),
             window.rfind(". "),
@@ -429,10 +435,10 @@ def _split_long(text: str) -> list[str]:
         )
         if cut < len(window) // 2:
             cut = len(window) - 1
-        pieces.append(remaining[: cut + 1].strip())
-        remaining = remaining[cut + 1 :]
-    if remaining.strip():
-        pieces.append(remaining.strip())
+        pieces.append(text[start : start + cut + 1].strip())
+        start += cut + 1
+    if text[start:].strip():
+        pieces.append(text[start:].strip())
     return pieces
 
 

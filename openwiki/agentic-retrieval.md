@@ -1012,7 +1012,7 @@ Indexing tab lists the change as failed.
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
-| `tabular_text_limit` | Characters of rendered CSV/TSV row text | 64 Mi | No |
+| `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |
 
 ### Provider source imports
 
@@ -1102,10 +1102,17 @@ performs the planned work:
   prompt asks for every visible label, table cell, number, unit, formula,
   diagram relationship, and uncertainty rather than a short visual summary;
 - CSV/TSV is decoded as text, detects a likely header, and emits deterministic
-  row text with explicit field names. Formulas remain literal source values.
-  The file stops before parsing when it has more than 100,000 delimiter bytes
-  (counted in the raw bytes, so quoted delimiters count too), and while
-  rendering when the row text passes 64 Mi characters (see Ingest limits).
+  row text with explicit field names (`Row N: Header=value | …`), one paragraph
+  per row, so the chunker packs whole rows and never splits a table-sized
+  block. Whitespace inside a cell, line breaks included, collapses to one
+  space. Formulas remain literal source values. A row stops before it is
+  parsed when it holds 1,000 or more raw delimiters (quoted ones count too),
+  and rendering stops once the row text passes about 1M estimated tokens
+  (about 3,000 chunks), before anything is chunked or embedded (see Ingest
+  limits). `CAPY_TABULAR_TEXT_VERSION` (v2) names this row text in the
+  pipeline identity, so after a bump an upload or reprocess chunks the table
+  again instead of reusing a donor's old chunks; tables already indexed keep
+  theirs until they are reprocessed.
 
 Image captions use the containing-resource associations described below.
 
@@ -1249,7 +1256,11 @@ raise it to `high` or `max`.
   `estimate_tokens` counts ~4 Latin characters or 1 CJK character per token)
   without splitting a block unless one block alone exceeds the target. Packing
   by characters made a Chinese chunk carry ~4x the tokens of an English one,
-  so five CJK hits alone filled the tool-output cap.
+  so five CJK hits alone filled the tool-output cap. A block over the target
+  is cut at the last sentence end or line break in each window (`_split_long`),
+  looking at most `4 × CAPY_CHUNK_TOKENS + 1` characters ahead, so the split is
+  linear in the block's length: it used to re-estimate and copy the whole
+  remainder per cut, quadratic on one long paragraph.
 - Flattens parser table HTML to one pipe-separated line per row
   (`flatten_table`): cell text and order survive, `rowspan`/`colspan`
   attributes and embedded `<img>` tags do not. On the lab corpus that markup

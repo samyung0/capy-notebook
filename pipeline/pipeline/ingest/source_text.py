@@ -20,17 +20,19 @@ from pathlib import Path
 from ..config import cfg
 from ..jobs import InputLimitError, RetryableError, TerminalError
 from ..prompts.captioning import IMAGE_PROMPT
+from ..retrieval.chunking import estimate_tokens
 
 # csv.reader streams rows, but it builds a whole row before its width can be
 # read: one 30 MiB row of short fields peaks above 500 MiB, and the widest row
 # sets the header list. So each row's raw delimiters (quoted ones too, an upper
 # bound on its columns) are counted as its lines reach the reader, and a row
-# over the cap is refused before it is parsed. Repeating long headers can
-# still make the searchable projection much larger than the source, so that is
-# bounded separately before the chunker sees it.
+# over the cap is refused before it is parsed. Repeating headers make the
+# searchable projection several times the source, so its estimated tokens are
+# capped while it is built, before anything is chunked or embedded: about
+# 3,000 chunks, roughly a 1,400-page PDF.
 _TABULAR_MAX_COLUMNS = 1_000
 _TABULAR_MAX_FIELD_CHARS = 8 << 20
-_TABULAR_MAX_OUTPUT_CHARS = 64 << 20
+_TABULAR_MAX_TOKENS = 1_000_000
 
 
 def extension(name: str) -> str:
@@ -194,25 +196,26 @@ def tabular_text(path: str, name: str) -> str:
         if has_header
         else [f"Column {index + 1}" for index in range(width)]
     )
+    # Whitespace runs, line breaks inside quoted cells included, become one
+    # space, so each row stays one line.
     headers = [
-        (headers[index].strip() if index < len(headers) else "")
+        (" ".join(headers[index].split()) if index < len(headers) else "")
         or f"Column {index + 1}"
         for index in range(width)
     ]
 
     parts: list[str] = []
-    output_chars = 0
+    tokens = 0
 
     def append(line: str) -> None:
-        nonlocal output_chars
-        extra = len(line) + (1 if parts else 0)
-        if output_chars + extra > _TABULAR_MAX_OUTPUT_CHARS:
+        nonlocal tokens
+        tokens += estimate_tokens(line)
+        if tokens > _TABULAR_MAX_TOKENS:
             raise InputLimitError(
                 "tabular_text_limit",
                 "delimited table exceeds the searchable-text limit",
             )
         parts.append(line)
-        output_chars += extra
 
     append("Columns: " + " | ".join(headers))
     with open(path, "r", encoding="utf-8-sig", errors="replace", newline="") as source:
@@ -222,9 +225,11 @@ def tabular_text(path: str, name: str) -> str:
         for row_number, row in enumerate(reader, start=2 if has_header else 1):
             values = []
             for index, raw_value in enumerate(row):
-                value = raw_value.strip()
+                value = " ".join(raw_value.split())
                 if value:
                     values.append(f"{headers[index]}={value}")
             if values:
                 append(f"Row {row_number}: " + " | ".join(values))
-    return "\n".join(parts)
+    # A blank line between rows makes each row its own paragraph, so the
+    # chunker packs whole rows and never splits one table-sized block.
+    return "\n\n".join(parts)

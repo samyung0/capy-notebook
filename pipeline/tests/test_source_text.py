@@ -5,6 +5,7 @@ from PIL import Image
 
 from pipeline.ingest import source_text
 from pipeline.parse import caption_cache
+from pipeline.retrieval import chunking
 
 
 def test_tabular_text_preserves_headers_values_and_formulas(tmp_path) -> None:
@@ -16,10 +17,43 @@ def test_tabular_text_preserves_headers_values_and_formulas(tmp_path) -> None:
 
     text = source_text.tabular_text(str(source), source.name)
 
-    assert "Columns: Student | Score | Formula" in text
-    assert "Student=Ada" in text
-    assert "Score=98" in text
-    assert "Formula==B2/100" in text
+    assert text.split("\n\n") == [
+        "Columns: Student | Score | Formula",
+        "Row 2: Student=Ada | Score=98 | Formula==B2/100",
+        "Row 3: Student=Lin | Score=87 | Formula==B3/100",
+    ]
+
+    # A line break inside a quoted cell must not split its row.
+    notes = tmp_path / "notes.csv"
+    notes.write_text('a,"two\n\n  lines"\n', encoding="utf-8")
+    assert source_text.tabular_text(str(notes), notes.name).split("\n\n")[1:] == [
+        "Row 1: Column 1=a | Column 2=two lines"
+    ]
+
+
+def test_tabular_rows_are_packed_whole_with_one_block_per_row(
+    monkeypatch, tmp_path
+) -> None:
+    monkeypatch.setattr(chunking.cfg, "chunk_tokens", 80)
+    monkeypatch.setattr(chunking.cfg, "chunk_overlap_tokens", 0)
+    source = tmp_path / "scores.csv"
+    # Every row renders to 29 characters (8 tokens): the padding shrinks as the
+    # row number grows.
+    source.write_text(
+        "Score,Note\n"
+        + "".join(f"1,{'x' * (8 - len(str(n)))}\n" for n in range(2, 1002)),
+        encoding="utf-8",
+    )
+
+    text = source_text.tabular_text(str(source), source.name)
+    blocks = text.split("\n\n")
+    chunks = chunking.chunk_markdown(text)
+
+    assert len(blocks) == 1001
+    assert blocks[1] == "Row 2: Score=1 | Note=xxxxxxx"
+    # The 6-token column line and 9 rows fill the first chunk, then 10 rows each.
+    assert len(chunks) == 101
+    assert [b for chunk in chunks for b in chunk.text.split("\n\n")] == blocks
 
 
 def test_tabular_text_caps_columns_per_row_not_cells(monkeypatch, tmp_path) -> None:
@@ -38,15 +72,18 @@ def test_tabular_text_caps_columns_per_row_not_cells(monkeypatch, tmp_path) -> N
     assert error.value.code == "tabular_column_limit"
 
 
-def test_tabular_text_bounds_its_expanded_search_projection(
+def test_tabular_text_caps_the_estimated_tokens_of_its_projection(
     monkeypatch, tmp_path
 ) -> None:
     source = tmp_path / "rows.csv"
     source.write_text("LongHeader\na\nb\nc\n", encoding="utf-8")
-    monkeypatch.setattr(source_text, "_TABULAR_MAX_OUTPUT_CHARS", 30)
+    monkeypatch.setattr(source_text, "_TABULAR_MAX_TOKENS", 12)
 
-    with pytest.raises(source_text.TerminalError, match="searchable-text limit"):
+    with pytest.raises(
+        source_text.TerminalError, match="searchable-text limit"
+    ) as error:
         source_text.tabular_text(str(source), source.name)
+    assert error.value.code == "tabular_text_limit"
 
 
 @pytest.mark.asyncio

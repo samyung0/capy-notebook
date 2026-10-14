@@ -847,6 +847,33 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
     assert parse_stub["chunked"] is None
 
 
+async def test_a_table_over_the_token_cap_is_refused_before_chunking(
+    parse_stub, monkeypatch, tmp_path
+):
+    """The cap is checked while the rows are projected, so a table over it
+    never reaches the chunker and never spends on embeddings."""
+    source = tmp_path / "scores.csv"
+    source.write_text("Student,Score\n" + "Ada,98\n" * 50, encoding="utf-8")
+    monkeypatch.setattr(worker.source_text, "_TABULAR_MAX_TOKENS", 100)
+    chunked: list[str] = []
+    monkeypatch.setattr(worker, "chunk_markdown", chunked.append)
+
+    with pytest.raises(worker.InputLimitError) as error:
+        await worker._chunks_for(
+            payload={"blobPath": "sources/scores.csv"},
+            name="scores.csv",
+            processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),
+            local_path=str(source),
+            source_key="sources/source-1",
+            ws="ws_1",
+            file_id="f_1",
+            source_sha256="aa" * 32,
+        )
+
+    assert error.value.code == "tabular_text_limit"
+    assert chunked == []
+
+
 async def test_pdf_chunking_reads_the_spooled_source(parse_stub):
     """The heading and confidence passes measure the PDF the parser saw."""
     await _run()
