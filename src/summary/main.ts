@@ -1,4 +1,3 @@
-import '@/share/jitless';
 import fileIcons from '@/assets/catppuccin.svg?no-inline';
 import { bindPublicChrome } from '@/components/app/publicChrome';
 import { afterPaint } from '@/lib/afterPaint';

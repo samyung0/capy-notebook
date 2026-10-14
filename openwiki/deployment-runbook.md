@@ -1020,7 +1020,7 @@ Two content security policies, both built once per SPA build by
     the Worker adds the SHA-256 of each inline script its own template holds
     (a build's templates hold none, Vite bundles them; the dev server's carry
     React's refresh preamble), so markup a render writes into the page never
-    runs. The page scripts set Zod to `jitless` first
+    runs. The share page script sets Zod to `jitless` first
     (`src/share/jitless.ts`), so Zod never probes `new Function`;
   - `script-src-attr 'none'` (no event-handler attributes),
     `worker-src 'self' blob:` (clerk-js's timer worker),

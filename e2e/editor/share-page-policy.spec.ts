@@ -85,5 +85,7 @@ test('a workspace summary runs its page script under the script policy', async (
   await expect(
     page.locator('use[data-file-icon][href]').first()
   ).toBeAttached();
+  // Analytics loads after first paint.
+  await page.waitForLoadState('networkidle');
   expect(await blocked()).toEqual([]);
 });
