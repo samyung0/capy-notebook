@@ -1536,7 +1536,12 @@ child and depth 2. The v11 stress run
 (`2026-09-28-parser-v11-stress.md`) measured, with a 1g heap, Java at 0.24–1.28
 GiB, a parse child at 1.46–2.12 GiB and the whole cgroup at 1.8–3.9 GiB per
 document; a trimmed idle child holds about 0.55 GiB and the OCR process about
-0.4 GiB plus 0.5–0.8 GiB while reading a page.
+0.4 GiB plus 0.5–0.8 GiB while reading a page. The v14 rerun
+(`2026-10-15-parser-v14-stress.md`, same shape and inputs) peaked at 8.6 of
+14 GiB with five 1,400-page books and a 150-page scan at once (v11: 13.1). Each
+book finished in under 400 s of the 900 s deadline. One parse or OCR child
+reached 1.44 GiB RSS and 4.91 GiB virtual size, so a per-child RLIMIT_AS has to
+allow about 5 GiB plus headroom.
 
 Each of the four production ingest workers has a 1 CPU, 1 GiB RAM, 1.25 GiB
 total memory-plus-swap, and 128-process ceiling. A separate 120 MiB

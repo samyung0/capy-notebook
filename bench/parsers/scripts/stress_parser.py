@@ -75,7 +75,9 @@ class Sampler(threading.Thread):
         }
 
     def rss_by_name(self) -> dict[str, int]:
-        totals: dict[str, int] = {}
+        """RSS summed per process kind, plus the largest single parse child's
+        RSS and virtual size (what a per-child RLIMIT_AS would have to allow)."""
+        totals: dict[str, int] = {"child_max_rss": 0, "child_max_vm": 0}
         for pid in self.read("cgroup.procs").split():
             try:
                 status = Path(f"/proc/{pid}/status").read_text()
@@ -94,6 +96,10 @@ class Sampler(threading.Thread):
                 name = "child" if b"multiprocessing" in cmdline else "api"
             rss = int(fields.get("VmRSS", "0 kB").split()[0]) * 1024
             totals[name] = totals.get(name, 0) + rss
+            if name == "child":
+                vm = int(fields.get("VmSize", "0 kB").split()[0]) * 1024
+                totals["child_max_rss"] = max(totals["child_max_rss"], rss)
+                totals["child_max_vm"] = max(totals["child_max_vm"], vm)
         return totals
 
     def run(self) -> None:
@@ -118,8 +124,12 @@ class Sampler(threading.Thread):
                     "java_rss": rss.get("java", 0),
                     "api_rss": rss.get("api", 0),
                     "child_rss": rss.get("child", 0),
+                    "child_max_rss": rss["child_max_rss"],
+                    "child_max_vm": rss["child_max_vm"],
                     "other_rss": sum(
-                        v for k, v in rss.items() if k not in ("java", "api", "child")
+                        v
+                        for k, v in rss.items()
+                        if k not in ("java", "api", "child", "child_max_rss", "child_max_vm")
                     ),
                 }
             )
@@ -146,6 +156,8 @@ class Sampler(threading.Thread):
             "peak_java_rss_gib": round(max(r["java_rss"] for r in rows) / gib, 2),
             "peak_api_rss_gib": round(max(r["api_rss"] for r in rows) / gib, 2),
             "peak_child_rss_gib": round(max(r["child_rss"] for r in rows) / gib, 2),
+            "peak_one_child_rss_gib": round(max(r["child_max_rss"] for r in rows) / gib, 2),
+            "peak_one_child_vm_gib": round(max(r["child_max_vm"] for r in rows) / gib, 2),
             "peak_other_rss_gib": round(max(r["other_rss"] for r in rows) / gib, 2),
             "avg_cores": round(cpu_s / max(end - start, 1e-6), 2),
             "oom_kills": rows[-1]["oom_kill"] - rows[0]["oom_kill"],
