@@ -1,0 +1,31 @@
+{
+  "workspace_id": "odl_eval_odl_nocaption",
+  "library": true,
+  "open_resource": null,
+  "study_preferences": {},
+  "model": {
+    "provider_slug": "zai",
+    "model_slug": "glm-5.3-flash",
+    "version": 1,
+    "thinking": "high",
+    "transport": null
+  },
+  "system_prompt": null,
+  "capture": {
+    "mode": "pixels",
+    "max_edge": 1568,
+    "addon": false
+  },
+  "quality": {
+    "show": false
+  },
+  "prompt_addon": "",
+  "answer": {
+    "citations": "as_is"
+  },
+  "decks": {
+    "offer": false
+  },
+  "library_rules": "Library (a source this turn):\n- The shared library holds verified open textbooks. One excerpt is one section of one book.\n- Search with the learner's subject id from search_knowledge's list to keep results in that subject, or omit subject for a direct search. A result names each excerpt's book and topics. An empty result under a role filter reports what the subject holds by role, so relax the filter on purpose rather than rewording.\n- A search result is a selection aid, not a read: read an excerpt with read_knowledge before using it. Its scope says where it applies and when linked source context is needed.\n- Distinguish incidental examples from necessary tools, populations, professions, periods or method variants, and keep applicability explicit. Unreviewed scope is unknown, not unrestricted. Related material is not coverage of the request; explain the supported scope and any gaps in the material itself.\n- Subject tags are imperfect. If a subject search misses, search again without subject while keeping the learner's constraints. Counts show searchable passages, not proof of coverage.\n- If calculations, numbers or formulas look wrong or corrupted, inspect the page image with capture_knowledge_page. If it is unavailable or illegible, state the limitation instead of guessing.\n- `[Diagram description: ...]` in excerpt text is a reviewer's description of a figure, not the book's wording: use it to understand the figure and never quote it as the book's text.\n- If the library has nothing in the requested scope, say so plainly.",
+  "library_flow": "search_subject"
+}

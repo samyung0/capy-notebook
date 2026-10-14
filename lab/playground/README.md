@@ -152,6 +152,7 @@ Fields absent from a config take the defaults in `DEFAULT_CONFIG`
 | `study_preferences` | The learner's saved preferences; missing fields take the defaults in `pipeline/prompts/preferences.py` |
 | `study_progress` | `null` leaves `read_study_progress` unoffered; a dict is the fixture it returns, shaped like `/api/internal/study-progress` (`items`, `recentAttempts`, `weakChapters`) |
 | `tools` | `null` (default) offers what production offers for an editor; a list of tool names narrows it for an experiment. Limits are production's (`pipeline/retrieval/limits.py`) |
+| `library_flow` | Reshapes the library tools for an experiment. `null` keeps production's; `browse_first` leaves `browse_knowledge` only its `subject` argument (a subject's topics with counts); `search_subject` gives `search_knowledge` a `subject` id in place of `topics` (filtering by every topic of that subject), removes `browse_knowledge` and moves its subject list into search's description. Arguments are checked against the reshaped schema, and result lines naming a removed argument are reworded. Configs `flow-browse-first` and `flow-search-subject` pair each with matching `library_rules` |
 | `search` | `top_k`, `per_file_cap` |
 | `capture.mode` | `pixels` attaches the JPEG to the conversation (needs a vision chat model); `ocr` sends it to Qwen3.5-OCR (`ocr_route` `docparse` or `chat`) and returns the transcript as a passage; `caption` asks the captioning model, question-aware when `question_aware` is true |
 | `capture.require_seen_page` | Refuse captures of pages no retrieved passage has shown |
@@ -194,9 +195,18 @@ and the turn reports `stall` (or `tool_cap` when the call cap ended it).
 There is no gateway, so `create_material` and `edit_document` are handled in
 process: a created material is written to `materials/<id>.json` under the run
 with the provenance `library.provenance` resolved for its `excerpt_ids`, an edit
-appends its commands to that file and merges its own books into the record by
+applies its commands to that file and merges its own books into the record by
 book id the way Go does, and both return the receipt the gateway would have
-produced. Both go through `tools.write_sources`, the production write guard
+produced. `inspect_document` and `read_document` on a material the conversation
+wrote read that file: a note is split into top-level blocks (a blank line
+outside a fence ends one, a heading stands alone) whose ids (`b1`, `b2`, …) are
+given on first sight and kept in the record, a card set's cards get `c1`, `c2`,
+…, and a block shows its markdown as its text. Edits go by those ids in order
+on a copy (`insert_markdown` after a block or at the start, `replace_block` and
+`remove_block` against the block's current text, `replace_text` occurring once,
+card and Mermaid commands), and one stale expectation refuses the whole call.
+Workspace source files still go to the production tools, which have no
+gateway here. Both go through `tools.write_sources`, the production write guard
 (named excerpts read this turn or retained in full; with none named, the
 excerpts read since the last write, or all read this turn when none are new,
 of the books whose read text the write's text matches). The

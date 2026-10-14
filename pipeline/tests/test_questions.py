@@ -115,13 +115,17 @@ def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
             ],
         },
     )
-    assert [i.index for i in found.valid] == [0]
-    assert found.listing().splitlines() == [
+    # A field outside the kind is dropped from an otherwise whole question and
+    # named in the success result; a question refused anyway still names it.
+    assert [i.index for i in found.valid] == [0, 1]
+    assert found.notes == [
         (
-            '- questions[1].markscheme: unknown field, sent [{"text": "a", "marks": 1}]; a '
-            "multiple-choice or short-answer question has no markscheme; a written answer "
+            'Dropped questions[1].markscheme: unknown field, sent [{"text": "a", "marks": 1}]; '
+            "a multiple-choice or short-answer question has no markscheme; a written answer "
             "marked on one is an open question"
-        ),
+        )
+    ]
+    assert found.listing().splitlines() == [
         '- questions[2].fixedUnit: unknown field, sent "mV"; the field is unit',
         (
             "- questions[2].accepted[0]: expected a plain number because unit is set "
@@ -135,8 +139,8 @@ def test_a_call_names_every_problem_with_its_path_and_the_shape_to_copy():
             "- questions[4].correct: missing; expected the one correct option, copied "
             "exactly from options"
         ),
-        questions.SHAPES["mcq"],
         questions.SHAPES["short"],
+        questions.SHAPES["mcq"],
     ]
 
 
@@ -204,7 +208,7 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
     """Blank means absent (null, "", "null", [] or {}): the 2026-10-13 runs
     sent accepted: [] on multiple choice, unit: "", back: "", quiz_id: "" and
     "null". A field the question's kind needs stays, so it keeps its own
-    message; an unknown field with content is still refused."""
+    message; an unknown field with content is dropped and named."""
     sent = {
         "title": "T",
         "quiz_id": "null",
@@ -226,8 +230,9 @@ def test_a_blank_field_is_left_out_unless_the_kind_needs_it():
     assert [i.problems for i in found.items] == [
         [],
         ["questions[1].accepted: expected at least 1 items; sent 0"],
-        ['questions[2].back: unknown field, sent "Sodium"'],
+        [],
     ]
+    assert found.notes == ['Dropped questions[2].back: unknown field, sent "Sodium"']
     # A quiz fence's question too, and media by its block's schema.
     assert questions.drop_question_blanks({**OPEN, "hints": [], "unit": "null"}) == {
         k: v for k, v in OPEN.items() if k != "hints"

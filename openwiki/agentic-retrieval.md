@@ -2894,7 +2894,12 @@ optional `explanation`) and open (`question`, `marks`, `markscheme` of
 `{text, marks}` adding up to `marks`, `model_answer`, optional `hints` and
 `explanation`), all through `add_questions` and told apart by their fields
 (an item with `marks`, `markscheme` and `model_answer` is open whatever else
-it carries, and the extra field is named). Open questions had their own tool
+it carries). A field outside the item's kind (`marks` on multiple choice,
+`unit` on an open question, a misspelled key) is dropped when the rest is a
+whole question, and the success result names it ("Dropped questions[1].marks:
+…"); an item refused for another reason names it among its problems, and an
+open item carrying `options` stays refused, since its text may point at
+choices it would lose. Open questions had their own tool
 until 2026-10-14: GLM fills tool arguments in alphabetical order, so that
 tool's `question` and `quiz_id` came last, after three long text fields, and
 arrived scrambled on 9 of its 41 playground calls (15 refused), while

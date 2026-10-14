@@ -109,6 +109,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "skills": {},
     # null offers what production offers; a list narrows it for an experiment.
     "tools": None,
+    # library_flow reshapes the library tools for an experiment: null keeps
+    # production's; "browse_first" keeps browse_knowledge to a subject's topic
+    # list; "search_subject" gives search_knowledge a subject id in place of
+    # topics and drops browse_knowledge, its subject list moving to search.
+    "library_flow": None,
     "search": {"top_k": 5, "per_file_cap": 4},
     "capture": {
         "mode": "pixels",
@@ -177,6 +182,8 @@ def merged(raw: dict[str, Any]) -> dict[str, Any]:
         or any(name not in known for name in out["tools"])
     ):
         raise HTTPException(400, "tools must be null or a list of known tool names")
+    if out["library_flow"] not in LIBRARY_FLOWS:
+        raise HTTPException(400, f"library_flow must be one of {LIBRARY_FLOWS}")
     return out
 
 
@@ -255,12 +262,102 @@ def effective_prompt(
 
 
 SUBJECT_CATALOG = "\n\nSubjects this library holds (browse one for its topic ids):\n"
+SEARCH_SUBJECTS = "\n\nSubjects this library holds:\n"
 # The lists production appends per turn, kept when a config replaces the text.
 CATALOGS = {
     "browse_knowledge": SUBJECT_CATALOG,
+    "search_knowledge": SEARCH_SUBJECTS,
     "list_question_bank": "\n\nExams and subjects this bank holds",
     "read_skill": "\n\nSkills:\n",
 }
+
+
+LIBRARY_FLOWS = (None, "browse_first", "search_subject")
+SUBJECT_LINE = re.compile(r'^- browse_knowledge\(\{"subject": (".*?")\}\) ', re.M)
+# Result lines that name a tool argument the flow took away, and what they say instead.
+FLOW_TEXT = {
+    "browse_first": (
+        (", or in browse_knowledge.topic to see excerpts by role and book.", "."),
+        ("Browse one of those topics to see what it does hold.", "Search again with other words or roles."),
+    ),
+    "search_subject": (
+        (
+            " This search had no topic filter. Browse a subject from the browse_knowledge "
+            "description to get its topic ids, then pass topics to see what the library "
+            "holds for them by role.",
+            " Pass a subject from this tool's list to see what that subject holds by role.",
+        ),
+        ("Browse one of those topics to see what it does hold.", "Search again with other words or roles."),
+    ),
+}
+
+
+def flow_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
+    """The library tools as library_flow reshapes them (see DEFAULT_CONFIG)."""
+    flow = c["library_flow"]
+    functions = {s["function"]["name"]: s["function"] for s in schemas}
+    browse, search = functions.get("browse_knowledge"), functions.get("search_knowledge")
+    if flow == "browse_first" and browse:
+        subject = browse["parameters"]["properties"]["subject"]
+        browse["parameters"] = {
+            **browse["parameters"], "properties": {"subject": subject}, "required": ["subject"],
+        }
+    if flow != "search_subject":
+        return schemas
+    if search:
+        rest = {k: v for k, v in search["parameters"]["properties"].items() if k != "topics"}
+        subject = {"type": "string", "description": "A subject id listed below: search only its excerpts."}
+        search["parameters"] = {**search["parameters"], "properties": {**rest, "subject": subject}}
+        listed = browse["description"].partition(SUBJECT_CATALOG)[2] if browse else ""
+        if listed:
+            search["description"] += SEARCH_SUBJECTS + SUBJECT_LINE.sub(r"- \1 ", listed)
+    return [s for s in schemas if s["function"]["name"] != "browse_knowledge"]
+
+
+def flow_problem(state: dict[str, Any], name: str, args: dict[str, Any]) -> str | None:
+    """A reshaped library tool's arguments checked against what the turn offered."""
+    from jsonschema import Draft202012Validator
+
+    function = next(
+        (s["function"] for s in state.get("tool_schemas") or [] if s["function"]["name"] == name),
+        None,
+    )
+    if function is None:
+        return f"{name} is not offered in this configuration."
+    error = next(iter(Draft202012Validator(function["parameters"]).iter_errors(args)), None)
+    return f"{name} arguments invalid: {error.message}" if error else None
+
+
+async def flow_run(c: dict[str, Any], name: str, args: dict[str, Any], ctx, run):
+    """A library tool under library_flow: a subject search filters by the
+    subject's topics, and result lines naming a removed argument are reworded."""
+    from pipeline.retrieval import library, tools
+
+    subject = args.get("subject") if name == "search_knowledge" else None
+    if subject:
+        try:
+            listing = await library.browse_subject(subject)
+        except ValueError:
+            return tools._refused(
+                f"Unknown subject id {subject!r}: use one listed in this tool's "
+                "description, or omit subject for a direct search."
+            )
+        ctx.subject_topics[subject] = listing["topics"]
+        topics = [t["id"] for t in listing["topics"]]
+        args = {**{k: v for k, v in args.items() if k != "subject"}, "topics": topics}
+        # A subject holds more topics than the contract's cap of 8, so the
+        # handler runs directly; flow_problem already checked the arguments.
+        result = await tools.REGISTRY[name].handler(args, ctx)
+    else:
+        result = await run(name, args, ctx)
+    replacements = list(FLOW_TEXT[c["library_flow"]])
+    if subject:
+        replacements.append((f"on topics {', '.join(topics)}", f"in subject {subject}"))
+    for i, part in enumerate(result.text_parts):
+        for old, new in replacements:
+            part = part.replace(old, new)
+        result.text_parts[i] = part
+    return result
 
 
 def tool_prompt(function: dict[str, Any]) -> str:
@@ -305,7 +402,7 @@ def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
         if (c["decks"]["offer"] or s["function"]["name"] not in deck.NAMES)
         and (c["tools"] is None or s["function"]["name"] in c["tools"])
     ]
-    schemas = configured_tools(c, out)
+    schemas = flow_tools(c, configured_tools(c, out))
     if not c["decks"]["offer"]:
         line = "\n" + skills.catalog_line(skills.DECK, skills.SKILLS[skills.DECK].when)
         for schema in schemas:
@@ -475,9 +572,222 @@ async def save_figures(state: dict[str, Any], figures) -> dict[str, Any]:
     return saved
 
 
+# What inspect_document offers per material kind (the gateway's materialOperations).
+OPERATIONS = {
+    "quiz": ["replace_question", "add_question", "remove_question"],
+    "flashcards": ["replace_card", "add_card", "remove_card"],
+    "mindmap": ["set_mermaid"],
+    "diagram": ["set_mermaid"],
+}
+NOTE_OPERATIONS = ["replace_text", "replace_block", "insert_markdown", "remove_block"]
+FENCE_OPEN = re.compile(r" {0,3}(`{3,}|~{3,})\s*([\w-]*)")
+HEADING = re.compile(r" {0,3}#{1,6}(\s|$)")
+BLOCK_TYPES = (
+    (re.compile(r"([-*+]|\d+[.)])\s"), "list"),
+    (re.compile(r">"), "blockquote"),
+    (re.compile(r"\|"), "table"),
+    (re.compile(r"\$\$"), "math"),
+    (re.compile(r"!\["), "image"),
+)
+
+
+def split_blocks(markdown: str) -> list[str]:
+    """A note's top-level blocks, roughly as the editor's import splits it: a
+    blank line outside a fence ends one, and a heading stands alone."""
+    blocks: list[str] = []
+    lines: list[str] = []
+    fence = ""
+    for line in markdown.split("\n"):
+        stripped = line.strip()
+        if fence:
+            lines.append(line)
+            if stripped and set(stripped) == {fence[0]} and len(stripped) >= len(fence):
+                fence = ""
+            continue
+        if opened := FENCE_OPEN.match(line):
+            fence = opened[1]
+        elif not stripped or HEADING.match(line):
+            if lines:
+                blocks.append("\n".join(lines))
+                lines = []
+            if stripped:
+                blocks.append(line)
+            continue
+        lines.append(line)
+    if lines:
+        blocks.append("\n".join(lines))
+    return blocks
+
+
+def block_type(markdown: str) -> str:
+    if opened := FENCE_OPEN.match(markdown):
+        return opened[2] or "code"
+    if HEADING.match(markdown):
+        return "heading"
+    head = markdown.lstrip()
+    return next((kind for pattern, kind in BLOCK_TYPES if pattern.match(head)), "paragraph")
+
+
+def fresh_id(record: dict[str, Any], prefix: str) -> str:
+    """A block or card id never given before in this material, as the editor's
+    ids stay put while others come and go."""
+    key = f"next_{prefix}"
+    record[key] = record.get(key, 0) + 1
+    return f"{prefix}{record[key]}"
+
+
+def new_blocks(record: dict[str, Any], markdown: str) -> list[dict[str, str]]:
+    return [{"id": fresh_id(record, "b"), "markdown": text} for text in split_blocks(markdown)]
+
+
+def inspected(record: dict[str, Any]) -> list[dict[str, Any]]:
+    """The material's targets as the gateway's inspection lists them. A note's
+    blocks and a set's cards get their ids on first sight, kept in the record."""
+    kind = record["kind"]
+    if kind == "quiz":
+        return [
+            {"id": q["id"], "type": "question", "text": question_text(q)}
+            for q in record["questions"]
+        ]
+    if kind == "flashcards":
+        for card in record["cards"]:
+            if "id" not in card:
+                card["id"] = fresh_id(record, "c")
+        return [
+            {"id": c["id"], "type": "card", "text": f"{c['front']} | {c['back']}"}
+            for c in record["cards"]
+        ]
+    if kind in ("mindmap", "diagram"):
+        return [{"id": "source", "type": kind, "text": "", "properties": {"source": record["content"]}}]
+    if "blocks" not in record:
+        record["blocks"] = new_blocks(record, record["content"])
+    return [
+        {"id": b["id"], "type": block_type(b["markdown"]), "text": b["markdown"]}
+        for b in record["blocks"]
+    ]
+
+
+def question_text(question: dict[str, Any]) -> str:
+    parts = question.get("parts") or [{}]
+    blocks = [*(question.get("stem") or []), *(parts[0].get("blocks") or [])]
+    return " ".join(str(b.get("text") or "") for b in blocks if b.get("type") == "text")
+
+
+def inspect_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
+    """inspect_document on a material this conversation wrote, shown as the
+    gateway shows it; None for anything else, which the production tool reads."""
+    from pipeline.retrieval import tools
+
+    target = args.get("target") or {}
+    rid = str(target.get("id") or "")
+    record = run_material(state, rid) if target.get("kind") == "material" else None
+    if record is None:
+        return None
+    targets = inspected(record)
+    write_material(state, record)
+    start = int(args.get("start") or 0)
+    end = min(start + int(args.get("count") or 60), len(targets))
+    shown = targets[min(start, end) : end]
+    ctx.seen_blocks.setdefault(rid, {}).update({str(t["id"]): t["text"] for t in shown})
+    body = {
+        "title": record["title"],
+        "format": "plate",
+        "supportedOperations": OPERATIONS.get(record["kind"], NOTE_OPERATIONS),
+        "blocks": shown,
+        "total": len(targets),
+        "nextStart": end if end < len(targets) else None,
+    }
+    return tools._result(tools._render_inspection(body))
+
+
+def read_locally(args: dict[str, Any], state: dict[str, Any]):
+    """read_document on a material this conversation wrote: its targets in
+    order, a block standing for a chunk; None for a workspace file."""
+    from pipeline.retrieval import tools
+
+    record = run_material(state, str(args.get("file_id") or ""))
+    if record is None:
+        return None
+    targets = inspected(record)
+    write_material(state, record)
+    start = max(0, int(args.get("start") or 0))
+    end = min(start + min(12, int(args.get("count") or 4)), len(targets))
+    if start >= end:
+        return tools._result("No passages at that position.")
+    text = "\n\n".join(
+        t["text"] or t.get("properties", {}).get("source", "") for t in targets[start:end]
+    )
+    return tools._result(text + (f"\n\n(next start = {end})" if end < len(targets) else ""))
+
+
+def edited(record: dict[str, Any], commands: list[dict[str, Any]]) -> dict[str, Any] | str:
+    """A note's blocks, a set's cards or a diagram's source after edit_document's
+    commands, applied in order to a copy: the record fields to update, or the
+    problem, since one stale expectation refuses the whole call."""
+    draft = json.loads(json.dumps(record))
+    inspected(draft)
+    for n, command in enumerate(commands):
+        problem = apply_edit(draft, command, f"commands[{n}]")
+        if problem:
+            return f"edit_document: {problem}"
+    if "blocks" in draft:
+        draft["blocks"] = [b for b in draft["blocks"] if b["markdown"].strip()]
+        draft["content"] = "\n\n".join(b["markdown"] for b in draft["blocks"])
+    return draft
+
+
+def apply_edit(draft: dict[str, Any], command: dict[str, Any], where: str) -> str:
+    kind, op = draft["kind"], command.get("type")
+    offered = OPERATIONS.get(kind, NOTE_OPERATIONS)
+    if op not in offered:
+        return f"{where}: a {kind} takes {', '.join(offered)}"
+    if op == "set_mermaid":
+        if command["expected_source"].strip() != draft["content"].strip():
+            return f"{where}.expected_source: the source changed; inspect it again"
+        draft["content"] = command["source"]
+        return ""
+    items = draft["cards"] if kind == "flashcards" else draft["blocks"]
+    ids = [item["id"] for item in items]
+    if op in ("insert_markdown", "add_card"):
+        key = "after_card_id" if op == "add_card" else "after_block_id"
+        after = command.get(key)
+        if after is not None and after not in ids:
+            return f"{where}.{key}: no {after} in this {kind}"
+        at = 0 if after is None else ids.index(after) + 1
+        if op == "add_card":
+            new = [{"id": fresh_id(draft, "c"), "front": command["front"], "back": command["back"]}]
+        else:
+            new = new_blocks(draft, command["markdown"])
+        items[at:at] = new
+        return ""
+    key = "card_id" if kind == "flashcards" else "block_id"
+    target = command.get(key) or command.get("target_id")
+    if target is not None and target not in ids:
+        return f"{where}.{key}: no {target} in this {kind}"
+    if op == "replace_text":
+        expected = command["expected_text"]
+        hits = [b for b in items if target in (None, b["id"]) and expected in b["markdown"]]
+        count = sum(b["markdown"].count(expected) for b in hits)
+        if count != 1:
+            return f"{where}.expected_text: found {count} times; it must occur once"
+        hits[0]["markdown"] = hits[0]["markdown"].replace(expected, command["text"])
+        return ""
+    i = ids.index(target)
+    if op == "replace_card":
+        items[i] = {**items[i], **{k: command[k] for k in ("front", "back") if k in command}}
+    elif op == "remove_card":
+        del items[i]
+    elif command["expected_text"].strip() != items[i]["markdown"].strip():
+        return f"{where}.expected_text: {target} now reads: {items[i]['markdown'][:2000]}"
+    else:
+        items[i : i + 1] = [] if op == "remove_block" else new_blocks(draft, command["markdown"])
+    return ""
+
+
 async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]):
-    """edit_document against a material this conversation created: the commands are appended
-    to its file, a quiz's removed questions leave it, and the appended
+    """edit_document against a material this conversation created: a note's
+    blocks, a set's cards and a diagram's source are edited by id as the
+    editor would, a quiz's removed questions leave it, and the added
     section's provenance merges into the material's."""
     from pipeline.retrieval import questions, tools
 
@@ -513,27 +823,26 @@ async def edit_material_locally(args: dict[str, Any], ctx, state: dict[str, Any]
         return tools._refused(summary, detail=listing)
     books, credited = prepared
     problem = await check_note("\n".join(figures.markdown))
-    if record["kind"] == "quiz" and not problem:
-        kept = apply_question_commands(record["questions"], commands)
-        problem = await check_quiz(kept)
-        record["questions"] = kept if not problem else record["questions"]
     if problem:
         return tools._refused(f"edit_document: {problem}")
+    for i, markdown in zip(placing, figures.markdown, strict=True):
+        commands[i] = {**commands[i], "markdown": markdown}
+    if record["kind"] == "quiz":
+        kept = apply_question_commands(record["questions"], commands)
+        problem = await check_quiz(kept)
+        if problem:
+            return tools._refused(f"edit_document: {problem}")
+        draft = {"questions": kept}
+    else:
+        draft = edited(record, commands)
+        if isinstance(draft, str):
+            return tools._refused(draft)
     saved = await save_figures(state, figures)
     if isinstance(saved, tools.ToolResult):
         return saved
-    for i, markdown in zip(placing, figures.markdown, strict=True):
-        commands[i] = {**commands[i], "markdown": markdown}
+    record.update(draft)
     record["figures"] = {**(record.get("figures") or {}), **saved}
     record["edits"].extend(commands)
-    record["content"] = "\n".join(
-        part
-        for part in [
-            record["content"],
-            *(str(c.get("markdown") or c.get("text") or "") for c in commands),
-        ]
-        if part
-    )
     record["size"] = material_size(record["kind"], record)
     record["excerpt_ids"] = sorted({*record["excerpt_ids"], *credited})
     if books:
@@ -1142,11 +1451,13 @@ class Turn:
                 record["clean_args"] = clean
             state["calls"].append(record)
             started = time.perf_counter()
-            problem = (
-                tools.contract.validate_args(name, clean)
-                if name in tools.contract.DEFINITIONS
-                else None
-            )
+            flowed = c["library_flow"] and name in ("search_knowledge", "browse_knowledge")
+            if flowed:
+                problem = flow_problem(state, name, clean)
+            elif name in tools.contract.DEFINITIONS:
+                problem = tools.contract.validate_args(name, clean)
+            else:
+                problem = None
             if offered is not None and name not in offered:
                 result = tools._refused(
                     f"{name} is not offered in this configuration.",
@@ -1190,10 +1501,20 @@ class Turn:
                 result = await copy_locally(args, ctx_, state, self.id)
             elif name in tools.contract.HANDLER_CHECKED:
                 result = await questions_locally(name, args, ctx_, state, self.id)
+            elif name == "inspect_document" and (
+                local := inspect_locally(args, ctx_, state)
+            ) is not None:
+                result = local
+            elif name == "read_document" and (
+                local := read_locally(args, state)
+            ) is not None:
+                result = local
             elif name == "create_material":
                 result = await create_material_locally(args, ctx_, state, self.id)
             elif name == "edit_document":
                 result = await edit_material_locally(args, ctx_, state)
+            elif flowed:
+                result = await flow_run(c, name, args, ctx_, saved["run"])
             else:
                 result = await saved["run"](name, args, ctx_)
             if result.effects:
@@ -2335,6 +2656,78 @@ def check_figures() -> None:
         asyncio.run(flow(Path(tmp) / "runs" / "r1"))
 
 
+def check_edits() -> None:
+    """inspect_document, read_document and edit_document on a run's note and
+    card set: blocks keep their ids across edits and turns, edits land where
+    their ids say, and a stale expectation refuses the whole call."""
+    from tempfile import TemporaryDirectory
+
+    from pipeline.retrieval import tools
+
+    async def flow(run_dir: Path) -> None:
+        ctx = tools.ToolContext(workspace_id="ws", user_id="u", operations=BUILD_OPERATIONS)
+        state = {"materials": [], "captures": [], "run_dir": run_dir}
+        made = await create_material_locally(
+            {"kind": "note", "title": "T", "content": "# T\nIntro.\n\n- a\n- b", "_tool_call_id": "c1"},
+            ctx, state, "m1",
+        )
+        assert not made.refused, made.text()
+        note = state["materials"][-1]
+        target = {"kind": "material", "id": note["id"]}
+        seen = inspect_locally({"target": target}, ctx, state).text()
+        assert "[b1] (heading) # T\n[b2] (paragraph) Intro.\n[b3] (list) - a\n- b" in seen, seen
+        commands = [
+            {"type": "insert_markdown", "after_block_id": "b2", "markdown": "Part two.\n\nMore."},
+            {"type": "replace_block", "block_id": "b3", "expected_text": "- a\n- b", "markdown": "- c"},
+            {"type": "replace_text", "target_id": "b2", "expected_text": "Intro", "text": "Start"},
+        ]
+        done = await edit_material_locally({"target": target, "commands": commands}, ctx, state)
+        assert not done.refused and note["content"] == "# T\n\nStart.\n\nPart two.\n\nMore.\n\n- c", note
+        stale = [{"type": "remove_block", "block_id": "b2", "expected_text": "Intro."}]
+        refused = await edit_material_locally({"target": target, "commands": stale}, ctx, state)
+        assert refused.refused and "b2 now reads: Start." in refused.text(), refused.text()
+        read = read_locally({"file_id": note["id"], "start": 1, "count": 2}, state).text()
+        assert read == "Start.\n\nPart two.\n\n(next start = 3)", read
+        later = {"materials": [], "captures": [], "run_dir": run_dir.parent / "r2"}
+        again = inspect_locally({"target": target, "start": 2, "count": 1}, ctx, later).text()
+        assert "[b4] (paragraph) Part two.\n(next start = 3 of 5)" in again, again
+        cards = await create_material_locally(
+            {"kind": "flashcards", "title": "C", "cards": [{"front": "a", "back": "b"}], "_tool_call_id": "c2"},
+            ctx, state, "m1",
+        )
+        assert not cards.refused, cards.text()
+        deck_ = {"kind": "material", "id": state["materials"][-1]["id"]}
+        assert "[c1] (card) a | b" in inspect_locally({"target": deck_}, ctx, state).text()
+        add = [{"type": "add_card", "after_card_id": "c1", "front": "x", "back": "y"}]
+        added = await edit_material_locally({"target": deck_, "commands": add}, ctx, state)
+        assert not added.refused and [c["id"] for c in state["materials"][-1]["cards"]] == ["c1", "c2"]
+
+    with TemporaryDirectory() as tmp:
+        asyncio.run(flow(Path(tmp) / "runs" / "r1"))
+
+
+def check_flows() -> None:
+    """library_flow: browse_first leaves browse_knowledge a subject only;
+    search_subject moves the subject list into search and drops browse."""
+
+    def schemas() -> list[dict]:
+        listed = SUBJECT_CATALOG + '- browse_knowledge({"subject": "math"}) (10 excerpts)'
+        return [
+            {"type": "function", "function": {"name": "browse_knowledge", "description": "b" + listed,
+             "parameters": {"type": "object", "properties": {"subject": {}, "topic": {}}}}},
+            {"type": "function", "function": {"name": "search_knowledge", "description": "s",
+             "parameters": {"type": "object", "properties": {"query": {}, "topics": {}}}}},
+        ]
+
+    first = flow_tools(merged({"library_flow": "browse_first"}), schemas())
+    assert first[0]["function"]["parameters"]["properties"] == {"subject": {}}
+    assert first[0]["function"]["parameters"]["required"] == ["subject"]
+    [search] = flow_tools(merged({"library_flow": "search_subject"}), schemas())
+    assert set(search["function"]["parameters"]["properties"]) == {"query", "subject"}
+    assert search["function"]["description"] == 's' + SEARCH_SUBJECTS + '- "math" (10 excerpts)'
+    assert flow_tools(merged({}), schemas()) == schemas()
+
+
 def check() -> None:
     assert merged({"search": {"top_k": 3}})["search"] == {
         **DEFAULT_CONFIG["search"],
@@ -2429,6 +2822,8 @@ def check() -> None:
     check_copy()
     check_questions()
     check_figures()
+    check_edits()
+    check_flows()
     # Preview requests must not inherit the monkeypatches of an active turn.
     from tempfile import TemporaryDirectory
     from unittest.mock import AsyncMock, patch

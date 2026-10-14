@@ -433,6 +433,8 @@ class Item:
     value: Any
     problems: list[str] = field(default_factory=list)
     structural: bool = False
+    # Fields outside the kind that were dropped, one success-result line each.
+    dropped: list[str] = field(default_factory=list)
 
 
 # Schema errors that mean the shape itself is wrong.
@@ -466,6 +468,18 @@ def check_item(item: Any, index: int, path: str, *, fence: bool) -> Item:
             if k != "question" and (hint := _hint(k, None, fence=fence))
         ]
         return Item(index, path, None, item, problems, True)
+    # Fields outside the kind are dropped when the rest is a whole question;
+    # options on an open question stay refused, as its text may point at them.
+    kept = {k: v for k, v in item.items() if k in FIELDS[kind]}
+    if kept != item and not (kind == "open" and "options" in item):
+        whole = check_item(kept, index, path, fence=fence)
+        if not whole.problems:
+            whole.dropped = [
+                "Dropped " + _unknown(path, k, item[k], kind, fence=fence)
+                for k in item
+                if k not in kept
+            ]
+            return whole
     validator = _KINDS[kind]
     problems = _schema_problems(validator, item, path, kind, fence=fence)
     structural = any(e.validator in STRUCTURAL for e in validator.iter_errors(item))
@@ -668,6 +682,8 @@ def check(args: dict[str, Any]) -> Check:
                 f"{item.path}.replaces: a new quiz has no question to replace"
             )
         result.items.append(item)
+        if not item.problems:
+            result.notes += item.dropped
     result.call += _target_problems(args)
     quiz_id = args.get("quiz_id")
     if quiz_id and "chapter_id" in args and not args.get("title"):
@@ -996,6 +1012,7 @@ def _fence(
         return match[0]
     if fixed:
         found.notes.append(_repair_note(at, fixed))
+    found.notes += [line for item in checked for line in item.dropped]
     questions = [expand(i.kind or "open", i.value, new_id()) for i in checked]
     return _emit(match, json.dumps({"questions": questions}, ensure_ascii=False))
 
