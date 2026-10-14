@@ -150,8 +150,13 @@ days behind (frozen) or a few days behind (grace).
    user. During the deletion grace the member gets 404 on the owner's items;
    after Clerk deletion the owner's objects are reaped, used bytes go to zero,
    and the clone keeps its objects and charge.
-2. **Reprocessing** (plan below): J1 + J2 now, J4 after the note-indexing fix,
-   J3 optional. Open questions for Epo:
+2. **Reprocessing** (plan below, verified 2026-10-14):
+   - J1 (corrected) and J2 now;
+   - J3 with the F2 fix;
+   - J4 after the note-indexing fix;
+   - J5 (text) after the restore fix and the text hold.
+
+   Open questions for Epo (more are under "Fix plan"):
    - Notes have no manual Process: with auto process off they wait until it is
      on again, but `agentic-retrieval.md` says they wait for the owner's
      Process. Add a Process for notes, or fix the doc?
@@ -187,6 +192,23 @@ one `rag_contents` row.
 `size_bytes`, `index_dirty_at`); the scheduler admits dirty notes 15 s later
 (`server/internal/store/note_index.go`); the worker chunks, attaches, embeds.
 Only `kind='note'` in a workspace is indexed. No B2 objects.
+
+**Text** (text, code, CSV/TSV; verified 2026-10-14, `REPORT-text.md`):
+- **Save:** saves append `source_document_updates`, the first row whole with the
+  seed included. They write `files.preview` when it changes.
+- **Refresh:** the scheduler makes a file due 15 s after its last refresh request
+  with any net change. There is no idle window (`refresh.rs`).
+- **Export and ingest:** export writes the text to `sources/source_<id>`. Ingest
+  re-chunks it, with no parse, and embeds only chunks whose `indexed_text`
+  changed. It regenerates the descriptor once the accumulated change reaches 2%.
+- **Publication keeps the epoch and the rows; there is no swap and no rebuild:**
+  - base, blob, `revision`, alias and `seed_bytes` move;
+  - the old blob and its `rag_contents` row go at once;
+  - saves after the capture stay a residual.
+- **Fold:** the fold on unload drops deleted text bytes but keeps the history.
+- **Charge:** file bytes + effects JSON + `max(0, state + log − seed_bytes)`.
+- **UAT:** 50 refreshes, median 5.9 s from admission, each one embedding call
+  and one descriptor call.
 
 **Charge**: `files.size_bytes` + `source_documents.storage_bytes` (effects +
 state/log beyond `published_state` while a rebuild is pending); candidates,
@@ -227,39 +249,268 @@ note indexing entirely uncovered.
   Today that loop publishes while the outsider still has the editor open, then
   purges with `rebuild_pending`, so its rebuild is never reached
   (`files.spec.ts:144-159`).
-- **J4** note indexing (blocked on the fix below): create → indexed; edit →
-  re-indexed, only the changed chunk embedded; auto process off → waits; on →
-  indexed; trash → index gone; exact charge.
-- Verifier grants needed: `rag_material_contents`, `material_yjs_documents`,
-  `material_yjs_updates`, `agent_edit_inverses`; optionally `user_credits`
-  (`reserved_micros` back to 0).
+- **J4** note indexing (after the note fixes below), new `noteIndex.spec.ts`
+  (~8 min). Auto process on, an API note with three headed sections:
+  1. **Created → indexed:**
+     - one job `done` on the expected `release_sha`;
+     - `index_job_id`/`index_dirty_at`/`index_error` null;
+     - the alias names a ready `note:` content with 3 chunks and 3 vectors;
+     - one embedding call on the workspace pin, settled,
+       `credit_micros = tokens × micros_per_input_token`, paid by the owner.
+  2. **An editor changes one section in the browser:** a second job with
+     `chunks_embedded = 1` and fewer input tokens than the first; the old
+     content row is gone.
+  3. **Auto process off (Indexing tab), then edit.** After 75 s:
+     - the note is dirty and has no job;
+     - `pendingNotes = 1`;
+     - a scripted `search_workspace` still finds the old text.
+
+     Turn it back on: indexed within 60 s, `pendingNotes = 0`, and search finds
+     the new text.
+  4. **Trash:** search drops the note; rows and charge stay. **Purge:** alias,
+     content, chunks and vectors are gone.
+  5. **Every step:** `ledger()` holds and indexing adds 0 bytes. At the end: no
+     `processing` content, `user_credits.reserved_micros = 0`, and no Sentry
+     event on the jobs' traces.
+- **J5** text reprocessing, new `textLifecycle.spec.ts` (~12–15 min, <0.4
+  credits). Fixture `reprocess.md`: 8 KB, 4 sections, 8 chunks.
+  1. **One-word edit:**
+     - the preview follows the save;
+     - only the edited chunk's `indexed_text` changes;
+     - one refresh paid by the owner, embedding tokens under a third of the
+       upload's, no LLM call;
+     - the old content row and the old blob are gone;
+     - exact charge.
+  2. **Owner and editor type at once:**
+     - a viewer reads the saved text;
+     - a save during ingest (needs the UAT hold extended to text) leaves a
+       residual that a second refresh publishes;
+     - no failed or superseded job.
+  3. **Everyone leaves:** no deleted-text bytes are left in the state or the
+     rows; exact charge.
+  4. **Auto process off:** the preview follows, there is no refresh for 45 s,
+     `fileChanges` shows `waiting`, and an editor's Process answers 403. **On:**
+     published within 45 s.
+  5. **New section, trash, restore, purge:**
+     - a new section makes one descriptor call;
+     - trash while a refresh runs, then restore: the saved edit is indexed
+       without another edit (fails until the restore fix);
+     - purge leaves nothing behind.
+  6. **A 200-row CSV:** a cell edit and an append re-embed at most one chunk. A
+     mid-table insert re-embeds every later chunk until `table_units`.
+
+  Assert outcomes, not mechanics. The epoch, rows and `seed_bytes` checks are
+  the only ones a text compaction would change. After every step run
+  `refreshSettled()`: no job pending over 2 min, no candidate, no
+  `refresh_error`.
+- **CI side of J4/J5:**
+  - text rows in `TestRefreshSchedulerQuery`;
+  - a Rust `rooms.rs` test of a text room saving across a publication;
+  - the note pipeline and Go tests listed under the note bug.
+- **Verifier grants (operator; add to `scripts/uat/verifier-role.sql`):**
+  - needed: `rag_material_contents`, `agent_edit_inverses`, `edit_incidents`;
+  - recommended: `user_credits`;
+  - optional: `material_yjs_documents`;
+  - not needed: `material_yjs_updates`;
+  - plus the pending `model_configs` grant.
+
+  The search checks need `RETRIEVAL_UAT_SCRIPTED_TOOLS=true`.
+- **Plan corrections** (verified 2026-10-14, `REPORT-office.md`):
+  - **J1:**
+    - A deferred publication keeps the old base A (`base_blob_path`) until the
+      rebuild.
+    - At the republication, assert that the previously published file B is
+      reaped.
+    - A goes only after the rebuild.
+  - **Save during parse** (one test, in J3, for docx and xlsx):
+    - click Process, then save;
+    - assert the save landed while `source_refresh_candidates.content_id IS NULL`;
+    - assert one lease group and no superseded job.
+
+    It fails until F2 lands.
+  - **J2:** a hold on a store-only file blocks the refresh scheduler while it
+    lasts, so release it promptly.
+  - **Charge:** after a rebasing rebuild the exact charge is size + effects +
+    state bytes. "Charge = B2 size" holds only for a NULL-state rebuild.
+  - **Rebuild waits:**
+    - a room unload rebuilds at once;
+    - the sweep backs off 5 min when busy and 10 min after an error;
+    - on timeout, fail with diagnostics.
+  - **F1 coverage:**
+    - a `refreshSettled()` teardown in every Office and text journey: no pending
+      or running refresh, parse or ingest job for the run's files; no candidate;
+      `running_job_id` NULL; no open ingest provider session for the run's
+      actors; reserved credits 0;
+    - a canary: no `source_refresh` job pending for more than 10 min;
+    - in `membership.spec.ts`, demote an editor holding an unsaved DOCX edit and
+      assert an `epoch_reset` incident.
 - Also missing:
   - the refusal journey never settles its republication spend;
   - the Indexing tab's `fileChanges` / `pendingNotes` are never asserted.
-- **Budget:** J1–J4 together add 35–40 min. Run J2–J4 under their own
-  `--grep` dispatch, or raise `globalTimeout`.
+- **Budget:** J1–J4 together add 35–40 min, J5 another 12–15. Run J2–J5
+  under their own `--grep` dispatch, or raise `globalTimeout`.
 - Doc fixes beyond the chips:
   - `plate-editor.md`: the pending-projection idle threshold is 30 s, not 5 s.
-  - `agentic-retrieval.md`: worker and reaper parks clear the dirty flag, so
-    those notes don't count in `pendingNotes`.
+  - `agentic-retrieval.md` says worker and reaper parks count in
+    `pendingNotes`. Today they don't, because admission already cleared the
+    dirty mark. The release trigger in the fix plan makes the doc true, so fix
+    the code, not the doc.
 
-## Product bugs (task chips created 2026-10-14)
+## Product bugs (task chips created 2026-10-14; verified read-only 2026-10-14)
 
-- **Note indexing never succeeds on UAT** (verified read-only): all 245 note
-  index jobs since 2026-09-19 failed with "ingest source identity is invalid";
-  all 181 notes sit on a failed `index_job_id` and are never retried;
-  `rag_material_contents` is empty. Causes: note payloads have no file identity
-  but the provider boundary requires one; the 30 s heartbeat cancels note jobs;
-  the alias moves before the new content is ready (old content deleted, no
-  vector reuse); terminal failure leaves a `processing` content row. Recovering
-  the 181 stuck UAT notes needs Epo's call.
-- **Office refresh**: F1, an epoch reset leaves queued refreshes that 409 at
-  claim and never finish (two stall every export); F2, any save between
-  capture and attach throws away a parsed refresh. Plus smaller leaks and
-  stale docs listed in the chip.
+Verification reports, with file:line evidence, UAT queries and reproductions:
+`C:/WEB/capy-harness/2026-10-06-rust-round/uat-claims/` (`REPORT-notes.md`,
+`REPORT-office.md`, `REPORT-text.md`). **Work is paused: nothing below is
+fixed yet.** The fix order and open questions are in "Fix plan" below.
+
+- **Note indexing never succeeds on UAT:**
+  - **State:**
+    - 245 note jobs, none done. 244 (2026-10-08 → 10-12) were cancelled
+      0.06–1.7 s after their claim with "ingest source identity is invalid".
+    - The 2026-09-19 job failed on an ingest release without note support.
+    - All 181 live workspace notes hold a failed `index_job_id`; 180 are no
+      longer dirty.
+    - `rag_material_contents` is empty, and the Indexing tab shows them waiting
+      forever.
+    - No provider spend happened.
+    - No CI or e2e test covers note indexing end to end. The chat journey
+      already creates a note that gets stuck.
+  - **Cause:**
+    - `_pipeline_source_cancellation` (`pipeline/pipeline/store/db.py`) only
+      knows file payloads, and a note payload has no `fileId`/`sourceRevision`.
+    - Embedding admission refuses the first call ("no source file"). The retry's
+      claim fence (`_requeue` → `lock_pipeline_claim_boundary`) then calls the
+      note superseded, and `cancel_pipeline_jobs` fails the job.
+    - The same check would also cancel any note job at its first 30 s heartbeat.
+    - Neither cancellations (including `cancel_user_async_work` on account
+      deletion) nor edits clear `materials.index_job_id`, so the note is never
+      admitted again.
+  - **Latent:**
+    - `attach_material_content` moves the alias before the new content is ready,
+      so migration 0024's trigger deletes the old content first. Result: no
+      vector reuse (measured 0 of 3 vs 2 of 3), the note is unsearchable during
+      every re-index, and it loses its index on failure.
+    - The note path never abandons its `processing` row, so a later job with the
+      same text is blocked.
+- **Source refresh F1** (Office **and text**; never seen on UAT, reproduced on a
+  scratch database):
+  - `ResetSourceEpoch` (and `RestoreFromTrash`) move the epoch but leave the
+    refresh captured under it. A queued or lease-expired `source_refresh` job
+    then 409s at every claim (`d.epoch=c.epoch`).
+  - The Rust loop drops the 409 without reporting it, and nothing cleans the job
+    up. Consequences:
+    - the file never publishes or rebuilds again;
+    - its provider session stays open, using one of the owner's 20 ingest leases;
+    - maintenance readiness never clears;
+    - the export query's `LIMIT 2` means two such jobs stop every source refresh
+      on the environment, text included.
+  - A live export during the reset parks the file with `refresh_error`
+    ("Source candidate changed").
+  - Text causes it too: any discard with unsaved text resets the epoch.
+- **Source refresh F2** (Office only):
+  - The pipeline attach check (`retrieval/store.py:286`) requires
+    `d.checkpoint=c.checkpoint` for Office files. Any save between admission and
+    the content claim (UAT median 8–12 s, max 53 s) discards the parsed refresh.
+  - Lost: the parse and the publication. There is no provider spend.
+  - The file republishes once a refresh gets through without a save. An owner's
+    Process while still editing nearly always hits it.
+  - Text is exempt: later text saves become a residual.
+- **Restore after a trash during a refresh** (Office and text): the trash
+  trigger cancels the refresh as failed (`refresh_error='source deleted'`), and
+  `RestoreFromTrash` never clears it. The restored file's saved edits wait for
+  another edit, and the Indexing tab shows `failed`.
+- **The UAT publication hold skips text** (`handoff.rs` publish returns from the
+  text branch before the hold), so J5 can't save during ingest.
+- **Reconciliation** (the recount in `storage.go`) doesn't lock
+  `source_documents` or `agent_edit_inverses`, and its drift report compares
+  without the pending deltas.
 - **Reconnect message**: a removed member's open editor shows file-missing; by
   decision that stays.
-- **CSV limit**: see the next section.
+- **CSV limit**: see the next section. Every CSV save re-chunks the whole table
+  at the 15 s text cadence, which adds to the quadratic-chunking risk.
+
+## Fix plan (recommended 2026-10-14; paused, needs Epo's go)
+
+1. **Note indexing, pipeline (one ingest release):**
+   - give `_pipeline_source_cancellation` a note branch (workspace and owner
+     lifecycle, no file or revision);
+   - accept and compare `materialId` in `_lock_ingest_provider_boundary` and
+     `lock_pipeline_claim_boundary`;
+   - abandon the claim on failure in `_process_material_index_bound`;
+   - move the alias only in a new `publish_material_content` step that marks the
+     content ready;
+   - record `chunks_created`/`chunks_embedded` on the attempt.
+
+   Tests:
+   - offline heartbeat, requeue and admission for a note payload;
+   - an integration note job through the real admission with only
+     `elitellm.embed_batch` stubbed;
+   - an integration test where an edit embeds only the changed chunk and a
+     failure keeps the old index.
+2. **Note indexing, migration:** a trigger on `jobs` releases the note when its
+   index job ends:
+   - failed: `index_error` set, and the note stays dirty and counted in
+     `pendingNotes`;
+   - done: job and error cleared.
+
+   Then delete the redundant Python clears. Go tests: `cancel_pipeline_jobs`,
+   `cancel_user_async_work` and `done` each release the note.
+3. **F1 (Go only):**
+   - in `ResetSourceEpoch`, when the epoch moved, call `cancel_pipeline_jobs`
+     on the old epoch's candidate jobs with
+     `'superseded','superseded','source_superseded','Editing moved to a new epoch'`;
+   - do the same in `RestoreFromTrash`;
+   - optionally, let `ClaimSourceRefresh` supersede a stale job instead of
+     answering a bare 409.
+
+   Test: `TestSourceEpochResetSupersedesItsRefresh`, with queued, expired-claim,
+   live-claim and restore cases, plus text. Add a stale-jobs-never-hold-the-queue
+   test.
+4. **F2 (pipeline only):** in `_lock_source_candidate`, use
+   `d.checkpoint>=c.checkpoint`, as the heartbeat check does. Test: attach with a
+   newer checkpoint for docx, xlsx, pptx and text. Land it with J3, because
+   rebasing rebuilds become common.
+5. **Restore** (Epo's call): clear `refresh_error` in `RestoreFromTrash`.
+6. **UAT hold covers text:** run the hold before the text branch.
+7. **Docs:**
+   - `agentic-retrieval.md`: notes have no Process (with auto process off they
+     wait until it is on); the vector-reuse sentence; parked notes count; the
+     scheduler SQL lives in `refresh.rs`; a claimed refresh can stick until F1.
+   - `office-files.md`: an epoch reset supersedes the refresh; saves before the
+     attach stay pending.
+   - `backend-storage-quota.md`: the charged size comes from migration 0075 and
+     includes `log_bytes`; correct what reconciliation sums and locks.
+   - `thumbnails.md`: text previews follow saves.
+   - `plate-editor.md`: the pending-projection idle threshold is 30 s, not 5 s.
+8. **Recovery of the 181 UAT notes** (Epo's call, after 1 and 2 are on UAT):
+   - set `index_job_id=NULL, index_error=NULL,
+     index_dirty_at=COALESCE(index_dirty_at, now())` on live workspace notes
+     whose job is terminal;
+   - clearing `index_job_id` alone re-admits only 1 note;
+   - cost: about 1.07M characters, roughly 13–54 credits on the owner of
+     `ws_28b4c9d279`.
+9. **Then the verifier grants and the journeys:** J4, J1 corrected, J3, J2, J5.
+10. **Later:** reconciliation locks and drift with pending deltas; optionally move
+    export-only publications off the 5 s scheduler loop.
+
+**Questions for Epo:**
+1. Recover the 181 UAT notes, or delete them, or leave them?
+2. Should parked notes count in `pendingNotes` (recommended, per the 2026-09-18
+   decision)?
+3. Notes Process: fix the doc (recommended), or add a Process?
+4. Notes parked by transient failures: wait for their next edit, or be
+   re-admitted later (which needs a backoff)?
+5. Should a restore clear the `refresh_error` the trash left (recommended)? And
+   should other errors whose cause has gone away (credits bought, space freed)
+   also clear?
+6. F1: also cover `RestoreFromTrash` (recommended)? And add the claim-time
+   self-heal?
+7. J3 cost: all three Office formats, or docx and xlsx only (+3–4 min each)?
+8. Text refreshes every ~15 s with no idle window, and on small files nearly
+   every refresh regenerates the descriptor (~0.09 credits on UAT). Keep that,
+   or add an idle window or a minimum interval for descriptors?
+9. Is extending the UAT publication hold to text OK?
+10. Reconciliation fixes: now, or with the storage backlog?
 
 ## CSV/TSV ingest limits (separate session, uncommitted)
 

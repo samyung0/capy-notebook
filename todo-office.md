@@ -678,13 +678,37 @@ for scale, `mermaid.core` is 150.7 KB before any diagram chunk.
 
 ## Queued 2026-10-13 (from the Rust round)
 
-- **Text publishing without the swap** (Epo: later). A text source publishes
-  through the Office path: export to a new file version, re-ingest, then a new
-  epoch over the published file once the room empties. Office needs that (its
-  editing state is a delta over seed(base)); text does not, since its Y.Text is
-  the whole document: publishing could write the current text to the file and
-  reindex, keeping editing in the same epoch. The swap now doubles as history
-  compaction for text, so compaction would need its own idle trigger.
+- **Text publication already keeps its epoch** (checked 2026-10-14,
+  `capy-harness/2026-10-06-rust-round/uat-claims/REPORT-text.md`; this replaces
+  the earlier "text publishing without the swap" item, whose premise was
+  wrong).
+  - **How text publishes today:** a text source exports its current text
+    (`export_candidate`), is re-ingested without a parse, and publishes in the
+    same epoch:
+    - the base moves to the export;
+    - the rows stay;
+    - saves after the capture stay a residual.
+
+    See the text branch of `handoff.rs` publish and the text case of
+    `PublishSourceRefresh`; `TestSourceTextPublishesCapturedStateWithExactRemainingEffects`
+    asserts epoch 1.
+  - **No compaction:** there is no swap, so nothing compacts text history. The
+    fold merges rows but keeps the Yjs history, about 3 bytes per keystroke
+    (20,000 keystrokes on a 20 KB file left 64 KB).
+  - **What remains:**
+    - F1 (`todo-uat-journeys.md` "Product bugs") blocks text exports too, since
+      they share the two-slot export queue.
+    - Compaction only if history ever matters (the 2026-10-05 decision stands):
+      set `rebuild_pending` on a fully published text file once its charged
+      growth passes a threshold (proposal `max(256 KiB, 2 × size_bytes)`), and
+      let `rebuild()` land seed(published) in a new epoch. That reuses the
+      empty-room probe, lock, compare-and-swap and sweep.
+    - Keep the epoch for text: discards, restores and compaction need it.
+    - Text exports wait behind Office exports in one loop (two per 5 s tick,
+      each up to a 120 s engine call). Give text its own lane only if indexing
+      lag shows.
+    - Test it with J5 in `todo-uat-journeys.md`. J5 asserts outcomes, so it
+      stays valid if compaction lands.
 - **Server-side check on Office image bytes** (Epo: later): the Rust server
   refuses an Office edit that adds an image over the payer's cap, so the 2/5 MiB
   cap holds against a modified client (the browser enforces it today).
@@ -692,3 +716,15 @@ for scale, `mermaid.core` is 150.7 KB before any diagram chunk.
   editors (found by the agent-writes e2e, 2026-10-13).
 - **`[@Name](mention:id)` in agent markdown becomes a link with an empty URL**
   (Go does not check link URLs; the note format offers no mentions).
+
+## Refresh lifecycle fixes (verified 2026-10-14)
+
+Office and text source refreshes have two confirmed bugs, F1 and F2, plus
+smaller leaks. The evidence, fixes and landing order are in
+`todo-uat-journeys.md` ("Product bugs" and "Fix plan"), with the full report
+in `capy-harness/2026-10-06-rust-round/uat-claims/REPORT-office.md`. Paused
+until Epo's go.
+
+- **Correction to "AI-edit Undo storage" above:** `RebuildSource` releases the
+  inverses (`source_rebased`). Only text publications, and rooms that never
+  empty, keep them.
