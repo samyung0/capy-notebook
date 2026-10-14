@@ -527,6 +527,28 @@ async def test_create_material_rejects_scope_without_indexed_content(monkeypatch
     assert "no indexed content" in result.text()
 
 
+async def test_create_material_refuses_an_unknown_chapter_before_sending(monkeypatch):
+    ctx = ToolContext(
+        workspace_id="ws_1",
+        user_id="u1",
+        operations=frozenset(contract.OPERATIONS),
+        assistant_message_id="m_1",
+    )
+    ctx.chapters = [{"id": "ch_1", "name": "Cells"}]
+    monkeypatch.setattr(tools.cfg, "gateway_url", "http://gw")
+    monkeypatch.setattr(tools.cfg, "pipeline_secret", "s")
+
+    def _post(*_args, **_kwargs):
+        raise AssertionError("an unknown chapter reached the gateway")
+
+    monkeypatch.setattr(tools.requests, "post", _post)
+    result = await tools._create_material(
+        {"kind": "note", "content": "body", "chapter_id": "ch_9", "_tool_call_id": "c"},
+        ctx,
+    )
+    assert result.refused and "not a chapter of this workspace" in result.text()
+
+
 def _library_ctx(monkeypatch) -> ToolContext:
     """A Library-on context whose gateway is stubbed, with an empty workspace index."""
     ctx = ToolContext(
@@ -3424,3 +3446,35 @@ async def test_askuser_called_as_a_tool_ends_the_turn_on_that_question(monkeypat
     assert agent.ask_user_answer([_call("AskUser", "{}")], "x") is None, (
         "no question, no answer"
     )
+
+
+async def test_results_before_the_last_tools_response_say_write_now(monkeypatch):
+    """With 4 responses the last has tools off, so the third is the last with
+    tools: the results it reads (the second response's) carry the notice."""
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("list_sources", "{}", "a")]),
+            _assembled("", [_call("list_sources", "{}", "b")]),
+            _assembled("", [_call("list_sources", "{}", "c")]),
+            _assembled(_answer(("done", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.cfg, "agent_max_steps", 4)
+
+    async def _run(_name, _args, _ctx):
+        return ToolResult(text_parts=["sources"])
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    def results(call):
+        return {
+            m["tool_call_id"]: m["content"]
+            for m in call["messages"]
+            if m.get("role") == "tool"
+        }
+
+    assert agent.LAST_TOOLS_NOTICE not in results(seen[2])["a"]
+    assert results(seen[2])["b"].endswith(agent.LAST_TOOLS_NOTICE)
+    assert seen[3]["tools_off"]

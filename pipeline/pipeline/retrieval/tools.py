@@ -1260,6 +1260,18 @@ def _relocations(effect: dict[str, Any]) -> str:
     return out
 
 
+def unknown_chapter(ctx: ToolContext, args: dict[str, Any]) -> ToolResult | None:
+    """A chapter_id that names no chapter of the workspace, refused before
+    anything is sent (Go refuses it too, after the write is built). Shared
+    with the playground's local writes."""
+    chapter = str(args.get("chapter_id") or "")
+    if chapter and chapter not in {c["id"] for c in ctx.chapters}:
+        return _refused(
+            "chapter_id is not a chapter of this workspace; the turn context lists them."
+        )
+    return None
+
+
 async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if not _gateway_ready() or not ctx.user_id:
         return _refused(
@@ -1272,6 +1284,8 @@ async def _create_material(args: dict[str, Any], ctx: ToolContext) -> ToolResult
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id:
         return _refused("create_material is missing its tool-call id.")
+    if (unknown := unknown_chapter(ctx, args)) is not None:
+        return unknown
     content = str(args.get("content") or "")
     fences = questions.Check(questions.FENCE)
     if kind == "note":
@@ -1791,6 +1805,7 @@ async def _post_operation(
     """
     last_exc: BaseException | None = None
     last_status = 0
+    last_detail = ""
     last_event_id = None
     for attempt in range(4):
         try:
@@ -1808,6 +1823,7 @@ async def _post_operation(
             if resp.status_code < 300:
                 return _receipt_result(resp.json())
             last_event_id = resp.headers.get(obs.ERROR_EVENT_HEADER)
+            last_detail = _response_detail(resp)
             if resp.status_code in (400, 401, 403, 404, 409, 422) or not _is_transient(
                 None, resp.status_code
             ):
@@ -1839,7 +1855,15 @@ async def _post_operation(
             TurnFailed("mutation outcome is unknown"), last_event_id
         ) from last_exc
     if recovered is None:
-        return _failed(f"Could not {failure}: not found after retries.")
+        # Nothing was saved; say what the service last answered, so the model
+        # can tell a passing outage from a write it should change.
+        why = (
+            f"the service answered {last_status}"
+            + (f" ({last_detail})" if last_detail else "")
+            if last_status
+            else "the service could not be reached"
+        )
+        return _failed(f"Could not {failure}: {why} on 4 tries; nothing was saved.")
     return _receipt_result(recovered)
 
 
@@ -2420,6 +2444,11 @@ async def write_questions(
         "add_questions", {k: v for k, v in args.items() if not k.startswith("_")}
     )
     found = questions.check(clean)
+    if clean.get("title") and unknown_chapter(ctx, clean) is not None:
+        found.call.append(
+            "chapter_id: not a chapter of this workspace; the turn context lists them; "
+            f"sent {json.dumps(clean.get('chapter_id'))}"
+        )
     quiz_id = clean.get("quiz_id")
     quiz: list[dict[str, Any]] | None = None
     if isinstance(quiz_id, str) and quiz_id and not clean.get("title"):
@@ -2566,11 +2595,8 @@ async def _create_deck(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     call_id = str(args.get("_tool_call_id") or "")
     if not call_id or not ctx.assistant_message_id:
         return _refused("create_deck needs its tool-call and assistant message ids.")
-    chapter = str(args.get("chapter_id") or "")
-    if chapter and chapter not in {c["id"] for c in ctx.chapters}:
-        return _refused(
-            "chapter_id is not a chapter of this workspace; the turn context lists them."
-        )
+    if (unknown := unknown_chapter(ctx, args)) is not None:
+        return unknown
     prepared = await write_sources(ctx, "create_deck", args)
     if isinstance(prepared, ToolResult):
         return prepared

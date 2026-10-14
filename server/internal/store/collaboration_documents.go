@@ -83,6 +83,15 @@ func (s *Store) postDocumentAuthority(ctx context.Context, path string, body any
 	return s.postCollaboration(ctx, s.collaborationURL, s.collaborationSecret, path, body, out)
 }
 
+// limitMessages words the authority's bare limit codes for the model, which
+// otherwise reads only the code.
+var limitMessages = map[string]string{
+	"document_size_exceeded":  "the material would be over its size limit; put the rest in a new material",
+	"document_nodes_exceeded": "the material would hold too many blocks; put the rest in a new material",
+	"document_depth_exceeded": "the material would nest lists or quotes too deeply; flatten them",
+	"undo_payload_exceeded":   "this edit is too large to undo; make it as several smaller edits",
+}
+
 func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path string, body any, out any) error {
 	if baseURL == "" || secret == "" {
 		return ErrAuthorityUnavailable
@@ -116,7 +125,14 @@ func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path str
 		Details json.RawMessage `json:"details"`
 	}
 	_ = json.Unmarshal(payload, &refusal)
+	if readable, ok := limitMessages[refusal.Message]; ok {
+		refusal.Message = readable
+	}
 	switch response.StatusCode {
+	case http.StatusRequestEntityTooLarge:
+		// A source checkpoint over its byte limit is the edit's result being
+		// too large, not an unknown outcome.
+		return &EditRefusal{Code: agenttools.ErrQuotaRejected, Message: "the edited file would be over its size limit; make a smaller edit", Details: refusal.Details}
 	case http.StatusConflict, http.StatusForbidden, http.StatusUnprocessableEntity, http.StatusBadRequest, http.StatusNotFound, http.StatusLocked:
 		code := agenttools.ErrorCode(refusal.Code)
 		if code == "" {

@@ -553,6 +553,8 @@ async def create_material_locally(
     from pipeline.retrieval import questions, tools
 
     kind, call_id = str(args.get("kind") or ""), str(args.get("_tool_call_id") or "")
+    if (unknown := tools.unknown_chapter(ctx, args)) is not None:
+        return unknown
     content = str(args.get("content") or "")
     fences = questions.Check(questions.FENCE)
     if kind == "note":

@@ -718,6 +718,7 @@ async def _run_turn(
             # counts against the stall guard.
             writes_before = writes
             write_calls = {c.id for c in calls if c.name in WRITE_TOOLS}
+            results_from = len(messages)
             try:
                 async for event in _run_tools(
                     calls, ctx, budget, messages, building=building
@@ -745,6 +746,22 @@ async def _run_turn(
                 budget.stop_reason = STOP_TURN_FAILED
                 return
             stalled = 0 if writes > writes_before else stalled + 1
+            # The next response is the last with tools: say so where the model
+            # reads first, under each result (Epo 2026-10-14).
+            last_with_tools = (
+                stalled
+                == STALL_RESPONSES
+                + WRITE_ERROR_GRACE * min(write_errors, WRITE_ERROR_GRACE_MAX)
+                - 1
+                if writes
+                else step == planning_cap - 2
+            )
+            if last_with_tools:
+                for message in messages[results_from:]:
+                    if message.get("role") == "tool" and isinstance(
+                        message.get("content"), str
+                    ):
+                        message["content"] += LAST_TOOLS_NOTICE
             if exhausted and state and state.terminal_call_allowed:
                 terminal_pending = True
             continue
@@ -840,6 +857,12 @@ async def _run_turn(
         done["tokenCount"] = usage.input_tokens + usage.output_tokens
     yield done
 
+
+# Under every tool result of the response before a turn's last one with tools.
+LAST_TOOLS_NOTICE = (
+    "\n\nYour next response is the last one with tools in this turn. Write what "
+    "you have now (create or edit the material), or the turn ends without it."
+)
 
 # The answer component the model sometimes calls as a tool (GLM, 2026-10-14).
 ASK_USER = "AskUser"

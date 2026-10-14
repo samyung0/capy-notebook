@@ -200,6 +200,14 @@ func (a *api) createAgentMaterial(w http.ResponseWriter, r *http.Request, req in
 		return
 	}
 	if err := a.s.AssertWorkspaceEditor(ctx, req.UserID, req.WorkspaceID); err != nil {
+		if errors.Is(err, store.ErrForbidden) {
+			// The role changed after the turn started; the write is refused,
+			// not lost (an unmapped error read as an unknown outcome).
+			writeJSON(w, http.StatusForbidden, map[string]string{
+				"code": "lifecycle_rejected", "message": "you can no longer edit this workspace, so nothing was created",
+			})
+			return
+		}
 		a.fail(w, err)
 		return
 	}

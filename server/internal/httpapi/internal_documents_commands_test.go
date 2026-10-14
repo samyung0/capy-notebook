@@ -3,6 +3,7 @@ package httpapi
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -67,5 +68,21 @@ func TestCardCommandsRefuseOverLongText(t *testing.T) {
 		`{"type":"add_card","front":"` + strings.Repeat("é", materialdoc.MaxCardFrontRunes) + `","back":"` + strings.Repeat("é", materialdoc.MaxCardBackRunes) + `"}`,
 	)}, nil); err != nil {
 		t.Fatalf("a card at the caps: %v", err)
+	}
+}
+
+// Converted note blocks the document check refuses reach the model as an
+// invalid_input refusal naming the rule, not an unmapped 500 it reads as an
+// unknown outcome; a refusal already typed passes through.
+func TestNoteEditDocumentErrorsAreRefusals(t *testing.T) {
+	var typed *store.EditRefusal
+	err := documentRefusal(fmt.Errorf("%w: a note cannot hold a slide block", materialdoc.ErrInvalid))
+	if !errors.As(err, &typed) || typed.Code != agenttools.ErrInvalidInput ||
+		typed.Message != "invalid material document: a note cannot hold a slide block" {
+		t.Fatalf("err = %#v", err)
+	}
+	stale := refusal(agenttools.ErrStaleTarget, "changed")
+	if got := documentRefusal(stale); got != stale {
+		t.Fatalf("a typed refusal was rewrapped: %v", got)
 	}
 }

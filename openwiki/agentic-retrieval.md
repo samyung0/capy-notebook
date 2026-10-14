@@ -2432,8 +2432,12 @@ build, and the knowledge library is one more source while the switch is on.
   writes landed. Each of the first two errored writes raises that threshold
   by two, to at most nine. Empty nonterminal responses count as stalls. The
   loop counts landed writes itself from the `tool_end` outcomes; nothing about
-  the budget is stored. The credit guard remains a separate platform billing
-  cutoff; its silent terminal call reports `planning_cap`.
+  the budget is stored. When the next response is the last with tools (the
+  planning cap's second to last, or the stall guard one response short), every
+  tool result of the current response ends with `agent.LAST_TOOLS_NOTICE`: the
+  next response is the last chance to write before the turn ends (Epo
+  2026-10-14). The credit guard remains a separate platform billing cutoff;
+  its silent terminal call reports `planning_cap`.
 - **Write guard** (`tools.write_sources`, shared with the playground). For a
   **material** target (`create_material`, `edit_document`, the three question
   tools and the deck tools), `excerpt_ids` is optional. Named excerpts are the
@@ -2864,6 +2868,18 @@ anything unrecognised becoming `outcome_unknown`. Tool errors carry a stable
 code (`unsupported_format`, `unsupported_operation`, `invalid_input`,
 `unavailable_target`, `stale_target`, `quota_rejected`, `lifecycle_rejected`,
 `outcome_unknown`, `limit_reached`, `office_editing_paused`) that the frontend localizes.
+The model reads only the message and any help text, so each refusal names its
+reason (2026-10-14): a create by someone who lost the editor role is refused
+as `lifecycle_rejected`, a note edit whose converted blocks fail the document
+check as `invalid_input` naming the rule, a source edit whose checkpoint would
+be over its byte limit (authority 413) as `quota_rejected`, and the
+authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
+`undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). A
+write whose retries run out and whose receipt is absent says what the service
+last answered (`the service answered 503 (…) on 4 tries; nothing was saved`).
+A `chapter_id` naming no chapter of the workspace is refused in the pipeline
+before anything is built (`tools.unknown_chapter`, for notes, decks and new
+quizzes).
 
 **Question tools.** The agent never writes the question format (Epo
 2026-10-13). It writes three small shapes, which `retrieval/questions.py`

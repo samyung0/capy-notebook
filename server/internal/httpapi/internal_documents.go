@@ -593,11 +593,11 @@ func (a *api) noteBlocksFromMarkdown(ctx context.Context, req internalDocumentsE
 		return nil, nil, refusal(agenttools.ErrInvalidInput, "%s", strings.TrimPrefix(err.Error(), materialdoc.ErrInvalid.Error()+": "))
 	}
 	if content, err = figures.resolve(content); err != nil {
-		return nil, nil, err
+		return nil, nil, documentRefusal(err)
 	}
 	doc, err := materialdoc.Parse(content)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, documentRefusal(err)
 	}
 	blocks := make([]any, len(doc.Value))
 	for i, node := range doc.Value {
@@ -635,6 +635,16 @@ type rawCommand struct {
 
 func refusal(code agenttools.ErrorCode, format string, args ...any) error {
 	return &store.EditRefusal{Code: code, Message: fmt.Sprintf(format, args...)}
+}
+
+// documentRefusal names why converted note blocks cannot be stored, as the
+// create route does; a refusal already typed passes through.
+func documentRefusal(err error) error {
+	var typed *store.EditRefusal
+	if errors.As(err, &typed) {
+		return err
+	}
+	return refusal(agenttools.ErrInvalidInput, "invalid material document: %s", strings.TrimPrefix(err.Error(), materialdoc.ErrInvalid.Error()+": "))
 }
 
 // normalizeMaterialCommands turns model-facing study commands into node-level
