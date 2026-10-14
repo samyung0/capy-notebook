@@ -246,7 +246,7 @@ Clerk development instance. Point a local gateway at the UAT database only with
   the UAT bucket host, the bank asset base, `https://img.clerk.com`,
   `https://i.ytimg.com` and a `report-uri` on the Sentry security endpoint
   with `sentry_environment=uat`. On `/` and the deep link the same header
-  also carries `script-src 'self' https://clerk.uat.capynotebook.com …`. If
+  also carries `script-src 'self' https://clerk.uat.capynotebook.com/npm/@clerk/ …`. If
   `/` and the deep link lack it while the summary has it, Workers Assets does
   not apply `_headers` to the SPA fallback: tell the Editor session (runbook
   §2.4 has the fallback plan). Then open a workspace with a PDF, an image
@@ -261,12 +261,15 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - The script policy on the Worker's pages (runbook §2.4): `curl -s -o
   /dev/null -D -` on a `/share/notes/…`, a `/share/quizzes/…`, a `/w/…`
   summary and a missing `/w/x` returns an enforced `Content-Security-Policy`
-  whose `script-src` is `'self'`, `https://clerk.uat.capynotebook.com` and,
-  when UAT has a PostHog key, the `eu-assets.i.posthog.com` `/static/` and
+  whose `script-src` is `'self'`,
+  `https://clerk.uat.capynotebook.com/npm/@clerk/` and, when UAT has a
+  PostHog key, the `eu-assets.i.posthog.com` `/static/` and
   `/array/{key}/config.js` paths, with no `'unsafe-inline'`, no
   `'unsafe-eval'` and no `sha256-` hash, then `script-src-attr 'none'`,
   `frame-src https://uat.capy-embed.pages.dev https://www.youtube-nocookie.com`,
-  `object-src 'none'` and `base-uri 'none'`. Signed out, open a shared note
+  `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`. Web
+  Analytics' automatic beacon, Zaraz and Rocket Loader are off on the zone
+  (runbook §2). Signed out, open a shared note
   with a formula, a diagram, an embedded quiz, an interactive block and a
   YouTube block (play it), a shared quiz and a shared flashcard set (Clerk
   loads on those two), and a summary: each comes to life, and the console

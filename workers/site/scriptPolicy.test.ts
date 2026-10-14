@@ -105,6 +105,7 @@ describe('enforced script policy', () => {
   it('names the app, Clerk and this PostHog project for scripts, and only embed and YouTube frames', () => {
     expect(directives(pagePolicy(DEPLOYED))).toEqual({
       'base-uri': ["'none'"],
+      'form-action': ["'self'"],
       'frame-src': [
         'https://uat.capy-embed.pages.dev',
         'https://www.youtube-nocookie.com',
@@ -113,7 +114,7 @@ describe('enforced script policy', () => {
       'report-uri': [REPORT],
       'script-src': [
         "'self'",
-        'https://clerk.uat.capynotebook.com',
+        'https://clerk.uat.capynotebook.com/npm/@clerk/',
         'https://eu-assets.i.posthog.com/static/',
         'https://eu-assets.i.posthog.com/array/phc_project/config.js',
       ],
@@ -124,6 +125,41 @@ describe('enforced script policy', () => {
     // A local build without Clerk or PostHog runs scripts from the app only.
     expect(directives(pagePolicy({}))['script-src']).toEqual(["'self'"]);
     expect(locked(PAGE_POLICY)).toEqual(LOCKED);
+  });
+
+  it('fails the build when the Clerk key names no plain host', () => {
+    for (const host of ['clerk.example.com/x', 'clerk example', 'a;b'])
+      expect(() =>
+        pagePolicy({
+          VITE_CLERK_PUBLISHABLE_KEY: `pk_test_${btoa(`${host}$`)}`,
+        })
+      ).toThrow('VITE_CLERK_PUBLISHABLE_KEY');
+  });
+
+  it('allows PostHog scripts from where posthog-js loads them', () => {
+    const posthog = (host?: string) =>
+      directives(
+        pagePolicy({ VITE_POSTHOG_HOST: host, VITE_POSTHOG_KEY: 'phc_project' })
+      )['script-src'].slice(1);
+    // Unset means EU Cloud, as in src/lib/analytics.ts.
+    for (const host of [
+      undefined,
+      'https://eu.posthog.com',
+      'https://eu.i.posthog.com/',
+    ])
+      expect(posthog(host)).toEqual([
+        'https://eu-assets.i.posthog.com/static/',
+        'https://eu-assets.i.posthog.com/array/phc_project/config.js',
+      ]);
+    expect(posthog('https://app.posthog.com')[0]).toBe(
+      'https://us-assets.i.posthog.com/static/'
+    );
+    // A proxy serves them itself; an empty host means the page's origin.
+    expect(posthog('https://ph.example.com/ingest/')).toEqual([
+      'https://ph.example.com/ingest/static/',
+      'https://ph.example.com/ingest/array/phc_project/config.js',
+    ]);
+    expect(posthog('')).toEqual([]);
   });
 
   it('is sent with every page the Worker renders, error pages and HEAD included', async () => {

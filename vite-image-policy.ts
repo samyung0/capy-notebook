@@ -1,12 +1,13 @@
 import { appendFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
+import { posthogApiHost, posthogScriptHost } from './src/lib/posthogHost';
 
 type Env = Record<string, string | undefined>;
 
 const TRAILING_SLASH = /\/+$/;
-const POSTHOG_CLOUD = /^(eu|us)\.i\.posthog\.com$/;
 const KEY_END = /\$$/;
+const CLERK_HOST = /^[a-z0-9.-]+$/i;
 
 /** What a deployed build's policy cannot leave out: its bucket and where it
  * reports. */
@@ -57,10 +58,10 @@ function imageSources(env: Env): string {
 
 /**
  * Where the pages the site Worker renders run scripts from: the app itself,
- * Clerk's frontend API (named by the publishable key; shared quizzes and
- * flashcard sets load clerk-js from it to learn who is signed in) and this
- * PostHog project's script assets (its remote config and lazy extensions).
- * The paths keep any other PostHog project's config out.
+ * Clerk's packages on its frontend API (named by the publishable key; shared
+ * quizzes and flashcard sets load clerk-js from it to learn who is signed in)
+ * and this PostHog project's script assets (its remote config and lazy
+ * extensions). The paths keep the rest of those hosts out.
  */
 function scriptSources(env: Env): string[] {
   const sources = ["'self'"];
@@ -70,21 +71,20 @@ function scriptSources(env: Env): string[] {
     const host = Buffer.from(clerkKey.split('_')[2] ?? '', 'base64')
       .toString()
       .replace(KEY_END, '');
-    sources.push(`https://${host}`);
+    if (!CLERK_HOST.test(host))
+      throw new Error(
+        'VITE_CLERK_PUBLISHABLE_KEY does not name a Clerk frontend API host.'
+      );
+    sources.push(`https://${host}/npm/@clerk/`);
   }
   if (env.VITE_POSTHOG_KEY) {
-    // src/lib/analytics.ts falls back to the same host. PostHog Cloud serves
-    // scripts from the region's assets host, a proxy from itself.
-    const host = (env.VITE_POSTHOG_HOST || 'https://eu.i.posthog.com').replace(
-      TRAILING_SLASH,
-      ''
-    );
-    const region = new URL(host).hostname.match(POSTHOG_CLOUD)?.[1];
-    const assets = region ? `https://${region}-assets.i.posthog.com` : host;
-    sources.push(
-      `${assets}/static/`,
-      `${assets}/array/${env.VITE_POSTHOG_KEY}/config.js`
-    );
+    const assets = posthogScriptHost(posthogApiHost(env.VITE_POSTHOG_HOST));
+    // An empty host loads from the page's own origin, which 'self' covers.
+    if (assets)
+      sources.push(
+        `${assets}/static/`,
+        `${assets}/array/${env.VITE_POSTHOG_KEY}/config.js`
+      );
   }
   return sources;
 }
@@ -95,10 +95,10 @@ function scriptSources(env: Env): string[] {
  * `scriptSources` and never inline or from an event-handler attribute (the
  * Worker adds the hash of each inline script its own template carries,
  * workers/site/handler.ts), workers also from `blob:` (clerk-js's timers),
- * frames only for interactive blocks and YouTube, no plugins and no `<base>`.
- * Styles stay open to inline: the Worker inlines the page's CSS, and MathLive
- * and Mermaid write style attributes. Framing is unchanged (no
- * `frame-ancestors`).
+ * frames only for interactive blocks and YouTube, forms posting only to the
+ * app, no plugins and no `<base>`. Styles stay open to inline: the Worker
+ * inlines the page's CSS, and MathLive and Mermaid write style attributes.
+ * Framing is unchanged (no `frame-ancestors`).
  */
 export function pagePolicy(env: Env): string {
   const frames = [
@@ -111,6 +111,7 @@ export function pagePolicy(env: Env): string {
     "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     `frame-src ${frames.join(' ')}`,
+    "form-action 'self'",
     "object-src 'none'",
     "base-uri 'none'",
   ]);

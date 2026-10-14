@@ -1,5 +1,6 @@
 import { isApiError } from '@/api/client';
 import { errorKind } from '@/lib/errors';
+import { posthogApiHost } from '@/lib/posthogHost';
 
 /* Product analytics (PostHog), loaded lazily and allowed to fail silently: a
    meaningful share of users block it, which is why it is never the source of
@@ -7,9 +8,9 @@ import { errorKind } from '@/lib/errors';
    Public pages use it without the app's error reporting (observability.ts). */
 
 const POSTHOG_KEY = import.meta.env.VITE_POSTHOG_KEY as string | undefined;
-const POSTHOG_HOST =
-  (import.meta.env.VITE_POSTHOG_HOST as string | undefined) ??
-  'https://eu.i.posthog.com';
+const POSTHOG_HOST = posthogApiHost(
+  import.meta.env.VITE_POSTHOG_HOST as string | undefined
+);
 const MIB = 1024 * 1024;
 
 export type SizeBucket =

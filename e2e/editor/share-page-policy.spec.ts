@@ -3,11 +3,10 @@ import { expect, type Page, test } from '@playwright/test';
 // The pages the site Worker renders run under an enforced script policy
 // (vite-image-policy.ts pagePolicy, workers/site/handler.ts): scripts only
 // from the app and named hosts, never inline. A shared note's formulas render
-// on the server and its islands hydrate, and a shared quiz hydrates whole,
-// with nothing the policy blocks.
+// on the server and its islands hydrate, and a shared quiz or flashcard set
+// hydrates whole, with nothing the policy blocks.
 
 const NOTE = '/share/notes/nt_shared.mswSignature0000';
-const QUIZ = '/share/quizzes/qz_shared.mswSignature0000';
 const SPACES = /\s+/;
 
 /** What the enforced policy blocks on `page`; the image policy only reports. */
@@ -64,17 +63,23 @@ test('a shared note with formulas hydrates its islands under the script policy',
   expect(await blocked()).toEqual([]);
 });
 
-test('a shared quiz with formulas hydrates under the script policy', async ({
-  page,
-}) => {
-  const blocked = await blockedOn(page);
-  await page.goto(QUIZ);
-  await expect(page.locator('html')).toHaveAttribute('data-hydrated', '', {
-    timeout: 30_000,
+// Each kind loads its own page code; the quiz's first question has a formula.
+for (const { kind, math, path } of [
+  { kind: 'quiz', math: true, path: '/share/quizzes/qz_shared' },
+  { kind: 'flashcard set', math: false, path: '/share/flashcards/dk_shared' },
+])
+  test(`a shared ${kind} hydrates under the script policy`, async ({
+    page,
+  }) => {
+    const blocked = await blockedOn(page);
+    await page.goto(`${path}.mswSignature0000`);
+    await expect(page.locator('html')).toHaveAttribute('data-hydrated', '', {
+      timeout: 30_000,
+    });
+    // MathLive draws the quiz's formulas.
+    if (math) await expect(page.locator('math-field').first()).toBeAttached();
+    expect(await blocked()).toEqual([]);
   });
-  await expect(page.locator('math-field').first()).toBeAttached();
-  expect(await blocked()).toEqual([]);
-});
 
 test('a workspace summary runs its page script under the script policy', async ({
   page,

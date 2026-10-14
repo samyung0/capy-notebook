@@ -815,6 +815,11 @@ Skip all security rules for:
 **Do not enable Bot Fight Mode.** It cannot be skipped per-path, so it
 challenges webhook deliveries, which cannot solve a JavaScript challenge.
 
+**Keep script injection off on the app zone:** Web Analytics' automatic
+beacon (`static.cloudflareinsights.com`), Zaraz and Rocket Loader each add a
+script to every page, which the public pages' script policy (§2.4) blocks
+with a console error.
+
 **Cache rules:** bypass cache for `api.capynotebook.com`, `collab.capynotebook.com`, and
 `ops.capynotebook.com` entirely. A cached SSE or WebSocket response breaks
 streaming. Cached operator responses can disclose one operator's data to
@@ -1011,23 +1016,25 @@ Two content security policies, both built once per SPA build by
 - **Scripts, enforced on the Worker's pages.** The share, summary and error
   pages the site Worker renders are also sent with an enforced
   `Content-Security-Policy` (`pagePolicy`):
-  - `script-src` names only `'self'`, the Clerk frontend API (decoded from
-    `VITE_CLERK_PUBLISHABLE_KEY`; shared quizzes and flashcard sets load
-    clerk-js from it) and this PostHog project's script assets
-    (`https://{region}-assets.i.posthog.com/static/` and
-    `…/array/{VITE_POSTHOG_KEY}/config.js`, or the proxy host when
-    `VITE_POSTHOG_HOST` is one). No `'unsafe-inline'` and no `'unsafe-eval'`:
-    the Worker adds the SHA-256 of each inline script its own template holds
-    (a build's templates hold none, Vite bundles them; the dev server's carry
-    React's refresh preamble), so markup a render writes into the page never
-    runs. The share page script sets Zod to `jitless` first
+  - `script-src` names only `'self'`, Clerk's packages on its frontend API
+    (`https://{host}/npm/@clerk/`, the host decoded from
+    `VITE_CLERK_PUBLISHABLE_KEY`, and a key that names no plain host fails the
+    build; shared quizzes and flashcard sets load clerk-js from it) and this
+    PostHog project's script assets (`/static/` and
+    `/array/{VITE_POSTHOG_KEY}/config.js` on the host posthog-js loads them
+    from, `src/lib/posthogHost.ts`: `https://{eu|us}-assets.i.posthog.com` for
+    PostHog Cloud, the proxy itself otherwise). No `'unsafe-inline'` and no
+    `'unsafe-eval'`: the Worker adds the SHA-256 of each inline script its
+    own template holds (a build's templates hold none, Vite bundles them; the
+    dev server's carry React's refresh preamble), so markup a render writes
+    into the page never runs. The share page script sets Zod to `jitless` first
     (`src/share/jitless.ts`), so Zod never probes `new Function`;
   - `script-src-attr 'none'` (no event-handler attributes),
     `worker-src 'self' blob:` (clerk-js's timer worker),
     `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
     MathLive and Mermaid write style attributes),
     `frame-src` `VITE_EMBED_ORIGIN` and `https://www.youtube-nocookie.com`,
-    `object-src 'none'` and `base-uri 'none'`;
+    `form-action 'self'`, `object-src 'none'` and `base-uri 'none'`;
   - no `frame-ancestors`: who may frame the pages is unchanged.
 
   The SPA gets the same `script-src` report-only, inside its image header,
