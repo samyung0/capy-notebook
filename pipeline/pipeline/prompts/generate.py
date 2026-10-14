@@ -112,7 +112,7 @@ The application assigns UUID ids to questions and parts; omit their ids.
 - {"type":"chart", "kind":"bar|hbar|line|area|pie|stacked", "title":"...", "labels":["..."], "series":[{"name":"...", "values":[1]}], optional "xTitle", "yTitle", "gridlines":"normal|fine"}.
 Do not invent image URLs or SVGs. Use text, tables or charts for generated app quizzes.
 Answer is one of:
-- {"type":"mcq" or "multi", "options":["text option"], "correct":[0]} using zero-based indices; mcq has exactly one correct index.
+- {"type":"mcq", "options":["text option"], "correct":[0]} using zero-based indices: one or more distinct correct options.
 - {"type":"boolean", "correct":true}.
 - {"type":"short", "accepted":["value"], optional "unit":"authored fixed unit"}.
 - {"type":"matching", "options":["complete choice pool including unused distractors"], "pairs":[{"left":"prompt", "right":0}]} with zero-based option indices; reusable choices only when question instructions permit them.
@@ -124,7 +124,7 @@ difficulty, explanation or top-level type.
 Open/essay answers must be NON-COMPUTATIONAL: only facts, definitions and
 explanations assessable from text. Calculations, numerical equivalence, algebraic
 or logical derivations and proofs must use deterministic answer types such as
-mcq, multi or short instead. Do not ask an open answer to check mathematical working.
+mcq or short instead. Do not ask an open answer to check mathematical working.
 For quantities requiring units, author one required unit, state it in the question
 and short answer unit field, and write accepted VALUES ONLY in that unit. The UI
 fixes that unit; do not accept unit text or alternative-unit conversions. Text

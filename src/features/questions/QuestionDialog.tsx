@@ -26,7 +26,6 @@ import {
   UndoButtons,
 } from '@/features/collaboration/LiveItemControls';
 import type { UndoTarget } from '@/features/collaboration/undo';
-import { incompleteLine } from '@/features/quizzes/incomplete';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -44,6 +43,8 @@ import {
   SelectField,
 } from './editorFields';
 import { renderGraphSvg } from './graph';
+import { IssueIcon, IssueSummary } from './IssueViews';
+import { issueMessages, questionIssues } from './issues';
 import { type BlockSection, QuestionBlockView } from './QuestionView';
 import { TextView } from './TextView';
 import {
@@ -576,7 +577,24 @@ function QuestionDialogSession({
     if (live && policy === 'quiz') void warnComputationalOpenParts(draft);
     onClose();
   };
-  const incomplete = live ? incompleteLine(draft) : null;
+  // What keeps the question from being marked (Epo 2026-10-15): the first
+  // issue at the top, a warning icon on each affected outline row, and one
+  // right of each affected title, whose tooltip lists that title's issues. A
+  // lone part's issues sit on the question's title (it has no title of its
+  // own).
+  const issues = questionIssues(draft, {
+    bank: policy === 'bank',
+    bankAssetsUrl,
+  });
+  const issueRows = new Set(
+    issues.flatMap((issue) => (issue.row ? [rowKey(issue.row)] : []))
+  );
+  const titleIssues = (partId?: string) =>
+    issueMessages(
+      issues.filter((issue) =>
+        draft.parts.length > 1 ? issue.partId === partId : !partId
+      )
+    );
   // Part labels only mean something when a question has several parts.
   const labelled = draft.parts.length > 1;
   const row = (
@@ -673,6 +691,15 @@ function QuestionDialogSession({
                 label
               )}
             </span>
+            {issueRows.has(key) && (
+              <span
+                aria-label={m.question_issue_row()}
+                className="mt-px shrink-0 text-tint-warning-fg"
+                role="img"
+              >
+                <Icon className="size-3.5" name="alert" />
+              </span>
+            )}
           </span>
           {meta && (
             <span
@@ -1295,15 +1322,7 @@ function QuestionDialogSession({
               )}
               ref={setBodyColumn}
             >
-              {incomplete && (
-                <p
-                  className="mb-4 flex items-start gap-1.5 text-sm text-tint-warning-fg"
-                  role="status"
-                >
-                  <Icon className="mt-0.5 size-4 shrink-0" name="alert" />
-                  {incomplete}
-                </p>
-              )}
+              <IssueSummary className="mb-4" messages={issueMessages(issues)} />
               <QuestionRunner
                 answers={{}}
                 disabled
@@ -1355,6 +1374,9 @@ function QuestionDialogSession({
                 question={draft}
                 questionNumber={questionNumber}
                 renderBlock={previewBlock}
+                titleAside={(partId) => (
+                  <IssueIcon messages={titleIssues(partId)} />
+                )}
               />
             </div>
           </div>

@@ -142,7 +142,6 @@ function closedCorrect(part: QuestionPart, value: Answer | undefined): boolean {
   if (value == null) return false;
   switch (answer.type) {
     case 'mcq':
-    case 'multi':
       return (
         Array.isArray(value) &&
         new Set<number | string>(value).size === value.length &&
@@ -215,7 +214,6 @@ export function emptyAnswer(part: QuestionPart | LearnerPart): Answer {
         () => ''
       );
     case 'mcq':
-    case 'multi':
       return [];
     case 'boolean':
     case 'ordering':

@@ -6270,7 +6270,7 @@ export const GenerateBody = zod.object({
   "kind": zod.enum(['flashcards', 'quiz', 'mindmap', 'diagram']),
   "levels": zod.array(zod.enum(['recall', 'application', 'analysis'])).optional(),
   "title": zod.string().min(1).max(generateBodyTitleMax),
-  "types": zod.array(zod.enum(['mcq', 'multi', 'boolean', 'short', 'open', 'ordering', 'matching'])).min(1).default([`mcq`])
+  "types": zod.array(zod.enum(['mcq', 'boolean', 'short', 'open', 'ordering', 'matching'])).min(1).default([`mcq`])
 })
 
 export const GenerateResponse = zod.record(zod.string(), zod.unknown())

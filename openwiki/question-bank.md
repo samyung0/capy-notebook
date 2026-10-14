@@ -120,10 +120,15 @@ kept their position.
 ## Shared question format
 
 `src/features/questions/types.ts` defines stem blocks and ordered parts. Each
-part has a stable ID, blocks, one of eight answer types, whole `marks` (1–20)
-and worked-solution blocks. Only open parts carry a marking scheme: items of
+part has a stable ID, blocks, one of seven answer types, whole `marks` (1–20)
+and worked-solution blocks. A multiple-choice part (`mcq`) has one or more
+correct options and is answered with checkboxes (multiple answers, `multi`,
+merged into it on every layer, Epo 2026-10-15; the learner UI redesign is
+Epo's). Only open parts carry a marking scheme: items of
 text and whole marks that add up to the part's marks, because Jev grades against
-them. A closed part's answer is its own key and its solution explains it, so it
+them. An open part takes at most one sample answer (`accepted`, 0 or 1 items),
+and it is optional: the editor shows one Sample answer input, and grading never
+reads it. A closed part's answer is its own key and its solution explains it, so it
 has none; the editor sets a closed part's marks from a dropdown and an open
 part's from its items. Authored parts are told from learner parts by their
 worked solution (`isAuthoredPart`). A matching
@@ -177,7 +182,28 @@ Each part's worked solution is always listed in the outline (its Worked
 solution row is a 36px header, not a toggle) and shown in the body under the
 part's answer, both below a `wavy-rule` line; the body's line reads "Hidden
 until checked", since learners only get the solution after checking.
-Its title names the question ("Edit question 10"). Rows the app names take
+Its title names the question ("Edit question 10").
+What keeps the question from being marked comes from `questionIssues`
+(`src/features/questions/issues.ts`, Epo 2026-10-15): it validates
+`withoutBlanks(question)` with the schema and the hand-written rules
+(`ruleIssues` in `validation.ts`, which `validateQuestion` throws the first of)
+and maps each failure, by its path, to the agreed wording (`question_issue_*`
+messages: "MCQ: option B cannot be empty", "Fill in the blanks: a blank is
+missing at least one correct answer", "Part B: missing or empty question text"
+and so on), with its outline row and the title it belongs to, in reading
+order and each once. An answer issue starts "Part B" (the question's own
+letters or numbers) only when there are several parts; a chart's or graph's
+issue keeps its block ("Graph error: …" with the graph rule's message);
+rules the dialog cannot break (agent-only bounds and counts, ids, awarded
+marks, image links) read "Finish the question and its answer." The dialog
+shows one issue box at the top of the body with the first issue and
+"(+n more)" (`IssueSummary` in `IssueViews.tsx`, also the quiz editor's line
+under each question in `QuizForm`), a warning icon right of each affected
+title (`IssueIcon`, through `QuestionView`'s `titleAside`: the question's for
+question-level and generic issues and for a lone part, each part's for its
+own) whose tooltip lists that title's issues, and only a warning icon on each
+affected outline row. User-facing wording says blanks ("Fill in the blanks",
+"Blank 1"); the stored type stays `gaps`. Rows the app names take
 an accent of their own (Answer rows `tint-accent-1`, Worked solution
 `tint-accent-2`), and the row ⋮ has no tooltip (`ToolbarButton tooltip={false}`),
 since its label repeats the row's text. Menus (add block, question
@@ -209,10 +235,12 @@ catalog's chart schema accept it, and it draws no bar, point or slice
 (`CategoryChart`; a line breaks there), showing as `–` in values tables, the
 export table and the grading text. Blanks are dropped or filled before a question is
 validated and stored (`withoutBlanks` in `types.ts` on every save and the
-incomplete line, `blockWithoutBlanks` for a note's chart or graph, Rust
+dialog's issues, `blockWithoutBlanks` for a note's chart or graph, Rust
 `without_blanks` in the live quiz projection): empty text blocks, a blank
-unit, blank hints and blank accepted answers (no accepted answer left leaves
-the part incomplete), and a blank figure description go; a table's shorter
+unit, blank hints and blank accepted answers, a blank's included (no accepted
+answer left leaves the part or blank incomplete), blank marking items (the
+part's marks become the rest's, `schemeMarks`; none left leaves it
+incomplete, Epo 2026-10-15), and a blank figure description go; a table's shorter
 rows take empty cells up to the longest (a longer row adds a column with an
 empty header; a live room's table is a grid, always even); a chart series
 short of its labels takes nulls and an empty value (NaN) is null, while a
@@ -222,8 +250,8 @@ table rows, a value per label), so nothing uneven is stored (Epo
 ones; a figure without one is `[Figure]` in the grading text and has empty
 alt text. An open part's marks are its marking items' total capped at
 `QUESTION_MARKS_MAX` (`schemeMarks`, live and staged alike): items past the
-cap stay as entered, so the live room admits the edit and the incomplete line
-names the mismatch. Graphs store a bounded
+cap stay as entered, so the live room admits the edit and the dialog names
+the mismatch. Graphs store a bounded
 JSXGraph recipe and a static rendering. Recipe elements are function graphs,
 points, lines, segments, circles, labels, angles (three points with the vertex
 in the middle, drawn under 180° with a square mark at 90°), arcs and sectors
@@ -328,7 +356,7 @@ anonymous caps are in [observability-metering.md](observability-metering.md).
 
 User quizzes (not the bank) are bounded so one attempt fits one grading
 request: at most 100 parts per quiz, 7 per question, 5 marking items per part
-and 20 open parts per quiz, and sample answers of at most 5,000 characters;
+and 20 open parts per quiz, and a sample answer of at most 5,000 characters;
 learners' open answers have the same 5,000-character cap. The Go, browser and
 collaboration validators share these bounds (`fieldlimits.Quiz*`), and the
 generation prompt states them.
@@ -370,7 +398,7 @@ schemes or worked solutions; editing sends them to whoever may edit; checking
 an answer or submitting an attempt returns the key for what was just checked.
 Grading happens only on the server, and retakes and Try again are unlimited.
 Answer-free questions are `questions.LearnerView` (`server/internal/questions/questions.go`):
-part ids, blocks and marks, mcq/multi options in stored order, a short answer's
+part ids, blocks and marks, mcq options in stored order, a short answer's
 unit, matching `left` items with shuffled `options`, shuffled ordering `items`
 and the number of `gaps`. It reads stored content with checked assertions, so a
 malformed question loses fields instead of failing the read.
@@ -419,7 +447,7 @@ learner view and a full question:
 
 | Type | Answer |
 | --- | --- |
-| `mcq`, `multi` | option indices in stored order (the learner view keeps it) |
+| `mcq` | option indices in stored order (the learner view keeps it); right only as the exact set of correct options |
 | `boolean` | `true` or `false` |
 | `short`, `open` | the typed text |
 | `ordering` | the item texts in the learner's order |
@@ -751,7 +779,7 @@ workspaces.
 ## Delivery and checks
 
 The Biology 101 MSW quiz and both note-embedded quizzes share
-`src/mocks/biologyQuiz.ts`: 11 questions, 13 parts and 26 marks covering all eight
+`src/mocks/biologyQuiz.ts`: 11 questions, 13 parts and 26 marks covering all seven
 answer types, fixed-unit quantities, multipart questions, both layouts, formulas,
 tables, an editable graph and all six chart styles. Every part has a worked
 solution. The graph SVG is rendered from its stored JSXGraph recipe. The seeded

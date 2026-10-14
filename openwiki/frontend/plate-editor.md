@@ -1442,10 +1442,12 @@ a viewer or a read-only editor gets 403, and the collaboration server refuses a
 read token for a keys room at JOIN and at refresh). The content document holds
 `questions`: question id to `{order, layout, labels, level?, stem, parts}`,
 part id to `{order, marks, blocks, answer}`, the answer map holding the type
-and what a learner may see (mcq and multi options, a short answer's unit,
+and what a learner may see (mcq options, a short answer's unit,
 matching left items). The keys document holds `keys`: part id to `{type,
 solution, correct | accepted | hints | markscheme | gaps | options | pairs |
-items}`. Editors type ordering items and matching options in the keys
+items}`; an mcq's `correct` is a map of ticks by option id (one or more,
+Epo 2026-10-15), a boolean's a plain true or false, and an open part's
+`accepted` holds at most one sample answer, which the room refuses past. Editors type ordering items and matching options in the keys
 document. Readers get them outside Yjs (D3 as revised 2026-10-10: a reader
 copy inside the content document leaked typing order through its tombstones):
 the content room keeps a plain list of texts per part (`items::quiz::

@@ -30,7 +30,6 @@ export function learnerView(question: Question): LearnerQuestion {
       let learner: LearnerAnswer;
       switch (answer.type) {
         case 'mcq':
-        case 'multi':
           learner = { options: answer.options, type: answer.type };
           break;
         case 'short':

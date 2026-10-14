@@ -284,7 +284,7 @@ fn an_incomplete_question_stays_out_of_the_projection() {
     assert!(!ids.contains(&json!(question)));
     assert_eq!(ids.len(), questions.len() - 1);
     // Keys written for another answer type count as none.
-    map_in(&keys, &["keys", &part]).insert(&mut keys.transact_mut(), "type", "multi");
+    map_in(&keys, &["keys", &part]).insert(&mut keys.transact_mut(), "type", "boolean");
     assert_eq!(projected(&content, &keys).len(), questions.len() - 1);
 }
 
@@ -314,6 +314,21 @@ fn blanks_are_dropped_from_the_projection() {
         .unwrap()
         .push(json!(" "));
     questions[open]["parts"][0]["answer"]["hints"] = json!(["", "Think of the area.", " "]);
+    // A blank gap answer and a blank marking item go; the part's marks are
+    // then the rest's (Epo 2026-10-15).
+    let gaps = of_type(&questions, "gaps");
+    let gap_answers = questions[gaps]["parts"][0]["answer"]["accepted"].clone();
+    questions[gaps]["parts"][0]["answer"]["accepted"][1]
+        .as_array_mut()
+        .unwrap()
+        .push(json!(" "));
+    let scheme = questions[open]["parts"][0]["markscheme"].clone();
+    let marks = questions[open]["parts"][0]["marks"].clone();
+    questions[open]["parts"][0]["markscheme"]
+        .as_array_mut()
+        .unwrap()
+        .push(json!({ "text": " ", "marks": 2 }));
+    questions[open]["parts"][0]["marks"] = json!(marks.as_f64().unwrap() + 2.0);
     // A chart series short of its labels takes nulls (empty cells), and a
     // blank description goes.
     let chart_at = |q: &Value| {
@@ -344,9 +359,13 @@ fn blanks_are_dropped_from_the_projection() {
         json!(vec![Value::Null; labels])
     );
     assert!(block.get("description").is_none());
+    let open_part = &find(&questions[open]["id"])["parts"][0];
+    assert_eq!(open_part["answer"]["hints"], json!(["Think of the area."]));
+    assert_eq!(open_part["markscheme"], scheme);
+    assert_eq!(open_part["marks"], marks);
     assert_eq!(
-        find(&questions[open]["id"])["parts"][0]["answer"]["hints"],
-        json!(["Think of the area."])
+        find(&questions[gaps]["id"])["parts"][0]["answer"]["accepted"],
+        gap_answers
     );
 }
 
@@ -368,7 +387,12 @@ fn two_editors_merge_an_option_and_its_correct_answer() {
     accepted(&mut check, &content, &a);
     assert_eq!(check.exact_checks, 0, "typing takes the bound");
     let mut keys_check = validator(Kind::QuizKeys, &keys);
-    map_in(&keys_b, &["keys", &part]).insert(&mut keys_b.transact_mut(), "correct", "o1");
+    let ticks = map_in(&keys_b, &["keys", &part, "correct"]);
+    {
+        let mut txn = keys_b.transact_mut();
+        ticks.remove(&mut txn, "o0");
+        ticks.insert(&mut txn, "o1", true);
+    }
     accepted(&mut keys_check, &keys, &keys_b);
     let after = projected(&content, &keys);
     let merged = after.iter().find(|q| q["id"] == json!(question)).unwrap();
@@ -760,10 +784,25 @@ fn figures_past_their_caps_are_refused_at_admission() {
 }
 
 /// Accepted answers turned open are held to the open bound in the update
-/// that turns them; ticks are counted like any answer list.
+/// that turns them; ticks are counted like any answer list, and an open part
+/// takes at most one sample answer (Epo 2026-10-15).
 #[test]
 fn answer_keys_past_their_caps_are_refused() {
     let questions = fixtures();
+    let (_, open) = part_of(&questions, "open");
+    refused(
+        Kind::QuizKeys,
+        |doc| {
+            let accepted = map_in(doc, &["keys", &open, "accepted"]);
+            let mut txn = doc.transact_mut();
+            for (id, order) in [("a8", "a5"), ("a9", "a6")] {
+                let entry = accepted.insert(&mut txn, id, MapPrelim::default());
+                entry.insert(&mut txn, "order", order);
+                entry.insert(&mut txn, "text", TextPrelim::new("a sample"));
+            }
+        },
+        "accepted answers",
+    );
     let (_, short) = part_of(&questions, "short");
     refused(
         Kind::QuizKeys,
@@ -779,11 +818,11 @@ fn answer_keys_past_their_caps_are_refused() {
         },
         "accepted answers",
     );
-    let (_, multi) = part_of(&questions, "multi");
+    let (_, mcq) = part_of(&questions, "mcq");
     refused(
         Kind::QuizKeys,
         |doc| {
-            let correct = map_in(doc, &["keys", &multi, "correct"]);
+            let correct = map_in(doc, &["keys", &mcq, "correct"]);
             for i in 0..101 {
                 correct.insert(&mut doc.transact_mut(), format!("t{i}"), true);
             }

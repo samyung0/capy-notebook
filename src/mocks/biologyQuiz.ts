@@ -160,7 +160,7 @@ export const biologyQuizQuestions: Question[] = [
         answer: {
           correct: [1, 2],
           options: ['Ribosome', 'Nucleus', 'Mitochondria', 'Cytosol'],
-          type: 'multi',
+          type: 'mcq',
         },
         blocks: [
           {

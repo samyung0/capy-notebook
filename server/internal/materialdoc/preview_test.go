@@ -204,12 +204,6 @@ func TestPreview(t *testing.T) {
 			want:    `{"kind":"quiz","questionCount":3,"first":{"type":"mcq","stem":"Answer?","options":["A","B"]}}`,
 		},
 		{
-			name:    "multi",
-			kind:    "quiz",
-			content: quizDoc(t, "multi"),
-			want:    `{"kind":"quiz","questionCount":1,"first":{"type":"multi","stem":"Answer?","options":["A","B"]}}`,
-		},
-		{
 			name:    "boolean",
 			kind:    "quiz",
 			content: quizDoc(t, "boolean"),

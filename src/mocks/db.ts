@@ -1089,7 +1089,7 @@ const seedQuizzes: EditableQuiz[] = [
             answer: {
               correct: [0, 2],
               options: ['AA', 'Aa', 'aa', 'Bb'],
-              type: 'multi',
+              type: 'mcq',
             },
             blocks: [
               { text: 'Select all homozygous genotypes.', type: 'text' },
@@ -1372,7 +1372,7 @@ const seedQuizzes: EditableQuiz[] = [
                 'Integration by parts',
                 'Trig substitution',
               ],
-              type: 'multi',
+              type: 'mcq',
             },
             blocks: [
               {

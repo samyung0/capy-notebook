@@ -15,7 +15,7 @@ import (
 // Learner answers are keyed by part id. Each answer type takes one shape, the
 // same for a learner view and a full question:
 //
-//	mcq, multi  option indices (numbers) in stored order, which LearnerView keeps
+//	mcq         option indices (numbers) in stored order, which LearnerView keeps
 //	boolean     true or false
 //	short, open the typed text
 //	ordering    the item texts in the learner's order
@@ -100,7 +100,7 @@ func closedCorrect(a map[string]any, value any) bool {
 		return false
 	}
 	switch a["type"] {
-	case "mcq", "multi":
+	case "mcq":
 		chosen, ok := value.([]any)
 		correct, _ := a["correct"].([]any)
 		if !ok || len(chosen) != len(correct) {

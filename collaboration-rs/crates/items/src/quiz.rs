@@ -5,7 +5,7 @@
 //!
 //! Content: `questions`, question id to `{order, layout, labels, level?,
 //! stem, parts}`; part id to `{order, marks, blocks, answer}`; the answer map
-//! holds the type and what a learner may see: mcq and multi `options`, a
+//! holds the type and what a learner may see: mcq `options`, a
 //! short answer's `unit` and matching `left` items.
 //!
 //! Keys: `keys`, part id to `{type, solution, correct | accepted | hints |
@@ -47,13 +47,15 @@ pub const BLOCK_ID: &str = "quiz";
 pub const MAX_ID: usize = 128;
 
 const ANSWER_TYPES: &[&str] = &[
-    "mcq", "multi", "boolean", "short", "matching", "ordering", "open", "gaps",
+    "mcq", "boolean", "short", "matching", "ordering", "open", "gaps",
 ];
 /// The question block kinds a live quiz holds: the embed catalog's question
 /// blocks (chart, plot, graph) and the plain ones it does not list.
 pub const BLOCK_TYPES: &[&str] = &["text", "table", "image", "chart", "plot", "graph"];
 /// Whole marks a part or a marking item carries.
 const MAX_MARKS: f64 = q::QUESTION_MARKS_MAX;
+/// An open part's sample answers: at most one, optional (Epo 2026-10-15).
+const OPEN_ACCEPTED_MAX: usize = 1;
 
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty()
@@ -335,20 +337,13 @@ fn read_answer<C: ReadTxn, K: ReadTxn>(
         None => Vec::new(),
     };
     match kind.as_str() {
-        "mcq" | "multi" => {
+        "mcq" => {
             let options = ordered(
                 content,
                 answer.and_then(|a| map_at(content, a, "options")).as_ref(),
             );
+            // The correct options are a map of ticks by option id.
             let correct: Vec<usize> = match keys {
-                Some((txn, key)) if kind == "mcq" => match str_at(txn, key, "correct") {
-                    Some(id) => options
-                        .iter()
-                        .position(|o| o.id == id)
-                        .into_iter()
-                        .collect(),
-                    None => Vec::new(),
-                },
                 Some((txn, key)) => match map_at(txn, key, "correct") {
                     Some(ticks) => options
                         .iter()
@@ -559,11 +554,13 @@ fn quiz_block(children: Vec<Value>) -> Vec<Value> {
 }
 
 /// The question without blanks, as `withoutBlanks` in the browser: empty text
-/// blocks, a blank short-answer unit, blank accepted answers and blank
-/// open-answer hints never leave it incomplete (no accepted answer left does),
-/// and the projection drops them; a blank figure description goes, and a
-/// chart series short of its labels takes nulls, an empty value being null
-/// (Epo 2026-10-14). A room's table is a grid, so its rows are always even.
+/// blocks, a blank short-answer unit, blank accepted answers (a gap's too) and
+/// blank open-answer hints never leave it incomplete (no accepted answer left
+/// does), and the projection drops them; a blank figure description goes, and
+/// a chart series short of its labels takes nulls, an empty value being null
+/// (Epo 2026-10-14). Blank marking items go too, and then the part's marks are
+/// the rest's total capped at QUESTION_MARKS_MAX (Epo 2026-10-15). A room's
+/// table is a grid, so its rows are always even.
 fn without_blanks(mut question: Value) -> Value {
     let blank = |value: &Value| {
         value
@@ -611,11 +608,22 @@ fn without_blanks(mut question: Value) -> Value {
                     answer.remove("unit");
                 }
                 // Short and open answers' lists of texts; a gaps answer's
-                // accepted lists hold lists, which are never blank.
+                // accepted lists hold one list per gap.
                 for key in ["accepted", "hints"] {
                     if let Some(list) = answer.get_mut(key).and_then(Value::as_array_mut) {
                         list.retain(|item| !blank(item));
+                        for gap in list.iter_mut().filter_map(Value::as_array_mut) {
+                            gap.retain(|item| !blank(item));
+                        }
                     }
+                }
+            }
+            if let Some(items) = part.get_mut("markscheme").and_then(Value::as_array_mut) {
+                let before = items.len();
+                items.retain(|item| !blank(&item["text"]));
+                if items.len() != before {
+                    let total: f64 = items.iter().filter_map(|item| item["marks"].as_f64()).sum();
+                    part["marks"] = number(total.min(MAX_MARKS));
                 }
             }
         }
@@ -1021,20 +1029,18 @@ fn sync_answer(
         .filter_map(|i| i.as_u64().map(|i| i as usize))
         .collect();
     match kind.as_str() {
-        "mcq" | "multi" => {
+        "mcq" => {
             let options = strings(&answer, "options");
             let ids = sync_entries(content, &answer_map, "options", "o", &options, text_fill);
-            let correct: Vec<&String> = indexes.iter().filter_map(|i| ids.get(*i)).collect();
-            if kind == "mcq" {
-                let first = correct.first().map(|id| string_any(id));
-                sync_plain(keys, &key, "correct", first);
-            } else {
-                let ticks = child_map(keys, &key, "correct");
-                let wanted: HashSet<&str> = correct.iter().map(|id| id.as_str()).collect();
-                remove_keys(keys, &ticks, |id| wanted.contains(id));
-                for id in wanted {
-                    sync_plain(keys, &ticks, id, Some(Any::Bool(true)));
-                }
+            let ticks = child_map(keys, &key, "correct");
+            let wanted: HashSet<&str> = indexes
+                .iter()
+                .filter_map(|i| ids.get(*i))
+                .map(String::as_str)
+                .collect();
+            remove_keys(keys, &ticks, |id| wanted.contains(id));
+            for id in wanted {
+                sync_plain(keys, &ticks, id, Some(Any::Bool(true)));
             }
         }
         "boolean" => {
@@ -1751,10 +1757,8 @@ fn keys_shape(
             tally.value(content);
             Ok(())
         }
-        // mcq: an option id; boolean: true or false; multi: a map of ticks.
-        ([K, _], Some("correct"))
-            if a_string(content, MAX_ID) || a_bool(content) || is_map(content) =>
-        {
+        // boolean: true or false; mcq: a map of ticks by option id.
+        ([K, _], Some("correct")) if a_bool(content) || is_map(content) => {
             tally.structure(16);
             Ok(())
         }
@@ -1978,7 +1982,13 @@ fn admit<T: ReadTxn>(txn: &T, incoming: &Incoming, shape: Shape) -> Result<Growt
         if matches!(keys.as_slice(), [QUESTIONS_ROOT, _, "parts"]) {
             new_parts += added;
         }
-        let Some(cap) = list_cap(&keys) else { continue };
+        let cap = match keys.as_slice() {
+            [KEYS_ROOT, part, "accepted"] if open_part(txn, part) => OPEN_ACCEPTED_MAX,
+            _ => match list_cap(&keys) {
+                Some(cap) => cap,
+                None => continue,
+            },
+        };
         let held = map_by_path(txn, path).map_or(0, |map| counted_len(txn, &map));
         if held + added > cap as u64 {
             tally.growth.over_cap = true;
@@ -2162,15 +2172,15 @@ pub fn check_keys_caps<T: ReadTxn>(txn: &T) -> Result<(), String> {
         let Out::YMap(key) = value else { continue };
         check_blocks(txn, map_at(txn, &key, "solution").as_ref())?;
         let open = str_at(txn, &key, "type").as_deref() == Some("open");
-        let accepted_cap = if open {
-            q::QUIZ_OPEN_ANSWER_MAX
+        let (accepted_count, accepted_cap) = if open {
+            (OPEN_ACCEPTED_MAX, q::QUIZ_OPEN_ANSWER_MAX)
         } else {
-            q::QUESTION_TEXT_MAX
+            (q::QUESTION_ANSWERS_MAX, q::QUESTION_TEXT_MAX)
         };
         check_list(
             txn,
             map_at(txn, &key, "accepted").as_ref(),
-            q::QUESTION_ANSWERS_MAX,
+            accepted_count,
             accepted_cap,
             "accepted answers",
         )?;

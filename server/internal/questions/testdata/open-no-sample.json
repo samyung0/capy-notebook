@@ -1,0 +1,40 @@
+{
+  "name": "open-no-sample",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "text",
+        "text": "Shared $x$ context."
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "open",
+          "accepted": [],
+          "hints": ["reason"]
+        },
+        "marks": 1,
+        "markscheme": [
+          {
+            "text": "Correct answer",
+            "marks": 1
+          }
+        ],
+        "solution": []
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

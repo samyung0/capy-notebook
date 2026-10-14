@@ -29,8 +29,6 @@ function questionTypeLabel(type: QuestionType): string {
       return m.quiz_type_matching();
     case 'mcq':
       return m.quiz_type_mcq();
-    case 'multi':
-      return m.quiz_type_multi();
     case 'ordering':
       return m.quiz_type_ordering();
     case 'short':

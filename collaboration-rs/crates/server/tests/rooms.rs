@@ -2836,8 +2836,10 @@ async fn two_editors_converge_across_a_quizs_content_and_keys() {
     .await;
     keys.write(|doc| {
         use yrs::Map;
-        let key = map_at(doc, &["keys", "q1-p"]).expect("key");
-        key.insert(&mut doc.transact_mut(), "correct", "o1");
+        let ticks = map_at(doc, &["keys", "q1-p", "correct"]).expect("ticks");
+        let mut txn = doc.transact_mut();
+        ticks.remove(&mut txn, "o0");
+        ticks.insert(&mut txn, "o1", true);
     })
     .await;
     assert!(a.until(6).await.is_some(), "content ack");
@@ -4089,8 +4091,8 @@ async fn live_item_drafts_reach_their_rooms() {
     );
     let drafts = drafted(&keys.doc, |doc| {
         use yrs::Map;
-        let key = map_at(doc, &["keys", "q1-p"]).expect("key");
-        key.insert(&mut doc.transact_mut(), "correct", "o1");
+        let ticks = map_at(doc, &["keys", "q1-p", "correct"]).expect("ticks");
+        ticks.insert(&mut doc.transact_mut(), "o1", true);
     });
     let (status, answer) = send_drafts(
         server.port,
@@ -4117,9 +4119,10 @@ async fn live_item_drafts_reach_their_rooms() {
     assert!(
         keys.settle(|c| {
             use yrs::Map;
-            map_at(&c.doc, &["keys", "q1-p"]).is_some_and(|key| {
-                key.get(&c.doc.transact(), "correct")
-                    .is_some_and(|value| value.to_string(&c.doc.transact()) == "o1")
+            map_at(&c.doc, &["keys", "q1-p", "correct"]).is_some_and(|ticks| {
+                ticks
+                    .get(&c.doc.transact(), "o1")
+                    .is_some_and(|value| value.to_string(&c.doc.transact()) == "true")
             })
         })
         .await

@@ -143,7 +143,7 @@ export function AnswerView({ part }: { part: QuestionPart }) {
         {answer.correct ? m.question_ui_true() : m.question_ui_false()}
       </span>
     );
-  if (answer.type === 'mcq' || answer.type === 'multi')
+  if (answer.type === 'mcq')
     return (
       <ol className="grid gap-1">
         {[...answer.correct]
@@ -307,7 +307,7 @@ function Choices({
   twoColumns: boolean;
 }) {
   const answer = part.answer;
-  if (answer.type === 'mcq' || answer.type === 'multi')
+  if (answer.type === 'mcq')
     return (
       <div className="@container col-[2/-1] min-w-0">
         <ol className={cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-7')}>
@@ -367,6 +367,9 @@ export interface QuestionViewProps {
   renderMarks?: (part: QuestionPart | LearnerPart) => ReactNode;
   review?: boolean;
   showTotalMarks?: boolean;
+  /** Right of a title, after its marks: the question's (no part id) or a
+   * part's (several parts); the question dialog's issue icons. */
+  titleAside?: (partId?: string) => ReactNode;
 }
 
 export function QuestionView({
@@ -377,6 +380,7 @@ export function QuestionView({
   renderAnswer,
   renderBlock,
   renderMarks,
+  titleAside,
 }: QuestionViewProps) {
   // A lone part needs no label, and the header's marks stand in for its own.
   // With no stem either, its first text block joins the header.
@@ -415,19 +419,15 @@ export function QuestionView({
               merged ? { partId: question.parts[0].id } : {}
             )}
         </div>
-        {lone && renderMarks ? (
-          <span className="whitespace-nowrap text-fg-muted text-xs">
-            {renderMarks(question.parts[0])}
-          </span>
-        ) : (
-          showTotalMarks && (
-            <span className="whitespace-nowrap text-fg-muted text-xs">
-              {total === 1
+        <span className="flex items-center gap-1 whitespace-nowrap text-fg-muted text-xs">
+          {lone && renderMarks
+            ? renderMarks(question.parts[0])
+            : showTotalMarks &&
+              (total === 1
                 ? m.question_ui_one_mark()
-                : m.question_ui_marks({ count: total })}
-            </span>
-          )
-        )}
+                : m.question_ui_marks({ count: total }))}
+          {titleAside?.()}
+        </span>
       </header>
       <div
         className={cn(
@@ -467,8 +467,9 @@ export function QuestionView({
                 </div>
               )}
               {!lone && (
-                <span className="col-start-3 whitespace-nowrap pt-1 text-fg-muted text-xs">
+                <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 text-fg-muted text-xs">
                   {renderMarks ? renderMarks(part) : `[${part.marks}]`}
+                  {titleAside?.(part.id)}
                 </span>
               )}
               {renderAnswer ? (
@@ -478,12 +479,18 @@ export function QuestionView({
               )}
               {review && isAuthoredPart(part) && (
                 <div className="col-start-2 min-w-0 space-y-1 text-fg-secondary text-sm">
-                  <h4 className="font-semibold text-fg-muted text-xs">
-                    {m.question_ui_answer()}
-                  </h4>
-                  <div>
-                    <AnswerView part={part} />
-                  </div>
+                  {/* An open part's sample answer is optional. */}
+                  {(part.answer.type !== 'open' ||
+                    part.answer.accepted.length > 0) && (
+                    <>
+                      <h4 className="font-semibold text-fg-muted text-xs">
+                        {m.question_ui_answer()}
+                      </h4>
+                      <div>
+                        <AnswerView part={part} />
+                      </div>
+                    </>
+                  )}
                   {part.markscheme && (
                     <>
                       <h4 className="pt-2 font-semibold text-fg-muted text-xs">

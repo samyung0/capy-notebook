@@ -1,6 +1,6 @@
 {
-  "name": "multi",
-  "valid": true,
+  "name": "open-two-samples-rejected",
+  "valid": false,
   "policy": {},
   "question": {
     "id": "q1",
@@ -20,11 +20,17 @@
           }
         ],
         "answer": {
-          "type": "multi",
-          "options": ["A", "B"],
-          "correct": [0, 1]
+          "type": "open",
+          "accepted": ["explanation", "another explanation"],
+          "hints": ["reason"]
         },
         "marks": 1,
+        "markscheme": [
+          {
+            "text": "Correct answer",
+            "marks": 1
+          }
+        ],
         "solution": []
       }
     ],

@@ -50,10 +50,10 @@
       "items": [false]
     },
     {
-      "name": "multi exact set in any order",
+      "name": "mcq several correct: exact set in any order",
       "part": {
         "answer": {
-          "type": "multi",
+          "type": "mcq",
           "options": ["A", "B", "C"],
           "correct": [0, 2]
         },
@@ -64,10 +64,10 @@
       "items": [true]
     },
     {
-      "name": "multi subset",
+      "name": "mcq several correct: subset",
       "part": {
         "answer": {
-          "type": "multi",
+          "type": "mcq",
           "options": ["A", "B", "C"],
           "correct": [0, 2]
         },
@@ -78,10 +78,10 @@
       "items": [false]
     },
     {
-      "name": "multi superset",
+      "name": "mcq several correct: superset",
       "part": {
         "answer": {
-          "type": "multi",
+          "type": "mcq",
           "options": ["A", "B", "C"],
           "correct": [0, 2]
         },
@@ -92,10 +92,10 @@
       "items": [false]
     },
     {
-      "name": "multi repeated option",
+      "name": "mcq several correct: repeated option",
       "part": {
         "answer": {
-          "type": "multi",
+          "type": "mcq",
           "options": ["A", "B", "C"],
           "correct": [0, 2]
         },

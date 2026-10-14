@@ -186,7 +186,7 @@ def learner(question):
     for part in view["parts"]:
         answer = part["answer"]
         visible = {"type": answer["type"]}
-        if answer["type"] in ("mcq", "multi", "matching"):
+        if answer["type"] in ("mcq", "matching"):
             visible["options"] = answer["options"]
         if answer["type"] == "matching":
             visible["left"] = [p["left"] for p in answer["pairs"]]
@@ -244,7 +244,7 @@ def closed_correct(answer, value):
     kind = answer["type"]
     if kind == "mcq" and type(value) is int:
         value = [value]  # The solve schema admits a bare index for a single choice.
-    if kind in ("mcq", "multi"):
+    if kind == "mcq":
         return (
             isinstance(value, list)
             and all(type(v) is int for v in value)

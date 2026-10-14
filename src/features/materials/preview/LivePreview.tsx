@@ -144,10 +144,10 @@ export const QuizLive = memo(function QuizLive({
           {stem}
         </p>
       )}
-      {(type === 'mcq' || type === 'multi') &&
+      {type === 'mcq' &&
         options.map((option, i) => (
           <p className="pv-opt" key={i}>
-            {type === 'mcq' ? <i>{LETTERS[i]}</i> : <span className="pv-box" />}
+            <i>{LETTERS[i]}</i>
             {option}
           </p>
         ))}
@@ -188,8 +188,6 @@ export const QuizLive = memo(function QuizLive({
  * need none. */
 function typeLabel(type: QuestionType): string | undefined {
   switch (type) {
-    case 'multi':
-      return m.question_ui_multiple_answers();
     case 'boolean':
       return m.question_ui_true_false();
     case 'matching':

@@ -83,16 +83,14 @@ test('editors edit a quiz together and a learner follows it live', async ({
   ).toBeVisible();
 
   // Removing the correct option leaves the question incomplete: a line under
-  // it says what it lacks, and the projection leaves it out.
+  // it names its first issue, and the projection leaves it out.
   await dialog
     .getByRole('button', {
       name: m.question_ui_remove_option({ number: 2 }),
     })
     .click();
   await expect(
-    editorPage.getByText(
-      m.quiz_incomplete({ reason: m.quiz_incomplete_correct() })
-    )
+    editorPage.getByText(m.question_issue_mcq_correct())
   ).toBeVisible();
   await expect(
     viewerPage.getByText('Mitochondrion', { exact: true })

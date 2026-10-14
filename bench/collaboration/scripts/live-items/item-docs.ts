@@ -39,15 +39,15 @@ type Json = Record<string, unknown>;
 /* ---------- Synthetic content in today's JSON question shape ---------- */
 
 function question(): Json {
-  const types = ['mcq', 'mcq', 'mcq', 'mcq', 'short', 'short', 'multi', 'boolean', 'matching', 'ordering', 'open', 'gaps'];
+  const types = ['mcq', 'mcq', 'mcq', 'mcq', 'short', 'short', 'mcq', 'boolean', 'matching', 'ordering', 'open', 'gaps'];
   const partCount = random(10) < 7 ? 1 : 2 + random(2);
   const parts = Array.from({ length: partCount }, () => {
     const type = types[random(types.length)];
     const marks = type === 'open' ? 3 : 1 + random(2);
     const text = type === 'gaps' ? `${words(60)} (1) ______ ${words(40)} (2) ______.` : words(70 + random(60));
     const part: Json = { blocks: [{ text, type: 'text' }], id: id('p'), marks, solution: [{ text: words(150), type: 'text' }] };
-    if (type === 'mcq' || type === 'multi')
-      part.answer = { correct: type === 'mcq' ? [random(4)] : [0, 2], options: [0, 1, 2, 3].map(() => words(30)), type };
+    if (type === 'mcq')
+      part.answer = { correct: random(3) === 0 ? [0, 2] : [random(4)], options: [0, 1, 2, 3].map(() => words(30)), type };
     else if (type === 'short') part.answer = { accepted: [words(10), words(12)], type };
     else if (type === 'boolean') part.answer = { correct: random(2) === 0, type };
     else if (type === 'matching')
@@ -146,12 +146,12 @@ function partMaps(part: Json): [YT.Map<unknown>, YT.Map<unknown>] {
   const type = answer.type as string;
   const content = map({ type });
   const keys = map({ type });
-  if (type === 'mcq' || type === 'multi') {
+  if (type === 'mcq') {
     const options = textEntries(answer.options as string[]);
     content.set('options', options);
     const optionIds = lastIds;
     const correct = (answer.correct as number[]).map((i) => optionIds[i]);
-    keys.set('correct', type === 'mcq' ? correct[0] : map(Object.fromEntries(correct.map((c) => [c, true]))));
+    keys.set('correct', map(Object.fromEntries(correct.map((c) => [c, true]))));
   } else if (type === 'boolean') keys.set('correct', answer.correct);
   else if (type === 'short' || type === 'open') {
     keys.set('accepted', textEntries(answer.accepted as string[]));

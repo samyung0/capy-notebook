@@ -10,7 +10,6 @@ export type GenerateQuestionType = typeof GenerateQuestionType[keyof typeof Gene
 
 export const GenerateQuestionType = {
   mcq: 'mcq',
-  multi: 'multi',
   boolean: 'boolean',
   short: 'short',
   open: 'open',

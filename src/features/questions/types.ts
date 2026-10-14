@@ -3,7 +3,6 @@ import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
 
 export const QUESTION_TYPES = [
   'mcq',
-  'multi',
   'boolean',
   'short',
   'matching',
@@ -175,7 +174,8 @@ export type QuestionBlock =
   | ImageBlock;
 
 export type QuestionAnswer =
-  | { type: 'mcq' | 'multi'; options: string[]; correct: number[] }
+  /** One or more correct options, answered with checkboxes (Epo 2026-10-15). */
+  | { type: 'mcq'; options: string[]; correct: number[] }
   | { type: 'boolean'; correct: boolean }
   | { type: 'short'; accepted: string[]; unit?: string }
   | {
@@ -216,7 +216,7 @@ export type Question = {
 };
 
 export type LearnerAnswer =
-  | { type: 'mcq' | 'multi'; options: string[] }
+  | { type: 'mcq'; options: string[] }
   | { type: 'boolean' | 'open' }
   | { type: 'short'; unit?: string }
   | { type: 'matching'; options: string[]; left: string[] }
@@ -327,10 +327,11 @@ export function blockWithoutBlanks(block: QuestionBlock): QuestionBlock {
 }
 
 /** The question without blanks: empty text blocks, a blank short-answer unit,
- * blank accepted answers and blank open-answer hints never leave it
- * incomplete (no accepted answer left does), and saves and the quiz
+ * blank accepted answers (a blank's too) and blank open-answer hints never
+ * leave it incomplete (no accepted answer left does), and saves and the quiz
  * projection drop them, with every block as `blockWithoutBlanks` keeps it
- * (Epo 2026-10-14). */
+ * (Epo 2026-10-14). Blank marking items go too, and then the part's marks are
+ * the rest's (`schemeMarks`, Epo 2026-10-15). */
 export function withoutBlanks(question: Question): Question {
   const keep = (blocks: QuestionBlock[]) =>
     blocks
@@ -348,7 +349,15 @@ export function withoutBlanks(question: Question): Question {
         accepted: filled(answer.accepted),
         hints: filled(answer.hints),
       };
+    if (answer.type === 'gaps')
+      return { ...answer, accepted: answer.accepted.map(filled) };
     return answer;
+  };
+  const scheme = (part: QuestionPart) => {
+    const items = part.markscheme?.filter((item) => item.text.trim());
+    return items && items.length !== part.markscheme?.length
+      ? { marks: schemeMarks(items), markscheme: items }
+      : {};
   };
   return {
     ...question,
@@ -357,6 +366,7 @@ export function withoutBlanks(question: Question): Question {
       answer: answer(part.answer),
       blocks: keep(part.blocks),
       solution: keep(part.solution),
+      ...scheme(part),
     })),
     stem: keep(question.stem),
   };

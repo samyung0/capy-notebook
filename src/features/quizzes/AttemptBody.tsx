@@ -45,7 +45,7 @@ function stillAnswers(before: AnyPart, after: AnyPart, value: Answer): boolean {
   const a = before.answer;
   const b = after.answer;
   if (a.type !== b.type) return false;
-  if ((a.type === 'mcq' || a.type === 'multi') && 'options' in b)
+  if (a.type === 'mcq' && 'options' in b)
     return (
       Array.isArray(value) &&
       value.every(

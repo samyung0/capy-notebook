@@ -315,7 +315,7 @@ func (s *Store) List(ctx context.Context, topic string) ([]Row, error) {
 	return out, dbError(rows.Err())
 }
 
-// AnswerTypes is the distinct answer types of a question's parts (mcq, multi,
+// AnswerTypes is the distinct answer types of a question's parts (mcq,
 // boolean, short, matching, ordering, open, gaps), in part order.
 func AnswerTypes(q map[string]any) []string {
 	out := []string{}

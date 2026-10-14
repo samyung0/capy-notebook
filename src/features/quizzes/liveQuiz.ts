@@ -18,7 +18,7 @@ import { keyBetween } from '@/lib/orderKey';
  * 2026-10-10). The content document, which readers join too, holds
  * `questions`: question id -> {order, layout, labels, level?, stem, parts},
  * part id -> {order, marks, blocks, answer}. The answer map holds the type and
- * what a learner may see: mcq and multi options, a short answer's unit and
+ * what a learner may see: mcq options, a short answer's unit and
  * matching left items. The keys document, which only editors with write
  * access join, holds `keys`: part id -> {type, solution, correct | accepted |
  * hints | markscheme | gaps | options | pairs | items}. Editors type ordering
@@ -177,18 +177,12 @@ function readAnswer(
 ): { answer: QuestionAnswer; markscheme?: MarkItem[] } {
   const type = plain<string>(answer, 'type');
   switch (type) {
-    case 'mcq':
-    case 'multi': {
+    case 'mcq': {
       const options = ordered(mapAt(answer, 'options'));
       const correct = key?.get('correct');
-      const indexes =
-        type === 'mcq'
-          ? options.flatMap((option, i) => (option.id === correct ? [i] : []))
-          : options.flatMap((option, i) =>
-              correct instanceof Y.Map && correct.get(option.id) === true
-                ? [i]
-                : []
-            );
+      const indexes = options.flatMap((option, i) =>
+        correct instanceof Y.Map && correct.get(option.id) === true ? [i] : []
+      );
       return {
         answer: {
           correct: indexes,
@@ -332,7 +326,6 @@ export function readLearnerQuestions(
           let learner: LearnerAnswer;
           switch (type) {
             case 'mcq':
-            case 'multi':
               learner = { options: texts(mapAt(answer, 'options')), type };
               break;
             case 'short': {
@@ -752,7 +745,6 @@ function writeContentAnswer(part: YMap, answer: QuestionAnswer): PartIds {
   const ids: PartIds = { left: [], options: [] };
   switch (answer.type) {
     case 'mcq':
-    case 'multi':
       ids.options = writeList(
         child(map, 'options'),
         answer.options.map((value) => ({ text: value })),
@@ -783,10 +775,7 @@ function writeKeys(key: YMap, part: QuestionPart, ids: PartIds) {
       prefix
     );
   switch (answer.type) {
-    case 'mcq':
-      setPlain(key, 'correct', ids.options[answer.correct[0] ?? -1]);
-      break;
-    case 'multi': {
+    case 'mcq': {
       const correct = child(key, 'correct');
       const wanted = new Set(answer.correct.map((i) => ids.options[i]));
       for (const id of [...correct.keys()])

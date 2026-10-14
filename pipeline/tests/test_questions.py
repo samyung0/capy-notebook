@@ -94,6 +94,9 @@ def test_the_shapes_expand_into_the_question_format_go_accepts():
     ]
     assert short["parts"][0]["solution"] == [] and short["parts"][0]["marks"] == 1
     assert open_["parts"][0]["answer"]["accepted"] == [OPEN["model_answer"]]
+    # Without a model_answer the part has no sample answer (Epo 2026-10-15).
+    bare = {k: v for k, v in OPEN.items() if k != "model_answer"}
+    assert questions.expand("open", bare, "q_9")["parts"][0]["answer"]["accepted"] == []
     assert [b["type"] for b in expanded[3]["parts"][0]["blocks"]] == ["text", "plot"]
 
 
@@ -158,16 +161,16 @@ def test_the_correct_option_and_an_open_questions_marks_are_checked():
     assert found.items[1].problems == [
         (
             "questions[1]: expected a multiple-choice question (options and correct), a "
-            "short answer (accepted) or an open question (marks, markscheme, "
-            "model_answer); sent the fields question"
+            "short answer (accepted) or an open question (marks and markscheme); "
+            "sent the fields question"
         )
     ]
+    # model_answer is optional (Epo 2026-10-15): only the marks are named.
     unsure = {k: v for k, v in OPEN.items() if k != "model_answer"}
     opened = questions.check(
         {"quiz_id": "mat_1", "questions": [{**unsure, "marks": 3}]}
     )
     assert opened.call == [] and opened.items[0].problems == [
-        "questions[0].model_answer: missing; expected a full-marks answer",
         (
             "questions[0].markscheme: expected item marks adding up to marks (3); sent "
             "items adding up to 2"
@@ -823,14 +826,16 @@ def test_numbers_with_a_unit_accept_commas_minus_signs_and_unit_words():
 def test_an_inspected_quiz_fence_reads_back_as_the_items_it_was_written_from():
     """inspect_document shows a note's quiz as the fence an edit writes, so a
     section copied from it lands (Epo 2026-10-14)."""
-    items = [MCQ, SHORT, OPEN]
+    # An open question without a model_answer reads back without one.
+    bare = {k: v for k, v in OPEN.items() if k != "model_answer"}
+    items = [MCQ, SHORT, OPEN, bare]
     stored = [
         questions.expand(kind, item, f"q_{n}")
-        for n, (kind, item) in enumerate(zip(("mcq", "short", "open"), items))
+        for n, (kind, item) in enumerate(zip(("mcq", "short", "open", "open"), items))
     ]
     fence = "```quiz\n" + json.dumps({"questions": stored}) + "\n```"
     view = questions.quiz_fence_view(fence)
-    ids = iter(f"q_{n}" for n in range(3))
+    ids = iter(f"q_{n}" for n in range(4))
     [text], found = questions.note_fences(
         [view + "\n"], lambda _: "content", ids.__next__
     )
@@ -845,6 +850,7 @@ def test_an_inspected_quiz_fence_reads_back_as_the_items_it_was_written_from():
         )
 
     assert [same(q) for q in again] == [same(q) for q in stored]
+    assert "model_answer" not in questions.authored(stored[3])
     # A question the fence form cannot write leaves the block as stored.
     stored[0]["stem"] = [{"type": "text", "text": "Context"}]
     assert (

@@ -17,7 +17,7 @@ Answer shapes, by answer type:
 
 | Type | Learner's answer |
 |---|---|
-| `mcq`, `multi` | option indices in stored order (`LearnerView` keeps that order) |
+| `mcq` | option indices in stored order (`LearnerView` keeps that order) |
 | `boolean` | `true` or `false` |
 | `short`, `open` | the typed text |
 | `ordering` | the item texts in the learner's order |

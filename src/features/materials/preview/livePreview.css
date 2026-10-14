@@ -194,13 +194,6 @@
   font-weight: 800;
   color: var(--text-muted);
 }
-.pv-box {
-  flex-shrink: 0;
-  width: 9px;
-  height: 9px;
-  border: 1.3px solid var(--border-default);
-  border-radius: 2px;
-}
 .pv-ord {
   gap: 6px;
   padding: 4px 7px;

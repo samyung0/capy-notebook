@@ -5,15 +5,15 @@ import type { Question } from '@/api/types';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Button } from '@/components/ui/Button';
 import { ConfirmDialog } from '@/components/ui/Dialog';
-import { Icon } from '@/components/ui/Icon';
 import type { ItemRoomStatus } from '@/features/collaboration/itemRoom';
 import type { UndoTarget } from '@/features/collaboration/undo';
 import type { UploadQuestionAsset } from '@/features/questions/BlockEditor';
+import { IssueSummary } from '@/features/questions/IssueViews';
+import { issueMessages, questionIssues } from '@/features/questions/issues';
 import { blankQuestion } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { fitImage } from '@/lib/fitImage';
-import { incompleteLine } from './incomplete';
 import { removeQuestion, writeQuestion } from './liveQuiz';
 import { type QuizRooms, useQuizQuestions } from './liveQuizRooms';
 import { QuizQuestionList } from './QuizPage';
@@ -119,23 +119,14 @@ export function QuizForm({
       <QuizQuestionList
         disabled
         questions={questions}
-        renderAfter={(item) => {
-          const incomplete = incompleteLine(item);
-          return (
-            <>
-              {incomplete && (
-                <p
-                  className="flex items-start gap-1.5 text-sm text-tint-warning-fg"
-                  role="status"
-                >
-                  <Icon className="mt-0.5 size-4 shrink-0" name="alert" />
-                  {incomplete}
-                </p>
-              )}
-              {actions(item)}
-            </>
-          );
-        }}
+        renderAfter={(item) => (
+          <>
+            {/* Learners see every question as typed; only complete ones are
+                projected and marked (D4, Epo 2026-10-10). */}
+            <IssueSummary messages={issueMessages(questionIssues(item))} />
+            {actions(item)}
+          </>
+        )}
       />
       <Button
         fullWidth

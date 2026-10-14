@@ -411,13 +411,12 @@ const answerSchema = z.discriminatedUnion('type', [
     .strictObject({
       correct: z.array(index).min(1).max(limits.QUESTION_ANSWERS_MAX),
       options: list.min(2),
-      type: z.enum(['mcq', 'multi']),
+      type: z.literal('mcq'),
     })
     .superRefine((v, ctx) => {
       if (
         new Set(v.correct).size !== v.correct.length ||
-        v.correct.some((n) => n >= v.options.length) ||
-        (v.type === 'mcq' && v.correct.length !== 1)
+        v.correct.some((n) => n >= v.options.length)
       )
         ctx.addIssue({
           code: 'custom',
@@ -459,8 +458,9 @@ const answerSchema = z.discriminatedUnion('type', [
     accepted: z.array(list).min(1).max(limits.QUESTION_ANSWERS_MAX),
     type: z.literal('gaps'),
   }),
+  // At most one sample answer, and it is optional (Epo 2026-10-15).
   z.strictObject({
-    accepted: list,
+    accepted: z.array(text).max(1),
     hints: z.array(text).max(limits.QUESTION_ANSWERS_MAX),
     type: z.literal('open'),
   }),
@@ -510,7 +510,9 @@ export const questionSchema = z.strictObject({
 });
 
 function hostedAsset(value: string, base?: string): boolean {
-  if (!base) return false;
+  // The schema refuses a value that is no URL; the issue list still runs these
+  // rules over it.
+  if (!(base && URL.canParse(value))) return false;
   const url = new URL(value);
   const allowed = new URL(base);
   const prefix = `${allowed.pathname.replace(trailingSlash, '')}/`;
@@ -525,14 +527,40 @@ function hostedAsset(value: string, base?: string): boolean {
   );
 }
 
-export function validateQuestion(
-  value: unknown,
+/** A hand-written rule a schema-valid question fails: the rule, where (a
+ * part index, and a block's section and index), and its copy. */
+export type RuleIssue = {
+  rule:
+    | 'part-ids'
+    | 'awarded'
+    | 'gap-markers'
+    | 'markscheme-open'
+    | 'markscheme-total'
+    | 'awarded-range'
+    | 'bank-solution'
+    | 'quiz-markscheme'
+    | 'open-answer-length'
+    | 'quiz-question-parts'
+    | 'description'
+    | 'asset-host'
+    | 'upload-graphs';
+  part?: number;
+  block?: { section: 'stem' | 'blocks' | 'solution'; index: number };
+  message: string;
+};
+
+/** Every hand-written rule the schema-valid `question` fails, in the order
+ * `validateQuestion` checks them. */
+export function ruleIssues(
+  question: Question,
   policy: QuestionPolicy = {}
-): Question {
-  const question = questionSchema.parse(value);
+): RuleIssue[] {
+  const issues: RuleIssue[] = [];
   const ids = new Set<string>();
-  for (const part of question.parts) {
-    if (ids.has(part.id)) throw new CopyError(m.question_validation_part_ids());
+  question.parts.forEach((part, index) => {
+    const fail = (rule: RuleIssue['rule'], message: string) =>
+      issues.push({ message, part: index, rule });
+    if (ids.has(part.id)) fail('part-ids', m.question_validation_part_ids());
     ids.add(part.id);
     if (
       !policy.snapshot &&
@@ -540,64 +568,110 @@ export function validateQuestion(
         part.itemAwards !== undefined ||
         part.itemResults !== undefined)
     )
-      throw new CopyError(m.question_validation_awarded_marks());
+      fail('awarded', m.question_validation_awarded_marks());
     // Each accepted list belongs to one blank, numbered 1 to n in the text.
     if (
       part.answer.type === 'gaps' &&
       gapNumbers(part.blocks).join() !==
         part.answer.accepted.map((_, i) => i + 1).join()
     )
-      throw new CopyError(m.question_validation_gap_markers());
+      fail('gap-markers', m.question_validation_gap_markers());
     // Only open parts have a marking scheme, which Jev grades against.
     if ((part.answer.type === 'open') !== (part.markscheme !== undefined))
-      throw new CopyError(m.question_validation_markscheme_open());
+      fail('markscheme-open', m.question_validation_markscheme_open());
     if (
       part.markscheme &&
       part.markscheme.reduce((sum, item) => sum + item.marks, 0) !== part.marks
     )
-      throw new CopyError(m.question_validation_markscheme_total());
+      fail('markscheme-total', m.question_validation_markscheme_total());
     if (
-      part.awarded !== undefined &&
-      (part.awarded > part.marks || (part.awarded * 2) % 1 !== 0)
+      (part.awarded !== undefined &&
+        (part.awarded > part.marks || (part.awarded * 2) % 1 !== 0)) ||
+      (part.itemAwards !== undefined && !validItemAwards(part))
     )
-      throw new CopyError(m.question_validation_awarded_range());
-    if (part.itemAwards !== undefined && !validItemAwards(part))
-      throw new CopyError(m.question_validation_awarded_range());
+      fail('awarded-range', m.question_validation_awarded_range());
     if (policy.bank && part.solution.length === 0)
-      throw new CopyError(m.question_validation_bank_solution());
-    if (!policy.bank) quizPartBounds(part);
-  }
-  if (!policy.bank && question.parts.length > limits.QUIZ_QUESTION_PARTS_MAX)
-    throw new CopyError(
-      m.question_validation_quiz_question_parts({
-        max: limits.QUIZ_QUESTION_PARTS_MAX,
-      })
-    );
-  for (const block of [
-    ...question.stem,
-    ...question.parts.flatMap((p) => [...p.blocks, ...p.solution]),
-  ]) {
-    if (!(policy.bank || descriptionFits(block)))
-      throw new CopyError(m.question_validation_text_too_long());
-    if (block.type !== 'image' && block.type !== 'graph') continue;
-    // Bank figures must be hosted bank assets; quiz figures are editor assets,
-    // or a copied bank question's link under the deployment's BANK_ASSETS_URL
-    // (VITE_BANK_ASSETS_URL, scripts/env/config.py). Outside Vite (the site
-    // worker bundles this module) import.meta.env is undefined.
+      fail('bank-solution', m.question_validation_bank_solution());
+    if (policy.bank) return;
+    // User quizzes (not the bank) cap marking items and sample answer length.
+    if (part.markscheme && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
+      fail(
+        'quiz-markscheme',
+        m.question_validation_quiz_markscheme({
+          max: limits.QUIZ_MARKSCHEME_MAX,
+        })
+      );
     if (
-      'url' in block.image
-        ? !hostedAsset(
-            block.image.url,
-            policy.bank
-              ? policy.bankAssetsUrl
-              : import.meta.env?.VITE_BANK_ASSETS_URL
-          )
-        : 'assetId' in block.image && policy.bank
+      part.answer.type === 'open' &&
+      part.answer.accepted.some(
+        (text) => [...text].length > limits.QUIZ_OPEN_ANSWER_MAX
+      )
     )
-      throw new CopyError(m.question_validation_asset_host());
-    if (policy.bank && block.type === 'graph' && 'svg' in block.image)
-      throw new CopyError(m.question_validation_upload_graphs());
-  }
+      fail(
+        'open-answer-length',
+        m.question_validation_open_answer_length({
+          max: limits.QUIZ_OPEN_ANSWER_MAX,
+        })
+      );
+  });
+  if (!policy.bank && question.parts.length > limits.QUIZ_QUESTION_PARTS_MAX)
+    issues.push({
+      message: m.question_validation_quiz_question_parts({
+        max: limits.QUIZ_QUESTION_PARTS_MAX,
+      }),
+      rule: 'quiz-question-parts',
+    });
+  type Section = NonNullable<RuleIssue['block']>['section'];
+  const sections: {
+    blocks: QuestionBlock[];
+    part?: number;
+    section: Section;
+  }[] = [
+    { blocks: question.stem, section: 'stem' },
+    ...question.parts.flatMap((part, index) =>
+      (['blocks', 'solution'] as const).map((section) => ({
+        blocks: part[section],
+        part: index,
+        section,
+      }))
+    ),
+  ];
+  for (const { blocks, part, section } of sections)
+    blocks.forEach((block, index) => {
+      const fail = (rule: RuleIssue['rule'], message: string) =>
+        issues.push({ block: { index, section }, message, part, rule });
+      if (!(policy.bank || descriptionFits(block)))
+        fail('description', m.question_validation_text_too_long());
+      if (block.type !== 'image' && block.type !== 'graph') return;
+      // Bank figures must be hosted bank assets; quiz figures are editor
+      // assets, or a copied bank question's link under the deployment's
+      // BANK_ASSETS_URL (VITE_BANK_ASSETS_URL, scripts/env/config.py). Outside
+      // Vite (the site worker bundles this module) import.meta.env is
+      // undefined.
+      if (
+        'url' in block.image
+          ? !hostedAsset(
+              block.image.url,
+              policy.bank
+                ? policy.bankAssetsUrl
+                : import.meta.env?.VITE_BANK_ASSETS_URL
+            )
+          : 'assetId' in block.image && policy.bank
+      )
+        fail('asset-host', m.question_validation_asset_host());
+      if (policy.bank && block.type === 'graph' && 'svg' in block.image)
+        fail('upload-graphs', m.question_validation_upload_graphs());
+    });
+  return issues;
+}
+
+export function validateQuestion(
+  value: unknown,
+  policy: QuestionPolicy = {}
+): Question {
+  const question = questionSchema.parse(value);
+  const [issue] = ruleIssues(question, policy);
+  if (issue) throw new CopyError(issue.message);
   return question;
 }
 
@@ -625,25 +699,6 @@ function validItemAwards(part: Question['parts'][number]): boolean {
     }) &&
     awards.reduce((sum, award) => sum + award, 0) === part.awarded
   );
-}
-
-/** User quizzes (not the bank) cap marking items and sample answer length per part. */
-function quizPartBounds(part: Question['parts'][number]) {
-  if (part.markscheme && part.markscheme.length > limits.QUIZ_MARKSCHEME_MAX)
-    throw new CopyError(
-      m.question_validation_quiz_markscheme({ max: limits.QUIZ_MARKSCHEME_MAX })
-    );
-  if (
-    part.answer.type === 'open' &&
-    part.answer.accepted.some(
-      (text) => [...text].length > limits.QUIZ_OPEN_ANSWER_MAX
-    )
-  )
-    throw new CopyError(
-      m.question_validation_open_answer_length({
-        max: limits.QUIZ_OPEN_ANSWER_MAX,
-      })
-    );
 }
 
 /** One attempt's open parts must fit a single grading request. */

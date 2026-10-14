@@ -277,7 +277,7 @@ func questionPreviewOf(q map[string]any) *questionPreview {
 		}
 	}
 	switch typ {
-	case "mcq", "multi":
+	case "mcq":
 		options, _ := answer["options"].([]any)
 		out.Options = clippedChoices(options)
 	case "matching":

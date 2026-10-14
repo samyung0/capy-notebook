@@ -70,6 +70,7 @@ export function QuestionRunner({
   questionNumber,
   renderBlock,
   frameAnswer,
+  titleAside,
 }: {
   /** Learner questions (no answer key) only render without `review`, which
    * shows a question graded on the server: its key and each part's `awarded`. */
@@ -85,6 +86,7 @@ export function QuestionRunner({
   renderBlock?: QuestionViewProps['renderBlock'];
   /** The question dialog: wraps each part's answer controls to select them. */
   frameAnswer?: (partId: string, answer: ReactNode) => ReactNode;
+  titleAside?: QuestionViewProps['titleAside'];
 }) {
   // A gaps part's text carries its own fields, one per numbered blank.
   const gapBlock: QuestionViewProps['renderBlock'] = (
@@ -138,6 +140,7 @@ export function QuestionRunner({
         renderAnswer={answer}
         renderBlock={gapBlock}
         review={showAnswerKey}
+        titleAside={titleAside}
       />
     );
   return (
@@ -448,7 +451,8 @@ function PartRunner({
   const indices = Array.isArray(value)
     ? value.filter((item) => typeof item === 'number')
     : null;
-  if (answer.type === 'mcq' || answer.type === 'multi')
+  // Several options may be correct: options toggle like checkboxes.
+  if (answer.type === 'mcq')
     return (
       <div className={cn('grid', twoColumns && '@xl:grid-cols-2 @xl:gap-x-7')}>
         {answer.options.map((option, i) => {
@@ -461,11 +465,9 @@ function PartRunner({
               label={optionLetter(i)}
               onClick={() =>
                 onChange(
-                  answer.type === 'mcq'
-                    ? [i]
-                    : selected
-                      ? (indices ?? []).filter((n) => n !== i)
-                      : [...(indices ?? []), i]
+                  selected
+                    ? (indices ?? []).filter((n) => n !== i)
+                    : [...(indices ?? []), i]
                 )
               }
               review={review}

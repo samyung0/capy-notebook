@@ -94,7 +94,6 @@ function answerLines(part: QuestionPart, labels: ExportLabels): string[] {
   const a = part.answer;
   switch (a.type) {
     case 'mcq':
-    case 'multi':
       return a.correct.map(
         (index) => `${String.fromCharCode(65 + index)}. ${a.options[index]}`
       );
@@ -117,11 +116,9 @@ function answerLines(part: QuestionPart, labels: ExportLabels): string[] {
 
 function choices(part: QuestionPart, labels: ExportLabels): MaterialValue {
   const a = part.answer;
-  if (a.type === 'mcq' || a.type === 'multi')
+  if (a.type === 'mcq')
     return a.options.map((option, i) =>
-      paragraph(
-        `${a.type === 'multi' ? '☐' : `${String.fromCharCode(65 + i)}.`} ${option}`
-      )
+      paragraph(`${String.fromCharCode(65 + i)}. ${option}`)
     );
   if (a.type === 'boolean')
     return [paragraph(`☐ ${labels.true}    ☐ ${labels.false}`)];

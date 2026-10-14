@@ -160,7 +160,7 @@ export function questionPreview(question: Question): QuizPreviewQuestion {
     stem,
     type: answer.type,
     ...(hasChart && { hasChart }),
-    ...((answer.type === 'mcq' || answer.type === 'multi') && {
+    ...(answer.type === 'mcq' && {
       options: cut(answer.options),
     }),
     ...(answer.type === 'ordering' && { itemCount: answer.items.length }),
@@ -361,13 +361,12 @@ function quizStartingWith(
 
 const quizzes: [string, MaterialValue][] = [
   ['Respiration · multiple choice', quizStartingWith('mcq', 12, false)],
-  ['Organelle functions', quizStartingWith('multi', 8)],
   ['Membrane facts', quizStartingWith('boolean', 13)],
   ['Osmosis recall', quizStartingWith('short', 6)],
   ['Rate of photosynthesis', quizStartingWith('open', 3, true)],
   ['Organelle locations', quizStartingWith('matching', 10)],
   ['Mitosis stages', quizStartingWith('ordering', 5)],
-  ['Cell biology gaps', quizStartingWith('gaps', 9)],
+  ['Cell biology blanks', quizStartingWith('gaps', 9)],
   ['Surface area graphs', quizStartingWith('mcq', 4, true)],
   ['Single question', quizStartingWith('short', 1)],
 ];

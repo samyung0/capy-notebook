@@ -158,7 +158,6 @@ type GenerateQuestionType string
 
 const (
 	QuestionMCQ      GenerateQuestionType = "mcq"
-	QuestionMulti    GenerateQuestionType = "multi"
 	QuestionBoolean  GenerateQuestionType = "boolean"
 	QuestionShort    GenerateQuestionType = "short"
 	QuestionOpen     GenerateQuestionType = "open"
@@ -167,7 +166,7 @@ const (
 )
 
 func (GenerateQuestionType) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "GenerateQuestionType", "mcq", "multi", "boolean", "short", "open", "ordering", "matching")
+	return enumRef(r, "GenerateQuestionType", "mcq", "boolean", "short", "open", "ordering", "matching")
 }
 
 // GenerateDetail is the mindmap density knob.

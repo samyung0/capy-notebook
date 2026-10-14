@@ -253,7 +253,6 @@ export const answerLabels: Record<QuestionType, () => string> = {
   gaps: m.question_ui_fill_in_the_gaps,
   matching: m.question_ui_matching,
   mcq: m.question_ui_multiple_choice,
-  multi: m.question_ui_multiple_answers,
   open: m.question_ui_open_answer,
   ordering: m.question_ui_ordering,
   short: m.question_ui_short_answer,
@@ -261,14 +260,13 @@ export const answerLabels: Record<QuestionType, () => string> = {
 export function emptyAnswer(type: QuestionType): QuestionAnswer {
   switch (type) {
     case 'mcq':
-    case 'multi':
       return { correct: [], options: ['', ''], type };
     case 'boolean':
       return { correct: true, type };
     case 'short':
       return { accepted: [''], type };
     case 'open':
-      return { accepted: [''], hints: [], type };
+      return { accepted: [], hints: [], type };
     case 'matching':
       return { options: ['', ''], pairs: [{ left: '', right: 0 }], type };
     case 'ordering':
@@ -299,7 +297,7 @@ export function AnswerEditor({
         }))}
         value={answer.type}
       />
-      {(answer.type === 'mcq' || answer.type === 'multi') && (
+      {answer.type === 'mcq' && (
         <div className="space-y-2">
           <p className="t-label">
             {m.question_ui_options_and_correct_answers()}
@@ -312,15 +310,12 @@ export function AnswerEditor({
                 onChange={(event) =>
                   onChange({
                     ...answer,
-                    correct:
-                      answer.type === 'mcq'
-                        ? [i]
-                        : event.target.checked
-                          ? [...answer.correct, i]
-                          : answer.correct.filter((value) => value !== i),
+                    correct: event.target.checked
+                      ? [...answer.correct, i]
+                      : answer.correct.filter((value) => value !== i),
                   })
                 }
-                type={answer.type === 'mcq' ? 'radio' : 'checkbox'}
+                type="checkbox"
               />
               <FieldInput
                 aria-label={m.question_ui_option_number({ number: i + 1 })}
@@ -378,17 +373,35 @@ export function AnswerEditor({
           value={String(answer.correct)}
         />
       )}
-      {(answer.type === 'short' || answer.type === 'open') && (
+      {answer.type === 'short' && (
         <StringList
           label={m.question_ui_accepted_answers()}
-          maxLength={
-            answer.type === 'open' && !bank
-              ? limits.QUIZ_OPEN_ANSWER_MAX
-              : limits.QUESTION_TEXT_MAX
-          }
           onChange={(accepted) => onChange({ ...answer, accepted })}
           values={answer.accepted}
         />
+      )}
+      {answer.type === 'open' && (
+        // At most one sample answer, and it is optional (Epo 2026-10-15).
+        <Field
+          count={{
+            max: bank ? limits.QUESTION_TEXT_MAX : limits.QUIZ_OPEN_ANSWER_MAX,
+            value: textLength(answer.accepted[0]),
+          }}
+          label={m.question_ui_sample_answer()}
+        >
+          <FieldInput
+            maxLength={
+              bank ? limits.QUESTION_TEXT_MAX : limits.QUIZ_OPEN_ANSWER_MAX
+            }
+            onChange={(event) =>
+              onChange({
+                ...answer,
+                accepted: event.target.value ? [event.target.value] : [],
+              })
+            }
+            value={answer.accepted[0] ?? ''}
+          />
+        </Field>
       )}
       {answer.type === 'short' && (
         <Field

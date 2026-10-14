@@ -162,10 +162,7 @@ BLOCK = {
 }
 ANSWER = {
     "oneOf": [
-        *[
-            tagged(kind, {"options": array(TEXT, 2), "correct": array(INDEX, 1)})
-            for kind in ("mcq", "multi")
-        ],
+        tagged("mcq", {"options": array(TEXT, 2), "correct": array(INDEX, 1)}),
         tagged("boolean", {"correct": BOOL}),
         tagged("short", {"accepted": array(TEXT, 1), "unit": TEXT}, ["accepted"]),
         tagged(
@@ -176,7 +173,7 @@ ANSWER = {
             },
         ),
         tagged("ordering", {"items": array(TEXT, 2)}),
-        tagged("open", {"accepted": array(TEXT, 1), "hints": array(TEXT)}),
+        tagged("open", {"accepted": array(TEXT, 0, 1), "hints": array(TEXT)}),
         # One accepted list per numbered gap in the part's text.
         tagged("gaps", {"accepted": array(array(TEXT, 1), 1)}),
     ]

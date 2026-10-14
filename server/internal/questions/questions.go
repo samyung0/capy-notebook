@@ -940,7 +940,7 @@ func answer(value any, policy Policy) error {
 	}
 	required, optional := "type", ""
 	switch a["type"] {
-	case "mcq", "multi":
+	case "mcq":
 		required += " options correct"
 	case "boolean":
 		required += " correct"
@@ -963,7 +963,7 @@ func answer(value any, policy Policy) error {
 		return err
 	}
 	switch a["type"] {
-	case "mcq", "multi", "matching":
+	case "mcq", "matching":
 		if !stringsArray(a["options"], 1, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
 			return fail("invalid options")
 		}
@@ -995,11 +995,8 @@ func answer(value any, policy Policy) error {
 				}
 			}
 		} else {
-			max := count
-			if a["type"] == "mcq" {
-				max = 1
-			}
-			correct, ok := array(a["correct"], 1, max)
+			// One or more distinct correct options (Epo 2026-10-15).
+			correct, ok := array(a["correct"], 1, count)
 			if !ok {
 				return fail("invalid correct indices")
 			}
@@ -1027,11 +1024,15 @@ func answer(value any, policy Policy) error {
 			}
 		}
 	case "short", "open":
-		length := fieldlimits.QuestionText
-		if a["type"] == "open" && !policy.Bank {
-			length = fieldlimits.QuizOpenAnswer
+		length, least, most := fieldlimits.QuestionText, 1, fieldlimits.QuestionAnswers
+		if a["type"] == "open" {
+			// At most one sample answer, and it is optional (Epo 2026-10-15).
+			least, most = 0, 1
+			if !policy.Bank {
+				length = fieldlimits.QuizOpenAnswer
+			}
 		}
-		if !stringsArray(a["accepted"], 1, fieldlimits.QuestionAnswers, length) {
+		if !stringsArray(a["accepted"], least, most, length) {
 			return fail("invalid accepted answers")
 		}
 		if a["type"] == "open" && !stringsArray(a["hints"], 0, fieldlimits.QuestionAnswers, fieldlimits.QuestionText) {
@@ -1122,7 +1123,7 @@ func LearnerView(q map[string]any) map[string]any {
 		a, _ := p["answer"].(map[string]any)
 		learner := map[string]any{"type": a["type"]}
 		switch a["type"] {
-		case "mcq", "multi":
+		case "mcq":
 			learner["options"] = a["options"]
 		case "short":
 			if unit, ok := a["unit"]; ok {

@@ -984,7 +984,7 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
     match kind {
-        "mcq" | "multi" => {
+        "mcq" => {
             strict(map, what, &["correct", "options", "type"], &[])?;
             let correct: Vec<f64> = array(&map["correct"], what, 1, QUESTION_ANSWERS_MAX)?
                 .iter()
@@ -992,9 +992,8 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
                 .collect::<Result<_, _>>()?;
             let options = list(&map["options"], what, 2)?;
             let distinct: HashSet<u64> = correct.iter().map(|n| *n as u64).collect();
-            if distinct.len() != correct.len()
-                || correct.iter().any(|n| *n >= options.len() as f64)
-                || (kind == "mcq" && correct.len() != 1)
+            // One or more distinct correct options (Epo 2026-10-15).
+            if distinct.len() != correct.len() || correct.iter().any(|n| *n >= options.len() as f64)
             {
                 return fail("Choose valid, distinct correct options.");
             }
@@ -1057,7 +1056,11 @@ fn answer(value: &Value) -> Result<(String, usize, Vec<String>), String> {
         }
         "open" => {
             strict(map, what, &["accepted", "hints", "type"], &[])?;
-            let accepted = list(&map["accepted"], what, 1)?;
+            // At most one sample answer, and it is optional (Epo 2026-10-15).
+            let accepted = array(&map["accepted"], what, 0, 1)?
+                .iter()
+                .map(|item| text(item, what))
+                .collect::<Result<Vec<_>, _>>()?;
             for hint in array(&map["hints"], what, 0, QUESTION_ANSWERS_MAX)? {
                 text(hint, what)?;
             }

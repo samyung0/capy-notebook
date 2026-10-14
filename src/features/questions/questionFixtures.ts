@@ -10,7 +10,7 @@ export const exampleAnswers: QuestionAnswer[] = [
   {
     correct: [0, 2],
     options: ['Nucleus', 'Ribosome', 'Mitochondria'],
-    type: 'multi',
+    type: 'mcq',
   },
   { correct: true, type: 'boolean' },
   { accepted: ['osmosis'], type: 'short' },

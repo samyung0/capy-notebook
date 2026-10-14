@@ -10,7 +10,8 @@ shapes, the fields telling them apart:
 - short answer: question, accepted, unit? (accepted then holds plain numbers),
   explanation?
 - open: question, marks, markscheme [{text, marks}] adding up to marks,
-  model_answer, hints?, explanation?
+  model_answer? (the part's one optional sample answer, Epo 2026-10-15),
+  hints?, explanation?
 
 add_questions takes a list of them, and add_question_media puts a chart, a
 plot or a library figure after one question's text. A note's ```quiz fence
@@ -79,7 +80,7 @@ FIELDS = {
 NEEDS = {
     "mcq": ("options", "correct"),
     "short": ("accepted",),
-    "open": ("marks", "markscheme", "model_answer"),
+    "open": ("marks", "markscheme"),
 }
 # Each kind's check: the add_questions item narrowed to the kind's fields, so
 # another kind's field is named as unknown with what to do instead.
@@ -100,8 +101,8 @@ SHAPES = {
     "short": 'A short answer: {"question": "…", "accepted": ["…"], "unit": "<only for '
     'a quantity; accepted then holds plain numbers>", "explanation": "…"}',
     "open": 'An open question: {"question": "…", "marks": 2, "markscheme": [{"text": '
-    '"…", "marks": 1}, {"text": "…", "marks": 1}], "model_answer": "…", '
-    '"hints": ["…"], "explanation": "…"}',
+    '"…", "marks": 1}, {"text": "…", "marks": 1}], "model_answer": "<optional: a '
+    'full-marks answer>", "hints": ["…"], "explanation": "…"}',
 }
 # What a missing field should have held.
 EXPECTED = {
@@ -459,8 +460,8 @@ def check_item(item: Any, index: int, path: str, *, fence: bool) -> Item:
         problems = [
             (
                 f"{path}: expected a multiple-choice question (options and correct), "
-                "a short answer (accepted) or an open question (marks, markscheme, "
-                f"model_answer); sent the fields {sent}"
+                "a short answer (accepted) or an open question (marks and "
+                f"markscheme); sent the fields {sent}"
             )
         ]
         problems += [
@@ -560,7 +561,8 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
     else:
         part["answer"] = {
             "type": "open",
-            "accepted": [item["model_answer"]],
+            # The one sample answer is optional (Epo 2026-10-15).
+            "accepted": [item["model_answer"]] if item.get("model_answer") else [],
             "hints": list(item.get("hints") or []),
         }
         part["marks"] = item["marks"]
@@ -615,8 +617,10 @@ def authored(question: dict[str, Any]) -> dict[str, Any] | None:
                 {"text": i.get("text"), "marks": i.get("marks")}
                 for i in part.get("markscheme") or []
             ],
-            "model_answer": (answer.get("accepted") or [""])[0],
         }
+        # A part without a sample answer leaves model_answer out.
+        if answer.get("accepted"):
+            item["model_answer"] = answer["accepted"][0]
         if answer.get("hints"):
             item["hints"] = list(answer["hints"])
     else:

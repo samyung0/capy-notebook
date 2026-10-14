@@ -305,7 +305,6 @@ def normalize_questions(data: Any) -> list[dict[str, Any]]:
                 or part["answer"].get("type")
                 not in (
                     "mcq",
-                    "multi",
                     "boolean",
                     "short",
                     "matching",

@@ -59,9 +59,6 @@ describe('ThumbnailPanel', () => {
     const mcq = quiz({ options: ['A1', 'B1'], stem: 'Pick', type: 'mcq' });
     expect(count(mcq, 'pv-opt')).toBe(2);
     expect(quiz({ stem: 'Q', type: 'boolean' })).toContain('False');
-    expect(
-      count(quiz({ options: ['x'], stem: 'Q', type: 'multi' }), 'pv-box')
-    ).toBe(1);
     expect(quiz({ stem: 'Q', type: 'short' })).toContain('pv-input');
     expect(count(quiz({ stem: 'Q', type: 'open' }), '<i></i>')).toBe(3);
     const matching = quiz({

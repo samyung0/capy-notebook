@@ -29,7 +29,7 @@ fn policy(fixture: &Value, host: &Value) -> Policy {
 /// reference never keeping an imported fence body (live-items REVIEW5), and
 /// the embed catalog (Epo 2026-10-13): a type or material kind it does not
 /// list, an element in a material kind it does not list it for, and Go's
-/// wording for figures.
+/// wording for figures; and `multi`, merged into `mcq` (Epo 2026-10-15).
 fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     fn has_type(node: &Value, kinds: &[&str]) -> bool {
         node["type"]
@@ -47,7 +47,8 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
     }
     let Err(message) = ours else { return false };
     let message = message.trim_start_matches("invalid material document: ");
-    message.ends_with("material reference carries an imported fence body")
+    (message == "answer: invalid type" && holds_multi(value))
+        || message.ends_with("material reference carries an imported fence body")
         || (message.ends_with("materialId is required")
             && value
                 .as_array()
@@ -67,6 +68,17 @@ fn tightened(ours: &Result<(), String>, value: &Value) -> bool {
                 .iter()
                 .any(|node| has_type(node, &["diagram", "mindmap"]))
         })
+}
+
+/// Whether a value holds a `multi` answer, a type merged into `mcq`.
+fn holds_multi(value: &Value) -> bool {
+    match value {
+        Value::Object(map) => {
+            map.get("type").is_some_and(|kind| kind == "multi") || map.values().any(holds_multi)
+        }
+        Value::Array(items) => items.iter().any(holds_multi),
+        _ => false,
+    }
 }
 
 /// A case the Rust store accepts where the Node server refused, by a rule
@@ -105,6 +117,9 @@ fn validation_matches_the_node_server() {
             &policy(&case["policy"], &case["host"]),
         )
         .map(|_| ());
+        if tightened(&ours, &case["question"]) {
+            continue;
+        }
         compare(&at, ours, &case["outcome"], &mut failures);
         if case["host"].is_null() && case["outcome"]["ok"].as_bool() != case["valid"].as_bool() {
             failures.push(format!("{at}: the JS outcome disagrees with the fixture"));

@@ -86,7 +86,8 @@ import (
 // takes after_block_id "end"; create and edit receipts list the note blocks
 // they wrote (effect.blockIds); replace_card keeps a side it is not sent (Epo
 // 2026-10-14).
-const ContractVersion = 29
+// v30: an open question's model_answer is optional (Epo 2026-10-15).
+const ContractVersion = 30
 
 // Slot names the product feature that may expose a tool loop. Only chat does.
 type Slot string
@@ -518,7 +519,7 @@ func replacesSchema() map[string]any {
 
 // questionSchema is one add_questions item, its kind decided by its fields:
 // options and correct make a multiple-choice question, accepted (and unit) a
-// short answer, marks, markscheme and model_answer an open one.
+// short answer, marks and markscheme (model_answer optional) an open one.
 func questionSchema() map[string]any {
 	return obj(map[string]any{
 		"question": textField("The question as the learner reads it."),
@@ -539,7 +540,7 @@ func questionSchema() map[string]any {
 			}, "text", "marks"),
 		},
 		"model_answer": map[string]any{
-			"type": "string", "maxLength": fieldlimits.QuizOpenAnswer, "description": "Open: a full-marks answer.",
+			"type": "string", "maxLength": fieldlimits.QuizOpenAnswer, "description": "Open, optional: a full-marks answer.",
 		},
 		"hints":       textList("Open, optional: nudges the learner may open.", 0),
 		"explanation": textField("Optional: why the answer is right or the worked solution, shown after checking."),
@@ -745,7 +746,7 @@ func Definitions() []Definition {
 			Description: "Add questions to a quiz (quiz_id), or create a quiz with them (title). A " +
 				"question's fields make its kind: multiple choice (options, one correct) and short answer " +
 				"(accepted) are 1 mark each; an open question, answered in writing, has marks and a " +
-				"markscheme adding up to them, and a model_answer. Options are shown shuffled: never " +
+				"markscheme adding up to them, and optionally a model_answer. Options are shown shuffled: never " +
 				`refer to one by its letter or position (A, B, "the first", "all of the above"). ` +
 				"The result lists each question's id. " +
 				`Example: {"title": "Osmosis", "questions": [{"question": "Which way does water move when ` +
