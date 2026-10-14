@@ -120,7 +120,9 @@ async def test_candidate_stages_parse_and_index_without_replacing_published(
 
 
 @pytest.mark.parametrize("format", ["docx", "xlsx", "pptx", "text"])
-def test_candidate_survives_newer_saves_but_requires_current_attempt(workspace, format):
+async def test_candidate_survives_newer_saves_but_requires_current_attempt(
+    workspace, format
+):
     job = candidate(workspace, format=format)
     file_id = job["payload"]["fileId"]
     with workspace._connect() as conn:
@@ -128,9 +130,27 @@ def test_candidate_survives_newer_saves_but_requires_current_attempt(workspace, 
             "UPDATE source_documents SET checkpoint=2 WHERE file_id=%s", (file_id,)
         )
     token = db.bind_source_refresh(job)
+
+    async def attach():
+        return await store.attach_file_content(
+            workspace_id=workspace.id,
+            file_id=file_id,
+            content_hash="hash-b",
+            claim_job_id=job["id"],
+        )
+
     try:
         with workspace._connect() as conn, conn.transaction(), conn.cursor() as cur:
             db.require_current_file_source(cur, file_id, 1, "etag-b")
+        # The save after the capture stays pending: the parsed refresh attaches.
+        attached = await attach()
+        assert (
+            workspace.scalar(
+                "SELECT content_id FROM source_refresh_candidates WHERE file_id=%s",
+                (file_id,),
+            )
+            == attached["content_id"]
+        )
         with workspace._connect() as conn:
             conn.execute("UPDATE jobs SET attempts=2 WHERE id=%s", (job["id"],))
         with (
@@ -140,6 +160,8 @@ def test_candidate_survives_newer_saves_but_requires_current_attempt(workspace, 
             pytest.raises(db.SourceSupersededError),
         ):
             db.require_current_file_source(cur, file_id, 1, "etag-b")
+        with pytest.raises(db.SourceSupersededError):
+            await attach()
     finally:
         db.reset_source_refresh(token)
 

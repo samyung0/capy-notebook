@@ -245,6 +245,9 @@ async def attach_material_content(
 
 
 async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
+    """Fence an attach to the live candidate. Saves made after the capture
+    stay pending against it (deferred publication), so a newer checkpoint
+    passes, as in the heartbeat's boundary fence."""
     file_id = refresh["fileId"]
     await conn.execute(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (file_id,)
@@ -283,7 +286,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         WHERE c.file_id=%s AND c.job_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
           AND d.epoch=c.epoch AND d.running_job_id=c.job_id AND d.base_revision=f.revision AND f.revision=%s
           AND f.workspace_id=%s AND f.user_id=%s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
-          AND (d.format='text' OR d.checkpoint=c.checkpoint)
+          AND d.checkpoint>=c.checkpoint
           AND j.status='running' AND j.attempts=%s AND j.lease_expires_at>now()
         FOR UPDATE OF f,c,d,j""",
         (
