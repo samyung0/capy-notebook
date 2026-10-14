@@ -24,9 +24,10 @@ Blank fields (null, blank text, "null", [] or {}) are left out before
 checking unless the question's kind needs them, and an accepted answer written
 with its unit ("5%" with unit "%") keeps the number (Epo 2026-10-13: leniency
 the agent need not be told about). The server fills the rest: ids, one part
-per question, 1 mark for a simple question (multiple-choice options keep
-the order written; the model is told to vary the correct one's position),
-layout paper, labels letters, and the worked solution from the
+per question, 1 mark for a simple question, multiple-choice options in an
+order shuffled by the question id (the model puts the answer first; it is told
+never to name an option by letter or position), layout paper, labels letters,
+and the worked solution from the
 explanation (empty without one: a quiz part's solution may be empty, only bank
 parts need one). The gateway routes and Go's validator take the expanded
 questions unchanged.
@@ -38,6 +39,7 @@ import contextlib
 import copy
 import hashlib
 import json
+import random
 import re
 from collections import Counter
 from collections.abc import Callable
@@ -536,11 +538,19 @@ def expand(kind: str, item: dict[str, Any], qid: str) -> dict[str, Any]:
         "blocks": [{"type": "text", "text": item["question"]}],
     }
     if kind == "mcq":
-        # In the order written: the model varies where the correct option sits
-        # (Epo 2026-10-14, a trial in place of the server's shuffle).
-        options = list(item["options"])
-        answer = [o.strip() for o in options].index(item["correct"].strip())
-        part["answer"] = {"type": "mcq", "options": options, "correct": [answer]}
+        written = list(item["options"])
+        answer = [o.strip() for o in written].index(item["correct"].strip())
+        # Shuffled, seeded by the id so a retried call writes the same order:
+        # told to vary it, the model still put the answer first or second in
+        # 45 of 48 questions (Epo 2026-10-14).
+        order = list(range(len(written)))
+        random.Random(qid).shuffle(order)
+        options = [written[i] for i in order]
+        part["answer"] = {
+            "type": "mcq",
+            "options": options,
+            "correct": [order.index(answer)],
+        }
         part["marks"] = 1
     elif kind == "short":
         part["answer"] = {"type": "short", "accepted": list(item["accepted"])}

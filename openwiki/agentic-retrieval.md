@@ -2322,8 +2322,9 @@ build, and the knowledge library is one more source while the switch is on.
   as the output-files preference says; quizzes and flashcards standalone in
   the chapter they practise; other materials as the study preferences and the
   chapter's teaching need say), an example the sources lack labelled as
-  illustrative, which question tool writes what (Question tools, below; the
-  model varies the correct option's position), and the flashcards, mindmap and
+  illustrative, which question tool writes what (Question tools, below;
+  options are shown shuffled, so never name one by its letter or position,
+  "all of the above" included), and the flashcards, mindmap and
   diagram formats. `note_building` is a note's own: mindmaps, diagrams and
   interactive blocks inside it as the preferences say, knowledge checks sized
   and placed as the preferences say, growing a long note by appending
@@ -2806,8 +2807,9 @@ and removes `browse_knowledge` and section reading (`read_knowledge` takes an
 `excerpt_id` again). Version 29 (2026-10-14) renames the skills (`editing`,
 `note_building`, `deck_building`), takes `after_block_id: "end"` on
 `insert_markdown`, lists the note blocks a create or edit wrote in
-`effect.blockIds`, keeps a `replace_card` side that is not sent and
-multiple-choice options in the order written. Go and the pipeline deploy
+`effect.blockIds` and keeps a `replace_card` side that is not sent; options
+stay shuffled, and `add_questions` and the editing skill say never to refer to
+an option by its letter or position. Go and the pipeline deploy
 together. `cmd/openapi -agent-tools`
 exports it to `pipeline/pipeline/generated/agent_tools.json`; Python validates
 every call against that JSON (`retrieval/contract.py`) and refuses unknown
@@ -2880,11 +2882,11 @@ before `create_material` or `edit_document` leaves the pipeline. The pipeline
 drops blank fields before checking them (agent write leniency, below) and
 fills the rest: question ids `q_` + `sha256(message, call, n)[:10]` (so a
 retried call sends the same payload) with one part `<id>-a`, 1 mark for a
-simple question, multiple-choice options in the order written (Epo
-2026-10-14, a trial: the server shuffled them from 2026-10-13, after the model
-wrote the answer first in 2 of 4 runs; `add_questions` and the editing skill
-now tell it to vary the correct option's position), layout `paper`, labels
-`letters`, and the explanation as the
+simple question, multiple-choice options shuffled in an order seeded by the
+question id (stable on a retry; the model wrote the answer first in 2 of 4
+runs on 2026-10-13, and on 2026-10-14, told to vary it, still put it first or
+second in 45 of 48 questions), layout `paper`, labels `letters`, and the
+explanation as the
 solution, an empty solution without one (only bank parts need one); there are
 no parts, no other answer types and no layout choice. The expanded questions
 go through the unchanged gateway routes: a new quiz through

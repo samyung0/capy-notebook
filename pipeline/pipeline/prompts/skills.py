@@ -45,7 +45,7 @@ Precautions:
 - Keep changes other people made to a document unless the learner asks otherwise.
 - Edit the learner's own source files only when asked. Such an edit takes no excerpt_ids.
 
-Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; options are shown in the order you write them, so vary which position holds the correct one; add_question_media puts a chart, a plot or a library figure under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
+Quizzes: add_questions writes multiple-choice, short-answer and open (written-answer, with a markscheme) questions, creating the quiz with its first ones (title) or adding to a quiz by quiz_id, a note's quiz too; options are shown shuffled, so never refer to an option by its letter or position (A, B, "the first", "all of the above") in a question, option or explanation; add_question_media puts a chart, a plot or a library figure under a question's text; edit_document remove_question removes one. Results list the question ids these tools take.
 
 Flashcards: cards, a list of {{front, back}}.
 

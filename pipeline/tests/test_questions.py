@@ -80,9 +80,15 @@ def test_the_shapes_expand_into_the_question_format_go_accepts():
     assert expanded == json.loads(EXPANDED.read_text(encoding="utf-8"))
     mcq, short, open_ = expanded[:3]
     answer = mcq["parts"][0]["answer"]
-    # Options keep the order written; the model varies the correct one's place
-    # (Epo 2026-10-14).
-    assert answer["options"] == MCQ["options"] and answer["correct"] == [0]
+    # Options are shuffled by the question id: the same order on a retry, and
+    # the correct index follows the option.
+    assert sorted(answer["options"]) == sorted(MCQ["options"])
+    assert answer["options"][answer["correct"][0]] == "Sodium"
+    assert answer == questions.expand("mcq", MCQ, mcq["id"])["parts"][0]["answer"]
+    assert any(
+        questions.expand("mcq", MCQ, f"q_{n}")["parts"][0]["answer"]["correct"] != [0]
+        for n in range(8)
+    ), "the written first option does not stay first"
     assert mcq["parts"][0]["solution"] == [
         {"type": "text", "text": "Voltage-gated sodium channels open first."}
     ]
@@ -752,10 +758,15 @@ def test_an_inspected_quiz_fence_reads_back_as_the_items_it_was_written_from():
     )
     assert not found.problems(), found.problems()
     again = json.loads(text.split("\n")[1])["questions"]
-    strip = lambda qs: [
-        {**q, "id": "", "parts": [{**q["parts"][0], "id": ""}]} for q in qs
-    ]
-    assert strip(again) == strip(stored)
+
+    # The same items come back; multiple-choice options are reshuffled by id.
+    def same(q: dict) -> dict:
+        item = questions.authored(q)
+        return (
+            {**item, "options": sorted(item["options"])} if "options" in item else item
+        )
+
+    assert [same(q) for q in again] == [same(q) for q in stored]
     # A question the fence form cannot write leaves the block as stored.
     stored[0]["stem"] = [{"type": "text", "text": "Context"}]
     assert (

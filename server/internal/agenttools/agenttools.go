@@ -84,8 +84,7 @@ import (
 // section) are gone (Epo 2026-10-14).
 // v29: the skills are editing, note_building and deck_building; insert_markdown
 // takes after_block_id "end"; create and edit receipts list the note blocks
-// they wrote (effect.blockIds); replace_card keeps a side it is not sent; a
-// multiple-choice question keeps its options in the order written (Epo
+// they wrote (effect.blockIds); replace_card keeps a side it is not sent (Epo
 // 2026-10-14).
 const ContractVersion = 29
 
@@ -746,8 +745,9 @@ func Definitions() []Definition {
 			Description: "Add questions to a quiz (quiz_id), or create a quiz with them (title). A " +
 				"question's fields make its kind: multiple choice (options, one correct) and short answer " +
 				"(accepted) are 1 mark each; an open question, answered in writing, has marks and a " +
-				"markscheme adding up to them, and a model_answer. Options show in the order written, " +
-				"so vary which position holds the correct one. The result lists each question's id. " +
+				"markscheme adding up to them, and a model_answer. Options are shown shuffled: never " +
+				`refer to one by its letter or position (A, B, "the first", "all of the above"). ` +
+				"The result lists each question's id. " +
 				`Example: {"title": "Osmosis", "questions": [{"question": "Which way does water move when ` +
 				`a red blood cell is put in pure water?", "options": ["Into the cell", "Out of the cell"], ` +
 				`"correct": "Into the cell", "explanation": "From the higher water potential outside."}, ` +
