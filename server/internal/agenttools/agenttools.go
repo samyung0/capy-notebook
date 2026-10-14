@@ -743,8 +743,8 @@ func Definitions() []Definition {
 		chatTool(Definition{
 			Name:      "add_questions",
 			Retention: RetainFull,
-			Description: "Add questions to a quiz (quiz_id), or create a quiz with them (title). A " +
-				"question's fields make its kind: multiple choice (options, one correct) and short answer " +
+			Description: "Add questions to a quiz (quiz_id), or create a quiz with them (title); read " +
+				"the editing skill before the first call. A question's fields make its kind: multiple choice (options, one correct) and short answer " +
 				"(accepted) are 1 mark each; an open question, answered in writing, has marks and a " +
 				"markscheme adding up to them, and optionally a model_answer. Options are shown shuffled: never " +
 				`refer to one by its letter or position (A, B, "the first", "all of the above"). ` +
