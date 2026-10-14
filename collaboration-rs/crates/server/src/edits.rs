@@ -163,10 +163,14 @@ impl From<tokio_postgres::Error> for DocumentError {
 impl From<sources::SourceError> for DocumentError {
     fn from(error: sources::SourceError) -> Self {
         match error {
-            sources::SourceError::Edit { code, message } => DocumentError::Edit {
+            sources::SourceError::Edit {
                 code,
                 message,
-                details: None,
+                details,
+            } => DocumentError::Edit {
+                code,
+                message,
+                details,
             },
             sources::SourceError::Request {
                 status, message, ..
@@ -618,9 +622,16 @@ fn compute(
         };
         let value = notes::plate::value(&txn).map_err(|error| unknown(error.to_string()))?;
         // A whole note the check refuses (an 11th interactive block across
-        // it) is a refusal naming the rule, as for a live item.
-        notes::material::assert_canonical(&value, &kind)
-            .map_err(|error| DocumentError::edit("invalid_input", error.to_string()))?;
+        // it) is a refusal naming the rule, as for a live item; logged, since
+        // a command that built a wrong document refuses the same way.
+        notes::material::assert_canonical(&value, &kind).map_err(|error| {
+            observe::log(
+                observe::Level::Warn,
+                "agent edit refused by the material check",
+                json!({ "error": error.0, "kind": kind }),
+            );
+            DocumentError::edit("invalid_input", error.to_string())
+        })?;
         let metrics = notes::limits::measure_value(&value);
         if let Some(code) = notes::limits::limit_code(&metrics)
             && !notes::limits::recovers(&metrics, Some(&previous))
@@ -1346,6 +1357,32 @@ mod tests {
     use serde_json::json;
 
     use super::{DocumentError, Model, Scratch, compute, compute_quiz};
+
+    /// A text source's ambiguous span keeps the lines it occurs in on its way
+    /// to the gateway: the notes refusal, the sources error, the body.
+    #[test]
+    fn a_text_source_refusal_keeps_its_lines() {
+        use yrs::{Text, Transact};
+        let doc = yrs::Doc::new();
+        let root = doc.get_or_insert_text("source");
+        root.insert(&mut doc.transact_mut(), 0, "a cat\na cat");
+        let command = notes::edit::DocumentCommand::ReplaceText {
+            block_id: None,
+            expected_text: "cat".into(),
+            text: "dog".into(),
+            offset: None,
+        };
+        let refusal = notes::edit::apply_text_commands(&mut doc.transact_mut(), &root, &[command])
+            .unwrap_err();
+        let (status, body) =
+            DocumentError::from(sources::SourceError::from(refusal)).status_and_body();
+        assert_eq!(status, 409);
+        assert_eq!(
+            body["details"],
+            json!({ "lines": [{ "start": 0, "text": "a cat" }, { "start": 6, "text": "a cat" }] }),
+            "{body}"
+        );
+    }
 
     /// A note edit whose result the whole-note check refuses (here an 11th
     /// interactive block across the note) is an `invalid_input` refusal

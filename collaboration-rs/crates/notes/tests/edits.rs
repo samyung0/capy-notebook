@@ -136,10 +136,9 @@ fn replay_step(
     };
     tally.steps += 1;
     let mut ours = outcome_json(&result);
-    // Every refused span carries its block (2026-10-14); Node's ambiguous
-    // and empty expected texts carried none.
-    if !text_source
-        && step["error"].get("details").is_none()
+    // Every refused material span carries its block and a text source's
+    // ambiguous one its lines (2026-10-14); Node's carried none.
+    if step["error"].get("details").is_none()
         && ours["error"]["message"]
             .as_str()
             .is_some_and(|m| m.starts_with("expected"))
@@ -316,6 +315,49 @@ fn ambiguous_spans_and_stale_properties_carry_the_current_target() {
             Some(json!({ "block": { "id": "m1", "text": source, "type": "mermaid" } })),
         )
     );
+}
+
+/// A text source's expected text that occurs more than once comes back with
+/// the line of each occurrence (`start`, its UTF-16 offset, as inspect pages
+/// lines), one per occurrence and at most 20; one not found carries nothing
+/// (Epo 2026-10-14).
+#[test]
+fn an_ambiguous_text_source_span_lists_the_lines_it_occurs_in() {
+    use yrs::Text as _;
+    let refusal = |text: &str, expected: &str| {
+        let doc = yrs::Doc::new();
+        let root = doc.get_or_insert_text("source");
+        root.insert(&mut doc.transact_mut(), 0, text);
+        let command = DocumentCommand::ReplaceText {
+            block_id: None,
+            expected_text: expected.into(),
+            text: "x".into(),
+            offset: None,
+        };
+        match edit::apply_text_commands(&mut doc.transact_mut(), &root, &[command]) {
+            Err(EditError::Edit {
+                message, details, ..
+            }) => (message, details),
+            other => panic!("expected a refusal, got {other:?}"),
+        }
+    };
+    let (message, details) = refusal("\u{1F600} cat\nthe cat and a cat\nend", "cat");
+    assert_eq!(
+        message,
+        "expected text occurs 3 times; include more context"
+    );
+    assert_eq!(
+        details,
+        Some(json!({ "lines": [
+            { "start": 0, "text": "\u{1F600} cat" },
+            { "start": 7, "text": "the cat and a cat" },
+            { "start": 7, "text": "the cat and a cat" },
+        ] }))
+    );
+    let lines = refusal(&"cat\n".repeat(25), "cat").1.unwrap()["lines"].clone();
+    assert_eq!(lines.as_array().map(Vec::len), Some(20));
+    assert_eq!(lines[19], json!({ "start": 76, "text": "cat" }));
+    assert_eq!(refusal("a cat", "dog").1, None);
 }
 
 /// A library figure arrives as an `img` naming the editor asset Go stored for

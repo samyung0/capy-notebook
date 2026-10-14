@@ -330,21 +330,38 @@ pub fn listing(blocks: &[InspectedBlock]) -> Value {
     json!({ "blocks": listed, "total": blocks.len() })
 }
 
-/// A refused span (stale, or an expected text that occurs more than once)
-/// carries the block as it reads now, so the retry needs no inspect.
+/// A refused span on a material (stale, or an expected text that occurs more
+/// than once) carries its block as it reads now, so the retry needs no
+/// inspect.
 fn with_current(error: EditError, block: &Value, text: &str) -> EditError {
     match error {
-        EditError::Edit {
-            code,
-            message,
-            details: None,
-        } => EditError::Edit {
+        EditError::Edit { code, message, .. } => EditError::Edit {
             code,
             message,
             details: Some(current_block(block, text.to_owned())),
         },
         other => other,
     }
+}
+
+/// How many occurrences an ambiguous span lists.
+const LISTED_LINES: usize = 20;
+
+/// An expected text that occurs more than once: the line each occurrence
+/// starts in, one per occurrence and at most [LISTED_LINES], as inspect
+/// pages a text source (`start`, the line's UTF-16 offset; its text without
+/// the newline), so the retry can add context (Epo 2026-10-14).
+fn occurrence_lines(text: &str, expected: &str) -> Value {
+    let lines: Vec<Value> = text
+        .match_indices(expected)
+        .take(LISTED_LINES)
+        .map(|(at, _)| {
+            let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+            let end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+            json!({ "start": len16(&text[..start]), "text": &text[start..end] })
+        })
+        .collect();
+    json!({ "lines": lines })
 }
 
 /// UTF-16 positions of the non-overlapping occurrences of `needle`.
@@ -577,9 +594,10 @@ fn resolve_span(
     match found.len() {
         0 => edit(StaleTarget, "expected text was not found in the target"),
         1 => Ok((found[0], length)),
-        n => edit(
+        n => edit_with(
             InvalidInput,
             format!("expected text occurs {n} times; include more context"),
+            occurrence_lines(current, expected),
         ),
     }
 }

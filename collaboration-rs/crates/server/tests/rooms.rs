@@ -1220,6 +1220,34 @@ async fn an_agent_read_of_a_source_shows_unsaved_typing_and_the_stored_text_with
     assert_eq!(view["text"], "hello", "{view}");
 }
 
+/// A text source's edit whose expected text occurs more than once refuses
+/// with the line of each occurrence, through the sources crate to the
+/// gateway (Epo 2026-10-14).
+#[tokio::test]
+async fn an_ambiguous_text_source_edit_lists_its_lines() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (user, file) = text_file(&env, &gateway, "the cat\nthe dog\n").await;
+    let edit = serde_json::json!({
+        "actorUserId": user,
+        "commands": [{ "type": "replace_text", "expectedText": "the", "text": "a" }],
+        "operation": { "id": format!("op_{file}"), "requestHash": "h1" },
+        "target": { "id": file, "kind": "source_file" },
+    });
+    let (status, refusal) = internal(server.port, "/internal/documents/edit", &edit).await;
+    assert_eq!(status, 409, "{refusal}");
+    assert_eq!(refusal["code"], "invalid_input", "{refusal}");
+    assert_eq!(
+        refusal["details"],
+        serde_json::json!({ "lines": [
+            { "start": 0, "text": "the cat" },
+            { "start": 8, "text": "the dog" },
+        ] }),
+        "{refusal}"
+    );
+}
+
 // ------------------------------------------------------------ source rooms
 
 /// A stand-in for the Go API's internal source routes, text files only: the

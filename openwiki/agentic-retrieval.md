@@ -3084,7 +3084,12 @@ empty or overlong one; 2026-10-14), a stale `set_mermaid` carries the source
 the diagram holds as its block's text, and an id that is gone carries the
 material's first 60 blocks with an 80-character preview and the total, as
 does an edit of a material rebuilt since it was read (its room schema moved,
-`edit::listing`). A text source's span refusals carry nothing yet. The pipeline keeps what this turn last inspected or wrote of each
+`edit::listing`). A text source's expected text that occurs more than once
+carries `lines`, the line each occurrence starts in (`{start, text}`, the
+line's UTF-16 offset as `inspect_document` pages lines; one per occurrence,
+at most 20), and one not found carries nothing (Epo 2026-10-14;
+`occurrence_lines` in `crates/notes/src/edit.rs`, through the sources
+crate's refusal). The pipeline keeps what this turn last inspected or wrote of each
 block (`ToolContext.seen_blocks`, applying its own `replace_text` edits) and
 adds "changed since you last saw it" when the block differs. An insert whose
 `after_block_id` is gone is not refused (decision 2026-10-09): when the same

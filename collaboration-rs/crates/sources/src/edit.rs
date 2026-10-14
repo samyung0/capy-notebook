@@ -59,6 +59,7 @@ fn edit_error(code: &str, message: impl Into<String>) -> SourceError {
     SourceError::Edit {
         code: code.into(),
         message: message.into(),
+        details: None,
     }
 }
 
@@ -70,12 +71,17 @@ fn parse<T: serde::de::DeserializeOwned>(value: Value, what: &str) -> Result<T, 
 impl From<notes::edit::EditError> for SourceError {
     fn from(error: notes::edit::EditError) -> Self {
         match error {
-            notes::edit::EditError::Edit { code, message, .. } => SourceError::Edit {
+            notes::edit::EditError::Edit {
+                code,
+                message,
+                details,
+            } => SourceError::Edit {
                 code: serde_json::to_value(code)
                     .ok()
                     .and_then(|code| code.as_str().map(str::to_owned))
                     .unwrap_or_else(|| "invalid_input".into()),
                 message,
+                details,
             },
             other => SourceError::Other(other.to_string()),
         }
@@ -522,7 +528,7 @@ mod tests {
         });
         assert!(matches!(
             office_error(refused),
-            SourceError::Edit { ref code, ref message } if code == "stale_target" && message == "the paragraph changed"
+            SourceError::Edit { ref code, ref message, .. } if code == "stale_target" && message == "the paragraph changed"
         ));
         let other = EngineError::Transient("Office engine process exited".into());
         assert!(matches!(office_error(other), SourceError::Engine(_)));
