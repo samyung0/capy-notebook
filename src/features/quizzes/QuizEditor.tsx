@@ -1,4 +1,4 @@
-import { useContext, useEffect } from 'react';
+import { type ReactNode, useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
@@ -27,10 +27,13 @@ import { QuizQuestionList } from './QuizPage';
 export function QuizEditor({
   quizId,
   title,
+  action,
   onStatusChange,
 }: {
   quizId: string;
   title: string;
+  /** Sits right of the title. */
+  action?: ReactNode;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
 }) {
   const rooms = useQuizRooms(quizId, { edit: true });
@@ -52,7 +55,10 @@ export function QuizEditor({
           <UndoButtons header manager={rooms.undo} />,
           headerActions
         )}
-      <h1 className="t-large-card-title">{title}</h1>
+      <div className="flex items-baseline gap-4">
+        <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+        {action}
+      </div>
       {rooms.recovery ? (
         <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
       ) : rooms.ready ? (

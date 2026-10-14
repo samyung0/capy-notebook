@@ -41,8 +41,8 @@ export function ContentActions({
   onDeleted,
   onMove,
   onShare,
-  propertiesClassName = 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm',
-  propertyLabelClassName = 'text-fg-muted',
+  propertiesClassName,
+  propertyLabelClassName,
   renameFieldLabel,
   renameTitle,
   readOnly = false,
@@ -228,64 +228,13 @@ export function ContentActions({
             />
           )}
 
-          <SimpleDialog
+          <ContentPropertiesDialog
+            className={propertiesClassName}
+            content={content}
+            labelClassName={propertyLabelClassName}
             onClose={() => setPropertiesOpen(false)}
             open={propertiesOpen}
-            title={m.content_properties_title({
-              kind:
-                content.type === 'file' ? m.common_file() : m.common_material(),
-            })}
-          >
-            <dl className={propertiesClassName}>
-              <Row
-                label={m.common_name()}
-                labelClassName={propertyLabelClassName}
-                value={content.name}
-              />
-              <Row
-                label={m.common_type()}
-                labelClassName={propertyLabelClassName}
-                value={content.kind.toUpperCase()}
-              />
-              {content.type === 'file' ? (
-                <>
-                  <Row
-                    label={m.common_size()}
-                    labelClassName={propertyLabelClassName}
-                    value={formatFileSize(content.sizeBytes ?? 0)}
-                  />
-                  <Row
-                    label={m.common_status()}
-                    labelClassName={propertyLabelClassName}
-                    value={content.status ?? 'ready'}
-                  />
-                  <Row
-                    label={m.common_added()}
-                    labelClassName={propertyLabelClassName}
-                    value={new Date(content.createdAt).toLocaleString()}
-                  />
-                </>
-              ) : (
-                <>
-                  <Row
-                    label={m.content_nodes()}
-                    labelClassName={propertyLabelClassName}
-                    value={String(content.nodeCount ?? '--')}
-                  />
-                  <Row
-                    label={m.content_max_depth()}
-                    labelClassName={propertyLabelClassName}
-                    value={String(content.maxDepth ?? '--')}
-                  />
-                  <Row
-                    label={m.common_created()}
-                    labelClassName={propertyLabelClassName}
-                    value={new Date(content.createdAt).toLocaleString()}
-                  />
-                </>
-              )}
-            </dl>
-          </SimpleDialog>
+          />
 
           <TrashConfirmDialog
             name={content.name}
@@ -307,6 +256,79 @@ export function ContentActions({
         </>
       )}
     </>
+  );
+}
+
+/** An item's properties: a file's size, status and upload time; a material's
+ * size, structure and creation time, each row only where the item has it. */
+export function ContentPropertiesDialog({
+  className = 'grid grid-cols-[auto_1fr] gap-x-6 gap-y-2 text-sm',
+  content,
+  labelClassName = 'text-fg-muted',
+  onClose,
+  open,
+}: {
+  className?: string;
+  content: ContentActionTarget;
+  labelClassName?: string;
+  onClose: () => void;
+  open: boolean;
+}) {
+  const file = content.type === 'file';
+  return (
+    <SimpleDialog
+      onClose={onClose}
+      open={open}
+      title={m.content_properties_title({
+        kind: file ? m.common_file() : m.common_material(),
+      })}
+    >
+      <dl className={className}>
+        <Row
+          label={m.common_name()}
+          labelClassName={labelClassName}
+          value={content.name}
+        />
+        <Row
+          label={m.common_type()}
+          labelClassName={labelClassName}
+          value={content.kind.toUpperCase()}
+        />
+        {content.sizeBytes !== undefined && (
+          <Row
+            label={m.common_size()}
+            labelClassName={labelClassName}
+            value={formatFileSize(content.sizeBytes)}
+          />
+        )}
+        {file && (
+          <Row
+            label={m.common_status()}
+            labelClassName={labelClassName}
+            value={content.status ?? 'ready'}
+          />
+        )}
+        {content.nodeCount !== undefined && (
+          <Row
+            label={m.content_nodes()}
+            labelClassName={labelClassName}
+            value={String(content.nodeCount)}
+          />
+        )}
+        {content.maxDepth !== undefined && (
+          <Row
+            label={m.content_max_depth()}
+            labelClassName={labelClassName}
+            value={String(content.maxDepth)}
+          />
+        )}
+        <Row
+          label={file ? m.common_added() : m.common_created()}
+          labelClassName={labelClassName}
+          value={new Date(content.createdAt).toLocaleString()}
+        />
+      </dl>
+    </SimpleDialog>
   );
 }
 

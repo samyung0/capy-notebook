@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useMe } from '@/api/hooks';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { SaveBanner } from '@/components/banners/SaveBanner';
@@ -20,6 +20,7 @@ import { useCards } from './liveSet';
 export function LiveFlashcards({
   setId,
   title,
+  action,
   onEmpty,
   onStatusChange,
   showTitle,
@@ -28,6 +29,8 @@ export function LiveFlashcards({
 }: {
   setId: string;
   title: string;
+  /** Sits right of the title. */
+  action?: ReactNode;
   onEmpty?: () => void;
   onStatusChange?: (status: NoteEditorStatus | null) => void;
   showTitle?: boolean;
@@ -69,7 +72,11 @@ export function LiveFlashcards({
           onReload={() => void room.reload()}
           state={snapshot.recovery.refused ? 'refused' : 'changed'}
         />
-        <FlashcardGrid cards={recovered} title={showTitle ? title : ''} />
+        <FlashcardGrid
+          action={action}
+          cards={recovered}
+          title={showTitle ? title : ''}
+        />
       </div>
     );
   // Opened offline (or the server failed): it joins once back.
@@ -77,7 +84,13 @@ export function LiveFlashcards({
     return <QueryPausedState />;
   if (!(room && snapshot.synced))
     return <Skeleton className="h-40 w-full rounded-card" />;
-  const grid = <FlashcardGrid cards={cards} title={showTitle ? title : ''} />;
+  const grid = (
+    <FlashcardGrid
+      action={action}
+      cards={cards}
+      title={showTitle ? title : ''}
+    />
+  );
   return (
     <div className="flex flex-col gap-4">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
@@ -85,6 +98,7 @@ export function LiveFlashcards({
         grid
       ) : (
         <FlashcardsEditor
+          action={action}
           onEmpty={onEmpty}
           room={room}
           setId={setId}

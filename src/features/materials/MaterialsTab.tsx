@@ -55,6 +55,8 @@ import {
 } from '@/features/materials/MaterialListCard';
 import { MaterialShareDialog } from '@/features/materials/MaterialShareDialog';
 import { CloneItemDialog } from '@/features/workspace/CloneItemDialog';
+import { ContentPropertiesDialog } from '@/features/workspace/ContentActions';
+import { toMaterialActionTarget } from '@/features/workspace/contentActionTarget';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import {
@@ -273,6 +275,7 @@ export function MaterialsTab({
     deleting?.workspaceId ?? ''
   );
   const [cloning, setCloning] = useState<MaterialListItem | null>(null);
+  const [inspecting, setInspecting] = useState<MaterialListItem | null>(null);
 
   // Stable while `frozen` holds, so the memoised cards skip a pick's render.
   const menuFor = useCallback(
@@ -280,23 +283,15 @@ export function MaterialsTab({
       const standalone = !item.workspaceId;
       const items: MenuItem[] = [];
       if (item.kind === 'quiz') {
-        items.push(
-          {
-            icon: 'quiz',
-            label: m.quiz_start(),
-            onClick: () =>
-              navigate({
-                params: { quizId: item.id },
-                to: '/quizzes/$quizId/attempt',
-              }),
-          },
-          {
-            icon: 'settings',
-            label: m.action_edit(),
-            onClick: () =>
-              navigate({ ...materialLink(item), search: { mode: 'edit' } }),
-          }
-        );
+        items.push({
+          icon: 'quiz',
+          label: m.action_study(),
+          onClick: () =>
+            navigate({
+              params: { quizId: item.id },
+              to: '/quizzes/$quizId/attempt',
+            }),
+        });
       } else if (item.kind === 'flashcards') {
         items.push({
           icon: 'flashcards',
@@ -306,12 +301,6 @@ export function MaterialsTab({
               params: { flashcardSetId: item.id },
               to: '/flashcards/$flashcardSetId',
             }),
-        });
-      } else {
-        items.push({
-          icon: 'newNote',
-          label: m.action_open(),
-          onClick: () => navigate(materialLink(item)),
         });
       }
       items.push({
@@ -331,6 +320,11 @@ export function MaterialsTab({
         icon: 'clone',
         label: m.action_clone(),
         onClick: () => setCloning(item),
+      });
+      items.push({
+        icon: 'help',
+        label: m.content_properties(),
+        onClick: () => setInspecting(item),
       });
       items.push({
         danger: true,
@@ -488,6 +482,13 @@ export function MaterialsTab({
             workspaceId: cloning.workspaceId,
           }}
           onClose={() => setCloning(null)}
+        />
+      )}
+      {inspecting && (
+        <ContentPropertiesDialog
+          content={toMaterialActionTarget(inspecting)}
+          onClose={() => setInspecting(null)}
+          open
         />
       )}
       <ConfirmDialog

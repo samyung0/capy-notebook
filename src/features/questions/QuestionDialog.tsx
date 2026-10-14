@@ -585,7 +585,7 @@ function QuestionDialogSession({
     return (
       <div
         className={cn(
-          'group relative flex min-w-0 rounded-button hover:bg-surface-hover-bg',
+          'group relative flex min-w-0 rounded-lg hover:bg-surface-hover-bg',
           drop?.key === key &&
             (drop.after
               ? 'after:absolute after:inset-x-0 after:bottom-0 after:h-0.5 after:bg-action-accent'
@@ -617,7 +617,7 @@ function QuestionDialogSession({
       >
         <button
           className={cn(
-            'grid w-full min-w-0 py-1.5 pr-9 pl-2 text-left text-sm md:pr-2',
+            'grid w-full min-w-0 py-1.5 pr-9 pl-2 text-left text-sm md:pr-2 md:pl-1',
             indented ? 'grid-cols-[1.5rem_minmax(0,1fr)]' : 'grid-cols-1',
             // A header row: tall enough for its menu button.
             item.kind === 'solution' && 'min-h-9 content-center'
@@ -668,7 +668,7 @@ function QuestionDialogSession({
         <Popover>
           {/* The file panel's hover actions: a faded backing over the text,
               the row's full height so a second line never shows below it. */}
-          <div className="scroll-fade-x absolute inset-y-0 right-0 animate-none! rounded-r-button bg-overlay pt-0.5 pr-0.5 pl-3 transition-opacity ease-(--motion-ease-smooth-out) [--scroll-fade-on:1] [--scroll-fade-start:12px] group-hover:bg-surface-hover-bg has-data-[state=open]:opacity-100 md:opacity-0 md:has-focus-visible:opacity-100 md:group-hover:opacity-100">
+          <div className="scroll-fade-x absolute inset-y-0 right-0 animate-none! rounded-r-lg bg-overlay pt-0.5 pr-0.5 pl-3 transition-opacity ease-(--motion-ease-smooth-out) [--scroll-fade-on:1] [--scroll-fade-start:12px] group-hover:bg-surface-hover-bg has-data-[state=open]:opacity-100 md:opacity-0 md:has-focus-visible:opacity-100 md:group-hover:opacity-100">
             <PopoverTrigger asChild>
               <ToolbarButton
                 className="hover:bg-transparent"
@@ -1130,7 +1130,7 @@ function QuestionDialogSession({
             </div>
             <div
               className={cn(
-                'min-w-0 space-y-1 md:block md:min-h-0 md:-translate-x-1 md:overflow-y-auto md:overscroll-contain md:border-divider md:border-r md:pr-4',
+                'min-w-0 space-y-1 md:block md:min-h-0 md:-translate-x-1 md:overflow-y-auto md:overscroll-contain md:border-divider md:border-r md:pr-4 md:pl-1',
                 mobileTab !== 'outline' && 'hidden'
               )}
             >
@@ -1240,7 +1240,7 @@ function QuestionDialogSession({
                     })}
                     {/* Learners only see what sits below the wave once they
                         check their answer. */}
-                    <div className="wavy-rule mx-2 my-2.5 text-line-strong" />
+                    <div className="wavy-rule mx-2 my-2.5 text-line-strong md:mx-1" />
                     {row(
                       { kind: 'solution', partId: part.id },
                       m.question_ui_worked_solution()

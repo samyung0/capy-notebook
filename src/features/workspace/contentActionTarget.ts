@@ -43,6 +43,7 @@ export function toMaterialActionTarget(
       ? { maxDepth: material.maxDepth, nodeCount: material.nodeCount }
       : {}),
     name: material.title,
+    ...('sizeBytes' in material ? { sizeBytes: material.sizeBytes } : {}),
     type: 'material',
   };
 }

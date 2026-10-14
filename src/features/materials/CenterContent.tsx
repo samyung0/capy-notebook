@@ -466,6 +466,7 @@ export function MaterialContent({
       <div className="h-full min-h-0 overflow-auto">
         <TabContent centered={centerQuiz}>
           <QuizEditor
+            action={<StudyLink kind="quiz" materialId={materialId} />}
             key={materialId}
             onStatusChange={onEditorStatusChange}
             quizId={materialId}
@@ -486,13 +487,14 @@ export function MaterialContent({
           <TabContent centered={centerQuiz}>
             {activeMode === 'edit' ? (
               <LiveFlashcards
+                action={<StudyLink kind="flashcards" materialId={materialId} />}
                 onStatusChange={onEditorStatusChange}
                 setId={materialId}
                 title={material.title}
               />
             ) : (
               <LiveSetGrid
-                action={<StudySetLink setId={materialId} />}
+                action={<StudyLink kind="flashcards" materialId={materialId} />}
                 material={material}
                 openCardId={target}
               />
@@ -694,7 +696,6 @@ function QuizPreview({
   target?: string;
   title: string;
 }) {
-  const navigate = useNavigate();
   const overBar = useContext(FloatingBarContext);
   useEffect(() => {
     if (!target) return;
@@ -716,12 +717,7 @@ function QuizPreview({
     <TabContent centered={centered}>
       <div className="mb-7 flex items-baseline gap-4">
         <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
-        <TitleAction
-          label={m.quiz_start()}
-          onClick={() =>
-            navigate({ params: { quizId }, to: '/quizzes/$quizId/attempt' })
-          }
-        />
+        <StudyLink kind="quiz" materialId={quizId} />
       </div>
       <QuizQuestionList disabled questions={questions} />
       <SourcesLine
@@ -732,16 +728,28 @@ function QuizPreview({
   );
 }
 
-function StudySetLink({ setId }: { setId: string }) {
+/** Study: a quiz's attempt or a set's study session, in View and Edit. */
+function StudyLink({
+  kind,
+  materialId,
+}: {
+  kind: 'quiz' | 'flashcards';
+  materialId: string;
+}) {
   const navigate = useNavigate();
   return (
     <TitleAction
-      label={m.flashcards_study()}
+      label={m.action_study()}
       onClick={() =>
-        navigate({
-          params: { flashcardSetId: setId },
-          to: '/flashcards/$flashcardSetId',
-        })
+        kind === 'quiz'
+          ? navigate({
+              params: { quizId: materialId },
+              to: '/quizzes/$quizId/attempt',
+            })
+          : navigate({
+              params: { flashcardSetId: materialId },
+              to: '/flashcards/$flashcardSetId',
+            })
       }
     />
   );

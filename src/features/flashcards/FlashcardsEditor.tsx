@@ -1,4 +1,4 @@
-import { useContext, useState } from 'react';
+import { type ReactNode, useContext, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Card } from '@/components/ui/Card';
@@ -12,6 +12,7 @@ import type {
 import { UndoButtons } from '@/features/collaboration/LiveItemControls';
 import { FileActionsTarget } from '@/features/files/fileModeContext';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { CardDialog } from './CardDialog';
 import { CardGrid, CardTile } from './CardView';
 import { addCard, isBlank, readCards, removeCard, useCards } from './liveSet';
@@ -25,6 +26,7 @@ export function FlashcardsEditor({
   status,
   setId,
   title,
+  action,
   onEmpty,
   showTitle = true,
   showUndo = true,
@@ -33,6 +35,8 @@ export function FlashcardsEditor({
   status: ItemRoomStatus;
   setId: string;
   title: string;
+  /** Sits right of the title. */
+  action?: ReactNode;
   /** Inside a note: removing the last card removes the embed block. A set
    * of its own keeps at least one card. */
   onEmpty?: () => void;
@@ -74,8 +78,17 @@ export function FlashcardsEditor({
         headerActions &&
         createPortal(<UndoButtons header manager={undo} />, headerActions)}
       {(showTitle || (showUndo && !headerActions)) && (
-        <div className="flex items-center gap-2">
-          {showTitle && <h1 className="t-large-card-title">{title}</h1>}
+        // Lined up with the set's View grid, so Study holds still across modes.
+        <div
+          className={cn(
+            'flex',
+            action ? 'items-baseline gap-4' : 'items-center gap-2'
+          )}
+        >
+          {showTitle && (
+            <h1 className="t-large-card-title min-w-0 flex-1">{title}</h1>
+          )}
+          {action}
           {showUndo && !headerActions && (
             <div className="ml-auto">
               <UndoButtons manager={undo} />

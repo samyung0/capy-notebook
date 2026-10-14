@@ -316,7 +316,7 @@ function ActiveFiles({
                 columns={[
                   { label: m.list_col_name(), sort: 'name' },
                   { label: m.create_filter_workspace(), sort: 'workspace' },
-                  { label: m.list_col_details(), sort: 'size' },
+                  { label: m.common_size(), sort: 'size' },
                   { label: m.files_sort_added(), sort: 'added' },
                 ]}
                 sorting={sorting}
