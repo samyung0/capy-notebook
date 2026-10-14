@@ -179,3 +179,24 @@ kept; whole-chapter withholding is the rule Epo approved.
   with the same repair rate, or keep Opus 5.5 medium where accuracy matters
   most. Opus 5.5 low saves 32% but leaves about one in six defects
   unrepaired; Sonnet 5.5 medium and Haiku 5.5 xhigh are not safe.
+
+## Round 3: Sonnet 5.5 high on rights with the final rules
+
+Epo asked whether one model, Sonnet 5.5 high, should run both steps. Rights
+screening is once per book while review covers every excerpt (about $0.08 an
+excerpt with Sonnet high, so $27–46 for books of 343–591 excerpts), so
+splitting the steps saves 3–6% of a book's cost. Sonnet 5.5 high reran the
+five books with the final brief (`rights-assignment-v3.md`):
+
+| Book | Sonnet 5.5 high | Best of round 2 |
+|---|---|---|
+| Manufacturing (110 withheld) | 108, +15 pages of the same chapters | 108, +20 |
+| #TheatreAppreciation | 7 of 8 pages, 22 of 22 image pages, no extras | same |
+| Media (29 pages, 8 image pages) | 27 (LUMA card text withheld as text spans on 72 and 75), 8 | 29, 6 (Opus low) / 25, 8 (Sonnet medium) |
+| Music | right, no exclusions, licence mismatch flagged | right |
+| OSS (6 pages, Reiners kept) | 5, nothing extra; Shane, Fitzpatrick and Deloitte withheld | 5 (Sonnet medium) |
+| Cost per book | $1.81 | $0.47–0.58 |
+
+The best rights result of any setting, with no false withholding and no
+missed restricted work. **Recommendation: Sonnet 5.5 high for the whole
+intake agent**, one model and one brief.
