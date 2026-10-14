@@ -318,9 +318,11 @@ fn ambiguous_spans_and_stale_properties_carry_the_current_target() {
 }
 
 /// A text source's expected text that occurs more than once comes back with
-/// the line of each occurrence (`start`, its UTF-16 offset, as inspect pages
-/// lines), one per occurrence and at most 20; one not found carries nothing
-/// (Epo 2026-10-14).
+/// the lines it occurs in (`start`, the line's UTF-16 offset, as inspect
+/// pages lines), each once and at most 20, a line's text cut after 1,000
+/// characters with a trailing `…`; one not found carries nothing (Epo
+/// 2026-10-14). A long line holding thousands of occurrences is listed once
+/// and cut, so the refusal stays small.
 #[test]
 fn an_ambiguous_text_source_span_lists_the_lines_it_occurs_in() {
     use yrs::Text as _;
@@ -351,7 +353,19 @@ fn an_ambiguous_text_source_span_lists_the_lines_it_occurs_in() {
         Some(json!({ "lines": [
             { "start": 0, "text": "\u{1F600} cat" },
             { "start": 7, "text": "the cat and a cat" },
-            { "start": 7, "text": "the cat and a cat" },
+        ] }))
+    );
+    let long = "\u{e9}cat ".repeat(5_000);
+    let (message, details) = refusal(&format!("{long}\nend cat"), "cat");
+    assert_eq!(
+        message,
+        "expected text occurs 5001 times; include more context"
+    );
+    assert_eq!(
+        details,
+        Some(json!({ "lines": [
+            { "start": 0, "text": format!("{}\u{2026}", "\u{e9}cat ".repeat(200)) },
+            { "start": 25_001, "text": "end cat" },
         ] }))
     );
     let lines = refusal(&"cat\n".repeat(25), "cat").1.unwrap()["lines"].clone();

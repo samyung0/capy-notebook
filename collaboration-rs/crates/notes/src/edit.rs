@@ -344,23 +344,37 @@ fn with_current(error: EditError, block: &Value, text: &str) -> EditError {
     }
 }
 
-/// How many occurrences an ambiguous span lists.
+/// How many lines an ambiguous span lists, and how many characters of each.
 const LISTED_LINES: usize = 20;
+const LISTED_LINE_CHARS: usize = 1000;
 
-/// An expected text that occurs more than once: the line each occurrence
-/// starts in, one per occurrence and at most [LISTED_LINES], as inspect
-/// pages a text source (`start`, the line's UTF-16 offset; its text without
-/// the newline), so the retry can add context (Epo 2026-10-14).
+/// An expected text that occurs more than once: the lines its occurrences
+/// start in, each once and at most [LISTED_LINES], as inspect pages a text
+/// source (`start`, the line's UTF-16 offset; its text without the newline,
+/// cut after [LISTED_LINE_CHARS] characters with a trailing `…`), so the
+/// retry can add context and the refusal stays small (Epo 2026-10-14).
 fn occurrence_lines(text: &str, expected: &str) -> Value {
-    let lines: Vec<Value> = text
-        .match_indices(expected)
-        .take(LISTED_LINES)
-        .map(|(at, _)| {
-            let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
-            let end = text[at..].find('\n').map_or(text.len(), |i| at + i);
-            json!({ "start": len16(&text[..start]), "text": &text[start..end] })
-        })
-        .collect();
+    let mut lines = Vec::new();
+    // The end of the last line listed, and the UTF-16 offset counted so far.
+    let (mut listed_end, mut counted, mut units) = (0, 0, 0);
+    for (at, _) in text.match_indices(expected) {
+        if at < listed_end {
+            continue;
+        }
+        if lines.len() == LISTED_LINES {
+            break;
+        }
+        let start = text[..at].rfind('\n').map_or(0, |i| i + 1);
+        listed_end = text[at..].find('\n').map_or(text.len(), |i| at + i);
+        units += len16(&text[counted..start]);
+        counted = start;
+        let line = &text[start..listed_end];
+        let shown = match line.char_indices().nth(LISTED_LINE_CHARS) {
+            Some((cut, _)) => format!("{}…", &line[..cut]),
+            None => line.to_owned(),
+        };
+        lines.push(json!({ "start": units, "text": shown }));
+    }
     json!({ "lines": lines })
 }
 

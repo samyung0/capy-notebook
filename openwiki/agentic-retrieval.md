@@ -3102,9 +3102,11 @@ the diagram holds as its block's text, and an id that is gone carries the
 material's first 60 blocks with an 80-character preview and the total, as
 does an edit of a material rebuilt since it was read (its room schema moved,
 `edit::listing`). A text source's expected text that occurs more than once
-carries `lines`, the line each occurrence starts in (`{start, text}`, the
-line's UTF-16 offset as `inspect_document` pages lines; one per occurrence,
-at most 20), and one not found carries nothing (Epo 2026-10-14;
+carries `lines`, the lines its occurrences start in (`{start, text}`, the
+line's UTF-16 offset as `inspect_document` pages lines; each line once, at
+most 20, its text cut after 1,000 characters with a trailing `…`, so a
+refusal stays far below Go's 8 MiB read), and one not found carries nothing
+(Epo 2026-10-14;
 `occurrence_lines` in `crates/notes/src/edit.rs`, through the sources
 crate's refusal). A DOCX or PPTX `replace_text` whose expected text is not
 in the paragraph, occurs in it more than once, or is empty in a paragraph
