@@ -1157,7 +1157,9 @@ performs the planned work:
 Image captions use the containing-resource associations described below.
 
 These B2 objects are reuse caches, not ingest success conditions. Each cache
-write makes three `put_object` attempts. If all three fail, the worker logs the
+write is one `put_object` through the pipeline's S3 client, which gives every
+call 3 attempts in all (botocore standard mode, its own retries included;
+`pipeline/pipeline/store/blobstore.py`). If all three fail, the worker logs the
 failure and continues indexing from the provider result already in memory. It
 does not register an artifact key. Database registration has the same
 best-effort rule. Updating `files.caption_blob_path` is diagnostic and follows
@@ -1749,8 +1751,9 @@ call: a file reaching `ready` (indexed, duplicate or stored-only) counts done
 and `failed` counts failed (`files.batch_id` is cleared, so a file counts
 once); an upload session expiring without a file (abandoned PUT, failed import)
 counts failed, as does an upload reservation or import request the handler
-refuses (other than the statuses the browser retries: 429 for uploads; 408, 429
-and 5xx for imports, whose exhausted retries are left to the idle sweep). The settle that reaches `total` writes the notification. The
+refuses (other than the statuses the browser retries, 3 attempts in all: 429
+for uploads; network errors, 408, 429 and 5xx for imports; a request whose
+attempts run out is left to the idle sweep). The settle that reaches `total` writes the notification. The
 API's `runSourceBatchWorker` polls every second: it closes batches idle for an
 hour (unsent or unsettled files count failed), then deletes notified rows and
 publishes their notifications to `notif:{userId}`.
@@ -3374,7 +3377,8 @@ counts as drift; the durable copy drops the room's server-owned contributor
 markers while the delta sent back to the room keeps them, so the room's own
 store still asserts each contributor's access. A source edit reads state and
 checkpoint from one session and commits with that checkpoint's CAS, so a
-commit landing in between conflicts and the edit retries from fresh state. There is no revision precondition: expected content compared under
+commit landing in between conflicts and the edit retries from fresh state,
+3 attempts in all. There is no revision precondition: expected content compared under
 the lock catches target drift, the lock and the source checkpoint CAS serialize
 concurrent commits, and the server-resolved room incarnation fences trash,
 restore and rebase. Each edit stores an inverse command list and target guards
@@ -3724,7 +3728,8 @@ marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
 of bytes an export-only publication left unindexed is reprocessed like its
 source. A pipeline ingest that adds the same content to the destination after
 the snapshot conflicts on `rag_contents` and the clone retries as a
-serialization failure. A standalone material has no index.
+serialization failure (3 attempts in all, see
+[authorization](authorization-permissions-lifecycles.md)). A standalone material has no index.
 
 That transaction uses one repeatable-read source snapshot. Only ready source
 files are copied; pending, processing, and failed rows are omitted. Ready editor

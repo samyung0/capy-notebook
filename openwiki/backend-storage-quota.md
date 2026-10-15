@@ -468,7 +468,10 @@ unloads or the log passes `max(256 KiB, state bytes)` or 1,000 rows; the
 document row keeps `log_bytes` and `log_rows`). Idle rooms whose state plus log
 is at least `max(256 KiB, material.size_bytes * 4)` are compaction candidates.
 Source documents keep the same log in `source_document_updates`, charged in
-`storage_bytes` with the state (migration 0075).
+`storage_bytes` with the state (migration 0075). A source save appends its row
+through the checkpoint compare-and-swap; a moved checkpoint re-reads the rows
+saved meanwhile and appends again, 3 attempts in all
+(`collaboration-rs/crates/sources/src/store.rs`).
 
 Source text states are not compacted. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not

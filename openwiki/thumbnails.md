@@ -140,8 +140,10 @@ the donor-reuse, content-reuse and indexed exits all reach it.
   `thumbnail` phase of the parse receipt. The worker's bundle check refuses a
   `page1.png` over 1 MiB.
 - Failure policy: any error is logged (`thumbnail capture failed`, structured,
-  with the trace id) and dropped. No retry, the job is already committed, and
-  the card keeps its icon or its previous thumbnail until the next capture.
+  with the trace id) and dropped. No retry: the PUT is one attempt
+  (`blobstore.put_object` uses an S3 client limited to one attempt, like Go's
+  `PutObjectOnce`), the job is already committed, and the card keeps its icon
+  or its previous thumbnail until the next capture.
 
 Measured on the developer PC (2026-10-11, three runs, median): the parse-side
 page render adds 3.4-37 ms to a PDF parse (a 27 MB textbook 21.5 ms) and

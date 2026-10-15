@@ -649,7 +649,10 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   source workspace/material as a source (a copy into the source's own workspace
   takes its row as the destination, like any write) or wait for Yjs
   persistence/projection; a stale SQL projection is an explicitly accepted
-  result. A transaction that loses a race retries. Clone counters live on separate
+  result. A transaction that loses a race (a serialization failure, 40001 or
+  40P01) runs again, 3 attempts in all; then the error goes to the user, who
+  can clone again (`retryClone` in `server/internal/store/share.go`). Clone
+  counters live on separate
   rows, while source-owner and target account locks are acquired in canonical ID
   order.
 - Referenced ready media of a cloned material is rehomed under fresh asset IDs
