@@ -19,14 +19,14 @@ Legend: **Y** works and a test shows it; **P** partial (see notes); **N** missin
 
 ## Fidelity against Office
 
-From the fork's Benchmarks workflow on BetterOffice `1a69c151` (not the pin `d5e297bf`): render similarity and page counts against Office's own renders of upstream's real-file corpus, next to upstream's latest release and LibreOffice (`bench/parity/fixtures/fidelity.md`).
+From the fork's Benchmarks workflow on BetterOffice `d5e297bf` (the pin): render similarity and page counts against Office's own renders of upstream's real-file corpus, next to upstream's latest release and LibreOffice (`bench/parity/fixtures/fidelity.md`).
 
-|  | BetterOffice (0.3.0) | BetterOffice (1a69c151) | LibreOffice (26.2.3.2) |
+|  | BetterOffice (0.3.0) | BetterOffice (d5e297bf) | LibreOffice (26.2.3.2) |
 |---|---|---|---|
 | SSIM | 0.7661 | 0.7660 | 0.6901 |
 | Scored/total | 207/208 | 207/208 | 204/208 |
 | Recalc accuracy | 99.60% | 99.60% | 85.87% |
-| Recalc time (avg) | 99 ms | 74 ms | 454 ms |
+| Recalc time (avg) | 97 ms | 72 ms | 449 ms |
 | Parse success | 100.00% | 100.00% | 100.00% |
 
 ## Features
