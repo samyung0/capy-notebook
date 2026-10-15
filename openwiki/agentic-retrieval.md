@@ -952,7 +952,11 @@ while the count rose is that document's `parse_oom` too; without a counted OOM
 kill it stays an ordinary failure. The window is the whole conversion (up to
 180 s), so a conversion that fails for another reason (a damaged file) while
 another process in the cgroup is OOM-killed is quarantined as `parse_oom` as
-well; such a file would fail its retry anyway. A SIGKILL without a counted OOM kill, or any
+well; such a file would fail its retry anyway. A conversion past
+`CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is final like the parse deadline: the
+document answers `parse_hard_timeout`, its fingerprint is quarantined and its
+parse child replaced, unless an OOM kill was counted meanwhile, which makes it
+`parse_oom`. A SIGKILL without a counted OOM kill, or any
 other child crash, is a `parser_runtime_failed` with one ordinary retry. An
 Office file whose bytes are not its suffix's container (ZIP for OOXML, OLE2 for
 the legacy formats) is refused before LibreOffice as the terminal

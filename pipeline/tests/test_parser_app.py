@@ -940,6 +940,10 @@ async def test_child_answers_are_read_as_data_never_unpickled(tmp_path: Path) ->
             parser_app.OfficeFormatMismatch,
         ),
         (parser_app.ParseTooManyPages("1500 pages"), parser_app.ParseTooManyPages),
+        (
+            parser_app.OfficeConversionTimeout("conversion exceeded 180 seconds"),
+            parser_app.OfficeConversionTimeout,
+        ),
         (parser_app.SourceUnreadable("no pages"), parser_app.SourceUnreadable),
         (ValueError("broken PDF"), RuntimeError),
     ],
@@ -1009,6 +1013,44 @@ async def test_a_count_that_fails_admits_uncounted_and_keeps_the_process(
     finally:
         await runtime.close()
     assert not list(parser_app.WORK_DIR.glob("transfer-*"))
+
+
+@pytest.mark.parametrize(
+    ("oom_kills", "code"), [(0, "parse_hard_timeout"), (1, "parse_oom")]
+)
+@pytest.mark.asyncio
+async def test_a_conversion_past_its_timeout_is_final_like_the_parse_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, oom_kills: int, code: str
+) -> None:
+    """A LibreOffice conversion past its timeout is a hard timeout: the
+    fingerprint is quarantined and the child replaced. An OOM kill counted
+    meanwhile still makes it parse_oom."""
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    kills = 0
+    monkeypatch.setattr(parser_app, "_cgroup_event_value", lambda _name: kills)
+
+    async def handler(_document):
+        nonlocal kills
+        kills += oom_kills
+        raise parser_app.OfficeConversionTimeout(
+            "LibreOffice conversion exceeded 180 seconds"
+        )
+
+    runtime, (child,), _ = _runtime(monkeypatch, handler)
+    await runtime.start()
+    try:
+        with pytest.raises(
+            (parser_app.ParseHardTimeout, parser_app.ParseOOM)
+        ) as raised:
+            await runtime.parse(parser_app.Document(b"PK", "deck.pptx", "deck-fp"))
+    finally:
+        await runtime.close()
+
+    assert json.loads(parser_app._failure_response(raised.value).body)["code"] == code
+    marker = json.loads((tmp_path / "quarantine" / "deck-fp.json").read_text())
+    assert marker["reason"] == code and child.terminations == 1
+    if code == "parse_hard_timeout":
+        assert "LibreOffice conversion exceeded 180 seconds" in str(raised.value)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="prctl is Linux")

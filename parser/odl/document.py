@@ -70,6 +70,11 @@ class OfficeConversionFailed(SourceUnreadable):
     kill when the cgroup's ``oom_kill`` count rose meanwhile)."""
 
 
+class OfficeConversionTimeout(RuntimeError):
+    """LibreOffice ran past its timeout: final like the parse deadline (or an
+    OOM kill, when the cgroup's ``oom_kill`` count rose meanwhile)."""
+
+
 @dataclass(frozen=True)
 class NormalizedDocument:
     data: bytes
@@ -139,7 +144,9 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             # soffice.bin outlives its killed launcher; end the whole group.
             os.killpg(process.pid, signal.SIGKILL)
             process.communicate()
-            raise
+            raise OfficeConversionTimeout(
+                f"LibreOffice conversion exceeded {OFFICE_CONVERT_TIMEOUT_S} seconds"
+            ) from None
         rendered = tmp / "source.pdf"
         if process.returncode != 0 or not rendered.is_file():
             detail = (stderr or stdout or "conversion failed").strip()

@@ -1809,7 +1809,9 @@ the host:
   locations (there are none), disables macros at the highest security level and
   sets Writer and Calc link updates to never. A conversion that exceeds
   `CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is killed with its whole process group,
-  so `soffice.bin` cannot outlive its launcher. Ingest, `/capture_page`, and
+  so `soffice.bin` cannot outlive its launcher, and the document fails as
+  `parse_hard_timeout` with its fingerprint quarantined, like a parse past its
+  deadline. Ingest, `/capture_page`, and
   Drive/OneDrive imports (which reach the parser as ordinary parse jobs) all
   convert through this one function. It ships with the parser image; nothing to
   apply by hand.

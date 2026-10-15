@@ -57,6 +57,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from odl.document import (
     OfficeConversionFailed,
+    OfficeConversionTimeout,
     OfficeFormatMismatch,
     SourceUnreadable,
 )
@@ -505,6 +506,7 @@ _CHILD_ERRORS: dict[str, type[Exception]] = {
         JavaTimeout,
         JavaKilled,
         OfficeConversionFailed,
+        OfficeConversionTimeout,
         OfficeFormatMismatch,
         ParseTooManyPages,
         SourceUnreadable,
@@ -1064,10 +1066,10 @@ class ParserRuntime:
         # document whose child, or Java inside it, died by SIGKILL while the
         # cgroup's oom_kill count rose is the one that was using the memory.
         # LibreOffice's launcher hides the signal its soffice.bin died by, so
-        # any failed conversion counts the same way.
-        killed = isinstance(exc, (JavaKilled, OfficeConversionFailed)) or (
-            isinstance(exc, _ChildExited) and exc.exitcode == -signal.SIGKILL
-        )
+        # any failed or timed-out conversion counts the same way.
+        killed = isinstance(
+            exc, (JavaKilled, OfficeConversionFailed, OfficeConversionTimeout)
+        ) or (isinstance(exc, _ChildExited) and exc.exitcode == -signal.SIGKILL)
         if killed and _cgroup_event_value("oom_kill") > work.oom_kills:
             slot.restart = True
             slot.process.terminate()
@@ -1077,9 +1079,13 @@ class ParserRuntime:
                 ParseOOM("parser cgroup killed a process because it ran out of memory"),
             )
             return
+        if isinstance(exc, OfficeConversionTimeout):
+            # Final like the parse deadline.
+            self._expire(slot, work, str(exc))
+            return
         work.future.set_exception(exc)
 
-    def _expire(self, slot: _Slot, work: _QueuedDocument) -> None:
+    def _expire(self, slot: _Slot, work: _QueuedDocument, detail: str = "") -> None:
         """The parse-stage deadline: stop only this slot's child."""
         if slot.work is not work or work.future.done():
             return
@@ -1088,7 +1094,9 @@ class ParserRuntime:
         _quarantine_and_fail(
             work,
             "parse_hard_timeout",
-            ParseHardTimeout(f"parse exceeded {PARSE_DOCUMENT_TIMEOUT_S} seconds"),
+            ParseHardTimeout(
+                detail or f"parse exceeded {PARSE_DOCUMENT_TIMEOUT_S} seconds"
+            ),
         )
 
     def _fail_ocr_stage(self, detail: str) -> None:
