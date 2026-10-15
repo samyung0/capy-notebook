@@ -145,7 +145,7 @@ days behind (frozen) or a few days behind (grace).
 
 ## Next journeys
 
-1. **Account deletion with content** (proposed, not approved yet): owner with an
+1. **Account deletion with content** (approved 2026-10-15; written as `accountDeletion.spec.ts`, not yet run on UAT): owner with an
    Office file, a note with an image, a member, and a clone held by another
    user. During the deletion grace the member gets 404 on the owner's items;
    after Clerk deletion the owner's objects are reaped, used bytes go to zero,
