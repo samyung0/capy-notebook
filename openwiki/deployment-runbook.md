@@ -1596,8 +1596,13 @@ document; a trimmed idle child holds about 0.55 GiB. The v14 rerun
 RapidOCR process) peaked at 8.6 of 14 GiB with five 1,400-page books and a
 150-page scan at once (v11: 13.1). Each book finished in under 400 s of the
 900 s deadline. One parse or OCR child
-reached 1.44 GiB RSS and 4.91 GiB virtual size, so a per-child RLIMIT_AS has to
-allow about 5 GiB plus headroom.
+reached 1.44 GiB RSS and 4.91 GiB virtual size; most of that was the RapidOCR
+process, which left the parser on 2026-10-15. With `MALLOC_ARENA_MAX=2` a parse
+child peaked at 0.64 GiB of virtual size, alone on the 1,400-page book and with
+five of them beside a 150-page scan (scenario C on a 14 GiB, 8-CPU container:
+6 of 6 parsed, peak 7.0 GiB), and LibreOffice at 0.88 GiB, so each child runs
+under a 2 GiB address-space limit (Java lifts it; its heap is bounded by
+`-Xmx`).
 
 Each of the four production ingest workers has a 1 CPU, 1 GiB RAM, 1.25 GiB
 total memory-plus-swap, and 128-process ceiling. A separate 120 MiB

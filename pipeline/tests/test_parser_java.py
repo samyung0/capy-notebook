@@ -54,6 +54,40 @@ def test_java_keeps_its_temporary_files_in_the_output_dir(tmp_path, monkeypatch)
     assert f"-Djava.io.tmpdir={out_dir}" in commands[0]
 
 
+@pytest.mark.skipif(sys.platform != "linux", reason="RLIMIT_AS is Linux")
+def test_java_runs_without_the_parse_childs_address_space_limit(tmp_path, monkeypatch):
+    """The parse child's soft limit is for MuPDF and LibreOffice; the JVM,
+    bounded by -Xmx, starts with it lifted to the hard limit."""
+    import os
+    import resource
+
+    monkeypatch.setattr(java, "jar_path", lambda: tmp_path / "parser.jar")
+    (tmp_path / "capy-odl.jar").write_bytes(b"")
+    monkeypatch.setattr(java, "ENTRY_JAR", tmp_path / "capy-odl.jar")
+    fake = tmp_path / "bin" / "java"
+    fake.parent.mkdir()
+    fake.write_text('#!/bin/sh\ngrep "Max address space" /proc/self/limits\nexit 1\n')
+    fake.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{fake.parent}{os.pathsep}{os.environ['PATH']}")
+    read, write = os.pipe()
+    pid = os.fork()
+    if pid == 0:  # a child with the parse child's soft limit
+        try:
+            _, hard = resource.getrlimit(resource.RLIMIT_AS)
+            resource.setrlimit(resource.RLIMIT_AS, (2 << 30, hard))
+            java.run(tmp_path / "document.pdf", tmp_path, timeout_s=60)
+        except RuntimeError as exc:
+            os.write(write, str(exc).encode())
+        finally:
+            os._exit(0)
+    os.close(write)
+    with os.fdopen(read) as answer:
+        message = answer.read()
+    os.waitpid(pid, 0)
+    assert "Max address space" in message
+    assert str(2 << 30) not in message and "unlimited" in message
+
+
 @pytest.fixture
 def source(monkeypatch):
     monkeypatch.setattr(refine.fonts, "repair_fonts", lambda data: (data, 0))
@@ -87,7 +121,6 @@ def test_reader_retry_preserves_source_encryption_in_a_fresh_directory(
         if len(calls) == 1:
             clock[0] = 2.0
             raise java.JavaPageTreeError("unknown type of page tree node")
-        (out_dir / "capy-images.json").write_text("{}")
         return {"number of pages": 1, "kids": []}
 
     monkeypatch.setattr(java, "run", run)
@@ -123,7 +156,6 @@ def test_reader_retry_is_bounded_and_leaves_other_outcomes_alone(
     def run(pdf, out_dir, *, timeout_s):
         calls.append(out_dir.name)
         if outcome == "success":
-            (out_dir / "capy-images.json").write_text("{}")
             return {"number of pages": 1, "kids": []}
         if outcome == "other-error":
             raise RuntimeError("unrelated parser failure")

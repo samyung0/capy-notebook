@@ -60,7 +60,7 @@ from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 # Bump when parse output changes: it names the output in the ingest donor key.
-PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v15"
+PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v16"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
     r"[0-9a-f]{40}", RELEASE_SHA
@@ -122,6 +122,12 @@ RESTART_BACKSTOP_S = 1.0
 # The kernel OOM-kills the highest oom_score first: a parse child (one document)
 # before the API.
 PARSE_OOM_SCORE_ADJ = 1000
+# Address space (a soft RLIMIT_AS) of a parse child and the LibreOffice it
+# starts; Java lifts it (odl/java.py), its heap bounded by -Xmx. A document
+# that needs more fails as parse_oom instead of crowding the other children.
+PARSE_CHILD_MAX_BYTES = 2 << 30
+# MuPDF's failed allocation, as PyMuPDF passes it on.
+_ALLOCATION_FAILED = re.compile(r"\b(?:m|c|re)alloc \([^)]*\) failed")
 # A child's answer on its pipe: a status and small payloads.
 # A longer one ends that child.
 MESSAGE_MAX_BYTES = 1 << 24
@@ -362,6 +368,17 @@ def _kill_session(sid: int) -> None:
             continue
 
 
+def _limit_address_space(limit: int) -> None:
+    """A soft limit, so a subprocess may lift it to the hard one."""
+    try:
+        import resource
+    except ImportError:
+        return  # Not POSIX.
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    soft = limit if hard == resource.RLIM_INFINITY else min(limit, hard)
+    resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+
+
 def _parse_worker_main(
     requests: Connection, responses: Connection, work_dir: str
 ) -> None:
@@ -372,6 +389,7 @@ def _parse_worker_main(
     except OSError:
         pass
     _set_oom_score_adj(PARSE_OOM_SCORE_ADJ)
+    _limit_address_space(PARSE_CHILD_MAX_BYTES)
     WORK_DIR = Path(work_dir)
 
     while True:
@@ -392,6 +410,11 @@ def _parse_worker_main(
             _write_worker_result(Path(result_path), result)
             _send(responses, "ok", None)
         except Exception as exc:  # noqa: BLE001 - returned to API supervisor
+            if isinstance(exc, MemoryError) or _ALLOCATION_FAILED.search(str(exc)):
+                exc = ParseOOM(
+                    f"the parse needed more than {PARSE_CHILD_MAX_BYTES >> 30} GiB "
+                    f"of address space: {exc}"
+                )
             _send_error(responses, exc)
         finally:
             document = result = None
@@ -411,6 +434,7 @@ _CHILD_ERRORS: dict[str, type[Exception]] = {
         ParseTooManyPages,
         ParseTooManyScannedPages,
         SourceUnreadable,
+        ParseOOM,
     )
 }
 
@@ -829,6 +853,12 @@ class ParserRuntime:
             return  # The deadline already answered and stopped this document.
         if isinstance(exc, JavaTimeout):
             self._expire(slot, work)
+            return
+        # Past the child's own address-space limit: this document asked for
+        # the memory. The child answered, so it is replaced, not killed.
+        if isinstance(exc, ParseOOM):
+            slot.restart = True
+            _quarantine_and_fail(work, "parse_oom", exc)
             return
         # The kernel kills the process with the highest oom_score, so a
         # document whose child, or Java inside it, died by SIGKILL while the

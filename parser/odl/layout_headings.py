@@ -39,7 +39,7 @@ import pymupdf
 
 from . import page_text
 from .list_headings import _compact
-from .pictures import _figure_clusters
+from .pictures import Drawings
 
 MAX_WORDS = 16
 MAX_RUN_ROWS = 3
@@ -315,12 +315,14 @@ def heading_lines(
     running: set[str],
     lines: list[dict],
     images: Sequence[pymupdf.Rect] = (),
+    drawings: Drawings | None = None,
 ) -> list[bool]:
     """Whether each of ``lines`` (``_lines(page)``) is part of a heading.
-    ``images`` are the parser's image and figure blocks on the page."""
+    ``images`` are the parser's image and figure blocks on the page;
+    ``drawings`` the document's drawing clusters (vector figures' own)."""
     flags = [False] * len(lines)
     index = {id(line): i for i, line in enumerate(lines)}
-    for run, reason in classify(page, facts, running, lines, images):
+    for run, reason in classify(page, facts, running, lines, images, drawings):
         if reason is None:
             for row in run:
                 for line in row["lines"]:
@@ -334,6 +336,7 @@ def classify(
     running: set[str],
     lines: list[dict],
     images: Sequence[pymupdf.Rect] = (),
+    drawings: Drawings | None = None,
 ) -> list[tuple[list[dict], str | None]]:
     """Every run of rows on the page with the reason it is not a heading, or
     None for a heading."""
@@ -352,9 +355,7 @@ def classify(
             + [r for r in images if abs(r) < 0.5 * area]
         )
     )
-    figures = cache(
-        lambda: [r for r, segments, _ in _figure_clusters(page) if segments >= 12]
-    )
+    figures = cache(lambda: [r for r, _, _ in (drawings or Drawings()).clusters(page)])
     out = [
         (run, _reason(run, rows, page, facts, running, pictures, figures))
         for run in _runs(rows, facts)
@@ -560,7 +561,10 @@ def _running(blocks: list[dict]) -> set[str]:
     return running
 
 
-def recall_headings(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+def recall_headings(
+    blocks: list[dict], document: pymupdf.Document, drawings: Drawings | None = None
+) -> list[dict]:
+    drawings = drawings or Drawings()
     facts = census(document)
     running = _running(blocks)
     images: defaultdict[int, list[pymupdf.Rect]] = defaultdict(list)
@@ -602,7 +606,9 @@ def recall_headings(blocks: list[dict], document: pymupdf.Document) -> list[dict
                 seen[lines[i]["style"]][level] += 1
             continue
         if flags is None:
-            flags = heading_lines(page, facts, running, lines, images[page_index])
+            flags = heading_lines(
+                page, facts, running, lines, images[page_index], drawings
+            )
             current = (page_index, lines, flags)
             if any(flags):
                 kept[page_index] = (lines, flags)

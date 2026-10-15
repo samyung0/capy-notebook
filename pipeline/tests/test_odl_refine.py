@@ -661,70 +661,33 @@ def test_wide_to_unicode_ranges_split_at_byte_blocks() -> None:
     assert text.count("beginbfrange") == 3
 
 
-def _place_image(page: pymupdf.Page, rect: tuple, key: int) -> None:
-    """A picture of three black bars (formula-like ink); ``key`` sets one pixel,
-    so equal keys are the same image."""
+def _place_image(page: pymupdf.Page, rect: tuple) -> None:
+    """A picture of three black bars (formula-like ink)."""
     pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 12), False)
     pixmap.set_rect(pixmap.irect, (255, 255, 255))
     for y in (3, 6, 9):
         pixmap.set_rect(pymupdf.IRect(0, y, 40, y + 1), (0, 0, 0))
-    pixmap.set_pixel(0, 0, (key, key, key))
     page.insert_image(rect, pixmap=pixmap, keep_proportion=False)
 
 
-def test_picture_triage_drops_slivers_and_discards_repeats() -> None:
+def test_picture_triage_drops_slivers() -> None:
     document = pymupdf.open()
-    for _ in range(6):
-        document.new_page(width=600, height=800)
-
-    objects: dict[int, int] = {}
-
-    def image(name: str, key: int, page: int, rect: tuple) -> dict:
-        # Badges by the image object ODL reports, the rest by the page's images.
-        _place_image(document[page], rect, key)
-        block = {"type": "image", "name": name, "page_idx": page, "bbox": _grid(rect)}
-        if name == "badge":
-            block["_native_id"] = len(objects)
-            objects[len(objects)] = document[page].get_images()[-1][0]
-        return block
-
-    # Same picture on five pages is a repeat; on four it is not.
-    badges = [image("badge", 1, p, (60, 80, 180, 160)) for p in range(5)]
-    icons = [image("icon", 2, p, (300, 80, 420, 160)) for p in range(4)]
-    figure = image("figure", 3, 5, (60, 80, 180, 160))
+    page = document.new_page(width=600, height=800)
     text = {
         "type": "text",
         "text": "prose",
         "page_idx": 0,
         "bbox": [100, 100, 300, 200],
     }
-    blocks = [
-        text,
-        image("rule", 4, 0, (60, 240, 300, 240.8)),  # 0.8 pt tall
-        image("bar", 5, 0, (0, 320, 600, 324)),  # 4 x 600 pt
-        *badges,
-        *icons,
-        figure,
-    ]
-    result = pictures.classify(blocks, document, objects)
-    assert result == [
-        text,
-        *({**badge, "type": "discarded"} for badge in badges),
-        *icons,
-        figure,
-    ]
-
-
-def test_a_picture_mupdf_cannot_decode_falls_back_to_page_matching() -> None:
-    document = pymupdf.open()
-    page = document.new_page(width=600, height=800)
-    rect = (60, 80, 180, 160)
-    _place_image(page, rect, 1)
-    xref = page.get_images()[-1][0]
-    document.xref_set_key(xref, "ColorSpace", "/NoSuchSpace")
-    block = {"type": "image", "page_idx": 0, "bbox": _grid(rect), "_native_id": 0}
-
-    assert pictures.classify([block], document, {0: xref}) == [block]
+    blocks = [text]
+    for name, rect in (
+        ("rule", (60, 240, 300, 240.8)),  # 0.8 pt tall
+        ("bar", (0, 320, 600, 324)),  # 4 x 600 pt
+        ("figure", (60, 80, 180, 160)),
+    ):
+        _place_image(page, rect)
+        blocks.append(_picture(name, 0, rect))
+    assert pictures.classify(blocks, document) == [text, blocks[-1]]
 
 
 def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
@@ -797,6 +760,179 @@ def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
     # stays in the body and the grid is untouched.
     assert figure["figure_labels"] == ["Peak", "Time (t)"]
     assert result[2:] == [gain, *cells]
+
+
+def _pairwise_clusters(page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
+    """Vector-figure grouping as it ran before the grid: every path against
+    every cluster, then a merge pass restarted after each merge."""
+    width, height = page.rect.width, page.rect.height
+    clusters: list[list] = []
+    for path in page.get_cdrawings():
+        x0, y0, x1, y1 = path["rect"]
+        w, h = x1 - x0, y1 - y0
+        if (w < 0.5 and h < 0.5) or (w >= 0.9 * width and h >= 0.9 * height):
+            continue
+        if (h <= 1.5 and w >= 0.3 * width) or (w <= 1.5 and h >= 0.3 * height):
+            continue
+        if path.get("fill") == (1.0, 1.0, 1.0) and not path.get("color"):
+            continue
+        rect = pymupdf.Rect(x0, y0, max(x1, x0 + 0.5), max(y1, y0 + 0.5))
+        grown = rect + (-8, -8, 8, 8)
+        hits = [c for c in clusters if c[0].intersects(grown)]
+        items = path.get("items") or ()
+        merged = [rect, len(items) or 1, sum(map(pictures._axis_aligned, items))]
+        for cluster in hits:
+            merged[0] |= cluster[0]
+            merged[1] += cluster[1]
+            merged[2] += cluster[2]
+            clusters.remove(cluster)
+        clusters.append(merged)
+    changed = True
+    while changed:
+        changed = False
+        for a in clusters:
+            for b in clusters:
+                if a is not b and a[0].intersects(b[0]):
+                    a[0] |= b[0]
+                    a[1] += b[1]
+                    a[2] += b[2]
+                    clusters.remove(b)
+                    changed = True
+                    break
+            if changed:
+                break
+    return [tuple(cluster) for cluster in clusters]
+
+
+def _strokes(page: pymupdf.Page, lines: list[tuple]) -> None:
+    """Each line its own drawing path."""
+    shape = page.new_shape()
+    for start, end in lines:
+        shape.draw_line(start, end)
+        shape.finish(closePath=False)
+    shape.commit()
+
+
+def _merging_late(dots: int, groups: int) -> pymupdf.Document:
+    """A page of separate dots, then groups whose merged box covers a stroke
+    the path-by-path pass left alone, so the last pass must merge them."""
+    side = int(dots**0.5) + 1
+    document = pymupdf.open()
+    page = document.new_page(width=2700, height=side * 12 + 140 * (groups // 20 + 2))
+    _strokes(
+        page,
+        [
+            ((x, y), (x + 1, y + 1))
+            for x, y in (
+                (10 + 12 * (i % side), 10 + 12 * (i // side)) for i in range(dots)
+            )
+        ],
+    )
+    for k in range(groups):
+        ox, oy = 10 + 130 * (k % 20), side * 12 + 30 + 130 * (k // 20)
+        # Two tall strokes, one between them, then one joining their tops.
+        _strokes(
+            page,
+            [
+                ((ox + a, oy + b), (ox + c, oy + d))
+                for a, b, c, d in (
+                    (0, 0, 2, 100),
+                    (100, 0, 102, 100),
+                    (50, 50, 51, 51),
+                    (2, 0, 100, 2),
+                )
+            ],
+        )
+    return document
+
+
+def _chart_page(document: pymupdf.Document, segments: int = 20) -> pymupdf.Page:
+    page = document.new_page(width=600, height=800)
+    page.draw_line((100, 100), (100, 300))
+    page.draw_line((100, 300), (400, 300))
+    step = 300 / segments
+    _strokes(
+        page,
+        [
+            (
+                (100 + step * i, 300 - 90 * (i % 5) / 4),
+                (100 + step * (i + 1), 300 - 90 * ((i + 1) % 5) / 4),
+            )
+            for i in range(segments)
+        ],
+    )
+    return page
+
+
+def _clusters(found: list[tuple]) -> list[tuple]:
+    return [(tuple(rect), segments, aligned) for rect, segments, aligned in found]
+
+
+def test_grid_clusters_equal_the_pairwise_grouping() -> None:
+    document = pymupdf.open()
+    _chart_page(document)
+    # Frames holding marks, an L whose box takes in a mark the path-by-path
+    # pass reaches only through the box, and separate marks in reading order.
+    page = document.new_page(width=600, height=800)
+    page.draw_rect((50, 50, 250, 150))
+    page.draw_rect((70, 70, 90, 90), fill=(0, 0, 0))
+    _strokes(
+        page,
+        [((300, 50), (302, 250)), ((302, 250), (500, 252)), ((480, 60), (481, 61))],
+    )
+    _strokes(page, [((60 + 30 * i, 600), (70 + 30 * i, 610)) for i in range(12)])
+    page.draw_rect((0, 0, 600, 800), color=None, fill=(1, 1, 1))  # white fill
+    _strokes(page, [((20, 700), (580, 700.5))])  # a page-wide rule
+    late = _merging_late(60, 12)
+    for page in [*document, *late]:
+        assert _clusters(pictures._figure_clusters(page, pictures.Drawings())) == (
+            _clusters(_pairwise_clusters(page))
+        )
+
+
+def test_clusters_that_keep_merging_take_steps_linear_in_the_paths() -> None:
+    page = _merging_late(400, 40)[0]
+    drawings = pictures.Drawings()
+    found = pictures._figure_clusters(page, drawings)
+    spent = pictures.VECTOR_MAX_STEPS - drawings.left
+    # 560 paths; the pairwise grouping compares millions of boxes here.
+    assert spent < 50 * 560
+    assert len(found) == 400 + 40 and sum(s for _, s, _ in found) == 560
+
+
+def test_a_dense_drawing_stays_one_figure() -> None:
+    document = pymupdf.open()
+    _chart_page(document, segments=6000)
+    blocks = [
+        {
+            "type": "text",
+            "text": "Intro.",
+            "page_idx": 0,
+            "bbox": _grid((100, 60, 400, 80)),
+        }
+    ]
+    result = pictures.add_vector_figures(blocks, document)
+    assert [b.get("_source_role") for b in result] == [None, "vector-figure"]
+
+
+def test_drawing_steps_are_a_backstop_for_the_whole_document() -> None:
+    """Past the document's steps, that page and every later one have no
+    clusters, for vector figures and heading recall alike; text is kept."""
+    document = _merging_late(100, 4)
+    _chart_page(document)
+    blocks = [
+        {
+            "type": "text",
+            "text": "Intro.",
+            "page_idx": 1,
+            "bbox": _grid((100, 60, 400, 80)),
+        }
+    ]
+    assert len(pictures.add_vector_figures(blocks, document)) == 2
+
+    drawings = pictures.Drawings(steps=200)
+    assert pictures.add_vector_figures(blocks, document, drawings) == blocks
+    assert drawings.clusters(document[0]) == drawings.clusters(document[1]) == []
 
 
 @pytest.mark.parametrize(
@@ -880,7 +1016,7 @@ def test_formula_pictures_pass_the_six_precision_tests(
     elif case != "blank":
         _bars(page, rect, (1, 0, 0) if case == "colour" else (0, 0, 0))
     block = _picture("p.png", 0, rect)
-    [result] = pictures.classify([block], document, {})
+    [result] = pictures.classify([block], document)
     if case == "formula":
         assert result == {**block, "type": "equation", "text": "", "_picture": "inline"}
     else:
@@ -905,7 +1041,7 @@ def test_formula_pictures_skip_tall_lines_and_tall_pictures(tmp_path: Path) -> N
         _picture("a.png", 0, beside_tall_line),
         _picture("b.png", 0, tall),
     ]
-    assert pictures.classify(blocks, document, {}) == blocks
+    assert pictures.classify(blocks, document) == blocks
 
 
 def test_formula_pictures_are_placed_in_text_or_as_their_own_block(
@@ -934,7 +1070,7 @@ def test_formula_pictures_are_placed_in_text_or_as_their_own_block(
         _picture("pair.png", 0, repeated_pair),
         {**ambiguous, "page_idx": 0, "bbox": _grid((60, 389, 240, 403))},
     ]
-    result = pictures.classify(blocks, document, {})
+    result = pictures.classify(blocks, document)
     result = pictures.place_inline(result, document)
     # The unplaced pair carries its own placeholder after its paragraph; the
     # hostless one keeps its place in reading order.
@@ -968,7 +1104,7 @@ def test_formula_pictures_in_list_items_match_whole_words(tmp_path: Path) -> Non
         _picture("second.png", 0, second),
         {**listed, "bbox": _grid((60, 89, 170, 117))},
     ]
-    result = pictures.classify(blocks, document, {})
+    result = pictures.classify(blocks, document)
     result = pictures.place_inline(result, document)
     assert [(b["type"], b.get("text"), b.get("name")) for b in result] == [
         ("equation", "", "first.png"),
@@ -993,40 +1129,7 @@ def test_formula_pictures_skip_rotated_pages(tmp_path: Path) -> None:
         **_picture("p.png", 0, INLINE),
         "bbox": [x0 / 0.8, y0 / 0.6, x1 / 0.8, y1 / 0.6],
     }
-    assert pictures.classify([block], document, {}) == [block]
-
-
-def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words() -> (
-    None
-):
-    document = pymupdf.open()
-    glyph, badge, tall = (105, 91, 125, 101), (260, 91, 290, 101), (385, 86, 405, 106)
-    blocks = []
-    for p in range(5):
-        page = document.new_page(width=600, height=800)
-        page.insert_text((60, 100), f"alpha{p} is", fontsize=10)
-        page.insert_text((130, 100), f"beta{p} and", fontsize=10)
-        page.insert_text((190, 100), "licensed under", fontsize=10)
-        page.insert_text((295, 100), "CC BY", fontsize=10)
-        page.insert_text((340, 100), f"gamma{p}", fontsize=10)
-        page.insert_text((410, 100), f"delta{p}", fontsize=10)
-        for key, rect in enumerate((glyph, badge, tall)):
-            _place_image(page, rect, key)
-        blocks += [
-            _picture("glyph", p, glyph),
-            _picture("badge", p, badge),
-            _picture("tall", p, tall),
-        ]
-    result = pictures.classify(blocks, document, {})
-    assert [(b["type"], b["name"]) for b in result] == [
-        (kind, name)
-        for _ in range(5)
-        for kind, name in (
-            ("equation", "glyph"),
-            ("discarded", "badge"),
-            ("discarded", "tall"),
-        )
-    ]
+    assert pictures.classify([block], document) == [block]
 
 
 def test_pages_without_a_text_layer_are_listed_for_the_vlm() -> None:

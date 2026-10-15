@@ -304,7 +304,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v15` plus the release SHA (the donor key uses the first
+`odl-2.5.7-refined-vlm-v16` plus the release SHA (the donor key uses the first
 part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
@@ -330,10 +330,11 @@ Parser v7 (decision 2026-09-24; evidence in
   split by `|`.
 - **Picture triage** (`pictures.classify`, right after adaptation). An image
   block with a side under 1 pt, or a short side under 1% of its long side, is
-  dropped: rules and spacer pixels drawn as images. The same rendered picture
-  on 5 or more pages becomes `discarded` furniture. Other pictures stay image
-  blocks until v12 retypes formula pictures (below). Triage reads ODL's image
-  files in the parse work directory; no image bytes leave it.
+  dropped: rules and spacer pixels drawn as images. Other pictures stay image
+  blocks until v12 retypes formula pictures (below). Until v16 the same picture
+  (by MuPDF's image digest) on 5 or more pages became `discarded` furniture,
+  which kept logos and badges from being captioned; captioning is gone, so the
+  parser no longer marks repeats or digests any image (decision 2026-10-15).
 
 Parser v8 (decision 2026-09-24; gate in
 `bench/parsers/reports/2026-09-24-parser-v8-gate.md`) adds:
@@ -576,7 +577,22 @@ empty tables, plus the speed work and the Java entry point:
 - **Vector figures** (`pictures.add_vector_figures`, after picture triage).
   veraPDF chunks placed images only, so a diagram drawn with paths reached the
   index as loose labels. Drawing paths within 8 pt of each other form a
-  cluster (page-wide rules, frames and white fills excluded). A cluster of at
+  cluster (page-wide rules, frames and white fills excluded): each path in
+  turn joins every cluster whose box its own box, grown by 8 pt, meets, then
+  clusters whose boxes meet merge until none do. Since v16 a grid of 16 pt
+  cells holds each cluster's box and union-find tracks the merges, so a path
+  is compared only with the clusters in the cells it covers and nothing is
+  rescanned (the grouping is the earlier all-pairs one, checked page for page
+  on the bench corpus and 288 library books; decision 2026-10-15). A cluster
+  spanning more than 64 cells stays out of the grid and is compared with every
+  path, as is every cluster for a path whose grown box spans more cells than
+  there are clusters. Clustering stays near linear in the paths: 5,000
+  separate strokes take 0.13 s where the all-pairs scan took 94 s, and the
+  books' clustering time fell from 220 to 86 s. A backstop of 20 million steps
+  per document (`VECTOR_MAX_STEPS`: a grid cell read or written, a box
+  compared; the costliest library book takes 10.6 million) ends clustering for
+  the rest of a document past it. Layout heading recall reads the same
+  clusters (`Drawings`, each page's computed once per document). A cluster of at
   least 3% of the page and 12 path segments, with words covering at most 25%
   of it and clear of image, table and equation blocks, becomes an `image`
   block with `_source_role: vector-figure`. Text blocks inside it, and short
@@ -705,14 +721,8 @@ empty tables, plus the speed work and the Java entry point:
   "Preface" head elsewhere, and changed no other path.
 ODL runs as a library under `parser/java/CapyMain.java` (built by
 `parser/java/build.sh`, in the image by a JDK build stage; the runtime keeps a
-JRE): the same options and JSON as ODL's CLI, plus `capy-images.json`, the PDF
-object of the image each picture element draws. veraPDF resolves it while
-parsing; picture triage digests each object once instead of replaying every
-page in MuPDF to find its images (18.6 s of the textbook's parse), and replays
-only pages with inline images, where an exact box key (the image's
-placement) answers almost every picture: a 3,311-page manual has pages with
-17,561 inline-image pictures, which an all-pairs overlap search turned into
-hours.
+JRE): the same options and JSON as ODL's CLI, one document per JVM, which
+exits without ODL's static cleanup.
 
 Speed (same output). Inside `parse_pdf`, `page_text.session` extracts each
 page's text once: the first stage to read a page takes MuPDF's `rawdict` and
@@ -886,6 +896,16 @@ persistent spawned parse child owns LibreOffice, Java and the repairs for one
 document at a time, in its own session (`setsid`; LibreOffice runs in its own
 process group inside it) with Linux `oom_score_adj` 1000 and a work directory
 `slot-N` under `CAPY_PARSE_WORK_DIR` that is wiped when the child is respawned.
+The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
+`PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java lifts it to the hard
+limit when it starts, its heap bounded by `-Xmx` (decision 2026-10-15). The
+container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice with
+it too, so the multithreaded LibreOffice and JVM reserve far less address
+space: LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to
+0.52 GiB, and without the setting that workbook fails to convert under the
+limit. A parse child reached 0.64 GiB on a 1,400-page book. A parse that needs more address space fails in the child (Python's
+`MemoryError` or MuPDF's failed `malloc`) and answers `parse_oom`: its
+fingerprint is quarantined and the child replaced before the next document.
 Mode-0600 temporary files carry the source and the result (JSON, then the
 repaired PDF and page-image bytes, then one JPEG per text-less page, each after
 its length); small pipe messages carry only status and paths. Children answer in JSON (an answer over 16 MiB ends that
@@ -893,7 +913,8 @@ child), and the API never unpickles anything a child writes; it refuses a
 result file larger than a bundle may expand to, or one listing more text-less
 pages than the cap. The errors it classifies (a
 Java timeout or kill, a failed or timed-out LibreOffice conversion, a format
-mismatch, both page caps, an unreadable source) keep their kind by name; any other arrives as a runtime error naming
+mismatch, both page caps, an unreadable source, a parse past the address-space
+limit) keep their kind by name; any other arrives as a runtime error naming
 its type. The API opens nothing a child wrote with MuPDF: an Office source's
 page evidence is computed in the parse child from its own parse, without the
 VLM-read pages (their text arrives later, in ingest). The API process makes
@@ -959,8 +980,7 @@ ingest reads: image blocks keep their geometry and caption but no file, since
 figures are reached at question time by rendering the source page
 (`capture_page`). ODL runs with `--format json --image-output off`: it writes no
 image files or Markdown (decoding and re-encoding every picture was 85% of its
-time on a figure-heavy textbook), and picture triage identifies repeats by
-MuPDF's image digest instead. The worker rejects any
+time on a figure-heavy textbook). The worker rejects any
 other entry. Office bundles contain no PDF. The parser freezes page text and visible-heading proofs before
 discarding the temporary conversion, preserving downstream confidence/heading checks.
 The evidence leaves out the VLM-read pages, so a heading on an image-only page
@@ -1226,9 +1246,10 @@ figures stage) both run. There are three kinds:
 - `parser_image`: the parser's image and chart blocks. Blocks 2 units or
   thinner on the 0-1000 grid are left out; they are formula bars and rules
   drawn as images (decision 2026-09-23). Parser v7 already drops images under
-  1 pt and types pictures repeated on 5 or more pages `discarded`, and v12
-  retypes formula pictures `equation`; this stage reads neither. The 2-unit
-  rule stays for older parses.
+  1 pt and v12 retypes formula pictures `equation`; this stage reads neither.
+  From v16 the parser no longer types pictures repeated on 5 or more pages
+  `discarded`, so a book parsed again keeps its repeated logos and badges as
+  `parser_image` records. The 2-unit rule stays for older parses.
 - `caption_page_reference`: `Figure N:` caption lines with no image block and
   no vector drawing they label, boxed as the whole page.
 - `vector_drawing`: drawings in the source PDF that the parser does not report

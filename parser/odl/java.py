@@ -2,7 +2,7 @@
 
 ODL runs as a library under ``parser/java/CapyMain.java`` (built by
 ``parser/java/build.sh``; the image sets ``CAPY_ODL_ENTRY_JAR``): the same
-options and JSON as ODL's CLI, plus the facts the JSON leaves out.
+options and JSON as ODL's CLI, one document per JVM.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from pathlib import Path
 # The lab configuration: cluster table detection, header and footer blocks kept,
 # one Java worker thread (more threads gave the same output and no speed). JSON
 # only and no image files: decoding and re-encoding every picture was 85% of
-# ODL's time on a figure-heavy textbook, and only their digests were used.
+# ODL's time on a figure-heavy textbook, and the parser reads none.
 ODL_FLAGS = (
     "--format",
     "json",
@@ -58,6 +58,16 @@ def jar_path() -> Path:
     )
 
 
+def _lift_address_space() -> None:
+    """The parse child's soft address-space limit is for MuPDF and
+    LibreOffice; -Xmx bounds the JVM, which reserves far more address space
+    than it uses."""
+    import resource
+
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    resource.setrlimit(resource.RLIMIT_AS, (hard, hard))
+
+
 def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
     """Parse ``pdf`` into ``out_dir`` and return the native JSON tree.
 
@@ -90,6 +100,8 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
             errors="replace",
             timeout=timeout_s,
             check=False,
+            # The parse child runs no other thread, so preexec_fn is safe.
+            preexec_fn=_lift_address_space if os.name == "posix" else None,
         )
     except subprocess.TimeoutExpired as exc:
         raise JavaTimeout(f"OpenDataLoader exceeded {timeout_s:.0f} seconds") from exc
@@ -106,10 +118,3 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         )
     native_path = out_dir / f"{pdf.stem}.json"
     return json.loads(native_path.read_text(encoding="utf-8"))
-
-
-def image_objects(out_dir: Path) -> dict[int, int]:
-    """JSON element id -> PDF object number of the image a picture draws
-    (inline images have none), as CapyMain wrote it."""
-    raw = json.loads((out_dir / "capy-images.json").read_text(encoding="utf-8"))
-    return {int(key): value for key, value in raw.items()}

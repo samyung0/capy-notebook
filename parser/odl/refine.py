@@ -118,10 +118,10 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
             native,
             [{"width": p.rect.width, "height": p.rect.height} for p in document],
         )
-        blocks = step(pictures.classify)(
-            blocks, document, java.image_objects(native_dir)
-        )
-        blocks = step(pictures.add_vector_figures)(blocks, document)
+        blocks = step(pictures.classify)(blocks, document)
+        # One document's drawing clusters, for vector figures and heading recall.
+        drawings = pictures.Drawings()
+        blocks = step(pictures.add_vector_figures)(blocks, document, drawings)
         blocks, reordered = step(order.repair)(blocks)
         blocks = step(order.move_rotated_labels)(blocks, reordered, pdf)
         blocks = step(order.split_continuations)(blocks, reordered, pdf)
@@ -149,7 +149,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         blocks = step(furniture.mark_page_numbers)(blocks, document)
         # Headings ODL folded into list items, before levels are settled.
         blocks = step(list_headings.split_headings)(blocks, document)
-        blocks = step(layout_headings.recall_headings)(blocks, document)
+        blocks = step(layout_headings.recall_headings)(blocks, document, drawings)
         # Heading levels once roles, folios and heading text are settled.
         blocks = step(levels.demote_fragments)(blocks, document)
         blocks = step(levels.demote_contents_lines)(blocks, document)
