@@ -1110,6 +1110,111 @@ async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_oper
 /// An edit of a material rebuilt since the agent read it (its room schema
 /// moved) refuses with the blocks as they are now, as a gone block's refusal
 /// lists them, so the agent retries without an inspect.
+/// The Undo the gateway sends: the stored inverse and guards of `undo_of`.
+async fn stored_undo(
+    env: &Env,
+    user: &str,
+    room: &str,
+    material: &str,
+    undo_of: &str,
+    id: &str,
+) -> serde_json::Value {
+    let row = db(env)
+        .await
+        .query_one(
+            "SELECT inverse, guards FROM agent_edit_inverses WHERE operation_id=$1 AND undo_status='available'",
+            &[&undo_of],
+        )
+        .await
+        .expect("stored step");
+    let inverse: serde_json::Value = row.get("inverse");
+    let guards: serde_json::Value = row.get("guards");
+    serde_json::json!({
+        "actorUserId": user,
+        "guards": guards,
+        "inverse": inverse["commands"],
+        "operation": { "id": id, "requestHash": id },
+        "room": room,
+        "target": { "id": material, "kind": "material" },
+        "undoOf": undo_of,
+    })
+}
+
+#[tokio::test]
+async fn an_undo_stores_its_redo_and_a_changed_target_refuses_it() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "hello world").await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(server.port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == "hello world").await);
+    let edit = |id: &str, expected: &str, text: &str| {
+        serde_json::json!({
+            "actorUserId": user,
+            "commands": [{ "type": "replace_text", "blockId": "b1", "expectedText": expected, "text": text }],
+            "operation": { "id": id, "requestHash": id },
+            "room": room,
+            "target": { "id": material, "kind": "material" },
+        })
+    };
+    let (e, u1, r1, u2) = (
+        format!("e_{material}"),
+        format!("u1_{material}"),
+        format!("r1_{material}"),
+        format!("u2_{material}"),
+    );
+    let (status, _) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(&e, "world", "there"),
+    )
+    .await;
+    assert_eq!(status, 200);
+    // Undo, Redo, Undo: each step's receipt carries the ref of the next.
+    for (undo_of, id, operation, text) in [
+        (&e, &u1, "edit_undone", "hello world"),
+        (&u1, &r1, "edited", "hello there"),
+        (&r1, &u2, "edit_undone", "hello world"),
+    ] {
+        let undo = stored_undo(&env, &user, &room, &material, undo_of, id).await;
+        let (status, receipt) = internal(server.port, "/internal/documents/undo", &undo).await;
+        assert_eq!(status, 200, "{receipt}");
+        assert_eq!(receipt["effect"]["operation"], operation, "{receipt}");
+        assert_eq!(
+            receipt["effect"]["undo"]["operationId"],
+            id.as_str(),
+            "{receipt}"
+        );
+        assert!(
+            client.settle(|c| c.block_text() == text).await,
+            "{}",
+            client.block_text()
+        );
+    }
+    // The span the Redo would rewrite changed since: refused, nothing written.
+    let (status, _) = internal(
+        server.port,
+        "/internal/documents/edit",
+        &edit(&format!("x_{material}"), "world", "earth"),
+    )
+    .await;
+    assert_eq!(status, 200);
+    let redo = stored_undo(
+        &env,
+        &user,
+        &room,
+        &material,
+        &u2,
+        &format!("r2_{material}"),
+    )
+    .await;
+    let (status, refusal) = internal(server.port, "/internal/documents/undo", &redo).await;
+    assert_eq!(status, 409, "{refusal}");
+    assert_eq!(refusal["code"], "stale_target", "{refusal}");
+    assert!(client.settle(|c| c.block_text() == "hello earth").await);
+}
+
 #[tokio::test]
 async fn an_edit_of_a_rebuilt_material_lists_its_blocks() {
     let Some(env) = env() else { return };

@@ -86,6 +86,8 @@ type pipeChatEvent struct {
 	Outcome           string                      `json:"outcome,omitempty"`
 	ToolError         *agenttools.ToolError       `json:"error,omitempty"`
 	Effects           []agenttools.ResourceEffect `json:"effects,omitempty"`
+	StartedAt         string                      `json:"startedAt,omitempty"` // tool_start
+	EndedAt           string                      `json:"endedAt,omitempty"`   // tool_end
 	Citations         []store.Citation            `json:"citations,omitempty"`
 	Version           int                         `json:"version,omitempty"`
 	TokenCount        int                         `json:"tokenCount,omitempty"`

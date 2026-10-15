@@ -27,12 +27,16 @@ def block_end(block_id: str, kind: str) -> dict[str, Any]:
     return {"type": "block_end", "blockId": block_id, "kind": kind}
 
 
-def tool_start(call_id: str, name: str, detail: str) -> dict[str, Any]:
+def tool_start(
+    call_id: str, name: str, detail: str, *, started_at: str
+) -> dict[str, Any]:
+    """``detail`` is the row's human label; ``started_at`` RFC 3339 UTC."""
     return {
         "type": "tool_start",
         "callId": call_id,
         "name": name,
         "detail": detail,
+        "startedAt": started_at,
     }
 
 
@@ -42,8 +46,14 @@ def tool_end(
     *,
     error: dict[str, str] | None = None,
     effects: list[dict[str, Any]] | None = None,
+    ended_at: str,
 ) -> dict[str, Any]:
-    event: dict[str, Any] = {"type": "tool_end", "callId": call_id, "outcome": outcome}
+    event: dict[str, Any] = {
+        "type": "tool_end",
+        "callId": call_id,
+        "outcome": outcome,
+        "endedAt": ended_at,
+    }
     if error:
         event["error"] = error
     if effects:

@@ -16,10 +16,12 @@ export interface ActivityBlock {
   detail?: string;
   /** @nullable */
   effects?: ResourceEffect[] | null;
+  endedAt?: string;
   error?: ToolError;
   id: string;
   kind: ActivityBlockKind;
   name?: string;
   outcome?: ActivityBlockOutcome;
+  startedAt?: string;
   text?: string;
 }

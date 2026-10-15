@@ -733,6 +733,36 @@ async def figures(figure_ids: list[str]) -> dict[str, Figure]:
     }
 
 
+def excerpt_label(book_title: str, section_path: str) -> str:
+    """An excerpt as the chat's tool row names it: the book and its chapter
+    (the section path's first part)."""
+    chapter = section_path.replace("›", ">").split(">")[0].strip()
+    return f"{book_title}, {chapter}" if chapter else book_title
+
+
+async def excerpt_labels(excerpt_ids: list[str]) -> dict[str, str]:
+    """excerpt_label by excerpt id, for ids this turn has not shown yet."""
+    if not excerpt_ids:
+        return {}
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT e.id, b.title, e.section_path
+            FROM library_excerpts e
+            JOIN rag_file_contents fc
+              ON fc.content_id = e.content_id AND fc.workspace_id = %s
+            JOIN library_books b ON b.id = e.book_id
+            WHERE e.id = ANY(%s)
+            """,
+            (WORKSPACE, excerpt_ids),
+        )
+        return {
+            row["id"]: excerpt_label(row["title"], row["section_path"])
+            for row in await cur.fetchall()
+        }
+
+
 async def provenance(excerpt_ids: list[str]) -> list[dict[str, Any]]:
     """Attribution for the books behind these excerpts, one entry per book.
 

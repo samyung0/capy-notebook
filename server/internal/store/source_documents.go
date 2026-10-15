@@ -491,29 +491,35 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 	receipt.WorkspaceID = ws
 	receipt.Outcome = agenttools.OutcomeSucceeded
 	var name string
-	if err := tx.QueryRow(ctx, `SELECT name FROM files WHERE id=$1`, fileID).Scan(&name); err != nil {
+	err := tx.QueryRow(ctx, `SELECT name FROM files WHERE id=$1`, fileID).Scan(&name)
+	if err != nil {
 		return AgentOperation{}, err
 	}
 	effect := agenttools.ResourceEffect{
 		Resource:    agenttools.ResourceRef{Kind: agenttools.KindSourceFile, ID: fileID, Title: name, WorkspaceID: ws},
 		OperationID: receipt.ID,
 	}
+	receipt.Kind = "edit_document"
+	effect.Operation = agenttools.EffectEdited
 	if op.UndoOf != "" {
 		receipt.Kind = "undo_edit"
-		effect.Operation = agenttools.EffectEditUndone
+		if effect.Operation, err = undoneStepEffectTx(ctx, tx, op.UndoOf); err != nil {
+			return AgentOperation{}, err
+		}
 		if err := markEditInverseUndoneTx(ctx, tx, op.UndoOf, receipt.ID); err != nil {
 			return AgentOperation{}, err
 		}
-	} else {
-		receipt.Kind = "edit_document"
-		effect.Operation = agenttools.EffectEdited
+	}
+	// Every step stores the one reversing it, so an Undo's Undo is Redo.
+	reversible := op.UndoOf == "" || hasInverseCommands(op.Inverse)
+	if reversible {
 		effect.Undo = &agenttools.UndoRef{OperationID: receipt.ID, Status: agenttools.UndoAvailable}
 	}
 	receipt.Effect = &effect
 	if err := insertAgentOperationTx(ctx, tx, receipt); err != nil {
 		return AgentOperation{}, err
 	}
-	if op.UndoOf == "" {
+	if reversible {
 		if err := insertEditInverseTx(ctx, tx, EditInverse{
 			OperationID: receipt.ID, ResourceKind: agenttools.KindSourceFile, ResourceID: fileID,
 			ActorUserID: receipt.ActorUserID, OwnerUserID: owner, WorkspaceID: ws,

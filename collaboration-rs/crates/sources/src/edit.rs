@@ -322,7 +322,7 @@ impl Sources {
                         let outcome = notes::edit::apply_text_commands(&mut txn, &root, &commands)?;
                         (
                             serde_json::to_value(outcome.inverse).unwrap_or_default(),
-                            Vec::new(),
+                            outcome.guards,
                         )
                     }
                     None => {
@@ -379,12 +379,14 @@ impl Sources {
                         .map_err(|error| SourceError::State(error.to_string()))?,
                 )
                 .map_err(|error| SourceError::State(error.to_string()))?;
-                let guards = if input.undo.is_some() {
-                    Vec::new()
-                } else {
-                    office_guards(&doc, &targets)?
-                };
-                (serde_json::to_value(inverse).unwrap_or_default(), guards)
+                let inverse = serde_json::to_value(inverse).unwrap_or_default();
+                match office_guards(&doc, &targets) {
+                    Ok(guards) => (inverse, guards),
+                    // An Undo whose targets cannot be guarded still lands,
+                    // without a Redo (no commands, so Go stores no step).
+                    Err(_) if input.undo.is_some() => (Value::Array(Vec::new()), Vec::new()),
+                    Err(error) => return Err(error),
+                }
             }
         };
         let whole = doc
@@ -424,14 +426,15 @@ impl Sources {
         } else {
             row
         };
-        let operation = match &input.undo {
-            Some(undo) => json!({ "receipt": operation, "undoOf": undo.undo_of }),
-            None => json!({
-                "guards": guards,
-                "inverse": { "commands": inverse },
-                "receipt": operation,
-            }),
-        };
+        // An Undo carries its own inverse and guards too: its Undo is Redo.
+        let mut operation = json!({
+            "guards": guards,
+            "inverse": { "commands": inverse },
+            "receipt": operation,
+        });
+        if let Some(undo) = &input.undo {
+            operation["undoOf"] = json!(undo.undo_of);
+        }
         let body = CheckpointBody {
             actor_ids: vec![input.actor_user_id.clone()],
             epoch: session.epoch,

@@ -168,6 +168,7 @@ export const user: Omit<User, 'account'> = {
     modelSlug: 'deepseek-flash',
     providerSlug: 'deepseek',
   },
+  chatSteps: 'normal',
   classLabel: 'Grade 11 · Science',
   editorModel: {
     modelSlug: 'deepseek-flash',
@@ -2241,6 +2242,7 @@ chatFixtures.forEach((fixture, index) => {
       activity: [
         {
           callId: `${conversationId}_search`,
+          detail: fixture.prompt.slice(0, 40),
           id: `${conversationId}_search`,
           kind: 'tool',
           name: 'search_workspace',

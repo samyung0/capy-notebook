@@ -487,6 +487,11 @@ type RequestAccountDeletionReq struct {
 
 // SetStudyEnabledReq turns study progress on or off, for one workspace or as
 // the account default.
+// SetChatStepsReq sets how much of a turn's tool work the chat shows.
+type SetChatStepsReq struct {
+	Steps string `json:"steps" enum:"normal,verbose"`
+}
+
 type SetStudyEnabledReq struct {
 	Enabled bool `json:"enabled"`
 }

@@ -780,7 +780,8 @@ pub async fn compact(
         "UPDATE agent_edit_inverses
          SET undo_status='unavailable', undo_reason='compacted', inverse='[]'::jsonb,
              guards='[]'::jsonb, inverse_bytes=0, updated_at=now()
-         WHERE resource_kind='material' AND resource_id=$1 AND undo_status='available'",
+         WHERE resource_kind='material' AND resource_id=$1 AND undo_status='available'
+           AND step='edit'",
         &[&material_id],
     )
     .await?;

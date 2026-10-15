@@ -8,6 +8,7 @@ import itertools
 import json
 import re
 from dataclasses import replace
+from datetime import datetime
 
 import pytest
 from PIL import Image
@@ -38,8 +39,12 @@ def no_pending_sources(monkeypatch):
     async def chapters(*_args, **_kwargs):
         return [], None
 
+    async def titles(*_args, **_kwargs):
+        return {}
+
     monkeypatch.setattr(pending, "load", load)
     monkeypatch.setattr(agent.store, "workspace_chapters", chapters)
+    monkeypatch.setattr(agent.store, "resource_titles", titles)
 
 
 def _model() -> ModelConfig:
@@ -3503,3 +3508,82 @@ async def test_results_before_the_last_tools_response_say_write_now(
     assert notice not in results(seen[2])["a"]
     assert results(seen[2])["b"].endswith(notice)
     assert seen[3]["tools_off"]
+
+
+async def test_tool_rows_name_their_targets_and_carry_their_run_times(monkeypatch):
+    stream, _ = _script_stream(
+        [
+            _assembled(
+                "",
+                [
+                    _call("read_document", '{"file_id":"f_1"}', "r1"),
+                    _call("read_knowledge", '{"excerpt_id":"ex_1"}', "k1"),
+                    _call(
+                        "inspect_document",
+                        '{"target":{"kind":"material","id":"m_1"}}',
+                        "i1",
+                    ),
+                    _call("capture_page", '{"file_id":"f_1","page":4}', "c1"),
+                ],
+            ),
+            _assembled("", [_call("write_slide", '{"deck_id":"d1","slide":3}', "w1")]),
+            _assembled(_answer(("Done.", []))),
+        ]
+    )
+    lookups: list[list[str]] = []
+
+    async def titles(_workspace, ids):
+        lookups.append(ids)
+        return {"f_1": "Biology.pdf"}
+
+    async def excerpts(ids):
+        return {"ex_1": "Campbell Biology, Chapter 3"}
+
+    async def _run(name, args, ctx):
+        return ToolResult(text_parts=["ok"])
+
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.tools, "run", _run)
+    monkeypatch.setattr(agent.store, "resource_titles", titles)
+    monkeypatch.setattr(agent.library, "excerpt_labels", excerpts)
+    monkeypatch.setattr(agent.library, "enabled", lambda: True)
+    ctx = ToolContext(workspace_id="ws_1", labels={"m_1": "Cell notes"})
+
+    events = await _collect("q", ctx)
+
+    # One lookup for the response's unknown targets; known ones need none.
+    assert lookups == [["f_1"]]
+    starts = {e["callId"]: e for e in events if e["type"] == "tool_start"}
+    assert {k: v["detail"] for k, v in starts.items()} == {
+        "r1": "Biology.pdf",
+        "k1": "Campbell Biology, Chapter 3",
+        "i1": "Cell notes",
+        "c1": "page 4",
+        "w1": "slide 3",
+    }
+    ends = {e["callId"]: e for e in events if e["type"] == "tool_end"}
+    blocks = {b["callId"]: b for b in events[-1]["activity"] if b["kind"] == "tool"}
+    for call_id, start in starts.items():
+        block = blocks[call_id]
+        assert block["detail"] == start["detail"]
+        assert block["startedAt"] == start["startedAt"]
+        assert block["endedAt"] == ends[call_id]["endedAt"]
+        began = datetime.fromisoformat(block["startedAt"])
+        assert began.tzinfo is not None
+        assert datetime.fromisoformat(block["endedAt"]) >= began
+
+
+def test_results_teach_the_rows_their_names():
+    ctx = ToolContext(workspace_id="ws_1")
+    tools._learn_labels(
+        ctx,
+        ToolResult(
+            passages=[_passage(file_id="f_2", file_name="Physics.pdf")],
+            effects=[{"resource": {"id": "m_9", "title": "Forces quiz"}}],
+        ),
+    )
+    assert ctx.labels == {"f_2": "Physics.pdf", "m_9": "Forces quiz"}
+    assert (
+        agent._describe("trash_file", {"target": {"id": "m_9"}}, ctx) == "Forces quiz"
+    )
+    assert agent._describe("create_deck", {"title": "x" * 300}, ctx) == "x" * 240

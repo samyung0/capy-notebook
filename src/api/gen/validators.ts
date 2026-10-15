@@ -1102,6 +1102,7 @@ export const ListMessagesResponseItem = zod.object({
   "status": zod.enum(['available', 'undone', 'unavailable', 'pending'])
 }).optional()
 })).nullish(),
+  "endedAt": zod.iso.datetime({"offset":true}).optional(),
   "error": zod.object({
   "code": zod.string(),
   "message": zod.string()
@@ -1110,6 +1111,7 @@ export const ListMessagesResponseItem = zod.object({
   "kind": zod.enum(['narration', 'tool']),
   "name": zod.string().optional(),
   "outcome": zod.enum(['succeeded', 'refused', 'failed', 'cancelled', 'outcome_unknown']).optional(),
+  "startedAt": zod.iso.datetime({"offset":true}).optional(),
   "text": zod.string().optional()
 })).nullish(),
   "citations": zod.array(zod.object({
@@ -3674,6 +3676,7 @@ export const GetMeResponse = zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
 }),
+  "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
   "editorModel": zod.object({
   "modelSlug": zod.string(),
@@ -3736,6 +3739,7 @@ export const UpdateMeResponse = zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
 }),
+  "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
   "editorModel": zod.object({
   "modelSlug": zod.string(),
@@ -3762,6 +3766,16 @@ export const UpdateMeResponse = zod.object({
   "studyProgress": zod.boolean(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
+
+
+/**
+ * @summary Set how much of its tool work the chat shows
+ */
+export const SetChatStepsBody = zod.object({
+  "steps": zod.enum(['normal', 'verbose'])
+})
+
+export const SetChatStepsResponse = zod.void()
 
 
 /**

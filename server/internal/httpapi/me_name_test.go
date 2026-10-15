@@ -74,3 +74,50 @@ func TestUpdateMeName(t *testing.T) {
 		t.Fatalf("GET /api/me name = %q", me.Name)
 	}
 }
+
+// PATCH /api/me/chat-steps saves the chat's Steps setting, which GET /api/me
+// returns; anything but normal or verbose is refused.
+func TestChatSteps(t *testing.T) {
+	dsn := testdb.URL(t)
+	ctx := context.Background()
+	st, err := store.New(ctx, dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(st.Close)
+	userID := fmt.Sprintf("u_chat_steps_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Steps',$2)`,
+		userID, userID+"@example.test"); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_, _ = st.Pool().Exec(context.Background(), `DELETE FROM users WHERE id=$1`, userID)
+	})
+	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
+		httpapi.Config{AuthDisabled: true, DevUserID: userID})
+	steps := func() string {
+		t.Helper()
+		var me struct {
+			ChatSteps string `json:"chatSteps"`
+		}
+		rec := doReq(t, h, http.MethodGet, "/api/me", "", nil)
+		if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil {
+			t.Fatal(err)
+		}
+		return me.ChatSteps
+	}
+	if got := steps(); got != "normal" {
+		t.Fatalf("default chatSteps = %q", got)
+	}
+	for _, bad := range []any{"loud", "", nil} {
+		if rec := doReq(t, h, http.MethodPatch, "/api/me/chat-steps", "", map[string]any{"steps": bad}); rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("steps %v: status %d, want 422", bad, rec.Code)
+		}
+	}
+	if rec := doReq(t, h, http.MethodPatch, "/api/me/chat-steps", "", map[string]any{"steps": "verbose"}); rec.Code != http.StatusNoContent {
+		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := steps(); got != "verbose" {
+		t.Fatalf("chatSteps = %q", got)
+	}
+}

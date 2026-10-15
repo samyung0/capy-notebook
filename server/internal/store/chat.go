@@ -80,6 +80,10 @@ type ActivityBlock struct {
 	Error   *agenttools.ToolError       `json:"error,omitempty"`
 	Effects []agenttools.ResourceEffect `json:"effects,omitempty"`
 	Capture *ActivityCapture            `json:"capture,omitempty"`
+	// StartedAt and EndedAt bound a tool block's run (the retrieval
+	// service's clock), so "Worked for 14s" survives a reload.
+	StartedAt *time.Time `json:"startedAt,omitempty"`
+	EndedAt   *time.Time `json:"endedAt,omitempty"`
 }
 
 // ActivityCapture is what a successful capture_page call rendered: the page,
@@ -366,9 +370,10 @@ func (s *Store) ListMessages(ctx context.Context, userID, convID string) ([]Mess
 	return out, s.refreshUndoStatuses(ctx, out)
 }
 
-// refreshUndoStatuses overlays the current Undo availability of edit effects
-// so a hydrated card reflects an Undo, rebase or compaction that happened
-// after the message was finalized.
+// refreshUndoStatuses puts each effect with an Undo ref at the latest step of
+// its chain: after an Undo the block shows the edit_undone (or trashed)
+// effect with its Redo ref, and a release after the message was finalized
+// shows as unavailable, so a reload matches the live view.
 func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) error {
 	var ids []string
 	for _, m := range messages {
@@ -383,7 +388,7 @@ func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) err
 	if len(ids) == 0 {
 		return nil
 	}
-	statuses, err := s.UndoStatuses(ctx, ids)
+	steps, err := s.LatestSteps(ctx, ids)
 	if err != nil {
 		return err
 	}
@@ -394,10 +399,14 @@ func (s *Store) refreshUndoStatuses(ctx context.Context, messages []Message) err
 				if effect.Undo == nil {
 					continue
 				}
-				if current, ok := statuses[effect.Undo.OperationID]; ok {
-					effect.Undo = &current
-				} else {
+				step, ok := steps[effect.Undo.OperationID]
+				switch {
+				case !ok:
 					effect.Undo = &agenttools.UndoRef{OperationID: effect.Undo.OperationID, Status: agenttools.UndoUnavailable, Reason: "released"}
+				case step.Effect != nil:
+					*effect = *step.Effect
+				default:
+					effect.Undo = step.Undo
 				}
 			}
 		}

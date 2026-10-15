@@ -13,11 +13,13 @@ import type {
   ChatRole,
   ChatStatus,
   ResourceEffect,
+  UndoRef,
   WireMessage,
 } from '@/api/types';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
 import { errorCopy } from '@/lib/errors';
+import type { ToolBlock } from './chat/trace';
 
 /** Map a persisted wire message onto the UI turn shape (narrowing role/status). */
 export function toChatMessage(row: WireMessage): ChatMessage {
@@ -71,6 +73,10 @@ export function invalidateForEffects(
   }
 }
 
+/** A turn in this panel. `key` stays the placeholder's id after the server
+ * names the message, so the bubble (and its timers) does not remount. */
+export type LiveMessage = ChatMessage & { key?: string };
+
 const tempId = () =>
   `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
@@ -93,7 +99,7 @@ export function useChatStream(workspaceId: string) {
     fileIds: string[];
     omitted: boolean;
   } | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<LiveMessage[]>([]);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [streaming, setStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -122,10 +128,11 @@ export function useChatStream(workspaceId: string) {
 
   const stop = useCallback(() => abortRef.current?.abort(), []);
 
-  /** Reflect a server-confirmed Undo on the card that offered it. */
-  const markUndone = useCallback(
-    (operationId: string, effects: ResourceEffect[] | undefined) => {
-      invalidateForEffects(qc, workspaceId, effects);
+  /** Swap one undoable effect in place: the Undo or Redo receipt's effect
+   * (carrying the next step's undo ref), or the same effect with its undo
+   * marked unavailable after a refusal, which disables the button. */
+  const replaceEffect = useCallback(
+    (operationId: string, next: ResourceEffect) => {
       setMessages((prev) =>
         prev.map((msg) => ({
           ...msg,
@@ -134,12 +141,7 @@ export function useChatStream(workspaceId: string) {
               ? {
                   ...block,
                   effects: block.effects?.map((effect) =>
-                    effect.undo?.operationId === operationId
-                      ? {
-                          ...effect,
-                          undo: { ...effect.undo, status: 'undone' as const },
-                        }
-                      : effect
+                    effect.undo?.operationId === operationId ? next : effect
                   ),
                 }
               : block
@@ -147,7 +149,25 @@ export function useChatStream(workspaceId: string) {
         }))
       );
     },
-    [qc, workspaceId]
+    []
+  );
+
+  /** A confirmed Undo or Redo: refresh what it touched and show its receipt. */
+  const applyUndo = useCallback(
+    (operationId: string, effect: ResourceEffect) => {
+      invalidateForEffects(qc, workspaceId, [effect]);
+      replaceEffect(operationId, effect);
+    },
+    [qc, replaceEffect, workspaceId]
+  );
+
+  const refuseUndo = useCallback(
+    (effect: ResourceEffect & { undo: UndoRef }) =>
+      replaceEffect(effect.undo.operationId, {
+        ...effect,
+        undo: { ...effect.undo, status: 'unavailable' },
+      }),
+    [replaceEffect]
   );
 
   const send = useCallback(
@@ -186,7 +206,10 @@ export function useChatStream(workspaceId: string) {
         {
           activity: [],
           content: '',
+          // The turn's start for step timings; history has the server's.
+          createdAt: new Date().toISOString(),
           id: placeholderId,
+          key: placeholderId,
           phase: 'planning',
           role: 'assistant',
           status: 'streaming',
@@ -319,7 +342,9 @@ export function useChatStream(workspaceId: string) {
                 )
               );
             },
+            // Server times when the event carries them, else this clock.
             onToolEnd: (callId, result) => {
+              const endedAt = result.endedAt ?? new Date().toISOString();
               invalidateForEffects(qc, workspaceId, result.effects);
               setMessages((prev) =>
                 prev.map((msg) => {
@@ -331,6 +356,7 @@ export function useChatStream(workspaceId: string) {
                         ? {
                             ...block,
                             effects: result.effects,
+                            endedAt,
                             error: result.error,
                             outcome: result.outcome,
                           }
@@ -340,7 +366,15 @@ export function useChatStream(workspaceId: string) {
                 })
               );
             },
-            onToolStart: (callId, name, detail) =>
+            onToolStart: (callId, name, detail, startedAt) => {
+              const tool: ToolBlock = {
+                callId,
+                detail,
+                id: callId,
+                kind: 'tool',
+                name,
+                startedAt: startedAt ?? new Date().toISOString(),
+              };
               setMessages((prev) =>
                 prev.map((msg) => {
                   if (msg.id !== currentId) return msg;
@@ -351,17 +385,12 @@ export function useChatStream(workspaceId: string) {
                         block.kind === 'tool' && block.callId === callId
                     )
                   ) {
-                    activity.push({
-                      callId,
-                      detail,
-                      id: callId,
-                      kind: 'tool',
-                      name,
-                    });
+                    activity.push(tool);
                   }
                   return { ...msg, activity };
                 })
-              ),
+              );
+            },
           },
           ac.signal
         );
@@ -384,11 +413,12 @@ export function useChatStream(workspaceId: string) {
   );
 
   return {
+    applyUndo,
     conversationId,
     hydrate,
-    markUndone,
     messages,
     pendingSources,
+    refuseUndo,
     send,
     startNew,
     stop,

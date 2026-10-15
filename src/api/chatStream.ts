@@ -44,12 +44,20 @@ export interface ChatStreamHandlers {
   onPhase?: (phase: ChatPhase) => void;
   onStart?: (e: StreamStart) => void;
   onToolEnd?: (callId: string, result: ToolEndEvent) => void;
-  onToolStart?: (callId: string, name: string, detail: string) => void;
+  /** `startedAt` is the retrieval service's clock (RFC 3339). */
+  onToolStart?: (
+    callId: string,
+    name: string,
+    detail: string,
+    startedAt?: string
+  ) => void;
 }
 
 /** Terminal result of one tool call, in the shared agent-tool contract shape. */
 export interface ToolEndEvent {
   effects?: ResourceEffect[];
+  /** The retrieval service's clock (RFC 3339). */
+  endedAt?: string;
   error?: ToolError;
   outcome: ToolOutcome;
 }
@@ -193,6 +201,7 @@ export async function streamChat(
       conversationId?: string;
       detail?: string;
       effects?: ResourceEffect[];
+      endedAt?: string;
       error?: ToolError;
       generationId?: string;
       kind?: string;
@@ -205,6 +214,7 @@ export async function streamChat(
       name?: string;
       outcome?: string;
       phase?: ChatPhase;
+      startedAt?: string;
       status?: ChatStatus;
       text?: string;
       tokenCount?: number;
@@ -254,13 +264,19 @@ export async function streamChat(
         break;
       case 'tool_start':
         if (ev.callId) {
-          handlers.onToolStart?.(ev.callId, ev.name ?? '', ev.detail ?? '');
+          handlers.onToolStart?.(
+            ev.callId,
+            ev.name ?? '',
+            ev.detail ?? '',
+            ev.startedAt
+          );
         }
         break;
       case 'tool_end':
         if (ev.callId && TOOL_OUTCOMES.includes(ev.outcome as ToolOutcome)) {
           handlers.onToolEnd?.(ev.callId, {
             effects: Array.isArray(ev.effects) ? ev.effects : undefined,
+            endedAt: ev.endedAt,
             error: ev.error,
             outcome: ev.outcome as ToolOutcome,
           });

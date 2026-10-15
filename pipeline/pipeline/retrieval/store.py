@@ -1284,6 +1284,24 @@ async def workspace_chapters(
     return chapters, (row["chapter_id"] if row else None)
 
 
+async def resource_titles(workspace_id: str, ids: list[str]) -> dict[str, str]:
+    """The names of this workspace's files and titles of its materials by id,
+    trashed ones included (restore_file names them), for the chat's tool rows."""
+    if not ids:
+        return {}
+    db = await pool()
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """
+            SELECT id, name AS title FROM files WHERE workspace_id = %s AND id = ANY(%s)
+            UNION ALL
+            SELECT id, title FROM materials WHERE workspace_id = %s AND id = ANY(%s)
+            """,
+            (workspace_id, ids, workspace_id, ids),
+        )
+        return {row["id"]: row["title"] for row in await cur.fetchall()}
+
+
 async def workspace_outline(workspace_id: str) -> dict[str, Any]:
     """Chapters, their files, and the per-file descriptor the listing tool prints."""
     db = await pool()

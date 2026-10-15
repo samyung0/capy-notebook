@@ -27,7 +27,9 @@ type User struct {
 	StudyProgress bool `json:"studyProgress"`
 	// StudyPreferences shape what the chat agent builds; empty fields take the
 	// pipeline's defaults.
-	StudyPreferences   StudyPreferences   `json:"studyPreferences"`
+	StudyPreferences StudyPreferences `json:"studyPreferences"`
+	// ChatSteps is how much of a turn's tool work the chat shows.
+	ChatSteps          string             `json:"chatSteps" enum:"normal,verbose"`
 	ChatModel          models.Ref         `json:"chatModel"`
 	EditorModel        models.Ref         `json:"editorModel"`
 	PlanTier           PlanTier           `json:"planTier"`

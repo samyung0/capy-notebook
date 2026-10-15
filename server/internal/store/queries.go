@@ -1446,6 +1446,14 @@ func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft
 	if err := insertAgentOperationTx(ctx, tx, op); err != nil {
 		return AgentOperation{}, false, err
 	}
+	// Its Undo moves it to the trash (UndoFileStep).
+	var ownerID string
+	if err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, id).Scan(&ownerID); err != nil {
+		return AgentOperation{}, false, err
+	}
+	if err := insertFileStepTx(ctx, tx, &op, StepTrash, ownerID, ""); err != nil {
+		return AgentOperation{}, false, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return AgentOperation{}, false, err
 	}

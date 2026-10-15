@@ -96,6 +96,9 @@ components:
             $ref: "#/components/schemas/ResourceEffect"
           nullable: true
           type: array
+        endedAt:
+          format: date-time
+          type: string
         error:
           $ref: "#/components/schemas/ToolError"
         id:
@@ -114,6 +117,9 @@ components:
             - failed
             - cancelled
             - outcome_unknown
+          type: string
+        startedAt:
+          format: date-time
           type: string
         text:
           type: string
@@ -4561,6 +4567,23 @@ components:
         - correct
         - total
       type: object
+    SetChatStepsReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SetChatStepsReq.json
+          format: uri
+          readOnly: true
+          type: string
+        steps:
+          enum:
+            - normal
+            - verbose
+          type: string
+      required:
+        - steps
+      type: object
     SetModelPrefsReq:
       additionalProperties: false
       properties:
@@ -6350,6 +6373,11 @@ components:
           type: string
         chatModel:
           $ref: "#/components/schemas/Ref"
+        chatSteps:
+          enum:
+            - normal
+            - verbose
+          type: string
         classLabel:
           type: string
         editorModel:
@@ -6382,6 +6410,7 @@ components:
         - locale
         - studyProgress
         - studyPreferences
+        - chatSteps
         - chatModel
         - editorModel
         - planTier
@@ -9001,6 +9030,27 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Update profile
+      tags:
+        - Account
+  /api/me/chat-steps:
+    patch:
+      operationId: setChatSteps
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetChatStepsReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set how much of its tool work the chat shows
       tags:
         - Account
   /api/me/ingest-slots:

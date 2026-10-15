@@ -22,10 +22,12 @@ func (a *api) registerUndo(api huma.API) {
 		"Reverse one direct AI edit", http.StatusOK, a.undoEditOperation)
 }
 
-// undoEditOperation reverses exactly one committed direct AI edit. Only the
-// original chat actor with current edit access may invoke it; the server
-// loads the stored inverse and guards (never a client-authored inverse) and
-// the authority refuses the whole Undo when any affected target changed.
+// undoEditOperation reverses exactly one step of a chat Undo chain: a direct
+// AI edit, a file the chat created, or an earlier Undo (which makes it Redo).
+// Only the original chat actor with current edit access may invoke it; the
+// server loads the stored inverse and guards (never a client-authored
+// inverse) and the authority refuses the whole Undo when any affected target
+// changed. The receipt's effect carries the next step's ref.
 func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operationOutput, error) {
 	if err := a.requireAccountEdit(ctx); err != nil {
 		return nil, err
@@ -38,8 +40,38 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 	if inv.ActorUserID != actor || original.ActorUserID != actor {
 		return nil, hErr(store.ErrNotFound)
 	}
+	// A retried request answers with its receipt, also once the step is used.
+	hash, err := store.RequestHash(map[string]any{"action": "undo", "undoOf": in.OperationID})
+	if err != nil {
+		return nil, hErr(err)
+	}
+	opID := clientOperationID(ctx, in.Body.RequestID)
+	if existing, err := a.s.ReplayAgentOperation(ctx, opID, hash); err == nil {
+		return &operationOutput{Body: *existing}, nil
+	} else if !errors.Is(err, store.ErrNotFound) {
+		return nil, trashError(err)
+	}
 	if inv.UndoStatus != agenttools.UndoAvailable {
 		return nil, undoUnavailable(inv)
+	}
+	op := store.DocumentOperation{
+		ID: opID, RequestHash: hash, ToolVersion: 1,
+		ConversationID: original.ConversationID, MessageID: original.MessageID,
+	}
+	if inv.Step != store.StepEdit {
+		// A created file's step: the trash and restore paths check access
+		// themselves (an editor trashes, the owner restores).
+		receipt, err := a.s.UndoFileStep(ctx, actor, inv, store.AgentOperation{
+			ID: op.ID, RequestHash: op.RequestHash, ToolVersion: 1,
+			ConversationID: op.ConversationID, MessageID: op.MessageID,
+		})
+		if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrTrashExpired) || errors.Is(err, store.ErrUndoUnavailable) {
+			return nil, undoUnavailable(store.EditInverse{UndoStatus: agenttools.UndoUnavailable})
+		}
+		if err != nil {
+			return nil, trashError(err)
+		}
+		return &operationOutput{Body: receipt}, nil
 	}
 	// Current edit access on the active resource, not the access the actor
 	// held when the edit was made.
@@ -57,20 +89,7 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 			return nil, hErr(store.ErrNotFound)
 		}
 	}
-	hash, err := store.RequestHash(map[string]any{"action": "undo", "undoOf": in.OperationID})
-	if err != nil {
-		return nil, hErr(err)
-	}
-	opID := clientOperationID(ctx, in.Body.RequestID)
-	if existing, err := a.s.ReplayAgentOperation(ctx, opID, hash); err == nil {
-		return &operationOutput{Body: *existing}, nil
-	} else if !errors.Is(err, store.ErrNotFound) {
-		return nil, trashError(err)
-	}
-	receipt, err := a.s.UndoDocumentEdit(ctx, actor, inv, store.DocumentOperation{
-		ID: opID, RequestHash: hash, ToolVersion: 1,
-		ConversationID: original.ConversationID, MessageID: original.MessageID,
-	})
+	receipt, err := a.s.UndoDocumentEdit(ctx, actor, inv, op)
 	if err != nil {
 		var refusal *store.EditRefusal
 		if errors.As(err, &refusal) {

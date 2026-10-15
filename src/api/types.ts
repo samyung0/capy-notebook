@@ -60,6 +60,7 @@ import type {
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
   MaterialKind,
   ResourceEffect,
+  SetChatStepsReqSteps,
   ToolError,
   UndoRefStatus,
   UserColor,
@@ -465,6 +466,8 @@ export type {
   UndoRef,
 } from './gen/model';
 export type ToolOutcome = ActivityBlockOutcome;
+/** How much of a turn's tool work the chat shows (`User.chatSteps`). */
+export type ChatSteps = SetChatStepsReqSteps;
 export type ResourceEffectOperation = GenResourceEffectOperation;
 export type UndoStatus = UndoRefStatus;
 
@@ -473,13 +476,17 @@ export type ActivityBlock =
   | {
       callId: string;
       capture?: ActivityCapture;
+      /** The row's human label: a title, a query, "page 4". */
       detail?: string;
       effects?: ResourceEffect[];
+      /** RFC 3339, the retrieval service's clock; tool_end brings endedAt. */
+      endedAt?: string;
       error?: ToolError;
       id: string;
       kind: 'tool';
       name: string;
       outcome?: ToolOutcome;
+      startedAt?: string;
     };
 
 export type WireMessage = Omit<GenMessage, 'citations'> & {

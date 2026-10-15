@@ -18,6 +18,7 @@ import logging
 import shutil
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from .. import elitellm, obs, registry
@@ -30,6 +31,7 @@ from . import (
     compact,
     events,
     evidence,
+    library,
     models,
     pending,
     scripted,
@@ -93,40 +95,81 @@ def _parse_args(raw: str | None) -> dict[str, Any]:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _describe(name: str, args: dict[str, Any]) -> str:
-    if name in ("search_workspace", "search_knowledge"):
-        return str(args.get("query") or "")
-    if name == "read_knowledge":
-        return str(args.get("excerpt_id") or "")
-    if name == "read_skill":
-        return str(args.get("name") or "")
-    if name == "capture_knowledge_page":
-        return f"{args.get('excerpt_id') or ''} page {args.get('page')}"
-    if name == "list_sources":
-        return "listing sources"
+# Tools whose rows name a workspace resource, and where its id sits.
+_TARGET_TOOLS = ("trash_file", "restore_file", "inspect_document", "edit_document")
+
+
+def _target_id(name: str, args: dict[str, Any]) -> str:
+    if name in _TARGET_TOOLS:
+        target = args.get("target")
+        return str(target.get("id") or "") if isinstance(target, dict) else ""
     if name == "read_document":
         return str(args.get("file_id") or "")
-    if name == "capture_page":
-        page = args.get("page")
-        bbox = args.get("bbox")
-        detail = f"page {page}" if page is not None else ""
-        if isinstance(bbox, list) and len(bbox) == 4:
-            detail += " region " + ",".join(str(int(v)) for v in bbox)
-        return detail
-    if name == "create_material":
-        return str(args.get("kind") or "")
-    if name == "add_questions":
-        return str(args.get("title") or args.get("quiz_id") or "")
-    if name == "add_question_media":
-        return str(args.get("question_id") or "")
-    if name == "create_deck":
-        return str(args.get("title") or "")
-    if name == "write_slide":
-        return f"slide {args.get('slide')}"
-    if name in ("trash_file", "restore_file", "inspect_document", "edit_document"):
-        target = args.get("target") or {}
-        return str(target.get("id") or "") if isinstance(target, dict) else ""
+    if name in ("add_questions", "add_question_media"):
+        return str(args.get("quiz_id") or "")
     return ""
+
+
+def _excerpt_id(name: str, args: dict[str, Any]) -> str:
+    if name in ("read_knowledge", "capture_knowledge_page"):
+        return str(args.get("excerpt_id") or "")
+    return ""
+
+
+async def _resolve_labels(ctx: ToolContext, calls: list[ToolCall]) -> None:
+    """Names for the targets of this response's calls that the turn has not
+    shown yet: one lookup per store for the whole response, none when every
+    target is known. A failed lookup leaves the row with the id."""
+    opened = ctx.open_resource
+    if opened.get("id") and opened.get("title"):
+        ctx.labels.setdefault(opened["id"], opened["title"])
+    resources: list[str] = []
+    excerpts: list[str] = []
+    for call in calls:
+        args = _parse_args(call.arguments)
+        for wanted, found in (
+            (resources, _target_id(call.name, args)),
+            (excerpts, _excerpt_id(call.name, args)),
+        ):
+            if found and found not in ctx.labels and found not in wanted:
+                wanted.append(found)
+    try:
+        if resources:
+            ctx.labels.update(await store.resource_titles(ctx.workspace_id, resources))
+        if excerpts and library.enabled():
+            ctx.labels.update(await library.excerpt_labels(excerpts))
+    except Exception:
+        log.warning("tool row labels unavailable", exc_info=True)
+
+
+def _describe(name: str, args: dict[str, Any], ctx: ToolContext | None = None) -> str:
+    """The tool row's detail: what the call is about, in words the learner
+    reads (a title, a query, a page), at most 240 characters."""
+    labels = ctx.labels if ctx is not None else {}
+
+    def named(found: str) -> str:
+        return labels.get(found, found)
+
+    if name in ("search_workspace", "search_knowledge"):
+        detail = str(args.get("query") or "")
+    elif name == "read_knowledge":
+        detail = named(_excerpt_id(name, args))
+    elif name == "read_skill":
+        detail = str(args.get("name") or "")
+    elif name in ("capture_page", "capture_knowledge_page"):
+        page = args.get("page")
+        detail = f"page {page}" if page is not None else ""
+    elif name == "list_sources":
+        detail = "listing sources"
+    elif name in ("create_material", "create_deck"):
+        detail = str(args.get("title") or "")
+    elif name in ("add_questions", "add_question_media"):
+        detail = str(args.get("title") or "") or named(_target_id(name, args))
+    elif name == "write_slide":
+        detail = f"slide {args.get('slide')}"
+    else:
+        detail = named(_target_id(name, args))
+    return detail[:240]
 
 
 CLIENT_ERROR = "The chat agent hit an internal error."
@@ -1017,10 +1060,24 @@ async def _record_searches(ctx: ToolContext, cited_order: list[int]) -> None:
         log.warning("search telemetry write failed", exc_info=True)
 
 
+def _now() -> str:
+    """The server clock as RFC 3339 in UTC, to the millisecond."""
+    return datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+@dataclass
+class _Run:
+    """One call's row as the stream showed it: its detail and when it ran."""
+
+    detail: str
+    started_at: str
+    ended_at: str = ""
+
+
 def _activity(
     call: ToolCall,
     name: str,
-    args: dict[str, Any],
+    run: _Run,
     result: ToolResult,
     ctx: ToolContext | None = None,
 ) -> dict[str, Any]:
@@ -1029,8 +1086,10 @@ def _activity(
         "kind": "tool",
         "callId": call.id,
         "name": name,
-        "detail": _describe(name, args),
+        "detail": run.detail,
         "outcome": result.outcome,
+        "startedAt": run.started_at,
+        "endedAt": run.ended_at,
     }
     error = result.error_payload()
     if error:
@@ -1046,12 +1105,18 @@ def _activity(
     return block
 
 
-def _tool_end(call: ToolCall, result: ToolResult) -> dict[str, Any]:
+def _tool_start(call: ToolCall, name: str, run: _Run) -> dict[str, Any]:
+    return events.tool_start(call.id, name, run.detail, started_at=run.started_at)
+
+
+def _tool_end(call: ToolCall, result: ToolResult, run: _Run) -> dict[str, Any]:
+    run.ended_at = _now()
     return events.tool_end(
         call.id,
         result.outcome,
         error=result.error_payload(),
         effects=result.effects or None,
+        ended_at=run.ended_at,
     )
 
 
@@ -1065,6 +1130,13 @@ async def _run_tools(
 ) -> AsyncIterator[dict[str, Any]]:
     accepted: list[tuple[ToolCall, dict[str, Any], str]] = []
     results: list[tuple[ToolCall, ToolResult]] = []
+    runs: dict[str, _Run] = {}
+    await _resolve_labels(ctx, calls)
+
+    def _start(call: ToolCall, name: str, args: dict[str, Any]) -> dict[str, Any]:
+        runs[call.id] = _Run(_describe(name, args, ctx), _now())
+        return _tool_start(call, name, runs[call.id])
+
     for call in calls:
         args = _parse_args(call.arguments)
         args["_tool_call_id"] = call.id
@@ -1078,11 +1150,11 @@ async def _run_tools(
         if limit_text:
             result = tools._refused(limit_text, code="limit_reached")
             results.append((call, result))
-            yield events.tool_start(call.id, call.name, _describe(call.name, args))
-            yield _tool_end(call, result)
+            yield _start(call, call.name, args)
+            yield _tool_end(call, result, runs[call.id])
             yield {
                 "type": "activity",
-                "block": _activity(call, call.name, args, result),
+                "block": _activity(call, call.name, runs[call.id], result),
             }
             continue
         accepted.append((call, args, call.name))
@@ -1093,12 +1165,13 @@ async def _run_tools(
     by_call = {call.id: (call, args, name) for call, args, name in work}
 
     def _finish(call_id: str, result: ToolResult) -> list[dict[str, Any]]:
-        call, args, name = by_call[call_id]
+        call, _, name = by_call[call_id]
         executed[call_id] = result
         results.append((call, result))
+        run = runs[call_id]
         return [
-            _tool_end(call, result),
-            {"type": "activity", "block": _activity(call, name, args, result, ctx)},
+            _tool_end(call, result, run),
+            {"type": "activity", "block": _activity(call, name, run, result, ctx)},
         ]
 
     if work:
@@ -1107,7 +1180,7 @@ async def _run_tools(
             # A mutation keeps the whole response serial, so a create/edit/trash
             # never races a read of the same resource inside one response.
             for call, args, name in work:
-                yield events.tool_start(call.id, name, _describe(name, args))
+                yield _start(call, name, args)
                 for event in _finish(call.id, await tools.run(name, args, ctx)):
                     yield event
             budget.peak_parallel_tools = max(budget.peak_parallel_tools, 1)
@@ -1123,7 +1196,7 @@ async def _run_tools(
                     return call.id, await tools.run(name, args, ctx)
 
             for call, args, name in work:
-                yield events.tool_start(call.id, name, _describe(name, args))
+                yield _start(call, name, args)
             # Each read reports completion as it finishes rather than waiting for
             # the slowest sibling; the model still sees results in call order.
             for finished in asyncio.as_completed(
@@ -1158,7 +1231,7 @@ async def _run_tools(
             ctx.evidence_notes.append(
                 {
                     "name": call.name,
-                    "detail": _describe(call.name, _parse_args(call.arguments))[:240],
+                    "detail": runs[call.id].detail,
                     "outcome": result.outcome,
                     "text": text,
                 }

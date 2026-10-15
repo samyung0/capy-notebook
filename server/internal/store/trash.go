@@ -95,6 +95,14 @@ func (s *Store) TrashFile(ctx context.Context, actorID, fileID string, op AgentO
 		return AgentOperation{}, err
 	}
 	defer tx.Rollback(ctx)
+	result, err := s.trashFileTx(ctx, tx, actorID, fileID, op)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID string, op AgentOperation) (AgentOperation, error) {
 	var wsID, name, kind string
 	var trashedAt *time.Time
 	if err := tx.QueryRow(ctx, `SELECT workspace_id, name, kind, trashed_at FROM files WHERE id=$1`, fileID).
@@ -143,7 +151,7 @@ func (s *Store) TrashFile(ctx context.Context, actorID, fileID string, op AgentO
 	if err != nil {
 		return AgentOperation{}, err
 	}
-	return result, tx.Commit(ctx)
+	return result, nil
 }
 
 // TrashMaterial moves an active material into the trash. expectedKind lets the
@@ -154,6 +162,14 @@ func (s *Store) TrashMaterial(ctx context.Context, actorID, materialID, expected
 		return AgentOperation{}, err
 	}
 	defer tx.Rollback(ctx)
+	result, err := s.trashMaterialTx(ctx, tx, actorID, materialID, expectedKind, op)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materialID, expectedKind string, op AgentOperation) (AgentOperation, error) {
 	var ownerID, kind, title string
 	var workspaceID, parentID *string
 	var trashedAt *time.Time
@@ -169,6 +185,7 @@ func (s *Store) TrashMaterial(ctx context.Context, actorID, materialID, expected
 		return AgentOperation{}, ErrNotFound
 	}
 	if workspaceID != nil {
+		var err error
 		ownerID, err = s.lockWorkspaceEditorRecoveryTx(ctx, tx, *workspaceID, actorID)
 		if err != nil {
 			return AgentOperation{}, err
@@ -221,7 +238,7 @@ func (s *Store) TrashMaterial(ctx context.Context, actorID, materialID, expected
 	if err != nil {
 		return AgentOperation{}, err
 	}
-	return result, tx.Commit(ctx)
+	return result, nil
 }
 
 func encodeTrashCursor(at time.Time, id string) string {
@@ -365,6 +382,14 @@ func (s *Store) RestoreTrashed(ctx context.Context, ownerID string, kind agentto
 		return AgentOperation{}, err
 	}
 	defer tx.Rollback(ctx)
+	result, err := s.restoreTrashedTx(ctx, tx, ownerID, kind, id, episodeID, op)
+	if err != nil {
+		return AgentOperation{}, err
+	}
+	return result, tx.Commit(ctx)
+}
+
+func (s *Store) restoreTrashedTx(ctx context.Context, tx pgx.Tx, ownerID string, kind agenttools.ResourceKind, id, episodeID string, op AgentOperation) (AgentOperation, error) {
 	wsID, err := s.lockTrashOwnerTx(ctx, tx, ownerID, kind, id)
 	if err != nil {
 		return AgentOperation{}, err
@@ -445,7 +470,7 @@ func (s *Store) RestoreTrashed(ctx context.Context, ownerID string, kind agentto
 	if err != nil {
 		return AgentOperation{}, err
 	}
-	return result, tx.Commit(ctx)
+	return result, nil
 }
 
 // assertOwnerCanRestoreTx applies the account gates a restore shares with any
@@ -510,7 +535,8 @@ func purgeTrashedRowTx(ctx context.Context, tx pgx.Tx, kind agenttools.ResourceK
 	if ct.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	// A chat step that would restore it has nothing left to restore.
+	return invalidateEditInversesTx(ctx, tx, kind, id, "purged")
 }
 
 // SweepDueTrash purges episodes whose retention has passed, one resource per

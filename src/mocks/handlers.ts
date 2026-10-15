@@ -59,6 +59,7 @@ import { getFileKind } from '@/features/workspace/sourceUpload';
 import { DEV_SHARE_LINK_SECRET, sharePath } from '@/lib/shareLink';
 import { gradeQuestions, learnerView } from './answerKeys';
 import { mockChatStream } from './chatStream';
+import { mockUndo } from './chatUndo';
 import {
   mockMaterialRoom,
   savedSourceState,
@@ -776,6 +777,13 @@ export const handlers = [
   }),
   http.patch('/api/me/study-preferences', async ({ request }) => {
     db.user.studyPreferences = (await request.json()) as StudyPreferences;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.patch('/api/me/chat-steps', async ({ request }) => {
+    const { steps } = (await request.json()) as { steps?: string };
+    if (steps !== 'normal' && steps !== 'verbose')
+      return HttpResponse.json({ detail: 'invalid steps' }, { status: 422 });
+    db.user.chatSteps = steps;
     return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/me/study-progress', async ({ request }) => {
@@ -2442,6 +2450,7 @@ export const handlers = [
     return new HttpResponse(null, { status: 204 });
   }),
   mockChatStream(),
+  mockUndo,
   /* Plate/@ai-sdk UI-message stream. This mirrors the production protocol so
      editor integration can be developed under MSW without provider calls. */
   http.post('/api/workspaces/:id/ai/command', async ({ request }) => {

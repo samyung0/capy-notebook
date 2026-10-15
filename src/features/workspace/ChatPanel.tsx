@@ -1,22 +1,18 @@
 import type React from 'react';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { chatTurn, LIBRARY_DEFAULT } from '@/api/chatStream';
-import { isApiError } from '@/api/client';
-import { useConversations, useMessages, useUndoEdit } from '@/api/hooks';
+import { useConversations, useMe, useMessages } from '@/api/hooks';
 import { CHAT_CHARACTER_LIMIT } from '@/api/limits.generated';
 import type {
-  ActivityBlock,
   ChatMessage,
+  ChatSteps,
   Citation,
-  ResourceEffect,
   ResourceRef,
-  UndoStatus,
   UserColor,
 } from '@/api/types';
 import { Badge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { Spinner } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount } from '@/components/ui/Input';
@@ -30,11 +26,11 @@ import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
+import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
 import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
 import { extractQuestions } from './chat/questions';
 import type { TabAction } from './PanelTabRow';
-import { toolErrorMessage } from './toolErrorMessage';
 import { toChatMessage, useChatStream } from './useChatStream';
 import { useProcessFileChanges } from './useProcessFileChanges';
 
@@ -84,263 +80,33 @@ function Citations({
   );
 }
 
-function PlanningHint({ visible }: { visible: boolean }) {
-  const [show, setShow] = useState(false);
-  useEffect(() => {
-    if (!visible) {
-      setShow(false);
-      return;
-    }
-    const timer = window.setTimeout(() => setShow(true), 400);
-    return () => window.clearTimeout(timer);
-  }, [visible]);
-  if (!show) return null;
-  return (
-    <p className="text-fg-muted text-sm italic">
-      {m.chat_planning_next_step()}
-    </p>
-  );
-}
-
-function effectLabel(operation: ResourceEffect['operation']): string {
-  switch (operation) {
-    case 'created':
-      return m.chat_effect_created();
-    case 'edited':
-      return m.chat_effect_edited();
-    case 'edit_undone':
-      return m.chat_effect_edit_undone();
-    case 'trashed':
-      return m.chat_effect_trashed();
-    case 'restored':
-      return m.chat_effect_restored();
-    default:
-      return operation;
-  }
-}
-
-/** One durable mutation receipt. Presentation is decided here from the
- * trusted resource type; the model never picks a component or a URL. Opening
- * is separate from the commit: nothing steals focus when a result lands. */
-function undoLabel(status: UndoStatus): string {
-  switch (status) {
-    case 'available':
-      return m.chat_undo_edit();
-    case 'undone':
-      return m.chat_undo_done();
-    case 'pending':
-      return m.chat_undo_pending();
-    default:
-      return m.chat_undo_unavailable();
-  }
-}
-
-function EffectCard({
-  effect,
-  onOpen,
-  onUndone,
-}: {
-  effect: ResourceEffect;
-  onOpen?: (ref: ResourceRef) => void;
-  onUndone?: (
-    operationId: string,
-    effects: ResourceEffect[] | undefined
-  ) => void;
-}) {
-  const { resource } = effect;
-  const active = effect.operation !== 'trashed';
-  const undoRef = effect.undo;
-  const { mutate: undo, isPending: undoing, error: undoError } = useUndoEdit();
-  const undoStatus: UndoStatus = undoing
-    ? 'pending'
-    : (undoRef?.status ?? 'unavailable');
-  const undoRefusal = undoError
-    ? isApiError(undoError) && undoError.code === 'undo_unavailable'
-      ? m.chat_undo_unavailable()
-      : toolErrorMessage({
-          code: isApiError(undoError) ? (undoError.code ?? '') : '',
-          message: '',
-        })
-    : null;
-  return (
-    <div className="flex items-center gap-2 rounded-card border border-line bg-surface px-2.5 py-1.5 text-sm">
-      <Icon
-        name={resource.kind === 'material' ? 'message' : 'files'}
-        size={14}
-      />
-      <div className="min-w-0 flex-1">
-        <p className="truncate">{resource.title || resource.id}</p>
-        <p className="t-meta text-fg-muted">
-          {effectLabel(effect.operation)}
-          {resource.materialKind ? ` · ${resource.materialKind}` : ''}
-        </p>
-        {undoRefusal ? (
-          <p className="t-meta text-tint-error-fg">{undoRefusal}</p>
-        ) : null}
-      </div>
-      {undoRef ? (
-        <Button
-          disabled={undoStatus !== 'available'}
-          onClick={() =>
-            undo(undoRef.operationId, {
-              onSuccess: (receipt) =>
-                onUndone?.(
-                  undoRef.operationId,
-                  receipt.effect ? [receipt.effect] : undefined
-                ),
-            })
-          }
-          size="sm"
-          variant="ghost-hover"
-        >
-          {undoLabel(undoStatus)}
-        </Button>
-      ) : null}
-      {active && onOpen ? (
-        <Button
-          onClick={() =>
-            onOpen({
-              id: resource.id,
-              kind: resource.kind,
-              title: resource.title,
-            })
-          }
-          size="sm"
-          variant="ghost-hover"
-        >
-          {m.chat_open_resource()}
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-function ActivityList({
-  blocks,
-  citations,
-  onOpenResource,
-  onUndone,
-}: {
-  blocks: ActivityBlock[];
-  citations?: Citation[];
-  onOpenResource?: (ref: ResourceRef) => void;
-  onUndone?: (
-    operationId: string,
-    effects: ResourceEffect[] | undefined
-  ) => void;
-}) {
-  if (!blocks.length) return null;
-  return (
-    <div className="mb-3 flex flex-col gap-2">
-      {blocks.map((block) =>
-        block.kind === 'narration' ? (
-          <div className="text-fg-muted text-sm" key={block.id}>
-            <LangAnswer
-              citations={citations}
-              complete
-              content={block.text}
-              latest={false}
-              streaming={false}
-            />
-          </div>
-        ) : (
-          <div className="flex flex-col gap-1.5" key={block.id}>
-            <div
-              className={cn(
-                'inline-flex w-fit items-center gap-1.5 rounded-full px-2 py-0.5 text-xs',
-                block.outcome && block.outcome !== 'succeeded'
-                  ? 'bg-tint-error text-solid-error'
-                  : 'bg-page text-fg-muted'
-              )}
-            >
-              {block.outcome ? <Icon name="search" size={12} /> : <Spinner />}
-              {block.capture ? (
-                <span>
-                  {m.chat_tool_capture_page({ page: block.capture.page })}
-                </span>
-              ) : (
-                <>
-                  <span>{block.name}</span>
-                  {block.detail ? (
-                    <span className="opacity-70">{block.detail}</span>
-                  ) : null}
-                </>
-              )}
-            </div>
-            {block.outcome && block.outcome !== 'succeeded' ? (
-              <p
-                className={cn(
-                  'text-xs',
-                  block.outcome === 'outcome_unknown' && !block.error
-                    ? 'text-fg-muted'
-                    : 'text-solid-error'
-                )}
-              >
-                {block.outcome === 'outcome_unknown' && !block.error
-                  ? m.chat_tool_error_outcome_unknown()
-                  : toolErrorMessage(block.error)}
-              </p>
-            ) : null}
-            {block.effects?.map((effect) => (
-              <EffectCard
-                effect={effect}
-                key={`${block.id}:${effect.operationId ?? effect.resource.id}`}
-                onOpen={onOpenResource}
-                onUndone={onUndone}
-              />
-            ))}
-          </div>
-        )
-      )}
-    </div>
-  );
-}
-
 function AssistantBubble({
   msg,
   streaming,
   latest,
+  mode,
+  handlers,
   onOpenCitation,
-  onOpenResource,
-  onUndone,
 }: {
   msg: ChatMessage;
   streaming: boolean;
   /** The last message of the thread: its questions live in the question block. */
   latest: boolean;
+  mode: ChatSteps;
+  handlers: UndoHandlers;
   onOpenCitation?: (citation: Citation) => void;
-  onOpenResource?: (ref: ResourceRef) => void;
-  onUndone?: (
-    operationId: string,
-    effects: ResourceEffect[] | undefined
-  ) => void;
 }) {
-  const runningTool = msg.activity?.some(
-    (block) => block.kind === 'tool' && !block.outcome
-  );
-  const waiting =
-    streaming &&
-    msg.status === 'streaming' &&
-    msg.phase !== 'running_tools' &&
-    msg.phase !== 'answering' &&
-    !msg.currentBlockText &&
-    !runningTool;
+  const live = streaming && msg.status === 'streaming';
   const draft =
     msg.phase === 'answering' || msg.currentBlockId
       ? msg.currentBlockText
       : undefined;
   const answer = msg.content || draft || '';
-  const empty = !answer && !msg.activity?.length && !waiting;
   return (
     <div className="py-2.5">
-      <ActivityList
-        blocks={msg.activity ?? []}
-        citations={msg.citations}
-        onOpenResource={onOpenResource}
-        onUndone={onUndone}
-      />
+      <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
-        <div className="mb-2 text-fg-muted text-sm">
+        <div className="mb-4 text-fg-muted">
           <LangAnswer
             citations={msg.citations}
             complete={false}
@@ -350,17 +116,14 @@ function AssistantBubble({
           />
         </div>
       ) : null}
-      <PlanningHint visible={!!waiting} />
-      {empty && streaming && msg.status === 'streaming' && !waiting ? (
-        <Spinner />
-      ) : answer ? (
+      {answer ? (
         <LangAnswer
           citations={msg.citations}
           complete={msg.status === 'complete'}
           content={answer}
           latest={latest}
           onOpenCitation={onOpenCitation}
-          streaming={streaming && msg.status === 'streaming'}
+          streaming={live}
         />
       ) : null}
       {msg.status === 'aborted' && (
@@ -416,8 +179,16 @@ export function ChatPanel({
     stop,
     startNew,
     hydrate,
-    markUndone,
+    applyUndo,
+    refuseUndo,
   } = useChatStream(workspaceId);
+  const { data: me } = useMe({ errorBoundary: false });
+  const mode: ChatSteps = me?.chatSteps ?? 'normal';
+  const handlers: UndoHandlers = {
+    onOpenResource,
+    onUndoApplied: applyUndo,
+    onUndoRefused: refuseUndo,
+  };
   const { mutate: processChanges, isPending: processingChanges } =
     useProcessFileChanges(workspaceId);
   const { data: conversations } = useConversations(workspaceId, {
@@ -461,10 +232,14 @@ export function ChatPanel({
     }
   }, [selectId, history, hydrate]);
 
-  // Keep the newest message in view as tokens stream in.
+  // Keep the newest message in view as tokens stream in or a thread opens;
+  // an Undo on an older receipt changes messages too and must not scroll.
+  const shownCount = useRef(0);
   useEffect(() => {
+    if (!streaming && messages.length === shownCount.current) return;
+    shownCount.current = messages.length;
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [messages]);
+  }, [messages, streaming]);
 
   function submit() {
     const trimmed = text.trim();
@@ -592,17 +367,17 @@ export function ChatPanel({
             </div>
           ) : (
             <AssistantBubble
-              key={msg.id}
+              handlers={handlers}
+              key={msg.key ?? msg.id}
               latest={
                 index === messages.length - 1 &&
                 msg.status !== 'aborted' &&
                 msg.status !== 'error' &&
                 msg.id !== dismissedId
               }
+              mode={mode}
               msg={msg}
               onOpenCitation={onOpenCitation}
-              onOpenResource={onOpenResource}
-              onUndone={markUndone}
               streaming={streaming}
             />
           )

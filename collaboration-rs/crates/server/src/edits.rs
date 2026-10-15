@@ -864,8 +864,37 @@ pub async fn edit_material(
         Some(row) => (row.get("title"), row.get("kind"), row.get("workspace_id")),
         None => (String::new(), String::new(), None),
     };
+    // Undo and Redo alternate along one chain: the Undo of an edit (or of a
+    // Redo) is edit_undone, the Undo of an Undo is the edit again.
+    let operation_name = match &undo {
+        Some(undo) => {
+            let undone = tx
+                .query_opt(
+                    "SELECT effect->>'operation' AS operation FROM agent_operations WHERE id=$1",
+                    &[&undo.undo_of],
+                )
+                .await?
+                .and_then(|row| row.get::<_, Option<String>>("operation"));
+            if undone.as_deref() == Some("edit_undone") {
+                "edited"
+            } else {
+                "edit_undone"
+            }
+        }
+        None => "edited",
+    };
+    // Every step stores the step that reverses it, under the same 256 KB
+    // bound; an Undo whose own inverse is over it still lands, without Redo.
+    let inverse = json!({ "commands": computed.outcome.inverse });
+    let guards = serde_json::to_value(&computed.outcome.guards).unwrap_or(Value::Null);
+    let inverse_bytes = inverse.to_string().len() + guards.to_string().len();
+    let reversible = inverse_bytes <= MAX_EDIT_INVERSE_BYTES
+        && (undo.is_none() || !computed.outcome.inverse.is_empty());
+    if undo.is_none() && !reversible {
+        return Err(DocumentError::Quota("undo_payload_exceeded".into()));
+    }
     let mut effect = json!({
-        "operation": if undo.is_some() { "edit_undone" } else { "edited" },
+        "operation": operation_name,
         "operationId": operation.id,
         "projectionPending": true,
         "resource": {
@@ -876,8 +905,10 @@ pub async fn edit_material(
             "workspaceId": workspace.clone().unwrap_or_default(),
         },
     });
-    if undo.is_none() {
+    if reversible {
         effect["undo"] = json!({ "operationId": operation.id, "status": "available" });
+    }
+    if undo.is_none() {
         // Inserts whose anchor block was gone say where they landed instead.
         if let Some(relocated) = computed
             .outcome
@@ -914,51 +945,43 @@ pub async fn edit_material(
         ],
     )
     .await?;
-    match &undo {
-        Some(undo) => {
-            let consumed = tx
-                .execute(
-                    "UPDATE agent_edit_inverses
-                     SET undo_status='undone', undone_by=$2, inverse='[]'::jsonb, guards='[]'::jsonb,
-                         inverse_bytes=0, updated_at=now()
-                     WHERE operation_id=$1 AND undo_status='available'",
-                    &[&undo.undo_of, &operation.id],
-                )
-                .await?;
-            if consumed == 0 {
-                return Err(DocumentError::edit(
-                    "unavailable_target",
-                    "undo is no longer available for this edit",
-                ));
-            }
-        }
-        None => {
-            let inverse = json!({ "commands": computed.outcome.inverse });
-            let guards = serde_json::to_value(&computed.outcome.guards).unwrap_or(Value::Null);
-            let inverse_bytes = inverse.to_string().len() + guards.to_string().len();
-            if inverse_bytes > MAX_EDIT_INVERSE_BYTES {
-                return Err(DocumentError::Quota("undo_payload_exceeded".into()));
-            }
-            tx.execute(
-                "INSERT INTO agent_edit_inverses
-                 (operation_id, resource_kind, resource_id, actor_user_id, owner_user_id, workspace_id,
-                  incarnation, revision, inverse, guards, inverse_bytes)
-                 VALUES ($1,'material',$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10)",
-                &[
-                    &operation.id,
-                    &material_id,
-                    &actor,
-                    &boundary.owner_user_id,
-                    &workspace_id,
-                    &schema,
-                    &version,
-                    &inverse,
-                    &guards,
-                    &(inverse_bytes as i64),
-                ],
+    if let Some(undo) = &undo {
+        let consumed = tx
+            .execute(
+                "UPDATE agent_edit_inverses
+                 SET undo_status='undone', undone_by=$2, inverse='[]'::jsonb, guards='[]'::jsonb,
+                     inverse_bytes=0, updated_at=now()
+                 WHERE operation_id=$1 AND undo_status='available'",
+                &[&undo.undo_of, &operation.id],
             )
             .await?;
+        if consumed == 0 {
+            return Err(DocumentError::edit(
+                "unavailable_target",
+                "undo is no longer available for this edit",
+            ));
         }
+    }
+    if reversible {
+        tx.execute(
+            "INSERT INTO agent_edit_inverses
+             (operation_id, resource_kind, resource_id, actor_user_id, owner_user_id, workspace_id,
+              incarnation, revision, inverse, guards, inverse_bytes)
+             VALUES ($1,'material',$2,$3,$4,NULLIF($5,''),$6,$7,$8,$9,$10)",
+            &[
+                &operation.id,
+                &material_id,
+                &actor,
+                &boundary.owner_user_id,
+                &workspace_id,
+                &schema,
+                &version,
+                &inverse,
+                &guards,
+                &(inverse_bytes as i64),
+            ],
+        )
+        .await?;
     }
     tx.commit().await?;
     drop(client);

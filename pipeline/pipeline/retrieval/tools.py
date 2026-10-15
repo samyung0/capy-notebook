@@ -206,6 +206,10 @@ class ToolContext:
     # -> block id -> (shown, stored text)): an edit expecting the shown text
     # expects the stored one.
     shown_quizzes: dict[str, dict[str, tuple[str, str]]] = field(default_factory=dict)
+    # What the chat's tool rows call a resource or excerpt (id -> file name,
+    # material title, or book and chapter), learned from this turn's results
+    # so a row names its target without a lookup per call.
+    labels: dict[str, str] = field(default_factory=dict)
     _scope_outline: dict[str, Any] | None = field(default=None, repr=False)
 
 
@@ -466,6 +470,12 @@ async def _list_sources(_args: dict[str, Any], ctx: ToolContext) -> ToolResult:
     if isinstance(body, ToolResult):
         return body
     outline = await store.workspace_outline(ctx.workspace_id)
+    ctx.labels.update((f["id"], f["name"]) for f in outline["files"])
+    ctx.labels.update(
+        (item["id"], item["title"])
+        for item in body["items"]
+        if item["kind"] == "material"
+    )
     return _source_listing(outline, body["items"], ctx.file_ids)
 
 
@@ -747,6 +757,7 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
         return _result(_no_excerpts(subject, roles, result.available_roles))
     blocks = []
     for excerpt in result.excerpts:
+        _learn_excerpt(ctx, excerpt)
         blocks.append(
             source_block(
                 "\n".join(
@@ -762,6 +773,12 @@ async def _search_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResul
     return _result(
         "\n\n".join(blocks)
         + "\n\nRead an excerpt in full with read_knowledge before writing from it."
+    )
+
+
+def _learn_excerpt(ctx: ToolContext, excerpt: library.Excerpt) -> None:
+    ctx.labels[excerpt.id] = library.excerpt_label(
+        excerpt.book_title, excerpt.section_path
     )
 
 
@@ -830,6 +847,9 @@ async def _read_knowledge(args: dict[str, Any], ctx: ToolContext) -> ToolResult:
         )
     except ValueError as exc:
         return _refused(f"read_knowledge: {exc}")
+    for excerpt in (read.excerpt, read.previous, read.following):
+        if excerpt is not None:
+            _learn_excerpt(ctx, excerpt)
     if not read.chunks:
         return _result(f"Excerpt {excerpt_id} has no text at chunk {start}.")
     head = (
@@ -2643,12 +2663,24 @@ async def run(name: str, args: dict[str, Any], ctx: ToolContext) -> ToolResult:
             detail=skills.carried(needs, lambda n: skills.SKILLS[n].text(ctx.library)),
         )
     try:
-        return await spec.handler(args, ctx)
+        result = await spec.handler(args, ctx)
     except (TurnFailed, pending.SourceChanged):
         raise
     except Exception as exc:
         log.exception("tool %s failed", name)
         return _failed(f"The {name} tool failed: {exc}")
+    _learn_labels(ctx, result)
+    return result
+
+
+def _learn_labels(ctx: ToolContext, result: ToolResult) -> None:
+    """Names the result showed, for later tool rows of the turn."""
+    for passage in result.passages:
+        ctx.labels.setdefault(passage.file_id, passage.file_name)
+    for effect in result.effects:
+        resource = effect.get("resource") or {}
+        if resource.get("id") and resource.get("title"):
+            ctx.labels[resource["id"]] = resource["title"]
 
 
 def assign_citations(

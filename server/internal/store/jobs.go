@@ -129,6 +129,14 @@ func (s *Store) CreateAgentFileOperation(ctx context.Context, draft AgentFileDra
 	if err := insertAgentOperationTx(ctx, tx, op); err != nil {
 		return AgentOperation{}, false, err
 	}
+	// Its Undo moves it to the trash (UndoFileStep).
+	var ownerID string
+	if err := tx.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, f.ID).Scan(&ownerID); err != nil {
+		return AgentOperation{}, false, err
+	}
+	if err := insertFileStepTx(ctx, tx, &op, StepTrash, ownerID, ""); err != nil {
+		return AgentOperation{}, false, err
+	}
 	if err := tx.Commit(ctx); err != nil {
 		return AgentOperation{}, false, err
 	}

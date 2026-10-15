@@ -51,6 +51,10 @@ type notificationPrefsInput struct {
 type updateMeInput struct {
 	Body apimodel.UpdateMeReq
 }
+type chatStepsInput struct {
+	Body apimodel.SetChatStepsReq
+}
+
 type localeInput struct {
 	Body struct {
 		Locale string `json:"locale" enum:"en,zh"`
@@ -108,6 +112,7 @@ func (a *api) registerAccount(api huma.API) {
 	reg(api, http.MethodGet, "/api/me/ingest-slots", "getIngestSlots", tag, "Actor ingest slot remaining", http.StatusOK, a.getIngestSlots)
 	reg(api, http.MethodPatch, "/api/me", "updateMe", tag, "Update profile", http.StatusOK, a.updateMe)
 	reg(api, http.MethodPatch, "/api/me/locale", "setLocale", tag, "Set account locale", http.StatusNoContent, a.setLocale)
+	reg(api, http.MethodPatch, "/api/me/chat-steps", "setChatSteps", tag, "Set how much of its tool work the chat shows", http.StatusNoContent, a.setChatSteps)
 	reg(api, http.MethodGet, "/api/search", "search", tag, "Global search", http.StatusOK, a.searchAll)
 	reg(api, http.MethodGet, "/api/notifications", "listNotifications", tag, "List notifications", http.StatusOK, a.listNotifications)
 	reg(api, http.MethodGet, "/api/notifications/unread-count", "getUnreadNotificationCount", tag, "Unread notification count", http.StatusOK, a.getUnreadNotificationCount)
@@ -200,6 +205,13 @@ func (a *api) searchAll(ctx context.Context, in *searchInput) (*searchOutput, er
 		}
 	}
 	return &searchOutput{Body: res}, nil
+}
+
+func (a *api) setChatSteps(ctx context.Context, in *chatStepsInput) (*Empty, error) {
+	if err := a.requireAccountMutate(ctx); err != nil {
+		return nil, err
+	}
+	return &Empty{}, hErr(a.s.SetChatSteps(ctx, userID(ctx), in.Body.Steps))
 }
 
 func (a *api) setLocale(ctx context.Context, in *localeInput) (*Empty, error) {

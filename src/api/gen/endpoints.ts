@@ -136,6 +136,7 @@ import type {
   SaveCanvasReq,
   SearchParams,
   SearchResult,
+  SetChatStepsReq,
   SetModelPrefsReq,
   SetStudyEnabledReq,
   SetStudyItemReq,
@@ -4431,6 +4432,56 @@ export const updateMe = async (updateMeReq: NonReadonly<UpdateMeReq>, options?: 
 
   const data: updateMeResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as updateMeResponse
+}
+
+
+
+export type setChatStepsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setChatStepsResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setChatStepsResponseSuccess = (setChatStepsResponse204) & {
+  headers: Headers;
+};
+export type setChatStepsResponseError = (setChatStepsResponseDefault) & {
+  headers: Headers;
+};
+
+export type setChatStepsResponse = (setChatStepsResponseSuccess | setChatStepsResponseError)
+
+export const getSetChatStepsUrl = () => {
+
+
+
+
+  return `/api/me/chat-steps`
+}
+
+/**
+ * @summary Set how much of its tool work the chat shows
+ */
+export const setChatSteps = async (setChatStepsReq: NonReadonly<SetChatStepsReq>, options?: RequestInit): Promise<setChatStepsResponse> => {
+
+  const res = await fetch(getSetChatStepsUrl(),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(setChatStepsReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setChatStepsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setChatStepsResponse
 }
 
 

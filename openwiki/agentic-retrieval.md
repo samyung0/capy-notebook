@@ -2328,9 +2328,56 @@ current pending changes applied. Embedded source instructions remain untrusted.
    `tool_start` / `tool_end`, versioned `citations` (`final: true` on the
    answer's own list), `done` | `error`. A `capture_page` activity block carries
    `capture: {page, bbox, bytes}` so the frontend can show "Looked at page 4".
-   Checkpoint events stay on the Python→Go hop. The browser may show
-   "Planning next step" after ~400ms when waiting on the next provider
-   response with no active text or tool.
+   A tool row's `detail` is a human label at most 240 characters long
+   (`agent._describe`, 2026-10-15): the file or material title for
+   `read_document`, `inspect_document`, `edit_document`, `trash_file`,
+   `restore_file` and a quiz id; "Book, chapter" (the book title and the
+   section path's first part) for `read_knowledge`; the query for searches;
+   "page N" for both captures; "slide N" for `write_slide`; the title for
+   `create_material`, `create_deck` and `add_questions`. Names come from
+   what the turn already showed (`ToolContext.labels`: `list_sources`,
+   passages, receipts' resources, knowledge excerpts, the open item); the
+   targets of one response still unknown cost one lookup per store before
+   its rows start (`store.resource_titles`, `library.excerpt_labels`), and an
+   unknown id stays the id. `tool_start` carries `startedAt` and `tool_end`
+   `endedAt` (RFC 3339 UTC, the retrieval service's clock, to the
+   millisecond); the persisted tool block keeps both, so "Worked for 14s"
+   survives a reload. Narration blocks carry no times, and a block rebuilt
+   from receipts after an interrupted turn has none. How much of this work the chat
+   shows is the account's Steps setting (`users.chat_steps`, `normal` or
+   `verbose`, default `normal`; `chatSteps` on `GET /api/me`, set with
+   `PATCH /api/me/chat-steps {"steps"}` → 204, migration 0085); it is display
+   only and never reaches the pipeline.
+   Checkpoint events stay on the Python→Go hop.
+
+   The chat panel shows a turn's work as trace rows
+   (`src/features/workspace/chat/ChatTrace.tsx`, logic in `trace.ts`). Each
+   row is an 18px CSS-animated icon chosen by tool family (`ActivityIcon.tsx`:
+   hourglass for thinking, a lens over a book for searches, a page turn for
+   reads and inspect, a viewfinder for captures, fanned files for listings, a
+   pen for anything that edits, creates or adds, pacman for trash and restore,
+   ldrs bouncy for any other tool) and a sentence: present tense while
+   running, past tense when done, "Couldn't …" in the error colour with the
+   `toolErrorMessage` reason below on failure, muted with a question icon for
+   `outcome_unknown`, "Stopped while …" after a stop. The running row is the
+   newest tool without an outcome while the message streams; only its icon
+   moves (no title shimmer), and reduced motion stops it. Thinking rows come
+   from gaps of 400ms or more between steps (the tool blocks'
+   `startedAt`/`endedAt` and the message's `createdAt`); a live "Thinking" row
+   appears after the same 400ms with no active text or tool. Back-to-back
+   finished calls of one tool group into one expandable row, and narration
+   sits between lists 16px apart. `me.chatSteps` picks the mode (Settings →
+   Customizations → Chat): Normal shows only the current step and folds
+   everything into "Worked for Ns · N steps" when the answer starts; Verbose
+   keeps every row. Receipts stay visible in both modes. A file the turn
+   created is a card (callout container weight, ghost-hover buttons, Undo in
+   danger-light): Undo moves it to trash and Redo restores it, and later steps
+   on that file fold into the card. An undoable edit to an existing file turns
+   its own row into the receipt ("Undid the edit to X" after Undo, small
+   outline buttons). The receipt's effect replaces the block's effect and the
+   button reads Undo or Redo from the operation; a refused step shows an error
+   toast and disables its button for the session, and history disables a
+   button whose status is not `available`.
 
 `generate_material` mints a deterministic `mat_` id from
 `sha256(assistantMessageId + "\\n" + toolCallId)`, looks up that id before
@@ -3198,7 +3245,41 @@ new checkpoint state, the inverse and Yrs locators of the targets; Capy derives 
 guards from those locators. PDFs and store-only files refuse with
 `unsupported_format`. Undo is `POST /api/chat/edit-operations/{id}/undo`, only
 for the original chat actor with current edit access; a trash, source rebase or
-material compaction invalidates outstanding Undo entries. After a material edit
+material compaction invalidates outstanding Undo entries.
+
+**Undo chain** (Epo 2026-10-15). Redo is the Undo of an Undo: every Undo
+stores the step that reverses it as an `agent_edit_inverses` row under the
+Undo's own operation id, so the same endpoint called with that id is Redo,
+for any number of steps. A material Undo keeps the inverse and guards
+`undo_material_commands` (or the item and quiz commands) return, within the
+same 256 KB bound; an Undo whose own inverse is over it, or holds no
+commands, still lands, without a Redo. A text source's Undo keeps the
+guards `apply_text_commands` returns and an Office Undo derives guards from
+the engine's located targets as an edit does; the checkpoint carries them
+with `undoOf` and Go stores the row in the checkpoint's transaction. Each
+step's `undone_by` names the next. The effect alternates: an edit is
+`edited`, its Undo `edit_undone`, the Undo of that `edited` again (from the
+undone step's effect), and each receipt's effect carries `undo:
+{operationId, status}` while the step can be reversed. Every step is
+guarded and refuses `stale_target` like an Undo; trash, source rebase,
+compaction and an editing-epoch change release every available row of the
+resource, so they reach whatever step a chain stands at. A file the chat
+creates (`create_material`, `add_questions` creating a quiz, a deck's PPTX)
+gets a row of step `trash` with its receipt (`insertFileStepTx`): its Undo
+trashes the file through the ordinary trash path under the Undo's
+operation id (`UndoFileStep`), the trash consumes the step and stores a
+`restore` step naming the trash episode, whose Undo restores it and stores
+a `trash` step again, and so on (`created`, `trashed`, `restored`,
+`trashed`...). A restore stays the owner's (the trash rule), so a trashed
+file gets its Redo ref only when the chat actor owns it. Compaction and
+rebases release `edit` steps only (`step='edit'`); trash and purge release
+every step. History (`ListMessages` → `refreshUndoStatuses` →
+`LatestSteps`) follows each block's chain to its latest step and returns
+that step's effect with its current ref, so a reload shows what the live
+view showed. A retried Undo request answers with its receipt even after the
+step was used. Refusals keep their codes: `undo_unavailable` for a used,
+released, expired or purged step, `stale_target`, `quota_rejected`,
+`lifecycle_rejected`. After a material edit
 or its Undo the collaboration service runs its children pass over the update
 as the chat actor (`collaboration-rs/crates/server/src/children.rs`): a quiz, flashcard set or
 image the note trashed within the day comes back, one purged since (or never

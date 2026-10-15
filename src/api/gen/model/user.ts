@@ -9,6 +9,7 @@ import type { PlanTier } from './planTier.ts';
 import type { Ref } from './ref.ts';
 import type { StudyPreferences } from './studyPreferences.ts';
 import type { SubscriptionStatus } from './subscriptionStatus.ts';
+import type { UserChatSteps } from './userChatSteps.ts';
 
 export interface User {
   /** A URL to the JSON Schema for this object. */
@@ -17,6 +18,7 @@ export interface User {
   avatarIconId?: string;
   avatarUrl?: string;
   chatModel: Ref;
+  chatSteps: UserChatSteps;
   classLabel?: string;
   editorModel: Ref;
   email: string;

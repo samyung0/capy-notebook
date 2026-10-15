@@ -383,9 +383,10 @@ A tool block ends with an `outcome` (`succeeded`, `refused`, `failed`) and,
 for mutations, `effects` with the touched resource. Failures carry a stable
 error code that `toolErrorMessage` localizes; an unknown code falls back to the
 generic tool failure copy. `invalidateForEffects` refreshes the affected
-queries (files, materials, trash) when a receipt lands. A refused Undo
-(`stale_target`, `unavailable_target`, `undo_unavailable`) shows its localized
-message under the result card without the mutation toast.
+queries (files, materials, trash) when a receipt lands. A refused Undo or
+Redo (`stale_target`, `unavailable_target`, `undo_unavailable`) shows an error
+toast with its localized message and disables that button for the session; no
+text is added under the receipt.
 
 ## Development scenario panel
 

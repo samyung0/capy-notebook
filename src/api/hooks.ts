@@ -39,6 +39,7 @@ import type {
   BillingInfo,
   CalendarEvent,
   Chapter,
+  ChatSteps,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResult,
@@ -620,6 +621,33 @@ export function useSetStudyPreferences() {
       await qc.cancelQueries({ queryKey: qk.me });
       qc.setQueryData<User>(qk.me, (me) =>
         me ? { ...me, studyPreferences: prefs } : me
+      );
+    },
+    onSettled: () =>
+      refetchIfLast(qc, qk.me, () => qc.invalidateQueries({ queryKey: qk.me })),
+  });
+}
+
+/** Saves the chat's Steps setting, shown at once through the me cache. */
+export function useSetChatSteps() {
+  const qc = useQueryClient();
+  const queue = useRef(Promise.resolve());
+  return useMutation({
+    mutationFn: (steps: ChatSteps) => {
+      const request = queue.current.then(() =>
+        api.patch<void>('/me/chat-steps', { steps })
+      );
+      queue.current = request.then(
+        () => undefined,
+        () => undefined
+      );
+      return request;
+    },
+    mutationKey: qk.me,
+    onMutate: async (steps) => {
+      await qc.cancelQueries({ queryKey: qk.me });
+      qc.setQueryData<User>(qk.me, (me) =>
+        me ? { ...me, chatSteps: steps } : me
       );
     },
     onSettled: () =>

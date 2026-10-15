@@ -127,7 +127,9 @@ it.each([
   async (scenario, errorCode) => {
     server.use(...getMockScenarioHandlers(scenario));
     let start: StreamStart | undefined;
-    let streamed = '';
+    // The answer's text; the mock turn's narration block is left out.
+    const blocks = new Map<string, string>();
+    const narration = new Set<string>();
     const onError = vi.fn();
     const onDone = vi.fn();
     const onToolEnd = vi.fn();
@@ -135,8 +137,11 @@ it.each([
       'ws_bio',
       { library: false, text: 'Preview "quotes" and\nnewlines' },
       {
-        onBlockDelta: (_id, text) => {
-          streamed += text;
+        onBlockDelta: (id, text) => {
+          blocks.set(id, (blocks.get(id) ?? '') + text);
+        },
+        onBlockEnd: (id, kind) => {
+          if (kind === 'narration') narration.add(id);
         },
         onDone,
         onError,
@@ -146,6 +151,10 @@ it.each([
         onToolEnd,
       }
     );
+    const streamed = [...blocks]
+      .filter(([id]) => !narration.has(id))
+      .map(([, text]) => text)
+      .join('');
     expect(onToolEnd).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ outcome: 'succeeded' })

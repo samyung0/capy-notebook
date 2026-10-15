@@ -381,8 +381,8 @@ export function getMockScenarioHandlers(
             start,
             {
               callId: 'mock_edit',
-              detail: 'Mock source edit',
-              name: 'edit_file',
+              detail: 'Organelles cheatsheet.md',
+              name: 'edit_document',
               type: 'tool_start',
             },
             {
