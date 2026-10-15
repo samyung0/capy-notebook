@@ -85,6 +85,21 @@ describe('CSV preview parsing', () => {
     expect(rows('"a\tb\tc",d\n')).toEqual([['a\tb\tc', 'd']]);
   });
 
+  it('reads semicolon and pipe files and an Excel sep= line', () => {
+    expect(rows('name;score\nfrog;"1,5"\n')).toEqual([
+      ['name', 'score'],
+      ['frog', '1,5'],
+    ]);
+    expect(rows('a|b|c\n1|2|3\n')).toEqual([
+      ['a', 'b', 'c'],
+      ['1', '2', '3'],
+    ]);
+    expect(rows('sep=;\r\nname;note\nfrog;a,b\n')).toEqual([
+      ['name', 'note'],
+      ['frog', 'a,b'],
+    ]);
+  });
+
   it('drops a BOM and pads ragged rows', () => {
     const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
     const body = encoder.encode('name,score\nfrog\nnewt,4,extra\n');

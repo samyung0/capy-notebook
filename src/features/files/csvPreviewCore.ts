@@ -55,17 +55,27 @@ function describeColumns(rows: string[][]): CsvPreviewColumn[] {
   });
 }
 
-/** Tab when tabs outnumber commas outside quotes in the first KiB, else comma. */
-function guessDelimiter(text: string): string {
-  let commas = 0;
-  let tabs = 0;
+// In tie order: the most frequent outside quotes in the first KiB wins.
+const DELIMITERS = [',', '\t', ';', '|'];
+const SEP_LINE_PATTERN = /^sep=(.)(\r\n|\n|\r|$)/;
+
+/** An Excel `sep=<char>` first line names the delimiter; otherwise the
+ *  delimiter is guessed as the previous SheetJS preview did. */
+function splitDelimiter(text: string): [string, string] {
+  const hint = SEP_LINE_PATTERN.exec(text);
+  if (hint) return [hint[1], text.slice(hint[0].length)];
+  const counts = new Map(DELIMITERS.map((char) => [char, 0]));
   let quoted = false;
   for (const char of text.slice(0, 1024)) {
     if (char === '"') quoted = !quoted;
-    else if (!quoted && char === ',') commas++;
-    else if (!quoted && char === '\t') tabs++;
+    else if (!quoted && counts.has(char)) {
+      counts.set(char, (counts.get(char) ?? 0) + 1);
+    }
   }
-  return tabs > commas ? '\t' : ',';
+  const delimiter = DELIMITERS.reduce((best, char) =>
+    (counts.get(char) ?? 0) > (counts.get(best) ?? 0) ? char : best
+  );
+  return [delimiter, text];
 }
 
 /** RFC 4180 records: a field starting with `"` is quoted, may hold
@@ -131,10 +141,10 @@ export function parseCsvPreview(bytes: Uint8Array): CsvPreviewResult {
   }
   // TextDecoder drops a UTF-8 BOM. Cells stay as written: no date or
   // boolean coercion.
-  const text = new TextDecoder().decode(bytes);
+  const [delimiter, text] = splitDelimiter(new TextDecoder().decode(bytes));
   const records = parseDelimited(
     text,
-    guessDelimiter(text),
+    delimiter,
     CSV_PREVIEW_MAX_ROWS + 1,
     CSV_PREVIEW_MAX_COLUMNS
   );
