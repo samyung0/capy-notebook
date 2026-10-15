@@ -24,9 +24,9 @@ The Python services share one Postgres schema owned by Go migrations
 | Process | Entry | Role |
 | --- | --- | --- |
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
-| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
+| Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then reads a parse bundle's text-less page renders with the VLM, chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
+| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs (`parser/odl/`); five parse children over one FIFO, depth 8; renders text-less pages as JPEGs for the ingest worker's VLM; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -51,14 +51,15 @@ flowchart LR
   Route -->|PDF / modern Office| ParseJob[(parse job)]
   ParseJob --> Coordinator[Parse coordinator]
   Coordinator --> Download[One B2 download + trusted SHA]
-  Download --> Parse[Netcup OpenDataLoader + RapidOCR]
+  Download --> Parse[Netcup OpenDataLoader + text-less page renders]
   Parse --> Artifact[Immutable local artifact]
   Artifact --> IngestJob[(ingest continuation)]
   Route -->|direct route| IngestJob
   IngestJob --> Worker[Ingest worker]
   Worker -->|image| ImageCaption[ZAI GLM via Relace]
   Worker -->|CSV / TSV / text| DirectText[Direct normalization]
-  Worker -->|parsed document| Chunk[Heading-aware chunker + heading retention + confidence]
+  Worker -->|parsed document| VlmPages[Text-less pages read by ZAI GLM via Relace]
+  VlmPages --> Chunk[Heading-aware chunker + heading retention + confidence]
   ImageCaption --> Chunk
   DirectText --> Chunk
   Chunk --> Index[Embed + file descriptor]
@@ -271,7 +272,7 @@ silently taking a nearby route.
 
 | Source | Worker route | Searchable output | Page model |
 | --- | --- | --- | --- |
-| PDF / DOCX / XLSX / PPTX with `fast` | OpenDataLoader parser service on the ingest host, RapidOCR on text-less pages | `content_list.json` (+ images) | Yes — `page_idx` + `bbox` |
+| PDF / DOCX / XLSX / PPTX with `fast` | OpenDataLoader parser service on the ingest host; text-less pages rendered there and read by the ingest worker's VLM | `content_list.json` (+ `vlm/<page>.jpg` renders) | Yes — `page_idx` + `bbox` |
 | txt / md / json and other accepted text/code formats | Raw text | original text | No |
 | CSV / TSV | Delimiter/header normalization | explicit row/field text, including formulas | No |
 | supported image | Pinned ZAI GLM-5.3-Flash call through Relace | faithful searchable caption | No |
@@ -288,16 +289,13 @@ ported from the `bench/parsers` lab into `parser/odl/`: font `ToUnicode`
 repairs, picture triage, table-cell styles, column reading order, hidden-OCR-layer order, heading
 and table context, footer ancestry, list geometry and text-overprint repair,
 exponents, column continuations, source-geometry table recovery and negation
-composition, and formula pictures retyped with a `[formula]` placeholder. Pages whose
-text layer has fewer than 40 characters are routed to RapidOCR (PP-OCRv6 small,
-2560 px long edge, score 0.5, models baked into the image). Fresh OCR uses
-PP-DocLayoutV3 through rapid-layout 1.2.1 to order regions only when every line
-overlaps exactly one detected region by at least half its area. A page with
-unmapped or ambiguously mapped lines keeps the original row order. Lines inside each region keep that order too,
-including table cells. This preserves every OCR line and its source box.
-The model is hash-pinned in the image and loaded lazily. Partial ordering and
-table-row clustering remain rejected experiments; the 17 earlier source
-geometries are regression checks, not evidence of accuracy on unseen pages.
+composition, and formula pictures retyped with a `[formula]` placeholder. Pages
+with fewer than 40 kept characters (blank pages included) are text-less
+(`textless.textless_pages`); the parse renders each as a grey JPEG and the
+ingest worker's VLM reads it ([VLM page read](#vlm-page-read)). The parser holds
+no OCR model. History: until 2026-10-15 RapidOCR (PP-OCRv6 small, with
+PP-DocLayoutV3 region ordering) read these pages inside the parser and kept a
+box per OCR line.
 Mixed-text table recovery uses repeated source row geometry, ruled header
 scope and source-character coverage. Wrapped cells require consecutive lines
 in the same PDF text block with matching font/style and aligned, adjacent boxes;
@@ -306,7 +304,8 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-rapidocr-v14` plus the release SHA.
+`odl-2.5.7-refined-vlm-v15` plus the release SHA, and the bundle schema
+`capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -783,23 +782,24 @@ heading/confidence checks use the parser's measured copy. Phase receipts expose
 `pdf_structure_rewrite` and `java_structure_retry` when used.
 The lab corpus (`/opt/capy-odl-third-pass-20260909/refined-final-r1`) checks
 port compatibility, with reviewed bug fixes checked separately. It does not
-establish accuracy on unseen layouts or fresh selective OCR. Each successful
-attempt reports total pages, OCR pages (`_ocr_page_count`), elapsed phases and
-the parser implementation string. Billing uses the page counts, 1.0 credit per
-digital page and 1.0 credit per OCR page. The receipt still carries
+establish accuracy on unseen layouts. Each successful attempt reports total
+pages, text-less pages (still under the key `_ocr_page_count`), `_parse_lane`
+(`vlm` when the document has a text-less page, else `digital`), elapsed phases
+(the renders as `vlm_render`) and the parser implementation string. The parse
+charges 1.0 credit per page with a text layer (`digital_parse_page`;
+`db.credits_for_parse_pages` leaves the text-less pages out); a text-less page
+costs 1.0 credit (`vlm_ingest_page`) only when the ingest worker's VLM reads it
+([VLM page read](#vlm-page-read)). The receipt still carries
 `_slice_count: 1` and zero slice health keys so Go and the ops dashboard keep
 their shape; there are no slices.
 
 ### Parse capacity
 
-Parsing runs in two stages inside the parser container. `CAPY_PARSE_WORKERS`
-(5) persistent parse children each take one document from one FIFO and run
-`parse_pdf` up to, but not including, OCR. A document whose parsed PDF has
-text-less pages (under 40 characters of text layer) then hands off to the OCR
-stage and frees its child for the next document, so an OCR-heavy book never
-holds a parse slot while its pages wait. `CAPY_PARSE_QUEUE_DEPTH` (8) counts
-documents in a parse child, in the OCR stage and waiting, and must be at least
-the worker count (checked at startup); one more concurrent request is answered
+`CAPY_PARSE_WORKERS` (5) persistent parse children each take one document at
+a time from one FIFO and run all of it: LibreOffice for an Office source, the
+page count, `parse_pdf`, the page-1 thumbnail and the text-less page renders.
+`CAPY_PARSE_QUEUE_DEPTH` (8) counts documents in a parse child and waiting, and
+must be at least the worker count (checked at startup); one more concurrent request is answered
 `429` and the coordinator returns its job to `pending` as a capacity wait
 without spending an attempt (`YIELD_BACKOFF_S`, 2 s). There is no Redis
 admission gate and no page slicing: a 610-page textbook is one Java run plus
@@ -808,34 +808,28 @@ children are the outer cap.
 
 | Route | Host | Parser admission | Deadlines | JVM heap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | depth 8, 5 parse children, 1 OCR process, 500 text-less pages | 900 s parse stage, 60 s per OCR page | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
+| fast | one 8-core / 16 GiB VM | depth 8, 5 parse children, at most 500 text-less pages per document | 900 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
 
 The capacity run on the ingest host (14 GiB, 8 CPUs, 1g heap) found CPU and
 the deadline, not memory, to be the limit: each 1,216-page book adds about
-1.45 GiB and nothing was OOM-killed up to eight slots, six native slots parsed
-13.3 pages/s against 3.3 for one, and a 150-page scan's OCR went from 258 s to
-568 s when it competed with three book parses, which is why OCR became its own
-stage. Four ONNX threads beat eight next to five book parses: the scan's OCR
-took 369 s against 402 s and the books 215–223 s against 263–271 s (alone, 290 s
-against 259 s).
+1.45 GiB and nothing was OOM-killed up to eight slots, and six native slots
+parsed 13.3 pages/s against 3.3 for one.
 
 A new document upload lands `files.status=pending` with a pending `parse` row.
 Eight coordinator children claim only parse rows and flip the file to
 `processing` when the parser accepts the request. While the parser runs, no
 ingest worker slot is occupied.
 
-The OCR stage caps its backlog at the handoff, with the parse child's count
-of the parsed PDF's text-less pages (admission counts none). A document with
-more than `CAPY_PARSE_OCR_PAGE_CAP` (500) is refused with the terminal
-`parse_too_many_scanned_pages`; one that would lift the unread pages in the OCR
-stage past the cap is answered `429 parser_capacity`, its parse dropped, and
-the coordinator's capacity wait sends it again later. Until the OCR rework,
-which removes the stage, no new parse starts while the OCR stage holds the
-cap's worth of unread pages (`429` before the source is read; a page capture
-still runs). That gate fires only when the stage is full, so a finished parse
-can still be dropped at the handoff and sent again; this stays open until the
-rework. Before the OCR stage such documents timed out at about 320 scanned
-pages.
+`parse_pdf` lists the parsed PDF's text-less pages (`textless.textless_pages`:
+fewer than 40 kept characters, blank pages included). A document with more
+than `CAPY_PARSE_OCR_PAGE_CAP` (500; the env name is older than the VLM read,
+the constant is `SCANNED_PAGE_CAP`) fails as the terminal
+`parse_too_many_scanned_pages`. Otherwise the child renders each text-less page
+as a grey JPEG with a 1,280 px long edge at quality 80 (`textless.render_jpeg`,
+timed as the `vlm_render` phase) and writes the renders into its result file.
+The parser has no OCR stage, OCR backlog or capacity gate for these pages: a
+scanned document holds its parse child only for the parse and the renders, and
+the reading happens in the ingest worker ([VLM page read](#vlm-page-read)).
 
 Pages are counted once, in the parse child at the start of its parse (an
 Office source right after LibreOffice), before the Java run: a document with
@@ -859,77 +853,54 @@ open, has no pages or needs a password to open (an owner-password-only PDF
 parses), a LibreOffice conversion that exits non-zero or leaves no PDF, and a
 converted PDF over `CAPY_OFFICE_PREVIEW_MAX_BYTES`. The worker fails the file
 without the automatic retry, as it does for a parse that yields no indexable
-content. A LibreOffice timeout, a Java crash and an OCR process death keep the
-one retry.
+content. A Java crash or any other child crash keeps the one retry; a
+LibreOffice timeout is final like the parse deadline (below).
 
-The parse stage has a 900-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
-that starts when a document leaves the queue, before LibreOffice normalisation
-of an Office source and the Java run, and ends at the handoff; queue wait does
-not spend it. The Java subprocess itself runs under the same timeout. If a
+A document has a 900-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
+that starts when it leaves the queue, before LibreOffice normalisation of an
+Office source and the Java run, and ends when the API has read the child's
+result, renders included; queue wait does not spend it. The Java subprocess itself runs under the same timeout. If a
 document crosses the deadline, the parser atomically writes a quarantine marker
 keyed by source fingerprint and exact parser implementation, returns
 `parse_hard_timeout` for that file, and kills only that document's parse child
 with its session (Java and LibreOffice); the child is respawned before its slot
-takes the next document. The other children, the OCR stage and the queue keep
-running. The offending parse is terminal and later submissions of that exact
+takes the next document. The other children and the queue keep running. The offending parse is terminal and later submissions of that exact
 fingerprint fail immediately while that parser version is live. A parser-version change (`PARSER_IMPLEMENTATION` in
 `parser/app.py`, mirrored by `PARSER_IMPLEMENTATIONS` in
 `pipeline/parse/parser_client.py`) creates a new fingerprint and is the
 deliberate automatic way to retry the file after parser code changes.
 
-The OCR stage has no document clock. One OCR process owns the RapidOCR and
-PP-DocLayoutV3 models (about 0.4 GiB loaded, plus 0.5–0.8 GiB while reading a
-page; four ONNX threads); parse children never load them. It reads one page
-per waiting document per turn (round robin), rendering from the parsed PDF the
-child wrote beside its result (`ocr.read_page`), and trims its heap after each
-page. A small upload therefore finishes next to a 300-page scan. Each page gets
-`CAPY_PARSE_OCR_PAGE_TIMEOUT` (60 s) in the OCR process; waiting for its turn
-does not count. A page past its limit quarantines its document as
-`parse_hard_timeout`, like a runaway parse; the OCR process is replaced only if
-it still has not answered after a second limit (stuck, not slow). When a
-document's last page is read, the API merges the lines into its blocks in page
-order (`ocr.merge`, as `ocr.add_ocr_text` does) and, for an Office source,
-computes the page evidence; the result is byte-identical to reading OCR inside
-`parse_pdf`. Its `oom_score_adj` is 500: the kernel kills a parse child (one
-document) before the OCR process (every document in the OCR stage), and the
-API (0) last. If the OCR process dies, every document in the OCR stage fails as
-`parser_runtime_failed` (one ordinary retry, nothing quarantined) and the next
-page starts a fresh OCR process; three deaths in a row with no page answered
-in between restart the whole parser.
-
-The whole-document parser request has a 4,420-second bound (`PARSER_TIMEOUT`:
-one wait for a parse child and the parse itself, 900 s each with eight admitted
-over five children, then at most the 500 pages the OCR stage holds before the document's
-last page at up to 5 s a page, the rate a 150-page scan kept next to five
-1,400-page book parses with four OCR threads (722 s, 4.8 s a page; 290 s alone),
-plus a 120 s margin)
-and the parse job a 4,600-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
-continuation has a 1,200-second bound. A page may legally take up to 60 s, so a
-backlog of slow pages can outlast the bound; the client's retry then rejoins
-the parse already in flight for that fingerprint. A timed-out coordinator or
+The whole-document parser request has a 4,420-second bound (`PARSER_TIMEOUT`)
+and the parse job a 4,600-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the
+independent ingest continuation has a 1,200-second bound. `PARSER_TIMEOUT` was
+derived while the parser still read scanned pages: one wait for a parse child
+and the parse itself (900 s each, eight admitted over five children), 500 OCR
+pages at up to 5 s, and a 120 s margin. A request now needs only the wait and
+the parse, about 1,920 s with the same margin, so the current value leaves
+about 2,500 s unused; it has not been lowered. A later attempt for the same
+fingerprint joins the parse already in flight. A timed-out coordinator or
 ingest process records its retry and exits; the supervisor or Docker replaces
 only that process, so a cancelled blocking thread cannot overlap a later job.
 
-The API process owns the FIFO, the parse deadlines and the OCR stage. Each
+The API process owns the FIFO and the parse deadlines. Each
 persistent spawned parse child owns LibreOffice, Java and the repairs for one
 document at a time, in its own session (`setsid`; LibreOffice runs in its own
 process group inside it) with Linux `oom_score_adj` 1000 and a work directory
 `slot-N` under `CAPY_PARSE_WORK_DIR` that is wiped when the child is respawned.
-Mode-0600 temporary files carry the source, the result (JSON, then the
-repaired PDF and page-image bytes, each after its length) and, for the OCR
-stage, the parsed PDF; small pipe messages carry only status, paths and the
-text-less page list. Children answer in JSON (an answer over 16 MiB ends that
+Mode-0600 temporary files carry the source and the result (JSON, then the
+repaired PDF and page-image bytes, then one JPEG per text-less page, each after
+its length); small pipe messages carry only status and paths. Children answer in JSON (an answer over 16 MiB ends that
 child), and the API never unpickles anything a child writes; it refuses a
-result file larger than a bundle may expand to. The errors it classifies (a
-Java timeout or kill, a failed LibreOffice conversion, a format mismatch, the
-page cap) keep their kind by name; any other arrives as a runtime error naming
-its type. The one file a child wrote that the API opens with MuPDF is the
-parsed PDF whose result asks for Office page evidence after OCR
-(`_merge_ocr`); that step goes away with the OCR rework. The API process makes
+result file larger than a bundle may expand to, or one listing more text-less
+pages than the cap. The errors it classifies (a
+Java timeout or kill, a failed or timed-out LibreOffice conversion, a format
+mismatch, both page caps, an unreadable source) keep their kind by name; any other arrives as a runtime error naming
+its type. The API opens nothing a child wrote with MuPDF: an Office source's
+page evidence is computed in the parse child from its own parse, without the
+VLM-read pages (their text arrives later, in ingest). The API process makes
 itself non-dumpable at startup, so no other process of the parser user can
 trace it or read its memory and environment; PID 1 is the image's
-execute-only `tini`, which the kernel runs non-dumpable as well. A handed-off document's blocks stay in its result file
-until the OCR stage finishes. After each document the child drops the result,
+execute-only `tini`, which the kernel runs non-dumpable as well. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
 1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work
 directory: abandoned transfer, document and slot files, and the temporary
@@ -959,8 +930,8 @@ Office file whose bytes are not its suffix's container (ZIP for OOXML, OLE2 for
 the legacy formats) is refused before LibreOffice as the terminal
 `parse_format_mismatch`; the coordinator fails the file without a retry. A completed artifact takes
 precedence over a late marker. Hard timeout and OOM markers are terminal
-without a retry. Only a process-wide failure (repeated OCR deaths, or a
-runtime task that cannot continue) marks `/healthz` failed and exits so Docker
+without a retry. Only a process-wide failure (a slot's runtime task that
+exits) marks `/healthz` failed and exits so Docker
 replaces the parser.
 
 After an artifact is published, OOM, timeout, worker death, and other
@@ -976,12 +947,15 @@ trusted SHA-256, writing a job-scoped source file into the shared volume.
 The parser reads that local key and atomically writes
 `artifacts/{parse_fingerprint}.zip` to the same volume. The worker extracts that
 file directly. That local atomic ZIP is the required parser-to-ingest handoff
-(`capy-parser-bundle-v5`: `manifest.json` with the receipt and the SHA-256 of
+(`capy-parser-bundle-v6`: `manifest.json` with the receipt and the SHA-256 of
 the source bytes parsed, `content_list.json`,
 `refinement.json` with frozen furniture and Office page evidence, and
-`parsed.pdf` only for repaired native PDF sources, and an optional
+`parsed.pdf` only for repaired native PDF sources, an optional
 `page1.png`, page 1 of the PDF the parse held, 200 px wide, for the file's
-thumbnail, [thumbnails.md](thumbnails.md)). The bundle carries only what
+thumbnail, [thumbnails.md](thumbnails.md), and `vlm/<page>.jpg` for each
+text-less page, by 0-based page index, stored uncompressed and at most 4 MiB
+each, which the parser checks before writing and the client's entry limit
+enforces again). The bundle carries only what
 ingest reads: image blocks keep their geometry and caption but no file, since
 figures are reached at question time by rendering the source page
 (`capture_page`). ODL runs with `--format json --image-output off`: it writes no
@@ -990,6 +964,8 @@ time on a figure-heavy textbook), and picture triage identifies repeats by
 MuPDF's image digest instead. The worker rejects any
 other entry. Office bundles contain no PDF. The parser freezes page text and visible-heading proofs before
 discarding the temporary conversion, preserving downstream confidence/heading checks.
+The evidence leaves out the VLM-read pages, so a heading on an image-only page
+indexes as text without becoming a section heading.
 
 After the coordinator verifies the local ZIP's size, checksum, archive bounds,
 manifest identity (schema, parser release, source fingerprint and the SHA-256
@@ -1298,8 +1274,8 @@ still described once with the pinned vision model so the file is searchable,
 and `capture_page` shows the image itself (decision 2026-09-21): an upload is
 one page, page 1, its bytes normalised with Pillow and attached directly, with
 no PDF conversion. The caption chunk carries no page, so it counts as citing page 1.
-That path is the only user of `parse/caption_cache.py`, and every lookup and
-write runs inside the image file's own ingest job (its source and attempt
+That path and the [VLM page read](#vlm-page-read) are the only users of
+`parse/caption_cache.py`, and every lookup and write runs inside the image file's own ingest job (its source and attempt
 fenced): the lookup identity is the exact image SHA, the payload lives under
 `image-captions/<imageSHA>/<payloadSHA>.json`, and reuse follows the donor
 file's workspace privacy (a private workspace reuses within itself, a link or
@@ -1308,9 +1284,62 @@ prompt, never a source name or nearby text. Those calls bill their tokens only.
 
 Caption calls never inherit a user's chat reasoning level. The pinned catalog
 identity is `zai/glm-5.3-flash`, served from Relace as wire model
-`z-ai/glm-5.3-flash` (`RELACE_API_KEY`). Captioning always sends
-`reasoning_effort: low`. The catalog default is `low` for chat, and users may
-raise it to `high` or `max`.
+`z-ai/glm-5.3-flash` (on the ingest host the key is the ingest account's,
+below). The caption prompt rides as the system message and the image as the
+user turn, since Relace refuses image input with no conversation context.
+Captioning always sends `reasoning_effort: low`. The catalog default is `low`
+for chat, and users may raise it to `high` or `max`.
+
+### VLM page read
+
+Text-less pages (a scan, a blank page, a slide that is one picture) reach the
+ingest worker as `vlm/<page>.jpg` renders in the parse bundle. After extracting
+the bundle, `_read_vlm_pages` (stage `vlm_pages`) reads each with the captioning
+slot's pinned model, GLM-5.3-Flash on Relace, through `models.read_page`:
+`VLM_PAGE_PROMPT` (`pipeline/prompts/captioning.py`, the developer's wording)
+as the system message and the image as the user turn, reasoning `low`, at most
+2,000 output tokens (`VLM_PAGE_MAX_TOKENS`; a page is about 460). An empty
+answer, one that stops at the cap (finish `length`) and a provider error left
+after the ingest retry policy are failed reads; a page gets two reads, then it
+is unread. A busy provider past its budget raises `ProviderBusy` instead and
+the job re-pends; pages already read are cached. One job reads at most 10 pages
+at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
+its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
+flight (`VLM_PAGE_CAPACITY`), taken in place of the GLM `model_capacities` row,
+so page reads neither need that row nor count against its ingest share.
+
+Ingest calls Relace on a second account: GitHub holds its key as
+`RELACE_INGEST_API_KEY`, and the env renderer (`scripts/env/config.py`) writes
+it into the ingest queue env as `RELACE_API_KEY`, the one name the pipeline
+reads. Chat on the app host keeps its own `RELACE_API_KEY`. Both accounts share
+Relace's server pool (a server already serving 32 requests sheds new
+sessions), so the second key adds no capacity and ingest reads stay inside
+their gate. Quality against RapidOCR, the 1,280 px render size, per-page speed
+and cost, and the load where shedding starts are in
+[`bench/parsers/reports/2026-10-15-glm-ocr.md`](../bench/parsers/reports/2026-10-15-glm-ocr.md).
+
+Reads go through the caption cache keyed by the SHA-256 of `vlm-page\0` plus
+the JPEG bytes, with the image captions' donor rules and storage under
+`image-captions/`, so a page read before for this file, or by an eligible
+donor, costs nothing. Page reads pass `exclusive=False`: they take no
+per-image lock (it would hold a pooled connection through each model call), so
+two uploads racing on one page may read it twice.
+
+Each read page becomes one `text` block inserted after that page's own blocks,
+with `_recovery: vlm-page` and a whole-page box `[0, 0, 1000, 1000]`. There
+are no per-line boxes; a citation opens and highlights that page, even when
+its chunk spans pages. VLM-read pages score extraction confidence 1.0 (see
+Chunking). An Office file's frozen page evidence leaves them out.
+
+A page read is charged 1.0 credit (`vlm_ingest_page`) when it succeeds; a
+cached page and a failed read cost nothing, and the parse does not charge
+these pages the digital rate as well. When pages are still unread after two
+reads, the readable pages are indexed and searchable, but the file ends
+`failed` (still `indexed`) and the job note names the unread pages (the first
+20, then a count). Retry processing runs the file again (a parse redone because
+its bundle left the spool is charged like any retry) and only the unread pages
+reach the VLM; the others come from the cache. A document with no indexable
+content besides its unread pages fails terminally with the same note.
 
 ### Chunking
 
@@ -1422,9 +1451,10 @@ need no PDF or repeated conversion:
   `rag_chunks.confidence` / `confidence_reasons`): agreement of the chunk's
   tokens (words for spaced scripts, characters for CJK) with the cited pages'
   text layer, a 0.35 floor for pages with no text layer, a penalty for
-  pipe-table rows with uneven column counts. Pages RapidOCR handled score a
-  fixed 0.5 with the reason "page text came from OCR", because an OCR text
-  layer would only agree with itself. Passage headers show the score and
+  pipe-table rows with uneven column counts. A chunk that spans a page the
+  VLM read (a block marked `_recovery: vlm-page`) scores 1.0 (`VLM_SCORE`)
+  with no reasons, since that page has no text layer to agree with (decision
+  2026-10-15, replacing the fixed 0.5 of RapidOCR pages). Passage headers show the score and
   reasons below `CAPY_CONFIDENCE_NOTE_BELOW` (0.9); the chat prompt ties
   `capture_page` to that note. Ported from the playground's `chunk_quality.py`.
 
@@ -3619,8 +3649,8 @@ current chunk, with full coverage in the large-document reduction path.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_TIMEOUT`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `CAPY_RAPIDOCR_MODEL_DIR`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose) and one OCR process, 900 s per document in the parse stage, 60 s per OCR page, 500 text-less pages admitted, 4,420 s per request and 4,600 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT` | Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 900 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 4,420 s per request and 4,600 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |
@@ -3632,7 +3662,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Extraction confidence | `CAPY_CONFIDENCE_NOTE_BELOW` | Default 0.9. A passage whose chunk confidence is below this carries `[extraction confidence 0.72: reasons]` in its header. Visual facts require capture even above this threshold |
 | capture_page | `CAPY_CAPTURE_CACHE_DIR`, `CAPY_CAPTURE_CACHE_MAX_BYTES`, `CAPY_CAPTURE_MAX_EDGE` | Retrieval-host PDF cache (LRU by size, 2 GiB), 1568 px long edge JPEG q80, no per-turn capture cap |
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
-| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
+| Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
 | UAT scripted tool turns | `RETRIEVAL_UAT_SCRIPTED_TOOLS` | UAT only, exactly `true` or unset; a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`, and the renderer refuses it outside `uat`. With it on, a chat message starting `[uat-scripted-tools]` followed by JSON steps (`retrieval/scripted.py`) replaces the model's responses: each step's tool calls still run through `tools.run` with the role's operations, contract validation and the skills gate, and a string step is the answer. With it off the marker is plain text. The UAT chat journey uses it so tool coverage is deterministic and free. |
 

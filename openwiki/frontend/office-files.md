@@ -1713,15 +1713,16 @@ or switching it to no parsing cancels queued work and terminates the active
 worker for that row. A completed result stays cached when parsing is toggled off
 and back on. Each row owns its progress bar; there is no separate queue panel.
 
-PDF.js reports an exact PDF page count and estimates OCR routing from the text
-layer with the parser's own rule: a page with fewer than 40 text-layer
-characters goes to OCR (`TEXTLESS_CHARS` in `sourceAnalysisCore.ts`). It reads
+PDF.js reports an exact PDF page count and estimates the text-less pages
+from the text layer with the parser's own rule: a page with fewer than 40
+text-layer characters is text-less and will be read by the ingest worker's VLM
+(`TEXTLESS_CHARS` in `sourceAnalysisCore.ts`). It reads
 text only (no operator list) and loads the packed pdf.js CMaps, which Vite
 emits as same-origin assets fetched on demand, so non-embedded CJK fonts read
 as text rather than scans. The OOXML probe reads ZIP/XML parts:
 PPTX slide count is exact, while DOCX pagination (the larger of Word's saved
 page count and the body's page breaks), XLSX rendered pages, and every Office
-OCR classification are explicitly estimates. XLSX estimates printed
+text-less classification are explicitly estimates. XLSX estimates printed
 pages from each worksheet's used row/column extent because its eventual
 LibreOffice print layout is not available in the browser. Every format stops
 at the upload policy's fast-parse `maxPages`. Each PDF.js open, page load and
@@ -1732,7 +1733,8 @@ media payloads and unrelated package parts are never inflated by the probe.
 
 The estimate feeds the dialog summary and the page limits, both from
 `source-upload-policy` (`parseModes[fast].maxPages` 1,400 and `maxOcrPages`
-1,000, the parser's own env values). Every reserved fast-parse source carries
+500, the parser's own env values `CAPY_PARSE_MAX_PAGES` and
+`CAPY_PARSE_OCR_PAGE_CAP`; the OCR names predate the VLM read). Every reserved fast-parse source carries
 an estimate, so a failed analysis keeps Add disabled until the row is removed
 or switched to no parsing. The row names the failure: a damaged file, more
 pages than `maxPages` (fast parsing is also disabled in the row's mode menu),
@@ -1743,14 +1745,16 @@ mode menu, and a muted notice says it is added without parsing; the parser
 refuses one that arrives anyway as `parse_unreadable`. A PDF whose
 text-less count is above 105% of `maxOcrPages` is refused; from 95% up to that
 it warns and uploads, since the count can be off by a few pages and the parser
-refuses the file if it really is over. Office OCR estimates miss
+refuses the file if it really is over. Office text-less estimates miss
 slide-master text, so they warn from 95% and never block. The upload sends the
 page count, and the gateway refuses a fast-parse reservation above `maxPages`. Images and audio do not enter the
-browser page/OCR analysis queue: the ingest worker captions images (a cost
+browser page analysis queue: the ingest worker captions images (a cost
 deliberately absent from the page-based estimate) and stores audio without indexing.
-The server-owned page rates (1.0 credit per digital page and per OCR page) are
-returned by `source-upload-policy`; parser receipts remain authoritative for
-settlement.
+The server-owned page rates (1.0 credit per page with a text layer,
+`digitalParsePageCreditMicros`, and 1.0 credit per page the VLM reads,
+`vlmIngestPageCreditMicros`) are returned by `source-upload-policy`; the
+estimate charges each text-less page the VLM rate instead of the digital one.
+Parser receipts and the VLM reads remain authoritative for settlement.
 
 The same dialog submits each cloud row with its own chapter and parse mode;
 there is no caption toggle, because embedded figure captioning was retired.

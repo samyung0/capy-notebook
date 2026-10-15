@@ -606,7 +606,7 @@ input > 0; cached-read and output may be 0.
 | `user_credits` | the counter the gate locks; monthly period resets lazily on first read |
 | `provider_sessions` | request or ingest sessions; owns the concurrency lease, per-session credit reservation, and pinned provider configuration, swept on expiry |
 | `provider_calls` | one row inserted before each provider attempt; records lifecycle, measured usage, numeric-only context composition, and optional ingest attempt/stage linkage |
-| `ingest_job_attempts` | one durable row per actual parse/ingest queue claim, including stage timings, retry/error classification, page/OCR/chunk counts (the slice and caption columns stay at their zero defaults since the OpenDataLoader parser), and no source name or content |
+| `ingest_job_attempts` | one durable row per actual parse/ingest queue claim, including stage timings, retry/error classification, page, text-less page (the OCR-named columns) and chunk counts (the slice and caption columns stay at their zero defaults since the OpenDataLoader parser), and no source name or content |
 | `ingest_host_samples` / `ingest_host_sample_rollups` | shared parser-process, queue, spool, and physical-host samples; raw rows retain 30 days and one-minute rollups retain one year |
 | `ingest_worker_samples` / `ingest_worker_sample_rollups` | per-container import/parse/ingest worker cgroup samples; raw rows retain 30 days and one-minute rollups retain one year |
 
@@ -896,8 +896,8 @@ reserved + estimate would exceed 1.3× the plan limit; provider import
 reservations stay on the plain exhaustion check. The dialog
 holds submit while any fast-parse analysis is running or failed, so every
 reserved document carries an estimate; since 2026-09-28 analysis fails only for
-real reasons (damaged file, user password, over the policy's page or OCR page
-cap), each with its own message (see
+real reasons (damaged file, over the policy's page or text-less page cap; a
+PDF that needs a password to open is added without parsing instead), each with its own message (see
 [frontend/office-files.md](frontend/office-files.md)). The reservation also
 takes the analysed `pageCount` and refuses a fast parse above `maxPages`. The
 browser reads the fast-parse
@@ -929,26 +929,37 @@ the creator's receipt. Legacy responses without a receipt retain
 `parse:{job id}:{attempt}` as their compatibility key. Cache and donor hits do
 not create parse events because they did not run the parser.
 
-The charge is per page, not per container time. Every page gets exactly one of
-two active database rates: the digital-page rate or the OCR-page rate. The
-OCR rate replaces the digital rate. It is not a surcharge added on top.
+The charge is per page, not per container time. Every page gets at most one
+of two active database rates. A page with a text layer is charged the digital
+rate (`digital_parse_page`) on the parse event. A text-less page (fewer than
+40 kept characters, which is also the browser estimator's rule) is left out of
+the parse charge (`db.credits_for_parse_pages`) and charged the VLM rate
+(`vlm_ingest_page`) when the ingest worker's VLM reads it. That read is an LLM
+provider call (`purpose` `vlm_page`) that records its tokens but settles at the
+page rate instead of token pricing, and at zero when the read fails; a page
+served from the caption cache makes no call and costs nothing. The VLM rate
+replaces the digital rate; it is not a surcharge added on top. A retried
+page is charged when it is read again (decision 2026-10-15).
 
-`GET /api/source-upload-policy` returns both page rates in microcredits. The browser
-details dialog applies them to its serial worker's digital/OCR page estimate so
-the user sees an expected cost before submit. It is not a reservation or ledger
-write. PDF page count is exact but OCR routing remains estimated; OOXML counts
-can also be estimated. Only the parser receipt creates `usage_events` and
-settles the actual charge.
+`GET /api/source-upload-policy` returns both page rates in microcredits
+(`digitalParsePageCreditMicros`, `vlmIngestPageCreditMicros`). The browser
+details dialog applies them to its serial worker's digital/text-less page
+estimate so the user sees an expected cost before submit. It is not a
+reservation or ledger write. PDF page count is exact but the text-less count
+remains an estimate; OOXML counts can also be estimated. Only the parser
+receipt and the VLM reads create `usage_events` and settle the actual charge.
 
-Both page rates are 1.0 credit (1,000,000 micros) since the OpenDataLoader
-parser: version 2 of `digital_parse_page` and `ocr_parse_page` are the active
-rows (`0008_parse_page_rates.sql`), version 1 and `figure_caption_call` are
-inactive (decision 2026-09-12, `human/observability-metering.md`). An OCR page
-is one the parser routed to RapidOCR (fewer than 40 text-layer characters),
-which is also the browser estimator's rule. Operators can create a new active
-version without deploying. Enqueue snapshots the applicable versions and
+Both page rates are 1.0 credit (1,000,000 micros): version 2 of
+`digital_parse_page` (`0008_parse_page_rates.sql`) and version 1 of
+`vlm_ingest_page` (`0084_vlm_ingest_page.sql`, which deactivated
+`ocr_parse_page`, the rate of the parser's former RapidOCR pages). Earlier
+versions and `figure_caption_call` are inactive (decisions 2026-09-12 and
+2026-10-15, `human/observability-metering.md`). Operators can create a new
+active version without deploying. Enqueue snapshots the applicable versions and
 microcredit amounts into the job, so an edit never reprices work already
-waiting in the queue. Standalone image captions bill their tokens only.
+waiting in the queue; the parse event's metadata carries both snapshots
+(`digitalPageRate`, `vlmPageRate`). Standalone image captions bill their
+tokens only.
 
 ### Source refreshes and maintenance republishes
 
@@ -978,17 +989,18 @@ The persistent parser returns wall time, queue time, shared-spool
 source-read/bundle-write time, and current process/cgroup RSS/PSS and I/O. The
 historical database column names still say parse download/upload, but those
 values no longer measure B2 transfers. The receipt also carries per-phase
-timings; the `ocr` phase is the time the OCR process spent on this document's
-pages, not its wait for a turn, and `_queue_ms` is only the wait for a parse
-child. With several parse children the process/cgroup RSS/PSS fields measure
+timings; the `vlm_render` phase is the time the parse child spent rendering
+the text-less pages into JPEGs (the VLM read itself runs in the ingest worker,
+under its `vlm_pages` stage), and `_queue_ms` is only the wait for a parse
+child. `_ocr_page_count` (stored as `usage_events.parse_ocr_pages`) keeps its
+old name but counts the text-less pages rendered for the VLM, and `_parse_lane`
+is `vlm` or `digital`. With several parse children the process/cgroup RSS/PSS fields measure
 the whole parser, including the other documents running then, not this
 document alone; whole-host sampling captures CPU and memory. These fields are
 operational telemetry only. Page counts determine the charge. `/healthz`
 reports `executing_jobs` (documents in a parse child, 0 to `parse_workers`),
-`ocr_stage_jobs` (documents waiting for or in OCR), `ocr_queued_pages` (their
-unread pages), `ocr_page_cap` and `ocr_page_timeout_s`; `active_jobs` counts
-both stages plus the waiting documents. The host sampler stores only the
-fields it stored before, so the Ops chart does not show the OCR stage yet.
+`queued_jobs`, `active_jobs` (both together) and `scanned_page_cap` (the
+per-document text-less page cap); the parser has no OCR stage to report.
 
 Host saturation is separate. `pipeline.ingest.host_sampler` reads host `/proc`,
 polls parser admission counts, reads the durable parse/ingest queues and spool,
@@ -1022,7 +1034,7 @@ primary database and can add optional column-limited read DSNs for UAT/local.
 ### Pricing is policy
 
 Token work is priced from the resolved `model_configs` row. Non-token policy
-(digital/OCR pages and email) is versioned in
+(digital and VLM pages, and email) is versioned in
 `resource_credit_rates`; `figure_caption_call` rows remain for history but none
 is active. The Ops usage page edits these
 rates by inserting a new active version and recording an operator audit event.
@@ -1178,7 +1190,11 @@ Only platform-key calls take a lease; BYOK uses the user's own provider limits.
 Missing capacity raises an explicit configuration error before a call row or
 provider request is created. A full gate polls with jitter within the call budget,
 then fails as `provider_busy`. Leases use the call id and receipt deadline and are
-released when the call ends.
+released when the call ends. The VLM read of text-less document pages has a
+gate of its own: its leases use the fixed key `vlm_page` with a limit of 20
+across every worker (`models.VLM_PAGE_CAPACITY`) in place of the GLM row, so those
+reads need no `model_capacities` row and do not count against GLM's ingest
+share.
 
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account

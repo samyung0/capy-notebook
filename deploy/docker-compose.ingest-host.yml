@@ -71,19 +71,17 @@ services:
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
       PARSER_BIND_ADDRESS: ${PARSER_BIND_ADDRESS:?set the WireGuard bind address}
       PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-      # Parse children, one document each. A document with text-less pages
-      # then frees its child and waits in the OCR stage (one OCR process).
+      # Parse children, one document each.
       CAPY_PARSE_WORKERS: ${CAPY_PARSE_WORKERS:-5}
-      # Depth counts documents in a parse child, in the OCR stage and waiting.
+      # Depth counts documents in a parse child and waiting.
       # One more is 429 and the coordinator re-pends without spending an
       # attempt.
       CAPY_PARSE_QUEUE_DEPTH: ${CAPY_PARSE_QUEUE_DEPTH:-8}
       # Hard deadline per document in its parse child (Java plus repairs, wall
       # clock); a breach quarantines the fingerprint and replaces that child.
       CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-900}
-      # OCR stage: each page's limit in the OCR process (queue wait is free),
-      # and the text-less pages it holds, checked at the handoff. A document
-      # with more than the cap fails as parse_too_many_scanned_pages.
+      # Text-less pages one document may send to the ingest worker's VLM;
+      # more fails as parse_too_many_scanned_pages.
       CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:-500}
       # Pages per document; more fails as parse_too_many_pages. The API serves
       # the same value in the upload policy.
