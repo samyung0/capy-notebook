@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { ApiError } from '@/api/client';
 import { m } from '@/i18n';
@@ -178,5 +178,17 @@ describe('upload batch limits', () => {
     expect(
       retryAfterMs(new ApiError(403, 'Forbidden', undefined, { code: 'x' }))
     ).toBeNull();
+  });
+
+  it('gives a reservation answered 429 three attempts in all', async () => {
+    const error = new ApiError(429, 'Too Many Requests', undefined, {
+      retryAfterSeconds: 2,
+    });
+    const reserve = vi.fn().mockRejectedValue(error);
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(withUploadRetry(reserve, wait)).rejects.toBe(error);
+    expect(reserve).toHaveBeenCalledTimes(3);
+    expect(wait.mock.calls).toEqual([[2000], [2000]]);
   });
 });
