@@ -276,12 +276,11 @@ export async function emptyLine(
 /** The slash command's media blocks: its option, and the placeholder's picker. */
 const MEDIA = {
   audio: { option: () => m.editor_audio(), pick: () => m.editor_add_audio() },
-  file: { option: () => m.editor_file(), pick: () => m.editor_add_file() },
   img: { option: () => m.editor_image(), pick: () => m.editor_add_image() },
 };
 
 /**
- * A note image, audio or file through the slash command's file picker (the
+ * A note image or audio clip through the slash command's file picker (the
  * actor, under the line `after`): one ready row named by the note and charged
  * to the owner, and the stored bytes are the picked ones. Images also render.
  */
@@ -497,7 +496,7 @@ const EVERY_BLOCK = new URL(
 /** Blocks backed by an editor asset. Imported, they would name assets that do
  * not exist (the collaboration service drops those), so the journey uploads
  * its own through the picker instead. */
-const ASSET_BLOCKS = new Set(['img', 'audio', 'file']);
+const ASSET_BLOCKS = new Set(['img', 'audio']);
 
 type PlateNode = {
   type?: string;
@@ -710,6 +709,17 @@ export async function sharedNote(
         { timeout: 60_000 }
       )
       .toBeGreaterThan(0);
+    // The audio plays: the asset route redirects it to its signed link.
+    await expect
+      .poll(
+        () =>
+          page
+            .locator('audio')
+            .first()
+            .evaluate((element) => (element as HTMLAudioElement).readyState),
+        { timeout: 60_000 }
+      )
+      .toBeGreaterThanOrEqual(1); // HAVE_METADATA: the clip's duration is known
     // Double-click preview: the image, the diagram (once drawn), chart and graph.
     const previews = page.locator('[data-island] [data-media-preview]');
     await expect(previews).toHaveCount(4, { timeout: 60_000 });

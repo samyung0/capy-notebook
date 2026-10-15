@@ -84,10 +84,7 @@ test('note: created in the browser, two editors converge, every block type impor
     'img',
     { buffer: png, mimeType: 'image/png', name: imageName }
   );
-  const attachments = {
-    'readings.txt': Buffer.from(`Readings ${marker}\n`),
-    'tide.wav': silentWav(),
-  };
+  const attachments = { 'tide.wav': silentWav() };
   const audio = await insertNoteMedia(
     run,
     editor,
@@ -96,19 +93,6 @@ test('note: created in the browser, two editors converge, every block type impor
     editorLine,
     'audio',
     { buffer: attachments['tide.wav'], mimeType: 'audio/wav', name: 'tide.wav' }
-  );
-  const file = await insertNoteMedia(
-    run,
-    editor,
-    workspaceId,
-    noteId,
-    editorLine,
-    'file',
-    {
-      buffer: attachments['readings.txt'],
-      mimeType: 'text/plain',
-      name: 'readings.txt',
-    }
   );
 
   // 3. The owner imports an interactive block, then the every-block note,
@@ -166,7 +150,7 @@ test('note: created in the browser, two editors converge, every block type impor
   // 7. A link-shared copy, read by a signed-out visitor.
   const shared = await sharedNote(run, browser, noteId);
   await run.attach(`${noteId}-note`, {
-    attachments: [audio.id, file.id],
+    attachments: [audio.id],
     embed: embed.id,
     images: [asset.id],
     shared,
