@@ -10,7 +10,7 @@ import {
   type SaveBannerState,
 } from '@/components/banners/SaveBanner';
 import { ErrorAction } from '@/components/ui/Button';
-import { Spinner } from '@/components/ui/feedback';
+import { PaneLoading } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { useOnlineStatus } from '@/lib/online';
@@ -22,12 +22,7 @@ export function FileLoading({
   message?: string;
 }) {
   const online = useOnlineStatus();
-  return (
-    <div className="flex h-full flex-1 flex-col items-center justify-center gap-3">
-      <Spinner className="size-6.5" />
-      <p>{online ? message : m.connection_waiting()}</p>
-    </div>
-  );
+  return <PaneLoading message={online ? message : m.connection_waiting()} />;
 }
 
 export function FileError({

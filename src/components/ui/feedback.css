@@ -1,9 +1,11 @@
-/* Leapfrog loader, after ldrs 1.1.9 (MIT, GriffinJohnston/ldrs) at 1.3x its
+/* Plain CSS, layered so Tailwind's size-* and other utilities win, and so the
+   Office runtime frame, which has no Tailwind utilities, gets it too.
+
+   Leapfrog loader, after ldrs 1.1.9 (MIT, GriffinJohnston/ldrs) at 1.3x its
    speed. Each dot spans the whole box and rotates half a turn about its
    centre, so a dot hops over the others inside a square slot; percentages are
-   of that full-width box, so a size-* class is the only knob. Layered so those
-   classes win; plain CSS so the Office runtime frame, which has no Tailwind
-   utilities, gets it too. index.html inlines a copy for the boot page. */
+   of that full-width box, so a size-* class is the only knob. index.html
+   inlines a copy for the boot page. */
 @layer components {
   .spinner {
     position: relative;
@@ -38,6 +40,26 @@
   .spinner > i:nth-child(3) {
     transform: translateX(80%);
     animation-delay: calc(3.25s / -3);
+  }
+
+  /* PaneLoading: the loader over a body-text message, centred in its pane. */
+  .pane-loading {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: 12px;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    font-size: var(--body-font-size);
+    font-weight: var(--body-font-weight);
+    line-height: var(--body-line-height);
+    color: var(--text-primary);
+  }
+
+  .pane-loading > .spinner {
+    width: 26px;
+    height: 26px;
   }
 }
 

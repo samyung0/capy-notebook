@@ -1,6 +1,6 @@
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import './spinner.css';
+import './feedback.css';
 
 /** Leapfrog dots in an 18px square; a size-* class resizes it. */
 export function Spinner({ className }: { className?: string }) {
@@ -15,6 +15,16 @@ export function Spinner({ className }: { className?: string }) {
       <i />
       <i />
     </span>
+  );
+}
+
+/** The loader over a message, centred in a file or editor pane. */
+export function PaneLoading({ message }: { message: string }) {
+  return (
+    <div className="pane-loading">
+      <Spinner />
+      <p>{message}</p>
+    </div>
   );
 }
 

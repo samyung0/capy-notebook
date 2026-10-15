@@ -9,7 +9,7 @@ import {
   useState,
 } from 'react';
 import { createRoot } from 'react-dom/client';
-import { Spinner } from '@/components/ui/feedback';
+import { PaneLoading } from '@/components/ui/feedback';
 import {
   isOfficeHostMessage,
   OFFICE_PROTOCOL_VERSION,
@@ -100,6 +100,7 @@ function OfficeRuntime() {
   const [file, setFile] = useState<LoadedFile | null>(null);
   const [citation, setCitation] = useState<OfficeCitation | null>(null);
   const [mode, setMode] = useState<OfficeMode>('view');
+  const [appearance, setAppearance] = useState(false);
   const [dark, setDark] = useState(false);
   const [narrow, setNarrow] = useState(false);
   // Below md: a DOCX opens fitted to the pane, and a pinch zooms it.
@@ -358,6 +359,7 @@ function OfficeRuntime() {
         setCompact(message.compact);
         // Below lg, for CSS that keeps clear of Capy's floating tools button.
         document.documentElement.toggleAttribute('data-narrow', message.narrow);
+        setAppearance(true);
         return;
       }
       if (message.type === 'load') {
@@ -603,13 +605,12 @@ function OfficeRuntime() {
     };
   }, [file, mode]);
 
+  // Nothing until Capy's appearance arrives: before it the frame has no
+  // theme tokens, font or locale, and would flash black system-font English.
   if (!file)
-    return (
-      <div className="office-runtime-state">
-        <Spinner />
-        {m.files_office_runtime_loading_file()}
-      </div>
-    );
+    return appearance ? (
+      <PaneLoading message={m.files_office_runtime_loading_file()} />
+    ) : null;
 
   // XLSX zooms by a number only; DOCX and PPTX may also fit.
   const zoom = typeof file.zoom === 'number' ? file.zoom : undefined;
@@ -677,12 +678,7 @@ function OfficeRuntime() {
       }}
     >
       <Suspense
-        fallback={
-          <div className="office-runtime-state">
-            <Spinner />
-            {m.files_office_runtime_loading()}
-          </div>
-        }
+        fallback={<PaneLoading message={m.files_office_runtime_loading()} />}
       >
         {mode === 'edit' && collaboration ? (
           file.format === 'docx' ? (
