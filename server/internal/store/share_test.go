@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
@@ -116,6 +117,23 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 	}
 	if got := blobRefCount(t, s, path); got != 0 {
 		t.Fatalf("deleted path refcount = %d, want 0", got)
+	}
+}
+
+// A clone transaction that keeps failing on serialization runs three times in
+// all, then hands the error to the user, who can clone again.
+func TestCloneStopsAfterThreeSerializationFailures(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, code := range []string{"40001", "40P01"} {
+		calls := 0
+		err := retryClone(ctx, func() error {
+			calls++
+			return &pgconn.PgError{Code: code}
+		})
+		if calls != 3 || !isRetryableTransactionError(err) {
+			t.Fatalf("%s: %d transactions, error %v; want 3 and the serialization error", code, calls, err)
+		}
 	}
 }
 

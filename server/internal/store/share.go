@@ -991,15 +991,13 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 		return Workspace{}, nil, err
 	}
 	defer unlock()
-	for attempt := 0; ; attempt++ {
-		workspace, copies, err := s.cloneWorkspaceOnce(ctx, conn, userID, srcID, input)
-		if !isRetryableTransactionError(err) {
-			return workspace, copies, err
-		}
-		if err := waitCloneRetry(ctx, attempt); err != nil {
-			return Workspace{}, nil, err
-		}
-	}
+	var workspace Workspace
+	var copies []ThumbnailCopy
+	err = retryClone(ctx, func() (err error) {
+		workspace, copies, err = s.cloneWorkspaceOnce(ctx, conn, userID, srcID, input)
+		return err
+	})
+	return workspace, copies, err
 }
 
 // SetCloneThumbnail points a cloned file at its copied thumbnail. A file that
@@ -1026,6 +1024,24 @@ func (s *Store) SetCloneThumbnail(ctx context.Context, fileID, key string) error
 
 type cloneTxStarter interface {
 	BeginTx(context.Context, pgx.TxOptions) (pgx.Tx, error)
+}
+
+// cloneAttempts bounds a clone transaction that fails on a serialization
+// error (40001, 40P01); the last error goes to the user, who can clone again.
+const cloneAttempts = 3
+
+// retryClone runs one clone transaction, again after a serialization error,
+// at most cloneAttempts times in all.
+func retryClone(ctx context.Context, once func() error) error {
+	for attempt := 0; ; attempt++ {
+		err := once()
+		if !isRetryableTransactionError(err) || attempt+1 == cloneAttempts {
+			return err
+		}
+		if err := waitCloneRetry(ctx, attempt); err != nil {
+			return err
+		}
+	}
 }
 
 func waitCloneRetry(ctx context.Context, attempt int) error {
@@ -1594,15 +1610,13 @@ func sourceOwnerHidden(err error, sourceOwnerID string) error {
 // counted), saved edit state, captions, provenance and index, plus the
 // thumbnail the caller copies after the commit. The target owner pays.
 func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
-	for attempt := 0; ; attempt++ {
-		file, copies, err := s.cloneFileOnce(ctx, userID, fileID, target)
-		if !isRetryableTransactionError(err) {
-			return file, copies, err
-		}
-		if err := waitCloneRetry(ctx, attempt); err != nil {
-			return File{}, nil, err
-		}
-	}
+	var file File
+	var copies []ThumbnailCopy
+	err := retryClone(ctx, func() (err error) {
+		file, copies, err = s.cloneFileOnce(ctx, userID, fileID, target)
+		return err
+	})
+	return file, copies, err
 }
 
 func (s *Store) cloneFileOnce(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
@@ -1747,15 +1761,12 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target 
 		return Material{}, err
 	}
 	defer unlock()
-	for attempt := 0; ; attempt++ {
-		material, err := s.cloneMaterialOnce(ctx, conn, userID, matID, target)
-		if !isRetryableTransactionError(err) {
-			return material, err
-		}
-		if err := waitCloneRetry(ctx, attempt); err != nil {
-			return Material{}, err
-		}
-	}
+	var material Material
+	err = retryClone(ctx, func() (err error) {
+		material, err = s.cloneMaterialOnce(ctx, conn, userID, matID, target)
+		return err
+	})
+	return material, err
 }
 
 func (s *Store) cloneMaterialOnce(
