@@ -1297,11 +1297,15 @@ the bundle, `_read_vlm_pages` (stage `vlm_pages`) reads each with the captioning
 slot's pinned model, GLM-5.3-Flash on Relace, through `models.read_page`:
 `VLM_PAGE_PROMPT` (`pipeline/prompts/captioning.py`, the developer's wording)
 as the system message and the image as the user turn, reasoning `low`, at most
-2,000 output tokens (`VLM_PAGE_MAX_TOKENS`; a page is about 460). An empty
-answer, one that stops at the cap (finish `length`) and a provider error left
-after the ingest retry policy are failed reads; a page gets two reads, then it
-is unread. A busy provider past its budget raises `ProviderBusy` instead and
-the job re-pends; pages already read are cached. One job reads at most 10 pages
+2,000 output tokens (`VLM_PAGE_MAX_TOKENS`; a page is about 460). A page gets
+one read (decided 2026-10-15, replacing the second read of the same day's OCR
+decision): the ingest retry policy's three calls. An empty answer, one that
+stops at the cap (finish `length`, both settled at 0 credits) and a transient
+provider error (5xx, a connection reset) take the next call, as for the file
+descriptor (parts design Q7); after the third, or at once on a definitive
+client error (400, 401, 403, 404, 422), the page is unread. A busy provider
+past its budget raises `ProviderBusy` instead and the job re-pends once; pages
+already read are cached. One job reads at most 10 pages
 at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
 its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
 flight (`VLM_PAGE_CAPACITY`), taken in place of the GLM `model_capacities` row,
@@ -1560,11 +1564,13 @@ exists; the local bundle is gone once the first ingest finished.
 4. The file descriptor (~50 words, one cheap-model call); upsert
   `rag_content_summaries`. Like compaction's summary, the call asks for plain
   text (one dense sentence of about 50 words, no JSON, no preamble) and the
-  stripped reply is stored as written, with no parser. `max_tokens` 400
+  stripped reply is stored as written, with no parser, under `max_tokens` 400
   (assuming thinking off, which the operator-set ingest pin is expected to
-  have) is the only cut, so a reply cut off there keeps its text up to the
-  cut. An empty reply fails explicitly, and the job's ordinary failure path
-  retries it. A reindex of a file with a ready descriptor first measures the net text change between the
+  have). Within the call's three attempts (parts design Q7, 2026-10-15), an
+  empty reply or one cut off at that cap is a failed attempt, a transient
+  provider error (5xx, a connection reset) takes the next attempt, and a
+  definitive client error (400, 401, 403, 404, 422) ends the call at once;
+  the job's ordinary failure path then retries it. A reindex of a file with a ready descriptor first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and
   retained headings dropped, lines aligned, then words inside each changed
   range; spans that differ only in spacing or glyph forms count nothing; a
@@ -3536,8 +3542,9 @@ dirty with `index_error` set (the job's error, or `index job failed` when it
 has none) and counts in `pendingNotes`, and nothing admits it again until its
 next edit clears the error. The one wait before that
 is a busy embedding provider: like a file's job, a note job that finds it busy
-re-pends without spending an attempt (up to 5 waits, `PROVIDER_WAITS_MAX`;
-Retry-After or 30 s doubling) and fails only after that; otherwise there is no
+re-pends without spending an attempt (once, `PROVIDER_WAITS_MAX`, decided
+2026-10-15 in place of the five waits of 2026-10-14; Retry-After or 30 s) and
+fails only after that; otherwise there is no
 automatic re-admission or backoff. A note parked by a lifecycle cancellation
 (an account-deletion request, a suspension) stays parked after the account is
 restored or unsuspended, until an edit.
@@ -3778,7 +3785,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 900 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,920 s per request and 2,100 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |

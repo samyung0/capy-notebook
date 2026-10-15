@@ -1736,10 +1736,9 @@ async def test_replacement_between_failure_check_and_job_write_closes_job(
     assert finished == [("job_raced_replacement", 1, "cr_1")]
 
 
-async def test_provider_busy_repends_until_the_cap_then_fails_the_file(monkeypatch):
-    """A busy provider hands the attempt back at most PROVIDER_WAITS_MAX times."""
+async def test_provider_busy_repends_once_then_fails_the_file(monkeypatch):
+    """A busy provider hands the attempt back once (decided 2026-10-15)."""
     from pipeline import elitellm
-    from pipeline.jobs import PROVIDER_WAITS_MAX
 
     yields: list = []
     terminal: list = []
@@ -1778,7 +1777,7 @@ async def test_provider_busy_repends_until_the_cap_then_fails_the_file(monkeypat
     assert args[8] == 12 and args[9] == "provider_busy"
     assert kwargs == {"count_provider_wait": True}
 
-    job["provider_waits"] = PROVIDER_WAITS_MAX
+    job["provider_waits"] = 1
     await worker._handle_job_failure(job, busy)
     assert len(yields) == 1 and requeued == []
     ((*_args, category, code, index_limit),) = terminal
@@ -1901,10 +1900,9 @@ async def test_a_retryable_note_failure_requeues(monkeypatch):
     assert not cur.ran("cancel_pipeline_jobs")
 
 
-@pytest.mark.parametrize("waits", [0, "cap"])
-async def test_a_busy_provider_repends_a_note_job_until_the_cap(monkeypatch, waits):
+@pytest.mark.parametrize("waits", [0, 1])
+async def test_a_busy_provider_repends_a_note_job_once(monkeypatch, waits):
     from pipeline import elitellm
-    from pipeline.jobs import PROVIDER_WAITS_MAX
 
     cur = _NoteCursor()
     published: list = []
@@ -1920,13 +1918,13 @@ async def test_a_busy_provider_repends_a_note_job_until_the_cap(monkeypatch, wai
         "id": "job_1",
         "type": "ingest",
         "attempts": 1,
-        "provider_waits": PROVIDER_WAITS_MAX if waits == "cap" else waits,
+        "provider_waits": waits,
         "payload": _NOTE_PAYLOAD,
     }
 
     await worker._handle_job_failure(job, busy)
 
-    repended = waits != "cap"
+    repended = waits == 0
     # The attempt is handed back and the wait counted; no file or progress.
     assert cur.ran("provider_waits=provider_waits+1") is repended
     assert cur.ran("attempts=GREATEST(attempts-1, 0)") is repended

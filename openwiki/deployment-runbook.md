@@ -915,7 +915,7 @@ infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
 
-Retry scheduling lives on the `jobs` row (four attempts, 30 s doubling
+Retry scheduling lives on the `jobs` row (three attempts, 30 s doubling
 backoff, `CAPY_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
 attempt lease only fences stale callbacks: a retryable failure releases it before
 the requeue, a terminal failure or an exhausted budget closes the import and
