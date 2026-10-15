@@ -254,11 +254,14 @@ async def index_dataset(label, dataset, state, cache):
                 descriptor=doc["title"],
                 summary=doc["markdown"],
             )
-            await store.mark_content_ready(doc["content_id"])
             completed.add(doc["content_id"])
         if number % 500 == 0:
             print("indexed", label, number, "/", len(documents), flush=True)
     with psycopg.connect(cfg.dsn, row_factory=dict_row) as conn:
+        conn.execute(
+            "UPDATE rag_contents SET status='ready',claim_job_id=NULL WHERE workspace_id=%s",
+            (entry["id"],),
+        )
         conn.execute(
             "UPDATE files SET status='ready',indexed=true WHERE workspace_id=%s",
             (entry["id"],),

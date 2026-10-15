@@ -1552,12 +1552,17 @@ async def test_input_limit_leaves_the_file_unindexed_without_a_sentry_event(
 @pytest.mark.parametrize("index_limit", ["", "tabular_column_limit"])
 def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
     writes: list[tuple] = []
-    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+
+    class _Recorder(_Conn):
+        def execute(self, query, params):
+            writes.append((" ".join(query.split()), *params))
+
+    monkeypatch.setattr(worker.db, "connect", lambda: _Recorder())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
     monkeypatch.setattr(worker.db, "source_refresh_for", lambda _f: None)
     for name in (
         "set_file_status",
-        "set_file_indexed",
+        "set_file_indexed_as_served",
         "set_file_index_limit",
         "set_job",
         "close_credit_reservation",
@@ -1574,17 +1579,19 @@ def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
         index_limit=index_limit,
     )
 
-    file_writes = [w for w in writes if w[0].startswith("set_file")]
+    file_writes = [w for w in writes if w[0].startswith(("set_file", "DELETE"))]
+    # indexed follows the alias; a file over a limit drops it first.
     if index_limit:
         assert file_writes == [
-            ("set_file_status", "f_1", "ready"),
-            ("set_file_indexed", "f_1", False),
+            ("DELETE FROM rag_file_contents WHERE file_id=%s", "f_1"),
             ("set_file_index_limit", "f_1", "tabular_column_limit"),
+            ("set_file_status", "f_1", "ready"),
+            ("set_file_indexed_as_served", "f_1"),
         ]
     else:
         assert file_writes == [
             ("set_file_status", "f_1", "failed"),
-            ("set_file_indexed", "f_1", False),
+            ("set_file_indexed_as_served", "f_1"),
         ]
     assert (
         "set_job",
@@ -2365,3 +2372,67 @@ def test_a_parts_only_handoff_enqueues_a_continuation_without_a_bundle(monkeypat
     assert (job_id, job_type) == ("job_parse_ingest", "ingest")
     assert queued["partsOnly"] is True and queued["parseJobId"] == "job_parse"
     assert "parseArtifact" not in queued and "localSource" not in queued
+
+
+@pytest.mark.parametrize(
+    ("unread", "message"),
+    [
+        ([], "parse produced no indexable content"),
+        ([2, 3], "2 pages could not be read"),
+    ],
+)
+async def test_an_empty_parse_is_refused_before_it_is_attached(
+    monkeypatch, unread, message
+):
+    """Published empty content would be a passage-less donor: the worker
+    fails the file before attaching anything."""
+    from pipeline.jobs import TerminalError
+
+    _summary_path(monkeypatch, ready=False, summary_error=None)
+
+    async def _empty(**_kwargs):
+        return [], unread, None
+
+    async def _forbidden(**_kwargs):
+        pytest.fail("an empty parse must not be attached")
+
+    monkeypatch.setattr(worker, "_chunks_for", _empty)
+    monkeypatch.setattr(worker.store, "attach_file_content", _forbidden)
+
+    with pytest.raises(TerminalError, match=message):
+        await _run_text_ingest(waits=0)
+
+
+async def test_a_parts_only_document_job_skips_the_parse_handoff(monkeypatch):
+    """A partsOnly continuation of a PDF has no bundle and goes straight to the
+    fill, with no "queued" progress first."""
+    reached: list[tuple] = []
+    events: list[tuple] = []
+
+    async def _spec(_ws):
+        return object()
+
+    async def _parts(job, payload, file_id, ws, name):
+        reached.append((job["id"], file_id, ws, name))
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _spec)
+    monkeypatch.setattr(worker.registry, "pins_from_payload", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.registry, "set_job_pins", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.accounting, "bind_ingest", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_resume_source_publication", lambda _job: False)
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "notes.pdf")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: True)
+    monkeypatch.setattr(worker, "_process_parts_bound", _parts)
+    monkeypatch.setattr(worker.progress, "publish", lambda *a, **_k: events.append(a))
+    payload = _ingest_payload(partsOnly=True)
+    payload.pop("parseArtifact")
+    payload.pop("parseJobId")
+
+    await worker._process_ingest_job_bound(
+        {"id": "job_parts", "type": "ingest", "attempts": 1, "payload": payload}
+    )
+
+    assert reached == [("job_parts", "f_1", "ws_1", "notes.pdf")]
+    assert events == []

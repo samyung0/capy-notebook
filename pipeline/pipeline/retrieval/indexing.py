@@ -290,13 +290,11 @@ async def embed_copied_chunks(
     workspace_id: str,
     content_id: str,
     claim_job_id: str | None = None,
-    mark_ready: bool = True,
 ) -> dict[str, Any]:
-    """Re-embed chunk text copied from a donor in a different vector space."""
+    """Re-embed chunk text copied from a donor in a different vector space;
+    the caller publishes the content."""
     chunks = await store.load_content_chunks(content_id)
     if not chunks:
-        if mark_ready:
-            await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
         return {"chunks": 0, "reembedded": True}
     texts = [str(row["indexed_text"] or row["text"]) for row in chunks]
     vectors = await models.embed(texts, spec=embedding_spec())
@@ -331,8 +329,6 @@ async def embed_copied_chunks(
         rows=rows,
         claim_job_id=claim_job_id,
     )
-    if mark_ready:
-        await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
     return {"chunks": len(rows), "reembedded": True}
 
 
@@ -363,9 +359,10 @@ async def _descriptor(
     the failure that left the descriptor pending (``None`` to store).
 
     Regenerates from the complete content when no published descriptor exists
-    or once the change reaches the share. A failed regeneration keeps the
-    published descriptor with the accumulated share, so the next run tries
-    again; without one the descriptor is pending. A SettlementError raises.
+    or once the change reaches the share. A failed regeneration keeps a
+    non-blank published descriptor with the accumulated share, so the next run
+    tries again; without one the descriptor is pending. An accounting error
+    (a SettlementError among them) raises: it is no part failure.
     """
     share = 0.0
     if published is not None:
@@ -379,11 +376,11 @@ async def _descriptor(
         if uat.fail_summary(file_name):
             raise RuntimeError(f"UAT: the file name carries {uat.FAIL_SUMMARY}")
         return await summarize_file(file_name, chunks), 0.0, None
-    except accounting.SettlementError:
+    except accounting.AccountingError:
         raise
     except Exception as exc:  # noqa: BLE001 - any failure leaves a part missing
         log.warning("file descriptor failed for %s: %s", file_name, exc)
-        if published is not None:
+        if published is not None and published["descriptor"]:
             return published["descriptor"], share, None
         return None, 0.0, exc
 
@@ -540,9 +537,10 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
     """
     try:
         descriptor = await _summarize(descriptor_excerpt(chunks))
-    except (accounting.SettlementError, elitellm.ProviderBusy):
-        # Settlement failures must not start another provider call; a busy
-        # provider re-pends the job without spending its attempt.
+    except (accounting.AccountingError, elitellm.ProviderBusy):
+        # Accounting failures (settlement among them) must not start another
+        # provider call; a busy provider re-pends the job without spending its
+        # attempt.
         raise
     except Exception as exc:
         log.warning("file summary failed for %s", file_name, exc_info=True)

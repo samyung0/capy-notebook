@@ -445,13 +445,16 @@ def _resume_source_publication(job: dict) -> bool:
 @dataclass(frozen=True)
 class Missing:
     """The parts an ingest leaves missing: the pending descriptor's failure
-    and the 1-based pages the VLM left unread."""
+    and the 1-based pages the VLM left unread. ``unread`` marks unread pages
+    this job did not read itself (a parts-only job on content whose
+    ``pipeline_identity`` is NULL), so it cannot name them."""
 
     summary: str | None = None
     pages: tuple[int, ...] = ()
+    unread: bool = False
 
     def __bool__(self) -> bool:
-        return self.summary is not None or bool(self.pages)
+        return self.summary is not None or bool(self.pages) or self.unread
 
 
 COMPLETE = Missing()
@@ -537,13 +540,17 @@ def _finish_ok(
                     (file_id,),
                 )
                 if content_id is not None and not missing:
-                    # Duplicate uploads share the content row, so its parts.
+                    # Duplicate uploads share the content row, so its parts;
+                    # the row itself must show both present.
                     cur.execute(
                         """UPDATE files SET status='ready'
                         WHERE id IN (SELECT file_id FROM rag_file_contents WHERE content_id=%s)
                           AND id<>%s AND status='failed' AND indexed AND trashed_at IS NULL
+                          AND EXISTS (SELECT 1 FROM rag_content_summaries WHERE content_id=%s)
+                          AND EXISTS (SELECT 1 FROM rag_contents
+                                      WHERE id=%s AND pipeline_identity IS NOT NULL)
                         RETURNING id""",
-                        (content_id, file_id),
+                        (content_id, file_id, content_id, content_id),
                     )
                     siblings = [row[0] for row in cur.fetchall()]
                 db.set_job(
@@ -580,9 +587,10 @@ def _finish_fail(
     error_code: str = "",
     index_limit: str = "",
 ) -> bool:
-    """Fail the job. The file fails too, unless ``index_limit`` names the
-    ingest limit its content is over: then it is ready and unindexed, still
-    usable, and only search and chat skip it."""
+    """Fail the job. The file fails too, still indexed while its alias serves
+    a previous index, unless ``index_limit`` names the ingest limit its content
+    is over: then it is ready and unindexed (its alias dropped), still usable,
+    and only search and chat skip it."""
     with db.connect() as conn:
         with conn.cursor() as cur:
             boundary_payload = None
@@ -602,10 +610,15 @@ def _finish_fail(
                     db.require_current_file_source(
                         cur, file_id, source_revision, source_etag
                     )
-                db.set_file_status(cur, file_id, "ready" if index_limit else "failed")
-                db.set_file_indexed(cur, file_id, False)
-                if index_limit:
+                if index_limit and db.source_refresh_for(file_id) is None:
+                    # Search skips a file over a limit, so its previous index
+                    # goes too (the orphan trigger drops unshared content).
+                    cur.execute(
+                        "DELETE FROM rag_file_contents WHERE file_id=%s", (file_id,)
+                    )
                     db.set_file_index_limit(cur, file_id, index_limit)
+                db.set_file_status(cur, file_id, "ready" if index_limit else "failed")
+                db.set_file_indexed_as_served(cur, file_id)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
             if file_id:
@@ -795,6 +808,8 @@ def _missing_note(missing: Missing) -> str:
         shown = ", ".join(str(page) for page in pages[:20])
         more = f" and {len(pages) - 20} more" if len(pages) > 20 else ""
         parts.append(f"{len(pages)} pages could not be read (p. {shown}{more})")
+    elif missing.unread:
+        parts.append("some pages could not be read")
     return "; ".join(parts) + "; retry processing fills them in"
 
 
@@ -1366,10 +1381,12 @@ def _handoff_parsed_artifact(
             )
             db.enqueue_job(cur, continuation_id, "ingest", continuation_payload)
             db.transfer_source_candidate(cur, payload, job["id"], continuation_id)
-            cur.execute(
-                "UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL",
-                (file_id,),
-            )
+            if artifact is not None:
+                # A parse ran. A donor copy leaves it to _finish_ok's rule.
+                cur.execute(
+                    "UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL",
+                    (file_id,),
+                )
             db.set_job(cur, job["id"], "done")
             db.finish_job_attempt(
                 cur,
@@ -2118,7 +2135,6 @@ async def _reuse_donor(
                     workspace_id=ws,
                     content_id=content_id,
                     claim_job_id=job["id"],
-                    mark_ready=False,
                 )
             if isinstance(result.get("chunks"), int):
                 telemetry.record(chunks_created=max(0, int(result["chunks"])))
@@ -2186,12 +2202,16 @@ async def _process_parts_bound(
     """A parts-only job (``partsOnly``): Retry processing of a file whose only
     missing part is its descriptor, or a parse coordinator's donor
     continuation. Fills the published content's pending descriptor from its
-    stored chunks, with no parse and no embedding, then finishes the file."""
+    stored chunks, with no parse and no embedding, then finishes the file.
+    Unread pages (a NULL ``pipeline_identity``) stay a missing part."""
     _set_stage("parts_fill")
     content = await store.file_content(file_id)
     if content is None or content["status"] != "ready":
         raise TerminalError("parts-only job found no published content")
-    missing = Missing(await _fill_summary(job, ws, content["id"], name))
+    missing = Missing(
+        await _fill_summary(job, ws, content["id"], name),
+        unread=content["pipeline_identity"] is None,
+    )
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
@@ -2264,11 +2284,10 @@ async def _process_ingest_job(
             ws, file_id, "failed", 100, status="failed", message=note, indexed=False
         )
         return
-    _publish_progress(ws, file_id, "queued", 5, status="pending")
-
     if payload.get("partsOnly") is True:
         await _process_parts_bound(job, payload, file_id, ws, name)
         return
+    _publish_progress(ws, file_id, "queued", 5, status="pending")
 
     if processing_plan.route == ingest_plan.STORE_ONLY:
         _set_stage("store_only")

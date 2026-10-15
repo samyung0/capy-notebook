@@ -943,14 +943,27 @@ async def _write(
 ) -> None:
     content_hash = hashlib.sha256("\x00".join(texts).encode()).hexdigest()
     association = await store.attach_file_content(
-        workspace_id=ws.id, file_id=file_id, content_hash=content_hash
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_hash=content_hash,
+        claim_job_id="job_write",
     )
     await store.replace_content_chunks(
         workspace_id=ws.id,
         content_id=association["content_id"],
         rows=_rows(file_id, texts, axis_base=axis_base, lang=lang),
     )
-    await store.mark_content_ready(association["content_id"])
+    if not association["ready"]:
+        await _publish(ws, file_id, association["content_id"], "job_write")
+
+
+async def _publish(ws, file_id: str, content_id: str, claim_job_id: str) -> None:
+    await store.publish_file_content(
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_id=content_id,
+        claim_job_id=claim_job_id,
+    )
 
 
 # ------------------------------------------------------------------- search
@@ -1484,19 +1497,23 @@ async def test_canonical_reuse_keeps_extraction_confidence_separate(workspace):
         confidence=1.0,
     )
     low = replace(high, confidence=0.5, confidence_reasons=["page text came from OCR"])
+    native_file = workspace.add_file("native.pdf")
     native = await store.attach_file_content(
         workspace_id=workspace.id,
-        file_id=workspace.add_file("native.pdf"),
+        file_id=native_file,
         content_hash=content_hash([high]),
+        claim_job_id="job_native",
     )
-    await store.mark_content_ready(native["content_id"])
+    await _publish(workspace, native_file, native["content_id"], "job_native")
+    scan_file = workspace.add_file("scan.pdf")
     scan = await store.attach_file_content(
         workspace_id=workspace.id,
-        file_id=workspace.add_file("scan.pdf"),
+        file_id=scan_file,
         content_hash=content_hash([low]),
+        claim_job_id="job_scan",
     )
     assert not scan["ready"] and scan["content_id"] != native["content_id"]
-    await store.mark_content_ready(scan["content_id"])
+    await _publish(workspace, scan_file, scan["content_id"], "job_scan")
     duplicate = await store.attach_file_content(
         workspace_id=workspace.id,
         file_id=workspace.add_file("scan-copy.pdf"),
@@ -2063,6 +2080,7 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         content_hash=donor["content_hash"],
         source_sha256=sha,
         pipeline_identity=identity,
+        claim_job_id="job_copy",
     )
     copied = await store.copy_content_from_donor(
         donor_id=donor["id"],
@@ -2072,7 +2090,7 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         copy_vectors=True,
     )
     assert copied
-    await store.mark_content_ready(association["content_id"])
+    await _publish(other, dest_file, association["content_id"], "job_copy")
     assert (
         other.scalar(
             "SELECT count(*) FROM rag_chunks WHERE content_id = %s",

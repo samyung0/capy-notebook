@@ -435,7 +435,7 @@ def test_finish_fail_closes_reservation_from_recorded_spend(monkeypatch):
     monkeypatch.setattr(db, "connect", lambda: _Conn())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a, **_k: False)
     monkeypatch.setattr(db, "set_file_status", lambda *_a, **_k: None)
-    monkeypatch.setattr(db, "set_file_indexed", lambda *_a, **_k: None)
+    monkeypatch.setattr(db, "set_file_indexed_as_served", lambda *_a, **_k: None)
     monkeypatch.setattr(db, "set_job", lambda *_a, **_k: None)
     monkeypatch.setattr(
         db, "close_credit_reservation", lambda _cur, rid: closed.append(rid)

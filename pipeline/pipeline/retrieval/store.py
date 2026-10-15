@@ -594,33 +594,6 @@ async def find_ready_donor(
     return dict(row) if row else None
 
 
-async def mark_content_ready(
-    content_id: str, *, claim_job_id: str | None = None
-) -> None:
-    db = await pool()
-    async with db.connection() as conn:
-        if claim_job_id is None:
-            await conn.execute(
-                """
-                UPDATE rag_contents
-                SET status = 'ready', claim_job_id = NULL, updated_at = now()
-                WHERE id = %s
-                """,
-                (content_id,),
-            )
-            return
-        cur = await conn.execute(
-            """
-            UPDATE rag_contents
-            SET status = 'ready', claim_job_id = NULL, updated_at = now()
-            WHERE id = %s AND claim_job_id = %s
-            """,
-            (content_id, claim_job_id),
-        )
-        if not cur.rowcount:
-            raise RetryableError("content claim taken over")
-
-
 async def content_status(content_id: str) -> str | None:
     db = await pool()
     async with db.connection() as conn:
@@ -1078,7 +1051,7 @@ async def file_content(file_id: str) -> dict[str, Any] | None:
         if refresh is not None:
             cur = await conn.execute(
                 """
-                SELECT rc.id, rc.content_hash, rc.status
+                SELECT rc.id, rc.content_hash, rc.status, rc.pipeline_identity
                 FROM source_refresh_candidates c
                 JOIN rag_contents rc ON rc.id = c.content_id
                 WHERE c.file_id = %s AND c.job_id = %s AND c.lease_token = %s
@@ -1088,7 +1061,7 @@ async def file_content(file_id: str) -> dict[str, Any] | None:
         else:
             cur = await conn.execute(
                 """
-                SELECT rc.id, rc.content_hash, rc.status
+                SELECT rc.id, rc.content_hash, rc.status, rc.pipeline_identity
                 FROM rag_file_contents fc JOIN rag_contents rc ON rc.id = fc.content_id
                 WHERE fc.file_id = %s
                 """,

@@ -154,6 +154,21 @@ async def test_an_unmarked_file_reads_its_pages_with_the_model(pages):
     assert seen["keys"][0] == hashlib.sha256(b"vlm-page\0render 0").hexdigest()
 
 
+async def test_markers_without_their_switches_read_for_real(pages):
+    """Security regression: with the UAT switches off (production), a file
+    named with the markers is read by the model under the ordinary cache key."""
+    raw_dir, seen = pages
+    name = f"scan {uat.FAIL_PAGES} {uat.SCRIPTED_VLM} UAT_ab12.pdf"
+
+    blocks, unread = await worker._read_vlm_pages([], raw_dir, "f_1", name)
+
+    assert [b["text"] for b in blocks] == ["Read by the model."] * 2 and unread == []
+    assert seen["provider"] == ["complete", "complete"]
+    assert seen["keys"] == [
+        hashlib.sha256(b"vlm-page\0render " + page).hexdigest() for page in (b"0", b"2")
+    ]
+
+
 async def test_a_scripted_file_is_read_and_charged_without_a_provider_call(
     monkeypatch, pages
 ):

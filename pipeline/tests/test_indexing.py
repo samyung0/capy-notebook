@@ -70,8 +70,19 @@ def fake_models(monkeypatch):
 
 
 async def _attach(ws, file_id: str) -> str:
+    """Published content to index into, as reindexing an existing file does
+    (``index_file`` leaves publication to the worker)."""
     association = await store.attach_file_content(
-        workspace_id=ws.id, file_id=file_id, content_hash=_SOURCE_HASH
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_hash=_SOURCE_HASH,
+        claim_job_id="job_index",
+    )
+    await store.publish_file_content(
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_id=association["content_id"],
+        claim_job_id="job_index",
     )
     return association["content_id"]
 
@@ -151,14 +162,13 @@ async def test_the_summary_lands_under_the_chunk_fingerprint(workspace, fake_mod
     assert "Calvin cycle" in body
 
 
-async def test_content_with_no_passages_spends_nothing_and_stays_unready(
+async def test_content_with_no_passages_spends_nothing_and_writes_no_descriptor(
     workspace, fake_models
 ):
-    """An empty parse must not reach a provider, and must not look indexed.
-
-    Ready content is what donor reuse copies. Marking an empty parse ready would
-    hand every later upload of the same bytes a document with no passages.
-    """
+    """An empty parse reaches no provider and writes no chunks or descriptor,
+    outside a text refresh (``allow_empty``). The worker refuses an empty parse
+    before attaching it, so it never becomes ready, passage-less donor content
+    (test_ingest_worker.py)."""
     file_id = workspace.add_file("blank.md")
     content_id = await _attach(workspace, file_id)
 
@@ -185,10 +195,6 @@ async def test_content_with_no_passages_spends_nothing_and_stays_unready(
         )
         == []
     )
-    assert (
-        workspace.scalar("SELECT status FROM rag_contents WHERE id = %s", (content_id,))
-        == "processing"
-    )
 
 
 async def test_reindex_reuses_only_exact_embedding_inputs(workspace, fake_models):
@@ -204,7 +210,6 @@ async def test_reindex_reuses_only_exact_embedding_inputs(workspace, fake_models
         file_name="source.md",
         chunks=chunks,
     )
-    await store.mark_content_ready(content_id)
     changed = [replace(chunks[0], section_path="Changed heading"), *chunks[1:]]
     assert indexing.content_hash(changed) != indexing.content_hash(chunks)
     await indexing.index_file(
@@ -232,7 +237,6 @@ async def test_a_refresh_reuses_the_descriptor_until_the_change_reaches_the_shar
             file_name="topics.md",
             chunks=chunk_markdown("\n\n".join(lines)),
         )
-        await store.mark_content_ready(content_id)
         return workspace.scalar(
             "SELECT change_share FROM rag_content_summaries WHERE content_id = %s",
             (content_id,),

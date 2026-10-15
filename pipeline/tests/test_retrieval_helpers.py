@@ -1048,14 +1048,24 @@ async def test_summary_settlement_failure_is_not_rewritten_as_retryable(monkeypa
     from pipeline.retrieval import accounting, indexing
     from pipeline.retrieval.chunking import Chunk
 
+    raised: list[Exception] = []
+
     async def _reject_receipt(*_a, **_k):
-        raise accounting.SettlementError("receipt rejected")
+        raise raised[0]
 
     monkeypatch.setattr(indexing, "ingest_spec", _ingest_spec)
     monkeypatch.setattr(indexing.models, "complete_text", _reject_receipt)
 
-    with pytest.raises(accounting.SettlementError, match="receipt rejected"):
-        await indexing.summarize_file("bio.pdf", [Chunk(text="Chlorophyll absorbs")])
+    # Any accounting error, a capacity row missing as much as a rejected receipt.
+    for error in (
+        accounting.SettlementError("receipt rejected"),
+        accounting.AccountingError("model capacity is not configured"),
+    ):
+        raised[:] = [error]
+        with pytest.raises(type(error), match=str(error)):
+            await indexing.summarize_file(
+                "bio.pdf", [Chunk(text="Chlorophyll absorbs")]
+            )
 
 
 async def test_the_summary_prompt_excludes_the_uploaders_file_name(monkeypatch):
@@ -1174,10 +1184,10 @@ async def test_the_descriptor_regenerates_at_two_percent_or_first(
 async def test_a_failed_descriptor_is_pending_or_keeps_the_published_one(
     monkeypatch,
 ):
-    """Parts design Q4/Q10: a failed regeneration keeps the published
+    """Parts design Q4/Q10: a failed regeneration keeps a non-blank published
     descriptor with its accumulated share (the next run tries again); without
-    one the descriptor is pending (no row to write), never blank. A
-    settlement failure still raises."""
+    one, or over a blank one, the descriptor is pending (no row to write),
+    never blank. Accounting failures, settlement among them, still raise."""
     import pytest
 
     from pipeline.retrieval import accounting, indexing
@@ -1198,9 +1208,15 @@ async def test_a_failed_descriptor_is_pending_or_keeps_the_published_one(
         None,
     )
     assert await indexing._descriptor("f", chunks, None) == (None, 0.0, failure)
-    failure = accounting.SettlementError("receipt rejected")
-    with pytest.raises(accounting.SettlementError):
-        await indexing._descriptor("f", chunks, None)
+    blank = {**published, "descriptor": ""}
+    assert await indexing._descriptor("f", chunks, blank) == (None, 0.0, failure)
+    for raised in (
+        accounting.SettlementError("receipt rejected"),
+        accounting.AccountingError("model capacity is not configured"),
+    ):
+        failure = raised
+        with pytest.raises(type(raised)):
+            await indexing._descriptor("f", chunks, None)
 
 
 def test_text_change_ignores_reflow_and_counts_only_edited_words():
