@@ -106,7 +106,7 @@ function AssistantBubble({
     <div className="py-2.5">
       <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
-        <div className="mb-4 text-fg-muted">
+        <div className="mb-6">
           <LangAnswer
             citations={msg.citations}
             complete={false}

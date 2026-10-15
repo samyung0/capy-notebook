@@ -412,7 +412,7 @@ function Row({
   switch (row.type) {
     case 'narration':
       return (
-        <div className="text-fg-muted">
+        <div>
           <LangAnswer
             citations={citations}
             complete
@@ -448,7 +448,7 @@ function Row({
   }
 }
 
-/** Rows in lists 8px apart; narration sits between lists, 16px away. */
+/** Rows in lists 8px apart; narration, in answer text, sits between lists 24px away. */
 function TraceList({
   rows,
   handlers,
@@ -466,7 +466,7 @@ function TraceList({
     else last.push(row);
   }
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-6">
       {lists.map((list) => (
         <div className="flex flex-col gap-2" key={list[0].id}>
           {list.map((row) => (
