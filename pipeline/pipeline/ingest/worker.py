@@ -1895,30 +1895,30 @@ async def _wait_for_content(
     """Wait for another worker's claim, stealing it if that worker looks dead.
 
     Returns only once this job owns the claim (``created``) or the content is
-    ``ready``; the caller indexes into the row afterwards, so returning on a
-    claim someone else holds would mean two workers writing the same content.
-    The job wall-clock timeout is the hard bound — raising after a short wait
-    would burn the waiter's attempt budget while a live creator is still
-    indexing.
+    ``ready`` and aliased; the caller indexes into the row afterwards, so
+    returning on a claim someone else holds would mean two workers writing the
+    same content. The job wall-clock timeout is the hard bound — raising after
+    a short wait would burn the waiter's attempt budget while a live creator is
+    still indexing.
     """
     loop = asyncio.get_running_loop()
     steal_after = loop.time() + CONTENT_CLAIM_WAIT_S
     while not association["created"] and not association["ready"]:
         await asyncio.sleep(cfg.poll_interval)
         status = await store.content_status(association["content_id"])
-        if status == "ready":
-            association["ready"] = True
-            break
-        if status is not None and loop.time() < steal_after:
+        if status not in (None, "ready") and loop.time() < steal_after:
             continue
-        # The claim is either gone (the creator abandoned it) or stale enough
-        # that its owner looks dead. Either way, try to take it over; losing the
-        # race just means waiting on whoever won it.
-        await store.steal_stale_content(
-            workspace_id=workspace_id,
-            content_hash=content_hash,
-            stale_s=CONTENT_CLAIM_STALE_S,
-        )
+        if status != "ready":
+            # The claim is either gone (the creator abandoned it) or stale
+            # enough that its owner looks dead. Either way, try to take it
+            # over; losing the race just means waiting on whoever won it.
+            await store.steal_stale_content(
+                workspace_id=workspace_id,
+                content_hash=content_hash,
+                stale_s=CONTENT_CLAIM_STALE_S,
+            )
+        # Attaching again aliases ready content (a deferred alias moves now)
+        # or takes over a dropped claim.
         association = await store.attach_file_content(
             workspace_id=workspace_id,
             file_id=file_id,
@@ -2019,17 +2019,8 @@ async def _reuse_donor(
         copy_vectors=copy_vectors,
     )
     if not copied:
+        # Parsing follows; a re-ingest's previous index keeps serving.
         await store.abandon_content(association["content_id"])
-        await store.attach_file_content(
-            workspace_id=ws,
-            file_id=file_id,
-            content_hash=donor["content_hash"],
-            source_sha256=source_sha256,
-            pipeline_identity=identity,
-            claim_job_id=job["id"],
-            source_revision=source_revision,
-            source_etag=source_etag,
-        )
         return False
     try:
         if copy_vectors:
@@ -2043,8 +2034,13 @@ async def _reuse_donor(
             )
         if isinstance(result.get("chunks"), int):
             telemetry.record(chunks_created=max(0, int(result["chunks"])))
-        await store.mark_content_ready(
-            association["content_id"], claim_job_id=job["id"]
+        await store.publish_file_content(
+            workspace_id=ws,
+            file_id=file_id,
+            content_id=association["content_id"],
+            claim_job_id=job["id"],
+            source_revision=source_revision,
+            source_etag=source_etag,
         )
     except BaseException:
         await store.abandon_content(association["content_id"])
@@ -2384,6 +2380,14 @@ async def _process_ingest_job(
             and payload.get("format") == "text",
             on_progress=lambda pct: _publish_progress(ws, file_id, "indexing", pct),
             claim_job_id=job["id"],
+        )
+        await store.publish_file_content(
+            workspace_id=ws,
+            file_id=file_id,
+            content_id=association["content_id"],
+            claim_job_id=job["id"],
+            source_revision=source_revision,
+            source_etag=source_etag,
         )
     except BaseException:
         await store.abandon_content(association["content_id"])

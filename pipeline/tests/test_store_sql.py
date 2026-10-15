@@ -914,14 +914,10 @@ def _unit_vector(axis: int) -> list[float]:
     return vector
 
 
-async def _write(
-    ws, file_id: str, texts: list[str], *, axis_base: int = 0, lang: str = "en"
-) -> None:
-    content_hash = hashlib.sha256("\x00".join(texts).encode()).hexdigest()
-    association = await store.attach_file_content(
-        workspace_id=ws.id, file_id=file_id, content_hash=content_hash
-    )
-    rows = [
+def _rows(
+    file_id: str, texts: list[str], *, axis_base: int = 0, lang: str = "en"
+) -> list[dict]:
+    return [
         {
             "id": f"{file_id}_c{i}",
             "chunk_idx": i,
@@ -940,8 +936,19 @@ async def _write(
         }
         for i, text in enumerate(texts)
     ]
+
+
+async def _write(
+    ws, file_id: str, texts: list[str], *, axis_base: int = 0, lang: str = "en"
+) -> None:
+    content_hash = hashlib.sha256("\x00".join(texts).encode()).hexdigest()
+    association = await store.attach_file_content(
+        workspace_id=ws.id, file_id=file_id, content_hash=content_hash
+    )
     await store.replace_content_chunks(
-        workspace_id=ws.id, content_id=association["content_id"], rows=rows
+        workspace_id=ws.id,
+        content_id=association["content_id"],
+        rows=_rows(file_id, texts, axis_base=axis_base, lang=lang),
     )
     await store.mark_content_ready(association["content_id"])
 
@@ -1364,7 +1371,14 @@ async def test_chunks_carry_the_provenance_a_citation_needs(workspace):
 async def test_reindexing_removes_the_tail_of_the_previous_run(workspace):
     file_id = workspace.add_file("bio.txt")
     await _write(workspace, file_id, ["one", "two", "three"])
-    await _write(workspace, file_id, ["one"])
+    content_id = workspace.scalar(
+        "SELECT content_id FROM rag_file_contents WHERE file_id = %s", (file_id,)
+    )
+    # The same content rewritten shorter (a retried claim). A re-ingest of new
+    # content replaces the old row when it publishes (test_indexing.py).
+    await store.replace_content_chunks(
+        workspace_id=workspace.id, content_id=content_id, rows=_rows(file_id, ["one"])
+    )
 
     assert (
         workspace.scalar(

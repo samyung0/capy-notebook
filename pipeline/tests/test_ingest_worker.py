@@ -1050,14 +1050,14 @@ async def test_donor_content_is_copied_before_the_destination_becomes_ready(
         order.append("copy")
         return True
 
-    async def _ready(*_args, **_kwargs):
+    async def _publish(**_kwargs):
         order.append("ready")
 
     monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
     monkeypatch.setattr(worker.store, "attach_file_content", _attach)
     monkeypatch.setattr(worker, "_wait_for_content", _wait)
     monkeypatch.setattr(worker.store, "copy_content_from_donor", _copy)
-    monkeypatch.setattr(worker.store, "mark_content_ready", _ready)
+    monkeypatch.setattr(worker.store, "publish_file_content", _publish)
     monkeypatch.setattr(
         worker,
         "_finish_ok",

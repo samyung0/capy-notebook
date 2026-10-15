@@ -88,7 +88,8 @@ async def index_file(
     claim_job_id: str | None = None,
     allow_empty: bool = False,
 ) -> dict[str, Any]:
-    """Write chunks and the descriptor for canonical parsed content."""
+    """Write chunks and the descriptor for canonical parsed content; the
+    caller publishes it (``store.publish_file_content``)."""
     if not chunks:
         await store.replace_content_chunks(
             workspace_id=workspace_id,
@@ -104,7 +105,6 @@ async def index_file(
                 descriptor="",
                 change_share=0.0,
             )
-            await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
         return {"chunks": 0}
 
     # Read before any write: reindexing the same content replaces these rows.
@@ -172,8 +172,6 @@ async def index_file(
         descriptor=descriptor,
         change_share=change_share,
     )
-
-    await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
     if on_progress:
         on_progress(95)
     return {"chunks": len(rows), "fingerprint": fingerprint}
