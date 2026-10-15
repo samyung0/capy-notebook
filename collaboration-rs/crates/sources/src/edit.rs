@@ -5,7 +5,7 @@
 //! Office through the engine's commands, guarded as editCommands.ts guards
 //! them. The change commits as one row through the checkpoint CAS with the
 //! operation's receipt; a moved checkpoint applies the commands again on the
-//! new state (4 attempts), an ended epoch never will.
+//! new state (3 attempts), an ended epoch never will.
 
 use notes::edit::{DocumentCommand, GuardTarget};
 use office_service::{Command, Target};
@@ -22,7 +22,7 @@ use crate::store::{office, replay, text_of};
 use crate::text::{TEXT_ROOT, full_text_effects};
 use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceRoom, Sources};
 
-const ATTEMPTS: usize = 4;
+const ATTEMPTS: usize = 3;
 
 /// What the gateway asked: the commands, or an Undo of an earlier edit.
 #[derive(Clone, Debug)]
