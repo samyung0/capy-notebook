@@ -49,3 +49,53 @@ describe('CSV preview bounds', () => {
     ).toEqual(['2026-04-02', 'TRUE']);
   });
 });
+
+describe('CSV preview parsing', () => {
+  const rows = (text: string) => parseCsvPreview(encoder.encode(text)).rows;
+
+  it('reads quoted fields with delimiters, line breaks and escaped quotes', () => {
+    expect(
+      rows(
+        'id,comment\r\n1,"a, b\r\nnext ""line"""\r\n2,"tab\there"\r\n3,""\r\n'
+      )
+    ).toEqual([
+      ['id', 'comment'],
+      ['1', 'a, b\r\nnext "line"'],
+      ['2', 'tab\there'],
+      ['3', ''],
+    ]);
+    // A quote inside an unquoted field, or after a closing quote, is text.
+    expect(rows('a"b,"c"d\n')).toEqual([['a"b', 'cd']]);
+  });
+
+  it('ends records at LF, CRLF or CR', () => {
+    expect(rows('a,b\n1,2\r\n3,4\r5,6')).toEqual([
+      ['a', 'b'],
+      ['1', '2'],
+      ['3', '4'],
+      ['5', '6'],
+    ]);
+  });
+
+  it('picks tab when tabs outnumber commas outside quotes', () => {
+    expect(rows('name\tnote\nfrog\t"1,2,3"\n')).toEqual([
+      ['name', 'note'],
+      ['frog', '1,2,3'],
+    ]);
+    expect(rows('"a\tb\tc",d\n')).toEqual([['a\tb\tc', 'd']]);
+  });
+
+  it('drops a BOM and pads ragged rows', () => {
+    const bom = new Uint8Array([0xef, 0xbb, 0xbf]);
+    const body = encoder.encode('name,score\nfrog\nnewt,4,extra\n');
+    const bytes = new Uint8Array(bom.length + body.length);
+    bytes.set(bom);
+    bytes.set(body, bom.length);
+
+    expect(parseCsvPreview(bytes).rows).toEqual([
+      ['name', 'score', ''],
+      ['frog', '', ''],
+      ['newt', '4', 'extra'],
+    ]);
+  });
+});

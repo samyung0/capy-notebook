@@ -2258,6 +2258,11 @@ The text preview follows that current shared text after Done, including remote
 edits; publication metadata does not replace a mounted editor's newer state.
 Opened in view mode without a session, the preview reads the saved state from
 the viewer's session (see "Viewing shows the last saved state" above).
+The CSV/TSV table preview parses in a Web Worker with Capy's own RFC 4180
+reader (`src/features/files/csvPreviewCore.ts`): tab when tabs outnumber
+commas outside quotes in the first KiB, otherwise comma; the first 500 rows and
+50 columns, ragged rows padded, cells as written. SheetJS is a test-only
+dependency (journeys and benches that read XLSX), from its pinned CDN tarball.
 
 The published file remains readable and cloneable while a candidate is being
 exported or processed. Clones (a workspace clone, or one file through

@@ -1,5 +1,3 @@
-import * as XLSX from 'xlsx';
-
 export const CSV_PREVIEW_MAX_BYTES = 30 * 1024 * 1024;
 export const CSV_PREVIEW_MAX_COLUMNS = 50;
 export const CSV_PREVIEW_MAX_ROWS = 500;
@@ -57,30 +55,98 @@ function describeColumns(rows: string[][]): CsvPreviewColumn[] {
   });
 }
 
+/** Tab when tabs outnumber commas outside quotes in the first KiB, else comma. */
+function guessDelimiter(text: string): string {
+  let commas = 0;
+  let tabs = 0;
+  let quoted = false;
+  for (const char of text.slice(0, 1024)) {
+    if (char === '"') quoted = !quoted;
+    else if (!quoted && char === ',') commas++;
+    else if (!quoted && char === '\t') tabs++;
+  }
+  return tabs > commas ? '\t' : ',';
+}
+
+/** RFC 4180 records: a field starting with `"` is quoted, may hold
+ *  delimiters and line breaks, and reads `""` as one quote; text after its
+ *  closing quote is kept. Records end at CRLF, LF or CR. Stops after
+ *  `maxRows` records and keeps `maxColumns + 1` cells per record at most, so
+ *  the caller can tell a wider file. */
+function parseDelimited(
+  text: string,
+  delimiter: string,
+  maxRows: number,
+  maxColumns: number
+): string[][] {
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let i = 0;
+  while (rows.length < maxRows) {
+    let cell = '';
+    if (text[i] === '"') {
+      let from = i + 1;
+      for (;;) {
+        const quote = text.indexOf('"', from);
+        if (quote === -1) {
+          cell += text.slice(from);
+          i = text.length;
+          break;
+        }
+        cell += text.slice(from, quote);
+        if (text[quote + 1] !== '"') {
+          i = quote + 1;
+          break;
+        }
+        cell += '"';
+        from = quote + 2;
+      }
+    }
+    const from = i;
+    while (
+      i < text.length &&
+      text[i] !== delimiter &&
+      text[i] !== '\n' &&
+      text[i] !== '\r'
+    ) {
+      i++;
+    }
+    cell += text.slice(from, i);
+    if (row.length <= maxColumns) row.push(cell);
+    if (text[i] === delimiter) {
+      i++;
+      continue;
+    }
+    rows.push(row);
+    row = [];
+    i += text[i] === '\r' && text[i + 1] === '\n' ? 2 : 1;
+    if (i >= text.length) break;
+  }
+  return rows;
+}
+
 export function parseCsvPreview(bytes: Uint8Array): CsvPreviewResult {
   if (bytes.byteLength > CSV_PREVIEW_MAX_BYTES) {
     throw new Error('Delimited file exceeds the preview byte limit');
   }
-  // SheetJS reads raw bytes as Latin-1, so decode as UTF-8 (BOM stripped)
-  // first. `raw` keeps every cell as written: no date or boolean coercion.
-  const workbook = XLSX.read(new TextDecoder().decode(bytes), {
-    raw: true,
-    sheetRows: CSV_PREVIEW_MAX_ROWS + 1,
-    type: 'string',
-  });
-  const first = workbook.Sheets[workbook.SheetNames[0] ?? ''];
-  const parsed = first
-    ? XLSX.utils.sheet_to_json<unknown[]>(first, {
-        defval: '',
-        header: 1,
-        raw: false,
-      })
-    : [];
+  // TextDecoder drops a UTF-8 BOM. Cells stay as written: no date or
+  // boolean coercion.
+  const text = new TextDecoder().decode(bytes);
+  const records = parseDelimited(
+    text,
+    guessDelimiter(text),
+    CSV_PREVIEW_MAX_ROWS + 1,
+    CSV_PREVIEW_MAX_COLUMNS
+  );
+  const width = Math.max(...records.map((record) => record.length));
   const truncated =
-    parsed.length > CSV_PREVIEW_MAX_ROWS ||
-    parsed.some((row) => row.length > CSV_PREVIEW_MAX_COLUMNS);
-  const rows = parsed
+    records.length > CSV_PREVIEW_MAX_ROWS || width > CSV_PREVIEW_MAX_COLUMNS;
+  // Ragged rows are padded to the widest one, as a table.
+  const columns = Math.min(width, CSV_PREVIEW_MAX_COLUMNS);
+  const rows = records
     .slice(0, CSV_PREVIEW_MAX_ROWS)
-    .map((row) => row.slice(0, CSV_PREVIEW_MAX_COLUMNS).map(String));
+    .map((record) =>
+      Array.from({ length: columns }, (_, index) => record[index] ?? '')
+    );
   return { columns: describeColumns(rows), rows, truncated };
 }
