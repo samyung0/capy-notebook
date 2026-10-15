@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 var (
@@ -280,19 +282,19 @@ func (s *Store) MarkEditorAssetUploadExpired(ctx context.Context, uploadID strin
 }
 
 // EditorAssetMaterial returns the live material's workspace (empty when
-// standalone) and the image cap of the account that pays for its assets.
-func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, imageMaxBytes int64, err error) {
+// standalone) and the plan limits of the account that pays for its assets.
+func (s *Store) EditorAssetMaterial(ctx context.Context, id string) (workspaceID string, limits planlimits.Limits, err error) {
 	var ownerID string
 	err = s.pool.QueryRow(ctx, `SELECT COALESCE(workspace_id,''), owner_user_id
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, id).Scan(&workspaceID, &ownerID)
 	if isNoRows(err) {
-		return "", 0, ErrNotFound
+		return "", planlimits.Limits{}, ErrNotFound
 	}
 	if err != nil {
-		return "", 0, err
+		return "", planlimits.Limits{}, err
 	}
-	imageMaxBytes, err = s.ImageMaxBytes(ctx, ownerID)
-	return workspaceID, imageMaxBytes, err
+	limits, err = s.PayerPlanLimits(ctx, ownerID)
+	return workspaceID, limits, err
 }
 
 // pruneMaterialAssetsTx trashes the material's own ready editor assets that its
@@ -365,15 +367,15 @@ func (s *Store) PurgeTrashedEditorAssets(ctx context.Context, limit int) (int, e
 // target's (restored when trashed), else a new ready row sharing the stored
 // object under blob refcounting and charged to the target's payer; a trashed
 // source is copied too. A source that is unknown (purged), not
-// ready, or unreadable by the actor (the resolve rule) is left out, as is an
-// image over imageMaxBytes (the payer's plan image cap).
+// ready, or unreadable by the actor (the resolve rule) is left out, as is one
+// over the payer's plan cap for its purpose (limits.EditorAssetBytes).
 // When the copies do not fit the payer's quota none is made and refused is
 // true; restores still land.
 func (s *Store) AdoptEditorAssets(
 	ctx context.Context,
 	actorID, workspaceID, materialID string,
 	sourceIDs []string,
-	imageMaxBytes int64,
+	limits planlimits.Limits,
 ) (adopted map[string]string, refused bool, err error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -422,8 +424,7 @@ func (s *Store) AdoptEditorAssets(
 			adopted[asset.ID] = asset.ID
 			continue
 		}
-		if asset.Status != "ready" ||
-			(asset.Purpose == "image" && asset.SizeBytes > imageMaxBytes) {
+		if asset.Status != "ready" || asset.SizeBytes > limits.EditorAssetBytes(asset.Purpose) {
 			continue
 		}
 		readable, err := editorAssetReadableTx(ctx, tx, actorID, asset)

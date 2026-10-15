@@ -34,11 +34,6 @@ export function MediaUploadMenu({ editor }: { editor: AnyEditor }) {
           onClick={() => insertMediaPlaceholder(editor, 'audio')}
         />
         <ToolbarPopoverRow
-          icon={<EditorIcon name="fileText" />}
-          label={m.editor_upload_file()}
-          onClick={() => insertMediaPlaceholder(editor, 'file')}
-        />
-        <ToolbarPopoverRow
           icon={<EditorIcon name="externalLink" />}
           label={m.editor_youtube_embed()}
           onClick={() =>

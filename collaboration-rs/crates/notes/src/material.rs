@@ -23,7 +23,7 @@ pub const HTML_EMBED_TYPE: &str = "html_embed";
 pub const MATERIAL_REF_TYPE: &str = "material_ref";
 /// Media blocks name their file: an asset id, never a URL (Epo, 2026-10-10).
 /// The catalog's elements that require `assetId`.
-pub const MEDIA_TYPES: [&str; 3] = ["img", "audio", "file"];
+pub const MEDIA_TYPES: [&str; 2] = ["img", "audio"];
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 #[error("invalid material document: {0}")]
@@ -219,7 +219,7 @@ fn text_chars(node: &Node) -> usize {
     }
 }
 
-/// An image, audio or file block carries its asset id and no URL
+/// An image or audio block carries its asset id and no URL
 /// (`validateMediaElement`).
 fn validate_media(node: &Node, kind: &str) -> Check {
     if !node
@@ -503,7 +503,7 @@ fn validate_element(node: &Node, kind: &str, depth: usize, policy: &Policy) -> C
             validate_media(node, kind)?;
             validate_width(node)
         }
-        "audio" | "file" => validate_media(node, kind),
+        "audio" => validate_media(node, kind),
         MATERIAL_REF_TYPE => validate_material_ref(node),
         "video" => {
             if node.get("provider").and_then(Value::as_str) != Some("youtube") {

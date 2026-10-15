@@ -1,15 +1,18 @@
 import { verifiedShareToken } from '../../src/lib/shareLink';
 
 /**
- * Images of shared standalone quizzes, flashcard sets and notes for
- * signed-out visitors (the pages themselves render in handler.ts). Every route
- * verifies the share token first, so forged links never reach the API. Images
- * are cached by Workers Cache for five minutes, like the pages; Go verifies the
- * token again and reads privacy live. Grading posts go straight to
+ * Images of shared standalone quizzes, flashcard sets and notes, and a shared
+ * note's audio, for signed-out visitors (the pages themselves render in
+ * handler.ts). Every route verifies the share token first, so forged links
+ * never reach the API. Images are cached by Workers Cache for five minutes,
+ * like the pages; Go verifies the token again and reads privacy live. Audio
+ * redirects, uncached, to the short-lived bucket link Go signs, which the
+ * player reads in ranges (Epo 2026-10-15). Grading posts go straight to
  * `/api/public/.../grade`: a Worker subrequest reaches the API without the
  * visitor's IP, which the per-IP grading caps and rate limits key on.
  *
  *   GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId} → image bytes
+ *   GET /p/notes/{token}/assets/{assetId} → 302 to the audio's link
  */
 
 const ROUTE =
@@ -27,6 +30,17 @@ const IMAGE_TYPES = new Set([
   'image/gif',
   'image/webp',
   'image/avif',
+]);
+// The audio types a note's asset may have (server/internal/httpapi/editor_assets.go).
+const AUDIO_TYPES = new Set([
+  'audio/mpeg',
+  'audio/wav',
+  'audio/x-wav',
+  'audio/ogg',
+  'audio/flac',
+  'audio/mp4',
+  'audio/x-m4a',
+  'audio/aac',
 ]);
 
 const respond = (
@@ -113,12 +127,11 @@ export async function handlePublicRequest(
   const asset = JSON.parse(
     new TextDecoder().decode(await bounded(upstream.body, JSON_LIMIT))
   ) as { contentType?: unknown; url?: unknown };
-  if (
-    typeof asset.url !== 'string' ||
-    typeof asset.contentType !== 'string' ||
-    !IMAGE_TYPES.has(asset.contentType)
-  )
+  if (typeof asset.url !== 'string' || typeof asset.contentType !== 'string')
     return error(503);
+  if (kind === 'notes' && AUDIO_TYPES.has(asset.contentType))
+    return respond(null, 302, { Location: asset.url });
+  if (!IMAGE_TYPES.has(asset.contentType)) return error(503);
   const image = await fetcher(asset.url, {
     signal: AbortSignal.timeout(20_000),
   });

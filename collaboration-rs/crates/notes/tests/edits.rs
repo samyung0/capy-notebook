@@ -377,7 +377,7 @@ fn an_ambiguous_text_source_span_lists_the_lines_it_occurs_in() {
 /// A library figure arrives as an `img` naming the editor asset Go stored for
 /// the note before the edit (`figure:<id>` in agent markdown): an edit may
 /// insert it, at the top level or inside a block. Any other media (a URL
-/// image, an audio or file block, an asset id on a non-image) is still
+/// image, an audio block, an asset id on a non-image) is still
 /// refused, as Node refused all of it.
 #[test]
 fn an_edit_inserts_a_figure_image_and_no_other_media() {

@@ -10,6 +10,7 @@ import (
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 )
 
 // A standalone material uploads editor assets into its own scope, charged to
@@ -434,9 +435,10 @@ func TestAdoptEditorAssets(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	roomy := planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 10 << 20}
 	usedBefore := f.used(ownerID)
 	adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID,
-		[]string{own.ID, readable.ID, pending.ID, deleted.ID, foreign.ID, "asset_unknown"}, 2<<20)
+		[]string{own.ID, readable.ID, pending.ID, deleted.ID, foreign.ID, "asset_unknown"}, roomy)
 	if err != nil || refused {
 		t.Fatal(err, refused)
 	}
@@ -465,16 +467,29 @@ func TestAdoptEditorAssets(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='link' WHERE id=$1`, foreignNote.ID); err != nil {
 		t.Fatal(err)
 	}
-	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{foreign.ID}, 2<<20); err != nil || adopted[foreign.ID] == "" {
+	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{foreign.ID}, roomy); err != nil || adopted[foreign.ID] == "" {
 		t.Fatalf("adopt shared foreign asset = %v, %v", adopted, err)
 	}
 
-	// A quiz's image cap leaves out a larger image.
-	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{readable.ID}, 50); err != nil || adopted[readable.ID] != "" {
+	// The payer's plan cap for the purpose leaves out a larger asset: the
+	// image cap for an image, the per-file cap for audio.
+	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{readable.ID},
+		planlimits.Limits{ImageBytes: 50, SourceFileBytes: 10 << 20}); err != nil || adopted[readable.ID] != "" {
 		t.Fatalf("adopt over the image cap = %v, %v; want it left out", adopted, err)
 	}
+	if _, err := s.pool.Exec(ctx, `UPDATE editor_assets SET purpose='audio' WHERE id=$1`, readable.ID); err != nil {
+		t.Fatal(err)
+	}
+	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{readable.ID},
+		planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 50}); err != nil || adopted[readable.ID] != "" {
+		t.Fatalf("adopt over the audio cap = %v, %v; want it left out", adopted, err)
+	}
+	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{readable.ID},
+		planlimits.Limits{ImageBytes: 50, SourceFileBytes: 100}); err != nil || adopted[readable.ID] == "" {
+		t.Fatalf("adopt audio at its cap = %v, %v; want a copy", adopted, err)
+	}
 
-	if _, _, err := s.AdoptEditorAssets(ctx, viewerID, workspace.ID, target.ID, []string{readable.ID}, 2<<20); err == nil {
+	if _, _, err := s.AdoptEditorAssets(ctx, viewerID, workspace.ID, target.ID, []string{readable.ID}, roomy); err == nil {
 		t.Fatal("a viewer adopted into the note")
 	}
 	limit := mustPlanLimits(t, s, PlanFree).StorageBytes
@@ -483,15 +498,17 @@ func TestAdoptEditorAssets(t *testing.T) {
 	}
 	// Over the quota no copy is made and the call says so; the own asset
 	// still answers.
-	if adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{own.ID, readable.ID}, 2<<20); err != nil || !refused ||
+	if adopted, refused, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{own.ID, readable.ID}, roomy); err != nil || !refused ||
 		adopted[readable.ID] != "" || adopted[own.ID] != own.ID {
 		t.Fatalf("adopt over quota = %v refused %v, %v", adopted, refused, err)
 	}
 }
 
-// Every material's images take the payer's plan image cap
-// (human/backend-storage-quota.md 2026-10-09): 2 MiB Free, 5 MiB Pro.
-func TestEditorAssetMaterialTakesPayerImageCap(t *testing.T) {
+// Every material's assets take the payer's plan caps: images the image cap
+// (human/backend-storage-quota.md 2026-10-09), 2 MiB Free and 5 MiB Pro, and
+// audio the per-file cap (human/frontend/plate-editor.md 2026-10-15), 10 MiB
+// Free and 30 MiB Pro.
+func TestEditorAssetMaterialTakesPayerCaps(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_asset_cap")
@@ -503,13 +520,21 @@ func TestEditorAssetMaterialTakesPayerImageCap(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, got, err := s.EditorAssetMaterial(ctx, material.ID); err != nil || got != 2<<20 {
-		t.Fatalf("free cap = %d, %v; want 2 MiB", got, err)
+	caps := func() (image, audio int64) {
+		t.Helper()
+		_, limits, err := s.EditorAssetMaterial(ctx, material.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return limits.EditorAssetBytes("image"), limits.EditorAssetBytes("audio")
+	}
+	if image, audio := caps(); image != 2<<20 || audio != 10<<20 {
+		t.Fatalf("free caps = %d image, %d audio; want 2 and 10 MiB", image, audio)
 	}
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, ownerID); err != nil {
 		t.Fatal(err)
 	}
-	if _, got, err := s.EditorAssetMaterial(ctx, material.ID); err != nil || got != 5<<20 {
-		t.Fatalf("pro cap = %d, %v; want 5 MiB", got, err)
+	if image, audio := caps(); image != 5<<20 || audio != 30<<20 {
+		t.Fatalf("pro caps = %d image, %d audio; want 5 and 30 MiB", image, audio)
 	}
 }

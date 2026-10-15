@@ -66,7 +66,6 @@ import {
 } from '@platejs/list/react';
 import {
   AudioPlugin,
-  FilePlugin,
   ImagePlugin,
   PlaceholderPlugin,
 } from '@platejs/media/react';
@@ -441,6 +440,9 @@ const SlashKit = [
   SlashInputPlugin.withComponent(SlashInputElement),
 ];
 
+/** Plate's largest size, as no limit: see MediaKit's uploadConfig. */
+const NO_LIMIT = '1024GB';
+
 const MediaKit = [
   // Pasted image files and URLs go through pastedImagesPlugin's asset path
   // instead: no URL-only image node is ever made.
@@ -452,14 +454,26 @@ const MediaKit = [
     node: { isElement: true, isVoid: true, type: 'video' },
   }).withComponent(YouTubeEmbedElement),
   AudioPlugin,
-  FilePlugin,
   PlaceholderPlugin.configure({
-    options: { disableEmptyPlaceholder: true },
+    options: {
+      disableEmptyPlaceholder: true,
+      // Every dropped or pasted file gets a placeholder, which uploads an
+      // image or audio file or says why it can't (MediaPlaceholderElement):
+      // any other file gets an image placeholder, which refuses it. Plate's
+      // per-type size and count checks would drop a file silently, so they
+      // are off: the server holds the payer's caps, and an image over its cap
+      // is shrunk first.
+      uploadConfig: {
+        audio: { maxFileSize: NO_LIMIT, mediaType: KEYS.audio },
+        blob: { maxFileSize: NO_LIMIT, mediaType: KEYS.img },
+        image: { maxFileSize: NO_LIMIT, mediaType: KEYS.img },
+      },
+    },
     render: { node: MediaPlaceholderElement },
   }),
   CaptionPlugin.configure({
     options: {
-      query: { allow: [KEYS.img, KEYS.video, KEYS.audio, KEYS.file] },
+      query: { allow: [KEYS.img, KEYS.video, KEYS.audio] },
     },
   }),
 ];

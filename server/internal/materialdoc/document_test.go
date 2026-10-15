@@ -1030,10 +1030,10 @@ func validateNote(nodes ...map[string]any) error {
 	return Validate(Envelope{SchemaVersion: SchemaVersion, Value: nodes})
 }
 
-// Image, audio and file blocks name their editor asset and carry no URL, as
-// the browser and the collaboration server refuse otherwise.
+// Image and audio blocks name their editor asset and carry no URL, as the
+// browser and the collaboration server refuse otherwise.
 func TestMediaBlocksNameTheirAsset(t *testing.T) {
-	for _, typ := range []string{"img", "audio", "file"} {
+	for _, typ := range []string{"img", "audio"} {
 		node := func(extra map[string]any) map[string]any {
 			node := map[string]any{"type": typ, "id": "m", "children": []any{textLeaf("")}}
 			for key, value := range extra {

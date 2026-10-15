@@ -273,7 +273,9 @@ Clerk development instance. Point a local gateway at the UAT database only with
   Analytics' automatic beacon, Zaraz and Rocket Loader are off on the zone
   (runbook §2). Signed out, open a shared note
   with a formula, a diagram, an embedded quiz, an interactive block and a
-  YouTube block (play it), a shared quiz and a shared flashcard set (Clerk
+  YouTube block (play it), an audio block (play it: its
+  `/p/notes/…/assets/…` request answers `302` to the bucket with
+  `Cache-Control: no-store`), a shared quiz and a shared flashcard set (Clerk
   loads on those two), and a summary: each comes to life, and the console
   shows no `Refused to` message. A `Refused to` message names what the
   policy blocked: send it, with the URL, to the Editor session.

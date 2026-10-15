@@ -52,6 +52,14 @@ describe('editor insertion command catalog', () => {
     expect(EDITOR_COMMANDS.every((command) => command.icon)).toBe(true);
   });
 
+  it('offers images, YouTube and audio as media, no PDF or file block', () => {
+    expect(
+      EDITOR_COMMANDS.filter(
+        (command) => command.group === 'fileOperations'
+      ).map((command) => command.id)
+    ).toEqual(['image', 'youtube', 'audio']);
+  });
+
   it('includes the complete heading and list set', () => {
     expect(
       EDITOR_COMMANDS.filter((command) =>

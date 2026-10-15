@@ -87,8 +87,10 @@ alone, and its provenance bytes are counted with it at creation only
 Storage limits are **100 MB** free and **1 GB** Pro. These use decimal bytes:
 100,000,000 and 1,000,000,000 respectively.
 
-Per-file **source upload** caps are separate from that quota and from editor-asset
-purpose limits (images take the plan image cap, audio 100 MB, …); an image
+Per-file **source upload** caps are separate from that quota. Editor assets
+take the payer's plan by purpose (`planlimits.Limits.EditorAssetBytes`): images
+the plan image cap, audio this per-file cap (Epo 2026-10-15), on upload and on
+a pasted copy (`AdoptEditorAssets`); a note holds no other asset. An image
 uploaded as a source takes the source cap, not the image cap. They follow the **workspace
 owner's** plan, create-only (no retroactive invalidation): **10 MiB** free,
 **30 MiB** Pro (from the startup plan snapshot). GPU/LLM cost is metered
@@ -345,6 +347,11 @@ with "This image type can't be inserted." (`image-type`). DOCX picture
 watermarks take the same path. The check is the browser's only: the
 collaboration server does not read image sizes (a server check is queued for
 later).
+A note's audio is capped by the payer's per-file cap (10 MiB Free, 30 MiB
+Pro) at the reservation; the browser does not check it first, and the
+server's refusal names the limit in the placeholder. Notes hold no other
+asset: the purposes are `image` and `audio` (Epo 2026-10-15; the table's
+`purpose` check still lists the old `pdf` and `file`, unused).
 Quizzes and flashcard sets edit live (Epo
 2026-10-10, D6): a picked image is shrunk and uploads at once, and the block
 or card takes its asset id (`quizImageUpload` in

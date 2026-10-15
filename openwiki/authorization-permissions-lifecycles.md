@@ -158,7 +158,12 @@ English (public pages ignore `Accept-Language`: there are no per-language paths 
 differ), puts the page's own stylesheets inline (`inlineStylesheets`, so first paint waits on no other request;
 MathLive's static stylesheet only when the note has math) and caches the HTML at the edge for five minutes, one
 copy per item. Images go through
-`GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId}`, verified and cached the same way. Grading posts
+`GET /p/{quizzes|flashcards|notes}/{token}/assets/{assetId}`, verified and cached the same way. A note's
+audio takes the same route, which answers `302` to the five-minute bucket link Go signs, with
+`Cache-Control: no-store` (Epo 2026-10-15): the player reads it in ranges, which a cached, buffered copy
+would not serve, and re-requests the route on a media error, so a seek after the link expired gets a fresh
+one (`MediaAssetView`). The share pages' policy has no `media-src` or `default-src`, so the bucket host is
+not blocked. Anything else (SVG, any other type) is still refused with `503`. Grading posts
 straight to `/api/public/.../grade`, because a Worker subrequest reaches the API without the visitor's IP, which
 the per-IP caps need. Go verifies the token again on `/api/public/...` because the API hostname is public, and
 reads visibility and the owner's lifecycle in the same statement as the content. Quiz reads are answer-free
@@ -198,7 +203,7 @@ router; `PublicPageContext`) and embedded quizzes and sets, each hydrated from t
 beside it, all at load so nothing changes size mid-scroll; a note without them loads no React. Public pages
 load no zod: `@/i18n` leaves zod's message locale to the app entry (`src/main.tsx`), and grading's number
 pattern lives in `src/features/questions/quantity.ts`. Mentions render the name stored in the note.
-`GET /p/notes/{token}/assets/{assetId}` serves an image only when the note's current content shows it
+`GET /p/notes/{token}/assets/{assetId}` serves an image or audio only when the note's current content shows it
 (`materialdoc.EditorAssetIDs`). The read also returns `embeds`: each quiz and flashcard set the note owns,
 references in its current content and has not trashed, in reference order (quizzes answer-free, flashcards
 written cards only); they render in place (`src/share/PublicEmbed.tsx`) and are the only note data the page's
@@ -393,8 +398,8 @@ Sources: [membership handlers](../server/internal/httpapi/huma_membership.go#L39
   keeps `image/svg+xml` so `<img>` still draws it but downloads when opened.
   The viewers read bytes through `fetch`, `<img>` or `<audio>`, which ignore
   the disposition, so only opening a link in a tab changes: Download original
-  and a note's file attachment save the file instead of showing it, while a
-  note's PDF attachment still opens in the browser. Hour-stable thumbnail
+  saves the file instead of showing it, while a PDF still opens in the
+  browser. Hour-stable thumbnail
   links carry no overrides ([thumbnails.md](thumbnails.md)). The e2e stack's
   blob server answers its links the same way. The bank's public figures are
   not presigned and keep their server-detected type.

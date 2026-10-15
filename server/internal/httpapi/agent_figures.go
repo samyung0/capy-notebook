@@ -166,11 +166,11 @@ func (a *api) putAgentFigures(ctx context.Context, f *agentFigures, imageMaxByte
 // edits, under its payer's image cap and quota, and returns the ids of the
 // assets it added (a retried edit adds none).
 func (a *api) ensureFigureAssets(ctx context.Context, req internalDocumentsEditReq, f *agentFigures) ([]string, error) {
-	_, imageMaxBytes, err := a.s.EditorAssetMaterial(ctx, req.Target.ID)
+	_, limits, err := a.s.EditorAssetMaterial(ctx, req.Target.ID)
 	if err != nil {
 		return nil, err
 	}
-	assets, err := a.putAgentFigures(ctx, f, imageMaxBytes)
+	assets, err := a.putAgentFigures(ctx, f, limits.ImageBytes)
 	if err != nil {
 		return nil, err
 	}

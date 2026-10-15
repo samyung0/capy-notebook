@@ -217,15 +217,6 @@
       "children": [{ "text": "" }]
     },
     {
-      "id": "fx_file",
-      "type": "file",
-      "assetId": "asset_every_block_file",
-      "name": "readings.txt",
-      "contentType": "text/plain",
-      "sizeBytes": 64,
-      "children": [{ "text": "" }]
-    },
-    {
       "id": "fx_video",
       "type": "video",
       "provider": "youtube",

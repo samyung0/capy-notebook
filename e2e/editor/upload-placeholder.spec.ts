@@ -68,20 +68,25 @@ async function openEmptyLine(page: Page) {
 }
 
 /** A clipboard paste (as e2e/editor/paste.spec.ts), optionally carrying a
- * PNG file named `name`. */
+ * PNG file named `name`, or with `other` a file of that type and size. */
 async function paste(
   editor: Locator,
   data: Record<string, string>,
-  name?: string
+  name?: string,
+  other?: { size: number; type: string }
 ) {
   await editor.evaluate(
-    (element, { b64, entries, name }) => {
+    (element, { b64, entries, name, other }) => {
       const transfer = new DataTransfer();
       for (const [type, value] of Object.entries(entries))
         transfer.setData(type, value);
       if (name) {
-        const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
-        transfer.items.add(new File([bytes], name, { type: 'image/png' }));
+        const bytes = other
+          ? new Uint8Array(other.size)
+          : Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+        transfer.items.add(
+          new File([bytes], name, { type: other?.type ?? 'image/png' })
+        );
       }
       const event = new ClipboardEvent('paste', {
         bubbles: true,
@@ -99,7 +104,7 @@ async function paste(
           })
         );
     },
-    { b64: PNG_B64, entries: data, name }
+    { b64: PNG_B64, entries: data, name, other }
   );
 }
 
@@ -240,6 +245,31 @@ test.describe('upload placeholder', () => {
     await page.screenshot({
       path: test.info().outputPath('refused-upload.png'),
     });
+  });
+
+  // Epo 2026-10-15: notes embed images and audio only. Any other file pasted
+  // or dropped, whatever its size, is refused in the placeholder it lands in.
+  test('a pasted PDF is refused in its placeholder and nothing uploads', async ({
+    page,
+  }) => {
+    await holdUploads(page);
+    const editor = await openEmptyLine(page);
+    await paste(editor, { 'text/plain': '' }, 'paper.pdf', {
+      size: 5 * 1024 * 1024,
+      type: 'application/pdf',
+    });
+
+    const placeholder = editor.locator('.slate-placeholder');
+    await expect(placeholder).toContainText(
+      m.editor_choose_purpose({ purpose: m.editor_image() })
+    );
+    await expect(placeholder).toContainText(m.editor_add_image());
+    await expect(placeholder.getByRole('status')).toHaveCount(0);
+    expect(
+      await page.evaluate(
+        () => (window as unknown as { reservations?: number }).reservations
+      )
+    ).toBeUndefined();
   });
 });
 

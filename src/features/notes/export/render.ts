@@ -496,12 +496,12 @@ export async function renderExport(
         (await join(table, html))
       );
     }
-    if (['img', 'image', 'audio', 'file'].includes(type)) {
+    if (['img', 'image', 'audio'].includes(type)) {
       const assetId = field(node, 'assetId');
       const source = assetId ? assetUrls[assetId] : field(node, 'url');
       if (!source) throw new Error('An attachment is unavailable.');
       const name = field(node, 'name') || caption(node) || type;
-      if (type === 'audio' || type === 'file') {
+      if (type === 'audio') {
         if (!md)
           return `<p>${link(escapeHtml(name), assetId ? noteUrl : source, true)}</p>`;
         const response = await fetch(source);

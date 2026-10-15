@@ -6,12 +6,10 @@ import {
   useCallback,
   useContext,
   useEffect,
-  useRef,
   useState,
 } from 'react';
 import { Skeleton } from '@/components/ui/feedback';
 import { onChildrenReady } from '@/features/notes/childrenReady';
-import { EditorIcon } from '@/features/notes/EditorIcon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { MediaFrame } from './MediaFrame';
@@ -154,15 +152,14 @@ export function MediaAssetView({
   // Mounted from the first open on, so closing still animates.
   const [previewed, setPreviewed] = useState(false);
   // A presigned URL is short-lived; seeking past the buffered range re-reads
-  // it. Re-resolve once, then let a second failure surface.
-  const retried = useRef(false);
+  // it. Re-resolve once, then let a second failure surface. The audio mounts
+  // again either way: a shared page's URL stays its share route, which
+  // redirects to a fresh link.
+  const [retried, setRetried] = useState(false);
   const onMediaError = () => {
-    if (retried.current) return;
-    retried.current = true;
+    if (retried) return;
+    setRetried(true);
     reload();
-  };
-  const openFile = () => {
-    if (element.assetId) openEditorAsset(element.assetId);
   };
   return (
     <figure className="group relative m-0" contentEditable={false}>
@@ -232,20 +229,10 @@ export function MediaAssetView({
         <audio
           className="w-full"
           controls
-          key={asset.url}
+          key={`${asset.url} ${retried}`}
           onError={onMediaError}
           src={asset.url}
         />
-      )}
-      {asset.status === 'ready' && !waiting && element.type === 'file' && (
-        <button
-          className="flex w-full items-center gap-2 rounded-card border border-line bg-surface-hover-bg px-3 py-2 text-fg text-sm hover:border-line-strong"
-          onClick={openFile}
-          type="button"
-        >
-          <EditorIcon className="size-4 text-fg-muted" name="fileText" />
-          <span className="truncate">{element.name || asset.name}</span>
-        </button>
       )}
       {caption}
     </figure>

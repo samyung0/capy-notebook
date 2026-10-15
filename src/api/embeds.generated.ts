@@ -308,27 +308,6 @@ export const EMBED_CATALOG = {
       ]
     },
     {
-      "type": "file",
-      "void": true,
-      "required": [
-        "assetId"
-      ],
-      "forbidden": [
-        "url",
-        "src"
-      ],
-      "assets": [
-        "assetId"
-      ],
-      "materials": [
-        "note",
-        "quiz",
-        "flashcards",
-        "mindmap",
-        "diagram"
-      ]
-    },
-    {
       "type": "video",
       "void": true,
       "required": [

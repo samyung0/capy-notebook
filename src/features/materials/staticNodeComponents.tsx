@@ -511,7 +511,6 @@ export const staticNoteComponents = {
   column: Column,
   column_group: element('div', COLUMN_GROUP_CLASS),
   equation: BlockEquation,
-  file: MediaAssetElement,
   flashcard: FlashcardElement,
   flashcard_back: element('p', FLASHCARD_BACK_CLASS),
   flashcard_front: element('p', FLASHCARD_FRONT_CLASS),

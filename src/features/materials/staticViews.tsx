@@ -58,7 +58,7 @@ function usePreview() {
   };
 }
 
-/** An image, audio or file with its caption and an open-in-new-tab action. */
+/** An image or audio with its caption and an open-in-new-tab action. */
 export function StaticMediaAsset({ element }: { element: MediaAssetNode }) {
   const assetUrl = useContext(AssetUrlContext);
   const caption = element.caption?.map((node) => node.text).join('');

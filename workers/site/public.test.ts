@@ -167,4 +167,54 @@ describe('anonymous material routes', () => {
       expect(svg).toHaveBeenCalledTimes(1);
     }
   );
+
+  it('redirects a shared note audio to its link, uncached; images still proxy', async () => {
+    const assetPath = `/p/notes/${TOKEN}/assets/asset_abc`;
+    const link = 'https://b2.example.test/tide.mp3?X-Amz-Signature=s';
+    const answer = (contentType: string) =>
+      vi
+        .fn<typeof fetch>()
+        .mockResolvedValueOnce(Response.json({ contentType, url: link }))
+        .mockResolvedValueOnce(new Response(new Uint8Array([137, 80, 78, 71])));
+    for (const method of ['GET', 'HEAD']) {
+      const audio = answer('audio/mpeg');
+      const response = await handleSiteRequest(
+        request(assetPath, { method }),
+        env,
+        audio
+      );
+      expect(response.status).toBe(302);
+      expect(response.headers.get('Location')).toBe(link);
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.body).toBeNull();
+      // Only Go's answer is read; the player fetches the audio itself.
+      expect(audio).toHaveBeenCalledTimes(1);
+    }
+    const image = await handleSiteRequest(
+      request(assetPath),
+      env,
+      answer('image/png')
+    );
+    expect(image.status).toBe(200);
+    expect(image.headers.get('Cache-Control')).toBe(
+      'public, s-maxage=300, max-age=0, must-revalidate'
+    );
+    for (const contentType of ['image/svg+xml', 'application/pdf']) {
+      const refused = answer(contentType);
+      expect(
+        (await handleSiteRequest(request(assetPath), env, refused)).status
+      ).toBe(503);
+      expect(refused).toHaveBeenCalledTimes(1);
+    }
+    // Only notes hold audio.
+    expect(
+      (
+        await handleSiteRequest(
+          request(`/p/quizzes/${TOKEN}/assets/asset_abc`),
+          env,
+          answer('audio/mpeg')
+        )
+      ).status
+    ).toBe(503);
+  });
 });

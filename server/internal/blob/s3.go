@@ -163,7 +163,7 @@ func (s *B2) PresignGet(ctx context.Context, path string) (string, error) {
 }
 
 // inlineTypes are the formats a read link opens in place, in the app's viewers
-// or in a tab (a note's PDF attachment): PDF, raster images and audio. SVG is
+// or in a tab: PDF, raster images and audio. SVG is
 // an image that can carry script, so it is not one of them.
 var inlineTypes = map[string]string{
 	".pdf": "application/pdf",

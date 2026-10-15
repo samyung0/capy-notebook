@@ -303,7 +303,7 @@ fn a_card_holds_what_go_projects() {
     }
 }
 
-/// An image, audio or file block stores its asset id and no URL, as the
+/// An image or audio block stores its asset id and no URL, as the
 /// browser and Go refuse otherwise (Epo, 2026-10-10).
 #[test]
 fn a_media_block_names_its_asset() {

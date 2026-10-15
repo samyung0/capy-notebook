@@ -359,8 +359,8 @@ function validateCustomElement(element: MaterialElement): boolean {
   }
 }
 
-/** A YouTube video names its video; an image, audio or file block (an element
- * whose asset is its own `assetId`) names a non-empty asset. */
+/** A YouTube video names its video; an image or audio block (an element whose
+ * asset is its own `assetId`) names a non-empty asset. */
 function validateMediaElement(
   element: MaterialElement,
   catalog: CatalogElement

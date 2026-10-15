@@ -3,7 +3,8 @@ import { api } from './client';
 import { materialQuery } from './hooks';
 import { queryClient } from './queryClient';
 
-export type EditorAssetPurpose = 'image' | 'audio' | 'pdf' | 'file';
+/** A note's media are images and audio only (Epo 2026-10-15). */
+export type EditorAssetPurpose = 'image' | 'audio';
 
 export interface EditorAsset {
   assetId: string;

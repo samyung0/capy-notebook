@@ -40,11 +40,7 @@ import { BaseIndentPlugin } from '@platejs/indent';
 import { BaseColumnItemPlugin, BaseColumnPlugin } from '@platejs/layout';
 import { BaseLinkPlugin } from '@platejs/link';
 import { BaseListPlugin, isOrderedList } from '@platejs/list';
-import {
-  BaseAudioPlugin,
-  BaseFilePlugin,
-  BaseImagePlugin,
-} from '@platejs/media';
+import { BaseAudioPlugin, BaseImagePlugin } from '@platejs/media';
 import { BaseMentionPlugin } from '@platejs/mention';
 import {
   BaseTableCellHeaderPlugin,
@@ -278,7 +274,6 @@ export const StaticMaterialKit: AnyPlugin[] = [
   ...StaticTransientPlugins,
   UnsupportedBlockPlugin,
   BaseAudioPlugin,
-  BaseFilePlugin,
   BaseCalloutPlugin,
   BaseColumnPlugin,
   BaseColumnItemPlugin,

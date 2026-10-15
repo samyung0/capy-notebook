@@ -720,7 +720,7 @@ func validateElement(node map[string]any, typ string, depth int, children []any)
 			return err
 		}
 		return validateMediaWidth(node)
-	case "audio", "file":
+	case "audio":
 		return validateMedia(node, typ)
 	case RefType:
 		return validateMaterialRef(node)
@@ -1175,8 +1175,8 @@ func ExtractIndexText(raw string) (string, error) {
 
 var (
 	indexContainers = set("callout", "column_group", "column")
-	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "audio", "file",
-		"video", "mermaid", HTMLEmbedType, RefType, "quiz", "flashcards")
+	indexSkipped    = set("hr", "toc", "equation", "inline_equation", "img", "audio", "video",
+		"mermaid", HTMLEmbedType, RefType, "quiz", "flashcards")
 )
 
 func writeIndexBlock(node map[string]any, out *[]string) {

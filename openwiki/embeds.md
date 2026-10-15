@@ -23,7 +23,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
 
 - **`elements`**: every element type a stored document or a room may hold,
   including Plate's transient ones (a media `placeholder` while it uploads,
-  `mention_input` and `slash_input` while typing). Markdown footnotes are not
+  `mention_input` and `slash_input` while typing). The media blocks naming an
+  editor asset are `img` and `audio` only: notes embed no PDF or other file
+  (Epo 2026-10-15), so a stored `file` block is an unlisted type, below.
+  Markdown footnotes are not
   elements: the import turns them into text (see the note imports section of
   `frontend/plate-editor.md`). For each: `void`,
   `inline`, `topLevel` (only a top-level block), `required` keys besides

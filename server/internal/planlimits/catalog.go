@@ -28,6 +28,15 @@ type Limits struct {
 	ImageBytes int64
 }
 
+// EditorAssetBytes caps one editor asset of the purpose: an image takes the
+// image cap, audio the per-file cap uploads take (Epo 2026-10-15).
+func (l Limits) EditorAssetBytes(purpose string) int64 {
+	if purpose == "image" {
+		return l.ImageBytes
+	}
+	return l.SourceFileBytes
+}
+
 // Catalog is an immutable startup snapshot. Its map is private so request
 // paths can read values but cannot replace them or observe database edits.
 type Catalog struct {

@@ -3,13 +3,22 @@ package httpapi
 import (
 	"strings"
 	"testing"
+
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
+)
+
+// The plan caps an editor asset takes (plan_limits): images 2 MiB Free and
+// 5 MiB Pro, audio the per-file cap, 10 MiB Free and 30 MiB Pro.
+var (
+	freeAssetLimits = planlimits.Limits{ImageBytes: 2 << 20, SourceFileBytes: 10 << 20}
+	proAssetLimits  = planlimits.Limits{ImageBytes: 5 << 20, SourceFileBytes: 30 << 20}
 )
 
 func TestValidateEditorAssetMetadata(t *testing.T) {
 	t.Run("accepts matching image metadata", func(t *testing.T) {
 		name, ext, contentType, err := validateEditorAssetMetadata(reserveEditorAssetRequest{
 			Name: "photo.JPEG", Purpose: "image", SizeBytes: 1024, ContentType: "image/jpeg",
-		}, 100_000_000, 2<<20)
+		}, 100_000_000, freeAssetLimits)
 		if err != nil {
 			t.Fatalf("validateEditorAssetMetadata: %v", err)
 		}
@@ -28,11 +37,18 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 		{"rejects mismatched mime", reserveEditorAssetRequest{
 			Name: "photo.png", Purpose: "image", SizeBytes: 20, ContentType: "image/jpeg",
 		}},
+		// Notes embed images and audio only (Epo 2026-10-15).
+		{"rejects the pdf purpose", reserveEditorAssetRequest{
+			Name: "paper.pdf", Purpose: "pdf", SizeBytes: 20, ContentType: "application/pdf",
+		}},
+		{"rejects the file purpose", reserveEditorAssetRequest{
+			Name: "notes.txt", Purpose: "file", SizeBytes: 20, ContentType: "text/plain",
+		}},
 		{"rejects purpose mismatch", reserveEditorAssetRequest{
-			Name: "paper.pdf", Purpose: "file", SizeBytes: 20, ContentType: "application/pdf",
+			Name: "paper.pdf", Purpose: "audio", SizeBytes: 20, ContentType: "application/pdf",
 		}},
 		{"rejects empty file", reserveEditorAssetRequest{
-			Name: "notes.txt", Purpose: "file", SizeBytes: 0, ContentType: "text/plain",
+			Name: "tide.wav", Purpose: "audio", SizeBytes: 0, ContentType: "audio/wav",
 		}},
 		{"rejects oversized image", reserveEditorAssetRequest{
 			Name: "photo.png", Purpose: "image", SizeBytes: (2 << 20) + 1, ContentType: "image/png",
@@ -40,41 +56,51 @@ func TestValidateEditorAssetMetadata(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if _, _, _, err := validateEditorAssetMetadata(tt.in, 100_000_000, 2<<20); err == nil {
+			if _, _, _, err := validateEditorAssetMetadata(tt.in, 100_000_000, freeAssetLimits); err == nil {
 				t.Fatal("metadata was accepted")
 			}
 		})
 	}
 }
 
-// Images stop at the payer's plan cap (2 MiB Free, 5 MiB Pro); other purposes
-// keep their own limits.
-func TestValidateEditorAssetMetadataImageCap(t *testing.T) {
+// Each asset stops at the payer's plan cap: images at the image cap, audio at
+// the per-file cap uploads take, both by plan.
+func TestValidateEditorAssetMetadataPlanCaps(t *testing.T) {
 	image := func(size int64) reserveEditorAssetRequest {
 		return reserveEditorAssetRequest{Name: "figure.png", Purpose: "image", SizeBytes: size, ContentType: "image/png"}
 	}
+	audio := func(size int64) reserveEditorAssetRequest {
+		return reserveEditorAssetRequest{Name: "tide.mp3", Purpose: "audio", SizeBytes: size, ContentType: "audio/mpeg"}
+	}
 	for _, tc := range []struct {
-		name string
-		in   reserveEditorAssetRequest
-		cap  int64
-		ok   bool
+		name   string
+		in     reserveEditorAssetRequest
+		limits planlimits.Limits
+		limit  string // the refusal names it
 	}{
-		{"free image at 2 MiB", image(2 << 20), 2 << 20, true},
-		{"free image over 2 MiB", image(2<<20 + 1), 2 << 20, false},
-		{"pro image over 2 MiB", image(2<<20 + 1), 5 << 20, true},
-		{"pdf over the image cap", reserveEditorAssetRequest{
-			Name: "paper.pdf", Purpose: "pdf", SizeBytes: 3 << 20, ContentType: "application/pdf",
-		}, 2 << 20, true},
+		{"free image at 2 MiB", image(2 << 20), freeAssetLimits, ""},
+		{"free image over 2 MiB", image(2<<20 + 1), freeAssetLimits, "2 MB"},
+		{"pro image over 2 MiB", image(2<<20 + 1), proAssetLimits, ""},
+		{"pro image over 5 MiB", image(5<<20 + 1), proAssetLimits, "5 MB"},
+		{"free audio at 10 MiB", audio(10 << 20), freeAssetLimits, ""},
+		{"free audio over 10 MiB", audio(10<<20 + 1), freeAssetLimits, "10 MB"},
+		{"pro audio over 10 MiB", audio(10<<20 + 1), proAssetLimits, ""},
+		{"pro audio at 30 MiB", audio(30 << 20), proAssetLimits, ""},
+		{"pro audio over 30 MiB", audio(30<<20 + 1), proAssetLimits, "30 MB"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			_, _, _, err := validateEditorAssetMetadata(tc.in, 100_000_000, tc.cap)
-			if (err == nil) != tc.ok {
-				t.Fatalf("err = %v, want ok=%v", err, tc.ok)
+			_, _, _, err := validateEditorAssetMetadata(tc.in, 100_000_000, tc.limits)
+			if (err == nil) != (tc.limit == "") {
+				t.Fatalf("err = %v, want refused=%v", err, tc.limit != "")
 			}
-			if err != nil && !strings.Contains(err.Error(), "2 MB") {
-				t.Fatalf("refusal %q does not name the 2 MB limit", err)
+			if err != nil && !strings.Contains(err.Error(), tc.limit) {
+				t.Fatalf("refusal %q does not name the %s limit", err, tc.limit)
 			}
 		})
+	}
+	// The storage ceiling still bounds a plan cap above it.
+	if _, _, _, err := validateEditorAssetMetadata(audio(2<<20), 1<<20, proAssetLimits); err == nil {
+		t.Fatal("audio over the storage ceiling was accepted")
 	}
 }
 
@@ -89,12 +115,10 @@ func TestEditorAssetSignatureAllowed(t *testing.T) {
 		{"png", "image", ".png", []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, true},
 		{"jpeg", "image", ".jpg", []byte{0xff, 0xd8, 0xff, 0xe0}, true},
 		{"webp", "image", ".webp", []byte("RIFF1234WEBP"), true},
-		{"pdf", "pdf", ".pdf", []byte("%PDF-1.7"), true},
-		{"docx", "file", ".docx", []byte{'P', 'K', 0x03, 0x04}, true},
-		{"utf8 text", "file", ".txt", []byte("hello"), true},
-		{"binary text", "file", ".txt", []byte{'a', 0, 'b'}, false},
+		{"wav", "audio", ".wav", []byte("RIFF1234WAVE"), true},
+		{"pdf", "pdf", ".pdf", []byte("%PDF-1.7"), false},
 		{"renamed executable", "image", ".png", []byte("MZ executable"), false},
-		{"wrong purpose", "file", ".png", []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, false},
+		{"wrong purpose", "audio", ".png", []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'}, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

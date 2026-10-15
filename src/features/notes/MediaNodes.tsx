@@ -21,7 +21,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFilePicker } from 'use-file-picker';
 import { isStorageQuotaError } from '@/api/client';
-import { uploadEditorAsset } from '@/api/editorAssets';
+import { type EditorAssetPurpose, uploadEditorAsset } from '@/api/editorAssets';
 import { Skeleton } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
@@ -50,11 +50,9 @@ import { deferStorageRefusal, errorCopy } from '@/lib/errors';
 import { useEditorRuntime, useOptionalEditorRuntime } from './EditorRuntime';
 import {
   acceptsPurpose,
-  editorAssetPurpose,
   isVideoFile,
   MEDIA_ACCEPT,
   mediaNodeFromAsset,
-  type plateMediaType,
 } from './media';
 import { MEDIA_CAPTION_CLASS } from './nodeStyles';
 import { pastedImage, settlePastedImage } from './pastedImages';
@@ -66,22 +64,13 @@ import {
 } from './uploadPresence';
 import { youtubeVideoId } from './youtube';
 
-type MediaType = ReturnType<typeof plateMediaType>;
-
 const PLACEHOLDER_COPY: Record<
-  MediaType,
+  EditorAssetPurpose,
   { label: () => string; icon: IconName }
 > = {
   audio: { icon: 'fileAudio', label: () => m.editor_add_audio() },
-  file: { icon: 'fileText', label: () => m.editor_add_file() },
-  img: { icon: 'image', label: () => m.editor_add_image() },
+  image: { icon: 'image', label: () => m.editor_add_image() },
 };
-
-function purposeForMediaType(type: string) {
-  if (type === KEYS.img) return 'image' as const;
-  if (type === KEYS.audio) return 'audio' as const;
-  return 'file' as const;
-}
 
 export const MediaPlaceholderElement = withHOC(
   PlaceholderProvider,
@@ -102,28 +91,27 @@ export const MediaPlaceholderElement = withHOC(
     const [reading, setReading] = useState(() => !!pastedImage(id));
     const [error, setError] = useState<string | null>(null);
     const abortRef = useRef<AbortController | null>(null);
-    const mediaType = (element.mediaType || KEYS.file) as MediaType;
-    const purpose = purposeForMediaType(mediaType);
-    const content = PLACEHOLDER_COPY[mediaType] ?? PLACEHOLDER_COPY.file;
+    // A note's media are images and audio only (Epo 2026-10-15): any other
+    // dropped or pasted file gets an image placeholder (MediaKit's
+    // uploadConfig), which refuses it.
+    const purpose: EditorAssetPurpose =
+      element.mediaType === KEYS.audio ? 'audio' : 'image';
+    const content = PLACEHOLDER_COPY[purpose];
 
     const replaceCurrentPlaceholder = useCallback(
       async (file: File) => {
         if (!canCreateAssets) return;
-        if (isVideoFile(file)) {
-          setError(m.editor_video_disabled());
-          return;
-        }
-        if (!acceptsPurpose(file, purpose)) {
-          setError(
+        const refusal = isVideoFile(file)
+          ? m.editor_video_disabled()
+          : !acceptsPurpose(file, purpose) &&
             m.editor_choose_purpose({
               purpose:
-                purpose === 'image'
-                  ? m.editor_image()
-                  : purpose === 'audio'
-                    ? m.editor_audio()
-                    : m.editor_file(),
-            })
-          );
+                purpose === 'image' ? m.editor_image() : m.editor_audio(),
+            });
+        if (refusal) {
+          setError(refusal);
+          // A dropped file is no upload: the block offers its picker again.
+          setUploading(null);
           return;
         }
         abortRef.current?.abort();
@@ -134,15 +122,10 @@ export const MediaPlaceholderElement = withHOC(
         setError(null);
         api.placeholder.addUploadingFile(id, file);
         try {
-          const asset = await uploadEditorAsset(
-            materialId,
-            file,
-            editorAssetPurpose(file),
-            {
-              onProgress: setProgress,
-              signal: controller.signal,
-            }
-          );
+          const asset = await uploadEditorAsset(materialId, file, purpose, {
+            onProgress: setProgress,
+            signal: controller.signal,
+          });
           const path = editor.api.findPath(element);
           if (!path) return;
           const node = { ...mediaNodeFromAsset(asset), placeholderId: id };
@@ -223,12 +206,12 @@ export const MediaPlaceholderElement = withHOC(
     // returns and the image takes its place, here and, through this tab's
     // presence, in every other client of the room (uploadPresence.ts).
     const awareness = editorAwareness(editor);
-    const busy = mediaType === KEYS.img && !error && (!!uploading || reading);
+    const busy = purpose === 'image' && !error && (!!uploading || reading);
     useEffect(() => {
       if (busy) return announceUpload(awareness, id);
     }, [awareness, busy, id]);
     const elsewhere = useUploadingElsewhere(awareness, id);
-    if (busy || (mediaType === KEYS.img && elsewhere))
+    if (busy || (purpose === 'image' && elsewhere))
       return (
         <PlateElement {...props} className="my-2">
           <div

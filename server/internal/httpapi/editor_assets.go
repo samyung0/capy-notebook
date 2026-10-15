@@ -11,61 +11,28 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
-	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/fieldlimits"
+	"github.com/samyung0/capy-notebook/server/internal/planlimits"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
 const editorAssetMetadataMaxBytes = 64 << 10
 
-type editorAssetRule struct {
-	// maxBytes is unset for images, which take the payer's plan image cap.
-	maxBytes int64
-	mimes    map[string][]string
-}
-
-var editorAssetRules = map[string]editorAssetRule{
+// editorAssetRules lists, per purpose, each allowed extension's content types.
+// A note's media are images and audio only (Epo 2026-10-15).
+var editorAssetRules = map[string]map[string][]string{
 	"image": {
-		mimes: map[string][]string{
-			".png": {"image/png"}, ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"},
-			".gif": {"image/gif"}, ".webp": {"image/webp"}, ".avif": {"image/avif"},
-		},
+		".png": {"image/png"}, ".jpg": {"image/jpeg"}, ".jpeg": {"image/jpeg"},
+		".gif": {"image/gif"}, ".webp": {"image/webp"}, ".avif": {"image/avif"},
 	},
 	"audio": {
-		maxBytes: 100 << 20,
-		mimes: map[string][]string{
-			".mp3": {"audio/mpeg"}, ".wav": {"audio/wav", "audio/x-wav"},
-			".ogg": {"audio/ogg"}, ".flac": {"audio/flac"}, ".m4a": {"audio/mp4", "audio/x-m4a"},
-			".aac": {"audio/aac"},
-		},
+		".mp3": {"audio/mpeg"}, ".wav": {"audio/wav", "audio/x-wav"},
+		".ogg": {"audio/ogg"}, ".flac": {"audio/flac"}, ".m4a": {"audio/mp4", "audio/x-m4a"},
+		".aac": {"audio/aac"},
 	},
-	"pdf": {
-		maxBytes: 50 << 20,
-		mimes:    map[string][]string{".pdf": {"application/pdf"}},
-	},
-	"file": {
-		maxBytes: 100 << 20,
-		mimes: map[string][]string{
-			".txt": {"text/plain"}, ".md": {"text/markdown", "text/plain"},
-			".csv": {"text/csv", "text/plain"}, ".zip": {"application/zip", "application/x-zip-compressed"},
-			".doc":  {"application/msword"},
-			".docx": {"application/vnd.openxmlformats-officedocument.wordprocessingml.document"},
-			".xls":  {"application/vnd.ms-excel"},
-			".xlsx": {"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"},
-			".ppt":  {"application/vnd.ms-powerpoint"},
-			".pptx": {"application/vnd.openxmlformats-officedocument.presentationml.presentation"},
-		},
-	},
-}
-
-func editorAssetMaxBytes(rule editorAssetRule, purpose string, storageCeiling, imageMaxBytes int64) int64 {
-	if purpose == "image" {
-		return min(imageMaxBytes, storageCeiling)
-	}
-	return min(rule.maxBytes, storageCeiling)
 }
 
 type reserveEditorAssetRequest struct {
@@ -88,7 +55,8 @@ func normalizeMediaType(value string) (string, error) {
 
 func validateEditorAssetMetadata(
 	in reserveEditorAssetRequest,
-	storageCeiling, imageMaxBytes int64,
+	storageCeiling int64,
+	limits planlimits.Limits,
 ) (name, ext, contentType string, err error) {
 	name = strings.TrimSpace(in.Name)
 	name = fieldlimits.ClampFileName(path.Base(strings.ReplaceAll(name, `\`, "/")))
@@ -98,14 +66,16 @@ func validateEditorAssetMetadata(
 	}
 	rule, ok := editorAssetRules[in.Purpose]
 	if !ok {
-		return "", "", "", errors.New("purpose must be image, audio, pdf, or file")
+		return "", "", "", errors.New("purpose must be image or audio")
 	}
-	maxBytes := editorAssetMaxBytes(rule, in.Purpose, storageCeiling, imageMaxBytes)
+	// The payer's plan cap (the browser shrinks larger images first), never
+	// above the storage ceiling.
+	maxBytes := min(limits.EditorAssetBytes(in.Purpose), storageCeiling)
 	if in.SizeBytes <= 0 || in.SizeBytes > maxBytes {
 		return "", "", "", fmt.Errorf("%s uploads must be between 1 byte and %d MB", in.Purpose, maxBytes>>20)
 	}
 	ext = strings.ToLower(filepath.Ext(name))
-	allowedMimes, ok := rule.mimes[ext]
+	allowedMimes, ok := rule[ext]
 	if !ok {
 		return "", "", "", fmt.Errorf("%s files with extension %q are not allowed", in.Purpose, ext)
 	}
@@ -126,9 +96,9 @@ func validateEditorAssetMetadata(
 // one, which pays.
 type editorAssetScope struct {
 	workspaceID, materialID string
-	// The payer's plan image cap; the browser shrinks larger images first.
+	// The payer's plan limits, which cap each asset (EditorAssetBytes).
 	// Bank figures have their own limit (bank/assets.go).
-	imageMaxBytes int64
+	limits planlimits.Limits
 }
 
 // editorAssetScopeFor admits an editor of the route's material and resolves the
@@ -146,12 +116,12 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	workspaceID, imageMaxBytes, err := a.s.EditorAssetMaterial(r.Context(), materialID)
+	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID)
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, imageMaxBytes: imageMaxBytes}, true
+	return editorAssetScope{workspaceID: workspaceID, materialID: materialID, limits: limits}, true
 }
 
 func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
@@ -174,7 +144,7 @@ func (a *api) reserveEditorAsset(w http.ResponseWriter, r *http.Request) {
 		a.fail(w, err)
 		return
 	}
-	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.imageMaxBytes)
+	name, ext, contentType, err := validateEditorAssetMetadata(in, freeLimits.StorageBytes, scope.limits)
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
 		return
@@ -355,7 +325,7 @@ func editorAssetSignatureAllowed(purpose, ext string, data []byte) bool {
 	if !ok {
 		return false
 	}
-	if _, ok := rule.mimes[ext]; !ok {
+	if _, ok := rule[ext]; !ok {
 		return false
 	}
 	has := func(prefix []byte) bool { return bytes.HasPrefix(data, prefix) }
@@ -388,14 +358,6 @@ func editorAssetSignatureAllowed(purpose, ext string, data []byte) bool {
 		return len(data) >= 2 && data[0] == 0xff && data[1]&0xf6 == 0xf0
 	case ".m4a":
 		return isISOBaseMedia && (isoBrand == "M4A " || isoBrand == "M4B " || isoBrand == "f4a ")
-	case ".pdf":
-		return has([]byte("%PDF-"))
-	case ".doc", ".xls", ".ppt":
-		return has([]byte{0xd0, 0xcf, 0x11, 0xe0, 0xa1, 0xb1, 0x1a, 0xe1})
-	case ".docx", ".xlsx", ".pptx", ".zip":
-		return has([]byte{'P', 'K', 0x03, 0x04}) || has([]byte{'P', 'K', 0x05, 0x06})
-	case ".txt", ".md", ".csv":
-		return utf8.Valid(data) && !bytes.ContainsRune(data, '\x00')
 	default:
 		return false
 	}

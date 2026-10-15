@@ -256,10 +256,13 @@ Text leaves do not need IDs. Runtime values must never be written onto nodes:
 - collaboration presence;
 - local AI preview data.
 
-Media nodes persist `assetId` and stable metadata. Uploads go through the
+Media nodes persist `assetId` and stable metadata. A note's media are images
+and audio only (Epo 2026-10-15): there is no PDF or file block, and the editor
+asset purposes are `image` and `audio`, an audio file capped by the payer's
+per-file plan cap. Uploads go through the
 note's material route, so standalone notes upload too (see
 [backend-storage-quota.md](../backend-storage-quota.md)). Renderers resolve signed URLs
-at runtime. An `img`, `image`, `audio` or `file` node always names its asset
+at runtime. An `img`, `image` or `audio` node always names its asset
 and carries no `url` or `src` (Epo, 2026-10-10): the browser's document check
 (`validateMediaElement`), Go (`validateMedia` in `materialdoc`) and the
 collaboration server refuse it otherwise. The server refuses it when the
@@ -321,8 +324,14 @@ skeleton while its asset resolves (`MediaAssetView`), so nothing flashes in
 between (Epo, 2026-10-10). An upload superseded by a newer one of the same
 block (its effect run again) leaves the block's state to that one. A refused
 upload leaves the empty placeholder (pick again, or delete it) with the
-storage notice or the error under it; audio and file placeholders keep the
-name, progress and cancel.
+storage notice or the error under it; an audio placeholder keeps the name,
+progress and cancel. Every dropped or pasted file gets a placeholder: Plate's
+own per-type size and count checks, which dropped a file silently, are off
+(the placeholder plugin's `uploadConfig` in `plugins.ts`), so the server's
+caps answer. A file that is neither an image nor audio (a PDF, a document, a
+video) gets an image placeholder that refuses it with the type message
+(`editor_choose_purpose`, or the YouTube hint for a video) and offers its
+picker again.
 
 Other clients see the same skeleton through the uploader's presence
 (`uploadPresence.ts`, Epo 2026-10-10): while an image uploads, the uploading
@@ -757,10 +766,10 @@ the worker; duplicate clicks are disabled, and errors appear as a toast.
 
 Markdown uses standard headings, nested lists, links and tables, with labeled
 quotes for callouts, sequential columns, LaTeX math and captioned Mermaid fences.
-Rich/merged tables use HTML. Images and attachments produce a ZIP containing
+Rich/merged tables use HTML. Images and audio produce a ZIP containing
 `document.md` and relative `assets/`; text-only exports remain `.md`.
 DOCX uses blue info callouts, grey quote/divider borders, plain answer keys, images
-for formulas/diagrams, and borderless tables for columns. Private audio/file links
+for formulas/diagrams, and borderless tables for columns. Private audio links
 return to the note in view mode rather than retaining expiring signed URLs.
 Each DOCX outline becomes a native Word TOC field covering heading levels 1–6,
 with indented TOC styles, dot leaders and page-number fields. Cached entries retain

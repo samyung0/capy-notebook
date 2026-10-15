@@ -1019,11 +1019,11 @@ fn required_keys<T: ReadTxn>(
 }
 
 /// The elements [plain_content] named, read in `candidate`, the room with the
-/// update applied. Media blocks name their file (Epo, 2026-10-10): an `img`,
-/// `audio` or `file` element carries a non-empty `assetId` and no `url` or
-/// `src`. A closed element (chart, plot, graph, html_embed) carries only its
-/// fields. Refused here, when the update arrives, so only this writer's
-/// update is lost; the store's check would discard the room.
+/// update applied. Media blocks name their file (Epo, 2026-10-10): an `img`
+/// or `audio` element carries a non-empty `assetId` and no `url` or `src`. A
+/// closed element (chart, plot, graph, html_embed) carries only its fields.
+/// Refused here, when the update arrives, so only this writer's update is
+/// lost; the store's check would discard the room.
 fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(), Refusal> {
     use yrs::Transact;
     let txn = candidate.transact();

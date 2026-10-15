@@ -66,6 +66,17 @@ test.describe('inline and block insertions', () => {
     const groupHeading = await firstGroup.getByRole('heading').innerText();
     expect(groupHeading.trim()).not.toBe('');
     await expect(firstGroup).toHaveAccessibleName(groupHeading);
+    // Notes embed images and audio only (Epo 2026-10-15): no PDF or file.
+    const media = listbox
+      .getByRole('group', { exact: true, name: m.editor_prefs_files() })
+      .getByRole('option');
+    await expect(media).toHaveCount(3);
+    for (const [index, name] of [
+      m.editor_image(),
+      m.editor_youtube_embed(),
+      m.editor_audio(),
+    ].entries())
+      await expect(media.nth(index)).toHaveAccessibleName(name);
     await expect(
       listbox.getByRole('option', { exact: true, name: m.editor_image() })
     ).toHaveAttribute('aria-selected', 'true');

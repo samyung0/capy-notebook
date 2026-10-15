@@ -10,14 +10,11 @@ import {
 } from './media';
 
 describe('editor media persistence', () => {
-  it('classifies media without relying only on file extensions', () => {
-    expect(editorAssetPurpose({ name: 'photo.bin', type: 'image/png' })).toBe(
-      'image'
-    );
-    expect(editorAssetPurpose({ name: 'paper.PDF', type: '' })).toBe('pdf');
-    expect(editorAssetPurpose({ name: 'notes.txt', type: 'text/plain' })).toBe(
-      'file'
-    );
+  it('takes images and audio only (Epo 2026-10-15)', () => {
+    expect(editorAssetPurpose({ type: 'image/png' })).toBe('image');
+    expect(editorAssetPurpose({ type: 'audio/mpeg' })).toBe('audio');
+    expect(editorAssetPurpose({ type: 'application/pdf' })).toBeUndefined();
+    expect(editorAssetPurpose({ type: 'text/plain' })).toBeUndefined();
   });
 
   it('persists stable metadata without signed or blob URLs', () => {
@@ -38,15 +35,19 @@ describe('editor media persistence', () => {
     expect(node).not.toHaveProperty('src');
   });
 
-  it('enforces placeholder purpose while allowing generic files', () => {
+  it('enforces the placeholder purpose', () => {
     const file = { name: 'audio.mp3', type: 'audio/mpeg' };
     expect(acceptsPurpose(file, 'audio')).toBe(true);
     expect(acceptsPurpose(file, 'image')).toBe(false);
-    expect(acceptsPurpose(file, 'file')).toBe(true);
+    const pdf = { name: 'paper.pdf', type: 'application/pdf' };
+    expect(acceptsPurpose(pdf, 'image')).toBe(false);
+    expect(acceptsPurpose(pdf, 'audio')).toBe(false);
   });
 
   it('rejects video files from every upload purpose', () => {
     expect(isVideoFile({ name: 'clip.mp4', type: '' })).toBe(true);
-    expect(acceptsPurpose({ name: 'clip.mp4', type: '' }, 'file')).toBe(false);
+    expect(
+      acceptsPurpose({ name: 'clip.mp4', type: 'video/mp4' }, 'image')
+    ).toBe(false);
   });
 });

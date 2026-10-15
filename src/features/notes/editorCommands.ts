@@ -386,19 +386,6 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
   },
   {
     get description() {
-      return m.editor_cmd_file();
-    },
-    group: 'fileOperations',
-    icon: 'fileText',
-    id: 'file',
-    get label() {
-      return m.editor_file();
-    },
-    run: (editor) => insertMediaPlaceholder(editor, 'file'),
-    widget: 'media',
-  },
-  {
-    get description() {
       return m.editor_cmd_mention();
     },
     focusEditor: false,

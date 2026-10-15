@@ -194,11 +194,11 @@ func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInp
 	out.Body.Assets = []adoptedMaterialChild{}
 	out.Body.Materials = []adoptedMaterialChild{}
 	if len(in.Body.AssetIDs) > 0 {
-		workspaceID, imageMaxBytes, err := a.s.EditorAssetMaterial(ctx, in.ID)
+		workspaceID, limits, err := a.s.EditorAssetMaterial(ctx, in.ID)
 		if err != nil {
 			return nil, hErr(err)
 		}
-		adopted, refused, err := a.s.AdoptEditorAssets(ctx, actor, workspaceID, in.ID, in.Body.AssetIDs, imageMaxBytes)
+		adopted, refused, err := a.s.AdoptEditorAssets(ctx, actor, workspaceID, in.ID, in.Body.AssetIDs, limits)
 		if err != nil {
 			return nil, hErr(err)
 		}

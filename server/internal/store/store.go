@@ -211,14 +211,20 @@ func (s *Store) PlanLimits(tier PlanTier) (planlimits.Limits, error) {
 	return s.planLimits.For(string(tier))
 }
 
-// ImageMaxBytes caps one uploaded image by the plan of the account that pays
-// for it: a workspace's owner, or a standalone material's owner.
-func (s *Store) ImageMaxBytes(ctx context.Context, payerID string) (int64, error) {
+// PayerPlanLimits are the plan limits of the account that pays: a
+// workspace's owner, or a standalone material's owner.
+func (s *Store) PayerPlanLimits(ctx context.Context, payerID string) (planlimits.Limits, error) {
 	tier, err := s.effectivePlanTierForUser(ctx, s.pool, payerID)
 	if err != nil {
-		return 0, err
+		return planlimits.Limits{}, err
 	}
-	limits, err := s.PlanLimits(tier)
+	return s.PlanLimits(tier)
+}
+
+// ImageMaxBytes caps one uploaded image by the plan of the account that pays
+// for it.
+func (s *Store) ImageMaxBytes(ctx context.Context, payerID string) (int64, error) {
+	limits, err := s.PayerPlanLimits(ctx, payerID)
 	return limits.ImageBytes, err
 }
 

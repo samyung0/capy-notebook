@@ -278,7 +278,7 @@ func Elements() []Element {
 		inline("mention", true),
 		inline("mention_input", true),
 		inline("slash_input", true),
-		media("img", true), media("audio", false), media("file", false),
+		media("img", true), media("audio", false),
 		video,
 		void("placeholder"),
 		figure("chart"), figure("plot"), figure("graph"),
