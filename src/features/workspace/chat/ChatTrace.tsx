@@ -22,6 +22,7 @@ import { toolErrorMessage } from '../toolErrorMessage';
 import { ActivityIcon } from './ActivityIcon';
 import { LangAnswer } from './LangAnswer';
 import {
+  type ActivityIconKind,
   buildTrace,
   currentRow,
   foldTrace,
@@ -150,19 +151,58 @@ function ThinkingRow({
   );
 }
 
-/** A row that opens to list the rows behind it. `flat` (the Normal summary)
- * drops the chevron and lists the rows flush with it. */
+/** Normal's folded turn: one line naming the latest step. Clicking it opens
+ * the earlier steps above it and any later rows below, flush, in order. */
+function FoldRow({
+  icon,
+  title,
+  before,
+  after,
+  citations,
+  handlers,
+}: {
+  icon: ActivityIconKind;
+  title: string;
+  before: TraceRow[];
+  after: TraceRow[];
+  citations?: Citation[];
+  handlers: UndoHandlers;
+}) {
+  const [open, setOpen] = useState(false);
+  const list = (rows: TraceRow[]) =>
+    rows.length ? (
+      <TraceList citations={citations} handlers={handlers} rows={rows} />
+    ) : null;
+  return (
+    <div className="flex min-w-0 flex-col gap-2">
+      {open ? list(before) : null}
+      <button
+        aria-expanded={open}
+        className={cn(
+          ROW,
+          'cursor-pointer rounded-md text-left hover:text-fg focus-visible:outline-2 focus-visible:outline-action'
+        )}
+        onClick={() => setOpen((value) => !value)}
+        type="button"
+      >
+        <ActivityIcon kind={icon} />
+        <span className="min-w-0 truncate">{title}</span>
+      </button>
+      {open ? list(after) : null}
+    </div>
+  );
+}
+
+/** A row that opens to list the rows behind it. */
 function ExpandRow({
   icon,
   title,
   description,
-  flat = false,
   children,
 }: {
   icon: ReactNode;
   title: string;
   description?: string;
-  flat?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -184,19 +224,15 @@ function ExpandRow({
             {description}
           </span>
         ) : null}
-        {flat ? null : (
-          <Icon
-            className={cn(
-              '-ml-1 size-3.5 shrink-0 transition-transform duration-(--motion-duration-quick) ease-(--motion-ease-smooth-out) motion-reduce:transition-none',
-              open && 'rotate-90'
-            )}
-            name="chevronRight"
-          />
-        )}
+        <Icon
+          className={cn(
+            '-ml-1 size-3.5 shrink-0 transition-transform duration-(--motion-duration-quick) ease-(--motion-ease-smooth-out) motion-reduce:transition-none',
+            open && 'rotate-90'
+          )}
+          name="chevronRight"
+        />
       </button>
-      {open ? (
-        <div className={cn('mt-1.5 mb-0.5', !flat && 'ml-6.5')}>{children}</div>
-      ) : null}
+      {open ? <div className="mt-1.5 mb-0.5 ml-6.5">{children}</div> : null}
     </div>
   );
 }
@@ -510,29 +546,20 @@ export function ChatTrace({
 
   const fold = foldTrace(input);
   if (!fold.rows.length && !fold.receipts.length) return null;
-  // With step times the line says how long it worked; without them (older
-  // history) it is the latest step itself, never a bare count.
-  const latest = fold.seconds ? undefined : latestStep(fold.rows);
+  // Normal folds every step behind one line that names the latest step; the
+  // steps before it open above that line, the ones after it below.
+  const latest = latestStep(fold.rows);
   return (
     <div className="mb-4 flex flex-col gap-2">
-      {fold.steps ? (
-        <ExpandRow
-          flat
-          icon={<ActivityIcon kind={latest?.icon ?? 'think'} />}
-          title={
-            latest
-              ? latest.text
-              : fold.seconds
-                ? m.chat_trace_worked_for({ seconds: fold.seconds })
-                : m.chat_trace_thought()
-          }
-        >
-          <TraceList
-            citations={msg.citations}
-            handlers={handlers}
-            rows={fold.rows}
-          />
-        </ExpandRow>
+      {latest ? (
+        <FoldRow
+          after={fold.rows.slice(latest.index + 1)}
+          before={fold.rows.slice(0, latest.index)}
+          citations={msg.citations}
+          handlers={handlers}
+          icon={latest.icon}
+          title={latest.text}
+        />
       ) : (
         <TraceList
           citations={msg.citations}

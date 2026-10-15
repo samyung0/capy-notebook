@@ -679,7 +679,6 @@
   "chat_trace_thinking": "Thinking",
   "chat_trace_thought": "Thought",
   "chat_trace_thought_for": "Thought for {seconds}s",
-  "chat_trace_worked_for": "Worked for {seconds}s",
   "chat_redo": "Redo",
   "chat_redo_pending": "Redoing…",
   "chat_undo_failed_edit": "Couldn't undo the edit",

@@ -422,7 +422,6 @@ export function foldTrace(input: Omit<TraceInput, 'receipts'>): {
   rows: TraceRow[];
   receipts: TraceRow[];
   steps: number;
-  seconds?: number;
 } {
   const rows = buildTrace({ ...input, receipts: false });
   const tools = input.activity.filter(
@@ -431,42 +430,42 @@ export function foldTrace(input: Omit<TraceInput, 'receipts'>): {
   const thinking = rows.filter(
     (row) => row.type === 'thinking' && !row.running
   ).length;
-  const end = Math.max(...tools.map((tool) => time(tool.endedAt)));
-  const span = end - time(input.startedAt);
   return {
     receipts: buildTrace(input).filter(isReceipt),
     rows,
-    seconds:
-      tools.length && Number.isFinite(span)
-        ? Math.max(1, Math.round(span / 1000))
-        : undefined,
     steps: tools.length + thinking,
   };
 }
 
-/** The last tool step's icon and sentence: the folded line's title when the
- * turn has no step times to say how long it worked. */
+/** The last tool step: its index in `rows`, icon and sentence. Normal's folded
+ * line names it, and the steps before it open above that line. */
 export function latestStep(
   rows: readonly TraceRow[]
-): { icon: ActivityIconKind; text: string } | undefined {
-  for (const row of [...rows].reverse()) {
+): { index: number; icon: ActivityIconKind; text: string } | undefined {
+  for (let index = rows.length - 1; index >= 0; index--) {
+    const row = rows[index];
     switch (row.type) {
       case 'step':
         return {
           icon: toolIcon(row.tool.name),
+          index,
           text: stepTitle(row.tool, row.state).text,
         };
       case 'group':
         return {
           icon: toolIcon(row.name),
+          index,
           text: groupTitle(row.name, row.tools.length),
         };
       case 'created':
       case 'edited':
         return {
           icon: toolIcon(row.tool.name),
+          index,
           text: stepTitle(row.tool, 'done').text,
         };
+      default:
+        break;
     }
   }
 }

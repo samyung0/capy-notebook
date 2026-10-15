@@ -2341,7 +2341,7 @@ current pending changes applied. Embedded source instructions remain untrusted.
    its rows start (`store.resource_titles`, `library.excerpt_labels`), and an
    unknown id stays the id. `tool_start` carries `startedAt` and `tool_end`
    `endedAt` (RFC 3339 UTC, the retrieval service's clock, to the
-   millisecond); the persisted tool block keeps both, so "Worked for 14s"
+   millisecond); the persisted tool block keeps both, so "Thought for 3s"
    survives a reload. Narration blocks carry no times, and a block rebuilt
    from receipts after an interrupted turn has none. How much of this work the chat
    shows is the account's Steps setting (`users.chat_steps`, `normal` or
@@ -2368,8 +2368,9 @@ current pending changes applied. Embedded source instructions remain untrusted.
    finished calls of one tool group into one expandable row, and narration
    sits between lists 16px apart. `me.chatSteps` picks the mode (Settings →
    Customizations → Chat): Normal shows only the current step and folds
-   everything into "Worked for Ns" when the answer starts (the whole line opens
-   it; a turn with no step times shows its latest step instead); Verbose
+   everything behind one line naming the latest step when the answer starts
+   (clicking it opens the earlier steps above it, flush and in order, with no
+   count or chevron); Verbose
    keeps every row. Receipts stay visible in both modes. A file the turn
    created or edited gets one receipt strip in full text colour: its
    catppuccin file icon, "Created X" or "Edited X", compact (xs) Undo in

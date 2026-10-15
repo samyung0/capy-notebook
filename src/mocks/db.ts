@@ -2246,7 +2246,7 @@ chatFixtures.forEach((fixture, index) => {
         {
           callId: `${conversationId}_search`,
           detail: fixture.prompt.slice(0, 40),
-          // Step times, so history reads "Worked for 3s" like a live turn.
+          // Step times, so history shows "Thought for 2s" like a live turn.
           endedAt: after(createdAt, 2700),
           id: `${conversationId}_search`,
           kind: 'tool',

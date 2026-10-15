@@ -170,7 +170,6 @@ describe('Normal mode', () => {
   it('folds every step behind one row and keeps the receipts', () => {
     const fold = foldTrace({ ...base, activity });
     expect(fold.steps).toBe(4);
-    expect(fold.seconds).toBe(9);
     expect(fold.rows.map((row) => row.type)).toEqual([
       'thinking',
       'step',
@@ -179,15 +178,15 @@ describe('Normal mode', () => {
     ]);
     expect(fold.receipts.map((row) => row.type)).toEqual(['created']);
   });
-  it('titles the fold with the latest step when there are no timestamps', () => {
+  it('titles the fold with the latest step', () => {
     const fold = foldTrace({
       ...base,
       activity: [tool('a', 'list_sources'), tool('b', 'search_workspace')],
       startedAt: undefined,
     });
-    expect(fold.seconds).toBeUndefined();
     expect(latestStep(fold.rows)).toEqual({
       icon: 'search',
+      index: fold.rows.length - 1,
       text: stepTitle(tool('b', 'search_workspace'), 'done').text,
     });
   });
