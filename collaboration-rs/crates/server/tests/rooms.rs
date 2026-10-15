@@ -3711,14 +3711,22 @@ async fn synced(port: u16, room: &str, user: &str, text: &str) -> Client {
     client
 }
 
-async fn active_rooms(port: u16) -> u64 {
-    let metrics = reqwest::get(format!("http://127.0.0.1:{port}/metrics"))
+/// The server's counters, read with the service secret `/metrics` requires.
+async fn metrics_text(port: u16) -> String {
+    reqwest::Client::new()
+        .get(format!("http://127.0.0.1:{port}/metrics"))
+        .header("x-collaboration-secret", SECRET)
+        .send()
         .await
         .expect("metrics")
         .text()
         .await
-        .expect("metrics text");
-    metrics
+        .expect("metrics text")
+}
+
+async fn active_rooms(port: u16) -> u64 {
+    metrics_text(port)
+        .await
         .lines()
         .find_map(|line| line.strip_prefix("capy_collaboration_active_rooms "))
         .and_then(|value| value.parse().ok())
@@ -3877,12 +3885,7 @@ async fn draft_sends_are_refused_with_their_class() {
     );
     // The browser hears the class alone (REVIEW1 S5); the server counts each.
     assert_eq!(answer, serde_json::json!({ "class": "lineage" }));
-    let metrics = reqwest::get(format!("http://127.0.0.1:{}/metrics", server.port))
-        .await
-        .expect("metrics")
-        .text()
-        .await
-        .expect("metrics text");
+    let metrics = metrics_text(server.port).await;
     for (class, count) in [
         ("limit", 1),
         ("unheld", 1),
