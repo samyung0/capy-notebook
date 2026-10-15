@@ -1157,17 +1157,50 @@ async def test_the_descriptor_regenerates_at_two_percent_or_first(
         "change_share": 0.0199,
         "chunks": chunks,
     }
-    fresh = ("Fresh descriptor.", 0.0)
+    fresh = ("Fresh descriptor.", 0.0, None)
 
     assert await indexing._descriptor("f", chunks, published) == (
         "Stored descriptor.",
         0.0199,
+        None,
     )
     assert (
         await indexing._descriptor("f", chunks, {**published, "change_share": 0.02})
         == fresh
     )
     assert await indexing._descriptor("f", chunks, None) == fresh
+
+
+async def test_a_failed_descriptor_is_pending_or_keeps_the_published_one(
+    monkeypatch,
+):
+    """Parts design Q4/Q10: a failed regeneration keeps the published
+    descriptor with its accumulated share (the next run tries again); without
+    one the descriptor is pending (no row to write), never blank. A
+    settlement failure still raises."""
+    import pytest
+
+    from pipeline.retrieval import accounting, indexing
+    from pipeline.retrieval.chunking import Chunk
+
+    failure = RuntimeError("503 upstream")
+
+    async def _fail(_name, _chunks):
+        raise failure
+
+    monkeypatch.setattr(indexing, "summarize_file", _fail)
+    chunks = [Chunk(text="Chlorophyll absorbs red and blue light.")]
+    published = {"descriptor": "Stored.", "change_share": 0.05, "chunks": chunks}
+
+    assert await indexing._descriptor("f", chunks, published) == (
+        "Stored.",
+        0.05,
+        None,
+    )
+    assert await indexing._descriptor("f", chunks, None) == (None, 0.0, failure)
+    failure = accounting.SettlementError("receipt rejected")
+    with pytest.raises(accounting.SettlementError):
+        await indexing._descriptor("f", chunks, None)
 
 
 def test_text_change_ignores_reflow_and_counts_only_edited_words():

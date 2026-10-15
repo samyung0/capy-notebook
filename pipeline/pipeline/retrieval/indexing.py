@@ -89,7 +89,12 @@ async def index_file(
     allow_empty: bool = False,
 ) -> dict[str, Any]:
     """Write chunks and the descriptor for canonical parsed content; the
-    caller publishes it (``store.publish_file_content``)."""
+    caller publishes it (``store.publish_file_content``).
+
+    The descriptor is a part: when it fails, no summary row is written (the
+    descriptor is pending, never blank) and ``summary_error`` carries the
+    failure. Only a SettlementError raises.
+    """
     if not chunks:
         await store.replace_content_chunks(
             workspace_id=workspace_id,
@@ -105,7 +110,7 @@ async def index_file(
                 descriptor="",
                 change_share=0.0,
             )
-        return {"chunks": 0}
+        return {"chunks": 0, "summary_error": None}
 
     # Read before any write: reindexing the same content replaces these rows.
     published = await store.published_summary(
@@ -164,17 +169,43 @@ async def index_file(
     if on_progress:
         on_progress(85)
 
-    descriptor, change_share = await _descriptor(file_name, chunks, published)
-    await store.upsert_content_summary(
-        workspace_id=workspace_id,
-        content_id=content_id,
-        fingerprint=fingerprint,
-        descriptor=descriptor,
-        change_share=change_share,
+    descriptor, change_share, summary_error = await _descriptor(
+        file_name, chunks, published
     )
+    if descriptor is not None:
+        await store.upsert_content_summary(
+            workspace_id=workspace_id,
+            content_id=content_id,
+            fingerprint=fingerprint,
+            descriptor=descriptor,
+            change_share=change_share,
+        )
     if on_progress:
         on_progress(95)
-    return {"chunks": len(rows), "fingerprint": fingerprint}
+    return {
+        "chunks": len(rows),
+        "fingerprint": fingerprint,
+        "summary_error": summary_error,
+    }
+
+
+async def fill_descriptor(
+    *, workspace_id: str, content_id: str, file_name: str
+) -> Exception | None:
+    """Describe published content whose descriptor is pending, from its stored
+    chunks: one summary call, no parse and no embedding. The row is inserted
+    only if still absent. Returns the failure, or None once a descriptor is
+    present; a SettlementError raises."""
+    if await store.has_content_summary(content_id):
+        return None
+    rows = await store.load_content_chunks(content_id)
+    chunks = [Chunk(text=r["text"], section_path=r["section_path"] or "") for r in rows]
+    descriptor, _, error = await _descriptor(file_name, chunks, None)
+    if descriptor is not None:
+        await store.fill_content_summary(
+            workspace_id=workspace_id, content_id=content_id, descriptor=descriptor
+        )
+    return error
 
 
 async def index_material(
@@ -326,20 +357,32 @@ SUMMARY_REUSE_SHARE = 0.02
 
 async def _descriptor(
     file_name: str, chunks: list[Chunk], published: dict[str, Any] | None
-) -> tuple[str, float]:
-    """The descriptor to store and the running change share kept next to it.
+) -> tuple[str | None, float, Exception | None]:
+    """The descriptor to store, the running change share kept next to it, and
+    the failure that left the descriptor pending (``None`` to store).
 
     Regenerates from the complete content when no published descriptor exists
-    or once the change reaches the share.
+    or once the change reaches the share. A failed regeneration keeps the
+    published descriptor with the accumulated share, so the next run tries
+    again; without one the descriptor is pending. A SettlementError raises.
     """
+    share = 0.0
     if published is not None:
         # The document size is the same estimate as the full summary input.
         document = estimate_tokens("\n\n".join(c.indexed_text() for c in chunks))
         changed = text_change_tokens(published["chunks"], chunks)
         share = published["change_share"] + changed / max(1, document)
         if share < SUMMARY_REUSE_SHARE:
-            return published["descriptor"], share
-    return await summarize_file(file_name, chunks), 0.0
+            return published["descriptor"], share, None
+    try:
+        return await summarize_file(file_name, chunks), 0.0, None
+    except accounting.SettlementError:
+        raise
+    except Exception as exc:  # noqa: BLE001 - any failure leaves a part missing
+        log.warning("file descriptor failed for %s: %s", file_name, exc)
+        if published is not None:
+            return published["descriptor"], share, None
+        return None, 0.0, exc
 
 
 def _key(text: str) -> str:
@@ -487,10 +530,10 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
     naming into another's descriptor, and would make the same bytes describe
     differently depending on who happened to ingest them first.
 
-    A failure raises rather than returning a blank. An empty descriptor is
-    written as if it were real, marked ready, and then copied to future donors,
-    and no later pass ever refills it. Retrying the job (and failing it after
-    the budget) is recoverable; a permanent blank is not.
+    A failure raises rather than returning a blank. An empty descriptor would
+    be stored as if it were real and copied to future donors, and no later pass
+    would ever refill it; a pending one (no row, ``_descriptor``) is filled by
+    the next busy re-pend, donor continuation, refresh or Retry processing.
     """
     try:
         descriptor = await _summarize(descriptor_excerpt(chunks))

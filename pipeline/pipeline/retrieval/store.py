@@ -1037,15 +1037,65 @@ async def published_summary(
     return {**dict(row), "chunks": chunks}
 
 
-async def content_fingerprint(content_id: str) -> str:
+async def has_content_summary(content_id: str) -> bool:
+    """False while the content's descriptor is pending (a missing row)."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            "SELECT fingerprint FROM rag_content_summaries WHERE content_id = %s",
+            "SELECT 1 FROM rag_content_summaries WHERE content_id = %s",
             (content_id,),
         )
+        return await cur.fetchone() is not None
+
+
+async def fill_content_summary(
+    *, workspace_id: str, content_id: str, descriptor: str
+) -> None:
+    """Insert a pending descriptor, never overwriting one another job or a
+    refresh wrote meanwhile. The fingerprint is the content hash, which is
+    ``indexing.content_hash`` of the stored chunks."""
+    db = await pool()
+    async with db.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO rag_content_summaries
+                (content_id, workspace_id, fingerprint, descriptor, change_share,
+                 updated_at)
+            SELECT id, workspace_id, content_hash, %s, 0, now()
+            FROM rag_contents WHERE id = %s AND workspace_id = %s
+            ON CONFLICT (content_id) DO NOTHING
+            """,
+            (descriptor, content_id, workspace_id),
+        )
+
+
+async def file_content(file_id: str) -> dict[str, Any] | None:
+    """The content a parts-only job fills: the source refresh candidate's
+    under a bound refresh, else the file's alias."""
+    refresh = jobdb.source_refresh_for(file_id)
+    db = await pool()
+    async with db.connection() as conn:
+        if refresh is not None:
+            cur = await conn.execute(
+                """
+                SELECT rc.id, rc.content_hash, rc.status
+                FROM source_refresh_candidates c
+                JOIN rag_contents rc ON rc.id = c.content_id
+                WHERE c.file_id = %s AND c.job_id = %s AND c.lease_token = %s
+                """,
+                (file_id, refresh["_jobId"], refresh["sourceLeaseToken"]),
+            )
+        else:
+            cur = await conn.execute(
+                """
+                SELECT rc.id, rc.content_hash, rc.status
+                FROM rag_file_contents fc JOIN rag_contents rc ON rc.id = fc.content_id
+                WHERE fc.file_id = %s
+                """,
+                (file_id,),
+            )
         row = await cur.fetchone()
-        return str(row["fingerprint"]) if row else ""
+    return dict(row) if row else None
 
 
 # ---------------------------------------------------------------- search

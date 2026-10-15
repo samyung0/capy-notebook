@@ -450,7 +450,7 @@ def test_parse_charges_only_text_layer_pages():
     assert db.credits_for_parse_pages(3, 1, digital_rate=31_000_000) == 62_000_000
 
 
-def test_unread_vlm_pages_end_the_file_failed_with_its_pages_indexed(monkeypatch):
+def test_missing_parts_end_the_file_failed_with_its_content_indexed(monkeypatch):
     calls: list[tuple] = []
     monkeypatch.setattr(db, "connect", lambda: _Conn())
     monkeypatch.setattr(db, "source_refresh_for", lambda _file_id: None)
@@ -470,9 +470,13 @@ def test_unread_vlm_pages_end_the_file_failed_with_its_pages_indexed(monkeypatch
         lambda _cur, _j, status, error=None: calls.append((status, error)),
     )
     worker.obs.start_usage()
-    assert worker._finish_ok("f_1", "job_1", unread_pages=[4, 9])
+    missing = worker.Missing(summary="file summary failed: 503", pages=(4, 9))
+    assert worker._finish_ok("f_1", "job_1", missing=missing)
     assert ("status", "failed") in calls and ("indexed", True) in calls
     assert (
         "done",
-        "2 pages could not be read (p. 4, 9); retry processing reads them again",
+        (
+            "summary pending (file summary failed: 503); 2 pages could not be read "
+            "(p. 4, 9); retry processing fills them in"
+        ),
     ) in calls

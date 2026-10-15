@@ -168,7 +168,7 @@ async def test_content_with_no_passages_spends_nothing_and_stays_unready(
         file_id=file_id,
         file_name="blank.md",
         chunks=[],
-    ) == {"chunks": 0}
+    ) == {"chunks": 0, "summary_error": None}
 
     assert fake_models == {"embedded": [], "summarized": []}
     assert (
