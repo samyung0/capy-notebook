@@ -13,6 +13,7 @@ import type {
 import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -233,6 +234,7 @@ function UndoButton({
   const { operationId } = effect.undo;
   return (
     <Button
+      className="px-1.5"
       disabled={isPending || effect.undo.status !== 'available'}
       onClick={() =>
         undo(operationId, {
@@ -250,8 +252,8 @@ function UndoButton({
           },
         })
       }
-      size="sm"
-      variant={redo ? 'outline' : 'danger-light'}
+      size="xs"
+      variant={redo ? 'ghost-hover' : 'danger-light'}
     >
       {isPending
         ? redo
@@ -273,15 +275,14 @@ function OpenButton({
 }) {
   if (!onOpen) return null;
   return (
-    <Button
+    <UnderlineLink
+      noArrow
       onClick={() =>
         onOpen({ id: resource.id, kind: resource.kind, title: resource.title })
       }
-      size="sm"
-      variant="outline"
     >
       {m.chat_open_resource()}
-    </Button>
+    </UnderlineLink>
   );
 }
 
@@ -332,7 +333,7 @@ function ReceiptRow({
         </span>
         {text.slice(at + label.length)}
       </span>
-      <span className="ml-auto flex shrink-0 gap-1.5 pl-1">
+      <span className="ml-auto flex shrink-0 items-center gap-2 pl-1">
         {hasUndo(effect) ? (
           <UndoButton effect={effect} handlers={handlers} />
         ) : null}

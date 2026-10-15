@@ -2371,11 +2371,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    everything into "Worked for Ns · N steps" when the answer starts; Verbose
    keeps every row. Receipts stay visible in both modes. A file the turn
    created or edited gets one receipt strip in full text colour: its
-   catppuccin file icon, "Created X" or "Edited X", Undo in danger-light and
-   Open in outline (Button size sm). On a created file Undo moves it to trash
+   catppuccin file icon, "Created X" or "Edited X", compact (xs) Undo in
+   danger-light and an underlined Open (UnderlineLink without the arrow), so a
+   strip is as tall as a step row. On a created file Undo moves it to trash
    ("Moved X to trash", muted, Redo) and Redo restores it ("Restored X");
    later steps on that file fold into its strip. After an edit's Undo the strip
-   reads "Undid the edit to X", muted, with Redo. The receipt's effect replaces the block's effect and the
+   reads "Undid the edit to X", muted, with Redo (ghost-hover). The receipt's effect replaces the block's effect and the
    button reads Undo or Redo from the operation; a refused step shows an error
    toast and disables its button for the session, and history disables a
    button whose status is not `available`.
