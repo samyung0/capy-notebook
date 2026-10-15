@@ -1258,7 +1258,10 @@ is refused once the grace deadline has passed. At purge, all
 owned workspaces—including shared workspaces—their share links, files,
 standalone materials, planner/history data,
 memberships, invitations, notification data, credentials, and other
-product-content rows are deleted atomically with the account tombstone.
+product-content rows are deleted atomically with the account tombstone, as is
+the account's job history (job and attempt rows whose payload names its
+workspaces; billing rows keep theirs with the attempt link cleared). A job it
+ran in another owner's workspace stays with that file, without its id.
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. The account's editing incidents
