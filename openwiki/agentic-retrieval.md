@@ -2368,7 +2368,8 @@ current pending changes applied. Embedded source instructions remain untrusted.
    finished calls of one tool group into one expandable row, and narration
    sits between lists 16px apart. `me.chatSteps` picks the mode (Settings →
    Customizations → Chat): Normal shows only the current step and folds
-   everything into "Worked for Ns · N steps" when the answer starts; Verbose
+   everything into "Worked for Ns" when the answer starts (the whole line opens
+   it; a turn with no step times shows its latest step instead); Verbose
    keeps every row. Receipts stay visible in both modes. A file the turn
    created or edited gets one receipt strip in full text colour: its
    catppuccin file icon, "Created X" or "Edited X", compact (xs) Undo in

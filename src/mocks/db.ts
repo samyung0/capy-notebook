@@ -2215,6 +2215,9 @@ export const chatMessages: WireMessage[] = [
   },
 ];
 
+const after = (iso: string, ms: number) =>
+  new Date(new Date(iso).getTime() + ms).toISOString();
+
 // Every preview is also a saved conversation, so history needs no streamed turn.
 chatFixtures.forEach((fixture, index) => {
   const conversationId = `conv_${fixture.id}`;
@@ -2243,10 +2246,13 @@ chatFixtures.forEach((fixture, index) => {
         {
           callId: `${conversationId}_search`,
           detail: fixture.prompt.slice(0, 40),
+          // Step times, so history reads "Worked for 3s" like a live turn.
+          endedAt: after(createdAt, 2700),
           id: `${conversationId}_search`,
           kind: 'tool',
           name: 'search_workspace',
           outcome: 'succeeded',
+          startedAt: after(createdAt, 1800),
         },
       ],
       citations:

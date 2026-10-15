@@ -4,6 +4,7 @@ import {
   buildTrace,
   currentRow,
   foldTrace,
+  latestStep,
   stepTitle,
   type ToolBlock,
   toolIcon,
@@ -178,13 +179,17 @@ describe('Normal mode', () => {
     ]);
     expect(fold.receipts.map((row) => row.type)).toEqual(['created']);
   });
-  it('counts steps without timestamps', () => {
+  it('titles the fold with the latest step when there are no timestamps', () => {
     const fold = foldTrace({
       ...base,
-      activity: [tool('a', 'list_sources')],
+      activity: [tool('a', 'list_sources'), tool('b', 'search_workspace')],
       startedAt: undefined,
     });
-    expect(fold).toMatchObject({ seconds: undefined, steps: 2 });
+    expect(fold.seconds).toBeUndefined();
+    expect(latestStep(fold.rows)).toEqual({
+      icon: 'search',
+      text: stepTitle(tool('b', 'search_workspace'), 'done').text,
+    });
   });
   it('shows the step it is on while it works', () => {
     const rows = buildTrace({

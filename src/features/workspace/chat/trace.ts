@@ -444,6 +444,33 @@ export function foldTrace(input: Omit<TraceInput, 'receipts'>): {
   };
 }
 
+/** The last tool step's icon and sentence: the folded line's title when the
+ * turn has no step times to say how long it worked. */
+export function latestStep(
+  rows: readonly TraceRow[]
+): { icon: ActivityIconKind; text: string } | undefined {
+  for (const row of [...rows].reverse()) {
+    switch (row.type) {
+      case 'step':
+        return {
+          icon: toolIcon(row.tool.name),
+          text: stepTitle(row.tool, row.state).text,
+        };
+      case 'group':
+        return {
+          icon: toolIcon(row.name),
+          text: groupTitle(row.name, row.tools.length),
+        };
+      case 'created':
+      case 'edited':
+        return {
+          icon: toolIcon(row.tool.name),
+          text: stepTitle(row.tool, 'done').text,
+        };
+    }
+  }
+}
+
 /** Normal mode while the turn runs: only the step it is on. */
 export function currentRow(rows: readonly TraceRow[]): TraceRow | undefined {
   return [...rows].reverse().find((row) => row.type !== 'narration');

@@ -680,8 +680,6 @@
   "chat_trace_thought": "已思考",
   "chat_trace_thought_for": "思考了 {seconds} 秒",
   "chat_trace_worked_for": "用时 {seconds} 秒",
-  "chat_trace_steps": "{count} 个步骤",
-  "chat_trace_steps_one": "1 个步骤",
   "chat_redo": "重做",
   "chat_redo_pending": "正在重做…",
   "chat_undo_failed_edit": "无法撤销编辑",

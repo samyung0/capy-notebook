@@ -26,6 +26,7 @@ import {
   currentRow,
   foldTrace,
   groupTitle,
+  latestStep,
   type StepState,
   stepTitle,
   THINKING_DELAY_MS,
@@ -509,20 +510,21 @@ export function ChatTrace({
 
   const fold = foldTrace(input);
   if (!fold.rows.length && !fold.receipts.length) return null;
-  const steps =
-    fold.steps === 1
-      ? m.chat_trace_steps_one()
-      : m.chat_trace_steps({ count: fold.steps });
+  // With step times the line says how long it worked; without them (older
+  // history) it is the latest step itself, never a bare count.
+  const latest = fold.seconds ? undefined : latestStep(fold.rows);
   return (
     <div className="mb-4 flex flex-col gap-2">
       {fold.steps ? (
         <ExpandRow
           flat
-          icon={<ActivityIcon kind="think" />}
+          icon={<ActivityIcon kind={latest?.icon ?? 'think'} />}
           title={
-            fold.seconds
-              ? m.chat_trace_worked_for({ seconds: fold.seconds })
-              : steps
+            latest
+              ? latest.text
+              : fold.seconds
+                ? m.chat_trace_worked_for({ seconds: fold.seconds })
+                : m.chat_trace_thought()
           }
         >
           <TraceList
