@@ -17,6 +17,7 @@ import unicodedata
 from typing import Any
 
 from .. import elitellm
+from ..ingest import uat
 from ..jobs import RetryableError
 from ..prompts.ingest import (
     summary_messages,
@@ -375,6 +376,8 @@ async def _descriptor(
         if share < SUMMARY_REUSE_SHARE:
             return published["descriptor"], share, None
     try:
+        if uat.fail_summary(file_name):
+            raise RuntimeError(f"UAT: the file name carries {uat.FAIL_SUMMARY}")
         return await summarize_file(file_name, chunks), 0.0, None
     except accounting.SettlementError:
         raise

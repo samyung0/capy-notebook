@@ -153,6 +153,42 @@ class ConfigTest(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, f"{switch} is not allowed"):
                     config.render(values, "production", temp, "a" * 40)
 
+    def test_render_refuses_the_uat_ingest_switches_outside_uat(self):
+        """Security gate: the UAT-only ingest switches reach only the UAT
+        queue workers; a production render with either set fails."""
+        for switch in ("CAPY_UAT_FAIL_PARTS", "INGEST_UAT_SCRIPTED_VLM"):
+            self.assertEqual(
+                config.MANIFEST[switch],
+                {
+                    "kind": "variable",
+                    "targets": ["ingest-queue"],
+                    "environments": ["uat"],
+                },
+            )
+            values = {
+                key: "explicit"
+                for key, rule in config.MANIFEST.items()
+                if rule.get("required_for")
+            }
+            values.update(
+                POSTGRES_PASSWORD="secret",
+                CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+                CLERK_PUBLISHABLE_KEY="pk_public",
+                DEPLOYMENT_APP_URL="https://uat.example.com",
+            )
+            with tempfile.TemporaryDirectory() as temp:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, "production", temp, "a" * 40)
+                prod = config.parse_dotenv(Path(temp, "prod.env").read_text())
+                self.assertEqual(prod[switch], "")
+                values[switch] = "true"
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, "uat", temp, "a" * 40)
+                queue = config.parse_dotenv(Path(temp, "uat.queue.env").read_text())
+                self.assertEqual(queue[switch], "true")
+                with self.assertRaisesRegex(ValueError, f"{switch} is not allowed"):
+                    config.render(values, "production", temp, "a" * 40)
+
     def test_render_pins_collaboration_cores_only_in_production(self):
         values = {
             key: "explicit"

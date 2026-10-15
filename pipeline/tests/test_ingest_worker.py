@@ -2034,6 +2034,7 @@ async def test_vlm_pages_join_their_page_and_unread_ones_are_reported(
             ],
             tmp_path,
             "f_1",
+            "scan.pdf",
         )
     finally:
         worker._resource_rates.reset(token)
@@ -2114,7 +2115,7 @@ async def test_refresh_reads_vlm_pages_through_the_caption_cache(
         {worker._RESOURCE_VLM_PAGE: {"version": 1, "creditMicrosPerUnit": 1_000_000}}
     )
     try:
-        blocks, unread = await worker._read_vlm_pages([], tmp_path, "f_1")
+        blocks, unread = await worker._read_vlm_pages([], tmp_path, "f_1", "deck.pptx")
     finally:
         worker._resource_rates.reset(rates)
         worker.db.reset_source_refresh(source)

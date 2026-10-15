@@ -65,7 +65,7 @@ from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
-from . import capacity, import_stage, source_text, telemetry, thumbnail
+from . import capacity, import_stage, source_text, telemetry, thumbnail, uat
 from . import plan as ingest_plan
 
 log = logging.getLogger("capy.worker")
@@ -1609,7 +1609,9 @@ async def _chunks_for(
         )
         _publish_progress(ws, file_id, "indexing", 45)
         _set_stage("vlm_pages")
-        content_list, unread = await _read_vlm_pages(content_list, raw_dir, file_id)
+        content_list, unread = await _read_vlm_pages(
+            content_list, raw_dir, file_id, name
+        )
         _set_stage("chunking")
         chunks = await asyncio.to_thread(
             _page_chunks, content_list, raw_dir, Path(local_path or "")
@@ -1628,7 +1630,7 @@ VLM_PAGES_PER_JOB = 10
 
 
 async def _read_vlm_pages(
-    content_list: list[dict], raw_dir: Path, file_id: str
+    content_list: list[dict], raw_dir: Path, file_id: str, name: str
 ) -> tuple[list[dict], list[int]]:
     """Read the bundle's text-less page renders (``vlm/<page>.jpg``) with the
     VLM. Each read page becomes one text block after that page's own blocks;
@@ -1639,19 +1641,35 @@ async def _read_vlm_pages(
         return content_list, []
     rate = int(_rate(_RESOURCE_VLM_PAGE)["creditMicrosPerUnit"])
     limit = asyncio.Semaphore(VLM_PAGES_PER_JOB)
+    # UAT only (ingest/uat.py): a marked file's reads fail or are scripted,
+    # under a cache key of their own, so no real read is served from them or
+    # them from a real one.
+    fail, token = uat.fail_pages(name), uat.scripted_token(name)
+    marker = uat.FAIL_PAGES if fail else None if token is None else uat.SCRIPTED_VLM
+    salt = f"{marker}{token or ''}\0".encode() if marker else b""
+
+    async def read_page(page: int, data_url: str) -> str | None:
+        if fail:
+            return None
+        if token is None:
+            return await models.read_page(data_url, credit_micros=rate)
+        return await models.read_page(
+            data_url, credit_micros=rate, scripted=uat.scripted_page(token, page + 1)
+        )
 
     async def read(path: Path) -> tuple[int, str]:
+        page = int(path.stem)
         jpeg = await asyncio.to_thread(path.read_bytes)
         url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
         async with limit:
             text, *_ = await caption_cache.caption(
                 file_id=file_id,
-                image_sha256=hashlib.sha256(b"vlm-page\0" + jpeg).hexdigest(),
+                image_sha256=hashlib.sha256(b"vlm-page\0" + salt + jpeg).hexdigest(),
                 data_url=url,
-                read=lambda data_url: models.read_page(data_url, credit_micros=rate),
+                read=lambda data_url: read_page(page, data_url),
                 exclusive=False,
             )
-        return int(path.stem), text
+        return page, text
 
     tasks = [asyncio.ensure_future(read(path)) for path in renders]
     try:

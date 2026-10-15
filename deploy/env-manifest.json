@@ -358,6 +358,11 @@
       "kind": "variable",
       "targets": ["ingest-production", "ingest-shared"]
     },
+    "CAPY_UAT_FAIL_PARTS": {
+      "kind": "variable",
+      "targets": ["ingest-queue"],
+      "environments": ["uat"]
+    },
     "CLERK_PUBLISHABLE_KEY": {
       "kind": "variable",
       "targets": ["workflow", "ops", "quality"],
@@ -529,6 +534,11 @@
     "INGEST_HOST_USER": {
       "kind": "variable",
       "targets": ["workflow", "quality"]
+    },
+    "INGEST_UAT_SCRIPTED_VLM": {
+      "kind": "variable",
+      "targets": ["ingest-queue"],
+      "environments": ["uat"]
     },
     "JEV_TYPESAFE_API_KEY": {
       "kind": "secret",
