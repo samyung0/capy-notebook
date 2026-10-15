@@ -327,7 +327,7 @@ export function ChatPanel({
       </SimpleDialog>
 
       <div
-        className="flex flex-1 flex-col gap-4 self-stretch overflow-auto px-4 py-4"
+        className="scroll-fade-y flex flex-1 flex-col gap-4 self-stretch overflow-auto px-4 py-4 [--scroll-fade-bottom-padding:--spacing(4)]"
         ref={scrollRef}
       >
         {!messages.length && (
