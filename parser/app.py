@@ -16,8 +16,8 @@ parse deadline or OOM-killed is quarantined by fingerprint and only its parse
 child is replaced; one with a page past its OCR limit is quarantined the same
 way.
 
-The API process opens no source with MuPDF: an admission process counts a
-PDF's pages and the parse children parse. The one file a child wrote that it
+The API process opens no source with MuPDF: the parse children count a
+document's pages and parse it. The one file a child wrote that it
 opens with MuPDF is the parsed PDF whose result asks for Office page evidence
 after OCR (``_merge_ocr``); that step leaves with the OCR stage. Children answer
 in JSON and plain files, never pickle. The API serves a cached bundle only as
@@ -135,13 +135,6 @@ OCR_OOM_SCORE_ADJ = 500
 # One OCR process death fails the documents in the OCR stage; this many in a
 # row, with no page answered in between, restart the whole parser.
 OCR_DEATH_LIMIT = 3
-# The admission process counts one PDF's pages within this time and address
-# space; past either, the document goes to a parse child uncounted, which
-# checks the page cap itself under its deadline and OOM handling. A 26 MiB,
-# 610-page textbook counts in 9 ms (150 ms with its cross-reference table
-# rebuilt) at a VmPeak under 140 MiB.
-ADMISSION_TIMEOUT_S = 10
-ADMISSION_MAX_BYTES = 1 << 30
 # A child's answer on its pipe: status, small payloads, one page's OCR lines.
 # A longer one ends that child.
 MESSAGE_MAX_BYTES = 1 << 24
@@ -274,8 +267,8 @@ def run_document(document: Document, ocr_path: Path | None = None) -> dict[str, 
         from odl.capture import capture_page
 
         return capture_page(normalized.data, **document.capture)
-    # Every document: admission counts only what starts like a PDF, and Office
-    # pages exist only after LibreOffice.
+    # The only page count: every document, before the parse (an Office
+    # document's pages exist only after LibreOffice).
     _check_page_count(pdf_page_count(normalized.data))
     from odl.refine import parse_pdf
 
@@ -347,15 +340,6 @@ def _merge_ocr(
 
         result["_page_evidence"] = page_evidence(pdf_path.read_bytes(), blocks)
     return result
-
-
-def _count_pdf_pages(path: str) -> int:
-    """Admission's count, in the admission process: the page tree only, no
-    page content. The parse child counts the text-less pages it hands to OCR."""
-    import pymupdf
-
-    with pymupdf.open(path, filetype="pdf") as document:
-        return document.page_count
 
 
 def _release_memory() -> None:
@@ -465,34 +449,6 @@ def _ocr_worker_main(requests: Connection, responses: Connection) -> None:
         try:
             _send(responses, "ok", ocr.read_page(*request))
         except Exception as exc:  # noqa: BLE001 - returned to the waiting document
-            _send_error(responses, exc)
-        finally:
-            _release_memory()
-
-
-def _admission_main(requests: Connection, responses: Connection) -> None:
-    """Counts one PDF's pages per request (``_count_pdf_pages``) under an
-    address-space limit, so a source that is slow or large to open never runs
-    MuPDF in the API process."""
-    _set_oom_score_adj(PARSE_OOM_SCORE_ADJ)
-    try:
-        import resource
-    except ImportError:
-        pass  # Not Linux (development).
-    else:
-        resource.setrlimit(
-            resource.RLIMIT_AS, (ADMISSION_MAX_BYTES, ADMISSION_MAX_BYTES)
-        )
-    while True:
-        try:
-            request = requests.recv()
-        except EOFError:
-            return
-        if request is None:
-            return
-        try:
-            _send(responses, "ok", _count_pdf_pages(request))
-        except Exception as exc:  # noqa: BLE001 - the API admits it uncounted
             _send_error(responses, exc)
         finally:
             _release_memory()
@@ -684,15 +640,6 @@ class _OCRProcess(_Child):
         return _unwrap(await self.recv())
 
 
-class _AdmissionProcess(_Child):
-    def __init__(self) -> None:
-        super().__init__(_admission_main, name="admission process")
-
-    async def page_count(self, pdf: str) -> int:
-        await self.send(pdf)
-        return int(_unwrap(await self.recv()))
-
-
 def _unlink(*paths: Path) -> None:
     for path in paths:
         try:
@@ -784,16 +731,12 @@ class ParserRuntime:
         self,
         parse_process: Callable[[int], _ParseWorkerProcess] = _ParseWorkerProcess,
         ocr_process: Callable[[], _OCRProcess] = _OCRProcess,
-        admission_process: Callable[[], _AdmissionProcess] = _AdmissionProcess,
     ) -> None:
         self.started_at = time.monotonic()
         self.state = "starting"
         self.active_jobs = 0
         self._new_parse_process = parse_process
         self._new_ocr_process = ocr_process
-        self._admission = admission_process()
-        # One count at a time on the admission process's pipe.
-        self._admission_lock = asyncio.Lock()
         self._queue: deque[_QueuedDocument] = deque()
         self._condition = asyncio.Condition()
         self._slots: list[_Slot] = []
@@ -808,7 +751,6 @@ class ParserRuntime:
 
     async def start(self) -> None:
         await asyncio.to_thread(_clear_work_dir)
-        self._admission.start()
         self._ocr = self._new_ocr_process()
         self._ocr.start()
         self._ocr_task = asyncio.create_task(self._serve_ocr(), name="OCR stage")
@@ -842,7 +784,7 @@ class ParserRuntime:
             doc = self._ocr_docs.popleft()
             doc.work.future.cancel()
             _unlink(doc.result_path, doc.pdf_path)
-        children = [slot.process for slot in self._slots] + [self._ocr, self._admission]
+        children = [slot.process for slot in self._slots] + [self._ocr]
         for child in children:
             if child is not None:
                 await asyncio.to_thread(child.stop)
@@ -899,46 +841,10 @@ class ParserRuntime:
         """Text-less pages handed to the OCR stage and not yet read."""
         return sum(doc.work.ocr_pages for doc in self._ocr_docs)
 
-    async def page_count(self, data: bytes) -> int:
-        """A PDF source's page count from the admission process, or 0: an
-        Office source (its parse child counts after LibreOffice), or a PDF the
-        process could not count in time and memory (its parse child reports a
-        broken PDF, under the parse deadline)."""
-        if not data.lstrip().startswith(b"%PDF"):
-            return 0
-        async with self._admission_lock:
-            child = self._admission
-            source = _temporary_file(".source")
-            counting: asyncio.Future[int] | None = None
-            try:
-                await asyncio.to_thread(source.write_bytes, data)
-                if not child.alive:
-                    await asyncio.to_thread(child.stop)
-                    child.start()
-                counting = asyncio.ensure_future(child.page_count(str(source)))
-                await asyncio.wait({counting}, timeout=ADMISSION_TIMEOUT_S)
-                if counting.done():
-                    return counting.result()
-                print("admission page count timed out", flush=True)
-                return 0
-            except Exception as exc:  # noqa: BLE001 - admitted uncounted
-                print(f"admission page count failed: {exc}", flush=True)
-                return 0
-            finally:
-                if counting is not None and not counting.done():
-                    # Never leave an answer in the pipe for the next count.
-                    child.terminate()
-                    await asyncio.gather(counting, return_exceptions=True)
-                _unlink(source)
-
-    async def parse(
-        self, document: Document, pages: int = 0
-    ) -> tuple[dict[str, Any], int]:
-        """Admit a document with ``pages`` pages (0 for Office, checked in the
-        parse child)."""
+    async def parse(self, document: Document) -> tuple[dict[str, Any], int]:
+        """Admit a document; its parse child counts its pages."""
         if not self.ready:
             raise RuntimeError("parser is not ready")
-        _check_page_count(pages)
         loop = asyncio.get_running_loop()
         async with self._condition:
             if self.active_jobs >= QUEUE_DEPTH:
@@ -1656,8 +1562,7 @@ def _write_artifact(key: str, data: bytes) -> None:
 
 async def _run(document: Document) -> tuple[dict[str, Any], dict[str, Any]]:
     started = time.perf_counter()
-    pages = await runtime.page_count(document.data)
-    result, queue_ms = await runtime.parse(document, pages)
+    result, queue_ms = await runtime.parse(document)
     measurements = _measurements(result, time.perf_counter() - started, queue_ms)
     return result, measurements
 
@@ -1859,7 +1764,7 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
                 },
                 status_code=422,
             )
-        # Answered before the source is read or counted.
+        # Answered before the source is read.
         full = ""
         if runtime.active_jobs >= QUEUE_DEPTH:
             full = "parser document queue is full"

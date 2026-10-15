@@ -1569,8 +1569,7 @@ Depth 8 counts both stages plus waiting documents; one more concurrent request
 gets `429`, and so does a parsed document whose text-less pages would lift the
 OCR stage's unread pages past 500 at the handoff; while the OCR stage holds 500
 unread pages no new parse starts. The coordinator re-pends each as a capacity
-wait. A separate admission process counts each PDF's pages
-before it is queued (about 80 MiB resident, a 1 GiB address-space limit), so
+wait. The parse child counts each document's pages before parsing it, and
 the API process opens no source with MuPDF; the one file a child wrote that it
 opens is the parsed PDF for Office page evidence after OCR (`_merge_ocr`),
 which goes with the OCR rework. A document with
@@ -1612,7 +1611,7 @@ child. If the kernel kills a coordinator child, its lease expires and follows
 the same one-retry rule. This differs from a parser OOM: when a parse child or
 its JVM dies by SIGKILL, or its LibreOffice conversion fails, while the parser
 cgroup's `oom_kill` count rises, the parser writes a `parse_oom` marker for
-that child's document and respawns only that child. Parse children and the admission process run at `oom_score_adj` 1000, the OCR process at 500
+that child's document and respawns only that child. Parse children run at `oom_score_adj` 1000, the OCR process at 500
 and the API at 0, so the kernel picks a parse child first.
 
 `restart: unless-stopped` recovers PID 1 kills, cgroup OOM kills, a Docker
