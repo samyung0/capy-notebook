@@ -10,9 +10,9 @@ for (const inDialog of [false, true]) {
       page.getByRole('heading', { exact: true, name: 'Biology 101' })
     ).toBeVisible({ timeout: 30_000 });
     if (inDialog) {
-      await page
-        .getByRole('button', { exact: true, name: m.workspace_settings() })
-        .click();
+      // The rail's gear (its aria-label); the empty viewer's quick action shares
+      // the name as text and appears once the recent files load.
+      await page.getByLabel(m.workspace_settings(), { exact: true }).click();
       await expect(page.getByRole('dialog')).toBeVisible();
     }
 

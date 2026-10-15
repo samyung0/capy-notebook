@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta content="%VITE_RELEASE_SHA%" name="capy-release">
     <link href="/favicon.svg" rel="icon" type="image/svg+xml">
-    <meta content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content" name="viewport">
+    <meta
+      content="width=device-width, initial-scale=1.0, interactive-widget=resizes-content"
+      name="viewport"
+    >
     <meta content="light dark" name="color-scheme">
     <title>Capy Notebook</title>
     <script blocking="render" type="module">
@@ -52,8 +55,8 @@
       inset: 0;
       display: grid;
       place-items: center;
-      background: var(--bg);
       color: var(--fg);
+      background: var(--bg);
     }
     [data-theme="frappe"] .boot-loader {
       --bg: #141a23;
@@ -88,11 +91,11 @@
       animation: boot-leap 2.5s ease infinite;
     }
     .boot-loader i::before {
-      content: "";
       width: 22%;
       aspect-ratio: 1;
-      border-radius: 50%;
+      content: "";
       background: currentColor;
+      border-radius: 50%;
     }
     .boot-loader i:nth-child(2) {
       animation-delay: calc(2.5s / -1.5);
