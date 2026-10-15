@@ -6,7 +6,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { request } from '@playwright/test';
 import * as Y from 'yjs';
-import { savedTokenStatus } from './accounts';
+import { actorEmailPrefix, savedTokenStatus } from './accounts';
 import {
   cleanupRun,
   validateCleanupTarget,
@@ -363,9 +363,17 @@ test('recorded cleanup ownership tolerates clock skew but never an identity mism
   });
 });
 
+test('actor emails stay within a 64-character local part and differ per lane', () => {
+  const office = actorEmailPrefix('38756112360-12-office');
+  const app = actorEmailPrefix('38756112360-12-app');
+  assert.notEqual(office, app);
+  // The longest label in use plus the random suffix and the test subaddress.
+  assert.ok(`${office}rich-pptx-editor-12345678+clerk_test`.length <= 64);
+});
+
 test('cleanup requires the original target and exact run-owned registration intent', () => {
   const id = randomUUID();
-  const email = `journeys+uat-${id.replaceAll('-', '').slice(0, 20)}-owner-12345678+clerk_test@example.test`;
+  const email = `${actorEmailPrefix(id)}owner-12345678+clerk_test@example.test`;
   const manifest: Manifest = {
     appUrl: 'https://app.uat.capynotebook.com',
     bucket: 'capy-uat',
@@ -491,7 +499,7 @@ test('artifacts redact authentication credentials but retain exact resource IDs'
 test('failed pre-purge inventory preserves accounts and a resumable failure report', async () => {
   const directory = mkdtempSync(path.join(tmpdir(), 'uat-cleanup-check-'));
   const id = randomUUID();
-  const email = `journeys+uat-${id.replaceAll('-', '').slice(0, 20)}-owner-12345678+clerk_test@example.test`;
+  const email = `${actorEmailPrefix(id)}owner-12345678+clerk_test@example.test`;
   const revision = 'a'.repeat(40);
   // Exercise the real cleanup orchestrator with a failed verifier process.
   // No application/provider is contacted; every fetch below is intercepted.

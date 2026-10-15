@@ -2,7 +2,7 @@ import { existsSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createClerkClient } from '@clerk/backend';
-import { cleanupClerkActor } from './accounts';
+import { actorEmailPrefix, cleanupClerkActor } from './accounts';
 import { loadEnvironment } from './environment';
 import {
   type Manifest,
@@ -39,7 +39,7 @@ export function validateCleanupTarget(
   ) {
     throw new Error('Cleanup configuration must match the recorded UAT run');
   }
-  const prefix = `journeys+uat-${manifest.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)}-`;
+  const prefix = actorEmailPrefix(manifest.id);
   for (const resource of manifest.resources.filter(
     (entry) => entry.kind === 'actor-email' || entry.kind === 'actor'
   )) {

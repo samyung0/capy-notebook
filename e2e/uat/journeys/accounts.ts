@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { createClerkClient } from '@clerk/backend';
 import type {
   APIRequestContext,
@@ -52,9 +52,20 @@ type BrowserClerk = {
 
 // The inbox's routing rule matches journeys@ and keeps everything after the
 // first + as a subaddress; Clerk treats the trailing +clerk_test as a test address.
+/** Every actor email of a run starts with this; cleanup claims only these.
+ * A hash keeps it short and distinct per lane and attempt: an email local
+ * part holds at most 64 characters, and Clerk refuses a longer one (422). */
+export function actorEmailPrefix(runId: string) {
+  return `journeys+uat-${createHash('sha256').update(runId).digest('hex').slice(0, 12)}-`;
+}
+
 function uniqueEmail(run: UatRun, label: string) {
-  const local = `uat-${run.id.replace(/[^a-zA-Z0-9]/g, '').slice(0, 20)}-${label}-${randomUUID().slice(0, 8)}`;
-  return `journeys+${local}+clerk_test@${run.env.actorEmailDomain}`;
+  const local = `${actorEmailPrefix(run.id)}${label}-${randomUUID().slice(0, 8)}+clerk_test`;
+  if (local.length > 64)
+    throw new Error(
+      `Actor label "${label}" makes the email local part too long`
+    );
+  return `${local}@${run.env.actorEmailDomain}`;
 }
 
 async function actorContext(env: UatEnvironment, browser: Browser) {
