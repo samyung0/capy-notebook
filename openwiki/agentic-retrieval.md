@@ -2467,8 +2467,15 @@ build, and the knowledge library is one more source while the switch is on.
   only resume from saved states), and a context that moved or changed in place
   left every later step uncached. For the same reason a tools-off call (the
   last response before the first write, the stall guard, the tool cap) still sends
-  the tools, with `tool_choice: "none"` (`{"type": "none"}` for Anthropic);
-  only the credit guard's terminal call drops them, to make room. A copy not yet followed by a step is
+  the tools under the default `tool_choice`, and only the turn context's final
+  notice says tools are off: Relace leaves the tools out of the prompt under
+  `tool_choice: "none"`, which missed the cache on every final call (5 of 5 in
+  the 2026-10-15 probe; 4 of 5 hit with the default). Calls a tools-off response
+  makes anyway do not run: each gets `agent.TOOLS_OFF_RESULT` as its result
+  (`agent.TOOL_CAP_RESULT`, naming the tool call limit, past the tool cap) and
+  the model answers once more; a second such response's calls are dropped and
+  the turn ends as an empty one does (Epo 2026-10-15). Only the credit guard's
+  terminal call drops the tools, to make room. A copy not yet followed by a step is
   replaced; a turn note drops the stale copies (`compact._fold_turn`), and none
   reaches the stored conversation. It names the open item
   (`Open: <title> (<kind> <id>), in chapter <n>.` or `Open: nothing.`), lists
@@ -2515,7 +2522,9 @@ build, and the knowledge library is one more source while the switch is on.
   next response is the last chance to write before the turn ends (Epo
   2026-10-14); a turn that has written nothing and lacks the `editing` skill
   gets `LAST_ANSWER_NOTICE` (answer with what was found) instead, so a
-  question turn is never told to create a material. The credit guard remains a separate platform billing cutoff;
+  question turn is never told to create a material. Under the stall guard the
+  notice is `agent.STALL_NOTICE` instead, which says to start writing now or
+  the turn ends (Epo 2026-10-15). The credit guard remains a separate platform billing cutoff;
   its silent terminal call reports `planning_cap`.
 - **Write guard** (`tools.write_sources`, shared with the playground). For a
   **material** target (`create_material`, `edit_document`, the three question

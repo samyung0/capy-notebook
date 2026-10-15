@@ -58,10 +58,11 @@ unchanged, reasoning and tool-call arguments included (measured 2026-10-05).
   placeholder into two new slides. Tried and removed on 2026-10-05; the
   numbers are in `DECKS.md`. Shrink the history only where it is rewritten
   anyway (compaction).
-- Tools-off calls (the 8th response, the stall guard, the tool cap) now keep
-  the tools and send `tool_choice: "none"`; dropping them had left that call
-  uncached. Relace accepts it. Not yet seen in a live run: check the final
-  call's cached tokens in a long turn.
+- Tools-off calls (the last planning response, the stall guard, the tool cap)
+  keep the tools under the default `tool_choice` (2026-10-15): Relace drops the
+  tools from the prompt under `"none"`, so that call had missed the cache. The
+  playground recognizes a tools-off call by the turn context's final notice
+  (`turn_context.tools_off`).
 - Still uncached: the second call of a turn often gets 0; a page capture
   breaks the prefix once, because its image rides only into the next request.
 

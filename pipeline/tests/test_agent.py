@@ -130,15 +130,13 @@ def _script_stream(responses: list[AssembledResponse]):
         on_event=None,
         call_purpose="agent",
         response_format=None,
-        tool_choice=None,
     ):
         del model, call_purpose
         seen.append(
             {
                 "tools": tools,
-                "tool_choice": tool_choice,
-                # Tools off: sent with tool_choice "none", or none to send.
-                "tools_off": tool_choice == "none" or not tools,
+                # Tools off: the turn context says so, or no tools to send.
+                "tools_off": agent.turn_context.tools_off(messages) or not tools,
                 "messages": list(messages),
                 "response_format": response_format,
             }
@@ -856,7 +854,6 @@ async def test_block_deltas_emit_while_provider_stream_is_open(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
-        tool_choice=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -974,6 +971,48 @@ async def test_a_turn_before_its_first_write_counts_its_responses_down(monkeypat
     # A turn without the writing skill is asked for an answer, not a material.
     assert "Write before then" not in contexts[0]
     assert agent.turn_context.FINAL_ANSWER_NOTICE in contexts[1]
+
+
+async def test_a_tools_off_response_that_calls_tools_is_asked_once_more(monkeypatch):
+    """Tools stay in a tools-off request, so the model may still call one. The
+    calls do not run; each result says so, and the next response answers."""
+    stream, seen = _script_stream(
+        [
+            _assembled("", [_call("list_sources")]),
+            _assembled(_answer(("ok", []))),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.cfg, "agent_max_steps", 1)
+
+    async def _run(_name, _args, _ctx):
+        raise AssertionError("a tools-off call ran")
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    assert [call["tools_off"] for call in seen] == [True, True]
+    assert seen[1]["tools"] == seen[0]["tools"]
+    results = [m for m in seen[1]["messages"] if m.get("role") == "tool"]
+    assert [m["content"] for m in results] == [agent.TOOLS_OFF_RESULT]
+    assert events[-1]["telemetry"]["stopReason"] == "answer"
+
+
+async def test_a_second_tools_off_response_with_calls_ends_the_turn(monkeypatch):
+    calling = _assembled("", [_call("list_sources")])
+    stream, seen = _script_stream([calling, calling])
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(agent.cfg, "agent_max_steps", 1)
+
+    async def _run(_name, _args, _ctx):
+        raise AssertionError("a tools-off call ran")
+
+    monkeypatch.setattr(agent.tools, "run", _run)
+    events = await _collect("q", ToolContext(workspace_id="ws_1"))
+
+    # The calls are dropped; with no text left the turn ends as any empty one.
+    assert len(seen) == 2
+    assert events[-1]["code"] == "invalid_answer"
 
 
 async def test_a_tool_call_written_as_text_with_tools_off_ends_at_the_cap(monkeypatch):
@@ -1197,7 +1236,6 @@ async def test_exhausting_tool_response_runs_tools_then_one_terminal_call(
         on_event=None,
         call_purpose="agent",
         response_format=None,
-        tool_choice=None,
     ):
         del messages, model, on_event
         purposes.append(call_purpose)
@@ -1596,7 +1634,6 @@ async def test_client_drop_after_stream_skips_tools_and_next_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
-        tool_choice=None,
     ):
         del messages, model, call_purpose
         calls["n"] += 1
@@ -1636,7 +1673,6 @@ async def test_client_drop_before_stream_skips_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
-        tool_choice=None,
     ):
         del messages, model, tools, on_event, call_purpose
         calls["n"] += 1
@@ -1673,7 +1709,6 @@ async def test_client_drop_does_not_cancel_in_flight_provider_call(monkeypatch):
         on_event=None,
         call_purpose="agent",
         response_format=None,
-        tool_choice=None,
     ):
         del messages, model, tools, call_purpose
         if on_event is not None:
@@ -2485,15 +2520,13 @@ def _stream_chunks(
         on_event=None,
         call_purpose="agent",
         response_format=None,
-        tool_choice=None,
     ):
         del model, call_purpose
         seen.append(
             {
                 "tools": tools,
-                "tool_choice": tool_choice,
-                # Tools off: sent with tool_choice "none", or none to send.
-                "tools_off": tool_choice == "none" or not tools,
+                # Tools off: the turn context says so, or no tools to send.
+                "tools_off": agent.turn_context.tools_off(messages) or not tools,
                 "messages": list(messages),
                 "response_format": response_format,
             }
@@ -2947,7 +2980,10 @@ async def test_stall_guard_turns_tools_off_after_five_barren_responses(
 
     assert [call["tools_off"] for call in seen] == [False] * 6 + [True]
     # The tools stay in the request so its prefix still hits the cache.
-    assert seen[-1]["tools"] == seen[0]["tools"] and seen[-1]["tool_choice"] == "none"
+    assert seen[-1]["tools"] == seen[0]["tools"]
+    # The response before the last with tools warned why the tools go off.
+    results = [m for m in seen[-1]["messages"] if m.get("role") == "tool"]
+    assert results[-2]["content"].endswith(agent.STALL_NOTICE)
     assert events[-1]["answer"] == "The library has nothing more."
     # The guard, not a planning ceiling, is what ended this turn.
     assert events[-1]["telemetry"]["stopReason"] == "stall"
@@ -3255,6 +3291,26 @@ async def test_the_build_tool_cap_runs_one_terminal_response(
         ][-1]
     )
     assert events[-1]["telemetry"]["toolCallsTurn"] == 4
+    assert events[-1]["telemetry"]["stopReason"] == "tool_cap"
+
+
+async def test_calls_past_the_tool_cap_are_answered_with_the_cap(
+    monkeypatch, library_on
+):
+    monkeypatch.setattr(agent, "BUILD_TOOLS_PER_TURN", 1)
+    stream, seen = _script_stream(
+        [
+            _writing(),
+            _assembled(calls=[_call("read_knowledge", '{"excerpt_id":"a"}', "r")]),
+            _assembled("Made one note."),
+        ]
+    )
+    monkeypatch.setattr(agent.models, "stream_agent_response", stream)
+    monkeypatch.setattr(tools, "run", _land)
+    events = await _collect("Study", _build_ctx(), model=_build_model())
+
+    results = [m for m in seen[-1]["messages"] if m.get("role") == "tool"]
+    assert results[-1]["content"] == agent.TOOL_CAP_RESULT
     assert events[-1]["telemetry"]["stopReason"] == "tool_cap"
 
 

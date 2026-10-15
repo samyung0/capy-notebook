@@ -32,6 +32,18 @@ FINAL_ANSWER_NOTICE = (
 UNSAVED_DECK = " A deck with slides left unwritten was not saved: say so."
 
 
+def tools_off(messages: list[dict[str, Any]]) -> bool:
+    """Whether a request is a tools-off call. The tools stay in the request,
+    so its turn context's final notice is the only sign (tests, playground).
+    Matches on content because provider messages lose `_kind`."""
+    return any(
+        m.get("role") == "user"
+        and isinstance(m.get("content"), str)
+        and (FINAL_NOTICE in m["content"] or FINAL_ANSWER_NOTICE in m["content"])
+        for m in messages
+    )
+
+
 def _open_line(resource: dict[str, Any], chapters: list[dict[str, Any]]) -> str:
     if not resource.get("id"):
         return "Open: nothing."

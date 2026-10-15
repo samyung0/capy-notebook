@@ -305,10 +305,13 @@ def configured_tools(c: dict[str, Any], schemas: list[dict]) -> list[dict]:
     return result
 
 
-def tools_off(kw: dict[str, Any]) -> bool:
-    """A model call that may not call tools: none sent, or sent with
-    tool_choice "none" so the request keeps its cached prefix."""
-    return not kw.get("tools") or kw.get("tool_choice") == "none"
+def tools_off(messages: list[dict[str, Any]], kw: dict[str, Any]) -> bool:
+    """A model call that may not call tools: none sent, or sent with its turn
+    context's final notice (the tools stay so the request keeps its cached
+    prefix)."""
+    from pipeline.retrieval import turn_context
+
+    return not kw.get("tools") or turn_context.tools_off(messages)
 
 
 def turn_tools(c: dict[str, Any], production: list[dict]) -> list[dict]:
@@ -1460,7 +1463,7 @@ class Turn:
             if (
                 model.pin == spec.pin
                 and structured
-                and tools_off(kw)
+                and tools_off(messages, kw)
                 and kw.get("response_format") is None
             ):
                 kw["response_format"] = {"type": "json_object"}
@@ -1640,7 +1643,7 @@ class Turn:
                 for c_ in state["calls"]
                 if c_["name"] in agent.WRITE_TOOLS and c_.get("outcome") == "succeeded"
             )
-            if writes and tools_off(kw):
+            if writes and tools_off(request, kw):
                 # Once a write lands tools go off only on the stall guard, the
                 # tool cap or the terminal call after credits run out.
                 stall = {"call": call, "writes": writes}
@@ -1663,7 +1666,7 @@ class Turn:
                     "reasoning_tokens": usage.reasoning_tokens,
                     "tool_calls": [call.name for call in assembled.tool_calls],
                     "images_attached": len(state["images"]),
-                    "response_format": bool(structured and tools_off(kw)),
+                    "response_format": bool(structured and tools_off(request, kw)),
                     "transport": transport["url"] if transport else "production",
                     "context": context,
                 }

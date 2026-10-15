@@ -368,8 +368,10 @@ async def _run_turn(
     tool_stop = False
     # Errored writes earn the guard extra responses (limits.WRITE_ERROR_GRACE).
     write_errors = 0
+    # A tools-off response that called tools anyway gets one more response.
+    refused_off = False
 
-    while writes or step < planning_cap or terminal_pending:
+    while writes or step < planning_cap or terminal_pending or refused_off:
         if _client_gone(client):
             budget.stop_reason = STOP_CLIENT_GONE
             return
@@ -397,10 +399,13 @@ async def _run_turn(
                 )
         else:
             tools_off = terminal_call or step == planning_cap - 1
-        # A tools-off call still sends the tools, with tool_choice "none":
-        # dropping them would change the start of the request and miss the
-        # provider's cache for the whole turn. The credit guard's terminal call
-        # drops them to make room.
+        tools_off = tools_off or refused_off
+        # A tools-off call still sends the tools under the default tool_choice;
+        # only the turn context says tools are off. Dropping them, or sending
+        # tool_choice "none" (Relace then leaves them out of the prompt), changes
+        # the start of the request and misses the provider's cache for the whole
+        # turn (2026-10-15). The credit guard's terminal call drops them to make
+        # room.
         active_schemas = None if terminal_call else schemas
 
         yield events.phase("planning")
@@ -522,7 +527,6 @@ async def _run_turn(
                     request_messages,
                     model=spec,
                     tools=active_schemas,
-                    tool_choice="none" if tools_off and active_schemas else None,
                     on_event=_on_event,
                     call_purpose=(
                         accounting.PURPOSE_TERMINAL
@@ -667,8 +671,10 @@ async def _run_turn(
         exhausted = bool(state and state.credits_exhausted)
         # A tools-off call ends the turn: once a write has landed there is no
         # planning ceiling, so a call the model emits anyway must not start
-        # another round.
-        if terminal_call or tools_off:
+        # another round. The first such response is answered without running
+        # its calls and asked once more; a second one's calls are dropped.
+        refuse = bool(calls) and tools_off and not terminal_call and not refused_off
+        if (terminal_call or tools_off) and not refuse:
             calls = []
         if calls:
             tail = renderer.finish()
@@ -685,7 +691,8 @@ async def _run_turn(
                 activity.append(
                     {"id": block_id, "kind": "narration", "text": narration}
                 )
-            yield events.phase("running_tools")
+            if not refuse:
+                yield events.phase("running_tools")
             if assembled.provider_message:
                 assistant = dict(assembled.provider_message)
                 assistant.setdefault("role", "assistant")
@@ -721,6 +728,17 @@ async def _run_turn(
             if assembled.output_items:
                 assistant["output_items"] = assembled.output_items
             messages.append(assistant)
+            if refuse:
+                refused_off = True
+                messages.extend(
+                    {
+                        "role": "tool",
+                        "tool_call_id": call.id,
+                        "content": TOOL_CAP_RESULT if tool_stop else TOOLS_OFF_RESULT,
+                    }
+                    for call in calls
+                )
+                continue
             # Progress is a write that landed; nothing else in a response
             # counts against the stall guard.
             writes_before = writes
@@ -765,8 +783,10 @@ async def _run_turn(
             )
             if last_with_tools:
                 notice = (
-                    LAST_TOOLS_NOTICE
-                    if writes or skills.EDITING in skills.retained(messages)
+                    STALL_NOTICE
+                    if writes
+                    else LAST_TOOLS_NOTICE
+                    if skills.EDITING in skills.retained(messages)
                     else LAST_ANSWER_NOTICE
                 )
                 for message in messages[results_from:]:
@@ -870,8 +890,9 @@ async def _run_turn(
     yield done
 
 
-# Under every tool result of the response before a turn's last one with tools:
-# a turn that can write is told to write, one that cannot to answer.
+# Under every tool result of the response before a turn's last one with tools
+# under the planning cap: a turn that can write is told to write, one that
+# cannot to answer.
 LAST_TOOLS_NOTICE = (
     "\n\nYour next response is the last one with tools in this turn. Write what "
     "you have now (create or edit the material), or the turn ends without it."
@@ -879,6 +900,20 @@ LAST_TOOLS_NOTICE = (
 LAST_ANSWER_NOTICE = (
     "\n\nYour next response is the last one with tools in this turn. Answer the "
     "learner with what you have found."
+)
+# The stall guard's turn instead: say why the tools go off (Epo 2026-10-15).
+STALL_NOTICE = (
+    "\n\nYou must start writing the materials and files now! This turn will "
+    "end otherwise."
+)
+# The result of each call a tools-off response made anyway; nothing ran. Past
+# the tool cap the result names the cap (Epo 2026-10-15).
+TOOL_CAP_RESULT = (
+    "You have exceeded the tool call limit! Any more tool calls will be dropped."
+)
+TOOLS_OFF_RESULT = (
+    "Not run: tools are off for this response. Do not send any tool calls; "
+    "answer now as the turn context asks."
 )
 
 # The answer component the model sometimes calls as a tool (GLM, 2026-10-14).
