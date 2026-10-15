@@ -149,16 +149,19 @@ function ThinkingRow({
   );
 }
 
-/** A row that opens to list the rows behind it. */
+/** A row that opens to list the rows behind it. `flat` (the Normal summary)
+ * drops the chevron and lists the rows flush with it. */
 function ExpandRow({
   icon,
   title,
   description,
+  flat = false,
   children,
 }: {
   icon: ReactNode;
   title: string;
   description?: string;
+  flat?: boolean;
   children: ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -180,15 +183,19 @@ function ExpandRow({
             {description}
           </span>
         ) : null}
-        <Icon
-          className={cn(
-            '-ml-1 size-3.5 shrink-0 transition-transform duration-(--motion-duration-quick) ease-(--motion-ease-smooth-out) motion-reduce:transition-none',
-            open && 'rotate-90'
-          )}
-          name="chevronRight"
-        />
+        {flat ? null : (
+          <Icon
+            className={cn(
+              '-ml-1 size-3.5 shrink-0 transition-transform duration-(--motion-duration-quick) ease-(--motion-ease-smooth-out) motion-reduce:transition-none',
+              open && 'rotate-90'
+            )}
+            name="chevronRight"
+          />
+        )}
       </button>
-      {open ? <div className="mt-1.5 mb-0.5 ml-6.5">{children}</div> : null}
+      {open ? (
+        <div className={cn('mt-1.5 mb-0.5', !flat && 'ml-6.5')}>{children}</div>
+      ) : null}
     </div>
   );
 }
@@ -543,7 +550,7 @@ export function ChatTrace({
     <div className="mb-4 flex flex-col gap-2">
       {fold.steps ? (
         <ExpandRow
-          description={fold.seconds ? steps : undefined}
+          flat
           icon={<ActivityIcon kind="think" />}
           title={
             fold.seconds
