@@ -45,54 +45,89 @@
          colours of the style and theme set above. Own class names, because
          these rules are unlayered and would beat the app's. -->
     <style>
-      .boot-loader {
-        --bg: #f7f7f7;
-        --fg: #222222;
-        position: fixed;
-        inset: 0;
-        display: grid;
-        place-items: center;
-        background: var(--bg);
-        color: var(--fg);
+    .boot-loader {
+      --bg: #f7f7f7;
+      --fg: #222222;
+      position: fixed;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      background: var(--bg);
+      color: var(--fg);
+    }
+    [data-theme="frappe"] .boot-loader {
+      --bg: #141a23;
+      --fg: #eef1f5;
+    }
+    [data-theme="mocha"] .boot-loader {
+      --bg: #0d1219;
+      --fg: #e6e9ef;
+    }
+    [data-style="notion"] .boot-loader {
+      --bg: #f7f7f5;
+      --fg: #37352f;
+    }
+    [data-style="notion"][data-theme="frappe"] .boot-loader {
+      --bg: #1d1d1f;
+      --fg: #d8d7d5;
+    }
+    [data-style="notion"][data-theme="mocha"] .boot-loader {
+      --bg: #171717;
+      --fg: #d4d4d2;
+    }
+    .boot-loader > span {
+      position: relative;
+      width: 28px;
+      height: 28px;
+    }
+    .boot-loader i {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      animation: boot-leap 3s ease infinite;
+    }
+    .boot-loader i::before {
+      content: "";
+      width: 22%;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    .boot-loader i:nth-child(2) {
+      animation-delay: calc(3s / -1.5);
+    }
+    .boot-loader i:nth-child(3) {
+      animation-delay: calc(3s / -3);
+    }
+    @keyframes boot-leap {
+      0% {
+        transform: translateX(0) rotate(0deg);
       }
-      [data-theme="frappe"] .boot-loader { --bg: #141a23; --fg: #eef1f5; }
-      [data-theme="mocha"] .boot-loader { --bg: #0d1219; --fg: #e6e9ef; }
-      [data-style="notion"] .boot-loader { --bg: #f7f7f5; --fg: #37352f; }
-      [data-style="notion"][data-theme="frappe"] .boot-loader { --bg: #1d1d1f; --fg: #d8d7d5; }
-      [data-style="notion"][data-theme="mocha"] .boot-loader { --bg: #171717; --fg: #d4d4d2; }
-      .boot-loader > span {
-        position: relative;
-        width: 28px;
-        height: 28px;
+      33.333% {
+        transform: translateX(0) rotate(180deg);
       }
+      66.666% {
+        transform: translateX(-38%) rotate(180deg);
+      }
+      99.999% {
+        transform: translateX(-78%) rotate(180deg);
+      }
+      100% {
+        transform: translateX(0) rotate(0deg);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
       .boot-loader i {
-        position: absolute;
-        inset: 0;
-        display: flex;
-        align-items: center;
-        animation: boot-leap 3.25s ease infinite;
+        animation: none;
       }
-      .boot-loader i::before {
-        content: "";
-        width: 22%;
-        aspect-ratio: 1;
-        border-radius: 50%;
-        background: currentColor;
+      .boot-loader i:nth-child(2) {
+        transform: translateX(40%);
       }
-      .boot-loader i:nth-child(2) { animation-delay: calc(3.25s / -1.5); }
-      .boot-loader i:nth-child(3) { animation-delay: calc(3.25s / -3); }
-      @keyframes boot-leap {
-        0% { transform: translateX(0) rotate(0deg); }
-        33.333% { transform: translateX(0) rotate(180deg); }
-        66.666% { transform: translateX(-38%) rotate(180deg); }
-        99.999% { transform: translateX(-78%) rotate(180deg); }
-        100% { transform: translateX(0) rotate(0deg); }
+      .boot-loader i:nth-child(3) {
+        transform: translateX(80%);
       }
-      @media (prefers-reduced-motion: reduce) {
-        .boot-loader i { animation: none; }
-        .boot-loader i:nth-child(2) { transform: translateX(40%); }
-        .boot-loader i:nth-child(3) { transform: translateX(80%); }
-      }
+    }
     </style>
   </head>
   <body>
