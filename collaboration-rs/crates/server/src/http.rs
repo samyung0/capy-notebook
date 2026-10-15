@@ -1,6 +1,6 @@
 //! The HTTP listener: the WebSocket upgrade (origin checked here), health,
-//! metrics, the internal routes (service secret) and the browser's draft
-//! send (`drafts.rs`: origin and room token).
+//! a liveness probe, metrics and the internal routes (service secret) and the
+//! browser's draft send (`drafts.rs`: origin and room token).
 
 use axum::Router;
 use axum::body::Bytes;
@@ -20,6 +20,7 @@ pub fn router(app: Shared) -> Router {
     Router::new()
         .route("/healthz", get(healthz))
         .route("/readyz", get(healthz))
+        .route("/livez", get(livez))
         .route("/metrics", get(metrics))
         .route("/internal/materials/{id}/project", post(project))
         .route(
@@ -132,7 +133,21 @@ async fn healthz(State(app): State<Shared>) -> Response {
     response
 }
 
-async fn metrics(State(app): State<Shared>) -> Response {
+/// Liveness for probes from outside: answered by the event loop alone, with
+/// nothing about the server in it.
+async fn livez() -> &'static str {
+    "ok"
+}
+
+/// The counters are the service's own (service secret): the collaboration host
+/// is public for WebSockets.
+async fn metrics(State(app): State<Shared>, headers: HeaderMap) -> Response {
+    if !authorized(&app, &headers) {
+        return json_response(
+            StatusCode::UNAUTHORIZED,
+            json!({ "message": "Unauthorized" }),
+        );
+    }
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],

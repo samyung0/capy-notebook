@@ -2054,6 +2054,43 @@ async fn internal_routes_refuse_a_missing_or_wrong_service_secret() {
     }
 }
 
+/// Security regression: the public host serves its counters only with the
+/// service secret; the liveness probe answers without saying anything about
+/// the server.
+#[tokio::test]
+async fn metrics_need_the_service_secret_and_livez_says_nothing() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let client = reqwest::Client::new();
+    let url = |path: &str| format!("http://127.0.0.1:{}{path}", server.port);
+    for secret in [None, Some("not-the-secret")] {
+        let mut request = client.get(url("/metrics"));
+        if let Some(secret) = secret {
+            request = request.header("x-collaboration-secret", secret);
+        }
+        let status = request.send().await.expect("metrics request").status();
+        assert_eq!(status.as_u16(), 401, "metrics with {secret:?}");
+    }
+    let metrics = client
+        .get(url("/metrics"))
+        .header("x-collaboration-secret", SECRET)
+        .send()
+        .await
+        .expect("metrics request");
+    assert_eq!(metrics.status().as_u16(), 200);
+    assert!(
+        metrics
+            .text()
+            .await
+            .unwrap()
+            .contains("capy_collaboration_connections")
+    );
+    let live = client.get(url("/livez")).send().await.expect("livez request");
+    assert_eq!(live.status().as_u16(), 200);
+    assert!(live.headers().get("x-capy-release").is_none());
+    assert_eq!(live.text().await.unwrap(), "ok");
+}
+
 /// Security regression (REVIEW5 N1: an access check that panicked failed
 /// every join and store of the owner's notes). An owner over the Free limit
 /// that never had Pro is full, not frozen (Go gives it no quota state): a

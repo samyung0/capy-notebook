@@ -345,8 +345,8 @@ is a `reportOnlyFailures` entry; the phase's rooms are still judged and
 written. Outside the
 budgeted phase (calibrated without it), `probe` gives the answer time to an
 endpoint that touches only the server's event loop, every 250 ms
-(`STRESS_PROBE_PATH`, the service's in-memory `/metrics`; the Node service's
-`/healthz` pinged Postgres and Redis, so it is not used), p50, p99, max and
+(`STRESS_PROBE_PATH`, the service's `/livez`; `/healthz` pings Postgres and
+Redis and `/metrics` needs the service secret, so neither is used), p50, p99, max and
 failures: it grows with whatever holds the event loop or scheduler. Read it
 beside `clientLoopDelayMs`, which bounds what the client can see. Then the
 cost windows (`STRESS_COST_ROOMS`, local default
@@ -410,7 +410,8 @@ off before its note exists, and the DOCX is a store-only upload
 (`parseMode=none`), so nothing is parsed or indexed. The only jobs are
 export-only `source_refresh` publications, which the collaboration service runs
 itself, so nothing reaches the shared ingest host. Collaboration errors come
-from the host's logs and its `/metrics` failure counters over SSH
+from the host's logs and its `/metrics` failure counters (read inside the
+container with the service secret) over SSH
 (`STRESS_UAT_SSH`, `STRESS_UAT_SSH_KEY`). Cleanup deletes the workspaces, then
 the users. `uat-resources.json` in `STRESS_OUT` lists them if cleanup fails.
 On UAT the budget is 1 s, including the client's round trip (about 300 ms from
