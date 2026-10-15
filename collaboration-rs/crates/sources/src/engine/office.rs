@@ -158,7 +158,11 @@ pub fn dispatch(request: &Frame) -> Answer {
             let result = office_service::apply_commands(blob(0)?, checkpoint(1)?, commands)
                 .map_err(failure)?;
             Ok((
-                json!({ "inverse": to_json(result.inverse)?, "targets": to_json(result.targets)? }),
+                json!({
+                    "inverse": to_json(result.inverse)?,
+                    "targets": to_json(result.targets)?,
+                    "notice": result.notice,
+                }),
                 vec![result.state],
             ))
         }
@@ -180,7 +184,9 @@ pub fn dispatch(request: &Frame) -> Answer {
 /// (effects, seeds for a load, replica drops) never wait behind background
 /// work (exports, rebases, inspect, agent commands, locate, assets).
 pub mod calls {
-    use office_service::{BaselineEntry, Command, Entry, Format, NetEffect, ObjectRef, Target};
+    use office_service::{
+        BaselineEntry, Command, CommandResult, Entry, Format, NetEffect, ObjectRef, Target,
+    };
     use serde::de::DeserializeOwned;
     use serde_json::Value;
 
@@ -336,7 +342,7 @@ pub mod calls {
             on: On<'_>,
             state: &[u8],
             commands: &[Command],
-        ) -> Result<(Vec<u8>, Vec<Command>, Vec<Target>), EngineError> {
+        ) -> Result<CommandResult, EngineError> {
             let mut request = args(on);
             request.commands = Some(commands.to_vec());
             let request = frame(
@@ -345,10 +351,12 @@ pub mod calls {
                 vec![on.base.to_vec(), state.to_vec()],
             );
             let mut reply = self.call(Lane::Background, on.room, request).await?;
-            let state = blob(&mut reply)?;
-            let inverse = parse(reply.value["inverse"].take())?;
-            let targets = parse(reply.value["targets"].take())?;
-            Ok((state, inverse, targets))
+            Ok(CommandResult {
+                state: blob(&mut reply)?,
+                inverse: parse(reply.value["inverse"].take())?,
+                targets: parse(reply.value["targets"].take())?,
+                notice: parse(reply.value["notice"].take())?,
+            })
         }
 
         pub async fn locate_targets(

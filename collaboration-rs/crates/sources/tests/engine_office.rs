@@ -86,16 +86,17 @@ async fn office_calls_through_the_pool_equal_the_crate_in_process() {
             office_service::inspect(&base, checkpoint(&seed)).unwrap()
         );
         let edit = command(format, &entries);
-        let (edited, inverse, targets) = pool
+        let applied = pool
             .apply_commands(on, &seed, std::slice::from_ref(&edit))
             .await
             .unwrap();
         let direct = office_service::apply_commands(&base, checkpoint(&seed), &[edit]).unwrap();
         assert_eq!(
-            (inverse, targets),
-            (direct.inverse, direct.targets),
+            (applied.inverse, applied.targets, applied.notice),
+            (direct.inverse, direct.targets, direct.notice),
             "{path}"
         );
+        let edited = applied.state;
         let effects = match format {
             Format::Xlsx => {
                 let miss = pool.xlsx_pending_effects(on, &edited).await.unwrap();
@@ -165,6 +166,104 @@ async fn a_refused_edit_keeps_its_details_through_the_pool() {
             "block": { "id": entry.id, "type": "paragraph", "text": entry.value }
         }))
     );
+}
+
+/// An agent's text holding a character an Office file cannot store applies
+/// without it, and the engine's note on it crosses the pool for the tool
+/// result (Epo 2026-10-15); what an engine refuses about the input itself (a
+/// line break inside a DOCX paragraph, a cell outside the grid) crosses it as
+/// an edit refusal, `invalid_input` with the engine's sentence, so the
+/// gateway answers 409 instead of an unknown outcome.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn agent_input_a_file_cannot_hold_is_dropped_with_a_note_or_refused_as_invalid_input() {
+    use sources::engine::{EngineError, FailureKind};
+    let pool = pool();
+    for (format, path) in [
+        (Format::Xlsx, "e2e/fixtures/files/basic/grades.xlsx"),
+        (Format::Pptx, "e2e/fixtures/files/basic/lesson.pptx"),
+        (Format::Docx, "e2e/fixtures/files/basic/lesson.docx"),
+    ] {
+        let base = fixture(path);
+        let sha = office_service::sha256_hex(&base);
+        let on = On {
+            format,
+            base: &base,
+            base_sha256: &sha,
+            room: None,
+        };
+        let seed = pool.seed(on).await.unwrap();
+        let entries = pool.inspect(on, &seed).await.unwrap();
+        let (dropped, id, refused) = match command(format, &entries) {
+            Command::SetCell {
+                sheet,
+                cell,
+                expected_value,
+                ..
+            } => {
+                let id = entries
+                    .iter()
+                    .find(|entry| entry.position == format!("{sheet}:{cell}"))
+                    .unwrap()
+                    .id
+                    .clone();
+                let refused = Command::SetCell {
+                    sheet: sheet.clone(),
+                    cell: "ZZZ9999999".into(),
+                    expected_value: String::new(),
+                    value: "x".into(),
+                };
+                let dropped = Command::SetCell {
+                    sheet,
+                    cell,
+                    expected_value,
+                    value: "a\u{1}b".into(),
+                };
+                (dropped, id, Some(refused))
+            }
+            Command::ReplaceText {
+                target_id,
+                expected_text,
+                ..
+            } => {
+                let refused = (format == Format::Docx).then(|| Command::ReplaceText {
+                    target_id: target_id.clone(),
+                    expected_text: expected_text.clone(),
+                    text: "a\u{2028}b".into(),
+                });
+                let dropped = Command::ReplaceText {
+                    target_id: target_id.clone(),
+                    expected_text,
+                    text: "a\u{1}b".into(),
+                };
+                (dropped, target_id, refused)
+            }
+        };
+        let applied = pool
+            .apply_commands(on, &seed, std::slice::from_ref(&dropped))
+            .await
+            .unwrap();
+        assert_eq!(
+            applied.notice.as_deref(),
+            Some("Removed 1 character Office files cannot store (U+0001)."),
+            "{path}"
+        );
+        let after = pool.inspect(on, &applied.state).await.unwrap();
+        let written = after.iter().find(|entry| entry.id == id).unwrap();
+        assert_eq!(written.value, "ab", "{path}");
+        let Some(refused) = refused else { continue };
+        let error = pool
+            .apply_commands(on, &seed, std::slice::from_ref(&refused))
+            .await
+            .unwrap_err();
+        let EngineError::Refused(failure) = error else {
+            panic!("{path}: {error:?}")
+        };
+        assert_eq!(failure.kind, FailureKind::Edit, "{path}: {failure:?}");
+        assert!(
+            failure.message.starts_with("invalid_input: "),
+            "{path}: {failure:?}"
+        );
+    }
 }
 
 // seedCheck.test.ts: the seed check seeds each base once and reports every

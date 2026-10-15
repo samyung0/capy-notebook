@@ -45,9 +45,12 @@ pub struct EditUndo {
 }
 
 /// A committed edit: the receipt, its room, what that room lacks of it, the
-/// stored cover it makes and the checkpoint it reached.
+/// stored cover it makes and the checkpoint it reached. `notice` is the
+/// Office engine's note on the characters the agent's text lost (Epo
+/// 2026-10-15), for the tool result.
 pub struct EditResult {
     pub receipt: Value,
+    pub notice: Option<String>,
     pub room: String,
     pub update: Vec<u8>,
     pub durable: ydoc::Durable,
@@ -309,6 +312,7 @@ impl Sources {
         )
         .await
         .map_err(|error| SourceError::Other(format!("source edit: {error}")))??;
+        let mut notice = None;
         let (inverse, guards) = match office(session.format) {
             None => {
                 let root = doc.get_or_insert_text(TEXT_ROOT);
@@ -366,21 +370,22 @@ impl Sources {
                     }
                     None => parse(Value::Array(input.commands.clone()), "commands")?,
                 };
-                let (applied, inverse, targets) = self
+                let applied = self
                     .engines()
                     .apply_commands(on, &state, &commands)
                     .await
                     .map_err(office_error)?;
+                notice = applied.notice;
                 // The engine's state is the checkpoint plus its edits: merged
                 // in, the document is the post-edit state the guards describe.
                 ydoc::apply(
                     &doc,
-                    yrs::Update::decode_v1(&applied)
+                    yrs::Update::decode_v1(&applied.state)
                         .map_err(|error| SourceError::State(error.to_string()))?,
                 )
                 .map_err(|error| SourceError::State(error.to_string()))?;
-                let inverse = serde_json::to_value(inverse).unwrap_or_default();
-                match office_guards(&doc, &targets) {
+                let inverse = serde_json::to_value(applied.inverse).unwrap_or_default();
+                match office_guards(&doc, &applied.targets) {
                     Ok(guards) => (inverse, guards),
                     // An Undo whose targets cannot be guarded still lands,
                     // without a Redo (no commands, so Go stores no step).
@@ -463,6 +468,7 @@ impl Sources {
         };
         Ok(EditResult {
             receipt,
+            notice,
             room: name,
             update,
             durable: after,

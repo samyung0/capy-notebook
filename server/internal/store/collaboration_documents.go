@@ -166,10 +166,19 @@ func (s *Store) InspectSourceDocument(ctx context.Context, actorID, fileID strin
 	return out, err
 }
 
+// DocumentEdit is the authority's answer to an edit: its receipt and, for an
+// Office source, the engine's note on the characters an Office file cannot
+// store that the agent's text lost (Epo 2026-10-15), passed on to the tool
+// result. A replayed receipt has no note.
+type DocumentEdit struct {
+	AgentOperation
+	Notice string `json:"notice,omitempty"`
+}
+
 // EditDocument applies normalized commands through the authority, which
 // commits state, receipt, inverse and the merged provenance together and
 // returns the receipt.
-func (s *Store) EditDocument(ctx context.Context, actorID string, target DocumentTarget, commands []json.RawMessage, provenance *Provenance, op DocumentOperation) (AgentOperation, error) {
+func (s *Store) EditDocument(ctx context.Context, actorID string, target DocumentTarget, commands []json.RawMessage, provenance *Provenance, op DocumentOperation) (DocumentEdit, error) {
 	req := documentRequest{
 		Target: target, ActorUserID: actorID, Commands: commands,
 		Provenance: provenance, Operation: &op,
@@ -177,13 +186,13 @@ func (s *Store) EditDocument(ctx context.Context, actorID string, target Documen
 	if target.Kind == agenttools.KindMaterial {
 		room, err := s.MaterialRoom(ctx, target.ID)
 		if err != nil {
-			return AgentOperation{}, err
+			return DocumentEdit{}, err
 		}
 		req.Room = room
 	} else if err := s.officeEditRefusal(ctx, target.ID); err != nil {
-		return AgentOperation{}, err
+		return DocumentEdit{}, err
 	}
-	var out AgentOperation
+	var out DocumentEdit
 	err := s.postDocumentAuthority(ctx, "/internal/documents/edit", req, &out)
 	return out, err
 }

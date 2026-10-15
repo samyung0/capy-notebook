@@ -371,6 +371,20 @@ changed, over the fingerprinted source that every open requires:
   refuses text edits with `EquationTextError`, which the runtime reports as
   the `equation-text` notice.
 
+Every export is well-formed XML whatever the state holds: the DOCX, XLSX and
+PPTX writers drop the characters XML 1.0 cannot carry (controls other than
+tab, line feed and carriage return; U+FFFE, U+FFFF) from everything they
+write, text, attribute values and shared strings alike. A typed or pasted
+character of that kind, or one an import brought in, therefore stays in the
+editing state and is missing from the saved file. Each writer has one place
+for it: DOCX every XML part the save writes (`Package::set_text` in the
+fork's `docx-parse/src/serializer/s13.rs`, which covers raw-XML replays too),
+XLSX every part it generates (`xml_chars` in `xlsx-parse/src/xml.rs`) and its
+chart rewrites (which refused such a character before; Epo 2026-10-15), PPTX
+its one XML
+escaper (`escape_into` in `pptx-parse/src/xml.rs`). Parts kept byte for byte
+from the upload are not rewritten.
+
 A publication rebases the edits saved after its capture onto seed(export) in
 every format (`rebaseOffice` in `vendor/betteroffice/shared/office-checkpoint.ts`),
 so the rebased state is stored as its change over that seed and its effects
@@ -2300,6 +2314,29 @@ whole paragraph. The rule is `check_replacement` in the fork's
 as inspect lists it in `details.block` (the entry's `id`, `type: "cell"`, its
 `value` as `text`; Epo, 2026-10-14). An empty cell is not listed, so its
 refusal carries nothing.
+
+Both commands drop the characters no Office file can store (the writers'
+set above) from a replacement or value before the engine applies it, and
+the edit lands without them (Epo 2026-10-15; `storable_command` in the
+fork's `crates/office-service/src/common.rs`, `storableCommand` in the TS
+mirror). The command result's `notice` names them ("Removed 2 characters
+Office files cannot store (U+0001, U+FFFE)."); the collaboration server adds
+it to the receipt it returns, Go passes it on (`store.DocumentEdit`) and the
+pipeline puts it in the edit's tool result (`_receipt_result` in
+`retrieval/tools.py`). A replayed receipt has no note. The inverse an edit
+returns for its Undo restores the paragraph or cell as the file can store
+it: such a character a paste or an import left there is dropped
+(`storable_text`; `storableText` in the TS mirror), so the Undo is not
+refused for it. What an engine itself
+refuses about the agent's input is an edit refusal too, `invalid_input` with
+the engine's sentence and no details: a DOCX line break inside a paragraph
+(CR, U+2028, U+2029), text in a PPTX equation, an XLSX cell outside the grid
+or a value over Excel's limits (text, formula length, a non-finite number, a
+sheet that is not a worksheet). So the
+gateway answers 409 and the agent can correct the call; only a lost or killed
+engine process, a panic or another engine failure stays a 503
+`outcome_unknown`. The TS mirror throws those engine refusals as plain
+errors.
 
 The collaboration server's documents run no yrs formatting cleanup: every
 room and every working document (folds, captures, saves, rebuilds, the size

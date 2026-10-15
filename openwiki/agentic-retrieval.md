@@ -3092,7 +3092,16 @@ the collaboration service's note check (an eleventh interactive block across
 the note; `compute` in `collaboration-rs/crates/server/src/edits.rs`), a source edit whose checkpoint would
 be over its byte limit (authority 413) as `quota_rejected`, and the
 authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
-`undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). A
+`undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). An
+Office `replace_text` or `set_cell` carrying characters no Office file can
+store applies without them, and its tool result says which were removed
+(the receipt's `notice`, Epo 2026-10-15); whatever an Office engine refuses
+about the agent's input (a line break inside a DOCX
+paragraph, a PPTX equation's text, an XLSX cell outside the grid or a value
+over Excel's limits) comes back as `invalid_input` with the engine's sentence
+and no details, a 409 the pipeline does not retry; a lost, killed or
+panicking engine process and any other engine failure stay a 503
+`outcome_unknown` ([Office files](frontend/office-files.md)). A
 write whose retries run out and whose receipt is absent says what the service
 last answered (`the service answered 503 (…) on 4 tries; nothing was saved`).
 A `chapter_id` naming no chapter of the workspace is refused in the pipeline
