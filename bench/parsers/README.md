@@ -50,7 +50,11 @@ for comparing two revisions run alternately, not for the budgets
 keeps the SHA-256 of the fixture's `content_list.json` (`content_sha256`) and
 the seconds of every refinement stage (`stages`, the receipt's `_stages`);
 `compare` says per fixture whether the output is the same, so an
-output-neutral change such as a speed-up shows `same` everywhere.
+output-neutral change such as a speed-up shows `same` everywhere. Service runs
+also record VmPeak, the peak virtual size a per-process `RLIMIT_AS` bounds:
+the parse children's over their life so far (`child_vmpeak_gib`), LibreOffice's
+`soffice.bin` (`office_vmpeak_gib`) and the JVM's (`java_vmpeak_gib`); `check`
+shows the first two and judges none.
 
 ## Holdout gate
 

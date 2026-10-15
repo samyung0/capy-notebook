@@ -4,8 +4,8 @@ Runs on the ingest host with the stdlib only. Each request copies its source
 into the container's spool and posts the same JSON the parse coordinator
 sends, with a fingerprint unique to the run so no bundle is served from cache.
 A sampler thread reads the container's cgroup every 250 ms (memory split into
-anon and file, swap, CPU, OOM kills, and RSS of Java, the API process and the
-parse child).
+anon and file, swap, CPU, OOM kills, RSS of Java, the API process and the
+parse child, and VmPeak of the parse child, LibreOffice and Java).
 
     python3 stress_parser.py solo  --manifest m.json --out DIR --container NAME
     python3 stress_parser.py burst --manifest m.json --out DIR --container NAME
@@ -36,13 +36,21 @@ import uuid
 from pathlib import Path
 
 SCHEMA = "capy-parser-bundle-v6"
+# VmPeak (the kernel's peak virtual size per process, which RLIMIT_AS bounds)
+# kept per process kind, by /proc Name.
+VMPEAK = {"child": "child_vmpeak", "soffice.bin": "office_vmpeak", "java": "java_vmpeak"}
+PER_PROCESS = ("child_max_rss", "child_max_vm", *VMPEAK.values())
 
 
 def cgroup_dir(container: str) -> Path:
     full = subprocess.check_output(
         ["docker", "inspect", "-f", "{{.Id}}", container], text=True
     ).strip()
-    return Path(f"/sys/fs/cgroup/system.slice/docker-{full}.scope")
+    systemd = Path(f"/sys/fs/cgroup/system.slice/docker-{full}.scope")
+    if systemd.exists():
+        return systemd
+    # The cgroupfs driver (Docker Desktop) names the container's cgroup by id.
+    return next(Path("/sys/fs/cgroup").glob(f"**/*{full}*"))
 
 
 def spool_dir(container: str) -> Path:
@@ -76,8 +84,10 @@ class Sampler(threading.Thread):
 
     def rss_by_name(self) -> dict[str, int]:
         """RSS summed per process kind, plus the largest single parse child's
-        RSS and virtual size (what a per-child RLIMIT_AS would have to allow)."""
-        totals: dict[str, int] = {"child_max_rss": 0, "child_max_vm": 0}
+        RSS and virtual size, and the largest VmPeak of a parse child (over its
+        life, which spans documents), a LibreOffice soffice.bin and a JVM: what
+        a per-process RLIMIT_AS would have to allow."""
+        totals: dict[str, int] = dict.fromkeys(PER_PROCESS, 0)
         for pid in self.read("cgroup.procs").split():
             try:
                 status = Path(f"/proc/{pid}/status").read_text()
@@ -100,6 +110,9 @@ class Sampler(threading.Thread):
                 vm = int(fields.get("VmSize", "0 kB").split()[0]) * 1024
                 totals["child_max_rss"] = max(totals["child_max_rss"], rss)
                 totals["child_max_vm"] = max(totals["child_max_vm"], vm)
+            if key := VMPEAK.get(name):
+                peak = int(fields.get("VmPeak", "0 kB").split()[0]) * 1024
+                totals[key] = max(totals[key], peak)
         return totals
 
     def run(self) -> None:
@@ -124,12 +137,11 @@ class Sampler(threading.Thread):
                     "java_rss": rss.get("java", 0),
                     "api_rss": rss.get("api", 0),
                     "child_rss": rss.get("child", 0),
-                    "child_max_rss": rss["child_max_rss"],
-                    "child_max_vm": rss["child_max_vm"],
+                    **{key: rss[key] for key in PER_PROCESS},
                     "other_rss": sum(
                         v
                         for k, v in rss.items()
-                        if k not in ("java", "api", "child", "child_max_rss", "child_max_vm")
+                        if k not in ("java", "api", "child", *PER_PROCESS)
                     ),
                 }
             )
@@ -158,6 +170,9 @@ class Sampler(threading.Thread):
             "peak_child_rss_gib": round(max(r["child_rss"] for r in rows) / gib, 2),
             "peak_one_child_rss_gib": round(max(r["child_max_rss"] for r in rows) / gib, 2),
             "peak_one_child_vm_gib": round(max(r["child_max_vm"] for r in rows) / gib, 2),
+            "peak_child_vmpeak_gib": round(max(r["child_vmpeak"] for r in rows) / gib, 2),
+            "peak_office_vmpeak_gib": round(max(r["office_vmpeak"] for r in rows) / gib, 2),
+            "peak_java_vmpeak_gib": round(max(r["java_vmpeak"] for r in rows) / gib, 2),
             "peak_other_rss_gib": round(max(r["other_rss"] for r in rows) / gib, 2),
             "avg_cores": round(cpu_s / max(end - start, 1e-6), 2),
             "oom_kills": rows[-1]["oom_kill"] - rows[0]["oom_kill"],
