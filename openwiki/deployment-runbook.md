@@ -1848,7 +1848,14 @@ the host:
   playbook also sets `kernel.yama.ptrace_scope=1`
   (`/etc/sysctl.d/60-capy-ptrace.conf`): a process may trace only its own
   descendants. Check it with `sysctl kernel.yama.ptrace_scope` after applying
-  the playbook.
+  the playbook. The container's PID 1 is the image's own init, Debian's
+  `tini`, installed execute-only (root, mode `0711`) as the entrypoint; the
+  compose files set no `init: true`. A binary the user cannot read runs
+  non-dumpable, so the parser user cannot read PID 1's environment either
+  (`PARSER_TOKEN`), and tini still reaps the `soffice.bin` a conversion
+  timeout kills. After a deploy,
+  `docker exec "$parser" cat /proc/1/environ` and the same for uvicorn's pid
+  answer `Permission denied`.
 
 Apply the host rules with the provisioning playbook (see the
 [ingest-host README](../deploy/ansible/ingest-host/README.md) for the inventory):

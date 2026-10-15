@@ -69,6 +69,14 @@ RUN curl -fsSL -o /models/rapidocr/pp_doc_layoutv3.onnx \
         '250dbad1dfb9e4983fab75e1bf5085cd56ec3f41d5c7d0f8623ec74856e7aa67  /models/rapidocr/pp_doc_layoutv3.onnx' \
         | sha256sum -c -
 
+# PID 1 reaps the soffice.bin a conversion timeout kills (parser/odl/document.py).
+# Execute-only: the kernel then runs it non-dumpable, so the parser user cannot
+# read its environment (PARSER_TOKEN) through /proc/1.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends tini \
+    && rm -rf /var/lib/apt/lists/* \
+    && chmod 0711 /usr/bin/tini
+
 # RELEASE_SHA sits below every cacheable layer so a new commit rebuilds only the
 # source copy (Coolify must not inject build args above).
 ARG RELEASE_SHA
@@ -94,4 +102,5 @@ ENV TMPDIR=/run/capy-parser/work
 USER parser
 
 EXPOSE 8090
+ENTRYPOINT ["/usr/bin/tini", "--"]
 CMD ["uvicorn", "app:app", "--app-dir", "/app/parser", "--host", "0.0.0.0", "--port", "8090", "--workers", "1"]

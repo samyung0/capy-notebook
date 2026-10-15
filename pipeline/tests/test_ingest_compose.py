@@ -1,8 +1,9 @@
 """The ingest-host compose files: the parser reads untrusted documents, so it
 runs with no capabilities, no privilege gain and a read-only root (small tmpfs
 mounts, a disk-backed work volume), the Parser budget runs the image the same
-way, the deploy can supply every variable the files require, and the host
-lets a process trace only its own descendants."""
+way, the deploy can supply every variable the files require, the image's
+own execute-only init is PID 1, and the host lets a process trace only its own
+descendants."""
 
 from __future__ import annotations
 
@@ -55,6 +56,21 @@ def test_parser_runs_unprivileged_on_a_read_only_root(name: str) -> None:
         assert not any(
             "unconfined" in option for option in service.get("security_opt", [])
         )
+
+
+@pytest.mark.parametrize("name", COMPOSE)
+def test_the_parsers_pid_1_is_the_images_execute_only_init(name: str) -> None:
+    """The parser user cannot read PID 1's environment: tini is installed
+    execute-only and is the entrypoint, with no Docker init in front of it."""
+    _, parser = _parser(name)
+    dockerfile = (ROOT / "parser/Dockerfile").read_text()
+    budget = (ROOT / ".github/workflows/parser-budget.yml").read_text()
+
+    assert not parser.get("init") and "entrypoint" not in parser
+    assert "install -y --no-install-recommends tini" in dockerfile
+    assert "chmod 0711 /usr/bin/tini" in dockerfile
+    assert 'ENTRYPOINT ["/usr/bin/tini", "--"]' in dockerfile
+    assert "--init" not in budget.split("docker run -d --name capy-parser-budget")[1]
 
 
 @pytest.mark.parametrize("name", COMPOSE)

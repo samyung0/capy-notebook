@@ -930,7 +930,8 @@ its type. The one file a child wrote that the API opens with MuPDF is the
 parsed PDF whose result asks for Office page evidence after OCR
 (`_merge_ocr`); that step goes away with the OCR rework. The API process makes
 itself non-dumpable at startup, so no other process of the parser user can
-trace it or read its memory and environment. A handed-off document's blocks stay in its result file
+trace it or read its memory and environment; PID 1 is the image's
+execute-only `tini`, which the kernel runs non-dumpable as well. A handed-off document's blocks stay in its result file
 until the OCR stage finishes. After each document the child drops the result,
 runs `gc.collect()` and glibc `malloc_trim(0)`, which brings it from about
 1.4 GiB of retained heap back to about 0.55 GiB. Startup empties the work

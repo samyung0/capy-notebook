@@ -99,8 +99,7 @@ services:
       args:
         RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
     network_mode: host
-    # Reaps the soffice.bin a conversion timeout kills (parser/odl/document.py).
-    init: true
+    # No `init: true`: the image's own PID 1 (tini, execute-only) reaps.
     # The parser reads untrusted documents: no capabilities, no privilege gain,
     # Docker's default seccomp profile and a read-only root. HOME and /tmp are
     # small RAM tmpfs mounts; sources, conversions and temporary files use the

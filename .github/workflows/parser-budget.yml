@@ -67,7 +67,7 @@ jobs:
             'mkdir -p /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine && chown -R 10001:10001 /var/lib/capy-parse && chmod 2770 /var/lib/capy-parse /var/lib/capy-parse/sources /var/lib/capy-parse/artifacts /var/lib/capy-parse/quarantine && chown 10001:10001 /run/capy-parser/work && chmod 0700 /run/capy-parser/work'
           # The compose files' hardening, so OCR and Office conversion run
           # under it here.
-          docker run -d --name capy-parser-budget --init -p 127.0.0.1:18090:8090 \
+          docker run -d --name capy-parser-budget -p 127.0.0.1:18090:8090 \
             --memory 12g --memory-swap 12g --cpus 4 --pids-limit 512 \
             --cap-drop ALL --security-opt no-new-privileges:true --read-only \
             --tmpfs /run/capy-parser/home:noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700 \
