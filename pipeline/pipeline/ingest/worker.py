@@ -42,7 +42,7 @@ from .. import (
     registry,
     use_compatible_event_loop,
 )
-from ..config import cfg
+from ..config import cfg, require_parse_timeouts
 from ..jobs import (
     CONTENT_CLAIM_STALE_S,
     CONTENT_CLAIM_WAIT_S,
@@ -2769,6 +2769,7 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
 
 
 def main(job_type: str = "ingest") -> None:
+    require_parse_timeouts()
     use_compatible_event_loop()
     asyncio.run(main_async(job_type))
 

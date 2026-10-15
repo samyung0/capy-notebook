@@ -51,3 +51,22 @@ def test_unknown_job_types_are_terminal():
 def test_missing_job_type_is_terminal():
     with pytest.raises(TerminalError, match="missing job type"):
         policy_for("")
+
+
+def test_only_the_job_worker_requires_parse_timeouts(monkeypatch):
+    """A parse request must end before its job's limit, but the check belongs to
+    the job worker: retrieval imports the same config and must still start."""
+    from pipeline.config import cfg, require_parse_timeouts
+    from pipeline.ingest import worker
+
+    monkeypatch.setattr(cfg, "parser_timeout", 2520)
+    monkeypatch.setattr(cfg, "parse_job_timeout", 2100)
+    with pytest.raises(ValueError, match="PARSER_TIMEOUT must be below"):
+        require_parse_timeouts()
+
+    async def never(job_type):
+        raise AssertionError("the worker started with a parser timeout past its job")
+
+    monkeypatch.setattr(worker, "main_async", never)
+    with pytest.raises(ValueError, match="PARSER_TIMEOUT must be below"):
+        worker.main("parse")
