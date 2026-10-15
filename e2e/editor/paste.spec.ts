@@ -204,7 +204,7 @@ test.describe('paste', () => {
       editor
         .locator('.slate-material_ref')
         .getByRole('button', { name: m.quiz_add_question() })
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 20_000 });
     await expect(editor.locator('.slate-material_ref')).toHaveCount(1);
   });
 
@@ -236,12 +236,13 @@ test.describe('paste', () => {
 
     // Each block edits its own copy: the editor reads a quiz only once the
     // block points at this note's copy, so two distinct reads, neither the
-    // original.
+    // original. A block's editor shows once its quiz read and both room
+    // tokens are back, one after another through the mock's 1 s latency.
     await expect(
       editor
         .locator('.slate-material_ref')
         .getByRole('button', { name: m.quiz_add_question() })
-    ).toHaveCount(2);
+    ).toHaveCount(2, { timeout: 20_000 });
     expect(
       [...edited].filter((id) => id !== 'mat_embed_bio_note_quiz')
     ).toHaveLength(2);
@@ -284,7 +285,7 @@ test.describe('paste', () => {
 
     // From another note first: the block edits the note's own copy.
     await pasteRef('mat_embed_bio_note_quiz');
-    await expect(quizzes).toHaveCount(1);
+    await expect(quizzes).toHaveCount(1, { timeout: 20_000 });
     await expect
       .poll(() => edited.filter((id) => id !== 'mat_embed_bio_note_quiz'))
       .toHaveLength(1);
@@ -296,7 +297,7 @@ test.describe('paste', () => {
     await page.keyboard.press('End');
     await page.keyboard.press('Enter');
     await pasteRef(own);
-    await expect(quizzes).toHaveCount(2);
+    await expect(quizzes).toHaveCount(2, { timeout: 20_000 });
     // The second block edits a second copy, neither the original nor own.
     await expect
       .poll(() =>
@@ -338,12 +339,12 @@ test.describe('paste', () => {
     const blocks = editor.locator('.slate-material_ref');
     const quizzes = blocks.getByRole('button', { name: m.quiz_add_question() });
     await pasteRefs(['block-held']);
-    await expect(quizzes).toHaveCount(1);
+    await expect(quizzes).toHaveCount(1, { timeout: 20_000 });
 
     // A click on the block's own area, away from its buttons, selects it.
     await blocks.first().click({ position: { x: 4, y: 4 } });
     await pasteRefs(['block-one', 'block-two']);
-    await expect(quizzes).toHaveCount(3);
+    await expect(quizzes).toHaveCount(3, { timeout: 20_000 });
     const top = async (index: number) =>
       (await blocks.nth(index).boundingBox())!.y;
     const held = (await blocks.first().boundingBox())!.y;

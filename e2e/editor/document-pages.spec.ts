@@ -388,7 +388,11 @@ test('workspace links remember each file and material mode independently', async
   await mode.click();
   await expect(page).toHaveURL(/mode=edit/);
   await file.click();
-  await expect(mode).toHaveAttribute('aria-pressed', 'false');
+  // The PDF's toggle shows once the file, its links and the viewer chunk
+  // load, the two reads one after another through the mock's 1 s latency.
+  await expect(mode).toHaveAttribute('aria-pressed', 'false', {
+    timeout: 30_000,
+  });
   await mode.click();
   await expect(page).toHaveURL(/mode=edit/);
   await material.click();
