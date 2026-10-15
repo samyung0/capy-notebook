@@ -37,3 +37,14 @@ patchedDependencies:
   # Office host docs do, since yrs keeps the cleanup off there
   # (human/frontend/office-files.md, 2026-10-09).
   "yjs@13.6.31": patches/yjs@13.6.31.patch
+
+# Security overrides, only where no parent release carries the fix:
+# - geopattern 1.2.3 (its last release) pins extend ~1.2.1, which allows
+#   prototype pollution; it only does shallow `extend({}, ...)` merges, which
+#   3.0.2 (already in the tree) does the same way.
+# - xmlbuilder2 3.x (its last 3.x is 3.1.1, and @platejs/docx-io needs ^3.1.1)
+#   pins js-yaml 3.14.1, which has merge-key DoS and prototype-pollution
+#   fixes in 3.15.2; docx-io never converts YAML.
+overrides:
+  "geopattern>extend": 3.0.2
+  "xmlbuilder2>js-yaml": 3.15.2
