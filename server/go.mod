@@ -13,9 +13,9 @@ require (
 	github.com/getsentry/sentry-go v0.48.0
 	github.com/go-chi/chi/v5 v5.3.1
 	github.com/go-chi/cors v1.2.1
-	github.com/go-jose/go-jose/v3 v3.0.4
+	github.com/go-jose/go-jose/v3 v3.0.5
 	github.com/google/uuid v1.6.0
-	github.com/jackc/pgx/v5 v5.7.1
+	github.com/jackc/pgx/v5 v5.9.2
 	github.com/open-spaced-repetition/go-fsrs/v3 v3.3.1
 	github.com/redis/go-redis/v9 v9.21.0
 	github.com/stripe/stripe-go/v82 v82.5.1
