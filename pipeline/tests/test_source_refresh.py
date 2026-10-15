@@ -251,6 +251,119 @@ async def test_candidate_donor_captions_stay_unpublished_until_handoff(workspace
         db.reset_source_refresh(token)
 
 
+@pytest.mark.asyncio
+async def test_refresh_reads_vlm_pages_through_the_caption_cache(
+    workspace, monkeypatch
+):
+    """A refresh's text-less pages go through the caption cache (they used to
+    fail it as superseded, so the refresh looped): the file's own caption, a
+    donor's and a fresh read each stay unpublished or untouched until Go
+    publishes the refresh, and every digest lands on the candidate."""
+    from pipeline.parse import caption_cache
+
+    job = candidate(workspace)
+    file_id = job["payload"]["fileId"]
+    donor_file = workspace.add_file("donor.pptx")
+    own, donated, fresh = "d" * 64, "e" * 64, "f" * 64
+    blobs = {
+        "captions/own": b'{"text":"Own page"}',
+        "captions/donor": b'{"text":"Donor page"}',
+    }
+    with workspace._connect() as conn:
+        for holder, digest, path in (
+            (file_id, own, "captions/own"),
+            (donor_file, donated, "captions/donor"),
+        ):
+            conn.execute(
+                "INSERT INTO image_caption_associations(id,file_id,image_sha256,caption_blob_path,size_bytes) VALUES(%s,%s,%s,%s,20)",
+                ("ica_" + secrets.token_hex(6), holder, digest, path),
+            )
+    monkeypatch.setattr(caption_cache.blobstore, "read_bytes", blobs.get)
+    monkeypatch.setattr(
+        caption_cache.blobstore,
+        "write_bytes",
+        lambda path, raw, _mime: blobs.__setitem__(path, raw),
+    )
+    reads: list[str] = []
+
+    async def read(url):
+        reads.append(url)
+        return "Fresh page"
+
+    token = db.bind_source_refresh(job)
+    try:
+        texts = [
+            (
+                await caption_cache.caption(
+                    file_id=file_id,
+                    image_sha256=digest,
+                    data_url="data:image/jpeg;base64,AA==",
+                    read=read,
+                    exclusive=False,
+                )
+            )[0]
+            for digest in (own, donated, fresh)
+        ]
+    finally:
+        db.reset_source_refresh(token)
+
+    assert texts == ["Own page", "Donor page", "Fresh page"] and len(reads) == 1
+    with workspace._connect() as conn:
+        assert sorted(
+            conn.execute(
+                "SELECT image_sha256s FROM source_refresh_candidates WHERE job_id=%s",
+                (job["id"],),
+            ).fetchone()[0]
+        ) == [own, donated, fresh]
+        # The own row still serves the published content.
+        assert dict(
+            conn.execute(
+                "SELECT image_sha256,published FROM image_caption_associations WHERE file_id=%s",
+                (file_id,),
+            ).fetchall()
+        ) == {own: True, donated: False, fresh: False}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("superseded", [False, True])
+async def test_a_refresh_refused_by_its_current_source_is_parked_not_due(
+    workspace, superseded
+):
+    """A refresh that raises SourceSuperseded while nothing replaced it fails
+    with refresh_error, which REFRESH_CANDIDATES_SQL skips; finishing it as
+    superseded would leave it due and admitted again every pass (the UAT xlsx
+    loop). A refresh a newer epoch really replaced still finishes superseded."""
+    from pipeline.ingest import worker
+
+    job = {**candidate(workspace, format="xlsx"), "type": "ingest"}
+    file_id = job["payload"]["fileId"]
+    if superseded:
+        with workspace._connect() as conn:
+            conn.execute(
+                "UPDATE source_documents SET epoch=2 WHERE file_id=%s", (file_id,)
+            )
+
+    await worker._handle_job_failure(
+        job, db.SourceSupersededError("ingest source context is unavailable")
+    )
+
+    with workspace._connect() as conn:
+        status, error = conn.execute(
+            "SELECT status,error FROM jobs WHERE id=%s", (job["id"],)
+        ).fetchone()
+        refresh_error, running = conn.execute(
+            "SELECT refresh_error,running_job_id FROM source_documents WHERE file_id=%s",
+            (file_id,),
+        ).fetchone()
+    assert status == "failed" and running is None
+    if superseded:
+        assert refresh_error is None
+        assert error == "superseded by newer source revision"
+    else:
+        assert refresh_error is not None
+        assert error.startswith("source refresh refused its current source")
+
+
 def test_published_receipt_finishes_expired_job_without_retry(workspace):
     job = candidate(workspace)
     with workspace._connect() as conn, conn.transaction(), conn.cursor() as cur:

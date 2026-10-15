@@ -2309,6 +2309,10 @@ async def _process_ingest_job(
     telemetry.record(chunks_created=len(chunks))
 
     digest = indexing.content_hash(chunks)
+    # Content with unread pages has no identity, so it is never a donor: not
+    # for this file's own retry, nor from a shared workspace.
+    if unread:
+        identity = None
     if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
         raise TerminalError(
             "ingest stopped because an account is suspended or deleting"
@@ -2634,6 +2638,15 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
             # the logical file points at B.
             exc = superseded
             error_category, error_code, _provider_status = telemetry.classify_error(exc)
+        else:
+            if payload.get("sourceRefresh") is True and isinstance(
+                exc, db.SourceSupersededError
+            ):
+                # The refresh's source is still current, so nothing replaced
+                # it. Fail it with its error: a superseded finish would leave
+                # the file due, and the scheduler would admit it every pass.
+                exc = TerminalError(f"source refresh refused its current source: {exc}")
+                error_category, error_code = "source_refresh", "source_refresh_refused"
     if (
         isinstance(exc, elitellm.ProviderBusy)
         and job_type == "ingest"

@@ -1274,8 +1274,8 @@ and `capture_page` shows the image itself (decision 2026-09-21): an upload is
 one page, page 1, its bytes normalised with Pillow and attached directly, with
 no PDF conversion. The caption chunk carries no page, so it counts as citing page 1.
 That path and the [VLM page read](#vlm-page-read) are the only users of
-`parse/caption_cache.py`, and every lookup and write runs inside the image file's own ingest job (its source and attempt
-fenced): the lookup identity is the exact image SHA, the payload lives under
+`parse/caption_cache.py`, and every lookup and write runs inside the file's own ingest job or source refresh (its source and attempt
+fenced). A refresh inserts its associations unpublished and adds each digest to its candidate's `image_sha256s` instead of publishing, as a donor copy into a refresh does; Go's publication publishes exactly those and deletes the file's other associations, and a discarded refresh publishes nothing. The lookup identity is the exact image SHA, the payload lives under
 `image-captions/<imageSHA>/<payloadSHA>.json`, and reuse follows the donor
 file's workspace privacy (a private workspace reuses within itself, a link or
 public one globally). The provider receives only image bytes and the caption
@@ -1324,9 +1324,13 @@ and cost, and the load where shedding starts are in
 Reads go through the caption cache keyed by the SHA-256 of `vlm-page\0` plus
 the JPEG bytes, with the image captions' donor rules and storage under
 `image-captions/`, so a page read before for this file, or by an eligible
-donor, costs nothing. Page reads pass `exclusive=False`: they take no
+donor, costs nothing; an Office refresh reads only its changed text-less pages
+(1.0 credit each, paid by the owner). Page reads pass `exclusive=False`: they take no
 per-image lock (it would hold a pooled connection through each model call), so
-two uploads racing on one page may read it twice.
+two uploads racing on one page may read it twice. Content with unread pages is
+attached with no `pipeline_identity`, so it is never a donor: neither for the
+file's own Retry processing, which would otherwise finish ready with the pages
+still missing, nor for another workspace (decided 2026-10-15, parts design Q10).
 
 Each read page becomes one `text` block inserted after that page's own blocks,
 with `_recovery: vlm-page` and a whole-page box `[0, 0, 1000, 1000]`. There
@@ -1526,7 +1530,8 @@ artifact version the pipeline and parser check against each other. Any change
 to parse output, including the ingest worker's VLM page read
 (`VLM_PAGE_PROMPT`), bumps that string, as any change to packing bumps
 `CHUNKER_VERSION`; output that changes without a bump is served to later
-uploads of the same bytes.
+uploads of the same bytes. Content an ingest left with unread VLM pages has a
+NULL `pipeline_identity`, which the lookup never matches.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
 its vectors), plus its descriptor, into a new per-workspace
@@ -3688,7 +3693,11 @@ due files. Each 5 s pass then claims and exports the two oldest claimable
 refreshes (`EXPORT_JOBS_SQL`). A file has one running candidate and one
 coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
-state intact and exposes manual processing.
+state intact and exposes manual processing. A refresh that raises
+`SourceSupersededError` while its source recheck still passes (nothing replaced
+it) fails as `source_refresh_refused` with `refresh_error`, so the scheduler
+leaves the file until its next save; finishing it as superseded would leave it
+due and admit it again on every pass.
 
 The workspace stats (`fileChanges`) list each file with unprocessed saved edits
 (the scheduler's predicate) or a refresh in flight, as the settings Indexing

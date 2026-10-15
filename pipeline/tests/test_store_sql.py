@@ -2242,6 +2242,111 @@ async def test_donor_lookup_prefers_matching_pin(workspace):
         conn.execute("DELETE FROM workspaces WHERE id = %s", (other_id,))
 
 
+async def test_incomplete_content_is_never_a_donor(workspace, monkeypatch):
+    """Content an ingest left with unread VLM pages is no donor: not for the
+    file's own Retry processing (it would finish ready with the pages still
+    missing) and not for another workspace through a link workspace."""
+    import psycopg
+
+    from pipeline.ingest import plan as ingest_plan
+    from pipeline.ingest import worker  # imports fcntl: Linux only
+    from pipeline.retrieval.chunking import Chunk
+
+    sha = "fe" * 32
+    plan = ingest_plan.ProcessingPlan(
+        version=2,
+        format="pdf",
+        route=ingest_plan.DOCUMENT_PARSE,
+        parser_route="fast",
+        caption_mode="none",
+        office=False,
+        stages=(),
+        resources=(),
+    )
+    workspace.scalar(
+        "UPDATE workspaces SET privacy='link' WHERE id=%s RETURNING id",
+        (workspace.id,),
+    )
+    file_id = workspace.add_file("scan.pdf")
+
+    async def chunks_for(**_values):
+        chunks = [
+            Chunk(text=f"Page {page} explains osmosis.", page_start=page, page_end=page)
+            for page in (1, 3)
+        ]
+        return chunks, [2], None
+
+    async def embed(texts, *, spec):
+        return [_unit_vector(i) for i, _ in enumerate(texts)]
+
+    async def summarize(*_args, **_kwargs):
+        return "Osmosis across a membrane."
+
+    async def no_thumbnail(*_args):
+        return None
+
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "scan.pdf")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: True)
+    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
+    monkeypatch.setattr(
+        worker,
+        "_acquire_local_source",
+        lambda *_a: ("source.pdf", "sources/source", sha, lambda: None),
+    )
+    monkeypatch.setattr(worker, "_chunks_for", chunks_for)
+    monkeypatch.setattr(worker.indexing.models, "embed", embed)
+    monkeypatch.setattr(worker.indexing.models, "complete_text", summarize)
+    monkeypatch.setattr(worker, "_finish_ok", lambda *_a, **_k: True)
+    monkeypatch.setattr(worker, "_publish_progress", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_capture_thumbnail", no_thumbnail)
+    monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)
+
+    await worker._process_ingest_job(
+        {"id": "job_partial", "type": "ingest", "attempts": 1},
+        {
+            "blobPath": "sources/source",
+            "sourceRevision": 1,
+            "sourceETag": "",
+            "actorUserId": workspace.user_id,
+            "reservationId": "cr_1",
+        },
+        file_id,
+        workspace.id,
+        "pdf",
+        plan,
+    )
+
+    assert workspace.scalar(
+        "SELECT rc.status = 'ready' AND rc.pipeline_identity IS NULL "
+        "FROM rag_contents rc JOIN rag_file_contents fc ON fc.content_id = rc.id "
+        "WHERE fc.file_id = %s",
+        (file_id,),
+    )
+    other_id = f"ws_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        conn.execute(
+            "INSERT INTO workspaces (id, user_id, name) VALUES (%s, %s, %s)",
+            (other_id, workspace.user_id, "Other"),
+        )
+    try:
+        pin = await store.workspace_embedding_pin(workspace.id)
+        for workspace_id in (workspace.id, other_id):
+            assert (
+                await store.find_ready_donor(
+                    workspace_id=workspace_id,
+                    source_sha256=sha,
+                    pipeline_identity=worker._pipeline_identity(plan),
+                    **pin,
+                )
+                is None
+            )
+    finally:
+        with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+            conn.execute("DELETE FROM workspaces WHERE id = %s", (other_id,))
+
+
 def test_only_the_claiming_attempt_may_write_its_outcome(workspace):
     """A worker whose lease was reclaimed must not overwrite its successor.
 

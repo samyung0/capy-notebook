@@ -5,6 +5,7 @@ source fencing, donor reuse, provider admission and ingest retry handling.
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 import json
 from pathlib import Path
@@ -2039,3 +2040,82 @@ async def test_vlm_pages_join_their_page_and_unread_ones_are_reported(
     assert blocks[2]["_recovery"] == worker.VLM_RECOVERY
     assert blocks[2]["bbox"] == [0, 0, 1000, 1000]
     assert unread == [4]
+
+
+async def test_refresh_reads_vlm_pages_through_the_caption_cache(
+    monkeypatch, tmp_path: Path
+):
+    """A source refresh reads its text-less pages instead of failing as
+    superseded (which left an edited deck looping). Its caption association
+    stays unpublished and the digest goes on the refresh candidate."""
+    jpeg = b"\xff\xd8slide"
+    (tmp_path / "vlm").mkdir()
+    (tmp_path / "vlm" / "0.jpg").write_bytes(jpeg)
+    executed: list[tuple[str, tuple]] = []
+
+    class Connection:
+        rowcount = 1
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def transaction(self):
+            return self
+
+        def cursor(self):
+            return self
+
+        def execute(self, query, params=()):
+            executed.append((" ".join(query.split()), params))
+
+        def fetchone(self):
+            return None
+
+    sync_db = worker.caption_cache.sync_db
+    monkeypatch.setattr(sync_db, "connect", Connection)
+    monkeypatch.setattr(
+        sync_db, "lock_pipeline_claim_boundary", lambda *_a, **_k: "current"
+    )
+    monkeypatch.setattr(sync_db, "require_current_file_source", lambda *_a: None)
+
+    async def persist(file_id, digest, path, raw):
+        # Only the association write; the cleanup row and the upload are B2's.
+        worker.caption_cache._persist_ingest(file_id, digest, path, raw)
+
+    async def read_page(_url, *, credit_micros):
+        return "Slide title"
+
+    monkeypatch.setattr(worker.caption_cache, "_persist", persist)
+    monkeypatch.setattr(worker.models, "read_page", read_page)
+    job = {
+        "id": "job_refresh",
+        "attempts": 1,
+        "payload": {
+            "fileId": "f_1",
+            "sourceRefresh": True,
+            "sourceLeaseToken": "lease",
+            "sourceRevision": 1,
+            "sourceETag": "etag-b",
+        },
+    }
+    source = worker.db.bind_source_refresh(job)
+    rates = worker._resource_rates.set(
+        {worker._RESOURCE_VLM_PAGE: {"version": 1, "creditMicrosPerUnit": 1_000_000}}
+    )
+    try:
+        blocks, unread = await worker._read_vlm_pages([], tmp_path, "f_1")
+    finally:
+        worker._resource_rates.reset(rates)
+        worker.db.reset_source_refresh(source)
+
+    assert [b["text"] for b in blocks] == ["Slide title"] and unread == []
+    inserts = [p for q, p in executed if "INSERT INTO image_caption_associations" in q]
+    assert len(inserts) == 2 and all(p[-1] is False for p in inserts)
+    assert not any("SET published=true" in q for q, _ in executed)
+    digest = hashlib.sha256(b"vlm-page\0" + jpeg).hexdigest()
+    assert [p for q, p in executed if "UPDATE source_refresh_candidates" in q] == [
+        (digest, digest, "f_1", "job_refresh", "lease")
+    ]
