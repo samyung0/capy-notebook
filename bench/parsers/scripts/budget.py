@@ -10,7 +10,7 @@
           peaks from the container's cgroup (Linux; run as root for the spool).
           CI runs this.
         --inprocess: parser/app.run_document (normalization, Java, repairs,
-          OCR, thumbnail) in a fresh child per fixture; peaks from the process
+          thumbnail, VLM page renders) in a fresh child per fixture; peaks from the process
           tree. Compares two revisions on one machine; never judged by the CI
           budgets.
     check --out DIR --machine NAME
@@ -23,7 +23,7 @@
         fixture's output is the same (SHA-256 of its content_list.json).
 
 Execution time excludes queue wait; it is what the 900 s document deadline
-bounds (OCR pages are bounded per page instead).
+bounds. "OCR pages" are the text-less pages rendered for the ingest worker's VLM.
 """
 
 from __future__ import annotations
@@ -242,7 +242,7 @@ started = time.perf_counter()
 result = run_document(Document(data, Path(sys.argv[2]).name))
 elapsed = time.perf_counter() - started
 json.dump({"elapsed": elapsed, "page_count": result.get("_page_count"),
-           "ocr_pages": len(result.get("_ocr_pages") or []), "phases": result.get("_phases"),
+           "ocr_pages": len(result.get("_vlm_pages") or []), "phases": result.get("_phases"),
            "stages": result.get("_stages"), "content_list": result.get("content_list") or []},
           open(sys.argv[3], "w"))
 """

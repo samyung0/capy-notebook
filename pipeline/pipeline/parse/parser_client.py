@@ -30,6 +30,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 import stat
 import tempfile
@@ -48,14 +49,14 @@ from ..config import cfg
 log = logging.getLogger("capy.parse.client")
 
 SOURCE_DESCRIPTOR_SCHEMA = "capy-local-source-v1"
-ARTIFACT_SCHEMA = "capy-parser-bundle-v5"
+ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 
 ROUTE_FAST = "fast"
 
 # Must match parser/app.py. The implementation generation and exact release
 # SHA form one identity, so rebuilt parser output cannot masquerade as an older
 # artifact even when the source is unchanged.
-PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-rapidocr-v14"}
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v15"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
 
@@ -358,6 +359,8 @@ def _entry_limit(info: zipfile.ZipInfo) -> int:
         return min(cfg.parse_artifact_max_entry_bytes, cfg.parse_content_max_bytes)
     if info.filename == PAGE_IMAGE:
         return min(cfg.parse_artifact_max_entry_bytes, 1 << 20)
+    if _VLM_PAGE.fullmatch(info.filename):
+        return min(cfg.parse_artifact_max_entry_bytes, 4 << 20)
     return cfg.parse_artifact_max_entry_bytes
 
 
@@ -366,6 +369,8 @@ def _entry_limit(info: zipfile.ZipInfo) -> int:
 PAGE_IMAGE = "page1.png"
 _REQUIRED_ENTRIES = frozenset({"manifest.json", "content_list.json", "refinement.json"})
 _ENTRIES = _REQUIRED_ENTRIES | {"parsed.pdf", PAGE_IMAGE}
+# A text-less page's grey render for the ingest worker's VLM (0-based index).
+_VLM_PAGE = re.compile(r"vlm/(?:0|[1-9][0-9]{0,4})\.jpg")
 
 
 def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
@@ -373,7 +378,7 @@ def _validated_entries(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     names = [info.filename for info in infos]
     if len(names) != len(set(names)):
         raise ParserClientError("parsed artifact contains duplicate entries")
-    if set(names) - _ENTRIES:
+    if {name for name in names if not _VLM_PAGE.fullmatch(name)} - _ENTRIES:
         raise ParserClientError("parsed artifact contains unexpected entries")
     if _REQUIRED_ENTRIES - set(names):
         raise ParserClientError(

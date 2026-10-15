@@ -330,10 +330,6 @@
       "targets": ["coolify", "local", "ingest-production", "ingest-shared"],
       "required_for": ["coolify", "ingest-production", "ingest-shared"]
     },
-    "CAPY_PARSE_OCR_PAGE_TIMEOUT": {
-      "kind": "variable",
-      "targets": ["ingest-production", "ingest-shared"]
-    },
     "CAPY_PARSE_QUEUE_DEPTH": {
       "kind": "variable",
       "targets": ["ingest-production"]

@@ -30,13 +30,13 @@ from odl import (
     hidden,
     joins,
     lists,
-    ocr,
     order,
     page_text,
     pictures,
     scripts,
     source_text,
     tables,
+    textless,
 )
 from odl.adapter import node_text, odl_content_list
 from odl.table_html import Table, table_html
@@ -1029,42 +1029,13 @@ def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words()
     ]
 
 
-def test_ocr_lines_become_page_blocks_after_the_page(tmp_path: Path) -> None:
-    blocks = [
-        {"page_idx": 0, "type": "image", "bbox": [0, 0, 1000, 1000]},
-        {"page_idx": 1, "type": "text", "text": "b", "bbox": [0, 0, 1, 1]},
-    ]
-    lines = [
-        {
-            "box": [[10, 500], [90, 500], [90, 520], [10, 520]],
-            "text": "second",
-            "score": 0.9,
-        },
-        {
-            "box": [[10, 10], [90, 10], [90, 30], [10, 30]],
-            "text": "first",
-            "score": 0.9,
-        },
-    ]
-    new = ocr.line_blocks(lines, (100, 1000), 0)
-    assert [b["text"] for b in new] == ["first", "second"]
-    assert (
-        new[0]["bbox"] == [100.0, 10.0, 900.0, 30.0]
-        and new[0]["_recovery"] == "rapidocr-line"
-    )
-    merged = ocr.merge(blocks, 0, new)
-    assert [b.get("text", b["type"]) for b in merged] == [
-        "image",
-        "first",
-        "second",
-        "b",
-    ]
+def test_pages_without_a_text_layer_are_listed_for_the_vlm() -> None:
     with pymupdf.open() as document:
         document.new_page().insert_text(
             (50, 50), "a page with enough native characters to keep"
         )
         document.new_page()
-        assert ocr.textless_pages(document) == [1]
+        assert textless.textless_pages(document) == [1]
 
 
 def test_font_repair_abstains_for_an_unknown_unused_glyph() -> None:
@@ -1156,7 +1127,7 @@ def test_page_text_extracts_each_page_once_and_rebuilds_mupdf_dicts(
                 )
         assert reads == [0, 1]
         # Plain text holds every kept character: page 1's 48 need no read.
-        assert ocr.textless_pages(document) == [0]
+        assert textless.textless_pages(document) == [0]
         assert reads == [0, 1, 0]
     assert page_text._session is None  # nothing outlives the parse
     with pymupdf.open(path) as document:  # outside a session, MuPDF reads it

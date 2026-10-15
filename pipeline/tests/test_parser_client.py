@@ -95,7 +95,7 @@ def test_source_schema_and_release_all_participate_in_identity(monkeypatch):
     _, other_source = parser_client.artifact_identity(
         _descriptor(source_sha256="bb" * 32)
     )
-    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v6")
+    monkeypatch.setattr(parser_client, "ARTIFACT_SCHEMA", "capy-parser-bundle-v7")
     _, other_schema = parser_client.artifact_identity(_descriptor())
     monkeypatch.setattr(parser_client.cfg, "release_sha", "b" * 40)
     _, other_release = parser_client.artifact_identity(_descriptor())

@@ -35,7 +35,7 @@ import urllib.request
 import uuid
 from pathlib import Path
 
-SCHEMA = "capy-parser-bundle-v5"
+SCHEMA = "capy-parser-bundle-v6"
 
 
 def cgroup_dir(container: str) -> Path:

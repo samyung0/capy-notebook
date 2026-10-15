@@ -1,4 +1,4 @@
-"""One PDF through OpenDataLoader, the reviewed native repairs and selective OCR.
+"""One PDF through OpenDataLoader and the reviewed native repairs.
 
 The stage order is the lab's ``refined`` variant and must not be reshuffled:
 font repair, Java, cell styles, adaptation, picture triage, vector figures,
@@ -6,8 +6,8 @@ column order, hidden-OCR order, heading context, then table context, footer
 ancestry, list geometry, glyph repairs, exponents, formula structure, column
 continuations, split ligatures, line joins, page numbers, list headings, layout
 headings, heading levels, source tables, inline formula placeholders, figure
-captions, negation composition, and finally RapidOCR lines for pages without a
-text layer.
+captions and negation composition. Pages without a text layer are listed for
+the ingest worker's VLM (``textless.py``).
 """
 
 from __future__ import annotations
@@ -34,7 +34,6 @@ from . import (
     levels,
     list_headings,
     lists,
-    ocr,
     order,
     outline_levels,
     page_text,
@@ -43,6 +42,7 @@ from . import (
     source_text,
     styles,
     tables,
+    textless,
 )
 from .adapter import odl_content_list
 
@@ -50,8 +50,8 @@ from .adapter import odl_content_list
 @dataclass
 class ParseOutput:
     content_list: list[dict]
-    # OpenDataLoader's own Markdown, for bench inspection; ingest never reads it.
-    ocr_pages: list[int]
+    # 0-based pages without a text layer, blank pages included.
+    textless_pages: list[int]
     page_count: int
     phases: dict[str, float] = field(default_factory=dict)
     # Seconds per structure and repair stage ("module.function"), for profiles.
@@ -66,15 +66,8 @@ class ParseOutput:
     parsed_pdf: bytes | None = None
 
 
-def parse_pdf(
-    data: bytes, work_dir: Path, *, java_timeout_s: float, read_ocr: bool = True
-) -> ParseOutput:
-    """Parse one PDF. ``work_dir`` must be empty and is left for the caller to remove.
-
-    With ``read_ocr`` false the text-less pages are listed in ``ocr_pages`` but
-    not read: the parser service's OCR stage reads them and merges the lines
-    with ``ocr.merge`` in page order, which gives the same blocks.
-    """
+def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOutput:
+    """Parse one PDF. ``work_dir`` must be empty and is left for the caller to remove."""
     phases: dict[str, float] = {}
     started = time.perf_counter()
     repaired, repaired_fonts = fonts.repair_fonts(data)
@@ -174,16 +167,13 @@ def parse_pdf(
         phases["repairs"] = time.perf_counter() - started
 
         started = time.perf_counter()
-        if read_ocr:
-            blocks, ocr_pages = ocr.add_ocr_text(blocks, document)
-        else:
-            ocr_pages = ocr.textless_pages(document)
-        phases["ocr"] = time.perf_counter() - started
+        textless_pages = textless.textless_pages(document)
+        phases["textless"] = time.perf_counter() - started
         page_count = len(document)
 
     return ParseOutput(
         content_list=blocks,
-        ocr_pages=ocr_pages,
+        textless_pages=textless_pages,
         page_count=page_count,
         phases=phases,
         stages=stages,

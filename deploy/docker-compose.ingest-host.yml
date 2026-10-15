@@ -84,7 +84,6 @@ services:
       # OCR stage: each page's limit in the OCR process (queue wait is free),
       # and the text-less pages it holds, checked at the handoff. A document
       # with more than the cap fails as parse_too_many_scanned_pages.
-      CAPY_PARSE_OCR_PAGE_TIMEOUT: ${CAPY_PARSE_OCR_PAGE_TIMEOUT:-60}
       CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:-500}
       # Pages per document; more fails as parse_too_many_pages. The API serves
       # the same value in the upload policy.
@@ -118,7 +117,7 @@ services:
     mem_limit: 14g
     memswap_limit: 18g
     cpus: 8.0
-    # Threads count: five JVMs, onnxruntime and LibreOffice passed 256.
+    # Threads count: five JVMs and LibreOffice passed 256.
     pids_limit: 512
     healthcheck:
       test:
@@ -131,7 +130,6 @@ services:
         ]
       interval: 15s
       timeout: 5s
-      # No model warm-up: the RapidOCR models load on the first text-less page.
       start_period: 60s
       retries: 8
     depends_on:

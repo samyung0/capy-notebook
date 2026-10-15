@@ -1594,6 +1594,8 @@ async def _read_vlm_pages(
                 "type": "text",
                 "text": text,
                 "page_idx": page_idx,
+                # No line boxes: the whole page, so a citation opens this page.
+                "bbox": [0, 0, 1000, 1000],
                 "_recovery": VLM_RECOVERY,
             },
         )

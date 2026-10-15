@@ -2032,4 +2032,5 @@ async def test_vlm_pages_join_their_page_and_unread_ones_are_reported(
         (10, "Page eleven"),
     ]
     assert blocks[2]["_recovery"] == worker.VLM_RECOVERY
+    assert blocks[2]["bbox"] == [0, 0, 1000, 1000]
     assert unread == [4]

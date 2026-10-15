@@ -4,7 +4,8 @@ Set CAPY_ODL_LOCAL_URL, CAPY_ODL_LOCAL_SPOOL and CAPY_ODL_LOCAL_RELEASE for an
 already running localhost parser. The normal workspace fixture owns disposable
 Postgres/Redis. CAPY_ODL_LOCAL_REPORT_DIR optionally retains the evidence.
 The native page reuses the September 9 French development source, not a holdout.
-Embeddings, summaries and object downloads are deterministic local substitutes.
+The VLM page read, embeddings, summaries and object downloads are deterministic
+local substitutes.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ import requests
 from PIL import Image
 
 from pipeline.config import cfg
+from pipeline.ingest import worker
 from pipeline.ingest.worker import _page_chunks
 from pipeline.parse import parser_client
 from pipeline.retrieval import (
@@ -41,10 +43,6 @@ from pipeline.retrieval import (
     tools,
 )
 from pipeline.retrieval.confidence import VLM_SCORE, vlm_pages
-
-# TODO(vlm-ocr): rewrite against the parser's vlm/ page renders read by a
-# stubbed models.read_page once the parser drops RapidOCR (2026-10-15 rework).
-OCR_SCORE, OCR_REASON, ocr_pages = VLM_SCORE, "", vlm_pages
 from pipeline.retrieval.search import search
 
 NATIVE_SOURCE = (
@@ -59,7 +57,6 @@ REQUIRED_ENV = (
 )
 pytestmark = [
     pytest.mark.integration,
-    pytest.mark.skip(reason="parser OCR stage is moving to the VLM"),
     pytest.mark.skipif(
         not all(os.getenv(key) for key in REQUIRED_ENV) or not NATIVE_SOURCE.is_file(),
         reason="explicit local parser configuration and the reviewed French PDF required",
@@ -149,7 +146,7 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
             "original_sha256": NATIVE_SHA256,
             "original_page": 6,
             "output_native_page": 1,
-            "generated_ocr_page": 2,
+            "generated_scan_page": 2,
             "source_sha256": digest,
             "descriptor": descriptor,
         },
@@ -216,7 +213,27 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
     assert "moyenne de 10" in " ".join(table["table_caption"])
     assert {"row": 1, "column": 14, "styles": ["bold"]} in table["_table_source_styles"]
     assert len(table["_table_source_styles"]) == 24
-    assert ocr_pages(content) == {2}
+
+    # The image-only page arrives as a render for the VLM, read here by a stub.
+    assert sorted(p.name for p in (raw / "vlm").iterdir()) == ["1.jpg"]
+    with Image.open(raw / "vlm" / "1.jpg") as render:
+        assert (render.format, render.mode, max(render.size)) == ("JPEG", "L", 1280)
+    reads = []
+
+    async def read_page(data_url, *, credit_micros):
+        reads.append(credit_micros)
+        assert data_url.startswith("data:image/jpeg;base64,")
+        return (
+            "ORBIT SCIENCE FIELD NOTES\n\n"
+            "The violet observatory records the planet every night. "
+            "A copper telescope measures distant orbital motion."
+        )
+
+    monkeypatch.setattr(models, "read_page", read_page)
+    file_id = workspace.add_file("integration.pdf")
+    content, unread = await worker._read_vlm_pages(content, raw, file_id)
+    assert unread == [] and len(reads) == 1 and reads[0] > 0
+    assert vlm_pages(content) == {2}
     chunks = await asyncio.to_thread(_page_chunks, content, raw, source)
     _write_json(evidence / "chunks.json", [asdict(chunk) for chunk in chunks])
     table_chunk = next(
@@ -224,19 +241,16 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
     )
     assert "Fine-tuning" in table_chunk.text and "CCNET" in table_chunk.text
     assert "TABLE 3" in table_chunk.text and "NLI / ACC." in table_chunk.text
-    ocr_chunks = [
+    scan_chunks = [
         chunk
         for chunk in chunks
         if chunk.page_start is not None
         and chunk.page_start <= 2 <= (chunk.page_end or chunk.page_start)
     ]
-    assert ocr_chunks and any(
-        "violet observatory" in chunk.text.lower() for chunk in ocr_chunks
+    assert scan_chunks and any(
+        "violet observatory" in chunk.text.lower() for chunk in scan_chunks
     )
-    assert all(
-        chunk.confidence == OCR_SCORE and OCR_REASON in chunk.confidence_reasons
-        for chunk in ocr_chunks
-    )
+    assert all(chunk.confidence == VLM_SCORE for chunk in scan_chunks)
 
     embed_calls = []
 
@@ -250,7 +264,6 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
 
     monkeypatch.setattr(models, "embed", embed)
     monkeypatch.setattr(indexing, "summarize_file", summarize)
-    file_id = workspace.add_file("integration.pdf")
     blob_key = f"sources/{file_id}"
     with workspace._connect() as connection:
         connection.execute(
@@ -297,8 +310,9 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
     )
     assert table_hit.lex_rank is not None and scan_hit.lex_rank is not None
     assert table_hit.vec_rank is not None and scan_hit.vec_rank is not None
-    assert scan_hit.confidence == OCR_SCORE and OCR_REASON in scan_hit.location()
-    assert "extraction confidence 0.50" in scan_hit.as_context(2)
+    # VLM text carries no extraction note.
+    assert scan_hit.confidence == VLM_SCORE
+    assert "extraction confidence" not in scan_hit.as_context(2)
     _write_json(
         evidence / "retrieval.json",
         {"table": asdict(table_hit), "scan": asdict(scan_hit)},
@@ -365,8 +379,11 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
     assert streamed == raw_answer == answer and stream.complete and order == [2]
     citations = agent._ordered_citations(ctx, order)
     assert citations == [{**scan_hit.as_citation(), "n": 2}]
+    # VLM text has no line boxes: its region is the whole page.
     assert citations[0]["pageStart"] <= 2 <= citations[0]["pageEnd"]
-    assert any(region["page"] == 2 for region in citations[0]["regions"])
+    assert {"page": 2, "bbox": [0.0, 0.0, 1000.0, 1000.0]}.items() <= next(
+        region for region in citations[0]["regions"] if region["page"] == 2
+    ).items()
     assert citations[0]["regions"] == scan_hit.regions
     _write_json(
         evidence / "result.json",
@@ -375,7 +392,7 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
             "parser_version": artifact["version"],
             "source_sha256": digest,
             "chunks": len(chunks),
-            "ocr_chunks": len(ocr_chunks),
+            "scan_chunks": len(scan_chunks),
             "source_style_cells": 24,
             "receipt_owner_replayed": True,
             "other_request_receipt_absent": True,
