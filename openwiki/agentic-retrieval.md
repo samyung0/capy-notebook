@@ -1280,6 +1280,10 @@ fenced). A refresh inserts its associations unpublished and adds each digest to 
 file's workspace privacy (a private workspace reuses within itself, a link or
 public one globally). The provider receives only image bytes and the caption
 prompt, never a source name or nearby text. Those calls bill their tokens only.
+The caption call follows the summary's attempt rule (decided 2026-10-15,
+parts design Q7): an empty or cut-off answer settles and takes the next of the
+three attempts, a transient error retries, and a definitive client error (400,
+401, 403, 404, 422) ends the call; with no caption the job's retry runs.
 
 Caption calls never inherit a user's chat reasoning level. The pinned catalog
 identity is `zai/glm-5.3-flash`, served from Relace as wire model
@@ -1340,13 +1344,25 @@ Chunking). An Office file's frozen page evidence leaves them out.
 
 A page read is charged 1.0 credit (`vlm_ingest_page`) when it succeeds; a
 cached page and a failed read cost nothing, and the parse does not charge
-these pages the digital rate as well. When pages are still unread after two
-reads, the readable pages are indexed and searchable, but the file ends
-`failed` (still `indexed`) and the job note names the unread pages (the first
-20, then a count). Retry processing runs the file again (a parse redone because
-its bundle left the spool is charged like any retry) and only the unread pages
-reach the VLM; the others come from the cache. A document with no indexable
-content besides its unread pages fails terminally with the same note.
+these pages the digital rate as well. Unread pages are a missing part (see
+"Parts" under Indexing one file): the readable pages are indexed and
+searchable, but the file ends `failed` (still `indexed`) and the job note
+names the unread pages (the first 20, then a count). Retry processing runs the
+file again (a parse redone because its bundle left the spool is charged like
+any retry) and only the unread pages reach the VLM; the others come from the
+cache. Its new content attaches beside the old one, which keeps serving search
+and lends its vectors until the new content publishes. A document with no
+indexable content besides its unread pages fails terminally with the same note.
+
+On UAT, `CAPY_UAT_FAIL_PARTS` fails every page read of a file named with
+`[uat-fail-pages]`, and `INGEST_UAT_SCRIPTED_VLM` reads each text-less page of
+a file named with `[uat-scripted-vlm]` as `UAT scripted page <n>: <token>`
+(the token is the file name without its extension and the markers), both with
+no provider call (`pipeline/ingest/uat.py`, see Configuration surface). A
+scripted read opens and settles its `vlm_page` call at the page rate, so it
+writes the same `vlm_ingest_page` usage row as a real read. A marked file's
+reads use a cache key salted with the marker (and the token), so no real read
+is served from a scripted one or the other way round.
 
 ### Chunking
 
@@ -1530,14 +1546,27 @@ artifact version the pipeline and parser check against each other. Any change
 to parse output, including the ingest worker's VLM page read
 (`VLM_PAGE_PROMPT`), bumps that string, as any change to packing bumps
 `CHUNKER_VERSION`; output that changes without a bump is served to later
-uploads of the same bytes. Content an ingest left with unread VLM pages has a
+uploads of the same bytes. Swapping the captioning model that reads the pages
+is no such change (decided 2026-10-15): the key does not name it, so earlier
+reads stay in use until a file is reprocessed. Content an ingest left with unread VLM pages has a
 NULL `pipeline_identity`, which the lookup never matches.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
 its vectors), plus its descriptor, into a new per-workspace
 `rag_contents` row. Isolation stays `workspace_id` on the chunks; user B is
 not billed for user A's original ingest. If the pins differ, chunk text is
-copied and re-embedded into the target workspace's space.
+copied and re-embedded into the target workspace's space. A re-ingest's new
+row attaches beside the file's ready content and replaces it only when it
+publishes, as in Indexing one file.
+
+A donor whose descriptor is pending (no `rag_content_summaries` row) is still
+used (decided 2026-10-15, parts design Q9): the copy carries no row, and the
+receiving job fills the descriptor for its file, paid by the uploader. An
+ingest worker fills it inline (`indexing.fill_descriptor`); a parse
+coordinator, which holds no provider keys, finishes its claim and hands off a
+`partsOnly` ingest continuation (`_handoff_parsed_artifact` with no bundle)
+that an ingest worker runs through `_process_parts_bound`. A receiver never
+waits for the donor's own descriptor.
 
 Office donor reuse copies or re-embeds canonical content without a preview
 lookup. Caption associations and derivative work retain their existing ownership
@@ -1561,7 +1590,13 @@ exists; the local bundle is gone once the first ingest finished.
 `pipeline/retrieval/indexing.py` is idempotent per file:
 
 1. Attach the logical file to canonical workspace content by parsed-text hash.
-  If ready content already exists, reuse it without model calls.
+  If ready content already exists, the file's alias moves onto it and it is
+  reused without parse or embedding (a pending descriptor is still filled; see
+  "Parts" below). New content attaches without moving an alias that serves
+  ready content: a re-ingest keeps the previous index searchable, lending its
+  vectors and descriptor to steps 2 and 4, until step 5 publishes, and a
+  failed re-ingest leaves it in place (parts design R5, 2026-10-15). A first
+  ingest's alias points at its processing content at once.
 2. Embed all canonical `indexed_text` values in provider-sized batches. These
   use heading breadcrumbs but not a mutable logical file name.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
@@ -1577,8 +1612,9 @@ exists; the local bundle is gone once the first ingest finished.
   have). Within the call's three attempts (parts design Q7, 2026-10-15), an
   empty reply or one cut off at that cap is a failed attempt, a transient
   provider error (5xx, a connection reset) takes the next attempt, and a
-  definitive client error (400, 401, 403, 404, 422) ends the call at once;
-  the job's ordinary failure path then retries it. A reindex of a file with a ready descriptor first measures the net text change between the
+  definitive client error (400, 401, 403, 404, 422) ends the call at once.
+  The descriptor is a part (see "Parts" below): a failure writes no row and
+  never fails the file. A reindex of a file with a ready descriptor first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and
   retained headings dropped, lines aligned, then words inside each changed
   range; spans that differ only in spacing or glyph forms count nothing; a
@@ -1596,15 +1632,22 @@ exists; the local bundle is gone once the first ingest finished.
   book therefore costs the same as a long chapter (about $0.15 per 1,000
   files on 2026-10-15 list prices); the change share still measures the whole
   document. The estimator counts Latin script with diacritics (Vietnamese)
-  at about 1.6× under, so those excerpts run a little over. A provider failure here
-  retries the job rather than storing a blank: an empty descriptor would be marked ready, copied to future
-  donors, and never refilled. A descriptor carries no prompt version: rewording
+  at about 1.6× under, so those excerpts run a little over. A regeneration
+  that fails keeps the published descriptor with its accumulated share, so the
+  next run tries again (a present, stale descriptor is not a missing part;
+  decided 2026-10-15, Q4); with no previous descriptor it is pending: no row,
+  never a blank one (Q10), since a blank would be copied to future donors and
+  never refilled. A fill (below) reads the same excerpt of the stored chunks.
+  A descriptor carries no prompt version: rewording
   the prompt or swapping the ingest model leaves stored descriptors in place.
-  A final receipt settlement rejection is not an ordinary provider failure: the
-  summary helper propagates `SettlementError` unchanged so the ingest worker
-  closes the attempt without retrying a provider response that was already
-  charged.
-5. Stop. There is no concept or entity index, no chapter/workspace content-summary
+  A final receipt settlement rejection is not a part failure: `_descriptor`
+  propagates `SettlementError` unchanged so the ingest worker closes the
+  attempt without retrying a provider response that was already charged.
+5. Publish: `store.publish_file_content` marks the content ready and moves the
+  file's alias onto it in one transaction, fenced to the job's file revision;
+  the orphan trigger then drops the previous content. A source refresh's
+  candidate is only marked ready (Go's publication aliases it).
+6. Stop. There is no concept or entity index, no chapter/workspace content-summary
    tree and no rollup job. The public metadata outline described above is read
    directly from workspace/chapter/file rows and is separate from this pipeline. Cross-document reasoning happens at query time,
    conditioned on the question: the agent reads the first hits and searches
@@ -1618,6 +1661,39 @@ exists; the local bundle is gone once the first ingest finished.
    of 26 turns with the footer and 23 of 26 without, with every turn on both
    builds answering across the documents. See `human/agentic-retrieval.md`
    for the decision and the telemetry that would reopen it.
+
+**Parts.** A part is a provider output the index does not depend on: the
+file descriptor and each text-less page's VLM read (decided 2026-10-15, parts
+design). A missing part never fails the file: its content is published and
+searchable, and `_finish_ok(missing=Missing(...))` ends the file `failed`
+with `indexed` true and the job `done` with a note from `_missing_note`:
+`summary pending (<reason>)` and/or `N pages could not be read (p. …)`, joined
+by `; ` and ending `; retry processing fills them in`. The state lives where
+the part lives (no migration, Q10): a pending descriptor is a missing
+`rag_content_summaries` row, and content with unread pages has a NULL
+`pipeline_identity`.
+
+- A busy summary provider past its in-call budget re-pends the job once
+  (`PROVIDER_WAITS_MAX`) after the content is published; the re-claim finds
+  the same content ready and only fills the descriptor. Busy again, the
+  descriptor is missing.
+- The content-reuse path (step 1's ready content) and an ingest worker's donor
+  path fill a pending descriptor inline with `indexing.fill_descriptor`: the
+  stored chunks, one summary call, no parse or embedding, and an insert that
+  does nothing when another job or a refresh wrote the row meanwhile
+  (`store.fill_content_summary`, fingerprint the content hash).
+- A `partsOnly` ingest job (`_process_parts_bound`) only does that fill for
+  the file's published content (a refresh's candidate when one is bound),
+  then finishes the file. The parse coordinator's donor path sends one; Retry
+  processing of a file whose only missing part is its descriptor is to send
+  one once Go routes retries by missing part.
+- `_finish_ok` checks, under `FOR UPDATE`, that the file still aliases the
+  content the job published (else the job ends superseded and statuses stay),
+  and once the content is complete it sets every other file aliasing it that
+  is `failed` with `indexed` true to `ready` in the same transaction, so one
+  fill completes duplicate uploads.
+- On UAT, `CAPY_UAT_FAIL_PARTS` fails the descriptor of a file named with
+  `[uat-fail-summary]` with no provider call.
 
 Once the job has committed, before the local source is cleaned up, the worker
 captures the file's list-card thumbnail (page 1 as a small WebP) or, for a text
@@ -3826,6 +3902,8 @@ current chunk, with full coverage in the large-document reduction path.
 | LLM input budget | required catalog `context_window_tokens`; optional catalog param `context_safety_margin_tokens`; `CAPY_LLM_INPUT_BUDGET_TOKENS` only before model selection | Chat admission uses the smaller of 250k and the selected model window minus 8k for output, then subtracts the greater of the 512-token protocol minimum and the model's calibrated safety margin. The env value only bounds initial multi-file gathering before a catalog model is selected. |
 | Standalone image captions | `CAPY_CAPTION_MAX_EDGE` | Only image uploads are captioned (plan `captionMode: standalone`); text-less document pages are read by the same model (VLM page read). The ZAI GLM-5.3-Flash catalog row is served from Relace. Captions always use `reasoning_effort: low`, which is also the catalog default for chat. |
 | Direct media | `CAPY_IMAGE_MAX_PIXELS`, `CAPY_TABULAR_TEXT_VERSION` | Image decoding is capped at 100M pixels. |
+| UAT part failures | `CAPY_UAT_FAIL_PARTS` | UAT only, on the UAT ingest queue workers; exactly `true` or unset, and a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`; `deploy/env-manifest.json` scopes it to `uat` and the renderer refuses it outside `uat`. With it on, a file whose name contains `[uat-fail-summary]` gets a descriptor failure and one containing `[uat-fail-pages]` a failure on every VLM page read, with no provider call (`pipeline/ingest/uat.py`). Off, the markers are plain file-name text. |
+| UAT scripted VLM page reads | `INGEST_UAT_SCRIPTED_VLM` | Gated like `CAPY_UAT_FAIL_PARTS`. With it on, each text-less page of a file whose name contains `[uat-scripted-vlm]` is read as `UAT scripted page <n>: <token>` (1-based page; the token is the file name without its extension and the three markers, whitespace collapsed), with no provider call but its `vlm_page` call settled at the `vlm_ingest_page` rate. `[uat-fail-pages]` wins when both apply. |
 | UAT scripted tool turns | `RETRIEVAL_UAT_SCRIPTED_TOOLS` | UAT only, exactly `true` or unset; a pipeline process refuses to start with it unless `SENTRY_ENVIRONMENT=uat`, and the renderer refuses it outside `uat`. With it on, a chat message starting `[uat-scripted-tools]` followed by JSON steps (`retrieval/scripted.py`) replaces the model's responses: each step's tool calls still run through `tools.run` with the role's operations, contract validation and the skills gate, and a string step is the answer. With it off the marker is plain text. The UAT chat journey uses it so tool coverage is deterministic and free. |
 
 Windows note: psycopg's async driver refuses the Proactor event loop.

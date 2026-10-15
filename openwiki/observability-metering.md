@@ -809,9 +809,11 @@ summary, standalone image caption and VLM page calls get three attempts inside t
 minutes; past that the call raises `ProviderBusy` so the job re-pends without spending an attempt
 (`jobs.provider_waits`, at most once, `not_before` from the provider's own
 `Retry-After` else 30 s; the synthesized client hint never feeds the
-job backoff), after which the file fails as `provider_busy`. Waiting at a capped
-model's gate spends the same budget. Within those attempts the summary and VLM
-page calls also retry a transient error (5xx, a connection reset) and an empty
+job backoff), after which the file fails as `provider_busy` (a busy summary
+instead leaves the descriptor a missing part; agentic-retrieval, "Parts").
+Waiting at a capped model's gate spends the same budget. Within those attempts
+the summary, standalone image caption and VLM page calls also retry a
+transient error (5xx, a connection reset) and an empty
 or cut-off answer (settled, so its tokens are billed), and end at once on a
 definitive client error (400, 401, 403, 404, 422; parts design Q7).
 Chat planning retries any pre-byte failure under that policy while leaving
