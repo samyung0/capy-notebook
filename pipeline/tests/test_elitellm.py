@@ -11,6 +11,8 @@ from pipeline.config import cfg
 from pipeline.elitellm.client import (
     ANTHROPIC_URL,
     DEEPINFRA_EMBED_URL,
+    OPENROUTER_CHAT_URL,
+    OPENROUTER_DEEPSEEK_MODEL,
     RELACE_CHAT_URL,
     RELACE_GLM_FLASH_MODEL,
     RELACE_PROVIDER,
@@ -238,6 +240,43 @@ async def test_zai_complete_uses_relace(
     assert transport_provider_slug(spec) == RELACE_PROVIDER
     assert transport_model_slug(spec) == "glm-5.3-flash"
     assert response.choices[0].message.content == "caption"
+
+
+@pytest.mark.asyncio
+async def test_openrouter_deepseek_is_held_on_relace(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    spec = _spec(
+        provider_slug="openrouter",
+        model_slug=OPENROUTER_DEEPSEEK_MODEL,
+        byok_enabled=False,
+        thinking_levels=("instant",),
+        slots=("ingest",),
+    )
+    seen: dict[str, object] = {}
+
+    async def post_json(url, headers, body):
+        seen.update(url=url, headers=headers, body=body)
+        return {
+            "choices": [{"message": {"role": "assistant", "content": "descriptor"}}],
+            "usage": {"prompt_tokens": 1, "completion_tokens": 1},
+        }
+
+    bind_request_llm(paid_by="platform")
+    monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or")
+    monkeypatch.setattr("pipeline.elitellm.client._post_json", post_json)
+
+    await elitellm_complete(
+        spec, [{"role": "user", "content": "describe"}], max_tokens=400, reasoning=False
+    )
+
+    assert seen["url"] == OPENROUTER_CHAT_URL
+    assert seen["headers"]["authorization"] == "Bearer sk-or"
+    assert seen["body"]["model"] == OPENROUTER_DEEPSEEK_MODEL
+    assert seen["body"]["provider"] == {"order": ["Relace"], "allow_fallbacks": False}
+    assert seen["body"]["reasoning"] == {"enabled": False}
+    assert seen["body"]["max_tokens"] == 400
+    assert transport_provider_slug(spec) == "openrouter"
 
 
 @pytest.mark.asyncio

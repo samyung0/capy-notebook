@@ -18,6 +18,10 @@
 -- a full gate is ~1,500 RPM, so Relace's RPM limit binds first and its 429s
 -- show under Ops Health "Busy models": that is the signal to ask Relace for a
 -- higher limit. The gate stays as a runaway bound.
+-- OpenRouter DeepSeek V4 Flash 0731 (held on Relace) serves only the ingest
+-- descriptor, so it has no interactive reserve. Measured 2026-10-15: no 429 at
+-- up to 96 calls in flight; 32 in flight held ~600 requests/min (p95 5.5 s),
+-- while 96 queued (p95 25 s), so the gate stops at 32.
 -- Interactive reserves: 80% Relace GLM / 60% DeepSeek / 40% embedding.
 -- The reranker is a separate DeepInfra model on the same account, with its own
 -- 200-request limit. Only interactive search calls it, so its reserve never
@@ -27,6 +31,7 @@ WITH capacities(provider, model, concurrency_total, interactive_reserve) AS (
   VALUES
     ('deepseek', 'deepseek-flash', 2500, 2200),
     ('relace', 'glm-5.3-flash', 100, 80),
+    ('openrouter', 'deepseek/deepseek-v4-flash-0731', 32, 0),
     ('deepinfra', 'Qwen/Qwen3-Embedding-4B', 200, 80),
     ('deepinfra', 'Qwen/Qwen3-Reranker-4B', 200, 80)
 )

@@ -1557,9 +1557,12 @@ exists; the local bundle is gone once the first ingest finished.
   use heading breadcrumbs but not a mutable logical file name.
 3. Replace that content's `rag_chunks` (delete-then-insert so a shorter
   re-ingest does not leave a stale tail).
-4. The file descriptor (~50 words, one cheap-model call); upsert
+4. The file descriptor (~50 words, one call on the ingest pin, DeepSeek V4
+  Flash 0731 through OpenRouter held on Relace); upsert
   `rag_content_summaries`. Like compaction's summary, the call asks for plain
-  text (one dense sentence of about 50 words, no JSON, no preamble) and the
+  text (one dense sentence of about 50 words, no JSON, no preamble, starting
+  with the subject rather than "This document…", in the source's language or
+  its main language when mixed) and the
   stripped reply is stored as written, with no parser. `max_tokens` 400
   (assuming thinking off, which the operator-set ingest pin is expected to
   have) is the only cut, so a reply cut off there keeps its text up to the
@@ -1574,10 +1577,15 @@ exists; the local bundle is gone once the first ingest finished.
   can only regenerate earlier). Its
   share of the document's estimated tokens adds to the stored `change_share`,
   and the published descriptor is kept while that sum stays under 2%
-  (`SUMMARY_REUSE_SHARE`). At 2% or more, or with no previous descriptor, the descriptor is regenerated from the complete
-  content and the share resets to 0. Documents larger than the pinned ingest
-  model's catalog context window are map-reduced in chunk groups (about 500
-  words of section overviews in total) rather than sampled. A provider failure here
+  (`SUMMARY_REUSE_SHARE`). At 2% or more, or with no previous descriptor, the descriptor is regenerated
+  and the share resets to 0. The call reads `descriptor_excerpt`: the whole
+  content up to `DESCRIPTOR_INPUT_TOKENS` (8,000 estimated tokens), else the
+  heading outline (halved until it fits 1,200), the opening chunks up to half
+  the budget, then the first ~130 tokens of evenly spaced later chunks. A
+  book therefore costs the same as a long chapter (about $0.15 per 1,000
+  files on 2026-10-15 list prices); the change share still measures the whole
+  document. The estimator counts Latin script with diacritics (Vietnamese)
+  at about 1.6× under, so those excerpts run a little over. A provider failure here
   retries the job rather than storing a blank: an empty descriptor would be marked ready, copied to future
   donors, and never refilled. A descriptor carries no prompt version: rewording
   the prompt or swapping the ingest model leaves stored descriptors in place.

@@ -16,15 +16,14 @@ import secrets
 import unicodedata
 from typing import Any
 
-from .. import elitellm, registry
+from .. import elitellm
 from ..jobs import RetryableError
 from ..prompts.ingest import (
-    partial_messages,
     summary_messages,
 )
 from ..registry import embedding_spec, ingest_spec
-from . import accounting, compact, models, store
-from .chunking import Chunk, estimate_tokens, tokenize_for_search
+from . import accounting, models, store
+from .chunking import Chunk, clip_to_tokens, estimate_tokens, tokenize_for_search
 from .lang import detect_lang
 
 log = logging.getLogger("capy.retrieval.indexing")
@@ -309,12 +308,12 @@ async def embed_copied_chunks(
 
 # ------------------------------------------------------------------ summaries
 
-_PROMPT_RESERVE_TOKENS = 2000
-
-
-# Words of section overviews a document too large for one call is reduced to,
-# split across its chunk groups, before the descriptor is written from them.
-_PARTIAL_WORDS = 500
+# A descriptor reads at most this many estimated tokens of the content (see
+# ``descriptor_excerpt``): the outline, about half the budget of opening
+# chunks, and openings of evenly spaced later chunks.
+DESCRIPTOR_INPUT_TOKENS = 8000
+_OUTLINE_TOKENS = 1200
+_OPENING_TOKENS = 150
 
 # The prompt asks for about ``DESCRIPTOR_WORDS`` as plain text; like
 # compaction's summary, the reply is stored as written and the call's token
@@ -430,39 +429,44 @@ def text_change_tokens(old: list[Chunk], new: list[Chunk]) -> int:
     return total
 
 
-def _input_budget() -> int:
-    spec = ingest_spec()
-    overhead = max(
-        compact.request_context(summary_messages(""), spec).total_tokens,
-        compact.request_context(partial_messages("", 1000), spec).total_tokens,
-    )
-    available = (
-        registry.input_budget(spec) - overhead - compact.PROTOCOL_SAFETY_MARGIN_TOKENS
-    )
-    if available <= 0:
-        raise RetryableError("The ingest model has no space for source content.")
-    return available
+def descriptor_excerpt(chunks: list[Chunk]) -> str:
+    """What the descriptor call reads: the whole content when it fits
+    ``DESCRIPTOR_INPUT_TOKENS``, else the heading outline, the opening chunks
+    and the start of evenly spaced later chunks (decision 2026-10-15)."""
+    full = "\n\n".join(chunk.indexed_text() for chunk in chunks)
+    if estimate_tokens(full) <= DESCRIPTOR_INPUT_TOKENS:
+        return full
+    outline = list(dict.fromkeys(c.section_path for c in chunks if c.section_path))
+    while estimate_tokens("\n".join(outline)) > _OUTLINE_TOKENS:
+        outline = outline[::2]
+    parts = ["\n".join(outline)] if outline else []
+    budget = DESCRIPTOR_INPUT_TOKENS - estimate_tokens("\n".join(outline))
+    used, start = 0, 0
+    while start < len(chunks):
+        cost = estimate_tokens(chunks[start].indexed_text())
+        if used + cost > budget // 2:
+            break
+        parts.append(chunks[start].indexed_text())
+        used += cost
+        start += 1
+    rest = chunks[start:]
+    count = max(1, (budget - used) // _OPENING_TOKENS)
+    step = max(1.0, len(rest) / count)
+    position = 0.0
+    while int(position) < len(rest):
+        chunk = rest[int(position)]
+        opening = clip_to_tokens(chunk.text, _OPENING_TOKENS - 20) + " …"
+        piece = f"{chunk.section_path}\n{opening}" if chunk.section_path else opening
+        cost = estimate_tokens(piece)
+        if used + cost > budget:
+            break
+        parts.append(piece)
+        used += cost
+        position += step
+    return "\n\n".join(parts)
 
 
-def _chunk_groups(chunks: list[Chunk], budget: int) -> list[list[Chunk]]:
-    groups: list[list[Chunk]] = []
-    current: list[Chunk] = []
-    used = 0
-    for chunk in chunks:
-        cost = estimate_tokens(chunk.indexed_text()) + 2
-        if current and used + cost > budget:
-            groups.append(current)
-            current = [chunk]
-            used = cost
-        else:
-            current.append(chunk)
-            used += cost
-    if current:
-        groups.append(current)
-    return groups
-
-
-async def _summarize_once(body: str) -> str:
+async def _summarize(body: str) -> str:
     raw = await models.complete_text(
         summary_messages(body),
         model=ingest_spec(),
@@ -474,48 +478,6 @@ async def _summarize_once(body: str) -> str:
     if not descriptor:
         raise RetryableError("The file summary was empty.")
     return descriptor
-
-
-async def _summarize_mapped(chunks: list[Chunk]) -> str:
-    """Summarize chunk groups, then describe the combination. Used when the
-    document exceeds the budget."""
-    groups = _chunk_groups(chunks, _input_budget())
-    partials: list[str] = []
-    per_group = max(80, _PARTIAL_WORDS // max(len(groups), 1))
-    for group in groups:
-        body = "\n\n".join(chunk.indexed_text() for chunk in group)
-        raw = await models.complete_text(
-            partial_messages(body, per_group),
-            model=ingest_spec(),
-            reasoning=False,
-            call_purpose="file_summary",
-        )
-        if not raw or not raw.strip():
-            raise RetryableError("A source section summary was empty.")
-        partials.append(raw.strip())
-    combined = "\n\n---\n\n".join(partials)
-    while estimate_tokens(combined) > _input_budget():
-        previous_size = estimate_tokens(combined)
-        smaller: list[str] = []
-        for group in _chunk_groups(
-            [Chunk(text=part) for part in partials], _input_budget()
-        ):
-            raw = await models.complete_text(
-                partial_messages("\n\n".join(chunk.text for chunk in group), per_group),
-                model=ingest_spec(),
-                reasoning=False,
-                call_purpose="file_summary",
-            )
-            if not raw or not raw.strip():
-                raise RetryableError("A source section summary was empty.")
-            smaller.append(raw.strip())
-        partials = smaller
-        combined = "\n\n---\n\n".join(partials)
-        if estimate_tokens(combined) >= previous_size:
-            raise RetryableError(
-                "Source summaries exceed the ingest model input limit."
-            )
-    return await _summarize_once(combined)
 
 
 async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
@@ -532,12 +494,8 @@ async def summarize_file(file_name: str, chunks: list[Chunk]) -> str:
     and no later pass ever refills it. Retrying the job (and failing it after
     the budget) is recoverable; a permanent blank is not.
     """
-    body = "\n\n".join(chunk.indexed_text() for chunk in chunks)
     try:
-        if estimate_tokens(body) <= _input_budget():
-            descriptor = await _summarize_once(body)
-        else:
-            descriptor = await _summarize_mapped(chunks)
+        descriptor = await _summarize(descriptor_excerpt(chunks))
     except (accounting.SettlementError, elitellm.ProviderBusy):
         # Settlement failures must not start another provider call; a busy
         # provider re-pends the job without spending its attempt.

@@ -8,7 +8,9 @@ not fail the request.
 GLM is proven under its `zai` catalog slug because the hop is a billing
 route, not a fan-out: Relace serves the model and charges us directly, so the
 split it reports (observed inclusive in the 2026-09-26 bench run) is the one
-the row's cached rate is priced against.
+the row's cached rate is priced against. The `openrouter` descriptor pin
+reports the same nested cached_tokens, observed inclusive on 2026-10-15
+(1,024 cached of 1,208 prompt tokens).
 """
 
 from __future__ import annotations
@@ -119,7 +121,7 @@ def extract_usage(block: Any, *, provider: str = "") -> NormalizedUsage:
         if cached and not anthropic_cached:
             out.anomaly = "unproven_cache_shape"
         return out
-    proven = slug in ("deepseek", "openai", "zai")
+    proven = slug in ("deepseek", "openai", "zai", "openrouter")
     if not proven:
         if cached:
             out.anomaly = "unproven_cache_shape"

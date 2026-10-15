@@ -589,7 +589,7 @@
     },
     "OPENROUTER_API_KEY": {
       "kind": "secret",
-      "targets": ["local"]
+      "targets": ["ingest-production", "ingest-queue", "local", "ops"]
     },
     "OPS_ACCESS_DISABLED": {
       "kind": "variable",

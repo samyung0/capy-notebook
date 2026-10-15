@@ -27,6 +27,12 @@ DEEPINFRA_INFERENCE_URL = "https://api.deepinfra.com/v1/inference/"
 RELACE_CHAT_URL = "https://models.relace.ai/v1/chat/completions"
 RELACE_PROVIDER = "relace"
 RELACE_GLM_FLASH_MODEL = "z-ai/glm-5.3-flash"
+# The ingest descriptor model: DeepSeek V4 Flash 0731 through OpenRouter, held
+# on Relace with fallbacks and reasoning off (decision 2026-10-15). OpenRouter
+# bills its listed Relace price, below Relace's own account rate.
+OPENROUTER_CHAT_URL = "https://openrouter.ai/api/v1/chat/completions"
+OPENROUTER_DEEPSEEK_MODEL = "deepseek/deepseek-v4-flash-0731"
+OPENROUTER_ROUTING = {"order": ["Relace"], "allow_fallbacks": False}
 
 DEEPINFRA_QWEN_EMBED_MODEL = "Qwen/Qwen3-Embedding-4B"
 DEEPINFRA_QWEN_RERANK_MODEL = "Qwen/Qwen3-Reranker-4B"
@@ -58,6 +64,13 @@ _ANTHROPIC_BUDGET = {
 
 def _is_routed_zai_glm(spec: ModelConfig) -> bool:
     return spec.provider_slug == "zai" and spec.model_slug == ZAI_GLM_FLASH_MODEL
+
+
+def _is_routed_openrouter_deepseek(spec: ModelConfig) -> bool:
+    return (
+        spec.provider_slug == "openrouter"
+        and spec.model_slug == OPENROUTER_DEEPSEEK_MODEL
+    )
 
 
 BUSY_STATUSES = frozenset({429, 503, 529})
@@ -469,6 +482,37 @@ def zai_request(
     return body
 
 
+def openrouter_request(
+    messages: list[dict[str, Any]],
+    *,
+    temperature: float | None,
+    tools: list[dict[str, Any]] | None,
+    response_format: dict[str, Any] | None,
+    max_tokens: int | None,
+    stream: bool,
+    tool_choice: Any | None,
+) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "model": OPENROUTER_DEEPSEEK_MODEL,
+        "messages": messages,
+        "provider": OPENROUTER_ROUTING,
+        "reasoning": {"enabled": False},
+    }
+    if temperature is not None:
+        body["temperature"] = temperature
+    if tools:
+        body["tools"] = tools
+        body["tool_choice"] = tool_choice if tool_choice is not None else "auto"
+    if response_format:
+        body["response_format"] = response_format
+    if max_tokens is not None:
+        body["max_tokens"] = max_tokens
+    if stream:
+        body["stream"] = True
+        body["stream_options"] = {"include_usage": True}
+    return body
+
+
 def _flat_tools(schemas: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for schema in schemas or []:
@@ -782,6 +826,17 @@ async def complete(
             tool_choice=tool_choice,
         )
         return _as_obj(await _post_json(RELACE_CHAT_URL, _bearer(key), body))
+    if _is_routed_openrouter_deepseek(spec):
+        body = openrouter_request(
+            messages,
+            temperature=temperature,
+            tools=tools,
+            response_format=response_format,
+            max_tokens=max_tokens,
+            stream=False,
+            tool_choice=tool_choice,
+        )
+        return _as_obj(await _post_json(OPENROUTER_CHAT_URL, _bearer(key), body))
     raise RegistryError(f"elitellm has no chat route for {spec.provider_slug}")
 
 
@@ -876,6 +931,19 @@ async def stream(
             tool_choice=tool_choice,
         )
         async for event in _stream_sse(RELACE_CHAT_URL, _bearer(key), body):
+            yield _as_obj(event)
+        return
+    if _is_routed_openrouter_deepseek(spec):
+        body = openrouter_request(
+            messages,
+            temperature=temperature,
+            tools=tools,
+            response_format=response_format,
+            max_tokens=max_tokens,
+            stream=True,
+            tool_choice=tool_choice,
+        )
+        async for event in _stream_sse(OPENROUTER_CHAT_URL, _bearer(key), body):
             yield _as_obj(event)
         return
     raise RegistryError(f"elitellm has no stream route for {spec.provider_slug}")

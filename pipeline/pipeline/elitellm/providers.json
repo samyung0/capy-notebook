@@ -26,6 +26,13 @@
       "allowedModelSlugs": ["glm-5.3-flash"],
       "thinking": ["low", "high", "max"]
     },
+    "openrouter": {
+      "name": "OpenRouter",
+      "byok": false,
+      "platformEnv": "OPENROUTER_API_KEY",
+      "allowedModelSlugs": ["deepseek/deepseek-v4-flash-0731"],
+      "thinking": ["instant"]
+    },
     "deepinfra": {
       "name": "DeepInfra",
       "byok": false,

@@ -1099,6 +1099,30 @@ async def test_the_descriptor_token_bound_is_its_only_cut(monkeypatch):
     assert bounds == [400]
 
 
+def test_the_descriptor_reads_an_outline_opening_and_spaced_excerpt():
+    import re
+
+    from pipeline.retrieval import indexing
+    from pipeline.retrieval.chunking import Chunk, estimate_tokens
+
+    short = [Chunk(text="Chlorophyll absorbs light.", section_path="Light")]
+    assert indexing.descriptor_excerpt(short) == short[0].indexed_text()
+
+    chapters = [
+        Chunk(
+            text=f"Chapter {i} opens here. " + "filler " * 400, section_path=f"Ch {i}"
+        )
+        for i in range(200)
+    ]
+    excerpt = indexing.descriptor_excerpt(chapters)
+
+    assert estimate_tokens(excerpt) <= indexing.DESCRIPTOR_INPUT_TOKENS
+    assert excerpt.startswith("Ch 0\nCh 1\n")  # the outline comes first
+    assert chapters[0].indexed_text() in excerpt  # the opening is whole
+    sampled = [int(n) for n in re.findall(r"Chapter (\d+) opens here", excerpt)]
+    assert max(sampled) >= 180  # the end is sampled too
+
+
 async def test_an_empty_descriptor_reply_fails_explicitly(monkeypatch):
     import pytest
 

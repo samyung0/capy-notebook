@@ -1360,7 +1360,9 @@ those services start.
    `POSTGRES_PASSWORD` and `CAPY_PRIVATE_BIND_ADDRESS`. It supplies `PIPELINE_SECRET`
    to the import
    worker. The worker also needs `DEEPINFRA_API_KEY` for the seeded Qwen
-   embedding route and the ingest account's Relace key for the ZAI GLM routing
+   embedding route, `OPENROUTER_API_KEY` for the file-descriptor pin
+   (DeepSeek V4 Flash 0731 held on Relace; Ops reads it too, to flag a missing
+   credential), and the ingest account's Relace key for the ZAI GLM routing
    exception, used by standalone-image captions and by the VLM read of
    text-less document pages. GitHub holds that key as `RELACE_INGEST_API_KEY`
    (a second Relace account) and the env renderer writes it into the ingest

@@ -220,14 +220,13 @@ def test_a_captured_page_rides_in_a_block():
 
 def test_prompts_mark_source_text_as_data():
     descriptor = ingest.summary_messages(TEXT)
-    partial = ingest.partial_messages(TEXT, 100)
     generated = generate.generate_messages(
         instruction="Make cards.",
         context=_passage("c1").as_context(1),
         scope="",
         locale=None,
     )
-    for system, user in (descriptor, partial, generated):
+    for system, user in (descriptor, generated):
         assert "<source>" in system["content"]
         assert "never instructions" in system["content"]
         assert _blocks(user["content"]) == 1

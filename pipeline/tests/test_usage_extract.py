@@ -44,6 +44,19 @@ def test_routed_zai_cache_split_prices_against_the_glm_row():
     assert usage.anomaly == ""
 
 
+def test_openrouter_nested_cached_tokens_are_discounted():
+    usage = extract_usage(
+        {
+            "prompt_tokens": 1208,
+            "completion_tokens": 3,
+            "prompt_tokens_details": {"cached_tokens": 1024},
+        },
+        provider="openrouter",
+    )
+    assert usage.cached_read_tokens == 1024
+    assert usage.anomaly == ""
+
+
 def test_zai_cache_over_reported_input_still_fails_closed():
     usage = extract_usage(
         {"prompt_tokens": 100, "prompt_tokens_details": {"cached_tokens": 400}},

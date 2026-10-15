@@ -437,6 +437,15 @@ named provider directly. Two exact routing exceptions are allowed:
   no fallback route: Relace replaced Tencent TokenHub on 2026-09-26, which had
   replaced DeepInfra (`human/agentic-retrieval.md`). Thinking cannot be
   disabled on this route; `low` is the floor and the catalog default.
+- `openrouter/deepseek/deepseek-v4-flash-0731` is the ingest descriptor pin.
+  EliteLLM posts it to OpenRouter (`https://openrouter.ai/api/v1/chat/completions`,
+  platform-only `OPENROUTER_API_KEY`) with `provider: {order: ["Relace"],
+  allow_fallbacks: false}` and `reasoning: {enabled: false}`, so a busy Relace
+  answers 429 rather than moving to another host. OpenRouter bills its listed
+  Relace price, below Relace's own account rate: response `usage.cost`,
+  the Logs page and the key's usage agreed on 2026-10-15. Accounting still
+  prices tokens from the catalog row. Its nested `cached_tokens` is inclusive
+  of `prompt_tokens` (1,024 of 1,208 observed).
 
 Neither exception opens a general router path. Other DeepInfra slugs
 and other ZAI slugs fail registry validation. A ZAI user key cannot
@@ -580,7 +589,9 @@ Per-model credit multipliers live on the config row as three rates: input,
 cached-read input, and output. One credit is $0.0005 of provider cost, so a
 rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
 whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
-80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, embedding 40, reranker 50.
+80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, OpenRouter DeepSeek V4 Flash
+0731 32 / 32 / 1280 (OpenRouter's Relace price, cached reads at the input
+price), embedding 40, reranker 50.
 While there is no production data these values are set directly in the UAT
 database, so a database built from migrations still seeds the older rates.
 There is no USD estimate on `model_configs` or `usage_events`.
@@ -1207,7 +1218,8 @@ share.
 Before enabling traffic, configure the environment's limits in Ops. The approved
 production values are GLM 200/120 and Qwen embedding 200/80; UAT uses its own account
 and limits. The opt-in `deploy/model-capacities.sql` fills only missing rows:
-DeepSeek Flash 2500/1500, Relace GLM 100/80, Qwen embedding 200/80
+DeepSeek Flash 2500/1500, Relace GLM 100/80, OpenRouter DeepSeek V4 Flash
+0731 32/0 (ingest-only, so no interactive reserve), Qwen embedding 200/80
 (total/interactive reserve). Existing settings, including GLM 200/120, remain.
 DeepSeek and DeepInfra totals follow their published account/model concurrency
 limits; the reserves are application policy. GLM's 100 concurrent calls with
