@@ -1743,7 +1743,7 @@ mode menu, and a muted notice says it is added without parsing; the parser
 refuses one that arrives anyway as `parse_unreadable`. A PDF whose
 text-less count is above 105% of `maxOcrPages` is refused; from 95% up to that
 it warns and uploads, since the count can be off by a few pages and the parser
-refuses the file at admission if it really is over. Office OCR estimates miss
+refuses the file if it really is over. Office OCR estimates miss
 slide-master text, so they warn from 95% and never block. The upload sends the
 page count, and the gateway refuses a fast-parse reservation above `maxPages`. Images and audio do not enter the
 browser page/OCR analysis queue: the ingest worker captions images (a cost

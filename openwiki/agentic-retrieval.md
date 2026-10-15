@@ -26,7 +26,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); an admission process that counts a PDF's pages, five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
+| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs and selective RapidOCR (`parser/odl/`); five parse children, then an OCR stage with one OCR process, depth 8 across both stages; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -837,16 +837,13 @@ can still be dropped at the handoff and sent again; this stays open until the
 rework. Before the OCR stage such documents timed out at about 320 scanned
 pages.
 
-Admission refuses a PDF with more than `CAPY_PARSE_MAX_PAGES` (1,400) pages
-with the terminal `parse_too_many_pages` before it takes a parse child. The API
-process opens no source with MuPDF: a spawned admission process
-(`oom_score_adj` 1000, a 1 GiB address-space limit) reads only the page tree,
-one file at a time, in milliseconds (a 610-page textbook in 9 ms, 150 ms with
-its cross-reference table rebuilt). A count that fails or takes over 10 s
-admits the PDF uncounted (a stuck count also replaces the process). The parse
-child counts every document's pages again before the Java run, since admission
-counts only bytes that start like a PDF and an Office source has pages only
-after LibreOffice. The
+Pages are counted once, in the parse child at the start of its parse (an
+Office source right after LibreOffice), before the Java run: a document with
+more than `CAPY_PARSE_MAX_PAGES` (1,400) pages fails as the terminal
+`parse_too_many_pages`, a PDF that cannot be counted (broken, no pages, an
+open password) as the terminal `parse_unreadable`, and a count that hangs runs
+into the parse deadline (`parse_hard_timeout`, quarantined). There is no count
+at admission, and the API process opens no source with MuPDF. The
 coordinator maps both page codes to an input limit (`scanned_page_limit`,
 `page_limit`) carrying the parser's reason (no quarantine, no retry): the file
 ends ready and unindexed, see Ingest limits below. The API serves the same two env
@@ -952,7 +949,11 @@ while the count rose is that document's `parse_oom` too; without a counted OOM
 kill it stays an ordinary failure. The window is the whole conversion (up to
 180 s), so a conversion that fails for another reason (a damaged file) while
 another process in the cgroup is OOM-killed is quarantined as `parse_oom` as
-well; such a file would fail its retry anyway. A SIGKILL without a counted OOM kill, or any
+well; such a file would fail its retry anyway. A conversion past
+`CAPY_OFFICE_CONVERT_TIMEOUT` (180 s) is final like the parse deadline: the
+document answers `parse_hard_timeout`, its fingerprint is quarantined and its
+parse child replaced, unless an OOM kill was counted meanwhile, which makes it
+`parse_oom`. A SIGKILL without a counted OOM kill, or any
 other child crash, is a `parser_runtime_failed` with one ordinary retry. An
 Office file whose bytes are not its suffix's container (ZIP for OOXML, OLE2 for
 the legacy formats) is refused before LibreOffice as the terminal

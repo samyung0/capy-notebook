@@ -2845,6 +2845,108 @@ async fn a_quiz_holding_a_block_this_version_cannot_read_loads_both_rooms_read_o
     }
 }
 
+/// Compaction never rebuilds a quiz holding a block this version cannot read
+/// (the rebuild would drop it), and it checks before taking the eviction
+/// lease, so a reader on another instance stays connected; it then skips the
+/// quiz, so a note behind it in the queue still compacts (one room per pass
+/// here). Fails if the check follows the lease, or the quiz keeps its place
+/// at the head of the queue.
+#[tokio::test]
+async fn compaction_skips_an_unreadable_quiz_without_evicting_its_readers() {
+    let Some(env) = env() else { return };
+    let reader_server = start(&env).await;
+    let owner = user(&env).await;
+    let quiz = quiz_material(&env, &owner, "private").await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE materials SET content = jsonb_set(content,
+               '{value,0,children,0,question,stem}', '[{\"type\":\"timeline\",\"events\":[]}]')
+             WHERE id = $1",
+            &[&quiz],
+        )
+        .await
+        .expect("content");
+    // Opening seeds each document's row; readers store nothing, so both
+    // projections stay current.
+    let (author, note) = note(&env, "base").await;
+    {
+        let note_room = format!("material:{note}:schema:1");
+        let mut seed = Client::open(reader_server.port).await;
+        seed.joined(&note_room, &token(&note_room, &author, "read"))
+            .await;
+        assert!(seed.settle(|c| c.block_text() == "base").await);
+    }
+    wait_unloaded(reader_server.port).await;
+    let quiz_room = format!("material:{quiz}:schema:1");
+    let mut reader = Client::open(reader_server.port).await;
+    reader
+        .joined(&quiz_room, &token(&quiz_room, &owner, "read"))
+        .await;
+    // Both idle and grown (1 MiB of log stands in for a long history), the
+    // quiz first in line.
+    for (material, at) in [(&quiz, "2000-01-01"), (&note, "2000-01-02")] {
+        client
+            .execute(
+                "UPDATE material_yjs_documents SET updated_at = $2::text::timestamptz, log_bytes = 1048576
+                 WHERE material_id = $1",
+                &[material, &at],
+            )
+            .await
+            .expect("backdate");
+    }
+    // Servers the earlier tests killed stay listed for 60 s, and the note's
+    // lease would wait on their acks; the live ones list themselves again.
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let _: () = redis::cmd("DEL")
+        .arg("capy:collaboration:instances")
+        .query_async(&mut connection)
+        .await
+        .expect("instances");
+    let _compactor = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_COMPACTION_INTERVAL_MS", "200"),
+            ("COLLABORATION_COMPACTION_IDLE_MS", "86400000"),
+            ("COLLABORATION_COMPACTION_MAX_ROOMS", "1"),
+        ],
+    )
+    .await;
+    let schema = |material: String| {
+        let client = &client;
+        async move {
+            client
+                .query_one(
+                    "SELECT room_schema FROM material_yjs_documents WHERE material_id = $1",
+                    &[&material],
+                )
+                .await
+                .expect("schema")
+                .get::<_, i32>(0)
+        }
+    };
+    let mut compacted = false;
+    for _ in 0..100 {
+        if schema(note.clone()).await == 2 {
+            compacted = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(compacted, "the note behind the quiz was never compacted");
+    assert_eq!(schema(quiz.clone()).await, 1);
+    assert_eq!(
+        active_rooms(reader_server.port).await,
+        1,
+        "the quiz's reader was evicted"
+    );
+}
+
 #[tokio::test]
 async fn two_editors_converge_across_a_quizs_content_and_keys() {
     let Some(env) = env() else { return };

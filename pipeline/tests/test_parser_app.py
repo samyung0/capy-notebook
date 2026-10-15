@@ -85,9 +85,6 @@ class FakeChild:
         result = await self._until_killed(self.handler(document))
         parser_app._write_worker_result(result_path, result)
 
-    async def page_count(self, pdf):
-        return await self._until_killed(self.handler(self, pdf))
-
     def terminate(self) -> None:
         self.terminations += 1
         if self.exitcode is None:
@@ -98,16 +95,11 @@ class FakeChild:
         pass
 
 
-async def _no_count(_child, _pdf):
-    raise AssertionError("no admission count expected")
-
-
-def _runtime(monkeypatch, handler, *, workers=1, depth=4, count=_no_count):
+def _runtime(monkeypatch, handler, *, workers=1, depth=4):
     monkeypatch.setattr(parser_app, "PARSE_WORKERS", workers)
     monkeypatch.setattr(parser_app, "QUEUE_DEPTH", depth)
     children = [FakeChild(handler) for _ in range(workers)]
-    counter = FakeChild(count)
-    runtime = parser_app.ParserRuntime(lambda index: children[index], lambda: counter)
+    runtime = parser_app.ParserRuntime(lambda index: children[index])
     return runtime, children
 
 
@@ -172,7 +164,7 @@ async def test_a_child_whose_answer_was_over_the_limit_is_replaced_before_the_ne
     it never does); the slot replaces that child for the next document instead
     of reading a closed pipe."""
     monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
-    runtime = parser_app.ParserRuntime(admission_process=lambda: FakeChild(_no_count))
+    runtime = parser_app.ParserRuntime()
     await runtime.start()
     slot = runtime._slots[0]
     first = slot.process._process
@@ -582,76 +574,36 @@ def _three_page_pdf() -> bytes:
         return document.tobytes()
 
 
-def test_admission_counts_pages_without_reading_page_content(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """Admission reads the page tree only; the text-less count comes from the
-    parse child at the handoff."""
-    import pymupdf
-
-    def no_page_content(*_args, **_kwargs):
-        raise AssertionError("admission read page content")
-
-    pdf = tmp_path / "source.pdf"
-    pdf.write_bytes(_three_page_pdf())
-    monkeypatch.setattr(pymupdf.Document, "load_page", no_page_content)
-    monkeypatch.setattr(pymupdf.Page, "get_text", no_page_content)
-
-    assert parser_app._count_pdf_pages(str(pdf)) == 3
+_three_page_pdf_bytes = _three_page_pdf()
 
 
 @pytest.mark.asyncio
-async def test_admission_counts_pdf_pages_outside_the_api_process(
+async def test_the_api_process_opens_no_pdf_with_mupdf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The API process opens no source with MuPDF: a spawned admission process
-    counts, and an Office source is counted after LibreOffice instead."""
+    """A PDF request reaches its parse child without the API process opening
+    it: there is no admission count, the child counts the pages."""
     import pymupdf
-
-    data = _three_page_pdf()
 
     def not_in_the_api(*_args, **_kwargs):
         raise AssertionError("MuPDF opened a source in the API process")
 
+    async def parsed(document):
+        assert document.data == _three_page_pdf_bytes
+        return _result(3)
+
     monkeypatch.setattr(pymupdf, "open", not_in_the_api)
     monkeypatch.setattr(pymupdf, "Document", not_in_the_api)
-    runtime, _ = _runtime(monkeypatch, None)
-    runtime._admission = parser_app._AdmissionProcess()
+    runtime, (child,) = _runtime(monkeypatch, parsed)
+    monkeypatch.setattr(parser_app, "runtime", runtime)
     await runtime.start()
     try:
-        assert await runtime.page_count(data) == 3
-        assert await runtime.page_count(b"PK\x03\x04 office zip") == 0
+        _parsed, measurements = await parser_app._run(
+            parser_app.Document(_three_page_pdf_bytes, "lecture.pdf")
+        )
     finally:
         await runtime.close()
-    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
-
-
-@pytest.mark.asyncio
-async def test_a_stuck_admission_count_admits_uncounted_and_replaces_the_process(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(parser_app, "ADMISSION_TIMEOUT_S", 0.05)
-    calls = 0
-
-    async def count(_child, _pdf):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            await asyncio.Event().wait()
-        return 3
-
-    runtime, _ = _runtime(monkeypatch, None, count=count)
-    counter = runtime._admission
-    await runtime.start()
-    try:
-        assert await runtime.page_count(b"%PDF-1.7 stuck") == 0
-        assert (counter.terminations, counter.starts) == (1, 1)
-        # The next count starts a fresh process; nothing is left in the pipe.
-        assert await runtime.page_count(b"%PDF-1.7 next") == 3
-        assert counter.starts == 2
-    finally:
-        await runtime.close()
-    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
+    assert measurements["_page_count"] == 3 and child.starts == 1
 
 
 _UNPICKLED: list[str] = []
@@ -668,7 +620,7 @@ class _CallsOnLoad:
 
 @pytest.mark.asyncio
 async def test_child_answers_are_read_as_data_never_unpickled(tmp_path: Path) -> None:
-    """A parse or admission child's answer and a parse result file are
+    """A parse child's answer and a parse result file are
     JSON and length-framed bytes; a pickle in either is refused unread."""
     child = parser_app._Child(_record_unpickled, name="test child")
     reader, writer = multiprocessing.Pipe(duplex=False)
@@ -704,6 +656,10 @@ async def test_child_answers_are_read_as_data_never_unpickled(tmp_path: Path) ->
         (
             parser_app.ParseTooManyScannedPages("501 pages have no text layer"),
             parser_app.ParseTooManyScannedPages,
+        ),
+        (
+            parser_app.OfficeConversionTimeout("conversion exceeded 180 seconds"),
+            parser_app.OfficeConversionTimeout,
         ),
         (parser_app.SourceUnreadable("no pages"), parser_app.SourceUnreadable),
         (ValueError("broken PDF"), RuntimeError),
@@ -758,22 +714,42 @@ def test_a_result_file_is_refused_when_truncated_or_oversized(
         parser_app._read_worker_result(path)
 
 
+@pytest.mark.parametrize(
+    ("oom_kills", "code"), [(0, "parse_hard_timeout"), (1, "parse_oom")]
+)
 @pytest.mark.asyncio
-async def test_a_count_that_fails_admits_uncounted_and_keeps_the_process(
-    monkeypatch: pytest.MonkeyPatch,
+async def test_a_conversion_past_its_timeout_is_final_like_the_parse_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, oom_kills: int, code: str
 ) -> None:
-    async def count(_child, _pdf):
-        raise RuntimeError("FzErrorFormat: no objects found")
+    """A LibreOffice conversion past its timeout is a hard timeout: the
+    fingerprint is quarantined and the child replaced. An OOM kill counted
+    meanwhile still makes it parse_oom."""
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    kills = 0
+    monkeypatch.setattr(parser_app, "_cgroup_event_value", lambda _name: kills)
 
-    runtime, _ = _runtime(monkeypatch, None, count=count)
-    counter = runtime._admission
+    async def handler(_document):
+        nonlocal kills
+        kills += oom_kills
+        raise parser_app.OfficeConversionTimeout(
+            "LibreOffice conversion exceeded 180 seconds"
+        )
+
+    runtime, (child,) = _runtime(monkeypatch, handler)
     await runtime.start()
     try:
-        assert await runtime.page_count(b"%PDF-1.7 broken") == 0
-        assert (counter.terminations, counter.starts) == (0, 1)
+        with pytest.raises(
+            (parser_app.ParseHardTimeout, parser_app.ParseOOM)
+        ) as raised:
+            await runtime.parse(parser_app.Document(b"PK", "deck.pptx", "deck-fp"))
     finally:
         await runtime.close()
-    assert not list(parser_app.WORK_DIR.glob("transfer-*"))
+
+    assert json.loads(parser_app._failure_response(raised.value).body)["code"] == code
+    marker = json.loads((tmp_path / "quarantine" / "deck-fp.json").read_text())
+    assert marker["reason"] == code and child.terminations == 1
+    if code == "parse_hard_timeout":
+        assert "LibreOffice conversion exceeded 180 seconds" in str(raised.value)
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="prctl is Linux")
@@ -817,26 +793,13 @@ def test_a_parse_result_file_round_trips_blocks_and_bytes(tmp_path: Path) -> Non
     assert parser_app._read_worker_result(path) == result
 
 
-@pytest.mark.asyncio
-async def test_page_cap_refuses_pdfs_at_admission_and_office_after_conversion(
+def test_the_page_cap_refuses_an_office_document_after_conversion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import pymupdf
     from odl import document as odl_document
 
     monkeypatch.setattr(parser_app, "MAX_PAGES", 2)
-
-    async def never_parsed(_document):
-        raise AssertionError("refused before a parse child")
-
-    runtime, _ = _runtime(monkeypatch, never_parsed)
-    await runtime.start()
-    try:
-        with pytest.raises(parser_app.ParseTooManyPages, match="at most 2 pages"):
-            await runtime.parse(parser_app.Document(b"", "long.pdf"), pages=3)
-        assert runtime.active_jobs == 0
-    finally:
-        await runtime.close()
 
     with pymupdf.open() as rendered:
         for _ in range(3):
@@ -854,13 +817,15 @@ async def test_page_cap_refuses_pdfs_at_admission_and_office_after_conversion(
 
 
 @pytest.mark.parametrize(
-    "prefix", [b"\x00", b"\xef\xbb\xbf", b"garbage line\n"], ids=["nul", "bom", "text"]
+    "prefix",
+    [b"", b"\x00", b"\xef\xbb\xbf", b"garbage line\n"],
+    ids=["plain", "nul", "bom", "text"],
 )
 def test_the_parse_child_checks_the_page_cap_of_every_document(
     monkeypatch: pytest.MonkeyPatch, prefix: bytes
 ) -> None:
-    """A PDF that admission does not count (its bytes do not start like a
-    PDF) is still refused over the cap, before the parse."""
+    """The parse child counts every PDF's pages, a leading NUL, BOM or line
+    of text included, and refuses one over the cap before the Java run."""
     import pymupdf
     from odl import refine
 
@@ -874,7 +839,6 @@ def test_the_parse_child_checks_the_page_cap_of_every_document(
         for _ in range(3):
             document.new_page()
         data = prefix + document.tobytes()
-    assert not data.lstrip().startswith(b"%PDF")
     with pytest.raises(parser_app.ParseTooManyPages, match="3 pages"):
         parser_app.run_document(parser_app.Document(data, "long.pdf"))
 

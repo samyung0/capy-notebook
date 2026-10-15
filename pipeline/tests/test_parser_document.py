@@ -259,7 +259,7 @@ def test_timeout_kills_the_whole_process_group(
     monkeypatch.setattr(document, "SOFFICE", str(launcher))
     monkeypatch.setattr(document, "OFFICE_CONVERT_TIMEOUT_S", 1)
 
-    with pytest.raises(subprocess.TimeoutExpired):
+    with pytest.raises(document.OfficeConversionTimeout, match="exceeded 1 seconds"):
         document.normalize_document(ZIP + b"office", "slow.docx", tmp_path)
 
     helper = int(helper_pid.read_text())
