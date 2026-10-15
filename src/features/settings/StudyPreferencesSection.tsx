@@ -4,7 +4,7 @@ import {
   useSetStudyProgressDefault,
 } from '@/api/hooks';
 import type { StudyPreferences } from '@/api/types';
-import { SettingRow, TabHeader } from '@/components/app/tabPanel';
+import { SectionTitle, SettingRow, TabHeader } from '@/components/app/tabPanel';
 import {
   Select,
   SelectContent,
@@ -158,10 +158,7 @@ export function StudyPreferencesSection() {
   );
   return (
     <>
-      <TabHeader
-        description={m.settings_study_hint()}
-        title={m.settings_tab_study()}
-      />
+      <TabHeader title={m.settings_tab_study()} />
       <div className="flex flex-col gap-6">
         <SettingRow
           hint={m.study_progress_default_hint()}
@@ -175,16 +172,10 @@ export function StudyPreferencesSection() {
           />
         </SettingRow>
         <div className="border-divider border-t" />
-        <TabHeader
-          description={m.study_pref_review_hint()}
-          title={m.study_pref_review_title()}
-        />
+        <SectionTitle title={m.study_pref_review_title()} />
         {REVIEW_ROWS.map(choiceRow)}
         <div className="border-divider border-t" />
-        <TabHeader
-          description={m.study_prefs_hint()}
-          title={m.study_prefs_title()}
-        />
+        <SectionTitle title={m.study_prefs_title()} />
         {ROWS.map(choiceRow)}
         {/* Last: the least used (Epo 2026-10-14). */}
         <SettingRow
@@ -221,10 +212,10 @@ function ChoiceRow({
         onValueChange={(value) => onChange(value as string)}
         value={current}
       >
-        <SelectTrigger aria-label={row.title()} className="w-56">
+        <SelectTrigger aria-label={row.title()} layout="row">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent>
+        <SelectContent layout="row">
           {row.choices.map((choice) => (
             <SelectItem key={choice.value} value={choice.value}>
               {choice.label()}

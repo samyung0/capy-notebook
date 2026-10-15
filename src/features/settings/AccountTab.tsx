@@ -94,10 +94,7 @@ function AccountForm({ user }: { user?: ClerkUser }) {
 
   return (
     <>
-      <TabHeader
-        description={m.settings_account_hint()}
-        title={m.settings_account()}
-      />
+      <TabHeader title={m.settings_account()} />
       <form className="flex flex-col gap-8" onSubmit={(e) => void save(e)}>
         {formError && (
           <p

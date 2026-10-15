@@ -24,7 +24,7 @@ export function TabHeader({
   badge,
 }: {
   title: string;
-  description: ReactNode;
+  description?: ReactNode;
   badge?: ReactNode;
 }) {
   return (
@@ -33,13 +33,30 @@ export function TabHeader({
         <h2 className="t-card-title">{title}</h2>
         {badge}
       </div>
-      <p className="text-fg-secondary">{description}</p>
+      {description && <p className="text-fg-secondary">{description}</p>}
+    </div>
+  );
+}
+
+/** Heading for a group of rows inside a tab's row column; the column's gap
+ * spaces it, so it carries no margin of its own. */
+export function SectionTitle({ title }: { title: string }) {
+  return <h3 className="t-card-title">{title}</h3>;
+}
+
+/** Groups irreversible SettingRows. The red border marks the group from sm;
+ * phones drop it to keep the row width. */
+export function DangerZone({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-4 sm:rounded-card sm:border sm:border-solid-error/40 sm:p-4">
+      {children}
     </div>
   );
 }
 
 /** Title and hint on the left, control on the right, as in the workspace
- * sharing dialog. Stacks on phones so wide controls keep their width. */
+ * sharing dialog, phones included. A control too wide to share the line
+ * (a full-width picker) wraps under the text. */
 export function SettingRow({
   title,
   hint,
@@ -50,8 +67,8 @@ export function SettingRow({
   children: ReactNode;
 }) {
   return (
-    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
-      <div className="flex min-w-0 flex-col gap-1">
+    <div className="flex flex-wrap items-center justify-between gap-3 sm:flex-nowrap sm:gap-6">
+      <div className="flex min-w-24 flex-1 basis-0 flex-col gap-1">
         <InputTitle>{title}</InputTitle>
         {hint && <p className="t-meta text-fg-muted">{hint}</p>}
       </div>

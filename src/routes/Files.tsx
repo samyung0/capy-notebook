@@ -98,7 +98,7 @@ export default function Files() {
     >
       <fieldset className="min-w-0" disabled={busy}>
         <Tabs
-          className="px-1 sm:px-6"
+          className="px-1 sm:px-3"
           onChange={(value) => {
             void navigate({
               replace: true,

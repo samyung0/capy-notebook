@@ -1231,11 +1231,10 @@ are left to the browser, as in Sheets. Zoom edits nothing, so View › Zoom runs
 while editing is paused; PNG saves the part on screen drawn at the same scale at
 every zoom.
 
-Below lg, while a DOCX, XLSX or PPTX file is open, the workspace's floating
-Files/Chat/Create/Settings bar folds into one button at the bottom right, above
-the sheet tabs and the slide pager, that morphs into a menu of the same items
-(`Menu`'s morph variant, as the Files panel's plus); other files keep the bar
-(`WorkspaceOpen`).
+Below lg, while a DOCX, XLSX or PPTX file is open, the workspace's chat stays
+a round button at the bottom right, above the sheet tabs and the slide pager,
+at every width; it opens the same one-line field as other files
+(`ChatDock`, `WorkspaceOpen`).
 
 The runtime is its own document, so `office-runtime.css` brings Capy's look
 itself. It imports Tailwind's preflight (in a lower layer) and Capy's theme
@@ -1451,8 +1450,9 @@ production the runtime is a separate origin inside Capy's page, so browsers
 keep that storage partitioned under Capy's site, and Safari may clear it after
 some days without a visit, after which the notes start hidden again.
 
-Below lg the workspace's floating tools button sits at the frame's bottom
-right, 8px above its bottom chrome. The runtime reports that chrome's height
+Below lg the workspace's chat button sits at the frame's bottom right, 8px
+above its bottom chrome; the open chat field sits at the same 16px gap from
+the viewer's bottom as on every other file, over that chrome. The runtime reports that chrome's height
 as `bottom-inset` (protocol v9) whenever it changes: the frame's height minus
 the bottom of the area the document scrolls in (`bottomInset.ts`: the XLSX
 grid, the PPTX slide stage, in both modes), watched with a ResizeObserver on
@@ -1750,7 +1750,7 @@ slide-master text, so they warn from 95% and never block. The upload sends the
 page count, and the gateway refuses a fast-parse reservation above `maxPages`. Images and audio do not enter the
 browser page analysis queue: the ingest worker captions images (a cost
 deliberately absent from the page-based estimate) and stores audio without indexing.
-The server-owned page rates (1.0 credit per page with a text layer,
+The server-owned page rates (0.4 credits per page with a text layer,
 `digitalParsePageCreditMicros`, and 1.0 credit per page the VLM reads,
 `vlmIngestPageCreditMicros`) are returned by `source-upload-policy`; the
 estimate charges each text-less page the VLM rate instead of the digital one.

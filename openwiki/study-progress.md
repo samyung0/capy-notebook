@@ -263,12 +263,15 @@ who cannot manage settings, get the dialog with only that row.
 
 With progress on, Files panel rows (`FileListItem`, `MaterialListItem`) show a
 check for `done`, a dashed circle for `started` and a muted title for
-`removed`, at the row end left of the hover ⋮. The row ⋮ gains Mark as read or
+`removed`, at the row end left of the hover ⋮ (at the right edge in the top
+Files drawer below lg, whose rows have no ⋮). The row ⋮ gains Mark as read or
 Mark as unread and Stop tracking or Start tracking; that menu is rendered only
 for roles that can edit, so viewers use the viewer header instead.
 `CenterContentHeader` has a Mark as read toggle right of the view/edit toggle
 on every workspace file and material (an open book with a check, the marks'
 green closed book once read) and the same items in its ⋮ menu, for every role.
+On phones the workspace header hides the toggle and keeps the ⋮ items. Below
+lg the workspace has no Study tab; Study gets its own page later.
 
 ## Review session
 

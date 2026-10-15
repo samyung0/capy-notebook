@@ -89,7 +89,7 @@ network and no pin.
 | `chat.py` | `chat` | Agent system prompt (one prompt for every turn, library rules appended only with Library on) and full message list; the checkpoint compaction prompt |
 | `generate.py` | `generate` | Material grounding rules, plus the flashcards / mindmap / diagram / quiz instructions |
 | `editor.py` | `editor` | Plate menu prompts: generate, edit, comment, table cells |
-| `ingest.py` | `ingest` | File descriptor, and `SUMMARY_VERSION` |
+| `ingest.py` | `ingest` | File descriptor |
 | `captioning.py` | `captioning` | Whole-image captions for standalone image uploads |
 | `retrieval.py` | `retrieval` | The Qwen3 instruct prefix for embedding queries |
 | `preferences.py` | `chat`, `generate` | The learner's study preferences as build instructions, rendered into the turn context; `/generate`'s count when the request omits it |
@@ -118,7 +118,7 @@ The retrieval index is application schema, not pipeline-owned:
 | `rag_contents` | Canonical parsed content per workspace, unique by parsed-text hash |
 | `rag_file_contents` | Logical file → canonical content aliases |
 | `rag_chunks` | Canonical passages: text, heading path, pages/regions, `tsvector`, `halfvec(2560)` |
-| `rag_content_summaries` | The ~50-word `descriptor`, its running `change_share` and `summary_version`; shared by files with identical content |
+| `rag_content_summaries` | The ~50-word `descriptor` and its running `change_share`; shared by files with identical content |
 
 All of these FK-cascade from `workspaces` / `files` / `chapters`. Deleting a
 logical file removes its alias; a trigger removes canonical content only after
@@ -304,8 +304,8 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v15` plus the release SHA, and the bundle schema
-`capy-parser-bundle-v6`.
+`odl-2.5.7-refined-vlm-v15` plus the release SHA (the donor key uses the first
+part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
 `bench/parsers/reports/2026-09-24-parser-v7-gate.md`) adds:
@@ -786,7 +786,7 @@ establish accuracy on unseen layouts. Each successful attempt reports total
 pages, text-less pages (still under the key `_ocr_page_count`), `_parse_lane`
 (`vlm` when the document has a text-less page, else `digital`), elapsed phases
 (the renders as `vlm_render`) and the parser implementation string. The parse
-charges 1.0 credit per page with a text layer (`digital_parse_page`;
+charges 0.4 credits per page with a text layer (`digital_parse_page`;
 `db.credits_for_parse_pages` leaves the text-less pages out); a text-less page
 costs 1.0 credit (`vlm_ingest_page`) only when the ingest worker's VLM reads it
 ([VLM page read](#vlm-page-read)). The receipt still carries
@@ -1515,9 +1515,14 @@ and summary. One GET per ingest is the price. It then looks for a
 **ready** `rag_contents` row with the same
 `(source_sha256, pipeline_identity)`. `pipeline_identity` is
 `plan-v{version}:{route}:{parser implementation}:{CHUNKER_VERSION}` — anything
-that feeds chunk text. The parser implementation string changed with
-OpenDataLoader, so every MinerU-era artifact stopped being a donor and existing
-sources re-parse on their next refresh.
+that feeds chunk text. The parser implementation is the generation string
+alone (`PARSER_IMPLEMENTATIONS`, matching `parser/app.py`), without the release
+SHA, so a donor stays reusable across deploys; the release SHA stays in the
+artifact version the pipeline and parser check against each other. Any change
+to parse output, including the ingest worker's VLM page read
+(`VLM_PAGE_PROMPT`), bumps that string, as any change to packing bumps
+`CHUNKER_VERSION`; output that changes without a bump is served to later
+uploads of the same bytes.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
 its vectors), plus its descriptor, into a new per-workspace
@@ -1530,12 +1535,13 @@ lookup. Caption associations and derivative work retain their existing ownership
 and publication checks.
 
 `pipeline_identity` covers only what feeds chunk *text*, so it is not an
-invalidation lever for model prose: changing the ingest or captioning default leaves
-existing summaries and standalone image captions in place, and a later upload of
-already-seen bytes is served the older model's output. Neither slot is user
-selectable (the job snapshot exists to pin billing and to survive a hot reload
-mid-queue), so nobody's choice is being overridden — but an operator who swaps
-either model and wants the prose regenerated has only the blunt lever below.
+invalidation lever for model prose: changing the ingest or captioning default,
+or their prompts, leaves existing descriptors and standalone image captions in
+place, and a later upload of already-seen bytes is served the older output.
+This is deliberate: regenerating costs credits (a book's descriptor rereads the
+whole book) and the old prose stays usable. Neither slot is user selectable
+(the job snapshot exists to pin billing and to survive a hot reload mid-queue),
+so nobody's choice is being overridden.
 
 A parser or chunker version bump invalidates every donor and re-parses.
 Delete-and-re-upload with identical parse params re-parses unless a donor row
@@ -1558,8 +1564,7 @@ exists; the local bundle is gone once the first ingest finished.
   (assuming thinking off, which the operator-set ingest pin is expected to
   have) is the only cut, so a reply cut off there keeps its text up to the
   cut. An empty reply fails explicitly, and the job's ordinary failure path
-  retries it. A reindex of a file whose ready descriptor has the
-  current `summary_version` first measures the net text change between the
+  retries it. A reindex of a file with a ready descriptor first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and
   retained headings dropped, lines aligned, then words inside each changed
   range; spans that differ only in spacing or glyph forms count nothing; a
@@ -1569,15 +1574,13 @@ exists; the local bundle is gone once the first ingest finished.
   can only regenerate earlier). Its
   share of the document's estimated tokens adds to the stored `change_share`,
   and the published descriptor is kept while that sum stays under 2%
-  (`SUMMARY_REUSE_SHARE`). At 2% or more, on a `summary_version` change, or with
-  no previous descriptor, the descriptor is regenerated from the complete
+  (`SUMMARY_REUSE_SHARE`). At 2% or more, or with no previous descriptor, the descriptor is regenerated from the complete
   content and the share resets to 0. Documents larger than the pinned ingest
   model's catalog context window are map-reduced in chunk groups (about 500
   words of section overviews in total) rather than sampled. A provider failure here
   retries the job rather than storing a blank: an empty descriptor would be marked ready, copied to future
-  donors, and never refilled. `summary_version` is **not** part of
-  `pipeline_identity` — a prompt change must not invalidate a parse; a refresh
-  regenerates a descriptor whose version differs.
+  donors, and never refilled. A descriptor carries no prompt version: rewording
+  the prompt or swapping the ingest model leaves stored descriptors in place.
   A final receipt settlement rejection is not an ordinary provider failure: the
   summary helper propagates `SettlementError` unchanged so the ingest worker
   closes the attempt without retrying a provider response that was already
@@ -2393,6 +2396,38 @@ scope. The tool resolves and persists source provenance, cannot widen the chat
 scope, rejects the whole call if any id is invalid or unavailable, and rejects
 a valid scope with no indexed content.
 
+### Chat below lg
+
+Below 1260px the workspace has no panels and `ChatPanel` takes `dock`
+(`WorkspaceOpen`): it lays an overlay on the viewer holding the chat page and,
+while that is closed, `ChatDock` (`chat/ChatDock.tsx`). Phones, and Office
+files at every width, get a 52px round button at the bottom right that morphs
+into a one-line field (history clock on the left, send on the right) and
+focuses it in the same tap, so the keyboard opens; wider screens show the
+field itself. The morph copies the Files panel's floating plus
+(`motion-chat-dock` in `motion.css`): one surface anchored bottom right
+springs from the button to the row's width and the field's measured height,
+the icon blurs and slides out and the field slides in. The open field keeps
+the button's 16px gap from the viewer's bottom on every file, Office
+included (the button alone rises above Office bottom chrome), and uses 16px
+text so phones do not zoom into it. It grows to four lines, then scrolls; a
+blur folds an empty field back to the button and keeps a filled one. With a
+draft, scrolling any scroller down folds the field into the button (blurring
+it, so the keyboard closes) and scrolling up brings it back; positions are
+tracked from mount, and scrolls within 600ms of a focus or a keyboard resize
+are ignored as the browser making room. The folded button shows a dot for
+the kept draft. Send blurs the field (the keyboard closes) and grows it into the chat
+page with a view transition (`view-transition-name: chat-dock`): the
+conversation's title, history in the view/edit spot, ⋮ with New chat, Add
+file and Workspace settings, and the usual thread and composer.
+Back, a citation or a created file returns to the file and leaves a chip at
+the bottom left (back arrow, title, ✕) that reopens the conversation.
+
+The page fits above the keyboard because index.html asks Chrome on Android for
+`interactive-widget=resizes-content` and `useKeyboardHeight` keeps the app
+shell at the visual viewport's height (`--app-height`) for iOS Safari, which
+pans the page under the keyboard instead.
+
 ### Build flow and the Library switch
 
 Curate mode, a thread flag fixed at creation (`conversations.curate`), was
@@ -2725,9 +2760,9 @@ build, and the knowledge library is one more source while the switch is on.
   show no credits; they link to the item's own page, which does. The space above it is the
   document's own bottom padding plus the footer's, so a block inserted at the
   end does not move it (Epo 2026-10-11); below it there is room above the
-  page's end (`pb-12`), and room under the workspace's floating tools bar
-  where that shows (`FloatingBarContext`, provided by `WorkspaceOpen` while the
-  bar is on screen; `pb-28`). In the editor the stats footer, when shown,
+  page's end (`pb-12`), and room under the workspace's chat dock below lg
+  (`FloatingBarContext`, provided by `WorkspaceOpen` in one column except over
+  Office files; `pb-28`). In the editor the stats footer, when shown,
   follows it and keeps that room instead.
   **Embedded quizzes and flashcard sets** keep their own provenance (Epo
   2026-10-10): every fence of an agent write (above), the bank page's copy

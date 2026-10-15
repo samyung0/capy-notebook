@@ -525,3 +525,61 @@
   transition: grid-template-rows var(--motion-duration-medium)
     var(--motion-ease-smooth-out) var(--motion-duration-very-slow);
 }
+
+/* The workspace chat dock below lg morphs like the Files panel's floating
+   plus (motion-menu-morph): one surface anchored bottom right springs from
+   the 52px button to the row's width and the field's height, the chat icon
+   blurs and slides out, and the field slides in. */
+@utility motion-chat-dock-row {
+  transition: bottom 250ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+@utility motion-chat-dock-height {
+  height: 52px;
+  transition: height 250ms cubic-bezier(0.22, 1, 0.36, 1);
+
+  &[data-open="true"] {
+    height: var(--dock-height);
+    transition-timing-function: cubic-bezier(0.34, 1.25, 0.64, 1);
+    transition-duration: 350ms;
+  }
+}
+@utility motion-chat-dock {
+  width: 52px;
+  border-radius: 26px;
+  transition:
+    width 250ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 250ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 150ms ease-out;
+
+  &[data-open="true"] {
+    width: 100%;
+    border-radius: 18px;
+    transition-timing-function: cubic-bezier(0.34, 1.25, 0.64, 1);
+    transition-duration: 350ms;
+  }
+
+  & > [data-chat-dock-trigger],
+  & > [data-chat-dock-field] {
+    transition:
+      opacity 200ms cubic-bezier(0.22, 1, 0.36, 1),
+      transform 350ms cubic-bezier(0.22, 1, 0.36, 1),
+      filter 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  &[data-open="true"] > [data-chat-dock-trigger] {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateX(-40px);
+  }
+
+  &[data-open="false"] > [data-chat-dock-field] {
+    opacity: 0;
+    filter: blur(2px);
+    transform: translateX(40px) scale(0.97);
+  }
+}
+/* The dock growing into the chat page, and back. */
+::view-transition-group(chat-dock) {
+  animation-duration: var(--motion-duration-medium);
+  animation-timing-function: var(--motion-ease-smooth-out);
+}

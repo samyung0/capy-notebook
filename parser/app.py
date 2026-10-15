@@ -59,6 +59,7 @@ from odl.document import (
 from odl.java import JavaKilled, JavaTimeout
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
+# Bump when parse output changes: it names the output in the ingest donor key.
 PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v15"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(

@@ -1695,8 +1695,8 @@ rows, keyed to the frame's width (office-files.md).
 8px horizontal padding, zero default button gap, and 28px dividers with 6px
 margins; below `sm` 36px height, 4px padding and 20px dividers with 4px
 margins. The file header drops from 56px to 48px below `sm` with tighter gaps,
-and the workspace bottom bar (`PageFloatingBar`) uses 44px buttons with 18px
-icons there. Plate keeps its sticky placement and scrolls enabled groups horizontally with
+and the question bank's bottom bar (`PageFloatingBar`) uses 44px buttons with
+18px icons there. Plate keeps its sticky placement and scrolls enabled groups horizontally with
 the shared tabs scroll fade, while settings stay pinned and group preferences
 still control visibility. PDF keeps its centered annotation tools, page count,
 zoom controls and horizontal scrolling on narrow screens.

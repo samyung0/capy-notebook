@@ -23,6 +23,7 @@ export function MaterialListItem({
   readOnly = false,
   canClone = false,
   study,
+  menu = true,
 }: {
   data: MaterialRef;
   active: boolean;
@@ -40,6 +41,8 @@ export function MaterialListItem({
   canClone?: boolean;
   /** The reader's own progress on this material, while progress is on. */
   study?: StudyRow;
+  /** The hover ⋮; touch lists (the top Files drawer) leave it out. */
+  menu?: boolean;
 }) {
   return (
     <div
@@ -70,10 +73,10 @@ export function MaterialListItem({
         >
           {matRef.title}
         </span>
-        <StudyMark className="mr-6" state={study?.state} />
+        <StudyMark className={cn(menu && 'mr-6')} state={study?.state} />
         {generating && <Spinner className="size-4 shrink-0" />}
       </Link>
-      {(!readOnly || canClone) && !generating && (
+      {menu && (!readOnly || canClone) && !generating && (
         <ContentActions
           canClone={canClone}
           chapters={chapters}

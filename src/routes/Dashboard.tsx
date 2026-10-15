@@ -22,11 +22,12 @@ const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
 const DASHBOARD_WORKSPACE_LIMIT = 12;
 
 /** One row of recent workspaces scrolling sideways, inside the content
- * width; the scroll fade marks the hidden cards. */
+ * width; the scroll fade marks the hidden cards. Only the right edge fades,
+ * so the card at the left edge stays at full strength. */
 const SLIDER_CLASS =
-  'scroll-fade-x flex snap-x snap-mandatory gap-4 overflow-x-auto pt-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
+  'scroll-fade-x flex [--scroll-fade-start:0px]! gap-4 overflow-x-auto pt-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden';
 // Phones show part of the next card so the row reads as scrollable.
-const SLIDE_CLASS = 'w-[85%] shrink-0 snap-start sm:w-75';
+const SLIDE_CLASS = 'w-[85%] shrink-0 sm:w-75';
 
 function WorkspacesSection() {
   const { data, error, fetchStatus, isLoading, refetch } = useWorkspaces(
@@ -103,7 +104,7 @@ function WorkspacesSection() {
             </div>
           ))}
           {hasMore && (
-            <div className="flex shrink-0 snap-start items-center justify-center p-5">
+            <div className="flex shrink-0 items-center justify-center p-5">
               <Button asChild size="xs" variant="ghost-link">
                 <Link preload="intent" to="/workspaces">
                   <span className="flex items-center gap-2">

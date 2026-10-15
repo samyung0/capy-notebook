@@ -577,8 +577,13 @@ or preference that cannot be loaded fails the request (`model_unavailable`) or
 the job. There is no Flash fallback.
 
 Per-model credit multipliers live on the config row as three rates: input,
-cached-read input, and output. The 1x reference is DeepSeek Flash (250 / 25 /
-1000). There is no USD estimate on `model_configs` or `usage_events`.
+cached-read input, and output. One credit is $0.0005 of provider cost, so a
+rate is the provider's list USD per 1M tokens × 2,000 micros, rounded up to
+whole micros, DeepSeek at its peak-hour price (decision 2026-10-15): GLM-5.3-Flash
+80 / 30 / 1000, DeepSeek Flash 600 / 12 / 2400, embedding 40, reranker 50.
+While there is no production data these values are set directly in the UAT
+database, so a database built from migrations still seeds the older rates.
+There is no USD estimate on `model_configs` or `usage_events`.
 `RatesFromConfig` and `credits_for_tokens` compute
 `(input-cached)*input + cached*cache + output*output`. A 0 stays 0. Missing or
 unproven cache details charge all reported input at the input rate and do not
@@ -614,7 +619,8 @@ Shape mirrors `backend-storage-quota.md` on purpose: hot-path ledger, counter
 row for the gate to lock, reconcile pass for drift.
 
 Monthly credit limits come from the immutable `plan_limits` startup snapshot
-(1,000 free / 20,000 Pro), shared with the other upgradeable product limits.
+(1,000 free / 10,000 Pro; the Pro value is set directly in UAT, the migration
+seed still says 20,000), shared with the other upgradeable product limits.
 The Go gateway and Python ingest worker do not query that table while admitting
 or claiming work. A stale monthly counter is rolled over inside the same row
 lock used by reads, reservations, and direct usage recording. Once the latest
@@ -949,12 +955,14 @@ reservation or ledger write. PDF page count is exact but the text-less count
 remains an estimate; OOXML counts can also be estimated. Only the parser
 receipt and the VLM reads create `usage_events` and settle the actual charge.
 
-Both page rates are 1.0 credit (1,000,000 micros): version 2 of
-`digital_parse_page` (`0008_parse_page_rates.sql`) and version 1 of
-`vlm_ingest_page` (`0084_vlm_ingest_page.sql`, which deactivated
-`ocr_parse_page`, the rate of the parser's former RapidOCR pages). Earlier
-versions and `figure_caption_call` are inactive (decisions 2026-09-12 and
-2026-10-15, `human/observability-metering.md`). Operators can create a new
+`digital_parse_page` is 0.4 credits (version 3, set directly in UAT on
+2026-10-15; migrations seed version 2 at 1.0 from `0008_parse_page_rates.sql`)
+and `vlm_ingest_page` is 1.0 credit (version 1, `0084_vlm_ingest_page.sql`,
+which deactivated `ocr_parse_page`, the rate of the parser's former RapidOCR
+pages). The scanned rate sits above the read's ~0.6-credit token cost on
+purpose, to deter large scans on the 20-call VLM gate. Earlier versions and
+`figure_caption_call` are inactive (decisions 2026-09-12 and 2026-10-15,
+`human/observability-metering.md`). Operators can create a new
 active version without deploying. Enqueue snapshots the applicable versions and
 microcredit amounts into the job, so an edit never reprices work already
 waiting in the queue; the parse event's metadata carries both snapshots

@@ -53,9 +53,11 @@ ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 
 ROUTE_FAST = "fast"
 
-# Must match parser/app.py. The implementation generation and exact release
-# SHA form one identity, so rebuilt parser output cannot masquerade as an older
-# artifact even when the source is unchanged.
+# Must match parser/app.py. The implementation generation alone names parse
+# output in the donor key (pipeline_identity), so bump it whenever the parser or
+# the ingest worker's VLM page read (prompts/captioning.py VLM_PAGE_PROMPT)
+# changes output. With the release SHA it forms the artifact version, so a
+# parser from another release is refused.
 PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v15"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
@@ -126,12 +128,15 @@ def _record_measurement(payload: object) -> None:
     )
 
 
-def parser_version(route: str) -> str:
+def parser_implementation(route: str) -> str:
     try:
-        implementation = PARSER_IMPLEMENTATIONS[route]
+        return PARSER_IMPLEMENTATIONS[route]
     except KeyError:
         raise ParserClientError(f"unknown parse route {route!r}") from None
-    return f"{implementation}+{cfg.release_sha}"
+
+
+def parser_version(route: str) -> str:
+    return f"{parser_implementation(route)}+{cfg.release_sha}"
 
 
 def _route(descriptor: Mapping[str, Any]) -> str:

@@ -42,6 +42,11 @@ const selectTriggerVariants = cva(
       variant: 'border',
     },
     variants: {
+      // At the end of a SettingRow: the sharing tab's 144px on phones, long
+      // values ellipsized (the list shows them whole); 224px from sm.
+      layout: {
+        row: 'w-36 shrink-0 sm:w-56',
+      },
       size: {
         // Same heights as Button md and Input md.
         md: 'h-(--select-h) px-3.25 py-0 [--select-h:--spacing(10)] sm:[--select-h:--spacing(11)]',
@@ -59,6 +64,7 @@ const selectTriggerVariants = cva(
 
 function SelectTrigger({
   className,
+  layout,
   size = 'md',
   variant = 'border',
   loading = false,
@@ -72,7 +78,10 @@ function SelectTrigger({
   }) {
   return (
     <SelectPrimitive.Trigger
-      className={cn(selectTriggerVariants({ size, variant }), className)}
+      className={cn(
+        selectTriggerVariants({ layout, size, variant }),
+        className
+      )}
       data-loading={loading || undefined}
       data-size={size}
       data-slot="select-trigger"
@@ -100,11 +109,16 @@ function SelectContent({
   position = 'popper',
   align = 'center',
   variant,
+  layout,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content> & {
   /** The editor toolbar popover look with compact rows. Pair with
    * SelectItem size="menu". */
   variant?: 'menu';
+  /** Pairs with SelectTrigger layout="row" and the other 40px phone
+   * triggers: on phones the list takes the toolbar menu's proportions (4px
+   * inset, 28px rows, 14px text) so it doesn't dwarf the trigger. */
+  layout?: 'row';
 }) {
   return (
     <SelectPrimitive.Portal>
@@ -115,6 +129,8 @@ function SelectContent({
           position === 'popper' &&
             'data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=bottom]:translate-y-1 data-[side=top]:-translate-y-1',
           variant === 'menu' && 'min-w-44 rounded-lg px-1 py-1.5',
+          layout === 'row' &&
+            'max-sm:p-1 max-sm:[&_[data-slot=select-group]]:p-0 max-sm:[&_[data-slot=select-item][data-size=md]]:h-7 max-sm:[&_[data-slot=select-item][data-size=md]]:rounded-lg max-sm:[&_[data-slot=select-item][data-size=md]]:py-0 max-sm:[&_[data-slot=select-item][data-size=md]]:pr-8 max-sm:[&_[data-slot=select-item][data-size=md]]:pl-2 max-sm:[&_[data-slot=select-item][data-size=md]]:text-sm',
           className
         )}
         data-align-trigger={position === 'item-aligned'}

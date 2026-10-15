@@ -45,7 +45,7 @@ export const buttonVariants = cva(BASE_BUTTON_STYLE, {
       ghost: 'border-none',
       'ghost-hover': 'border-none text-fg hover:bg-surface-hover-bg/80',
       'ghost-link': 'border-none text-link hover:text-link-hover',
-      'ghost-muted': 'border-none text-fg-muted hover:text-fg/80',
+      'ghost-muted': 'border-none text-fg-muted hover:text-fg',
       gray: 'border border-transparent bg-page text-fg hover:bg-page-hover',
       outline:
         'border border-line bg-surface text-fg hover:bg-surface-hover-bg/80',

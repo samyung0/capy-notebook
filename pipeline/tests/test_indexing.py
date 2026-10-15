@@ -17,7 +17,6 @@ import pytest
 
 from pipeline import registry
 from pipeline.config import cfg
-from pipeline.prompts.ingest import SUMMARY_VERSION
 from pipeline.retrieval import indexing, store
 from pipeline.retrieval.chunking import chunk_markdown
 
@@ -138,7 +137,7 @@ async def test_the_summary_lands_under_the_chunk_fingerprint_and_marks_content_r
 
     assert _rows(
         workspace,
-        "SELECT fingerprint, descriptor, change_share, summary_version "
+        "SELECT fingerprint, descriptor, change_share "
         "FROM rag_content_summaries WHERE content_id = %s",
         (content_id,),
     ) == [
@@ -146,7 +145,6 @@ async def test_the_summary_lands_under_the_chunk_fingerprint_and_marks_content_r
             indexing.content_hash(chunks),
             "Photosynthesis in two stages.",
             0.0,
-            SUMMARY_VERSION,
         )
     ]
     # Both stages receive complete semantic text, including changed headings.

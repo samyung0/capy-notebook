@@ -1,0 +1,256 @@
+import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
+import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
+import { Textarea } from '@/components/ui/TextArea';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
+import { useMediaQuery } from '@/lib/useMediaQuery';
+
+/** The chat dock and the chat page share this name, so a view transition
+ * grows one into the other. */
+export const CHAT_DOCK_TRANSITION = '[view-transition-name:chat-dock]';
+
+/** Runs a state change as a view transition where the browser has them. */
+export function withViewTransition(update: () => void) {
+  if (
+    !document.startViewTransition ||
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  ) {
+    update();
+    return;
+  }
+  document.startViewTransition(() => flushSync(update));
+}
+
+const BUTTON = 52;
+// Scrolls this soon after a focus or a keyboard resize are the browser
+// making room, not the reader.
+const SETTLE_MS = 600;
+
+/**
+ * Chat on the file page below lg. Phones, and Office files at any width,
+ * show a round button that morphs into a one-line field (the Files panel
+ * plus's morph); wider screens show the field itself. Focusing the field
+ * leaves the page as it is; sending is the caller's (it opens the chat page).
+ */
+export function ChatDock({
+  text,
+  onTextChange,
+  onSend,
+  sendDisabled,
+  overLimit,
+  office,
+  back,
+  onOpenHistory,
+}: {
+  text: string;
+  onTextChange: (text: string) => void;
+  onSend: () => void;
+  sendDisabled: boolean;
+  overLimit: boolean;
+  /** Office files keep their bottom chrome clear: the button floats above it. */
+  office: boolean;
+  /** After leaving a conversation: returns to it, or closes. */
+  back?: { title: string; onOpen: () => void; onClose: () => void };
+  /** Opens the chat page with its history. */
+  onOpenHistory: () => void;
+}) {
+  const sm = useMediaQuery('(min-width: 640px)');
+  const fieldOnly = sm && !office;
+  const [expanded, setExpanded] = useState(false);
+  // A filled field scrolled out of the way; scrolling back up returns it.
+  const [away, setAway] = useState(false);
+  const open = fieldOnly || (expanded && !away);
+  const draft = text.trim().length > 0;
+  const fieldRef = useRef<HTMLTextAreaElement>(null);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const settledAt = useRef(0);
+  const [size, setSize] = useState({ height: BUTTON, width: BUTTON });
+
+  // The field lays out at the row's full width even while the surface is a
+  // button, so its height is known before it opens (as Menu's morph).
+  const fieldBox = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const row = rowRef.current;
+    const field = fieldBox.current;
+    if (!(row && field)) return;
+    const measure = () =>
+      setSize({ height: field.offsetHeight, width: row.offsetWidth });
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(row);
+    observer.observe(field);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+    const settle = () => {
+      settledAt.current = performance.now() + SETTLE_MS;
+    };
+    viewport.addEventListener('resize', settle);
+    return () => viewport.removeEventListener('resize', settle);
+  }, []);
+
+  // With a draft, scrolling the page down folds the field into the button and
+  // scrolling up brings it back, focused or not. Positions are tracked from
+  // mount, so the first scroll after typing already has a direction.
+  const folds = !fieldOnly && expanded && draft;
+  const foldsRef = useRef(folds);
+  foldsRef.current = folds;
+  useEffect(() => {
+    const last = new WeakMap<Element, number>();
+    const onScroll = (event: Event) => {
+      const scroller = event.target;
+      if (!(scroller instanceof Element) || rowRef.current?.contains(scroller))
+        return;
+      const top = scroller.scrollTop;
+      const previous = last.get(scroller) ?? top;
+      last.set(scroller, top);
+      if (!foldsRef.current || performance.now() < settledAt.current) return;
+      if (top - previous > 4) {
+        fieldRef.current?.blur();
+        setAway(true);
+      } else if (previous - top > 4) setAway(false);
+    };
+    document.addEventListener('scroll', onScroll, {
+      capture: true,
+      passive: true,
+    });
+    return () =>
+      document.removeEventListener('scroll', onScroll, { capture: true });
+  }, []);
+
+  function expand() {
+    // Synchronous, so the focus below still counts as the tap's own and the
+    // phone opens its keyboard.
+    flushSync(() => {
+      setExpanded(true);
+      setAway(false);
+    });
+    fieldRef.current?.focus();
+  }
+
+  return (
+    <div
+      className="motion-chat-dock-row pointer-events-none absolute inset-x-4 bottom-4 data-[office=true]:bottom-[calc(var(--office-inset)+8px)]"
+      // The open field keeps the button's gap from the screen's edge on every
+      // file; only the button rises above an Office file's bottom chrome.
+      data-office={office && !open}
+      data-workspace-chat-dock
+    >
+      <div
+        className={cn(
+          'motion-chat-dock-height relative',
+          fieldOnly && 'mx-auto max-w-xl'
+        )}
+        data-open={open}
+        ref={rowRef}
+        style={
+          {
+            '--dock-height': `${size.height}px`,
+            '--dock-width': `${size.width}px`,
+          } as CSSProperties
+        }
+      >
+        {back && (
+          <div
+            className={cn(
+              'pointer-events-auto absolute left-0 flex h-9 items-center rounded-button bg-overlay pl-1 shadow-pop ring-1 ring-overlay-line',
+              open
+                ? 'bottom-[calc(100%+8px)] max-w-full'
+                : 'bottom-2 max-w-[calc(100%-60px)]'
+            )}
+          >
+            <button
+              className="flex min-w-0 items-center gap-2 px-2 font-semibold text-sm text-tint-accent-1-fg"
+              onClick={back.onOpen}
+              type="button"
+            >
+              <Icon className="shrink-0" name="navigationBack" size={16} />
+              <span className="truncate">{back.title}</span>
+            </button>
+            <ToolbarButton label={m.action_close()} onClick={back.onClose}>
+              <Icon name="x" />
+            </ToolbarButton>
+          </div>
+        )}
+        <div
+          className={cn(
+            'motion-chat-dock pointer-events-auto absolute right-0 bottom-0 h-full overflow-hidden bg-overlay shadow-pop ring-1 ring-overlay-line focus-within:ring-action-accent',
+            CHAT_DOCK_TRANSITION
+          )}
+          data-open={open}
+          // Focus anywhere in the field (text, history, send) keeps it open,
+          // so Tab reaches its buttons.
+          onBlur={(event) => {
+            if (event.currentTarget.contains(event.relatedTarget)) return;
+            if (!(fieldOnly || draft)) setExpanded(false);
+          }}
+          onFocus={() => {
+            settledAt.current = performance.now() + SETTLE_MS;
+          }}
+        >
+          {!fieldOnly && (
+            <button
+              aria-label={m.workspace_tab_chat()}
+              className="absolute right-0 bottom-0 grid size-13 place-items-center text-solid-accent-1"
+              data-chat-dock-trigger
+              data-workspace-chat-button
+              inert={open}
+              onClick={expand}
+              type="button"
+            >
+              <Icon name="message" size={22} />
+              {draft && (
+                <span className="absolute top-1.5 right-1.5 size-2.5 rounded-full bg-solid-accent-1 ring-2 ring-overlay" />
+              )}
+            </button>
+          )}
+          <div
+            className="absolute right-0 bottom-0 flex w-(--dock-width) items-end gap-1 p-1.5"
+            data-chat-dock-field
+            inert={!open}
+            ref={fieldBox}
+          >
+            <IconButton
+              className="p-2.5 text-fg-muted"
+              icon="clock"
+              label={m.chat_history()}
+              onClick={onOpenHistory}
+              onMouseDown={(event) => event.preventDefault()}
+              size="sm"
+              variant="ghost-hover"
+            />
+            {/* 16px text: phones zoom the page into smaller fields. */}
+            <Textarea
+              aria-invalid={overLimit || undefined}
+              aria-label={m.chat_placeholder()}
+              className="max-h-[calc(4lh+--spacing(4))] min-h-0 flex-1 resize-none rounded-none border-0 bg-transparent px-0 py-2 text-base/[22px] text-fg focus:border-0"
+              onChange={(event) => onTextChange(event.target.value)}
+              placeholder={m.chat_placeholder()}
+              ref={fieldRef}
+              rows={1}
+              value={text}
+            />
+            <IconButton
+              className="p-2.5"
+              disabled={sendDisabled}
+              icon="send"
+              label={m.chat_send()}
+              onClick={onSend}
+              // Keeps the field focused through the tap, so its blur cannot
+              // fold the dock before the send lands.
+              onMouseDown={(event) => event.preventDefault()}
+              size="sm"
+              variant="accent"
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

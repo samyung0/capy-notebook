@@ -207,10 +207,10 @@
   background: var(--pptx-pressed);
 }
 
-/* Below lg Capy's floating tools button (WorkspaceOpen, right-4) sits over
-   the frame's bottom right, so the Notes button keeps that column clear. */
+/* Below lg Capy's 52px chat button (ChatDock, right-4) sits over the
+   frame's bottom right, so the Notes button keeps that column clear. */
 :root[data-narrow] {
-  --pptx-notes-toggle-right: 64px;
+  --pptx-notes-toggle-right: 72px;
 }
 
 /* pptx-react's notesPanel, read-only. */

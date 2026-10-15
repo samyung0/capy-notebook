@@ -16,7 +16,9 @@ import { SimpleDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { CharCount } from '@/components/ui/Input';
+import { Menu, type MenuItem } from '@/components/ui/Menu';
 import { Textarea } from '@/components/ui/TextArea';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
   Tooltip,
   TooltipContent,
@@ -26,6 +28,11 @@ import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { userColorPairDark } from '@/lib/userColor';
+import {
+  CHAT_DOCK_TRANSITION,
+  ChatDock,
+  withViewTransition,
+} from './chat/ChatDock';
 import { ChatTrace, type UndoHandlers } from './chat/ChatTrace';
 import { LangAnswer } from './chat/LangAnswer';
 import { QuestionBlock } from './chat/QuestionBlock';
@@ -139,13 +146,22 @@ function AssistantBubble({
         </div>
       )}
       {msg.modelDisplayName || msg.modelSlug ? (
-        <p className="mt-3 text-fg-muted text-xs">
+        <p className="mt-6 text-fg-muted">
           {msg.modelDisplayName || msg.modelSlug}
         </p>
       ) : null}
       <Citations msg={msg} onOpen={onOpenCitation} />
     </div>
   );
+}
+
+/** Below lg chat has no panel: a dock on the file page and a chat page over
+ * the viewer, which the dock grows into on send. */
+export interface ChatDockOptions {
+  /** Workspace actions after New chat in the chat page's ⋮. */
+  menuItems: MenuItem[];
+  /** An Office file is open: the dock stays a button above its bottom chrome. */
+  office: boolean;
 }
 
 export function ChatPanel({
@@ -156,11 +172,13 @@ export function ChatPanel({
   onOpenCitation,
   onOpenResource,
   renderTabRow,
+  dock,
 }: {
   workspaceId: string;
   color?: UserColor;
   /** Draws the panel's tab row with this chat's own actions (history, new chat). */
-  renderTabRow: (actions: TabAction[]) => ReactNode;
+  renderTabRow?: (actions: TabAction[]) => ReactNode;
+  dock?: ChatDockOptions;
   /** Owner-only: shows the process-changes button under the pending notice. */
   canReprocess?: boolean;
   /** What the learner has open in the center pane, sent with each turn. */
@@ -184,8 +202,29 @@ export function ChatPanel({
   } = useChatStream(workspaceId);
   const { data: me } = useMe({ errorBoundary: false });
   const mode: ChatSteps = me?.chatSteps ?? 'normal';
+  // Dock only: the chat page is open, or a chip leads back to it after a
+  // citation or a created file took the learner to the file.
+  const [pageOpen, setPageOpen] = useState(false);
+  const [backShown, setBackShown] = useState(false);
+  function toFile() {
+    if (!dock) return;
+    setPageOpen(false);
+    setBackShown(true);
+  }
+  const openCitation =
+    onOpenCitation &&
+    ((citation: Citation) => {
+      toFile();
+      onOpenCitation(citation);
+    });
+  const openCreated =
+    onOpenResource &&
+    ((ref: ResourceRef) => {
+      toFile();
+      onOpenResource(ref);
+    });
   const handlers: UndoHandlers = {
-    onOpenResource,
+    onOpenResource: openCreated,
     onUndoApplied: applyUndo,
     onUndoRefused: refuseUndo,
   };
@@ -254,29 +293,39 @@ export function ChatPanel({
     startNew();
   }
 
-  return (
-    <div
-      className="flex h-full flex-col"
-      style={
-        {
-          '--temp-btn-bg': lightPair.bg,
-          '--temp-btn-fg': lightPair.fg,
-        } as React.CSSProperties
-      }
-    >
-      {renderTabRow([
-        {
-          icon: 'clock',
-          label: m.chat_history(),
-          onClick: () => setHistoryOpen(true),
-        },
-        {
-          disabled: !conversationId,
-          icon: 'newChat',
-          label: m.chat_new(),
-          onClick: openNew,
-        },
-      ])}
+  // The dock sends, then grows into the chat page; the keyboard closes so the
+  // answer has the page.
+  function sendFromDock() {
+    if (!text.trim() || streaming || overLimit) return;
+    (document.activeElement as HTMLElement | null)?.blur();
+    withViewTransition(() => {
+      submit();
+      setPageOpen(true);
+      setBackShown(false);
+    });
+  }
+
+  const colorVars = {
+    '--temp-btn-bg': lightPair.bg,
+    '--temp-btn-fg': lightPair.fg,
+  } as React.CSSProperties;
+  const historyAction: TabAction = {
+    icon: 'clock',
+    label: m.chat_history(),
+    onClick: () => setHistoryOpen(true),
+  };
+  const newAction: TabAction = {
+    disabled: !conversationId,
+    icon: 'newChat',
+    label: m.chat_new(),
+    onClick: openNew,
+  };
+  const title =
+    conversations?.find((c) => c.id === conversationId)?.title ||
+    m.chat_untitled();
+
+  const thread = (
+    <>
       <SimpleDialog
         onClose={() => setHistoryOpen(false)}
         open={historyOpen}
@@ -377,7 +426,7 @@ export function ChatPanel({
               }
               mode={mode}
               msg={msg}
-              onOpenCitation={onOpenCitation}
+              onOpenCitation={openCitation}
               streaming={streaming}
             />
           )
@@ -405,7 +454,8 @@ export function ChatPanel({
               aria-invalid={overLimit || undefined}
               aria-label={m.chat_placeholder()}
               className={cn(
-                'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0'
+                // 16px on phones, which zoom the page into smaller fields.
+                'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0 max-sm:text-base'
               )}
               onChange={(e) => setText(e.target.value)}
               placeholder={m.chat_placeholder()}
@@ -471,6 +521,96 @@ export function ChatPanel({
           {library ? m.chat_grounded_library() : m.chat_grounded()}
         </p>
       </div>
+    </>
+  );
+
+  if (!dock)
+    return (
+      <div className="flex h-full flex-col" style={colorVars}>
+        {renderTabRow?.([historyAction, newAction])}
+        {thread}
+      </div>
+    );
+  // Over the viewer: the chat page when open, else the dock on the file.
+  return (
+    <div
+      className="pointer-events-none absolute inset-0 z-20"
+      style={colorVars}
+    >
+      <div
+        className={cn(
+          'pointer-events-auto absolute inset-0 flex flex-col overflow-hidden rounded-card-xl bg-surface shadow-card',
+          CHAT_DOCK_TRANSITION
+        )}
+        data-workspace-chat-page
+        hidden={!pageOpen}
+      >
+        <div className="flex h-12 shrink-0 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:pr-2 sm:pl-4">
+          <ToolbarButton
+            label={m.action_back()}
+            onClick={() =>
+              withViewTransition(() => {
+                setPageOpen(false);
+                setBackShown(messages.length > 0);
+              })
+            }
+          >
+            <Icon name="navigationBack" />
+          </ToolbarButton>
+          <Icon
+            className="size-4 shrink-0 -translate-y-px text-solid-accent-1 md:size-5"
+            name="message"
+          />
+          <h2 className="t-body min-w-0 flex-1 truncate font-semibold">
+            {title}
+          </h2>
+          <ToolbarButton
+            label={historyAction.label}
+            onClick={historyAction.onClick}
+          >
+            <Icon name="clock" />
+          </ToolbarButton>
+          <Menu
+            items={[newAction, ...dock.menuItems]}
+            trigger={
+              <ToolbarButton label={m.a11y_open_menu()}>
+                <Icon name="moreVertical" />
+              </ToolbarButton>
+            }
+          />
+        </div>
+        {thread}
+      </div>
+      {!pageOpen && (
+        <ChatDock
+          back={
+            backShown
+              ? {
+                  onClose: () => setBackShown(false),
+                  onOpen: () =>
+                    withViewTransition(() => {
+                      setPageOpen(true);
+                      setBackShown(false);
+                    }),
+                  title,
+                }
+              : undefined
+          }
+          office={dock.office}
+          onOpenHistory={() => {
+            withViewTransition(() => {
+              setPageOpen(true);
+              setBackShown(false);
+            });
+            setHistoryOpen(true);
+          }}
+          onSend={sendFromDock}
+          onTextChange={setText}
+          overLimit={overLimit}
+          sendDisabled={!text.trim() || streaming || overLimit}
+          text={text}
+        />
+      )}
     </div>
   );
 }

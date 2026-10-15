@@ -1121,7 +1121,7 @@ def _pipeline_identity(
     route = _parse_route(processing_plan.parser_route)
     return (
         f"plan-v{processing_plan.version}:{route}:"
-        f"{parser_client.parser_version(route)}:{CHUNKER_VERSION}"
+        f"{parser_client.parser_implementation(route)}:{CHUNKER_VERSION}"
     )
 
 

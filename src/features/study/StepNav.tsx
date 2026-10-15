@@ -18,13 +18,13 @@ export function StepNav({
   onPrevious: () => void;
 }) {
   return (
-    <div className={cn('flex justify-end gap-2', className)}>
+    <div className={cn('flex justify-end', className)}>
       <Button
         disabled={!canPrevious}
         iconLeft="navigationBack"
         onClick={onPrevious}
         size="sm"
-        variant="outline"
+        variant="ghost-hover"
       >
         {m.action_previous()}
       </Button>
@@ -33,7 +33,7 @@ export function StepNav({
         iconRight="navigationForward"
         onClick={onNext}
         size="sm"
-        variant="outline"
+        variant="ghost-hover"
       >
         {m.action_next()}
       </Button>

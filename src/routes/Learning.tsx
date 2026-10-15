@@ -249,7 +249,7 @@ export default function Learning() {
   return (
     <PanelWithInvertedRadius header={<PageHeader title={m.nav_learning()} />}>
       <Tabs
-        className="px-1 sm:px-6"
+        className="px-1 sm:px-3"
         onChange={(next) =>
           navigate({
             replace: true,

@@ -24,6 +24,7 @@ Include all readable text. Transcribe every title, label, legend, annotation, ta
 
 # The developer's wording (2026-10-15), measured in
 # bench/parsers/reports/2026-10-15-glm-ocr.md. It rides as the system message.
+# A change to it bumps parser_client.PARSER_IMPLEMENTATIONS (the donor key).
 VLM_PAGE_PROMPT = (
     "Caption this page and extract all the visible text, formulas, tables and "
     "images. Keep text identical. Do not add any information not visible on the "

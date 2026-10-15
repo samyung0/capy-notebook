@@ -62,7 +62,7 @@ const isChapterMap = (value: unknown): value is Record<string, boolean> =>
 const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
 
 /** The chapter tree with its files and materials. Lives in the right panel's
- * Files tab, as its own column when pinned, or in the drawer on small screens;
+ * Files tab, as its own column when pinned, or in the top drawer below lg;
  * `renderTabRow` draws whichever header that placement needs. */
 export function FilesPanel({
   workspaceId,
@@ -75,6 +75,9 @@ export function FilesPanel({
   onRenameChapter,
   renderTabRow,
   header,
+  footer,
+  className,
+  rowMenus = true,
   onAddSource,
   onAddChapter,
 }: {
@@ -90,6 +93,11 @@ export function FilesPanel({
   renderTabRow: (actions: TabAction[]) => ReactNode;
   /** The tree's first row, scrolling with it, e.g. the workspace switcher. */
   header?: ReactNode;
+  /** Pinned under the tree, e.g. the top drawer's Workspace settings row. */
+  footer?: ReactNode;
+  className?: string;
+  /** Rows' hover ⋮; the touch drawer leaves them out. */
+  rowMenus?: boolean;
   onAddSource?: (mode: AddSourceMode) => void;
   onAddChapter?: () => void;
 }) {
@@ -327,6 +335,7 @@ export function FilesPanel({
         color="purple"
         data={mt}
         key={`${mt.type}:${mt.id}`}
+        menu={rowMenus}
         onDeleted={() => {
           if (openItem?.kind === 'material' && openItem.id === mt.id) {
             onOpenItem(null);
@@ -384,6 +393,7 @@ export function FilesPanel({
             chapters={chapters}
             color="purple"
             file={item.data}
+            menu={rowMenus}
             onDeleted={onFileDeleted}
             onOpen={openLink}
             readOnly={readOnly}
@@ -420,6 +430,7 @@ export function FilesPanel({
     <div
       className={cn(
         'group/file-tree relative flex h-full min-h-0 flex-col',
+        className,
         dragging && '[&_[data-slot=hover-actions]]:hidden',
         dropTarget === 'unfiled-files' &&
           'outline-2 outline-solid-accent-1 -outline-offset-2'
@@ -594,6 +605,7 @@ export function FilesPanel({
           </div>
         )}
       </div>
+      {footer}
       {!readOnly && onAddSource && (
         <div
           className="absolute right-4 bottom-4 z-10 flex"

@@ -404,9 +404,9 @@ test('Office viewer keeps its iframe when the workspace layout changes', async (
   const opened = sessions;
 
   // One column below lg, two columns at lg: both switch the surrounding layout.
-  // Below lg an open Office file folds the workspace tools into one button.
+  // Below lg an open Office file keeps chat to its round button.
   for (const [width, role, tools] of [
-    [900, 'button', m.workspace_tools()],
+    [900, 'button', m.workspace_tab_chat()],
     [1280, 'tab', m.workspace_tab_files()],
   ] as const) {
     await page.setViewportSize({ height: 800, width });
@@ -1091,14 +1091,10 @@ test.describe('DOCX on a phone', () => {
 
     await page.goto('/workspaces/ws_bio');
     await page
-      .getByRole('toolbar', { name: m.workspace_tools() })
       .getByRole('button', { exact: true, name: m.workspace_tab_chat() })
       .click({ timeout: 60_000 });
-    await page
-      .getByRole('dialog')
-      .getByRole('button', { name: 'More actions' })
-      .click();
-    await page.getByRole('menuitem', { name: m.chat_history() }).click();
+    // The MSW User scenarios panel floats over the chat field's history button.
+    await page.getByRole('button', { name: m.chat_history() }).press('Enter');
     await page.getByRole('button', { name: 'OpenUI: Office citation' }).click();
     await page.getByTitle(m.chat_source_number({ n: 1 })).click();
     const frame = page.frameLocator('iframe[src*="office-runtime"]');
@@ -2030,9 +2026,9 @@ test('PPTX speaker notes start hidden, and one remembered toggle serves view and
   await showNotes.click();
   await expect(viewNotes).toBeVisible();
 
-  // Below lg the floating tools button sits above the open notes box.
+  // Below lg the chat button sits above the open notes box.
   await page.setViewportSize({ height: 800, width: 390 });
-  const tools = page.getByRole('button', { name: m.workspace_tools() });
+  const tools = page.locator('[data-workspace-chat-button]');
   await expect(tools).toBeVisible();
   await expect(async () => {
     const toolsBox = await tools.boundingBox();
@@ -2321,12 +2317,12 @@ test('DOCX Format › Table fits, centres and pins a table, a drag keeps the fit
   ).toHaveAttribute('aria-disabled', 'true');
 });
 
-test('below lg the tools button sits 8px above the sheet tabs, the slide strip and the notes box', async ({
+test('below lg the chat button sits 8px above the sheet tabs, the slide strip and the notes box', async ({
   page,
 }) => {
   test.setTimeout(180_000);
   await page.setViewportSize({ height: 780, width: 360 });
-  const tools = page.locator('[data-workspace-tools-menu]');
+  const tools = page.locator('[data-workspace-chat-button]');
   const frame = page.frameLocator('iframe[src*="office-runtime"]');
   // From the button's bottom edge to the top of the chrome in the frame
   // (boxes are in page pixels, frame contents included).
@@ -2376,7 +2372,10 @@ test('below lg the tools button sits 8px above the sheet tabs, the slide strip a
   expect((await tools.boundingBox())?.y ?? 0).toBeLessThan(closed - 40);
   await frame.getByTestId('pptx-notes-toggle').click();
   await expect(frame.getByTestId('pptx-notes-textarea')).toHaveCount(0);
-  await expect.poll(async () => (await tools.boundingBox())?.y).toBe(closed);
+  // The dock eases its bottom, which can settle a subpixel off.
+  await expect
+    .poll(async () => (await tools.boundingBox())?.y ?? 0)
+    .toBeCloseTo(closed, 0);
 });
 
 test('Office toolbars take the note toolbar scale: 36px rows and 30px buttons in a phone-width frame, 40px and 32px from 640px', async ({

@@ -760,16 +760,15 @@ async def copy_content_from_donor(
             """
             INSERT INTO rag_content_summaries
                 (content_id, workspace_id, fingerprint, descriptor, change_share,
-                 summary_version, updated_at)
+                 updated_at)
             SELECT %s, %s, s.fingerprint, s.descriptor, s.change_share,
-                   s.summary_version, s.updated_at
+                   s.updated_at
             FROM rag_content_summaries s
             WHERE s.content_id = %s
             ON CONFLICT (content_id) DO UPDATE SET
                 fingerprint = EXCLUDED.fingerprint,
                 descriptor = EXCLUDED.descriptor,
                 change_share = EXCLUDED.change_share,
-                summary_version = EXCLUDED.summary_version,
                 updated_at = EXCLUDED.updated_at
             """,
             (dest_content_id, dest_workspace_id, donor_id),
@@ -924,7 +923,6 @@ async def upsert_content_summary(
     fingerprint: str,
     descriptor: str,
     change_share: float,
-    summary_version: int,
 ) -> None:
     db = await pool()
     async with db.connection() as conn:
@@ -932,14 +930,13 @@ async def upsert_content_summary(
             """
             INSERT INTO rag_content_summaries
                 (content_id, workspace_id, fingerprint, descriptor, change_share,
-                 summary_version, updated_at)
-            VALUES (%s, %s, %s, %s, %s, %s, now())
+                 updated_at)
+            VALUES (%s, %s, %s, %s, %s, now())
             ON CONFLICT (content_id) DO UPDATE SET
                 workspace_id    = EXCLUDED.workspace_id,
                 fingerprint     = EXCLUDED.fingerprint,
                 descriptor      = EXCLUDED.descriptor,
                 change_share    = EXCLUDED.change_share,
-                summary_version = EXCLUDED.summary_version,
                 updated_at      = now()
             """,
             (
@@ -948,7 +945,6 @@ async def upsert_content_summary(
                 fingerprint,
                 descriptor,
                 change_share,
-                summary_version,
             ),
         )
 
@@ -962,7 +958,7 @@ async def published_summary(
     async with db.connection() as conn:
         cur = await conn.execute(
             """
-            SELECT cs.content_id, cs.descriptor, cs.change_share, cs.summary_version
+            SELECT cs.content_id, cs.descriptor, cs.change_share
             FROM rag_file_contents fc
             JOIN rag_contents rc ON rc.id = fc.content_id AND rc.status = 'ready'
             JOIN rag_content_summaries cs ON cs.content_id = rc.id

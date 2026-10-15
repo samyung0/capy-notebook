@@ -1,13 +1,14 @@
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useState } from 'react';
-import {
-  useMe,
-  useNotificationPrefs,
-  useSetNotificationPrefs,
-} from '@/api/hooks';
+import { useNotificationPrefs, useSetNotificationPrefs } from '@/api/hooks';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { StyleIcon } from '@/components/app/ThemeDrawer';
-import { SettingRow, TabContent, TabHeader } from '@/components/app/tabPanel';
+import {
+  DangerZone,
+  SettingRow,
+  TabContent,
+  TabHeader,
+} from '@/components/app/tabPanel';
 import { Button } from '@/components/ui/Button';
 import {
   Select,
@@ -34,10 +35,7 @@ function CustomizationsTab() {
   const { style, theme, setStyle, setTheme } = useTheme();
   return (
     <>
-      <TabHeader
-        description={m.settings_customizations_hint()}
-        title={m.settings_tab_customizations()}
-      />
+      <TabHeader title={m.settings_tab_customizations()} />
       <div className="flex flex-col gap-6">
         <LanguageRow />
         <SettingRow hint={m.settings_theme_hint()} title={m.settings_theme()}>
@@ -45,10 +43,10 @@ function CustomizationsTab() {
             onValueChange={(v) => setStyle(v as typeof style)}
             value={style}
           >
-            <SelectTrigger aria-label={m.settings_theme()} className="w-56">
+            <SelectTrigger aria-label={m.settings_theme()} layout="row">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent layout="row">
               {STYLES.map((t) => (
                 <SelectItem key={t.value} value={t.value}>
                   <span className="flex items-center gap-2">
@@ -71,10 +69,10 @@ function CustomizationsTab() {
             onValueChange={(v) => setTheme(v as typeof theme)}
             value={theme}
           >
-            <SelectTrigger aria-label={m.settings_mode()} className="w-56">
+            <SelectTrigger aria-label={m.settings_mode()} layout="row">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent layout="row">
               {THEMES.map((t) => (
                 <SelectItem key={t.value} value={t.value}>
                   <span className="flex items-center gap-2">
@@ -117,15 +115,11 @@ const NOTIFICATION_ROWS: {
 ];
 
 function NotificationsTab() {
-  const { data: me } = useMe();
   const { data: prefs, isSuccess } = useNotificationPrefs();
   const { isPending, mutate: setPrefs } = useSetNotificationPrefs();
   return (
     <>
-      <TabHeader
-        description={m.settings_notifications_hint({ email: me?.email ?? '' })}
-        title={m.settings_tab_notifications()}
-      />
+      <TabHeader title={m.settings_tab_notifications()} />
       <div className="flex flex-col gap-6">
         {NOTIFICATION_ROWS.map((row) => (
           <SettingRow hint={row.hint()} key={row.field} title={row.title()}>
@@ -148,10 +142,7 @@ function NotificationsTab() {
 function LlmTab() {
   return (
     <>
-      <TabHeader
-        description={m.settings_llm_hint()}
-        title={m.settings_tab_llm()}
-      />
+      <TabHeader title={m.settings_tab_llm()} />
       <div className="flex flex-col gap-6">
         <SettingRow
           hint={m.settings_llm_chat_hint()}
@@ -178,24 +169,23 @@ function DangerTab() {
   const [deleting, setDeleting] = useState(false);
   return (
     <>
-      <TabHeader
-        description={m.settings_danger_hint()}
-        title={m.workspace_tab_danger()}
-      />
-      <SettingRow
-        hint={m.settings_delete_account_hint()}
-        title={m.settings_danger_zone_title()}
-      >
-        <Button
-          className="shrink-0"
-          iconLeft="trash"
-          onClick={() => setDeleting(true)}
-          rounded="large"
-          variant="danger"
+      <TabHeader title={m.workspace_tab_danger()} />
+      <DangerZone>
+        <SettingRow
+          hint={m.settings_delete_account_hint()}
+          title={m.settings_danger_zone_title()}
         >
-          {m.action_delete()}
-        </Button>
-      </SettingRow>
+          <Button
+            className="shrink-0"
+            iconLeft="trash"
+            onClick={() => setDeleting(true)}
+            rounded="large"
+            variant="danger"
+          >
+            {m.action_delete()}
+          </Button>
+        </SettingRow>
+      </DangerZone>
       {/* Mounted only while open: the preflight asks Stripe live. */}
       {deleting && (
         <DeleteAccountDialog onClose={() => setDeleting(false)} open />
@@ -213,7 +203,7 @@ export default function Settings() {
       header={<PageHeader title={m.profile_menu_settings()} />}
     >
       <Tabs
-        className="px-1 sm:px-6"
+        className="px-1 sm:px-3"
         onChange={(value) => {
           void navigate({
             replace: true,

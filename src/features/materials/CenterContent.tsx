@@ -28,10 +28,13 @@ import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { ThumbnailPanel } from '@/components/app/ThumbnailPanel';
 import { TabContent } from '@/components/app/tabPanel';
 import { BannerStack, FileBanner } from '@/components/banners/FileBanner';
+import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { FloatingBarContext } from '@/components/ui/floatingBarContext';
 import { Icon } from '@/components/ui/Icon';
+import { Menu } from '@/components/ui/Menu';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import {
   recentIcon,
   recentThumbnail,
@@ -72,10 +75,13 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { useMediaQuery } from '@/lib/useMediaQuery';
 import {
   createEditorStatusStore,
   EditorStatusStoreContext,
+  FilesTitleButton,
   Header,
+  type OneColumnChrome,
 } from './CenterContentHeader';
 import {
   type FlashcardsElement,
@@ -139,12 +145,17 @@ export function CenterContent({
   color,
   onDeleted,
   onFileViewerDirtyChange,
+  onAddFile,
   onModeChange,
+  onOpenSettings,
   requestedMode = null,
   workspaceId,
   leading,
+  oneColumn,
   standalone = false,
 }: {
+  /** Below lg: the title opens Files and ⋮ carries the workspace actions. */
+  oneColumn?: OneColumnChrome;
   standalone?: boolean;
   beforeFileDelete?: () => boolean;
   /** Workspace chrome drawn before the file name in the header. */
@@ -157,6 +168,10 @@ export function CenterContent({
   onFileViewerDirtyChange?: (dirty: boolean) => void;
   requestedMode?: MaterialMode | null;
   onModeChange: (mode: MaterialMode) => void;
+  /** Opens the add file dialog; an empty workspace shows it as a card. */
+  onAddFile?: () => void;
+  /** Opens workspace settings; shown as a quick action when no file is open. */
+  onOpenSettings?: () => void;
   workspaceId: string;
 }) {
   const [fileHeader, setFileHeader] = useState<HTMLSpanElement | null>(null);
@@ -194,6 +209,9 @@ export function CenterContent({
     return (
       <EmptyCenter
         leading={leading}
+        onAddFile={onAddFile}
+        oneColumn={oneColumn}
+        onOpenSettings={onOpenSettings}
         workspaceId={standalone ? '' : workspaceId}
       />
     );
@@ -239,6 +257,7 @@ export function CenterContent({
                       />
                     }
                     onDeleted={onDeleted}
+                    oneColumn={oneColumn}
                     onImageZoomChange={setImageZoom}
                     onMaterialModeChange={changeMaterialMode}
                     onToggleFullscreen={() =>
@@ -780,26 +799,68 @@ function TitleAction({
  * and workspace status icons. No strip renders, since strips belong to a file. */
 function EmptyCenter({
   leading,
+  oneColumn,
+  onAddFile,
+  onOpenSettings,
   workspaceId,
 }: {
   leading?: ReactNode;
+  oneColumn?: OneColumnChrome;
+  onAddFile?: () => void;
+  onOpenSettings?: () => void;
   workspaceId: string;
 }) {
+  const sm = useMediaQuery('(min-width: 640px)');
+  const menuItems = oneColumn
+    ? [...oneColumn.addItems, ...oneColumn.settingsItems]
+    : [];
   return (
     <>
-      <div className="flex h-12 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:px-4">
+      <div
+        className="flex h-12 items-center gap-1 border-divider border-b pr-1 pl-2 sm:h-14 sm:gap-2 sm:px-4"
+        data-slot="center-header"
+      >
         {leading ?? (
           <>
             <Icon className="size-5.5" name="files" />
             <h2 className="t-subtitle translate-y-px truncate">--</h2>
           </>
         )}
-        <OfflineStatus />
-        <WorkspaceStatusButton workspaceId={workspaceId} />
+        {oneColumn && (
+          <h2 className="t-body min-w-0 font-semibold">
+            <FilesTitleButton chrome={oneColumn}>
+              <span className="min-w-0 truncate">
+                {oneColumn.workspaceName}
+              </span>
+            </FilesTitleButton>
+          </h2>
+        )}
+        {!(oneColumn && !sm) && (
+          <>
+            <OfflineStatus />
+            <WorkspaceStatusButton workspaceId={workspaceId} />
+          </>
+        )}
+        {menuItems.length > 0 && (
+          <div className="ml-auto flex items-center">
+            <Menu
+              items={menuItems}
+              trigger={
+                <ToolbarButton label={m.a11y_open_menu()}>
+                  <Icon name="moreVertical" />
+                </ToolbarButton>
+              }
+            />
+          </div>
+        )}
       </div>
       <div className="grid flex-1 place-items-center p-4 sm:p-6">
         {workspaceId ? (
-          <RecentInWorkspace workspaceId={workspaceId} />
+          <RecentInWorkspace
+            actions={<QuickActions onOpenSettings={onOpenSettings} />}
+            onAddFile={onAddFile}
+            workspaceId={workspaceId}
+          />
         ) : (
           <PickAFile />
         )}
@@ -808,19 +869,57 @@ function EmptyCenter({
   );
 }
 
-function PickAFile() {
+function PickAFile({ actions }: { actions?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-3">
       <Icon className="non-scaling-svg size-8" name="files" />
       <p>{m.material_select()}</p>
+      {actions && <div className="mt-6">{actions}</div>}
+    </div>
+  );
+}
+
+/** Workspace shortcuts under the recent files: as tall as a file tree row,
+ * muted until hovered. */
+function QuickActions({ onOpenSettings }: { onOpenSettings?: () => void }) {
+  return (
+    <div className="flex flex-col items-start">
+      {onOpenSettings && (
+        <Button
+          className="h-8 px-3 text-xs"
+          iconLeft="settings"
+          onClick={onOpenSettings}
+          size="sm"
+          variant="ghost-muted"
+        >
+          {m.workspace_settings()}
+        </Button>
+      )}
+      {/* TODO: open the study progress page once it exists. */}
+      <Button
+        className="h-8 px-3 text-xs"
+        iconLeft="knowledge"
+        size="sm"
+        variant="ghost-muted"
+      >
+        {m.workspace_study_progress()}
+      </Button>
     </div>
   );
 }
 
 /** The workspace's four newest files and materials as cards for a quick
- * open. Blank while loading; an empty workspace, or a failed read, keeps the
- * plain prompt. */
-function RecentInWorkspace({ workspaceId }: { workspaceId: string }) {
+ * open. Blank while loading; an empty workspace gets a dashed add file card
+ * instead, or the plain prompt when the viewer cannot add. */
+function RecentInWorkspace({
+  actions,
+  onAddFile,
+  workspaceId,
+}: {
+  actions: ReactNode;
+  onAddFile?: () => void;
+  workspaceId: string;
+}) {
   const { data, isLoading } = useWorkspaceRecent(workspaceId);
   if (isLoading) return null;
   const items = mergeRecentItems(
@@ -829,12 +928,19 @@ function RecentInWorkspace({ workspaceId }: { workspaceId: string }) {
     [],
     4
   );
-  if (!items.length) return <PickAFile />;
+  if (!items.length && !onAddFile) return <PickAFile actions={actions} />;
+  const single = items.length <= 1;
   return (
     // Lifted by half the subtitle row so the grid, not the block, sits centred.
     <div className="flex w-full max-w-[400px] -translate-y-4 flex-col gap-2.5">
       <h3 className="t-subtitle px-1">{m.dashboard_recent()}</h3>
-      <div className="grid grid-cols-2 gap-1">
+      <div
+        className={cn(
+          'grid gap-1',
+          // A lone card keeps its two-column width, centred.
+          single ? 'grid-cols-[calc(50%-2px)] justify-center' : 'grid-cols-2'
+        )}
+      >
         {items.map((item) => (
           <QuickOpenCard
             item={item}
@@ -842,8 +948,27 @@ function RecentInWorkspace({ workspaceId }: { workspaceId: string }) {
             workspaceId={workspaceId}
           />
         ))}
+        {!items.length && onAddFile && <AddFileCard onClick={onAddFile} />}
       </div>
+      <div className="mt-6">{actions}</div>
     </div>
+  );
+}
+
+/** The empty workspace's only card: a dashed tile the size of a preview,
+ * as the dashed new workspace card on Workspaces. */
+function AddFileCard({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      className="cursor-pointer rounded-[15px] p-1 outline-none focus-visible:ring-2 focus-visible:ring-action"
+      onClick={onClick}
+      type="button"
+    >
+      <span className="flex aspect-[16/10] flex-col items-center justify-center gap-2 rounded-[13px] text-fg-muted transition-colors hover:bg-surface-hover-bg">
+        <Icon name="plus" size={20} />
+        <span className="t-meta">{m.action_add_file()}</span>
+      </span>
+    </button>
   );
 }
 

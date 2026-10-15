@@ -11,7 +11,8 @@ export interface PlanLimits {
 }
 
 /**
- * Explicit product-copy snapshot of `plan_limits` (initial schema plus 0069 and 0070).
+ * Explicit product-copy snapshot of `plan_limits` (initial schema plus 0069 and 0070,
+ * and Pro's 10,000 credits set directly in UAT on 2026-10-15).
  * This is intentionally not fetched through an API. Changing a value is an
  * explicit product action: update the SQL seed, this file, and any affected
  * Paraglide translations together.
@@ -27,7 +28,7 @@ export const PLAN_LIMITS = {
     storageLimitBytes: 100_000_000,
   },
   pro: {
-    creditLimitMicros: 20_000_000_000,
+    creditLimitMicros: 10_000_000_000,
     filesPerUpload: 20,
     filesPerWorkspace: 100,
     imageMaxBytes: 5_242_880,

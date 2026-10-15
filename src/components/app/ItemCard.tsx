@@ -220,7 +220,7 @@ export function ItemCard({
     >
       {overlay}
       <div className="flex min-w-0 items-center gap-2 pb-1.5 pl-1.5">
-        <FileIcon className="size-4 shrink-0" name={icon} />
+        <FileIcon className="size-4 shrink-0 -translate-y-px" name={icon} />
         <Title
           className="min-w-0 flex-1 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card"
           link={titleLink}
@@ -249,7 +249,9 @@ export function ItemCard({
                 width={16}
               />
             )}
-            <span className="min-w-0 truncate">{workspace}</span>
+            <span className="min-w-0 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight">
+              {workspace}
+            </span>
             <span aria-hidden className="shrink-0">
               ·
             </span>

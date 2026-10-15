@@ -78,7 +78,7 @@ export function ChapterSelect({
       value={chapterName ? TYPED_CHAPTER : (value ?? NO_CHAPTER)}
     >
       {field ? (
-        <SelectTrigger className="sm:w-56">{label}</SelectTrigger>
+        <SelectTrigger layout="row">{label}</SelectTrigger>
       ) : (
         <RowPickerTrigger>{label}</RowPickerTrigger>
       )}
@@ -135,7 +135,7 @@ export function NewChapterInput({
   onCancel: () => void;
 }) {
   return (
-    <div className={cn('flex items-center', field && 'gap-1 sm:w-56')}>
+    <div className={cn('flex items-center', field && 'w-52 gap-1 sm:w-56')}>
       <Input
         autoFocus
         maxLength={addChapterBodyNameMax}

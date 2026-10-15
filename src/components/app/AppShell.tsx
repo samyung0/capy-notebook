@@ -5,6 +5,7 @@ import { useEventStream, useMe } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { useFinishToasts } from '@/features/study/finishToasts';
 import { startDraftSweeps } from '@/lib/editDrafts';
+import { useKeyboardHeight } from '@/lib/useKeyboardHeight';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { InShellMain } from './AppErrorBoundary';
 import { Sidebar } from './Sidebar';
@@ -34,9 +35,10 @@ export function AppShell() {
     if (actorId) startDraftSweeps(actorId, api);
   }, [actorId]);
   useFinishToasts();
+  useKeyboardHeight();
 
   return (
-    <div className="t-body relative flex h-dvh overflow-hidden bg-page text-fg">
+    <div className="t-body relative flex h-[var(--app-height,100dvh)] overflow-hidden bg-page text-fg">
       {/* Phones open the nav from the page panel's menu button instead. */}
       {!hideSidebar && (
         <>

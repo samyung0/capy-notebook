@@ -253,7 +253,6 @@ async def index_dataset(label, dataset, state, cache):
                 fingerprint=doc["hash"],
                 descriptor=doc["title"],
                 summary=doc["markdown"],
-                summary_version=1,
             )
             await store.mark_content_ready(doc["content_id"])
             completed.add(doc["content_id"])

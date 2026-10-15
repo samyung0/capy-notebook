@@ -8,7 +8,7 @@ questions, and a right column (`PanelHeader`, shared with the theme
 drawer) holds exams and topics (Exam switcher and
 covers, below), swapping to the topic's question list. Below `lg` that column
 becomes a bottom sheet opened from `PageFloatingBar`
-(`src/components/ui/PageFloatingBar.tsx`, shared with the workspace tools bar):
+(`src/components/ui/PageFloatingBar.tsx`):
 Topics on every /qb page, Questions once a topic is open. Its labels stay
 visible, small under the icons on phones and beside them from `sm`. Editors switch between View mode and Edit mode; edit mode adds
 the answer key and a review bar (review status, Mark reviewed/Undo review,

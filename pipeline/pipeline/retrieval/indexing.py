@@ -19,7 +19,6 @@ from typing import Any
 from .. import elitellm, registry
 from ..jobs import RetryableError
 from ..prompts.ingest import (
-    SUMMARY_VERSION,
     partial_messages,
     summary_messages,
 )
@@ -105,7 +104,6 @@ async def index_file(
                 fingerprint=content_hash([]),
                 descriptor="",
                 change_share=0.0,
-                summary_version=SUMMARY_VERSION,
             )
             await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
         return {"chunks": 0}
@@ -174,7 +172,6 @@ async def index_file(
         fingerprint=fingerprint,
         descriptor=descriptor,
         change_share=change_share,
-        summary_version=SUMMARY_VERSION,
     )
 
     await store.mark_content_ready(content_id, claim_job_id=claim_job_id)
@@ -335,10 +332,10 @@ async def _descriptor(
 ) -> tuple[str, float]:
     """The descriptor to store and the running change share kept next to it.
 
-    Regenerates from the complete content when no published descriptor exists,
-    when its ``summary_version`` is stale, or once the change reaches the share.
+    Regenerates from the complete content when no published descriptor exists
+    or once the change reaches the share.
     """
-    if published is not None and published["summary_version"] == SUMMARY_VERSION:
+    if published is not None:
         # The document size is the same estimate as the full summary input.
         document = estimate_tokens("\n\n".join(c.indexed_text() for c in chunks))
         changed = text_change_tokens(published["chunks"], chunks)

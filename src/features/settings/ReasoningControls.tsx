@@ -42,12 +42,12 @@ export function ReasoningControls({
     >
       <SelectTrigger
         aria-label={m.settings_llm_thinking()}
-        className="w-34"
+        className="w-auto shrink-0 sm:w-34"
         size="md"
       >
         <SelectValue />
       </SelectTrigger>
-      <SelectContent>
+      <SelectContent layout="row">
         {spec.levels.map((item) => (
           <SelectItem key={item} value={item}>
             {THINKING_LABEL[item]?.() ?? item}

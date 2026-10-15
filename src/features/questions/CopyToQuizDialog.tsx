@@ -191,13 +191,13 @@ export function CopyToQuizDialog({
             >
               <SelectTrigger
                 aria-label={m.question_ui_workspace()}
-                className="sm:w-56"
                 disabled={workspacesPending}
+                layout="row"
                 loading={workspacesPending}
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent layout="row">
                 {editable.map((ws) => (
                   <SelectItem key={ws.id} value={ws.id}>
                     <span className="flex min-w-0 items-center gap-2">

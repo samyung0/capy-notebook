@@ -82,7 +82,12 @@ export function ModelPicker({
     )
   );
   return (
-    <div className={cn('flex min-w-0 flex-col gap-1.5 sm:shrink-0', className)}>
+    <div
+      className={cn(
+        'flex w-full min-w-0 flex-col gap-1.5 sm:w-auto sm:shrink-0',
+        className
+      )}
+    >
       <div className="flex min-w-0 items-start gap-2">
         <Select
           disabled={isPending || models.length === 0}
@@ -95,11 +100,13 @@ export function ModelPicker({
         >
           <SelectTrigger
             aria-label={SLOT_LABEL[slot]()}
-            className="w-full sm:w-64"
+            className="min-w-36 flex-1 sm:w-64 sm:flex-none"
           >
-            <SelectValue placeholder={m.model_picker_label()} />
+            <SelectValue
+              placeholder={loading ? undefined : m.model_picker_label()}
+            />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent layout="row">
             {models.map((option) => (
               <SelectItem
                 disabled={!option.available}
@@ -122,12 +129,12 @@ export function ModelPicker({
           <Select disabled value="instant">
             <SelectTrigger
               aria-label={m.settings_llm_thinking()}
-              className="w-30"
+              className="w-auto shrink-0 sm:w-30"
               size="md"
             >
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent layout="row">
               <SelectItem value="instant">
                 {m.settings_llm_thinking_instant()}
               </SelectItem>
@@ -137,10 +144,10 @@ export function ModelPicker({
           <Select disabled>
             <SelectTrigger
               aria-label={m.settings_llm_thinking()}
-              className="w-34"
+              className="w-auto shrink-0 sm:w-34"
               size="md"
             >
-              <SelectValue placeholder={m.settings_llm_thinking()} />
+              <SelectValue />
             </SelectTrigger>
           </Select>
         ) : slot === 'chat' ? (

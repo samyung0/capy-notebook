@@ -1,6 +1,6 @@
 import { useMe, useSetChatSteps } from '@/api/hooks';
 import type { ChatSteps } from '@/api/types';
-import { SettingRow, TabHeader } from '@/components/app/tabPanel';
+import { SectionTitle, SettingRow } from '@/components/app/tabPanel';
 import {
   Select,
   SelectContent,
@@ -23,10 +23,7 @@ export function ChatStepsSection() {
   return (
     <>
       <div className="border-divider border-t" />
-      <TabHeader
-        description={m.settings_chat_hint()}
-        title={m.settings_chat_title()}
-      />
+      <SectionTitle title={m.settings_chat_title()} />
       <SettingRow
         hint={m.settings_chat_steps_hint()}
         title={m.settings_chat_steps()}
@@ -36,10 +33,10 @@ export function ChatStepsSection() {
           onValueChange={(value) => setChatSteps(value as ChatSteps)}
           value={me?.chatSteps ?? 'normal'}
         >
-          <SelectTrigger aria-label={m.settings_chat_steps()} className="w-56">
+          <SelectTrigger aria-label={m.settings_chat_steps()} layout="row">
             <SelectValue />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent layout="row">
             {CHOICES.map((choice) => (
               <SelectItem key={choice.value} value={choice.value}>
                 {choice.label()}

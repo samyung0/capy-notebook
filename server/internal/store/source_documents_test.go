@@ -1286,7 +1286,7 @@ func TestSourceCloneCopiesSavedEditsAndCaptionReferences(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, file.ID, ws.ID, contentID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor,change_share,summary_version) VALUES($1,$2,'Photosynthesis.',0.0125,2)`, contentID, ws.ID); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor,change_share) VALUES($1,$2,'Photosynthesis.',0.0125)`, contentID, ws.ID); err != nil {
 		t.Fatal(err)
 	}
 	clone, err := s.CloneWorkspace(ctx, owner, ws.ID, WorkspaceCreate{Name: "Clone"})

@@ -1476,8 +1476,8 @@ func copyRetrievalContents(ctx context.Context, tx pgx.Tx, dstID string, pin mod
 	_, err = tx.Exec(ctx, `
 	WITH cmap(old_id, new_id) AS (SELECT * FROM unnest($1::text[], $2::text[]))
 	INSERT INTO rag_content_summaries
-		(content_id, workspace_id, fingerprint, descriptor, change_share, summary_version, updated_at)
-	SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.change_share, s.summary_version, s.updated_at
+		(content_id, workspace_id, fingerprint, descriptor, change_share, updated_at)
+	SELECT c.new_id, $3, s.fingerprint, s.descriptor, s.change_share, s.updated_at
 	FROM rag_content_summaries s JOIN cmap c ON c.old_id = s.content_id`,
 		oldContents, newContents, dstID)
 	return err

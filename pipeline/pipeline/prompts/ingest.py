@@ -2,19 +2,15 @@
 
 These are read by another model, not by a person, so they stay English whatever
 the uploader's locale — the descriptor is stored on canonical content and copied
-to every later workspace that uploads the same bytes.
-
-``SUMMARY_VERSION`` lives here so a prose change and its version bump are one
-edit apart. It is deliberately not part of the parse fingerprint: rewording a
-descriptor must not invalidate a parse. A refresh regenerates a descriptor
-whose version differs.
+to every later workspace that uploads the same bytes. Rewording these prompts
+leaves stored descriptors in place: only the reuse gate in
+``retrieval/indexing.py`` regenerates one.
 """
 
 from __future__ import annotations
 
 from .sources import SOURCE_RULE, source_block
 
-SUMMARY_VERSION = 3
 DESCRIPTOR_WORDS = 50
 
 SUMMARY_SYSTEM = (

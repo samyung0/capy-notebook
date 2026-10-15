@@ -237,6 +237,13 @@ def _plan(
     )
 
 
+def test_donor_key_survives_a_release(monkeypatch):
+    monkeypatch.setattr(worker.cfg, "release_sha", "a" * 40)
+    before = worker._pipeline_identity(_plan())
+    monkeypatch.setattr(worker.cfg, "release_sha", "b" * 40)
+    assert worker._pipeline_identity(_plan()) == before
+
+
 async def _run():
     return await worker._chunks_for(
         payload={

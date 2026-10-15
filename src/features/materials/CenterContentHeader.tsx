@@ -62,6 +62,47 @@ const STATUS_ICON = {
   unsaved: 'cloudAlert',
 } satisfies Record<NoteEditorSaveState, IconName>;
 
+/** The workspace below lg has no side panels: the title opens Files from the
+ * top, and ⋮ carries the workspace actions the panels held. */
+export interface OneColumnChrome {
+  /** Add file and Add chapter, first in ⋮. */
+  addItems: MenuItem[];
+  filesOpen: boolean;
+  onOpenFiles: () => void;
+  /** Workspace settings, before Delete in ⋮. */
+  settingsItems: MenuItem[];
+  /** The title when no file is open. */
+  workspaceName: string;
+}
+
+/** The title as the button that opens the Files drawer, chevron after it. */
+export function FilesTitleButton({
+  chrome,
+  children,
+}: {
+  chrome: OneColumnChrome;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      aria-expanded={chrome.filesOpen}
+      className="flex min-w-0 max-w-full items-center gap-1.5 rounded-button text-left sm:gap-2"
+      onClick={chrome.onOpenFiles}
+      type="button"
+    >
+      {children}
+      <Icon
+        className={cn(
+          'shrink-0 text-fg-muted transition-transform duration-(--motion-duration-fast) ease-(--motion-ease-in-out)',
+          chrome.filesOpen && 'rotate-180'
+        )}
+        name="chevronDown"
+        size={16}
+      />
+    </button>
+  );
+}
+
 /** The open editor's save status. A store rather than `CenterContent` state:
  * it changes on the first keystroke of every edit (Saved to Syncing), and as
  * state it re-rendered the whole header and the open note for one icon. */
@@ -274,7 +315,9 @@ export function Header({
   fileControls,
   fileActions,
   menuBar,
+  oneColumn,
 }: {
+  oneColumn?: OneColumnChrome;
   standalone?: boolean;
   fileControls?: ReactNode;
   /** Office files: buttons the runtime adds before the mode toggle (Present). */
@@ -327,20 +370,29 @@ export function Header({
       ? material
       : undefined;
   const [sharing, setSharing] = useState(false);
-  const name = (
+  // Phones drop the read toggle and the status icons for the title's chevron.
+  const compact = !!oneColumn && !sm;
+  const fileIcon = (
+    <FileIcon
+      className="size-4 shrink-0 -translate-y-px md:size-5"
+      name={icon}
+    />
+  );
+  const nameClassName = cn(
+    'min-w-0 truncate',
+    leading ? 't-body font-semibold' : 't-subtitle'
+  );
+  const name = oneColumn ? (
+    <h2 className="min-w-0">
+      <FilesTitleButton chrome={oneColumn}>
+        {fileIcon}
+        <span className={nameClassName}>{title ?? '--'}</span>
+      </FilesTitleButton>
+    </h2>
+  ) : (
     <>
-      <FileIcon
-        className="size-4 shrink-0 -translate-y-px md:size-5"
-        name={icon}
-      />
-      <h2
-        className={cn(
-          'min-w-0 truncate',
-          leading ? 't-body font-semibold' : 't-subtitle'
-        )}
-      >
-        {title ?? '--'}
-      </h2>
+      {fileIcon}
+      <h2 className={nameClassName}>{title ?? '--'}</h2>
     </>
   );
   const right = (
@@ -351,7 +403,9 @@ export function Header({
       {!readOnly && modes && modes.length > 1 && activeMode && (
         <MaterialModeToggle mode={activeMode} onChange={onMaterialModeChange} />
       )}
-      {!standalone && <ReadToggle item={item} workspaceId={workspaceId} />}
+      {!(standalone || compact) && (
+        <ReadToggle item={item} workspaceId={workspaceId} />
+      )}
       {showImageZoom && (
         <>
           <ToolbarButton
@@ -376,6 +430,7 @@ export function Header({
       )}
       <ContentActions
         beforeDelete={file ? beforeFileDelete : undefined}
+        beforeDeleteItems={oneColumn?.settingsItems}
         canClone={canClone}
         chapters={chapters}
         color={color}
@@ -389,6 +444,7 @@ export function Header({
         display="menu"
         key={`${item.kind}:${item.id}`}
         leadingItems={[
+          ...(oneColumn?.addItems ?? []),
           ...(studying && !standalone
             ? studyMenu(
                 { id: item.id, kind: item.kind },
@@ -453,15 +509,21 @@ export function Header({
           {leading}
           <div className="-ml-2 flex min-w-0 items-center gap-2 sm:-ml-0.5 lg:ml-2">
             {name}
-            <OfflineStatus />
-            <WorkspaceStatusButton
-              workspaceId={standalone ? '' : workspaceId}
-            />
+            {!compact && (
+              <>
+                <OfflineStatus />
+                <WorkspaceStatusButton
+                  workspaceId={standalone ? '' : workspaceId}
+                />
+              </>
+            )}
           </div>
         </div>
         <div className="col-span-2 row-start-2 flex min-w-0 items-center sm:col-span-1">
           {menuBar}
-          <EditorSaveStatus layout="office" store={editorStatus} />
+          {!compact && (
+            <EditorSaveStatus layout="office" store={editorStatus} />
+          )}
         </div>
         <div className="col-start-2 row-start-1 flex items-center gap-0 sm:row-span-2 max-sm:[&_[data-slot=button]]:size-7.5 max-sm:[&_[data-slot=dropdown-menu-trigger]]:size-7.5">
           {right}
@@ -475,21 +537,23 @@ export function Header({
     >
       {leading}
       <div className="-ml-0.5 flex min-w-0 items-center gap-1.5 sm:gap-2 lg:ml-2">
-        <FileIcon
-          className="size-4 shrink-0 -translate-y-px md:size-5"
-          name={icon}
-        />
-        <h2
-          className={cn(
-            'min-w-0 flex-1 truncate',
-            leading ? 't-body font-semibold' : 't-subtitle'
-          )}
-        >
-          {title ?? '--'}
-        </h2>
-        <OfflineStatus />
-        <EditorSaveStatus layout="default" store={editorStatus} />
-        <WorkspaceStatusButton workspaceId={standalone ? '' : workspaceId} />
+        {oneColumn ? (
+          name
+        ) : (
+          <>
+            {fileIcon}
+            <h2 className={cn(nameClassName, 'flex-1')}>{title ?? '--'}</h2>
+          </>
+        )}
+        {!compact && (
+          <>
+            <OfflineStatus />
+            <EditorSaveStatus layout="default" store={editorStatus} />
+            <WorkspaceStatusButton
+              workspaceId={standalone ? '' : workspaceId}
+            />
+          </>
+        )}
       </div>
       <div className="ml-auto flex items-center gap-0">{right}</div>
     </div>

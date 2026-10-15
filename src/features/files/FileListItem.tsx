@@ -28,6 +28,7 @@ export function FileListItem({
   canClone = false,
   canRetry = false,
   study,
+  menu = true,
 }: {
   beforeDelete?: () => boolean;
   file: SourceFile;
@@ -46,6 +47,9 @@ export function FileListItem({
   canRetry?: boolean;
   /** The reader's own progress on this file, while progress is on. */
   study?: StudyRow;
+  /** The hover ⋮; touch lists (the top Files drawer) leave it out and act
+   * from the open file's header instead. */
+  menu?: boolean;
 }) {
   const ingesting = fileIsIngesting(file.status);
   const waitingForBytes = ingesting && !file.hasBytes;
@@ -84,9 +88,9 @@ export function FileListItem({
           >
             {file.name}
           </span>
-          <StudyMark className="mr-6" state={study?.state} />
+          <StudyMark className={cn(menu && 'mr-6')} state={study?.state} />
         </Link>
-        {(!readOnly || canClone) && (
+        {menu && (!readOnly || canClone) && (
           <ContentActions
             beforeDelete={beforeDelete}
             canClone={canClone && file.status === 'ready'}

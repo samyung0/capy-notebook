@@ -34,6 +34,7 @@ export function ContentActions({
   display,
   hoverClassName,
   leadingItems = [],
+  beforeDeleteItems = [],
   menuAlign,
   menuTrigger,
   menuTriggerIcon,
@@ -58,6 +59,8 @@ export function ContentActions({
   display: 'hover' | 'menu';
   hoverClassName?: string;
   leadingItems?: MenuItem[];
+  /** After Properties, before Delete, e.g. the open item's Workspace settings. */
+  beforeDeleteItems?: MenuItem[];
   menuAlign?: MenuProps['align'];
   menuTrigger?: ReactNode;
   menuTriggerIcon?: MenuProps['triggerIcon'];
@@ -127,6 +130,7 @@ export function ContentActions({
             label: m.content_properties(),
             onClick: () => setPropertiesOpen(true),
           },
+          ...beforeDeleteItems,
           {
             danger: true,
             icon: 'trash' as const,
@@ -134,7 +138,7 @@ export function ContentActions({
             onClick: () => setConfirmOpen(true),
           },
         ]
-      : []),
+      : beforeDeleteItems),
   ];
 
   const saveName = async (nextName: string) => {

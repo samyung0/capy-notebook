@@ -15,7 +15,7 @@ import {
   useUpdateChapter,
   useWorkspace,
 } from '@/api/hooks';
-import type { Citation, Region } from '@/api/types';
+import type { Citation, Region, ResourceRef } from '@/api/types';
 import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { LoadingLarge } from '@/components/app/LoadingLarge';
 import { Panel } from '@/components/app/layout';
@@ -27,14 +27,9 @@ import {
   FloatingBarContext,
   OfficeInsetContext,
 } from '@/components/ui/floatingBarContext';
-import { Icon, type IconName } from '@/components/ui/Icon';
-import { IconButton } from '@/components/ui/IconButton';
-import { Menu, type MenuItem } from '@/components/ui/Menu';
+import { Icon } from '@/components/ui/Icon';
+import type { MenuItem } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
-import {
-  PageFloatingBar,
-  PageFloatingBarButton,
-} from '@/components/ui/PageFloatingBar';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -46,6 +41,7 @@ import { officeFormatOf } from '@/features/files/fileUtils';
 import type { OfficeCitation } from '@/features/files/officeProtocol';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
+import type { OneColumnChrome } from '@/features/materials/CenterContentHeader';
 import {
   type OpenItem,
   openItemFromSearch,
@@ -68,16 +64,11 @@ import { WorkspaceHealth } from '@/features/workspace/WorkspaceHealth';
 import { WorkspacePicker } from '@/features/workspace/WorkspacePicker';
 import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsDialog';
 import { m } from '@/i18n';
+import { iconUrl } from '@/lib/icon-catalog';
 import { isBoolean, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 type PanelTab = 'study' | 'files' | 'chat';
-const TAB_ICON: Record<PanelTab, IconName> = {
-  chat: 'message',
-  files: 'files',
-  study: 'bookOpenCheck',
-};
-/** Three columns is a per-browser preference, not per workspace. */
 
 // The rail is 32% of the group from 1380px up (~438px at a 1400px window).
 // Narrower, it takes three quarters of the lost width down to 400px, the
@@ -163,7 +154,8 @@ export default function WorkspaceOpen() {
 
   const searchedOpenItem = openItemFromSearch(search);
   const [tab, setTab] = useState<PanelTab>('files');
-  const [toolsOpen, setToolsOpen] = useState(false);
+  // One column: Files drops from the top, under the header it was opened from.
+  const [filesOpen, setFilesOpen] = useState(false);
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
     regions: Region[];
@@ -171,9 +163,9 @@ export default function WorkspaceOpen() {
   } | null>(null);
   const [officeEditDirty, setOfficeEditDirty] = useState(false);
   const confirmViewerReplacement = useOfficeEditGuard(officeEditDirty);
-  // The tools button sits 8px above the Office frame's bottom chrome, which
-  // the runtime reports; written to the box's style so the workspace does
-  // not re-render while a resize moves it.
+  // The chat dock sits 8px above the Office frame's bottom chrome, which the
+  // runtime reports; written to the box's style so the workspace does not
+  // re-render while a resize moves it.
   const viewerBox = useRef<HTMLDivElement>(null);
   const setOfficeInset = useCallback((inset: number) => {
     viewerBox.current?.style.setProperty('--office-inset', `${inset}px`);
@@ -191,7 +183,7 @@ export default function WorkspaceOpen() {
   function setOpenItem(item: OpenItem | null) {
     if (!confirmViewerReplacement()) return;
     setCitationTarget(null);
-    setToolsOpen(false);
+    setFilesOpen(false);
     navigate({
       replace: true,
       search: searchFromOpenItem(item),
@@ -202,7 +194,6 @@ export default function WorkspaceOpen() {
   function openCitation(citation: Citation) {
     if (!confirmViewerReplacement()) return;
     if (citation.materialId) {
-      setToolsOpen(false);
       navigate({
         replace: true,
         search: { material: citation.materialId, mode: 'view' },
@@ -219,7 +210,6 @@ export default function WorkspaceOpen() {
       fileId: citation.fileId,
       regions,
     });
-    setToolsOpen(false);
     navigate({
       replace: true,
       search: {
@@ -280,40 +270,65 @@ export default function WorkspaceOpen() {
       : t === 'chat'
         ? m.workspace_tab_chat()
         : m.workspace_tab_study();
-  function showTab(next: PanelTab) {
-    setTab(next);
-    if (layout === 'one') setToolsOpen(true);
-  }
-
   const rowProps = {
     // Viewers open settings too, for the one row they can use: reset their
     // own study progress.
     onOpenSettings: () => setSettingsOpen(true),
   };
   // Below lg an open Office file keeps its bottom chrome (sheet tabs, slide
-  // pager) clear: the tools bar folds into one morphing button, as the Files
-  // panel's plus.
+  // pager) clear: the chat dock stays a button above it.
   const openFile =
     openItem?.kind === 'file'
       ? files?.find((file) => file.id === openItem.id)
       : undefined;
   const officeOpen = !!openFile && !!officeFormatOf(openFile);
-  const toolItems: MenuItem[] = [
-    ...panelTabs.map((t) => ({
-      icon: TAB_ICON[t],
-      label: tabLabel(t),
-      onClick: () => showTab(t),
-    })),
-    ...(rowProps.onOpenSettings
-      ? [
-          {
-            icon: 'settings' as const,
-            label: m.workspace_settings_short(),
-            onClick: rowProps.onOpenSettings,
-          },
-        ]
-      : []),
+
+  // One column has no panels: the header title opens Files, and ⋮ carries
+  // the workspace actions their tab rows held.
+  const addItems: MenuItem[] = readOnly
+    ? []
+    : [
+        {
+          icon: 'plusCircle',
+          label: m.action_add_file(),
+          onClick: () => setAddSource('upload'),
+        },
+        {
+          icon: 'archive',
+          label: m.action_add_chapter(),
+          onClick: () => setChapterForm({ mode: 'add' }),
+        },
+      ];
+  const settingsItems: MenuItem[] = [
+    {
+      icon: 'settings',
+      label: m.workspace_settings(),
+      onClick: rowProps.onOpenSettings,
+    },
   ];
+  function openFiles() {
+    const header = viewerBox.current?.querySelector(
+      '[data-testid=content-header],[data-slot=center-header]'
+    );
+    // On the root: the drawer and its scrim are portalled apart, and the
+    // scrim starts under the header too, which stays readable.
+    document.documentElement.style.setProperty(
+      '--files-top',
+      `${header?.getBoundingClientRect().bottom ?? 0}px`
+    );
+    setFilesOpen(true);
+  }
+  const oneColumn: OneColumnChrome | undefined =
+    layout === 'one'
+      ? {
+          addItems,
+          filesOpen,
+          onOpenFiles: openFiles,
+          settingsItems,
+          workspaceName: ws.name,
+        }
+      : undefined;
+
   const addProps = readOnly
     ? {}
     : {
@@ -323,18 +338,19 @@ export default function WorkspaceOpen() {
   const tabs = (
     <Tabs
       className="relative inset-shadow-none min-w-0 flex-1 shrink"
-      onChange={(value) => showTab(value as PanelTab)}
+      onChange={(value) => setTab(value as PanelTab)}
       tabs={railTabs.map((t) => ({ label: tabLabel(t), value: t }))}
       value={railTab}
     />
   );
-  // The plus lives with the tree: on the rail row unless Files is pinned left.
+  // The plus lives with the tree: on the rail's Files tab unless Files is
+  // pinned left.
   const railRow = (actions: TabAction[]) => (
     <PanelTabRow
       actions={actions}
       tabs={tabs}
       {...rowProps}
-      {...(layout === 'three' ? {} : addProps)}
+      {...(layout === 'three' || railTab !== 'files' ? {} : addProps)}
     />
   );
   // The workspace switcher is the first row of the file tree and scrolls
@@ -349,16 +365,19 @@ export default function WorkspaceOpen() {
     </div>
   );
 
+  const openChatResource = (ref: ResourceRef) =>
+    setOpenItem(
+      ref.kind === 'material'
+        ? { id: ref.id, kind: 'material' }
+        : { id: ref.id, kind: 'file' }
+    );
   const filesPanel = (renderTabRow: (actions: TabAction[]) => ReactNode) => (
     <FilesPanel
       {...addProps}
       beforeReplace={confirmViewerReplacement}
       generating={generating}
       header={picker}
-      onNavigate={() => {
-        setCitationTarget(null);
-        setToolsOpen(false);
-      }}
+      onNavigate={() => setCitationTarget(null)}
       onOpenItem={setOpenItem}
       onRenameChapter={(ch) =>
         setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
@@ -372,6 +391,70 @@ export default function WorkspaceOpen() {
   // Every tab stays mounted so chat keeps its state while hidden; only the
   // visible one draws the tab row.
   const noRow = () => null;
+  // The top drawer's tree: the workspace as a plain row the size of a file
+  // row (no switcher; Back leaves the workspace), Workspace settings pinned
+  // under it, and the add actions in the header's ⋮ instead of the plus.
+  const filesDrawer = (
+    <FilesPanel
+      beforeReplace={confirmViewerReplacement}
+      className="h-auto flex-1"
+      footer={
+        <div className="flex shrink-0 flex-col border-divider border-t px-2.5">
+          {[
+            ...settingsItems,
+            ...(readOnly && canClone
+              ? [
+                  {
+                    icon: 'clone' as const,
+                    label: m.action_clone_workspace(),
+                    onClick: () => setCloneOpen(true),
+                  },
+                ]
+              : []),
+          ].map((action) => (
+            <button
+              className="flex items-center gap-1.5 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+              key={action.label}
+              onClick={() => {
+                setFilesOpen(false);
+                action.onClick?.();
+              }}
+              type="button"
+            >
+              {action.icon && <Icon name={action.icon} size={15} />}
+              <span className="translate-y-px">{action.label}</span>
+            </button>
+          ))}
+        </div>
+      }
+      generating={generating}
+      header={
+        <div className="mt-1.5 flex items-center gap-1.5 px-2 py-1.5">
+          <img
+            alt=""
+            className="size-3.75 shrink-0 rounded-[4px]"
+            src={iconUrl(ws.iconId)}
+          />
+          <span className="min-w-0 translate-y-px truncate font-semibold">
+            {ws.name}
+          </span>
+        </div>
+      }
+      onNavigate={() => {
+        setCitationTarget(null);
+        setFilesOpen(false);
+      }}
+      onOpenItem={setOpenItem}
+      onRenameChapter={(ch) =>
+        setChapterForm({ id: ch.id, mode: 'rename', name: ch.name })
+      }
+      openItem={openItem}
+      readOnly={readOnly}
+      renderTabRow={noRow}
+      rowMenus={false}
+      workspaceId={workspaceId}
+    />
+  );
   const rail = (
     <>
       <div className="min-h-0 flex-1" hidden={railTab !== 'study'}>
@@ -392,13 +475,7 @@ export default function WorkspaceOpen() {
             canReprocess={ws.isOwner}
             color="purple"
             onOpenCitation={openCitation}
-            onOpenResource={(ref) =>
-              setOpenItem(
-                ref.kind === 'material'
-                  ? { id: ref.id, kind: 'material' }
-                  : { id: ref.id, kind: 'file' }
-              )
-            }
+            onOpenResource={openChatResource}
             openResource={openItem}
             renderTabRow={railTab === 'chat' ? railRow : noRow}
             workspaceId={workspaceId}
@@ -439,7 +516,9 @@ export default function WorkspaceOpen() {
               )}
             </div>
           }
+          onAddFile={readOnly ? undefined : () => setAddSource('upload')}
           onDeleted={() => setOpenItem(null)}
+          oneColumn={oneColumn}
           onFileViewerDirtyChange={setOfficeEditDirty}
           onModeChange={(mode) => {
             void navigate({
@@ -450,6 +529,7 @@ export default function WorkspaceOpen() {
               to: '.',
             });
           }}
+          onOpenSettings={rowProps.onOpenSettings}
           readOnly={readOnly}
           requestedMode={search.mode ?? null}
           workspaceId={workspaceId}
@@ -516,48 +596,22 @@ export default function WorkspaceOpen() {
                   {viewer}
                 </OfficeInsetContext.Provider>
               </FloatingBarContext.Provider>
-              {layout === 'one' && officeOpen && (
-                <div
-                  className="absolute right-4 bottom-[calc(var(--office-inset)+8px)] z-10 flex"
-                  data-workspace-tools-menu
-                >
-                  <Menu
-                    items={toolItems}
-                    trigger={
-                      <IconButton
-                        className="size-11 rounded-full p-2.5 text-solid-accent-1 active:scale-100"
-                        icon="panelRight"
-                        label={m.workspace_tools()}
-                        strokeWidth={2.2}
-                        variant="ghost-hover"
-                      />
-                    }
-                    variant="morph"
+              {layout === 'one' && (
+                <AppErrorBoundary resetKeys={[workspaceId]}>
+                  <ChatPanel
+                    canReprocess={ws.isOwner}
+                    color="purple"
+                    dock={{
+                      // The page's ⋮ keeps Add file, not Add chapter.
+                      menuItems: [...addItems.slice(0, 1), ...settingsItems],
+                      office: officeOpen,
+                    }}
+                    onOpenCitation={openCitation}
+                    onOpenResource={openChatResource}
+                    openResource={openItem}
+                    workspaceId={workspaceId}
                   />
-                </div>
-              )}
-              {layout === 'one' && !officeOpen && (
-                <PageFloatingBar
-                  aria-label={m.workspace_tools()}
-                  open={!toolsOpen}
-                >
-                  {panelTabs.map((t) => (
-                    <PageFloatingBarButton
-                      icon={TAB_ICON[t]}
-                      key={t}
-                      label={tabLabel(t)}
-                      onClick={() => showTab(t)}
-                    />
-                  ))}
-                  {rowProps.onOpenSettings && (
-                    <PageFloatingBarButton
-                      icon="settings"
-                      label={m.workspace_settings()}
-                      onClick={rowProps.onOpenSettings}
-                      text={m.workspace_settings_short()}
-                    />
-                  )}
-                </PageFloatingBar>
+                </AppErrorBoundary>
               )}
             </div>
           </ResizablePanel>
@@ -570,19 +624,22 @@ export default function WorkspaceOpen() {
         </ResizablePanelGroup>
         {layout === 'one' && (
           <Drawer
-            onOpenChange={setToolsOpen}
-            open={toolsOpen}
-            showSwipeHandle
-            swipeDirection="down"
+            onOpenChange={setFilesOpen}
+            open={filesOpen}
+            swipeDirection="up"
           >
+            {/* Part of the header it opens from: it unrolls from under the
+                header's edge (a clip, not a slide over it), in the page's
+                colour with no shadow above; full width on phones, a 400px
+                column from sm. */}
             <DrawerContent
-              keepMounted
-              style={{ '--drawer-height': '82dvh' } as React.CSSProperties}
+              className="inset-x-1.5! top-(--files-top)! rounded-none! rounded-b-card-xl! bg-surface transition-[clip-path,transform]! [--closed-transform:none]! [--drawer-content-max-height:min(70dvh,calc(100dvh-var(--files-top)-4rem))]! [--drawer-inset:0px] [clip-path:inset(0_-3rem_-3rem)] sm:right-auto! sm:left-2.5! sm:w-100 data-ending-style:[clip-path:inset(0_-3rem_100%)] data-starting-style:[clip-path:inset(0_-3rem_100%)]"
+              overlayClassName="top-(--files-top)! min-h-0! supports-backdrop-filter:backdrop-blur-none"
             >
               <DrawerTitle className="sr-only">
-                {m.workspace_tools()}
+                {m.workspace_tab_files()}
               </DrawerTitle>
-              {rail}
+              {filesDrawer}
             </DrawerContent>
           </Drawer>
         )}

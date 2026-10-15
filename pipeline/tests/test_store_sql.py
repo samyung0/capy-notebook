@@ -1393,7 +1393,6 @@ async def test_workspace_outline_groups_files_under_chapters(workspace):
         fingerprint="fp",
         descriptor="A short descriptor.",
         change_share=0.0,
-        summary_version=2,
     )
 
     outline = await store.workspace_outline(workspace.id)
@@ -2022,7 +2021,6 @@ async def test_donor_copy_reuses_chunks_across_workspaces(workspace):
         fingerprint="fp",
         descriptor="Osmosis in brief.",
         change_share=0.0125,
-        summary_version=2,
     )
 
     other_id = f"ws_{secrets.token_hex(6)}"

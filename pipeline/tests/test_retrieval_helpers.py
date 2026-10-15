@@ -1117,10 +1117,9 @@ async def test_an_empty_descriptor_reply_fails_explicitly(monkeypatch):
             await indexing.summarize_file("a.pdf", [Chunk(text="x")])
 
 
-async def test_the_descriptor_regenerates_at_two_percent_a_version_change_or_first(
+async def test_the_descriptor_regenerates_at_two_percent_or_first(
     monkeypatch,
 ):
-    from pipeline.prompts.ingest import SUMMARY_VERSION
     from pipeline.retrieval import indexing
     from pipeline.retrieval.chunking import Chunk
 
@@ -1132,7 +1131,6 @@ async def test_the_descriptor_regenerates_at_two_percent_a_version_change_or_fir
     published = {
         "descriptor": "Stored descriptor.",
         "change_share": 0.0199,
-        "summary_version": SUMMARY_VERSION,
         "chunks": chunks,
     }
     fresh = ("Fresh descriptor.", 0.0)
@@ -1145,8 +1143,6 @@ async def test_the_descriptor_regenerates_at_two_percent_a_version_change_or_fir
         await indexing._descriptor("f", chunks, {**published, "change_share": 0.02})
         == fresh
     )
-    stale = {**published, "summary_version": SUMMARY_VERSION - 1}
-    assert await indexing._descriptor("f", chunks, stale) == fresh
     assert await indexing._descriptor("f", chunks, None) == fresh
 
 

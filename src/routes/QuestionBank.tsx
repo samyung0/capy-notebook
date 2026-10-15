@@ -623,7 +623,7 @@ export default function QuestionBank() {
         <Panel
           className="min-h-0 flex-1 rounded-button sm:rounded-card-xl"
           scrollRef={scrollRef}
-          sectionClassName="h-full gap-0"
+          sectionClassName="h-full gap-0 pb-10"
         >
           <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
           {topicId ? (

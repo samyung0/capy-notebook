@@ -9,10 +9,10 @@ import {
 } from '@/api/hooks';
 import type { Workspace } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
+import { DangerZone, SettingRow } from '@/components/app/tabPanel';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { ConfirmDialog, SimpleDialog } from '@/components/ui/Dialog';
 import { Skeleton } from '@/components/ui/feedback';
-import { InputTitle } from '@/components/ui/Input';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
@@ -22,27 +22,6 @@ import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
 import { ShareDialog } from './ShareDialog';
 import { WorkspaceFormEditDialog } from './WorkspaceFormEditDialog';
-
-/** Title, hint, action. The same shape the Sharing tab's rows use. */
-function SettingRow({
-  title,
-  hint,
-  children,
-}: {
-  title: string;
-  hint: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3">
-      <div className="flex flex-col gap-1">
-        <InputTitle>{title}</InputTitle>
-        <p className="t-meta text-fg-muted">{hint}</p>
-      </div>
-      {children}
-    </div>
-  );
-}
 
 export function WorkspaceSettingsDialog({
   workspace,
@@ -217,14 +196,12 @@ export function WorkspaceSettingsDialog({
           </div>
         )}
         {tab === 'danger' && (
-          /* Keeps its own padding: the error border is the grouping. */
-          <div className="flex flex-col gap-4 rounded-card border border-solid-error/40 p-4">
+          <DangerZone>
             <SettingRow
               hint={m.study_reset_hint()}
               title={m.study_reset_title()}
             >
               <Button
-                className="h-fit py-2.5"
                 disabled={resetting}
                 onClick={() => setConfirmReset(true)}
                 rounded="large"
@@ -239,7 +216,6 @@ export function WorkspaceSettingsDialog({
                 title={m.workspace_delete_action()}
               >
                 <Button
-                  className="h-fit py-2.5"
                   disabled={deleting}
                   iconLeft="trash"
                   onClick={() => setConfirmDelete(true)}
@@ -250,7 +226,7 @@ export function WorkspaceSettingsDialog({
                 </Button>
               </SettingRow>
             )}
-          </div>
+          </DangerZone>
         )}
       </div>
       <ConfirmDialog

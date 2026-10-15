@@ -20,7 +20,7 @@ catalog for every numeric limit that may vary by subscription plan:
 | Limit                           |                       Free |                        Pro |
 | ------------------------------- | -------------------------: | -------------------------: |
 | Storage                         | 100,000,000 bytes (100 MB) | 1,000,000,000 bytes (1 GB) |
-| Monthly credits                 |                      1,000 |                     20,000 |
+| Monthly credits                 |                      1,000 |                     10,000 |
 | Source file                     |                     10 MiB |                     30 MiB |
 | Material daily-history entries  |                          3 |                         30 |
 | Owned workspaces                |                         10 |                         50 |

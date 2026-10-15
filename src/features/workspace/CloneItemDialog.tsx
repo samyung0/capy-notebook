@@ -296,13 +296,13 @@ export function CloneItemDialog({
             >
               <SelectTrigger
                 aria-label={m.question_ui_workspace()}
-                className="sm:w-56"
                 disabled={workspacesPending || isSubmitting}
+                layout="row"
                 loading={workspacesPending}
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent layout="row">
                 {!isFile && (
                   <SelectItem value={STANDALONE}>
                     <span className="text-fg-muted">
