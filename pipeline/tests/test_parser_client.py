@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import sys
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -176,20 +178,52 @@ def test_a_bundle_in_the_spool_is_used_only_through_the_parser(
     assert artifact["source_sha256"] == SOURCE_SHA256
 
 
-def test_a_lost_parser_answer_is_retried_not_read_from_the_spool(
-    tmp_path: Path, monkeypatch, parser_url
+@pytest.mark.parametrize(
+    ("lost", "posts"),
+    [
+        ("ConnectionError", 2),
+        ("ReadTimeout", 1),
+        # Both a ConnectionError and a Timeout: a timeout, so not asked again.
+        ("ConnectTimeout", 1),
+    ],
+)
+def test_a_lost_parser_answer_is_asked_for_once_more_never_read_from_the_spool(
+    tmp_path: Path, monkeypatch, parser_url, lost: str, posts: int
 ):
+    """A dropped connection re-sends the same request once, at once, and the
+    parser answers for the bundle it published; a timeout is not re-sent, and
+    the spool file is never used in place of an answer."""
     monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
     key, fingerprint = parser_client.artifact_identity(_descriptor())
+    blob = _artifact_zip(parser_client._shared_path(key), fingerprint=fingerprint)
+    bodies: list[dict] = []
 
-    def _publish_then_disconnect(*_args, **_kwargs):
-        _artifact_zip(parser_client._shared_path(key), fingerprint=fingerprint)
-        raise parser_client.requests.ConnectionError("response lost")
+    def post(url, **kwargs):
+        bodies.append(kwargs["json"])
+        if len(bodies) == 1:
+            raise getattr(parser_client.requests, lost)("answer lost")
+        return _answer(key, blob, cached=True)
 
-    monkeypatch.setattr(parser_client.requests, "post", _publish_then_disconnect)
+    monkeypatch.setattr(parser_client.requests, "post", post)
 
+    if posts == 2:
+        artifact = parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+        assert artifact["key"] == key and artifact["cached"] is True
+        assert bodies[0] == bodies[1]
+    else:
+        with pytest.raises(parser_client.requests.RequestException):
+            parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+    assert len(bodies) == posts
+
+    def always_lost(url, **kwargs):
+        bodies.append(kwargs["json"])
+        raise parser_client.requests.ConnectionError("answer lost")
+
+    bodies.clear()
+    monkeypatch.setattr(parser_client.requests, "post", always_lost)
     with pytest.raises(parser_client.requests.ConnectionError):
-        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-final")
+        parser_client._request_artifact(_descriptor(), "doc.pdf", "job-1")
+    assert len(bodies) == 2
 
 
 def test_local_hard_timeout_quarantine_fails_without_calling_parser(
@@ -547,8 +581,8 @@ def test_office_bundle_requires_evidence_and_rejects_pdfs(tmp_path: Path, monkey
 
 
 def test_an_office_bundle_may_carry_its_page_image(tmp_path: Path, monkeypatch):
-    """``page1.png`` is optional and bounded; ingest reads it back for the
-    file's thumbnail and finds None in a bundle without one."""
+    """``page1.png`` is optional and bounded; extraction writes it beside the
+    blocks, where the card thumbnail reads it."""
     raw = tmp_path / "raw"
     raw.mkdir()
     evidence = json.dumps(
@@ -565,12 +599,14 @@ def test_an_office_bundle_may_carry_its_page_image(tmp_path: Path, monkeypatch):
         extra={"refinement.json": evidence, "page1.png": png},
     )
     parser_client._extract(artifact, raw, FAST_VERSION, office=True)
-    assert parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE) == png
+    assert (raw / parser_client.PAGE_IMAGE).read_bytes() == png
 
     bare = _install_artifact(
         monkeypatch, tmp_path, fingerprint="bare", extra={"refinement.json": evidence}
     )
-    assert parser_client.artifact_entry(bare, parser_client.PAGE_IMAGE) is None
+    bare_raw = tmp_path / "bare-raw"
+    parser_client._extract(bare, bare_raw, FAST_VERSION, office=True)
+    assert not (bare_raw / parser_client.PAGE_IMAGE).exists()
 
     big = _install_artifact(
         monkeypatch,
@@ -683,8 +719,8 @@ def test_a_bundle_for_other_source_bytes_is_discarded_unused(
 def test_the_coordinator_reads_only_its_private_copy_of_a_bundle(
     tmp_path: Path, monkeypatch
 ):
-    """Validation, extraction and entry reads open a private copy whose
-    SHA-256 is the parser's answer, never the shared spool file."""
+    """Validation and extraction open a private copy whose SHA-256 is the
+    parser's answer, never the shared spool file."""
     artifact = _install_artifact(
         monkeypatch, tmp_path, extra={"page1.png": b"\x89PNG\r\n\x1a\npage"}
     )
@@ -706,13 +742,75 @@ def test_the_coordinator_reads_only_its_private_copy_of_a_bundle(
     parser_client.extract_artifact(
         artifact, tmp_path / "raw", route=parser_client.ROUTE_FAST, office=False
     )
-    assert parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
     assert opened and not any(spool.resolve() in path.parents for path in opened)
 
     # A spool file that no longer has the answered digest is never read.
     (spool / f"{artifact['fingerprint']}.zip").write_bytes(b"changed")
     with pytest.raises(parser_client.ParserClientError, match="mismatch"):
-        parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
+        parser_client._extract(artifact, tmp_path / "raw-2", FAST_VERSION)
+
+
+def _finishes(call, *args):
+    """Run ``call`` in a thread and return what it returned or raised, failing
+    the test if it is still blocked after a few seconds."""
+    outcome: list = []
+
+    def run():
+        try:
+            outcome.append(call(*args))
+        except Exception as exc:  # noqa: BLE001 - returned to the test
+            outcome.append(exc)
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    thread.join(5)
+    assert not thread.is_alive(), "blocked on a spool file"
+    return outcome[0]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="FIFOs and links: Linux")
+@pytest.mark.parametrize("kind", ["fifo", "link"])
+def test_a_fifo_or_link_in_the_spool_is_refused_promptly(
+    tmp_path: Path, monkeypatch, kind: str
+):
+    """A bundle or quarantine marker that is not a regular file is never read:
+    a FIFO does not block, a link is not followed, and discarding a bundle
+    removes the link itself."""
+    monkeypatch.setattr(parser_client.cfg, "parse_shared_dir", str(tmp_path))
+    fingerprint = "e" * 64
+    real = _install_artifact(monkeypatch, tmp_path, fingerprint="f" * 64)
+    artifact = {
+        **real,
+        "fingerprint": fingerprint,
+        "key": f"artifacts/{fingerprint}.zip",
+    }
+    bundle = tmp_path / "artifacts" / f"{fingerprint}.zip"
+    marker = tmp_path / "quarantine" / f"{fingerprint}.json"
+    marker.parent.mkdir()
+    target = tmp_path / "artifacts" / f"{'f' * 64}.zip"
+    outside = tmp_path / "marker.json"
+    outside.write_text(
+        json.dumps(
+            {
+                "reason": "parse_oom",
+                "source_fingerprint": fingerprint,
+                "parser_version": FAST_VERSION,
+            }
+        )
+    )
+    if kind == "fifo":
+        os.mkfifo(bundle)
+        os.mkfifo(marker)
+    else:
+        bundle.symlink_to(target)
+        marker.symlink_to(outside)
+
+    error = _finishes(parser_client._extract, artifact, tmp_path / "raw", FAST_VERSION)
+    assert isinstance(error, parser_client.ParserClientError)
+    assert _finishes(parser_client._local_quarantine, fingerprint) is None
+
+    parser_client.discard_artifact(artifact)
+    assert not os.path.lexists(bundle) and target.exists()
 
 
 def test_extract_rejects_stale_version_and_wrong_source(tmp_path: Path, monkeypatch):

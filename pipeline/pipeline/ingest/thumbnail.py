@@ -3,11 +3,11 @@
 A successful ingest ends here, before the local source is cleaned up. PDF and
 Office files use the ``page1.png`` the parser rendered during the parse, in
 its bounded child, from the PDF it held (the repaired bytes, or an Office
-file's conversion): the worker never renders or converts a document itself. A
-bundle without the image (an older parser, a failed render) means no
-thumbnail. A parse that reused identical indexed bytes builds no bundle; the
-file then shares the key of a file with the same bytes in the same workspace
-only. Uploaded images go through Pillow. The 200 px wide WebP
+file's conversion), as the bundle's extraction wrote it: the worker never
+renders or converts a document itself. Without that image (a reused donor or
+identical indexed bytes, which build or extract no bundle, an older parser, a
+failed render) the file shares the key of a file with the same bytes in the
+same workspace only, if one has a thumbnail. Uploaded images go through Pillow. The 200 px wide WebP
 is stored content-addressed at ``thumbs/{file id}/{sha256}.webp`` and
 ``files.thumbnail_key`` points at it; the blob triggers release the key it
 replaces. Text sources store their first 600 characters in ``files.preview``
@@ -28,12 +28,9 @@ import io
 import logging
 import time
 import warnings
-from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
 
 from ..config import cfg
-from ..parse import parser_client
 from ..store import blobstore, db
 from . import plan as ingest_plan
 
@@ -55,7 +52,7 @@ def capture_source(
     plan: ingest_plan.ProcessingPlan,
     local_path: str | None,
     source_sha256: str,
-    artifact: Mapping[str, Any] | None,
+    page_image: bytes | None,
 ) -> None:
     """Store the thumbnail or text preview of the ingested bytes."""
     if not local_path:
@@ -66,14 +63,14 @@ def capture_source(
         if plan.route in (ingest_plan.RAW_TEXT, ingest_plan.DELIMITED_TEXT):
             _store_text_preview(file_id, source_sha256, Path(local_path))
             return
-        if artifact is None and plan.route == ingest_plan.DOCUMENT_PARSE:
-            # Reused from identical indexed bytes inside the parse job: no
-            # bundle to take the page from, so the file shares that file's key.
+        if page_image is None and plan.route == ingest_plan.DOCUMENT_PARSE:
+            # No page from the parse (reused bytes, or none rendered): the file
+            # shares the key of a file with the same bytes.
             with db.connect() as conn, conn.cursor() as cur:
                 db.share_file_thumbnail(cur, file_id, workspace_id, source_sha256)
                 conn.commit()
             return
-        data = render(plan, Path(local_path), artifact)
+        data = render(plan, Path(local_path), page_image)
         if data is None:
             return
         _store_thumbnail(file_id, source_sha256, data)
@@ -97,18 +94,13 @@ def capture_source(
 def render(
     plan: ingest_plan.ProcessingPlan,
     source: Path,
-    artifact: Mapping[str, Any] | None,
+    page_image: bytes | None,
 ) -> bytes | None:
     """The WebP of page 1, or None for a route without one (store-only, raw or
-    delimited text), a bundle without a page image, or an image format this
+    delimited text), a parse without a page image, or an image format this
     Pillow cannot decode."""
     if plan.route == ingest_plan.DOCUMENT_PARSE:
-        page = (
-            parser_client.artifact_entry(artifact, parser_client.PAGE_IMAGE)
-            if artifact
-            else None
-        )
-        return None if page is None else bundled_page(page)
+        return None if page_image is None else bundled_page(page_image)
     if plan.route == ingest_plan.IMAGE_CAPTION:
         return render_image(source, plan.format)
     return None

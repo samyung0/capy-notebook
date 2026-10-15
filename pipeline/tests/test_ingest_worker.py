@@ -539,6 +539,25 @@ async def test_the_processing_plan_selects_the_route(parse_stub):
     assert parse_stub["route"] == parser_client.ROUTE_FAST
 
 
+async def test_the_card_thumbnail_takes_the_page_image_extraction_wrote(
+    parse_stub, monkeypatch
+):
+    """The bundle is copied once, for extraction; its page image is read from
+    there rather than from another copy."""
+    extract = worker.parser_client.extract_artifact
+
+    def with_page(artifact, raw_dir, **kwargs):
+        blocks = extract(artifact, raw_dir, **kwargs)
+        (raw_dir / parser_client.PAGE_IMAGE).write_bytes(b"\x89PNG page")
+        return blocks
+
+    monkeypatch.setattr(worker.parser_client, "extract_artifact", with_page)
+
+    _chunks, _unread, page = await _run()
+
+    assert page == b"\x89PNG page"
+
+
 @pytest.mark.parametrize("parser_route", ["accurate", "advanced", "bogus"])
 async def test_unknown_contract_parser_routes_fail(parse_stub, parser_route):
     from pipeline.jobs import TerminalError
@@ -812,7 +831,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
     monkeypatch.setattr(worker, "_read_text", lambda _p: "# Notes")
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
-    chunks, unread = await worker._chunks_for(
+    chunks, unread, page = await worker._chunks_for(
         payload={"blobPath": "sources/notes.md"},
         name="notes.md",
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="md"),
@@ -823,7 +842,7 @@ async def test_text_sources_never_reach_the_parse_service(parse_stub, monkeypatc
         source_sha256="aa" * 32,
     )
 
-    assert chunks == ["# Notes"] and unread == []
+    assert chunks == ["# Notes"] and unread == [] and page is None
     assert parse_stub["descriptor"] is None
     assert parse_stub["chunked"] is None
 
@@ -832,7 +851,7 @@ async def test_json_sources_are_ingested_as_text(parse_stub, monkeypatch):
     monkeypatch.setattr(worker, "_read_text", lambda _p: '{"topic": "osmosis"}')
     monkeypatch.setattr(worker, "chunk_markdown", lambda text: [text])
 
-    chunks, _unread = await worker._chunks_for(
+    chunks, _unread, _page = await worker._chunks_for(
         payload={"blobPath": "sources/data.json"},
         name="data.json",
         processing_plan=_plan(ingest_plan.RAW_TEXT, format_name="json"),
@@ -890,7 +909,7 @@ async def test_a_table_chunks_without_overlap(parse_stub, monkeypatch, tmp_path)
         encoding="utf-8",
     )
 
-    chunks, _unread = await worker._chunks_for(
+    chunks, _unread, _page = await worker._chunks_for(
         payload={"blobPath": "sources/grades.csv"},
         name="grades.csv",
         processing_plan=_plan(ingest_plan.DELIMITED_TEXT, format_name="csv"),

@@ -71,32 +71,20 @@ def test_document_pages_come_from_the_parse_bundle(
 ):
     source = tmp_path / "source-1"
     source.write_bytes(b"document")
-    seen = []
-
-    def entry(artifact, name):
-        seen.append(name)
-        return _png(200, 283)
-
-    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", entry)
-    artifact = {"key": "artifacts/x.zip"}
 
     plan = _plan(ingest_plan.DOCUMENT_PARSE, format_name)
-    webp = thumbnail.render(plan, source, artifact)
+    webp = thumbnail.render(plan, source, _png(200, 283))
 
-    assert seen == ["page1.png"] and _size(webp) == (200, 283)
+    assert _size(webp) == (200, 283)
 
 
-@pytest.mark.parametrize("artifact", [None, {"key": "artifacts/old.zip"}])
-def test_a_bundle_without_a_page_image_gets_no_thumbnail(
-    tmp_path, monkeypatch, no_document_rendering, artifact
-):
+def test_a_parse_without_a_page_image_renders_none(tmp_path, no_document_rendering):
     source = tmp_path / "source-1"
     source.write_bytes(_PDF)
-    monkeypatch.setattr(thumbnail.parser_client, "artifact_entry", lambda *_a: None)
 
     for format_name in ("pdf", "pptx"):
         plan = _plan(ingest_plan.DOCUMENT_PARSE, format_name)
-        assert thumbnail.render(plan, source, artifact) is None
+        assert thumbnail.render(plan, source, None) is None
 
 
 @pytest.mark.parametrize(
@@ -217,7 +205,7 @@ def _capture(source: Path, route=ingest_plan.IMAGE_CAPTION, format_name="png"):
         plan=_plan(route, format_name),
         local_path=str(source),
         source_sha256="aa" * 32,
-        artifact=None,
+        page_image=None,
     )
 
 
@@ -293,7 +281,7 @@ async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, c
         return None
 
     async def _chunks(**_values):
-        return ["chunk"], []
+        return ["chunk"], [], b"page"
 
     async def _attach(**_values):
         return {"content_id": "rgc_1", "ready": True}
@@ -375,7 +363,7 @@ def test_a_reuse_without_a_bundle_shares_the_identical_files_key(workspace, tmp_
         plan=_plan(ingest_plan.DOCUMENT_PARSE, "pptx"),
         local_path=str(source),
         source_sha256=sha,
-        artifact=None,
+        page_image=None,
     )
 
     refs = "SELECT COALESCE((SELECT ref_count FROM blobs WHERE object_path=%s), 0)"
@@ -435,7 +423,7 @@ def test_a_reuse_never_shares_a_key_from_another_workspace(
             plan=_plan(ingest_plan.DOCUMENT_PARSE, "pdf"),
             local_path=str(source),
             source_sha256=sha,
-            artifact=None,
+            page_image=None,
         )
         shared = workspace.scalar(
             "SELECT thumbnail_key FROM files WHERE id=%s", (copy,)

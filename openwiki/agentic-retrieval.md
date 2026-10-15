@@ -829,11 +829,13 @@ of the parsed PDF's text-less pages (admission counts none). A document with
 more than `CAPY_PARSE_OCR_PAGE_CAP` (500) is refused with the terminal
 `parse_too_many_scanned_pages`; one that would lift the unread pages in the OCR
 stage past the cap is answered `429 parser_capacity`, its parse dropped, and
-the coordinator's capacity wait sends it again later. Until the OCR rework, no
-new parse starts while the OCR stage holds the cap's worth of unread pages
-(`429` before the parse; a page capture still runs), so a finished parse is
-rarely dropped. Before the OCR stage such documents timed out at about 320
-scanned pages.
+the coordinator's capacity wait sends it again later. Until the OCR rework,
+which removes the stage, no new parse starts while the OCR stage holds the
+cap's worth of unread pages (`429` before the source is read; a page capture
+still runs). That gate fires only when the stage is full, so a finished parse
+can still be dropped at the handoff and sent again; this stays open until the
+rework. Before the OCR stage such documents timed out at about 320 scanned
+pages.
 
 Admission refuses a PDF with more than `CAPY_PARSE_MAX_PAGES` (1,400) pages
 with the terminal `parse_too_many_pages` before it takes a parse child. The API
@@ -1012,9 +1014,16 @@ ZIP into its own temporary directory, hashes the copy against the parser's
 answer and reads only that copy. A ZIP whose manifest names other source bytes
 counts as missing, is deleted, and the job parses again. The source SHA-256
 binds a bundle to the bytes it was parsed from; it is not a check against a
-parse child itself. A parse child still serves one document after another, and
-one child per document, which waits on its cost measurement, is the step that
-keeps documents apart. Because the key is fingerprint-addressed, the
+parse child itself. A parse child still serves one document after another; one
+child per document, which waits on its cost measurement, stops a child
+carrying state into later documents in its slot. Keeping a child out of other
+documents' files needs it confined from the spool and the other slots, a
+follow-up. If the parser's answer is lost to a dropped connection (never a
+timeout), the coordinator sends the same request once more at once, and the
+parser answers for the bundle it published, with its receipt. Spool files a
+parse child can reach (bundles, sources, quarantine markers) are opened only
+as regular files within their size bound, never through a link or by waiting
+on a FIFO, and a bundle's link is discarded as the link itself. Because the key is fingerprint-addressed, the
 deletion skips a bundle another pending or running job still names; that job
 deletes it when it finishes. A bundle deleted under a concurrent job anyway
 takes the one-time return to parsing above.

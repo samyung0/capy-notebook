@@ -1411,9 +1411,9 @@ async def _chunks_for(
     file_id: str,
     source_sha256: str,
     job_id: str | None = None,
-) -> tuple[list[Chunk], list[int]]:
-    """Parse one source into chunks, and the 1-based pages the VLM left
-    unread."""
+) -> tuple[list[Chunk], list[int], bytes | None]:
+    """Parse one source into chunks, the 1-based pages the VLM left unread,
+    and the parse's page-1 image for the card thumbnail."""
     source_revision = int(payload.get("sourceRevision") or 0)
     source_etag = str(payload.get("sourceETag") or "")
 
@@ -1432,7 +1432,7 @@ async def _chunks_for(
         _set_stage("text_normalization")
         text = await asyncio.to_thread(_read_text, local_path)
         _publish_progress(ws, file_id, "indexing", 40, status="processing")
-        return chunk_markdown(text), []
+        return chunk_markdown(text), [], None
 
     direct = {
         ingest_plan.IMAGE_CAPTION: "image",
@@ -1504,8 +1504,8 @@ async def _chunks_for(
         if direct == "tabular":
             # Every row carries its own headers, so a table chunks with no
             # overlap: a carried row would only repeat in the next chunk.
-            return chunk_markdown(text, overlap_tokens=0), []
-        return chunk_markdown(text), []
+            return chunk_markdown(text, overlap_tokens=0), [], None
+        return chunk_markdown(text), [], None
 
     if processing_plan.route != ingest_plan.DOCUMENT_PARSE:
         raise TerminalError(f"unsupported processing route {processing_plan.route!r}")
@@ -1531,7 +1531,9 @@ async def _chunks_for(
             _page_chunks, content_list, raw_dir, Path(local_path or "")
         )
         _publish_progress(ws, file_id, "indexing", 55)
-        return chunks, unread
+        # Extraction already bounded this entry (parser_client._entry_limit).
+        page = raw_dir / parser_client.PAGE_IMAGE
+        return chunks, unread, page.read_bytes() if page.is_file() else None
     finally:
         shutil.rmtree(raw_dir, ignore_errors=True)
 
@@ -2210,7 +2212,7 @@ async def _process_ingest_job(
         )
         if reused:
             await _capture_thumbnail(
-                payload, ws, file_id, processing_plan, local_path, source_sha256
+                ws, file_id, processing_plan, local_path, source_sha256, None
             )
             await asyncio.to_thread(cleanup_source)
             await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2258,7 +2260,7 @@ async def _process_ingest_job(
             "ingest stopped because an account is suspended or deleting"
         )
     try:
-        chunks, unread = await _chunks_for(
+        chunks, unread, page_image = await _chunks_for(
             payload=payload,
             name=name,
             processing_plan=processing_plan,
@@ -2354,7 +2356,7 @@ async def _process_ingest_job(
             return
         _publish_done(ws, file_id, unread, note)
         await _capture_thumbnail(
-            payload, ws, file_id, processing_plan, local_path, source_sha256
+            ws, file_id, processing_plan, local_path, source_sha256, page_image
         )
         await asyncio.to_thread(cleanup_source)
         await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2402,7 +2404,7 @@ async def _process_ingest_job(
         return
     _publish_done(ws, file_id, unread)
     await _capture_thumbnail(
-        payload, ws, file_id, processing_plan, local_path, source_sha256
+        ws, file_id, processing_plan, local_path, source_sha256, page_image
     )
     await asyncio.to_thread(cleanup_source)
     await asyncio.to_thread(_release_parse_artifact, payload)
@@ -2410,16 +2412,15 @@ async def _process_ingest_job(
 
 
 async def _capture_thumbnail(
-    payload: dict,
     ws: str,
     file_id: str,
     processing_plan: ingest_plan.ProcessingPlan,
     local_path: str | None,
     source_sha256: str,
+    page_image: bytes | None,
 ) -> None:
     """The card thumbnail of a committed ingest; failures stay inside
     ``thumbnail.capture_source`` and never reach the job."""
-    artifact = payload.get("parseArtifact")
     await asyncio.to_thread(
         thumbnail.capture_source,
         file_id=file_id,
@@ -2427,7 +2428,7 @@ async def _capture_thumbnail(
         plan=processing_plan,
         local_path=local_path,
         source_sha256=source_sha256,
-        artifact=artifact if isinstance(artifact, dict) else None,
+        page_image=page_image,
     )
 
 

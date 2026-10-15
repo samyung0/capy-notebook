@@ -13,6 +13,7 @@ import multiprocessing
 import os
 import pickle
 import sys
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -184,6 +185,34 @@ async def test_parse_child_is_persistent_and_contains_document_errors(
         await runtime.close()
 
     assert not list(tmp_path.glob("transfer-*"))
+
+
+@pytest.mark.asyncio
+async def test_a_child_whose_answer_was_over_the_limit_is_replaced_before_the_next(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An oversized answer closes the answer pipe before the SIGKILL lands (here
+    it never does); the slot replaces that child for the next document instead
+    of reading a closed pipe."""
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
+    runtime = parser_app.ParserRuntime(
+        ocr_process=lambda: FakeChild(_no_ocr),
+        admission_process=lambda: FakeChild(_no_count),
+    )
+    await runtime.start()
+    slot = runtime._slots[0]
+    first = slot.process._process
+    monkeypatch.setattr(slot.process, "terminate", lambda: None)
+    try:
+        monkeypatch.setattr(parser_app, "MESSAGE_MAX_BYTES", 8)
+        with pytest.raises(parser_app.ParserRuntimeFailure, match="invalid answer"):
+            await runtime.parse(parser_app.Document(b"not a document", "first.txt"))
+        monkeypatch.setattr(parser_app, "MESSAGE_MAX_BYTES", 1 << 24)
+        with pytest.raises(parser_app.SourceUnreadable, match="PDF and Office"):
+            await runtime.parse(parser_app.Document(b"not a document", "second.txt"))
+        assert slot.process._process is not first
+    finally:
+        await runtime.close()
 
 
 @pytest.mark.asyncio
@@ -1345,6 +1374,154 @@ def test_a_cached_bundle_is_served_only_as_this_process_wrote_it(
     monkeypatch.setattr(parser_app, "_published", {})
     assert parser_app._artifact_descriptor(key, "fp") is None
     assert not path.exists()
+
+
+def _publish(fingerprint: str, bundle: bytes) -> None:
+    """What a producer does: the record first, then the file."""
+    digest = hashlib.sha256(bundle).hexdigest()
+    parser_app._record_bundle(fingerprint, digest, "job-1", {})
+    parser_app._write_artifact(f"artifacts/{fingerprint}.zip", bundle)
+
+
+@pytest.mark.parametrize("moment", ["before the open", "after the open"])
+def test_a_bundle_published_during_a_cache_check_is_kept(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, moment: str
+) -> None:
+    """A cache check running while the same bundle is published neither
+    deletes the bundle nor forgets its record: the record is read after the
+    hash, and only the file that was hashed is ever removed."""
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    monkeypatch.setattr(parser_app, "_published", {})
+    key, path = "artifacts/fp.zip", tmp_path / "artifacts" / "fp.zip"
+    bundle = parser_app._bundle_bytes(
+        {"content_list": []}, "fp", "aa" * 32, "job-1", {}
+    )
+    if moment == "after the open":
+        parser_app._write_artifact(key, b"left by an earlier parser")
+    opener = parser_app._open_spool_file
+
+    def publishing(file_path):
+        if moment == "before the open":
+            _publish("fp", bundle)
+            return opener(file_path)
+        opened = opener(file_path)
+        _publish("fp", bundle)
+        return opened
+
+    monkeypatch.setattr(parser_app, "_open_spool_file", publishing)
+    during = parser_app._artifact_descriptor(key, "fp")
+    monkeypatch.setattr(parser_app, "_open_spool_file", opener)
+
+    assert path.read_bytes() == bundle
+    after = parser_app._artifact_descriptor(key, "fp")
+    assert after["sha256"] == hashlib.sha256(bundle).hexdigest()
+    # Before the open the check hashed the new bundle; after it, the old file.
+    assert (during is not None) == (moment == "before the open")
+
+
+def test_recording_a_bundle_keeps_the_records_of_bundles_still_being_written(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    monkeypatch.setattr(
+        parser_app,
+        "_published",
+        {"writing": ("d1", "job-1", {}), "gone": ("d2", "job-2", {})},
+    )
+    monkeypatch.setattr(parser_app, "_artifact_tasks", {"writing": object()})
+
+    parser_app._record_bundle("next", "d3", "job-3", {})
+
+    assert set(parser_app._published) == {"writing", "next"}
+
+
+def _finishes(call, *args):
+    """Run ``call`` in a thread and return what it returned, failing the test
+    if it is still blocked after a few seconds."""
+    outcome: list = []
+    thread = threading.Thread(target=lambda: outcome.append(call(*args)), daemon=True)
+    thread.start()
+    thread.join(5)
+    assert not thread.is_alive(), "blocked on a spool file"
+    return outcome[0]
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="FIFOs and links: Linux")
+@pytest.mark.parametrize("kind", ["fifo", "link"])
+def test_a_fifo_or_link_in_the_spool_is_refused_promptly(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, kind: str
+) -> None:
+    """A bundle or quarantine marker that is not a regular file is never read:
+    a FIFO does not block, a link is not followed, and the bundle's link is
+    removed itself."""
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+    for directory in ("artifacts", "quarantine", "sources"):
+        (tmp_path / directory).mkdir()
+    bundle = tmp_path / "artifacts" / "fp.zip"
+    marker = tmp_path / "quarantine" / "fp.json"
+    kept = tmp_path / "sources" / "kept"
+    kept.write_bytes(b"kept")
+    valid = tmp_path / "sources" / "marker.json"
+    valid.write_text(
+        json.dumps(
+            {
+                "reason": "parse_oom",
+                "source_fingerprint": "fp",
+                "parser_version": parser_app.PARSER_VERSION,
+            }
+        )
+    )
+    # Following the link would find a bundle the record matches.
+    monkeypatch.setattr(
+        parser_app, "_published", {"fp": (hashlib.sha256(b"kept").hexdigest(), "", {})}
+    )
+    if kind == "fifo":
+        os.mkfifo(bundle)
+        os.mkfifo(marker)
+    else:
+        bundle.symlink_to(kept)
+        marker.symlink_to(valid)
+
+    assert _finishes(parser_app._artifact_descriptor, "artifacts/fp.zip", "fp") is None
+    assert not os.path.lexists(bundle) and kept.exists()
+    assert _finishes(parser_app._quarantine, "fp") is None
+
+
+@pytest.mark.asyncio
+async def test_a_full_ocr_stage_answers_429_before_the_source_is_read(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from types import SimpleNamespace
+
+    def unread(*_args):
+        raise AssertionError("the source was read")
+
+    monkeypatch.setattr(parser_app, "_artifact_descriptor", lambda *_args: None)
+    monkeypatch.setattr(parser_app, "_quarantine", lambda _fingerprint: None)
+    monkeypatch.setattr(parser_app, "_read_source", unread)
+    monkeypatch.setattr(
+        parser_app,
+        "runtime",
+        SimpleNamespace(active_jobs=0, _ocr_backlog=lambda: parser_app.OCR_PAGE_CAP),
+    )
+
+    response = await parser_app._artifact_parse(
+        {
+            "source_key": "sources/source-1",
+            "source_sha256": "a" * 64,
+            "output_key": "artifacts/fp.zip",
+            "source_fingerprint": "fp",
+            "request_id": "job",
+            "artifact_schema": parser_app.ARTIFACT_SCHEMA,
+            "parser_version": parser_app.PARSER_VERSION,
+        }
+    )
+
+    assert response.status_code == 429
+    assert json.loads(response.body) == {
+        "code": "parser_capacity",
+        "detail": "parser OCR backlog is full",
+    }
 
 
 def test_bundle_rejects_content_beyond_configured_budget(

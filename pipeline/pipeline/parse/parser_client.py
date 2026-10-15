@@ -29,14 +29,16 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
+import stat
 import tempfile
 import time
 import zipfile
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, BinaryIO
 
 import requests
 
@@ -168,21 +170,53 @@ def artifact_identity(descriptor: Mapping[str, Any]) -> tuple[str, str]:
 
 
 def _shared_path(key: str) -> Path:
+    """A spool file's path. Its directories must be the spool's own; the file
+    itself is not resolved, so a link there is refused when opened
+    (``_open_spool_file``) and unlinked as the link it is."""
     relative = PurePosixPath(key)
     if relative.is_absolute() or not relative.parts or ".." in relative.parts:
         raise ParserClientError("invalid shared spool key")
     root = Path(cfg.parse_shared_dir).resolve()
-    path = root.joinpath(*relative.parts).resolve()
-    if path == root or root not in path.parents:
+    path = root.joinpath(*relative.parts)
+    if path.parent.resolve() != path.parent:
         raise ParserClientError("invalid shared spool key")
     return path
+
+
+def _open_spool_file(path: Path) -> tuple[BinaryIO, int]:
+    """Open a spool file as a parse child may have left it: never through a
+    link, never waiting on a FIFO, only a regular file. Returns it and its
+    size; the caller bounds the size."""
+    descriptor = os.open(
+        path,
+        os.O_RDONLY
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+        | getattr(os, "O_BINARY", 0),
+    )
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError(f"{path.name} is not a regular file")
+        return os.fdopen(descriptor, "rb"), info.st_size
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+# A quarantine marker is a few hundred bytes of JSON.
+MARKER_MAX_BYTES = 64 << 10
 
 
 def _local_quarantine(fingerprint: str) -> tuple[str, str] | None:
     path = _shared_path(f"quarantine/{fingerprint}.json")
     try:
-        value = json.loads(path.read_bytes())
-    except (FileNotFoundError, OSError, ValueError):
+        marker, size = _open_spool_file(path)
+        with marker:
+            if size > MARKER_MAX_BYTES:
+                return None
+            value = json.loads(marker.read(MARKER_MAX_BYTES))
+    except (OSError, ValueError):
         return None
     if (
         not isinstance(value, dict)
@@ -229,25 +263,30 @@ def _request_artifact(
     headers.update(obs.outbound_headers())
     if cfg.parser_token:
         headers["Authorization"] = f"Bearer {cfg.parser_token}"
+    request = {
+        "source_key": str(descriptor["source_key"]),
+        "source_sha256": source_sha256,
+        "output_key": artifact_key,
+        "filename": upload_name,
+        "artifact_schema": ARTIFACT_SCHEMA,
+        "parser_version": version,
+        "source_fingerprint": fingerprint,
+        "request_id": request_id,
+    }
     try:
-        resp = requests.post(
-            endpoint,
-            headers=headers,
-            json={
-                "source_key": str(descriptor["source_key"]),
-                "source_sha256": source_sha256,
-                "output_key": artifact_key,
-                "filename": upload_name,
-                "artifact_schema": ARTIFACT_SCHEMA,
-                "parser_version": version,
-                "source_fingerprint": fingerprint,
-                "request_id": request_id,
-            },
-            timeout=cfg.parser_timeout,
-        )
+        try:
+            resp = requests.post(
+                endpoint, headers=headers, json=request, timeout=cfg.parser_timeout
+            )
+        except requests.ConnectionError as exc:
+            if isinstance(exc, requests.Timeout):
+                raise
+            # A lost answer: the same request once more, at once. The parser
+            # serves the bundle it published, with its receipt.
+            resp = requests.post(
+                endpoint, headers=headers, json=request, timeout=cfg.parser_timeout
+            )
     except requests.RequestException:
-        # A lost answer is retried: the parser serves the bundle it published
-        # to the job's next attempt, with its receipt.
         if quarantine := _local_quarantine(fingerprint):
             _raise_quarantine(quarantine)
         raise
@@ -394,15 +433,21 @@ def _private_copy(artifact: Mapping[str, Any]) -> Iterator[Path]:
         digest = hashlib.sha256()
         size = 0
         try:
-            with source.open("rb") as src, copy.open("wb") as dst:
-                while size <= declared_size and (chunk := src.read(1024 * 1024)):
-                    size += len(chunk)
-                    digest.update(chunk)
-                    dst.write(chunk)
+            src, found = _open_spool_file(source)
         except FileNotFoundError as exc:
             raise ParserClientError(
                 "parsed artifact is missing from shared spool"
             ) from exc
+        except OSError as exc:
+            raise ParserClientError("parsed artifact is not a regular file") from exc
+        with src:
+            if found != declared_size:
+                raise ParserClientError("parsed artifact size mismatch")
+            with copy.open("wb") as dst:
+                while size <= declared_size and (chunk := src.read(1024 * 1024)):
+                    size += len(chunk)
+                    digest.update(chunk)
+                    dst.write(chunk)
         if size != declared_size:
             raise ParserClientError("parsed artifact size mismatch")
         expected = str(artifact.get("sha256") or "")
@@ -556,26 +601,13 @@ def extract_artifact(
     return content_list
 
 
-def artifact_entry(artifact: Mapping[str, Any], name: str) -> bytes | None:
-    """One optional bundle entry (``parsed.pdf``, ``page1.png``), or None when
-    the bundle has none. Read from a private copy with the digest
-    ``extract_artifact`` verified in this job, within the same per-entry byte
-    limit."""
-    with _private_copy(artifact) as bundle, zipfile.ZipFile(bundle) as archive:
-        for info in _validated_entries(archive):
-            if info.filename == name:
-                with archive.open(info) as entry:
-                    return entry.read(_entry_limit(info))
-    return None
-
-
 def discard_artifact(artifact: Mapping[str, Any]) -> None:
     """Remove one handed-off artifact from the shared spool.
 
     Used for an invalid bundle before it returns to parsing, and for a bundle
     whose ingest continuation has finished. The descriptor came from a durable
     job payload, so constrain deletion to the exact fingerprint-addressed
-    artifact shape before touching the file.
+    artifact shape before touching the file; a link there is removed itself.
     """
     fingerprint = str(artifact.get("fingerprint") or "")
     key = str(artifact.get("key") or "")

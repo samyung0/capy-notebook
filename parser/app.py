@@ -50,7 +50,8 @@ from dataclasses import dataclass, field
 from importlib.metadata import PackageNotFoundError, version
 from multiprocessing.connection import Connection
 from pathlib import Path, PurePosixPath
-from typing import Any, NoReturn
+from stat import S_ISREG
+from typing import Any, BinaryIO, NoReturn
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -557,7 +558,14 @@ class _Child:
 
     @property
     def alive(self) -> bool:
-        return self._process is not None and self._process.is_alive()
+        """Running, with its answer pipe open: an answer over the limit closes
+        the pipe before the SIGKILL lands, and that child is replaced."""
+        return (
+            self._process is not None
+            and self._process.is_alive()
+            and self._responses is not None
+            and not self._responses.closed
+        )
 
     def _exit_code(self) -> int | None:
         if self._process is None:
@@ -934,7 +942,8 @@ class ParserRuntime:
             if self.active_jobs >= QUEUE_DEPTH:
                 raise ParserCapacity("parser document queue is full")
             # Until the OCR rework: no parse starts while the OCR stage is
-            # full, so the handoff check below rarely drops a finished parse.
+            # full. It fires only at the cap, so the handoff check can still
+            # drop a finished parse.
             if document.capture is None and self._ocr_backlog() >= OCR_PAGE_CAP:
                 raise ParserCapacity("parser OCR backlog is full")
             self.active_jobs += 1
@@ -1257,6 +1266,9 @@ def _authorized(request: Request) -> bool:
 
 
 def _shared_path(key: str, expected_dir: str) -> Path:
+    """A spool file's path. The directory must be the spool's own; the file
+    itself is not resolved, so a link there is refused when opened
+    (``_open_spool_file``) and unlinked as the link it is."""
     relative = PurePosixPath(key)
     if (
         relative.is_absolute()
@@ -1265,10 +1277,27 @@ def _shared_path(key: str, expected_dir: str) -> Path:
         or relative.parts[1] in {"", ".", ".."}
     ):
         raise ValueError("invalid shared spool key")
-    path = SHARED_DIR.joinpath(*relative.parts).resolve()
-    if SHARED_DIR not in path.parents:
+    directory = SHARED_DIR / expected_dir
+    if directory.resolve() != directory:
         raise ValueError("invalid shared spool key")
-    return path
+    return directory / relative.parts[1]
+
+
+def _open_spool_file(path: Path) -> tuple[BinaryIO, int]:
+    """Open a spool file as a child may have left it: never through a link,
+    never waiting on a FIFO, only a regular file. Returns it and its size;
+    the caller bounds the size."""
+    descriptor = os.open(
+        path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    )
+    try:
+        info = os.fstat(descriptor)
+        if not S_ISREG(info.st_mode):
+            raise OSError(f"{path.name} is not a regular file")
+        return os.fdopen(descriptor, "rb"), info.st_size
+    except BaseException:
+        os.close(descriptor)
+        raise
 
 
 def _cgroup_value(name: str) -> int:
@@ -1449,10 +1478,13 @@ def _bundle_bytes(
 
 
 def _read_source(key: str, expected_sha256: str) -> bytes:
-    path = _shared_path(key, "sources")
+    source, size = _open_spool_file(_shared_path(key, "sources"))
+    if size > MAX_SOURCE_BYTES:
+        source.close()
+        raise SourceTooLargeError("source exceeds size limit")
     body = bytearray()
     digest = hashlib.sha256()
-    with path.open("rb") as source:
+    with source:
         while chunk := source.read(1024 * 1024):
             body.extend(chunk)
             digest.update(chunk)
@@ -1474,7 +1506,10 @@ _published: dict[str, tuple[str, str, dict[str, Any]]] = {}
 def _record_bundle(
     fingerprint: str, digest: str, request_id: str, measurements: dict[str, Any]
 ) -> None:
-    for known in list(_published):  # Entries leave with their files.
+    for known in list(_published):
+        # Entries leave with their files; one still being written stays.
+        if known in _artifact_tasks:
+            continue
         if not _shared_path(f"artifacts/{known}.zip", "artifacts").exists():
             _published.pop(known, None)
     _published[fingerprint] = (digest, request_id, dict(measurements))
@@ -1482,19 +1517,33 @@ def _record_bundle(
 
 def _artifact_descriptor(key: str, fingerprint: str) -> dict[str, Any] | None:
     path = _shared_path(key, "artifacts")
-    published = _published.get(fingerprint)
+    digest = hashlib.sha256()
     try:
-        size = path.stat().st_size
+        artifact, size = _open_spool_file(path)
+        with artifact:
+            seen = os.fstat(artifact.fileno())
+            if 0 < size <= MAX_ARTIFACT_BYTES:
+                while chunk := artifact.read(1024 * 1024):
+                    digest.update(chunk)
+        ours = 0 < size <= MAX_ARTIFACT_BYTES
     except FileNotFoundError:
         return None
-    digest = hashlib.sha256()
-    if 0 < size <= MAX_ARTIFACT_BYTES:
-        with path.open("rb") as artifact:
-            while chunk := artifact.read(1024 * 1024):
-                digest.update(chunk)
-    if published is None or published[0] != digest.hexdigest():
-        _published.pop(fingerprint, None)
-        _unlink(path)
+    except OSError:  # A link or a FIFO is no bundle this process wrote.
+        try:
+            seen = os.lstat(path)
+        except FileNotFoundError:
+            return None
+        ours = False
+    # Read after the hash; a bundle's record is made before the bundle is
+    # written, so a request that saw the file sees its record too.
+    published = _published.get(fingerprint)
+    if not ours or published is None or published[0] != digest.hexdigest():
+        # Remove only the file looked at: one written meanwhile stays, with
+        # its record.
+        if _same_file(path, seen):
+            if _published.get(fingerprint) is published:
+                _published.pop(fingerprint, None)
+            _unlink(path)
         return None
     path.touch()
     return {
@@ -1507,12 +1556,24 @@ def _artifact_descriptor(key: str, fingerprint: str) -> dict[str, Any] | None:
     }
 
 
+def _same_file(path: Path, seen: os.stat_result) -> bool:
+    try:
+        now = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    return (now.st_dev, now.st_ino) == (seen.st_dev, seen.st_ino)
+
+
 def _artifact_receipt(fingerprint: str, request_id: str) -> dict[str, Any]:
     """The creating job's receipt for a bundle this process published."""
     published = _published.get(fingerprint)
     if not request_id or published is None or published[1] != request_id:
         return {}
     return {"_receipt_id": fingerprint, **published[2]}
+
+
+# A quarantine marker is a few hundred bytes of JSON.
+MARKER_MAX_BYTES = 64 << 10
 
 
 def _quarantine_key(fingerprint: str) -> str:
@@ -1522,8 +1583,12 @@ def _quarantine_key(fingerprint: str) -> str:
 def _quarantine(fingerprint: str) -> dict[str, Any] | None:
     path = _shared_path(_quarantine_key(fingerprint), "quarantine")
     try:
-        value = json.loads(path.read_bytes())
-    except (FileNotFoundError, OSError, ValueError):
+        marker, size = _open_spool_file(path)
+        with marker:
+            if size > MARKER_MAX_BYTES:
+                return None
+            value = json.loads(marker.read(MARKER_MAX_BYTES))
+    except (OSError, ValueError):
         return None
     if (
         not isinstance(value, dict)
@@ -1786,13 +1851,15 @@ async def _artifact_parse(body: dict[str, Any]) -> JSONResponse:
                 },
                 status_code=422,
             )
+        # Answered before the source is read or counted.
+        full = ""
         if runtime.active_jobs >= QUEUE_DEPTH:
+            full = "parser document queue is full"
+        elif runtime._ocr_backlog() >= OCR_PAGE_CAP:
+            full = "parser OCR backlog is full"
+        if full:
             return JSONResponse(
-                {
-                    "code": "parser_capacity",
-                    "detail": "parser document queue is full",
-                },
-                status_code=429,
+                {"code": "parser_capacity", "detail": full}, status_code=429
             )
         started = time.perf_counter()
         source = await asyncio.to_thread(_read_source, source_key, source_sha256)

@@ -107,7 +107,7 @@ the donor-reuse, content-reuse and indexed exits all reach it.
 
 | Route | Thumbnail |
 | ----- | --------- |
-| PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the ingest encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). A bundle without the image (an older parser, a failed render) means no thumbnail |
+| PDF and Office (`document_parse`) | the bundle's `page1.png`: the parse job renders page 1 of the PDF it holds, in its bounded child (the font-repaired bytes when there are any, an Office file's LibreOffice conversion; `odl.capture.page_thumbnail`, 200 px wide, cut at 400 px), and the ingest encodes it as WebP after checking from its header that it is a PNG of at most 200 x 400. The worker takes the file the bundle's extraction already wrote, with no second copy of the bundle. It never renders a document (no PyMuPDF in it for thumbnails) and never calls `/capture_page` for them (chat keeps using it). Without the image (an older parser, a failed render) the file takes the key of a same-bytes file, as a reuse does, or none |
 | Image (`image_caption`) | Pillow: first frame, EXIF orientation, shrunk to 200 px wide and cut at 400 px before it is converted and flattened on white; refused over `CAPY_IMAGE_MAX_PIXELS` or Pillow's decompression-bomb limit; SVG gets none (no rasterizer), HEIC only with a Pillow plugin |
 | Text (`raw_text`) and CSV/TSV (`delimited_text`) | no image: `files.preview = {"text": ...}`, the first 600 characters of the source (a text-mode read, never cut mid-character; NUL removed), for an untouched upload; once the file has saved edits its saves write it ([Text previews on save](#text-previews-on-save)). Cards draw text and code as monospace lines, and a CSV or TSV (kind `sheet`) as a small table: its first 8 rows and 5 columns, the first row the header, tab-separated when the first line has a tab, quoted cells kept whole |
 | Store-only, audio | none |
@@ -125,10 +125,10 @@ the donor-reuse, content-reuse and indexed exits all reach it.
   source's preview follows its saves instead
   ([Text previews on save](#text-previews-on-save)): its refresh leaves the
   preview alone.
-- A PDF or Office file the parse job reused from identical indexed bytes (the
-  donor path, `_reuse_donor` called from the parse job in
-  `pipeline/ingest/worker.py`) has no bundle, so it takes the thumbnail key of
-  a live file holding the same bytes in the same workspace
+- A PDF or Office file reused from identical indexed bytes (the donor path,
+  `_reuse_donor` in `pipeline/ingest/worker.py`, from the parse job or the
+  ingest continuation) extracts no bundle, so it takes the thumbnail key of a
+  live file holding the same bytes in the same workspace
   (`db.share_file_thumbnail`). A file in any other workspace never lends its
   key, the same owner's included
   (`test_a_reuse_never_shares_a_key_from_another_workspace`, a security

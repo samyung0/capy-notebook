@@ -1571,7 +1571,9 @@ OCR stage's unread pages past 500 at the handoff; while the OCR stage holds 500
 unread pages no new parse starts. The coordinator re-pends each as a capacity
 wait. A separate admission process counts each PDF's pages
 before it is queued (about 80 MiB resident, a 1 GiB address-space limit), so
-the API process never opens a source. A document with
+the API process opens no source with MuPDF; the one file a child wrote that it
+opens is the parsed PDF for Office page evidence after OCR (`_merge_ocr`),
+which goes with the OCR rework. A document with
 more than 500 text-less pages fails as `parse_too_many_scanned_pages`
 (terminal; it used to time out at about 320 scanned pages), and one with more
 than 1,400 pages as `parse_too_many_pages`. The OpenDataLoader accuracy record is the September 2026 series
