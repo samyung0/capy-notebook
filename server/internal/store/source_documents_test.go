@@ -144,7 +144,8 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 }
 
 // A caller without access to a source gets not found whatever the owner's
-// account state, never the owner's locked-account error.
+// account state, never the owner's locked-account error; while the owner is
+// pending deletion, so does a member.
 func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -152,7 +153,9 @@ func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			owner := newBlobTestUser(t, s, "source_locked_owner_"+state)
 			stranger := newBlobTestUser(t, s, "source_stranger_"+state)
-			_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+			member := newBlobTestUser(t, s, "source_member_"+state)
+			ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+			addWorkspaceEditor(t, s, ws.ID, member)
 			doc := sourceTestSeed(t, s, owner, file.ID)
 			lock := `UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1`
 			if state == "suspended" {
@@ -166,6 +169,16 @@ func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
 			}
 			if err := s.CheckSourceAccess(ctx, stranger, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
 				t.Fatalf("source access = %v, want not found", err)
+			}
+			// During the deletion grace the owner's content is gone for its
+			// members too.
+			if state == "deletion_pending" {
+				if _, err := s.SourceSession(ctx, member, file.ID); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("member source session = %v, want not found", err)
+				}
+				if err := s.CheckSourceAccess(ctx, member, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("member source access = %v, want not found", err)
+				}
 			}
 		})
 	}
