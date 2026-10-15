@@ -1392,10 +1392,9 @@ those services start.
    `CAPY_PARSE_OCR_PAGE_CAP=500` in the `uat` and `production` GitHub
    environments before deploying this change. The default time hierarchy is
    a 900-second per-document deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`), a
-   4,420-second parser request (`PARSER_TIMEOUT`, derived when the parser
-   still read 500 OCR pages at 5 s each; the wait and the parse now need about
-   1,920 s of it, see agentic-retrieval's Parse capacity) and a 4,600-second
-   parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
+   1,920-second parser request (`PARSER_TIMEOUT`: one 900 s wait for a parse
+   child, the 900 s parse and 120 s, see agentic-retrieval's Parse capacity)
+   and a 2,100-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
    20-minute bound. Queue wait does not spend the parse deadline. The process
    rejects a `PARSER_TIMEOUT` that is not below `CAPY_PARSE_JOB_TIMEOUT`. The parser container
    gets 8 CPUs, 14 GiB RAM, 18 GiB memory plus swap and a per-document JVM

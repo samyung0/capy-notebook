@@ -139,16 +139,16 @@ class Config:
     parser_token: str = _env("PARSER_TOKEN", "")
     # One document request end to end: its wait for a parse child and its
     # parse, each bounded by CAPY_PARSE_DOCUMENT_TIMEOUT (900 s; with 8 queued
-    # over 5 children one wait round), plus 120 s: 1,920 s. The 4,420 s value
-    # still includes the 500 x 5 s of the parser's former OCR stage.
-    parser_timeout: int = int(_env("PARSER_TIMEOUT", "4420"))
+    # over 5 children one wait round), plus 120 s. Scanned pages are read
+    # later, by the ingest worker's VLM, under CAPY_INGEST_TIMEOUT.
+    parser_timeout: int = int(_env("PARSER_TIMEOUT", "1920"))
     # The parser and ingest worker mount this directory on the Netcup ingest host.
     # Sources are job-scoped; parse bundles are fingerprint-addressed handoffs
     # deleted once their ingest continuation finishes.
     parse_shared_dir: str = _env("CAPY_PARSE_SHARED_DIR", "/tmp/capy-parse-spool")
     # The parse job must outlive one parser call; the continuation has its own
     # smaller budget for embeddings and final bookkeeping.
-    parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "4600"))
+    parse_job_timeout: int = int(_env("CAPY_PARSE_JOB_TIMEOUT", "2100"))
     ingest_timeout: int = int(_env("CAPY_INGEST_TIMEOUT", "1200"))
     # Parser artifacts cross a container boundary and may contain highly
     # compressed text. Keep both the local zip and its extracted form bounded
