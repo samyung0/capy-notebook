@@ -1249,7 +1249,9 @@ deadline, member and link/public access, listings, editing, invitations, and
 cloning become available again with the same structural permissions. No
 workspace content is rebuilt or approximated during cancellation.
 
-Purge runs after 30 days. During that grace window the durable content remains
+Purge runs after 30 days, except after Clerk `user.deleted`: the identity is
+gone, so `MarkIdentityDeleted` pulls `purge_after` to now and the account worker
+(every minute) purges on its next pass. During that grace window the durable content remains
 recoverable only by support cancelling the deletion after verifying the request
 out of band; there is no self-service cancellation endpoint, and cancellation
 is refused once the grace deadline has passed. At purge, all
