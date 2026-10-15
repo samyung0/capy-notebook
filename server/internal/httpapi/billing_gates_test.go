@@ -289,6 +289,12 @@ func TestUploadPolicyServesParserPageCapsAndReservationEnforcesThem(t *testing.T
 	if err := json.Unmarshal(rec.Body.Bytes(), &policy); err != nil {
 		t.Fatal(err)
 	}
+	// An unmatched extension walks every kind, so none may send null.
+	for _, kind := range policy.Kinds {
+		if kind.Extensions == nil {
+			t.Fatalf("kind %s sends null extensions", kind.Kind)
+		}
+	}
 	modes := map[string]apimodel.SourceUploadParseModePolicy{}
 	for _, mode := range policy.ParseModes {
 		modes[mode.Mode] = mode

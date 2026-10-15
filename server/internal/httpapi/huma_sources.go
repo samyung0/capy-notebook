@@ -77,9 +77,14 @@ func (a *api) getSourceUploadPolicy(
 	}
 	kinds := make([]apimodel.SourceUploadKindPolicy, 0, len(kindOrder))
 	for _, kind := range kindOrder {
+		extensions := extensionsByKind[string(kind)]
+		if extensions == nil {
+			// unknown has none; the upload dialog reads every kind's array.
+			extensions = []string{}
+		}
 		kinds = append(kinds, apimodel.SourceUploadKindPolicy{
 			Kind:       kind,
-			Extensions: extensionsByKind[string(kind)],
+			Extensions: extensions,
 			Text:       textKinds[kind],
 		})
 	}
