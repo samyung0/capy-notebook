@@ -14,7 +14,6 @@ import { Button } from '@/components/ui/Button';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
-import { materialKindLabel } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
@@ -224,12 +223,9 @@ function toastRefusal(effect: Undoable, code: string) {
  * unless the server says the step is available. */
 function UndoButton({
   effect,
-  quiet,
   handlers,
 }: {
   effect: Undoable;
-  /** Inside a card: ghost buttons; on a row: outlined. */
-  quiet: boolean;
   handlers: UndoHandlers;
 }) {
   const { mutate: undo, isPending } = useUndoEdit();
@@ -255,7 +251,7 @@ function UndoButton({
         })
       }
       size="sm"
-      variant={redo ? (quiet ? 'ghost-hover' : 'outline') : 'danger-light'}
+      variant={redo ? 'outline' : 'danger-light'}
     >
       {isPending
         ? redo
@@ -270,11 +266,9 @@ function UndoButton({
 
 function OpenButton({
   resource,
-  quiet,
   onOpen,
 }: {
   resource: ResourceRef;
-  quiet: boolean;
   onOpen?: (ref: ResourceRef) => void;
 }) {
   if (!onOpen) return null;
@@ -284,7 +278,7 @@ function OpenButton({
         onOpen({ id: resource.id, kind: resource.kind, title: resource.title })
       }
       size="sm"
-      variant={quiet ? 'ghost-hover' : 'outline'}
+      variant="outline"
     >
       {m.chat_open_resource()}
     </Button>
@@ -293,111 +287,79 @@ function OpenButton({
 
 const hasUndo = (effect: ResourceEffect): effect is Undoable => !!effect.undo;
 
-/** A file the turn created, with the callout container's weight. */
-function CreatedCard({
+/** A file the turn created or edited: one strip in full text colour, with the
+ * file's own icon, Undo (danger-light) and Open. The verb follows the
+ * operation, so Undo/Redo steps rewrite it in place. */
+function ReceiptRow({
   effect,
-  tool,
   handlers,
+  deck = false,
 }: {
   effect: ResourceEffect;
-  tool: ToolBlock;
   handlers: UndoHandlers;
+  /** create_deck: a source file whose title may carry no extension. */
+  deck?: boolean;
 }) {
   const { resource } = effect;
-  const trashed = effect.operation === 'trashed';
-  const kind = materialKind(resource.materialKind);
-  const deck = tool.name === 'create_deck';
+  const label = resource.title || resource.id;
   const icon =
     resource.kind === 'material'
-      ? materialIconName(kind ?? 'note')
-      : fileIconName({
-          kind: deck ? 'slides' : 'unknown',
-          name: resource.title ?? '',
-        });
-  const meta = trashed
-    ? m.chat_effect_trashed()
-    : kind
-      ? materialKindLabel(kind)
-      : deck
-        ? m.file_kind_slides()
-        : undefined;
+      ? materialIconName(materialKind(resource.materialKind) ?? 'note')
+      : fileIconName({ kind: deck ? 'slides' : 'unknown', name: label });
+  const trashed = effect.operation === 'trashed';
+  const muted = trashed || effect.operation === 'edit_undone';
+  const text = receiptText(effect.operation, label);
+  const at = text.indexOf(label);
   return (
-    <div className="flex min-w-0 items-center gap-2.5 rounded-lg border border-line-strong/45 bg-surface py-1.5 pr-1.5 pl-3 text-sm">
-      <FileIcon className="size-4.5 -translate-y-px" name={icon} />
-      <div className="min-w-0 flex-1">
-        <p
+    <div
+      className={cn(
+        'flex min-w-0 items-center gap-2 text-sm',
+        muted ? 'text-fg-muted' : 'text-fg'
+      )}
+    >
+      <FileIcon
+        className={cn('size-4.5 -translate-y-px', muted && 'opacity-60')}
+        name={icon}
+      />
+      <span className="min-w-0 truncate">
+        {text.slice(0, at)}
+        <span
           className={cn(
-            'truncate font-semibold',
-            trashed && 'text-fg-muted line-through'
+            muted ? 'font-medium text-fg-secondary' : 'font-semibold'
           )}
         >
-          {resource.title || resource.id}
-        </p>
-        {meta ? <p className="text-fg-muted text-xs">{meta}</p> : null}
-      </div>
-      <span className="flex shrink-0 gap-0.5">
+          {label}
+        </span>
+        {text.slice(at + label.length)}
+      </span>
+      <span className="ml-auto flex shrink-0 gap-1.5 pl-1">
         {hasUndo(effect) ? (
-          <UndoButton effect={effect} handlers={handlers} quiet />
+          <UndoButton effect={effect} handlers={handlers} />
         ) : null}
         {trashed ? null : (
-          <OpenButton
-            onOpen={handlers.onOpenResource}
-            quiet
-            resource={resource}
-          />
+          <OpenButton onOpen={handlers.onOpenResource} resource={resource} />
         )}
       </span>
     </div>
   );
 }
 
-/** An undoable edit: the tool's own row, in full text colour. */
-function EditedRow({
-  effect,
-  handlers,
-}: {
-  effect: ResourceEffect;
-  handlers: UndoHandlers;
-}) {
-  const { resource } = effect;
-  const label = resource.title || resource.id;
-  const undone = effect.operation === 'edit_undone';
-  const text = undone
-    ? m.chat_step_edit_undone({ label })
-    : m.chat_step_edit_done({ label });
-  return (
-    <div
-      className={cn(
-        'flex min-w-0 items-center gap-2 text-sm',
-        undone ? 'text-fg-muted' : 'text-fg'
-      )}
-    >
-      <ActivityIcon kind={undone ? 'undone' : 'doc'} />
-      <span className="min-w-0 truncate">
-        {text.slice(0, text.indexOf(label))}
-        <span
-          className={cn(
-            undone ? 'font-medium text-fg-secondary' : 'font-semibold'
-          )}
-        >
-          {label}
-        </span>
-        {text.slice(text.indexOf(label) + label.length)}
-      </span>
-      <span className="ml-auto flex shrink-0 gap-1.5 pl-1">
-        {hasUndo(effect) ? (
-          <UndoButton effect={effect} handlers={handlers} quiet={false} />
-        ) : null}
-        {effect.operation === 'trashed' ? null : (
-          <OpenButton
-            onOpen={handlers.onOpenResource}
-            quiet={false}
-            resource={resource}
-          />
-        )}
-      </span>
-    </div>
-  );
+function receiptText(
+  operation: ResourceEffect['operation'],
+  label: string
+): string {
+  switch (operation) {
+    case 'created':
+      return m.chat_step_create_done({ label });
+    case 'trashed':
+      return m.chat_step_trash_done({ label });
+    case 'restored':
+      return m.chat_step_restore_done({ label });
+    case 'edit_undone':
+      return m.chat_step_edit_undone({ label });
+    default:
+      return m.chat_step_edit_done({ label });
+  }
 }
 
 function Row({
@@ -441,10 +403,14 @@ function Row({
       );
     case 'created':
       return (
-        <CreatedCard effect={row.effect} handlers={handlers} tool={row.tool} />
+        <ReceiptRow
+          deck={row.tool.name === 'create_deck'}
+          effect={row.effect}
+          handlers={handlers}
+        />
       );
     case 'edited':
-      return <EditedRow effect={row.effect} handlers={handlers} />;
+      return <ReceiptRow effect={row.effect} handlers={handlers} />;
   }
 }
 

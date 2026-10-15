@@ -2370,11 +2370,12 @@ current pending changes applied. Embedded source instructions remain untrusted.
    Customizations → Chat): Normal shows only the current step and folds
    everything into "Worked for Ns · N steps" when the answer starts; Verbose
    keeps every row. Receipts stay visible in both modes. A file the turn
-   created is a card (callout container weight, ghost-hover buttons, Undo in
-   danger-light): Undo moves it to trash and Redo restores it, and later steps
-   on that file fold into the card. An undoable edit to an existing file turns
-   its own row into the receipt ("Undid the edit to X" after Undo, small
-   outline buttons). The receipt's effect replaces the block's effect and the
+   created or edited gets one receipt strip in full text colour: its
+   catppuccin file icon, "Created X" or "Edited X", Undo in danger-light and
+   Open in outline (Button size sm). On a created file Undo moves it to trash
+   ("Moved X to trash", muted, Redo) and Redo restores it ("Restored X");
+   later steps on that file fold into its strip. After an edit's Undo the strip
+   reads "Undid the edit to X", muted, with Redo. The receipt's effect replaces the block's effect and the
    button reads Undo or Redo from the operation; a refused step shows an error
    toast and disables its button for the session, and history disables a
    button whose status is not `available`.

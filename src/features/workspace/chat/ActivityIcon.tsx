@@ -4,7 +4,7 @@ import './ActivityIcon.css';
 import type { ActivityIconKind } from './trace';
 
 /** Still glyphs for row states and receipts, on the same grid. */
-export type StatusIconKind = 'alert' | 'unknown' | 'stop' | 'doc' | 'undone';
+export type StatusIconKind = 'alert' | 'unknown' | 'stop';
 
 const PENCIL =
   'M0 0L.99-3.25 5.23-7.49A1.6 1.6 0 0 1 7.49-5.23L3.25-.99Z M.99-3.25 3.25-.99';
@@ -96,12 +96,6 @@ const DRAWINGS: Record<
       </g>
     </g>
   ),
-  doc: (
-    <>
-      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
-      <path d="M14 3v5h5" />
-    </>
-  ),
   edit: (
     <>
       <path
@@ -183,12 +177,6 @@ const DRAWINGS: Record<
     </>
   ),
   trash: pacman,
-  undone: (
-    <>
-      <path d="M4 12a8 8 0 1 0 2.3-5.6L4 8.7" />
-      <path d="M4 4v4.7h4.7" />
-    </>
-  ),
   unknown: (
     <>
       <circle cx="12" cy="12" r="9" />

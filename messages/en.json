@@ -592,7 +592,6 @@
   "chat_response_flagged": "Response flagged due to safety concern",
   "chat_failed": "The chat response could not be completed.",
   "chat_model_unavailable": "LLM model not available. Pick another model in Settings → LLM.",
-  "chat_effect_trashed": "Moved to trash",
   "chat_open_resource": "Open",
   "chat_undo_edit": "Undo",
   "chat_undo_pending": "Undoing…",

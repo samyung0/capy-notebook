@@ -592,7 +592,6 @@
   "chat_response_flagged": "出于安全考虑，此回复已被标记",
   "chat_failed": "对话回复未能完成。",
   "chat_model_unavailable": "语言模型不可用。请到设置 → LLM 更换模型。",
-  "chat_effect_trashed": "已移到回收站",
   "chat_open_resource": "打开",
   "chat_undo_edit": "撤销",
   "chat_undo_pending": "正在撤销…",
