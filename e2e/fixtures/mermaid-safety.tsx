@@ -36,6 +36,8 @@ const REFERENCING: Record<string, string> = {
   fontFamilyDirective: `%%{init: {"fontFamily": "x; mask-image:url(${REMOTE}/font.png)"}}%%\nflowchart LR\n  A --> B`,
   imageNode: `flowchart LR\n  A@{ img: "${REMOTE}/node.png", label: "Cat" } --> B`,
   labelImage: `flowchart LR\n  A["<img src='${REMOTE}/label.png'> node"] --> B`,
+  // Links stay clickable; nothing loads until someone clicks.
+  link: 'flowchart LR\n  A --> B\n  click A href "https://offsite.test/x"\n  click B href "javascript:void(0)"',
   linkStyleFunction: `flowchart LR\n  A --> B\n  linkStyle 0 stroke:#f00,mask-image:url(${REMOTE}/linkstyle.png)`,
   styleFunction: `flowchart LR\n  A --> B\n  style A mask-image:url(${REMOTE}/style.png)`,
   themeCssDirective: `%%{init: {"themeCSS": ".node rect{mask-image:url(${REMOTE}/theme.png)}"}}%%\nflowchart LR\n  A --> B`,

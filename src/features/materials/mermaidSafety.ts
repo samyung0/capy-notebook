@@ -188,3 +188,19 @@ export async function withoutImages(mermaid: Mermaid, source: string) {
     throw new Error('The diagram draws an image from a URL.');
   return without;
 }
+
+const LINK = /<a[\s>]/;
+
+/** Every link in a drawn diagram opens in a new tab that cannot reach this
+ * one (Epo 2026-10-15). The template parses the SVG without loading
+ * anything. */
+export function withSafeLinks(svg: string) {
+  if (!LINK.test(svg)) return svg;
+  const template = document.createElement('template');
+  template.innerHTML = svg;
+  for (const link of template.content.querySelectorAll('a')) {
+    link.setAttribute('target', '_blank');
+    link.setAttribute('rel', 'noopener noreferrer');
+  }
+  return template.innerHTML;
+}

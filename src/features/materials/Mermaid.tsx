@@ -7,6 +7,7 @@ import {
   MERMAID_SECURITY,
   withoutImageFunctions,
   withoutImages,
+  withSafeLinks,
 } from './mermaidSafety';
 import {
   MERMAID_THEME_SWATCH,
@@ -79,7 +80,7 @@ export function renderMermaid(
     );
     // A fresh id each time: mermaid removes any element that already has it.
     const id = `mmd-${++renderSeq}`;
-    let { svg } = await mermaid.render(id, source, container);
+    let svg = withSafeLinks((await mermaid.render(id, source, container)).svg);
     if (preset.roughen) {
       svg = svg
         .replaceAll('url(#roughen', `url(#${id}-roughen`)

@@ -530,10 +530,19 @@ those keys back on (mermaid's own `secure` list, extended). Over that, the
 source drops what config cannot reach: a line naming a CSS image function
 (`url(`, `image-set(`, read through HTML and CSS escapes, character and mermaid
 entities, and across mermaid's directive cuts) is blanked keeping its line
-number, and an image node's `img` or a sequence actor's icon is removed when
+number. That is any line containing `url(` or `image-set(`, so a label whose
+text writes `url(` loses its line too ("the URL (a link)", with a space, is
+kept). This filter, not the sanitiser, is what stops an inline `style` in a
+label from fetching: labels keep their inline styles, since mermaid sanitises
+its own icon SVGs (architecture icons) and math-label wrappers with the same
+config. An image node's `img` or a sequence actor's icon is removed when
 mermaid's own parse says the diagram draws an image. A diagram that needed a
 removed part still draws, minus that part; one that still names or draws an
-image across lines after the pass is refused. The one `renderMermaid` serves
+image across lines after the pass is refused. Links stay clickable (`click …
+href`, Epo 2026-10-15): after `mermaid.render`, every `<a>` in the SVG gets
+`target="_blank"` and `rel="noopener noreferrer"`, so the outside page opens in
+a new tab and cannot reach the Capy tab; mermaid's strict mode already leaves
+a `javascript:` target's anchor with no href. The one `renderMermaid` serves
 every surface — chat, note blocks, mindmap and diagram files, shared-page
 islands and the export rasteriser — so this covers them all. The app's
 report-only image policy (deployment-runbook §2.4) is a backstop, not the fix.
