@@ -131,8 +131,29 @@ supports it.
 
 ## Running and cleanup
 
-The workflow uses one Chromium worker, no whole-test retries, a 90-minute
-suite budget and a separate 10-minute cleanup step inside a 150-minute job.
+The journeys run in lanes, one Playwright project per lane. The workflow runs
+each lane in its matrix as its own job, in parallel:
+
+| Lane | Specs | In the workflow matrix |
+| --- | --- | --- |
+| `office` | `files.spec.ts`, `chat.spec.ts`, `officeRefusal.spec.ts` | Yes |
+| `app` | Every other spec; a new spec lands here unless a lane names it | Yes |
+| `refresh` | `officeLifecycle.spec.ts` (J2), `noteIndex.spec.ts` (J4), `textLifecycle.spec.ts` (J5) | Not until those specs exist: an empty project fails with "No tests found" after preflight |
+
+- Each lane is a run of its own: its own `UAT_RUN_ID`
+  (`<run id>-<attempt>-<lane>` in the workflow), manifest, cleanup, Sentry gate
+  and artifact. A failing lane does not stop another (`fail-fast: false`).
+- J2, J4 and J5 share the refresh lane: J2's hold on a store-only file stops the
+  collaboration refresh scheduler while it lasts, and J4/J5 time refreshes.
+- A check that looks at the whole environment rather than at the run's own
+  resources (the "no `source_refresh` job pending over 10 minutes" canary) runs
+  only in the refresh lane.
+- Latency windows (J4/J5's 45–90 s waits) are recorded in the evidence, not
+  asserted: the other lanes share UAT's single ingest worker.
+
+Each lane's job uses one Chromium worker, no whole-test retries, a 90-minute
+suite budget (Playwright's `globalTimeout`) in a 95-minute step and a separate
+10-minute cleanup step, inside a 150-minute job.
 A failing journey does not stop the ones after it.
 Browser actions time out after 30 seconds and navigation after 60 seconds;
 parse/index polling retains its explicit longer limits. Uploads use the actual
@@ -143,14 +164,15 @@ Missing configuration or failed required checks fail the gate.
 
 Local operators need Node/pnpm, uv, the same BetterOffice Bun/Rust/WASM build
 toolchain as CI, and Chromium. Export the same UAT configuration above, plus
-`EXPECTED_REVISION` and a fresh lowercase `UAT_RUN_ID`. Then run:
+`EXPECTED_REVISION` and a fresh lowercase `UAT_RUN_ID`. Then run one lane
+(without `--project`, every lane runs one after another under one run ID):
 
 ```sh
 export RUNNER_TEMP="$(mktemp -d /tmp/capy-uat.XXXXXX)"
 pnpm office:prepare
 scripts/uat/journey-tunnel.sh start
 scripts/uat/verify-journey-releases.sh before
-pnpm e2e:uat:journeys
+pnpm e2e:uat:journeys --project=office
 pnpm e2e:uat:cleanup --run-id "$UAT_RUN_ID"
 scripts/uat/verify-journey-releases.sh after
 scripts/uat/journey-tunnel.sh stop
@@ -167,8 +189,9 @@ the ingest host. Preserve `UAT_RUN_ID` across these commands.
 Sanitized assertion evidence is persisted under the run directory’s `evidence/` folder.
 Every creation records exact resource IDs under
 `e2e/uat/journey-runs/<run-id>/manifest.json`, outside Playwright's cleared
-output directory. Cleanup runs in Playwright teardown and again in an
-`always()` workflow step. Download the artifact and restore that directory
+output directory. Cleanup runs in Playwright teardown; an `always()` workflow
+step reruns it unless the teardown wrote `cleanup.json` with no failures.
+Download the artifact and restore that directory
 to retry `pnpm e2e:uat:cleanup --run-id <run-id>` with the original revision
 and UAT configuration. Existing run IDs cannot be reused for new tests.
 

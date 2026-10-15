@@ -107,7 +107,7 @@ assert(job.steps.some(s => s.uses === './vendor/betteroffice/.github/actions/was
 assert.equal(job.steps.find(s => s.uses?.startsWith('taiki-e/install-action')).with.tool, 'wasm-pack@0.15.0');
 assert(job.steps.some(s => s.uses === './.github/actions/cache-betteroffice'));
 const prepared = job.steps.findIndex(s => s.run === 'pnpm office:prepare');
-assert(prepared > 0 && prepared < job.steps.findIndex(s => s.run === 'pnpm e2e:uat:journeys'));
+assert(prepared > 0 && prepared < job.steps.findIndex(s => s.name === 'Run critical-path journeys'));
 assert.equal(job.steps[prepared]['timeout-minutes'], 30);
 assert.equal(job['timeout-minutes'], 150);
 
@@ -121,6 +121,87 @@ for (const [key, expression] of Object.entries(job.env)) {
   assert.equal(key, match[2]);
   assert(keys[key].targets.includes('quality'), key);
   assert.equal(keys[key].kind, match[1] === 'vars' ? 'variable' : 'secret', key);
+}
+""",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_lanes_are_journey_projects_with_their_own_run_id(self):
+        result = subprocess.run(
+            ["node", "--input-type=module", "-"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            input=r"""
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import YAML from 'yaml';
+const job = YAML.parse(fs.readFileSync('.github/workflows/uat-quality.yml', 'utf8')).jobs.critical_paths;
+assert.equal(job.strategy['fail-fast'], false);
+const lanes = job.strategy.matrix.lane;
+// The run id names the run directory, which must be lowercase (evidence.ts).
+for (const lane of lanes) assert.match(lane, /^[a-z]+$/);
+assert.equal(job.env.UAT_RUN_ID, '${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}');
+assert.equal(job.steps.find(s => s.name === 'Run critical-path journeys').run,
+  'pnpm e2e:uat:journeys --project=${{ matrix.lane }}');
+assert.equal(job.steps.find(s => s.uses?.startsWith('actions/upload-artifact')).with.name,
+  'uat-journeys-${{ env.UAT_RUN_ID }}');
+// Playwright refuses an unknown or empty project only after preflight has run.
+const list = spawnSync(process.execPath, ['node_modules/@playwright/test/cli.js', 'test',
+  '-c', 'e2e/uat/journeys/playwright.journeys.config.ts', '--list', '--reporter=json'],
+  { encoding: 'utf8' });
+assert.equal(list.status, 0, list.stderr);
+const counts = {};
+const walk = (suite) => {
+  for (const spec of suite.specs ?? [])
+    for (const test of spec.tests) counts[test.projectName] = (counts[test.projectName] ?? 0) + 1;
+  for (const child of suite.suites ?? []) walk(child);
+};
+JSON.parse(list.stdout).suites.forEach(walk);
+for (const lane of lanes) assert(counts[lane] > 0, `lane ${lane} has no journeys`);
+""",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_cleanup_reruns_unless_the_teardown_cleanup_was_clean(self):
+        result = subprocess.run(
+            ["node", "--input-type=module", "-"],
+            cwd=ROOT,
+            text=True,
+            capture_output=True,
+            check=False,
+            input=r"""
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import YAML from 'yaml';
+const job = YAML.parse(fs.readFileSync('.github/workflows/uat-quality.yml', 'utf8')).jobs.critical_paths;
+const step = job.steps.find(s => s.name?.startsWith('Clean up'));
+const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'capy-uat-cleanup-'));
+try {
+  fs.writeFileSync(path.join(temp, 'pnpm'), '#!/usr/bin/env bash\nprintf "%s" "$*" > "$CAPY_TEST_CALLED"\n',
+    { mode: 0o700 });
+  const report = path.join(temp, 'e2e/uat/journey-runs/123-1-app/cleanup.json');
+  fs.mkdirSync(path.dirname(report), { recursive: true });
+  // No report (the teardown never finished), a failed teardown, a clean one.
+  for (const [content, rerun] of [[null, true], ['{"failed":["x"]}', true], ['{"failed":[]}', false]]) {
+    if (content) fs.writeFileSync(report, content);
+    const called = path.join(temp, 'called');
+    fs.rmSync(called, { force: true });
+    const run = spawnSync('bash', ['-eo', 'pipefail', '-c', step.run], {
+      cwd: temp, encoding: 'utf8', env: { ...process.env, PATH: `${temp}:${process.env.PATH}`,
+        UAT_RUN_ID: '123-1-app', CAPY_TEST_CALLED: called },
+    });
+    assert.equal(run.status, 0, run.stderr);
+    assert.equal(fs.existsSync(called) && fs.readFileSync(called, 'utf8'),
+      rerun && 'e2e:uat:cleanup --run-id 123-1-app');
+  }
+} finally {
+  fs.rmSync(temp, { recursive: true, force: true });
 }
 """,
         )
