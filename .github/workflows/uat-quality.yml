@@ -135,8 +135,14 @@ jobs:
     runs-on: ubuntu-24.04
     environment: uat
     timeout-minutes: 150
+    # One job per lane (a Playwright project), each with its own run id,
+    # manifest, cleanup and Sentry gate; one lane failing does not stop another.
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [office, app]
     env:
-      UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+      UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
       EXPECTED_REVISION: ${{ needs.smoke.outputs.revision }}
       UAT_TARGET_AUTHORIZED: ${{ vars.UAT_TARGET_AUTHORIZED }}
       UAT_APP_URL: ${{ vars.UAT_APP_URL }}
@@ -209,11 +215,18 @@ jobs:
         run: scripts/uat/verify-journey-releases.sh before
       - name: Run critical-path journeys
         timeout-minutes: 95
-        run: pnpm e2e:uat:journeys
+        run: pnpm e2e:uat:journeys --project=${{ matrix.lane }}
       - name: Clean up this run's disposable resources
         if: always()
         timeout-minutes: 10
-        run: pnpm e2e:uat:cleanup --run-id "$UAT_RUN_ID"
+        # Rerun only when the teardown's cleanup failed or never finished.
+        run: |
+          report="e2e/uat/journey-runs/$UAT_RUN_ID/cleanup.json"
+          if node -e 'process.exit(JSON.parse(fs.readFileSync(process.argv[1], "utf8")).failed.length ? 1 : 0)' "$report" 2>/dev/null; then
+            echo "The teardown's cleanup was clean; nothing to rerun."
+          else
+            pnpm e2e:uat:cleanup --run-id "$UAT_RUN_ID"
+          fi
       - name: Recheck the ingest candidate after cleanup
         if: always() && steps.ingest_release.outcome == 'success'
         timeout-minutes: 3
@@ -226,6 +239,6 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           if-no-files-found: ignore
-          name: uat-journeys-${{ github.run_id }}-${{ github.run_attempt }}
+          name: uat-journeys-${{ env.UAT_RUN_ID }}
           path: e2e/uat/journey-runs/${{ env.UAT_RUN_ID }}/
           retention-days: 30

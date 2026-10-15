@@ -142,7 +142,7 @@ class RetryPolicy:
 
 
 INTERACTIVE_RETRY = RetryPolicy(attempts=2, budget_s=3.0)
-INGEST_RETRY = RetryPolicy(attempts=4, budget_s=120.0)
+INGEST_RETRY = RetryPolicy(attempts=3, budget_s=120.0)
 
 
 def _interactive() -> bool:
@@ -223,11 +223,32 @@ async def _retry_or_raise(
     await asyncio.sleep(wait)
 
 
-async def _call_with_retry(attempt_call: Any, *, retry_any: bool = False) -> Any:
+# Another attempt would get the same answer, so these end a ``transient`` call
+# at once (decided 2026-10-15, parts design Q7).
+DEFINITIVE_CLIENT_ERRORS = frozenset({400, 401, 403, 404, 422})
+
+
+class UnusableAnswer(RuntimeError):
+    """An empty answer, or one cut off at the output cap: a failed attempt."""
+
+
+def _usable_text(resp: Any) -> str | None:
+    """The answer's text, or None when it is empty or cut off at the cap."""
+    text = (getattr(elitellm.message_from_response(resp), "content", "") or "").strip()
+    choices = getattr(resp, "choices", None) or []
+    finish = getattr(choices[0], "finish_reason", None) if choices else None
+    cut = finish == "length" or getattr(resp, "status", None) == "incomplete"
+    return text if text and not cut else None
+
+
+async def _call_with_retry(
+    attempt_call: Any, *, retry_any: bool = False, transient: bool = False
+) -> Any:
     """Run ``attempt_call(deadline)`` under the current retry policy.
 
     ``retry_any`` also retries failures that are not busy answers, for calls
     where one dropped attempt is a permanent loss rather than a user retry.
+    ``transient`` does the same except for a definitive client error.
     """
     policy = retry_policy()
     deadline = time.monotonic() + policy.budget_s
@@ -244,7 +265,11 @@ async def _call_with_retry(attempt_call: Any, *, retry_any: bool = False) -> Any
                 attempt=attempt,
                 policy=policy,
                 deadline=deadline,
-                retry_any=retry_any,
+                retry_any=retry_any
+                or (
+                    transient
+                    and accounting.provider_status(exc) not in DEFINITIVE_CLIENT_ERRORS
+                ),
             )
     raise AssertionError("retry loop must return or raise")
 
@@ -464,7 +489,9 @@ async def complete_response(
     Interactive callers run over the streaming transport and the stream is
     assembled here, so the idle timeout is what bounds them: a long quiz or
     checkpoint summary fails on silence, not on a whole-call clock. Ingest
-    keeps the plain request under its own larger bound.
+    keeps the plain request under its own larger bound, and there (the file
+    summary) an empty or cut-off answer is a failed attempt: it settles, then
+    takes the next attempt like a transient error.
     """
     spec = _as_spec(model)
     thinking = elitellm.resolve_thinking(spec, reasoning)
@@ -552,9 +579,11 @@ async def complete_response(
                 spec=spec,
                 usage=usage,
             )
+        if not streamed and _usable_text(resp) is None:
+            raise UnusableAnswer("empty or cut-off answer")
         return resp
 
-    return await _call_with_retry(_one)
+    return await _call_with_retry(_one, transient=not streamed)
 
 
 async def complete_text(
@@ -920,9 +949,10 @@ VLM_PAGE_MAX_TOKENS = 2_000
 async def read_page(data_url: str, *, credit_micros: int) -> str | None:
     """Read one text-less page with the captioning-slot VLM.
 
-    A busy provider waits under the ingest policy and, past its budget, raises
-    ProviderBusy so the job re-pends. Any other failure, an empty answer or one
-    cut off at the output cap gets one more read; after that the page is
+    One read: the ingest policy's attempts, each its own call. A busy provider
+    waits and, past the budget, raises ProviderBusy so the job re-pends. A
+    transient error, an empty answer or one cut off at the output cap takes the
+    next attempt; after the last, or at a definitive client error, the page is
     unread (None). Only a usable read is charged, at ``credit_micros``.
     """
     spec = registry.captioning_spec()
@@ -936,7 +966,7 @@ async def read_page(data_url: str, *, credit_micros: int) -> str | None:
     ]
     context = measure_request_context(messages, model=spec, reasoning=False)
 
-    async def _one(deadline: float) -> str | None:
+    async def _one(deadline: float) -> str:
         async with _tracked_call(
             kind=accounting.KIND_LLM,
             purpose="vlm_page",
@@ -950,11 +980,7 @@ async def read_page(data_url: str, *, credit_micros: int) -> str | None:
                 spec, messages, reasoning=False, max_tokens=VLM_PAGE_MAX_TOKENS
             )
             obs.record_completion(spec.provider_slug, _record_name(spec), resp)
-            message = elitellm.message_from_response(resp)
-            text = (getattr(message, "content", "") or "").strip()
-            choices = getattr(resp, "choices", None) or []
-            finish = getattr(choices[0], "finish_reason", None) if choices else None
-            read = text if text and finish != "length" else None
+            read = _usable_text(resp)
             await accounting.settle(
                 call_id=call_id,
                 kind=accounting.KIND_LLM,
@@ -966,21 +992,20 @@ async def read_page(data_url: str, *, credit_micros: int) -> str | None:
                 ),
                 credit_micros=credit_micros if read else 0,
             )
-            return read
+        # Raised after settling at 0, so it counts as one of the attempts.
+        if read is None:
+            raise UnusableAnswer("empty or cut-off page read")
+        return read
 
-    for _ in range(2):
-        try:
-            read = await _call_with_retry(_one)
-        except asyncio.CancelledError:
-            raise
-        except (accounting.SettlementError, elitellm.ProviderBusy):
-            raise
-        except Exception:
-            log.warning("VLM page read failed", exc_info=True)
-            continue
-        if read:
-            return read
-    return None
+    try:
+        return await _call_with_retry(_one, transient=True)
+    except asyncio.CancelledError:
+        raise
+    except (accounting.SettlementError, elitellm.ProviderBusy):
+        raise
+    except Exception:
+        log.warning("VLM page read failed", exc_info=True)
+        return None
 
 
 async def caption_image(data_url: str, prompt: str) -> str:

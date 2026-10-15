@@ -1334,7 +1334,13 @@ pub async fn source_request(
         };
         let _ = handle.tx.send(RoomCmd::ServiceEdit(Box::new(edit))).await;
     }
-    Ok(result.receipt)
+    // Go passes the engine's note on the characters the agent's text lost
+    // on to the tool result (Epo 2026-10-15).
+    let mut receipt = result.receipt;
+    if let Some(notice) = result.notice {
+        receipt["notice"] = json!(notice);
+    }
+    Ok(receipt)
 }
 
 /// `/internal/documents/{inspect,edit,undo}` after the secret check.

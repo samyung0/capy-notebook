@@ -805,12 +805,15 @@ chat and Plate commands). A request cancelled while its admission is in flight
 is undone by a detached task that abandons the never-sent call row and frees
 its lease, without delaying the cancellation. A `Retry-After`
 longer than what is left of the budget ends the call at once. Ingest embedding,
-summary and standalone image caption calls get four attempts inside two
+summary, standalone image caption and VLM page calls get three attempts inside two
 minutes; past that the call raises `ProviderBusy` so the job re-pends without spending an attempt
-(`jobs.provider_waits`, at most 5, `not_before` from the provider's own
-`Retry-After` else 30 s doubling; the synthesized client hint never feeds the
+(`jobs.provider_waits`, at most once, `not_before` from the provider's own
+`Retry-After` else 30 s; the synthesized client hint never feeds the
 job backoff), after which the file fails as `provider_busy`. Waiting at a capped
-model's gate spends the same budget.
+model's gate spends the same budget. Within those attempts the summary and VLM
+page calls also retry a transient error (5xx, a connection reset) and an empty
+or cut-off answer (settled, so its tokens are billed), and end at once on a
+definitive client error (400, 401, 403, 404, 422; parts design Q7).
 Chat planning retries any pre-byte failure under that policy while leaving
 each earlier uncertain attempt open for its bounded receipt window. A failure
 after the first provider chunk — even if the browser has not received SSE yet

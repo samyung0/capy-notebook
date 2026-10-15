@@ -2419,6 +2419,17 @@ def test_receipts_name_the_blocks_written_and_end_is_no_relocation():
     assert "It wrote blocks b1, b2." in tools._receipt_result(created).text()
 
 
+def test_an_office_edit_receipt_says_which_characters_it_removed():
+    """Go passes the engine's note on characters an Office file cannot store
+    on to the tool result (Epo 2026-10-15)."""
+    body = _receipt("edited", "source_file", "f_1")
+    body["notice"] = "Removed 1 character Office files cannot store (U+0001)."
+    assert (
+        "(id f_1). Removed 1 character Office files cannot store (U+0001)."
+        in tools._receipt_result(body).text()
+    )
+
+
 def test_an_edit_receipt_says_where_a_relocated_insert_landed():
     body = _receipt("edited", "material", "mat_1")
     body["effect"]["relocated"] = [

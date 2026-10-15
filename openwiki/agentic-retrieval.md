@@ -1274,8 +1274,8 @@ and `capture_page` shows the image itself (decision 2026-09-21): an upload is
 one page, page 1, its bytes normalised with Pillow and attached directly, with
 no PDF conversion. The caption chunk carries no page, so it counts as citing page 1.
 That path and the [VLM page read](#vlm-page-read) are the only users of
-`parse/caption_cache.py`, and every lookup and write runs inside the image file's own ingest job (its source and attempt
-fenced): the lookup identity is the exact image SHA, the payload lives under
+`parse/caption_cache.py`, and every lookup and write runs inside the file's own ingest job or source refresh (its source and attempt
+fenced). A refresh inserts its associations unpublished and adds each digest to its candidate's `image_sha256s` instead of publishing, as a donor copy into a refresh does; Go's publication publishes exactly those and deletes the file's other associations, and a discarded refresh publishes nothing. The lookup identity is the exact image SHA, the payload lives under
 `image-captions/<imageSHA>/<payloadSHA>.json`, and reuse follows the donor
 file's workspace privacy (a private workspace reuses within itself, a link or
 public one globally). The provider receives only image bytes and the caption
@@ -1297,11 +1297,15 @@ the bundle, `_read_vlm_pages` (stage `vlm_pages`) reads each with the captioning
 slot's pinned model, GLM-5.3-Flash on Relace, through `models.read_page`:
 `VLM_PAGE_PROMPT` (`pipeline/prompts/captioning.py`, the developer's wording)
 as the system message and the image as the user turn, reasoning `low`, at most
-2,000 output tokens (`VLM_PAGE_MAX_TOKENS`; a page is about 460). An empty
-answer, one that stops at the cap (finish `length`) and a provider error left
-after the ingest retry policy are failed reads; a page gets two reads, then it
-is unread. A busy provider past its budget raises `ProviderBusy` instead and
-the job re-pends; pages already read are cached. One job reads at most 10 pages
+2,000 output tokens (`VLM_PAGE_MAX_TOKENS`; a page is about 460). A page gets
+one read (decided 2026-10-15, replacing the second read of the same day's OCR
+decision): the ingest retry policy's three calls. An empty answer, one that
+stops at the cap (finish `length`, both settled at 0 credits) and a transient
+provider error (5xx, a connection reset) take the next call, as for the file
+descriptor (parts design Q7); after the third, or at once on a definitive
+client error (400, 401, 403, 404, 422), the page is unread. A busy provider
+past its budget raises `ProviderBusy` instead and the job re-pends once; pages
+already read are cached. One job reads at most 10 pages
 at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
 its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
 flight (`VLM_PAGE_CAPACITY`), taken in place of the GLM `model_capacities` row,
@@ -1320,9 +1324,13 @@ and cost, and the load where shedding starts are in
 Reads go through the caption cache keyed by the SHA-256 of `vlm-page\0` plus
 the JPEG bytes, with the image captions' donor rules and storage under
 `image-captions/`, so a page read before for this file, or by an eligible
-donor, costs nothing. Page reads pass `exclusive=False`: they take no
+donor, costs nothing; an Office refresh reads only its changed text-less pages
+(1.0 credit each, paid by the owner). Page reads pass `exclusive=False`: they take no
 per-image lock (it would hold a pooled connection through each model call), so
-two uploads racing on one page may read it twice.
+two uploads racing on one page may read it twice. Content with unread pages is
+attached with no `pipeline_identity`, so it is never a donor: neither for the
+file's own Retry processing, which would otherwise finish ready with the pages
+still missing, nor for another workspace (decided 2026-10-15, parts design Q10).
 
 Each read page becomes one `text` block inserted after that page's own blocks,
 with `_recovery: vlm-page` and a whole-page box `[0, 0, 1000, 1000]`. There
@@ -1522,7 +1530,8 @@ artifact version the pipeline and parser check against each other. Any change
 to parse output, including the ingest worker's VLM page read
 (`VLM_PAGE_PROMPT`), bumps that string, as any change to packing bumps
 `CHUNKER_VERSION`; output that changes without a bump is served to later
-uploads of the same bytes.
+uploads of the same bytes. Content an ingest left with unread VLM pages has a
+NULL `pipeline_identity`, which the lookup never matches.
 
 A hit copies that donor's `rag_chunks` (and, when the embedding pin matches,
 its vectors), plus its descriptor, into a new per-workspace
@@ -1563,11 +1572,13 @@ exists; the local bundle is gone once the first ingest finished.
   text (one dense sentence of about 50 words, no JSON, no preamble, starting
   with the subject rather than "This document…", in the source's language or
   its main language when mixed) and the
-  stripped reply is stored as written, with no parser. `max_tokens` 400
+  stripped reply is stored as written, with no parser, under `max_tokens` 400
   (assuming thinking off, which the operator-set ingest pin is expected to
-  have) is the only cut, so a reply cut off there keeps its text up to the
-  cut. An empty reply fails explicitly, and the job's ordinary failure path
-  retries it. A reindex of a file with a ready descriptor first measures the net text change between the
+  have). Within the call's three attempts (parts design Q7, 2026-10-15), an
+  empty reply or one cut off at that cap is a failed attempt, a transient
+  provider error (5xx, a connection reset) takes the next attempt, and a
+  definitive client error (400, 401, 403, 404, 422) ends the call at once;
+  the job's ordinary failure path then retries it. A reindex of a file with a ready descriptor first measures the net text change between the
   published chunks and the candidate (`text_change_tokens`: chunk overlap and
   retained headings dropped, lines aligned, then words inside each changed
   range; spans that differ only in spacing or glyph forms count nothing; a
@@ -3089,7 +3100,16 @@ the collaboration service's note check (an eleventh interactive block across
 the note; `compute` in `collaboration-rs/crates/server/src/edits.rs`), a source edit whose checkpoint would
 be over its byte limit (authority 413) as `quota_rejected`, and the
 authority's bare limit codes (`document_size_exceeded`, `_nodes_`, `_depth_`,
-`undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). A
+`undo_payload_exceeded`) reach it as sentences (`store.limitMessages`). An
+Office `replace_text` or `set_cell` carrying characters no Office file can
+store applies without them, and its tool result says which were removed
+(the receipt's `notice`, Epo 2026-10-15); whatever an Office engine refuses
+about the agent's input (a line break inside a DOCX
+paragraph, a PPTX equation's text, an XLSX cell outside the grid or a value
+over Excel's limits) comes back as `invalid_input` with the engine's sentence
+and no details, a 409 the pipeline does not retry; a lost, killed or
+panicking engine process and any other engine failure stay a 503
+`outcome_unknown` ([Office files](frontend/office-files.md)). A
 write whose retries run out and whose receipt is absent says what the service
 last answered (`the service answered 503 (…) on 4 tries; nothing was saved`).
 A `chapter_id` naming no chapter of the workspace is refused in the pipeline
@@ -3544,8 +3564,9 @@ dirty with `index_error` set (the job's error, or `index job failed` when it
 has none) and counts in `pendingNotes`, and nothing admits it again until its
 next edit clears the error. The one wait before that
 is a busy embedding provider: like a file's job, a note job that finds it busy
-re-pends without spending an attempt (up to 5 waits, `PROVIDER_WAITS_MAX`;
-Retry-After or 30 s doubling) and fails only after that; otherwise there is no
+re-pends without spending an attempt (once, `PROVIDER_WAITS_MAX`, decided
+2026-10-15 in place of the five waits of 2026-10-14; Retry-After or 30 s) and
+fails only after that; otherwise there is no
 automatic re-admission or backoff. A note parked by a lifecycle cancellation
 (an account-deletion request, a suspension) stays parked after the account is
 restored or unsuspended, until an edit.
@@ -3689,7 +3710,11 @@ due files. Each 5 s pass then claims and exports the two oldest claimable
 refreshes (`EXPORT_JOBS_SQL`). A file has one running candidate and one
 coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
-state intact and exposes manual processing.
+state intact and exposes manual processing. A refresh that raises
+`SourceSupersededError` while its source recheck still passes (nothing replaced
+it) fails as `source_refresh_refused` with `refresh_error`, so the scheduler
+leaves the file until its next save; finishing it as superseded would leave it
+due and admit it again on every pass.
 
 The workspace stats (`fileChanges`) list each file with unprocessed saved edits
 (the scheduler's predicate) or a refresh in flight, as the settings Indexing
@@ -3786,7 +3811,7 @@ current chunk, with full coverage in the large-document reduction path.
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
 | Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 900 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,920 s per request and 2,100 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (four attempts, two minutes) re-pends the job without spending an attempt, at most five times per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |

@@ -168,6 +168,11 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	if len(actors) == 0 {
 		return "", "", ErrForbidden
 	}
+	// Access first, so a caller who cannot reach the file learns nothing about
+	// the owner's account; checked again under the account locks below.
+	if err = sourceActorsAllowed(ctx, tx, ws, actors, edit); err != nil {
+		return "", "", err
+	}
 	if err = s.lockAccountSessionsTx(ctx, tx, append([]string{owner}, actors...)...); err != nil {
 		return "", "", err
 	}
@@ -310,10 +315,10 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 	if err != nil {
 		return err
 	}
-	if err = checkAccountSessions(ctx, tx, false, owner, actor); err != nil {
+	if err = sourceActorsAllowed(ctx, tx, ws, []string{actor}, edit); err != nil {
 		return err
 	}
-	if err = sourceActorsAllowed(ctx, tx, ws, []string{actor}, edit); err != nil {
+	if err = checkAccountSessions(ctx, tx, false, owner, actor); err != nil {
 		return err
 	}
 	if edit {

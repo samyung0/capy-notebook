@@ -1,6 +1,6 @@
 # UAT critical paths
 
-Run these twenty journeys deliberately through **Deterministic UAT quality**.
+Run these twenty-one journeys deliberately through **Deterministic UAT quality**.
 Its `critical_paths` input defaults to true for manual dispatch and false for
 the lightweight deploy check. **Promote revision to production** requires it.
 Normal pull-request CI does not contact UAT or these providers.
@@ -21,6 +21,7 @@ asserted. The existing authorization suite remains separate.
 | Account | Real signup with fixed Clerk code, verified identity, processed `user.created`, durable profile, 30-day deletion grace, session revocation, delivery to the UAT inbox, real Clerk deletion and processed `user.deleted` purge. |
 | Invitation | Signed-out invitation redirects to the app's password sign-in and returns to the original invitation; browser acceptance persists the recipient and viewer membership, then opens the authorized workspace. |
 | Membership | `membership.spec.ts`; Auto process edits off and a store-only DOCX, so no provider session or model usage. An invited editor gets write collaboration tokens for a note and the DOCX, saves a DOCX sentence (in a second tab) and a note line from the browser, and leaves both editors open. The owner demotes them to viewer in Workspace settings → Sharing → Manage member: `workspace_members.role` is `viewer`, the workspace reads `role: viewer` with `canEdit` false, and both open editors reconnect on a read token (the server discard-evicts the workspace's rooms; the browser's own token request answers `access: read`) and drop to View under the read-only strip, with no editable content left; the note's View joins its room on a read channel and shows the line. The member still reads the note and file; both token endpoints answer `access: read` and a metadata write is refused with 403. The owner then removes them (Remove in the same menu): no `workspace_members` row, the open View's room closes and its rejoin token is refused with 404, the workspace, roster, note and file reads, both tokens and the metadata write answer the non-disclosing 404, the workspace leaves their list, and they hold the role-change and removal notifications with no email beyond the invite. What they saved as an editor stays in the projection and the saved DOCX. |
+| Account deletion | `accountDeletion.spec.ts`; Auto process edits off and a store-only DOCX, so no provider session or model usage. The owner has the DOCX and a note with an image picked through the slash command, an invited editor and a viewer who copies the note as a standalone material: the copy has its own ready `editor_assets` row over the same object (two blob references) and its holder is charged the copy and its image. The owner deletes the account: during the 30-day grace the users row, file, note, image and both memberships stay, while for both members the workspace, roster, note, file, its read links, the image, both room tokens, the editor's note metadata write and the viewer's second copy answer the non-disclosing 404 and the workspace leaves their lists; their own accounts stay active. After the real Clerk deletion and its processed `user.deleted` webhook, the purge leaves no workspace, membership, file, source document, material, editor asset or upload session of the owner, the owner's recounted and counter bytes are zero, and every object only the owner held (recorded by exact key before the purge) loses its references and leaves B2, or waits out its queued `not_before`. The shared image keeps one reference, no queued deletion and its exact bytes, and the copy still reads, resolves its image, gets a write room token and costs its holder the same. |
 | Checkout | App-created sandbox customer/session/reservation, expected price and return URLs, session expiration. |
 | Billing | Sandbox subscription, paid renewal using a test clock, webhook-backed plan projection, deletion blocker and cancellation. Hosted payment-form entry is not covered. |
 | Storage lifecycle | `storageLifecycle.spec.ts`; one owner, one member, real sandbox subscriptions on a test clock started 21 days back (a monthly period started then is live in real time; a cancellation then is a lapse 21 days old), Auto process edits off and store-only ballast, so no provider session or model usage. Pro live (1 GB, 30 MiB files), the owner uploads four 26 MB `.bin` files in the browser (about 104 MB to B2, each read back once) and cancels at the clock's time: `over_quota_frozen`, `graceEndsAt` the clock-stamped `ended_at` plus 14 days. Frozen: the owner's note opens read-only in the browser for owner and member (no editable surface, no mode toggle); reads, the signed download and a new chat thread work; both get read room tokens and `account_over_quota` for a note or comment there; the owner also gets a read token and `account_over_quota` in the member's workspace, while the member still writes its own note; uploads, workspace creation, renaming, widening sharing, inviting and promoting are refused, demoting and trashing stay, and the trashed file is still charged. A second subscription on the clock makes it active: both edit the note again in the browser and the member comments. The clock moved to 3 days back, cancelling again gives `over_quota_grace`: uploads and notes there fail `storage_quota_exceeded` against the Free limit, the owner's content is view-only for both (read tokens, refused comments), the owner still writes and adds a note in the member's workspace (charged to the member), creates a workspace, renames, shares, invites and trashes. Purging the file trashed while frozen makes it active on Free with write tokens again. |
@@ -130,8 +131,29 @@ supports it.
 
 ## Running and cleanup
 
-The workflow uses one Chromium worker, no whole-test retries, a 90-minute
-suite budget and a separate 10-minute cleanup step inside a 150-minute job.
+The journeys run in lanes, one Playwright project per lane. The workflow runs
+each lane in its matrix as its own job, in parallel:
+
+| Lane | Specs | In the workflow matrix |
+| --- | --- | --- |
+| `office` | `files.spec.ts`, `chat.spec.ts`, `officeRefusal.spec.ts` | Yes |
+| `app` | Every other spec; a new spec lands here unless a lane names it | Yes |
+| `refresh` | `officeLifecycle.spec.ts` (J2), `noteIndex.spec.ts` (J4), `textLifecycle.spec.ts` (J5) | Not until those specs exist: an empty project fails with "No tests found" after preflight |
+
+- Each lane is a run of its own: its own `UAT_RUN_ID`
+  (`<run id>-<attempt>-<lane>` in the workflow), manifest, cleanup, Sentry gate
+  and artifact. A failing lane does not stop another (`fail-fast: false`).
+- J2, J4 and J5 share the refresh lane: J2's hold on a store-only file stops the
+  collaboration refresh scheduler while it lasts, and J4/J5 time refreshes.
+- A check that looks at the whole environment rather than at the run's own
+  resources (the "no `source_refresh` job pending over 10 minutes" canary) runs
+  only in the refresh lane.
+- Latency windows (J4/J5's 45–90 s waits) are recorded in the evidence, not
+  asserted: the other lanes share UAT's single ingest worker.
+
+Each lane's job uses one Chromium worker, no whole-test retries, a 90-minute
+suite budget (Playwright's `globalTimeout`) in a 95-minute step and a separate
+10-minute cleanup step, inside a 150-minute job.
 A failing journey does not stop the ones after it.
 Browser actions time out after 30 seconds and navigation after 60 seconds;
 parse/index polling retains its explicit longer limits. Uploads use the actual
@@ -142,14 +164,15 @@ Missing configuration or failed required checks fail the gate.
 
 Local operators need Node/pnpm, uv, the same BetterOffice Bun/Rust/WASM build
 toolchain as CI, and Chromium. Export the same UAT configuration above, plus
-`EXPECTED_REVISION` and a fresh lowercase `UAT_RUN_ID`. Then run:
+`EXPECTED_REVISION` and a fresh lowercase `UAT_RUN_ID`. Then run one lane
+(without `--project`, every lane runs one after another under one run ID):
 
 ```sh
 export RUNNER_TEMP="$(mktemp -d /tmp/capy-uat.XXXXXX)"
 pnpm office:prepare
 scripts/uat/journey-tunnel.sh start
 scripts/uat/verify-journey-releases.sh before
-pnpm e2e:uat:journeys
+pnpm e2e:uat:journeys --project=office
 pnpm e2e:uat:cleanup --run-id "$UAT_RUN_ID"
 scripts/uat/verify-journey-releases.sh after
 scripts/uat/journey-tunnel.sh stop
@@ -166,8 +189,9 @@ the ingest host. Preserve `UAT_RUN_ID` across these commands.
 Sanitized assertion evidence is persisted under the run directory’s `evidence/` folder.
 Every creation records exact resource IDs under
 `e2e/uat/journey-runs/<run-id>/manifest.json`, outside Playwright's cleared
-output directory. Cleanup runs in Playwright teardown and again in an
-`always()` workflow step. Download the artifact and restore that directory
+output directory. Cleanup runs in Playwright teardown; an `always()` workflow
+step reruns it unless the teardown wrote `cleanup.json` with no failures.
+Download the artifact and restore that directory
 to retry `pnpm e2e:uat:cleanup --run-id <run-id>` with the original revision
 and UAT configuration. Existing run IDs cannot be reused for new tests.
 

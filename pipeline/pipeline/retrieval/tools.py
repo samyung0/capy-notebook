@@ -997,8 +997,10 @@ def _receipt_result(body: dict[str, Any]) -> ToolResult:
             if effect.get("projectionPending")
             else ""
         )
+        # An Office edit's note on the characters its text lost (Epo 2026-10-15).
+        notice = f" {body['notice']}" if body.get("notice") else ""
         text = (
-            f"Edited '{title}' (id {rid}).{pending_note}{_relocations(effect)}"
+            f"Edited '{title}' (id {rid}).{notice}{pending_note}{_relocations(effect)}"
             f"{_block_ids(effect)} The user can undo this edit from the chat result."
         )
     elif operation == "edit_undone":

@@ -1249,14 +1249,19 @@ deadline, member and link/public access, listings, editing, invitations, and
 cloning become available again with the same structural permissions. No
 workspace content is rebuilt or approximated during cancellation.
 
-Purge runs after 30 days. During that grace window the durable content remains
+Purge runs after 30 days, except after Clerk `user.deleted`: the identity is
+gone, so `MarkIdentityDeleted` pulls `purge_after` to now and the account worker
+(every minute) purges on its next pass. During that grace window the durable content remains
 recoverable only by support cancelling the deletion after verifying the request
 out of band; there is no self-service cancellation endpoint, and cancellation
 is refused once the grace deadline has passed. At purge, all
 owned workspaces—including shared workspaces—their share links, files,
 standalone materials, planner/history data,
 memberships, invitations, notification data, credentials, and other
-product-content rows are deleted atomically with the account tombstone.
+product-content rows are deleted atomically with the account tombstone, as is
+the account's job history (job and attempt rows whose payload names its
+workspaces; billing rows keep theirs with the attempt link cleared). A job it
+ran in another owner's workspace stays with that file, without its id.
 Remaining cross-account attribution is anonymized. Profile PII is scrubbed;
 pseudonymous billing, usage, provider, storage, and audit ledgers may remain
 under their own retention requirements. The account's editing incidents

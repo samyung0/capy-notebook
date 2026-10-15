@@ -316,9 +316,9 @@ _OUTLINE_TOKENS = 1200
 _OPENING_TOKENS = 150
 
 # The prompt asks for about ``DESCRIPTOR_WORDS`` as plain text; like
-# compaction's summary, the reply is stored as written and the call's token
-# bound is the only cut. It fits a normal reply several times over with
-# thinking off, which the operator-set ingest pin is assumed to have.
+# compaction's summary, the reply is stored as written. A reply cut off at this
+# bound is a failed attempt (models.complete_response). It fits a normal reply
+# several times over with thinking off, which the ingest pin is assumed to have.
 _DESCRIPTOR_MAX_TOKENS = 400
 
 # A refresh reuses the published descriptor until the net text change since its

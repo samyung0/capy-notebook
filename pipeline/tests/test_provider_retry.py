@@ -1,7 +1,7 @@
 """Busy-answer retry policy at the model boundary.
 
 Every attempt is its own call id. Interactive calls get two attempts inside
-three seconds and fail closed as ProviderBusy; ingest calls get four attempts
+three seconds and fail closed as ProviderBusy; ingest calls get three attempts
 inside two minutes. A Retry-After longer than what is left of the budget ends
 the call at once instead of sleeping for nothing.
 """
@@ -172,7 +172,7 @@ async def test_a_busy_answer_on_a_user_key_is_not_a_key_failure(monkeypatch, sle
     assert caught.value.provider_retry_after == 30
 
 
-async def test_ingest_calls_get_four_attempts_with_backoff(
+async def test_ingest_calls_get_three_attempts_with_backoff(
     monkeypatch, sleeps, ingest_mode
 ):
     calls = 0
@@ -180,7 +180,7 @@ async def test_ingest_calls_get_four_attempts_with_backoff(
     async def complete(*_args, **_kwargs):
         nonlocal calls
         calls += 1
-        if calls < 4:
+        if calls < 3:
             raise _busy()
         return elitellm.chat_response(
             {"role": "assistant", "content": "done"},
@@ -193,8 +193,8 @@ async def test_ingest_calls_get_four_attempts_with_backoff(
         await models.complete_text([{"role": "user", "content": "hi"}], model=_spec())
         == "done"
     )
-    assert calls == models.INGEST_RETRY.attempts == 4
-    assert len(sleeps) == 3 and all(0.3 < s < 3 for s in sleeps)
+    assert calls == models.INGEST_RETRY.attempts == 3
+    assert len(sleeps) == 2 and all(0.3 < s < 3 for s in sleeps)
 
 
 async def test_ingest_exhaustion_raises_provider_busy(monkeypatch, sleeps, ingest_mode):
@@ -300,11 +300,14 @@ async def test_caption_retries_transient_failures_too(monkeypatch, sleeps, inges
     assert calls == 3 and len(sleeps) == 2
 
 
-async def test_vlm_page_rereads_a_cut_off_page_once_and_charges_only_a_usable_read(
-    monkeypatch, sleeps, ingest_mode
+@pytest.mark.parametrize(
+    ("first_text", "first_finish"), [("page text", "length"), ("", "stop")]
+)
+async def test_vlm_page_retries_an_unusable_answer_and_charges_only_a_usable_read(
+    monkeypatch, sleeps, ingest_mode, first_text, first_finish
 ):
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
-    finishes = iter(["length", "stop"])
+    answers = iter([(first_text, first_finish), ("page text", "stop")])
     opened: list = []
     charged: list = []
 
@@ -316,9 +319,10 @@ async def test_vlm_page_rereads_a_cut_off_page_once_and_charges_only_a_usable_re
 
     async def complete(_spec, _messages, **kwargs):
         assert kwargs["max_tokens"] == models.VLM_PAGE_MAX_TOKENS
+        text, finish = next(answers)
         return elitellm.chat_response(
-            {"role": "assistant", "content": "page text"},
-            finish_reason=next(finishes),
+            {"role": "assistant", "content": text},
+            finish_reason=finish,
             usage={"prompt_tokens": 1, "completion_tokens": 1},
         )
 
@@ -331,9 +335,58 @@ async def test_vlm_page_rereads_a_cut_off_page_once_and_charges_only_a_usable_re
     assert charged == [0, 1_000]
 
 
-async def test_vlm_page_is_unread_after_two_failed_reads(
-    monkeypatch, sleeps, ingest_mode
+@pytest.mark.parametrize("outcome", ["busy", "error", "empty", "length"])
+async def test_vlm_page_read_makes_at_most_three_calls(
+    monkeypatch, sleeps, ingest_mode, outcome
 ):
+    """One read per page (decided 2026-10-15): the ingest policy's 3 calls."""
+    monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+    calls = 0
+
+    async def complete(*_args, **_kwargs):
+        nonlocal calls
+        calls += 1
+        if outcome == "busy":
+            raise _busy(status=503)
+        if outcome == "error":
+            raise elitellm.ProviderError("upstream", status_code=500)
+        return elitellm.chat_response(
+            {"role": "assistant", "content": "" if outcome == "empty" else "text"},
+            finish_reason="length" if outcome == "length" else "stop",
+            usage={"prompt_tokens": 1, "completion_tokens": 1},
+        )
+
+    monkeypatch.setattr(models.elitellm, "complete", complete)
+    page = models.read_page("data:image/jpeg;base64,AA==", credit_micros=1)
+    if outcome == "busy":
+        # Busy past the attempts re-pends the job instead of leaving the page.
+        with pytest.raises(elitellm.ProviderBusy):
+            await page
+    else:
+        assert await page is None
+    assert calls == 3
+
+
+def _answer(text="text", finish="stop"):
+    return elitellm.chat_response(
+        {"role": "assistant", "content": text},
+        finish_reason=finish,
+        usage={"prompt_tokens": 1, "completion_tokens": 1},
+    )
+
+
+async def _summary():
+    return await models.complete_text(
+        [{"role": "user", "content": "hi"}], model=_spec(), max_tokens=400
+    )
+
+
+@pytest.mark.parametrize("call", ["summary", "vlm"])
+@pytest.mark.parametrize(("status", "expected_calls"), [(500, 2), (401, 1)])
+async def test_ingest_summary_and_vlm_retry_transient_errors_not_client_errors(
+    monkeypatch, sleeps, ingest_mode, call, status, expected_calls
+):
+    """Parts design Q7: a 5xx takes the next attempt; a 401 ends the call."""
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
     calls = 0
 
@@ -341,28 +394,37 @@ async def test_vlm_page_is_unread_after_two_failed_reads(
         nonlocal calls
         calls += 1
         if calls == 1:
-            raise RuntimeError("connection reset")
-        return elitellm.chat_response(
-            {"role": "assistant", "content": ""},
-            finish_reason="stop",
-            usage={"prompt_tokens": 1, "completion_tokens": 0},
-        )
+            raise elitellm.ProviderError("failed", status_code=status)
+        return _answer()
 
     monkeypatch.setattr(models.elitellm, "complete", complete)
-    assert (
-        await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1) is None
-    )
-    assert calls == 2
+    if call == "vlm":
+        read = await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1)
+        assert read == ("text" if status == 500 else None)
+    elif status == 500:
+        assert await _summary() == "text"
+    else:
+        with pytest.raises(elitellm.ProviderError):
+            await _summary()
+    assert calls == expected_calls
 
 
-async def test_vlm_page_busy_past_the_budget_re_pends_the_job(
+async def test_ingest_summary_counts_an_unusable_answer_as_an_attempt(
     monkeypatch, sleeps, ingest_mode
 ):
-    monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
+    answers = iter([_answer(""), _answer("cut", "length"), _answer("A descriptor.")])
+    calls = 0
 
     async def complete(*_args, **_kwargs):
-        raise _busy()
+        nonlocal calls
+        calls += 1
+        return next(answers)
 
     monkeypatch.setattr(models.elitellm, "complete", complete)
-    with pytest.raises(elitellm.ProviderBusy):
-        await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1)
+    assert await _summary() == "A descriptor."
+    assert calls == 3
+
+    answers = iter([_answer("")] * 3)
+    with pytest.raises(models.UnusableAnswer):
+        await _summary()
+    assert calls == 6

@@ -1163,3 +1163,54 @@ func TestConcurrentIdentityDeletionsFinishOnTheirLockConnections(t *testing.T) {
 		t.Fatalf("%d of %d identity deletions were not recorded", unmarked, len(users))
 	}
 }
+
+// A purge deletes the account's job history (its payloads name the account's
+// files and workspaces), attempt rows included; a job it ran in another
+// owner's workspace stays with that file, without the account's id.
+func TestPurgeDeletesTheAccountsJobHistory(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	leaver := newBlobTestUser(t, s, "u_purge_jobs")
+	host := newBlobTestUser(t, s, "u_purge_jobs_host")
+	own, err := s.CreateWorkspace(ctx, leaver, WorkspaceCreate{Name: "Own", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := s.CreateWorkspace(ctx, host, WorkspaceCreate{Name: "Host", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ownJob, hostJob := uid("job"), uid("job")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO jobs(id,type,payload,status) VALUES
+		($1,'ingest',jsonb_build_object('workspaceId',$2::text,'fileId','f_own'),'done'),
+		($3,'ingest',jsonb_build_object('workspaceId',$4::text,'fileId','f_host','actorUserId',$5::text),'done')`,
+		ownJob, own.ID, hostJob, shared.ID, leaver); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.pool.Exec(ctx, `INSERT INTO ingest_job_attempts
+		(job_id,operation_id,attempt,job_type,environment,host_id,worker_instance_id,trace_id,queued_at)
+		VALUES ($1,'op',1,'ingest','test','h','w','t',now())`, ownJob); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.RequestAccountDeletion(ctx, leaver, true); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.PurgeUser(ctx, leaver); err != nil {
+		t.Fatal(err)
+	}
+	var ownJobs, ownAttempts int
+	if err := s.pool.QueryRow(ctx, `SELECT (SELECT count(*) FROM jobs WHERE id=$1),
+		(SELECT count(*) FROM ingest_job_attempts WHERE job_id=$1)`, ownJob).Scan(&ownJobs, &ownAttempts); err != nil {
+		t.Fatal(err)
+	}
+	if ownJobs != 0 || ownAttempts != 0 {
+		t.Fatalf("own job history survived the purge: jobs=%d attempts=%d", ownJobs, ownAttempts)
+	}
+	var actor *string
+	if err := s.pool.QueryRow(ctx, `SELECT payload->>'actorUserId' FROM jobs WHERE id=$1`, hostJob).Scan(&actor); err != nil {
+		t.Fatalf("host job: %v", err)
+	}
+	if actor != nil {
+		t.Fatalf("host job keeps the purged actor %q", *actor)
+	}
+}

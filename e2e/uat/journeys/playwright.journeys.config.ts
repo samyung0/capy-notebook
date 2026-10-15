@@ -11,6 +11,17 @@ process.env.UAT_RUN_ID ??=
     ? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT}`
     : randomUUID();
 
+// Lanes: uat-quality runs each project as its own job with its own run id.
+// A new spec lands in `app`; `refresh` waits for its specs (an empty project
+// fails with "No tests found"). Without --project every lane runs serially.
+const office = ['files.spec.ts', 'chat.spec.ts', 'officeRefusal.spec.ts'];
+const refresh = [
+  'officeLifecycle.spec.ts',
+  'noteIndex.spec.ts',
+  'textLifecycle.spec.ts',
+];
+const chromium = devices['Desktop Chrome'];
+
 export default defineConfig({
   expect: { timeout: 15_000 },
   forbidOnly: true,
@@ -19,7 +30,11 @@ export default defineConfig({
   globalTeardown: path.join(directory, 'cleanup.ts'),
   globalTimeout: 90 * 60_000,
   outputDir: path.join(directory, 'test-results'),
-  projects: [{ name: 'uat-journeys-chromium', use: devices['Desktop Chrome'] }],
+  projects: [
+    { name: 'office', testMatch: office, use: chromium },
+    { name: 'refresh', testMatch: refresh, use: chromium },
+    { name: 'app', testIgnore: [...office, ...refresh], use: chromium },
+  ],
   reporter: 'list',
   retries: 0,
   testDir: directory,

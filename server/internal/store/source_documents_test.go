@@ -143,6 +143,34 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	}
 }
 
+// A caller without access to a source gets not found whatever the owner's
+// account state, never the owner's locked-account error.
+func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	for _, state := range []string{"suspended", "deletion_pending"} {
+		t.Run(state, func(t *testing.T) {
+			owner := newBlobTestUser(t, s, "source_locked_owner_"+state)
+			stranger := newBlobTestUser(t, s, "source_stranger_"+state)
+			_, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
+			doc := sourceTestSeed(t, s, owner, file.ID)
+			lock := `UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1`
+			if state == "suspended" {
+				lock = `UPDATE users SET suspended_at=now(), suspended_reason='test suspension' WHERE id=$1`
+			}
+			if _, err := s.pool.Exec(ctx, lock, owner); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.SourceSession(ctx, stranger, file.ID); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("source session = %v, want not found", err)
+			}
+			if err := s.CheckSourceAccess(ctx, stranger, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
+				t.Fatalf("source access = %v, want not found", err)
+			}
+		})
+	}
+}
+
 func TestSourceRefreshManualIsOwnerOnly(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

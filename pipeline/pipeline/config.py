@@ -319,9 +319,6 @@ if not cfg.parse_shared_dir.strip():
 if cfg.shared_capacity_lock_dir and not os.path.isabs(cfg.shared_capacity_lock_dir):
     raise ValueError("CAPY_SHARED_CAPACITY_LOCK_DIR must be an absolute path")
 
-if not cfg.parser_timeout < cfg.parse_job_timeout:
-    raise ValueError("PARSER_TIMEOUT must be below CAPY_PARSE_JOB_TIMEOUT")
-
 if not 0 < cfg.library_tag_min_confidence <= 1:
     raise ValueError("CAPY_LIBRARY_TAG_MIN_CONFIDENCE must be in (0, 1]")
 
@@ -350,3 +347,11 @@ if not 1 <= cfg.parse_coordinator_concurrency <= 8:
 
 if cfg.db_sync_pool_max_size <= 0 or cfg.db_async_pool_max_size <= 0:
     raise ValueError("pipeline database pool limits must be positive")
+
+
+def require_parse_timeouts() -> None:
+    """The parser request ends before its job's wall-clock limit. Checked by the
+    job worker, which runs parse jobs; retrieval reads PARSER_TIMEOUT only for
+    page captures, so a parse setting never stops it starting."""
+    if not cfg.parser_timeout < cfg.parse_job_timeout:
+        raise ValueError("PARSER_TIMEOUT must be below CAPY_PARSE_JOB_TIMEOUT")

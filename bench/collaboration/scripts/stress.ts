@@ -556,7 +556,7 @@ async function uatTarget(): Promise<Target> {
   const failureCounters = () =>
     Object.fromEntries(
       onHost(
-        `docker exec ${collaboration} node -e 'fetch("http://127.0.0.1:1234/metrics").then((r) => r.text()).then(console.log)'`
+        `docker exec ${collaboration} sh -c 'wget -q -O - --header "x-collaboration-secret: $COLLABORATION_SECRET" http://127.0.0.1:1234/metrics'`
       )
         .stdout.split('\n')
         .filter((line) => /_failures_total /.test(line))
@@ -1100,10 +1100,10 @@ async function quiet(containers: Containers, idle: Partial<Record<Server, number
   return { idle: run.length > 1 ? idleOf() : {}, ms: null, usage: run.at(-1)!.usage };
 }
 
-// An endpoint that touches only the server's event loop: the Node service's
-// /metrics reads in-memory counters (its /healthz pings Postgres and Redis).
-// Another implementation names its own with STRESS_PROBE_PATH.
-const PROBE_PATH = process.env.STRESS_PROBE_PATH ?? '/metrics';
+// An endpoint that touches only the server's event loop: /livez (/healthz pings
+// Postgres and Redis; /metrics needs the service secret). Another
+// implementation names its own with STRESS_PROBE_PATH.
+const PROBE_PATH = process.env.STRESS_PROBE_PATH ?? '/livez';
 const PROBE_EVERY_MS = 250;
 
 /** The probe endpoint beside a room token's WebSocket URL. */

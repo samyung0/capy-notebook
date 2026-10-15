@@ -50,7 +50,7 @@ class CapacityWait(Exception):
 # A provider that stays busy past the in-call retry budget re-pends the ingest
 # job without spending an attempt, at most this many times per job. The wait
 # follows the provider's Retry-After, else this base doubling per re-pend.
-PROVIDER_WAITS_MAX = 5
+PROVIDER_WAITS_MAX = 1
 PROVIDER_WAIT_BACKOFF_S = 30
 
 
@@ -74,7 +74,7 @@ POLICIES: dict[str, JobPolicy] = {
         # Provider 429/5xx and B2 hiccups are cheap to retry; every attempt asks
         # the gateway for a fresh download grant. Exhausting the budget fails
         # the import and releases its reservation.
-        max_attempts=4,
+        max_attempts=3,
         backoff_base_s=30,
         timeout_s=cfg.import_job_timeout,
         lease_s=180,

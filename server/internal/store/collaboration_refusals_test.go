@@ -69,3 +69,33 @@ func TestAuthorityEditRefusalsKeepTheirDetails(t *testing.T) {
 		}
 	}
 }
+
+// An Office edit's note on the characters the agent's text lost (Epo
+// 2026-10-15) is read with the receipt and written back beside it, so the
+// gateway's answer carries it to the tool result.
+func TestAuthorityEditNoticeTravelsWithTheReceipt(t *testing.T) {
+	const notice = "Removed 1 character Office files cannot store (U+0001)."
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"operationId":"op_1","kind":"edit_document","outcome":"succeeded","effect":{"operation":"edited","resource":{"kind":"source_file","id":"f1","title":"a.docx"}},"notice":"` + notice + `"}`))
+	}))
+	defer srv.Close()
+	s := &Store{collaborationHTTP: srv.Client()}
+	var out DocumentEdit
+	if err := s.postCollaboration(t.Context(), srv.URL, "secret", "/internal/documents/edit", map[string]any{}, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Notice != notice || out.ID != "op_1" || out.Effect == nil || out.Effect.Resource.ID != "f1" {
+		t.Fatalf("read %+v", out)
+	}
+	written, err := json.Marshal(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answer struct {
+		OperationID string `json:"operationId"`
+		Notice      string `json:"notice"`
+	}
+	if err := json.Unmarshal(written, &answer); err != nil || answer.OperationID != "op_1" || answer.Notice != notice {
+		t.Fatalf("wrote %s", written)
+	}
+}

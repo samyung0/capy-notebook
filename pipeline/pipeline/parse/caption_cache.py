@@ -44,7 +44,7 @@ _LOOKUP_INSERT = (
     + """
 INSERT INTO image_caption_associations
     (id,file_id,image_sha256,caption_blob_path,size_bytes,published)
-SELECT %s,%s,%s,caption_blob_path,size_bytes,true FROM eligible
+SELECT %s,%s,%s,caption_blob_path,size_bytes,%s FROM eligible
 ON CONFLICT DO NOTHING RETURNING caption_blob_path,size_bytes
 """
 )
@@ -52,16 +52,19 @@ _LOOKUP_OWN = "SELECT caption_blob_path,size_bytes FROM image_caption_associatio
 _PROMOTE = "UPDATE image_caption_associations SET published=true WHERE file_id=%s AND image_sha256=%s"
 _INSERT = """INSERT INTO image_caption_associations
     (id,file_id,image_sha256,caption_blob_path,size_bytes,published)
-VALUES (%s,%s,%s,%s,%s,true) ON CONFLICT DO NOTHING"""
+VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING"""
+# A source refresh names the digest on its candidate; publication publishes the
+# associations it names and deletes the rest.
+_CANDIDATE = """UPDATE source_refresh_candidates
+SET image_sha256s=array_append(array_remove(image_sha256s,%s),%s)
+WHERE file_id=%s AND job_id=%s AND lease_token=%s"""
 
 
 @contextmanager
 def _ingest_cursor(file_id: str):
     source = sync_db.pipeline_source_for(file_id)
-    if source is None or source.get("sourceRefresh") is True:
-        raise sync_db.SourceSupersededError(
-            "ordinary ingest source context is unavailable"
-        )
+    if source is None:
+        raise sync_db.SourceSupersededError("ingest source context is unavailable")
     # Use the worker's existing lock order and commit cancellation even when a
     # completed upload is rejected. Caption attachment uses this same transaction.
     with sync_db.connect() as conn, conn.transaction(), conn.cursor() as cur:
@@ -75,38 +78,52 @@ def _ingest_cursor(file_id: str):
                 source["sourceRevision"],
                 str(source.get("sourceETag") or ""),
             )
-            yield cur
+            yield cur, sync_db.source_refresh_for(file_id)
             return
-    raise sync_db.SourceSupersededError(
-        "ordinary ingest source or attempt was superseded"
+    raise sync_db.SourceSupersededError("ingest source or attempt was superseded")
+
+
+def _keep(cur, refresh, file_id: str, digest: str) -> None:
+    """Publish the file's association, or leave it to the refresh's publication."""
+    if refresh is None:
+        cur.execute(_PROMOTE, (file_id, digest))
+        return
+    cur.execute(
+        _CANDIDATE,
+        (digest, digest, file_id, refresh["_jobId"], refresh["sourceLeaseToken"]),
     )
+    if not cur.rowcount:
+        raise sync_db.SourceSupersededError("source candidate was superseded")
 
 
 def _lookup_ingest(file_id: str, digest: str):
-    with _ingest_cursor(file_id) as cur:
+    with _ingest_cursor(file_id) as (cur, refresh):
         # Grant a reference only while a readable containing file permits
         # reuse. A hash or an object-store cache hit alone grants nothing.
         cur.execute(
             _LOOKUP_INSERT,
-            (file_id, digest, secrets.token_hex(16), file_id, digest),
+            (file_id, digest, secrets.token_hex(16), file_id, digest, refresh is None),
         )
         row = cur.fetchone()
         if row is None:
             cur.execute(_LOOKUP_OWN, (file_id, digest))
             row = cur.fetchone()
         if row is not None:
-            cur.execute(_PROMOTE, (file_id, digest))
+            _keep(cur, refresh, file_id, digest)
             return {"caption_blob_path": row[0], "size_bytes": row[1]}
         return None
 
 
 def _persist_ingest(file_id: str, digest: str, path: str, raw: bytes):
-    with _ingest_cursor(file_id) as cur:
-        cur.execute(_INSERT, (secrets.token_hex(16), file_id, digest, path, len(raw)))
+    with _ingest_cursor(file_id) as (cur, refresh):
+        cur.execute(
+            _INSERT,
+            (secrets.token_hex(16), file_id, digest, path, len(raw), refresh is None),
+        )
         # The association owns the completed caption; this temporary upload
         # reference is needed only until the file is attached.
         cur.execute("DELETE FROM artifact_cache WHERE object_path=%s", (path,))
-        cur.execute(_PROMOTE, (file_id, digest))
+        _keep(cur, refresh, file_id, digest)
 
 
 async def lookup(file_id: str, digest: str) -> tuple[str, str, int] | None:
@@ -185,8 +202,9 @@ async def caption(
     exclusive: bool = True,
 ) -> tuple[str, str, int, bool]:
     """Caption the image a standalone image file's ingest job holds, reusing an
-    eligible caption first. Runs in the file's ordinary ingest job (bound by
-    ``db.bind_source_refresh``).
+    eligible caption first. Runs in the file's ingest job or source refresh
+    (bound by ``db.bind_source_refresh``); a refresh's associations stay
+    unpublished until Go publishes the refresh.
 
     ``read`` replaces the standalone-image caption call; the VLM page read of a
     text-less document page uses it, keyed by a digest of its own. Page reads

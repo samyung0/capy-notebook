@@ -915,7 +915,7 @@ infrastructure, so no further gate is added. An empty `PIPELINE_SECRET` on the
 gateway disables new imports with `503` instead of creating stranded
 reservations.
 
-Retry scheduling lives on the `jobs` row (four attempts, 30 s doubling
+Retry scheduling lives on the `jobs` row (three attempts, 30 s doubling
 backoff, `CAPY_IMPORT_JOB_TIMEOUT` per attempt). The gateway's twelve-minute
 attempt lease only fences stale callbacks: a retryable failure releases it before
 the requeue, a terminal failure or an exhausted budget closes the import and
@@ -1397,8 +1397,9 @@ those services start.
    1,920-second parser request (`PARSER_TIMEOUT`: one 900 s wait for a parse
    child, the 900 s parse and 120 s, see agentic-retrieval's Parse capacity)
    and a 2,100-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
-   20-minute bound. Queue wait does not spend the parse deadline. The process
-   rejects a `PARSER_TIMEOUT` that is not below `CAPY_PARSE_JOB_TIMEOUT`. The parser container
+   20-minute bound. Queue wait does not spend the parse deadline. The job worker
+   refuses to start with a `PARSER_TIMEOUT` that is not below `CAPY_PARSE_JOB_TIMEOUT`;
+   retrieval, which reads `PARSER_TIMEOUT` only for page captures, does not check it. The parser container
    gets 8 CPUs, 14 GiB RAM, 18 GiB memory plus swap and a per-document JVM
    heap of `CAPY_PARSER_JVM_MAX_HEAP` (1g; 1g to 8g made no speed difference on
    15 to 1,220 pages). The coordinator writes the raw source to

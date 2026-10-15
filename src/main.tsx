@@ -1,5 +1,8 @@
 import './lib/zodJitless';
 import './lib/openuiDevtools';
+// The first stylesheet, so Tailwind sets the cascade layer order: a
+// component's `@layer components` loaded earlier ranks it below base.
+import './styles/tailwind.css';
 import { QueryClientProvider } from '@tanstack/react-query';
 import {
   Link,
@@ -18,7 +21,6 @@ import { getLocale } from './i18n';
 import { initErrorReporting, reportReactError } from './lib/observability';
 import { router } from './router';
 import { ThemeProvider } from './theme/ThemeProvider';
-import './styles/tailwind.css';
 import 'streamdown/styles.css';
 import { TooltipProvider } from './components/ui/Tooltip';
 import { CrumbLinkContext } from './features/quizzes/QuizPageHeader';
