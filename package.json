@@ -132,7 +132,7 @@
     "ultracite": "7.9.4",
     "vite": "^6.0.0",
     "vitest": "^4.1.11",
-    "wrangler": "4.125.0",
+    "wrangler": "4.149.0",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz",
     "y-protocols": "1.0.7"
   },

@@ -966,7 +966,7 @@ First setup, once, by hand:
 
 1. Create the project:
    ```bash
-   npx wrangler@4.125.0 pages project create capy-embed --production-branch production
+   npx wrangler@4.149.0 pages project create capy-embed --production-branch production
    ```
    If `capy-embed.pages.dev` is taken, Cloudflare adds a suffix to the
    subdomain. Use the hostname shown under Workers & Pages → `capy-embed` in
