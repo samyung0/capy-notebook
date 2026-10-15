@@ -403,11 +403,20 @@ button {
 }
 
 .office-runtime-state {
-  display: grid;
-  place-items: center;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  align-items: center;
+  justify-content: center;
   height: 100%;
   font-size: 14px;
   color: var(--text-muted);
+}
+
+/* FileLoading's size, for the same loader the host showed a moment before. */
+.office-runtime-state > .spinner {
+  width: 26px;
+  height: 26px;
 }
 
 .office-a11y-only {

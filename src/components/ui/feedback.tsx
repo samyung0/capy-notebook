@@ -1,23 +1,20 @@
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import './spinner.css';
 
+/** Leapfrog dots in an 18px square; a size-* class resizes it. */
 export function Spinner({ className }: { className?: string }) {
   return (
-    <svg
+    <span
       aria-label={m.a11y_loading()}
-      className={cn('isolate size-4.5 animate-spin leading-none', className)}
+      className={cn('spinner', className)}
       data-slot="spinner"
-      fill="none"
       role="status"
-      stroke="currentColor"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      strokeWidth="2"
-      viewBox="0 0 24 24"
-      xmlns="http://www.w3.org/2000/svg"
     >
-      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
-    </svg>
+      <i />
+      <i />
+      <i />
+    </span>
   );
 }
 

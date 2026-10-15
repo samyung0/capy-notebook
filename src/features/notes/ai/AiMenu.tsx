@@ -18,6 +18,7 @@ import {
 } from 'platejs/react';
 import { useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/Button';
+import { Spinner } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
 import { PopupMotion } from '@/components/ui/PopupMotion';
 import { EditorIcon } from '@/features/notes/EditorIcon';
@@ -270,7 +271,7 @@ export function AiMenu() {
         {loading ? (
           <div className="flex items-center justify-between gap-2 p-3 text-fg-muted text-sm">
             <span className="flex items-center gap-2">
-              <EditorIcon className="size-4 animate-spin" name="loader" />
+              <Spinner className="size-4" />
               {chat.status === 'submitted'
                 ? m.editor_ai_thinking()
                 : m.editor_ai_writing_ellipsis()}

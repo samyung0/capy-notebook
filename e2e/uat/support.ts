@@ -79,7 +79,7 @@ async function evaluateWhenReady<T>(
 
 // While a site deploy propagates, or once the edge has cached the SPA fallback
 // under a chunk's name, UAT answers /assets/* with index.html: the app then
-// never boots ("Loading...") or shows "An update is ready" (2026-10-13). Fail
+// never gets past the boot loader or shows "An update is ready" (2026-10-13). Fail
 // on the first such answer, naming it, instead of timing out.
 async function failOnHtmlAssets<T>(page: Page, run: () => Promise<T>) {
   let onResponse = (_response: Response) => {};

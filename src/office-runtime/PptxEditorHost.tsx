@@ -6,6 +6,7 @@ import {
   type PptxEditorApi,
 } from '@betteroffice/pptx-react';
 import { useEffect, useRef, useState } from 'react';
+import { Spinner } from '@/components/ui/feedback';
 import type {
   OfficeAnalysis,
   OfficeLocale,
@@ -224,6 +225,7 @@ export function PptxEditorHost({
   if (!fonts)
     return (
       <div className="office-runtime-state">
+        <Spinner />
         {m.files_office_runtime_loading_editor()}
       </div>
     );

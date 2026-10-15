@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import { createRoot } from 'react-dom/client';
+import { Spinner } from '@/components/ui/feedback';
 import {
   isOfficeHostMessage,
   OFFICE_PROTOCOL_VERSION,
@@ -605,6 +606,7 @@ function OfficeRuntime() {
   if (!file)
     return (
       <div className="office-runtime-state">
+        <Spinner />
         {m.files_office_runtime_loading_file()}
       </div>
     );
@@ -677,6 +679,7 @@ function OfficeRuntime() {
       <Suspense
         fallback={
           <div className="office-runtime-state">
+            <Spinner />
             {m.files_office_runtime_loading()}
           </div>
         }

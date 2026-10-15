@@ -22,7 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFilePicker } from 'use-file-picker';
 import { isStorageQuotaError } from '@/api/client';
 import { type EditorAssetPurpose, uploadEditorAsset } from '@/api/editorAssets';
-import { Skeleton } from '@/components/ui/feedback';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import type { IconName } from '@/components/ui/Icon';
 import { Input } from '@/components/ui/Input';
 import {
@@ -249,10 +249,7 @@ export const MediaPlaceholderElement = withHOC(
           tabIndex={canCreateAssets ? 0 : undefined}
         >
           {uploading ? (
-            <EditorIcon
-              className="size-5 animate-spin text-action-accent"
-              name="loader"
-            />
+            <Spinner className="size-5 text-action-accent" />
           ) : (
             <EditorIcon className="size-5 text-fg-muted" name={content.icon} />
           )}
@@ -439,10 +436,7 @@ function ImageToolbar({
           onClick={openFilePicker}
           tooltipSide="top"
         >
-          <EditorIcon
-            className={cn(replacing && 'animate-spin')}
-            name={replacing ? 'loader' : 'pencil'}
-          />
+          {replacing ? <Spinner /> : <EditorIcon name="pencil" />}
         </ToolbarButton>
       )}
     </>

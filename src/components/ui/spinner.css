@@ -1,0 +1,60 @@
+/* Leapfrog loader, after ldrs 1.1.9 (MIT, GriffinJohnston/ldrs) at 1.3x its
+   speed. Each dot spans the whole box and rotates half a turn about its
+   centre, so a dot hops over the others inside a square slot; percentages are
+   of that full-width box, so a size-* class is the only knob. Layered so those
+   classes win; plain CSS so the Office runtime frame, which has no Tailwind
+   utilities, gets it too. index.html inlines a copy for the boot page. */
+@layer components {
+  .spinner {
+    position: relative;
+    display: inline-block;
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    color: inherit;
+  }
+
+  .spinner > i {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    animation: spinner-leap 3.25s ease infinite;
+  }
+
+  .spinner > i::before {
+    width: 22%;
+    aspect-ratio: 1;
+    content: "";
+    background-color: currentColor;
+    border-radius: 50%;
+  }
+
+  .spinner > i:nth-child(2) {
+    transform: translateX(40%);
+    animation-delay: calc(3.25s / -1.5);
+  }
+
+  .spinner > i:nth-child(3) {
+    transform: translateX(80%);
+    animation-delay: calc(3.25s / -3);
+  }
+}
+
+@keyframes spinner-leap {
+  0% {
+    transform: translateX(0) rotate(0deg);
+  }
+  33.333% {
+    transform: translateX(0) rotate(180deg);
+  }
+  66.666% {
+    transform: translateX(-38%) rotate(180deg);
+  }
+  99.999% {
+    transform: translateX(-78%) rotate(180deg);
+  }
+  100% {
+    transform: translateX(0) rotate(0deg);
+  }
+}

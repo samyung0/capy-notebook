@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
 import { queryClient } from '@/api/queryClient';
 import { startQueryPersistence } from '@/api/queryPersistence';
+import { Spinner } from '@/components/ui/feedback';
 import { signInHref } from '@/features/auth/clerk';
-import { m } from '@/i18n';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
@@ -60,12 +60,8 @@ function AuthTokenBridge({ children, pending }: AuthProviderProps) {
   if (!isLoaded || readyIdentity !== identity) {
     if (pending !== undefined) return <>{pending}</>;
     return (
-      <div
-        aria-label={m.a11y_loading()}
-        className="flex h-dvh items-center justify-center"
-        role="status"
-      >
-        {m.common_loading()}
+      <div className="flex h-dvh items-center justify-center">
+        <Spinner className="size-7" />
       </div>
     );
   }
