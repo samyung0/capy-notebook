@@ -2085,7 +2085,11 @@ async fn metrics_need_the_service_secret_and_livez_says_nothing() {
             .unwrap()
             .contains("capy_collaboration_connections")
     );
-    let live = client.get(url("/livez")).send().await.expect("livez request");
+    let live = client
+        .get(url("/livez"))
+        .send()
+        .await
+        .expect("livez request");
     assert_eq!(live.status().as_u16(), 200);
     assert!(live.headers().get("x-capy-release").is_none());
     assert_eq!(live.text().await.unwrap(), "ok");
