@@ -21,6 +21,8 @@ const office = [
   'scannedPdf.spec.ts',
   'partialIngest.spec.ts',
 ];
+// Stripe-heavy journeys: the credits ones alone take 35–40 min.
+const billing = ['billing.spec.ts', 'credits.spec.ts'];
 const refresh = [
   'officeLifecycle.spec.ts',
   'noteIndex.spec.ts',
@@ -39,7 +41,12 @@ export default defineConfig({
   projects: [
     { name: 'office', testMatch: office, use: chromium },
     { name: 'refresh', testMatch: refresh, use: chromium },
-    { name: 'app', testIgnore: [...office, ...refresh], use: chromium },
+    { name: 'billing', testMatch: billing, use: chromium },
+    {
+      name: 'app',
+      testIgnore: [...office, ...refresh, ...billing],
+      use: chromium,
+    },
   ],
   reporter: 'list',
   retries: 0,

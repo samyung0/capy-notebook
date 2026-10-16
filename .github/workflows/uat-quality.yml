@@ -140,7 +140,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [office, app]
+        lane: [office, app, billing]
     env:
       UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
       EXPECTED_REVISION: ${{ needs.smoke.outputs.revision }}

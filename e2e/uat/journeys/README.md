@@ -150,6 +150,7 @@ each lane in its matrix as its own job, in parallel:
 | Lane | Specs | In the workflow matrix |
 | --- | --- | --- |
 | `office` | `files.spec.ts`, `chat.spec.ts`, `officeRefusal.spec.ts`, `scannedPdf.spec.ts`, `partialIngest.spec.ts` | Yes |
+| `billing` | `billing.spec.ts`, `credits.spec.ts` (Stripe sandbox: subscriptions, top-ups, auto-reload; about 40 min) | Yes |
 | `app` | Every other spec; a new spec lands here unless a lane names it | Yes |
 | `refresh` | `officeLifecycle.spec.ts` (J2), `noteIndex.spec.ts` (J4), `textLifecycle.spec.ts` (J5) | Not until those specs exist: an empty project fails with "No tests found" after preflight |
 
