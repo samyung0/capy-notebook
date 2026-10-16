@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect, useState } from 'react';
 import { useMe } from '@/api/hooks';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import {
   itemEditingStopped,
@@ -83,7 +83,7 @@ export function LiveFlashcards({
       </div>
     );
   // Refused as outdated before it synced: nothing of the room to show.
-  if (snapshot.offline === 'outdated' && !snapshot.synced)
+  if (isOutdatedBanner(snapshot.offline) && !snapshot.synced)
     return <SaveBanner state="outdated" />;
   // Opened offline (or the server failed): it joins once back.
   if (snapshot.status === 'offline' && !snapshot.synced)

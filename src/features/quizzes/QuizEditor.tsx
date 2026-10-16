@@ -2,7 +2,7 @@ import { type ReactNode, useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
 import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import {
@@ -54,6 +54,7 @@ export function QuizEditor({
     <div className="flex flex-col gap-7">
       {rooms.undo &&
         headerActions &&
+        !itemEditingStopped(rooms.offline) &&
         createPortal(
           <UndoButtons header manager={rooms.undo} />,
           headerActions
@@ -93,7 +94,7 @@ export function QuizEditor({
         ) : (
           <Skeleton className="h-64 w-full" />
         )
-      ) : rooms.offline === 'outdated' ? (
+      ) : isOutdatedBanner(rooms.offline) ? (
         // Refused as outdated before it synced: nothing of the rooms to show.
         <SaveBanner state="outdated" />
       ) : rooms.status === 'offline' ? (

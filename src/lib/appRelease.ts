@@ -47,19 +47,17 @@ export function takeUpdateLoad(): boolean {
 }
 
 /** Makes the next path change a full page load once an update is available
- * (`?file=` and other search changes stay in the page). */
+ * (`?file=` and other search changes stay in the page). The router has
+ * already pushed the new URL, so a reload loads it (assigning it would only
+ * scroll to a `#fragment`). */
 export function loadUpdateOnPathChange(router: {
   subscribe: (
     event: 'onBeforeNavigate',
-    listener: (event: {
-      pathChanged: boolean;
-      toLocation: { href: string };
-    }) => void
+    listener: (event: { pathChanged: boolean }) => void
   ) => () => void;
 }) {
-  return router.subscribe('onBeforeNavigate', ({ pathChanged, toLocation }) => {
-    if (pathChanged && takeUpdateLoad())
-      window.location.assign(toLocation.href);
+  return router.subscribe('onBeforeNavigate', ({ pathChanged }) => {
+    if (pathChanged && takeUpdateLoad()) window.location.reload();
   });
 }
 

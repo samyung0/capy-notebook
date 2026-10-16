@@ -893,10 +893,10 @@ orphan an earlier request.
 
 The old REST content autosave, local revision refs, full-document replacement,
 draft unload warning, and five-second PATCH debounce do not exist. Public
-`PATCH /api/materials/{id}/metadata` updates metadata only. Study-tool commands
-that intentionally replace a stable quiz/card block use content-only endpoints;
-relational metadata and standalone sharing use separate endpoints so a privacy
-or metadata failure cannot be reported as though it rolled back an
+`PATCH /api/materials/{id}/metadata` updates metadata only. Quiz and
+flashcard content has no REST write either: live item rooms are its only
+writers. Relational metadata and standalone sharing use separate endpoints so a
+privacy or metadata failure cannot be reported as though it rolled back an
 already-durable Yjs command.
 
 ### Client protocol and the release nudge
@@ -931,16 +931,19 @@ design, option d).
 
   The one-row `outdated` save strip reads "Capy was updated. Reload to keep
   editing. Your edits are saved on this device and will sync after you
-  reload.", with Reload in the close button's place. The header status is
-  Collaboration unavailable, as in recovery. An item room or source session
+  reload.", with Reload in the close button's place. When this device could
+  not store the unsent edits (`outdated-unstored`), it says so instead: "This
+  device couldn't store your unsent edits, so reloading loses them." The
+  header status is Collaboration unavailable, as in recovery. An item room or
+  source session
   refused before it synced shows the strip alone (a source shows its base
   and this device's drafts, read-only).
 - **Its drafts stay.** Nothing is discarded, refused or marked. The reloaded
   page applies them before it joins (or the sweep sends them), so they go
   through the new version's checks as offline edits do; a refusal there
   gives the usual refused draft. A source whose edits this device stored no
-  longer counts as unsaved, so Reload brings no "Leave site?" prompt (one
-  whose storage failed still does).
+  longer counts as unsaved, so Reload brings no "Leave site?" prompt (a
+  source or item editor whose storage failed still asks).
 - **The next page change loads the new app**: any refused room (an editor's
   or a reader's) marks the update available, as the nudge below does. Drafts made by a refused client never carry
   normalization damage: it never synced the new content.
@@ -1007,8 +1010,9 @@ An editor that can edit keeps editing while its room cannot be reached: the
 browser went offline, or reconnecting failed for 30 s. Its header shows
 Offline and the `offline` save banner reads "Can't connect to Capy. Your edits
 are saved on this device and will sync when you reconnect. They may be
-rejected or lost." until the room syncs again. Note View never joins a room and
-is unchanged; opening the app offline is not supported.
+rejected or lost." until the room syncs again. Readers (Note View, study
+pages) hold no edits and keep what they painted; opening the app offline is not
+supported.
 
 Unsaved work lives in IndexedDB (`src/lib/editDrafts.ts`, database
 `capy-edit-drafts`, shared with Office and text sources), written by a

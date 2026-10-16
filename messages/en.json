@@ -1041,6 +1041,7 @@
   "editor_recovery_changed": "This file changed while your edits were waiting to sync. Copy anything you need, then reload.",
   "editor_outdated": "Capy was updated. Reload to keep editing. Your edits are saved on this device and will sync after you reload.",
   "editor_outdated_publishing": "The update is still being published. Try again in a minute.",
+  "editor_outdated_unstored": "Capy was updated. Reload to keep editing. This device couldn't store your unsent edits, so reloading loses them.",
   "editor_drafts_lost": "Some unsaved edits from your last session couldn't be restored.",
   "item_edits_refused": "Your latest changes couldn't be saved. They're shown read-only to copy until you reload.",
   "item_leave_unsent": "Some changes haven't reached the server yet. Leave anyway?",

@@ -161,6 +161,8 @@ pub const MIN_MATERIAL: u32 = 1;
 /// The oldest client source rooms accept (`source:`: Office and text); every
 /// BetterOffice pin bump and Office protocol bump raises it.
 pub const MIN_SOURCE: u32 = 1;
+// A minimum above the server's own protocol would refuse every client.
+const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
 
 /// Whether a client's protocol is refused: below its room family's minimum,
 /// or above this server's own (a newer tab after a rollback). A client from

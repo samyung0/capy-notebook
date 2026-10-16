@@ -7,9 +7,8 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
-// setCards writes a set's cards into its content as a live room's store
-// does (live item rooms are the only writers of set content); a new card gets
-// an id.
+// setCards writes a set's cards as its whole content (live item rooms are the
+// only writers of set content); a new card gets an id.
 func setCards(t *testing.T, s *Store, actor, setID string, edit func([]materialdoc.Card) []materialdoc.Card) {
 	t.Helper()
 	ctx := context.Background()
@@ -27,7 +26,7 @@ func setCards(t *testing.T, s *Store, actor, setID string, edit func([]materiald
 			cards[i].ID = uid("c")
 		}
 	}
-	content, err := materialdoc.ReplaceFlashcards(set.Content, cards)
+	content, err := materialdoc.FlashcardsDocument(cards)
 	if err != nil {
 		t.Fatal(err)
 	}

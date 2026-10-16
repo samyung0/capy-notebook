@@ -140,11 +140,15 @@ function CollaborativeNoteEditor({
   // The room cannot be reached; the edits stay on this device.
   const [offline, setOffline] = useState<NoteOfflineState | null>(null);
   // The room refuses this build (Capy was updated) until the page reloads.
-  const [outdated, setOutdated] = useState(false);
-  const banner: SaveBannerState | null = outdated
-    ? 'outdated'
-    : (offline ?? (saveDelayed ? 'delayed' : null));
-  const markOutdated = useCallback(() => setOutdated(true), []);
+  const [outdated, setOutdated] = useState<
+    'outdated' | 'outdated-unstored' | null
+  >(null);
+  const banner: SaveBannerState | null =
+    outdated ?? offline ?? (saveDelayed ? 'delayed' : null);
+  const markOutdated = useCallback(
+    (stored: boolean) => setOutdated(stored ? 'outdated' : 'outdated-unstored'),
+    []
+  );
   const onDocumentRejected = useCallback(
     (
       code: MaterialLimitCode | 'invalid_document' | 'revoked',

@@ -479,8 +479,9 @@ export function NoteEditorCore({
   onOffline?: (state: NoteOfflineState | null) => void;
   /** The room refuses this build's client protocol (Capy was updated): the
    * editor stopped and turned read-only, its unsaved edits stay stored for
-   * the reloaded page to send. */
-  onOutdated?: () => void;
+   * the reloaded page to send. `stored`: false when this device could not
+   * store unsaved edits, which the reload then loses. */
+  onOutdated?: (stored: boolean) => void;
   /** The room turned read-only (a frozen account or an owner at its storage
    * limit; `code`: a block this version cannot edit): the caller drops to
    * view, discarding unsaved edits. */
@@ -822,7 +823,9 @@ export function NoteEditorCore({
         markUpdateAvailable();
         setStatus('error');
         setOutdated(true);
-        reportOutdated.current?.();
+        reportOutdated.current?.(
+          storageOk.current || !(hasUnsavedWork() || recorder.current?.unsaved)
+        );
       } else {
         // The note's stored edits go too (not for an account lock); queued
         // before the recorder's discard, the report counts this session's
@@ -962,6 +965,7 @@ export function NoteEditorCore({
     currentUserId,
     discussions,
     handleStatelessEvent,
+    hasUnsavedWork,
     material.id,
     material.workspaceId,
     name,
@@ -1101,7 +1105,7 @@ export function NoteEditorCore({
     // A blip the socket survived brings no provider event, so the status comes
     // back from the provider's own state; a dropped one reconnects by itself.
     const online = () => {
-      if (reportedStatus.current !== 'offline') return;
+      if (stale.current || reportedStatus.current !== 'offline') return;
       if (roomProvider(editor)?.isSynced)
         setStatus(hasUnsavedWork() ? 'syncing' : 'synced');
       // Offline mode lasts until the room syncs again.

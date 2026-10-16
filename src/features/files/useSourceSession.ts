@@ -549,7 +549,7 @@ export function useSourceSession(
         setLoaded({ bytes, doc: shared, session });
         setHandoff(false);
         setStatus('error');
-        setBanner('outdated');
+        setBanner(storageOk ? 'outdated' : 'outdated-unstored');
         setOutdated(true);
       };
       // Nothing local is pending any more: the receipt deletes the drafts.

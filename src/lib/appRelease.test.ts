@@ -11,14 +11,14 @@ const served = (release: string) =>
   new Headers({ 'X-Capy-App-Release': release });
 
 let session: Map<string, string>;
-let location: { assign: ReturnType<typeof vi.fn>; reload: () => void };
+let location: { reload: ReturnType<typeof vi.fn> };
 beforeEach(() => {
   session = new Map();
   vi.stubGlobal('sessionStorage', {
     getItem: (key: string) => session.get(key) ?? null,
     setItem: (key: string, value: string) => session.set(key, value),
   });
-  location = { assign: vi.fn(), reload: vi.fn() };
+  location = { reload: vi.fn() };
   vi.stubGlobal('window', { location });
 });
 afterEach(() => {
@@ -29,10 +29,7 @@ afterEach(() => {
 describe('the release nudge', () => {
   it('loads the page at the next path change once another release is served, once per release', async () => {
     const { loadUpdateOnPathChange, noteServedRelease } = await page();
-    let navigate!: (event: {
-      pathChanged: boolean;
-      toLocation: { href: string };
-    }) => void;
+    let navigate!: (event: { pathChanged: boolean }) => void;
     loadUpdateOnPathChange({
       subscribe: (_event, listener) => {
         navigate = listener;
@@ -42,15 +39,15 @@ describe('the release nudge', () => {
     // The same release, or none (local dev, MSW): nothing happens.
     noteServedRelease(served('r1'));
     noteServedRelease(new Headers());
-    navigate({ pathChanged: true, toLocation: { href: '/a' } });
-    expect(location.assign).not.toHaveBeenCalled();
+    navigate({ pathChanged: true });
+    expect(location.reload).not.toHaveBeenCalled();
 
     noteServedRelease(served('r2'));
     // A search change (`?file=`) stays in the page.
-    navigate({ pathChanged: false, toLocation: { href: '/a?file=f' } });
-    expect(location.assign).not.toHaveBeenCalled();
-    navigate({ pathChanged: true, toLocation: { href: '/b?x=1' } });
-    expect(location.assign).toHaveBeenCalledWith('/b?x=1');
+    navigate({ pathChanged: false });
+    expect(location.reload).not.toHaveBeenCalled();
+    navigate({ pathChanged: true });
+    expect(location.reload).toHaveBeenCalledOnce();
 
     // A stale edge served r1 again: this tab does not load for r2 twice.
     const again = await page();

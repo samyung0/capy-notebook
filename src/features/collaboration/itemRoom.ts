@@ -2,7 +2,10 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { getMaterialCollaborationToken } from '@/api/hooks';
-import type { SaveBannerState } from '@/components/banners/SaveBanner';
+import {
+  isOutdatedBanner,
+  type SaveBannerState,
+} from '@/components/banners/SaveBanner';
 import { userToast } from '@/components/ui/userToast';
 import {
   type ReadOnlyCode,
@@ -70,11 +73,15 @@ export interface ItemRoomSnapshot {
   /** Bumped when the readers' lists change (`lists`). */
   listsVersion: number;
   /** An editor's save strip while the room cannot be used: unreachable
-   * (`offline…`), or refusing this build (`outdated`, until the page
+   * (`offline…`), or refusing this build (`outdated…`, until the page
    * reloads). */
   offline: Extract<
     SaveBannerState,
-    'offline' | 'offline-unstored' | 'offline-limit' | 'outdated'
+    | 'offline'
+    | 'offline-unstored'
+    | 'offline-limit'
+    | 'outdated'
+    | 'outdated-unstored'
   > | null;
   /** Why the room is read-only for this writer, when it said (a block
    * this version cannot edit). */
@@ -89,7 +96,7 @@ export interface ItemRoomSnapshot {
 /** Whether an item editor stops taking edits: offline past the bound this
  * device may hold, or refused as outdated. */
 export function itemEditingStopped(offline: ItemRoomSnapshot['offline']) {
-  return offline === 'offline-limit' || offline === 'outdated';
+  return offline === 'offline-limit' || isOutdatedBanner(offline);
 }
 
 /** What a room needs of its provider (the MSW stand-in implements it too). */
@@ -574,15 +581,18 @@ export class ItemRoom {
 
   /** Capy was updated and the room refuses this build: it stops for the
    * page load. An editor turns read-only under the outdated strip, its unsent
-   * edits kept for the reloaded page to send; a reader keeps what it painted. */
+   * edits kept for the reloaded page to send (leaving still asks when this
+   * device could not store them); a reader keeps what it painted. */
   private outdated() {
     if (this.destroyed || this.stale) return;
     this.stale = true;
     this.reconnector.dispose();
     this.provider?.disconnect();
     markUpdateAvailable();
-    this.markUnsent(false);
-    if (this.recorder) this.set({ offline: 'outdated' });
+    const unstored = !this.storageOk && !!this.recorder?.unsaved;
+    this.markUnsent(unstored);
+    if (this.recorder)
+      this.set({ offline: unstored ? 'outdated-unstored' : 'outdated' });
   }
 
   /** The item is gone or no longer this user's: the room stops for good. */

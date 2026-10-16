@@ -17,6 +17,8 @@ import { FileBanner } from './FileBanner';
  * - `outdated`: Capy was updated and the room refuses this build (the
  *   version gate); the editor is read-only, its edits stay on this device for
  *   the reloaded page to send, and Reload waits for the new app.
+ *   `outdated-unstored`: and this device could not store the unsent edits,
+ *   so the reload loses them.
  */
 export type SaveBannerState =
   | 'delayed'
@@ -25,13 +27,21 @@ export type SaveBannerState =
   | 'offline-limit'
   | 'refused'
   | 'changed'
-  | 'outdated';
+  | 'outdated'
+  | 'outdated-unstored';
+
+export function isOutdatedBanner(state: SaveBannerState | null | undefined) {
+  return state === 'outdated' || state === 'outdated-unstored';
+}
 
 export function isRecoveryBanner(state: SaveBannerState | null) {
   return state === 'refused' || state === 'changed';
 }
 
-const MESSAGES: Record<Exclude<SaveBannerState, 'outdated'>, () => string> = {
+const MESSAGES: Record<
+  Exclude<SaveBannerState, 'outdated' | 'outdated-unstored'>,
+  () => string
+> = {
   changed: () => m.editor_recovery_changed(),
   delayed: () => m.editor_save_delayed(),
   offline: () => m.editor_offline_banner(),
@@ -54,7 +64,8 @@ export function SaveBanner({
   onReload?: () => void;
   reloading?: boolean;
 }) {
-  if (state === 'outdated') return <OutdatedBanner />;
+  if (isOutdatedBanner(state))
+    return <OutdatedBanner stored={state === 'outdated'} />;
   return (
     <FileBanner
       actions={
@@ -82,7 +93,7 @@ export function SaveBanner({
 
 /** Reload loads the page only once the new app is served; until then the
  * strip says it is still being published. */
-function OutdatedBanner() {
+function OutdatedBanner({ stored }: { stored: boolean }) {
   const [checking, setChecking] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const reload = async () => {
@@ -104,7 +115,11 @@ function OutdatedBanner() {
       inline
       kind="outdated"
       message={
-        publishing ? m.editor_outdated_publishing() : m.editor_outdated()
+        publishing
+          ? m.editor_outdated_publishing()
+          : stored
+            ? m.editor_outdated()
+            : m.editor_outdated_unstored()
       }
       testId="save-banner"
     />

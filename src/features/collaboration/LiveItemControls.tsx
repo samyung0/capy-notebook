@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { isOutdatedBanner } from '@/components/banners/SaveBanner';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
@@ -13,7 +14,7 @@ export function itemSaveState(
   offline?: ItemRoomSnapshot['offline']
 ): NoteEditorSaveState | null {
   // Refused as outdated: stopped until the page reloads, as recovery.
-  if (offline === 'outdated') return 'error';
+  if (isOutdatedBanner(offline)) return 'error';
   return status === 'unavailable' ? null : status;
 }
 

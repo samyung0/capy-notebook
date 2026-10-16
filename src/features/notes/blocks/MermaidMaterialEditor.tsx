@@ -4,7 +4,7 @@ import * as Y from 'yjs';
 import { qk } from '@/api/client';
 import { useMe } from '@/api/hooks';
 import type { Material, Provenance } from '@/api/types';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
@@ -135,7 +135,7 @@ export default function MermaidMaterialEditor({
       </div>
     );
   // Refused as outdated before it synced: nothing of the room to show.
-  if (snapshot.offline === 'outdated' && !snapshot.synced)
+  if (isOutdatedBanner(snapshot.offline) && !snapshot.synced)
     return <SaveBanner state="outdated" />;
   if (!(room && snapshot.synced && live))
     return <FileLoading message={m.editor_connecting()} />;
