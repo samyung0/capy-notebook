@@ -16,7 +16,21 @@ import {
   setLocale as setParaglideLocale,
 } from '@/i18n';
 
-/** Account language: applies as soon as it changes and is saved for emails. */
+/**
+ * Saves the account language (emails use it), then applies it. Applying
+ * reloads the page, which would cancel a save still in flight; a failed save
+ * changes nothing and shows the default mutation toast.
+ */
+export async function changeLocale(
+  locale: 'en' | 'zh',
+  save: (locale: 'en' | 'zh') => Promise<unknown>,
+  apply: (locale: 'en' | 'zh') => void
+) {
+  await save(locale);
+  apply(locale);
+}
+
+/** Account language: saved for emails, then applied to the app. */
 export function LanguageRow() {
   const { isPending, mutateAsync: setLocale } = useSetLocale();
   const current = (() => {
@@ -36,11 +50,9 @@ export function LanguageRow() {
         disabled={isPending}
         onValueChange={(locale) => {
           if (locale !== 'en' && locale !== 'zh') return;
-          const previous = current;
-          setParaglideLocale(locale);
-          void setLocale(locale).catch(() => {
-            if (getLocale() === locale) setParaglideLocale(previous as never);
-          });
+          void changeLocale(locale, setLocale, setParaglideLocale).catch(
+            () => undefined
+          );
         }}
         value={current}
       >
