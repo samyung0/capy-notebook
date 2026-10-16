@@ -2,6 +2,8 @@ import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { isAccountForbiddenError, isApiError } from '@/api/client';
 import type { MaterialCollaborationToken } from '@/api/types';
+import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
+import { markUpdateAvailable } from '@/lib/appRelease';
 import {
   type EditIncidentReporter,
   editIncidentReporter,
@@ -786,9 +788,14 @@ function roomToken(
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
  * - `retry`: no answer (offline) or the rows changed: tried at the next
- *   trigger.
+ *   trigger;
+ * - `outdated`: the service refuses this build's client protocol (Capy was
+ *   updated): nothing more goes until the page reloads, and no row changes.
  */
-type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry';
+type Sent = 'sent' | 'refused' | 'waits' | 'later' | 'retry' | 'outdated';
+
+// Set once a send was refused as outdated: sweeps stop for the page load.
+let outdated = false;
 
 /** A document's rows its room takes now: not refused, not left for the
  * editor (`held`), of the token's room, one group per lineage (an Office
@@ -829,6 +836,7 @@ async function sendGroup(
   const headers: Record<string, string> = {
     authorization: `Bearer ${token.token}`,
     'content-type': 'application/octet-stream',
+    'x-capy-protocol': String(CLIENT_PROTOCOL),
     'x-capy-room': token.room,
   };
   if (group.base !== undefined) headers['x-capy-base'] = group.base;
@@ -853,6 +861,8 @@ async function sendGroup(
     case 'too_large':
     case 'unheld':
       return 'waits';
+    case 'outdated':
+      return 'outdated';
     default:
       return 'later';
   }
@@ -922,6 +932,11 @@ async function sweepDocument(
     if (!current()) return false;
     const sent = await sendGroup(token, group, kind === 'material');
     if (!current()) return false;
+    if (sent === 'outdated') {
+      outdated = true;
+      markUpdateAvailable();
+      return false;
+    }
     if (sent === 'sent') await deleteDrafts(group.refs);
     else if (sent === 'refused' || sent === 'waits') {
       const draws =
@@ -960,7 +975,7 @@ export async function sweepDrafts(
       prefix: `${actorId}:`,
     });
     for (const [key, ids] of Object.entries(documents)) {
-      if (!current()) return;
+      if (!current() || outdated) return;
       const seen = ids.join(' ');
       if (!cleanup && settledRows.get(key) === seen) continue;
       const settled = locks
@@ -1003,7 +1018,7 @@ export function startDraftSweeps(actorId: string, api: SweepApi) {
     }
   const run = (cleanup: boolean) => {
     const target = sweeping;
-    if (!target) return;
+    if (!target || outdated) return;
     void sweepDrafts(target.actorId, target.api, {
       cleanup,
       current: () => sweeping === target,

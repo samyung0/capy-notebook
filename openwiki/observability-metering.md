@@ -307,7 +307,15 @@ capturing it (`DocumentError::Unavailable` in
 expected (`authorityFailure` in `server/internal/store/collaboration_documents.go`)
 and answers its own caller as for any unavailable authority (503,
 `outcome_unknown` to the pipeline), reporting nothing; any other 503 from the
-authority is still reported. Sentry holds failures
+authority is still reported. A JOIN or draft send refused for its client
+protocol (`collaboration-outdated`, the version gate in
+[plate-editor.md](frontend/plate-editor.md#client-protocol-and-the-release-nudge))
+is expected after every bumping deploy: collaboration logs it at warn
+(`authentication rejected` or `draft send refused`), never captures it, and
+counts it in `capy_collaboration_outdated_refusals_total{family}` (material,
+source) and, for a draft send, `capy_collaboration_draft_refusals_total{class="outdated"}`
+on `/metrics`; the browser shows the outdated strip and reports nothing.
+That counter is how many stale tabs remain after a deploy. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal

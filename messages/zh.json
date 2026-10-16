@@ -1039,6 +1039,8 @@
   "editor_offline_unstored": "你的编辑无法保存在此设备上。请在重新连接前保持此标签页打开。",
   "editor_offline_limit": "你已达到此文件的离线编辑上限。请重新连接以继续编辑。",
   "editor_recovery_changed": "你的编辑在等待同步时，此文件已发生变化。请复制你需要的内容，然后重新加载。",
+  "editor_outdated": "Capy 已更新。请重新加载以继续编辑。你的编辑已保存在此设备上，重新加载后会同步。",
+  "editor_outdated_publishing": "更新仍在发布中。请一分钟后再试。",
   "editor_drafts_lost": "上次会话中有部分未保存的编辑无法恢复。",
   "item_edits_refused": "最近的更改无法保存。在重新加载之前，它们会以只读方式显示，方便复制。",
   "item_leave_unsent": "部分更改尚未送达服务器。仍要离开吗？",

@@ -1,3 +1,4 @@
+import { noteServedRelease } from '@/lib/appRelease';
 import { authHeaders } from './auth';
 import { API_BASE } from './client';
 import { consumeSSE, sseData, sseEvent } from './sse';
@@ -87,6 +88,7 @@ export async function readEventStream(
     method: 'GET',
     signal,
   });
+  noteServedRelease(response.headers);
   if (!response.ok || !response.body) {
     throw new Error(`${response.status} ${response.statusText}`);
   }

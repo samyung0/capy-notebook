@@ -132,6 +132,22 @@ impl RoomName {
             RoomName::Source { epoch, .. } => *epoch,
         }
     }
+
+    /// The oldest client protocol its family accepts (`protocol.rs`).
+    pub fn minimum_protocol(&self) -> u32 {
+        match self {
+            RoomName::Material { .. } => crate::protocol::MIN_MATERIAL,
+            RoomName::Source { .. } => crate::protocol::MIN_SOURCE,
+        }
+    }
+
+    /// The family's label on `capy_collaboration_outdated_refusals_total`.
+    pub fn family(&self) -> &'static str {
+        match self {
+            RoomName::Material { .. } => "material",
+            RoomName::Source { .. } => "source",
+        }
+    }
 }
 
 impl std::fmt::Display for RoomName {
@@ -287,6 +303,21 @@ mod tests {
         ] {
             assert!(RoomName::parse(bad).is_none(), "{bad}");
         }
+    }
+
+    #[test]
+    fn the_protocol_minimum_goes_by_the_room_family() {
+        let family = |room: &str| {
+            let name = RoomName::parse(room).unwrap();
+            (name.family(), name.minimum_protocol())
+        };
+        let material = ("material", crate::protocol::MIN_MATERIAL);
+        assert_eq!(family(ROOM), material);
+        assert_eq!(family("keys:mat_1:schema:2"), material);
+        assert_eq!(
+            family("source:file-1:epoch:3"),
+            ("source", crate::protocol::MIN_SOURCE)
+        );
     }
 
     #[test]

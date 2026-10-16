@@ -2,6 +2,7 @@
  * Thin fetch wrapper around the API. One base URL so the real
  * backend can be dropped in later by changing `API_BASE`.
  */
+import { noteServedRelease } from '@/lib/appRelease';
 import { authHeaders, USE_MSW } from './auth';
 
 export const API_BASE = '/api';
@@ -166,6 +167,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
+  noteServedRelease(res.headers);
   if (!res.ok) {
     let body: ApiErrorBody | null = null;
     try {

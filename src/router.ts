@@ -59,6 +59,7 @@ import {
   RESULT_SORT_DEFAULT,
   RESULT_SORTS,
 } from '@/features/study/reviewSearch';
+import { loadUpdateOnPathChange } from '@/lib/appRelease';
 import { features } from '@/lib/features';
 import {
   FILE_SORT_DEFAULT,
@@ -507,6 +508,9 @@ export const router = createRouter({
   routeTree,
   scrollRestoration: true,
 });
+
+// A newer app is served: the next page change loads it (the release nudge).
+loadUpdateOnPathChange(router);
 
 declare module '@tanstack/react-router' {
   interface Register {

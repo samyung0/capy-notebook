@@ -3,7 +3,10 @@ import { useMe } from '@/api/hooks';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
-import { useItemRoom } from '@/features/collaboration/itemRoom';
+import {
+  itemEditingStopped,
+  useItemRoom,
+} from '@/features/collaboration/itemRoom';
 import { itemSaveState } from '@/features/collaboration/LiveItemControls';
 import type { NoteEditorStatus } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
@@ -56,9 +59,9 @@ export function LiveFlashcards({
   useEffect(() => {
     const saveState = snapshot.recovery
       ? 'error'
-      : itemSaveState(snapshot.status);
+      : itemSaveState(snapshot.status, snapshot.offline);
     onStatusChange?.(saveState ? { saveState } : null);
-  }, [snapshot.status, snapshot.recovery, onStatusChange]);
+  }, [snapshot.status, snapshot.recovery, snapshot.offline, onStatusChange]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
 
   if (snapshot.status === 'unavailable')
@@ -79,6 +82,9 @@ export function LiveFlashcards({
         />
       </div>
     );
+  // Refused as outdated before it synced: nothing of the room to show.
+  if (snapshot.offline === 'outdated' && !snapshot.synced)
+    return <SaveBanner state="outdated" />;
   // Opened offline (or the server failed): it joins once back.
   if (snapshot.status === 'offline' && !snapshot.synced)
     return <QueryPausedState />;
@@ -94,7 +100,7 @@ export function LiveFlashcards({
   return (
     <div className="flex flex-col gap-4">
       {snapshot.offline && <SaveBanner state={snapshot.offline} />}
-      {snapshot.access !== 'write' || snapshot.offline === 'offline-limit' ? (
+      {snapshot.access !== 'write' || itemEditingStopped(snapshot.offline) ? (
         grid
       ) : (
         <FlashcardsEditor

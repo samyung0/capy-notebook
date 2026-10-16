@@ -4,13 +4,16 @@ import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import type { NoteEditorSaveState } from '@/features/notes/editorMode';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import type { ItemRoomStatus } from './itemRoom';
+import type { ItemRoomSnapshot, ItemRoomStatus } from './itemRoom';
 import type { UndoTarget } from './undo';
 
 /** A live item's room state as the note header's save status reads it. */
 export function itemSaveState(
-  status: ItemRoomStatus
+  status: ItemRoomStatus,
+  offline?: ItemRoomSnapshot['offline']
 ): NoteEditorSaveState | null {
+  // Refused as outdated: stopped until the page reloads, as recovery.
+  if (offline === 'outdated') return 'error';
   return status === 'unavailable' ? null : status;
 }
 

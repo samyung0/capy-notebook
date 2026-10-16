@@ -1,8 +1,9 @@
 //! `POST /drafts`: one document's stored drafts from a browser page with no
 //! editor open on it (the sweep in `src/lib/editDrafts.ts`). The page sends
 //! the editor's own room token (`Authorization: Bearer`), the room its rows
-//! grew from (`X-Capy-Room`) and, for a source, their base (`X-Capy-Base`),
-//! and the merged rows as one Yjs update; the URL is the same for every
+//! grew from (`X-Capy-Room`), its client protocol (`X-Capy-Protocol`, the
+//! JOIN's) and, for a source, their base (`X-Capy-Base`), and the merged rows
+//! as one Yjs update; the URL is the same for every
 //! document, so one preflight covers a sweep. The request runs a channel's
 //! JOIN checks, reads the body within a writer's sync cap, checks the
 //! eviction lease again, and goes through the room's writer admission (the
@@ -26,9 +27,10 @@ use crate::auth::{Access, Context, RoomName};
 use crate::observe::{Level, log};
 use crate::room::{self, Draft, Durable, NOTE_MAX_SYNC_BYTES, RoomCmd};
 
-/// The room the drafts grew from, and a source's base.
+/// The room the drafts grew from, a source's base, the client's protocol.
 const ROOM_HEADER: &str = "x-capy-room";
 const BASE_HEADER: &str = "x-capy-base";
+const PROTOCOL_HEADER: &str = "x-capy-protocol";
 /// How long a browser keeps the preflight's answer (Chromium caps it at 2 h).
 const PREFLIGHT_MAX_AGE: &str = "7200";
 
@@ -54,10 +56,13 @@ pub enum Class {
     Unheld,
     /// The room or a lookup is busy or failing: try at a later page load.
     Unavailable,
+    /// The page's client protocol is outside its room family's (a stale
+    /// tab): nothing more goes until the page reloads.
+    Outdated,
 }
 
 impl Class {
-    pub const ALL: [Class; 7] = [
+    pub const ALL: [Class; 8] = [
         Class::Lineage,
         Class::Limit,
         Class::Permission,
@@ -65,6 +70,7 @@ impl Class {
         Class::TooLarge,
         Class::Unheld,
         Class::Unavailable,
+        Class::Outdated,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -76,6 +82,7 @@ impl Class {
             Class::TooLarge => "too_large",
             Class::Unheld => "unheld",
             Class::Unavailable => "unavailable",
+            Class::Outdated => "outdated",
         }
     }
 
@@ -87,6 +94,7 @@ impl Class {
             Class::Malformed => StatusCode::BAD_REQUEST,
             Class::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Class::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
+            Class::Outdated => StatusCode::UPGRADE_REQUIRED,
         }
     }
 }
@@ -157,7 +165,7 @@ pub async fn preflight(State(app): State<Shared>, headers: HeaderMap) -> Respons
             (header::ACCESS_CONTROL_ALLOW_METHODS, "POST"),
             (
                 header::ACCESS_CONTROL_ALLOW_HEADERS,
-                "authorization, content-type, x-capy-room, x-capy-base",
+                "authorization, content-type, x-capy-room, x-capy-base, x-capy-protocol",
             ),
             (header::ACCESS_CONTROL_MAX_AGE, PREFLIGHT_MAX_AGE),
         ],
@@ -217,8 +225,9 @@ async fn checked_and_stored(
     let token = header_text(headers, header::AUTHORIZATION.as_str())
         .and_then(|value| value.strip_prefix("Bearer "))
         .ok_or_else(|| Refused::new(Class::Permission, "a room token is required"))?;
+    let protocol = header_text(headers, PROTOCOL_HEADER).and_then(|value| value.parse().ok());
     let (name, context) =
-        crate::socket::authenticate(app.clone(), room.to_owned(), token.to_owned())
+        crate::socket::authenticate(app.clone(), room.to_owned(), token.to_owned(), protocol)
             .await
             .map_err(|refusal| Refused::new(refusal.class, refusal.message))?;
     if context.access != Access::Write {

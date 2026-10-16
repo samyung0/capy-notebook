@@ -8,7 +8,10 @@ import { SaveBanner } from '@/components/banners/SaveBanner';
 import { Icon } from '@/components/ui/Icon';
 import { CharCount } from '@/components/ui/Input';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
-import { useItemRoom } from '@/features/collaboration/itemRoom';
+import {
+  itemEditingStopped,
+  useItemRoom,
+} from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
   UndoButtons,
@@ -90,9 +93,9 @@ export default function MermaidMaterialEditor({
   useEffect(() => {
     const saveState = snapshot.recovery
       ? 'error'
-      : itemSaveState(snapshot.status);
+      : itemSaveState(snapshot.status, snapshot.offline);
     onStatusChange(saveState ? { saveState } : null);
-  }, [snapshot.status, snapshot.recovery, onStatusChange]);
+  }, [snapshot.status, snapshot.recovery, snapshot.offline, onStatusChange]);
   useEffect(() => () => onStatusChange(null), [onStatusChange]);
   useEffect(() => {
     if (snapshot.access === 'read')
@@ -131,6 +134,9 @@ export default function MermaidMaterialEditor({
         )}
       </div>
     );
+  // Refused as outdated before it synced: nothing of the room to show.
+  if (snapshot.offline === 'outdated' && !snapshot.synced)
+    return <SaveBanner state="outdated" />;
   if (!(room && snapshot.synced && live))
     return <FileLoading message={m.editor_connecting()} />;
   return (
@@ -140,7 +146,7 @@ export default function MermaidMaterialEditor({
         history={room.history}
         live={live}
         provenance={provenance}
-        readOnly={snapshot.offline === 'offline-limit'}
+        readOnly={itemEditingStopped(snapshot.offline)}
         title={title}
       />
     </div>

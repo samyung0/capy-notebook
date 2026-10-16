@@ -139,8 +139,12 @@ function CollaborativeNoteEditor({
   const [saveDelayed, setSaveDelayed] = useState(false);
   // The room cannot be reached; the edits stay on this device.
   const [offline, setOffline] = useState<NoteOfflineState | null>(null);
-  const banner: SaveBannerState | null =
-    offline ?? (saveDelayed ? 'delayed' : null);
+  // The room refuses this build (Capy was updated) until the page reloads.
+  const [outdated, setOutdated] = useState(false);
+  const banner: SaveBannerState | null = outdated
+    ? 'outdated'
+    : (offline ?? (saveDelayed ? 'delayed' : null));
+  const markOutdated = useCallback(() => setOutdated(true), []);
   const onDocumentRejected = useCallback(
     (
       code: MaterialLimitCode | 'invalid_document' | 'revoked',
@@ -210,10 +214,13 @@ function CollaborativeNoteEditor({
   } = useMaterialCollaborationToken(material.id, true, {
     errorBoundary: false,
   });
-  // Offline past the bound this device may hold: every editing control
-  // (toolbar, palette, block actions) stands down with the content.
+  // Offline past the bound this device may hold, or refused as outdated:
+  // every editing control (toolbar, palette, block actions) stands down with
+  // the content.
   const canEdit =
-    material.capabilities.canEditContent && offline !== 'offline-limit';
+    material.capabilities.canEditContent &&
+    offline !== 'offline-limit' &&
+    !outdated;
   const drafts = useNoteDrafts(
     material.id,
     storedKey,
@@ -348,6 +355,7 @@ function CollaborativeNoteEditor({
                 onDocumentRejected={onDocumentRejected}
                 onEditorStatusChange={onEditorStatusChange}
                 onOffline={setOffline}
+                onOutdated={markOutdated}
                 onReadOnly={reportReadOnly}
                 onSaveDelayed={setSaveDelayed}
                 onUnavailable={onUnavailable}

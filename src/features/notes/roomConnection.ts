@@ -2,19 +2,27 @@ import { isAccountForbiddenError, isApiError } from '@/api/client';
 import {
   COLLABORATION_FORBIDDEN_REASON,
   COLLABORATION_NOT_FOUND_REASON,
+  COLLABORATION_OUTDATED_REASON,
   COLLABORATION_READ_ONLY_REASON,
 } from './collaborationEvents';
 
 /** What an editor does with a refused room connection. */
-export type RoomRefusal = 'readOnly' | 'notFound' | 'forbidden' | 'retry';
+export type RoomRefusal =
+  | 'readOnly'
+  | 'notFound'
+  | 'forbidden'
+  | 'outdated'
+  | 'retry';
 
 /**
  * Classifies an authentication refusal by its reason, or by the token request
  * that failed before one could be sent (the provider then reports its own
- * "Failed to get token" text). Anything unnamed (an expired token, a room
- * being reset or compacted) is worth retrying with a fresh token.
+ * "Failed to get token" text). `outdated`: this build's client protocol is
+ * refused, so only a page reload helps. Anything unnamed (an expired token, a
+ * room being reset or compacted) is worth retrying with a fresh token.
  */
 export function roomRefusal(reason: string, tokenError?: unknown): RoomRefusal {
+  if (reason === COLLABORATION_OUTDATED_REASON) return 'outdated';
   // A read token on reconnect is thrown by the token function itself, so the
   // provider wraps the reason in its own text.
   if (reason.includes(COLLABORATION_READ_ONLY_REASON)) return 'readOnly';

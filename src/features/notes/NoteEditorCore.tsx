@@ -111,6 +111,7 @@ const RESTORE_ORIGIN = Symbol('restore');
 export type NoteOfflineState = 'offline' | 'offline-unstored' | 'offline-limit';
 
 interface StatelessProviderWrapper {
+  disconnect(): void;
   isConnected: boolean;
   isSynced: boolean;
   provider: {
@@ -446,6 +447,7 @@ export function NoteEditorCore({
   onEditorStatusChange,
   onDocumentRejected,
   onOffline,
+  onOutdated,
   onReadOnly,
   onSaveDelayed,
   onUnavailable,
@@ -474,6 +476,10 @@ export function NoteEditorCore({
   /** The room cannot be reached and edits stay on this device (the banner to
    * show), or null once it syncs again. */
   onOffline?: (state: NoteOfflineState | null) => void;
+  /** The room refuses this build's client protocol (Capy was updated): the
+   * editor stopped and turned read-only, its unsaved edits stay stored for
+   * the reloaded page to send. */
+  onOutdated?: () => void;
   /** The room turned read-only (a frozen account or an owner at its storage
    * limit; `code`: a block this version cannot edit): the caller drops to
    * view, discarding unsaved edits. */
@@ -503,6 +509,9 @@ export function NoteEditorCore({
   const storageOk = useRef(true);
   const overLimit = useRef(false);
   const [offlineLimit, setOfflineLimit] = useState(false);
+  // The room refuses this build (the version gate): no reconnect, read-only.
+  const [outdated, setOutdated] = useState(false);
+  const stale = useRef(false);
   const rejected = useRef(false);
   // After the first sync a dropped connection keeps the editor on screen.
   const hasSynced = useRef(false);
@@ -598,6 +607,7 @@ export function NoteEditorCore({
   useEffect(() => () => saveDelay.dispose(), [saveDelay]);
   const reportUnavailable = useRef(onUnavailable);
   const reportOffline = useRef(onOffline);
+  const reportOutdated = useRef(onOutdated);
   const showOffline = useCallback(() => {
     if (!offlineMode.current) return;
     reportOffline.current?.(
@@ -611,7 +621,13 @@ export function NoteEditorCore({
   // Reconnecting kept failing or the browser went offline after the first
   // sync: edits go on, stored on this device, until the room syncs again.
   const goOffline = useCallback(() => {
-    if (rejected.current || !hasSynced.current || offlineMode.current) return;
+    if (
+      rejected.current ||
+      stale.current ||
+      !hasSynced.current ||
+      offlineMode.current
+    )
+      return;
     offlineMode.current = true;
     setStatus('offline');
     recorder.current?.disconnected();
@@ -789,8 +805,38 @@ export function NoteEditorCore({
     ]
   );
 
-  const plugins = useMemo(
-    () => [
+  const plugins = useMemo(() => {
+    const onAuthenticationFailed = ({ reason }: { reason: string }) => {
+      const failedToken = tokenError.current;
+      const refusal = roomRefusal(reason, failedToken);
+      tokenError.current = null;
+      if (refusal === 'readOnly') readOnlyNow.current(true);
+      else if (refusal === 'retry') reconnector.current?.refused();
+      else if (refusal === 'outdated') {
+        // Capy was updated: only a page reload helps. The unsaved edits
+        // stay stored (the reloaded editor applies them before it joins).
+        if (stale.current) return;
+        stale.current = true;
+        roomProvider(editorRef.current)?.disconnect();
+        setStatus('error');
+        setOutdated(true);
+        reportOutdated.current?.();
+      } else {
+        // The note's stored edits go too (not for an account lock); queued
+        // before the recorder's discard, the report counts this session's
+        // rows.
+        if (refusalDropsDrafts(refusal, failedToken)) {
+          void dropLostDrafts(
+            draftKey,
+            refusal === 'notFound' ? 'not_found' : 'forbidden',
+            reportIncident
+          ).catch((error) => console.warn('Draft storage failed:', error));
+          void recorder.current?.discard();
+        }
+        reportUnavailable.current?.(refusal);
+      }
+    };
+    return [
       YjsPlugin.configure({
         options: {
           cursors: {
@@ -842,6 +888,7 @@ export function NoteEditorCore({
                     initialValue,
                     materialId: material.id,
                     name: collaborationToken.room,
+                    onAuthenticationFailed,
                     onStateless: ({ payload }: { payload: string }) => {
                       handleStatelessEvent(payload);
                     },
@@ -851,34 +898,7 @@ export function NoteEditorCore({
               : ({
                   options: {
                     name: collaborationToken.room,
-                    onAuthenticationFailed: ({
-                      reason,
-                    }: {
-                      reason: string;
-                    }) => {
-                      const failedToken = tokenError.current;
-                      const refusal = roomRefusal(reason, failedToken);
-                      tokenError.current = null;
-                      if (refusal === 'readOnly') readOnlyNow.current(true);
-                      else if (refusal === 'retry')
-                        reconnector.current?.refused();
-                      else {
-                        // The note's stored edits go too (not for an account
-                        // lock); queued before the recorder's discard, the
-                        // report counts this session's rows.
-                        if (refusalDropsDrafts(refusal, failedToken)) {
-                          void dropLostDrafts(
-                            draftKey,
-                            refusal === 'notFound' ? 'not_found' : 'forbidden',
-                            reportIncident
-                          ).catch((error) =>
-                            console.warn('Draft storage failed:', error)
-                          );
-                          void recorder.current?.discard();
-                        }
-                        reportUnavailable.current?.(refusal);
-                      }
-                    },
+                    onAuthenticationFailed,
                     onClose: () => {
                       roomSynced.current = false;
                       reconnector.current?.closed(
@@ -931,24 +951,23 @@ export function NoteEditorCore({
         onSave: () => saveNow.current(),
         workspaceId: material.workspaceId,
       }),
-    ],
-    [
-      allowExternalAssets,
-      collaborationToken.room,
-      collaborationToken.url,
-      connecting,
-      currentUserId,
-      discussions,
-      handleStatelessEvent,
-      material.id,
-      material.workspaceId,
-      name,
-      qc,
-      saveDelay,
-      setStatus,
-      ydoc,
-    ]
-  );
+    ];
+  }, [
+    allowExternalAssets,
+    collaborationToken.room,
+    collaborationToken.url,
+    connecting,
+    currentUserId,
+    discussions,
+    handleStatelessEvent,
+    material.id,
+    material.workspaceId,
+    name,
+    qc,
+    saveDelay,
+    setStatus,
+    ydoc,
+  ]);
 
   const editor = usePlateEditor({
     // slate-react re-creates the element descriptors of every block in a
@@ -1007,11 +1026,14 @@ export function NoteEditorCore({
     const current = roomReconnector({
       // Lost for good before the first sync: nothing to edit offline.
       onStuck: () => {
+        if (stale.current) return;
         if (hasSynced.current) goOfflineNow.current();
         else setStatus('error');
       },
       provider: () =>
-        rejected.current ? null : roomProvider(editor)?.provider,
+        rejected.current || stale.current
+          ? null
+          : roomProvider(editor)?.provider,
     });
     reconnector.current = current;
     return () => {
@@ -1164,6 +1186,7 @@ export function NoteEditorCore({
     reportSaveDelayed.current = onSaveDelayed;
     reportUnavailable.current = onUnavailable;
     reportOffline.current = onOffline;
+    reportOutdated.current = onOutdated;
     let reported = false;
     readOnlyNow.current = (refusedConnect = false, code?: ReadOnlyCode) => {
       if (reported) return;
@@ -1181,6 +1204,7 @@ export function NoteEditorCore({
   }, [
     onDocumentRejected,
     onOffline,
+    onOutdated,
     onReadOnly,
     onSaveDelayed,
     onUnavailable,
@@ -1196,8 +1220,9 @@ export function NoteEditorCore({
             currentUserId={currentUserId}
             discussions={discussions}
           >
-            {/* Offline past the bound: nothing may edit until reconnect. */}
-            <div className="contents" inert={offlineLimit}>
+            {/* Offline past the bound, or refused as outdated: nothing may
+             * edit until reconnect or reload. */}
+            <div className="contents" inert={offlineLimit || outdated}>
               <NoteToolbar />
             </div>
             <div className="min-h-0 flex-1 overflow-auto" ref={setScrollArea}>
@@ -1215,7 +1240,7 @@ export function NoteEditorCore({
                     <EditorScrollAreaContext.Provider value={scrollArea}>
                       <NoteEditorContent
                         discussions={discussions}
-                        readOnly={offlineLimit}
+                        readOnly={offlineLimit || outdated}
                         shouldShowStats={shouldShowDocumentStats(documentStats)}
                       />
                     </EditorScrollAreaContext.Provider>
@@ -1233,10 +1258,9 @@ export function NoteEditorCore({
                 )}
               </div>
             </div>
-            {!offlineLimit && <EditorCommandPalette />}
-            {!offlineLimit && editorAiEnabled(allowExternalAssets) && (
-              <AiMenu />
-            )}
+            {!(offlineLimit || outdated) && <EditorCommandPalette />}
+            {!(offlineLimit || outdated) &&
+              editorAiEnabled(allowExternalAssets) && <AiMenu />}
           </CollaborationProvider>
         </Plate>
       </div>

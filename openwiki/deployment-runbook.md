@@ -71,6 +71,28 @@ until the gateway is updated. The other order is safe: an older
 collaboration service sends no `preview`, which a newer gateway does not
 require.
 
+**Client protocol bumps** (Epo 2026-10-16; when to bump:
+[plate-editor "When to bump"](frontend/plate-editor.md#when-to-bump)). A
+deploy that raises `CLIENT_PROTOCOL` and a family's minimum starts refusing
+that family's open editors (`collaboration-outdated`) the moment the new
+collaboration server starts, while the new SPA is only served once the site
+job finishes, about 2 to 3 minutes later. In that window a refused editor's
+Reload says the update is still being published; its edits stay on the
+device. So:
+
+- the deploy request names the bump ("client protocol: material 3 → 4"), so
+  the deployer knows that family's stale editors pause for those minutes;
+- a site job that fails after a bumping backend deploy leaves that family's
+  stale editors blocked until it succeeds: re-run it promptly (its build
+  artifact lives one day);
+- a rollback to an older SHA lowers the server's own protocol: newer tabs are
+  refused as above it and reload into the older SPA once it is served.
+
+The SPA Worker deploy passes `--var APP_RELEASE:<revision>`; the Worker
+stamps it on `/api/*` responses (`X-Capy-App-Release`), and an open tab whose
+build differs loads the new SPA at its next page change. A deploy without it
+still works, but open tabs then stay on their release until they reload.
+
 ---
 
 ## 1. DNS & hostnames

@@ -48,6 +48,7 @@ export interface QuizRooms {
 }
 
 const OFFLINE: ItemRoomSnapshot['offline'][] = [
+  'outdated',
   'offline-limit',
   'offline-unstored',
   'offline',

@@ -7,6 +7,7 @@
  */
 
 import { m } from '@/i18n';
+import { noteServedRelease } from '@/lib/appRelease';
 import { errorCopy } from '@/lib/errors';
 import { authHeaders } from './auth';
 import { API_BASE, ApiError, parseErrorBody } from './client';
@@ -166,6 +167,7 @@ export async function streamChat(
     reportError(errorCopy(e, m.chat_failed()));
     return;
   }
+  noteServedRelease(res.headers);
 
   if (!res.ok || !res.body) {
     const payload = res.ok ? null : await res.json().catch(() => null);

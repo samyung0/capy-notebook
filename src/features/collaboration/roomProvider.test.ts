@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSourceProvider } from '@/features/files/sourceProvider';
 import {
+  CLIENT_PROTOCOL,
   closedPayload,
   decodeFrame,
   type Message,
@@ -105,6 +107,9 @@ it('joins with its token, syncs both ways and counts unacknowledged updates', as
   const reader = new Reader(join.payload);
   expect(reader.varString()).toBe('material:m1:schema:1');
   expect(reader.varString()).toBe('token-1');
+  // The version gate: the build's client protocol follows the token.
+  expect(reader.varUint()).toBe(CLIENT_PROTOCOL);
+  expect(reader.done).toBe(true);
   const channel = join.channel;
 
   // The server admits the channel and asks for what it lacks.
@@ -332,4 +337,17 @@ it('holds joins past the eight the server authenticates at once', async () => {
   const next = socket.take(MessageKind.Join);
   expect(next).toHaveLength(2);
   expect(new Reader(next[1].payload).varString()).toBe('material:m9:schema:1');
+});
+
+it('speaks the collaboration server’s client protocol', () => {
+  const rust = readFileSync(
+    new URL(
+      '../../../collaboration-rs/crates/server/src/protocol.rs',
+      import.meta.url
+    ),
+    'utf8'
+  );
+  expect(rust).toContain(
+    `pub const CLIENT_PROTOCOL: u32 = ${CLIENT_PROTOCOL};`
+  );
 });

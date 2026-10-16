@@ -179,6 +179,10 @@ export function useSourceSession(
   // Offline past the bound this device may hold: the editor stops taking
   // edits until the room is back.
   const [offlineLimit, setOfflineLimit] = useState(false);
+  // The room refuses this build (Capy was updated): the session stopped, the
+  // view stays read-only under the outdated strip and the unsaved changes
+  // stay stored for the reloaded page.
+  const [outdated, setOutdated] = useState(false);
   // The file was trashed or deleted, or access to it lost, while editing.
   const [unavailable, setUnavailable] = useState<
     'notFound' | 'forbidden' | null
@@ -332,6 +336,7 @@ export function useSourceSession(
     setError(null);
     setBanner(null);
     setOfflineLimit(false);
+    setOutdated(false);
     setLoaded(null);
     void (async () => {
       const [session, credentials, storedDrafts] = await Promise.all([
@@ -428,6 +433,9 @@ export function useSourceSession(
       let tokenError: unknown = null;
       // Set by reset() and refuse(): later typing changes nothing stored.
       let discarded = false;
+      // Set by stale(): a late change (the frame's last input) is stored
+      // and nothing more is sent.
+      let refusedBuild = false;
       // The room is unreachable and this session keeps editing on the
       // device: the offline banner, until the room syncs again.
       let offlineMode = false;
@@ -521,6 +529,23 @@ export function useSourceSession(
         setBanner('refused');
         setSynced(false);
         provider?.disconnect();
+      };
+      // Capy was updated and the room refuses this build: the session stops
+      // for the page load, read-only (a session that never synced shows its
+      // base and this device's drafts), and its drafts stay for the reloaded
+      // page, which sends them through the new version's checks.
+      const stale = () => {
+        if (cancelled) return;
+        cancelled = true;
+        refusedBuild = true;
+        clearTimeout(timer);
+        provider?.disconnect();
+        rejectWaiters(new SourceSessionError(m.editor_outdated()));
+        setLoaded({ bytes, doc: shared, session });
+        setHandoff(false);
+        setStatus('error');
+        setBanner('outdated');
+        setOutdated(true);
       };
       // Nothing local is pending any more: the receipt deletes the drafts.
       const settle = () => {
@@ -642,6 +667,7 @@ export function useSourceSession(
           tokenError = null;
           if (refusal === 'readOnly') replace('readOnly', true);
           else if (refusal === 'retry') reconnect.refused();
+          else if (refusal === 'outdated') stale();
           else if (!cancelled) {
             cancelled = true;
             provider?.disconnect();
@@ -889,6 +915,7 @@ export function useSourceSession(
         if (origin === provider || origin === RESTORE_ORIGIN || discarded)
           return;
         setDirty(true);
+        if (refusedBuild) return;
         setStatus(
           active.recovery ? 'recovery' : offlineMode ? 'offline' : 'saving'
         );
@@ -932,6 +959,7 @@ export function useSourceSession(
     flushHandler,
     handoff,
     offlineLimit,
+    outdated,
     paused,
     pendingInput,
     readOnly,

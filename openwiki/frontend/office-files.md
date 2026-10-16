@@ -63,7 +63,14 @@ hashes and copies intact builds into the generated package directories; a miss
 rebuilds normally. CSS, the checkpoint bundle, and the environment-specific Vite
 output are rebuilt on each run.
 
-**Pin bump checklist.** The fork's `bun run test:golden` (the DOCX/PPTX golden
+**Pin bump checklist.** Every pin bump (and every `OFFICE_PROTOCOL_VERSION`
+bump) raises the client protocol of source rooms in the same commit:
+`CLIENT_PROTOCOL` to N+1 and `MIN_SOURCE` to N+1 in
+`collaboration-rs/crates/server/src/protocol.rs`, `CLIENT_PROTOCOL` in
+`src/features/collaboration/protocol.ts` (Epo 2026-10-16). Stale Office and
+text editors then reload instead of saving with an older engine; the deploy
+request names the bump ([plate-editor "When to bump"](plate-editor.md#when-to-bump)).
+The fork's `bun run test:golden` (the DOCX/PPTX golden
 seeds and `shared/office-checkpoint.test.ts`, then the XLSX golden seeds in
 `crates/betteroffice-xlsx/tests/storage.rs`) must pass on the new pin; frontend
 CI runs it inside `vendor/betteroffice` after the office build. A golden seed
@@ -108,7 +115,12 @@ same origin. The runtime's first message, `initialized`, carries its
 runtime or the app while the tab stayed open, so the host shows "An update is
 ready" with a Reload button (`FileUnavailable` kind `outdated`) instead of
 waiting for a runtime that ignores its messages. A host from before this check
-still waits on its first mismatch.
+still waits on its first mismatch. This check stays inside one tab; across a
+deploy the collaboration server refuses an older host's source-room JOIN as
+`collaboration-outdated` once the source minimum was raised: the session
+stops, the view stays read-only (`set-capabilities` with editing off) under
+the `outdated` save strip, and its drafts stay for the reloaded page
+([plate-editor "Client protocol"](plate-editor.md#client-protocol-and-the-release-nudge)).
 
 The runtime starts with a format-specific viewer entry point. XLSX/PPTX viewer
 WASM omits editing, collaboration, undo, and save machinery; the DOCX viewer

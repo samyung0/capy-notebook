@@ -299,3 +299,33 @@ it('stops on a refused token and backs off on a failing one', async () => {
   expect(room.getSnapshot().status).toBe('unavailable');
   room.destroy();
 });
+
+// The version gate (Epo 2026-10-16): a room that refuses this build stops
+// for the page load. A writer turns read-only under the outdated strip and
+// keeps its unsent edits stored for the reloaded page; a reader keeps what
+// it painted and shows no strip.
+it('stops when refused as outdated, a writer keeping its edits stored', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onAuthenticationFailed?.({
+    reason: 'collaboration-outdated',
+  });
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(provider.connects).toBe(1);
+  expect(onReplace).not.toHaveBeenCalled();
+  expect(room.getSnapshot().offline).toBe('outdated');
+  expect(drafts).toMatchObject({ discarded: 0, refused: 0 });
+  room.destroy();
+  expect(drafts.disposed).toBe(1);
+
+  const reader = new ItemRoom('q', { read: true });
+  await reader.start();
+  providers[1].config.onAuthenticationFailed?.({
+    reason: 'collaboration-outdated',
+  });
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(providers[1].connects).toBe(1);
+  expect(reader.getSnapshot().offline).toBeNull();
+  reader.destroy();
+});

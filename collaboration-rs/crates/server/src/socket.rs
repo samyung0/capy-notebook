@@ -36,6 +36,9 @@ const MAX_QUEUED_BYTES: usize = 512 * 1024;
 const MAX_PENDING_JOINS: usize = 8;
 /// The reason a refusal without its own carries; the client retries.
 pub const DEFAULT_REFUSAL: &str = "permission-denied";
+/// A client protocol its room family no longer (or not yet) accepts: the
+/// client stops and asks for a reload.
+pub const OUTDATED_REASON: &str = "collaboration-outdated";
 
 enum Channel {
     /// Queued messages and the JOIN attempt (a later JOIN on the channel
@@ -141,11 +144,13 @@ pub async fn room_evicting(app: &Shared, room: &str) -> Result<bool, String> {
         .map_err(|error| error.to_string())
 }
 
-/// `onAuthenticate` for one channel or draft send.
+/// `onAuthenticate` for one channel or draft send; `protocol` is the
+/// client's (`protocol::CLIENT_PROTOCOL`), checked before any lookup.
 pub async fn authenticate(
     app: Shared,
     room: String,
     token: String,
+    protocol: Option<u32>,
 ) -> Result<(RoomName, Context), Refusal> {
     let Some(name) = RoomName::parse(&room) else {
         return Err(Refusal {
@@ -153,6 +158,21 @@ pub async fn authenticate(
             ..Refusal::plain("invalid collaboration room")
         });
     };
+    if protocol::outdated(name.minimum_protocol(), protocol) {
+        let family = usize::from(matches!(name, RoomName::Source { .. }));
+        app.stats.outdated_refusals[family].fetch_add(1, Ordering::Relaxed);
+        return Err(Refusal {
+            reason: OUTDATED_REASON.into(),
+            message: format!(
+                "client protocol {} outside {}..={} for {} rooms",
+                protocol.unwrap_or(0),
+                name.minimum_protocol(),
+                protocol::CLIENT_PROTOCOL,
+                name.family()
+            ),
+            class: Class::Outdated,
+        });
+    }
     if app.evictions.blocks(&room, false) {
         return Err(Refusal::plain("collaboration room is being reset"));
     }
@@ -432,7 +452,7 @@ impl Connection {
     async fn on_message(&mut self, message: Message) -> bool {
         let channel = message.channel;
         if message.kind == Kind::Join {
-            let Ok((room, token)) = protocol::decode_join(&message.payload) else {
+            let Ok((room, token, client)) = protocol::decode_join(&message.payload) else {
                 return false;
             };
             if let Some(Channel::Joined { room, .. }) = self.channels.get(&channel) {
@@ -462,7 +482,7 @@ impl Connection {
             }
             let (app, tx) = (self.app.clone(), self.auth_tx.clone());
             tokio::spawn(async move {
-                let result = authenticate(app, room, token).await;
+                let result = authenticate(app, room, token, client).await;
                 let _ = tx.send((channel, attempt, result));
             });
             return true;
