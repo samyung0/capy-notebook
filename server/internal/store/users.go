@@ -385,11 +385,11 @@ func (s *Store) accountModelPrefs(ctx context.Context) (chat, editor models.Ref,
 // whether the account still needs its one-time starter workspace. Keeping that
 // state on the user row lets a later request retry a failed first provision.
 //
-// The profile sync deliberately skips locked rows. This runs before the auth
-// middleware's lifecycle check on every authenticated request, so without the
-// guard a stale Clerk token could refresh PII after deletion was requested or
-// while an operator suspension was in force. Purged tombstones must never be
-// repopulated either.
+// The profile sync deliberately skips locked rows: the Clerk webhook and the
+// auth middleware's provisioning or hourly refresh (Epo 2026-10-17) can race a
+// lifecycle change, and without the guard a stale Clerk token or a late event
+// could refresh PII after deletion was requested or while an operator
+// suspension was in force. Purged tombstones must never be repopulated either.
 func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
 	if name == "" {
 		name = email
@@ -399,8 +399,8 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		_ = s.pool.QueryRow(ctx, `SELECT locale FROM users WHERE id=$1`, id).Scan(&locale)
 		name = copytext.T(locale, copytext.User)
 	}
-	// Clerk-sourced values must fit the column: this runs on every
-	// authenticated request, so a rejected write would lock the account out.
+	// Clerk-sourced values must fit the column: this provisions the account on
+	// its first request, so a rejected write would lock the account out.
 	name = fieldlimits.Clamp(name, fieldlimits.UserName)
 	if utf8.RuneCountInString(email) > fieldlimits.Email {
 		email = ""

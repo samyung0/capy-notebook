@@ -97,9 +97,10 @@ Verify with a real signup, not with the dashboard's test button alone:
 
 The user row and default workspace appear either way, because the first
 authenticated request provisions them (`server/internal/auth/middleware.go`
-`syncClerkAccount`). A `200` in the delivery log is the only proof the webhook
-itself works. Until it does, profile edits made in Clerk never reach the
-database and deleted identities are never purged.
+`admitClerkIdentity`). A `200` in the delivery log is the only proof the webhook
+itself works. Until it does, profile edits made in Clerk reach the database
+only through the API's hourly profile read, and deleted identities are never
+purged.
 
 A `401` from the endpoint means the signing secret does not match the instance
 that sent the delivery. A `503` means `CLERK_WEBHOOK_SECRET` is still blank.

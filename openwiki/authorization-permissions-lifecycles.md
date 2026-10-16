@@ -926,14 +926,30 @@ refreshes email and avatar only. `PATCH /api/me` stores the name the user
 typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
 are created with that same name because no separate legal name is stored.
 
+Every Clerk-authenticated request reads the account once
+(`ClerkSession` in `store/account_state.go`): the lifecycle verdict, whether
+the starter workspace is pending and whether the profile is due. The API reads
+the Clerk profile (`user.Get`, a Backend API round trip of about 180 ms on UAT)
+only to provision an identity with no local row, and then at most once an hour
+per account as a backstop for missed `user.updated` webhooks (Epo 2026-10-17).
+`users.profile_synced_at` (migration 0091) holds the last read; a new row
+counts as just read. When it is over an hour old, the request first claims the
+read with a conditional update, so one request per account and hour wins it
+across gateway processes, a burst of page-load requests reads once, and a
+failed read waits for the next hour. A locked account is refused before any
+profile read, on every request. Requests that read the profile or create the
+starter workspace check the lifecycle state again afterwards, since that work
+can race a deletion or suspension.
+
 Clerk profile retrieval and local identity provisioning are separate gates. A
 temporary profile-read failure skips synchronization for an existing local
 account, preserving its stored name, email, and avatar. If profile retrieval or
 upsert fails while the identity is still unknown locally, the request fails
 retryably with `503 account_state_unavailable`. Starter-workspace completion is
 stored separately on the user row. A failed workspace insert also returns the
-retryable 503, and the next authenticated profile sync retries it. Once marked
-complete, deleting every workspace does not recreate the starter workspace.
+retryable 503, and the next authenticated request retries it, without a
+profile read. Once marked complete, deleting every workspace does not recreate
+the starter workspace.
 Starter provisioning locks the same user row as ordinary creation, then checks
 for an existing workspace, inserts if needed, and stores the marker in one
 transaction. If ordinary creation commits first, provisioning records only the
@@ -995,8 +1011,8 @@ fail closed with `503 account_state_unavailable`. Database failure is not
 treated as an active account and is distinct from a real `403` account lock.
 
 Sources: [lifecycle states and gate methods](../server/internal/store/account_state.go#L11),
-[session rejection](../server/internal/store/account_state.go#L174),
-[middleware enforcement](../server/internal/auth/middleware.go#L174), and
+[session rejection](../server/internal/store/account_state.go#L267),
+[middleware enforcement](../server/internal/auth/middleware.go#L237), and
 [over-quota API behavior test](../server/internal/httpapi/account_gates_test.go), and
 [frozen and grace store matrix](../server/internal/store/collaboration_owner_test.go).
 

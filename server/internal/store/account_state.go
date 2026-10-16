@@ -278,16 +278,59 @@ func (s *Store) AccountSessionAllowed(
 	if err != nil {
 		return false, "", err
 	}
-	if deletedAt != nil {
-		return false, (&AccountLockedError{State: AccountDeleted}).Code(), nil
-	}
-	if deletionRequestedAt != nil {
-		return false, (&AccountLockedError{State: AccountDeletionPending}).Code(), nil
-	}
-	if suspendedAt != nil {
-		return false, (&AccountLockedError{State: AccountSuspended}).Code(), nil
+	if code := lockedSessionCode(deletedAt, deletionRequestedAt, suspendedAt); code != "" {
+		return false, code, nil
 	}
 	return true, "", nil
+}
+
+func lockedSessionCode(deletedAt, deletionRequestedAt, suspendedAt *time.Time) string {
+	switch {
+	case deletedAt != nil:
+		return (&AccountLockedError{State: AccountDeleted}).Code()
+	case deletionRequestedAt != nil:
+		return (&AccountLockedError{State: AccountDeletionPending}).Code()
+	case suspendedAt != nil:
+		return (&AccountLockedError{State: AccountSuspended}).Code()
+	}
+	return ""
+}
+
+// ClerkSession is AccountSessionAllowed for a Clerk identity, read together
+// with what the request must provision (Epo 2026-10-17). readProfile is true
+// when the identity has no local row yet, or when this request claimed the
+// hourly Clerk profile refresh: the claim is a conditional write, so one
+// request per account and hour wins it across gateway processes, and a failed
+// Clerk read waits for the next hour. starterPending is true while the one-time
+// starter workspace is missing.
+func (s *Store) ClerkSession(
+	ctx context.Context,
+	userID string,
+) (allowed bool, code string, readProfile, starterPending bool, err error) {
+	var deletedAt, suspendedAt, deletionRequestedAt *time.Time
+	var stale bool
+	err = s.pool.QueryRow(ctx,
+		`SELECT deleted_at, suspended_at, deletion_requested_at,
+			starter_workspace_provisioned_at IS NULL,
+			profile_synced_at < now() - interval '1 hour'
+		FROM users WHERE id=$1`,
+		userID).Scan(&deletedAt, &suspendedAt, &deletionRequestedAt, &starterPending, &stale)
+	if isNoRows(err) {
+		return true, "", true, false, nil
+	}
+	if err != nil {
+		return false, "", false, false, err
+	}
+	if code := lockedSessionCode(deletedAt, deletionRequestedAt, suspendedAt); code != "" {
+		return false, code, false, false, nil
+	}
+	if stale {
+		tag, claimErr := s.pool.Exec(ctx, `UPDATE users SET profile_synced_at=now()
+			WHERE id=$1 AND profile_synced_at < now() - interval '1 hour'`, userID)
+		// The refresh is best-effort for an existing account, and so is its claim.
+		readProfile = claimErr == nil && tag.RowsAffected() == 1
+	}
+	return true, "", readProfile, starterPending, nil
 }
 
 // UserProvisioned reports whether Clerk identity provisioning has produced a

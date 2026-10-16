@@ -570,8 +570,8 @@ direction.
 
 User-typed values are rejected with a 422; the source details dialog refuses
 oversized file names before upload. Values the user did not type are clamped
-before insert: Clerk profile names on the first insert (the profile sync runs
-on every authenticated request, so a rejection would lock the account out; an
+before insert: Clerk profile names on the first insert (the profile sync
+provisions the account on its first request, so a rejection would lock the account out; an
 oversized Clerk email is dropped and the stored email kept; a name typed later
 through `PATCH /api/me` is user input and gets the 422),
 LLM-authored material titles and editor asset names (both

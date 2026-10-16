@@ -41,6 +41,11 @@ type Config struct {
 // UserStore lazily provisions users on first authenticated request and reports
 // whether the account may still hold a session.
 type UserStore interface {
+	// ClerkSession is AccountSessionAllowed for a Clerk identity in the same
+	// read, plus what the request must provision: readProfile when the identity
+	// has no local row or this request claimed the hourly profile refresh,
+	// starterPending while the one-time starter workspace is missing.
+	ClerkSession(ctx context.Context, userID string) (allowed bool, code string, readProfile, starterPending bool, err error)
 	// UpsertUserFromClerk returns true while the one-time starter workspace is
 	// still pending.
 	UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error)
@@ -109,11 +114,11 @@ func tryE2EAuth(w http.ResponseWriter, r *http.Request, cfg Config) (userID stri
 	return userID, true, false
 }
 
-func sessionAllowed(w http.ResponseWriter, r *http.Request, cfg Config, userID string) bool {
-	if cfg.Store == nil {
+func sessionAllowed(w http.ResponseWriter, r *http.Request, store UserStore, userID string) bool {
+	if store == nil {
 		return true
 	}
-	allowed, code, err := cfg.Store.AccountSessionAllowed(r.Context(), userID)
+	allowed, code, err := store.AccountSessionAllowed(r.Context(), userID)
 	if err != nil {
 		writeSessionUnavailable(w)
 		return false
@@ -170,7 +175,7 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 					writeUnauthorized(w)
 					return
 				}
-				if !sessionAllowed(w, r, cfg, cfg.DevUserID) {
+				if !sessionAllowed(w, r, cfg.Store, cfg.DevUserID) {
 					return
 				}
 				next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), cfg.DevUserID)))
@@ -187,7 +192,7 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 			if userID, ok, written := tryE2EAuth(w, r, cfg); written {
 				return
 			} else if ok {
-				if !sessionAllowed(w, r, cfg, userID) {
+				if !sessionAllowed(w, r, cfg.Store, userID) {
 					return
 				}
 				next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), userID)))
@@ -212,21 +217,9 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 					return
 				}
 				userID := claims.Subject
-
-				if cfg.Store != nil {
-					if err := syncClerkAccount(r.Context(), cfg.Store, userID, profileFromSession); err != nil {
-						writeSessionUnavailable(w)
-						return
-					}
-					// A purged account is refused here rather than per handler,
-					// so a Clerk token that outlived the purge cannot reach any
-					// route. Store failures fail closed with 503 so an outage
-					// cannot bypass suspension or deletion state.
-					if !sessionAllowed(w, r, cfg, userID) {
-						return
-					}
+				if cfg.Store != nil && !admitClerkIdentity(w, r, cfg.Store, userID, profileFromSession) {
+					return
 				}
-
 				next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), userID)))
 			})).ServeHTTP(w, r)
 		})
@@ -234,6 +227,45 @@ func Middleware(cfg Config) func(http.Handler) http.Handler {
 }
 
 type profileFetcher func(context.Context, string) (name, email, avatar string, err error)
+
+// admitClerkIdentity applies the account boundary to a verified Clerk identity.
+// One read per request carries the lifecycle verdict; the Clerk profile is read
+// only to provision the account and then at most hourly (Epo 2026-10-17). A
+// purged, suspended or deletion-pending account is refused here rather than per
+// handler, on every request, so a Clerk token that outlived the state change
+// cannot reach any route; store failures fail closed with 503.
+func admitClerkIdentity(
+	w http.ResponseWriter,
+	r *http.Request,
+	store UserStore,
+	userID string,
+	fetch profileFetcher,
+) bool {
+	ctx := r.Context()
+	allowed, code, readProfile, starterPending, err := store.ClerkSession(ctx, userID)
+	if err != nil {
+		writeSessionUnavailable(w)
+		return false
+	}
+	if !allowed {
+		writeAccountForbidden(w, code)
+		return false
+	}
+	if !readProfile && !starterPending {
+		return true
+	}
+	if readProfile {
+		err = syncClerkAccount(ctx, store, userID, fetch)
+	} else {
+		err = store.CreateDefaultWorkspace(ctx, userID)
+	}
+	if err != nil {
+		writeSessionUnavailable(w)
+		return false
+	}
+	// Provisioning can race a deletion or suspension; admit the state it left.
+	return sessionAllowed(w, r, store, userID)
+}
 
 var errAccountNotProvisioned = errors.New("account not provisioned")
 
