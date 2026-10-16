@@ -228,7 +228,10 @@ func splitCSVQuery(s string) []string {
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag string) ([]Workspace, error) {
-	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL AND (w.user_id=$1 OR me.user_id IS NOT NULL)"
+	// The id set is the user's own workspaces plus their memberships, read
+	// through both user indexes; an OR across the member join scanned every
+	// workspace in the database.
+	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL AND w.id IN (SELECT id FROM workspaces WHERE user_id=$1 UNION ALL SELECT workspace_id FROM workspace_members WHERE user_id=$1)"
 	args := []any{userID}
 	if q != "" {
 		args = append(args, "%"+strings.ToLower(q)+"%")
