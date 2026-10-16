@@ -2,6 +2,7 @@ import { type ReactNode, useState } from 'react';
 import {
   useFiles,
   useRetryFileProcessing,
+  useRetryingFileIds,
   useUpdateWorkspace,
 } from '@/api/hooks';
 import type {
@@ -179,11 +180,8 @@ function FailedFiles({
 }) {
   const { data: files } = useFiles(workspaceId, { errorBoundary: false });
   const [retrying, setRetrying] = useState<SourceFile | null>(null);
-  const {
-    mutateAsync: retryProcessing,
-    isPending,
-    variables,
-  } = useRetryFileProcessing(workspaceId);
+  const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
+  const retryingIds = useRetryingFileIds(workspaceId);
   const failed = files?.filter((file) => file.status === 'failed') ?? [];
   if (!failed.length) return null;
   return (
@@ -207,7 +205,7 @@ function FailedFiles({
             {owner && (
               <Button
                 className="col-start-3 row-span-2 row-start-1"
-                disabled={isPending && variables?.id === file.id}
+                disabled={retryingIds.includes(file.id)}
                 onClick={() =>
                   retryFailedFile(file, retryProcessing, () =>
                     setRetrying(file)

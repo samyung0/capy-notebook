@@ -31,6 +31,7 @@ export function FileListItem({
   readOnly = false,
   canClone = false,
   retry,
+  retryPending = false,
   study,
   menu = true,
 }: {
@@ -50,6 +51,8 @@ export function FileListItem({
   /** The owner's Retry processing for a failed file, one mutation for the
    * whole list; absent when the reader may not retry. */
   retry?: RetryProcessing;
+  /** This file's Retry processing is still running (useRetryingFileIds). */
+  retryPending?: boolean;
   /** The reader's own progress on this file, while progress is on. */
   study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out and act
@@ -115,6 +118,7 @@ export function FileListItem({
                     ...(failed && retry
                       ? [
                           {
+                            disabled: retryPending,
                             icon: 'refresh' as const,
                             label: m.files_retry_processing(),
                             onClick: () =>

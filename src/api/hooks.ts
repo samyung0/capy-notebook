@@ -6,6 +6,7 @@ import {
   queryOptions,
   useInfiniteQuery,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
@@ -1145,6 +1146,8 @@ export function useDeleteFile(wsId: string) {
   });
 }
 
+const retryProcessingKey = (wsId: string) => ['retryProcessing', wsId] as const;
+
 /** Process a failed file again on its stored bytes (owner only, charged like
  * automatic reprocessing). The file list shows it pending once it lands. */
 export function useRetryFileProcessing(wsId: string) {
@@ -1154,12 +1157,26 @@ export function useRetryFileProcessing(wsId: string) {
       api.post<void>(`/files/${encodeURIComponent(id)}/retry-processing`, {
         parseMode,
       } satisfies RetryProcessingReq),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: qk.files(wsId) });
-      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
-    },
+    mutationKey: retryProcessingKey(wsId),
+    // Awaited, so the retry stays pending until the refetched list shows the
+    // file out of `failed` (useRetryingFileIds).
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.files(wsId) }),
+        qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) }),
+      ]),
   });
 }
+
+/** Files whose Retry processing is still running: the POST, then the list
+ * refetch. Their Retry stays off, so no second click meets the queued job's
+ * 409. */
+export const useRetryingFileIds = (wsId: string) =>
+  useMutationState({
+    filters: { mutationKey: retryProcessingKey(wsId), status: 'pending' },
+    select: (mutation) =>
+      (mutation.state.variables as Pick<SourceFile, 'id'>).id,
+  });
 
 export function useDeleteOwnedFile() {
   const qc = useQueryClient();
