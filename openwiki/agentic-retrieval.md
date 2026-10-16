@@ -1349,11 +1349,10 @@ cached page and a failed read cost nothing, and the parse does not charge
 these pages the digital rate as well. Unread pages are a missing part (see
 "Parts" under Indexing one file): the readable pages are indexed and
 searchable, but the file ends `failed` (still `indexed`) and the job note
-names the unread pages (the first 20, then a count). Retry processing runs the
-file again (until Go's retry routing, parts design step 5, sends the page fee
-by `ever_parsed_successfully`, a parse redone because its bundle left the
-spool is charged like any retry) and only the unread pages reach the VLM; the others come from the
-cache. Its new content attaches beside the old one, which keeps serving search
+names the unread pages (the first 20, then a count). Retry processing parses
+the file again, with no digital page fee once it parsed successfully (`parseFee`
+follows `ever_parsed_successfully`, Q6), and only the unread pages reach the
+VLM; the others come from the cache. Its new content attaches beside the old one, which keeps serving search
 and lends its vectors until the new content publishes. A document with no
 indexable content besides its unread pages fails terminally with the same note.
 
@@ -1646,7 +1645,8 @@ exists; the local bundle is gone once the first ingest finished.
   An accounting error is not a part failure: `_descriptor` and
   `summarize_file` propagate `AccountingError` (a rejected receipt,
   `SettlementError`, among them) unchanged: a configuration or settlement
-  failure fails the job; it is not a missing part. A blank published descriptor
+  failure fails the job without its retry (another attempt fails the same);
+  it is not a missing part. A blank published descriptor
   is not kept over a failure: the descriptor is then pending.
 5. Publish: `store.publish_file_content` marks the content ready and moves the
   file's alias onto it in one transaction, fenced to the job's file revision;
@@ -1694,19 +1694,32 @@ the part lives (no migration, Q10): a pending descriptor is a missing
   this job never saw which), so such a file is never marked ready. The parse
   coordinator's donor path sends one (and leaves `ever_parsed_successfully` to
   the continuation's `_finish_ok`, as any donor reuse does); Retry processing
-  of a file whose only missing part is its descriptor is to send one once Go
-  routes retries by missing part.
+  sends one for a file whose only missing part is its descriptor.
+- Retry processing (Go `RetryFileProcessing`) routes a partial file by its
+  missing parts. Partial means `failed` with `indexed` true, its alias on ready
+  content whose `content_hash` equals `files.content_hash` (every revision
+  bump drops or moves the alias), and that content's `pipeline_identity`
+  naming the route of the file's own `parse_mode` (or NULL). With a NULL
+  identity (unread pages) it queues a parse job with `parseFee` set to
+  `!ever_parsed_successfully` (Q6; `_parse_fee` honours it for every job
+  type); with an identity and no summary row, a `partsOnly` ingest job; with
+  both parts present it sets the file ready and queues nothing. These jobs run
+  in the file's own mode and leave `indexed` and `parse_mode` as they are; the
+  file is `pending` meanwhile. Anything else is a full retry in the requested
+  mode, which resets `indexed`. A parse, ingest or `source_refresh` job pending
+  or running for the file answers 409.
 - `_finish_ok` checks, under `FOR UPDATE`, that the file still aliases the
   content the job published (else the job ends superseded and statuses stay),
   and once the content is complete, by the job and by its row (a summary row
   and a non-NULL `pipeline_identity`), it sets every other file aliasing it
   that is `failed` with `indexed` true to `ready` in the same transaction, so
   one fill completes duplicate uploads.
-- A job that fails (`_finish_fail`, or the lease reaper's
-  `fail_pipeline_file_if_current`) leaves `indexed` true exactly when the
-  file's alias still serves ready content (`db.SERVES_INDEX`): a failed retry
-  of a partial or indexed file keeps answering search with its previous
-  index. A file over an ingest limit drops its alias instead, so it is
+- A job that fails (`_finish_fail`, the lease reaper's
+  `fail_pipeline_file_if_current`, or account deletion's
+  `cancel_user_async_work`, migration 0087) leaves `indexed` true exactly when
+  the file's alias still serves ready content (`db.SERVES_INDEX`): a failed
+  retry of a partial or indexed file keeps answering search with its previous
+  index. The terminal progress event carries the `indexed` written. A file over an ingest limit drops its alias instead, so it is
   `ready`, unindexed and carries its `index_limit`.
 - On UAT, `CAPY_UAT_FAIL_PARTS` fails the descriptor of a file named with
   `[uat-fail-summary]` with no provider call. It bites only when the file has
@@ -3808,7 +3821,10 @@ due files. Each 5 s pass then claims and exports the two oldest claimable
 refreshes (`EXPORT_JOBS_SQL`). A file has one running candidate and one
 coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
-state intact and exposes manual processing. A refresh that raises
+state intact and exposes manual processing. Neither the scheduler nor Go
+admission picks a failed file automatically, unless it is partial (still
+`indexed`, a part missing: parts design Q1), so the next refresh of an edited
+source can fill the part. A refresh that raises
 `SourceSupersededError` while its source recheck still passes (nothing replaced
 it) fails as `source_refresh_refused` with `refresh_error`, so the scheduler
 leaves the file until its next save; finishing it as superseded would leave it
@@ -3843,6 +3859,10 @@ seed(export) of the captured export, and compares-and-swaps that saved
 checkpoint. A newer save retries local rebase with the same completed parse. A
 rebase the engine refuses answers 422, which ends the refresh job without a
 retry (see [Office files](frontend/office-files.md)).
+Publication sets the file `indexed` and derives its status from the candidate
+content, since a refresh's pipeline writes none: `failed` (a partial result,
+shown like any other, Q3) when the candidate has no `rag_content_summaries` row
+or a NULL `pipeline_identity`, else `ready`.
 Publication advances the indexed checkpoint and retains the current checkpoint
 and residual changes; the rebuild (or a maintenance handoff) increments the
 editing epoch and clears Undo/Redo. The

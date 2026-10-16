@@ -1029,7 +1029,10 @@ parse without the fee still records its pages: `credit_micros` 0 and
 `metadata.parseFee=false` on the parse event. The owner then pays only the
 refresh's provider calls (embeddings of changed chunks, and a descriptor when
 the reuse gate regenerates it), and refresh admission keeps its credit check
-for those. Uploads always pay the fee.
+for those. Uploads always pay the fee. Retry processing of a partial file with
+unread pages sends `parseFee` the same way (`!ever_parsed_successfully`, parts
+design Q6), and `_parse_fee` honours the payload for every job type; a full
+retry carries none and pays like an upload.
 
 `provider_sessions.paid_by` names who pays: `platform` (platform keys, the
 actor is charged credits; every ordinary ingest session), `user` (BYOK, zero
