@@ -733,6 +733,87 @@ def add_vector_figures(
     return out
 
 
+def flattened_figures(
+    blocks: list[dict],
+    document: pymupdf.Document,
+    regions: dict[int, list[pymupdf.Rect]],
+) -> list[dict]:
+    """One figure per flattened region (flatten.py), in the region's box: ODL's
+    picture of the render, or a new one. Pieces of it ODL read as pictures or
+    formulas go; the text inside and short labels beside it join the figure as
+    its labels, like a vector figure's; a sentence stays in the body."""
+    if not regions:
+        return blocks
+    by_page: dict[int, list[int]] = defaultdict(list)
+    for index, block in enumerate(blocks):
+        if len(block.get("bbox") or []) == 4:
+            by_page[block["page_idx"]].append(index)
+    gone: set[int] = set()
+    inserts: dict[int, dict] = {}
+    tail: dict[int, list[dict]] = defaultdict(list)
+    for number, boxes in regions.items():
+        page = document[number]
+        w, h = page.rect.width / 1000, page.rect.height / 1000
+        for region in boxes:
+            pieces, inside = [], []
+            reach = region + (
+                -VECTOR_LABEL_REACH,
+                -VECTOR_LABEL_REACH,
+                VECTOR_LABEL_REACH,
+                VECTOR_LABEL_REACH,
+            )
+            for i in by_page.get(number, []):
+                if i in gone:
+                    continue
+                block, rect = blocks[i], _rect(blocks[i], page)
+                if block.get("type") in ("image", "discarded") or (
+                    block.get("type") == "equation" and block.get("_picture")
+                ):
+                    if abs(rect & region) >= 0.5 * abs(rect):
+                        pieces.append(i)
+                elif block.get("type") in ("text", "title"):
+                    text = str(block.get("text", "")).strip()
+                    if _SENTENCE.search(text):
+                        continue
+                    # Inside, or a short label beside it, as for vector figures.
+                    if abs(rect & region) >= 0.8 * abs(rect) or (
+                        rect in reach
+                        and len(text.split()) <= VECTOR_LABEL_WORDS
+                        and "=" not in text
+                    ):
+                        inside.append(i)
+            base = next((blocks[i] for i in pieces if blocks[i]["type"] == "image"), {})
+            texts = [str(blocks[i].get("text", "")).strip() for i in inside]
+            figure = {
+                **base,
+                "type": "image",
+                "bbox": [region.x0 / w, region.y0 / h, region.x1 / w, region.y1 / h],
+                "page_idx": number,
+                "_source_role": "flattened-figure",
+                "figure_labels": [t for t in texts if t and not _SOURCE.match(t)],
+            }
+            if notes := [t for t in texts if _SOURCE.match(t)]:
+                figure["image_footnote"] = notes
+            gone.update(pieces, inside)
+            anchor = min(pieces + inside, default=None)
+            if anchor is None:
+                tail[number].append(figure)
+            else:
+                inserts[anchor] = figure
+    out: list[dict] = []
+    last_on_page = {page: max(indices) for page, indices in by_page.items()}
+    for index, block in enumerate(blocks):
+        if index in inserts:
+            out.append(inserts[index])
+        if index not in gone:
+            out.append(block)
+        if index == last_on_page.get(block.get("page_idx")):
+            out.extend(tail.pop(block["page_idx"], []))
+    for figures in tail.values():  # pages without any block
+        out.extend(figures)
+    return out
+
+
 def place_inline(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
     """Splice PLACEHOLDER into the paragraph holding each inline formula picture,
     between the words on either side of it when that pair occurs once there.

@@ -290,6 +290,31 @@ repairs, picture triage, table-cell styles, column reading order, hidden-OCR-lay
 and table context, footer ancestry, list geometry and text-overprint repair,
 exponents, column continuations, source-geometry table recovery and negation
 composition, and formula pictures retyped with a `[formula]` placeholder. Pages
+Before Java, dense vector figures are flattened in the parse copy
+(`flatten.py`, parser v17, decision 2026-10-16): plotting tools draw scatter
+markers, image pixels and curves as thousands of tiny paths, and OpenDataLoader
+keeps an object per path segment for the whole document, so plot-heavy books
+exhausted its 1 GiB heap (the five largest library books did). On a page with
+at least 800 path segments, each path's segments count toward the 12 pt cell
+under its centre; touching cells with at least 15 segments form a region, kept
+from 300 segments. Paths wider and taller than half the page (frames,
+backgrounds) never join one, and a region whose words cover more than 15% of
+it (a ruled table, a text box) stays vector. Each region is rendered at 150 dpi,
+the vector art it fully covers is removed (text and images stay, as text) and
+the render goes beneath the remaining content; rotated pages are skipped. The
+upload is unchanged; the flattened copy is what Java and the repairs read and
+the bundle's `parsed.pdf`. After picture triage, `pictures.flattened_figures`
+makes each region one `image` block with `_source_role: flattened-figure` in
+the region's box (ODL's picture of the render, or a new one), drops pieces ODL
+read as pictures or formulas, and folds the text inside and short labels
+beside it (at most six words, no `=`, within 30 pt, as for vector figures) into
+`figure_labels` (a source line into `image_footnote`); a sentence stays in the
+body. On 669 books it touches 2–3% of pages and takes 0.5–25 s a book. On 11
+books that parsed before, 8 of 4,279 headings left (mostly figure labels v16
+had promoted), 15 label headings appeared and at most 206 words a book left
+the text; the five failing books parse in 78–262 s, and floods of 1.76 and 2
+million paint operators parse in 16–23 s
+([report](../bench/parsers/reports/2026-10-16-element-limit.md)). Pages
 with fewer than 40 kept characters (blank pages included) are text-less
 (`textless.textless_pages`); the parse renders each as a grey JPEG and the
 ingest worker's VLM reads it ([VLM page read](#vlm-page-read)). The parser holds
@@ -304,7 +329,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v16` plus the release SHA (the donor key uses the first
+`odl-2.5.7-refined-vlm-v17` plus the release SHA (the donor key uses the first
 part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in

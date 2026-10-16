@@ -58,7 +58,7 @@ ROUTE_FAST = "fast"
 # the ingest worker's VLM page read (prompts/captioning.py VLM_PAGE_PROMPT)
 # changes output. With the release SHA it forms the artifact version, so a
 # parser from another release is refused.
-PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v16"}
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v17"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
 

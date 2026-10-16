@@ -40,6 +40,39 @@ limit refuses those files before that work. Between 1.5 and 2 million paint
 operators (exactly 2,000,000 included) a file still passes the check and may
 exhaust the Java heap.
 
+## Flattening dense figures (parser v17)
+
+The paint-operator count is a weak proxy for what exhausts OpenDataLoader's
+1 GiB heap: all six real books above 650,000 operators failed on v16 (five
+with `OutOfMemoryError: Java heap space`, one past the deadline) while a flood
+of 1.5 million bare rectangles parsed. Java keeps an object per path
+*segment*; the culprits are plotting-tool figures drawn as tiny paths: image
+pixels as 1 pt squares (189,030 on one page), scatter markers as two strokes
+each, and circles or curves as hundreds of 0.1 pt segments. With every vector
+removed, Evidence-Based Software Engineering parsed (454 pages, 190 s).
+
+`parser/odl/flatten.py` renders each dense region (segments per 12 pt cell,
+see openwiki) beneath the page and removes its vector art before Java;
+`pictures.flattened_figures` makes it one figure and folds its labels in.
+
+| Book | Pages | v16 | v17 |
+| --- | ---: | --- | --- |
+| 9d4f16ca (EBSE) | 454 | Java heap OOM at 16 s | 262 s (flatten 25 s, Java 14 s) |
+| afdf2621 | 922 | Java heap OOM | 170 s |
+| 0252fae1 | 682 | Java heap OOM | 78 s |
+| 90f7c22f | 674 | Java heap OOM | 80 s |
+| b38f53b6 | 964 | past 700 s | 130 s |
+| 1.76M / 2M rectangles, 2M strokes | 5–100 | Java heap OOM | 16–23 s |
+
+Dry run: 81 of 381 Mac PDFs and 85 of 288 library books touched, 2–3% of
+their pages. On 11 books that parse on v16, v17 is as fast or faster
+(unstats 20 → 11 s, os4 69 → 64 s, the flatten included), 8 of 4,279 headings
+left (mostly figure labels v16 had promoted), 15 label headings appeared, and
+at most 206 words a book left the text (labels count as text). A ruled table
+and a page-sized frame were early false regions, fixed by the text-share and
+frame rules. With flattening the paint limit stays 2,000,000: the largest real
+book has 1.51 million and a 2-million flood now parses.
+
 ## Census
 
 418 distinct real PDFs up to 1,400 pages (the bench corpus, fixtures,

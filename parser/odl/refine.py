@@ -1,12 +1,13 @@
 """One PDF through OpenDataLoader and the reviewed native repairs.
 
 The stage order is the lab's ``refined`` variant and must not be reshuffled:
-font repair, Java, cell styles, adaptation, picture triage, vector figures,
-column order, hidden-OCR order, heading context, then table context, footer
-ancestry, list geometry, glyph repairs, exponents, formula structure, column
-continuations, split ligatures, line joins, page numbers, list headings, layout
-headings, heading levels, source tables, inline formula placeholders, figure
-captions and negation composition. Pages without a text layer are listed for
+font repair, dense-figure flattening, Java, cell styles, adaptation, picture
+triage, flattened figures, vector figures, column order, hidden-OCR order,
+heading context, then table context, footer ancestry, list geometry, glyph
+repairs, exponents, formula structure, column continuations, split ligatures,
+line joins, page numbers, list headings, layout headings, heading levels,
+source tables, inline formula placeholders, figure captions and negation
+composition. Pages without a text layer are listed for
 the ingest worker's VLM (``textless.py``).
 """
 
@@ -24,6 +25,7 @@ from . import (
     columns,
     context,
     exponents,
+    flatten,
     fonts,
     furniture,
     headings,
@@ -75,9 +77,12 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
     phases: dict[str, float] = {}
     started = time.perf_counter()
     repaired, repaired_fonts = fonts.repair_fonts(data)
+    phases["fonts"] = time.perf_counter() - started
+    started = time.perf_counter()
+    repaired, flattened = flatten.flatten(repaired)
     pdf = work_dir / "document.pdf"
     pdf.write_bytes(repaired)
-    phases["fonts"] = time.perf_counter() - started
+    phases["flatten"] = time.perf_counter() - started
 
     started = time.perf_counter()
     java_deadline = started + java_timeout_s
@@ -125,6 +130,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         blocks = step(pictures.classify)(
             blocks, document, java.image_objects(native_dir)
         )
+        blocks = step(pictures.flattened_figures)(blocks, document, flattened)
         # One document's drawing clusters, for vector figures and heading recall.
         drawings = pictures.Drawings()
         blocks = step(pictures.add_vector_figures)(blocks, document, drawings)
