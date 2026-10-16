@@ -2269,7 +2269,7 @@ never mounts that volume.
 | Blob storage        | local/test bucket                    | dedicated private UAT bucket and key                                                        | production private bucket and key               |
 | Ingest host         | shared nonprod project, local queue consumers | same nonprod project, UAT queue consumers; one global `1/1/1` capacity with local | production project and `capy-ingest_parse_spool` |
 | Clerk               | development instance                 | separate Clerk application, Production instance                                             | production application's Production instance    |
-| Stripe              | `Stable Studio Dev` sandbox, `stripe listen` | named UAT sandbox with a registered endpoint                                             | live mode                                       |
+| Stripe              | `Capy Notebook Dev` sandbox, `stripe listen` | named UAT sandbox with a registered endpoint                                             | live mode                                       |
 | Product mail        | log backend, no credentials          | Cloudflare Email Service from `uat.capynotebook.com`; journey inbox on `inbox.uat`          | Cloudflare Email Service on the production domain |
 | Users and content   | developer fixtures                   | synthetic accounts and fixtures only                                                        | real users and content                          |
 | Scanner credentials | local only                           | GitHub `uat` environment                                                                    | never supplied to scanners                      |
@@ -2474,11 +2474,33 @@ should never fire on cross-environment noise.
 
 Three lanes, none of them shared:
 
-| Lane       | Stripe environment                                | Delivery                     |
-| ---------- | ------------------------------------------------- | ---------------------------- |
-| production | live mode                                         | registered endpoint          |
-| UAT        | `Stable Studio UAT`, `acct_1U8Djl2ZZopeANOe`      | registered endpoint          |
-| local dev  | `Stable Studio Dev`, `acct_1UC8tXFKth3QfmPW`      | `stripe listen`, no endpoint |
+| Lane       | Stripe environment                                  | Delivery                     |
+| ---------- | --------------------------------------------------- | ---------------------------- |
+| production | live mode, `Capy Notebook`, `acct_1U8DjUFAFTXFg4S6` | registered endpoint          |
+| UAT        | `Capy Notebook UAT`, `acct_1U8Djl2ZZopeANOe`        | registered endpoint          |
+| local dev  | `Capy Notebook Dev`, `acct_1UC8tXFKth3QfmPW`        | `stripe listen`, no endpoint |
+
+The live account belongs to Stable Studio Limited (Hong Kong) and carries the
+Capy Notebook public name; it is the only Stripe account, so Stable Studio's own
+work does not bill through it.
+
+**Tax.** Stripe Tax is active in all three lanes with the same settings: head
+office at the company address in Tsim Sha Tsui, Hong Kong; default tax behavior
+`exclusive` (customers pay the USD price plus their local tax); default tax code
+`txcd_10105001` (AI as a Service, cloud, personal use), also set on each Pro
+product. Hong Kong has no VAT/GST and there are no registrations, so tax is zero
+and Stripe charges no Tax fee until a registration is added under
+Tax → Registrations. Threshold monitoring runs on live payments only. All prices
+are USD.
+
+**Failed payments.** Set by hand in live and the UAT sandbox (the API cannot read
+them). Billing → Invoices → Retries → Card payments: a custom schedule of three
+retries one day apart for one-off invoices (auto-reload), separate from the
+subscription retries under Revenue recovery; after the last failure the invoice is
+marked uncollectible, so a stale reload cannot be paid later from the hosted link.
+Failed-payment emails link to the Stripe-hosted page, and the 3DS confirmation
+link email is on. Public details: name `Capy Notebook`, descriptor
+`CAPY NOTEBOOK`, support `support@capynotebook.com`.
 
 **UAT sandbox.** `Capy Notebook Pro` (`prod_VBvlTdsu2tTdkK`) with a monthly
 USD 8.00 price, `price_1UBXuV2ZZopeANOehrbUr1Qx`. The endpoint is
