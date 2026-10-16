@@ -20,6 +20,7 @@ import { IconButton } from '@/components/ui/IconButton';
 import { Input } from '@/components/ui/Input';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { unexpectedErrorId } from '@/lib/errors';
 import { features } from '@/lib/features';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
@@ -50,7 +51,7 @@ export function SearchDialog({
 }) {
   const [q, setQ] = useState('');
   const debounced = useDebounced(q, 400);
-  const { data, fetchStatus, isError, isFetching, refetch } = useSearch(
+  const { data, error, fetchStatus, isError, isFetching, refetch } = useSearch(
     debounced,
     {
       errorBoundary: false,
@@ -111,6 +112,7 @@ export function SearchDialog({
               <div className="absolute inset-0 flex items-center justify-center">
                 <InlineErrorState
                   className="-translate-y-1/2"
+                  errorId={unexpectedErrorId(error)}
                   message={m.search_error()}
                   onRetry={() => void refetch()}
                 />

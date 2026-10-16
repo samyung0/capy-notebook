@@ -25,6 +25,7 @@ import {
   toMaterialActionTarget,
 } from '@/features/workspace/contentActionTarget';
 import { getLocale, m } from '@/i18n';
+import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
@@ -111,6 +112,7 @@ export function useRecentItems() {
   const meta = { errorBoundary: false as const };
   const {
     data: files,
+    error: filesError,
     fetchStatus: filesFetchStatus,
     isError: filesFailed,
     isLoading: filesLoading,
@@ -118,6 +120,7 @@ export function useRecentItems() {
   } = useInfiniteQuery({ ...recentFilesQuery(), meta });
   const {
     data: materials,
+    error: materialsError,
     fetchStatus: materialsFetchStatus,
     isError: materialsFailed,
     isLoading: materialsLoading,
@@ -125,6 +128,7 @@ export function useRecentItems() {
   } = useInfiniteQuery({ ...recentMaterialsQuery(), meta });
   const {
     data: workspaces,
+    error: workspacesError,
     fetchStatus: workspacesFetchStatus,
     isError: workspacesFailed,
     isLoading: workspacesLoading,
@@ -144,9 +148,9 @@ export function useRecentItems() {
   // A list without data would drop its rows silently; a failed refresh keeps
   // the cached list, so only a missing one counts.
   const failed = [
-    [files, filesFailed, refetchFiles],
-    [materials, materialsFailed, refetchMaterials],
-    [workspaces, workspacesFailed, refetchWorkspaces],
+    [files, filesFailed, refetchFiles, filesError],
+    [materials, materialsFailed, refetchMaterials, materialsError],
+    [workspaces, workspacesFailed, refetchWorkspaces, workspacesError],
   ] as const;
   const missing = failed.filter(([data, isError]) => !data && isError);
   return { isLoading, items, missing, paused, workspaces };
@@ -175,6 +179,12 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
       ) : missing.length ? (
         <InlineErrorState
           className="pt-10 pb-6"
+          // The first failed list's id: the line has room for one.
+          errorId={
+            missing
+              .map(([, , , error]) => unexpectedErrorId(error))
+              .find(Boolean) ?? null
+          }
           message={m.dashboard_recent_error()}
           onRetry={() => {
             for (const [, , refetch] of missing) void refetch();
