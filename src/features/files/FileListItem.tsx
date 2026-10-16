@@ -14,7 +14,7 @@ import {
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
-import { fileIsIngesting } from './fileUtils';
+import { fileCanClone, fileIsIngesting } from './fileUtils';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
  * ingest progress, and exposes a hover action menu (rename / properties /
@@ -98,7 +98,7 @@ export function FileListItem({
         {menu && (!readOnly || canClone) && (
           <ContentActions
             beforeDelete={beforeDelete}
-            canClone={canClone && file.status === 'ready'}
+            canClone={canClone && fileCanClone(file)}
             chapters={chapters}
             color={color}
             content={toFileActionTarget(file)}

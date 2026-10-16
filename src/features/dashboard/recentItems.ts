@@ -5,6 +5,7 @@ import type {
   SourceFile,
   Workspace,
 } from '@/api/types';
+import { fileCanClone } from '@/features/files/fileUtils';
 
 export const RECENT_ITEM_LIMIT = 20;
 
@@ -49,8 +50,7 @@ export function mergeRecentItems(
     !workspaceId || !!workspaceById.get(workspaceId)?.canClone;
   const items: RecentItem[] = [
     ...files.map((file) => ({
-      // Only a processed file copies (the server refuses others).
-      canClone: file.status === 'ready' && canClone(file.workspaceId),
+      canClone: fileCanClone(file) && canClone(file.workspaceId),
       canEdit: canEdit(file.workspaceId),
       createdAt: file.addedAt,
       file,
