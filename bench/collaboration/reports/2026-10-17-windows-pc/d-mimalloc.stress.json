@@ -1,0 +1,386 @@
+{
+  "budgetMisses": [],
+  "budgetP95Ms": 45,
+  "byKind": {
+    "office": {
+      "latencyMaxMs": 40,
+      "latencyP50Ms": 34,
+      "latencyP95Ms": 37,
+      "latencyP99Ms": 38,
+      "rooms": 1,
+      "timed": 1435,
+      "budgeted": true
+    },
+    "plate": {
+      "latencyMaxMs": 40,
+      "latencyP50Ms": 34,
+      "latencyP95Ms": 37,
+      "latencyP99Ms": 38,
+      "rooms": 1,
+      "timed": 1435,
+      "budgeted": true
+    },
+    "note-limit": {
+      "latencyMaxMs": 38,
+      "latencyP50Ms": 33,
+      "latencyP95Ms": 36,
+      "latencyP99Ms": 37,
+      "rooms": 1,
+      "timed": 345,
+      "budgeted": false
+    },
+    "text": {
+      "latencyMaxMs": 72,
+      "latencyP50Ms": 33,
+      "latencyP95Ms": 36,
+      "latencyP99Ms": 38,
+      "rooms": 1,
+      "timed": 366,
+      "budgeted": false
+    }
+  },
+  "clientLoopDelayMs": {
+    "max": 185,
+    "p50": 31,
+    "p99": 33
+  },
+  "cost": {
+    "office": {
+      "idleMeasured": true,
+      "loadS": 0.2,
+      "peers": 5,
+      "probe": {
+        "failures": 0,
+        "maxMs": 87,
+        "p50Ms": 3,
+        "p99Ms": 86,
+        "samples": 117
+      },
+      "saveMs": 68,
+      "server": {
+        "api": {
+          "cpuMsPerSave": 62,
+          "cpuMsPerUpdate": 9.54,
+          "idleCpuMsPerS": 1.3,
+          "loadCpuMs": 103,
+          "memoryMBAfterTyping": -72.4,
+          "memoryMBPerRoom": -1
+        },
+        "collaboration": {
+          "cpuMsPerSave": 149,
+          "cpuMsPerUpdate": 7.9,
+          "idleCpuMsPerS": 3.6,
+          "loadCpuMs": 173,
+          "memoryMBAfterTyping": -6.4,
+          "memoryMBPerRoom": 18.5
+        },
+        "db": {
+          "cpuMsPerSave": 118,
+          "cpuMsPerUpdate": 18.15,
+          "idleCpuMsPerS": 3.8,
+          "loadCpuMs": 162,
+          "memoryMBAfterTyping": 30.3,
+          "memoryMBPerRoom": -0.3
+        }
+      },
+      "typingS": 37.5,
+      "updates": 104
+    },
+    "plate": {
+      "idleMeasured": true,
+      "loadS": 0,
+      "peers": 5,
+      "probe": {
+        "failures": 0,
+        "maxMs": 4,
+        "p50Ms": 3,
+        "p99Ms": 4,
+        "samples": 118
+      },
+      "saveMs": 2014,
+      "server": {
+        "api": {
+          "cpuMsPerSave": 83,
+          "cpuMsPerUpdate": 3.7,
+          "idleCpuMsPerS": 1,
+          "loadCpuMs": 70,
+          "memoryMBAfterTyping": 1.2,
+          "memoryMBPerRoom": 0.4
+        },
+        "collaboration": {
+          "cpuMsPerSave": 125,
+          "cpuMsPerUpdate": 6.28,
+          "idleCpuMsPerS": 3.4,
+          "loadCpuMs": 73,
+          "memoryMBAfterTyping": -8.1,
+          "memoryMBPerRoom": 0.2
+        },
+        "db": {
+          "cpuMsPerSave": 112,
+          "cpuMsPerUpdate": 4.87,
+          "idleCpuMsPerS": 12,
+          "loadCpuMs": 115,
+          "memoryMBAfterTyping": 1.9,
+          "memoryMBPerRoom": 1.7
+        }
+      },
+      "typingS": 37.5,
+      "updates": 100
+    },
+    "note-limit": {
+      "idleMeasured": true,
+      "loadS": 0.5,
+      "peers": 5,
+      "probe": {
+        "failures": 0,
+        "maxMs": 8,
+        "p50Ms": 3,
+        "p99Ms": 5,
+        "samples": 120
+      },
+      "saveMs": 2030,
+      "server": {
+        "api": {
+          "cpuMsPerSave": 75,
+          "cpuMsPerUpdate": 3.77,
+          "idleCpuMsPerS": 1.5,
+          "loadCpuMs": 67,
+          "memoryMBAfterTyping": 0.2,
+          "memoryMBPerRoom": 0.5
+        },
+        "collaboration": {
+          "cpuMsPerSave": 129,
+          "cpuMsPerUpdate": 6.28,
+          "idleCpuMsPerS": 4.4,
+          "loadCpuMs": 246,
+          "memoryMBAfterTyping": 23.3,
+          "memoryMBPerRoom": 19.4
+        },
+        "db": {
+          "cpuMsPerSave": 165,
+          "cpuMsPerUpdate": 8.54,
+          "idleCpuMsPerS": 3.5,
+          "loadCpuMs": 220,
+          "memoryMBAfterTyping": 4.2,
+          "memoryMBPerRoom": 3.2
+        }
+      },
+      "typingS": 38.1,
+      "updates": 96
+    },
+    "text": {
+      "idleMeasured": true,
+      "loadS": 0.3,
+      "peers": 5,
+      "probe": {
+        "failures": 0,
+        "maxMs": 4,
+        "p50Ms": 3,
+        "p99Ms": 4,
+        "samples": 120
+      },
+      "saveMs": 353,
+      "server": {
+        "api": {
+          "cpuMsPerSave": 229,
+          "cpuMsPerUpdate": 7.69,
+          "idleCpuMsPerS": 1.1,
+          "loadCpuMs": 107,
+          "memoryMBAfterTyping": 58.7,
+          "memoryMBPerRoom": 0.5
+        },
+        "collaboration": {
+          "cpuMsPerSave": 177,
+          "cpuMsPerUpdate": 8.35,
+          "idleCpuMsPerS": 4.3,
+          "loadCpuMs": 271,
+          "memoryMBAfterTyping": 147.4,
+          "memoryMBPerRoom": 1.2
+        },
+        "db": {
+          "cpuMsPerSave": 219,
+          "cpuMsPerUpdate": 10.25,
+          "idleCpuMsPerS": 1.8,
+          "loadCpuMs": 165,
+          "memoryMBAfterTyping": 7.7,
+          "memoryMBPerRoom": -0.1
+        }
+      },
+      "typingS": 39.9,
+      "updates": 101
+    }
+  },
+  "costPeers": 5,
+  "costSeconds": 30,
+  "collaborationErrors": 0,
+  "collaborationErrorSample": [],
+  "editMs": 1500,
+  "failures": [],
+  "limitClientLoopDelayMs": {
+    "max": 85,
+    "p50": 31,
+    "p99": 33
+  },
+  "limitPeers": 5,
+  "minutes": 2,
+  "peers": 20,
+  "reportOnlyFailures": [],
+  "rooms": [
+    {
+      "converged": true,
+      "doubled": 0,
+      "drops": 48,
+      "latencyP50Ms": 34,
+      "latencyP95Ms": 37,
+      "latencyMaxMs": 40,
+      "lateJoinError": null,
+      "missing": 0,
+      "missingSample": [],
+      "unsettled": 0,
+      "room": "office",
+      "format": "docx",
+      "typed": 1606
+    },
+    {
+      "converged": true,
+      "doubled": 0,
+      "drops": 53,
+      "latencyP50Ms": 34,
+      "latencyP95Ms": 37,
+      "latencyMaxMs": 40,
+      "lateJoinError": null,
+      "missing": 0,
+      "missingSample": [],
+      "unsettled": 0,
+      "room": "plate",
+      "format": "plate",
+      "typed": 1621
+    },
+    {
+      "converged": true,
+      "doubled": 0,
+      "drops": 16,
+      "latencyP50Ms": 33,
+      "latencyP95Ms": 36,
+      "latencyMaxMs": 38,
+      "lateJoinError": null,
+      "missing": 0,
+      "missingSample": [],
+      "unsettled": 0,
+      "room": "note-limit",
+      "format": "plate",
+      "typed": 398
+    },
+    {
+      "converged": true,
+      "doubled": 0,
+      "drops": 11,
+      "latencyP50Ms": 33,
+      "latencyP95Ms": 36,
+      "latencyMaxMs": 72,
+      "lateJoinError": null,
+      "missing": 0,
+      "missingSample": [],
+      "unsettled": 0,
+      "room": "text",
+      "format": "text",
+      "typed": 403
+    }
+  ],
+  "runner": {
+    "cpuModel": "AMD Ryzen 7 3700X 8-Core Processor             ",
+    "cpus": 16
+  },
+  "server": {
+    "containers": [
+      "api",
+      "collaboration",
+      "db"
+    ],
+    "images": {
+      "api": {
+        "id": "sha256:befe8aff113b170948f5933acc3c5cc54142d947bdd820403613db06ee4e5552",
+        "image": "perf-server-api:local"
+      },
+      "collaboration": {
+        "id": "sha256:532ac01598c95c29ee7a5e77faa1bffd3962db6413127f0503d5b794d80a832a",
+        "image": "perf-server-collab:mimalloc"
+      },
+      "db": {
+        "id": "sha256:9b05db12a35460fff0587e009f9326e414a53e9484555547f96d214a2ba98ef7",
+        "image": "pgvector/pgvector:pg16"
+      }
+    },
+    "limit": {
+      "probe": {
+        "failures": 0,
+        "maxMs": 105,
+        "p50Ms": 3,
+        "p99Ms": 5,
+        "samples": 466
+      },
+      "api": {
+        "cpuMs": 3183,
+        "cpuMsPerMarker": 3.97,
+        "memoryMB": {
+          "after": 148.6,
+          "before": 46.6,
+          "growth": 102
+        }
+      },
+      "collaboration": {
+        "cpuMs": 4252,
+        "cpuMsPerMarker": 5.31,
+        "memoryMB": {
+          "after": 523.3,
+          "before": 212.8,
+          "growth": 310.5
+        }
+      },
+      "db": {
+        "cpuMs": 4498,
+        "cpuMsPerMarker": 5.62,
+        "memoryMB": {
+          "after": 247.9,
+          "before": 193.4,
+          "growth": 54.5
+        }
+      }
+    },
+    "main": {
+      "probe": null,
+      "api": {
+        "cpuMs": 2952,
+        "cpuMsPerMarker": 0.91,
+        "memoryMB": {
+          "after": 23.4,
+          "before": 15.3,
+          "growth": 8.1
+        }
+      },
+      "collaboration": {
+        "cpuMs": 6092,
+        "cpuMsPerMarker": 1.89,
+        "memoryMB": {
+          "after": 212.4,
+          "before": 63.3,
+          "growth": 149.1
+        }
+      },
+      "db": {
+        "cpuMs": 5806,
+        "cpuMsPerMarker": 1.8,
+        "memoryMB": {
+          "after": 176.9,
+          "before": 76.1,
+          "growth": 100.8
+        }
+      }
+    },
+    "probePath": "/livez"
+  },
+  "target": "local",
+  "textMiB": 4,
+  "tokenFailures": 0,
+  "tokenFailureSample": []
+}

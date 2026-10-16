@@ -119,7 +119,10 @@ connections with the collaboration service on 1 and 2 cores, and the
 [replica run](collaboration/reports/2026-10-05-office-engine-replicas.md)
 measures the Office engine worker keeping each XLSX room's workbook open. The
 [2026-10-11 run](collaboration/reports/2026-10-11-prod-capacity-rust.md)
-repeats the ladder for the Rust collaboration server against Node.
+repeats the ladder for the Rust collaboration server against Node. The
+[2026-10-17 allocator run](collaboration/reports/2026-10-17-collaboration-allocator.md)
+measures the memory the server keeps after its peers leave, per glibc setting
+and with mimalloc.
 
 `bench/collaboration/scripts/chaos-peers.ts` (`pnpm chaos:peers`) is not a
 measurement: it joins synthetic collaborators to one live room of the Rust
