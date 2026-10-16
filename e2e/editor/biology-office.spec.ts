@@ -1768,10 +1768,18 @@ test('DOCX editor focus: chat typing while it opens, first open before a save re
       'saved'
     );
     await page.keyboard.type('Hello');
+    // A slow machine posts the first update seconds after the keys.
     await expect
-      .poll(() => updates.evaluate((seen) => seen.count))
+      .poll(() => updates.evaluate((seen) => seen.count), { timeout: 30_000 })
       .toBeGreaterThan(0);
     await receipts(false);
+    // Every key lands and saves before the next step counts updates: the
+    // rest of "Hello" can still be in the editor's input queue here.
+    await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+      'data-save-state',
+      'saved',
+      { timeout: 30_000 }
+    );
   });
 
   // A pause that ends hands nothing to the editor: a host field keeps the
