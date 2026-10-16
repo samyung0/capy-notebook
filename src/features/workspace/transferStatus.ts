@@ -55,9 +55,13 @@ export function transferStatus(
       value: file.ingestPct ?? 0,
     };
   }
+  // A failed file that is still indexed keeps answering search: a part is
+  // missing or a retry failed over its previous index (parts design Q1).
   if (file.status === 'failed') {
     return {
-      detail: m.files_not_indexed_failed(),
+      detail: file.indexed
+        ? m.files_processing_error()
+        : m.files_not_indexed_failed(),
       kind: 'error',
       label: m.source_transfer_parse_failed(),
     };

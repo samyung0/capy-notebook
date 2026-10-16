@@ -14,7 +14,7 @@ import {
 } from 'react';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
-import { describeError } from '@/lib/errors';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { ErrorState } from './ErrorState';
 import { Panel } from './layout';
 
@@ -136,6 +136,7 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
             this.props.variant === 'page' ? 'h-full w-full' : undefined
           }
           description={description.description}
+          errorId={unexpectedErrorId(this.state.error)}
           icon={description.icon}
           title={description.title}
           variant={this.props.variant ?? 'panel'}
@@ -194,6 +195,7 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
           </ErrorAction>
         }
         description={description.description}
+        errorId={unexpectedErrorId(error)}
         icon={description.icon}
         title={description.title}
         variant="page"

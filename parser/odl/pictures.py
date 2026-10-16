@@ -12,9 +12,11 @@ formulas set as pictures arrive as images
   and passing the six precision tests (``_not_formula``). Retyped ``equation``:
   a display formula's text is PLACEHOLDER, an inline one is spliced into its
   paragraph by ``place_inline`` or else carries PLACEHOLDER itself.
-- Repeat: the same image (MuPDF's digest of the image the box shows) on
-  REPEAT_PAGES or more pages (licence badges, logos, icons, chapter bars). Kept as ``discarded`` page furniture,
-  unless it is a glyph-sized formula among different words each time.
+- Repeat: the same stored image (a hash of the image object as the PDF stores
+  it, palette and mask included, no pixels decoded) on REPEAT_PAGES or more pages (licence
+  badges, logos, icons, chapter bars, also when each page stores its own copy).
+  Kept as ``discarded`` page furniture, unless it is a glyph-sized formula
+  among different words each time.
 
 ``add_vector_figures`` adds the figures ODL never sees: veraPDF makes chunks of
 placed images only, so a diagram drawn with paths reached the index as its loose
@@ -28,15 +30,21 @@ frame, a table or a text box and stays text.
 
 from __future__ import annotations
 
+import hashlib
+import math
 import re
 import statistics
+import struct
 from collections import Counter, defaultdict
 
 import pymupdf
 
 from . import page_text
+from .memory import out_of_memory
 
 REPEAT_PAGES = 5
+HASH_CHUNK = 1 << 16  # bytes read at a time when hashing a stored image
+STORED_DEPTH = 8  # reference levels a stored image's hash follows (mask, palette)
 MIN_SIDE_PT = 1.0
 SUBTLE_ASPECT = 0.01
 PLACEHOLDER = "[formula]"
@@ -156,77 +164,6 @@ def _words_beside(rect: pymupdf.Rect, words: list) -> tuple[str | None, str | No
     return (left[4] if left else None), (right[4] if right else None)
 
 
-def _image_digests(
-    blocks: list[dict],
-    images: set[int],
-    document: pymupdf.Document,
-    objects: dict[int, int],
-) -> dict[int, str]:
-    """Each picture's image digest. A picture whose image object ODL reported
-    (``objects``, by ``_native_id``) takes the digest of that object, decoded
-    once; the rest (inline images, objects MuPDF cannot decode) are matched
-    by box to MuPDF's list of the page's images (overlap at least half the
-    union), which replays the page. ODL no longer writes image files: decoding
-    and encoding them was 85% of its time on a figure-heavy textbook."""
-    by_object: dict[int, str | None] = {}
-    digests: dict[int, str] = {}
-    by_page: dict[int, list[int]] = defaultdict(list)
-    for index in images:
-        xref = objects.get(blocks[index].get("_native_id"))
-        if xref is not None and xref not in by_object:
-            try:
-                by_object[xref] = pymupdf.Pixmap(document, xref).digest.hex()
-            except (pymupdf.mupdf.FzErrorBase, ValueError):
-                by_object[xref] = None
-            _drop_decoded()
-        if xref is not None and by_object[xref]:
-            digests[index] = by_object[xref]
-        else:
-            by_page[blocks[index]["page_idx"]].append(index)
-    for number, indexes in sorted(by_page.items()):
-        page = document[number]
-        placed = [
-            (pymupdf.Rect(info["bbox"]), info["digest"].hex())
-            for info in page.get_image_info(hashes=True)
-            if info.get("digest")
-        ]
-        _drop_decoded()
-        # ODL's box is the image's placement: an exact key (the first image in
-        # page order, as the best share would pick) answers almost every
-        # picture; the rest search the cells they cover.
-        exact: dict[tuple[float, ...], str] = {}
-        grid: dict[tuple[int, int], list[int]] = defaultdict(list)
-        for k, (box, digest) in enumerate(placed):
-            exact.setdefault(_key(box), digest)
-            for cell in _cells(box & page.rect):  # an off-page part overlaps nothing
-                grid[cell].append(k)
-        for index in indexes:
-            rect = _rect(blocks[index], page)
-            if (digest := exact.get(_key(rect))) is not None:
-                digests[index] = digest
-                continue
-
-            def union_share(image: tuple, rect: pymupdf.Rect = rect) -> float:
-                overlap = abs(image[0] & rect)
-                return overlap / max(abs(image[0]) + abs(rect) - overlap, 1e-9)
-
-            cells = _cells(rect & page.rect)
-            near = sorted({k for cell in cells for k in grid.get(cell, ())})
-            # A page-wide background overlaps every picture on it; the share
-            # of the union picks the image the picture is.
-            best = max((placed[k] for k in near), key=union_share, default=None)
-            if best and union_share(best) >= 0.5:
-                digests[index] = best[1]
-    return digests
-
-
-def _drop_decoded() -> None:
-    """Empty MuPDF's store, where decoding just left the image(s): it fills to
-    256 MiB (120 page scans do) under the parse's peak, and the persistent
-    child keeps it after the document; nothing reads the images again."""
-    pymupdf.TOOLS.store_shrink(100)
-
-
 def empty_table(block: dict) -> bool:
     """A table with no text in any cell and no caption: ODL's cluster method
     boxes drawn frames (tableaux, answer boxes) as such; half the tables on 49
@@ -239,31 +176,90 @@ def empty_table(block: dict) -> bool:
     )
 
 
-def _key(rect: pymupdf.Rect) -> tuple[float, ...]:
-    return tuple(round(v, 1) for v in rect)
+_REFERENCE = re.compile(r"(\d+) \d+ R")
+_LENGTH = re.compile(r"/Length (?:\d+ \d+ R|\d+)")
 
 
-def _cells(rect: pymupdf.Rect, size: float = 50.0) -> list[tuple[int, int]]:
-    """The size-pt grid cells a box covers (none for an empty box)."""
-    if rect.is_empty:
-        return []
-    xs = range(int(rect.x0 // size), int(rect.x1 // size) + 1)
-    ys = range(int(rect.y0 // size), int(rect.y1 // size) + 1)
-    return [(x, y) for x in xs for y in ys]
+def _stored_hash(
+    document: pymupdf.Document,
+    xref: int,
+    memo: dict[int, bytes | None],
+    depth: int = 0,
+) -> bytes:
+    """SHA-256 of an object as the PDF stores it, no pixels decoded: its
+    dictionary without /Length, each reference replaced by the referenced
+    object's own hash (a palette or soft mask counts by content, not object
+    number), then its stream's still-encoded bytes read HASH_CHUNK at a time,
+    so the largest image costs no more memory than the chunk. ``memo`` keeps
+    a document's hashes and failures (None), so each object is read at most
+    once; a reference back to an object in progress hashes as empty. Raises
+    ValueError past STORED_DEPTH references or for an object that failed
+    before, and whatever reading a broken object raises."""
+    if xref in memo:
+        if (known := memo[xref]) is None:
+            raise ValueError("the object failed before")
+        return known
+    if depth > STORED_DEPTH:
+        raise ValueError("references nest too deep")
+    memo[xref] = b""
+    try:
+        text = _LENGTH.sub("", document.xref_object(xref, compressed=True))
+        text = _REFERENCE.sub(
+            lambda ref: _stored_hash(document, int(ref[1]), memo, depth + 1).hex(),
+            text,
+        )
+        digest = hashlib.sha256(text.encode())
+        if document.xref_is_stream(xref):
+            mupdf = pymupdf.mupdf
+            chunk = bytearray(HASH_CHUNK)
+            data = mupdf.python_mutable_buffer_data(chunk)
+            stream = mupdf.pdf_open_raw_stream_number(
+                mupdf.pdf_document_from_fz_document(document.this), xref
+            )
+            while read := mupdf.ll_fz_read(stream.m_internal, data, HASH_CHUNK):
+                digest.update(memoryview(chunk)[:read])
+    except BaseException:
+        memo[xref] = None
+        raise
+    memo[xref] = digest.digest()
+    return memo[xref]
 
 
 def classify(
     blocks: list[dict], document: pymupdf.Document, objects: dict[int, int]
 ) -> list[dict]:
+    """``objects``: ODL's element id -> the PDF object of the image a picture
+    draws (``java.image_objects``). A picture's identity for repeats is the
+    hash of that object as stored (``_stored_hash``), so copies stored as
+    separate objects match. An inline image or a broken object has none and
+    never repeats."""
     images = {
         index
         for index, block in enumerate(blocks)
         if block.get("type") == "image" and len(block.get("bbox") or []) == 4
     }
-    digests = _image_digests(blocks, images, document, objects)
-    pages: dict[str, set[int]] = defaultdict(set)
-    for index, digest in digests.items():
-        pages[digest].add(blocks[index]["page_idx"])
+    xrefs = {
+        index: xref
+        for index in images
+        if (xref := objects.get(blocks[index].get("_native_id"))) is not None
+    }
+    memo: dict[int, bytes | None] = {}
+
+    def stored(xref: int) -> bytes | None:
+        try:
+            return _stored_hash(document, xref, memo)
+        except Exception as exc:
+            if out_of_memory(exc):
+                raise  # the parse's out-of-memory path
+            return None  # a broken image object is never a repeat
+
+    hashes = {xref: stored(xref) for xref in set(xrefs.values())}
+    identity = {
+        index: hashes[xref] for index, xref in xrefs.items() if hashes[xref] is not None
+    }
+    pages: dict[bytes, set[int]] = defaultdict(set)
+    for index, key in identity.items():
+        pages[key].add(blocks[index]["page_idx"])
     facts: dict[int, tuple | None] = {}
 
     def page_facts(page: pymupdf.Page) -> tuple | None:
@@ -278,17 +274,17 @@ def classify(
         return facts[page.number]
 
     def repeated(index: int) -> bool:
-        return index in digests and len(pages[digests[index]]) >= REPEAT_PAGES
+        return index in identity and len(pages[identity[index]]) >= REPEAT_PAGES
 
     # A repeat with the same words beside it in most placements is furniture (a
     # licence badge after the same licence sentence); a reused formula glyph such
     # as x or dx sits among different words each time.
-    contexts: dict[str, Counter] = defaultdict(Counter)
+    contexts: dict[bytes, Counter] = defaultdict(Counter)
     for index in sorted(images):
         page = document[blocks[index]["page_idx"]]
         if repeated(index) and (page_fact := page_facts(page)):
             beside = _words_beside(_rect(blocks[index], page), page_fact[3])
-            contexts[digests[index]][beside] += 1
+            contexts[identity[index]][beside] += 1
     fixed = {
         key
         for key, seen in contexts.items()
@@ -311,7 +307,7 @@ def classify(
         if (
             kind
             and repeated(index)
-            and (digests[index] in fixed or rect.height > 1.6 * page_fact[2])
+            and (identity[index] in fixed or rect.height > 1.6 * page_fact[2])
         ):
             kind = None
         if kind and _not_formula(page, rect, page_fact):
@@ -330,6 +326,19 @@ VECTOR_MIN_AREA = 0.03
 VECTOR_MIN_SEGMENTS = 12
 # Paths this close (points) belong to one figure.
 VECTOR_GAP = 8.0
+# Grid cell side (points) for finding the clusters near a path: a hairline's
+# box grown by VECTOR_GAP spans at most three cells a side.
+VECTOR_CELL = 2 * VECTOR_GAP
+# A cluster spanning more cells than this is not put in the grid but compared
+# with every path, and a path whose grown box spans more cells than there are
+# clusters is compared with all of them: few such boxes fit on a page.
+VECTOR_BIG_CELLS = 64
+# Steps (a grid cell read or written, a box compared) clustering may take on
+# one document, a backstop: the grid keeps clustering near linear, and the
+# costliest of 288 library books took 10.6 million. The page that runs out and
+# every later page have no clusters: no vector figures, and heading recall
+# sees no drawing there.
+VECTOR_MAX_STEPS = 20_000_000
 # Word area over figure area above this is a text box or a table, not a figure.
 VECTOR_MAX_TEXT = 0.25
 # A short text block this close (points) to a figure is its axis or callout label.
@@ -369,12 +378,140 @@ def _axis_aligned(item: tuple) -> bool:
     return False
 
 
-def _figure_clusters(page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
+class Drawings:
+    """One document's drawing clusters: each page's computed once, within
+    VECTOR_MAX_STEPS for the document. Only clusters of at least
+    VECTOR_MIN_SEGMENTS segments are kept: vector figures and heading recall
+    read no others."""
+
+    def __init__(self, steps: int = VECTOR_MAX_STEPS) -> None:
+        self.steps = self.left = steps
+        self.pages: dict[int, list[tuple[pymupdf.Rect, int, int]]] = {}
+        # The page where the steps ran out, for the parse's log line.
+        self.stopped_at: int | None = None
+
+    @property
+    def spent(self) -> int:
+        return self.steps - self.left
+
+    def clusters(self, page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
+        if page.number not in self.pages:
+            found = _figure_clusters(page, self) if self.left >= 0 else []
+            if self.left < 0 and self.stopped_at is None:
+                self.stopped_at = page.number
+            self.pages[page.number] = [
+                cluster for cluster in found if cluster[1] >= VECTOR_MIN_SEGMENTS
+            ]
+        return self.pages[page.number]
+
+    def spend(self, steps: int) -> bool:
+        """False once the document's steps are spent; they stay spent."""
+        self.left -= steps
+        return self.left >= 0
+
+
+def _figure_clusters(
+    page: pymupdf.Page, drawings: Drawings
+) -> list[tuple[pymupdf.Rect, int, int]]:
     """Drawing clusters with their segment counts and how many of those are
     axis-aligned lines or boxes. Page-wide rules and frames, hairline specks
-    and white fills are left out first."""
+    and white fills are left out first. Each path in turn joins every cluster
+    whose box meets its own box grown by VECTOR_GAP; then clusters whose boxes
+    meet merge until none do. Clusters come in the order of the cluster each
+    one began as, as a list of them appended to on every merge would hold.
+
+    A grid of VECTOR_CELL cells holds each cluster in the cells its box covers,
+    on the page or off it (big clusters stay out, see VECTOR_BIG_CELLS), so a
+    path compares only the clusters in the cells its grown box covers, and union-find lets a merged cluster be found from the
+    cells of the clusters it took in. Boxes are
+    float tuples with pymupdf's own tests and union (``_meets``, ``_union``).
+    Empty once ``drawings`` has spent its steps."""
     width, height = page.rect.width, page.rect.height
-    clusters: list[list] = []  # [rect, segments, axis-aligned segments]
+    parent: list[int] = []
+    boxes: list[tuple[float, float, float, float]] = []
+    spans: list = []  # each cluster's span
+    segments: list[int] = []
+    aligned: list[int] = []
+    grid: dict[tuple[int, int], list[int]] = defaultdict(list)
+    live: set[int] = set()  # the clusters now
+    big: set[int] = set()  # clusters wider than VECTOR_BIG_CELLS, held here only
+
+    def span(box: tuple) -> tuple[int, int, int, int]:
+        """The cells a box (finite, see the path loop) covers."""
+        return (
+            int(box[0] // VECTOR_CELL),
+            int(box[1] // VECTOR_CELL),
+            int(box[2] // VECTOR_CELL),
+            int(box[3] // VECTOR_CELL),
+        )
+
+    def find(node: int) -> int:
+        while parent[node] != node:
+            parent[node] = parent[parent[node]]
+            node = parent[node]
+        return node
+
+    def near(area: tuple[int, int, int, int]) -> set[int] | None:
+        """The clusters in the cells of ``area`` (each cell's list cut to its
+        clusters) and the big ones, or every cluster when there are fewer
+        than cells to read; None once the steps are spent. The cells are paid
+        for before they are read."""
+        cells = _cells(area)
+        if cells > len(live):
+            found = set(live)
+            return found if drawings.spend(2 * len(found)) else None
+        roots = {find(node) for node in big}
+        big.clear()
+        big.update(roots)
+        found = set(roots)
+        if not drawings.spend(len(roots) + cells):
+            return None
+        steps = 0
+        for x in range(area[0], area[2] + 1):
+            for y in range(area[1], area[3] + 1):
+                held = grid.get((x, y))
+                if held:
+                    roots = {find(node) for node in held}
+                    if len(roots) < len(held):
+                        grid[(x, y)] = list(roots)
+                    found |= roots
+                    steps += len(held)
+        return found if drawings.spend(steps + len(found)) else None
+
+    def merge(node: int, others: list[int], held: tuple | None) -> tuple | None:
+        """Merge ``others`` into ``node``. Returns the widest span already
+        finding ``node``: ``held`` (its own, if in the grid) or an other's."""
+        for other in others:
+            parent[other] = node
+            live.discard(other)
+            boxes[node] = _union(boxes[node], boxes[other])
+            segments[node] += segments[other]
+            aligned[node] += aligned[other]
+            if held is None or _cells(spans[other]) > _cells(held):
+                held = spans[other]
+        spans[node] = span(boxes[node])
+        return held
+
+    def hold(node: int, held: tuple | None) -> bool:
+        """Put ``node`` in the cells of its span outside ``held`` (a span
+        inside it): the rows above and below ``held``, then the columns
+        either side of it. The cells are paid for before they are filled."""
+        x0, y0, x1, y1 = spans[node]
+        if _cells(spans[node]) > VECTOR_BIG_CELLS:
+            big.add(node)
+            return drawings.spend(1)
+        if not drawings.spend(_cells(spans[node]) - (_cells(held) if held else 0)):
+            return False
+        hx0, hy0, hx1, hy1 = held or (x1 + 1, y1 + 1, x1, y1)
+        rows = [*range(y0, hy0), *range(hy1 + 1, y1 + 1)]
+        cells = [(x, y) for y in rows for x in range(x0, x1 + 1)]
+        if x0 < hx0 or hx1 < x1:
+            columns = [*range(x0, hx0), *range(hx1 + 1, x1 + 1)]
+            cells += [(x, y) for y in range(hy0, hy1 + 1) for x in columns]
+        for at in cells:
+            grid[at].append(node)
+        return True
+
     for path in page.get_cdrawings():
         x0, y0, x1, y1 = path["rect"]
         w, h = x1 - x0, y1 - y0
@@ -386,36 +523,114 @@ def _figure_clusters(page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
             continue
         # A straight line's rect has no area, and pymupdf skips empty rects in
         # unions and intersections: give it a hairline's thickness.
-        rect = pymupdf.Rect(x0, y0, max(x1, x0 + 0.5), max(y1, y0 + 0.5))
-        grown = rect + (-VECTOR_GAP, -VECTOR_GAP, VECTOR_GAP, VECTOR_GAP)
-        hits = [c for c in clusters if c[0].intersects(grown)]
+        rect = (
+            float(x0),
+            float(y0),
+            float(max(x1, x0 + 0.5)),
+            float(max(y1, y0 + 0.5)),
+        )
+        # A NaN or infinite box (content under a huge matrix) meets nothing,
+        # as pymupdf's rects never did, and has no cells.
+        if not all(map(math.isfinite, rect)):
+            continue
+        grown = (
+            rect[0] - VECTOR_GAP,
+            rect[1] - VECTOR_GAP,
+            rect[2] + VECTOR_GAP,
+            rect[3] + VECTOR_GAP,
+        )
+        candidates = near(span(grown))
+        if candidates is None:
+            return []
         items = path.get("items") or ()
-        merged = [rect, len(items) or 1, sum(map(_axis_aligned, items))]
-        for cluster in hits:
-            merged[0] |= cluster[0]
-            merged[1] += cluster[1]
-            merged[2] += cluster[2]
-            clusters.remove(cluster)
-        clusters.append(merged)
+        node = len(parent)
+        parent.append(node)
+        live.add(node)
+        boxes.append(rect)
+        spans.append(None)  # set by merge
+        segments.append(len(items) or 1)
+        aligned.append(sum(map(_axis_aligned, items)))
+        hits = [c for c in candidates if _meets(boxes[c], grown)]
+        if not hold(node, merge(node, hits, None)):
+            return []
     # One more pass: merging can make clusters overlap that did not before.
-    changed = True
-    while changed:
-        changed = False
-        for a in clusters:
-            for b in clusters:
-                if a is not b and a[0].intersects(b[0]):
-                    a[0] |= b[0]
-                    a[1] += b[1]
-                    a[2] += b[2]
-                    clusters.remove(b)
-                    changed = True
-                    break
-            if changed:
-                break
-    return [tuple(cluster) for cluster in clusters]
+    # Merging them until no two boxes meet gives the same grouping in any
+    # order; a merged cluster keeps the earliest place among its parts.
+    order = list(range(len(parent)))
+    work = [node for node in reversed(order) if parent[node] == node]
+    while work:
+        node = work.pop()
+        if parent[node] != node:
+            continue
+        candidates = near(spans[node])
+        if candidates is None:
+            return []
+        hits = [c for c in candidates if c != node and _meets(boxes[c], boxes[node])]
+        if hits:
+            order[node] = min(order[c] for c in [node, *hits])
+            if not hold(node, merge(node, hits, spans[node])):
+                return []
+            work.append(node)
+    roots = sorted(
+        (n for n in range(len(parent)) if parent[n] == n), key=order.__getitem__
+    )
+    return [(pymupdf.Rect(boxes[n]), segments[n], aligned[n]) for n in roots]
 
 
-def add_vector_figures(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+def _cells(area: tuple[int, int, int, int]) -> int:
+    return (area[2] - area[0] + 1) * (area[3] - area[1] + 1)
+
+
+_INFINITE = (
+    pymupdf.FZ_MIN_INF_RECT,
+    pymupdf.FZ_MIN_INF_RECT,
+    pymupdf.FZ_MAX_INF_RECT,
+    pymupdf.FZ_MAX_INF_RECT,
+)
+_C_FLOATS = struct.Struct("4f")
+
+
+def _empty(box: tuple) -> bool:
+    return box[0] >= box[2] or box[1] >= box[3]
+
+
+def _inverted(box: tuple) -> bool:
+    return box[0] > box[2] or box[1] > box[3]
+
+
+def _meets(a: tuple, b: tuple) -> bool:
+    """``pymupdf.Rect(a).intersects(b)``."""
+    return (
+        not (_empty(a) or a == _INFINITE or _empty(b) or b == _INFINITE)
+        and a[0] < b[2]
+        and b[0] < a[2]
+        and a[1] < b[3]
+        and b[1] < a[3]
+    )
+
+
+def _union(a: tuple, b: tuple) -> tuple:
+    """``pymupdf.Rect(a) | b``: pymupdf's own checks, then MuPDF's union of
+    the two as C floats."""
+    if a == _INFINITE or b == _INFINITE:
+        return _INFINITE
+    if _empty(b):
+        return a
+    if _empty(a):
+        return b
+    a, b = _C_FLOATS.unpack(_C_FLOATS.pack(*a)), _C_FLOATS.unpack(_C_FLOATS.pack(*b))
+    # MuPDF's own test: only an inverted box is empty there.
+    if _inverted(b) or a == _INFINITE:
+        return a
+    if _inverted(a) or b == _INFINITE:
+        return b
+    return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+
+
+def add_vector_figures(
+    blocks: list[dict], document: pymupdf.Document, drawings: Drawings | None = None
+) -> list[dict]:
+    drawings = drawings or Drawings()
     by_page: dict[int, list[int]] = defaultdict(list)
     for index, block in enumerate(blocks):
         if len(block.get("bbox") or []) == 4:
@@ -435,11 +650,8 @@ def add_vector_figures(blocks: list[dict], document: pymupdf.Document) -> list[d
         ]
         words = None
         area = page.rect.width * page.rect.height
-        for rect, segments, aligned in _figure_clusters(page):
-            if (
-                segments < VECTOR_MIN_SEGMENTS
-                or rect.width * rect.height < VECTOR_MIN_AREA * area
-            ):
+        for rect, segments, aligned in drawings.clusters(page):
+            if rect.width * rect.height < VECTOR_MIN_AREA * area:
                 continue
             if any(abs(rect & t) > 0.5 * min(abs(rect), abs(t)) for t in taken):
                 continue

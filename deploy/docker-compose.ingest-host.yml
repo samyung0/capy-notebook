@@ -88,6 +88,9 @@ services:
       CAPY_PARSE_MAX_PAGES: ${CAPY_PARSE_MAX_PAGES:?set CAPY_PARSE_MAX_PAGES}
       # Per-document JVM heap; 1g parsed 15 to 1,220 pages as fast as 8g.
       CAPY_PARSER_JVM_MAX_HEAP: ${CAPY_PARSER_JVM_MAX_HEAP:-1g}
+      # Two malloc arenas per process: LibreOffice and the JVM reserve far
+      # less address space, which a parse child's limit also binds.
+      MALLOC_ARENA_MAX: "2"
       CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
       CAPY_OFFICE_CONVERT_TIMEOUT: ${CAPY_OFFICE_CONVERT_TIMEOUT:-180}
       CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}

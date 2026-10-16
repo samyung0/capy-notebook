@@ -623,6 +623,13 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   of landing. A copy in a workspace belongs to that workspace's owner, who pays
   for it (and whose plan's per-file cap applies to a file, as for an upload);
   `created_by` is the cloner. A standalone copy is the cloner's and private.
+- File clones (single and workspace) copy ready files and partial ones
+  (`failed` with a served index, a part missing), which stay partial in the
+  copy so its owner, who alone may Retry processing, can retry them (parts
+  design Q2); pending, processing and other failed files are not copied (a
+  single clone answers 404). The file row menu, the open file's header and
+  the dashboard's recent items offer Clone on those files only
+  (`fileCanClone`).
 - The dialog prefills `Name (copy)` (before a file's extension) while the
   destination is the source's own workspace and the plain name elsewhere,
   until the user types one. A material title is unique per workspace, so a
@@ -649,9 +656,31 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   source workspace/material as a source (a copy into the source's own workspace
   takes its row as the destination, like any write) or wait for Yjs
   persistence/projection; a stale SQL projection is an explicitly accepted
-  result. A transaction that loses a race retries. Clone counters live on separate
-  rows, while source-owner and target account locks are acquired in canonical ID
-  order.
+  result.
+- Clones queue instead of colliding (Epo 2026-10-16). Before its snapshot a
+  clone takes session advisory locks on its connection: the source's fence
+  (a workspace exclusively; a file or material exclusively under its
+  workspace's shared fence) and its payer's (`clone-payer:<id>`: the actor for
+  a workspace or standalone copy, the target workspace's owner otherwise).
+  Copies of one source, and copies one account pays for, therefore run one
+  after another and never meet on blob reference counts or the payer's
+  storage counter. The clone counter is bumped after the copy commits, in its
+  own statement under the fence, so it cannot fail the copy; a crash in
+  between loses one count. Source-owner and target account locks are acquired
+  in canonical ID order.
+- Writers outside clones still meet a clone's snapshot. The one that matters
+  is the payer's storage counter (`user_storage`): an upload reservation or
+  release of the payer committing while the clone runs fails the clone's
+  storage gate with a serialization failure (measured: with a busy writer
+  every clone spent its attempts). The clone then runs again, 3 attempts in
+  all, and once they are spent the user gets 409 `clone_source_changed`
+  ("The original changed while it was being copied. Try again.") (`retryClone`
+  in `server/internal/store/share.go`). Clones of different sources that share
+  a blob (a file and an earlier copy of it, or workspaces sharing an editor
+  asset) hold different fences, so with different payers they can still meet
+  on that blob's reference row and fall to the same backstop.
+- A clone reads the new row only after its fence's connection is back in the
+  pool, so clones never hold one connection while waiting for another.
 - Referenced ready media of a cloned material is rehomed under fresh asset IDs
   owned by the copy (in its destination workspace, or standalone); it never
   retains authorization-bearing asset IDs from the source workspace.

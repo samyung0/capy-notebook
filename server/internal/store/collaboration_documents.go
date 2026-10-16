@@ -143,7 +143,19 @@ func (s *Store) postCollaboration(ctx context.Context, baseURL, secret, path str
 		}
 		return &EditRefusal{Code: code, Message: refusal.Message, Details: refusal.Details}
 	}
-	return obs.WithEventID(fmt.Errorf("%w: %s", ErrAuthorityUnavailable, response.Status), response.Header.Get(obs.ErrorEventHeader))
+	return authorityFailure(response, refusal.Code, response.Status)
+}
+
+// authorityFailure is an authority answer that is neither a success nor a
+// refusal the agent acts on. A room being reset or compacted (503
+// unavailable_target) refused the edit before anything applied, so it is an
+// expected outcome: the authority logs it and the gateway does not report it.
+func authorityFailure(response *http.Response, code, message string) error {
+	err := obs.WithEventID(fmt.Errorf("%w: %s", ErrAuthorityUnavailable, message), response.Header.Get(obs.ErrorEventHeader))
+	if response.StatusCode == http.StatusServiceUnavailable && code == string(agenttools.ErrUnavailableTarget) {
+		return obs.ExpectedError(err)
+	}
+	return err
 }
 
 func (s *Store) InspectMaterialDocument(ctx context.Context, actorID, materialID string) (MaterialInspection, error) {

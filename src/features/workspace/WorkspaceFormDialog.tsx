@@ -20,6 +20,7 @@ import { Input, InputError, InputTitle } from '@/components/ui/Input';
 import { TagSelect } from '@/components/ui/TagSelect';
 import { Textarea } from '@/components/ui/TextArea';
 import { m } from '@/i18n';
+import { unexpectedErrorId } from '@/lib/errors';
 import { iconStyles, iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
 import { CoverField } from './CoverField';
@@ -81,7 +82,10 @@ export function WorkspaceFormDialog({
   // random seed that the created cover keeps.
   const [draftSeed] = useState(randomSeed);
   const ownerId = workspace.id ?? draftSeed;
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<{
+    errorId: string | null;
+    message: string;
+  } | null>(null);
   const wasOpen = useRef(false);
   useEffect(() => {
     if (open && !wasOpen.current) {
@@ -115,7 +119,11 @@ export function WorkspaceFormDialog({
       setOpen(false);
     } catch (error) {
       // Preserve the draft; the form or the mutation's toast reports it.
-      if (errorMessage) setFormError(errorMessage(error));
+      if (errorMessage)
+        setFormError({
+          errorId: unexpectedErrorId(error),
+          message: errorMessage(error),
+        });
     }
   });
   const fields = (
@@ -246,7 +254,10 @@ export function WorkspaceFormDialog({
           </div>
         )}
       />
-      <FormAlert message={formError} />
+      <FormAlert
+        errorId={formError?.errorId}
+        message={formError?.message ?? null}
+      />
     </div>
   );
   const footer = (

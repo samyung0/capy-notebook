@@ -10,6 +10,8 @@ export interface ApiErrorBody {
   code?: string;
   detail?: string;
   message?: string;
+  /** The request's trace id, on the gateway's generic 5xx answer. */
+  traceId?: string;
   [key: string]: unknown;
 }
 
@@ -19,12 +21,15 @@ export class ApiError extends Error {
   readonly code: string | null;
   readonly status: number;
   readonly statusText: string;
+  /** The failed request's trace id, which error screens show for support. */
+  readonly traceId: string | null;
 
   constructor(
     status: number,
     statusText: string,
     detail?: string,
-    body: ApiErrorBody | null = null
+    body: ApiErrorBody | null = null,
+    traceId: string | null = body?.traceId ?? null
   ) {
     super(`${status} ${statusText}${detail ? ` — ${detail}` : ''}`);
     this.name = 'ApiError';
@@ -32,6 +37,7 @@ export class ApiError extends Error {
     this.code = body?.code ?? null;
     this.status = status;
     this.statusText = statusText;
+    this.traceId = traceId;
   }
 }
 
@@ -140,6 +146,16 @@ function errorDetail(body: ApiErrorBody | null) {
   return body?.message ?? body?.detail;
 }
 
+/** A failed request's trace id: the gateway's answer, else the id it echoed
+ * (`X-Request-Id`), else the one this request sent (a proxy answered). */
+function failedTraceId(
+  body: ApiErrorBody | null,
+  requestId: string | null,
+  sent: Record<string, string>
+): string | null {
+  return body?.traceId ?? requestId ?? sent.traceparent?.split('-')[1] ?? null;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const auth = await authHeaders();
   const res = await fetch(`${API_BASE}${path}`, {
@@ -157,7 +173,13 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     } catch {
       /* ignore */
     }
-    throw new ApiError(res.status, res.statusText, errorDetail(body), body);
+    throw new ApiError(
+      res.status,
+      res.statusText,
+      errorDetail(body),
+      body,
+      failedTraceId(body, res.headers.get('X-Request-Id'), auth)
+    );
   }
   if (res.status === 204) return undefined as T;
   const body = await res.text();
@@ -191,7 +213,13 @@ async function upload<T>(
       } catch {
         /* ignore */
       }
-      throw new ApiError(res.status, res.statusText, errorDetail(body), body);
+      throw new ApiError(
+        res.status,
+        res.statusText,
+        errorDetail(body),
+        body,
+        failedTraceId(body, res.headers.get('X-Request-Id'), auth)
+      );
     }
     onProgress?.(100);
     if (res.status === 204) return undefined as T;
@@ -227,7 +255,15 @@ async function upload<T>(
         } catch {
           /* ignore */
         }
-        fail(new ApiError(xhr.status, xhr.statusText, errorDetail(body), body));
+        fail(
+          new ApiError(
+            xhr.status,
+            xhr.statusText,
+            errorDetail(body),
+            body,
+            failedTraceId(body, xhr.getResponseHeader('X-Request-Id'), auth)
+          )
+        );
         return;
       }
       if (xhr.status === 204 || !xhr.responseText) {

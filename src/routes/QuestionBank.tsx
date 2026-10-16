@@ -112,7 +112,7 @@ import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { CopyError, describeError } from '@/lib/errors';
+import { CopyError, describeError, unexpectedErrorId } from '@/lib/errors';
 import { holdPosition, scrollSettled } from '@/lib/scrollAnchor';
 import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { useDebounced } from '@/lib/useDebounced';
@@ -2049,6 +2049,7 @@ function BankError({ error, onRetry }: { error: Error; onRetry: () => void }) {
       action={<ErrorAction onClick={onRetry}>{m.action_retry()}</ErrorAction>}
       className="py-10"
       description={description}
+      errorId={unexpectedErrorId(error)}
       icon={icon}
       title={title}
       variant="panel"

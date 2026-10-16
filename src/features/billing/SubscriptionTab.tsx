@@ -12,7 +12,7 @@ import { TabHeader } from '@/components/app/tabPanel';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { getLocale, m } from '@/i18n';
 import { track } from '@/lib/analytics';
-import { describeError } from '@/lib/errors';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 import {
   type BillingColumn,
   BillingTable,
@@ -132,6 +132,7 @@ function Invoices() {
             {m.error_action_retry()}
           </ErrorAction>
         }
+        errorId={unexpectedErrorId(error)}
         variant="panel"
       />
     );

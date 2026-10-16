@@ -14,7 +14,7 @@ import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
 import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
-import { describeError } from '@/lib/errors';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -75,6 +75,7 @@ function WorkspacesSection() {
               {m.error_action_retry()}
             </ErrorAction>
           }
+          errorId={unexpectedErrorId(error)}
           variant="panel"
         />
       ) : !recent || recent.length === 0 ? (

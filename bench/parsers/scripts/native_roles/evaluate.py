@@ -25,7 +25,7 @@ from train import confusion, page_features, scores
 
 sys.path.insert(0, str(REPO / "parser"))
 from odl.furniture import clean_inline, normalized  # noqa: E402
-from odl.pictures import VECTOR_MAX_TEXT, VECTOR_MIN_AREA, VECTOR_MIN_SEGMENTS, _figure_clusters  # noqa: E402
+from odl.pictures import VECTOR_MAX_TEXT, VECTOR_MIN_AREA, VECTOR_MIN_SEGMENTS, Drawings, _figure_clusters  # noqa: E402
 
 norm = lambda s: re.sub(r"\W", "", s.lower())
 TOK = re.compile(r"[^\W\d_]+|\d+(?:[.,]\d+)*")
@@ -283,7 +283,7 @@ def proposals(page):
     imgs = [pymupdf.Rect(i["bbox"]) for i in page.get_image_info()]
     words = [pymupdf.Rect(w[:4]) for w in page.get_text("words")]
     out = []
-    for rect, segs, _ in _figure_clusters(page):
+    for rect, segs, _ in _figure_clusters(page, Drawings()):
         if segs < VECTOR_MIN_SEGMENTS or rect.width * rect.height < VECTOR_MIN_AREA * area:
             continue
         if any(abs(rect & t) > 0.5 * min(abs(rect), abs(t)) for t in imgs if abs(t)):

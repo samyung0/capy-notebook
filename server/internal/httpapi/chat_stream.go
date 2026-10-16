@@ -118,7 +118,7 @@ func (a *api) chatStream(w http.ResponseWriter, r *http.Request) {
 	}
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		writeUnexpected(w, http.StatusInternalServerError)
 		return
 	}
 

@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -55,6 +56,47 @@ func TestSentryHumaResponseOwnership(t *testing.T) {
 			}
 			if tc.count == 1 && transport.events[0].Exception[0].Value != tc.err.Error() {
 				t.Fatal("original cause missing")
+			}
+		})
+	}
+}
+
+// The browser's document routes (Undo, bank copy) keep the authority's cause:
+// a room being reset (an expected refusal) is not reported, any other
+// unavailable authority is, with its own cause, and both answer the same 503.
+func TestDocumentRoutesReportOnlyUnexpectedAuthorityFailures(t *testing.T) {
+	previous := sentry.CurrentHub().Client()
+	defer sentry.CurrentHub().BindClient(previous)
+	transport := &sentryTestTransport{}
+	if err := sentry.Init(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: transport}); err != nil {
+		t.Fatal(err)
+	}
+	unavailable := fmt.Errorf("%w: 503 Service Unavailable", store.ErrAuthorityUnavailable)
+	for _, tc := range []struct {
+		name  string
+		err   error
+		count int
+	}{
+		{"room unavailable", obs.ExpectedError(unavailable), 0},
+		{"authority unavailable", unavailable, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			transport.events = nil
+			r := chi.NewRouter()
+			r.Use(obs.Middleware, middleware.Recoverer, obs.SentryMiddleware)
+			api := humachi.New(r, humaConfig())
+			reg(api, http.MethodPost, "/test", "test", "test", "test", 200, func(context.Context, *struct{}) (*Empty, error) { return nil, documentHTTPError(tc.err) })
+			response := httptest.NewRecorder()
+			r.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/test", nil))
+			if response.Code != http.StatusServiceUnavailable || len(transport.events) != tc.count {
+				t.Fatalf("status=%d events=%d body=%s", response.Code, len(transport.events), response.Body.String())
+			}
+			if tc.count == 1 {
+				// The outermost error is last in the chain Sentry records.
+				exceptions := transport.events[0].Exception
+				if exceptions[len(exceptions)-1].Value != unavailable.Error() {
+					t.Fatal("original cause missing")
+				}
 			}
 		})
 	}

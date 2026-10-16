@@ -313,7 +313,7 @@ func (a *api) createMaterialCollaborationToken(
 	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"), schema)
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("collaboration service unavailable", err)
+		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}
 	}
 	return &collaborationTokenOutput{Body: collaborationTokenResponse{
 		Token: token, Room: room, URL: a.cfg.CollaborationURL, Access: access,

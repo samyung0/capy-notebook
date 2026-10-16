@@ -91,22 +91,10 @@ func (a *api) undoEditOperation(ctx context.Context, in *undoEditInput) (*operat
 	}
 	receipt, err := a.s.UndoDocumentEdit(ctx, actor, inv, op)
 	if err != nil {
-		var refusal *store.EditRefusal
-		if errors.As(err, &refusal) {
-			return nil, &huma.ErrorModel{
-				Status: http.StatusConflict,
-				Title:  http.StatusText(http.StatusConflict),
-				Detail: refusal.Message,
-				Errors: []*huma.ErrorDetail{{Message: string(refusal.Code)}},
-			}
-		}
 		if errors.Is(err, store.ErrUndoUnavailable) {
 			return nil, undoUnavailable(inv)
 		}
-		if errors.Is(err, store.ErrAuthorityUnavailable) {
-			return nil, huma.Error503ServiceUnavailable("the document authority is unavailable")
-		}
-		return nil, hErr(err)
+		return nil, documentHTTPError(err)
 	}
 	return &operationOutput{Body: receipt}, nil
 }

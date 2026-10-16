@@ -16,6 +16,7 @@ import { userToast } from '@/components/ui/userToast';
 import { ImageViewer } from '@/features/files/ImageViewer';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { unexpectedErrorId } from '@/lib/errors';
 import { FileEmpty, FileError, FileLoading } from './FileStates';
 import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
 import type { OfficeCitation } from './officeProtocol';
@@ -151,6 +152,7 @@ function FileViewerContent({
   // bearer-authenticated API hands out per file.
   const {
     data: links,
+    error: linksError,
     isPending: linksPending,
     isError: linksFailed,
     refetch: refetchLinks,
@@ -204,7 +206,12 @@ function FileViewerContent({
   if (!file.hasBytes) return <FileEmpty />;
   if (linksPending) return <FileLoading />;
   if (linksFailed || !links) {
-    return <FileError onRetry={() => void refetchLinks()} />;
+    return (
+      <FileError
+        errorId={unexpectedErrorId(linksError)}
+        onRetry={() => void refetchLinks()}
+      />
+    );
   }
   return (
     <ResolvedFileView

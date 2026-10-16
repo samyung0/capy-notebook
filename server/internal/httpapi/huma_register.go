@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -262,15 +263,12 @@ func mapHTTPError(err error) error {
 		return &huma.ErrorModel{
 			Status: http.StatusLocked,
 			Title:  http.StatusText(http.StatusLocked),
-			Detail: err.Error(),
+			Detail: store.ErrOfficeEditingPaused.Error(),
 			Errors: []*huma.ErrorDetail{{Message: "office_editing_paused"}},
 		}
 	}
 	if errors.Is(err, store.ErrAuthorityUnavailable) {
-		return huma.Error503ServiceUnavailable(
-			"collaboration authority unavailable",
-			err,
-		)
+		return huma.Error503ServiceUnavailable("collaboration authority unavailable")
 	}
 	var quota *store.QuotaExceededError
 	if errors.As(err, &quota) {
@@ -359,22 +357,86 @@ func mapHTTPError(err error) error {
 			}},
 		}
 	}
-	return huma.Error500InternalServerError(err.Error())
+	// Anything else is unexpected: reportHandlerError answers the generic 500.
+	return huma.Error500InternalServerError("")
+}
+
+// unexpectedError answers a server failure that carries no machine code: a
+// fixed message and the request's trace id, never the cause's text, which
+// stays in the logs and Sentry under that id. The browser shows the id where
+// the error stays on screen.
+type unexpectedError struct {
+	huma.ErrorModel
+	TraceID string `json:"traceId,omitempty"`
+}
+
+func newUnexpectedError(status int, traceID string) *unexpectedError {
+	return &unexpectedError{
+		ErrorModel: huma.ErrorModel{Status: status, Title: http.StatusText(status), Detail: "Something went wrong"},
+		TraceID:    traceID,
+	}
+}
+
+// typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
+// carrying anything else in errors[] (an error's text, even one word) is
+// unexpected. src/lib/errors.ts keeps the same list.
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable"}
+
+func typedServerError(details []*huma.ErrorDetail) bool {
+	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {
+		return detail == nil || !slices.Contains(typedServerCodes, detail.Message)
+	})
+}
+
+// publicError is the answer for a handler's error: a 5xx that is not typed
+// (or an error huma would answer as 500) becomes the generic answer; a typed
+// 5xx and every 4xx stay as they are.
+func publicError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	var status huma.StatusError
+	if !errors.As(err, &status) {
+		return newUnexpectedError(http.StatusInternalServerError, obs.TraceID(ctx))
+	}
+	if status.GetStatus() < http.StatusInternalServerError {
+		return err
+	}
+	var model *huma.ErrorModel
+	if errors.As(err, &model) && typedServerError(model.Errors) {
+		return err
+	}
+	return newUnexpectedError(status.GetStatus(), obs.TraceID(ctx))
+}
+
+func init() {
+	// The errors huma builds itself (a request body it could not read,
+	// writeStatusErr) follow the same rule; their cause goes to the logs and
+	// Sentry instead of the body.
+	huma.NewErrorWithContext = func(ctx huma.Context, status int, msg string, errs ...error) huma.StatusError {
+		built := huma.NewError(status, msg, errs...)
+		if model, ok := built.(*huma.ErrorModel); status < http.StatusInternalServerError || ok && typedServerError(model.Errors) {
+			return built
+		}
+		if cause := errors.Join(errs...); cause != nil {
+			obs.RecordHTTPError(ctx.Context(), fmt.Errorf("%s: %w", msg, cause))
+		}
+		return newUnexpectedError(status, obs.TraceID(ctx.Context()))
+	}
 }
 
 // materialContentError answers a read whose stored document cannot be decoded.
 // Reads no longer substitute an empty envelope for undecodable content, because
 // a blank body is indistinguishable from data loss. The machine code lets the
-// client say "this note could not be loaded" instead of "not found".
-func materialContentError(err error) error {
+// client say "this note could not be loaded" instead of "not found"; the
+// decode error stays in the log.
+func materialContentError(ctx context.Context, materialID string, err error) error {
+	obs.Log(ctx).Warn("material content unreadable", "material_id", materialID, "error", err)
 	return &huma.ErrorModel{
 		Status: http.StatusUnprocessableEntity,
 		Title:  http.StatusText(http.StatusUnprocessableEntity),
 		Detail: "material content could not be decoded",
-		Errors: []*huma.ErrorDetail{{
-			Message: "material_content_unreadable",
-			Value:   map[string]any{"reason": err.Error()},
-		}},
+		Errors: []*huma.ErrorDetail{{Message: "material_content_unreadable"}},
 	}
 }
 
@@ -428,7 +490,7 @@ func reportHandlerError(ctx context.Context, err error) error {
 		cause = obs.ExpectedError(cause)
 	}
 	obs.RecordHTTPError(ctx, cause)
-	return err
+	return publicError(ctx, err)
 }
 
 // Empty is the output for endpoints that return 204 No Content.
@@ -497,7 +559,9 @@ func writeStatusErr(api huma.API, ctx huma.Context, err error) {
 	err = reportHandlerError(ctx.Context(), err)
 	var model *huma.ErrorModel
 	if !errors.As(err, &model) {
-		_ = huma.WriteErr(api, ctx, http.StatusInternalServerError, err.Error())
+		// The generic answer (see huma.NewErrorWithContext in init); a typed
+		// 5xx below keeps its code there.
+		_ = huma.WriteErr(api, ctx, errorStatus(err), "")
 		return
 	}
 	details := make([]error, len(model.Errors))

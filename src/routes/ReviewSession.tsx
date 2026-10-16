@@ -42,6 +42,7 @@ import {
 } from '@/features/study/steps';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
+import { unexpectedErrorId } from '@/lib/errors';
 import { SRS_RATINGS } from '@/lib/srs';
 
 /** A checked question's record keeps what it showed: the answers and the
@@ -131,7 +132,7 @@ function Session({
     'resume' in source ? source.resume : '',
     { enabled: 'resume' in source }
   );
-  const { data, isFetching, isError, refetch } =
+  const { data, error, isFetching, isError, refetch } =
     'resume' in source ? resumed : fresh;
   const steps = useSteps<ItemRecord>([], { skipOnce: true });
   // The session is the batch fetched when it began: ratings change the order
@@ -281,6 +282,7 @@ function Session({
                   {m.action_retry()}
                 </ErrorAction>
               }
+              errorId={unexpectedErrorId(error)}
               title={m.review_load_failed()}
               variant="panel"
             />

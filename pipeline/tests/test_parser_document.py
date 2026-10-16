@@ -223,7 +223,9 @@ def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
 ) -> None:
     seen = tmp_path / "seen"
     launcher = tmp_path / "soffice"
-    launcher.write_text(f'#!/bin/sh\nprintf "%s\\n" "$TMPDIR" "$@" > {seen}\nexit 1\n')
+    launcher.write_text(
+        f'#!/bin/sh\nprintf "%s\\n" "$MALLOC_ARENA_MAX" "$TMPDIR" "$@" > {seen}\nexit 1\n'
+    )
     launcher.chmod(0o755)
     monkeypatch.setattr(document, "SOFFICE", str(launcher))
     work = tmp_path / "work"
@@ -232,8 +234,10 @@ def test_libreoffice_imports_through_the_suffix_filter_inside_the_work_dir(
     with pytest.raises(document.OfficeConversionFailed):
         document.normalize_document(data, name, work)
 
-    tmpdir, *argv = seen.read_text().splitlines()
+    arenas, tmpdir, *argv = seen.read_text().splitlines()
     assert f"--infilter={infilter}" in argv
+    # Two malloc arenas, so it fits the parse child's address-space limit.
+    assert arenas == "2"
     # LibreOffice's temporary files and output share the job directory in the
     # work dir, which goes with the job.
     job = Path(tmpdir)

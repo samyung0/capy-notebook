@@ -9,11 +9,16 @@ lab's ``refined-final-r1`` outputs is checked against the ingest host, not here.
 from __future__ import annotations
 
 import copy
+import errno
+import itertools
 import json
+import math
+import random
 import re
 import sys
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 import pymupdf
 import pytest
@@ -706,6 +711,8 @@ def test_picture_triage_drops_slivers_and_discards_repeats() -> None:
         *icons,
         figure,
     ]
+    # Stored bytes are read from the file, as the parse opens it.
+    document = pymupdf.open("pdf", document.tobytes())
     result = pictures.classify(blocks, document, objects)
     assert result == [
         text,
@@ -715,16 +722,190 @@ def test_picture_triage_drops_slivers_and_discards_repeats() -> None:
     ]
 
 
-def test_a_picture_mupdf_cannot_decode_falls_back_to_page_matching() -> None:
-    document = pymupdf.open()
-    page = document.new_page(width=600, height=800)
-    rect = (60, 80, 180, 160)
-    _place_image(page, rect, 1)
-    xref = page.get_images()[-1][0]
-    document.xref_set_key(xref, "ColorSpace", "/NoSuchSpace")
-    block = {"type": "image", "page_idx": 0, "bbox": _grid(rect), "_native_id": 0}
+def test_separate_image_objects_with_the_same_stored_bytes_repeat() -> None:
+    # Six one-page documents each store a badge as their own object; merged,
+    # five hold identical bytes and the sixth differs in its last pixel, past
+    # the first read chunk.
+    noise = random.Random(0).randbytes(200 * 200 * 3)
+    merged = pymupdf.open()
+    for samples in [noise] * 5 + [noise[:-1] + bytes([noise[-1] ^ 1])]:
+        with pymupdf.open() as one:
+            badge = pymupdf.Pixmap(pymupdf.csRGB, 200, 200, samples, False)
+            page = one.new_page(width=600, height=800)
+            page.insert_image((60, 80, 180, 160), pixmap=badge)
+            merged.insert_pdf(one)
+    document = pymupdf.open("pdf", merged.tobytes())
+    xrefs = [page.get_images()[0][0] for page in document]
+    assert len(set(xrefs)) == 6
+    assert len(document.xref_stream_raw(xrefs[0])) > pictures.HASH_CHUNK
+    blocks = [
+        {**_picture("badge", p, (60, 80, 180, 160)), "_native_id": p} for p in range(6)
+    ]
+    result = pictures.classify(blocks, document, dict(enumerate(xrefs)))
+    assert [block["type"] for block in result] == ["discarded"] * 5 + ["image"]
 
-    assert pictures.classify([block], document, {0: xref}) == [block]
+
+def test_a_stored_image_hashes_its_palette_by_content_not_object_number() -> None:
+    # The same index bytes in each image; palettes are separate objects.
+    document = pymupdf.open()
+    document.new_page()
+    images = []
+    for colour in (b"\xff\x00\x00", b"\xff\x00\x00", b"\x00\x00\xff"):
+        palette = document.get_new_xref()
+        document.update_object(palette, "<<>>")
+        document.update_stream(palette, colour)
+        image = document.get_new_xref()
+        document.update_object(
+            image,
+            "<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+            f"/ColorSpace[/Indexed/DeviceRGB 0 {palette} 0 R]>>",
+        )
+        document.update_stream(image, bytes(16))
+        images.append(image)
+    document = pymupdf.open("pdf", document.tobytes())
+    memo: dict[int, bytes | None] = {}
+    red, copy, blue = (pictures._stored_hash(document, x, memo) for x in images)
+    assert red == copy != blue
+
+
+def _handwritten_pdf(objects: list[bytes]) -> bytes:
+    """A PDF written by hand (object n is ``objects[n - 1]``, 1 the catalog),
+    for what MuPDF would rewrite on saving."""
+    out = bytearray(b"%PDF-1.7\n")
+    offsets = []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (number, body)
+    start = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    out += b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objects) + 1,
+        start,
+    )
+    return bytes(out)
+
+
+def _badges(document: pymupdf.Document, xrefs: list[int]) -> list[dict]:
+    """Each image object a picture on its own page, as ODL reports it."""
+    blocks = [
+        {**_picture("badge", p, (60, 80, 180, 160)), "_native_id": p}
+        for p in range(len(xrefs))
+    ]
+    return pictures.classify(blocks, document, dict(enumerate(xrefs)))
+
+
+def test_copies_whose_length_is_written_differently_are_one_repeat() -> None:
+    # Five pages, then five copies of one image: /Length direct, indirect
+    # (objects 13 and 14), too long and too short. MuPDF reads to endstream.
+    def image(length: bytes) -> bytes:
+        return (
+            b"<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+            b"/ColorSpace/DeviceGray/Length %s>>\nstream\n%s\nendstream"
+            % (length, bytes(range(16)))
+        )
+
+    pages = [b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 600 800]>>"] * 5
+    lengths = [b"16", b"13 0 R", b"14 0 R", b"99999", b"5"]
+    document = pymupdf.open(
+        "pdf",
+        _handwritten_pdf(
+            [
+                b"<</Type/Catalog/Pages 2 0 R>>",
+                b"<</Type/Pages/Kids[3 0 R 4 0 R 5 0 R 6 0 R 7 0 R]/Count 5>>",
+                *pages,
+                *map(image, lengths),
+                b"16",
+                b"16",
+            ]
+        ),
+    )
+    result = _badges(document, [8, 9, 10, 11, 12])
+    assert [block["type"] for block in result] == ["discarded"] * 5
+
+
+def test_a_reference_chain_past_the_depth_is_no_identity_and_read_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Five copies of one image, each referencing one chain deeper than
+    # STORED_DEPTH: no copy has an identity, and the chain is read once.
+    document = pymupdf.open()
+    for _ in range(5):
+        document.new_page(width=600, height=800)
+    chain = [document.get_new_xref() for _ in range(pictures.STORED_DEPTH + 2)]
+    for link, after in itertools.pairwise(chain):
+        document.update_object(link, f"[{after} 0 R]")
+    document.update_object(chain[-1], "[]")
+    images = []
+    for _ in range(5):
+        image = document.get_new_xref()
+        document.update_object(
+            image,
+            "<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+            f"/ColorSpace/DeviceGray/Chain {chain[0]} 0 R>>",
+        )
+        document.update_stream(image, bytes(16))
+        images.append(image)
+    document = pymupdf.open("pdf", document.tobytes())
+    reads: Counter = Counter()
+    read = pymupdf.Document.xref_object
+    monkeypatch.setattr(
+        pymupdf.Document,
+        "xref_object",
+        lambda self, xref, *args, **kwargs: (
+            reads.update([xref]) or read(self, xref, *args, **kwargs)
+        ),
+    )
+    assert [block["type"] for block in _badges(document, images)] == ["image"] * 5
+    assert reads[chain[0]] == 1
+
+
+def test_a_reference_cycle_hashes_and_ends() -> None:
+    document = pymupdf.open()
+    document.new_page()
+    first, second, image = (document.get_new_xref() for _ in range(3))
+    document.update_object(first, f"[{second} 0 R]")
+    document.update_object(second, f"[{first} 0 R]")
+    document.update_object(
+        image,
+        "<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+        f"/ColorSpace/DeviceGray/Cycle {first} 0 R>>",
+    )
+    document.update_stream(image, bytes(16))
+    document = pymupdf.open("pdf", document.tobytes())
+    assert len(pictures._stored_hash(document, image, {})) == 32
+
+
+@pytest.mark.parametrize(
+    ("error", "fails_the_parse"),
+    [
+        (OSError("read failed"), False),
+        (MemoryError(), True),
+        (OSError(errno.ENOMEM, "Cannot allocate memory"), True),
+        (RuntimeError("code=2: malloc (400000000 bytes) failed"), True),
+    ],
+    ids=["broken", "python", "enomem", "mupdf"],
+)
+def test_a_failed_hash_is_no_identity_but_running_out_of_memory_still_raises(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException, fails_the_parse: bool
+) -> None:
+    """Running out of memory (as the parse's ParseOOM path reads it) goes on;
+    any other error is no identity."""
+    document = pymupdf.open()
+    for _ in range(5):
+        document.new_page(width=600, height=800)
+
+    def fail(*args: object) -> bytes:
+        raise error
+
+    monkeypatch.setattr(pictures, "_stored_hash", fail)
+    if fails_the_parse:
+        with pytest.raises(type(error)):
+            _badges(document, [7] * 5)
+    else:
+        assert [block["type"] for block in _badges(document, [7] * 5)] == (
+            ["image"] * 5
+        )
 
 
 def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
@@ -797,6 +978,241 @@ def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
     # stays in the body and the grid is untouched.
     assert figure["figure_labels"] == ["Peak", "Time (t)"]
     assert result[2:] == [gain, *cells]
+
+
+def _pairwise_clusters(page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
+    """Vector-figure grouping as it ran before the grid: every path against
+    every cluster, then a merge pass restarted after each merge."""
+    width, height = page.rect.width, page.rect.height
+    clusters: list[list] = []
+    for path in page.get_cdrawings():
+        x0, y0, x1, y1 = path["rect"]
+        w, h = x1 - x0, y1 - y0
+        if (w < 0.5 and h < 0.5) or (w >= 0.9 * width and h >= 0.9 * height):
+            continue
+        if (h <= 1.5 and w >= 0.3 * width) or (w <= 1.5 and h >= 0.3 * height):
+            continue
+        if path.get("fill") == (1.0, 1.0, 1.0) and not path.get("color"):
+            continue
+        rect = pymupdf.Rect(x0, y0, max(x1, x0 + 0.5), max(y1, y0 + 0.5))
+        grown = rect + (-8, -8, 8, 8)
+        hits = [c for c in clusters if c[0].intersects(grown)]
+        items = path.get("items") or ()
+        merged = [rect, len(items) or 1, sum(map(pictures._axis_aligned, items))]
+        for cluster in hits:
+            merged[0] |= cluster[0]
+            merged[1] += cluster[1]
+            merged[2] += cluster[2]
+            clusters.remove(cluster)
+        clusters.append(merged)
+    changed = True
+    while changed:
+        changed = False
+        for a in clusters:
+            for b in clusters:
+                if a is not b and a[0].intersects(b[0]):
+                    a[0] |= b[0]
+                    a[1] += b[1]
+                    a[2] += b[2]
+                    clusters.remove(b)
+                    changed = True
+                    break
+            if changed:
+                break
+    return [tuple(cluster) for cluster in clusters]
+
+
+def _strokes(page: pymupdf.Page, lines: list[tuple]) -> None:
+    """Each line its own drawing path."""
+    shape = page.new_shape()
+    for start, end in lines:
+        shape.draw_line(start, end)
+        shape.finish(closePath=False)
+    shape.commit()
+
+
+def _merging_late(dots: int, groups: int) -> pymupdf.Document:
+    """A page of separate dots, then groups whose merged box covers a stroke
+    the path-by-path pass left alone, so the last pass must merge them."""
+    side = int(dots**0.5) + 1
+    document = pymupdf.open()
+    page = document.new_page(width=2700, height=side * 12 + 140 * (groups // 20 + 2))
+    _strokes(
+        page,
+        [
+            ((x, y), (x + 1, y + 1))
+            for x, y in (
+                (10 + 12 * (i % side), 10 + 12 * (i // side)) for i in range(dots)
+            )
+        ],
+    )
+    for k in range(groups):
+        ox, oy = 10 + 130 * (k % 20), side * 12 + 30 + 130 * (k // 20)
+        # Two tall strokes, one between them, then one joining their tops.
+        _strokes(
+            page,
+            [
+                ((ox + a, oy + b), (ox + c, oy + d))
+                for a, b, c, d in (
+                    (0, 0, 2, 100),
+                    (100, 0, 102, 100),
+                    (50, 50, 51, 51),
+                    (2, 0, 100, 2),
+                )
+            ],
+        )
+    return document
+
+
+def _chart_page(document: pymupdf.Document, segments: int = 20) -> pymupdf.Page:
+    page = document.new_page(width=600, height=800)
+    page.draw_line((100, 100), (100, 300))
+    page.draw_line((100, 300), (400, 300))
+    step = 300 / segments
+    _strokes(
+        page,
+        [
+            (
+                (100 + step * i, 300 - 90 * (i % 5) / 4),
+                (100 + step * (i + 1), 300 - 90 * ((i + 1) % 5) / 4),
+            )
+            for i in range(segments)
+        ],
+    )
+    return page
+
+
+def _clusters(found: list[tuple]) -> list[tuple]:
+    return [(tuple(rect), segments, aligned) for rect, segments, aligned in found]
+
+
+def test_grid_clusters_equal_the_pairwise_grouping() -> None:
+    document = pymupdf.open()
+    _chart_page(document)
+    # Frames holding marks, an L whose box takes in a mark the path-by-path
+    # pass reaches only through the box, and separate marks in reading order.
+    page = document.new_page(width=600, height=800)
+    page.draw_rect((50, 50, 250, 150))
+    page.draw_rect((70, 70, 90, 90), fill=(0, 0, 0))
+    _strokes(
+        page,
+        [((300, 50), (302, 250)), ((302, 250), (500, 252)), ((480, 60), (481, 61))],
+    )
+    _strokes(page, [((60 + 30 * i, 600), (70 + 30 * i, 610)) for i in range(12)])
+    page.draw_rect((0, 0, 600, 800), color=None, fill=(1, 1, 1))  # white fill
+    _strokes(page, [((20, 700), (580, 700.5))])  # a page-wide rule
+    # Strokes off the page, separate and merging, each in its own cells.
+    page = document.new_page(width=600, height=800)
+    _strokes(
+        page,
+        [
+            ((-20 * i, 40 * j), (2 - 20 * i, 2 + 40 * j))
+            for i in range(1, 9)
+            for j in range(8)
+        ],
+    )
+    _strokes(
+        page,
+        [
+            ((-300, 500), (-298, 600)),
+            ((-200, 500), (-198, 600)),
+            ((-250, 550), (-249, 551)),
+            ((-298, 500), (-200, 502)),
+        ],
+    )
+    late = _merging_late(60, 12)
+    for page in [*document, *late]:
+        assert _clusters(pictures._figure_clusters(page, pictures.Drawings())) == (
+            _clusters(_pairwise_clusters(page))
+        )
+
+
+@pytest.mark.parametrize(
+    ("a", "b"),
+    [
+        ((9e6, 0, 9e6 + 0.5, 1), (0, 0, 10, 10)),
+        ((0, 0, 10, 10), (9e6, 0, 9e6 + 0.5, 1)),
+        ((1, 1, 1.5, 2), (3, 3, 4, 4)),
+    ],
+)
+def test_cluster_boxes_merge_as_pymupdf_merges_them(a: tuple, b: tuple) -> None:
+    # A box that rounds to zero width as C floats is still a box to MuPDF.
+    assert pictures._union(a, b) == tuple(pymupdf.Rect(a) | b)
+
+
+def test_clusters_that_keep_merging_take_steps_linear_in_the_paths() -> None:
+    page = _merging_late(400, 40)[0]
+    drawings = pictures.Drawings()
+    found = pictures._figure_clusters(page, drawings)
+    spent = pictures.VECTOR_MAX_STEPS - drawings.left
+    # 560 paths; the pairwise grouping compares millions of boxes here.
+    assert spent < 50 * 560
+    assert len(found) == 400 + 40 and sum(s for _, s, _ in found) == 560
+
+
+def test_drawings_off_the_page_take_steps_linear_in_the_paths() -> None:
+    document = pymupdf.open()
+    page = document.new_page(width=600, height=800)
+    # 4,000 separate 2 pt strokes, 20 pt apart, left of the page.
+    _strokes(
+        page,
+        [
+            ((-20 - 20 * i, 20 * j), (-18 - 20 * i, 2 + 20 * j))
+            for i in range(80)
+            for j in range(50)
+        ],
+    )
+    drawings = pictures.Drawings()
+    found = pictures._figure_clusters(page, drawings)
+    assert len(found) == 4000 and drawings.spent < 50 * 4000
+
+
+def test_drawings_with_nan_or_infinite_boxes_are_left_out() -> None:
+    # Content under a huge matrix gives NaN or infinite path boxes; beside
+    # ordinary strokes they are left out in few steps, as the pairwise test
+    # never let them meet anything, and the rest group as before.
+    nan, inf = math.nan, math.inf
+    paths = [{"rect": (100 + 4 * i, 100, 102 + 4 * i, 102)} for i in range(30)]
+    paths += [{"rect": (300, 300, 330, 340)}, {"rect": (305, 310, 320, 330)}]
+    odd = [
+        (nan, nan, nan, nan),
+        (inf, nan, inf, nan),
+        (110, nan, 150, 101),
+        (inf, 100, inf, 110),
+        (-inf, 300, -inf, 320),
+    ]
+    for k, rect in enumerate(odd):
+        paths.insert(6 * k + 3, {"rect": rect})
+    page = SimpleNamespace(
+        rect=pymupdf.Rect(0, 0, 600, 800), get_cdrawings=lambda: paths
+    )
+    drawings = pictures.Drawings()
+    found = _clusters(pictures._figure_clusters(page, drawings))
+    expected = _clusters(_pairwise_clusters(page))
+    assert found == [c for c in expected if all(map(math.isfinite, c[0]))]
+    assert drawings.spent < 50 * len(paths)
+
+
+def test_drawing_steps_are_a_backstop_for_the_whole_document() -> None:
+    """Past the document's steps, that page and every later one have no
+    clusters, for vector figures and heading recall alike; text is kept."""
+    document = _merging_late(100, 4)
+    _chart_page(document)
+    blocks = [
+        {
+            "type": "text",
+            "text": "Intro.",
+            "page_idx": 1,
+            "bbox": _grid((100, 60, 400, 80)),
+        }
+    ]
+    assert len(pictures.add_vector_figures(blocks, document)) == 2
+
+    drawings = pictures.Drawings(steps=200)
+    assert pictures.add_vector_figures(blocks, document, drawings) == blocks
+    # Where the steps ran out and how many were taken, for the parse's log line.
+    assert drawings.stopped_at == 0 and drawings.spent > 200
+    assert drawings.clusters(document[0]) == drawings.clusters(document[1]) == []
 
 
 @pytest.mark.parametrize(
@@ -1001,7 +1417,7 @@ def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words()
 ):
     document = pymupdf.open()
     glyph, badge, tall = (105, 91, 125, 101), (260, 91, 290, 101), (385, 86, 405, 106)
-    blocks = []
+    blocks, objects = [], {}
     for p in range(5):
         page = document.new_page(width=600, height=800)
         page.insert_text((60, 100), f"alpha{p} is", fontsize=10)
@@ -1010,14 +1426,15 @@ def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words()
         page.insert_text((295, 100), "CC BY", fontsize=10)
         page.insert_text((340, 100), f"gamma{p}", fontsize=10)
         page.insert_text((410, 100), f"delta{p}", fontsize=10)
-        for key, rect in enumerate((glyph, badge, tall)):
+        for key, (name, rect) in enumerate(
+            (("glyph", glyph), ("badge", badge), ("tall", tall))
+        ):
             _place_image(page, rect, key)
-        blocks += [
-            _picture("glyph", p, glyph),
-            _picture("badge", p, badge),
-            _picture("tall", p, tall),
-        ]
-    result = pictures.classify(blocks, document, {})
+            # ODL reports the image object each picture draws: one per key.
+            objects[len(objects)] = page.get_images()[-1][0]
+            blocks.append({**_picture(name, p, rect), "_native_id": len(objects) - 1})
+    document = pymupdf.open("pdf", document.tobytes())
+    result = pictures.classify(blocks, document, objects)
     assert [(b["type"], b["name"]) for b in result] == [
         (kind, name)
         for _ in range(5)

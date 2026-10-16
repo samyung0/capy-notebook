@@ -60,6 +60,10 @@ class ParseOutput:
     # Frozen before table recovery (furniture.py); the chunker must not infer
     # recurrence again on the replaced list.
     furniture: list[str] = field(default_factory=list)
+    # Steps the drawing clusters took, and the page where VECTOR_MAX_STEPS ran
+    # out (None when it did not).
+    drawing_steps: int = 0
+    drawings_stopped_at: int | None = None
     # The bytes every repair measured. Only set when a repair changed them,
     # so the ingest worker's heading retention and confidence read the same
     # text layer the parser did instead of the CJK-decoded original.
@@ -121,7 +125,9 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         blocks = step(pictures.classify)(
             blocks, document, java.image_objects(native_dir)
         )
-        blocks = step(pictures.add_vector_figures)(blocks, document)
+        # One document's drawing clusters, for vector figures and heading recall.
+        drawings = pictures.Drawings()
+        blocks = step(pictures.add_vector_figures)(blocks, document, drawings)
         blocks, reordered = step(order.repair)(blocks)
         blocks = step(order.move_rotated_labels)(blocks, reordered, pdf)
         blocks = step(order.split_continuations)(blocks, reordered, pdf)
@@ -149,7 +155,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         blocks = step(furniture.mark_page_numbers)(blocks, document)
         # Headings ODL folded into list items, before levels are settled.
         blocks = step(list_headings.split_headings)(blocks, document)
-        blocks = step(layout_headings.recall_headings)(blocks, document)
+        blocks = step(layout_headings.recall_headings)(blocks, document, drawings)
         # Heading levels once roles, folios and heading text are settled.
         blocks = step(levels.demote_fragments)(blocks, document)
         blocks = step(levels.demote_contents_lines)(blocks, document)
@@ -179,6 +185,8 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         stages=stages,
         repaired_fonts=repaired_fonts,
         furniture=furniture_texts,
+        drawing_steps=drawings.spent,
+        drawings_stopped_at=drawings.stopped_at,
         parsed_pdf=repaired if repaired != data else None,
     )
 

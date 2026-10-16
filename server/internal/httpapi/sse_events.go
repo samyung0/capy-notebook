@@ -73,7 +73,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.broker == nil {
-		http.Error(w, "redis not configured", http.StatusServiceUnavailable)
+		writeUnexpected(w, http.StatusServiceUnavailable)
 		return
 	}
 	wsID := r.URL.Query().Get("workspace")
@@ -82,7 +82,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !a.treeLive.Load() {
-			http.Error(w, "event stream unavailable", http.StatusServiceUnavailable)
+			writeUnexpected(w, http.StatusServiceUnavailable)
 			return
 		}
 	}
@@ -99,7 +99,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		writeUnexpected(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -108,7 +108,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 	open := func(channel string) *subscription {
 		sub, err := a.broker.subscribe(ctx, channel)
 		if err != nil && ctx.Err() == nil {
-			http.Error(w, "event stream unavailable", http.StatusServiceUnavailable)
+			writeUnexpected(w, http.StatusServiceUnavailable)
 		}
 		return sub
 	}

@@ -24,6 +24,7 @@ import { MaterialRenderProvider } from '@/features/materials/MaterialRenderConte
 import { m } from '@/i18n';
 import { draftKey, dropLostDrafts } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
+import { unexpectedErrorId } from '@/lib/errors';
 import {
   type MaterialLimitCode,
   materialLimitMessage,
@@ -306,6 +307,7 @@ function CollaborativeNoteEditor({
       />
     ) : (
       <FileError
+        errorId={unexpectedErrorId(collaborationTokenError)}
         icon="error"
         message={m.editor_collab_unavailable()}
         onRetry={() => void refetchCollaborationToken()}

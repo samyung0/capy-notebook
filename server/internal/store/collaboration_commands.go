@@ -156,7 +156,11 @@ func (s *Store) applyAuthoritativeContentCommand(
 		if message == "" {
 			message = response.Status
 		}
-		return true, obs.WithEventID(fmt.Errorf("%w: %s", ErrAuthorityUnavailable, message), response.Header.Get(obs.ErrorEventHeader))
+		var refusal struct {
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(responseBody, &refusal)
+		return true, authorityFailure(response, refusal.Code, message)
 	}
 }
 

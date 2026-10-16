@@ -7,7 +7,8 @@
     run --out DIR (--service URL --container NAME | --inprocess)
         Parses every fixture once, one at a time, and writes DIR/results.jsonl.
         --service: the parser image through the production artifact route;
-          peaks from the container's cgroup (Linux; run as root for the spool).
+          peaks from the container's cgroup, VmPeak of the parse children,
+          LibreOffice and Java from /proc (Linux; run as root for the spool).
           CI runs this.
         --inprocess: parser/app.run_document (normalization, Java, repairs,
           thumbnail, VLM page renders) in a fresh child per fixture; peaks from the process
@@ -158,10 +159,7 @@ def run_service(args, fixtures: list[dict], out: Path) -> list[dict]:
     )
     spool = spool_dir(args.container)
     health = wait_healthy(args.service, token)
-    cgroup = cgroup_dir(args.container)
-    if not cgroup.exists():  # cgroupfs driver instead of systemd
-        cgroup = next(Path("/sys/fs/cgroup").glob(f"**/*{cgroup.name[7:-6]}*"))
-    sampler = Sampler(cgroup, out / "samples.csv")
+    sampler = Sampler(cgroup_dir(args.container), out / "samples.csv")
     sampler.start()
     results = []
     for fixture in fixtures:
@@ -213,10 +211,17 @@ def run_service(args, fixtures: list[dict], out: Path) -> list[dict]:
                 "ocr_pages": payload.get("_ocr_page_count"),
                 "phases": payload.get("_phases"),
                 "stages": payload.get("_stages"),
+                "drawing_steps": payload.get("_drawing_steps"),
                 # Anonymous memory is what the parser holds; the cgroup total
                 # also counts reclaimable page cache from reading the fixtures.
                 "peak_gib": window.get("peak_anon_gib"),
                 "peak_cgroup_gib": window.get("peak_current_gib"),
+                # Peak virtual size, which a per-process RLIMIT_AS bounds: the
+                # parse children's (over their life so far), LibreOffice's and
+                # the JVM's. Recorded, not judged.
+                "child_vmpeak_gib": window.get("peak_child_vmpeak_gib"),
+                "office_vmpeak_gib": window.get("peak_office_vmpeak_gib"),
+                "java_vmpeak_gib": window.get("peak_java_vmpeak_gib"),
                 "avg_cores": window.get("avg_cores"),
                 "oom_kills": window.get("oom_kills"),
                 **stats,
@@ -385,8 +390,9 @@ def check(args) -> None:
     lines = [
         f"Parser budget ({args.machine}): {next(iter(results.values()))['parser_version']}",
         "",
-        "| Fixture | Pages | OCR | Execution s | Budget s | Peak GiB | Budget GiB | Blocks | Result |",
-        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
+        "| Fixture | Pages | OCR | Execution s | Budget s | Peak GiB | Budget GiB "
+        "| VmPeak GiB child / LibreOffice | Blocks | Result |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
     for fixture in spec["fixtures"]:
         row = results.get(fixture["id"])
@@ -418,7 +424,9 @@ def check(args) -> None:
         lines.append(
             f"| {fixture['id']} | {row.get('page_count', '')} | {row.get('ocr_pages', '')} "
             f"| {row.get('execution_s', '')} | {budget.get('execution_s', '—')} "
-            f"| {row.get('peak_gib', '')} | {budget.get('peak_gib', '—')} | {row.get('blocks', '')} "
+            f"| {row.get('peak_gib', '')} | {budget.get('peak_gib', '—')} "
+            f"| {row.get('child_vmpeak_gib', '')} / {row.get('office_vmpeak_gib', '')} "
+            f"| {row.get('blocks', '')} "
             f"| {'; '.join(problems) or 'ok'} |"
         )
     if not budgets:
