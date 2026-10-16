@@ -938,7 +938,11 @@ design, option d).
 - **Its drafts stay.** Nothing is discarded, refused or marked. The reloaded
   page applies them before it joins (or the sweep sends them), so they go
   through the new version's checks as offline edits do; a refusal there
-  gives the usual refused draft. Drafts made by a refused client never carry
+  gives the usual refused draft. A source whose edits this device stored no
+  longer counts as unsaved, so Reload brings no "Leave site?" prompt (one
+  whose storage failed still does).
+- **The next page change loads the new app**: any refused room (an editor's
+  or a reader's) marks the update available, as the nudge below does. Drafts made by a refused client never carry
   normalization damage: it never synced the new content.
 - **Readers** (the live View, study pages) are gated too: a refused read
   room stops and keeps what it painted (the stored copy or the last live

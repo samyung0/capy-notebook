@@ -19,6 +19,7 @@ import {
   type ReaderLists,
 } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
+import { markUpdateAvailable } from '@/lib/appRelease';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
   applyDrafts,
@@ -579,6 +580,7 @@ export class ItemRoom {
     this.stale = true;
     this.reconnector.dispose();
     this.provider?.disconnect();
+    markUpdateAvailable();
     this.markUnsent(false);
     if (this.recorder) this.set({ offline: 'outdated' });
   }

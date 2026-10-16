@@ -72,9 +72,11 @@ vi.mock('@/lib/editDrafts', () => ({
   recoveryDocument: () => new Y.Doc(),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
 
 const { ItemRoom } = await import('./itemRoom');
 const { applyDrafts } = await import('@/lib/editDrafts');
+const { markUpdateAvailable } = await import('@/lib/appRelease');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -316,6 +318,8 @@ it('stops when refused as outdated, a writer keeping its edits stored', async ()
   expect(onReplace).not.toHaveBeenCalled();
   expect(room.getSnapshot().offline).toBe('outdated');
   expect(drafts).toMatchObject({ discarded: 0, refused: 0 });
+  // The next page change loads the new app.
+  expect(markUpdateAvailable).toHaveBeenCalledOnce();
   room.destroy();
   expect(drafts.disposed).toBe(1);
 

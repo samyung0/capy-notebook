@@ -3,8 +3,8 @@
  * Worker stamps the SPA release it serves on every /api response
  * (`X-Capy-App-Release`); when that differs from this build's, the next page
  * change is a full page load, once per served release per tab (a stale edge
- * cannot loop it), with nothing shown. A draft send refused for the client
- * protocol marks the update too.
+ * cannot loop it), with nothing shown. A room join or draft send refused
+ * for the client protocol marks the update too.
  */
 const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
 export const APP_RELEASE_HEADER = 'X-Capy-App-Release';
@@ -25,8 +25,8 @@ export function noteServedRelease(headers: Headers) {
   if (served && RELEASE && served !== RELEASE) available = served;
 }
 
-/** This build's client protocol was refused: a newer app is served or about
- * to be. */
+/** This build's client protocol was refused (an editor's or reader's room,
+ * a draft send): a newer app is served or about to be. */
 export function markUpdateAvailable() {
   available ??= 'unknown';
 }

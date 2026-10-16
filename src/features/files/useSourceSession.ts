@@ -23,6 +23,7 @@ import {
 } from '@/features/notes/saveDelay';
 import { toastDraftsLost, toastSaveUndone } from '@/features/notes/saveFailure';
 import { m } from '@/i18n';
+import { markUpdateAvailable } from '@/lib/appRelease';
 import { SOURCE_STATE_MAX_BYTES } from '@/lib/const';
 import {
   applyDrafts,
@@ -540,7 +541,11 @@ export function useSourceSession(
         refusedBuild = true;
         clearTimeout(timer);
         provider?.disconnect();
+        markUpdateAvailable();
         rejectWaiters(new SourceSessionError(m.editor_outdated()));
+        // Stored on this device for the reloaded page: leaving loses nothing,
+        // so Reload asks nothing.
+        if (storageOk) setDirty(false);
         setLoaded({ bytes, doc: shared, session });
         setHandoff(false);
         setStatus('error');
@@ -914,8 +919,11 @@ export function useSourceSession(
       shared.on('update', (_update: Uint8Array, origin: unknown) => {
         if (origin === provider || origin === RESTORE_ORIGIN || discarded)
           return;
+        if (refusedBuild) {
+          if (!storageOk) setDirty(true);
+          return;
+        }
         setDirty(true);
-        if (refusedBuild) return;
         setStatus(
           active.recovery ? 'recovery' : offlineMode ? 'offline' : 'saving'
         );

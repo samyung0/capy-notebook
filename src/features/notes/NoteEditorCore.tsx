@@ -49,6 +49,7 @@ import { MaterialAttributionFooter } from '@/features/materials/MaterialAttribut
 import { embedKey, useNoteFooter } from '@/features/materials/useNoteFooter';
 import { NoteToolbar } from '@/features/notes/toolbar/NoteToolbar';
 import { m } from '@/i18n';
+import { markUpdateAvailable } from '@/lib/appRelease';
 import { cn } from '@/lib/cn';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
@@ -818,6 +819,7 @@ export function NoteEditorCore({
         if (stale.current) return;
         stale.current = true;
         roomProvider(editorRef.current)?.disconnect();
+        markUpdateAvailable();
         setStatus('error');
         setOutdated(true);
         reportOutdated.current?.();
