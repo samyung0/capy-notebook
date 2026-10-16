@@ -1050,14 +1050,18 @@ async def test_donor_content_is_copied_before_the_destination_becomes_ready(
         order.append("copy")
         return True
 
-    async def _ready(*_args, **_kwargs):
+    async def _publish(**_kwargs):
         order.append("ready")
+
+    async def _described(**_kwargs):
+        return None
 
     monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
     monkeypatch.setattr(worker.store, "attach_file_content", _attach)
     monkeypatch.setattr(worker, "_wait_for_content", _wait)
     monkeypatch.setattr(worker.store, "copy_content_from_donor", _copy)
-    monkeypatch.setattr(worker.store, "mark_content_ready", _ready)
+    monkeypatch.setattr(worker.store, "publish_file_content", _publish)
+    monkeypatch.setattr(worker.indexing, "fill_descriptor", _described)
     monkeypatch.setattr(
         worker,
         "_finish_ok",
@@ -1548,12 +1552,17 @@ async def test_input_limit_leaves_the_file_unindexed_without_a_sentry_event(
 @pytest.mark.parametrize("index_limit", ["", "tabular_column_limit"])
 def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
     writes: list[tuple] = []
-    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+
+    class _Recorder(_Conn):
+        def execute(self, query, params):
+            writes.append((" ".join(query.split()), *params))
+
+    monkeypatch.setattr(worker.db, "connect", lambda: _Recorder())
     monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
     monkeypatch.setattr(worker.db, "source_refresh_for", lambda _f: None)
     for name in (
         "set_file_status",
-        "set_file_indexed",
+        "set_file_indexed_as_served",
         "set_file_index_limit",
         "set_job",
         "close_credit_reservation",
@@ -1570,17 +1579,19 @@ def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
         index_limit=index_limit,
     )
 
-    file_writes = [w for w in writes if w[0].startswith("set_file")]
+    file_writes = [w for w in writes if w[0].startswith(("set_file", "DELETE"))]
+    # indexed follows the alias; a file over a limit drops it first.
     if index_limit:
         assert file_writes == [
-            ("set_file_status", "f_1", "ready"),
-            ("set_file_indexed", "f_1", False),
+            ("DELETE FROM rag_file_contents WHERE file_id=%s", "f_1"),
             ("set_file_index_limit", "f_1", "tabular_column_limit"),
+            ("set_file_status", "f_1", "ready"),
+            ("set_file_indexed_as_served", "f_1"),
         ]
     else:
         assert file_writes == [
             ("set_file_status", "f_1", "failed"),
-            ("set_file_indexed", "f_1", False),
+            ("set_file_indexed_as_served", "f_1"),
         ]
     assert (
         "set_job",
@@ -1660,6 +1671,10 @@ async def test_image_donor_reuses_authorized_caption_without_an_empty_artifact_k
     async def captions(**_kwargs):
         return True
 
+    async def described(**_kwargs):
+        return None
+
+    monkeypatch.setattr(worker.indexing, "fill_descriptor", described)
     monkeypatch.setattr(worker.store, "workspace_embedding_pin", pin)
     monkeypatch.setattr(worker.caption_cache, "lookup", caption)
     monkeypatch.setattr(worker.store, "attach_file_content", attached)
@@ -2026,6 +2041,7 @@ async def test_vlm_pages_join_their_page_and_unread_ones_are_reported(
             ],
             tmp_path,
             "f_1",
+            "scan.pdf",
         )
     finally:
         worker._resource_rates.reset(token)
@@ -2106,7 +2122,7 @@ async def test_refresh_reads_vlm_pages_through_the_caption_cache(
         {worker._RESOURCE_VLM_PAGE: {"version": 1, "creditMicrosPerUnit": 1_000_000}}
     )
     try:
-        blocks, unread = await worker._read_vlm_pages([], tmp_path, "f_1")
+        blocks, unread = await worker._read_vlm_pages([], tmp_path, "f_1", "deck.pptx")
     finally:
         worker._resource_rates.reset(rates)
         worker.db.reset_source_refresh(source)
@@ -2119,3 +2135,304 @@ async def test_refresh_reads_vlm_pages_through_the_caption_cache(
     assert [p for q, p in executed if "UPDATE source_refresh_candidates" in q] == [
         (digest, digest, "f_1", "job_refresh", "lease")
     ]
+
+
+def _busy() -> Exception:
+    from pipeline import elitellm
+
+    return elitellm.ProviderBusy("summary model is busy", retry_after=7)
+
+
+async def _noop_capture(*_args):
+    return None
+
+
+def _summary_path(monkeypatch, *, ready: bool, summary_error, fill_error=None):
+    """Fakes for _process_ingest_job from the content claim on: the content
+    is new (indexed here) or already published (the content-reuse path)."""
+    seen: dict[str, list] = {"index": [], "publish": [], "fill": [], "finish": []}
+
+    async def _pin(_ws):
+        return {
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+            "embedding_model_version": 1,
+            "embedding_dim": 2560,
+        }
+
+    async def _none(**_kwargs):
+        return None
+
+    async def _chunks(**_kwargs):
+        return ["chunk"], [], None
+
+    async def _attach(**_kwargs):
+        return {"content_id": "rgc_1", "created": not ready, "ready": ready}
+
+    async def _wait(association, **_kwargs):
+        return association
+
+    async def _index(**kwargs):
+        seen["index"].append(kwargs["content_id"])
+        return {"chunks": 1, "summary_error": summary_error}
+
+    async def _publish(**kwargs):
+        seen["publish"].append(kwargs["content_id"])
+
+    async def _fill(**kwargs):
+        seen["fill"].append(kwargs["content_id"])
+        return fill_error
+
+    def _finish(*_args, **kwargs):
+        seen["finish"].append(kwargs)
+        return True
+
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "notes.txt")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: True)
+    monkeypatch.setattr(worker, "_record_source_sha", lambda *_a: None)
+    monkeypatch.setattr(
+        worker,
+        "_acquire_local_source",
+        lambda *_a: ("/shared/sources/s", "sources/s", "aa" * 32, lambda: None),
+    )
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
+    monkeypatch.setattr(worker.store, "find_ready_donor", _none)
+    monkeypatch.setattr(worker, "_chunks_for", _chunks)
+    monkeypatch.setattr(worker.indexing, "content_hash", lambda _chunks: "digest")
+    monkeypatch.setattr(worker.store, "attach_file_content", _attach)
+    monkeypatch.setattr(worker, "_wait_for_content", _wait)
+    monkeypatch.setattr(worker.indexing, "index_file", _index)
+    monkeypatch.setattr(worker.store, "publish_file_content", _publish)
+    monkeypatch.setattr(worker.indexing, "fill_descriptor", _fill)
+    monkeypatch.setattr(worker, "_finish_ok", _finish)
+    monkeypatch.setattr(worker, "_capture_thumbnail", _noop_capture)
+    monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+    return seen
+
+
+async def _run_text_ingest(waits: int) -> None:
+    await worker._process_ingest_job(
+        {"id": "job_1", "type": "ingest", "attempts": 1, "provider_waits": waits},
+        _ingest_payload(),
+        "f_1",
+        "ws_1",
+        "txt",
+        _plan(ingest_plan.RAW_TEXT, format_name="txt"),
+    )
+
+
+async def test_summary_busy_publishes_then_repends_once(monkeypatch):
+    """Parts design test 2: a busy summary provider publishes the content
+    (searchable, chunks embedded once) and re-pends; the re-claim reuses the
+    published content and only fills the descriptor, and a provider busy
+    again leaves it pending instead of failing the file."""
+    from pipeline import elitellm
+
+    seen = _summary_path(monkeypatch, ready=False, summary_error=_busy())
+    with pytest.raises(elitellm.ProviderBusy):
+        await _run_text_ingest(waits=0)
+    assert seen["index"] == ["rgc_1"] and seen["publish"] == ["rgc_1"]
+    assert seen["finish"] == []
+
+    seen = _summary_path(
+        monkeypatch, ready=True, summary_error=None, fill_error=_busy()
+    )
+    await _run_text_ingest(waits=1)
+    assert seen["index"] == [] and seen["fill"] == ["rgc_1"]
+    (finish,) = seen["finish"]
+    assert finish["missing"] == worker.Missing(summary="summary model is busy")
+    assert finish["content_id"] == "rgc_1"
+
+    seen = _summary_path(monkeypatch, ready=True, summary_error=None)
+    await _run_text_ingest(waits=1)
+    assert seen["finish"][0]["missing"] == worker.COMPLETE
+
+
+async def test_a_failed_summary_finishes_the_file_with_the_summary_missing(
+    monkeypatch,
+):
+    seen = _summary_path(
+        monkeypatch, ready=False, summary_error=RuntimeError("401 key revoked")
+    )
+    await _run_text_ingest(waits=0)
+    assert seen["publish"] == ["rgc_1"]
+    assert seen["finish"][0]["missing"] == worker.Missing(summary="401 key revoked")
+
+
+@pytest.mark.parametrize("job_type", ["ingest", "parse"])
+async def test_a_donor_with_a_pending_descriptor_is_filled_for_the_new_file(
+    monkeypatch, job_type
+):
+    """Parts design test 9 (Q9): an ingest worker fills the copied content's
+    descriptor inline; a parse coordinator, which holds no provider keys,
+    hands off a parts-only continuation instead of finishing the file."""
+    calls: list[str] = []
+
+    async def _pin(_workspace_id):
+        return {
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+            "embedding_model_version": 1,
+            "embedding_dim": 2560,
+        }
+
+    async def _attach(**_kwargs):
+        return {"content_id": "rgc_dest", "created": True, "ready": False}
+
+    async def _wait(association, **_kwargs):
+        return association
+
+    async def _copied(**_kwargs):
+        return True
+
+    async def _publish(**_kwargs):
+        calls.append("publish")
+
+    async def _pending(_content_id):
+        return False
+
+    async def _fill(**kwargs):
+        calls.append(f"fill {kwargs['content_id']}")
+
+    def _handoff(**kwargs):
+        calls.append(f"handoff {kwargs['artifact']}")
+        return True
+
+    def _finish(*_args, **kwargs):
+        calls.append(f"finish {kwargs['missing']}")
+        return True
+
+    monkeypatch.setattr(worker.store, "workspace_embedding_pin", _pin)
+    monkeypatch.setattr(worker.store, "attach_file_content", _attach)
+    monkeypatch.setattr(worker, "_wait_for_content", _wait)
+    monkeypatch.setattr(worker.store, "copy_content_from_donor", _copied)
+    monkeypatch.setattr(worker.store, "publish_file_content", _publish)
+    monkeypatch.setattr(worker.store, "has_content_summary", _pending)
+    monkeypatch.setattr(worker.indexing, "fill_descriptor", _fill)
+    monkeypatch.setattr(worker, "_handoff_parsed_artifact", _handoff)
+    monkeypatch.setattr(worker, "_finish_ok", _finish)
+    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+
+    assert await worker._reuse_donor(
+        job={"id": "job_1", "type": job_type, "attempts": 1},
+        payload=_ingest_payload(),
+        file_id="f_1",
+        ws="ws_1",
+        name="lesson.pdf",
+        kind="pdf",
+        route=ingest_plan.DOCUMENT_PARSE,
+        donor={
+            "id": "rgc_donor",
+            "content_hash": "content-hash",
+            "embedding_provider_slug": "deepinfra",
+            "embedding_model_slug": "Qwen/Qwen3-Embedding-4B",
+            "embedding_model_version": 1,
+            "embedding_dim": 2560,
+        },
+        identity="pipeline-v1",
+        source_sha256="aa" * 32,
+    )
+
+    if job_type == "ingest":
+        assert calls == ["publish", "fill rgc_dest", f"finish {worker.COMPLETE}"]
+    else:
+        assert calls == ["publish", "handoff None"]
+
+
+def test_a_parts_only_handoff_enqueues_a_continuation_without_a_bundle(monkeypatch):
+    events: list[tuple] = []
+    payload = _ingest_payload()
+    payload.pop("parseArtifact")
+    payload.pop("parseJobId")
+    payload["localSource"] = {"key": "sources/source-1", "sha256": "aa" * 32}
+    monkeypatch.setattr(worker.db, "connect", lambda: _Conn())
+    monkeypatch.setattr(worker, "_lost_claim", lambda *_a: False)
+    monkeypatch.setattr(
+        worker.db,
+        "enqueue_job",
+        lambda _cur, job_id, job_type, queued: events.append(
+            (job_id, job_type, queued)
+        ),
+    )
+    monkeypatch.setattr(worker.db, "set_job", lambda *_a: None)
+    monkeypatch.setattr(worker.obs, "take_parse_usage", worker.obs.ParseUsage)
+
+    assert worker._handoff_parsed_artifact(
+        job={"id": "job_parse", "attempts": 1},
+        payload=payload,
+        file_id="f_1",
+        workspace_id="ws_1",
+        artifact=None,
+    )
+
+    ((job_id, job_type, queued),) = events
+    assert (job_id, job_type) == ("job_parse_ingest", "ingest")
+    assert queued["partsOnly"] is True and queued["parseJobId"] == "job_parse"
+    assert "parseArtifact" not in queued and "localSource" not in queued
+
+
+@pytest.mark.parametrize(
+    ("unread", "message"),
+    [
+        ([], "parse produced no indexable content"),
+        ([2, 3], "2 pages could not be read"),
+    ],
+)
+async def test_an_empty_parse_is_refused_before_it_is_attached(
+    monkeypatch, unread, message
+):
+    """Published empty content would be a passage-less donor: the worker
+    fails the file before attaching anything."""
+    from pipeline.jobs import TerminalError
+
+    _summary_path(monkeypatch, ready=False, summary_error=None)
+
+    async def _empty(**_kwargs):
+        return [], unread, None
+
+    async def _forbidden(**_kwargs):
+        pytest.fail("an empty parse must not be attached")
+
+    monkeypatch.setattr(worker, "_chunks_for", _empty)
+    monkeypatch.setattr(worker.store, "attach_file_content", _forbidden)
+
+    with pytest.raises(TerminalError, match=message):
+        await _run_text_ingest(waits=0)
+
+
+async def test_a_parts_only_document_job_skips_the_parse_handoff(monkeypatch):
+    """A partsOnly continuation of a PDF has no bundle and goes straight to the
+    fill, with no "queued" progress first."""
+    reached: list[tuple] = []
+    events: list[tuple] = []
+
+    async def _spec(_ws):
+        return object()
+
+    async def _parts(job, payload, file_id, ws, name):
+        reached.append((job["id"], file_id, ws, name))
+
+    monkeypatch.setattr(worker, "_workspace_embedding_spec", _spec)
+    monkeypatch.setattr(worker.registry, "pins_from_payload", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.registry, "set_job_pins", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker.accounting, "bind_ingest", lambda *_a, **_k: None)
+    monkeypatch.setattr(worker, "_resume_source_publication", lambda _job: False)
+    monkeypatch.setattr(worker, "_file_exists", lambda *_a: True)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "notes.pdf")
+    monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
+    monkeypatch.setattr(worker, "_account_allows_ingest", lambda *_a: True)
+    monkeypatch.setattr(worker, "_process_parts_bound", _parts)
+    monkeypatch.setattr(worker.progress, "publish", lambda *a, **_k: events.append(a))
+    payload = _ingest_payload(partsOnly=True)
+    payload.pop("parseArtifact")
+    payload.pop("parseJobId")
+
+    await worker._process_ingest_job_bound(
+        {"id": "job_parts", "type": "ingest", "attempts": 1, "payload": payload}
+    )
+
+    assert reached == [("job_parts", "f_1", "ws_1", "notes.pdf")]
+    assert events == []

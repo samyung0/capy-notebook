@@ -289,6 +289,9 @@ async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, c
     async def _wait(association, **_values):
         return association
 
+    async def _described(**_values):
+        return None
+
     def _broken(*_args):
         raise RuntimeError("renderer crashed")
 
@@ -313,6 +316,7 @@ async def test_a_failed_capture_leaves_the_ingest_ready(monkeypatch, tmp_path, c
     monkeypatch.setattr(worker.indexing, "content_hash", lambda _chunks: "digest")
     monkeypatch.setattr(worker.store, "attach_file_content", _attach)
     monkeypatch.setattr(worker, "_wait_for_content", _wait)
+    monkeypatch.setattr(worker.indexing, "fill_descriptor", _described)
     monkeypatch.setattr(worker, "_finish_ok", lambda *_a, **_k: True)
     monkeypatch.setattr(worker, "_publish_progress", lambda *_a, **_k: None)
     monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)

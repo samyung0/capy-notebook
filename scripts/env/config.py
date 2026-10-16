@@ -138,6 +138,15 @@ def dotenv(values):
     )
 
 
+def refuse_other_environments(values, environment):
+    """Keys scoped to other environments (the UAT switches) stay blank."""
+    for key, value in values.items():
+        if value and environment not in MANIFEST[key].get(
+            "environments", [environment]
+        ):
+            fail(f"{key} is not allowed in {environment}")
+
+
 def render(values, environment, output, revision):
     if not re.fullmatch("[0-9a-f]{40}", revision):
         fail("revision must be a lowercase full Git SHA")
@@ -145,12 +154,7 @@ def render(values, environment, output, revision):
     output.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(output, 0o700)
     coolify = target_values(values, "coolify")
-    for key, value in coolify.items():
-        # Keys scoped to other environments (the UAT publication hold) stay blank.
-        if value and environment not in MANIFEST[key].get(
-            "environments", [environment]
-        ):
-            fail(f"{key} is not allowed in {environment}")
+    refuse_other_environments(coolify, environment)
     password = values.get("POSTGRES_PASSWORD", "")
     if not password:
         fail("POSTGRES_PASSWORD is required")
@@ -188,6 +192,7 @@ def render(values, environment, output, revision):
         fail("DEPLOYMENT_APP_URL and CLERK_PUBLISHABLE_KEY are required")
     private_write(output / "build.json", json.dumps(build))
     queue = target_values(values, "ingest-queue")
+    refuse_other_environments(queue, environment)
     address = values.get("CAPY_PRIVATE_BIND_ADDRESS", "")
     password = values.get("POSTGRES_PASSWORD", "")
     try:

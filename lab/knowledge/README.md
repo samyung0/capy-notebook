@@ -37,8 +37,8 @@ license its books. Direct PDF responses cannot inherit a referring page's
 metadata. It never writes to the store: `store.py` is the single source
 of truth, dedupe of URLs and files happens there, and the programmatic gate in
 `scrape.gate` decides what is downloaded. A downloaded book normally waits for
-the developer to add it to the ingestion queue from the dashboard. The Codex
-intake monitor below can admit eligible downloads after Physics v2 is verified.
+the developer to add it to the ingestion queue from the dashboard; the
+delegated intake below admits eligible downloads itself.
 Both paths check metadata (title, authors, edition, licence, evidence) before
 anything is parsed. Edition is optional; the licence evidence is
 a URL or the PDF page stating it.
@@ -221,44 +221,43 @@ were published under. Tags and queued or unpublished books are not counted.
 (about five seconds), is cached for a minute and is fetched only while the
 tab is open; it answers 503 while the library is unreachable.
 
-## Codex intake monitor
+## Delegated intake
 
-The `kb` heartbeat uses its configured schedule and can be paused in Codex.
-When active, it automatically admits eligible downloads using
-the existing licence, metadata, language, subject and hash checks.
-Missing metadata is not invented. The automatic scraper still uses GLM; the
-delegated per-book workflow uses Sol for both source review and topic reasoning.
+The parent session admits eligible downloads with the existing licence,
+metadata, language, subject and hash checks; missing metadata is not invented.
+The automatic scraper still uses GLM. Each book's source review, repairs,
+rights screening, topic reasoning and final tags go to fresh subagents whose
+model and effort follow the latest intake model decision in
+`human/agentic-retrieval.md`, set on the subagent; the briefs name no model.
 
-The monitor pauses the ordinary ingest worker before admitting a delegated
-book, then runs parse and figures. Sol medium reviews the source and produces
+The parent pauses the ordinary ingest worker before admitting a delegated
+book, then runs parse and figures. The owner reviews the source and produces
 corrected excerpts, semantic roles, full synopses and verbatim evidence.
 Follow [the review contract](review.md) for role semantics, non-teaching text,
 short retrieval descriptions, applicability and necessary source-context links.
 The short fields supplement the full notes. Final topic assignment must retain
 them; indexing refuses metadata lost between review and final tags.
-The scheduler sends [sol-assignment.txt](sol-assignment.txt) verbatim with a
-separate assignment record and saves its exact wording/hash. Sol finishes with
-a reusable local text packet, which completes the Sol workflow. The developer
-can send saved packets for Qwen review whenever needed and have someone else
-assess its response; submission and polling are outside this workflow. Qwen checks
-roles, full notes, scope, topics and necessary context links; initial page checks
-stay with Sol. No Qwen material review, image cache or Sol feedback loop is
-required. `packet.py` produces fixed, self-contained review inputs locally;
-see the command and candidate format in [review.md](review.md). The realtime
-study loop continues using the user-selected model.
-Operational Sol packets stay local under the Git-ignored `data/knowledge-base/`.
-The first batch is in
-`sol-first-batch-2026-09-21/<book-id>/packet-exported.json`. The full backfill
-uses `sol-backfill-2026-09-21/inventory.json` and per-book, per-scope artifacts
-under that directory. The current main task orchestrates fresh Sol medium
-workers over the remaining existing excerpts; completed scopes are preserved
-across heartbeat runs. Saving a packet does not submit it to Qwen or upload it
-to Drive.
+The parent sends [sol-assignment.txt](sol-assignment.txt) verbatim with a
+separate assignment record and saves its exact wording/hash. The owner finishes
+with a reusable local text packet. The developer can send saved packets for
+Qwen review whenever needed and have someone else assess its response;
+submission and polling are outside this workflow. Qwen checks roles, full
+notes, scope, topics and necessary context links; initial page checks stay with
+the owner. No Qwen material review, image cache or feedback loop is required.
+`packet.py` produces fixed, self-contained review inputs locally; see the
+command and candidate format in [review.md](review.md). The realtime study loop
+continues using the user-selected model.
+Packets stay local under the Git-ignored `data/knowledge-base/`. Earlier
+artifacts keep their directory names: the first batch is in
+`sol-first-batch-2026-09-21/<book-id>/packet-exported.json`, the backfill in
+`sol-backfill-2026-09-21/` (`inventory.json` and per-book, per-scope
+artifacts) and new-book intake in `opus-intake-2026-09-23/`. Saving a packet
+does not submit it to Qwen or upload it to Drive.
 The optional [Qwen batch commands](qwen-batch.md) prepare and submit selected
 saved packets, poll every ten minutes and store raw responses for later
 assessment. They require an explicit thinking-mode choice, preserve strict JSON
-output without token caps, and never apply findings or start Sol work.
-Topics follows review in the same Sol owner's assignment. Use `topics.py --run
+output without token caps, and never apply findings or start intake work.
+Topics follows review in the same owner's assignment. Use `topics.py --run
 <run> --book <id> --review-context <full-review.json> --export-context <context>`
 to refresh the subject catalog and save the full reviewed context, rules and
 input hashes. The owner produces `reused`/`proposed` topics, then imports them
@@ -293,8 +292,8 @@ replacement tags for exactly the reviewed excerpts. Each inspection record
 names the physical `pdf_page`, `rendered_page_path` and source-grounded
 `observation`; record the pages actually checked. Preserve the full synopsis.
 The prior version stays available for rollback. This does not start the intake scheduler.
-Source-backed extraction repairs use [source-repair.md](source-repair.md): Sol
-returns chunk replacements bound to the original corpus, chunk text and exact
+Source-backed extraction repairs use [source-repair.md](source-repair.md): the
+owner returns chunk replacements bound to the original corpus, chunk text and exact
 inspected page images. `enrich.py` projects and validates repaired excerpt and
 indexed text, then backs up the original corpus when applying. The parent
 reindexes, publishes and verifies actual chunk text. Earlier unresolved reports
@@ -305,9 +304,9 @@ reviewed excerpts whose old reports lack structured issue lists. Whole-book
 owners include those saved reports when assessing prior source limits.
 Source-authored errors and unavailable content retain explicit limits.
 
-The monitor allows up to eight active books across preparation, source review
+The parent allows up to eight active books across preparation, source review
 and indexing. Parser requests respect the configured document capacity. Up to
-six Sol agents can run alongside the parent; large books can share those
+six agents can run alongside the parent; large books can share those
 slots through disjoint page/excerpt scopes, with one owner assembling the book.
 The assigned owner advances the dashboard through publication automatically.
 No stage waits for user approval; existing validation and eligibility checks
@@ -317,8 +316,8 @@ The Physics trial and current repair artifacts are under
 `data/knowledge-base/runs/physics/sol-trial/` and
 `data/knowledge-base/runs/physics/manual-repair-2026-09-20/`. See the
 [trial report](../../bench/rag/reports/2026-09-20-delegated-knowledge-repair.md)
-for what has been checked and what has not. This monitor is attached to the
-Codex task; it is not a timer inside `server.py`.
+for what has been checked and what has not. The parent is a developer session,
+not a timer inside `server.py`.
 
 Checks: `uv run --project pipeline python lab/knowledge/server.py --check`;
 tests: `uv run --project pipeline --extra test pytest lab/knowledge/tests -q`.

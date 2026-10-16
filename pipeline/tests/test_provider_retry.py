@@ -277,17 +277,19 @@ def test_busy_retry_after_rounds_up_and_never_says_now():
     )
 
 
-async def test_caption_retries_transient_failures_too(monkeypatch, sleeps, ingest_mode):
+async def test_caption_retries_transient_failures_and_empty_answers(
+    monkeypatch, sleeps, ingest_mode
+):
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
     calls = 0
 
     async def complete(*_args, **_kwargs):
         nonlocal calls
         calls += 1
-        if calls < 3:
+        if calls == 1:
             raise elitellm.ProviderError("upstream reset", status_code=502)
         return elitellm.chat_response(
-            {"role": "assistant", "content": "a chart"},
+            {"role": "assistant", "content": "" if calls == 2 else "a chart"},
             finish_reason="stop",
             usage={"prompt_tokens": 1, "completion_tokens": 1},
         )
@@ -381,12 +383,13 @@ async def _summary():
     )
 
 
-@pytest.mark.parametrize("call", ["summary", "vlm"])
+@pytest.mark.parametrize("call", ["summary", "vlm", "caption"])
 @pytest.mark.parametrize(("status", "expected_calls"), [(500, 2), (401, 1)])
 async def test_ingest_summary_and_vlm_retry_transient_errors_not_client_errors(
     monkeypatch, sleeps, ingest_mode, call, status, expected_calls
 ):
-    """Parts design Q7: a 5xx takes the next attempt; a 401 ends the call."""
+    """Parts design Q7, for the summary, the VLM page read and the standalone
+    image caption: a 5xx takes the next attempt; a 401 ends the call."""
     monkeypatch.setattr(models.registry, "captioning_spec", lambda: _spec())
     calls = 0
 
@@ -401,6 +404,9 @@ async def test_ingest_summary_and_vlm_retry_transient_errors_not_client_errors(
     if call == "vlm":
         read = await models.read_page("data:image/jpeg;base64,AA==", credit_micros=1)
         assert read == ("text" if status == 500 else None)
+    elif call == "caption":
+        caption = await models.caption_image("data:image/png;base64,AA==", "describe")
+        assert caption == ("text" if status == 500 else "")
     elif status == 500:
         assert await _summary() == "text"
     else:

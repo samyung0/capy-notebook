@@ -276,8 +276,14 @@ async def test_unreadable_owner_cannot_donate_but_prior_target_keeps_its_grant(
             content_hash="donor-content",
             source_sha256=SHA,
             pipeline_identity="image-review",
+            claim_job_id="job_donor",
         )
-        await store.mark_content_ready(donor_content["content_id"])
+        await store.publish_file_content(
+            workspace_id=parent,
+            file_id=donor_id,
+            content_id=donor_content["content_id"],
+            claim_job_id="job_donor",
+        )
         destination = await store.attach_file_content(
             workspace_id=workspace.id,
             file_id=late,

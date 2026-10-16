@@ -199,6 +199,10 @@ class Config:
     # scripted-tools marker takes its model responses from its own script. An
     # invalid value, or the switch outside UAT, stops every pipeline process.
     uat_scripted_tools: bool = uat_only_flag("RETRIEVAL_UAT_SCRIPTED_TOOLS")
+    # UAT only (ingest/uat.py): file-name markers fail the descriptor or the
+    # VLM page reads, or script the page reads, without a provider call.
+    uat_fail_parts: bool = uat_only_flag("CAPY_UAT_FAIL_PARTS")
+    uat_scripted_vlm: bool = uat_only_flag("INGEST_UAT_SCRIPTED_VLM")
     # Pre-model gathering budget when no catalog model has been selected yet.
     # Provider calls use the selected catalog row's required context window.
     llm_input_budget_tokens: int = int(_env("CAPY_LLM_INPUT_BUDGET_TOKENS", "50000"))

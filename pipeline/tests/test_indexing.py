@@ -18,7 +18,7 @@ import pytest
 from pipeline import registry
 from pipeline.config import cfg
 from pipeline.retrieval import indexing, store
-from pipeline.retrieval.chunking import chunk_markdown
+from pipeline.retrieval.chunking import Chunk, chunk_markdown, search_query_terms
 
 pytestmark = pytest.mark.integration
 
@@ -70,8 +70,19 @@ def fake_models(monkeypatch):
 
 
 async def _attach(ws, file_id: str) -> str:
+    """Published content to index into, as reindexing an existing file does
+    (``index_file`` leaves publication to the worker)."""
     association = await store.attach_file_content(
-        workspace_id=ws.id, file_id=file_id, content_hash=_SOURCE_HASH
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_hash=_SOURCE_HASH,
+        claim_job_id="job_index",
+    )
+    await store.publish_file_content(
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_id=association["content_id"],
+        claim_job_id="job_index",
     )
     return association["content_id"]
 
@@ -120,9 +131,7 @@ async def test_every_chunk_is_stored_with_the_vector_embedded_for_it(
     assert progress == [70, 85, 95]
 
 
-async def test_the_summary_lands_under_the_chunk_fingerprint_and_marks_content_ready(
-    workspace, fake_models
-):
+async def test_the_summary_lands_under_the_chunk_fingerprint(workspace, fake_models):
     file_id = workspace.add_file("photosynthesis.md")
     content_id = await _attach(workspace, file_id)
     chunks = chunk_markdown(_DOC)
@@ -151,20 +160,15 @@ async def test_the_summary_lands_under_the_chunk_fingerprint_and_marks_content_r
     body = fake_models["summarized"][0][-1]["content"]
     assert "Carbon fixation builds sugar" in body
     assert "Calvin cycle" in body
-    assert (
-        workspace.scalar("SELECT status FROM rag_contents WHERE id = %s", (content_id,))
-        == "ready"
-    )
 
 
-async def test_content_with_no_passages_spends_nothing_and_stays_unready(
+async def test_content_with_no_passages_spends_nothing_and_writes_no_descriptor(
     workspace, fake_models
 ):
-    """An empty parse must not reach a provider, and must not look indexed.
-
-    Ready content is what donor reuse copies. Marking an empty parse ready would
-    hand every later upload of the same bytes a document with no passages.
-    """
+    """An empty parse reaches no provider and writes no chunks or descriptor,
+    outside a text refresh (``allow_empty``). The worker refuses an empty parse
+    before attaching it, so it never becomes ready, passage-less donor content
+    (test_ingest_worker.py)."""
     file_id = workspace.add_file("blank.md")
     content_id = await _attach(workspace, file_id)
 
@@ -174,7 +178,7 @@ async def test_content_with_no_passages_spends_nothing_and_stays_unready(
         file_id=file_id,
         file_name="blank.md",
         chunks=[],
-    ) == {"chunks": 0}
+    ) == {"chunks": 0, "summary_error": None}
 
     assert fake_models == {"embedded": [], "summarized": []}
     assert (
@@ -190,10 +194,6 @@ async def test_content_with_no_passages_spends_nothing_and_stays_unready(
             (content_id,),
         )
         == []
-    )
-    assert (
-        workspace.scalar("SELECT status FROM rag_contents WHERE id = %s", (content_id,))
-        == "processing"
     )
 
 
@@ -252,3 +252,98 @@ async def test_a_refresh_reuses_the_descriptor_until_the_change_reaches_the_shar
     assert await index() == 0
     assert len(fake_models["summarized"]) == 2
     assert "Rewritten passage 3" in fake_models["summarized"][-1][-1]["content"]
+
+
+def _pages(pages: list[int]) -> list[Chunk]:
+    return [
+        Chunk(
+            text=f"Page {p} explains osmosis across membranes, passage {p}.",
+            page_start=p,
+            page_end=p,
+        )
+        for p in pages
+    ]
+
+
+async def _reingest(ws, file_id: str, chunks: list[Chunk], job: str) -> str:
+    """The worker's attach, index and publish for one non-refresh ingest."""
+    association = await store.attach_file_content(
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_hash=indexing.content_hash(chunks),
+        claim_job_id=job,
+    )
+    await indexing.index_file(
+        workspace_id=ws.id,
+        content_id=association["content_id"],
+        file_id=file_id,
+        file_name="scan.pdf",
+        chunks=chunks,
+        claim_job_id=job,
+    )
+    await store.publish_file_content(
+        workspace_id=ws.id,
+        file_id=file_id,
+        content_id=association["content_id"],
+        claim_job_id=job,
+    )
+    return association["content_id"]
+
+
+async def _searchable(ws, file_id: str) -> str:
+    """The content search serves for the file (scoped by its alias)."""
+    hits = await store.hybrid_search(
+        workspace_id=ws.id,
+        vector=_one_hot(0),
+        terms=search_query_terms("osmosis"),
+        file_ids=[file_id],
+        candidates=10,
+    )
+    return _rows(
+        ws, "SELECT content_id FROM rag_chunks WHERE id = %s", (hits[0]["id"],)
+    )[0][0]
+
+
+async def test_reingest_keeps_the_previous_index_until_publish(workspace, fake_models):
+    """A re-ingest (Retry processing that read a missing page) leaves the old
+    index searchable while it runs, lends it its vectors, and replaces it only
+    at publish; a failed one leaves it in place (parts design R5)."""
+    file_id = workspace.add_file("scan.pdf")
+    first = await _reingest(workspace, file_id, _pages([1, 3]), "job_first")
+    fake_models["embedded"].clear()
+
+    retry = _pages([1, 2, 3])
+    association = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_hash=indexing.content_hash(retry),
+        claim_job_id="job_retry",
+    )
+    await indexing.index_file(
+        workspace_id=workspace.id,
+        content_id=association["content_id"],
+        file_id=file_id,
+        file_name="scan.pdf",
+        chunks=retry,
+        claim_job_id="job_retry",
+    )
+    assert await _searchable(workspace, file_id) == first
+    assert fake_models["embedded"] == [[retry[1].indexed_text()]]
+    await store.publish_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_id=association["content_id"],
+        claim_job_id="job_retry",
+    )
+    assert await _searchable(workspace, file_id) == association["content_id"]
+    assert _rows(workspace, "SELECT 1 FROM rag_contents WHERE id = %s", (first,)) == []
+
+    failed = _pages([1, 2, 3, 4])
+    claim = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=file_id,
+        content_hash=indexing.content_hash(failed),
+        claim_job_id="job_failed",
+    )
+    await store.abandon_content(claim["content_id"])
+    assert await _searchable(workspace, file_id) == association["content_id"]

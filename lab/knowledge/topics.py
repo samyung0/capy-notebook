@@ -269,14 +269,15 @@ def import_proposal(
     provenance = artifact.get("model_provenance", {})
     if not all(
         isinstance(provenance.get(k), str) and provenance[k].strip()
-        for k in ("model", "reasoning_effort", "agent_id")
+        for k in ("model", "reasoning_effort", "agent_id", "transport")
     ):
         raise ValueError(
-            "topic proposal needs model, reasoning_effort and agent_id provenance"
+            "topic proposal needs model, reasoning_effort, agent_id and transport"
+            " provenance"
         )
     return answer, {
         "model": provenance["model"],
-        "endpoint": provenance.get("transport", "codex-subagent"),
+        "endpoint": provenance["transport"],
         "request_id": provenance["agent_id"],
         "reasoning_effort": provenance["reasoning_effort"],
         "usage": None,

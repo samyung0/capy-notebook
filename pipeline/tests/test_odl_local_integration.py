@@ -231,7 +231,9 @@ async def test_local_parser_index_capture_citations(workspace, monkeypatch, tmp_
 
     monkeypatch.setattr(models, "read_page", read_page)
     file_id = workspace.add_file("integration.pdf")
-    content, unread = await worker._read_vlm_pages(content, raw, file_id)
+    content, unread = await worker._read_vlm_pages(
+        content, raw, file_id, "integration.pdf"
+    )
     assert unread == [] and len(reads) == 1 and reads[0] > 0
     assert vlm_pages(content) == {2}
     chunks = await asyncio.to_thread(_page_chunks, content, raw, source)

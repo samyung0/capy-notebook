@@ -820,9 +820,9 @@ def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool:
     if not file_id:
         return False
     cur.execute(
-        """
+        f"""
         UPDATE files
-        SET status='failed', indexed=false
+        SET status='failed', indexed={SERVES_INDEX}
         WHERE id=%s AND revision=%s AND COALESCE(source_etag, '')=%s
           AND status IN ('pending','processing') AND trashed_at IS NULL
         """,
@@ -1278,6 +1278,22 @@ def set_file_indexed(cur, file_id: str, indexed: bool) -> None:
             "UPDATE source_documents SET reprocess_at=NULL WHERE file_id=%s AND reprocess_at IS NOT NULL",
             (file_id,),
         )
+
+
+# A failed file is indexed exactly when its alias serves ready content, which
+# is what search reads: a failed re-ingest leaves the previous index in place.
+SERVES_INDEX = """EXISTS(SELECT 1 FROM rag_file_contents fc
+    JOIN rag_contents rc ON rc.id=fc.content_id AND rc.status='ready'
+    WHERE fc.file_id=files.id)"""
+
+
+def set_file_indexed_as_served(cur, file_id: str) -> None:
+    if source_refresh_for(file_id) is not None:
+        return
+    cur.execute(
+        f"UPDATE files SET indexed={SERVES_INDEX} WHERE id=%s AND trashed_at IS NULL",
+        (file_id,),
+    )
 
 
 def set_file_index_limit(cur, file_id: str, code: str) -> None:

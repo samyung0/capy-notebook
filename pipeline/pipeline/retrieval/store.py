@@ -338,6 +338,27 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         raise SourceSupersededError("source candidate was superseded")
 
 
+async def _lock_file_source(
+    conn, file_id: str, source_revision: int, source_etag: str
+) -> None:
+    """Fence an alias write to the file revision the job ingests."""
+    current = await conn.execute(
+        """
+        SELECT revision, COALESCE(source_etag, '') AS source_etag
+        FROM files WHERE id = %s AND trashed_at IS NULL FOR UPDATE
+        """,
+        (file_id,),
+    )
+    source = await current.fetchone()
+    if source is None:
+        raise SourceSupersededError("ingest source no longer exists")
+    if (
+        int(source["revision"]) != int(source_revision)
+        or str(source["source_etag"] or "") != source_etag
+    ):
+        raise SourceSupersededError("ingest source was superseded by a newer revision")
+
+
 async def attach_file_content(
     *,
     workspace_id: str,
@@ -354,6 +375,11 @@ async def attach_file_content(
     ``claim_job_id`` records who owns the claim when this call creates it. On
     conflict the existing owner is left alone: the caller is a waiter, and
     ``created=False`` is what tells it so.
+
+    The file's alias moves now unless it serves ready content and the attached
+    content is not ready yet: a re-ingest keeps the previous index searchable
+    (and lending its vectors and descriptor to ``index_file``) until
+    ``publish_file_content``, so a failed retry leaves it in place.
     """
     content_id = f"rgc_{secrets.token_hex(8)}"
     refresh = jobdb.source_refresh_for(file_id)
@@ -362,23 +388,7 @@ async def attach_file_content(
         if refresh is not None:
             await _lock_source_candidate(conn, refresh)
         elif source_revision is not None:
-            current = await conn.execute(
-                """
-                SELECT revision, COALESCE(source_etag, '') AS source_etag
-                FROM files WHERE id = %s AND trashed_at IS NULL FOR UPDATE
-                """,
-                (file_id,),
-            )
-            source = await current.fetchone()
-            if source is None:
-                raise SourceSupersededError("ingest source no longer exists")
-            if (
-                int(source["revision"]) != int(source_revision)
-                or str(source["source_etag"] or "") != source_etag
-            ):
-                raise SourceSupersededError(
-                    "ingest source was superseded by a newer revision"
-                )
+            await _lock_file_source(conn, file_id, source_revision, source_etag)
         cur = await conn.execute(
             """
             INSERT INTO rag_contents
@@ -437,14 +447,60 @@ async def attach_file_content(
                 ON CONFLICT (file_id) DO UPDATE SET
                     workspace_id = EXCLUDED.workspace_id,
                     content_id = EXCLUDED.content_id
+                WHERE %s OR NOT EXISTS (
+                    SELECT 1 FROM rag_contents served
+                    WHERE served.id = rag_file_contents.content_id
+                      AND served.status = 'ready'
+                )
                 """,
-                (file_id, workspace_id, row["id"]),
+                (file_id, workspace_id, row["id"], row["status"] == "ready"),
             )
         return {
             "content_id": row["id"],
             "ready": row["status"] == "ready",
             "created": created,
         }
+
+
+async def publish_file_content(
+    *,
+    workspace_id: str,
+    file_id: str,
+    content_id: str,
+    claim_job_id: str,
+    source_revision: int | None = None,
+    source_etag: str = "",
+) -> None:
+    """Mark a file's claimed content ready and move its alias onto it in one
+    transaction; the orphan trigger then drops the previous content. A source
+    refresh's candidate is only marked ready: Go's publication aliases it."""
+    refresh = jobdb.source_refresh_for(file_id)
+    db = await pool()
+    async with db.connection() as conn, conn.transaction():
+        if refresh is None and source_revision is not None:
+            await _lock_file_source(conn, file_id, source_revision, source_etag)
+        cur = await conn.execute(
+            """
+            UPDATE rag_contents
+            SET status = 'ready', claim_job_id = NULL, updated_at = now()
+            WHERE id = %s AND claim_job_id = %s
+            """,
+            (content_id, claim_job_id),
+        )
+        if not cur.rowcount:
+            raise RetryableError("content claim taken over")
+        if refresh is None:
+            await conn.execute(
+                """
+                INSERT INTO rag_file_contents (file_id, workspace_id, content_id)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (file_id) DO UPDATE SET
+                    workspace_id = EXCLUDED.workspace_id,
+                    content_id = EXCLUDED.content_id
+                WHERE rag_file_contents.content_id <> EXCLUDED.content_id
+                """,
+                (file_id, workspace_id, content_id),
+            )
 
 
 async def steal_stale_content(
@@ -536,33 +592,6 @@ async def find_ready_donor(
         )
         row = await cur.fetchone()
     return dict(row) if row else None
-
-
-async def mark_content_ready(
-    content_id: str, *, claim_job_id: str | None = None
-) -> None:
-    db = await pool()
-    async with db.connection() as conn:
-        if claim_job_id is None:
-            await conn.execute(
-                """
-                UPDATE rag_contents
-                SET status = 'ready', claim_job_id = NULL, updated_at = now()
-                WHERE id = %s
-                """,
-                (content_id,),
-            )
-            return
-        cur = await conn.execute(
-            """
-            UPDATE rag_contents
-            SET status = 'ready', claim_job_id = NULL, updated_at = now()
-            WHERE id = %s AND claim_job_id = %s
-            """,
-            (content_id, claim_job_id),
-        )
-        if not cur.rowcount:
-            raise RetryableError("content claim taken over")
 
 
 async def content_status(content_id: str) -> str | None:
@@ -981,15 +1010,65 @@ async def published_summary(
     return {**dict(row), "chunks": chunks}
 
 
-async def content_fingerprint(content_id: str) -> str:
+async def has_content_summary(content_id: str) -> bool:
+    """False while the content's descriptor is pending (a missing row)."""
     db = await pool()
     async with db.connection() as conn:
         cur = await conn.execute(
-            "SELECT fingerprint FROM rag_content_summaries WHERE content_id = %s",
+            "SELECT 1 FROM rag_content_summaries WHERE content_id = %s",
             (content_id,),
         )
+        return await cur.fetchone() is not None
+
+
+async def fill_content_summary(
+    *, workspace_id: str, content_id: str, descriptor: str
+) -> None:
+    """Insert a pending descriptor, never overwriting one another job or a
+    refresh wrote meanwhile. The fingerprint is the content hash, which is
+    ``indexing.content_hash`` of the stored chunks."""
+    db = await pool()
+    async with db.connection() as conn:
+        await conn.execute(
+            """
+            INSERT INTO rag_content_summaries
+                (content_id, workspace_id, fingerprint, descriptor, change_share,
+                 updated_at)
+            SELECT id, workspace_id, content_hash, %s, 0, now()
+            FROM rag_contents WHERE id = %s AND workspace_id = %s
+            ON CONFLICT (content_id) DO NOTHING
+            """,
+            (descriptor, content_id, workspace_id),
+        )
+
+
+async def file_content(file_id: str) -> dict[str, Any] | None:
+    """The content a parts-only job fills: the source refresh candidate's
+    under a bound refresh, else the file's alias."""
+    refresh = jobdb.source_refresh_for(file_id)
+    db = await pool()
+    async with db.connection() as conn:
+        if refresh is not None:
+            cur = await conn.execute(
+                """
+                SELECT rc.id, rc.content_hash, rc.status, rc.pipeline_identity
+                FROM source_refresh_candidates c
+                JOIN rag_contents rc ON rc.id = c.content_id
+                WHERE c.file_id = %s AND c.job_id = %s AND c.lease_token = %s
+                """,
+                (file_id, refresh["_jobId"], refresh["sourceLeaseToken"]),
+            )
+        else:
+            cur = await conn.execute(
+                """
+                SELECT rc.id, rc.content_hash, rc.status, rc.pipeline_identity
+                FROM rag_file_contents fc JOIN rag_contents rc ON rc.id = fc.content_id
+                WHERE fc.file_id = %s
+                """,
+                (file_id,),
+            )
         row = await cur.fetchone()
-        return str(row["fingerprint"]) if row else ""
+    return dict(row) if row else None
 
 
 # ---------------------------------------------------------------- search

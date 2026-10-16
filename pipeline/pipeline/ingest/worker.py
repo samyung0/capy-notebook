@@ -30,6 +30,7 @@ import tempfile
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 
 import requests
@@ -64,7 +65,7 @@ from ..retrieval.confidence import VLM_RECOVERY, score_chunks, vlm_pages
 from ..retrieval.headings import retain_headings
 from ..retrieval.packing import pack_blocks
 from ..store import blobstore, db
-from . import capacity, import_stage, source_text, telemetry, thumbnail
+from . import capacity, import_stage, source_text, telemetry, thumbnail, uat
 from . import plan as ingest_plan
 
 log = logging.getLogger("capy.worker")
@@ -441,6 +442,24 @@ def _resume_source_publication(job: dict) -> bool:
     return True
 
 
+@dataclass(frozen=True)
+class Missing:
+    """The parts an ingest leaves missing: the pending descriptor's failure
+    and the 1-based pages the VLM left unread. ``unread`` marks unread pages
+    this job did not read itself (a parts-only job on content whose
+    ``pipeline_identity`` is NULL), so it cannot name them."""
+
+    summary: str | None = None
+    pages: tuple[int, ...] = ()
+    unread: bool = False
+
+    def __bool__(self) -> bool:
+        return self.summary is not None or bool(self.pages) or self.unread
+
+
+COMPLETE = Missing()
+
+
 def _finish_ok(
     file_id: str,
     job_id: str,
@@ -453,14 +472,21 @@ def _finish_ok(
     source_revision: int | None = None,
     source_etag: str = "",
     parse_fee: bool = True,
-    unread_pages: list[int] | None = None,
+    content_id: str | None = None,
+    missing: Missing = COMPLETE,
 ) -> bool:
-    """Commit a finished ingest. With ``unread_pages`` the file ends failed
-    with its readable pages indexed, so Retry processing reads the rest."""
+    """Commit a finished ingest. With ``missing`` parts the file ends failed
+    with its content indexed, so Retry processing fills them in.
+
+    ``content_id`` is the content the job published, which the file must
+    still alias (else the job ends superseded); once it is complete, every
+    other file aliasing it that is failed with indexed content goes ready.
+    A source refresh leaves the status to Go's publication."""
     refresh = db.source_refresh_for(file_id)
     if refresh is not None:
         return _finish_source_refresh(file_id, job_id, content_hash)
     usage = obs.take_parse_usage()
+    siblings: list[str] = []
     try:
         with db.connect() as conn:
             with conn.cursor() as cur:
@@ -482,6 +508,16 @@ def _finish_ok(
                     raise TerminalError(
                         "ingest stopped because workspace access is no longer writable"
                     )
+                if content_id is not None:
+                    cur.execute(
+                        "SELECT content_id FROM rag_file_contents WHERE file_id=%s FOR UPDATE",
+                        (file_id,),
+                    )
+                    alias = cur.fetchone()
+                    if alias is None or alias[0] != content_id:
+                        raise db.SourceSupersededError(
+                            "the file's index moved before the ingest finished"
+                        )
                 _record_parse_usage_tx(
                     cur,
                     usage=usage,
@@ -495,7 +531,7 @@ def _finish_ok(
                     charged=parse_fee,
                 )
                 db.settle_credit_reservation(cur, reservation_id)
-                db.set_file_status(cur, file_id, "failed" if unread_pages else "ready")
+                db.set_file_status(cur, file_id, "failed" if missing else "ready")
                 db.set_file_indexed(cur, file_id, indexed)
                 if content_hash is not None:
                     db.set_file_content_hash(cur, file_id, content_hash)
@@ -503,11 +539,22 @@ def _finish_ok(
                     r"UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL AND (kind='pdf' OR lower(name) ~ '\.(docx|xlsx|pptx)$') AND parse_mode='fast'",
                     (file_id,),
                 )
+                if content_id is not None and not missing:
+                    # Duplicate uploads share the content row, so its parts;
+                    # the row itself must show both present.
+                    cur.execute(
+                        """UPDATE files SET status='ready'
+                        WHERE id IN (SELECT file_id FROM rag_file_contents WHERE content_id=%s)
+                          AND id<>%s AND status='failed' AND indexed AND trashed_at IS NULL
+                          AND EXISTS (SELECT 1 FROM rag_content_summaries WHERE content_id=%s)
+                          AND EXISTS (SELECT 1 FROM rag_contents
+                                      WHERE id=%s AND pipeline_identity IS NOT NULL)
+                        RETURNING id""",
+                        (content_id, file_id, content_id, content_id),
+                    )
+                    siblings = [row[0] for row in cur.fetchall()]
                 db.set_job(
-                    cur,
-                    job_id,
-                    "done",
-                    _unread_note(unread_pages) if unread_pages else None,
+                    cur, job_id, "done", _missing_note(missing) if missing else None
                 )
                 db.finish_job_attempt(
                     cur,
@@ -519,6 +566,10 @@ def _finish_ok(
     except Exception:
         obs.restore_parse_usage(usage)
         raise
+    for sibling in siblings:
+        _publish_progress(
+            workspace_id, sibling, "done", 100, status="ready", indexed=True
+        )
     return True
 
 
@@ -536,9 +587,10 @@ def _finish_fail(
     error_code: str = "",
     index_limit: str = "",
 ) -> bool:
-    """Fail the job. The file fails too, unless ``index_limit`` names the
-    ingest limit its content is over: then it is ready and unindexed, still
-    usable, and only search and chat skip it."""
+    """Fail the job. The file fails too, still indexed while its alias serves
+    a previous index, unless ``index_limit`` names the ingest limit its content
+    is over: then it is ready and unindexed (its alias dropped), still usable,
+    and only search and chat skip it."""
     with db.connect() as conn:
         with conn.cursor() as cur:
             boundary_payload = None
@@ -558,10 +610,15 @@ def _finish_fail(
                     db.require_current_file_source(
                         cur, file_id, source_revision, source_etag
                     )
-                db.set_file_status(cur, file_id, "ready" if index_limit else "failed")
-                db.set_file_indexed(cur, file_id, False)
-                if index_limit:
+                if index_limit and db.source_refresh_for(file_id) is None:
+                    # Search skips a file over a limit, so its previous index
+                    # goes too (the orphan trigger drops unshared content).
+                    cur.execute(
+                        "DELETE FROM rag_file_contents WHERE file_id=%s", (file_id,)
+                    )
                     db.set_file_index_limit(cur, file_id, index_limit)
+                db.set_file_status(cur, file_id, "ready" if index_limit else "failed")
+                db.set_file_indexed_as_served(cur, file_id)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
             if file_id:
@@ -741,25 +798,58 @@ def _notify_ingest_terminal(
     log.info("ingest %s failed terminally: %s", name, error)
 
 
-def _unread_note(pages: list[int]) -> str:
-    shown = ", ".join(str(page) for page in pages[:20])
-    more = f" and {len(pages) - 20} more" if len(pages) > 20 else ""
-    return f"{len(pages)} pages could not be read (p. {shown}{more}); retry processing reads them again"
+def _missing_note(missing: Missing) -> str:
+    """The job note (and progress message) naming a file's missing parts."""
+    parts = []
+    if missing.summary is not None:
+        parts.append(f"summary pending ({missing.summary[:200]})")
+    if missing.pages:
+        pages = missing.pages
+        shown = ", ".join(str(page) for page in pages[:20])
+        more = f" and {len(pages) - 20} more" if len(pages) > 20 else ""
+        parts.append(f"{len(pages)} pages could not be read (p. {shown}{more})")
+    elif missing.unread:
+        parts.append("some pages could not be read")
+    return "; ".join(parts) + "; retry processing fills them in"
+
+
+def _summary_reason(job: dict, error: Exception | None) -> str | None:
+    """The pending descriptor's failure, None once a descriptor is present.
+
+    A busy provider re-pends the job once: its content is already published,
+    so the re-claim only fills the descriptor. After that, or on any other
+    failure, the descriptor is a missing part."""
+    if error is None:
+        return None
+    if (
+        isinstance(error, elitellm.ProviderBusy)
+        and int(job.get("provider_waits") or 0) < PROVIDER_WAITS_MAX
+    ):
+        raise error
+    return str(error) or type(error).__name__
+
+
+async def _fill_summary(job: dict, ws: str, content_id: str, name: str) -> str | None:
+    """Fill published content's pending descriptor (a no-op when present)."""
+    error = await indexing.fill_descriptor(
+        workspace_id=ws, content_id=content_id, file_name=name
+    )
+    return _summary_reason(job, error)
 
 
 def _publish_done(
-    ws: str, file_id: str, unread: list[int], note: str | None = None
+    ws: str, file_id: str, missing: Missing, note: str | None = None
 ) -> None:
-    """The terminal progress event: ready, or failed with the pages the VLM
-    left unread while the rest stays indexed."""
-    if unread:
+    """The terminal progress event: ready, or failed with the missing parts
+    named while the content stays indexed."""
+    if missing:
         _publish_progress(
             ws,
             file_id,
             "failed",
             100,
             status="failed",
-            message=_unread_note(unread),
+            message=_missing_note(missing),
             indexed=True,
         )
         return
@@ -1255,12 +1345,21 @@ def _handoff_parsed_artifact(
     payload: dict,
     file_id: str,
     workspace_id: str,
-    artifact: dict,
+    artifact: dict | None,
 ) -> bool:
-    """Finish the parse claim and enqueue its ingest continuation atomically."""
+    """Finish the parse claim and enqueue its ingest continuation atomically.
+
+    Without an artifact the continuation is parts-only: a donor copy whose
+    descriptor is pending, which the coordinator (no provider keys) leaves to
+    an ingest worker."""
     attempt = int(job.get("attempts") or 1)
     continuation_payload = dict(payload)
-    continuation_payload["parseArtifact"] = dict(artifact)
+    if artifact is None:
+        continuation_payload["partsOnly"] = True
+        # The coordinator removes its local source once the copy is done.
+        continuation_payload.pop("localSource", None)
+    else:
+        continuation_payload["parseArtifact"] = dict(artifact)
     continuation_payload["parseJobId"] = job["id"]
     continuation_id = f"{job['id']}_ingest"
     usage = obs.take_parse_usage()
@@ -1282,10 +1381,12 @@ def _handoff_parsed_artifact(
             )
             db.enqueue_job(cur, continuation_id, "ingest", continuation_payload)
             db.transfer_source_candidate(cur, payload, job["id"], continuation_id)
-            cur.execute(
-                "UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL",
-                (file_id,),
-            )
+            if artifact is not None:
+                # A parse ran. A donor copy leaves it to _finish_ok's rule.
+                cur.execute(
+                    "UPDATE files SET ever_parsed_successfully=true WHERE id=%s AND trashed_at IS NULL",
+                    (file_id,),
+                )
             db.set_job(cur, job["id"], "done")
             db.finish_job_attempt(
                 cur,
@@ -1525,7 +1626,9 @@ async def _chunks_for(
         )
         _publish_progress(ws, file_id, "indexing", 45)
         _set_stage("vlm_pages")
-        content_list, unread = await _read_vlm_pages(content_list, raw_dir, file_id)
+        content_list, unread = await _read_vlm_pages(
+            content_list, raw_dir, file_id, name
+        )
         _set_stage("chunking")
         chunks = await asyncio.to_thread(
             _page_chunks, content_list, raw_dir, Path(local_path or "")
@@ -1544,7 +1647,7 @@ VLM_PAGES_PER_JOB = 10
 
 
 async def _read_vlm_pages(
-    content_list: list[dict], raw_dir: Path, file_id: str
+    content_list: list[dict], raw_dir: Path, file_id: str, name: str
 ) -> tuple[list[dict], list[int]]:
     """Read the bundle's text-less page renders (``vlm/<page>.jpg``) with the
     VLM. Each read page becomes one text block after that page's own blocks;
@@ -1555,19 +1658,35 @@ async def _read_vlm_pages(
         return content_list, []
     rate = int(_rate(_RESOURCE_VLM_PAGE)["creditMicrosPerUnit"])
     limit = asyncio.Semaphore(VLM_PAGES_PER_JOB)
+    # UAT only (ingest/uat.py): a marked file's reads fail or are scripted,
+    # under a cache key of their own, so no real read is served from them or
+    # them from a real one.
+    fail, token = uat.fail_pages(name), uat.scripted_token(name)
+    marker = uat.FAIL_PAGES if fail else None if token is None else uat.SCRIPTED_VLM
+    salt = f"{marker}{token or ''}\0".encode() if marker else b""
+
+    async def read_page(page: int, data_url: str) -> str | None:
+        if fail:
+            return None
+        if token is None:
+            return await models.read_page(data_url, credit_micros=rate)
+        return await models.read_page(
+            data_url, credit_micros=rate, scripted=uat.scripted_page(token, page + 1)
+        )
 
     async def read(path: Path) -> tuple[int, str]:
+        page = int(path.stem)
         jpeg = await asyncio.to_thread(path.read_bytes)
         url = "data:image/jpeg;base64," + base64.b64encode(jpeg).decode()
         async with limit:
             text, *_ = await caption_cache.caption(
                 file_id=file_id,
-                image_sha256=hashlib.sha256(b"vlm-page\0" + jpeg).hexdigest(),
+                image_sha256=hashlib.sha256(b"vlm-page\0" + salt + jpeg).hexdigest(),
                 data_url=url,
-                read=lambda data_url: models.read_page(data_url, credit_micros=rate),
+                read=lambda data_url: read_page(page, data_url),
                 exclusive=False,
             )
-        return int(path.stem), text
+        return page, text
 
     tasks = [asyncio.ensure_future(read(path)) for path in renders]
     try:
@@ -1692,6 +1811,7 @@ async def _process_ingest_job_bound(job: dict) -> None:
     if (
         job_type == "ingest"
         and processing_plan.route == ingest_plan.DOCUMENT_PARSE
+        and payload.get("partsOnly") is not True
         and (
             not isinstance(payload.get("parseArtifact"), dict)
             or not str(payload.get("parseJobId") or "").strip()
@@ -1895,30 +2015,30 @@ async def _wait_for_content(
     """Wait for another worker's claim, stealing it if that worker looks dead.
 
     Returns only once this job owns the claim (``created``) or the content is
-    ``ready``; the caller indexes into the row afterwards, so returning on a
-    claim someone else holds would mean two workers writing the same content.
-    The job wall-clock timeout is the hard bound — raising after a short wait
-    would burn the waiter's attempt budget while a live creator is still
-    indexing.
+    ``ready`` and aliased; the caller indexes into the row afterwards, so
+    returning on a claim someone else holds would mean two workers writing the
+    same content. The job wall-clock timeout is the hard bound — raising after
+    a short wait would burn the waiter's attempt budget while a live creator is
+    still indexing.
     """
     loop = asyncio.get_running_loop()
     steal_after = loop.time() + CONTENT_CLAIM_WAIT_S
     while not association["created"] and not association["ready"]:
         await asyncio.sleep(cfg.poll_interval)
         status = await store.content_status(association["content_id"])
-        if status == "ready":
-            association["ready"] = True
-            break
-        if status is not None and loop.time() < steal_after:
+        if status not in (None, "ready") and loop.time() < steal_after:
             continue
-        # The claim is either gone (the creator abandoned it) or stale enough
-        # that its owner looks dead. Either way, try to take it over; losing the
-        # race just means waiting on whoever won it.
-        await store.steal_stale_content(
-            workspace_id=workspace_id,
-            content_hash=content_hash,
-            stale_s=CONTENT_CLAIM_STALE_S,
-        )
+        if status != "ready":
+            # The claim is either gone (the creator abandoned it) or stale
+            # enough that its owner looks dead. Either way, try to take it
+            # over; losing the race just means waiting on whoever won it.
+            await store.steal_stale_content(
+                workspace_id=workspace_id,
+                content_hash=content_hash,
+                stale_s=CONTENT_CLAIM_STALE_S,
+            )
+        # Attaching again aliases ready content (a deferred alias moves now)
+        # or takes over a dropped claim.
         association = await store.attach_file_content(
             workspace_id=workspace_id,
             file_id=file_id,
@@ -1987,68 +2107,75 @@ async def _reuse_donor(
         source_revision=source_revision,
         source_etag=source_etag,
     )
+    content_id = association["content_id"]
+    note = None
     if association["ready"]:
         if not await store.attach_donor_captions(
             donor_id=donor["id"], dest_workspace_id=ws, dest_file_id=file_id
         ):
             return False
         note = f"{name}: identical content already indexed; reusing its index."
-        committed = await asyncio.to_thread(
-            _finish_ok,
-            file_id,
-            job["id"],
-            donor["content_hash"],
-            attempt=attempt,
-            actor_user_id=payload.get("actorUserId") or "",
-            workspace_id=ws,
-            reservation_id=_reservation_id(payload),
-            source_revision=source_revision,
-            source_etag=source_etag,
+    else:
+        copied = await store.copy_content_from_donor(
+            dest_file_id=file_id,
+            donor_id=donor["id"],
+            dest_content_id=content_id,
+            dest_workspace_id=ws,
+            copy_vectors=copy_vectors,
         )
-        if not committed:
+        if not copied:
+            # Parsing follows; a re-ingest's previous index keeps serving.
+            await store.abandon_content(content_id)
             return False
-        _publish_progress(
-            ws, file_id, "done", 100, status="ready", message=note, indexed=True
-        )
-        return True
-    copied = await store.copy_content_from_donor(
-        dest_file_id=file_id,
-        donor_id=donor["id"],
-        dest_content_id=association["content_id"],
-        dest_workspace_id=ws,
-        copy_vectors=copy_vectors,
-    )
-    if not copied:
-        await store.abandon_content(association["content_id"])
-        await store.attach_file_content(
-            workspace_id=ws,
-            file_id=file_id,
-            content_hash=donor["content_hash"],
-            source_sha256=source_sha256,
-            pipeline_identity=identity,
-            claim_job_id=job["id"],
-            source_revision=source_revision,
-            source_etag=source_etag,
-        )
-        return False
-    try:
-        if copy_vectors:
-            result = {"chunks": "copied", "donor": donor["id"]}
-        else:
-            result = await indexing.embed_copied_chunks(
+        try:
+            if copy_vectors:
+                result = {"chunks": "copied", "donor": donor["id"]}
+            else:
+                result = await indexing.embed_copied_chunks(
+                    workspace_id=ws,
+                    content_id=content_id,
+                    claim_job_id=job["id"],
+                )
+            if isinstance(result.get("chunks"), int):
+                telemetry.record(chunks_created=max(0, int(result["chunks"])))
+            await store.publish_file_content(
                 workspace_id=ws,
-                content_id=association["content_id"],
+                file_id=file_id,
+                content_id=content_id,
                 claim_job_id=job["id"],
-                mark_ready=False,
+                source_revision=source_revision,
+                source_etag=source_etag,
             )
-        if isinstance(result.get("chunks"), int):
-            telemetry.record(chunks_created=max(0, int(result["chunks"])))
-        await store.mark_content_ready(
-            association["content_id"], claim_job_id=job["id"]
-        )
-    except BaseException:
-        await store.abandon_content(association["content_id"])
-        raise
+        except BaseException:
+            await store.abandon_content(content_id)
+            raise
+        log.info("indexed %s from donor: %s", name, result)
+    # A donor's pending descriptor is filled for this file (parts design Q9):
+    # inline here, or by a parts-only continuation from a parse coordinator,
+    # which holds no provider keys.
+    if job.get("type") == "parse":
+        if not await store.has_content_summary(content_id):
+            handed_off = await asyncio.to_thread(
+                _handoff_parsed_artifact,
+                job=job,
+                payload=payload,
+                file_id=file_id,
+                workspace_id=ws,
+                artifact=None,
+            )
+            if handed_off:
+                _publish_progress(
+                    ws,
+                    file_id,
+                    "indexing",
+                    90,
+                    status="processing",
+                    message=f"{name}: identical content already indexed; describing it.",
+                )
+            return handed_off
+        missing = COMPLETE
+    else:
+        missing = Missing(await _fill_summary(job, ws, content_id, name))
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
@@ -2060,12 +2187,47 @@ async def _reuse_donor(
         reservation_id=_reservation_id(payload),
         source_revision=source_revision,
         source_etag=source_etag,
+        content_id=content_id,
+        missing=missing,
     )
     if not committed:
         return False
-    _publish_progress(ws, file_id, "done", 100, status="ready", indexed=True)
-    log.info("indexed %s from donor: %s", name, result)
+    _publish_done(ws, file_id, missing, note)
     return True
+
+
+async def _process_parts_bound(
+    job: dict, payload: dict, file_id: str, ws: str, name: str
+) -> None:
+    """A parts-only job (``partsOnly``): Retry processing of a file whose only
+    missing part is its descriptor, or a parse coordinator's donor
+    continuation. Fills the published content's pending descriptor from its
+    stored chunks, with no parse and no embedding, then finishes the file.
+    Unread pages (a NULL ``pipeline_identity``) stay a missing part."""
+    _set_stage("parts_fill")
+    content = await store.file_content(file_id)
+    if content is None or content["status"] != "ready":
+        raise TerminalError("parts-only job found no published content")
+    missing = Missing(
+        await _fill_summary(job, ws, content["id"], name),
+        unread=content["pipeline_identity"] is None,
+    )
+    committed = await asyncio.to_thread(
+        _finish_ok,
+        file_id,
+        job["id"],
+        content["content_hash"],
+        attempt=int(job.get("attempts") or 1),
+        actor_user_id=payload.get("actorUserId") or "",
+        workspace_id=ws,
+        reservation_id=_reservation_id(payload),
+        source_revision=int(payload["sourceRevision"]),
+        source_etag=str(payload.get("sourceETag") or ""),
+        content_id=content["id"],
+        missing=missing,
+    )
+    if committed:
+        _publish_done(ws, file_id, missing)
 
 
 async def _process_ingest_job(
@@ -2121,6 +2283,9 @@ async def _process_ingest_job(
         _publish_progress(
             ws, file_id, "failed", 100, status="failed", message=note, indexed=False
         )
+        return
+    if payload.get("partsOnly") is True:
+        await _process_parts_bound(job, payload, file_id, ws, name)
         return
     _publish_progress(ws, file_id, "queued", 5, status="pending")
 
@@ -2303,7 +2468,7 @@ async def _process_ingest_job(
         payload.get("sourceRefresh") is True and payload.get("format") == "text"
     ):
         if unread:
-            raise TerminalError(_unread_note(unread))
+            raise TerminalError(_missing_note(Missing(pages=tuple(unread))))
         # The same artifact chunks the same way on every attempt.
         raise TerminalError("parse produced no indexable content")
     telemetry.record(chunks_created=len(chunks))
@@ -2344,6 +2509,10 @@ async def _process_ingest_job(
         _set_stage("content_reuse")
         telemetry.record(donor_reused=True)
         note = f"{name}: identical content already indexed; reusing its index."
+        missing = Missing(
+            await _fill_summary(job, ws, association["content_id"], name),
+            tuple(unread),
+        )
         committed = await asyncio.to_thread(
             _finish_ok,
             file_id,
@@ -2356,11 +2525,12 @@ async def _process_ingest_job(
             source_revision=source_revision,
             source_etag=source_etag,
             parse_fee=_parse_fee(payload),
-            unread_pages=unread,
+            content_id=association["content_id"],
+            missing=missing,
         )
         if not committed:
             return
-        _publish_done(ws, file_id, unread, note)
+        _publish_done(ws, file_id, missing, note)
         await _capture_thumbnail(
             ws, file_id, processing_plan, local_path, source_sha256, page_image
         )
@@ -2385,6 +2555,14 @@ async def _process_ingest_job(
             on_progress=lambda pct: _publish_progress(ws, file_id, "indexing", pct),
             claim_job_id=job["id"],
         )
+        await store.publish_file_content(
+            workspace_id=ws,
+            file_id=file_id,
+            content_id=association["content_id"],
+            claim_job_id=job["id"],
+            source_revision=source_revision,
+            source_etag=source_etag,
+        )
     except BaseException:
         await store.abandon_content(association["content_id"])
         raise
@@ -2392,6 +2570,9 @@ async def _process_ingest_job(
         chunks_created=max(0, int(result.get("chunks") or 0)),
     )
     _set_stage("finalizing")
+    # Published first: a busy summary provider re-pends with the content
+    # searchable, and the re-claim only fills the descriptor.
+    missing = Missing(_summary_reason(job, result["summary_error"]), tuple(unread))
     committed = await asyncio.to_thread(
         _finish_ok,
         file_id,
@@ -2404,11 +2585,12 @@ async def _process_ingest_job(
         source_revision=source_revision,
         source_etag=source_etag,
         parse_fee=_parse_fee(payload),
-        unread_pages=unread,
+        content_id=association["content_id"],
+        missing=missing,
     )
     if not committed:
         return
-    _publish_done(ws, file_id, unread)
+    _publish_done(ws, file_id, missing)
     await _capture_thumbnail(
         ws, file_id, processing_plan, local_path, source_sha256, page_image
     )

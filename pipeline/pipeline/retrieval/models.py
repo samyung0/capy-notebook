@@ -946,7 +946,9 @@ VLM_PAGE_CAPACITY = ("vlm_page", 20)
 VLM_PAGE_MAX_TOKENS = 2_000
 
 
-async def read_page(data_url: str, *, credit_micros: int) -> str | None:
+async def read_page(
+    data_url: str, *, credit_micros: int, scripted: str | None = None
+) -> str | None:
     """Read one text-less page with the captioning-slot VLM.
 
     One read: the ingest policy's attempts, each its own call. A busy provider
@@ -954,6 +956,9 @@ async def read_page(data_url: str, *, credit_micros: int) -> str | None:
     transient error, an empty answer or one cut off at the output cap takes the
     next attempt; after the last, or at a definitive client error, the page is
     unread (None). Only a usable read is charged, at ``credit_micros``.
+
+    ``scripted`` (UAT only, ``ingest/uat.py``) is the read's text: the call is
+    opened and settled at ``credit_micros`` as a read, with no provider call.
     """
     spec = registry.captioning_spec()
     thinking = elitellm.resolve_thinking(spec, reasoning=False)
@@ -976,20 +981,24 @@ async def read_page(data_url: str, *, credit_micros: int) -> str | None:
             deadline=deadline,
             capacity=VLM_PAGE_CAPACITY,
         ) as call_id:
-            resp = await elitellm.complete(
-                spec, messages, reasoning=False, max_tokens=VLM_PAGE_MAX_TOKENS
-            )
-            obs.record_completion(spec.provider_slug, _record_name(spec), resp)
-            read = _usable_text(resp)
+            if scripted is None:
+                resp = await elitellm.complete(
+                    spec, messages, reasoning=False, max_tokens=VLM_PAGE_MAX_TOKENS
+                )
+                obs.record_completion(spec.provider_slug, _record_name(spec), resp)
+                read = _usable_text(resp)
+                usage = extract_usage(
+                    getattr(resp, "usage", None), provider=spec.provider_slug
+                )
+            else:
+                read, usage = scripted, NormalizedUsage()
             await accounting.settle(
                 call_id=call_id,
                 kind=accounting.KIND_LLM,
                 purpose="vlm_page",
                 thinking=thinking,
                 spec=spec,
-                usage=extract_usage(
-                    getattr(resp, "usage", None), provider=spec.provider_slug
-                ),
+                usage=usage,
                 credit_micros=credit_micros if read else 0,
             )
         # Raised after settling at 0, so it counts as one of the attempts.
@@ -1011,9 +1020,11 @@ async def read_page(data_url: str, *, credit_micros: int) -> str | None:
 async def caption_image(data_url: str, prompt: str) -> str:
     """Describe a standalone image upload so it becomes searchable text.
 
-    Any failure is retried under the ingest policy. Past that budget a busy
-    provider raises ProviderBusy so the job re-pends instead of spending an
-    attempt, since the caption is the file's whole content.
+    The ingest policy's attempts (parts design Q7): a transient error, an
+    empty answer or one cut off at the output cap takes the next attempt; a
+    definitive client error ends the call. Past that budget a busy provider
+    raises ProviderBusy so the job re-pends instead of spending an attempt,
+    since the caption is the file's whole content.
     """
     spec = registry.captioning_spec()
     caption_thinking = elitellm.resolve_thinking(spec, reasoning=False)
@@ -1051,13 +1062,14 @@ async def caption_image(data_url: str, prompt: str) -> str:
                     getattr(resp, "usage", None), provider=spec.provider_slug
                 ),
             )
-            message = elitellm.message_from_response(resp)
-            return (getattr(message, "content", "") or "").strip()
+        caption = _usable_text(resp)
+        # Raised after settling, so it counts as one of the attempts.
+        if caption is None:
+            raise UnusableAnswer("empty or cut-off caption")
+        return caption
 
     try:
-        # A transient failure here loses the file's only text, so every
-        # failure gets the policy's attempts, not only busy answers.
-        return await _call_with_retry(_one, retry_any=True)
+        return await _call_with_retry(_one, transient=True)
     except asyncio.CancelledError:
         raise
     except (accounting.SettlementError, elitellm.ProviderBusy):

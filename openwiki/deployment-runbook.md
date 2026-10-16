@@ -2322,6 +2322,16 @@ authentication strategy.
    tool turns (`openwiki/agentic-retrieval.md`, Configuration surface); it is
    UAT-only in the same way, and retrieval refuses to start with it unless
    `SENTRY_ENVIRONMENT=uat`.
+   For the partial-ingest and scanned-PDF journeys, set
+   `CAPY_UAT_FAIL_PARTS=true` (a file named with `[uat-fail-summary]` or
+   `[uat-fail-pages]` gets a descriptor or VLM page failure) and
+   `INGEST_UAT_SCRIPTED_VLM=true` (a file named with `[uat-scripted-vlm]` has
+   its text-less pages read as fixed text, charged as normal), both with no
+   provider call (`openwiki/agentic-retrieval.md`, Configuration surface).
+   They render into `uat.queue.env`, so they reach the UAT ingest workers on
+   the next **Deploy ingest**; the manifest scopes them to `uat`, a production
+   render with either set fails, and a pipeline process refuses to start with
+   one unless `SENTRY_ENVIRONMENT=uat`.
 6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
    following the route and hostname transition order in §1. No summary storage service is needed.
