@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/stripe/stripe-go/v82"
+
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -238,12 +240,17 @@ func (r *Runner) reconcileCredits(
 	run store.ReconcileRun,
 	result *store.ReconcileResult,
 ) error {
+	// fail reports per user, or per payment when the user is unknown.
 	fail := func(err error, userID, purchase string) error {
 		result.ErrorCount++
 		result.Status = store.ReconcileStatusPartial
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "stripe_credit_reconciliation", "userId": userID})
-		return r.store.InsertReconciliationReport(ctx, run, "stripe_credit_error", "user",
-			userID, userID, map[string]any{"outcome": "error", "purchase": purchase})
+		subjectType, subjectID := "user", userID
+		if userID == "" {
+			subjectType, subjectID = "payment", purchase
+		}
+		return r.store.InsertReconciliationReport(ctx, run, "stripe_credit_error", subjectType,
+			subjectID, userID, map[string]any{"outcome": "error", "purchase": purchase})
 	}
 	repaired := func(userID string, metadata map[string]any) error {
 		result.RepairedCount++
@@ -321,6 +328,40 @@ func (r *Runner) reconcileCredits(
 		}
 		if granted {
 			if err := repaired(userID, map[string]any{"session": t.SessionID, "kind": "topup"}); err != nil {
+				return err
+			}
+		}
+	}
+
+	// After the grants above, so a purchase recorded late is there to adjust.
+	reversals, err := billing.ListReversals(time.Now().Add(-topUpLookback))
+	if err != nil {
+		return err
+	}
+	for _, v := range reversals {
+		var userID string
+		// The same calls the webhooks make; an inquiry moves no funds.
+		switch v.Dispute {
+		case "":
+			userID, err = r.store.ReverseRefund(ctx, v.PaymentIntentID, v.RefundedCents, v.ChargedCents)
+		case stripe.DisputeStatusNeedsResponse, stripe.DisputeStatusUnderReview, stripe.DisputeStatusLost:
+			userID, err = r.store.HoldDispute(ctx, v.PaymentIntentID)
+		case stripe.DisputeStatusWon:
+			userID, err = r.store.ReleaseDispute(ctx, v.PaymentIntentID)
+		default:
+			continue
+		}
+		result.ScannedCount++
+		if err != nil {
+			if reportErr := fail(err, "", v.PaymentIntentID); reportErr != nil {
+				return reportErr
+			}
+			continue
+		}
+		if userID != "" {
+			if err := repaired(userID, map[string]any{
+				"paymentIntent": v.PaymentIntentID, "kind": "reversal", "dispute": string(v.Dispute),
+			}); err != nil {
 				return err
 			}
 		}

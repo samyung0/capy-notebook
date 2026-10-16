@@ -172,10 +172,12 @@ func (s *Store) SetAutoReload(ctx context.Context, userID string, enabled bool, 
 	if enabled && !(PaymentMethod{Type: *pmType}).Instant() {
 		return ErrPaymentMethodNotInstant
 	}
-	// Turning it on (or saving it on) arms one reload.
+	// Turning it on arms one reload; saving it while on keeps the arming, so
+	// a save during a charging reload never chains a second one.
 	if _, err := tx.Exec(ctx, `UPDATE user_credits
 		SET auto_reload_enabled = $2, reload_amount_cents = $3, reload_threshold_micros = $4,
-		    reload_skipped_at = NULL, reload_armed = reload_armed OR $2, updated_at = now()
+		    reload_skipped_at = NULL, updated_at = now(),
+		    reload_armed = reload_armed OR ($2 AND NOT auto_reload_enabled)
 		WHERE user_id = $1`, userID, enabled, amountCents, thresholdMicros); err != nil {
 		return err
 	}
@@ -348,6 +350,8 @@ type ReloadCharge struct {
 	CustomerID      string
 	PaymentMethodID string
 	AmountCents     int64
+	// Skipped: the spending limit stopped it; there is nothing to charge.
+	Skipped bool
 }
 
 // ReloadCandidates lists open accounts whose auto-reload is armed, or was
@@ -423,7 +427,10 @@ func (s *Store) StartReload(ctx context.Context, userID string) (*ReloadCharge, 
 			return nil, err
 		}
 		if spent+amount > *limit {
-			return nil, s.skipReloadTx(ctx, tx, userID, amount, *limit)
+			if err := s.skipReloadTx(ctx, tx, userID, amount, *limit); err != nil {
+				return nil, err
+			}
+			return &ReloadCharge{UserID: userID, Skipped: true}, nil
 		}
 	}
 	charge := &ReloadCharge{
@@ -646,9 +653,9 @@ func (s *Store) MarkReloadFailed(
 
 // ReverseRefund takes back credits in proportion to the amount refunded so
 // far (Stripe reports it cumulatively, so redeliveries change nothing).
-func (s *Store) ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) error {
+func (s *Store) ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) (string, error) {
 	if chargedCents <= 0 {
-		return nil
+		return "", nil
 	}
 	return s.adjustPurchase(ctx, paymentIntentID, func(credits, refunded, _ int64) (int64, int64) {
 		target := min(credits, credits*refundedCents/chargedCents)
@@ -657,7 +664,7 @@ func (s *Store) ReverseRefund(ctx context.Context, paymentIntentID string, refun
 }
 
 // HoldDispute takes back what is left of a purchase when a dispute opens.
-func (s *Store) HoldDispute(ctx context.Context, paymentIntentID string) error {
+func (s *Store) HoldDispute(ctx context.Context, paymentIntentID string) (string, error) {
 	return s.adjustPurchase(ctx, paymentIntentID, func(credits, refunded, disputed int64) (int64, int64) {
 		if disputed > 0 {
 			return disputed, 0
@@ -668,22 +675,23 @@ func (s *Store) HoldDispute(ctx context.Context, paymentIntentID string) error {
 }
 
 // ReleaseDispute gives the held credits back when a dispute closes won.
-func (s *Store) ReleaseDispute(ctx context.Context, paymentIntentID string) error {
+func (s *Store) ReleaseDispute(ctx context.Context, paymentIntentID string) (string, error) {
 	return s.adjustPurchase(ctx, paymentIntentID, func(_, _, disputed int64) (int64, int64) {
 		return 0, disputed
 	}, "disputed_micros")
 }
 
 // adjustPurchase sets one reversal column and moves the purchased balance by
-// the delta next returns, under the purchase row lock. An unknown payment
-// intent (a Pro subscription charge) is ignored.
+// the delta next returns, under the purchase row lock. It returns the user
+// whose credits moved, or "" when nothing changed. An unknown payment intent
+// (a Pro subscription charge) is ignored.
 func (s *Store) adjustPurchase(
 	ctx context.Context, paymentIntentID string,
 	next func(credits, refunded, disputed int64) (column, delta int64), column string,
-) error {
+) (string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var id, userID string
@@ -692,19 +700,20 @@ func (s *Store) adjustPurchase(
 		FROM credit_purchases WHERE stripe_payment_intent_id = $1 FOR UPDATE`, paymentIntentID).
 		Scan(&id, &userID, &credits, &refunded, &disputed)
 	if isNoRows(err) {
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	value, delta := next(credits, refunded, disputed)
+	if delta == 0 {
+		return "", nil
+	}
 	if _, err := tx.Exec(ctx, `UPDATE credit_purchases SET `+column+` = $2 WHERE id = $1`, id, value); err != nil {
-		return err
+		return "", err
 	}
-	if delta != 0 {
-		if err := addPurchasedTx(ctx, tx, userID, delta); err != nil {
-			return err
-		}
+	if err := addPurchasedTx(ctx, tx, userID, delta); err != nil {
+		return "", err
 	}
-	return tx.Commit(ctx)
+	return userID, tx.Commit(ctx)
 }

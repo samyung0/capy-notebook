@@ -539,8 +539,9 @@ func (a *api) billingTopUp(ctx context.Context, in *topUpInput) (*urlOutput, err
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// The webhook's billing event updates the tab once the top-up is credited.
 	returnURL := a.cfg.AppURL + "/billing?tab=subscription"
-	url, err := billing.CreateTopUpCheckout(customerID, uid, in.Body.AmountCents, returnURL+"&topup=done", returnURL)
+	url, err := billing.CreateTopUpCheckout(customerID, uid, in.Body.AmountCents, returnURL, returnURL)
 	if err != nil {
 		return nil, hErr(err)
 	}

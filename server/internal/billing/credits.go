@@ -8,9 +8,11 @@ import (
 
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/checkout/session"
+	"github.com/stripe/stripe-go/v82/dispute"
 	"github.com/stripe/stripe-go/v82/invoice"
 	"github.com/stripe/stripe-go/v82/invoiceitem"
 	"github.com/stripe/stripe-go/v82/paymentintent"
+	"github.com/stripe/stripe-go/v82/refund"
 	"github.com/stripe/stripe-go/v82/setupintent"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
@@ -270,7 +272,8 @@ func InvoiceKind(inv *stripe.Invoice) string {
 }
 
 // RunDueReloads starts every auto-reload that is due and charges it.
-func RunDueReloads(ctx context.Context, st *store.Store) error {
+// notify tells the user's open tabs that billing changed.
+func RunDueReloads(ctx context.Context, st *store.Store, notify func(userID string)) error {
 	users, err := st.ReloadCandidates(ctx)
 	if err != nil {
 		return err
@@ -281,9 +284,13 @@ func RunDueReloads(ctx context.Context, st *store.Store) error {
 			obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_start"})
 			continue
 		}
-		if charge != nil {
+		if charge == nil {
+			continue
+		}
+		if !charge.Skipped {
 			ProcessReload(ctx, st, *charge)
 		}
+		notify(userID)
 	}
 	return nil
 }
@@ -295,13 +302,14 @@ var errReloadStuck = errors.New("auto-reload left charging for 23 hours")
 // ResumeStaleReloads finishes reloads a stopped worker left charging, and
 // gives up on any still charging after 23 hours: its invoice is voided and it
 // is marked failed.
-func ResumeStaleReloads(ctx context.Context, st *store.Store) error {
+func ResumeStaleReloads(ctx context.Context, st *store.Store, notify func(userID string)) error {
 	charges, err := st.StaleReloadCharges(ctx, 2*time.Minute)
 	if err != nil {
 		return err
 	}
 	for _, charge := range charges {
 		ProcessReload(ctx, st, charge)
+		notify(charge.UserID)
 	}
 	stuck, err := st.StuckReloadCharges(ctx)
 	if err != nil {
@@ -383,4 +391,47 @@ func ListPaidTopUps(since time.Time) ([]PaidTopUp, error) {
 		})
 	}
 	return out, iter.Err()
+}
+
+// Reversal is a refund or dispute on one payment. A refund carries the
+// charge's cumulative refunded and charged cents; a dispute its status.
+type Reversal struct {
+	PaymentIntentID string
+	RefundedCents   int64
+	ChargedCents    int64
+	Dispute         stripe.DisputeStatus
+}
+
+// ListReversals returns refunds and disputes created since the given time,
+// for the daily reconciliation to re-apply to credit purchases (a webhook that
+// arrived before its purchase was recorded found nothing to take back).
+func ListReversals(since time.Time) ([]Reversal, error) {
+	created := &stripe.RangeQueryParams{GreaterThanOrEqual: since.Unix()}
+	var out []Reversal
+	refunds := &stripe.RefundListParams{CreatedRange: created}
+	refunds.AddExpand("data.charge")
+	ri := refund.List(refunds)
+	for ri.Next() {
+		r := ri.Refund()
+		if r.Charge == nil || r.Charge.PaymentIntent == nil {
+			continue
+		}
+		out = append(out, Reversal{
+			PaymentIntentID: r.Charge.PaymentIntent.ID,
+			RefundedCents:   r.Charge.AmountRefunded,
+			ChargedCents:    r.Charge.Amount,
+		})
+	}
+	if err := ri.Err(); err != nil {
+		return nil, err
+	}
+	di := dispute.List(&stripe.DisputeListParams{CreatedRange: created})
+	for di.Next() {
+		d := di.Dispute()
+		if d.PaymentIntent == nil {
+			continue
+		}
+		out = append(out, Reversal{PaymentIntentID: d.PaymentIntent.ID, Dispute: d.Status})
+	}
+	return out, di.Err()
 }

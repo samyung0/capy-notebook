@@ -40,9 +40,9 @@ type webhookStore interface {
 	SavePaymentMethod(ctx context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error
 	MarkReloadPaid(ctx context.Context, purchaseID, invoiceID, paymentIntentID string) error
 	MarkReloadFailed(ctx context.Context, purchaseID, invoiceID string, nextAttempt time.Time, declineReason string) error
-	ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) error
-	HoldDispute(ctx context.Context, paymentIntentID string) error
-	ReleaseDispute(ctx context.Context, paymentIntentID string) error
+	ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) (string, error)
+	HoldDispute(ctx context.Context, paymentIntentID string) (string, error)
+	ReleaseDispute(ctx context.Context, paymentIntentID string) (string, error)
 	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
 }
 
@@ -460,7 +460,9 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if charge.PaymentIntent != nil {
-			procErr = a.wh.ReverseRefund(r.Context(), charge.PaymentIntent.ID, charge.AmountRefunded, charge.Amount)
+			var userID string
+			userID, procErr = a.wh.ReverseRefund(r.Context(), charge.PaymentIntent.ID, charge.AmountRefunded, charge.Amount)
+			a.publishBillingChanged(r.Context(), userID)
 		}
 	case "charge.dispute.created", "charge.dispute.closed":
 		var dispute stripe.Dispute
@@ -473,12 +475,14 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		}
 		// An inquiry (warning_*) withdraws no funds, so it takes no credits.
 		inquiry := strings.HasPrefix(string(dispute.Status), "warning_")
+		var userID string
 		switch {
 		case event.Type == "charge.dispute.created" && !inquiry:
-			procErr = a.wh.HoldDispute(r.Context(), dispute.PaymentIntent.ID)
+			userID, procErr = a.wh.HoldDispute(r.Context(), dispute.PaymentIntent.ID)
 		case dispute.Status == stripe.DisputeStatusWon:
-			procErr = a.wh.ReleaseDispute(r.Context(), dispute.PaymentIntent.ID)
+			userID, procErr = a.wh.ReleaseDispute(r.Context(), dispute.PaymentIntent.ID)
 		}
+		a.publishBillingChanged(r.Context(), userID)
 	case "invoice.payment_failed":
 		// The first signal that entitlement is about to lapse. Nothing used to
 		// handle it, so past_due was written by subscription updates and then
@@ -609,7 +613,7 @@ func (a *api) creditCheckoutCompleted(
 		if err != nil {
 			return true, err
 		}
-		return true, a.voidReloads(ctx, retrying)
+		return true, a.voidReloadsAndPublish(ctx, userID, retrying)
 	}
 	// Top-ups accept instant methods only, so a completed session is paid.
 	if sess.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid || sess.PaymentIntent == nil {
@@ -626,7 +630,17 @@ func (a *api) creditCheckoutCompleted(
 	if err := a.wh.SavePaymentMethod(ctx, userID, pm, true); err != nil {
 		return true, err
 	}
-	return true, a.voidReloads(ctx, retrying)
+	return true, a.voidReloadsAndPublish(ctx, userID, retrying)
+}
+
+// voidReloadsAndPublish ends the retries a top-up or new card replaces, then
+// tells the user's open tabs to refetch billing.
+func (a *api) voidReloadsAndPublish(ctx context.Context, userID string, invoiceIDs []string) error {
+	if err := a.voidReloads(ctx, invoiceIDs); err != nil {
+		return err
+	}
+	a.publishBillingChanged(ctx, userID)
+	return nil
 }
 
 // voidReloads cancels Stripe's retries of reload invoices: after a top-up, a
@@ -657,9 +671,17 @@ func (a *api) reloadInvoiceChanged(ctx context.Context, inv *stripe.Invoice) err
 	purchaseID := inv.Metadata["purchase_id"]
 	switch {
 	case outcome.Paid:
-		return a.wh.MarkReloadPaid(ctx, purchaseID, inv.ID, outcome.PaymentIntentID)
+		err = a.wh.MarkReloadPaid(ctx, purchaseID, inv.ID, outcome.PaymentIntentID)
 	case outcome.Processing:
 		return nil
+	default:
+		err = a.wh.MarkReloadFailed(ctx, purchaseID, inv.ID, outcome.NextAttempt, outcome.DeclineReason)
 	}
-	return a.wh.MarkReloadFailed(ctx, purchaseID, inv.ID, outcome.NextAttempt, outcome.DeclineReason)
+	if err != nil || inv.Customer == nil {
+		return err
+	}
+	if userID, err := a.wh.UserIDByStripeCustomer(ctx, inv.Customer.ID); err == nil {
+		a.publishBillingChanged(ctx, userID)
+	}
+	return nil
 }

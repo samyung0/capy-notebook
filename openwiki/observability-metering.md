@@ -755,7 +755,8 @@ Checkout in setup mode (card and Link, billing address required) and returns to
 `?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
 reload invoice Stripe is still retrying. Turning auto-reload off voids it too.
 
-Auto-reload fires once per arming (`reload_armed`): turning it on, a paid
+Auto-reload fires once per arming (`reload_armed`): turning it on (a save
+while it is already on leaves the arming alone), a paid
 top-up, a new card, or a paid reload that leaves credits above the threshold
 arms it; starting a reload disarms it; the monthly allowance never re-arms it,
 so after Stripe gives up (or never retries) no reload starts until the user
@@ -775,8 +776,16 @@ stops (`invoice.payment_failed`), and the switch stays on. A reload left
 and card; after 23 hours it is reported to Sentry, its invoice voided and
 marked `failed`. `GET /api/billing` returns
 `creditsPurchasedMicros`, `creditsCarriedMicros` and `creditSettings` (switch,
-amount, threshold, saved method, limit, this month's spend, latest reload);
-the client polls it every 3 s while a reload is charging.
+amount, threshold, saved method, limit, this month's spend, latest reload).
+
+**Live billing.** Whatever Stripe or the reload worker changes reaches open
+tabs as a `{"type":"billing"}` event on the user's `notif:{userId}` stream
+(`publishBillingChanged`, from the credit webhooks and after each reload the
+worker processes or skips); the tab refetches billing, also on every stream
+connect, so the return from a top-up Checkout needs no polling. Billing saves
+(`useSetAutoReload`, `useSetSpendingLimit`) show at once, share the
+`qk.billing` mutation key and refetch only when the last one settles; a
+`billing` event during a pending save is left to that refetch.
 
 **Spending limit.** `PUT /api/billing/spending-limit` (`limitCents`, 0 removes
 it) counts paid and charging pre-tax dollars per UTC calendar month of payment
@@ -788,7 +797,11 @@ the auto-reload" from "over the limit".
 arrived: it re-reads every reload invoice still `retrying` or `failed`, or
 `charging` for over an hour, from the last 90 days, and records it paid
 (crediting it once), void, retrying or failed; and it credits paid top-up
-Checkouts from the last 7 days through the idempotent `GrantTopUp`. Each
+Checkouts from the last 7 days through the idempotent `GrantTopUp`. After
+those grants it re-applies refunds and disputes created in the last 7 days
+(`billing.ListReversals`) through the same idempotent calls as the webhooks,
+so a reversal whose webhook arrived before its purchase was recorded is taken
+back a day later; an open or lost dispute holds, a won one releases. Each
 repair writes a `stripe_credit_drift` report row and each failure a
 `stripe_credit_error` row. Re-reading an old failed reload never ends a newer
 reload's 60-second window: only the reload that was charging clears it.

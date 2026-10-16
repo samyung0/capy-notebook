@@ -1,10 +1,9 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
-import { isApiError, qk } from '@/api/client';
+import { isApiError } from '@/api/client';
 import {
   billingTopUpBodyAmountCentsMax,
   billingTopUpBodyAmountCentsMin,
@@ -55,33 +54,14 @@ export function CreditsSection({
   spentThisMonthMicros: number;
 }) {
   const navigate = useNavigate();
-  const { reload: reloadReturn, topup } = useSearch({
+  const { reload: reloadReturn } = useSearch({
     from: '/auth-shell/billing',
   });
-  const qc = useQueryClient();
   const [autoReloadOpen, setAutoReloadOpen] = useState(false);
   const [limitOpen, setLimitOpen] = useState(false);
   const topUpField = useRef<HTMLInputElement | null>(null);
   const view = creditView(billing, spentThisMonthMicros);
   const resetsAt = periodMonth(billing.creditsPeriodStart, 1);
-
-  // Back from paying a top-up: the webhook credits it within seconds, so
-  // refresh a few times rather than show the old balance.
-  useEffect(() => {
-    if (topup !== 'done') return;
-    let ticks = 0;
-    const timer = window.setInterval(() => {
-      void qc.invalidateQueries({ queryKey: qk.billing });
-      ticks += 1;
-      if (ticks >= 10) window.clearInterval(timer);
-    }, 3000);
-    void navigate({
-      replace: true,
-      search: { tab: 'subscription' },
-      to: '/billing',
-    });
-    return () => window.clearInterval(timer);
-  }, [topup, navigate, qc]);
 
   // Back from saving the auto-reload card: finish setting it up.
   useEffect(() => {
