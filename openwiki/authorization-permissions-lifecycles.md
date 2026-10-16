@@ -829,9 +829,17 @@ sources, and a copy into that owner's workspace. The answer comes before
 anything that could reveal the owner's state: the role read
 (`workspaceRoles`, `materialEffectiveAccess`, `sourceActorsAllowed`) leaves the
 workspace out, and a write that locks accounts before reading roles maps the
-owner's locked account to not found (`ownerHidden`). The owner keeps the
-locked-account answer of their own session. Copies other users already made
-belong to them and stay readable.
+owner's locked account to not found (`ownerHidden`). Becoming locked evicts
+the owner's note and source rooms with `discard` (`user_acl_eviction_trigger`,
+source rooms since migration 0090), so open viewers reconnect through that
+check. A member's unsynced edits in that owner's notes and files are dropped
+on the 404, as for a deleted owner: the browser cannot tell it from a
+deletion. The owner keeps the locked-account answer of their own session, so
+their own drafts are kept. Copies other users already made belong to them and
+stay readable. The 404 applies to new requests: presigned links handed out
+before stay valid until they expire (about five minutes for file and asset
+links, up to two hours for thumbnail links), and shared pages the edge cached
+are served for up to five minutes.
 
 Grace and frozen accounts may still open a Pro Checkout session: resubscribing
 is a recovery action, not content creation. Checkout completion retrieves the

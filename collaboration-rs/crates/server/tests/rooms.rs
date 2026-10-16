@@ -652,26 +652,50 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
 }
 
 /// Security regression (Epo 2026-10-16): a suspended owner's note is not
-/// found for its readers, as a deleted owner's is, even with a token minted
-/// before the suspension. Fails if the room still admits them read-only.
+/// found for a reader or a workspace editor, as a deleted owner's is, even
+/// with tokens minted before the suspension, while the owner joining is
+/// refused as a locked account (their drafts kept). Fails if the room still
+/// admits the others, or answers the owner not found.
 #[tokio::test]
 async fn a_suspended_owners_note_is_not_found_for_its_readers() {
     let Some(env) = env() else { return };
     let server = start(&env).await;
-    let (owner, material) = note(&env, "shared").await;
-    let (reader, _) = note(&env, "own").await;
     let client = db(&env).await;
+    let (owner, editor, reader) = (user(&env).await, user(&env).await, user(&env).await);
+    let workspace = format!("ws_it_{}", uuid_like());
     client
         .execute(
-            "UPDATE materials SET privacy='public' WHERE id=$1",
-            &[&material],
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','public')",
+            &[&workspace, &owner],
         )
         .await
-        .expect("share");
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')",
+            &[&workspace, &editor],
+        )
+        .await
+        .expect("member");
+    let material = format!("m_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": "shared" }] }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'IT', $4)",
+            &[&material, &owner, &workspace, &content],
+        )
+        .await
+        .expect("material");
     let room = format!("material:{material}:schema:1");
     let read = token(&room, &reader, "read");
+    let write = token(&room, &editor, "write");
     let mut before = Client::open(server.port).await;
     assert_eq!(before.joined(&room, &read).await, 0);
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &write).await, 1);
     client
         .execute(
             "UPDATE users SET suspended_at=now(), suspended_reason='it' WHERE id=$1",
@@ -679,10 +703,20 @@ async fn a_suspended_owners_note_is_not_found_for_its_readers() {
         )
         .await
         .expect("suspend");
-    let mut after = Client::open(server.port).await;
-    after.join(&room, &read).await;
-    let reason = text_payload(&after.until(2).await.expect("refused"));
-    assert_eq!(reason, "collaboration-not-found");
+    for (who, joining, want) in [
+        ("reader", read, "collaboration-not-found"),
+        ("editor", write, "collaboration-not-found"),
+        (
+            "owner",
+            token(&room, &owner, "write"),
+            "collaboration-forbidden",
+        ),
+    ] {
+        let mut after = Client::open(server.port).await;
+        after.join(&room, &joining).await;
+        let reason = text_payload(&after.until(2).await.expect("refused"));
+        assert_eq!(reason, want, "{who}");
+    }
 }
 
 /// Security regression (cutover-reset REVIEW1 L1): a material without a Yjs

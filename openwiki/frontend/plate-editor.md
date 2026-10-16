@@ -69,8 +69,9 @@ The permission boundary is layered:
 3. The collaboration server checks the browser origin at the upgrade and, per
    room, the token's signature, issuer, audience, expiry, exact room, schema
    and access.
-4. It joins `read` channels (the downgrade an editor receives while the
-   storage owner's account is locked) read-only: a step 2 or update holding
+4. It joins `read` channels (a viewer's, and the downgrade an editor receives
+   while their own or the storage owner's account is frozen, or the storage
+   owner is at its storage limit) read-only: a step 2 or update holding
    anything new closes the channel, so a modified browser cannot send Yjs
    document updates.
 5. View mounts only the static preview, without editor plugins or comment controls.
