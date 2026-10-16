@@ -94,7 +94,7 @@ async def index_file(
 
     The descriptor is a part: when it fails, no summary row is written (the
     descriptor is pending, never blank) and ``summary_error`` carries the
-    failure. Only a SettlementError raises.
+    failure. Only an AccountingError raises.
     """
     if not chunks:
         await store.replace_content_chunks(
@@ -196,7 +196,7 @@ async def fill_descriptor(
     """Describe published content whose descriptor is pending, from its stored
     chunks: one summary call, no parse and no embedding. The row is inserted
     only if still absent. Returns the failure, or None once a descriptor is
-    present; a SettlementError raises."""
+    present; an AccountingError raises."""
     if await store.has_content_summary(content_id):
         return None
     rows = await store.load_content_chunks(content_id)

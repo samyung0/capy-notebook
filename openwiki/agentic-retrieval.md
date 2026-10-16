@@ -1643,8 +1643,8 @@ exists; the local bundle is gone once the first ingest finished.
   the prompt or swapping the ingest model leaves stored descriptors in place.
   An accounting error is not a part failure: `_descriptor` and
   `summarize_file` propagate `AccountingError` (a rejected receipt,
-  `SettlementError`, among them) unchanged, so the ingest worker never retries
-  a provider response that was already charged. A blank published descriptor
+  `SettlementError`, among them) unchanged: a configuration or settlement
+  failure fails the job; it is not a missing part. A blank published descriptor
   is not kept over a failure: the descriptor is then pending.
 5. Publish: `store.publish_file_content` marks the content ready and moves the
   file's alias onto it in one transaction, fenced to the job's file revision;

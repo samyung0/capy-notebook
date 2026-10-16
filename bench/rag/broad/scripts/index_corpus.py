@@ -252,7 +252,7 @@ async def index_dataset(label, dataset, state, cache):
                 content_id=doc["content_id"],
                 fingerprint=doc["hash"],
                 descriptor=doc["title"],
-                summary=doc["markdown"],
+                change_share=0.0,
             )
             completed.add(doc["content_id"])
         if number % 500 == 0:
