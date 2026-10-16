@@ -609,7 +609,10 @@ cached rate is priced against (the 2026-09-26 bench run in
 Relace reports `reasoning_tokens` at the top level of `usage`). A split larger
 than reported input is still refused as
 `cached_gt_input` and charged in full.
-Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
+The web app offers no key entry since 2026-10-16 (Settings → LLM has no keys
+section), so the BYOK paths below stay in the backend but no user can reach
+them, and UAT's catalog has only GLM-5.3-Flash, DeepSeek Flash, the embedding,
+reranker and descriptor rows. Credit micros may be 0 only on BYOK-only rows (`platform_enabled=false`).
 (`model_configs_credit_rates_check`). Platform chat/generate/editor/
 ingest/vision rows need input, cached-read, and output all > 0. Embedding needs
 input > 0; cached-read and output may be 0.

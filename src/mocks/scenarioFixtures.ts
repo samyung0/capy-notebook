@@ -40,7 +40,6 @@ type OfficeFormat = keyof typeof office;
 const accountObjects = [
   db.user,
   db.accountStatus,
-  db.llmCredentials,
   db.notificationPrefs,
   db.userThinking,
 ];

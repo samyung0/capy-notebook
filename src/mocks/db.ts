@@ -185,8 +185,6 @@ export const user: Omit<User, 'account'> = {
   subscriptionStatus: 'active',
 };
 
-export const llmCredentials: Record<string, string> = {};
-
 export const userThinking: Record<string, Record<string, string>> = {};
 
 export const workspaces: Workspace[] = [

@@ -22,7 +22,6 @@ import { Tabs } from '@/components/ui/Tabs';
 import { AccountTab } from '@/features/settings/AccountTab';
 import { ChatStepsSection } from '@/features/settings/ChatStepsSection';
 import { DeleteAccountDialog } from '@/features/settings/DeleteAccountDialog';
-import { KeysSection } from '@/features/settings/KeysSection';
 import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
 import { StudyPreferencesSection } from '@/features/settings/StudyPreferencesSection';
@@ -158,8 +157,6 @@ function LlmTab() {
             <ModelPicker slot="editor" />
           </SettingRow>
         )}
-        <div className="border-divider border-t" />
-        <KeysSection />
       </div>
     </>
   );

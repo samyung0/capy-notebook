@@ -46,7 +46,6 @@ export function joinModelLabel(
 export function sortModelOptions(models: ModelOption[]): ModelOption[] {
   return [...models].sort((a, b) => {
     if (a.available !== b.available) return a.available ? -1 : 1;
-    if (a.usesUserKey !== b.usesUserKey) return a.usesUserKey ? 1 : -1;
     return joinModelLabel(a.providerName, a.modelName).localeCompare(
       joinModelLabel(b.providerName, b.modelName)
     );

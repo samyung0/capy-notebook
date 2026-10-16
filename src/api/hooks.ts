@@ -70,7 +70,6 @@ import type {
   InvoiceList,
   Label,
   LearningProgress,
-  LLMCredentialsResponse,
   Material,
   MaterialCollaborationToken,
   MaterialComment,
@@ -127,7 +126,6 @@ import type {
   UpdateWorkspaceMemberReq,
   UpdateWorkspaceReq,
   UpdateWorkspaceSharingReq,
-  UpsertLLMCredentialReq,
   URLResp,
   UsageEventPage,
   UsageEventParams,
@@ -224,43 +222,6 @@ export function useSetModelPrefs() {
       Promise.all([
         qc.invalidateQueries({ queryKey: qk.me }),
         qc.invalidateQueries({ queryKey: ['models'] }),
-      ]),
-  });
-}
-
-export const llmCredentialsQuery = () =>
-  queryOptions({
-    ...persisted,
-    queryFn: () => api.get<LLMCredentialsResponse>('/me/llm-credentials'),
-    queryKey: qk.llmCredentials,
-  });
-export const useLLMCredentials = (options?: QueryUiOptions) =>
-  useQuery({ ...llmCredentialsQuery(), meta: queryMeta(options) });
-
-export function useUpsertLLMCredential() {
-  const qc = useQueryClient();
-  return useMutation({
-    meta: { errorToast: false },
-    mutationFn: (body: UpsertLLMCredentialReq) =>
-      api.put<void>('/me/llm-credentials', body),
-    onSuccess: () => {
-      void qc.invalidateQueries({ queryKey: qk.llmCredentials });
-      void qc.invalidateQueries({ queryKey: ['models'] });
-      void qc.invalidateQueries({ queryKey: qk.me });
-    },
-  });
-}
-
-export function useDeleteLLMCredential() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: (provider: string) =>
-      api.del<void>(`/me/llm-credentials/${encodeURIComponent(provider)}`),
-    onSuccess: () =>
-      Promise.all([
-        qc.invalidateQueries({ queryKey: qk.llmCredentials }),
-        qc.invalidateQueries({ queryKey: ['models'] }),
-        qc.invalidateQueries({ queryKey: qk.me }),
       ]),
   });
 }

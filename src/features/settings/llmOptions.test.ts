@@ -22,7 +22,7 @@ describe('llm options', () => {
     expect(joinModelLabel('', 'Flash')).toBe('Flash');
   });
 
-  it('puts locked models last and platform rows before user-key rows', () => {
+  it('puts locked models last and sorts the rest by label', () => {
     const sorted = sortModelOptions([
       option({
         available: false,
@@ -36,7 +36,7 @@ describe('llm options', () => {
         modelName: 'Claude',
         modelSlug: 'claude',
         providerName: 'Anthropic',
-        usesUserKey: true,
+        usesUserKey: false,
       }),
       option({
         available: true,
@@ -47,8 +47,8 @@ describe('llm options', () => {
       }),
     ]);
     expect(sorted.map((item) => item.modelSlug)).toEqual([
-      'flash',
       'claude',
+      'flash',
       'gpt',
     ]);
   });

@@ -437,7 +437,6 @@ export async function runJourney(
     'billing-load': '/billing',
     'chapters-load': scenarioPath,
     'collaboration-token': `${scenarioPath}?material=${scenarioNote}&mode=edit`,
-    'credentials-load': '/settings?tab=llm',
     'dashboard-lists': '/',
     'deletion-check': '/settings?tab=danger',
     'deletion-transfer-required': '/settings?tab=danger',
@@ -493,16 +492,6 @@ export async function runJourney(
       ].includes(id)
     )
       return 'This page currently suppresses the failed read instead of rendering a local error.';
-    if (id === 'credentials-load') {
-      await ui.wait(
-        () =>
-          [...document.querySelectorAll('p')].some(
-            (node) => node.textContent === m.settings_llm_key_unavailable()
-          ),
-        'provider keys unavailable'
-      );
-      return 'The provider key error is displayed beside the input.';
-    }
     const accountTitle = (
       {
         'account-deleted': m.account_blocked_deleted_title,
@@ -883,7 +872,6 @@ export async function runJourney(
       );
       return;
     case 'models-save':
-      db.llmCredentials.openai = 'sk-mock-scenario';
       await go('/settings?tab=llm');
       await ui.click(m.settings_llm_chat(), '[role="combobox"]');
       fail();
@@ -893,19 +881,6 @@ export async function runJourney(
         )
       ).click();
       return;
-    case 'credentials-save':
-      await go('/settings?tab=llm');
-      await ui.fill('input[type="password"]', 'scenario-invalid-key');
-      fail();
-      await ui.click(m.settings_llm_key_save());
-      await ui.wait(
-        () =>
-          [...document.querySelectorAll('p')].some(
-            (node) => node.textContent === m.settings_llm_key_invalid()
-          ),
-        'provider key error'
-      );
-      return 'The provider key error is displayed beside the input.';
     case 'notification-prefs':
       await go('/settings?tab=notifications');
       fail();

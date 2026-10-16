@@ -474,21 +474,6 @@ export const failureScenarios = [
     status: 500,
   },
   {
-    id: 'credentials-load',
-    label: 'Provider keys GET 503',
-    method: 'get',
-    paths: ['/api/me/llm-credentials'],
-    status: 503,
-  },
-  {
-    code: 'invalid_llm_key',
-    id: 'credentials-save',
-    label: 'Provider key save 422',
-    method: 'put',
-    paths: ['/api/me/llm-credentials'],
-    status: 422,
-  },
-  {
     id: 'notifications-load',
     label: 'Notifications GET 500',
     method: 'get',

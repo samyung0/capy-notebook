@@ -40,9 +40,6 @@ export function ModelOptionLabel({ option }: { option: ModelOption }) {
         {joinModelLabel(option.providerName, option.modelName)}
         {option.isDefault ? ` · ${m.settings_llm_default()}` : ''}
       </span>
-      {option.usesUserKey ? (
-        <Icon className="size-3.5 shrink-0 text-fg-muted" name="key" />
-      ) : null}
       {option.available ? null : (
         <Icon className="size-3.5 shrink-0 text-fg-muted" name="lock" />
       )}
@@ -158,11 +155,6 @@ export function ModelPicker({
           />
         ) : null}
       </div>
-      {selected?.usesUserKey ? (
-        <p className="text-fg-muted text-sm">
-          {m.settings_llm_byok_disclaimer()}
-        </p>
-      ) : null}
     </div>
   );
 }

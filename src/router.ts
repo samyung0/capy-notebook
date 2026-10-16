@@ -24,7 +24,6 @@ import {
   flashcardSetQuery,
   labelsQuery,
   learningProgressQuery,
-  llmCredentialsQuery,
   materialQuery,
   materialsQuery,
   meQuery,
@@ -460,7 +459,6 @@ const appRoutes = [
       } else if (deps.tab === 'llm') {
         qc.prefetchQuery(modelsQuery('chat'));
         if (features.editorAi) qc.prefetchQuery(modelsQuery('editor'));
-        qc.prefetchQuery(llmCredentialsQuery());
       }
     },
     path: '/settings',

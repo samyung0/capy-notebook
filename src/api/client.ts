@@ -367,7 +367,6 @@ export const qk = {
   invoices: ['billing', 'invoices'] as const,
   labels: ['labels'] as const,
   learningProgress: ['learning', 'progress'] as const,
-  llmCredentials: ['llm-credentials'] as const,
   material: (id: string) => ['material', id] as const,
   materialDiscussions: (id: string) => ['material', id, 'discussions'] as const,
   materials: (wsId: string) => ['workspace', wsId, 'materials'] as const,

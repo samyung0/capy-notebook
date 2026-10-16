@@ -119,14 +119,7 @@ const GENERATE_KINDS: GenerateOptions['kind'][] = [
   'mindmap',
   'diagram',
 ];
-const USER_KEY_MODELS: Record<string, string> = {
-  [modelRefValue({ modelSlug: 'gpt-5.6-sol', providerSlug: 'openai' })]:
-    'openai',
-};
-
 function mockCatalogModels() {
-  const hasOpenAI = Boolean(db.llmCredentials.openai);
-  const hasDeepSeek = Boolean(db.llmCredentials.deepseek);
   const thinking = {
     default: 'high',
     levels: ['low', 'mid', 'high', 'max'],
@@ -140,20 +133,20 @@ function mockCatalogModels() {
       providerName: 'DeepSeek',
       providerSlug: 'deepseek',
       thinking,
-      usesUserKey: hasDeepSeek,
+      usesUserKey: false,
     },
     {
-      available: hasOpenAI,
+      available: true,
       isDefault: false,
-      modelName: 'GPT-5.6 Sol',
-      modelSlug: 'gpt-5.6-sol',
-      providerName: 'OpenAI',
-      providerSlug: 'openai',
+      modelName: 'GLM-5.3-Flash',
+      modelSlug: 'glm-5.3-flash',
+      providerName: 'Z.ai',
+      providerSlug: 'zai',
       thinking: {
-        default: 'mid',
-        levels: ['low', 'mid', 'high', 'max'],
+        default: 'high',
+        levels: ['low', 'high', 'max'],
       },
-      usesUserKey: hasOpenAI,
+      usesUserKey: false,
     },
   ];
 }
@@ -848,16 +841,6 @@ export const handlers = [
           { message: 'a model preference is required' },
           { status: 400 }
         );
-      const required = USER_KEY_MODELS[modelRefValue(value)];
-      if (required && !db.llmCredentials[required]) {
-        return HttpResponse.json(
-          {
-            detail: 'LLM model not available',
-            errors: [{ message: 'model_unavailable' }],
-          },
-          { status: 422 }
-        );
-      }
       db.user[field] = value;
     }
     const value = body.chatThinking;
@@ -872,57 +855,6 @@ export const handlers = [
       const identity = modelRefValue(model);
       if (!db.userThinking[identity]) db.userThinking[identity] = {};
       db.userThinking[identity].chat = value;
-    }
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.get('/api/me/llm-credentials', () =>
-    HttpResponse.json({
-      credentials: Object.entries(db.llmCredentials).map(([slug, last4]) => ({
-        last4,
-        providerSlug: slug,
-      })),
-      providers: [
-        {
-          eligible: true,
-          last4: db.llmCredentials.openai ?? '',
-          providerSlug: 'openai',
-          unlocks: ['GPT-5.6 Sol', 'GPT-5.6 Terra', 'GPT-5.6 Luna'],
-        },
-        {
-          eligible: true,
-          last4: db.llmCredentials.deepseek ?? '',
-          providerSlug: 'deepseek',
-          unlocks: ['DeepSeek Flash 4.1'],
-        },
-      ],
-    })
-  ),
-  http.put('/api/me/llm-credentials', async ({ request }) => {
-    const body = (await request.json()) as {
-      apiKey?: string;
-      providerSlug?: string;
-    };
-    const slug = body.providerSlug ?? '';
-    const key = (body.apiKey ?? '').trim();
-    if (!/^[a-z0-9][a-z0-9_-]{0,62}$/.test(slug) || !key) {
-      return HttpResponse.json({ message: 'invalid key' }, { status: 400 });
-    }
-    db.llmCredentials[slug] = key.slice(-4);
-    return new HttpResponse(null, { status: 204 });
-  }),
-  http.delete('/api/me/llm-credentials/:provider', ({ params }) => {
-    const slug = String(params.provider);
-    delete db.llmCredentials[slug];
-    const locked = Object.entries(USER_KEY_MODELS)
-      .filter(([, provider]) => provider === slug)
-      .map(([key]) => key);
-    for (const field of ['chatModel', 'editorModel'] as const) {
-      if (locked.includes(modelRefValue(db.user[field]))) {
-        db.user[field] = {
-          modelSlug: 'deepseek-flash',
-          providerSlug: 'deepseek',
-        };
-      }
     }
     return new HttpResponse(null, { status: 204 });
   }),
