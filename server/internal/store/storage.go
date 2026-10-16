@@ -177,7 +177,8 @@ func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID strin
 // lockWorkspaceMutationTx is the common final-admission boundary for an
 // authenticated workspace mutation. It makes ownership immutable, then locks
 // the actor and storage owner in stable ID order so suspension/deletion cannot
-// commit while the mutation is still in flight.
+// commit while the mutation is still in flight. A locked owner's workspace is
+// not found for any other actor (ownerHidden).
 func (s *Store) lockWorkspaceMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -191,7 +192,7 @@ func (s *Store) lockWorkspaceMutationTx(
 		actorID = ownerID
 	}
 	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
-		return "", err
+		return "", ownerHidden(err, ownerID, actorID)
 	}
 	return ownerID, nil
 }

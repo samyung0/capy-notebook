@@ -80,7 +80,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
-			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND (lower(w.name) LIKE $1
 			OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 				WHERE et.workspace_id=w.id AND lower(t.name) LIKE $1))`, like, userID)
@@ -131,7 +131,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		JOIN users owner ON owner.id=m.owner_user_id
 		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
-		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
@@ -228,7 +228,7 @@ func splitCSVQuery(s string) []string {
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag string) ([]Workspace, error) {
-	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (w.user_id=$1 OR me.user_id IS NOT NULL)"
+	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL AND (w.user_id=$1 OR me.user_id IS NOT NULL)"
 	args := []any{userID}
 	if q != "" {
 		args = append(args, "%"+strings.ToLower(q)+"%")

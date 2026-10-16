@@ -19,7 +19,8 @@ const RENEWAL_TOLERANCE: &str = "interval '48 hours'";
 
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AccessError {
-    /// A missing or trashed material, or an owner being deleted.
+    /// A missing or trashed material, or an owner deleted, being deleted or
+    /// suspended.
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -150,12 +151,11 @@ pub struct LiveAccess {
     pub editor: bool,
     pub frozen: bool,
     pub full: bool,
-    pub suspended: bool,
 }
 
 impl LiveAccess {
     pub fn access(self) -> Access {
-        if !self.editor || self.suspended || self.frozen || self.full {
+        if !self.editor || self.frozen || self.full {
             Access::Read
         } else {
             Access::Write
@@ -221,7 +221,12 @@ pub async fn live_access<C: GenericClient>(
     let owner_id: String = row.get("owner_user_id");
     let material_privacy: String = row.get("privacy");
     let workspace_id: Option<String> = row.get("workspace_id");
-    if row.get::<_, bool>("owner_gone") {
+    // A deleted or deletion-pending owner's material is gone for everyone, a
+    // suspended owner's for everyone but the owner (refused below as a locked
+    // actor), as in Go's materialEffectiveAccess.
+    if row.get::<_, bool>("owner_gone")
+        || (row.get::<_, bool>("owner_suspended") && owner_id != actor)
+    {
         return Err(AccessError::NotFound("material not found".into()));
     }
     if row.get::<_, bool>("actor_locked") {
@@ -255,7 +260,6 @@ pub async fn live_access<C: GenericClient>(
         editor: rank(&role) >= rank("editor"),
         frozen: row.get::<_, bool>("owner_frozen") || row.get::<_, bool>("actor_frozen"),
         full: row.get("owner_full"),
-        suspended: row.get("owner_suspended"),
     })
 }
 
@@ -407,7 +411,6 @@ mod tests {
             editor: true,
             frozen: false,
             full: false,
-            suspended: false,
         };
         assert_eq!(open.access(), Access::Write);
         for narrowed in [
@@ -416,10 +419,6 @@ mod tests {
                 ..open
             },
             LiveAccess { full: true, ..open },
-            LiveAccess {
-                suspended: true,
-                ..open
-            },
             LiveAccess {
                 editor: false,
                 ..open

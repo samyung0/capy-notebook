@@ -164,10 +164,9 @@ func (s *Store) CommentResource(ctx context.Context, id string) (CollaborationRe
 }
 
 // lockCommentAccountsTx is the account half of final comment admission. The
-// actor must be fully active. A different workspace owner may be suspended
-// without making shared content disappear, but deletion-pending/deleted content
-// is unavailable. Rows are locked in ID order to match the other multi-account
-// write paths.
+// actor must be fully active. A deleted, deletion-pending or suspended owner's
+// content is not found for any other actor. Rows are locked in ID order to
+// match the other multi-account write paths.
 func (s *Store) lockCommentAccountsTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -199,7 +198,8 @@ func (s *Store) lockCommentAccountsTx(
 			return err
 		}
 		seen++
-		if id == ownerID && (deletedAt != nil || deletionRequestedAt != nil) {
+		if id == ownerID && (deletedAt != nil || deletionRequestedAt != nil ||
+			(suspendedAt != nil && id != actorID)) {
 			return ErrNotFound
 		}
 		if id != actorID {

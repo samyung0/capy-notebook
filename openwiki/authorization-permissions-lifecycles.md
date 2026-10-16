@@ -463,8 +463,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
   without a roster still sees who wrote what.
 - Collaboration tokens encode `write` or `read` access; a `read` token exists
   only as the downgrade an editor receives when the storage owner's account is
-  suspended, frozen or at its storage limit (`full`, grace included), or the
-  editor's own account is frozen. The collaboration
+  frozen or at its storage limit (`full`, grace included), or the editor's own
+  account is frozen. A deleted, deletion-pending or suspended owner's material
+  gets no token (`404`), and the collaboration server refuses its room as not
+  found to everyone but the owner. The collaboration
   server rechecks actor lifecycle,
   current membership/share role, owner lifecycle, and current quota state when
   admitting a connection, synchronizing a refreshed token, and persisting each
@@ -684,10 +686,11 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
 - Referenced ready media of a cloned material is rehomed under fresh asset IDs
   owned by the copy (in its destination workspace, or standalone); it never
   retains authorization-bearing asset IDs from the source workspace.
-- Suspension blocks the suspended actor's own API access, but it does not hide
-  content they already shared from another active user's clone. Material and
-  workspace clones apply that rule consistently; deletion pending and deletion
-  still make the source unavailable.
+- A deleted, deletion-pending or suspended owner's workspaces and materials
+  are no clone source: material, file and workspace clones answer `404`, and
+  so does a copy into that owner's workspace (see "What everyone else sees"
+  under Account lifecycle gates). Copies other users made earlier are theirs
+  and stay readable.
 
 Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L74),
 [flashcard guards](../server/internal/httpapi/huma_flashcards.go#L60), and
@@ -814,6 +817,21 @@ E2E identities.
 | `deletion_pending`  | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 | `suspended`         | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 | `deleted`           | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
+
+**What everyone else sees** (Epo 2026-10-16). A deleted, deletion-pending or
+suspended owner's workspaces and their content answer the same non-disclosing
+`404` to members, other signed-in users and anonymous link or public viewers on
+every content path: the workspace itself and the lists (workspace list,
+search, member-scope Files, Explore), files (source sessions, view sessions,
+downloads, previews, thumbnails), notes and materials (reads, collaboration
+tokens and live rooms), editor assets, comments, chat, study pages and clone
+sources, and a copy into that owner's workspace. The answer comes before
+anything that could reveal the owner's state: the role read
+(`workspaceRoles`, `materialEffectiveAccess`, `sourceActorsAllowed`) leaves the
+workspace out, and a write that locks accounts before reading roles maps the
+owner's locked account to not found (`ownerHidden`). The owner keeps the
+locked-account answer of their own session. Copies other users already made
+belong to them and stay readable.
 
 Grace and frozen accounts may still open a Pro Checkout session: resubscribing
 is a recovery action, not content creation. Checkout completion retrieves the
@@ -1195,7 +1213,7 @@ operation; remaining items stay selected for a manual retry.
 default: files and materials in their own workspaces plus their standalone
 materials, which is what Files and Create show. `scope=member` adds every
 workspace where the caller is an explicit member, under the workspace list's
-rule that a deleted or deletion-pending owner hides the workspace. Link or
+rule that a deleted, deletion-pending or suspended owner hides the workspace. Link or
 public workspaces the caller has only opened never appear, and neither do other
 users' standalone materials. The dashboard's Recent Files uses member scope and
 offers Rename/Properties/Delete only where the workspace's `capabilities` allow
@@ -1267,8 +1285,8 @@ parse, and provider reservations are cancelled. The owner's workspaces
 and materials immediately disappear from member lists, Explore, direct shared
 reads, and clone endpoints. Long-running chat, generate, editor-AI, and ingest
 streams recheck both the actor session and workspace access and cancel when
-either boundary closes. Suspension does not hide another user's shared content
-this way. Clerk revocation reads explicit pages into a complete sweep before it
+either boundary closes. A suspension hides them the same way while it lasts
+(see "What everyone else sees" under Account lifecycle gates). Clerk revocation reads explicit pages into a complete sweep before it
 revokes them, then repeats until no active session remains. A page or sweep
 safety limit is a retryable failure, never success. A confirmed empty active
 session listing is success even if an earlier revoke returned an uncertain

@@ -651,6 +651,40 @@ async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
     }
 }
 
+/// Security regression (Epo 2026-10-16): a suspended owner's note is not
+/// found for its readers, as a deleted owner's is, even with a token minted
+/// before the suspension. Fails if the room still admits them read-only.
+#[tokio::test]
+async fn a_suspended_owners_note_is_not_found_for_its_readers() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (owner, material) = note(&env, "shared").await;
+    let (reader, _) = note(&env, "own").await;
+    let client = db(&env).await;
+    client
+        .execute(
+            "UPDATE materials SET privacy='public' WHERE id=$1",
+            &[&material],
+        )
+        .await
+        .expect("share");
+    let room = format!("material:{material}:schema:1");
+    let read = token(&room, &reader, "read");
+    let mut before = Client::open(server.port).await;
+    assert_eq!(before.joined(&room, &read).await, 0);
+    client
+        .execute(
+            "UPDATE users SET suspended_at=now(), suspended_reason='it' WHERE id=$1",
+            &[&owner],
+        )
+        .await
+        .expect("suspend");
+    let mut after = Client::open(server.port).await;
+    after.join(&room, &read).await;
+    let reason = text_payload(&after.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-not-found");
+}
+
 /// Security regression (cutover-reset REVIEW1 L1): a material without a Yjs
 /// row lives at room schema 1 + trash_restores. A token naming an older room
 /// (minted before a trash and restore, or before the cutover reset raised the

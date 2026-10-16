@@ -257,7 +257,8 @@ adds no empty cell.
 Viewing shows the last saved state, not only the last published blob. View
 mode reads `GET /api/files/{id}/source-session?view=true`, a lock-free read
 (read authorization only, no `source_documents` row is created, no account
-lock, so a suspended owner's shared files keep rendering) that returns the
+lock; a deleted, deletion-pending or suspended owner's files are not found)
+that returns the
 presigned base URL and checkpoint numbers and carries `state` only when the
 saved checkpoint is ahead of the indexed one (`pendingEffects` is omitted),
 with its `stateSeedSHA256`. The host passes that state as `checkpoint` and the

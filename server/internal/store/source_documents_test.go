@@ -145,8 +145,9 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 }
 
 // A caller without access to a source gets not found whatever the owner's
-// account state, never the owner's locked-account error; while the owner is
-// pending deletion, so does a member.
+// account state, never the owner's locked-account error, and so does a member
+// while the owner is suspended or pending deletion (Epo 2026-10-16). The
+// suspended owner's own session keeps the locked-account answer.
 func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -158,27 +159,19 @@ func TestSourceAccessHidesTheOwnersAccountState(t *testing.T) {
 			ws, file := sourceTestFile(t, s, owner, "lesson.docx", "doc")
 			addWorkspaceEditor(t, s, ws.ID, member)
 			doc := sourceTestSeed(t, s, owner, file.ID)
-			lock := `UPDATE users SET deletion_requested_at=now(), purge_after=now()+interval '30 days' WHERE id=$1`
-			if state == "suspended" {
-				lock = `UPDATE users SET suspended_at=now(), suspended_reason='test suspension' WHERE id=$1`
-			}
-			if _, err := s.pool.Exec(ctx, lock, owner); err != nil {
-				t.Fatal(err)
-			}
-			if _, err := s.SourceSession(ctx, stranger, file.ID); !errors.Is(err, ErrNotFound) {
-				t.Fatalf("source session = %v, want not found", err)
-			}
-			if err := s.CheckSourceAccess(ctx, stranger, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
-				t.Fatalf("source access = %v, want not found", err)
-			}
-			// During the deletion grace the owner's content is gone for its
-			// members too.
-			if state == "deletion_pending" {
-				if _, err := s.SourceSession(ctx, member, file.ID); !errors.Is(err, ErrNotFound) {
-					t.Fatalf("member source session = %v, want not found", err)
+			lockOwner(t, s, owner, state)
+			for name, actor := range map[string]string{"stranger": stranger, "member": member} {
+				if _, err := s.SourceSession(ctx, actor, file.ID); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("%s source session = %v, want not found", name, err)
 				}
-				if err := s.CheckSourceAccess(ctx, member, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
-					t.Fatalf("member source access = %v, want not found", err)
+				if err := s.CheckSourceAccess(ctx, actor, file.ID, doc.Epoch, false); !errors.Is(err, ErrNotFound) {
+					t.Fatalf("%s source access = %v, want not found", name, err)
+				}
+			}
+			if state == "suspended" {
+				var locked *AccountLockedError
+				if _, err := s.SourceSession(ctx, owner, file.ID); !errors.As(err, &locked) || locked.State != AccountSuspended {
+					t.Fatalf("owner source session = %v, want the suspended account", err)
 				}
 			}
 		})

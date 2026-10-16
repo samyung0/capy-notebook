@@ -34,7 +34,9 @@ workspace settings follow persisted membership only. */
 
 // workspaceRoles reads the actor's persisted membership and the role the
 // workspace effectively grants them. The owner is owner in both. userID "" is
-// tolerated and yields no role.
+// tolerated and yields no role. A deleted or deletion-pending owner's workspace
+// is not found for anyone, a suspended owner's for anyone but the owner (who
+// keeps the locked-account answer of the session checks).
 func workspaceRoles(ctx context.Context, q rowQueryer, userID, wsID string) (member, effective WorkspaceRole, err error) {
 	var owner string
 	var privacy Privacy
@@ -44,7 +46,8 @@ func workspaceRoles(ctx context.Context, q rowQueryer, userID, wsID string) (mem
 		JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
 		WHERE w.id=$1 AND owner.deleted_at IS NULL
-			AND owner.deletion_requested_at IS NULL`, wsID, userID).Scan(&owner, &privacy, &shareRole, &member)
+			AND owner.deletion_requested_at IS NULL
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, wsID, userID).Scan(&owner, &privacy, &shareRole, &member)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}
@@ -186,6 +189,8 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 //     workspace is link/public
 //   - signed-in nonmember of a link/public workspace: the share role
 //   - standalone link/public material: viewer
+//
+// The owner's lifecycle hides it as workspaceRoles does.
 func materialEffectiveAccess(
 	ctx context.Context,
 	q rowQueryer,
@@ -208,7 +213,8 @@ func materialEffectiveAccess(
 		LEFT JOIN workspace_members wm
 			ON wm.workspace_id=w.id AND wm.user_id=$2
 		WHERE m.id=$1 AND m.trashed_at IS NULL AND material_owner.deleted_at IS NULL
-			AND material_owner.deletion_requested_at IS NULL`, matID, userID).Scan(
+			AND material_owner.deletion_requested_at IS NULL
+			AND (material_owner.suspended_at IS NULL OR material_owner.id=$2)`, matID, userID).Scan(
 		&materialOwner,
 		&materialPrivacy,
 		&wsID,
@@ -342,7 +348,7 @@ func (s *Store) ListPublicWorkspaces(ctx context.Context, userID string) ([]Publ
 		LEFT JOIN workspace_clone_counts cc ON cc.workspace_id=w.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE w.privacy='public'
-		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
 		ORDER BY COALESCE(cc.clone_count,0) DESC, w.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -387,7 +393,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID string) ([]PublicQ
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
-		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
 		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -429,7 +435,7 @@ func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID string) ([]P
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
 		  AND ((m.workspace_id IS NULL AND m.privacy='public') OR w.privacy='public')
-		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL
+		  AND u.deleted_at IS NULL AND u.deletion_requested_at IS NULL AND u.suspended_at IS NULL
 		ORDER BY COALESCE(cc.clone_count,0) DESC, m.created_at DESC`, userID)
 	if err != nil {
 		return nil, err
@@ -1157,11 +1163,7 @@ func (s *Store) cloneWorkspaceOnce(
 		return "", nil, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, src.OwnerUserID, userID); err != nil {
-		var locked *AccountLockedError
-		if errors.As(err, &locked) && locked.UserID == src.OwnerUserID {
-			return "", nil, ErrNotFound
-		}
-		return "", nil, err
+		return "", nil, ownerHidden(err, src.OwnerUserID, userID)
 	}
 	if err := assertCloneSourceTx(ctx, tx, userID, srcID); err != nil {
 		return "", nil, err
@@ -1613,7 +1615,7 @@ func (s *Store) lockCloneTargetTx(
 		return cloneDestination{}, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, sourceOwnerID, actorID, ownerID); err != nil {
-		return cloneDestination{}, err
+		return cloneDestination{}, ownerHidden(err, ownerID, actorID)
 	}
 	// The rows are already held; this adds the editor and frozen checks.
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, target.WorkspaceID, actorID); err != nil {
@@ -1662,11 +1664,12 @@ func assertCloneSourceTx(ctx context.Context, tx pgx.Tx, userID, workspaceID str
 	return nil
 }
 
-// sourceOwnerHidden maps a locked source owner to not found: a deleted or
-// deleting owner's content is gone for everyone else.
-func sourceOwnerHidden(err error, sourceOwnerID string) error {
+// ownerHidden maps a locked (deleted, deletion-pending or suspended) owner to
+// not found for every actor but the owner: that owner's workspaces and content
+// are gone for everyone else, and the answer must not reveal why.
+func ownerHidden(err error, ownerID, actorID string) error {
 	var locked *AccountLockedError
-	if errors.As(err, &locked) && locked.UserID == sourceOwnerID {
+	if ownerID != actorID && errors.As(err, &locked) && locked.UserID == ownerID {
 		return ErrNotFound
 	}
 	return err
@@ -1725,7 +1728,7 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
 	if err != nil {
-		return "", nil, sourceOwnerHidden(err, sourceOwnerID)
+		return "", nil, ownerHidden(err, sourceOwnerID, userID)
 	}
 	files, err := snapshotCloneFilesTx(ctx, tx, `f.id=$1`, fileID)
 	if err != nil {
@@ -1902,7 +1905,7 @@ func (s *Store) cloneMaterialOnce(
 	// its workspace remain unlocked so accepted collaboration stores can finish.
 	dest, err := s.lockCloneTargetTx(ctx, tx, src.OwnerUserID, userID, target)
 	if err != nil {
-		return "", sourceOwnerHidden(err, src.OwnerUserID)
+		return "", ownerHidden(err, src.OwnerUserID, userID)
 	}
 
 	// A note brings its embedded rows along; their references are rewritten
@@ -2106,18 +2109,17 @@ func (s *Store) cloneMaterialOnce(
 }
 
 // lockCloneAccountsTx follows the normal ordered account lock discipline over
-// the source owner, the actor and the accounts that pay for the copy, but
-// suspension of a source owner who neither acts nor pays does not hide content
-// that was already shared. The cloning actor must still have an active session.
+// the source owner, the actor and the accounts that pay for the copy, and
+// refuses any of them that is locked (deleted, deletion pending, suspended):
+// callers map a locked owner to not found (ownerHidden).
 func lockCloneAccountsTx(
 	ctx context.Context,
 	tx pgx.Tx,
 	sourceOwnerID, actorUserID string,
 	payerIDs ...string,
 ) error {
-	strict := append([]string{actorUserID}, payerIDs...)
 	ids := []string{sourceOwnerID}
-	for _, id := range strict {
+	for _, id := range append([]string{actorUserID}, payerIDs...) {
 		if !slices.Contains(ids, id) {
 			ids = append(ids, id)
 		}
@@ -2149,8 +2151,7 @@ func lockCloneAccountsTx(
 		case suspendedAt != nil:
 			state = AccountSuspended
 		}
-		if state == AccountActive ||
-			(state == AccountSuspended && !slices.Contains(strict, id)) {
+		if state == AccountActive {
 			continue
 		}
 		locked := &AccountLockedError{UserID: id, State: state}
