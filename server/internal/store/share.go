@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path"
 	"slices"
 	"sort"
@@ -13,6 +14,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/models"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/sourceupload"
 )
 
@@ -986,7 +988,13 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 	}
 	// A workspace snapshot owns the hierarchy fence so contained material
 	// deletion cannot race its counter and blob-reference copy.
-	conn, unlock, err := s.lockWorkspaceCloneSource(ctx, srcID, false)
+	payer, err := s.clonePayerLock(ctx, userID, "")
+	if err != nil {
+		return Workspace{}, nil, err
+	}
+	conn, unlock, err := s.lockCloneSources(ctx, []cloneSourceLock{{
+		key: cloneSourceLockKey("workspace", srcID),
+	}, payer})
 	if err != nil {
 		return Workspace{}, nil, err
 	}
@@ -997,7 +1005,13 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 		workspace, copies, err = s.cloneWorkspaceOnce(ctx, conn, userID, srcID, input)
 		return err
 	})
-	return workspace, copies, err
+	if err != nil {
+		return Workspace{}, nil, err
+	}
+	bumpCloneCount(ctx, conn, `INSERT INTO workspace_clone_counts (workspace_id, clone_count)
+		VALUES ($1,1) ON CONFLICT (workspace_id) DO UPDATE
+		SET clone_count=workspace_clone_counts.clone_count+1`, srcID)
+	return workspace, copies, nil
 }
 
 // SetCloneThumbnail points a cloned file at its copied thumbnail. A file that
@@ -1027,21 +1041,68 @@ type cloneTxStarter interface {
 }
 
 // cloneAttempts bounds a clone transaction that fails on a serialization
-// error (40001, 40P01); the last error goes to the user, who can clone again.
+// error (40001, 40P01). Clones queue behind each other on their fences, so
+// this is a backstop; once spent, the user hears the source changed and can
+// clone again.
 const cloneAttempts = 3
+
+// cloneRetried sees each serialization failure a clone runs again after
+// (tests count them).
+var cloneRetried = func(error) {}
 
 // retryClone runs one clone transaction, again after a serialization error,
 // at most cloneAttempts times in all.
 func retryClone(ctx context.Context, once func() error) error {
 	for attempt := 0; ; attempt++ {
 		err := once()
-		if !isRetryableTransactionError(err) || attempt+1 == cloneAttempts {
+		if !isRetryableTransactionError(err) {
 			return err
 		}
+		if attempt+1 == cloneAttempts {
+			return fmt.Errorf("%w: %w", ErrCloneSourceChanged, err)
+		}
+		cloneRetried(err)
 		if err := waitCloneRetry(ctx, attempt); err != nil {
 			return err
 		}
 	}
+}
+
+// bumpCloneCount counts a committed clone on its source in its own statement,
+// still under the clone fence, so a source deletion's counter cleanup runs
+// after it. Outside the copy's transaction the counter cannot make a clone
+// fail. A crash or error between the copy's commit and this loses one count,
+// which is acceptable for a counter; the error is logged and the copy stands.
+func bumpCloneCount(ctx context.Context, starter cloneTxStarter, query, sourceID string) {
+	tx, err := starter.BeginTx(ctx, pgx.TxOptions{})
+	if err == nil {
+		defer tx.Rollback(ctx)
+		if _, err = tx.Exec(ctx, query, sourceID); err == nil {
+			err = tx.Commit(ctx)
+		}
+	}
+	if err != nil {
+		obs.Log(ctx).Warn("clone count not bumped", "source_id", sourceID, "error", err)
+	}
+}
+
+// clonePayerLock queues the clones one account pays for behind each other, so
+// they never collide on its storage counter: the actor pays for a workspace or
+// standalone copy, the target workspace's owner for a copy into it. The owner
+// read takes no lock; a transfer in between only names the old owner's queue,
+// and the transaction checks the payer itself.
+func (s *Store) clonePayerLock(ctx context.Context, actorID, targetWorkspaceID string) (cloneSourceLock, error) {
+	payerID := actorID
+	if targetWorkspaceID != "" {
+		err := s.pool.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`, targetWorkspaceID).Scan(&payerID)
+		if isNoRows(err) {
+			return cloneSourceLock{}, ErrNotFound
+		}
+		if err != nil {
+			return cloneSourceLock{}, err
+		}
+	}
+	return cloneSourceLock{key: "clone-payer:" + payerID}, nil
 }
 
 func waitCloneRetry(ctx context.Context, attempt int) error {
@@ -1285,11 +1346,6 @@ func (s *Store) cloneWorkspaceOnce(
 		return Workspace{}, nil, err
 	}
 
-	if _, err := tx.Exec(ctx, `INSERT INTO workspace_clone_counts (workspace_id, clone_count)
-		VALUES ($1,1) ON CONFLICT (workspace_id) DO UPDATE
-		SET clone_count=workspace_clone_counts.clone_count+1`, srcID); err != nil {
-		return Workspace{}, nil, err
-	}
 	if err := tx.Commit(ctx); err != nil {
 		return Workspace{}, nil, err
 	}
@@ -1610,19 +1666,30 @@ func sourceOwnerHidden(err error, sourceOwnerID string) error {
 // counted), saved edit state, captions, provenance and index, plus the
 // thumbnail the caller copies after the commit. The target owner pays.
 func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
+	payer, err := s.clonePayerLock(ctx, userID, target.WorkspaceID)
+	if err != nil {
+		return File{}, nil, err
+	}
+	// Copies of one file queue on its fence, so they never collide on its
+	// blob references.
+	conn, unlock, err := s.lockContainedCloneSource(ctx, "file", fileID, false, payer)
+	if err != nil {
+		return File{}, nil, err
+	}
+	defer unlock()
 	var file File
 	var copies []ThumbnailCopy
-	err := retryClone(ctx, func() (err error) {
-		file, copies, err = s.cloneFileOnce(ctx, userID, fileID, target)
+	err = retryClone(ctx, func() (err error) {
+		file, copies, err = s.cloneFileOnce(ctx, conn, userID, fileID, target)
 		return err
 	})
 	return file, copies, err
 }
 
-func (s *Store) cloneFileOnce(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
+func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
 	// Repeatable read: one consistent snapshot of the file, its saved state
 	// and its index, without waiting on collaboration.
-	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
+	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
 		return File{}, nil, err
 	}
@@ -1756,7 +1823,11 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 // state and study progress are not copied. The target owner pays (the actor,
 // standalone).
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target CloneTarget) (Material, error) {
-	conn, unlock, err := s.lockMaterialCloneSource(ctx, matID, false)
+	payer, err := s.clonePayerLock(ctx, userID, target.WorkspaceID)
+	if err != nil {
+		return Material{}, err
+	}
+	conn, unlock, err := s.lockContainedCloneSource(ctx, "material", matID, false, payer)
 	if err != nil {
 		return Material{}, err
 	}
@@ -1766,7 +1837,13 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target 
 		material, err = s.cloneMaterialOnce(ctx, conn, userID, matID, target)
 		return err
 	})
-	return material, err
+	if err != nil {
+		return Material{}, err
+	}
+	bumpCloneCount(ctx, conn, `INSERT INTO material_clone_counts (material_id, clone_count)
+		VALUES ($1,1) ON CONFLICT (material_id) DO UPDATE
+		SET clone_count=material_clone_counts.clone_count+1`, matID)
+	return material, nil
 }
 
 func (s *Store) cloneMaterialOnce(
@@ -2000,11 +2077,6 @@ func (s *Store) cloneMaterialOnce(
 				return Material{}, err
 			}
 		}
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO material_clone_counts (material_id, clone_count)
-		VALUES ($1,1) ON CONFLICT (material_id) DO UPDATE
-		SET clone_count=material_clone_counts.clone_count+1`, matID); err != nil {
-		return Material{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return Material{}, err

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -121,7 +122,8 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 }
 
 // A clone transaction that keeps failing on serialization runs three times in
-// all, then hands the error to the user, who can clone again.
+// all, then tells the user the source changed (409 clone_source_changed), so
+// they can clone again.
 func TestCloneStopsAfterThreeSerializationFailures(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -131,8 +133,8 @@ func TestCloneStopsAfterThreeSerializationFailures(t *testing.T) {
 			calls++
 			return &pgconn.PgError{Code: code}
 		})
-		if calls != 3 || !isRetryableTransactionError(err) {
-			t.Fatalf("%s: %d transactions, error %v; want 3 and the serialization error", code, calls, err)
+		if calls != 3 || !errors.Is(err, ErrCloneSourceChanged) {
+			t.Fatalf("%s: %d transactions, error %v; want 3 and ErrCloneSourceChanged", code, calls, err)
 		}
 	}
 }
