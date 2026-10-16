@@ -120,6 +120,81 @@ export async function fixture(
     : Buffer.from(bytes.toString().replaceAll('UAT_RUN_MARKER', marker));
 }
 
+/**
+ * A US Letter PDF made per run, so no donor, parse cache or page-read cache
+ * stands in for its processing. Each page is Helvetica lines (a text layer;
+ * none at all for `[]`) or a full-page JPEG with no text layer, as a scan is.
+ */
+export function pdf(
+  pages: (string[] | { jpeg: Buffer; width: number; height: number })[]
+) {
+  const bodies: Buffer[] = [];
+  const add = (body: string | Buffer) =>
+    bodies.push(typeof body === 'string' ? Buffer.from(body, 'latin1') : body);
+  const stream = (dict: string, data: Buffer) =>
+    Buffer.concat([
+      Buffer.from(`<< ${dict} /Length ${data.length} >>\nstream\n`, 'latin1'),
+      data,
+      Buffer.from('\nendstream', 'latin1'),
+    ]);
+  add('<< /Type /Catalog /Pages 2 0 R >>');
+  add(''); // the page tree, written once its kids are known
+  add('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>');
+  const kids: number[] = [];
+  for (const page of pages) {
+    let resources: string;
+    let content: string;
+    if (Array.isArray(page)) {
+      resources = '/Font << /F1 3 0 R >>';
+      const lines = page.map(
+        (line) => `(${line.replace(/[\\()]/g, '\\$&')}) Tj T*`
+      );
+      content = `BT /F1 11 Tf 16 TL 72 720 Td ${lines.join(' ')} ET`;
+    } else {
+      const image = add(
+        stream(
+          `/Type /XObject /Subtype /Image /Width ${page.width} /Height ${page.height} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter /DCTDecode`,
+          page.jpeg
+        )
+      );
+      resources = `/XObject << /Im1 ${image} 0 R >>`;
+      content = 'q 612 0 0 792 0 0 cm /Im1 Do Q';
+    }
+    const contents = add(stream('', Buffer.from(content, 'latin1')));
+    kids.push(
+      add(
+        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << ${resources} >> /Contents ${contents} 0 R >>`
+      )
+    );
+  }
+  bodies[1] = Buffer.from(
+    `<< /Type /Pages /Kids [${kids.map((id) => `${id} 0 R`).join(' ')}] /Count ${kids.length} >>`,
+    'latin1'
+  );
+  const out = [Buffer.from('%PDF-1.4\n', 'latin1')];
+  let offset = out[0].length;
+  const offsets = bodies.map((body, i) => {
+    const object = Buffer.concat([
+      Buffer.from(`${i + 1} 0 obj\n`, 'latin1'),
+      body,
+      Buffer.from('\nendobj\n', 'latin1'),
+    ]);
+    out.push(object);
+    offset += object.length;
+    return offset - object.length;
+  });
+  const xref = offsets
+    .map((at) => `${String(at).padStart(10, '0')} 00000 n \n`)
+    .join('');
+  out.push(
+    Buffer.from(
+      `xref\n0 ${bodies.length + 1}\n0000000000 65535 f \n${xref}trailer\n<< /Size ${bodies.length + 1} /Root 1 0 R >>\nstartxref\n${offset}\n%%EOF\n`,
+      'latin1'
+    )
+  );
+  return Buffer.concat(out);
+}
+
 export async function fileRow(run: UatRun, fileId: string) {
   const rows = await run.query(
     `SELECT id,workspace_id,user_id,name,kind,status,indexed,index_limit,parse_mode,
@@ -458,6 +533,56 @@ export async function settledSessions(
   }
   await run.attach(`${label}-spend`, sessions);
   return sessions;
+}
+
+/** The credit rate a provider session's jobs pinned at enqueue
+ * (`resourceRates`): UAT's rates are set by hand, so never a constant. */
+export async function pinnedRate(
+  run: UatRun,
+  reservationId: string,
+  key: 'digital_parse_page' | 'vlm_ingest_page'
+) {
+  const rows = await run.query(
+    `SELECT DISTINCT payload->'resourceRates'->%s->>'creditMicrosPerUnit' AS micros
+    FROM jobs WHERE payload->>'reservationId'=%s`,
+    [key, reservationId]
+  );
+  assert.equal(rows.length, 1, `${key}: one pinned rate`);
+  const micros = Number(rows[0].micros);
+  assert(micros > 0, `${key} is free`);
+  return micros;
+}
+
+/** The session's one VLM page read, scripted (UAT's INGEST_UAT_SCRIPTED_VLM):
+ * applied with no provider usage, charged to the owner at the pinned rate. */
+export async function scriptedPageRead(run: UatRun, reservationId: string) {
+  const reads = await run.query(
+    `SELECT c.status,u.actor_user_id,u.kind,u.credit_micros,u.input_tokens,u.output_tokens
+    FROM provider_calls c LEFT JOIN usage_events u ON u.provider_call_id=c.id AND u.reservation_id=c.reservation_id
+    WHERE c.purpose='vlm_page' AND c.reservation_id=%s`,
+    [reservationId]
+  );
+  assert.equal(reads.length, 1, 'one VLM page read');
+  const [read] = reads;
+  assert.deepEqual(
+    [
+      read.status,
+      read.actor_user_id,
+      read.kind,
+      Number(read.credit_micros),
+      Number(read.input_tokens),
+      Number(read.output_tokens),
+    ],
+    [
+      'applied',
+      run.owner.id,
+      'llm',
+      await pinnedRate(run, reservationId, 'vlm_ingest_page'),
+      0,
+      0,
+    ]
+  );
+  return read;
 }
 
 /** No provider session or model, caption or parse usage belongs to the workspace. */

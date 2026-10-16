@@ -14,7 +14,13 @@ process.env.UAT_RUN_ID ??=
 // Lanes: uat-quality runs each project as its own job with its own run id.
 // A new spec lands in `app`; `refresh` waits for its specs (an empty project
 // fails with "No tests found"). Without --project every lane runs serially.
-const office = ['files.spec.ts', 'chat.spec.ts', 'officeRefusal.spec.ts'];
+const office = [
+  'files.spec.ts',
+  'chat.spec.ts',
+  'officeRefusal.spec.ts',
+  'scannedPdf.spec.ts',
+  'partialIngest.spec.ts',
+];
 const refresh = [
   'officeLifecycle.spec.ts',
   'noteIndex.spec.ts',

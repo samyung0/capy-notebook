@@ -12,8 +12,8 @@
 // parse and index; resolve_source_change, which needs pending Office images.
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import type { Page } from '@playwright/test';
 import { m } from '../../i18n';
+import { citations, type Frame, scripted, send } from './chat';
 import {
   fixture,
   processed,
@@ -32,79 +32,7 @@ import {
 import { contentText, materialRow } from './note';
 import { expect, test, type UatRun } from './runtime';
 
-type Frame = Record<string, unknown> & { type: string };
-type Call = { name: string; arguments: Record<string, unknown> };
 type Effect = { operation: string; resource: { id: string; kind: string } };
-
-/** Sends a message from the chat panel; returns the frames the gateway
- * streamed, which must end in an answer and carry no error. */
-async function send(page: Page, text: string) {
-  await page
-    .getByRole('textbox', { exact: true, name: m.chat_placeholder() })
-    .fill(text);
-  const streamed = page.waitForResponse(
-    (r) =>
-      new URL(r.url()).pathname.endsWith('/chat/stream') &&
-      r.request().method() === 'POST',
-    { timeout: 300_000 }
-  );
-  await page.getByRole('button', { exact: true, name: m.chat_send() }).click();
-  const response = await streamed;
-  assert.equal(response.status(), 200);
-  const frames = (await response.text())
-    .split('\n\n')
-    .map((event) =>
-      event
-        .split('\n')
-        .filter((line) => line.startsWith('data:'))
-        .map((line) => line.slice(5).trim())
-        .join('\n')
-    )
-    .filter(Boolean)
-    .map((data) => JSON.parse(data) as Frame);
-  assert.deepEqual(
-    frames.filter((frame) => frame.type === 'error'),
-    [],
-    'the turn streamed an error'
-  );
-  assert(
-    frames.some(
-      (frame) => frame.type === 'block_end' && frame.kind === 'answer'
-    ),
-    'the turn streamed no answer'
-  );
-  const done = frames.at(-1);
-  assert.deepEqual([done?.type, done?.status], ['done', 'complete']);
-  return frames;
-}
-
-/** Sends a scripted turn; every call must succeed. Returns each call's
- * tool_end frame in script order, and the frames. */
-async function scripted(page: Page, steps: (Call[] | string)[]) {
-  const frames = await send(
-    page,
-    `[uat-scripted-tools]${JSON.stringify({ steps })}`
-  );
-  const calls = steps.flatMap((step) => (typeof step === 'string' ? [] : step));
-  const starts = frames.filter((frame) => frame.type === 'tool_start');
-  assert.deepEqual(
-    starts.map((frame) => frame.name),
-    calls.map((call) => call.name),
-    'the turn did not follow its script: UAT retrieval needs RETRIEVAL_UAT_SCRIPTED_TOOLS=true'
-  );
-  const ends = starts.map((start) =>
-    frames.find(
-      (frame) => frame.type === 'tool_end' && frame.callId === start.callId
-    )
-  );
-  for (const [i, end] of ends.entries())
-    assert.equal(
-      end?.outcome,
-      'succeeded',
-      `${calls[i].name}: ${JSON.stringify(end?.error)}`
-    );
-  return { ends, frames };
-}
 
 /** The resource a write's tool_end reports for `operation`. */
 function effect(end: Frame | undefined, operation: string) {
@@ -254,10 +182,8 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
     'root = Answer([a])\na = Md("Scripted tools ran.", [1])',
   ]);
   // The answer cites passage 1, a chunk of one of the two sources.
-  const cited = first.frames
-    .filter((frame) => frame.type === 'citations')
-    .at(-1)?.citations as { fileId: string; n: number }[] | undefined;
-  assert(cited?.length, 'the answer has no citations');
+  const cited = citations(first.frames);
+  assert(cited.length, 'the answer has no citations');
   assert.equal(cited[0].n, 1);
   assert([pdf, text].includes(cited[0].fileId));
   const noteId = effect(first.ends[8], 'created');

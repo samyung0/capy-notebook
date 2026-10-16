@@ -16,7 +16,9 @@ openpyxl, python-pptx and reportlab. Codex's bundled Python provides these libra
 
 The runner replaces run markers in temporary in-memory copies of Office/text
 inputs. PDF bytes stay fixed; that case permits exact-source reuse and does not
-claim a fresh conversion. The suite does not yet cover scans, mixed-page PDFs,
-image/audio codecs, legacy formats, private annotation pointer gestures,
+claim a fresh conversion. Scanned and mixed-page PDFs are not committed: the
+scanned-PDF and partial-file journeys make theirs per run (`pdf()` in
+`e2e/uat/journeys/files.ts`). The suite does not yet cover image/audio codecs,
+legacy formats, private annotation pointer gestures,
 Office structural editing, or native-highlight paint. Those remain explicit
 coverage gaps in the wider plan.
