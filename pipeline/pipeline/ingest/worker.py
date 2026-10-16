@@ -1519,9 +1519,11 @@ async def _chunks_for(
     file_id: str,
     source_sha256: str,
     job_id: str | None = None,
+    last_wait: bool = False,
 ) -> tuple[list[Chunk], list[int], bytes | None]:
     """Parse one source into chunks, the 1-based pages the VLM left unread,
-    and the parse's page-1 image for the card thumbnail."""
+    and the parse's page-1 image for the card thumbnail. ``last_wait``: the
+    job's busy re-pend is spent (see ``_read_vlm_pages``)."""
     source_revision = int(payload.get("sourceRevision") or 0)
     source_etag = str(payload.get("sourceETag") or "")
 
@@ -1634,7 +1636,7 @@ async def _chunks_for(
         _publish_progress(ws, file_id, "indexing", 45)
         _set_stage("vlm_pages")
         content_list, unread = await _read_vlm_pages(
-            content_list, raw_dir, file_id, name
+            content_list, raw_dir, file_id, name, last_wait=last_wait
         )
         _set_stage("chunking")
         chunks = await asyncio.to_thread(
@@ -1654,12 +1656,21 @@ VLM_PAGES_PER_JOB = 10
 
 
 async def _read_vlm_pages(
-    content_list: list[dict], raw_dir: Path, file_id: str, name: str
+    content_list: list[dict],
+    raw_dir: Path,
+    file_id: str,
+    name: str,
+    *,
+    last_wait: bool = False,
 ) -> tuple[list[dict], list[int]]:
     """Read the bundle's text-less page renders (``vlm/<page>.jpg``) with the
     VLM. Each read page becomes one text block after that page's own blocks;
     returns the blocks and the 1-based pages left unread. A page read before
-    for this file, or an eligible donor, comes from the caption cache free."""
+    for this file, or an eligible donor, comes from the caption cache free.
+
+    A provider busy past its budget re-pends the job; on ``last_wait`` (the
+    job's one re-pend spent) that page is unread instead, so the file ends
+    partial rather than failing ``provider_busy`` (parts design §6)."""
     renders = sorted(raw_dir.glob("vlm/*.jpg"), key=lambda path: int(path.stem))
     if not renders:
         return content_list, []
@@ -1675,11 +1686,18 @@ async def _read_vlm_pages(
     async def read_page(page: int, data_url: str) -> str | None:
         if fail:
             return None
-        if token is None:
-            return await models.read_page(data_url, credit_micros=rate)
-        return await models.read_page(
-            data_url, credit_micros=rate, scripted=uat.scripted_page(token, page + 1)
-        )
+        try:
+            if token is None:
+                return await models.read_page(data_url, credit_micros=rate)
+            return await models.read_page(
+                data_url,
+                credit_micros=rate,
+                scripted=uat.scripted_page(token, page + 1),
+            )
+        except elitellm.ProviderBusy:
+            if last_wait:
+                return None
+            raise
 
     async def read(path: Path) -> tuple[int, str]:
         page = int(path.stem)
@@ -2444,6 +2462,7 @@ async def _process_ingest_job(
             file_id=file_id,
             source_sha256=source_sha256,
             job_id=job["id"],
+            last_wait=int(job.get("provider_waits") or 0) >= PROVIDER_WAITS_MAX,
         )
     except parser_client.ParserClientError:
         artifact = payload.get("parseArtifact")
