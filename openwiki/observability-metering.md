@@ -685,8 +685,9 @@ Every account also starts with 800 purchased credits (below).
 The Go gateway and Python ingest worker do not query that table while admitting
 or claiming work. A stale monthly counter is rolled over inside the same row
 lock used by reads, reservations, and direct usage recording. Once the latest
-paid period ends, both runtimes apply the Free credit and storage limits even
-if a delayed webhook has not yet changed `users.plan_tier`.
+paid period ends and its 48-hour renewal tolerance passes, both runtimes apply
+the Free credit and storage limits even if a delayed webhook has not yet
+changed `users.plan_tier`.
 
 The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
@@ -703,8 +704,11 @@ invoices live for the Subscription tab (a user with no Stripe customer gets an
 empty list; a Stripe failure is a 503 the tab shows with Retry). Checkout and the
 billing portal return to `/billing?tab=subscription`. Each invoice carries a
 `kind` (`plan`, `topup`, `reload`) for the tab's Type column and Stripe's
-`nextAttemptAt`; an unpaid reload invoice shows as Failed (retrying on that
-date, or with a Pay link once Stripe stops). The operator dashboard
+`nextAttemptAt`. Any open invoice with a next attempt shows "Retrying <date>"
+with a Pay link (a failed reload or Pro renewal). Once Stripe stops
+(uncollectible) the invoice shows Failed: a reload keeps its Pay link, a Pro
+invoice shows View only, since its subscription is cancelled by then and paying
+it would not restore Pro. The operator dashboard
 also reads bounded
 `usage_events` ranges directly; there is no periodic usage rollup while the
 ledger is small enough for indexed live queries.

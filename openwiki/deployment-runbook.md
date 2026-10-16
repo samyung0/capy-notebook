@@ -2503,6 +2503,11 @@ them). Billing → Invoices → Retries → Card payments: a custom schedule of 
 retries one day apart for one-off invoices (auto-reload), separate from the
 subscription retries under Revenue recovery; after the last failure the invoice is
 marked uncollectible, so a stale reload cannot be paid later from the hosted link.
+Billing → Revenue recovery → Retries → Subscriptions: if all retries fail,
+**Cancel the subscription** and mark the invoice uncollectible, in live and UAT.
+The app's grace model assumes it: "Mark as unpaid" would leave a second Pro
+Checkout open next to the unpaid subscription, and "Leave as past due" keeps
+Pro without payment, since `past_due` still entitles.
 Failed-payment emails link to the Stripe-hosted page, and the 3DS confirmation
 link email is on. Public details: name `Capy Notebook`, descriptor
 `CAPY NOTEBOOK`, support `support@capynotebook.com`.

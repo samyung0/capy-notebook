@@ -1016,7 +1016,7 @@ func TestCurrentFreeSubscriptionBeatsExpiredProSubscription(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	user := newBlobTestUser(t, s, "sub_live_free_expired_pro")
-	expired := time.Now().Add(-time.Hour).UTC()
+	expired := time.Now().Add(-49 * time.Hour).UTC()
 	current := time.Now().Add(time.Hour).UTC()
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_subscriptions
 		(stripe_subscription_id, user_id, status, plan_tier,
@@ -1258,10 +1258,15 @@ func TestSubscriptionMailIsSentOncePerEvent(t *testing.T) {
 	}
 }
 
-func overFreeUser(t *testing.T, s *Store, label string) string {
+// overFreeUser is a Pro subscriber (subID, event 1000) storing more than the
+// Free limit.
+func overFreeUser(t *testing.T, s *Store, label, subID string) string {
 	t.Helper()
 	ctx := context.Background()
 	user := newBlobTestUser(t, s, label)
+	if err := s.UpsertSubscription(ctx, proSubscription(user, subID, 1000)); err != nil {
+		t.Fatal(err)
+	}
 	ws, err := s.CreateWorkspace(ctx, user, WorkspaceCreate{Name: "Over free", Tags: []TagRef{}})
 	if err != nil {
 		t.Fatal(err)
@@ -1299,12 +1304,8 @@ func countNotices(t *testing.T, s *Store, user string) int {
 func TestRenewalWebhookAfterPeriodEndKeepsPro(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	user := overFreeUser(t, s, "sub_renewal_race")
 	subID := uid("sub")
-	sub := proSubscription(user, subID, 1000)
-	if err := s.UpsertSubscription(ctx, sub); err != nil {
-		t.Fatal(err)
-	}
+	user := overFreeUser(t, s, "sub_renewal_race", subID)
 	setPeriodEnd := func(end time.Time) {
 		t.Helper()
 		if _, err := s.pool.Exec(ctx, `UPDATE user_subscriptions
@@ -1346,11 +1347,8 @@ func TestRenewalWebhookAfterPeriodEndKeepsPro(t *testing.T) {
 func TestPastDueRetrySuccessRestoresActive(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	user := overFreeUser(t, s, "sub_pastdue_recovery")
 	subID := uid("sub")
-	if err := s.UpsertSubscription(ctx, proSubscription(user, subID, 1000)); err != nil {
-		t.Fatal(err)
-	}
+	user := overFreeUser(t, s, "sub_pastdue_recovery", subID)
 	if err := s.MarkSubscriptionPastDue(ctx, subID, 1100); err != nil {
 		t.Fatal(err)
 	}
@@ -1384,11 +1382,8 @@ func TestPastDueRetrySuccessRestoresActive(t *testing.T) {
 func TestUnpaidGraceStartStaysFixed(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
-	user := overFreeUser(t, s, "sub_unpaid")
 	subID := uid("sub")
-	if err := s.UpsertSubscription(ctx, proSubscription(user, subID, 1000)); err != nil {
-		t.Fatal(err)
-	}
+	user := overFreeUser(t, s, "sub_unpaid", subID)
 	unpaidAt := time.Now().AddDate(0, 0, -(overQuotaBufferDays + 1)).UTC().Truncate(time.Second)
 	unpaid := proSubscription(user, subID, unpaidAt.Unix())
 	unpaid.Status = "canceled"

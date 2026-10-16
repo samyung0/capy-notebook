@@ -60,8 +60,10 @@ such as workspace `filesLimit`, upload-policy `maxBytes`, and billing counters.
 
 Subscription projection remains owned by the Stripe lifecycle code. Request
 gates do not trust a stale projected Pro tier past the latest paid
-`current_period_end`: Go and Python both apply Free limits at that boundary,
-even before a delayed webhook reconciles `users.plan_tier`. Accounts without a
+`current_period_end`: Go, Python and the collaboration server apply Free limits
+48 hours after that boundary (the renewal tolerance, so a late renewal webhook
+never lapses a paying account), even before a delayed webhook reconciles
+`users.plan_tier`. Accounts without a
 dated subscription retain their stored tier for local/operator fixtures.
 
 ## What counts

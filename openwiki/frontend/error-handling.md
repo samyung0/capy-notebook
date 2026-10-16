@@ -91,7 +91,9 @@ included, until that one request settles, which serialized `/me` and the shell's
 other reads a round trip behind each page's first query. `page()` in
 `src/router.ts` discards any return value; hand-written routes use block
 bodies. The auth-shell route itself prefetches `/me`, so every page starts it in
-the first wave.
+the first wave. `/me` alone refetches on every window focus, stale or not, so
+plan and account banners follow a plan change made in Checkout, the billing
+portal or another tab when the user returns.
 File and material detail queries also use five seconds, but retain the global
 disabled focus refetching. Reopening stale details refreshes them; live material
 editing continues to receive content through Yjs.

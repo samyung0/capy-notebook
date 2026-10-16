@@ -842,6 +842,29 @@ state deletes content. The states exist only when the paid period has lapsed
 subscription selects Free limits but does not erase the most recent expired Pro
 boundary used to derive grace or frozen.
 
+**Renewals and failed payments.** An `active`, `trialing` or `past_due` row
+stays live until `current_period_end` + 48 hours (`renewalTolerance` in
+`store/subscriptions.go`, mirrored in `pipeline/store/db.py` and
+`collaboration-rs` `access.rs`). Stripe moves the period forward when it
+renews, but its webhook can land after the old period end; without the
+tolerance an over-Free Pro account would briefly drop into grace, fail ingest
+jobs and receive an over-quota notice that cannot be withdrawn. A row still
+expired after the tolerance (a missed renewal or cancellation, until the daily
+reconciliation repairs it) lapses with grace counted from `current_period_end`.
+During Stripe's retries the subscription is `past_due` and keeps Pro, with no
+banner or notice; a retry that succeeds turns it `active` with nothing to
+revert. After the last failed retry Stripe cancels the subscription (the
+configured final action, runbook §12.4) and the 14-day grace starts from its
+`ended_at`. A subscription's end time is fixed by its first non-entitling event
+(Stripe's `ended_at`, else that event's time, which covers `unpaid`, stored as
+`canceled`); later events never move it and returning to an entitling status
+clears it, so the grace start and the over-quota notices keyed to it stay put.
+A live Pro subscription that ends without cancel-at-period-end, from a webhook
+or from reconciliation closing a row Stripe no longer reports, sends the "Pro
+ended" email (`subscription-ended`) once per subscription; a cancel-at-period-end
+subscription already sent "Pro cancelled" and gets none. Notifications and
+emails already sent stay sent when an account recovers.
+
 Store-level enforcement sits in the workspace edit lock
 (`lockWorkspaceEditorMutationTx`, which checks both actor and owner; trash and
 chapter deletion use `lockWorkspaceEditorRecoveryTx` without the check), the

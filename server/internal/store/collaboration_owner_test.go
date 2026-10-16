@@ -285,7 +285,7 @@ func TestCollaborationFrozenSQLMatchesGo(t *testing.T) {
 		if match == nil {
 			t.Fatalf("%s not found in access.rs", name)
 		}
-		return strings.NewReplacer("{user}", "u", "{storage}", "st").Replace(string(match[1]))
+		return strings.NewReplacer("{user}", "u", "{storage}", "st", "{RENEWAL_TOLERANCE}", renewalTolerance).Replace(string(match[1]))
 	}
 	query := `SELECT ` + sqlOf("frozen_sql") + `, ` + sqlOf("full_sql") + ` FROM users u LEFT JOIN user_storage st ON st.user_id=u.id WHERE u.id=$1`
 
