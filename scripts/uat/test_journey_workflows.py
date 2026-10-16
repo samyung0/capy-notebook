@@ -161,6 +161,8 @@ const walk = (suite) => {
 };
 JSON.parse(list.stdout).suites.forEach(walk);
 for (const lane of lanes) assert(counts[lane] > 0, `lane ${lane} has no journeys`);
+// The hosted top-up journey runs by hand (Stripe's hCaptcha stops it headless).
+assert(!lanes.includes('manual') && counts.manual > 0, 'manual journeys stay out of the lanes');
 """,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

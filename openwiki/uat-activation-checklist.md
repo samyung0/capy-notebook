@@ -312,4 +312,8 @@ Clerk development instance. Point a local gateway at the UAT database only with
 
 ## Manual critical-path gate
 
-After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify that both lane jobs (`office` and `app`) passed: every journey and each lane's cleanup and release checks. Review each lane's retained-resource report (artifact `uat-journeys-<run id>-<attempt>-<lane>`), including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md).
+After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify that every lane job (`office`, `app` and `billing`) passed: every journey and each lane's cleanup and release checks. Review each lane's retained-resource report (artifact `uat-journeys-<run id>-<attempt>-<lane>`), including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md).
+
+Before launch, also run the manual top-up journey headed (`pnpm e2e:uat:journeys --project=manual --headed`,
+[Hosted payment-form entry](../e2e/uat/journeys/README.md#hosted-payment-form-entry)): CI cannot fill
+Stripe's payment Checkout.

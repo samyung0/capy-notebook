@@ -27,6 +27,9 @@ const billing = [
   'credits.spec.ts',
   'renewalFailure.spec.ts',
 ];
+// Run by hand only, headed (hosted payment Checkout meets Stripe's hCaptcha
+// headless); uat-quality never names this project.
+const manual = ['creditsManual.spec.ts'];
 const refresh = [
   'officeLifecycle.spec.ts',
   'noteIndex.spec.ts',
@@ -46,9 +49,10 @@ export default defineConfig({
     { name: 'office', testMatch: office, use: chromium },
     { name: 'refresh', testMatch: refresh, use: chromium },
     { name: 'billing', testMatch: billing, use: chromium },
+    { name: 'manual', testMatch: manual, use: chromium },
     {
       name: 'app',
-      testIgnore: [...office, ...refresh, ...billing],
+      testIgnore: [...office, ...refresh, ...billing, ...manual],
       use: chromium,
     },
   ],
