@@ -782,6 +782,16 @@ it) counts paid and charging pre-tax dollars per UTC calendar month of payment
 and clears a skip. The 409 carries `spentCents` so the toast can tell "wait for
 the auto-reload" from "over the limit".
 
+**Daily reconciliation.** The UTC-daily Stripe run (`reconcile.Runner`,
+`reconcileCredits`) also settles credit purchases whose webhooks never
+arrived: it re-reads every reload invoice still `retrying` or `failed`, or
+`charging` for over an hour, from the last 90 days, and records it paid
+(crediting it once), void, retrying or failed; and it credits paid top-up
+Checkouts from the last 7 days through the idempotent `GrantTopUp`. Each
+repair writes a `stripe_credit_drift` report row and each failure a
+`stripe_credit_error` row. Re-reading an old failed reload never ends a newer
+reload's 60-second window: only the reload that was charging clears it.
+
 **Reversals.** `charge.refunded` takes credits back in proportion to Stripe's
 cumulative `amount_refunded`; `charge.dispute.created` holds what is left of the
 purchase and `charge.dispute.closed` with `won` gives it back; an inquiry
