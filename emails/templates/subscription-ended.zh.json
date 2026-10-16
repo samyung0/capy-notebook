@@ -1,0 +1,189 @@
+{
+  "schemaVersion": 1,
+  "subject": "你的 Capy Notebook Pro 计划已结束",
+  "preview": "你的账户已转为免费计划，以下是变化。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "你的 Pro 计划已结束"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "你的 Pro 计划已于 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "EndsOn",
+              "label": "Ended on",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 结束，账户已转为免费计划。如果是续费付款失败，你可以随时在账单页面重新订阅。"
+          }
+        ]
+      },
+      {
+        "type": "section",
+        "attrs": {
+          "backgroundColor": "#fdf5e4",
+          "borderColor": "#f0e0bd",
+          "borderWidth": 1,
+          "borderRadius": 10,
+          "paddingTop": 14,
+          "paddingRight": 16,
+          "paddingBottom": 14,
+          "paddingLeft": 16,
+          "marginBottom": 20
+        },
+        "content": [
+          {
+            "type": "paragraph",
+            "content": [
+              {
+                "type": "text",
+                "text": "现在的变化",
+                "marks": [
+                  {
+                    "type": "bold"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "type": "bulletList",
+            "content": [
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "存储额度降为 100 MB，你目前已使用 "
+                      },
+                      {
+                        "type": "variable",
+                        "attrs": {
+                          "id": "StorageUsed",
+                          "label": "Storage used",
+                          "required": true
+                        },
+                        "marks": [
+                          {
+                            "type": "bold"
+                          }
+                        ]
+                      },
+                      {
+                        "type": "text",
+                        "text": "。"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "AI 额度降为每月 1,000。"
+                      }
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "listItem",
+                "content": [
+                  {
+                    "type": "paragraph",
+                    "content": [
+                      {
+                        "type": "text",
+                        "text": "单个文件上限降为 10 MB。"
+                      }
+                    ]
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "如果你的文件超过 100 MB，你将有 14 天释放空间，之后账户将变为只读。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "重新订阅",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为你的 Capy Notebook Pro 计划已结束。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "不再接收账单邮件",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

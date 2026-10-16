@@ -13,6 +13,10 @@ pub const NOT_FOUND_REASON: &str = "collaboration-not-found";
 pub const FORBIDDEN_REASON: &str = "collaboration-forbidden";
 pub const READ_ONLY_REASON: &str = "collaboration-read-only";
 
+/// Go's renewalTolerance: an entitling period stays live this long past
+/// current_period_end, so a late renewal webhook never lapses a paying owner.
+const RENEWAL_TOLERANCE: &str = "interval '48 hours'";
+
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AccessError {
     /// A missing or trashed material, or an owner being deleted.
@@ -88,14 +92,14 @@ pub fn frozen_sql(user: &str, storage: &str) -> String {
           AND live_sub.plan_tier='pro'
           AND live_sub.status IN ('active','trialing','past_due')
           AND (live_sub.current_period_end IS NULL
-            OR live_sub.current_period_end > now()))
+            OR live_sub.current_period_end > now() - {RENEWAL_TOLERANCE}))
       AND COALESCE(GREATEST(
         (SELECT max(expired_sub.current_period_end)
           FROM user_subscriptions expired_sub
           WHERE expired_sub.user_id={user}.id
             AND expired_sub.plan_tier='pro'
             AND expired_sub.status IN ('active','trialing','past_due')
-            AND expired_sub.current_period_end <= now()),
+            AND expired_sub.current_period_end <= now() - {RENEWAL_TOLERANCE}),
         (SELECT max(LEAST(
             COALESCE(closed_sub.current_period_end, closed_sub.ended_at,
               closed_sub.canceled_at,
@@ -132,7 +136,7 @@ pub fn full_sql(user: &str, storage: &str) -> String {
             WHERE live.user_id={user}.id
               AND live.status IN ('active','trialing','past_due')
               AND (live.current_period_end IS NULL
-                OR live.current_period_end > now())
+                OR live.current_period_end > now() - {RENEWAL_TOLERANCE})
             ORDER BY (live.plan_tier='pro') DESC,
               live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
           END)"

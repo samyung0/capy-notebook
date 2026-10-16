@@ -82,6 +82,16 @@ export const emailTemplateDefinitions = [
     ],
   },
   {
+    id: 'subscription-ended',
+    label: 'Subscription ended',
+    variables: [
+      variable('EndsOn', '14 Nov 2026'),
+      variable('OpenURL', 'https://example.test/billing?tab=subscription'),
+      variable('StorageUsed', '640 MB'),
+      variable('UnsubscribeURL', 'https://example.test/settings'),
+    ],
+  },
+  {
     id: 'subscription-over-quota',
     label: 'Subscription over quota',
     variables: [

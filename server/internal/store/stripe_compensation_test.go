@@ -44,7 +44,7 @@ func TestOverQuotaAccountCanReserveCheckout(t *testing.T) {
 				t.Fatal(err)
 			}
 			pushOverQuota(t, s, userID, ws.ID)
-			lapse := "2 days"
+			lapse := "3 days"
 			if frozen {
 				lapse = "20 days"
 			}

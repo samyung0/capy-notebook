@@ -2388,7 +2388,7 @@ async def _process_ingest_job(
     if job_type == "parse":
         if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
             raise TerminalError(
-                "ingest stopped because an account is suspended or deleting"
+                "ingest refused because the account is locked or over quota"
             )
         if not local_path or not source_key:
             raise RetryableError("local document source is missing")
@@ -2424,7 +2424,7 @@ async def _process_ingest_job(
     _set_stage("content_prepare")
     if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
         raise TerminalError(
-            "ingest stopped because an account is suspended or deleting"
+            "ingest refused because the account is locked or over quota"
         )
     try:
         chunks, unread, page_image = await _chunks_for(
@@ -2480,7 +2480,7 @@ async def _process_ingest_job(
         identity = None
     if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
         raise TerminalError(
-            "ingest stopped because an account is suspended or deleting"
+            "ingest refused because the account is locked or over quota"
         )
     association = await store.attach_file_content(
         workspace_id=ws,
@@ -2541,7 +2541,7 @@ async def _process_ingest_job(
     _set_stage("indexing")
     if not await asyncio.to_thread(_account_allows_ingest, file_id, payload, False):
         raise TerminalError(
-            "ingest stopped because an account is suspended or deleting"
+            "ingest refused because the account is locked or over quota"
         )
     try:
         result = await indexing.index_file(

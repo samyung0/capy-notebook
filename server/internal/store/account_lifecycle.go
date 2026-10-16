@@ -165,7 +165,7 @@ func (s *Store) requestAccountDeletion(
 		SELECT $1, 'cancel_subscription', stripe_subscription_id
 		FROM user_subscriptions
 		WHERE user_id=$1 AND status IN `+entitlingStatuses+`
-		  AND (current_period_end IS NULL OR current_period_end>now())
+		  AND (current_period_end IS NULL OR current_period_end > now() - `+renewalTolerance+`)
 		  AND NOT cancel_at_period_end
 		ON CONFLICT (action, object_id) DO UPDATE SET
 			status='pending',attempts=0,lease_token=NULL,lease_expires_at=NULL,

@@ -185,7 +185,7 @@ const wsCols = `w.id, w.name, w.description, w.privacy, w.share_role,
 			ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
 				WHERE live.user_id=u.id
 				  AND live.status IN ('active','trialing','past_due')
-				  AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				  AND (live.current_period_end IS NULL OR live.current_period_end > now() - ` + renewalTolerance + `)
 				ORDER BY (live.plan_tier='pro') DESC,
 				  live.current_period_end DESC NULLS FIRST LIMIT 1), 'free') END
 		 FROM users u WHERE u.id=w.user_id),

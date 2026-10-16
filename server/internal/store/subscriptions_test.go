@@ -514,6 +514,9 @@ func TestReconcileAdoptsStripeAndClosesRowsStripeNoLongerReports(t *testing.T) {
 	if staleStatus != "canceled" {
 		t.Fatalf("a subscription Stripe no longer reports should be closed, got %s", staleStatus)
 	}
+	if n := countMails(t, s, user, "subscription-ended"); n != 1 {
+		t.Fatalf("closing a live Pro row sent %d Pro ended mails, want 1", n)
+	}
 
 	// A second pass over unchanged state must not report drift, otherwise the
 	// nightly log names every customer and drift becomes invisible.
@@ -945,7 +948,7 @@ func TestExpiredPaidPeriodAppliesFreeLimitsBeforeWebhookProjection(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	periodEnd := time.Now().Add(-time.Minute).UTC()
+	periodEnd := time.Now().Add(-49 * time.Hour).UTC()
 	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro',
 		subscription_status='active' WHERE id=$1`, user); err != nil {
 		t.Fatal(err)
@@ -1082,7 +1085,7 @@ func TestOverQuotaNoticesIncludeLiveFreeAfterPaidLapse(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
 	user := newBlobTestUser(t, s, "sub_live_free_notices")
-	expired := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	expired := time.Now().Add(-49 * time.Hour).UTC().Truncate(time.Second)
 	current := time.Now().Add(time.Hour).UTC().Truncate(time.Second)
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_subscriptions
 		(stripe_subscription_id, user_id, status, plan_tier,
@@ -1173,7 +1176,7 @@ func TestUpsertingExpiredEntitlementProjectsFree(t *testing.T) {
 	ctx := context.Background()
 	user := newBlobTestUser(t, s, "sub_expired_upsert")
 	expired := proSubscription(user, uid("sub"), 1000)
-	periodEnd := time.Now().Add(-time.Minute).UTC()
+	periodEnd := time.Now().Add(-49 * time.Hour).UTC()
 	expired.CurrentPeriodEnd = &periodEnd
 	if err := s.UpsertSubscription(ctx, expired); err != nil {
 		t.Fatal(err)
@@ -1238,12 +1241,190 @@ func TestSubscriptionMailIsSentOncePerEvent(t *testing.T) {
 	cancelled.StripeEventCreated = 3000
 	redelivered := cancelled
 	redelivered.StripeEventCreated = 3001
-	for _, event := range []Subscription{sub, renewed, cancelled, redelivered} {
+	deleted := redelivered
+	deleted.Status = "canceled"
+	deleted.StripeEventCreated = 4000
+	for _, event := range []Subscription{sub, renewed, cancelled, redelivered, deleted} {
 		if err := s.UpsertSubscription(ctx, event); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if started, ended := mails("subscription-started"), mails("subscription-cancelled"); started != 1 || ended != 1 {
-		t.Fatalf("started=%d cancelled=%d, want 1 and 1", started, ended)
+	if started, cancelledMails := mails("subscription-started"), mails("subscription-cancelled"); started != 1 || cancelledMails != 1 {
+		t.Fatalf("started=%d cancelled=%d, want 1 and 1", started, cancelledMails)
+	}
+	// The user already heard "Pro cancelled"; reaching the period end sends no "Pro ended".
+	if ended := mails("subscription-ended"); ended != 0 {
+		t.Fatalf("cancel-at-period-end sent %d Pro ended mails", ended)
+	}
+}
+
+func overFreeUser(t *testing.T, s *Store, label string) string {
+	t.Helper()
+	ctx := context.Background()
+	user := newBlobTestUser(t, s, label)
+	ws, err := s.CreateWorkspace(ctx, user, WorkspaceCreate{Name: "Over free", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.createReadyFile(ctx, ws.ID, user, "big.pdf", "pdf", nil, "",
+		mustPlanLimits(t, s, PlanFree).StorageBytes+1, "sources/"+uid("blob")); err != nil {
+		t.Fatal(err)
+	}
+	return user
+}
+
+func countMails(t *testing.T, s *Store, user, template string) int {
+	t.Helper()
+	var n int
+	if err := s.pool.QueryRow(context.Background(), `SELECT count(*) FROM email_outbox
+		WHERE user_id=$1 AND template=$2`, user, template).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func countNotices(t *testing.T, s *Store, user string) int {
+	t.Helper()
+	var n int
+	if err := s.pool.QueryRow(context.Background(), `SELECT count(*) FROM lifecycle_notices
+		WHERE user_id=$1`, user).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// Stripe's renewal webhook can land after current_period_end. Until the 48 h
+// tolerance passes the account stays Pro with no notice; after it, grace
+// counts from the period end.
+func TestRenewalWebhookAfterPeriodEndKeepsPro(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := overFreeUser(t, s, "sub_renewal_race")
+	subID := uid("sub")
+	sub := proSubscription(user, subID, 1000)
+	if err := s.UpsertSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	setPeriodEnd := func(end time.Time) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `UPDATE user_subscriptions
+			SET current_period_end=$2 WHERE stripe_subscription_id=$1`, subID, end); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	setPeriodEnd(time.Now().Add(-time.Hour))
+	if _, err := s.SweepOverQuotaNotices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	status, err := s.AccountAccess(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != AccountActive || status.PlanTier != PlanPro {
+		t.Fatalf("an hour past period end got %s/%s, want active/pro", status.State, status.PlanTier)
+	}
+	if n := countNotices(t, s, user); n != 0 {
+		t.Fatalf("renewal window sent %d over-quota notices", n)
+	}
+
+	periodEnd := time.Now().Add(-49 * time.Hour).UTC().Truncate(time.Second)
+	setPeriodEnd(periodEnd)
+	status, err = s.AccountAccess(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != AccountOverQuotaGrace || status.PlanTier != PlanFree {
+		t.Fatalf("past the tolerance got %s/%s, want over_quota_grace/free", status.State, status.PlanTier)
+	}
+	if want := periodEnd.AddDate(0, 0, overQuotaBufferDays); status.GraceEndsAt == nil || !status.GraceEndsAt.Equal(want) {
+		t.Fatalf("grace ends %v, want %v (period end + %d days)", status.GraceEndsAt, want, overQuotaBufferDays)
+	}
+}
+
+// A retry that succeeds while past_due leaves nothing to revert.
+func TestPastDueRetrySuccessRestoresActive(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := overFreeUser(t, s, "sub_pastdue_recovery")
+	subID := uid("sub")
+	if err := s.UpsertSubscription(ctx, proSubscription(user, subID, 1000)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkSubscriptionPastDue(ctx, subID, 1100); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpsertSubscription(ctx, proSubscription(user, subID, 1200)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.SweepOverQuotaNotices(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if tier, status := projectedPlan(t, s, user); tier != PlanPro || status != "active" {
+		t.Fatalf("after a paid retry got %s/%s, want pro/active", tier, status)
+	}
+	status, err := s.AccountAccess(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != AccountActive {
+		t.Fatalf("after a paid retry the account is %s", status.State)
+	}
+	if n := countNotices(t, s, user); n != 0 {
+		t.Fatalf("a recovered renewal sent %d notices", n)
+	}
+	if n := countMails(t, s, user, "subscription-ended"); n != 0 {
+		t.Fatalf("a recovered renewal sent %d Pro ended mails", n)
+	}
+}
+
+// Stripe sends no end time for unpaid (stored as canceled). The first
+// terminal event fixes it; later events must not restart grace or re-send
+// notices, and "Pro ended" goes out once.
+func TestUnpaidGraceStartStaysFixed(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := overFreeUser(t, s, "sub_unpaid")
+	subID := uid("sub")
+	if err := s.UpsertSubscription(ctx, proSubscription(user, subID, 1000)); err != nil {
+		t.Fatal(err)
+	}
+	unpaidAt := time.Now().AddDate(0, 0, -(overQuotaBufferDays + 1)).UTC().Truncate(time.Second)
+	unpaid := proSubscription(user, subID, unpaidAt.Unix())
+	unpaid.Status = "canceled"
+	if err := s.UpsertSubscription(ctx, unpaid); err != nil {
+		t.Fatal(err)
+	}
+	later := unpaid
+	later.StripeEventCreated = time.Now().Unix()
+	if err := s.UpsertSubscription(ctx, later); err != nil {
+		t.Fatal(err)
+	}
+	status, err := s.AccountAccess(ctx, user)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.State != AccountOverQuotaFrozen {
+		t.Fatalf("a later unpaid update moved the account to %s, want frozen", status.State)
+	}
+	if want := unpaidAt.AddDate(0, 0, overQuotaBufferDays); status.GraceEndsAt == nil || !status.GraceEndsAt.Equal(want) {
+		t.Fatalf("grace ends %v, want %v", status.GraceEndsAt, want)
+	}
+	if n := countMails(t, s, user, "subscription-ended"); n != 1 {
+		t.Fatalf("Pro ended mails=%d, want 1", n)
+	}
+
+	// Paying the unpaid invoice later makes it entitling again and clears the end.
+	paid := proSubscription(user, subID, later.StripeEventCreated+1)
+	if err := s.UpsertSubscription(ctx, paid); err != nil {
+		t.Fatal(err)
+	}
+	var endedAt *time.Time
+	if err := s.pool.QueryRow(ctx, `SELECT ended_at FROM user_subscriptions
+		WHERE stripe_subscription_id=$1`, subID).Scan(&endedAt); err != nil {
+		t.Fatal(err)
+	}
+	if endedAt != nil {
+		t.Fatalf("a paid subscription kept ended_at %v", endedAt)
 	}
 }

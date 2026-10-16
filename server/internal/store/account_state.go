@@ -446,12 +446,12 @@ func (s *Store) applyQuotaState(
 	err := q.QueryRow(ctx, `SELECT count(*) FILTER (WHERE plan_tier='pro') > 0,
 		(SELECT live.plan_tier FROM user_subscriptions live
 			WHERE live.user_id=$1 AND live.status IN `+entitlingStatuses+`
-				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
 			ORDER BY (live.plan_tier='pro') DESC,
 				live.current_period_end DESC NULLS FIRST LIMIT 1),
 		max(current_period_end) FILTER (
 			WHERE plan_tier='pro' AND status IN `+entitlingStatuses+`
-				AND current_period_end <= now()),
+				AND current_period_end <= now() - `+renewalTolerance+`),
 		max(LEAST(
 			COALESCE(current_period_end, ended_at, canceled_at,
 				to_timestamp(NULLIF(stripe_event_created, 0)), updated_at),

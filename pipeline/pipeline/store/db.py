@@ -2302,7 +2302,7 @@ def account_allows_ingest(cur, user_id: str) -> bool:
                    WHERE live.user_id=u.id
                      AND live.status IN ('active','trialing','past_due')
                      AND (live.current_period_end IS NULL
-                       OR live.current_period_end > now())
+                       OR live.current_period_end > now() - interval '48 hours')
                    ORDER BY (live.plan_tier='pro') DESC,
                      live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
                END,
@@ -2310,16 +2310,7 @@ def account_allows_ingest(cur, user_id: str) -> bool:
                COALESCE(st.used_bytes, 0) + COALESCE(
                    (SELECT sum(delta_bytes) FROM user_storage_deltas d
                     WHERE d.user_id = u.id), 0
-               ) + COALESCE(st.reserved_bytes, 0) AS effective_used,
-               (SELECT max(s.current_period_end)
-                  FROM user_subscriptions s
-                 WHERE s.user_id = u.id
-                   AND s.status IN ('active','trialing','past_due')
-                   AND s.current_period_end IS NOT NULL) AS period_end,
-               EXISTS(SELECT 1 FROM user_subscriptions s WHERE s.user_id=u.id),
-               EXISTS(SELECT 1 FROM user_subscriptions s
-                   WHERE s.user_id=u.id
-                     AND s.status IN ('active','trialing','past_due'))
+               ) + COALESCE(st.reserved_bytes, 0) AS effective_used
         FROM users u
         LEFT JOIN user_storage st ON st.user_id = u.id
         WHERE u.id = %s
@@ -2335,9 +2326,6 @@ def account_allows_ingest(cur, user_id: str) -> bool:
         suspended_at,
         deletion_requested_at,
         effective_used,
-        period_end,
-        has_subscriptions,
-        has_entitling_subscription,
     ) = row
     if (
         deleted_at is not None
@@ -2345,17 +2333,6 @@ def account_allows_ingest(cur, user_id: str) -> bool:
         or deletion_requested_at is not None
     ):
         return False
-    from datetime import datetime, timezone
-
-    if has_subscriptions and not has_entitling_subscription:
-        plan_tier = "free"
-    elif period_end is not None:
-        now = datetime.now(timezone.utc)
-        end = (
-            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
-        )
-        if end <= now:
-            plan_tier = "free"
     return effective_used <= plan_limits.for_tier(plan_tier).storage_bytes
 
 
@@ -2401,7 +2378,10 @@ def ingest_accounts_active(cur, file_id: str, actor_user_id: str) -> bool:
 
 
 def effective_plan_tier(cur, user_id: str) -> str:
-    """The plan whose limits apply now, as the gateway's effectivePlanTier."""
+    """The plan whose limits apply now, as the gateway's effectivePlanTier.
+
+    The 48 hours mirror Go's renewalTolerance: a late renewal webhook keeps Pro.
+    """
     cur.execute(
         """
         SELECT CASE
@@ -2412,19 +2392,10 @@ def effective_plan_tier(cur, user_id: str) -> str:
                    WHERE live.user_id=u.id
                      AND live.status IN ('active','trialing','past_due')
                      AND (live.current_period_end IS NULL
-                       OR live.current_period_end > now())
+                       OR live.current_period_end > now() - interval '48 hours')
                    ORDER BY (live.plan_tier='pro') DESC,
                      live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
-               END,
-               (SELECT max(s.current_period_end)
-                  FROM user_subscriptions s
-                 WHERE s.user_id = u.id
-                   AND s.status IN ('active','trialing','past_due')
-                   AND s.current_period_end IS NOT NULL) AS period_end,
-               EXISTS(SELECT 1 FROM user_subscriptions s WHERE s.user_id=u.id),
-               EXISTS(SELECT 1 FROM user_subscriptions s
-                   WHERE s.user_id=u.id
-                     AND s.status IN ('active','trialing','past_due'))
+               END
           FROM users u
          WHERE u.id = %s
         """,
@@ -2433,18 +2404,7 @@ def effective_plan_tier(cur, user_id: str) -> str:
     row = cur.fetchone()
     if not row:
         raise RuntimeError(f"user {user_id!r} not found")
-    plan_tier, period_end, has_subscriptions, has_entitling_subscription = row
-    from datetime import datetime, timezone
-
-    if has_subscriptions and not has_entitling_subscription:
-        return "free"
-    if period_end is not None:
-        end = (
-            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
-        )
-        if end <= datetime.now(timezone.utc):
-            return "free"
-    return plan_tier
+    return row[0]
 
 
 def _credit_limit_micros(cur, user_id: str) -> int:

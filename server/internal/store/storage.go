@@ -109,7 +109,7 @@ func (s *Store) effectiveSubscriptionStateForUser(
 			WHERE any_sub.user_id=u.id) THEN u.plan_tier
 		ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
 			WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
-				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
 			ORDER BY (live.plan_tier='pro') DESC,
 				live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
 		END,
@@ -118,7 +118,7 @@ func (s *Store) effectiveSubscriptionStateForUser(
 			WHERE any_sub.user_id=u.id) THEN u.subscription_status
 		ELSE COALESCE((SELECT live.status FROM user_subscriptions live
 			WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
-				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
 			ORDER BY (live.plan_tier='pro') DESC,
 				live.current_period_end DESC NULLS FIRST LIMIT 1), 'canceled')
 		END

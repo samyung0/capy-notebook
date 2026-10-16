@@ -193,6 +193,9 @@ export const meQuery = () =>
     ...persisted,
     queryFn: () => api.get<User>('/me'),
     queryKey: qk.me,
+    // Plan and account banners follow a plan change made in another tab
+    // (Checkout, the portal, Stripe's emails).
+    refetchOnWindowFocus: 'always',
   });
 export const useMe = (options?: QueryUiOptions) =>
   useQuery({ ...meQuery(), meta: queryMeta(options) });
