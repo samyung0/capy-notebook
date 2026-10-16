@@ -16,8 +16,17 @@ function setupFailure(error: unknown, stage: string) {
     typeof error.status === 'number'
       ? ` (${error.status})`
       : '';
+  // Only a fixed transport kind (a known Node error code, or Playwright's timeout
+  // or closed-context words) from the first line: the call log after it carries
+  // the bearer token.
+  const kind =
+    error instanceof Error
+      ? /\b(E(?:CONNRESET|CONNREFUSED|CONNABORTED|TIMEDOUT|NOTFOUND|AI_AGAIN|PIPE|PROTO|HOSTUNREACH|NETUNREACH)|socket hang up|Timeout \d+ms exceeded|has been closed|disposed)\b/.exec(
+          error.message.split('\n', 1)[0]
+        )?.[1]
+      : undefined;
   return new Error(
-    `${stage} failed${status}; browser/provider details are omitted to keep credentials out of artifacts`
+    `${stage} failed${status}${kind ? ` [${kind}]` : ''}; browser/provider details are omitted to keep credentials out of artifacts`
   );
 }
 
