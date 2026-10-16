@@ -151,7 +151,10 @@ async def test_an_unmarked_file_reads_its_pages_with_the_model(pages):
 
     assert [b["text"] for b in blocks] == ["Read by the model."] * 2 and unread == []
     assert seen["provider"] == ["complete", "complete"]
-    assert seen["keys"][0] == hashlib.sha256(b"vlm-page\0render 0").hexdigest()
+    # Pages are read concurrently, so their keys arrive in any order.
+    assert sorted(seen["keys"]) == sorted(
+        hashlib.sha256(b"vlm-page\0render " + page).hexdigest() for page in (b"0", b"2")
+    )
 
 
 async def test_markers_without_their_switches_read_for_real(pages):
@@ -164,9 +167,9 @@ async def test_markers_without_their_switches_read_for_real(pages):
 
     assert [b["text"] for b in blocks] == ["Read by the model."] * 2 and unread == []
     assert seen["provider"] == ["complete", "complete"]
-    assert seen["keys"] == [
+    assert sorted(seen["keys"]) == sorted(
         hashlib.sha256(b"vlm-page\0render " + page).hexdigest() for page in (b"0", b"2")
-    ]
+    )
 
 
 async def test_a_scripted_file_is_read_and_charged_without_a_provider_call(
