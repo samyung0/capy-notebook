@@ -19,6 +19,12 @@ const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
 const BROWSER_ONLY =
   /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
+/** MSW's entry points (src/main.tsx, src/share). A build never runs them, but
+ * Rollup loads every dynamic import, dead code included, and loading the mocks
+ * emits their `?url` fixtures (Office files up to 23 MB) into dist/: a build
+ * gets an empty module instead. MSW and e2e run on the dev server. */
+const MSW_ENTRIES =
+  /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$/;
 
 // Every component reads deploy/.env; see deploy/.env.example.
 const ENV_DIR = path.resolve(import.meta.dirname, 'deploy');
@@ -31,7 +37,7 @@ const WATCH_DIRECTORIES = [
   'workers/site',
 ];
 
-export default defineConfig(({ isSsrBuild, mode }) => {
+export default defineConfig(({ command, isSsrBuild, mode }) => {
   const env = loadEnv(mode, ENV_DIR, '');
   // Match src/main.tsx: MSW is on unless explicitly disabled.
   const useMsw = env.VITE_USE_MSW !== 'false' && mode === 'development';
@@ -132,6 +138,13 @@ export default defineConfig(({ isSsrBuild, mode }) => {
         name: 'share-render-browser-only',
         resolveId: (id: string) =>
           BROWSER_ONLY.test(id) ? '\0browser-only' : undefined,
+      },
+      command === 'build' && {
+        enforce: 'pre' as const,
+        load: (id: string) => (id === '\0no-mocks' ? 'export {};' : undefined),
+        name: 'no-mocks-in-builds',
+        resolveId: (id: string) =>
+          MSW_ENTRIES.test(id) ? '\0no-mocks' : undefined,
       },
       // The release an open tab compares with its own when it regains focus
       // (src/lib/appRelease.ts); public/_headers serves it uncached.
