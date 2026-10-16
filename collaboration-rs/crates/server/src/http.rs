@@ -300,6 +300,9 @@ async fn document(
         Ok(value) => json_response(StatusCode::OK, value),
         Err(error) => {
             let (status, body) = error.status_and_body();
+            if let crate::edits::DocumentError::Unavailable(reason) = error {
+                return unavailable(uri.path(), reason, body);
+            }
             if status >= 500 {
                 crate::observe::capture(error.message(), None, &[("stage", "document_request")]);
             }
@@ -307,6 +310,18 @@ async fn document(
             json_response(status, body)
         }
     }
+}
+
+/// An edit refused because its room is being reset or compacted: refused
+/// before anything applied, so the caller may retry. An expected outcome,
+/// logged and not reported.
+fn unavailable(route: &str, reason: &str, body: Value) -> Response {
+    crate::observe::log(
+        crate::observe::Level::Info,
+        "edit refused: room unavailable",
+        json!({ "route": route, "reason": reason }),
+    );
+    json_response(StatusCode::SERVICE_UNAVAILABLE, body)
 }
 
 /// `/internal/commands`: the replace-block command.
@@ -325,6 +340,15 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
         Ok(()) => json_response(StatusCode::OK, json!({ "status": "applied" })),
         Err(message) if message.starts_with("invalid collaboration command") => {
             json_response(StatusCode::BAD_REQUEST, json!({ "message": message }))
+        }
+        Err(message)
+            if message == crate::edits::ROOM_RESET || message == crate::edits::ROOM_COMPACTING =>
+        {
+            unavailable(
+                "/internal/commands",
+                &message,
+                json!({ "message": message }),
+            )
         }
         Err(message) => {
             let conflict = message.contains("concurrently") || message.contains("no longer exists");
@@ -489,6 +513,141 @@ mod tests {
         });
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].tags.get("trace_id"), Some(&trace));
+    }
+
+    /// An app whose database, Redis and gateway are never reached (lazy
+    /// connections), for requests answered by their checks alone.
+    fn offline_app() -> Shared {
+        let config = crate::config::Config::load(
+            &[
+                ("COLLABORATION_ENGINE_SAVE_PROCESSES", "1"),
+                ("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1"),
+                ("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "1"),
+            ]
+            .map(|(key, value)| (key.to_owned(), value.to_owned()))
+            .into(),
+        )
+        .unwrap();
+        let pg: tokio_postgres::Config = config.database_url.parse().unwrap();
+        let db = deadpool_postgres::Pool::builder(deadpool_postgres::Manager::new(
+            pg,
+            tokio_postgres::NoTls,
+        ))
+        .runtime(deadpool_postgres::Runtime::Tokio1)
+        .build()
+        .unwrap();
+        let redis_client = redis::Client::open(config.redis_url.as_str()).unwrap();
+        let redis = redis::aio::ConnectionManager::new_lazy_with_config(
+            redis_client.clone(),
+            Default::default(),
+        )
+        .unwrap();
+        let http = reqwest::Client::new();
+        let sources = std::sync::Arc::new(sources::Sources::new(
+            sources::SourcesConfig {
+                api_url: config.api_url.clone(),
+                secret: config.secret.clone(),
+                engine: sources::engine::PoolConfig {
+                    program: "unused".into(),
+                    args: Vec::new(),
+                    save_processes: 1,
+                    background_processes: 1,
+                    call_timeout: sources::engine::CALL_TIMEOUT,
+                    replica_budget_bytes: 0,
+                    memory_limit_bytes: None,
+                },
+            },
+            db.clone(),
+            http.clone(),
+        ));
+        std::sync::Arc::new(crate::app::App {
+            instance_id: "test".into(),
+            config,
+            db,
+            redis,
+            redis_client,
+            http,
+            rooms: Default::default(),
+            evictions: Default::default(),
+            stats: Default::default(),
+            health: Default::default(),
+            unplaced: Default::default(),
+            projection_failures: Default::default(),
+            projection_refused: Default::default(),
+            pubsub: Default::default(),
+            next_connection: Default::default(),
+            next_channel: Default::default(),
+            sources,
+            handoff: Default::default(),
+            source_joins: Default::default(),
+            markdown: None,
+        })
+    }
+
+    /// A room being reset (a discard, a rejected lineage) refuses an agent
+    /// edit and the replace-block command before anything applies: a 503
+    /// whose outcome is known (`unavailable_target` for an edit), so the
+    /// caller may retry, and no Sentry event. Fails if either refusal is
+    /// reported or the edit answers `outcome_unknown`.
+    #[test]
+    fn a_room_being_reset_refuses_edits_without_a_report() {
+        let room = "material:m1:schema:1";
+        let edit = json!({
+            "actorUserId": "u1",
+            "commands": [],
+            "operation": { "id": "op1", "requestHash": "h1" },
+            "room": room,
+            "target": { "id": "m1", "kind": "material" },
+        });
+        let command = json!({
+            "type": "replace-block",
+            "actorUserId": "u1",
+            "materialId": "m1",
+            "room": room,
+            "expectedBlock": {},
+            "replacementBlock": {},
+        });
+        let mut answers = Vec::new();
+        let events = sentry::test::with_captured_events(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            runtime.block_on(async {
+                let app = offline_app();
+                app.evictions.reject(room);
+                let secret = app.config.secret.clone();
+                for (path, body) in [
+                    ("/internal/documents/edit", &edit),
+                    ("/internal/commands", &command),
+                ] {
+                    let request = Request::post(path)
+                        .header("x-collaboration-secret", &secret)
+                        .body(Body::from(body.to_string()))
+                        .unwrap();
+                    let response = router(app.clone()).oneshot(request).await.unwrap();
+                    let status = response.status();
+                    let bytes = axum::body::to_bytes(response.into_body(), usize::MAX)
+                        .await
+                        .unwrap();
+                    answers.push((status, serde_json::from_slice::<Value>(&bytes).unwrap()));
+                }
+            });
+        });
+        assert_eq!(events.len(), 0, "{events:?}");
+        let [(edit_status, edit_body), (command_status, command_body)] = answers.as_slice() else {
+            panic!("{answers:?}");
+        };
+        assert_eq!(*edit_status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            *edit_body,
+            json!({ "code": "unavailable_target", "message": crate::edits::ROOM_RESET })
+        );
+        assert_eq!(*command_status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            *command_body,
+            json!({ "message": crate::edits::ROOM_RESET })
+        );
     }
 
     /// Sockets read through 8 KiB (REVIEW5 final N4): the upgrade sets the
