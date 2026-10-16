@@ -1393,10 +1393,10 @@ those services start.
    `CAPY_PARSE_MAX_PAGES`. Set `CAPY_PARSE_MAX_PAGES=1400` and
    `CAPY_PARSE_OCR_PAGE_CAP=500` in the `uat` and `production` GitHub
    environments before deploying this change. The default time hierarchy is
-   a 900-second per-document deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`), a
-   1,920-second parser request (`PARSER_TIMEOUT`: one 900 s wait for a parse
-   child, the 900 s parse and 120 s, see agentic-retrieval's Parse capacity)
-   and a 2,100-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
+   a 600-second per-document deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`), a
+   1,320-second parser request (`PARSER_TIMEOUT`: one 600 s wait for a parse
+   child, the 600 s parse and 120 s, see agentic-retrieval's Parse capacity)
+   and a 1,500-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
    20-minute bound. Queue wait does not spend the parse deadline. The job worker
    refuses to start with a `PARSER_TIMEOUT` that is not below `CAPY_PARSE_JOB_TIMEOUT`;
    retrieval, which reads `PARSER_TIMEOUT` only for page captures, does not check it. The parser container
@@ -1635,7 +1635,7 @@ cutovers. A restart drops in-flight connections, but ordinary parser errors get
 one retry and the client recovers an atomically published spool artifact when
 publication completed before the disconnect.
 
-Each document has a 900-second limit that begins when it leaves the queue,
+Each document has a 600-second limit that begins when it leaves the queue,
 before LibreOffice normalisation and the Java run, and ends when the API has
 read the child's result, page renders included. A timed-out document is
 quarantined (`parse_hard_timeout`) and its parse child is killed with its

@@ -113,7 +113,7 @@ PARSE_WORKERS = int(os.environ.get("CAPY_PARSE_WORKERS") or 0)
 # Wall clock for one document in its parse child, started when it leaves the
 # queue. The Java step gets the remaining budget as its own subprocess timeout.
 PARSE_DOCUMENT_TIMEOUT_S = max(
-    1, int(os.environ.get("CAPY_PARSE_DOCUMENT_TIMEOUT", "900"))
+    1, int(os.environ.get("CAPY_PARSE_DOCUMENT_TIMEOUT", "600"))
 )
 # Text-less pages one document may hand the ingest worker's VLM; a document
 # with more is refused. The API serves the same value in the upload policy.

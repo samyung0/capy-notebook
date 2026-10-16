@@ -17,9 +17,9 @@ x-pipeline-env: &pipeline-env
   B2_APP_KEY: ${B2_APP_KEY:?set B2_APP_KEY}
   PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the WireGuard bind address}:8090/file_parse
   PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-1920}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-1320}
   CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
-  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-2100}
+  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-1500}
   CAPY_INGEST_TIMEOUT: ${CAPY_INGEST_TIMEOUT:-1200}
   CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
   CAPY_PARSE_ARTIFACT_MAX_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_BYTES:-268435456}
@@ -81,7 +81,7 @@ services:
       CAPY_PARSE_QUEUE_DEPTH: ${CAPY_PARSE_QUEUE_DEPTH:-8}
       # Hard deadline per document in its parse child (Java plus repairs, wall
       # clock); a breach quarantines the fingerprint and replaces that child.
-      CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-900}
+      CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-600}
       # Text-less pages one document may send to the ingest worker's VLM;
       # more fails as parse_too_many_scanned_pages.
       CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:-500}

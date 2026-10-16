@@ -13,7 +13,8 @@ It also carries the parsercaps changes: figure clustering on a grid index, the
 
 The developer chose seven parse children (2026-10-16), with the 2 GiB
 per-process caps unchanged: UAT load on the shared host is light. The
-`PARSER_TIMEOUT` option below is still open. Findings:
+developer then chose option B for `PARSER_TIMEOUT`: a 600 s deadline and
+wait term (1,320 s request, 1,500 s job). Findings:
 
 - **Scanned pages cost the parser almost nothing now.** A 150-page scan
   parses in 5 s (3.7 s of it rendering the page JPEGs, 23 MiB for 150 pages);

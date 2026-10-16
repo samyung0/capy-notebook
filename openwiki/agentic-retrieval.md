@@ -833,7 +833,7 @@ children are the outer cap.
 
 | Route | Host | Parser admission | Deadlines | JVM heap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | depth 8, 7 parse children, at most 500 text-less pages per document | 900 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
+| fast | one 8-core / 16 GiB VM | depth 8, 7 parse children, at most 500 text-less pages per document | 600 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
 
 The v16 recalibration on the ingest host
 ([`2026-10-16-parser-v16-recalibration.md`](../bench/parsers/reports/2026-10-16-parser-v16-recalibration.md),
@@ -886,7 +886,7 @@ without the automatic retry, as it does for a parse that yields no indexable
 content. A Java crash or any other child crash keeps the one retry; a
 LibreOffice timeout is final like the parse deadline (below).
 
-A document has a 900-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
+A document has a 600-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
 that starts when it leaves the queue, before LibreOffice normalisation of an
 Office source and the Java run, and ends when the API has read the child's
 result, renders included; queue wait does not spend it. The Java subprocess itself runs under the same timeout. If a
@@ -900,13 +900,15 @@ fingerprint fail immediately while that parser version is live. A parser-version
 `pipeline/parse/parser_client.py`) creates a new fingerprint and is the
 deliberate automatic way to retry the file after parser code changes.
 
-The whole-document parser request has a 1,920-second bound (`PARSER_TIMEOUT`:
-one wait for a parse child and the parse itself, 900 s each with eight
+The whole-document parser request has a 1,320-second bound (`PARSER_TIMEOUT`:
+one wait for a parse child and the parse itself, 600 s each with eight
 admitted over seven children, plus a 120 s margin) and the parse job a
-2,100-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
+1,500-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
 continuation, which includes the VLM page reads, has a 1,200-second bound.
-Until the OCR stage left the parser the bounds were 4,420 s and 4,600 s, with
-500 OCR pages at up to 5 s inside the request. A later attempt for the same
+The 600 s deadline is twice the slowest parse and the longest wait measured
+at seven children (about 300 s each, a 1,400-page book among seven). Until the
+OCR stage left the parser the bounds were 4,420 s and 4,600 s, with 500 OCR
+pages at up to 5 s inside the request. A later attempt for the same
 fingerprint joins the parse already in flight. A timed-out coordinator or
 ingest process records its retry and exits; the supervisor or Docker replaces
 only that process, so a cancelled blocking thread cannot overlap a later job.
@@ -3984,7 +3986,7 @@ current chunk, with full coverage in the large-document reduction path.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 900 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,920 s per request and 2,100 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
 | Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
