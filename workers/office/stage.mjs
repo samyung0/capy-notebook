@@ -32,9 +32,9 @@ await cp(new URL('./_headers', import.meta.url), resolve(target, '_headers'));
 
 // WASM and uncompressed fonts become `<name>.br` at brotli's maximum quality,
 // which the Worker sends as `Content-Encoding: br` (the static layer would
-// compress them on the fly at a low quality). The original is removed, so a
-// request the Worker does not route fails instead of falling back to it. Keep
-// the list in step with PRECOMPRESSED in index.ts and run_worker_first.
+// compress them on the fly at a low quality). The original is removed, so
+// only the Worker answers for it. Keep the list in step with PRECOMPRESSED in
+// index.ts and run_worker_first. Each file is logged with its sizes.
 const PRECOMPRESSED = /\.(wasm|ttf|otf)$/;
 const compress = promisify(brotliCompress);
 const assets = resolve(target, 'assets');
@@ -52,5 +52,8 @@ await Promise.all(
       });
       await writeFile(`${file}.br`, packed);
       await rm(file);
+      process.stdout.write(
+        `${name}: ${bytes.length} -> ${packed.length} bytes (br)\n`
+      );
     })
 );
