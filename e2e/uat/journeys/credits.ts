@@ -426,11 +426,21 @@ export async function completeCheckout(
   const line1 = page.locator('#billingAddressLine1');
   if (await line1.isVisible()) {
     await line1.fill('1 Main Street');
-    await line1.press('Escape');
-    await page.locator('#billingLocality').fill('New York');
-    await page.locator('#billingAdministrativeArea').selectOption('NY');
+    // Stripe's address suggestions can arrive after any key that would close
+    // them and then cover the form below, Link's opt-in among it. Choosing one
+    // closes the list; it may fill the fields below as well.
+    const suggestion = page.locator('.AddressAutocomplete-result').first();
+    const listed = await suggestion
+      .waitFor({ timeout: 5000 })
+      .then(() => true)
+      .catch(() => false);
+    if (listed) await suggestion.click();
+    const city = page.locator('#billingLocality');
+    if (!(await city.inputValue())) await city.fill('New York');
+    const state = page.locator('#billingAdministrativeArea');
+    if (!(await state.inputValue())) await state.selectOption('NY');
   }
-  await postal.fill('10001');
+  if (!(await postal.inputValue())) await postal.fill('10001');
   // Link's opt-in would ask for a phone number.
   const link = page.locator('#enableStripePass');
   if ((await link.count()) > 0 && (await link.isChecked()))

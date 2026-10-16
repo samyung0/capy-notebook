@@ -167,8 +167,10 @@ async function refocus(page: Page) {
   return object(object(await (await refetched).json()).account);
 }
 
+// Journey users never finish onboarding, so its modal dialog sits over the
+// dashboard and hides the page behind it from the accessibility tree.
 const banner = (page: Page, title: string) =>
-  page.getByRole('status').filter({ hasText: title });
+  page.getByRole('status', { includeHidden: true }).filter({ hasText: title });
 
 /** The dashboard, with /me fetched fresh (persisted queries can be minutes
  * old on load). */
