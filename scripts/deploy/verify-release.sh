@@ -29,6 +29,7 @@ trap 'rm -rf "$temporary_dir"' EXIT
 app_body="$temporary_dir/app.html"
 api_headers="$temporary_dir/api.headers"
 collab_headers="$temporary_dir/collab.headers"
+missing_headers="$temporary_dir/missing.headers"
 collab_health="${DEPLOYMENT_COLLAB_URL/#wss:/https:}"
 
 release_header() {
@@ -37,7 +38,7 @@ release_header() {
 
 last_error=""
 check_release() {
-  local app_code app_revision api_code api_revision collab_code collab_revision
+  local app_code app_revision api_code api_revision collab_code collab_revision missing_code
 
   if ! app_code="$(curl --silent --show-error --location --max-time 30 \
     --output "$app_body" --write-out '%{http_code}' \
@@ -86,6 +87,19 @@ check_release() {
     last_error="collaboration reports revision '${collab_revision:-missing}', expected $EXPECTED_REVISION"
     return 1
   fi
+
+  # A chunk name no release has goes to the assets Worker's miss script
+  # (wrangler.assets.jsonc): 404 no-store, never the SPA's index.html.
+  if ! missing_code="$(curl --silent --show-error --max-time 30 \
+    --dump-header "$missing_headers" --output /dev/null --write-out '%{http_code}' \
+    "${DEPLOYMENT_APP_URL%/}/assets/capy-missing-$EXPECTED_REVISION.js")"; then
+    last_error="missing asset request failed"
+    return 1
+  fi
+  if [[ "$missing_code" != 404 ]] || ! grep -qi '^cache-control:[[:space:]]*no-store' "$missing_headers"; then
+    last_error="a missing asset returned HTTP $missing_code without a 404 no-store"
+    return 1
+  fi
 }
 
 verify_timeout="${VERIFY_RELEASE_TIMEOUT_SECONDS:-300}"
@@ -102,4 +116,4 @@ until check_release; do
   sleep "$verify_interval"
 done
 
-printf 'Verified application, gateway and collaboration revision %s.\n' "$EXPECTED_REVISION"
+printf 'Verified application, gateway and collaboration revision %s, and the 404 for missing assets.\n' "$EXPECTED_REVISION"

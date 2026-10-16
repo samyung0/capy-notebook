@@ -71,6 +71,7 @@
       "preview_urls": false,
       // Both app hosts point to capy-uat and need separate scriptless /api/* routes.
       // Keep the old host for browser draft recovery until the runbook §1.0.2 cutover.
+      // Each host's /assets/* belongs to the assets Worker (wrangler.assets.jsonc).
       "routes": [
         {
           "pattern": "app.uat.capynotebook.com/*",
@@ -89,6 +90,7 @@
       "preview_urls": false,
       // Provision tunnel-backed DNS and a scriptless app.capynotebook.com/api/*
       // zone route before first deployment. The apex belongs to the public site.
+      // /assets/* belongs to the assets Worker (wrangler.assets.jsonc).
       "routes": [
         {
           "pattern": "app.capynotebook.com/*",

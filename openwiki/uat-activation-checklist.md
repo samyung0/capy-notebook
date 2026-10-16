@@ -243,6 +243,14 @@ Clerk development instance. Point a local gateway at the UAT database only with
   include `X-Robots-Tag: noindex, nofollow`. Changing to private returns the
   same 404 as a missing workspace once the cached copy expires (five minutes). Full file/material/quiz routes
   reject anonymous requests.
+- `/assets/*` on both app hosts is Worker `capy-notebook-assets-uat`
+  (deployment-runbook §1): `curl -sI https://app.uat.capynotebook.com/assets/capy-missing.js`
+  returns `404` with `Cache-Control: no-store` and no `text/html` (Deploy UAT's
+  release check does the same), and a chunk the page loads (find one in
+  `curl -s https://app.uat.capynotebook.com/ | grep -o '/assets/[^"]*\.js' | head -1`)
+  returns `200` with `Cache-Control: public, max-age=31536000, immutable`. A
+  `200 text/html` for the missing name means the route is not attached: the
+  SPA fallback is answering, and the year-long header would pin it.
 - GitHub configuration sync/readback passed before deployment. Managed Coolify
   variables are literal, non-preview and readable for verification; unset ones
   are blank. Neither values nor fingerprints appear in runner logs.

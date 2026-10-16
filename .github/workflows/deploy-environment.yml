@@ -185,6 +185,21 @@ jobs:
             --project-name "$EMBED_PAGES_PROJECT" \
             --branch "$TARGET_ENVIRONMENT" \
             --commit-hash "$DEPLOY_REVISION"
+      # The app hosts' /assets/* route (wrangler.assets.jsonc) publishes before
+      # the SPA Worker, so the new index.html never names a chunk the edge
+      # cannot serve; a name it has no file for gets 404 no-store.
+      - name: Stage the SPA's hashed assets
+        run: mkdir "$RUNNER_TEMP/capy-app-assets" && cp -R dist/assets dist/_headers "$RUNNER_TEMP/capy-app-assets/"
+      - name: Deploy the matching SPA assets Worker
+        env:
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
+        run: >-
+          npx --yes wrangler@4.149.0 deploy
+          --config wrangler.assets.jsonc
+          --env "$TARGET_ENVIRONMENT"
+          --assets "$RUNNER_TEMP/capy-app-assets"
       - name: Deploy the matching SPA Worker
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}

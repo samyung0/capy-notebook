@@ -1,7 +1,9 @@
-# /assets/* keeps the Workers Assets default (max-age=0, must-revalidate with
-# an ETag): during a deploy some edge locations answer a new chunk name with
-# the SPA's index.html, and an immutable header would pin that HTML under the
-# chunk's URL for a year (human/deployment-runbook.md, 2026-10-13).
+# Content-hashed bundles: Vite renames a changed file and never reuses a name.
+# On the app hosts /assets/* is its own Worker (wrangler.assets.jsonc), which
+# answers a name no file matches with 404 no-store, so no SPA index.html can
+# sit under a chunk's URL (human/deployment-runbook.md, 2026-10-17).
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
 
 # The build's release (vite.config.ts), read by open tabs to learn a new app
 # is served: never from a cache.

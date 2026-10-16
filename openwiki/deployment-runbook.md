@@ -167,12 +167,27 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `max-age=31536000, immutable` (stable artwork, kept names) and
    `/release.txt` `no-store` (open tabs compare it with their own release, so
    no cache may answer it, and as a real file it never gets the SPA
-   fallback); everything else,
-   the content-hashed `/assets/*` bundles included, keeps the Workers Assets
-   default of `public, max-age=0, must-revalidate` with an `ETag`. `/assets/*`
-   is not immutable because the SPA fallback answers an unknown asset name
-   with `index.html` (200), and during a deploy some edge locations do that
-   for new chunk names; an immutable header would pin that HTML for a year.
+   fallback) and the content-hashed `/assets/*` bundles
+   `max-age=31536000, immutable` (Vite renames a changed file and never
+   reuses a name); everything else keeps the Workers Assets default of
+   `public, max-age=0, must-revalidate` with an `ETag`. Every app host's
+   `/assets/*` is the route of a separate assets Worker
+   (`wrangler.assets.jsonc`; the route is more specific than the app Worker's
+   `/*`, so it wins). Its static files are the build's `dist/assets` with
+   `dist/_headers`, and its script (`workers/site/assets.ts`) runs only when
+   no file matches: an empty 404 with `no-store`. The SPA fallback therefore
+   never answers a chunk's URL, which it did during deploys while the app
+   Worker served `/assets/*`, and which a year-long header would have pinned.
+   The deploy stages `dist/assets` and `dist/_headers` and publishes this
+   Worker right before the app Worker, so a new `index.html` never names a
+   chunk the edge cannot serve; in the minute between the two, a page still
+   on the old `index.html` gets 404 for old chunks it has not loaded and
+   shows the reload message. `scripts/deploy/verify-release.sh` checks the
+   404 `no-store` after every deploy. The assets Worker has no Workers Cache
+   block, so its static hits stay free requests. The app Worker keeps
+   `dist/assets` as well: share pages read their stylesheets through its
+   `ASSETS` binding. The first deploy creates the routes with the same token
+   and zone permissions the app Worker's routes use.
    The Office viewer/editor needs its own cookie-less hostname in production,
    such as `office.capynotebook.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
@@ -229,6 +244,7 @@ summary renders keep using the existing `capy-notebook-uat` deployment.
 | Proxied `app.uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
 | Worker Route | `app.uat.capynotebook.com/*` → `capy-notebook-uat` |
 | More-specific zone route | `app.uat.capynotebook.com/api/*` → **None**, no script |
+| More-specific Worker Route | `app.uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`; the old host has the same) |
 | Tunnel ingress | Host `app.uat.capynotebook.com`, path `^/api/`, service `http://localhost:80` |
 | Ingress HTTP Host Header | `uat-api.capynotebook.com` |
 
@@ -2366,7 +2382,8 @@ authentication strategy.
    the next **Deploy ingest**; the manifest scopes them to `uat`, a production
    render with either set fails, and a pipeline process refuses to start with
    one unless `SENTRY_ENVIRONMENT=uat`.
-6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
+6. The deployment publishes Worker `capy-notebook-assets-uat` (the app hosts'
+   `/assets/*`), then Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
    following the route and hostname transition order in §1. No summary storage service is needed.
 7. Deploy once, inspect the `migrate` container, and verify all public routes
