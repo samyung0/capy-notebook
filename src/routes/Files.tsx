@@ -69,6 +69,7 @@ import {
   sortSearch,
 } from '@/lib/listSearch';
 import { PREF_KEYS } from '@/lib/localPrefs';
+import { waitsForConnection } from '@/lib/online';
 import type { FilesTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
@@ -295,7 +296,7 @@ function ActiveFiles({
         className="shrink-0 grow px-2.5 pt-2 pb-5 sm:px-4"
         onClick={clearOnBlank(selection.clear)}
       >
-        {fetchStatus === 'paused' && !data ? (
+        {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
           view === 'grid' ? (
@@ -532,7 +533,7 @@ function TrashTab({
     if (all?.length) setPurgeRequest({ empty: true, items: all });
   }
 
-  if (fetchStatus === 'paused' && !data) return <QueryPausedState />;
+  if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isError && !data) {
     return (
       <div

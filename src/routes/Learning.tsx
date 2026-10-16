@@ -20,6 +20,7 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { coverInk } from '@/lib/coverInk';
 import { iconUrl } from '@/lib/icon-catalog';
+import { waitsForConnection } from '@/lib/online';
 import type { LearningTab } from '@/lib/tabSearch';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
@@ -32,7 +33,7 @@ function Progress({ finished }: { finished?: string }) {
   const { data, fetchStatus, isLoading } = useLearningProgress(finished);
   const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
-  if (fetchStatus === 'paused') return <QueryPausedState />;
+  if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <ProgressSkeleton />;
   if (!data?.active.length && !data?.finished.length)
     return (

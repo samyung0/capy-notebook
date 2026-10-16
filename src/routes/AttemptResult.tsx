@@ -19,6 +19,7 @@ import { QuizQuestionList, QuizScore } from '@/features/quizzes/QuizPage';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { getLocale, m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
+import { waitsForConnection } from '@/lib/online';
 
 export default function AttemptResult() {
   const params = useParams({ strict: false });
@@ -41,7 +42,7 @@ export default function AttemptResult() {
     errorBoundary: false,
   });
 
-  if (fetchStatus === 'paused') {
+  if (waitsForConnection(fetchStatus, attempt)) {
     return (
       <PanelWithInvertedRadius>
         <QueryPausedState className="h-full" />

@@ -214,7 +214,7 @@ not offline use: without a service worker the app itself does not load offline.
 
 - The root `AppErrorBoundary` protects the router and development probes. It
   renders a full-page fallback and recognizes chunk-load errors as requiring a
-  reload.
+  reload, except while offline, when any failure reads as offline.
 - Router error components protect route-level lazy loading and loader/render
   failures.
 - Feature and pane boundaries protect independently recoverable regions such as
@@ -233,6 +233,19 @@ outside the shell (the root boundary, a public route) the fallback is the
 A route chunk that comes back as HTML (a site deploy still propagating answers
 a missing `/assets/*` name with the SPA's `index.html`) fails as a chunk-load
 error: the router reloads once, then shows "An update is ready" with Reload.
+
+An open tab stays usable when the connection drops (Epo 2026-10-17). A page
+change whose code is not loaded yet fails offline as an `OfflineError`
+(`lazyPage` in `src/router.ts`) instead of TanStack's reload, which would
+land on the browser's offline page: the route's error component shows the
+offline state inside the shell. Retry and reconnect reset the boundary and
+reload the route (`router.invalidate()`). The browser keeps a failed import
+for the document, so back online that retry fails again as a chunk-load
+error and TanStack's one reload loads the page, now online. The release
+nudge's page load waits for the connection the same way (plate-editor
+"Client protocol and the release nudge"). The check is `navigator.onLine`:
+a connection that is down while the browser reports online still takes
+TanStack's reload.
 
 ## Shared-resource security
 
@@ -332,9 +345,14 @@ resubscribed), while renaming, moving and deleting still work.
 TanStack Query's `onlineManager` pauses network work until connectivity
 returns; loading UI should describe that it is waiting rather than escalating
 the pause to an error. A paused query is not loading (`isLoading` is false), so
-a page gated on it checks `fetchStatus === 'paused'` before its missing state
-and shows `QueryPausedState`; the workspace page does this, so opening a
-workspace offline reads "Waiting for connection", not private or unavailable.
+a page gated on it checks `waitsForConnection(fetchStatus, data)`
+(`src/lib/online.ts`) before its missing state and shows `QueryPausedState`;
+the workspace page does this, so opening a workspace offline reads "Waiting
+for connection", not private or unavailable. The waiting state is only for a
+query without data (Epo 2026-10-17): a page or list holding data, such as a
+stale or restored list whose refetch is paused, keeps showing it. Quiz
+attempts and flashcard study read fresh on purpose (`fresh: true`, drawn only
+after a read in this visit) and keep their waiting state while paused.
 
 A query that throws to `AppErrorBoundary` or `RouteErrorComponent` loses its
 observer, so neither `refetchOnReconnect` nor the event stream's reconnect

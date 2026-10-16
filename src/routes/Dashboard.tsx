@@ -15,6 +15,7 @@ import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { describeError, unexpectedErrorId } from '@/lib/errors';
+import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -53,7 +54,7 @@ function WorkspacesSection() {
           </Link>
         </Button>
       </div>
-      {fetchStatus === 'paused' ? (
+      {waitsForConnection(fetchStatus, data) ? (
         <QueryPausedState />
       ) : isLoading ? (
         <div className={SLIDER_CLASS}>

@@ -57,6 +57,11 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
+/** Work that failed because this device is offline, such as a page whose
+ * code could not load (src/router.ts): described as offline even once the
+ * connection is back, until the retry replaces it. */
+export class OfflineError extends Error {}
+
 export function isChunkLoadError(error: unknown): boolean {
   return error instanceof Error && CHUNK_LOAD_PATTERN.test(error.message);
 }
@@ -67,8 +72,9 @@ function browserIsOffline(): boolean {
 
 export function errorKind(error: unknown): ErrorKind {
   if (isAbortError(error)) return 'cancelled';
+  // Offline first: code that failed to load offline is no update to reload.
+  if (error instanceof OfflineError || browserIsOffline()) return 'offline';
   if (isChunkLoadError(error)) return 'chunkLoad';
-  if (browserIsOffline()) return 'offline';
   if (isStorageQuotaError(error)) return 'quota';
   if (isFileLimitError(error)) return 'files';
   if (isWorkspaceLimitError(error)) return 'quota';

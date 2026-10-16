@@ -113,6 +113,7 @@ import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError, unexpectedErrorId } from '@/lib/errors';
+import { waitsForConnection } from '@/lib/online';
 import { holdPosition, scrollSettled } from '@/lib/scrollAnchor';
 import { scrollIntoViewWithMotion } from '@/lib/scrollIntoViewWithMotion';
 import { useDebounced } from '@/lib/useDebounced';
@@ -530,7 +531,7 @@ export default function QuestionBank() {
     );
 
   let body: ReactNode;
-  if (fetchStatus === 'paused') body = <QueryPausedState />;
+  if (waitsForConnection(fetchStatus, syllabus)) body = <QueryPausedState />;
   else if (!syllabus)
     body = (
       <div aria-label={m.a11y_loading()} role="status">

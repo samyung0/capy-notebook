@@ -23,6 +23,7 @@ import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { iconUrl } from '@/lib/icon-catalog';
+import { waitsForConnection } from '@/lib/online';
 import { useDebounced } from '@/lib/useDebounced';
 import { userColorPair } from '@/lib/userColor';
 
@@ -102,7 +103,7 @@ export function SearchDialog({
             </DialogClose>
           </div>
           <div className="relative min-h-40 flex-1 overflow-auto px-2 py-2.5">
-            {fetchStatus === 'paused' ? (
+            {waitsForConnection(fetchStatus, data) ? (
               <QueryPausedState />
             ) : isFetching ? (
               <SkeletonList className="px-1" count={5} rowHeight={48} />

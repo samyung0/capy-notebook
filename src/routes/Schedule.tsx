@@ -33,6 +33,7 @@ import {
   useAccountFrozen,
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { waitsForConnection } from '@/lib/online';
 import { userColorPair } from '@/lib/userColor';
 
 type View = 'month' | 'week' | 'day';
@@ -311,7 +312,7 @@ export default function Schedule() {
         </div>
 
         <div className="min-h-0 flex-1 overflow-auto px-3 pb-4" ref={scrollRef}>
-          {fetchStatus === 'paused' ? (
+          {waitsForConnection(fetchStatus, events) ? (
             <QueryPausedState className="h-full min-h-[560px]" />
           ) : isLoading ? (
             <Skeleton className="h-full min-h-[560px] w-full" />

@@ -4,6 +4,7 @@ import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Checkbox } from '@/components/ui/Checkbox';
 import { SkeletonList } from '@/components/ui/feedback';
 import { m } from '@/i18n';
+import { waitsForConnection } from '@/lib/online';
 
 export default function Tasks() {
   const { data, fetchStatus, isLoading } = useTasks();
@@ -27,7 +28,7 @@ export default function Tasks() {
   return (
     <PanelWithInvertedRadius header={<PageHeader title={m.nav_tasks()} />}>
       <div className="flex-1 px-4 py-5 sm:px-6">
-        {fetchStatus === 'paused' ? (
+        {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
           <div className="mx-auto max-w-2xl">

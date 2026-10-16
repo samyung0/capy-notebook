@@ -66,6 +66,7 @@ import { WorkspaceSettingsDialog } from '@/features/workspace/WorkspaceSettingsD
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
 import { isBoolean, PREF_KEYS, useLocalPref } from '@/lib/localPrefs';
+import { waitsForConnection } from '@/lib/online';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 
 type PanelTab = 'study' | 'files' | 'chat';
@@ -245,7 +246,7 @@ export default function WorkspaceOpen() {
   }
 
   // Offline before the first load: the fetch resumes on reconnect.
-  if (!ws && wsFetchStatus === 'paused')
+  if (waitsForConnection(wsFetchStatus, ws))
     return (
       <Panel sectionClassName="items-center justify-center h-full">
         <QueryPausedState />

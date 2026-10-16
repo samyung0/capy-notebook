@@ -18,6 +18,7 @@ import { BillingTable } from '@/features/billing/BillingTable';
 import { formatPoints } from '@/features/quizzes/grade';
 import { getLocale, m } from '@/i18n';
 import { csv, sortSearch } from '@/lib/listSearch';
+import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import {
   PAST_REVIEW_SORT_DEFAULT,
@@ -107,7 +108,7 @@ export function PastReviews() {
         }
       />
       <div className="w-full shrink-0 grow px-2.5 pt-2 pb-6 sm:px-4">
-        {fetchStatus === 'paused' && !data ? (
+        {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
           <SkeletonList count={6} rowHeight={52} />

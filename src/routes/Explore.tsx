@@ -24,6 +24,7 @@ import {
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { iconUrl } from '@/lib/icon-catalog';
+import { waitsForConnection } from '@/lib/online';
 import { userColorPair } from '@/lib/userColor';
 
 export default function Explore() {
@@ -70,7 +71,7 @@ export default function Explore() {
       </div>
       <div className="flex-1 px-4 py-5 sm:px-6">
         {tab === 'workspaces' ? (
-          workspacesFetchStatus === 'paused' ? (
+          waitsForConnection(workspacesFetchStatus, workspaces) ? (
             <QueryPausedState />
           ) : workspacesIsLoading ? (
             <SkeletonCardGrid cardHeight={170} count={6} />
@@ -118,7 +119,8 @@ export default function Explore() {
               })}
             </div>
           )
-        ) : tab === 'quizzes' && quizzesFetchStatus === 'paused' ? (
+        ) : tab === 'quizzes' &&
+          waitsForConnection(quizzesFetchStatus, quizzes) ? (
           <QueryPausedState />
         ) : tab === 'quizzes' && quizzesIsLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />
@@ -159,7 +161,7 @@ export default function Explore() {
               </Card>
             ))}
           </div>
-        ) : flashcardSetsFetchStatus === 'paused' ? (
+        ) : waitsForConnection(flashcardSetsFetchStatus, flashcardSets) ? (
           <QueryPausedState />
         ) : flashcardSetsIsLoading ? (
           <SkeletonCardGrid cardHeight={190} count={6} />

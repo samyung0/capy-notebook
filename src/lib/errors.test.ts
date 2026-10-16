@@ -10,6 +10,7 @@ import {
   isAbortError,
   isChunkLoadError,
   isNonDisclosing,
+  OfflineError,
   toastKeyFor,
   unexpectedErrorId,
 } from './errors';
@@ -195,6 +196,23 @@ describe('frontend error normalization', () => {
     expect(isChunkLoadError(error)).toBe(true);
     expect(errorKind(error)).toBe('chunkLoad');
     expect(describeError(error).action).toBe('reload');
+  });
+
+  it('describes code that failed to load offline as offline, not as an update', () => {
+    const chunk = new TypeError(
+      'Failed to fetch dynamically imported module: /assets/page.js'
+    );
+    vi.stubGlobal('navigator', { onLine: false });
+    try {
+      expect(errorKind(chunk)).toBe('offline');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // Back online, a page's offline failure stays offline until its retry
+    // replaces it.
+    const offline = new OfflineError('Offline', { cause: chunk });
+    expect(errorKind(offline)).toBe('offline');
+    expect(describeError(offline).icon).toBe('wifiOff');
   });
 
   it('treats authorization and missing-resource failures as non-disclosing', () => {

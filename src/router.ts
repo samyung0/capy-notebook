@@ -60,6 +60,7 @@ import {
   RESULT_SORTS,
 } from '@/features/study/reviewSearch';
 import { checkReleaseOnFocus, loadUpdateOnPathChange } from '@/lib/appRelease';
+import { OfflineError } from '@/lib/errors';
 import { features } from '@/lib/features';
 import {
   FILE_SORT_DEFAULT,
@@ -110,6 +111,21 @@ const authShellRoute = createRoute({
   },
 });
 
+/** A page loaded with its route. TanStack reloads the tab once when a page's
+ * code fails to load (a deploy renamed its chunk); offline that reload lands
+ * on the browser's offline page, so there the failure is an OfflineError,
+ * which the route's error component shows as offline (Epo 2026-10-17). Its
+ * retry on reconnect loads the whole page: the browser keeps a failed import
+ * for the document, so TanStack's reload then runs, online. */
+const lazyPage = (importer: () => Promise<{ default: React.ComponentType }>) =>
+  lazyRouteComponent(() =>
+    importer().catch((error: unknown) => {
+      throw navigator.onLine
+        ? error
+        : new OfflineError('Offline', { cause: error });
+    })
+  );
+
 const page = <const T extends string>(
   path: T,
   importer: () => Promise<{ default: React.ComponentType }>,
@@ -117,7 +133,7 @@ const page = <const T extends string>(
   hideSidebar = false
 ) =>
   createRoute({
-    component: lazyRouteComponent(importer),
+    component: lazyPage(importer),
     getParentRoute: () => authShellRoute,
     path,
     staticData: { hideSidebar },
@@ -135,29 +151,27 @@ const page = <const T extends string>(
 
 const publicRoutes = [
   createRoute({
-    component: lazyRouteComponent(
-      () => import('@/routes/WorkspaceInviteAccept')
-    ),
+    component: lazyPage(() => import('@/routes/WorkspaceInviteAccept')),
     getParentRoute: () => rootRoute,
     path: '/workspace-invites/$token',
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/SignIn')),
+    component: lazyPage(() => import('@/routes/SignIn')),
     getParentRoute: () => rootRoute,
     path: '/sign-in',
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/SignUp')),
+    component: lazyPage(() => import('@/routes/SignUp')),
     getParentRoute: () => rootRoute,
     path: '/sign-up',
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/ForgotPassword')),
+    component: lazyPage(() => import('@/routes/ForgotPassword')),
     getParentRoute: () => rootRoute,
     path: '/forgot-password',
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/SsoCallback')),
+    component: lazyPage(() => import('@/routes/SsoCallback')),
     getParentRoute: () => rootRoute,
     path: '/sso-callback',
   }),
@@ -167,7 +181,7 @@ const publicRoutes = [
 // without components, so moving between them keeps the page mounted and its
 // filters and picks intact.
 const bankRoute = createRoute({
-  component: lazyRouteComponent(() => import('@/routes/QuestionBank')),
+  component: lazyPage(() => import('@/routes/QuestionBank')),
   getParentRoute: () => authShellRoute,
   path: '/qb',
   // `exam` is the exam open in the side panel; without it /qb lists every
@@ -206,7 +220,7 @@ const blocksRedirect = <const T extends string>(path: T) =>
 
 const appRoutes = [
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/Dashboard')),
+    component: lazyPage(() => import('@/routes/Dashboard')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
@@ -233,7 +247,7 @@ const appRoutes = [
           to: '/workspaces',
         });
     },
-    component: lazyRouteComponent(() => import('@/routes/Workspaces')),
+    component: lazyPage(() => import('@/routes/Workspaces')),
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => search,
     loader: ({ context: { queryClient: qc }, deps }) => {
@@ -244,7 +258,7 @@ const appRoutes = [
   }),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/WorkspaceOpen')),
+    component: lazyPage(() => import('@/routes/WorkspaceOpen')),
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => ({ file: search.file }),
     loader: ({ context: { queryClient: qc }, deps, params }) => {
@@ -287,7 +301,7 @@ const appRoutes = [
           to: '/learning',
         });
     },
-    component: lazyRouteComponent(() => import('@/routes/Learning')),
+    component: lazyPage(() => import('@/routes/Learning')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       void qc.prefetchInfiniteQuery(attemptsQuery());
@@ -310,13 +324,13 @@ const appRoutes = [
     },
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/ReviewSession')),
+    component: lazyPage(() => import('@/routes/ReviewSession')),
     getParentRoute: () => authShellRoute,
     path: '/learning/review/$workspaceId',
     validateSearch: parseReviewSearch,
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/MaterialOpen')),
+    component: lazyPage(() => import('@/routes/MaterialOpen')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient }, params }) => {
       void queryClient.prefetchQuery(materialQuery(params.materialId));
@@ -325,7 +339,7 @@ const appRoutes = [
     validateSearch: parseDocumentModeSearch,
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/MaterialOpen')),
+    component: lazyPage(() => import('@/routes/MaterialOpen')),
     getParentRoute: () => authShellRoute,
     path: '/files/$fileId',
     validateSearch: parseDocumentModeSearch,
@@ -351,7 +365,7 @@ const appRoutes = [
     beforeLoad: () => {
       if (!features.schedule) throw redirect({ to: '/' });
     },
-    component: lazyRouteComponent(() => import('@/routes/Schedule')),
+    component: lazyPage(() => import('@/routes/Schedule')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(eventsQuery());
@@ -386,7 +400,7 @@ const appRoutes = [
           to: '/files',
         });
     },
-    component: lazyRouteComponent(() => import('@/routes/Files')),
+    component: lazyPage(() => import('@/routes/Files')),
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => search,
     loader: ({ context: { queryClient: qc }, deps }) => {
@@ -403,7 +417,7 @@ const appRoutes = [
     beforeLoad: () => {
       if (!features.tasks) throw redirect({ to: '/' });
     },
-    component: lazyRouteComponent(() => import('@/routes/Tasks')),
+    component: lazyPage(() => import('@/routes/Tasks')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(tasksQuery());
@@ -451,7 +465,7 @@ const appRoutes = [
   page('/help-and-legal/credits', () => import('@/routes/Credits')),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/Settings')),
+    component: lazyPage(() => import('@/routes/Settings')),
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => ({ tab: search.tab }),
     // Only the open tab's data, started with the route instead of on mount.
@@ -483,7 +497,7 @@ const appRoutes = [
     path: '/subscription',
   }),
   createRoute({
-    component: lazyRouteComponent(() => import('@/routes/Billing')),
+    component: lazyPage(() => import('@/routes/Billing')),
     getParentRoute: () => authShellRoute,
     loader: ({ context: { queryClient: qc } }) => {
       qc.prefetchQuery(billingQuery());
