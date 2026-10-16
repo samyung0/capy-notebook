@@ -596,9 +596,12 @@ empty tables, plus the speed work and the Java entry point:
   there are clusters. Clustering stays near linear in the paths: 5,000
   separate strokes take 0.13 s where the all-pairs scan took 94 s, and the
   288 library books' clustering time fell from 215 to 84 s. Drawings off the
-  page get cells of their own like any other. A backstop of 20 million steps
+  page get cells of their own like any other; a path whose box has a NaN or
+  infinite coordinate (content under a huge matrix) is left out, as the
+  all-pairs test never let such a box meet anything. A backstop of 20 million steps
   per document (`VECTOR_MAX_STEPS`: a grid cell read or written, a box
-  compared; the costliest library book takes 10.6 million) ends clustering for
+  compared, paid before the cells are touched; the costliest library book
+  takes 10.6 million) ends clustering for
   the rest of a document past it, with one log line naming the page, the steps
   and the fingerprint; the receipt's `_drawing_steps` counts the steps
   (decision 2026-10-16). Layout heading recall reads the same

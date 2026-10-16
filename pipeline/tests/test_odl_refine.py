@@ -9,12 +9,15 @@ lab's ``refined-final-r1`` outputs is checked against the ingest host, not here.
 from __future__ import annotations
 
 import copy
+import itertools
 import json
+import math
 import random
 import re
 import sys
 from collections import Counter
 from pathlib import Path
+from types import SimpleNamespace
 
 import pymupdf
 import pytest
@@ -759,9 +762,138 @@ def test_a_stored_image_hashes_its_palette_by_content_not_object_number() -> Non
         document.update_stream(image, bytes(16))
         images.append(image)
     document = pymupdf.open("pdf", document.tobytes())
-    memo: dict[int, bytes] = {}
+    memo: dict[int, bytes | None] = {}
     red, copy, blue = (pictures._stored_hash(document, x, memo) for x in images)
     assert red == copy != blue
+
+
+def _handwritten_pdf(objects: list[bytes]) -> bytes:
+    """A PDF written by hand (object n is ``objects[n - 1]``, 1 the catalog),
+    for what MuPDF would rewrite on saving."""
+    out = bytearray(b"%PDF-1.7\n")
+    offsets = []
+    for number, body in enumerate(objects, 1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n%s\nendobj\n" % (number, body)
+    start = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    out += b"".join(b"%010d 00000 n \n" % offset for offset in offsets)
+    out += b"trailer\n<</Size %d/Root 1 0 R>>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objects) + 1,
+        start,
+    )
+    return bytes(out)
+
+
+def _badges(document: pymupdf.Document, xrefs: list[int]) -> list[dict]:
+    """Each image object a picture on its own page, as ODL reports it."""
+    blocks = [
+        {**_picture("badge", p, (60, 80, 180, 160)), "_native_id": p}
+        for p in range(len(xrefs))
+    ]
+    return pictures.classify(blocks, document, dict(enumerate(xrefs)))
+
+
+def test_copies_whose_length_is_written_differently_are_one_repeat() -> None:
+    # Five pages, then five copies of one image: /Length direct, indirect
+    # (objects 13 and 14), too long and too short. MuPDF reads to endstream.
+    def image(length: bytes) -> bytes:
+        return (
+            b"<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+            b"/ColorSpace/DeviceGray/Length %s>>\nstream\n%s\nendstream"
+            % (length, bytes(range(16)))
+        )
+
+    pages = [b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 600 800]>>"] * 5
+    lengths = [b"16", b"13 0 R", b"14 0 R", b"99999", b"5"]
+    document = pymupdf.open(
+        "pdf",
+        _handwritten_pdf(
+            [
+                b"<</Type/Catalog/Pages 2 0 R>>",
+                b"<</Type/Pages/Kids[3 0 R 4 0 R 5 0 R 6 0 R 7 0 R]/Count 5>>",
+                *pages,
+                *map(image, lengths),
+                b"16",
+                b"16",
+            ]
+        ),
+    )
+    result = _badges(document, [8, 9, 10, 11, 12])
+    assert [block["type"] for block in result] == ["discarded"] * 5
+
+
+def test_a_reference_chain_past_the_depth_is_no_identity_and_read_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Five copies of one image, each referencing one chain deeper than
+    # STORED_DEPTH: no copy has an identity, and the chain is read once.
+    document = pymupdf.open()
+    for _ in range(5):
+        document.new_page(width=600, height=800)
+    chain = [document.get_new_xref() for _ in range(pictures.STORED_DEPTH + 2)]
+    for link, after in itertools.pairwise(chain):
+        document.update_object(link, f"[{after} 0 R]")
+    document.update_object(chain[-1], "[]")
+    images = []
+    for _ in range(5):
+        image = document.get_new_xref()
+        document.update_object(
+            image,
+            "<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+            f"/ColorSpace/DeviceGray/Chain {chain[0]} 0 R>>",
+        )
+        document.update_stream(image, bytes(16))
+        images.append(image)
+    document = pymupdf.open("pdf", document.tobytes())
+    reads: Counter = Counter()
+    read = pymupdf.Document.xref_object
+    monkeypatch.setattr(
+        pymupdf.Document,
+        "xref_object",
+        lambda self, xref, *args, **kwargs: (
+            reads.update([xref]) or read(self, xref, *args, **kwargs)
+        ),
+    )
+    assert [block["type"] for block in _badges(document, images)] == ["image"] * 5
+    assert reads[chain[0]] == 1
+
+
+def test_a_reference_cycle_hashes_and_ends() -> None:
+    document = pymupdf.open()
+    document.new_page()
+    first, second, image = (document.get_new_xref() for _ in range(3))
+    document.update_object(first, f"[{second} 0 R]")
+    document.update_object(second, f"[{first} 0 R]")
+    document.update_object(
+        image,
+        "<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+        f"/ColorSpace/DeviceGray/Cycle {first} 0 R>>",
+    )
+    document.update_stream(image, bytes(16))
+    document = pymupdf.open("pdf", document.tobytes())
+    assert len(pictures._stored_hash(document, image, {})) == 32
+
+
+@pytest.mark.parametrize("error", [OSError("read failed"), MemoryError()])
+def test_a_failed_hash_is_no_identity_but_running_out_of_memory_still_raises(
+    monkeypatch: pytest.MonkeyPatch, error: BaseException
+) -> None:
+    document = pymupdf.open()
+    for _ in range(5):
+        document.new_page(width=600, height=800)
+
+    def fail(*args: object) -> bytes:
+        raise error
+
+    monkeypatch.setattr(pictures, "_stored_hash", fail)
+    if isinstance(error, MemoryError):
+        with pytest.raises(MemoryError):
+            _badges(document, [7] * 5)
+    else:
+        assert [block["type"] for block in _badges(document, [7] * 5)] == (
+            ["image"] * 5
+        )
 
 
 def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
@@ -1021,6 +1153,32 @@ def test_drawings_off_the_page_take_steps_linear_in_the_paths() -> None:
     drawings = pictures.Drawings()
     found = pictures._figure_clusters(page, drawings)
     assert len(found) == 4000 and drawings.spent < 50 * 4000
+
+
+def test_drawings_with_nan_or_infinite_boxes_are_left_out() -> None:
+    # Content under a huge matrix gives NaN or infinite path boxes; beside
+    # ordinary strokes they are left out in few steps, as the pairwise test
+    # never let them meet anything, and the rest group as before.
+    nan, inf = math.nan, math.inf
+    paths = [{"rect": (100 + 4 * i, 100, 102 + 4 * i, 102)} for i in range(30)]
+    paths += [{"rect": (300, 300, 330, 340)}, {"rect": (305, 310, 320, 330)}]
+    odd = [
+        (nan, nan, nan, nan),
+        (inf, nan, inf, nan),
+        (110, nan, 150, 101),
+        (inf, 100, inf, 110),
+        (-inf, 300, -inf, 320),
+    ]
+    for k, rect in enumerate(odd):
+        paths.insert(6 * k + 3, {"rect": rect})
+    page = SimpleNamespace(
+        rect=pymupdf.Rect(0, 0, 600, 800), get_cdrawings=lambda: paths
+    )
+    drawings = pictures.Drawings()
+    found = _clusters(pictures._figure_clusters(page, drawings))
+    expected = _clusters(_pairwise_clusters(page))
+    assert found == [c for c in expected if all(map(math.isfinite, c[0]))]
+    assert drawings.spent < 50 * len(paths)
 
 
 def test_drawing_steps_are_a_backstop_for_the_whole_document() -> None:

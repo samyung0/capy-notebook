@@ -180,18 +180,24 @@ _LENGTH = re.compile(r"/Length (?:\d+ \d+ R|\d+)")
 
 
 def _stored_hash(
-    document: pymupdf.Document, xref: int, memo: dict[int, bytes], depth: int = 0
+    document: pymupdf.Document,
+    xref: int,
+    memo: dict[int, bytes | None],
+    depth: int = 0,
 ) -> bytes:
     """SHA-256 of an object as the PDF stores it, no pixels decoded: its
     dictionary without /Length, each reference replaced by the referenced
     object's own hash (a palette or soft mask counts by content, not object
     number), then its stream's still-encoded bytes read HASH_CHUNK at a time,
     so the largest image costs no more memory than the chunk. ``memo`` keeps
-    a document's finished hashes; a reference back to an object in progress
-    hashes as empty. Raises ValueError past STORED_DEPTH references and
-    MuPDF's errors for a broken object, leaving ``memo`` without it."""
+    a document's hashes and failures (None), so each object is read at most
+    once; a reference back to an object in progress hashes as empty. Raises
+    ValueError past STORED_DEPTH references or for an object that failed
+    before, and whatever reading a broken object raises."""
     if xref in memo:
-        return memo[xref]
+        if (known := memo[xref]) is None:
+            raise ValueError("the object failed before")
+        return known
     if depth > STORED_DEPTH:
         raise ValueError("references nest too deep")
     memo[xref] = b""
@@ -212,7 +218,7 @@ def _stored_hash(
             while read := mupdf.ll_fz_read(stream.m_internal, data, HASH_CHUNK):
                 digest.update(memoryview(chunk)[:read])
     except BaseException:
-        del memo[xref]
+        memo[xref] = None
         raise
     memo[xref] = digest.digest()
     return memo[xref]
@@ -236,12 +242,14 @@ def classify(
         for index in images
         if (xref := objects.get(blocks[index].get("_native_id"))) is not None
     }
-    memo: dict[int, bytes] = {}
+    memo: dict[int, bytes | None] = {}
 
     def stored(xref: int) -> bytes | None:
         try:
             return _stored_hash(document, xref, memo)
-        except (RuntimeError, ValueError, pymupdf.mupdf.FzErrorBase):
+        except MemoryError:
+            raise  # the parse's out-of-memory path
+        except Exception:  # noqa: BLE001 - a broken image object is never a repeat
             return None
 
     hashes = {xref: stored(xref) for xref in set(xrefs.values())}
@@ -428,16 +436,13 @@ def _figure_clusters(
     big: set[int] = set()  # clusters wider than VECTOR_BIG_CELLS, held here only
 
     def span(box: tuple) -> tuple[int, int, int, int]:
-        """The cells a box covers."""
-        try:
-            return (
-                int(box[0] // VECTOR_CELL),
-                int(box[1] // VECTOR_CELL),
-                int(box[2] // VECTOR_CELL),
-                int(box[3] // VECTOR_CELL),
-            )
-        except (OverflowError, ValueError):  # an infinite or NaN coordinate
-            return (_cell(box[0]), _cell(box[1]), _cell(box[2]), _cell(box[3]))
+        """The cells a box (finite, see the path loop) covers."""
+        return (
+            int(box[0] // VECTOR_CELL),
+            int(box[1] // VECTOR_CELL),
+            int(box[2] // VECTOR_CELL),
+            int(box[3] // VECTOR_CELL),
+        )
 
     def find(node: int) -> int:
         while parent[node] != node:
@@ -448,19 +453,22 @@ def _figure_clusters(
     def near(area: tuple[int, int, int, int]) -> set[int] | None:
         """The clusters in the cells of ``area`` (each cell's list cut to its
         clusters) and the big ones, or every cluster when there are fewer
-        than cells to read; None once the steps are spent."""
-        if _cells(area) > len(live):
+        than cells to read; None once the steps are spent. The cells are paid
+        for before they are read."""
+        cells = _cells(area)
+        if cells > len(live):
             found = set(live)
             return found if drawings.spend(2 * len(found)) else None
         roots = {find(node) for node in big}
         big.clear()
         big.update(roots)
         found = set(roots)
-        steps = len(roots)
+        if not drawings.spend(len(roots) + cells):
+            return None
+        steps = 0
         for x in range(area[0], area[2] + 1):
             for y in range(area[1], area[3] + 1):
                 held = grid.get((x, y))
-                steps += 1
                 if held:
                     roots = {find(node) for node in held}
                     if len(roots) < len(held):
@@ -486,11 +494,13 @@ def _figure_clusters(
     def hold(node: int, held: tuple | None) -> bool:
         """Put ``node`` in the cells of its span outside ``held`` (a span
         inside it): the rows above and below ``held``, then the columns
-        either side of it."""
+        either side of it. The cells are paid for before they are filled."""
         x0, y0, x1, y1 = spans[node]
         if _cells(spans[node]) > VECTOR_BIG_CELLS:
             big.add(node)
             return drawings.spend(1)
+        if not drawings.spend(_cells(spans[node]) - (_cells(held) if held else 0)):
+            return False
         hx0, hy0, hx1, hy1 = held or (x1 + 1, y1 + 1, x1, y1)
         rows = [*range(y0, hy0), *range(hy1 + 1, y1 + 1)]
         cells = [(x, y) for y in rows for x in range(x0, x1 + 1)]
@@ -499,7 +509,7 @@ def _figure_clusters(
             cells += [(x, y) for y in range(hy0, hy1 + 1) for x in columns]
         for at in cells:
             grid[at].append(node)
-        return drawings.spend(len(cells))
+        return True
 
     for path in page.get_cdrawings():
         x0, y0, x1, y1 = path["rect"]
@@ -518,6 +528,10 @@ def _figure_clusters(
             float(max(x1, x0 + 0.5)),
             float(max(y1, y0 + 0.5)),
         )
+        # A NaN or infinite box (content under a huge matrix) meets nothing,
+        # as pymupdf's rects never did, and has no cells.
+        if not all(map(math.isfinite, rect)):
+            continue
         grown = (
             rect[0] - VECTOR_GAP,
             rect[1] - VECTOR_GAP,
@@ -564,19 +578,6 @@ def _figure_clusters(
 
 def _cells(area: tuple[int, int, int, int]) -> int:
     return (area[2] - area[0] + 1) * (area[3] - area[1] + 1)
-
-
-# Past the cell of any finite coordinate (the largest double over VECTOR_CELL).
-_FAR = 10**310
-
-
-def _cell(value: float) -> int:
-    """The cell of an infinite coordinate: past every finite one on its side,
-    so the box spans them all (a big cluster); a NaN one meets nothing, so
-    any cell does."""
-    if math.isnan(value):
-        return 0
-    return _FAR if value > 0 else -_FAR
 
 
 _INFINITE = (
