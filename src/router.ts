@@ -445,6 +445,7 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     path: '/support',
   }),
+  page('/notifications', () => import('@/routes/Notifications')),
   page('/help-and-legal', () => import('@/routes/HelpAndLegal')),
   page('/help-and-legal/credits', () => import('@/routes/Credits')),
   // biome-ignore assist/source/useSortedKeys: TanStack types `deps` in the loader from `loaderDeps`, which must come first.

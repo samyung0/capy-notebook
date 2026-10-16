@@ -1,18 +1,14 @@
-import { useState } from 'react';
 import type { AppNotification } from '@/api/types';
+import { Avatar } from '@/components/ui/Avatar';
 import { ContentSwap } from '@/components/ui/ContentSwap';
-import { Icon, type IconName } from '@/components/ui/Icon';
+import { FileIcon } from '@/components/ui/FileIcon';
+import { Icon } from '@/components/ui/Icon';
+import { LogoMark } from '@/components/ui/Logo';
+import { relativeTime } from '@/features/materials/MaterialListCard';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
-
-type NotificationKind = AppNotification['kind'];
-
-const KIND_ICON: Record<NotificationKind, IconName> = {
-  system: 'bell',
-  workspace_invite: 'workspaces',
-  workspace_member_removed: 'workspaces',
-  workspace_role_changed: 'workspaces',
-};
+import { fileIconName } from '@/lib/fileIcons';
+import { iconUrl } from '@/lib/icon-catalog';
 
 function dataValue(data: AppNotification['data'], key: string): unknown {
   if (typeof data !== 'object' || data === null) return;
@@ -29,26 +25,47 @@ function dataNumber(data: AppNotification['data'], key: string): number {
   return typeof value === 'number' ? value : 0;
 }
 
-function systemCopy(data: AppNotification['data']) {
+/** The workspace's current name, joined by the server, else the one the
+ * notification was written with. */
+function workspaceName(notification: AppNotification): string {
+  return (
+    notification.workspaceName || dataString(notification.data, 'workspaceName')
+  );
+}
+
+function systemCopy(notification: AppNotification) {
+  const { data } = notification;
   switch (dataString(data, 'code')) {
     case 'source_batch': {
       const done = dataNumber(data, 'done');
       const failed = dataNumber(data, 'failed');
+      const name = workspaceName(notification);
       if (dataString(data, 'source') === 'import') {
         return {
           body: failed
             ? m.notification_system_source_imported_failed_body({
                 done,
                 failed,
+                workspaceName: name,
               })
-            : m.notification_system_source_imported_body({ done }),
+            : m.notification_system_source_imported_body({
+                done,
+                workspaceName: name,
+              }),
           title: m.notification_system_source_import_title(),
         };
       }
       return {
         body: failed
-          ? m.notification_system_source_uploaded_failed_body({ done, failed })
-          : m.notification_system_source_uploaded_body({ done }),
+          ? m.notification_system_source_uploaded_failed_body({
+              done,
+              failed,
+              workspaceName: name,
+            })
+          : m.notification_system_source_uploaded_body({
+              done,
+              workspaceName: name,
+            }),
         title: m.notification_system_source_upload_title(),
       };
     }
@@ -114,7 +131,7 @@ function systemCopy(data: AppNotification['data']) {
       return {
         body: m.notification_system_invite_accepted_body({
           memberName: dataString(data, 'memberName'),
-          workspaceName: dataString(data, 'workspaceName'),
+          workspaceName: workspaceName(notification),
         }),
         title: m.notification_system_invite_accepted_title(),
       };
@@ -123,26 +140,28 @@ function systemCopy(data: AppNotification['data']) {
 }
 
 function notificationCopy(notification: AppNotification) {
-  const workspaceName = dataString(notification.data, 'workspaceName');
+  const name = workspaceName(notification);
   switch (notification.kind) {
     case 'system':
-      return systemCopy(notification.data);
+      return systemCopy(notification);
     case 'workspace_invite':
       return {
-        body: m.notification_workspace_invite_body({ workspaceName }),
+        body: m.notification_workspace_invite_body({ workspaceName: name }),
         title: m.notification_workspace_invite_title(),
       };
     case 'workspace_role_changed':
       return {
         body: m.notification_workspace_role_changed_body({
           role: roleLabel(dataString(notification.data, 'role')),
-          workspaceName,
+          workspaceName: name,
         }),
         title: m.notification_workspace_role_changed_title(),
       };
     case 'workspace_member_removed':
       return {
-        body: m.notification_workspace_member_removed_body({ workspaceName }),
+        body: m.notification_workspace_member_removed_body({
+          workspaceName: name,
+        }),
         title: m.notification_workspace_member_removed_title(),
       };
   }
@@ -159,33 +178,101 @@ function roleLabel(role: string) {
   }
 }
 
+export interface NotificationSelf {
+  avatarUrl?: string;
+  name?: string;
+}
+
+/** Who or what the notification is about: the workspace, the member who
+ * joined, you, the file, or the app itself (the Capy mark). */
+function ContextIcon({
+  notification,
+  self,
+}: {
+  notification: AppNotification;
+  self?: NotificationSelf;
+}) {
+  const code = dataString(notification.data, 'code');
+  if (notification.kind !== 'system' || code === 'source_batch') {
+    return notification.workspaceIconId ? (
+      <img
+        alt=""
+        className="size-9 rounded-button"
+        height={36}
+        src={iconUrl(notification.workspaceIconId)}
+        width={36}
+      />
+    ) : (
+      <span className="flex size-9 items-center justify-center rounded-button bg-tint-accent-1 text-tint-accent-1-fg">
+        <Icon name="workspaces" size={20} />
+      </span>
+    );
+  }
+  switch (code) {
+    case 'workspace_invite_accepted':
+      return (
+        <Avatar
+          className="size-9 text-[14.4px]"
+          name={dataString(notification.data, 'memberName')}
+          src={notification.memberAvatarUrl || undefined}
+        />
+      );
+    case 'account_deletion_requested':
+    case 'account_deletion_cancelled':
+      return (
+        <Avatar
+          className="size-9 text-[14.4px]"
+          name={self?.name}
+          src={self?.avatarUrl}
+        />
+      );
+    case 'pending_edits_too_large':
+      return (
+        <span className="flex size-9 items-center justify-center">
+          <FileIcon
+            className="size-6"
+            name={fileIconName({
+              kind: 'unknown',
+              name: dataString(notification.data, 'fileName'),
+            })}
+          />
+        </span>
+      );
+    default:
+      return <LogoMark size={36} />;
+  }
+}
+
+/** Relative today, the clock time on earlier days (the page groups by day). */
+function timeLabel(at: string): string {
+  const date = new Date(at);
+  if (date.toDateString() === new Date().toDateString())
+    return relativeTime(at);
+  return new Intl.DateTimeFormat(getLocale(), { timeStyle: 'short' }).format(
+    date
+  );
+}
+
 export function NotificationItem({
   className,
   notification,
-  reveal = false,
+  self,
 }: {
   className?: string;
   notification: AppNotification;
-  reveal?: boolean;
+  self?: NotificationSelf;
 }) {
   const copy = notificationCopy(notification);
-  const [revealOnMount] = useState(reveal);
   return (
-    <span
-      className={cn(
-        't-body flex w-full gap-3 text-left',
-        revealOnMount && 'motion-text-reveal',
-        className
-      )}
-    >
-      <span className="relative mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-button text-tint-accent-1-fg/70 group-hover:text-tint-accent-1-fg/95">
-        <Icon name={KIND_ICON[notification.kind]} size={20} />
+    <span className={cn('t-body flex w-full gap-3 text-left', className)}>
+      <span className="relative shrink-0">
+        <ContextIcon notification={notification} self={self} />
         {!notification.readAt && (
-          <span className="absolute -top-px -right-px h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-surface" />
+          <span className="absolute -top-0.5 -right-0.5 size-2 animate-pulse rounded-full bg-solid-error ring-2 ring-surface" />
         )}
       </span>
       <ContentSwap
-        className="flex-1"
+        className="min-w-0 flex-1"
         contentKey={JSON.stringify([copy.title, copy.body])}
       >
         <span className="flex min-w-0 flex-col">
@@ -198,6 +285,9 @@ export function NotificationItem({
             {copy.title}
           </span>
           <span className="text-fg-secondary">{copy.body}</span>
+          <span className="t-meta mt-0.5 text-fg-muted">
+            {timeLabel(notification.at)}
+          </span>
         </span>
       </ContentSwap>
     </span>

@@ -88,10 +88,11 @@ test.describe('workspace invitations', () => {
     expect(wrongAccount.status()).toBe(403);
 
     await viewerPage.goto('/workspaces');
-    // Phone and desktop bars both carry a bell; click the one on screen.
+    // Phone and desktop bars both link to the notifications page; click the
+    // one on screen.
     await viewerPage.locator('[data-unread-count]:visible').click();
     await viewerPage
-      .getByRole('button', { name: m.notification_workspace_invite_title() })
+      .getByRole('link', { name: m.notification_workspace_invite_title() })
       .click();
     await expect(viewerPage).toHaveURL(notification!.href!);
 

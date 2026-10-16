@@ -57,6 +57,8 @@ export interface MenuItem {
   danger?: boolean;
   description?: string;
   disabled?: boolean;
+  /** An unread dot on the icon, like IconButton's. */
+  dot?: boolean;
   icon?: IconName;
   label: string;
   onClick?: () => void;
@@ -209,7 +211,14 @@ export function Menu({
                 it.onClick?.();
               }}
             >
-              {it.icon && <Icon className="-translate-y-px" name={it.icon} />}
+              {it.icon && (
+                <span className="relative inline-flex shrink-0 -translate-y-px">
+                  <Icon name={it.icon} />
+                  {it.dot && (
+                    <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-overlay" />
+                  )}
+                </span>
+              )}
               <span className="flex flex-col items-start">
                 <span>{it.label}</span>
                 {it.description && (

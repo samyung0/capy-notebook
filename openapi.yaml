@@ -3131,8 +3131,14 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/NotificationKind"
+        memberAvatarUrl:
+          type: string
         readAt:
           format: date-time
+          type: string
+        workspaceIconId:
+          type: string
+        workspaceName:
           type: string
       required:
         - id

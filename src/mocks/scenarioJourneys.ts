@@ -887,15 +887,14 @@ export async function runJourney(
       (await ui.element('[role="switch"]:not(:disabled)')).click();
       return;
     case 'notifications-load':
-    case 'notification-save':
-      await go('/');
       fail();
-      (await ui.element('button[aria-label*="notification" i]')).click();
-      if (id === 'notification-save') {
-        await ui.click(m.notifications_mark_all_read());
-        return 'Marking read currently has no local error display.';
-      }
+      await go('/notifications');
       return;
+    case 'notification-save':
+      await go('/notifications');
+      fail();
+      await ui.click(m.notifications_mark_all_read());
+      return 'Marking read currently has no local error display.';
     case 'deletion-submit':
       await go('/settings?tab=danger');
       await ui.click(m.action_delete());

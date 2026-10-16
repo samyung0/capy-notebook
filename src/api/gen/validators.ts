@@ -3978,7 +3978,10 @@ export const ListNotificationsResponse = zod.object({
   "href": zod.string().optional(),
   "id": zod.string(),
   "kind": zod.enum(['system', 'workspace_invite', 'workspace_role_changed', 'workspace_member_removed']),
-  "readAt": zod.iso.datetime({"offset":true}).optional()
+  "memberAvatarUrl": zod.string().optional(),
+  "readAt": zod.iso.datetime({"offset":true}).optional(),
+  "workspaceIconId": zod.string().optional(),
+  "workspaceName": zod.string().optional()
 })),
   "next": zod.string().optional()
 })

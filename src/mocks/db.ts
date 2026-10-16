@@ -1783,10 +1783,28 @@ export const tasks: Task[] = [
 
 export const notifications: AppNotification[] = [
   {
-    at: hours(1),
+    at: hours(0.2),
     data: { code: 'source_batch', done: 3, failed: 1, source: 'upload' },
+    href: '/workspaces/ws_bio',
     id: 'nt_1',
     kind: 'system',
+    workspaceIconId: 'waves-01',
+    workspaceName: 'Biology 101',
+  },
+  {
+    at: hours(1),
+    data: {
+      code: 'workspace_invite_accepted',
+      memberId: 'u_mina',
+      memberName: 'Mina Okafor',
+      workspaceName: 'Biology 101',
+    },
+    href: '/workspaces/ws_bio',
+    id: 'nt_2',
+    kind: 'system',
+    memberAvatarUrl: '/icons/avataaars-02.svg',
+    workspaceIconId: 'waves-01',
+    workspaceName: 'Biology 101',
   },
   {
     at: hours(5),
@@ -1795,14 +1813,45 @@ export const notifications: AppNotification[] = [
       fromName: 'Previous model',
       toName: 'GLM-5.3 Flash',
     },
-    id: 'nt_2',
+    href: '/settings?tab=llm',
+    id: 'nt_3',
     kind: 'system',
   },
   {
     at: hours(26),
-    data: { role: 'editor', workspaceName: 'Biology' },
-    id: 'nt_3',
+    data: {
+      code: 'pending_edits_too_large',
+      fileId: 'f_1',
+      fileName: 'lecture-notes.docx',
+    },
+    href: '/workspaces/ws_bio?file=f_1',
+    id: 'nt_4',
+    kind: 'system',
+    readAt: hours(20),
+    workspaceIconId: 'waves-01',
+    workspaceName: 'Biology 101',
+  },
+  {
+    at: hours(30),
+    data: { role: 'editor', workspaceName: 'World History' },
+    href: '/workspaces/ws_hist',
+    id: 'nt_5',
     kind: 'workspace_role_changed',
+    readAt: hours(28),
+    workspaceIconId: 'waves-03',
+    workspaceName: 'World History',
+  },
+  {
+    at: hours(80),
+    data: {
+      code: 'office_maintenance',
+      hours: 2,
+      reminder: false,
+      startsAt: hours(-72),
+    },
+    id: 'nt_6',
+    kind: 'system',
+    readAt: hours(78),
   },
 ];
 

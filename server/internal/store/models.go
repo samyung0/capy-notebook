@@ -559,6 +559,12 @@ type Notification struct {
 	At     time.Time        `json:"at"`
 	ReadAt *time.Time       `json:"readAt,omitempty"`
 	Href   string           `json:"href,omitempty"`
+	// Joined at read time for the row's icon: the workspace it is about and,
+	// for an accepted invite, the member who joined. The list fills them; the
+	// stream's created events do not, so the browser refetches the list.
+	WorkspaceName   string `json:"workspaceName,omitempty"`
+	WorkspaceIconID string `json:"workspaceIconId,omitempty"`
+	MemberAvatarURL string `json:"memberAvatarUrl,omitempty"`
 	// These fields are used internally when publishing cache events and are not
 	// part of the public notification response.
 	UserID            string `json:"-"`

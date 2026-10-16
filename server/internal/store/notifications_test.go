@@ -58,6 +58,67 @@ func TestNotificationReadIsScopedToRecipient(t *testing.T) {
 	}
 }
 
+func TestNotificationListJoinsContextWithinThirtyDays(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := uid("notification-owner")
+	member := uid("notification-member")
+	_, err := s.pool.Exec(ctx, `INSERT INTO users (id, name, email, avatar_icon_id)
+		VALUES ($1,'Owner',$2,NULL),($3,'Mina',$4,'avataaars-02')`,
+		owner, owner+"@example.test", member, member+"@example.test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Biology " + uid("name"), Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = s.DeleteWorkspace(ctx, owner, ws.ID)
+		_, _ = s.pool.Exec(ctx, `DELETE FROM notifications WHERE user_id=$1`, owner)
+		_, _ = s.pool.Exec(ctx, `DELETE FROM users WHERE id IN ($1,$2)`, owner, member)
+	})
+
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, at := range []time.Time{time.Now(), time.Now().AddDate(0, 0, -31)} {
+		if _, err := CreateNotificationTx(ctx, tx, NotificationParams{
+			At:          at,
+			Data:        json.RawMessage(`{"code":"workspace_invite_accepted","memberId":"` + member + `"}`),
+			Kind:        NotifSystem,
+			UserID:      owner,
+			WorkspaceID: ws.ID,
+		}); err != nil {
+			_ = tx.Rollback(ctx)
+			t.Fatal(err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := s.ListNotifications(ctx, owner, 10, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Items) != 1 {
+		t.Fatalf("listed %d notifications, want only the one inside 30 days", len(page.Items))
+	}
+	n := page.Items[0]
+	if n.WorkspaceName != ws.Name || n.WorkspaceIconID != ws.IconID || n.MemberAvatarURL != "/icons/avataaars-02.svg" {
+		t.Fatalf("context = %q %q %q", n.WorkspaceName, n.WorkspaceIconID, n.MemberAvatarURL)
+	}
+	count, err := s.UnreadNotificationCount(ctx, owner)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("unread count = %d, want 1", count)
+	}
+}
+
 func TestEmailOutboxPreferencesIdempotencyAndFailureCleanup(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

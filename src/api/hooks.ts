@@ -279,9 +279,9 @@ export const useSearch = (q: string, options?: QueryUiOptions) =>
 type NotificationCache = InfiniteData<NotificationPage, string>;
 export type EventStreamState = { status: 'connected' | 'disconnected' };
 
-/** `enabled` lets the bell skip the list until its popover opens; the badge
- * rides on the separate unread count. */
-export const useNotifications = (options?: QueryUiOptions, enabled = true) =>
+/** The notifications page's list; the nav's dot rides on the separate unread
+ * count. */
+export const useNotifications = (options?: QueryUiOptions) =>
   useInfiniteQuery<
     NotificationPage,
     Error,
@@ -290,7 +290,6 @@ export const useNotifications = (options?: QueryUiOptions, enabled = true) =>
     string
   >({
     ...persisted,
-    enabled,
     getNextPageParam: (page) => page.next || undefined,
     initialPageParam: '',
     meta: queryMeta(options),
@@ -317,45 +316,11 @@ export function applyNotificationEvent(
   qc: QueryClient,
   event: NotificationStreamEvent
 ) {
-  if (event.type === 'created' && event.notification) {
-    const notification = event.notification;
-    const current = qc.getQueryData<NotificationCache>(qk.notifications);
-    if (!current) {
-      void qc.invalidateQueries({ queryKey: qk.notifications });
-      void qc.invalidateQueries({ queryKey: qk.notificationUnread });
-      return;
-    }
-    const previous = current.pages
-      .flatMap((page) => page.items)
-      .find((item) => item.id === notification.id);
-    const wasUnread = previous ? previous.readAt == null : false;
-    const isUnread = notification.readAt == null;
-    qc.setQueryData<NotificationCache>(qk.notifications, (cache) => {
-      if (!cache) return cache;
-      const pages = cache.pages.map((page) => ({
-        ...page,
-        items: page.items.filter((item) => item.id !== notification.id),
-      }));
-      if (!pages[0]) return cache;
-      pages[0] = {
-        ...pages[0],
-        items: [notification, ...pages[0].items].slice(
-          0,
-          NOTIFICATION_PAGE_SIZE
-        ),
-      };
-      return { ...cache, pages };
-    });
-    if (wasUnread !== isUnread) {
-      const count = qc.getQueryData<NotificationCount>(qk.notificationUnread);
-      if (count) {
-        qc.setQueryData(qk.notificationUnread, {
-          count: Math.max(0, count.count + (isUnread ? 1 : -1)),
-        });
-      } else {
-        void qc.invalidateQueries({ queryKey: qk.notificationUnread });
-      }
-    }
+  // The list joins each row's workspace and member for its icon, which a
+  // pushed row lacks, so a new notification refetches instead of inserting.
+  if (event.type === 'created') {
+    void qc.invalidateQueries({ queryKey: qk.notifications });
+    void qc.invalidateQueries({ queryKey: qk.notificationUnread });
     return;
   }
   if (event.type === 'removed') {

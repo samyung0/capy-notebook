@@ -615,6 +615,7 @@ func notifyInviteAcceptedTx(ctx context.Context, tx pgx.Tx, invite WorkspaceInvi
 		"code":          "workspace_invite_accepted",
 		"workspaceId":   invite.WorkspaceID,
 		"workspaceName": workspaceName,
+		"memberId":      memberID,
 		"memberName":    memberName,
 		"role":          invite.Role,
 	})

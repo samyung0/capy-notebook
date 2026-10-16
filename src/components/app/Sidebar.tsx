@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { useMediaQuery } from 'usehooks-ts';
 import { useUnreadNotificationCount } from '@/api/hooks';
 import { Icon, type IconName } from '@/components/ui/Icon';
-import { NotificationsBell } from '@/features/notification/NotificationBell';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { features } from '@/lib/features';
@@ -12,7 +11,7 @@ import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
-import { ProfileMenu } from './ProfileMenu';
+import { ProfileMenu, ProfileRow } from './ProfileMenu';
 import { SearchDialog } from './SearchDialog';
 
 interface NavItem {
@@ -22,15 +21,14 @@ interface NavItem {
   to: string;
 }
 
-const SETTINGS = '/settings';
-
 function items(): {
   sections: { label: string; items: NavItem[] }[];
   bottom: NavItem[];
 } {
   return {
     bottom: [
-      { icon: 'settings', label: m.profile_menu_settings(), to: SETTINGS },
+      { icon: 'settings', label: m.profile_menu_settings(), to: '/settings' },
+      { icon: 'chart', label: m.profile_menu_billing(), to: '/billing' },
       { icon: 'book', label: m.nav_help_legal(), to: '/help-and-legal' },
     ],
     sections: [
@@ -108,27 +106,43 @@ const ROW_IDLE = 'font-medium text-fg hover:bg-page-hover';
 function Row({
   item,
   active,
-  className,
   onNavigate,
+  unreadCount,
 }: {
   item: NavItem;
   active: boolean;
-  className?: string;
   onNavigate?: () => void;
+  /** Notifications only: the dot, and the count for tests and screen readers. */
+  unreadCount?: number;
 }) {
   return (
     <Link
+      aria-label={
+        unreadCount
+          ? m.notifications_unread_count({ count: String(unreadCount) })
+          : undefined
+      }
       className={cn(
         BASE_BUTTON_STYLE,
         ROW_CLASS,
-        active ? 'bg-action font-bold text-action-fg' : ROW_IDLE,
-        className
+        active ? 'bg-action font-bold text-action-fg' : ROW_IDLE
       )}
+      data-unread-count={unreadCount}
       onClick={onNavigate}
       preload="intent"
       to={item.to}
     >
-      <Icon className="shrink-0" name={item.icon} size={19} />
+      <span className="relative shrink-0">
+        <Icon name={item.icon} size={19} />
+        {!!unreadCount && (
+          <span
+            className={cn(
+              'absolute -top-0.5 -right-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1',
+              active ? 'ring-action' : 'ring-page'
+            )}
+          />
+        )}
+      </span>
       <span className="translate-y-px font-semibold" data-label>
         {item.label}
       </span>
@@ -156,9 +170,11 @@ function SearchRow() {
   );
 }
 
+const NOTIFICATIONS = '/notifications';
+
 /**
- * The app nav. With `account` it also carries search, notifications and the
- * profile menu (which holds Settings, so the Settings row goes):
+ * The app nav. With `account` it also carries search, notifications and a
+ * profile row with a log out button at its foot:
  * `below-xl` for the shell's sidebar, whose top bar sits in the page panel's
  * notch only from xl; `true` for the phone drawer.
  *
@@ -179,15 +195,12 @@ export function Sidebar({
   onNavigate?: () => void;
 }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const { data: unread } = useUnreadNotificationCount({
+    errorBoundary: false,
+  });
   const nav = items();
   const withAccount = rail || account;
   const accountClass = account === 'below-xl' ? 'xl:hidden' : undefined;
-  const settingsClass =
-    account === 'below-xl'
-      ? 'hidden xl:flex'
-      : withAccount
-        ? 'hidden'
-        : undefined;
 
   const body = (
     <nav aria-label={m.a11y_main_navigation()}>
@@ -223,8 +236,15 @@ export function Sidebar({
       {withAccount && (
         <div className={cn('mb-4 flex flex-col gap-1', accountClass)}>
           <SearchRow />
-          <NotificationsBell
-            rowClassName={cn(BASE_BUTTON_STYLE, ROW_CLASS, ROW_IDLE)}
+          <Row
+            active={pathname === NOTIFICATIONS}
+            item={{
+              icon: 'bell',
+              label: m.notifications_title(),
+              to: NOTIFICATIONS,
+            }}
+            onNavigate={onNavigate}
+            unreadCount={unread?.count ?? 0}
           />
         </div>
       )}
@@ -267,7 +287,6 @@ export function Sidebar({
         {nav.bottom.map((i) => (
           <Row
             active={isActive(pathname, i)}
-            className={i.to === SETTINGS ? settingsClass : undefined}
             item={i}
             key={i.to}
             onNavigate={onNavigate}
@@ -275,7 +294,7 @@ export function Sidebar({
         ))}
         {withAccount && (
           <div className={cn('flex flex-col', accountClass)}>
-            <ProfileMenu trigger="row" />
+            <ProfileRow />
           </div>
         )}
       </div>
@@ -380,30 +399,21 @@ export function MobileNavDrawer({
 /** The phone (below sm) top of a page, scrolling with it: the nav drawer's
  * menu button, and the profile menu behind an avatar a little larger than it
  * that carries the unread notifications dot; its Notifications item opens
- * the notification list under the avatar. */
+ * the notifications page. */
 export function PhoneTopRow({ className }: { className?: string }) {
-  // Shared with the bell's own query, so this costs no extra request.
+  // Shared with the nav's own query, so this costs no extra request.
   const { data: unread } = useUnreadNotificationCount({
     errorBoundary: false,
   });
-  const [notificationsOpen, setNotificationsOpen] = useState(false);
   return (
     <div
       className={cn('flex items-center justify-between sm:hidden', className)}
     >
       <MobileNavDrawer account />
-      <NotificationsBell
-        anchor={
-          <span>
-            <ProfileMenu
-              dot={(unread?.count ?? 0) > 0}
-              onNotifications={() => setNotificationsOpen(true)}
-              trigger="avatar"
-            />
-          </span>
-        }
-        onOpenChange={setNotificationsOpen}
-        open={notificationsOpen}
+      <ProfileMenu
+        dot={(unread?.count ?? 0) > 0}
+        notifications
+        trigger="avatar"
       />
     </div>
   );

@@ -518,7 +518,7 @@ slot default. A registry save that moves a user off a model they can no
 longer use (`remapPrefsToDefaults` in `server/internal/ops/registry.go`)
 also writes one `model_deprecated` in-app notification per moved slot; it
 sends no email and is not pushed live (the ops process has no Redis), so it
-appears on the next bell load. A pref that still names an unusable key fails
+appears on the next load of the notifications page. A pref that still names an unusable key fails
 `model_unavailable`, except BYOK-only rows that the user still has a key
 for.
 

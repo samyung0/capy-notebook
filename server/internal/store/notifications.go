@@ -67,7 +67,10 @@ type NotificationParams struct {
 	At                time.Time
 }
 
-// ListNotifications returns the newest notifications first. The cursor is an
+// notificationWindow is how far back the list and the unread count reach.
+const notificationWindow = `n.at > now() - interval '30 days'`
+
+// ListNotifications returns the newest notifications of the last 30 days first. The cursor is an
 // opaque encoding of the complete (at,id) ordering tuple, so rows sharing a
 // timestamp cannot be skipped or repeated when new notifications arrive.
 func (s *Store) ListNotifications(ctx context.Context, userID string, limit int, before string) (NotificationPage, error) {
@@ -90,9 +93,13 @@ func (s *Store) ListNotifications(ctx context.Context, userID string, limit int,
 	}
 
 	rows, err := s.pool.Query(ctx, `SELECT n.id, n.kind, n.data, COALESCE(n.href,''),
-			n.at, n.read_at, COALESCE(n.workspace_id,''), COALESCE(n.workspace_invite_id,'')
+			n.at, n.read_at, COALESCE(n.workspace_id,''), COALESCE(n.workspace_invite_id,''),
+			COALESCE(w.name,''), COALESCE(w.icon_id,''),
+			COALESCE('/icons/' || NULLIF(m.avatar_icon_id,'') || '.svg', m.avatar_url,'')
 		FROM notifications n
-		WHERE n.user_id=$1
+		LEFT JOIN workspaces w ON w.id=n.workspace_id
+		LEFT JOIN users m ON m.id=n.data->>'memberId'
+		WHERE n.user_id=$1 AND `+notificationWindow+`
 			AND ($2::timestamptz IS NULL OR (n.at,n.id) < ($2::timestamptz,$3::text))
 			AND (
 				n.workspace_invite_id IS NULL
@@ -123,6 +130,9 @@ func (s *Store) ListNotifications(ctx context.Context, userID string, limit int,
 			&n.ReadAt,
 			&n.WorkspaceID,
 			&n.WorkspaceInviteID,
+			&n.WorkspaceName,
+			&n.WorkspaceIconID,
+			&n.MemberAvatarURL,
 		); err != nil {
 			return NotificationPage{}, err
 		}
@@ -152,7 +162,7 @@ func (s *Store) UnreadNotificationCount(ctx context.Context, userID string) (int
 	var count int
 	err := s.pool.QueryRow(ctx, `SELECT count(*)
 		FROM notifications n
-		WHERE n.user_id=$1 AND n.read_at IS NULL
+		WHERE n.user_id=$1 AND n.read_at IS NULL AND `+notificationWindow+`
 			AND (
 				n.workspace_invite_id IS NULL
 				OR EXISTS (

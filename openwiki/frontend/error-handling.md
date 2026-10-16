@@ -92,7 +92,8 @@ subscribes to those fields. A list that fails without data must never fall
 through to its empty state ("No workspaces yet" reads as data loss after a
 redeploy): a large region renders `ErrorState` `variant="panel"` with Retry
 (the dashboard workspaces), a small one `InlineErrorState`, one muted line and
-Retry (the dashboard recents card, the notification list, search results).
+Retry (the dashboard recents card, search results). The /notifications page
+leaves its list to the route boundary.
 Filter and picker options may stay silently empty.
 
 Query metadata is shared by observers of the same key. A secondary consumer
@@ -362,7 +363,9 @@ layout the note editor uses.
 
 A signed-in tab holds `GET /api/stream` open for its whole life, with
 `?workspace=` set on the workspace page. It carries three named SSE events:
-`notification` (patched into the notification caches), `ingest` (patched into
+`notification` (read and removed events patch the notification caches; a
+created event refetches the list and the unread count, because the list joins
+each row's workspace and member for its icon), `ingest` (patched into
 the file caches) and `tree` (`{kind: files | materials}`, which invalidates
 that workspace list plus the chapters list after a 300 ms trailing debounce
 per kind, so one ingest's several writes cost one refetch; a hidden tab only

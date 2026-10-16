@@ -20,7 +20,7 @@ The CSS recipes share timing while keeping component semantics separate:
   stationary MenuAnchor. A shared Radix scope connects that anchor to dropdown
   content, including trigger-width matching; submenu triggers retain their own anchors.
   Shared PopoverTrigger owns a stationary PopoverAnchor wrapper, including for
-  Workspaces Filter and the notification bell. Triggerless editor popovers keep
+  Workspaces Filter. Triggerless editor popovers keep
   their explicit anchors. The motion browser suite samples Filter positioning through
   repeated opening animations at desktop and mobile widths.
 - Popovers, dropdowns and dropdown submenus share `motion-anchored-popup`: fade,

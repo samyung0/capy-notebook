@@ -1,4 +1,4 @@
-import { Slot } from '@radix-ui/react-slot';
+import { Slot, Slottable } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/cn';
 import { BASE_BUTTON_STYLE } from './Button';
@@ -22,6 +22,8 @@ const iconButtonVariants = cva(BASE_BUTTON_STYLE, {
         'bg-action-accent text-action-accent-fg hover:bg-action-accent-hover',
       'accent-light':
         'bg-tint-accent-1 text-tint-accent-1-fg hover:bg-action-accent/30',
+      'danger-light':
+        'bg-tint-error text-tint-error-fg hover:bg-solid-error/25',
       dark: 'bg-action text-action-fg outline-offset-2 hover:bg-action-hover focus-visible:outline-2 focus-visible:outline-action focus-visible:ring-0',
       ghost: 'bg-transparent text-fg',
       'ghost-hover': 'bg-transparent text-fg hover:bg-surface-hover-bg',
@@ -75,11 +77,22 @@ export function IconButton({
       data-variant={variant}
       {...rest}
     >
-      <Icon className={iconClassName} name={icon} strokeWidth={strokeWidth} />
-      {children}
-      {dot && (
-        <span className="absolute top-1.75 right-1.75 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-surface" />
-      )}
+      {/* With asChild (a Link) the icon and dot go inside the child. */}
+      <Slottable child={children}>
+        {(content) => (
+          <>
+            <Icon
+              className={iconClassName}
+              name={icon}
+              strokeWidth={strokeWidth}
+            />
+            {content}
+            {dot && (
+              <span className="absolute top-1.75 right-1.75 h-1.5 w-1.5 animate-pulse rounded-full bg-solid-error ring-1 ring-surface" />
+            )}
+          </>
+        )}
+      </Slottable>
     </Tag>
   );
 

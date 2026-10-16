@@ -12,5 +12,8 @@ export interface Notification {
   href?: string;
   id: string;
   kind: NotificationKind;
+  memberAvatarUrl?: string;
   readAt?: string;
+  workspaceIconId?: string;
+  workspaceName?: string;
 }
