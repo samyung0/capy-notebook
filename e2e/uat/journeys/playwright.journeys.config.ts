@@ -22,7 +22,11 @@ const office = [
   'partialIngest.spec.ts',
 ];
 // Stripe-heavy journeys: the credits ones alone take 35–40 min.
-const billing = ['billing.spec.ts', 'credits.spec.ts'];
+const billing = [
+  'billing.spec.ts',
+  'credits.spec.ts',
+  'renewalFailure.spec.ts',
+];
 const refresh = [
   'officeLifecycle.spec.ts',
   'noteIndex.spec.ts',
