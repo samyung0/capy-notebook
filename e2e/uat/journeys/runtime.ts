@@ -23,10 +23,12 @@ export type Actor = {
   email: string;
   page: Page;
   context: BrowserContext;
+  /** An event stream's body is its text. `timeout` overrides the 30 s default. */
   request(
     path: string,
     method?: string,
-    body?: unknown
+    body?: unknown,
+    timeout?: number
   ): Promise<{ status: number; body: unknown }>;
 };
 
