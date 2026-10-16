@@ -409,6 +409,24 @@ type BillingCheckoutReq struct {
 	PlanTier string `json:"planTier" enum:"pro"`
 }
 
+// TopUpReq buys credits at $1 per 1,000; the amount is in US cents.
+type TopUpReq struct {
+	AmountCents int64 `json:"amountCents" minimum:"800" maximum:"10000"`
+}
+
+// AutoReloadReq saves auto-reload: reload amountCents when credits reach
+// thresholdCredits.
+type AutoReloadReq struct {
+	Enabled          bool  `json:"enabled"`
+	AmountCents      int64 `json:"amountCents" minimum:"800" maximum:"10000"`
+	ThresholdCredits int64 `json:"thresholdCredits" minimum:"0" maximum:"1000000"`
+}
+
+// SpendingLimitReq sets the monthly spending limit in US cents; 0 removes it.
+type SpendingLimitReq struct {
+	LimitCents int64 `json:"limitCents" minimum:"0" maximum:"100000000"`
+}
+
 /* --------------------------------------------------------- small responses */
 
 // URLResp is returned by billing checkout/portal (a redirect target).

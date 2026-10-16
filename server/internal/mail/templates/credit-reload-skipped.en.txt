@@ -1,0 +1,13 @@
+AUTO-RELOAD SKIPPED
+
+Reloading {{.Amount}} would pass your {{.Limit}} monthly spending limit, so nothing was charged.
+
+Requests that need credits are paused until credits come in. Raise or remove the limit, or top up, to keep going.
+
+Change limit {{.OpenURL}}
+
+----------------------------------------
+
+You got this email because auto-reload is on for your Capy Notebook account.
+
+Stop billing emails {{.UnsubscribeURL}}

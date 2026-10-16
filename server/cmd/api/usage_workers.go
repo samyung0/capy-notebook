@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/reconcile"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -16,6 +17,7 @@ const (
 	// Manual reconciliation should start promptly. Scheduled enqueue is
 	// idempotent, so the same loop can also ensure today's runs exist.
 	reconciliationPollInterval = 5 * time.Second
+	reloadPollInterval         = 5 * time.Second
 )
 
 // runUsageWorkers releases dead leases and drains the reconciliation queue.
@@ -46,6 +48,21 @@ func runUsageWorkers(
 			obs.Log(ctx).Info("released expired provider sessions", "count", released)
 		}
 	})
+
+	if reconcileConfig.StripeSecretKey != "" {
+		// Auto-reload starts within a few seconds of credits reaching the
+		// threshold; the gate admits work at zero until then.
+		go loop(ctx, reloadPollInterval, "credit_reload", func(ctx context.Context) {
+			if err := billing.RunDueReloads(ctx, st); err != nil {
+				obs.CaptureErr(ctx, err, map[string]string{"stage": "credit_reload"})
+			}
+		})
+		go loop(ctx, time.Minute, "credit_reload_resume", func(ctx context.Context) {
+			if err := billing.ResumeStaleReloads(ctx, st); err != nil {
+				obs.CaptureErr(ctx, err, map[string]string{"stage": "credit_reload_resume"})
+			}
+		})
+	}
 
 	runner := reconcile.NewRunner(st, reconcileConfig)
 	go loop(ctx, reconciliationPollInterval, "stripe_compensation", func(ctx context.Context) {

@@ -93,6 +93,16 @@ export const emailTemplateDefinitions = [
     ],
   },
   {
+    id: 'credit-reload-skipped',
+    label: 'Auto-reload skipped',
+    variables: [
+      variable('Amount', '$10'),
+      variable('Limit', '$50'),
+      variable('OpenURL', 'https://example.test/billing?tab=subscription'),
+      variable('UnsubscribeURL', 'https://example.test/settings'),
+    ],
+  },
+  {
     id: 'subscription-frozen',
     label: 'Subscription frozen',
     variables: [

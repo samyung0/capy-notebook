@@ -87,11 +87,13 @@ func openBilling(t *testing.T) billingFixture {
 func setCreditCounters(t *testing.T, pool *pgxpool.Pool, userID string, used, reserved int64) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
-		INSERT INTO user_credits (user_id, used_micros, reserved_micros, period_start)
-		VALUES ($1, $2, $3, date_trunc('month', timezone('utc', now()))::date)
+		INSERT INTO user_credits
+		  (user_id, used_micros, reserved_micros, purchased_micros, period_start)
+		VALUES ($1, $2, $3, 0, date_trunc('month', timezone('utc', now()))::date)
 		ON CONFLICT (user_id) DO UPDATE
 		  SET used_micros = EXCLUDED.used_micros,
 		      reserved_micros = EXCLUDED.reserved_micros,
+		      purchased_micros = 0,
 		      period_start = EXCLUDED.period_start`,
 		userID, used, reserved)
 	if err != nil {

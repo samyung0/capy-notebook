@@ -2536,8 +2536,21 @@ stop that, and that is not worth the setup today.
 
 The event selection in every lane is exactly what the handler switches on:
 `checkout.session.completed`, `customer.subscription.created`,
-`customer.subscription.updated`, `customer.subscription.deleted`, and
-`invoice.payment_failed`. Anything else is delivery the gateway discards.
+`customer.subscription.updated`, `customer.subscription.deleted`,
+`invoice.payment_failed`, `invoice.paid`, `charge.refunded`,
+`charge.dispute.created`, `charge.dispute.closed` and
+`checkout.session.async_payment_succeeded`. The last five came with credit
+top-ups and auto-reload; add them to an existing endpoint. Anything else
+is delivery the gateway discards.
+
+**Credit top-ups and auto-reload.** No product or price is needed: top-ups and
+reloads charge an ad-hoc USD amount. The dashboard settings they depend on, set
+in live and UAT on 2026-10-16: one-off invoices retry the card 3 times a day
+apart and are then marked uncollectible (the Subscription tab still shows a
+Pay link, and paying later credits it); failed-payment emails with the hosted
+invoice link and 3D Secure confirmation links are on. Card and Link must be
+enabled payment methods. The reload worker runs only where
+`STRIPE_SECRET_KEY` is set.
 
 There is no Team product in any environment and no `STRIPE_PRICE_TEAM`
 setting: `plan_limits` restricts `plan_tier` to `free` and `pro`

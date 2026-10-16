@@ -4,13 +4,23 @@ import { m } from '@/i18n';
 import { UsageTab } from './UsageTab';
 
 const pending = vi.hoisted(() => ({ billing: true, usage: true }));
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children }: { children: React.ReactNode }) => (
+    <a href="/">{children}</a>
+  ),
+  useNavigate: () => () => undefined,
+}));
 vi.mock('@/api/hooks', () => ({
   useBilling: () => ({
     data: pending.billing
       ? undefined
       : {
+          creditSettings: { reload: { amountCents: 0, skipped: false } },
+          creditsCarriedMicros: 0,
           creditsLimitMicros: 20_000_000,
           creditsPeriodStart: '2026-10-01T00:00:00Z',
+          creditsPurchasedMicros: 0,
+          creditsReservedMicros: 0,
           creditsUsedMicros: 1_000_000,
           planTier: 'pro',
           storageLimitBytes: 100_000_000,

@@ -511,8 +511,9 @@ func TestFileClonePinMismatchQueuesIngest(t *testing.T) {
 		t.Fatalf("payer used %d, want %d (the pending copy charged)", got, used+file.SizeBytes)
 	}
 
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros) VALUES ($1, $2)
-		ON CONFLICT (user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros`,
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+		VALUES ($1, $2, 0)
+		ON CONFLICT (user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros, purchased_micros=0`,
 		owner, mustPlanLimits(t, s, PlanFree).CreditMicros); err != nil {
 		t.Fatal(err)
 	}

@@ -907,6 +907,76 @@ def test_parse_attempt_page_charge_is_idempotent_and_settles_session(workspace):
         )
 
 
+def test_actor_credits_spend_purchased_balance_and_admit_a_pending_reload(workspace):
+    import psycopg
+
+    uid = workspace.user_id
+    credit = 1_000_000
+    key = f"purchased:{secrets.token_hex(4)}"
+    with psycopg.connect(workspace.dsn, autocommit=True) as conn:
+        with conn.cursor() as cur:
+            limit = db._credit_limit_micros(cur, uid)
+        before = conn.execute(
+            "SELECT used_micros, purchased_micros FROM user_credits WHERE user_id = %s",
+            (uid,),
+        ).fetchone()
+        try:
+            conn.execute(
+                """
+                INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+                VALUES (%s, %s, %s)
+                ON CONFLICT (user_id) DO UPDATE
+                  SET used_micros = EXCLUDED.used_micros,
+                      purchased_micros = EXCLUDED.purchased_micros
+                """,
+                (uid, limit - 10 * credit, 50 * credit),
+            )
+            with conn.cursor() as cur:
+                assert db.actor_has_credits(cur, uid)
+                db.record_usage_event(
+                    cur,
+                    actor_user_id=uid,
+                    workspace_id=workspace.id,
+                    kind="llm",
+                    surface="ingest",
+                    credit_micros=100 * credit,
+                    idempotency_key=key,
+                )
+            used, purchased = conn.execute(
+                "SELECT used_micros, purchased_micros FROM user_credits WHERE user_id = %s",
+                (uid,),
+            ).fetchone()
+            # The allowance first, then purchased credits; the rest is owed.
+            assert (used, purchased) == (limit, -40 * credit)
+            with conn.cursor() as cur:
+                assert not db.actor_has_credits(cur, uid)
+            conn.execute(
+                """
+                UPDATE user_credits SET auto_reload_enabled = true,
+                  reload_pm_id = 'pm_test', reload_pm_type = 'card'
+                WHERE user_id = %s
+                """,
+                (uid,),
+            )
+            with conn.cursor() as cur:
+                assert db.actor_has_credits(cur, uid)
+        finally:
+            conn.execute("DELETE FROM usage_events WHERE idempotency_key = %s", (key,))
+            conn.execute(
+                """
+                UPDATE user_credits SET used_micros = %s, purchased_micros = %s,
+                  auto_reload_enabled = false, reload_pm_id = NULL, reload_pm_type = NULL,
+                  reload_started_at = NULL, reload_armed = true
+                WHERE user_id = %s
+                """,
+                (
+                    before[0] if before else 0,
+                    before[1] if before else 800 * credit,
+                    uid,
+                ),
+            )
+
+
 def _unit_vector(axis: int) -> list[float]:
     """A one-hot vector, so cosine distance between two of them is predictable."""
     vector = [0.0] * cfg.embedding_dim

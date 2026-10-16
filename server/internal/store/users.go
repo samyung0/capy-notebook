@@ -34,6 +34,12 @@ type BillingInfo struct {
 	CreditsReservedMicros int64     `json:"creditsReservedMicros"`
 	CreditsLimitMicros    int64     `json:"creditsLimitMicros"`
 	CreditsPeriodStart    time.Time `json:"creditsPeriodStart"`
+	// Never-expiring purchased credits, spent after the monthly allowance;
+	// negative while credits are owed.
+	CreditsPurchasedMicros int64 `json:"creditsPurchasedMicros"`
+	// Owed credits the rollover took from this month's allowance.
+	CreditsCarriedMicros int64          `json:"creditsCarriedMicros"`
+	CreditSettings       CreditSettings `json:"creditSettings"`
 }
 
 // IntegrationsStatus reflects Clerk external-account links and import grants.
@@ -714,7 +720,10 @@ func (s *Store) GetBilling(ctx context.Context, userID string) (BillingInfo, err
 	b.CreditsReservedMicros = credits.ReservedMicros
 	b.CreditsLimitMicros = credits.LimitMicros
 	b.CreditsPeriodStart = credits.PeriodStart
-	return b, nil
+	b.CreditsPurchasedMicros = credits.PurchasedMicros
+	b.CreditsCarriedMicros = credits.CarriedMicros
+	b.CreditSettings, err = s.CreditSettings(ctx, userID)
+	return b, err
 }
 
 func (s *Store) GetStripeCustomerID(ctx context.Context, userID string) (string, error) {

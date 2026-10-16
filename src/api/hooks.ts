@@ -35,6 +35,7 @@ import type {
   Attempt,
   AttemptDetail,
   AttemptParams,
+  AutoReloadReq,
   BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
@@ -104,11 +105,13 @@ import type {
   SetStudyItemReq,
   SourceFile,
   SourceUploadPolicy,
+  SpendingLimitReq,
   StudyPreferences,
   StudySummary,
   Tag,
   Task,
   ThinkingCanvas,
+  TopUpReq,
   TrashActionReq,
   TrashItem,
   TrashPage,
@@ -614,7 +617,15 @@ export const billingQuery = () =>
     queryKey: qk.billing,
   });
 export const useBilling = (options?: QueryUiOptions) =>
-  useQuery({ ...billingQuery(), meta: queryMeta(options) });
+  useQuery({
+    ...billingQuery(),
+    meta: queryMeta(options),
+    // A reload charge settles within seconds; poll until it does.
+    refetchInterval: (query) =>
+      query.state.data?.creditSettings.reload.status === 'charging'
+        ? 3000
+        : false,
+  });
 
 export const usageQuery = () =>
   queryOptions({
@@ -651,6 +662,47 @@ export function useBillingCheckout() {
   return useMutation({
     mutationFn: (planTier: BillingCheckoutReq['planTier']) =>
       api.post<URLResp>('/billing/checkout', { planTier }),
+  });
+}
+
+/** Starts a credit top-up: hosted Checkout in the same tab. */
+export function useTopUp() {
+  return useMutation({
+    meta: { errorToast: false },
+    mutationFn: async (amountCents: TopUpReq['amountCents']) => {
+      const { url } = await api.post<URLResp>('/billing/top-up', {
+        amountCents,
+      });
+      window.location.href = url;
+    },
+  });
+}
+
+/** Saves the auto-reload card through hosted Checkout in setup mode. */
+export function usePaymentMethodCheckout() {
+  return useMutation({
+    mutationFn: async () => {
+      const { url } = await api.post<URLResp>('/billing/payment-method');
+      window.location.href = url;
+    },
+  });
+}
+
+export function useSetAutoReload() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body: AutoReloadReq) =>
+      api.put<void>('/billing/auto-reload', body),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.billing }),
+  });
+}
+
+export function useSetSpendingLimit() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (limitCents: SpendingLimitReq['limitCents']) =>
+      api.put<void>('/billing/spending-limit', { limitCents }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: qk.billing }),
   });
 }
 

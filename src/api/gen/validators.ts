@@ -869,8 +869,32 @@ export const BankTopicSummaryResponse = zod.object({
 export const GetBillingResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "cancelAtPeriodEnd": zod.boolean(),
+  "creditSettings": zod.object({
+  "autoReload": zod.boolean(),
+  "paymentMethod": zod.object({
+  "brand": zod.string().optional(),
+  "expMonth": zod.int().optional(),
+  "expYear": zod.int().optional(),
+  "last4": zod.string().optional(),
+  "type": zod.string()
+}).optional(),
+  "paymentMethodInstant": zod.boolean(),
+  "reload": zod.object({
+  "amountCents": zod.int(),
+  "declineReason": zod.string().optional(),
+  "nextAttemptAt": zod.iso.datetime({"offset":true}).optional(),
+  "skipped": zod.boolean(),
+  "status": zod.enum(['charging', 'retrying', 'failed', 'paid', 'void']).optional()
+}),
+  "reloadAmountCents": zod.int(),
+  "reloadThresholdMicros": zod.int(),
+  "spendingLimitCents": zod.int().optional(),
+  "spentThisMonthCents": zod.int()
+}),
+  "creditsCarriedMicros": zod.int(),
   "creditsLimitMicros": zod.int(),
   "creditsPeriodStart": zod.iso.datetime({"offset":true}),
+  "creditsPurchasedMicros": zod.int(),
   "creditsReservedMicros": zod.int(),
   "creditsUsedMicros": zod.int(),
   "planTier": zod.enum(['free', 'pro']),
@@ -880,6 +904,26 @@ export const GetBillingResponse = zod.object({
   "storageUsedBytes": zod.int(),
   "subscriptionStatus": zod.enum(['none', 'active', 'past_due', 'canceled', 'trialing'])
 })
+
+
+/**
+ * @summary Save auto-reload
+ */
+export const setAutoReloadBodyAmountCentsMin = 800;
+export const setAutoReloadBodyAmountCentsMax = 10000;
+
+export const setAutoReloadBodyThresholdCreditsMin = 0;
+export const setAutoReloadBodyThresholdCreditsMax = 1000000;
+
+
+
+export const SetAutoReloadBody = zod.object({
+  "amountCents": zod.int().min(setAutoReloadBodyAmountCentsMin).max(setAutoReloadBodyAmountCentsMax),
+  "enabled": zod.boolean(),
+  "thresholdCredits": zod.int().min(setAutoReloadBodyThresholdCreditsMin).max(setAutoReloadBodyThresholdCreditsMax)
+})
+
+export const SetAutoReloadResponse = zod.void()
 
 
 /**
@@ -905,6 +949,8 @@ export const ListInvoicesResponse = zod.object({
   "currency": zod.string(),
   "dueAt": zod.iso.datetime({"offset":true}).optional(),
   "id": zod.string(),
+  "kind": zod.enum(['plan', 'topup', 'reload']),
+  "nextAttemptAt": zod.iso.datetime({"offset":true}).optional(),
   "status": zod.enum(['open', 'paid', 'uncollectible', 'void']),
   "total": zod.int(),
   "url": zod.string().optional()
@@ -913,9 +959,51 @@ export const ListInvoicesResponse = zod.object({
 
 
 /**
+ * @summary Start a checkout that saves the auto-reload card
+ */
+export const BillingPaymentMethodResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "url": zod.string()
+})
+
+
+/**
  * @summary Open billing portal
  */
 export const BillingPortalResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Set the monthly spending limit
+ */
+export const setSpendingLimitBodyLimitCentsMin = 0;
+export const setSpendingLimitBodyLimitCentsMax = 100000000;
+
+
+
+export const SetSpendingLimitBody = zod.object({
+  "limitCents": zod.int().min(setSpendingLimitBodyLimitCentsMin).max(setSpendingLimitBodyLimitCentsMax)
+})
+
+export const SetSpendingLimitResponse = zod.void()
+
+
+/**
+ * @summary Start a credit top-up checkout
+ */
+export const billingTopUpBodyAmountCentsMin = 800;
+export const billingTopUpBodyAmountCentsMax = 10000;
+
+
+
+export const BillingTopUpBody = zod.object({
+  "amountCents": zod.int().min(billingTopUpBodyAmountCentsMin).max(billingTopUpBodyAmountCentsMax)
+})
+
+export const BillingTopUpResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
 })

@@ -1,0 +1,344 @@
+package billing
+
+import (
+	"context"
+	"errors"
+	"strconv"
+	"time"
+
+	"github.com/stripe/stripe-go/v82"
+	"github.com/stripe/stripe-go/v82/checkout/session"
+	"github.com/stripe/stripe-go/v82/invoice"
+	"github.com/stripe/stripe-go/v82/invoiceitem"
+	"github.com/stripe/stripe-go/v82/paymentintent"
+	"github.com/stripe/stripe-go/v82/setupintent"
+
+	"github.com/samyung0/capy-notebook/server/internal/obs"
+	"github.com/samyung0/capy-notebook/server/internal/store"
+)
+
+// Checkout metadata kinds. Top-up sessions and their post-payment invoices
+// carry KindTopUp; reload invoices carry KindReload; the setup session that
+// saves the auto-reload card carries KindReloadMethod.
+const (
+	KindTopUp        = "topup"
+	KindReload       = "reload"
+	KindReloadMethod = "reload_method"
+)
+
+// instantMethodTypes are what top-ups and the auto-reload card accept: cards
+// (wallets arrive as cards) and Link. Every other method settles in days.
+var instantMethodTypes = []*string{stripe.String("card"), stripe.String("link")}
+
+// checkoutTTL bounds how long an unpaid top-up can wait, so an open session
+// cannot be paid long after the spending limit was checked. 30 minutes is
+// Stripe's minimum.
+const checkoutTTL = 30 * time.Minute
+
+// CreateTopUpCheckout opens hosted Checkout in payment mode for one top-up and
+// saves the card for off-session reuse.
+func CreateTopUpCheckout(customerID, userID string, amountCents int64, successURL, cancelURL string) (string, error) {
+	meta := map[string]string{
+		"kind":    KindTopUp,
+		"user_id": userID,
+		"credits": strconv.FormatInt(store.CreditsMicrosForCents(amountCents)/store.MicrosPerCredit, 10),
+	}
+	params := &stripe.CheckoutSessionParams{
+		Customer:           stripe.String(customerID),
+		Mode:               stripe.String(string(stripe.CheckoutSessionModePayment)),
+		PaymentMethodTypes: instantMethodTypes,
+		LineItems: []*stripe.CheckoutSessionLineItemParams{{
+			Quantity: stripe.Int64(1),
+			PriceData: &stripe.CheckoutSessionLineItemPriceDataParams{
+				Currency:   stripe.String(string(stripe.CurrencyUSD)),
+				UnitAmount: stripe.Int64(amountCents),
+				ProductData: &stripe.CheckoutSessionLineItemPriceDataProductDataParams{
+					Name: stripe.String("Capy Notebook credits"),
+				},
+			},
+		}},
+		PaymentIntentData: &stripe.CheckoutSessionPaymentIntentDataParams{
+			SetupFutureUsage: stripe.String(string(stripe.PaymentIntentSetupFutureUsageOffSession)),
+			Metadata:         meta,
+		},
+		InvoiceCreation: &stripe.CheckoutSessionInvoiceCreationParams{
+			Enabled:     stripe.Bool(true),
+			InvoiceData: &stripe.CheckoutSessionInvoiceCreationInvoiceDataParams{Metadata: meta},
+		},
+		AutomaticTax:    &stripe.CheckoutSessionAutomaticTaxParams{Enabled: stripe.Bool(true)},
+		CustomerUpdate:  &stripe.CheckoutSessionCustomerUpdateParams{Address: stripe.String("auto")},
+		AdaptivePricing: &stripe.CheckoutSessionAdaptivePricingParams{Enabled: stripe.Bool(false)},
+		ExpiresAt:       stripe.Int64(time.Now().Add(checkoutTTL).Unix()),
+		SuccessURL:      stripe.String(successURL),
+		CancelURL:       stripe.String(cancelURL),
+		Metadata:        meta,
+	}
+	s, err := session.New(params)
+	if err != nil {
+		return "", err
+	}
+	return s.URL, nil
+}
+
+// CreateReloadMethodCheckout opens hosted Checkout in setup mode to save the
+// card auto-reload charges. The billing address is kept on the customer
+// because reload invoices compute tax from it.
+func CreateReloadMethodCheckout(customerID, userID, successURL, cancelURL string) (string, error) {
+	meta := map[string]string{"kind": KindReloadMethod, "user_id": userID}
+	params := &stripe.CheckoutSessionParams{
+		Customer:                 stripe.String(customerID),
+		Mode:                     stripe.String(string(stripe.CheckoutSessionModeSetup)),
+		Currency:                 stripe.String(string(stripe.CurrencyUSD)),
+		PaymentMethodTypes:       instantMethodTypes,
+		BillingAddressCollection: stripe.String("required"),
+		CustomerUpdate:           &stripe.CheckoutSessionCustomerUpdateParams{Address: stripe.String("auto")},
+		SetupIntentData:          &stripe.CheckoutSessionSetupIntentDataParams{Metadata: meta},
+		ExpiresAt:                stripe.Int64(time.Now().Add(checkoutTTL).Unix()),
+		SuccessURL:               stripe.String(successURL),
+		CancelURL:                stripe.String(cancelURL),
+		Metadata:                 meta,
+	}
+	s, err := session.New(params)
+	if err != nil {
+		return "", err
+	}
+	return s.URL, nil
+}
+
+// PaymentMethodInfo describes a payment method as the auto-reload dialog
+// shows it.
+func PaymentMethodInfo(pm *stripe.PaymentMethod) store.PaymentMethod {
+	out := store.PaymentMethod{ID: pm.ID, Type: string(pm.Type)}
+	if pm.Card != nil {
+		out.Brand = string(pm.Card.Brand)
+		out.Last4 = pm.Card.Last4
+		out.ExpMonth = int(pm.Card.ExpMonth)
+		out.ExpYear = int(pm.Card.ExpYear)
+	}
+	return out
+}
+
+// TopUpPaymentMethod reads the payment method a paid top-up used.
+func TopUpPaymentMethod(paymentIntentID string) (store.PaymentMethod, error) {
+	params := &stripe.PaymentIntentParams{}
+	params.AddExpand("payment_method")
+	pi, err := paymentintent.Get(paymentIntentID, params)
+	if err != nil {
+		return store.PaymentMethod{}, err
+	}
+	if pi.PaymentMethod == nil {
+		return store.PaymentMethod{}, errors.New("top-up payment intent has no payment method")
+	}
+	return PaymentMethodInfo(pi.PaymentMethod), nil
+}
+
+// SetupPaymentMethod reads the payment method a setup Checkout saved.
+func SetupPaymentMethod(setupIntentID string) (store.PaymentMethod, error) {
+	params := &stripe.SetupIntentParams{}
+	params.AddExpand("payment_method")
+	si, err := setupintent.Get(setupIntentID, params)
+	if err != nil {
+		return store.PaymentMethod{}, err
+	}
+	if si.PaymentMethod == nil {
+		return store.PaymentMethod{}, errors.New("setup intent has no payment method")
+	}
+	return PaymentMethodInfo(si.PaymentMethod), nil
+}
+
+// ReloadResult is what one reload charge left behind.
+type ReloadResult struct {
+	InvoiceID       string
+	PaymentIntentID string
+	Paid            bool
+	// Processing is a payment Stripe has not settled yet: the reload stays
+	// charging until invoice.paid or the next resume reads it again.
+	Processing bool
+	// NextAttempt is when Stripe retries a failed charge; zero means it stopped.
+	NextAttempt   time.Time
+	DeclineReason string
+}
+
+// ChargeReload creates, finalizes and pays one auto-reload invoice. Every step
+// is keyed by the purchase id, so a worker that resumes a crashed charge reuses
+// the same Stripe objects. A declined card is a result, not an error: Stripe
+// keeps retrying the invoice on its own schedule.
+func ChargeReload(p store.ReloadCharge) (ReloadResult, error) {
+	key := "reload-" + p.ID
+	meta := map[string]string{"kind": KindReload, "user_id": p.UserID, "purchase_id": p.ID}
+	invParams := &stripe.InvoiceParams{
+		Customer:                    stripe.String(p.CustomerID),
+		Currency:                    stripe.String(string(stripe.CurrencyUSD)),
+		CollectionMethod:            stripe.String(string(stripe.InvoiceCollectionMethodChargeAutomatically)),
+		AutoAdvance:                 stripe.Bool(true),
+		DefaultPaymentMethod:        stripe.String(p.PaymentMethodID),
+		AutomaticTax:                &stripe.InvoiceAutomaticTaxParams{Enabled: stripe.Bool(true)},
+		PendingInvoiceItemsBehavior: stripe.String("exclude"),
+		Description:                 stripe.String("Capy Notebook auto-reload"),
+		Metadata:                    meta,
+	}
+	invParams.SetIdempotencyKey(key + "-invoice")
+	inv, err := invoice.New(invParams)
+	if err != nil {
+		return ReloadResult{}, err
+	}
+	itemParams := &stripe.InvoiceItemParams{
+		Customer:    stripe.String(p.CustomerID),
+		Invoice:     stripe.String(inv.ID),
+		Amount:      stripe.Int64(p.AmountCents),
+		Currency:    stripe.String(string(stripe.CurrencyUSD)),
+		Description: stripe.String("Capy Notebook credits"),
+	}
+	itemParams.SetIdempotencyKey(key + "-item")
+	if _, err := invoiceitem.New(itemParams); err != nil {
+		return ReloadResult{InvoiceID: inv.ID}, err
+	}
+	if inv.Status == stripe.InvoiceStatusDraft {
+		finalize := &stripe.InvoiceFinalizeInvoiceParams{AutoAdvance: stripe.Bool(true)}
+		finalize.SetIdempotencyKey(key + "-finalize")
+		if _, err := invoice.FinalizeInvoice(inv.ID, finalize); err != nil {
+			return ReloadResult{InvoiceID: inv.ID}, err
+		}
+	}
+	pay := &stripe.InvoicePayParams{OffSession: stripe.Bool(true)}
+	pay.SetIdempotencyKey(key + "-pay")
+	_, payErr := invoice.Pay(inv.ID, pay)
+	var stripeErr *stripe.Error
+	if payErr != nil && !(errors.As(payErr, &stripeErr) && stripeErr.Type == stripe.ErrorTypeCard) {
+		return ReloadResult{InvoiceID: inv.ID}, payErr
+	}
+	return ReloadOutcome(inv.ID)
+}
+
+// ReloadOutcome reads a reload invoice's payment state: paid, or failed with
+// Stripe's next attempt and the decline reason.
+func ReloadOutcome(invoiceID string) (ReloadResult, error) {
+	params := &stripe.InvoiceParams{}
+	params.AddExpand("payments.data.payment.payment_intent")
+	inv, err := invoice.Get(invoiceID, params)
+	if err != nil {
+		return ReloadResult{InvoiceID: invoiceID}, err
+	}
+	out := ReloadResult{InvoiceID: inv.ID, Paid: inv.Status == stripe.InvoiceStatusPaid}
+	if inv.NextPaymentAttempt > 0 {
+		out.NextAttempt = time.Unix(inv.NextPaymentAttempt, 0).UTC()
+	}
+	if inv.Payments != nil {
+		for _, p := range inv.Payments.Data {
+			if p.Payment == nil || p.Payment.PaymentIntent == nil {
+				continue
+			}
+			pi := p.Payment.PaymentIntent
+			out.PaymentIntentID = pi.ID
+			out.Processing = !out.Paid && pi.Status == stripe.PaymentIntentStatusProcessing
+			if pi.LastPaymentError != nil {
+				out.DeclineReason = string(pi.LastPaymentError.DeclineCode)
+				if out.DeclineReason == "" {
+					out.DeclineReason = string(pi.LastPaymentError.Code)
+				}
+			}
+		}
+	}
+	return out, nil
+}
+
+// VoidInvoice cancels a failed reload invoice, which stops Stripe's retries.
+func VoidInvoice(invoiceID string) error {
+	inv, err := invoice.Get(invoiceID, nil)
+	if err != nil {
+		return err
+	}
+	if inv.Status != stripe.InvoiceStatusOpen {
+		return nil
+	}
+	_, err = invoice.VoidInvoice(invoiceID, nil)
+	return err
+}
+
+// InvoiceKind names an invoice for the Subscription tab's Type column.
+func InvoiceKind(inv *stripe.Invoice) string {
+	if kind := inv.Metadata["kind"]; kind == KindTopUp || kind == KindReload {
+		return kind
+	}
+	return "plan"
+}
+
+// RunDueReloads starts every auto-reload that is due and charges it.
+func RunDueReloads(ctx context.Context, st *store.Store) error {
+	users, err := st.ReloadCandidates(ctx)
+	if err != nil {
+		return err
+	}
+	for _, userID := range users {
+		charge, err := st.StartReload(ctx, userID)
+		if err != nil {
+			obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_start"})
+			continue
+		}
+		if charge != nil {
+			ProcessReload(ctx, st, *charge)
+		}
+	}
+	return nil
+}
+
+// errReloadStuck reports a reload still charging after 23 hours, when its
+// Stripe idempotency keys have expired.
+var errReloadStuck = errors.New("auto-reload left charging for 23 hours")
+
+// ResumeStaleReloads finishes reloads a stopped worker left charging, and
+// gives up on any still charging after 23 hours: its invoice is voided and it
+// is marked failed.
+func ResumeStaleReloads(ctx context.Context, st *store.Store) error {
+	charges, err := st.StaleReloadCharges(ctx, 2*time.Minute)
+	if err != nil {
+		return err
+	}
+	for _, charge := range charges {
+		ProcessReload(ctx, st, charge)
+	}
+	stuck, err := st.StuckReloadCharges(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range stuck {
+		obs.CaptureErr(ctx, errReloadStuck, map[string]string{"stage": "reload_stuck", "purchase": r.ID})
+		if r.InvoiceID != "" {
+			if err := VoidInvoice(r.InvoiceID); err != nil {
+				obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_stuck_void"})
+				continue
+			}
+		}
+		if err := st.MarkReloadFailed(ctx, r.ID, r.InvoiceID, time.Time{}, "stuck"); err != nil {
+			obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_stuck_record"})
+		}
+	}
+	return nil
+}
+
+// ProcessReload charges one claimed reload and records the outcome. A Stripe
+// error leaves it charging for ResumeStaleReloads; the 60-second window has
+// ended by then, so new work at zero is refused meanwhile.
+func ProcessReload(ctx context.Context, st *store.Store, charge store.ReloadCharge) {
+	res, err := ChargeReload(charge)
+	if res.InvoiceID != "" {
+		if linkErr := st.SetReloadInvoice(ctx, charge.ID, res.InvoiceID); linkErr != nil {
+			obs.CaptureErr(ctx, linkErr, map[string]string{"stage": "reload_link_invoice"})
+		}
+	}
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_charge"})
+		return
+	}
+	switch {
+	case res.Paid:
+		err = st.MarkReloadPaid(ctx, charge.ID, res.InvoiceID, res.PaymentIntentID)
+	case res.Processing:
+		return
+	default:
+		err = st.MarkReloadFailed(ctx, charge.ID, res.InvoiceID, res.NextAttempt, res.DeclineReason)
+	}
+	if err != nil {
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_record"})
+	}
+}

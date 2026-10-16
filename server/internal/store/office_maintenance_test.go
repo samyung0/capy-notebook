@@ -113,7 +113,7 @@ func TestPublishAllOfficeSourcesRoutesSpecialGroupsExportOnly(t *testing.T) {
 		arg string
 	}{
 		// Blocked owners publish at platform cost: out of credits here.
-		{`INSERT INTO user_credits(user_id,used_micros) VALUES($1,999999999999999) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros`, owner},
+		{`INSERT INTO user_credits(user_id,used_micros,purchased_micros) VALUES($1,999999999999999,0) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros,purchased_micros=0`, owner},
 		{`UPDATE users SET suspended_at=now(),suspended_reason='test' WHERE id=$1`, suspended},
 		{`UPDATE files SET trashed_at=now(),trash_episode_id='episode',purge_after=now()+interval '30 days' WHERE id=$1`, trashed},
 		// This checkpoint's system republish already failed for good.

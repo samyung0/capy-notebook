@@ -46,12 +46,13 @@ func writeImportCapacityRetry(w http.ResponseWriter, err error) {
 	var credits *store.CreditsExhaustedError
 	if errors.As(err, &credits) {
 		writeJSON(w, http.StatusTooManyRequests, map[string]any{
-			"code":                  "llm_credits_exhausted",
-			"message":               "monthly AI credits exhausted",
-			"creditsUsedMicros":     credits.UsedMicros,
-			"creditsReservedMicros": credits.ReservedMicros,
-			"creditsLimitMicros":    credits.LimitMicros,
-			"planTier":              string(credits.PlanTier),
+			"code":                   "llm_credits_exhausted",
+			"message":                "monthly AI credits exhausted",
+			"creditsUsedMicros":      credits.UsedMicros,
+			"creditsReservedMicros":  credits.ReservedMicros,
+			"creditsLimitMicros":     credits.LimitMicros,
+			"creditsPurchasedMicros": credits.PurchasedMicros,
+			"planTier":               string(credits.PlanTier),
 		})
 		return
 	}

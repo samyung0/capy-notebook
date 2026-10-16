@@ -72,6 +72,10 @@ type fakeStore struct {
 	checkoutReserve string
 	associated      map[string]string
 	redacted        map[string]bool
+	// creditCalls logs purchased-credit store calls in order.
+	creditCalls []string
+	// retryingReloads is what GrantTopUp reports for the caller to void.
+	retryingReloads []string
 }
 
 func newFakeStore() *fakeStore {
@@ -194,6 +198,55 @@ func (f *fakeStore) UserIDBySubscription(_ context.Context, subscriptionID strin
 		return "", store.ErrNotFound
 	}
 	return userID, nil
+}
+
+func (f *fakeStore) GrantTopUp(
+	_ context.Context, userID, sessionID, paymentIntentID string, amountCents int64,
+) (bool, []string, error) {
+	f.creditCalls = append(f.creditCalls, fmt.Sprintf("grant %s %s %s %d", userID, sessionID, paymentIntentID, amountCents))
+	return true, f.retryingReloads, nil
+}
+
+func (f *fakeStore) MarkReloadVoid(_ context.Context, invoiceID string) error {
+	f.creditCalls = append(f.creditCalls, "void "+invoiceID)
+	return nil
+}
+
+func (f *fakeStore) SavePaymentMethod(_ context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error {
+	f.creditCalls = append(f.creditCalls, fmt.Sprintf("method %s %s %t", userID, pm.ID, onlyIfNone))
+	return nil
+}
+
+func (f *fakeStore) MarkReloadPaid(_ context.Context, purchaseID, invoiceID, paymentIntentID string) error {
+	f.creditCalls = append(f.creditCalls, fmt.Sprintf("paid %s %s %s", purchaseID, invoiceID, paymentIntentID))
+	return nil
+}
+
+func (f *fakeStore) MarkReloadFailed(
+	_ context.Context, purchaseID, invoiceID string, nextAttempt time.Time, declineReason string,
+) error {
+	f.creditCalls = append(f.creditCalls,
+		fmt.Sprintf("failed %s %s %t %s", purchaseID, invoiceID, nextAttempt.IsZero(), declineReason))
+	return nil
+}
+
+func (f *fakeStore) ReverseRefund(_ context.Context, paymentIntentID string, refunded, charged int64) error {
+	f.creditCalls = append(f.creditCalls, fmt.Sprintf("refund %s %d/%d", paymentIntentID, refunded, charged))
+	return nil
+}
+
+func (f *fakeStore) HoldDispute(_ context.Context, paymentIntentID string) error {
+	f.creditCalls = append(f.creditCalls, "hold "+paymentIntentID)
+	return nil
+}
+
+func (f *fakeStore) RetryingReloadInvoices(_ context.Context, userID string) ([]string, error) {
+	return f.retryingReloads, nil
+}
+
+func (f *fakeStore) ReleaseDispute(_ context.Context, paymentIntentID string) error {
+	f.creditCalls = append(f.creditCalls, "release "+paymentIntentID)
+	return nil
 }
 
 func (f *fakeStore) AccountAccess(_ context.Context, userID string) (store.AccountStatus, error) {

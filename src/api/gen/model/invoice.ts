@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { InvoiceKind } from './invoiceKind.ts';
 import type { InvoiceStatus } from './invoiceStatus.ts';
 
 export interface Invoice {
@@ -11,6 +12,8 @@ export interface Invoice {
   currency: string;
   dueAt?: string;
   id: string;
+  kind: InvoiceKind;
+  nextAttemptAt?: string;
   status: InvoiceStatus;
   total: number;
   url?: string;

@@ -59,7 +59,7 @@ GRANT USAGE ON SCHEMA public
   TO capy_ops, capy_ops_admin;
 
 GRANT SELECT (
-  user_id, period_start, used_micros, reserved_micros
+  user_id, period_start, used_micros, reserved_micros, purchased_micros, carried_micros
 ) ON user_credits TO capy_ops;
 GRANT SELECT (
   plan_tier, storage_limit_bytes, credit_limit_micros,

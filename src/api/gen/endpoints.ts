@@ -15,6 +15,7 @@ import type {
   AnonymousQuiz,
   AttemptDetail,
   AttemptsOutputBody,
+  AutoReloadReq,
   BankAssetOutputBody,
   BankBatchBody,
   BankCommentInputBody,
@@ -158,11 +159,13 @@ import type {
   SourceSession,
   SourceUploadPolicy,
   SourceUploadReservation,
+  SpendingLimitReq,
   StudyPreferences,
   StudySummary,
   Syllabus,
   Tag,
   Task,
+  TopUpReq,
   TopicPage,
   TransferWorkspaceReq,
   TrashActionReq,
@@ -1213,6 +1216,56 @@ export const getBilling = async ( options?: RequestInit): Promise<getBillingResp
 
 
 
+export type setAutoReloadResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setAutoReloadResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setAutoReloadResponseSuccess = (setAutoReloadResponse204) & {
+  headers: Headers;
+};
+export type setAutoReloadResponseError = (setAutoReloadResponseDefault) & {
+  headers: Headers;
+};
+
+export type setAutoReloadResponse = (setAutoReloadResponseSuccess | setAutoReloadResponseError)
+
+export const getSetAutoReloadUrl = () => {
+
+
+
+
+  return `/api/billing/auto-reload`
+}
+
+/**
+ * @summary Save auto-reload
+ */
+export const setAutoReload = async (autoReloadReq: NonReadonly<AutoReloadReq>, options?: RequestInit): Promise<setAutoReloadResponse> => {
+
+  const res = await fetch(getSetAutoReloadUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(autoReloadReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setAutoReloadResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setAutoReloadResponse
+}
+
+
+
 export type billingCheckoutResponse200 = {
   data: URLResp
   status: 200
@@ -1313,6 +1366,56 @@ export const listInvoices = async ( options?: RequestInit): Promise<listInvoices
 
 
 
+export type billingPaymentMethodResponse200 = {
+  data: URLResp
+  status: 200
+}
+
+export type billingPaymentMethodResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type billingPaymentMethodResponseSuccess = (billingPaymentMethodResponse200) & {
+  headers: Headers;
+};
+export type billingPaymentMethodResponseError = (billingPaymentMethodResponseDefault) & {
+  headers: Headers;
+};
+
+export type billingPaymentMethodResponse = (billingPaymentMethodResponseSuccess | billingPaymentMethodResponseError)
+
+export const getBillingPaymentMethodUrl = () => {
+
+
+
+
+  return `/api/billing/payment-method`
+}
+
+/**
+ * @summary Start a checkout that saves the auto-reload card
+ */
+export const billingPaymentMethod = async ( options?: RequestInit): Promise<billingPaymentMethodResponse> => {
+
+  const res = await fetch(getBillingPaymentMethodUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: billingPaymentMethodResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as billingPaymentMethodResponse
+}
+
+
+
 export type billingPortalResponse200 = {
   data: URLResp
   status: 200
@@ -1359,6 +1462,106 @@ export const billingPortal = async ( options?: RequestInit): Promise<billingPort
 
   const data: billingPortalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as billingPortalResponse
+}
+
+
+
+export type setSpendingLimitResponse204 = {
+  data: void
+  status: 204
+}
+
+export type setSpendingLimitResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type setSpendingLimitResponseSuccess = (setSpendingLimitResponse204) & {
+  headers: Headers;
+};
+export type setSpendingLimitResponseError = (setSpendingLimitResponseDefault) & {
+  headers: Headers;
+};
+
+export type setSpendingLimitResponse = (setSpendingLimitResponseSuccess | setSpendingLimitResponseError)
+
+export const getSetSpendingLimitUrl = () => {
+
+
+
+
+  return `/api/billing/spending-limit`
+}
+
+/**
+ * @summary Set the monthly spending limit
+ */
+export const setSpendingLimit = async (spendingLimitReq: NonReadonly<SpendingLimitReq>, options?: RequestInit): Promise<setSpendingLimitResponse> => {
+
+  const res = await fetch(getSetSpendingLimitUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(spendingLimitReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: setSpendingLimitResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setSpendingLimitResponse
+}
+
+
+
+export type billingTopUpResponse200 = {
+  data: URLResp
+  status: 200
+}
+
+export type billingTopUpResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type billingTopUpResponseSuccess = (billingTopUpResponse200) & {
+  headers: Headers;
+};
+export type billingTopUpResponseError = (billingTopUpResponseDefault) & {
+  headers: Headers;
+};
+
+export type billingTopUpResponse = (billingTopUpResponseSuccess | billingTopUpResponseError)
+
+export const getBillingTopUpUrl = () => {
+
+
+
+
+  return `/api/billing/top-up`
+}
+
+/**
+ * @summary Start a credit top-up checkout
+ */
+export const billingTopUp = async (topUpReq: NonReadonly<TopUpReq>, options?: RequestInit): Promise<billingTopUpResponse> => {
+
+  const res = await fetch(getBillingTopUpUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(topUpReq)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: billingTopUpResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as billingTopUpResponse
 }
 
 

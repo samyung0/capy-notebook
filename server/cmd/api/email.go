@@ -216,7 +216,7 @@ func emailCategory(template string) string {
 	case "workspace-invite", "workspace-invite-accepted":
 		return "workspace_invite"
 	case "subscription-over-quota", "subscription-frozen",
-		"subscription-started", "subscription-cancelled":
+		"subscription-started", "subscription-cancelled", "credit-reload-skipped":
 		return "billing"
 	}
 	return ""
@@ -262,6 +262,11 @@ func emailTemplateData(template, locale string, payload map[string]any, appURL, 
 			data[field] = emailMegabytes(v)
 		}
 	}
+	for key, field := range map[string]string{"amountCents": "Amount", "limitCents": "Limit"} {
+		if v, ok := payload[key].(float64); ok {
+			data[field] = emailDollars(v)
+		}
+	}
 	if role := stringValue(payload, "role"); role != "" {
 		data["Access"] = emailAccess(role, locale)
 	}
@@ -277,7 +282,7 @@ func emailTemplateData(template, locale string, payload map[string]any, appURL, 
 		// site / app root where support contact lives.
 		data["OpenURL"] = appURL
 	case "subscription-over-quota", "subscription-frozen",
-		"subscription-started", "subscription-cancelled":
+		"subscription-started", "subscription-cancelled", "credit-reload-skipped":
 		data["OpenURL"] = appURL + "/billing?tab=subscription"
 	default:
 		if workspaceID := stringValue(payload, "workspaceId"); workspaceID != "" {
@@ -290,6 +295,14 @@ func emailTemplateData(template, locale string, payload map[string]any, appURL, 
 		data["UnsubscribeURL"] = appURL + "/api/email/unsubscribe?token=" + url.QueryEscape(unsubscribeToken)
 	}
 	return data
+}
+
+// emailDollars formats US cents the same way in every locale: "$10" or "$12.50".
+func emailDollars(cents float64) string {
+	if int64(cents)%100 == 0 {
+		return fmt.Sprintf("$%d", int64(cents)/100)
+	}
+	return fmt.Sprintf("$%.2f", cents/100)
 }
 
 func emailDate(t time.Time, locale string) string {

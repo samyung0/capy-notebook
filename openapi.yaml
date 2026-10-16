@@ -483,6 +483,32 @@ components:
         - items
         - more
       type: object
+    AutoReloadReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AutoReloadReq.json
+          format: uri
+          readOnly: true
+          type: string
+        amountCents:
+          format: int64
+          maximum: 10000
+          minimum: 800
+          type: integer
+        enabled:
+          type: boolean
+        thresholdCredits:
+          format: int64
+          maximum: 1000000
+          minimum: 0
+          type: integer
+      required:
+        - enabled
+        - amountCents
+        - thresholdCredits
+      type: object
     BankAssetOutputBody:
       additionalProperties: false
       properties:
@@ -728,12 +754,20 @@ components:
           type: string
         cancelAtPeriodEnd:
           type: boolean
+        creditSettings:
+          $ref: "#/components/schemas/CreditSettings"
+        creditsCarriedMicros:
+          format: int64
+          type: integer
         creditsLimitMicros:
           format: int64
           type: integer
         creditsPeriodStart:
           format: date-time
           type: string
+        creditsPurchasedMicros:
+          format: int64
+          type: integer
         creditsReservedMicros:
           format: int64
           type: integer
@@ -767,6 +801,9 @@ components:
         - creditsReservedMicros
         - creditsLimitMicros
         - creditsPeriodStart
+        - creditsPurchasedMicros
+        - creditsCarriedMicros
+        - creditSettings
       type: object
     Canvas:
       additionalProperties: false
@@ -1539,6 +1576,37 @@ components:
           type: array
       required:
         - name
+      type: object
+    CreditSettings:
+      additionalProperties: false
+      properties:
+        autoReload:
+          type: boolean
+        paymentMethod:
+          $ref: "#/components/schemas/PaymentMethod"
+        paymentMethodInstant:
+          type: boolean
+        reload:
+          $ref: "#/components/schemas/ReloadState"
+        reloadAmountCents:
+          format: int64
+          type: integer
+        reloadThresholdMicros:
+          format: int64
+          type: integer
+        spendingLimitCents:
+          format: int64
+          type: integer
+        spentThisMonthCents:
+          format: int64
+          type: integer
+      required:
+        - autoReload
+        - reloadAmountCents
+        - reloadThresholdMicros
+        - paymentMethodInstant
+        - spentThisMonthCents
+        - reload
       type: object
     DeletionPreflight:
       additionalProperties: false
@@ -2457,6 +2525,15 @@ components:
           type: string
         id:
           type: string
+        kind:
+          enum:
+            - plan
+            - topup
+            - reload
+          type: string
+        nextAttemptAt:
+          format: date-time
+          type: string
         status:
           enum:
             - open
@@ -2475,6 +2552,7 @@ components:
         - total
         - currency
         - status
+        - kind
       type: object
     InvoiceList:
       additionalProperties: false
@@ -3427,6 +3505,24 @@ components:
         - items
         - more
       type: object
+    PaymentMethod:
+      additionalProperties: false
+      properties:
+        brand:
+          type: string
+        expMonth:
+          format: int64
+          type: integer
+        expYear:
+          format: int64
+          type: integer
+        last4:
+          type: string
+        type:
+          type: string
+      required:
+        - type
+      type: object
     PlanTier:
       enum:
         - free
@@ -3973,6 +4069,31 @@ components:
         - page
         - bbox
         - space
+      type: object
+    ReloadState:
+      additionalProperties: false
+      properties:
+        amountCents:
+          format: int64
+          type: integer
+        declineReason:
+          type: string
+        nextAttemptAt:
+          format: date-time
+          type: string
+        skipped:
+          type: boolean
+        status:
+          enum:
+            - charging
+            - retrying
+            - failed
+            - paid
+            - void
+          type: string
+      required:
+        - amountCents
+        - skipped
       type: object
     Relocation:
       additionalProperties: false
@@ -5406,6 +5527,23 @@ components:
         - headers
         - expiresAt
       type: object
+    SpendingLimitReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/SpendingLimitReq.json
+          format: uri
+          readOnly: true
+          type: string
+        limitCents:
+          format: int64
+          maximum: 100000000
+          minimum: 0
+          type: integer
+      required:
+        - limitCents
+      type: object
     StorageUsageLevel:
       enum:
         - ok
@@ -5646,6 +5784,23 @@ components:
       required:
         - code
         - message
+      type: object
+    TopUpReq:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/TopUpReq.json
+          format: uri
+          readOnly: true
+          type: string
+        amountCents:
+          format: int64
+          maximum: 10000
+          minimum: 800
+          type: integer
+      required:
+        - amountCents
       type: object
     Topic:
       additionalProperties: false
@@ -7292,6 +7447,27 @@ paths:
       summary: Billing info
       tags:
         - Billing & integrations
+  /api/billing/auto-reload:
+    put:
+      operationId: setAutoReload
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AutoReloadReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Save auto-reload
+      tags:
+        - Billing & integrations
   /api/billing/checkout:
     post:
       operationId: billingCheckout
@@ -7336,6 +7512,25 @@ paths:
       summary: Stripe invoices
       tags:
         - Billing & integrations
+  /api/billing/payment-method:
+    post:
+      operationId: billingPaymentMethod
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/URLResp"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Start a checkout that saves the auto-reload card
+      tags:
+        - Billing & integrations
   /api/billing/portal:
     post:
       operationId: billingPortal
@@ -7353,6 +7548,52 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Open billing portal
+      tags:
+        - Billing & integrations
+  /api/billing/spending-limit:
+    put:
+      operationId: setSpendingLimit
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpendingLimitReq"
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Set the monthly spending limit
+      tags:
+        - Billing & integrations
+  /api/billing/top-up:
+    post:
+      operationId: billingTopUp
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TopUpReq"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/URLResp"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Start a credit top-up checkout
       tags:
         - Billing & integrations
   /api/chapters/{id}:

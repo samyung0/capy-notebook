@@ -622,7 +622,8 @@ input > 0; cached-read and output may be 0.
 | Table | Role |
 | --- | --- |
 | `usage_events` | append-only source of truth; includes the actual per-call thinking level; corrections are new rows |
-| `user_credits` | the counter the gate locks; monthly period resets lazily on first read |
+| `user_credits` | the counter the gate locks; monthly period resets lazily on first read; also holds the signed purchased balance, auto-reload settings, the spending limit and the reload window |
+| `credit_purchases` | one row per top-up or auto-reload, unique on its Stripe Checkout session, invoice and payment intent, so grants and reversals are idempotent |
 | `provider_sessions` | request or ingest sessions; owns the concurrency lease, per-session credit reservation, and pinned provider configuration, swept on expiry |
 | `provider_calls` | one row inserted before each provider attempt; records lifecycle, measured usage, numeric-only context composition, and optional ingest attempt/stage linkage |
 | `ingest_job_attempts` | one durable row per actual parse/ingest queue claim, including stage timings, retry/error classification, page, text-less page (the OCR-named columns) and chunk counts (the slice and caption columns stay at their zero defaults since the OpenDataLoader parser), and no source name or content |
@@ -633,8 +634,9 @@ Shape mirrors `backend-storage-quota.md` on purpose: hot-path ledger, counter
 row for the gate to lock, reconcile pass for drift.
 
 Monthly credit limits come from the immutable `plan_limits` startup snapshot
-(1,000 free / 10,000 Pro; the Pro value is set directly in UAT, the migration
-seed still says 20,000), shared with the other upgradeable product limits.
+(200 free / 10,000 Pro; both values are set directly in UAT, the migration seed
+still says 1,000 and 20,000), shared with the other upgradeable product limits.
+Every account also starts with 800 purchased credits (below).
 The Go gateway and Python ingest worker do not query that table while admitting
 or claiming work. A stale monthly counter is rolled over inside the same row
 lock used by reads, reservations, and direct usage recording. Once the latest
@@ -654,10 +656,92 @@ tokens and credits. It does not use a separate analytics table and does not show
 USD. `GET /api/billing/invoices` reads the customer's latest 12 non-draft Stripe
 invoices live for the Subscription tab (a user with no Stripe customer gets an
 empty list; a Stripe failure is a 503 the tab shows with Retry). Checkout and the
-billing portal return to `/billing?tab=subscription`. The operator dashboard
+billing portal return to `/billing?tab=subscription`. Each invoice carries a
+`kind` (`plan`, `topup`, `reload`) for the tab's Type column and Stripe's
+`nextAttemptAt`; an unpaid reload invoice shows as Failed (retrying on that
+date, or with a Pay link once Stripe stops). The operator dashboard
 also reads bounded
 `usage_events` ranges directly; there is no periodic usage rollup while the
 ledger is small enough for indexed live queries.
+
+### Purchased credits, top-ups and auto-reload
+
+Decisions: `human/observability-metering.md` (2026-10-15/16). Prices: $1 buys
+1,000 credits (`store.CreditsMicrosForCents`).
+
+**Balance.** `user_credits.purchased_micros` never expires and is signed: its
+column default is the one-off 800-credit starter grant, a negative value is
+credits owed. Two SQL functions in `0088_purchased_credits.sql` are the only
+writers of spend, called by the gateway (`credits.go`) and the ingest worker
+(`pipeline/pipeline/store/db.py`) with the actor's monthly limit:
+`spend_user_credits` takes the monthly allowance first and the rest from the
+purchased balance (it may go negative: overrun from already-admitted work stays
+owed), and `roll_user_credits` rolls the period, taking owed credits off the new
+allowance first and recording them in `carried_micros` (the Usage tab's "Owed
+from <month>" row); what the allowance cannot cover stays owed.
+
+**Gate.** Available is `max(limit − used, 0) + purchased − reserved`. At zero
+or below new work is refused unless a started reload's 60-second window is open
+(`credit_reload_pending`), or this request starts an armed reload
+(`claim_credit_reload`: stamps `reload_started_at`, disarms, and the worker
+charges it). Settlement does the same, so a turn crossing zero claims the reload
+instead of ending. The pipeline's `actor_has_credits` applies the same rule. The
+operator role cannot execute these functions, so `CreditBalance` (display, ops)
+leaves `ReloadPending` unset and only the gate reads it.
+
+**Top-up.** `POST /api/billing/top-up` (`amountCents` 800–10,000) refuses with
+409 `spending_limit` (`limitCents`, `chargingCents`) when paid, charging and
+retrying top-ups and reloads this UTC month plus the amount would pass the
+limit, creates and binds a Stripe customer on first purchase, and returns a
+hosted Checkout URL (payment mode, card and Link only, Adaptive Pricing off,
+automatic tax with the address saved to the customer, `invoice_creation` with
+`kind=topup` metadata, `setup_future_usage=off_session`, 30-minute expiry).
+`checkout.session.completed` (or `checkout.session.async_payment_succeeded`)
+grants the pre-tax amount once per session, arms auto-reload, saves the card as
+the reload method when none is saved, and voids reload invoices Stripe is still
+retrying (which cancels their retries).
+
+**Auto-reload.** `PUT /api/billing/auto-reload` saves the switch, the amount
+($8–$100, default $10) and the threshold in credits (default 0); turning it on
+needs a saved instant method (409 `no_payment_method` /
+`payment_method_not_instant`). `POST /api/billing/payment-method` opens hosted
+Checkout in setup mode (card and Link, billing address required) and returns to
+`?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
+reload invoice Stripe is still retrying. Turning auto-reload off voids it too.
+
+Auto-reload fires once per arming (`reload_armed`): turning it on, a paid
+top-up, a new card, or a paid reload that leaves credits above the threshold
+arms it; starting a reload disarms it; the monthly allowance never re-arms it,
+so after Stripe gives up (or never retries) no reload starts until the user
+tops up or changes card. The worker (`billing.RunDueReloads`, every 5 s when
+Stripe is configured, open accounts only) handles each armed or
+request-started reload under the counter lock (`StartReload`, effective plan):
+an armed one starts when credits reach the threshold. Over the spending limit
+it sets `reload_skipped_at` (still armed) and queues the
+`credit-reload-skipped` email; otherwise it inserts a `charging` purchase with
+the card it charges and creates, finalizes and pays a one-off
+`charge_automatically` invoice (`kind=reload`, automatic tax), every step keyed
+by the purchase id. Paid adds the credits (`MarkReloadPaid`, also reached by
+`invoice.paid`); a payment Stripe is still processing stays `charging`; a
+decline is `retrying` while Stripe has a next attempt and `failed` once it
+stops (`invoice.payment_failed`), and the switch stays on. A reload left
+`charging` by a stopped worker is resumed after two minutes with the same keys
+and card; after 23 hours it is reported to Sentry, its invoice voided and
+marked `failed`. `GET /api/billing` returns
+`creditsPurchasedMicros`, `creditsCarriedMicros` and `creditSettings` (switch,
+amount, threshold, saved method, limit, this month's spend, latest reload);
+the client polls it every 3 s while a reload is charging.
+
+**Spending limit.** `PUT /api/billing/spending-limit` (`limitCents`, 0 removes
+it) counts paid and charging pre-tax dollars per UTC calendar month of payment
+and clears a skip. The 409 carries `spentCents` so the toast can tell "wait for
+the auto-reload" from "over the limit".
+
+**Reversals.** `charge.refunded` takes credits back in proportion to Stripe's
+cumulative `amount_refunded`; `charge.dispute.created` holds what is left of the
+purchase and `charge.dispute.closed` with `won` gives it back; an inquiry
+(`warning_*`) withdraws no funds and takes nothing. A payment intent
+with no purchase (a Pro charge) is ignored. The balance may go negative.
 
 ### Begin, settle each call, close
 
@@ -714,9 +798,10 @@ with a known failed response abandons the call immediately. An applied call with
 matching ledger event is therefore an invariant violation rather than an
 expected timing window.
 
-After each platform-paid LLM settlement, the gateway compares the new
-`used_micros + reserved_micros` balance with the plan limit. Crossing the limit
-stamps `provider_sessions.credits_exhausted_at`. The agent loop reads that
+After each platform-paid LLM settlement, the gateway recomputes what is
+available (monthly allowance left plus purchased balance minus reservations).
+Reaching zero with no auto-reload pending stamps
+`provider_sessions.credits_exhausted_at`. The agent loop reads that
 result and permits at most one tool-free terminal call.
 
 Immediately before an LLM request, the pipeline applies the provider-specific
@@ -916,8 +1001,8 @@ an in-flight actor before its next durable stage or external provider call.
 Upload reservation (`createSourceUpload`, the only source upload path)
 checks the same two budgets up front, with the same distinct errors, plus a
 headroom gate: the browser sends `estimatedCreditMicros` from the upload policy
-rates, and the reservation refuses as `llm_credits_exhausted` when used +
-reserved + estimate would exceed 1.3× the plan limit; provider import
+rates, and the reservation refuses as `llm_credits_exhausted` when the estimate
+exceeds the available credits by more than 0.3× the monthly limit; provider import
 reservations stay on the plain exhaustion check. The dialog
 holds submit while any fast-parse analysis is running or failed, so every
 reserved document carries an estimate; since 2026-09-28 analysis fails only for
@@ -1075,7 +1160,8 @@ snapshot, while new work uses the active version.
 
 ### Background workers
 
-`server/cmd/api/usage_workers.go`: reservation sweep (1 min), Stripe
+`server/cmd/api/usage_workers.go`: auto-reload (5 s) and stale-reload resume
+(1 min) when Stripe is configured, reservation sweep (1 min), Stripe
 compensation polling (5 s), and reconciliation queue polling (5 s). The
 compensation queue recovers and expires an unbound Checkout reservation,
 expires raced Checkout sessions, cancels subscriptions, and refunds the paid

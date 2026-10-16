@@ -11,6 +11,7 @@ import type {
   CloneFileReq,
   CloneMaterialReq,
   CreateWorkspaceReq,
+  CreditSettings,
   EditableQuiz,
   FlashcardSet,
   GenerateOptions,
@@ -585,6 +586,30 @@ function publicCloneSource(id: string): Material | undefined {
   const index = db.publicFlashcardSets.findIndex((set) => set.id === id);
   return index >= 0 ? db.flashcardSetMaterials()[index] : undefined;
 }
+
+/** Purchased-credit controls the billing mocks read and the PUT mocks edit. */
+const mockCreditSettings: CreditSettings = {
+  autoReload: true,
+  paymentMethod: {
+    brand: 'visa',
+    expMonth: 6,
+    expYear: 2029,
+    last4: '7290',
+    type: 'card',
+  },
+  paymentMethodInstant: true,
+  // Matches the retrying reload invoice below.
+  reload: {
+    amountCents: 1000,
+    nextAttemptAt: new Date(Date.now() + 86_400_000).toISOString(),
+    skipped: false,
+    status: 'retrying',
+  },
+  reloadAmountCents: 1000,
+  reloadThresholdMicros: 0,
+  spendingLimitCents: 5000,
+  spentThisMonthCents: 1800,
+};
 
 export const handlers = [
   ...questionBankHandlers,
@@ -3050,10 +3075,13 @@ export const handlers = [
   http.get('/api/billing', async () =>
     HttpResponse.json({
       cancelAtPeriodEnd: false,
+      creditSettings: mockCreditSettings,
+      creditsCarriedMicros: 0,
       creditsLimitMicros: PLAN_LIMITS.pro.creditLimitMicros,
       creditsPeriodStart: new Date(
         Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)
       ).toISOString(),
+      creditsPurchasedMicros: 4070 * 1_000_000,
       creditsReservedMicros: 40 * 1_000_000,
       creditsUsedMicros: 1250 * 1_000_000,
       planTier: db.user.planTier,
@@ -3109,21 +3137,86 @@ export const handlers = [
     HttpResponse.json({
       items:
         db.user.planTier === 'pro'
-          ? [0, 1, 2].map((months) => {
-              const at = new Date();
-              at.setUTCMonth(at.getUTCMonth() - months, 1);
-              return {
-                createdAt: at.toISOString(),
+          ? [
+              {
+                createdAt: new Date().toISOString(),
                 currency: 'usd',
-                id: `in_mock_${months}`,
-                status: 'paid',
-                total: 800,
+                id: 'in_mock_reload',
+                kind: 'reload',
+                nextAttemptAt: new Date(Date.now() + 86_400_000).toISOString(),
+                status: 'open',
+                total: 1000,
                 url: 'https://invoice.stripe.com/i/mock',
-              };
-            })
+              },
+              {
+                createdAt: new Date(Date.now() - 4 * 86_400_000).toISOString(),
+                currency: 'usd',
+                id: 'in_mock_topup',
+                kind: 'topup',
+                status: 'paid',
+                total: 2000,
+                url: 'https://invoice.stripe.com/i/mock',
+              },
+              ...[0, 1, 2].map((months) => {
+                const at = new Date();
+                at.setUTCMonth(at.getUTCMonth() - months, 1);
+                return {
+                  createdAt: at.toISOString(),
+                  currency: 'usd',
+                  id: `in_mock_${months}`,
+                  kind: 'plan',
+                  status: 'paid',
+                  total: 800,
+                  url: 'https://invoice.stripe.com/i/mock',
+                };
+              }),
+            ]
           : [],
     })
   ),
+  http.post('/api/billing/top-up', async ({ request }) => {
+    const { amountCents } = (await request.json()) as { amountCents: number };
+    const limit = mockCreditSettings.spendingLimitCents;
+    if (limit && mockCreditSettings.spentThisMonthCents + amountCents > limit) {
+      return HttpResponse.json(
+        {
+          detail: 'the monthly spending limit would be exceeded',
+          errors: [
+            {
+              message: 'spending_limit',
+              value: { chargingCents: 0, limitCents: limit },
+            },
+          ],
+          status: 409,
+          title: 'Conflict',
+        },
+        { status: 409 }
+      );
+    }
+    return HttpResponse.json({
+      url: `/billing?tab=subscription&mock_topup=${amountCents}`,
+    });
+  }),
+  http.post('/api/billing/payment-method', async () =>
+    HttpResponse.json({ url: '/billing?tab=subscription&reload=method' })
+  ),
+  http.put('/api/billing/auto-reload', async ({ request }) => {
+    const body = (await request.json()) as {
+      amountCents: number;
+      enabled: boolean;
+      thresholdCredits: number;
+    };
+    mockCreditSettings.autoReload = body.enabled;
+    mockCreditSettings.reloadAmountCents = body.amountCents;
+    mockCreditSettings.reloadThresholdMicros =
+      body.thresholdCredits * 1_000_000;
+    return new HttpResponse(null, { status: 204 });
+  }),
+  http.put('/api/billing/spending-limit', async ({ request }) => {
+    const { limitCents } = (await request.json()) as { limitCents: number };
+    mockCreditSettings.spendingLimitCents = limitCents || undefined;
+    return new HttpResponse(null, { status: 204 });
+  }),
   http.post('/api/billing/checkout', async ({ request }) => {
     const body = (await request.json()) as { planTier: string };
     return HttpResponse.json({

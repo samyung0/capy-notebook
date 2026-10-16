@@ -1,4 +1,6 @@
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useBilling, useUsage } from '@/api/hooks';
+import type { BillingInfo } from '@/api/types';
 import { TabHeader } from '@/components/app/tabPanel';
 import {
   type Segment,
@@ -7,25 +9,25 @@ import {
   UsageLegend,
 } from '@/components/app/UsageMeter';
 import { Badge } from '@/components/ui/Badge';
-import { getLocale, m } from '@/i18n';
+import { Button } from '@/components/ui/Button';
+import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { userColorPair } from '@/lib/userColor';
-import { formatBytes, formatCredits, storageLimitLabel } from './format';
-import { AREAS, areaOf, planLabel } from './labels';
-
+import { CreditNotices } from './CreditNotices';
 // Credit periods start at UTC midnight, so dates are read and shown in UTC;
 // local time would put a western user's period a day early.
-function shortDate(date: Date) {
-  return date.toLocaleDateString(getLocale(), {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
-}
+import { monthName, periodMonth, shortDate } from './creditLabels';
+import { type CreditView, creditView } from './credits';
+import { formatBytes, formatCredits, storageLimitLabel } from './format';
+import { AREAS, areaOf, planLabel } from './labels';
 
 export function UsageTab() {
   const { data: billing, isPending: billingPending } = useBilling();
   const { data: usage, isPending: usagePending } = useUsage();
   const creditsPending = billingPending || usagePending;
+  const navigate = useNavigate();
+  const toSubscription = () =>
+    void navigate({ search: { tab: 'subscription' }, to: '/billing' });
   const loadingValue = (
     <span
       aria-hidden="true"
@@ -43,19 +45,37 @@ export function UsageTab() {
 
   const storageLimit = billing?.storageLimitBytes ?? 0;
   const storageUsed = billing?.storageUsedBytes ?? 0;
-  const creditsLimit = billing?.creditsLimitMicros ?? 0;
 
   const byArea = new Map<string, number>();
   for (const bucket of usage?.bySurface ?? []) {
     const key = areaOf(bucket.key).key;
     byArea.set(key, (byArea.get(key) ?? 0) + bucket.creditMicros);
   }
-  const areas: Segment[] = AREAS.map((a) => ({
-    amount: byArea.get(a.key) ?? 0,
-    color: userColorPair(a.tone).bg,
-    key: a.key,
-    label: a.label(),
-  }));
+  const spent = [...byArea.values()].reduce((sum, v) => sum + v, 0);
+  const view = billing && creditView(billing, spent);
+  const carried: Segment[] =
+    billing && billing.creditsCarriedMicros > 0
+      ? [
+          {
+            amount: billing.creditsCarriedMicros,
+            color: userColorPair('coral').bg,
+            faint: true,
+            key: 'carried',
+            label: m.billing_owed_from({
+              month: monthName(periodMonth(billing.creditsPeriodStart, -1)),
+            }),
+          },
+        ]
+      : [];
+  const areas: Segment[] = [
+    ...carried,
+    ...AREAS.map((a) => ({
+      amount: byArea.get(a.key) ?? 0,
+      color: userColorPair(a.tone).bg,
+      key: a.key,
+      label: a.label(),
+    })),
+  ];
   const reserved: Segment = {
     amount: billing?.creditsReservedMicros ?? 0,
     color: purple,
@@ -104,6 +124,15 @@ export function UsageTab() {
         }
         title={m.billing_tab_usage()}
       />
+      {billing && view && (
+        <CreditNotices
+          billing={billing}
+          className="mb-8"
+          onChangeLimit={toSubscription}
+          onTopUp={toSubscription}
+          view={view}
+        />
+      )}
       <div className="flex flex-col gap-10">
         <div>
           <UsageHead
@@ -135,27 +164,60 @@ export function UsageTab() {
           </p>
         </div>
         <div>
-          <UsageHead
-            title={m.billing_credits()}
-            value={
-              billingPending
-                ? loadingValue
-                : m.billing_used_of({
-                    limit: formatCredits(creditsLimit),
-                    used: formatCredits(billing?.creditsUsedMicros ?? 0),
-                  })
-            }
-          />
-          <UsageBar
-            limit={creditsLimit}
-            segments={creditsPending ? [] : [...areas, reserved]}
-          />
+          <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+            <p className="t-subtitle font-bold">{m.billing_credits()}</p>
+            <div className="flex items-center gap-4">
+              <p className="t-subtitle font-bold">
+                {view
+                  ? view.owed > 0
+                    ? m.billing_credits_owed({
+                        amount: formatCredits(view.owed),
+                      })
+                    : m.billing_credits_left({
+                        amount: formatCredits(Math.max(0, view.available)),
+                      })
+                  : loadingValue}
+              </p>
+              <Button asChild size="sm" variant="outline">
+                <Link search={{ tab: 'subscription' }} to="/billing">
+                  {m.billing_top_up()}
+                </Link>
+              </Button>
+            </div>
+          </div>
+          <div className="relative">
+            <UsageBar
+              limit={view?.barTotal ?? 0}
+              segments={creditsPending ? [] : [...areas, reserved]}
+            />
+            {view && view.purchasedPool > 0 && (
+              <div
+                className="absolute -top-1 h-4.5 w-0.5 -translate-x-1/2 rounded-full bg-fg"
+                style={{ left: `${markerAt(view)}%` }}
+              />
+            )}
+          </div>
+          {view && view.purchasedPool > 0 && (
+            <div className="relative h-5.5">
+              <span
+                className={cn(
+                  't-meta absolute top-1.5 whitespace-nowrap text-fg-secondary',
+                  // Centred under the line, but kept inside the bar's width.
+                  markerAt(view) > 75
+                    ? '-translate-x-full'
+                    : markerAt(view) >= 25 && '-translate-x-1/2'
+                )}
+                style={{ left: `${markerAt(view)}%` }}
+              >
+                {m.billing_purchased_marker()}
+              </span>
+            </div>
+          )}
           {(billingPending || resetsAt) && (
             <p className="t-meta mt-2 text-fg-muted">
-              {billingPending
+              {!billing || !view || !resetsAt
                 ? loadingValue
-                : resetsAt &&
-                  m.billing_credits_resets({ date: shortDate(resetsAt) })}
+                : creditsHint(billing, view, shortDate(resetsAt))}
             </p>
           )}
           <p className="t-meta mt-6 mb-1 text-fg-muted">
@@ -175,4 +237,47 @@ export function UsageTab() {
       </div>
     </div>
   );
+}
+
+/** Where purchased credits start on the bar, in percent. */
+function markerAt(view: CreditView) {
+  return (view.limit / view.barTotal) * 100;
+}
+
+/** The line under the credits bar: how far into the monthly allowance, then
+ * the purchased credits, and what is owed. */
+function creditsHint(billing: BillingInfo, view: CreditView, date: string) {
+  const limit = formatCredits(view.limit);
+  const pool = formatCredits(view.purchasedPool);
+  if (view.owed > 0) {
+    const owed = formatCredits(view.owed);
+    return view.purchasedPool > 0
+      ? m.billing_credits_hint_owed({ limit, owed, pool })
+      : m.billing_credits_hint_owed_no_pool({ limit, owed });
+  }
+  if (view.monthlyUsed >= view.limit && view.purchasedPool > 0) {
+    return m.billing_credits_hint_purchased_used({
+      date,
+      limit,
+      pool,
+      used: formatCredits(view.purchasedUsed),
+    });
+  }
+  const used = formatCredits(view.monthlyUsed);
+  const monthly =
+    view.carried > 0
+      ? m.billing_credits_hint_carried({
+          carried: formatCredits(view.carried),
+          date,
+          limit,
+          month: monthName(periodMonth(billing.creditsPeriodStart, -1)),
+          used,
+        })
+      : m.billing_credits_hint_monthly({ date, limit, used });
+  if (view.purchasedPool <= 0) return monthly;
+  const then =
+    billing.planTier === 'free'
+      ? m.billing_credits_hint_then_starter({ amount: pool })
+      : m.billing_credits_hint_then_purchased({ amount: pool });
+  return `${monthly} ${then}`;
 }

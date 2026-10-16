@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "subject": "Auto-reload skipped: monthly limit reached",
+  "preview": "Nothing was charged. Change your limit or top up to keep going.",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "Auto-reload skipped"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Reloading "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "Amount",
+              "label": "Reload amount",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " would pass your "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "Limit",
+              "label": "Monthly limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " monthly spending limit, so nothing was charged."
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "Requests that need credits are paused until credits come in. Raise or remove the limit, or top up, to keep going."
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "Change limit",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "You got this email because auto-reload is on for your Capy Notebook account."
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "Stop billing emails",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

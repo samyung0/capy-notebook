@@ -84,6 +84,15 @@ type ingestSlotsOutput struct {
 type billingCheckoutInput struct {
 	Body apimodel.BillingCheckoutReq
 }
+type topUpInput struct {
+	Body apimodel.TopUpReq
+}
+type autoReloadInput struct {
+	Body apimodel.AutoReloadReq
+}
+type spendingLimitInput struct {
+	Body apimodel.SpendingLimitReq
+}
 type urlOutput struct {
 	Body apimodel.URLResp
 }
@@ -136,6 +145,10 @@ func (a *api) registerBillingIntegrations(api huma.API) {
 	reg(api, http.MethodGet, "/api/billing/invoices", "listInvoices", tag, "Stripe invoices", http.StatusOK, a.listInvoices)
 	reg(api, http.MethodPost, "/api/billing/checkout", "billingCheckout", tag, "Start checkout", http.StatusOK, a.billingCheckout)
 	reg(api, http.MethodPost, "/api/billing/portal", "billingPortal", tag, "Open billing portal", http.StatusOK, a.billingPortal)
+	reg(api, http.MethodPost, "/api/billing/top-up", "billingTopUp", tag, "Start a credit top-up checkout", http.StatusOK, a.billingTopUp)
+	reg(api, http.MethodPost, "/api/billing/payment-method", "billingPaymentMethod", tag, "Start a checkout that saves the auto-reload card", http.StatusOK, a.billingPaymentMethod)
+	reg(api, http.MethodPut, "/api/billing/auto-reload", "setAutoReload", tag, "Save auto-reload", http.StatusNoContent, a.setAutoReload)
+	reg(api, http.MethodPut, "/api/billing/spending-limit", "setSpendingLimit", tag, "Set the monthly spending limit", http.StatusNoContent, a.setSpendingLimit)
 	reg(api, http.MethodGet, "/api/integrations", "getIntegrations", tag, "Integration status", http.StatusOK, a.getIntegrations)
 	reg(api, http.MethodGet, "/api/integrations/microsoft/drive", "microsoftDrive", tag, "OneDrive host for File Picker", http.StatusOK, a.microsoftDrive)
 	reg(api, http.MethodGet, "/api/integrations/google/picker-token", "googlePickerToken", tag, "Google picker token", http.StatusOK, a.googlePickerTokenH)
@@ -362,6 +375,11 @@ func invoicesFromStripe(invoices []*stripe.Invoice) []apimodel.Invoice {
 			Currency:  string(inv.Currency),
 			Status:    string(inv.Status),
 			URL:       inv.HostedInvoiceURL,
+			Kind:      billing.InvoiceKind(inv),
+		}
+		if inv.NextPaymentAttempt > 0 {
+			next := time.Unix(inv.NextPaymentAttempt, 0).UTC()
+			item.NextAttemptAt = &next
 		}
 		if inv.DueDate > 0 {
 			due := time.Unix(inv.DueDate, 0).UTC()
@@ -480,6 +498,98 @@ func (a *api) billingCheckout(ctx context.Context, in *billingCheckoutInput) (*u
 		})
 	}
 	return &urlOutput{Body: apimodel.URLResp{URL: session.URL}}, nil
+}
+
+// creditsCustomer returns the user's Stripe customer, creating and binding one
+// for a first credit purchase.
+func (a *api) creditsCustomer(ctx context.Context, uid string) (string, error) {
+	status, err := a.s.AccountAccess(ctx, uid)
+	if err != nil {
+		return "", err
+	}
+	switch status.State {
+	case store.AccountDeletionPending, store.AccountDeleted, store.AccountSuspended:
+		return "", &store.AccountLockedError{UserID: uid, State: status.State, Reason: status.SuspendedReason}
+	}
+	customerID, err := a.s.GetStripeCustomerID(ctx, uid)
+	if err != nil || customerID != "" {
+		return customerID, err
+	}
+	u, err := a.s.Me(ctx, uid)
+	if err != nil {
+		return "", err
+	}
+	// Keyed by the user, so a bind that failed reuses the same customer.
+	customerID, err = billing.CreateCustomer(u.Email, u.Name, uid, "credits-customer-"+uid)
+	if err != nil {
+		return "", err
+	}
+	return a.s.BindStripeCustomer(ctx, uid, customerID)
+}
+
+func (a *api) billingTopUp(ctx context.Context, in *topUpInput) (*urlOutput, error) {
+	if a.cfg.StripeSecretKey == "" {
+		return nil, huma.Error503ServiceUnavailable("billing is not configured")
+	}
+	uid := userID(ctx)
+	if err := a.s.CheckTopUpLimit(ctx, uid, in.Body.AmountCents); err != nil {
+		return nil, hErr(err)
+	}
+	customerID, err := a.creditsCustomer(ctx, uid)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	returnURL := a.cfg.AppURL + "/billing?tab=subscription"
+	url, err := billing.CreateTopUpCheckout(customerID, uid, in.Body.AmountCents, returnURL+"&topup=done", returnURL)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+}
+
+func (a *api) billingPaymentMethod(ctx context.Context, _ *struct{}) (*urlOutput, error) {
+	if a.cfg.StripeSecretKey == "" {
+		return nil, huma.Error503ServiceUnavailable("billing is not configured")
+	}
+	uid := userID(ctx)
+	customerID, err := a.creditsCustomer(ctx, uid)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	returnURL := a.cfg.AppURL + "/billing?tab=subscription"
+	url, err := billing.CreateReloadMethodCheckout(customerID, uid, returnURL+"&reload=method", returnURL)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
+}
+
+func (a *api) setAutoReload(ctx context.Context, in *autoReloadInput) (*Empty, error) {
+	uid := userID(ctx)
+	err := a.s.SetAutoReload(ctx, uid, in.Body.Enabled, in.Body.AmountCents,
+		in.Body.ThresholdCredits*store.MicrosPerCredit)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	if in.Body.Enabled {
+		return &Empty{}, nil
+	}
+	// Turning it off cancels Stripe's retries of a failed reload.
+	retrying, err := a.s.RetryingReloadInvoices(ctx, uid)
+	if err == nil {
+		err = a.voidReloads(ctx, retrying)
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &Empty{}, nil
+}
+
+func (a *api) setSpendingLimit(ctx context.Context, in *spendingLimitInput) (*Empty, error) {
+	if err := a.s.SetSpendingLimit(ctx, userID(ctx), in.Body.LimitCents); err != nil {
+		return nil, hErr(err)
+	}
+	return &Empty{}, nil
 }
 
 func (a *api) billingPortal(ctx context.Context, _ *struct{}) (*urlOutput, error) {

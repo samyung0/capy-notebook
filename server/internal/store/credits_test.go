@@ -117,8 +117,8 @@ func TestProviderSessionSettlesEachCallOnceAndReportsTerminalState(t *testing.T)
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
 	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, reserved_micros)
-		VALUES ($1, $2)`, userID, limit-1); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, reserved_micros, purchased_micros)
+		VALUES ($1, $2, 0)`, userID, limit-1); err != nil {
 		t.Fatal(err)
 	}
 	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, 1)
@@ -394,8 +394,8 @@ func TestUserKeyProviderSessionRecordsZeroCreditCallsPastPlatformLimit(t *testin
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
-		VALUES ($1, $2)`, userID, limit); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+		VALUES ($1, $2, 0)`, userID, limit); err != nil {
 		t.Fatal(err)
 	}
 	sessionID, err := s.BeginProviderSession(
@@ -442,8 +442,8 @@ func TestClosedProviderSessionAcceptsLateReceiptWithoutContinuation(t *testing.T
 	s.SetModelRegistry(reg)
 	userID := newCreditsTestUser(t, s)
 	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
-		VALUES ($1, $2)`, userID, limit-1); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+		VALUES ($1, $2, 0)`, userID, limit-1); err != nil {
 		t.Fatal(err)
 	}
 	llmCfg, err := reg.Get(ctx, models.Ref{ProviderSlug: "deepseek", ModelSlug: "deepseek-flash"}, 1)
@@ -524,8 +524,8 @@ func TestBeginProviderSessionRejectsWhenUsedOrReservedAtLimit(t *testing.T) {
 	llm, embed := platformSessionRates()
 
 	usedID := newCreditsTestUser(t, s)
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
-		VALUES ($1, $2)`, usedID, limit); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+		VALUES ($1, $2, 0)`, usedID, limit); err != nil {
 		t.Fatal(err)
 	}
 	_, err := s.BeginProviderSession(
@@ -538,7 +538,7 @@ func TestBeginProviderSessionRejectsWhenUsedOrReservedAtLimit(t *testing.T) {
 
 	reservedID := newCreditsTestUser(t, s)
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits
-		(user_id, used_micros, reserved_micros) VALUES ($1, 0, $2)`, reservedID, limit); err != nil {
+		(user_id, used_micros, reserved_micros, purchased_micros) VALUES ($1, 0, $2, 0)`, reservedID, limit); err != nil {
 		t.Fatal(err)
 	}
 	_, err = s.BeginProviderSession(
@@ -971,8 +971,8 @@ func TestIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
 	ctx := context.Background()
 	userID := newCreditsTestUser(t, s)
 	limit := mustPlanLimits(t, s, PlanFree).CreditMicros
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros)
-		VALUES ($1, $2)`, userID, limit); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+		VALUES ($1, $2, 0)`, userID, limit); err != nil {
 		t.Fatal(err)
 	}
 	_, err := beginIngestSpend(ctx, s, userID, "")
@@ -983,7 +983,7 @@ func TestIngestSpendRejectsWhenUsedAtLimit(t *testing.T) {
 
 	reservedID := newCreditsTestUser(t, s)
 	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits
-		(user_id, used_micros, reserved_micros) VALUES ($1, 0, $2)`, reservedID, limit); err != nil {
+		(user_id, used_micros, reserved_micros, purchased_micros) VALUES ($1, 0, $2, 0)`, reservedID, limit); err != nil {
 		t.Fatal(err)
 	}
 	_, err = beginIngestSpend(ctx, s, reservedID, "")

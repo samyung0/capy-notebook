@@ -20,13 +20,17 @@ catalog for every numeric limit that may vary by subscription plan:
 | Limit                           |                       Free |                        Pro |
 | ------------------------------- | -------------------------: | -------------------------: |
 | Storage                         | 100,000,000 bytes (100 MB) | 1,000,000,000 bytes (1 GB) |
-| Monthly credits                 |                      1,000 |                     10,000 |
+| Monthly credits                 |                        200 |                     10,000 |
 | Source file                     |                     10 MiB |                     30 MiB |
 | Material daily-history entries  |                          3 |                         30 |
 | Owned workspaces                |                         10 |                         50 |
 | Files per workspace             |                        100 |                        100 |
 | Files per upload/import request |                         20 |                         20 |
 | One uploaded image              |                      2 MiB |                      5 MiB |
+
+Monthly credits are the allowance only: every account also starts with a
+one-off 800-credit grant in its never-expiring purchased balance, and top-ups
+add to that balance (`observability-metering.md`, purchased credits).
 
 Material history retains at most one snapshot per UTC day. A Pro-to-Free
 downgrade permanently deletes snapshots 4 through 30 in the same transaction

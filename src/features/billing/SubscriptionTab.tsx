@@ -4,6 +4,7 @@ import {
   useBillingCheckout,
   useBillingPortal,
   useInvoices,
+  useUsage,
 } from '@/api/hooks';
 import type { Invoice } from '@/api/types';
 import { ErrorState } from '@/components/app/ErrorState';
@@ -17,8 +18,16 @@ import {
   BillingTable,
   BillingTableSkeleton,
 } from './BillingTable';
+import { CreditsSection } from './CreditsSection';
+import { shortDate } from './creditLabels';
 import { formatMoney } from './format';
 import { planLabel } from './labels';
+
+const KIND_LABEL: Record<Invoice['kind'], () => string> = {
+  plan: m.billing_invoice_kind_plan,
+  reload: m.billing_invoice_kind_reload,
+  topup: m.billing_invoice_kind_topup,
+};
 
 const STATUS_LABEL: Record<Invoice['status'], () => string> = {
   open: m.billing_invoice_status_open,
@@ -31,6 +40,7 @@ const STATUS_LABEL: Record<Invoice['status'], () => string> = {
  * for Pro. Plan comparison lives on the landing site. */
 export function SubscriptionTab() {
   const { data: billing } = useBilling();
+  const { data: usage } = useUsage();
   const { mutateAsync: checkout } = useBillingCheckout();
   const { isPending: portalIsPending, mutate: openPortal } = useBillingPortal();
   const [upgrading, setUpgrading] = useState(false);
@@ -79,6 +89,15 @@ export function SubscriptionTab() {
           </Button>
         )}
       </div>
+      {billing && usage && (
+        <CreditsSection
+          billing={billing}
+          spentThisMonthMicros={usage.bySurface.reduce(
+            (sum, bucket) => sum + bucket.creditMicros,
+            0
+          )}
+        />
+      )}
       <div className="mt-12 flex flex-col gap-3">
         <p className="t-subtitle font-bold">{m.billing_invoices()}</p>
         <Invoices />
@@ -92,7 +111,7 @@ function Invoices() {
   const locale = getLocale();
   const columns: BillingColumn[] = [
     { id: 'date', label: m.billing_col_date() },
-    { id: 'due', label: m.billing_col_due(), muted: true },
+    { id: 'type', label: m.billing_col_type(), muted: true },
     { id: 'total', label: m.billing_col_total() },
     { id: 'status', label: m.billing_col_status() },
     { align: 'right', id: 'view', label: '' },
@@ -124,25 +143,45 @@ function Invoices() {
   return (
     <BillingTable
       columns={columns}
-      rows={data.items.map((invoice) => ({
-        cells: {
-          date: day(invoice.createdAt),
-          due: invoice.dueAt ? day(invoice.dueAt) : '—',
-          status: STATUS_LABEL[invoice.status](),
-          total: formatMoney(invoice.total, invoice.currency),
-          view: invoice.url && (
-            <a
-              className="font-semibold text-fg underline underline-offset-4"
-              href={invoice.url}
-              rel="noreferrer"
-              target="_blank"
-            >
-              {m.billing_invoice_view()}
-            </a>
-          ),
-        },
-        key: invoice.id,
-      }))}
+      rows={data.items.map((invoice) => {
+        // An unpaid reload failed: Stripe retries it (a next attempt) or gave
+        // up (uncollectible); either can still be paid from its hosted page.
+        // One that is open with no next attempt is still being charged.
+        const reload = invoice.kind === 'reload';
+        const retrying =
+          reload && invoice.status === 'open' && !!invoice.nextAttemptAt;
+        const failed =
+          retrying || (reload && invoice.status === 'uncollectible');
+        const status =
+          retrying && invoice.nextAttemptAt
+            ? m.billing_invoice_status_retrying({
+                date: shortDate(new Date(invoice.nextAttemptAt)),
+              })
+            : failed
+              ? m.billing_invoice_status_failed()
+              : reload && invoice.status === 'open'
+                ? m.billing_invoice_status_processing()
+                : STATUS_LABEL[invoice.status]();
+        return {
+          cells: {
+            date: day(invoice.createdAt),
+            status,
+            total: formatMoney(invoice.total, invoice.currency),
+            type: KIND_LABEL[invoice.kind](),
+            view: invoice.url && (
+              <a
+                className="font-semibold text-fg underline underline-offset-4"
+                href={invoice.url}
+                rel="noreferrer"
+                target="_blank"
+              >
+                {failed ? m.billing_invoice_pay() : m.billing_invoice_view()}
+              </a>
+            ),
+          },
+          key: invoice.id,
+        };
+      })}
     />
   );
 }

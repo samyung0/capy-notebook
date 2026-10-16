@@ -148,7 +148,7 @@ func TestProductionRoleContractsAndLeastPrivilegeAdminActions(t *testing.T) {
 		GRANT SELECT ON ops_assistant_turns TO %s;
 		GRANT SELECT ON edit_incidents TO %s;
 		GRANT SELECT (
-			user_id, period_start, used_micros, reserved_micros
+			user_id, period_start, used_micros, reserved_micros, purchased_micros, carried_micros
 		) ON user_credits TO %s;
 		GRANT SELECT (
 			id, actor_user_id, trace_id, surface, paid_by, status,

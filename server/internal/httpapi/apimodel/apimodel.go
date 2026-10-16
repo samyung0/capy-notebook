@@ -577,6 +577,10 @@ type Invoice struct {
 	Currency  string     `json:"currency"`
 	Status    string     `json:"status" enum:"open,paid,uncollectible,void"`
 	URL       string     `json:"url,omitempty"`
+	// Kind is the invoice's Type column: the Pro plan, a top-up or an auto-reload.
+	Kind string `json:"kind" enum:"plan,topup,reload"`
+	// NextAttemptAt is when Stripe retries an open invoice; absent once it stopped.
+	NextAttemptAt *time.Time `json:"nextAttemptAt,omitempty"`
 }
 
 type InvoiceList struct {

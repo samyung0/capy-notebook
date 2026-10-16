@@ -61,6 +61,8 @@ var readRequiredPrivileges = []columnPrivilege{
 	{"user_credits", "period_start", "SELECT"},
 	{"user_credits", "used_micros", "SELECT"},
 	{"user_credits", "reserved_micros", "SELECT"},
+	{"user_credits", "purchased_micros", "SELECT"},
+	{"user_credits", "carried_micros", "SELECT"},
 	{"provider_sessions", "id", "SELECT"},
 	{"provider_sessions", "actor_user_id", "SELECT"},
 	{"provider_sessions", "trace_id", "SELECT"},

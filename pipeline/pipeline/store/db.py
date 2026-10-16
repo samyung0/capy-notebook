@@ -29,6 +29,10 @@ _telemetry_maintenance_lock = threading.Lock()
 _telemetry_maintenance_at = 0.0
 log = logging.getLogger(__name__)
 
+# The one-off starter grant every account's purchased balance starts with
+# (user_credits.purchased_micros default).
+STARTER_GRANT_MICROS = 800_000_000
+
 
 # The worker binds one source candidate for its task. asyncio.to_thread copies
 # this context, while heartbeats pass their durable job payload explicitly.
@@ -1649,23 +1653,10 @@ def record_usage_event(
     )
     inserted = cur.fetchone() is not None
     if inserted and credit_micros:
+        # Monthly allowance first, then the purchased balance (may go negative).
         cur.execute(
-            "INSERT INTO user_credits (user_id) VALUES (%s) ON CONFLICT DO NOTHING",
-            (actor_user_id,),
-        )
-        cur.execute(
-            """
-            UPDATE user_credits
-            SET period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date,
-                used_micros = CASE
-                    WHEN period_start < date_trunc('month', now() AT TIME ZONE 'UTC')::date
-                    THEN %s
-                    ELSE used_micros + %s
-                END,
-                updated_at = now()
-            WHERE user_id = %s
-            """,
-            (credit_micros, credit_micros, actor_user_id),
+            "SELECT spend_user_credits(%s, %s, %s)",
+            (actor_user_id, credit_micros, _credit_limit_micros(cur, actor_user_id)),
         )
     return inserted
 
@@ -2409,10 +2400,8 @@ def ingest_accounts_active(cur, file_id: str, actor_user_id: str) -> bool:
     return cancellation is None
 
 
-def actor_has_credits(cur, user_id: str) -> bool:
-    """Unlocked lifecycle and credits check for ingest claim time."""
-    if not user_id:
-        return False
+def effective_plan_tier(cur, user_id: str) -> str:
+    """The plan whose limits apply now, as the gateway's effectivePlanTier."""
     cur.execute(
         """
         SELECT CASE
@@ -2427,12 +2416,6 @@ def actor_has_credits(cur, user_id: str) -> bool:
                    ORDER BY (live.plan_tier='pro') DESC,
                      live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
                END,
-               u.deleted_at,
-               u.suspended_at,
-               u.deletion_requested_at,
-               COALESCE(c.used_micros, 0),
-               COALESCE(c.reserved_micros, 0),
-               c.period_start,
                (SELECT max(s.current_period_end)
                   FROM user_subscriptions s
                  WHERE s.user_id = u.id
@@ -2443,25 +2426,73 @@ def actor_has_credits(cur, user_id: str) -> bool:
                    WHERE s.user_id=u.id
                      AND s.status IN ('active','trialing','past_due'))
           FROM users u
-          LEFT JOIN user_credits c ON c.user_id = u.id
          WHERE u.id = %s
         """,
         (user_id,),
     )
     row = cur.fetchone()
     if not row:
+        raise RuntimeError(f"user {user_id!r} not found")
+    plan_tier, period_end, has_subscriptions, has_entitling_subscription = row
+    from datetime import datetime, timezone
+
+    if has_subscriptions and not has_entitling_subscription:
+        return "free"
+    if period_end is not None:
+        end = (
+            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
+        )
+        if end <= datetime.now(timezone.utc):
+            return "free"
+    return plan_tier
+
+
+def _credit_limit_micros(cur, user_id: str) -> int:
+    cur.execute(
+        "SELECT credit_limit_micros FROM plan_limits WHERE plan_tier = %s",
+        (effective_plan_tier(cur, user_id),),
+    )
+    return int(cur.fetchone()[0])
+
+
+def actor_has_credits(cur, user_id: str) -> bool:
+    """Unlocked lifecycle and credits check for ingest claim time.
+
+    Available is the monthly allowance left plus the purchased balance minus
+    reservations; at zero, work is still admitted during a started auto-reload's
+    60-second window, or when this claim starts an armed one
+    (claim_credit_reload).
+    """
+    if not user_id:
+        return False
+    cur.execute(
+        """
+        SELECT u.deleted_at,
+               u.suspended_at,
+               u.deletion_requested_at,
+               COALESCE(c.used_micros, 0),
+               COALESCE(c.reserved_micros, 0),
+               c.period_start,
+               COALESCE(c.purchased_micros, %s),
+               credit_reload_pending(u.id)
+          FROM users u
+          LEFT JOIN user_credits c ON c.user_id = u.id
+         WHERE u.id = %s
+        """,
+        (STARTER_GRANT_MICROS, user_id),
+    )
+    row = cur.fetchone()
+    if not row:
         return False
     (
-        plan_tier,
         deleted_at,
         suspended_at,
         deletion_requested_at,
         used,
         reserved,
         period_start,
-        period_end,
-        has_subscriptions,
-        has_entitling_subscription,
+        purchased,
+        reload_pending,
     ) = row
     if (
         deleted_at is not None
@@ -2471,15 +2502,13 @@ def actor_has_credits(cur, user_id: str) -> bool:
         return False
     from datetime import datetime, timezone
 
+    limit = _credit_limit_micros(cur, user_id)
     today = datetime.now(timezone.utc).date()
     if period_start is not None and period_start < today.replace(day=1):
-        used = 0
-    if has_subscriptions and not has_entitling_subscription:
-        plan_tier = "free"
-    elif period_end is not None:
-        end = (
-            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
-        )
-        if end <= datetime.now(timezone.utc):
-            plan_tier = "free"
-    return (used + reserved) < plan_limits.for_tier(plan_tier).credit_micros
+        # Mirrors roll_user_credits: owed credits come off the new allowance.
+        used = min(max(-purchased, 0), limit)
+        purchased += used
+    if max(limit - used, 0) + purchased - reserved > 0 or reload_pending:
+        return True
+    cur.execute("SELECT claim_credit_reload(%s)", (user_id,))
+    return bool(cur.fetchone()[0])

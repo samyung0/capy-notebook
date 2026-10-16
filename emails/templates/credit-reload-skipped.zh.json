@@ -1,0 +1,107 @@
+{
+  "schemaVersion": 1,
+  "subject": "自动充值已跳过：已达每月上限",
+  "preview": "未扣款。修改上限或充值即可继续使用。",
+  "content": {
+    "type": "doc",
+    "content": [
+      {
+        "type": "heading",
+        "attrs": {
+          "level": 3
+        },
+        "content": [
+          {
+            "type": "text",
+            "text": "自动充值已跳过"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "充值 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "Amount",
+              "label": "Reload amount",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 会超过你每月 "
+          },
+          {
+            "type": "variable",
+            "attrs": {
+              "id": "Limit",
+              "label": "Monthly limit",
+              "required": true
+            }
+          },
+          {
+            "type": "text",
+            "text": " 的消费上限，因此没有扣款。"
+          }
+        ]
+      },
+      {
+        "type": "paragraph",
+        "content": [
+          {
+            "type": "text",
+            "text": "需要额度的请求会暂停，直到有新的额度。提高或取消上限，或手动充值，即可继续使用。"
+          }
+        ]
+      },
+      {
+        "type": "button",
+        "attrs": {
+          "text": "修改上限",
+          "url": "OpenURL",
+          "isUrlVariable": true,
+          "alignment": "left",
+          "variant": "filled",
+          "borderRadius": "smooth"
+        }
+      },
+      {
+        "type": "horizontalRule"
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "你收到这封邮件是因为你的 Capy Notebook 账户开启了自动充值。"
+          }
+        ]
+      },
+      {
+        "type": "footer",
+        "content": [
+          {
+            "type": "text",
+            "text": "不再接收账单邮件",
+            "marks": [
+              {
+                "type": "link",
+                "attrs": {
+                  "href": "UnsubscribeURL",
+                  "isUrlVariable": true,
+                  "target": "_blank",
+                  "rel": "noopener noreferrer nofollow"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

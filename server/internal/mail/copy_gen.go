@@ -10,6 +10,8 @@ var subjectTemplates = map[string]string{
 	"account-deletion-cancelled.zh": "你的 Capy Notebook 账户已恢复",
 	"account-deletion-requested.en": "Your Capy Notebook account will be deleted on {{.DeletionDate}}",
 	"account-deletion-requested.zh": "你的 Capy Notebook 账户将于 {{.DeletionDate}} 删除",
+	"credit-reload-skipped.en":      "Auto-reload skipped: monthly limit reached",
+	"credit-reload-skipped.zh":      "自动充值已跳过：已达每月上限",
 	"office-maintenance.en":         "Office editing in Capy Notebook pauses for an upgrade",
 	"office-maintenance.zh":         "Capy Notebook 的 Office 编辑将因升级暂停",
 	"subscription-cancelled.en":     "Your Capy Notebook Pro plan ends on {{.EndsOn}}",

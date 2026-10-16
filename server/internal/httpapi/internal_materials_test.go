@@ -194,17 +194,17 @@ func TestInternalMaterialRunsAfterInferenceCreditsExhaust(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := st.Pool().Exec(ctx, `
-		INSERT INTO user_credits (user_id, used_micros)
-		VALUES ('u_editor', 1000000000000000)
-		ON CONFLICT (user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros
+		INSERT INTO user_credits (user_id, used_micros, purchased_micros)
+		VALUES ('u_editor', 1000000000000000, 0)
+		ON CONFLICT (user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros, purchased_micros=0
 	`); err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
 		if prior.Valid {
 			_, _ = st.Pool().Exec(context.Background(), `
-				UPDATE user_credits SET used_micros=$2 WHERE user_id=$1`,
-				"u_editor", prior.Int64,
+				UPDATE user_credits SET used_micros=$2, purchased_micros=$3 WHERE user_id=$1`,
+				"u_editor", prior.Int64, store.StarterGrantMicros,
 			)
 		} else {
 			_, _ = st.Pool().Exec(context.Background(), `

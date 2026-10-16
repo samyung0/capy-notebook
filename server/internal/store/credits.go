@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -69,23 +70,49 @@ type CreditsExhaustedError struct {
 	ReservedMicros  int64
 	RequestedMicros int64
 	LimitMicros     int64
+	PurchasedMicros int64
 	PlanTier        PlanTier
 }
 
 func (e *CreditsExhaustedError) Error() string {
-	return fmt.Sprintf("%s: used=%d reserved=%d requested=%d limit=%d",
-		ErrCreditsExhausted, e.UsedMicros, e.ReservedMicros, e.RequestedMicros, e.LimitMicros)
+	return fmt.Sprintf("%s: used=%d reserved=%d requested=%d limit=%d purchased=%d",
+		ErrCreditsExhausted, e.UsedMicros, e.ReservedMicros, e.RequestedMicros, e.LimitMicros,
+		e.PurchasedMicros)
+}
+
+func exhaustedError(usage CreditUsage) *CreditsExhaustedError {
+	return &CreditsExhaustedError{
+		UserID:          usage.UserID,
+		UsedMicros:      usage.UsedMicros,
+		ReservedMicros:  usage.ReservedMicros,
+		LimitMicros:     usage.LimitMicros,
+		PurchasedMicros: usage.PurchasedMicros,
+		PlanTier:        usage.PlanTier,
+	}
 }
 
 func (e *CreditsExhaustedError) Unwrap() error { return ErrCreditsExhausted }
 
+// CreditUsage is the monthly allowance (LimitMicros, UsedMicros) plus the
+// never-expiring purchased balance, which is negative while credits are owed.
 type CreditUsage struct {
-	UserID         string    `json:"userId"`
-	UsedMicros     int64     `json:"creditsUsedMicros"`
-	ReservedMicros int64     `json:"creditsReservedMicros"`
-	LimitMicros    int64     `json:"creditsLimitMicros"`
-	PlanTier       PlanTier  `json:"planTier"`
-	PeriodStart    time.Time `json:"periodStart"`
+	UserID          string    `json:"userId"`
+	UsedMicros      int64     `json:"creditsUsedMicros"`
+	ReservedMicros  int64     `json:"creditsReservedMicros"`
+	LimitMicros     int64     `json:"creditsLimitMicros"`
+	PurchasedMicros int64     `json:"creditsPurchasedMicros"`
+	CarriedMicros   int64     `json:"creditsCarriedMicros"`
+	PlanTier        PlanTier  `json:"planTier"`
+	PeriodStart     time.Time `json:"periodStart"`
+	// ReloadPending admits work at zero during a started auto-reload's
+	// 60-second window (credit_reload_pending).
+	ReloadPending bool `json:"-"`
+}
+
+// AvailableMicros is what the gate admits against: the monthly allowance left
+// plus the purchased balance, minus open reservations.
+func (u CreditUsage) AvailableMicros() int64 {
+	return max(u.LimitMicros-u.UsedMicros, 0) + u.PurchasedMicros - u.ReservedMicros
 }
 
 // UsageBucket is one grouping on the user-facing usage page. Credits only;
@@ -197,15 +224,6 @@ const (
 
 /* --------------------------------------------------------------- counter */
 
-func (s *Store) ensureCreditsRowTx(ctx context.Context, tx pgx.Tx, userID string) error {
-	if userID == "" {
-		return ErrNotFound
-	}
-	_, err := tx.Exec(ctx, `INSERT INTO user_credits (user_id)
-		VALUES ($1) ON CONFLICT (user_id) DO NOTHING`, userID)
-	return err
-}
-
 // lockedCreditUsageTx reads the counter under a row lock, rolling the period
 // over first. The rollover is lazy on purpose: a monthly cron that fails to run
 // would hand every user an unlimited month, whereas a read that has not
@@ -216,81 +234,90 @@ func (s *Store) lockedCreditUsageTx(
 	userID string,
 ) (CreditUsage, error) {
 	var usage CreditUsage
-	if err := s.ensureCreditsRowTx(ctx, tx, userID); err != nil {
-		return usage, err
+	if userID == "" {
+		return usage, ErrNotFound
 	}
 	tier, err := s.effectivePlanTierForUser(ctx, tx, userID)
 	if err != nil {
 		return usage, err
 	}
-	// The UPDATE both takes the lock and resets a stale period in one
-	// statement, so two concurrent first-requests of a month cannot both
-	// observe the previous period's balance.
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return usage, err
+	}
+	// The rollover UPDATE takes the row lock when it fires, so two concurrent
+	// first-requests of a month cannot both roll; the second re-reads the
+	// rolled row.
+	if _, err := tx.Exec(ctx, `SELECT roll_user_credits($1, $2)`, userID, limits.CreditMicros); err != nil {
+		return usage, err
+	}
 	err = tx.QueryRow(ctx, `
-		UPDATE user_credits
-		SET period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date,
-		    used_micros = CASE
-		      WHEN period_start < date_trunc('month', now() AT TIME ZONE 'UTC')::date THEN 0
-		      ELSE used_micros END,
-		    updated_at = now()
-		WHERE user_id = $1
-		RETURNING used_micros, reserved_micros, period_start`, userID).
-		Scan(&usage.UsedMicros, &usage.ReservedMicros, &usage.PeriodStart)
+		SELECT used_micros, reserved_micros, period_start, purchased_micros, carried_micros,
+		       credit_reload_pending(user_id)
+		FROM user_credits WHERE user_id = $1 FOR UPDATE`, userID).
+		Scan(&usage.UsedMicros, &usage.ReservedMicros, &usage.PeriodStart,
+			&usage.PurchasedMicros, &usage.CarriedMicros, &usage.ReloadPending)
 	if err != nil {
 		return usage, err
 	}
 	usage.UserID = userID
 	usage.PlanTier = tier
-	limits, err := s.PlanLimits(tier)
-	if err != nil {
-		return usage, err
-	}
 	usage.LimitMicros = limits.CreditMicros
 	return usage, nil
 }
 
 // CreditBalance reads without locking, for display and for the operator
-// dashboard. The gate must not use this.
+// dashboard. The gate must not use this. It leaves ReloadPending unset: the
+// operator role cannot execute credit_reload_pending.
 func (s *Store) CreditBalance(ctx context.Context, userID string) (CreditUsage, error) {
 	var usage CreditUsage
 	tier, err := s.effectivePlanTierForUser(ctx, s.pool, userID)
 	if err != nil {
 		return usage, err
 	}
+	limits, err := s.PlanLimits(tier)
+	if err != nil {
+		return usage, err
+	}
 	var periodStart *time.Time
+	var purchased *int64
 	err = s.pool.QueryRow(ctx, `
 		SELECT COALESCE(c.used_micros, 0),
 		       COALESCE(c.reserved_micros, 0),
-		       c.period_start
+		       c.period_start,
+		       c.purchased_micros,
+		       COALESCE(c.carried_micros, 0)
 		FROM users u
 		LEFT JOIN user_credits c ON c.user_id = u.id
 		WHERE u.id = $1`, userID).
-		Scan(&usage.UsedMicros, &usage.ReservedMicros, &periodStart)
+		Scan(&usage.UsedMicros, &usage.ReservedMicros, &periodStart, &purchased,
+			&usage.CarriedMicros)
 	if isNoRows(err) {
 		return usage, ErrNotFound
 	}
 	if err != nil {
 		return usage, err
 	}
-	// A row whose period has lapsed has not been rolled over yet; report zero
-	// rather than last month's total so the UI matches what the next request
-	// will actually be gated against.
-	if periodStart != nil {
-		usage.PeriodStart = *periodStart
-		if periodStart.Before(monthStart()) {
-			usage.UsedMicros = 0
-			usage.PeriodStart = monthStart()
-		}
-	} else {
-		usage.PeriodStart = monthStart()
-	}
 	usage.UserID = userID
 	usage.PlanTier = tier
-	limits, err := s.PlanLimits(tier)
-	if err != nil {
-		return usage, err
-	}
 	usage.LimitMicros = limits.CreditMicros
+	if purchased == nil {
+		// No counter row yet: the account still holds its starter grant.
+		usage.PurchasedMicros = StarterGrantMicros
+		usage.PeriodStart = monthStart()
+		return usage, nil
+	}
+	usage.PurchasedMicros = *purchased
+	usage.PeriodStart = *periodStart
+	// A lapsed period has not been rolled yet; show what roll_user_credits will
+	// produce so the UI matches what the next request is gated against.
+	if periodStart.Before(monthStart()) {
+		moved := min(max(-usage.PurchasedMicros, 0), usage.LimitMicros)
+		usage.UsedMicros = moved
+		usage.CarriedMicros = moved
+		usage.PurchasedMicros += moved
+		usage.PeriodStart = monthStart()
+	}
 	return usage, nil
 }
 
@@ -303,20 +330,35 @@ func (s *Store) CreditBalance(ctx context.Context, userID string) (CreditUsage, 
 // It deliberately takes no lock and reserves nothing. Using the full gate here
 // would double-count the turn against itself.
 func (s *Store) AssertCreditsAvailable(ctx context.Context, userID string) error {
-	usage, err := s.CreditBalance(ctx, userID)
+	usage, err := s.unlockedGateUsage(ctx, userID)
 	if err != nil {
 		return err
 	}
-	return exhaustedIfOverLimit(usage)
+	return admit(ctx, s.pool, usage)
 }
 
-// The estimate headroom lets one admitted job overrun the monthly limit by
-// 30% (limit × 13/10, kept in integers so the boundary is exact). The
+// unlockedGateUsage is CreditBalance plus ReloadPending, read only when the
+// balance alone would refuse.
+func (s *Store) unlockedGateUsage(ctx context.Context, userID string) (CreditUsage, error) {
+	usage, err := s.CreditBalance(ctx, userID)
+	if err != nil || usage.AvailableMicros() > 0 {
+		return usage, err
+	}
+	err = s.pool.QueryRow(ctx, `SELECT credit_reload_pending($1)`, userID).Scan(&usage.ReloadPending)
+	return usage, err
+}
+
+// StarterGrantMicros is the one-off 800 credits every account starts with in
+// its purchased balance (the column default of user_credits.purchased_micros).
+const StarterGrantMicros = 800 * MicrosPerCredit
+
+// The estimate headroom lets one admitted job overrun what is available by
+// 30% of the monthly limit (kept in integers so the boundary is exact). The
 // browser's estimate is trusted here because the parser receipt still bills
 // the measured pages: a low estimate only lets a user finish one job past the
 // limit before the next interactive request refuses.
 const (
-	creditHeadroomNumerator   = 13
+	creditHeadroomNumerator   = 3
 	creditHeadroomDenominator = 10
 )
 
@@ -324,49 +366,56 @@ const (
 // exhaustion check plus a refusal when the estimated cost would land past the
 // headroom. Unlocked like AssertCreditsAvailable; the job's own claim rechecks.
 func (s *Store) AssertCreditsForEstimate(ctx context.Context, userID string, estimateMicros int64) error {
-	usage, err := s.CreditBalance(ctx, userID)
+	usage, err := s.unlockedGateUsage(ctx, userID)
 	if err != nil {
 		return err
 	}
-	if err := exhaustedIfOverLimit(usage); err != nil {
+	if err := admit(ctx, s.pool, usage); err != nil {
 		return err
 	}
 	if !estimateExceedsHeadroom(usage, estimateMicros) {
 		return nil
 	}
-	return &CreditsExhaustedError{
-		UserID:         usage.UserID,
-		UsedMicros:     usage.UsedMicros,
-		ReservedMicros: usage.ReservedMicros,
-		LimitMicros:    usage.LimitMicros,
-		PlanTier:       usage.PlanTier,
-	}
+	return exhaustedError(usage)
 }
 
 func estimateExceedsHeadroom(usage CreditUsage, estimateMicros int64) bool {
 	if estimateMicros <= 0 {
 		return false
 	}
-	// An estimate larger than the whole headroom refuses before any arithmetic
-	// that a client-supplied value could overflow.
-	if estimateMicros > usage.LimitMicros*creditHeadroomNumerator {
+	// A client-supplied estimate this large refuses before any arithmetic it
+	// could overflow.
+	if estimateMicros > math.MaxInt64/(2*creditHeadroomDenominator) {
 		return true
 	}
-	projected := usage.UsedMicros + usage.ReservedMicros + estimateMicros
-	return projected*creditHeadroomDenominator > usage.LimitMicros*creditHeadroomNumerator
+	excess := estimateMicros - usage.AvailableMicros()
+	return excess*creditHeadroomDenominator > usage.LimitMicros*creditHeadroomNumerator
 }
 
+// exhaustedIfOverLimit refuses new work once nothing is available, unless a
+// started auto-reload's 60-second window is open (credit_reload_pending).
 func exhaustedIfOverLimit(usage CreditUsage) error {
-	if usage.UsedMicros+usage.ReservedMicros < usage.LimitMicros {
+	if usage.AvailableMicros() > 0 || usage.ReloadPending {
 		return nil
 	}
-	return &CreditsExhaustedError{
-		UserID:         usage.UserID,
-		UsedMicros:     usage.UsedMicros,
-		ReservedMicros: usage.ReservedMicros,
-		LimitMicros:    usage.LimitMicros,
-		PlanTier:       usage.PlanTier,
+	return exhaustedError(usage)
+}
+
+// admit is the gate: exhaustedIfOverLimit, except that a request finding
+// credits at zero starts an armed auto-reload (claim_credit_reload), which opens
+// the window and lets it through.
+func admit(ctx context.Context, q rowQuerier, usage CreditUsage) error {
+	if exhaustedIfOverLimit(usage) == nil {
+		return nil
 	}
+	var claimed bool
+	if err := q.QueryRow(ctx, `SELECT claim_credit_reload($1)`, usage.UserID).Scan(&claimed); err != nil {
+		return err
+	}
+	if claimed {
+		return nil
+	}
+	return exhaustedError(usage)
 }
 
 func monthStart() time.Time {
@@ -410,7 +459,7 @@ func (s *Store) BeginProviderSession(
 		if err != nil {
 			return "", err
 		}
-		if err := exhaustedIfOverLimit(usage); err != nil {
+		if err := admit(ctx, tx, usage); err != nil {
 			return "", err
 		}
 		var open int64
@@ -764,13 +813,19 @@ func (s *Store) settleProviderCallAtomic(
 		}
 	}
 	if out.credits > 0 && out.paidBy == models.PaidByPlatform {
-		used := balance.UsedMicros + out.credits
-		if _, err := tx.Exec(ctx, `UPDATE user_credits
-			SET used_micros = $2, updated_at = now()
-			WHERE user_id = $1`, out.actorUserID, used); err != nil {
+		after := balance
+		if err := tx.QueryRow(ctx, `SELECT used_micros, purchased_micros FROM spend_user_credits($1, $2, $3)`,
+			out.actorUserID, out.credits, balance.LimitMicros).
+			Scan(&after.UsedMicros, &after.PurchasedMicros); err != nil {
 			return settlement, err
 		}
-		settlement.CreditsExhausted = used+balance.ReservedMicros >= balance.LimitMicros
+		if err := admit(ctx, tx, after); err != nil {
+			var exhausted *CreditsExhaustedError
+			if !errors.As(err, &exhausted) {
+				return settlement, err
+			}
+			settlement.CreditsExhausted = true
+		}
 	}
 	if settlement.CreditsExhausted && out.exhaustedAt == nil {
 		if _, err := tx.Exec(ctx, `UPDATE provider_sessions
@@ -831,7 +886,7 @@ func (s *Store) beginIngestSpendTx(
 	if err != nil {
 		return "", err
 	}
-	if err := exhaustedIfOverLimit(usage); err != nil {
+	if err := admit(ctx, tx, usage); err != nil {
 		return "", err
 	}
 
@@ -977,12 +1032,12 @@ func (s *Store) RecordUsage(ctx context.Context, events ...UsageEvent) error {
 		if micros == 0 {
 			continue
 		}
-		if _, err := s.lockedCreditUsageTx(ctx, tx, userID); err != nil {
+		usage, err := s.lockedCreditUsageTx(ctx, tx, userID)
+		if err != nil {
 			return err
 		}
-		if _, err := tx.Exec(ctx, `UPDATE user_credits
-			SET used_micros = used_micros + $2, updated_at = now()
-			WHERE user_id = $1`, userID, micros); err != nil {
+		if _, err := tx.Exec(ctx, `SELECT spend_user_credits($1, $2, $3)`,
+			userID, micros, usage.LimitMicros); err != nil {
 			return err
 		}
 	}

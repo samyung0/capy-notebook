@@ -112,9 +112,14 @@ type api struct {
 	stripeSubscription func(string) (*stripe.Subscription, error)
 	stripeEntitlements func(string) ([]*stripe.Subscription, error)
 	stripeInvoices     func(string) ([]*stripe.Invoice, error)
-	streamMu           sync.Mutex
-	streamByUser       map[string]int
-	streamTotal        int
+	// Credit top-up and auto-reload calls, replaced by tests.
+	stripeTopUpMethod   func(string) (store.PaymentMethod, error)
+	stripeSetupMethod   func(string) (store.PaymentMethod, error)
+	stripeVoidInvoice   func(string) error
+	stripeReloadOutcome func(string) (billing.ReloadResult, error)
+	streamMu            sync.Mutex
+	streamByUser        map[string]int
+	streamTotal         int
 	// broker fans the ingest and notification channels out from one Redis
 	// subscription, and the workspace tree channel from one Postgres LISTEN
 	// (treeLive says whether that LISTEN is attached); see fanout.go.
@@ -145,7 +150,12 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 		stripeSubscription: billing.RetrieveSubscription,
 		stripeEntitlements: billing.ListEntitlingSubscriptions,
 		stripeInvoices:     billing.ListInvoices,
-		streamByUser:       make(map[string]int),
+
+		stripeTopUpMethod:   billing.TopUpPaymentMethod,
+		stripeSetupMethod:   billing.SetupPaymentMethod,
+		stripeVoidInvoice:   billing.VoidInvoice,
+		stripeReloadOutcome: billing.ReloadOutcome,
+		streamByUser:        make(map[string]int),
 	}
 	if rdb != nil {
 		a.broker = newChannelBroker(rdb, "ingest:*", "notif:*")
@@ -472,12 +482,13 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 	var credits *store.CreditsExhaustedError
 	if errors.As(err, &credits) {
 		writeJSON(w, http.StatusForbidden, map[string]any{
-			"code":                  "llm_credits_exhausted",
-			"message":               "monthly AI credits exhausted",
-			"creditsUsedMicros":     credits.UsedMicros,
-			"creditsReservedMicros": credits.ReservedMicros,
-			"creditsLimitMicros":    credits.LimitMicros,
-			"planTier":              string(credits.PlanTier),
+			"code":                   "llm_credits_exhausted",
+			"message":                "monthly AI credits exhausted",
+			"creditsUsedMicros":      credits.UsedMicros,
+			"creditsReservedMicros":  credits.ReservedMicros,
+			"creditsLimitMicros":     credits.LimitMicros,
+			"creditsPurchasedMicros": credits.PurchasedMicros,
+			"planTier":               string(credits.PlanTier),
 		})
 		return
 	}

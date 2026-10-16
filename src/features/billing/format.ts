@@ -49,3 +49,13 @@ export function formatMoney(minor: number, currency: string): string {
   const digits = format.resolvedOptions().maximumFractionDigits ?? 2;
   return format.format(minor / 10 ** digits);
 }
+
+/** US cents as dollars, whole amounts without decimals: "$10", "$12.50". */
+export function formatDollars(cents: number): string {
+  return new Intl.NumberFormat(localeTag(), {
+    currency: 'USD',
+    maximumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    minimumFractionDigits: cents % 100 === 0 ? 0 : 2,
+    style: 'currency',
+  }).format(cents / 100);
+}

@@ -71,6 +71,28 @@ func mapHTTPError(err error) error {
 	if errors.Is(err, store.ErrInvalidCursor) {
 		return huma.Error400BadRequest(err.Error())
 	}
+	var spending *store.SpendingLimitError
+	if errors.As(err, &spending) {
+		return &huma.ErrorModel{
+			Status: http.StatusConflict,
+			Title:  http.StatusText(http.StatusConflict),
+			Detail: "the monthly spending limit would be exceeded",
+			Errors: []*huma.ErrorDetail{{
+				Message: "spending_limit",
+				Value: map[string]any{
+					"limitCents":    spending.LimitCents,
+					"spentCents":    spending.SpentCents,
+					"chargingCents": spending.ChargingCents,
+				},
+			}},
+		}
+	}
+	if errors.Is(err, store.ErrNoPaymentMethod) {
+		return conflictError("no_payment_method", err.Error())
+	}
+	if errors.Is(err, store.ErrPaymentMethodNotInstant) {
+		return conflictError("payment_method_not_instant", err.Error())
+	}
 	if errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrForbidden) {
 		return huma.Error404NotFound("not found")
 	}
@@ -328,10 +350,11 @@ func mapHTTPError(err error) error {
 			Errors: []*huma.ErrorDetail{{
 				Message: "llm_credits_exhausted",
 				Value: map[string]any{
-					"creditsUsedMicros":     credits.UsedMicros,
-					"creditsReservedMicros": credits.ReservedMicros,
-					"creditsLimitMicros":    credits.LimitMicros,
-					"planTier":              string(credits.PlanTier),
+					"creditsUsedMicros":      credits.UsedMicros,
+					"creditsReservedMicros":  credits.ReservedMicros,
+					"creditsLimitMicros":     credits.LimitMicros,
+					"creditsPurchasedMicros": credits.PurchasedMicros,
+					"planTier":               string(credits.PlanTier),
 				},
 			}},
 		}

@@ -123,7 +123,7 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, req); err == nil {
 		t.Fatal("viewer authored checkpoint")
 	}
-	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits(user_id,used_micros) VALUES($1,999999999999999) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros`, owner); err != nil {
+	if _, err := s.pool.Exec(ctx, `INSERT INTO user_credits(user_id,used_micros,purchased_micros) VALUES($1,999999999999999,0) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros,purchased_micros=0`, owner); err != nil {
 		t.Fatal(err)
 	}
 	doc = sourceTestEdit(t, s, owner, doc, "new-state")
@@ -486,7 +486,7 @@ func TestSourceRefreshParseFeeAndSystemPayer(t *testing.T) {
 	}
 	// The system payer admits an owner who is out of credits and takes none of
 	// the owner's ingest slots.
-	if _, err = s.pool.Exec(ctx, `INSERT INTO user_credits(user_id,used_micros) VALUES($1,999999999999999) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros`, owner); err != nil {
+	if _, err = s.pool.Exec(ctx, `INSERT INTO user_credits(user_id,used_micros,purchased_micros) VALUES($1,999999999999999,0) ON CONFLICT(user_id) DO UPDATE SET used_micros=EXCLUDED.used_micros,purchased_micros=0`, owner); err != nil {
 		t.Fatal(err)
 	}
 	maintained := edited(true)

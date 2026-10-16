@@ -73,8 +73,11 @@ export interface InputProps
   actionSide?: 'left' | 'right';
   actionSize?: IconButtonProps['size'];
   actionVariant?: IconButtonProps['variant'];
+  endText?: React.ReactNode;
   leftIcon?: IconName;
   rightIcon?: IconName;
+  /** Muted text inside the field, before and after the value ("$", "credits"). */
+  startText?: React.ReactNode;
   wrapperClassName?: string;
 }
 
@@ -110,6 +113,8 @@ const InlineAction = ({
 export function Input({
   leftIcon,
   rightIcon,
+  startText,
+  endText,
   wrapperClassName,
   actionIcon,
   actionLabel,
@@ -134,6 +139,7 @@ export function Input({
       )}
     >
       {leftIcon && <InlineIcon name={leftIcon} />}
+      {startText != null && <span className="text-fg-muted">{startText}</span>}
       {actionIcon && actionShowIcon && actionSide === 'left' && (
         <InlineAction
           actionClassName={actionClassName}
@@ -145,6 +151,9 @@ export function Input({
         />
       )}
       <input className={cn(inputVariants({ size }), className)} {...rest} />
+      {endText != null && (
+        <span className="shrink-0 text-fg-muted">{endText}</span>
+      )}
       {rightIcon && <InlineIcon name={rightIcon} />}
       {actionIcon && actionShowIcon && actionSide === 'right' && (
         <InlineAction

@@ -322,8 +322,18 @@ export function getMockScenarioHandlers(
         http.get('/api/billing', () =>
           HttpResponse.json({
             cancelAtPeriodEnd: false,
+            creditSettings: {
+              autoReload: false,
+              paymentMethodInstant: false,
+              reload: { amountCents: 0, skipped: false },
+              reloadAmountCents: 1000,
+              reloadThresholdMicros: 0,
+              spentThisMonthCents: 0,
+            },
+            creditsCarriedMicros: 0,
             creditsLimitMicros: PLAN_LIMITS.free.creditLimitMicros,
             creditsPeriodStart: new Date().toISOString(),
+            creditsPurchasedMicros: 800_000_000,
             creditsReservedMicros: 0,
             creditsUsedMicros: 0,
             planTier: 'free',

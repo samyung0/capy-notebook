@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/stripe/stripe-go/v82"
 	"github.com/stripe/stripe-go/v82/webhook"
@@ -34,6 +35,15 @@ type webhookStore interface {
 	MarkSubscriptionPastDue(ctx context.Context, subscriptionID string, eventCreated int64) error
 	UserIDBySubscription(ctx context.Context, subscriptionID string) (string, error)
 	AccountAccess(ctx context.Context, userID string) (store.AccountStatus, error)
+	GrantTopUp(ctx context.Context, userID, checkoutSessionID, paymentIntentID string, amountCents int64) (bool, []string, error)
+	MarkReloadVoid(ctx context.Context, invoiceID string) error
+	SavePaymentMethod(ctx context.Context, userID string, pm store.PaymentMethod, onlyIfNone bool) error
+	MarkReloadPaid(ctx context.Context, purchaseID, invoiceID, paymentIntentID string) error
+	MarkReloadFailed(ctx context.Context, purchaseID, invoiceID string, nextAttempt time.Time, declineReason string) error
+	ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) error
+	HoldDispute(ctx context.Context, paymentIntentID string) error
+	ReleaseDispute(ctx context.Context, paymentIntentID string) error
+	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
 }
 
 var errStripeSubscriptionNotReady = errors.New("stripe subscription mapping is not ready")
@@ -317,10 +327,22 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 	var procErr error
 	associated := false
 	switch event.Type {
+	case "checkout.session.async_payment_succeeded":
+		// A top-up whose payment settled after Checkout completed.
+		var sess stripe.CheckoutSession
+		if err := json.Unmarshal(event.Data.Raw, &sess); err != nil {
+			procErr = err
+			break
+		}
+		associated, procErr = a.creditCheckoutCompleted(r.Context(), &sess, event.ID, claim)
 	case "checkout.session.completed":
 		var sess stripe.CheckoutSession
 		if err := json.Unmarshal(event.Data.Raw, &sess); err != nil {
 			procErr = err
+			break
+		}
+		if sess.Mode == stripe.CheckoutSessionModePayment || sess.Mode == stripe.CheckoutSessionModeSetup {
+			associated, procErr = a.creditCheckoutCompleted(r.Context(), &sess, event.ID, claim)
 			break
 		}
 		userID := sess.Metadata["user_id"]
@@ -424,6 +446,39 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 			)
 			associated = procErr == nil
 		}
+	case "invoice.paid":
+		var invoice stripe.Invoice
+		if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
+			procErr = err
+			break
+		}
+		procErr = a.reloadInvoiceChanged(r.Context(), &invoice)
+	case "charge.refunded":
+		var charge stripe.Charge
+		if err := json.Unmarshal(event.Data.Raw, &charge); err != nil {
+			procErr = err
+			break
+		}
+		if charge.PaymentIntent != nil {
+			procErr = a.wh.ReverseRefund(r.Context(), charge.PaymentIntent.ID, charge.AmountRefunded, charge.Amount)
+		}
+	case "charge.dispute.created", "charge.dispute.closed":
+		var dispute stripe.Dispute
+		if err := json.Unmarshal(event.Data.Raw, &dispute); err != nil {
+			procErr = err
+			break
+		}
+		if dispute.PaymentIntent == nil {
+			break
+		}
+		// An inquiry (warning_*) withdraws no funds, so it takes no credits.
+		inquiry := strings.HasPrefix(string(dispute.Status), "warning_")
+		switch {
+		case event.Type == "charge.dispute.created" && !inquiry:
+			procErr = a.wh.HoldDispute(r.Context(), dispute.PaymentIntent.ID)
+		case dispute.Status == stripe.DisputeStatusWon:
+			procErr = a.wh.ReleaseDispute(r.Context(), dispute.PaymentIntent.ID)
+		}
 	case "invoice.payment_failed":
 		// The first signal that entitlement is about to lapse. Nothing used to
 		// handle it, so past_due was written by subscription updates and then
@@ -431,6 +486,10 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		var invoice stripe.Invoice
 		if err := json.Unmarshal(event.Data.Raw, &invoice); err != nil {
 			procErr = err
+			break
+		}
+		if invoiceSubscriptionID(&invoice) == "" {
+			procErr = a.reloadInvoiceChanged(r.Context(), &invoice)
 			break
 		}
 		if subID := invoiceSubscriptionID(&invoice); subID != "" {
@@ -507,4 +566,100 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "ok"})
+}
+
+// creditCheckoutCompleted handles the two credit Checkouts: a paid top-up
+// (credit it, save its card when none is saved, void reloads Stripe is still
+// retrying) and the setup session that saves the auto-reload card.
+func (a *api) creditCheckoutCompleted(
+	ctx context.Context, sess *stripe.CheckoutSession, eventID, claim string,
+) (bool, error) {
+	kind := sess.Metadata["kind"]
+	if (kind != billing.KindTopUp && kind != billing.KindReloadMethod) || sess.Customer == nil {
+		return false, nil
+	}
+	userID, err := a.wh.UserIDByStripeCustomer(ctx, sess.Customer.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		// Credit Checkouts open only for a bound customer; an unknown one is
+		// another lane's event.
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	if meta := sess.Metadata["user_id"]; meta != "" && meta != userID {
+		return false, store.ErrConflict
+	}
+	if err := a.wh.AssociateWebhookEvent(ctx, "stripe", eventID, claim, userID); err != nil {
+		return false, err
+	}
+	if kind == billing.KindReloadMethod {
+		if sess.SetupIntent == nil {
+			return true, nil
+		}
+		pm, err := a.stripeSetupMethod(sess.SetupIntent.ID)
+		if err != nil {
+			return true, err
+		}
+		if err := a.wh.SavePaymentMethod(ctx, userID, pm, false); err != nil {
+			return true, err
+		}
+		// A new card ends Stripe's retries of the old one.
+		retrying, err := a.wh.RetryingReloadInvoices(ctx, userID)
+		if err != nil {
+			return true, err
+		}
+		return true, a.voidReloads(ctx, retrying)
+	}
+	// Top-ups accept instant methods only, so a completed session is paid.
+	if sess.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid || sess.PaymentIntent == nil {
+		return true, nil
+	}
+	_, retrying, err := a.wh.GrantTopUp(ctx, userID, sess.ID, sess.PaymentIntent.ID, sess.AmountSubtotal)
+	if err != nil {
+		return true, err
+	}
+	pm, err := a.stripeTopUpMethod(sess.PaymentIntent.ID)
+	if err != nil {
+		return true, err
+	}
+	if err := a.wh.SavePaymentMethod(ctx, userID, pm, true); err != nil {
+		return true, err
+	}
+	return true, a.voidReloads(ctx, retrying)
+}
+
+// voidReloads cancels Stripe's retries of reload invoices: after a top-up, a
+// new card, or auto-reload turned off.
+func (a *api) voidReloads(ctx context.Context, invoiceIDs []string) error {
+	for _, invoiceID := range invoiceIDs {
+		if err := a.stripeVoidInvoice(invoiceID); err != nil {
+			return err
+		}
+		if err := a.wh.MarkReloadVoid(ctx, invoiceID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// reloadInvoiceChanged records a reload invoice's payment state from Stripe:
+// paid credits it (once), failed records Stripe's next attempt or that it
+// stopped retrying.
+func (a *api) reloadInvoiceChanged(ctx context.Context, inv *stripe.Invoice) error {
+	if inv.Metadata["kind"] != billing.KindReload {
+		return nil
+	}
+	outcome, err := a.stripeReloadOutcome(inv.ID)
+	if err != nil {
+		return err
+	}
+	purchaseID := inv.Metadata["purchase_id"]
+	switch {
+	case outcome.Paid:
+		return a.wh.MarkReloadPaid(ctx, purchaseID, inv.ID, outcome.PaymentIntentID)
+	case outcome.Processing:
+		return nil
+	}
+	return a.wh.MarkReloadFailed(ctx, purchaseID, inv.ID, outcome.NextAttempt, outcome.DeclineReason)
 }

@@ -4,6 +4,7 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { CreditSettings } from './creditSettings.ts';
 import type { PlanTier } from './planTier.ts';
 import type { SubscriptionStatus } from './subscriptionStatus.ts';
 
@@ -11,8 +12,11 @@ export interface BillingInfo {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   cancelAtPeriodEnd: boolean;
+  creditSettings: CreditSettings;
+  creditsCarriedMicros: number;
   creditsLimitMicros: number;
   creditsPeriodStart: string;
+  creditsPurchasedMicros: number;
   creditsReservedMicros: number;
   creditsUsedMicros: number;
   planTier: PlanTier;

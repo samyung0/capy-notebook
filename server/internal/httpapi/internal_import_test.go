@@ -110,11 +110,13 @@ func TestImportCompleteRetriesWhenCreditsExhausted(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := st.Pool().Exec(ctx, `
-		INSERT INTO user_credits (user_id, used_micros, reserved_micros, period_start)
-		VALUES ($1, $2, 0, date_trunc('month', timezone('utc', now()))::date)
+		INSERT INTO user_credits
+		  (user_id, used_micros, reserved_micros, purchased_micros, period_start)
+		VALUES ($1, $2, 0, 0, date_trunc('month', timezone('utc', now()))::date)
 		ON CONFLICT (user_id) DO UPDATE
 		  SET used_micros = EXCLUDED.used_micros,
 		      reserved_micros = 0,
+		      purchased_micros = 0,
 		      period_start = EXCLUDED.period_start`,
 		actor, mustPlanLimits(t, st, store.PlanFree).CreditMicros); err != nil {
 		t.Fatal(err)
