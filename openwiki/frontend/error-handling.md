@@ -624,7 +624,11 @@ file that is still indexed retries in one click, with no dialog, no parse-mode
 choice and no estimate (parts design Q8, `retryFailedFile`): it sends `fast`,
 the route every indexed file was processed on (direct routes ignore the mode),
 and a success toast follows; a refusal shows the default mutation error toast.
-The server queues the file's processing again on its stored bytes, charged to
+The file's Retry stays disabled, in both places and per file, until the file
+leaves `failed`: each list has one retry mutation (`useRetryFileProcessing`,
+keyed per workspace), its settle awaits the files refetch, and
+`useRetryingFileIds` lists the files whose mutation is still pending, so a
+second click never meets the queued job's 409. The server queues the file's processing again on its stored bytes, charged to
 the owner like automatic reprocessing; `none` just stores it, a file that is
 not failed or already has a parse, ingest or source refresh job answers 409, a
 mode the format does not offer 400 (`RetryFileProcessing`). A partial file
