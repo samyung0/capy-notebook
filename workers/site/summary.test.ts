@@ -300,18 +300,6 @@ describe('site routing and isolation', () => {
     );
     expect((fetcher.mock.calls[1][0] as Request).redirect).toBe('manual');
   });
-  it('stamps the SPA release it serves on API responses, when deployed with one', async () => {
-    const fetcher = upstream({ id: 'u_1' });
-    const response = await handleSiteRequest(
-      request('/api/me'),
-      { ...env, APP_RELEASE: 'a'.repeat(40) },
-      fetcher
-    );
-    expect(response.headers.get('X-Capy-App-Release')).toBe('a'.repeat(40));
-    // Unset locally: no header, so a dev tab never reloads for it.
-    const local = await handleSiteRequest(request('/api/me'), env, fetcher);
-    expect(local.headers.has('X-Capy-App-Release')).toBe(false);
-  });
   it('rejects API requests on another origin and invalid configured origins', async () => {
     const fetcher = upstream();
     expect(

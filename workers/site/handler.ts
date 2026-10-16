@@ -11,9 +11,6 @@ type SiteBindings = Pick<
   Cloudflare.Env,
   'API_ORIGIN' | 'APP_ORIGIN' | 'SHARE_LINK_SECRET'
 > & {
-  /** The deploy revision of the SPA this Worker serves (`--var` at deploy;
-   * unset locally). */
-  APP_RELEASE?: string;
   ASSETS: Pick<Cloudflare.Env['ASSETS'], 'fetch'>;
 };
 const SHARE_PAGE = /^\/share\/(quizzes|flashcards|notes)\/([^/]+)$/;
@@ -277,13 +274,8 @@ export async function handleSiteRequest(
       );
       // Do not follow redirects with the incoming credentials. Go's signed-file
       // redirects remain browser redirects; request/response bodies stream.
-      const apiHeaders = headers(upstream.headers);
-      // The SPA a reload gets (the Worker and its assets deploy as one
-      // version): an older open tab loads it at its next page change.
-      if (env.APP_RELEASE)
-        apiHeaders.set('X-Capy-App-Release', env.APP_RELEASE);
       return new Response(upstream.body, {
-        headers: apiHeaders,
+        headers: headers(upstream.headers),
         status: upstream.status,
         statusText: upstream.statusText,
       });

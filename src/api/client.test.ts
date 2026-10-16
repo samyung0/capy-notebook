@@ -221,27 +221,3 @@ describe('failed request trace ids', () => {
     expect(error.traceId).toBe('c'.repeat(32));
   });
 });
-
-describe('the served release', () => {
-  it('marks an update when the site serves another SPA release', async () => {
-    vi.resetModules();
-    vi.stubEnv('VITE_RELEASE_SHA', 'r1');
-    const { api: fresh } = await import('./client');
-    const { takeUpdateLoad } = await import('@/lib/appRelease');
-    vi.stubGlobal('sessionStorage', {
-      getItem: () => null,
-      setItem: () => undefined,
-    });
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(
-        async () =>
-          new Response('{}', { headers: { 'X-Capy-App-Release': 'r2' } })
-      )
-    );
-    await fresh.get('/me');
-    expect(takeUpdateLoad()).toBe(true);
-    vi.unstubAllGlobals();
-    vi.unstubAllEnvs();
-  });
-});

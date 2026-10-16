@@ -1,28 +1,52 @@
 /**
- * The release nudge and the version gate's Reload (Epo 2026-10-16). The site
- * Worker stamps the SPA release it serves on every /api response
- * (`X-Capy-App-Release`); when that differs from this build's, the next page
- * change is a full page load, once per served release per tab (a stale edge
- * cannot loop it), with nothing shown. A room join or draft send refused
- * for the client protocol marks the update too.
+ * The release nudge and the version gate's Reload (Epo 2026-10-16, the nudge
+ * source 2026-10-17). The build writes its release to `/release.txt`, served
+ * uncached; when the tab regains focus it reads that file, and another release
+ * makes the next page change a full page load, once per served release per
+ * tab (a stale edge cannot loop it), with nothing shown. A room join or draft
+ * send refused for the client protocol marks the update too.
  */
 const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
-export const APP_RELEASE_HEADER = 'X-Capy-App-Release';
 /** The last `<own release>><served release>` this tab loaded for. */
 const LOADED_KEY = 'capy-update-load';
-/** index.html's `<meta name="capy-release">` (scripts/deploy/verify-release.sh
- * reads it too). */
-const RELEASE_META = /<meta\b[^>]*\bname="capy-release"[^>]*>/;
-const CONTENT = /\bcontent="([^"]*)"/;
+/** A deploy's revision (scripts/env/config.py). Anything else, such as the
+ * SPA fallback's HTML where no release file is served, is no release. */
+const REVISION = /^[0-9a-f]{40}$/;
+/** Focus checks are at most this far apart. */
+const CHECK_INTERVAL_MS = 60_000;
 
 // The release a newer app is served under (`unknown` when only a refusal
 // said so), or null while this build is current.
 let available: string | null = null;
+let lastCheck = Number.NEGATIVE_INFINITY;
 
-/** Reads the served release off an /api response. */
-export function noteServedRelease(headers: Headers) {
-  const served = headers.get(APP_RELEASE_HEADER);
-  if (served && RELEASE && served !== RELEASE) available = served;
+/** The release the site serves now, or undefined when the check fails or
+ * finds none. */
+async function servedRelease(): Promise<string | undefined> {
+  try {
+    const response = await fetch('/release.txt', { cache: 'no-store' });
+    const served = (await response.text()).trim();
+    return response.ok && REVISION.test(served) ? served : undefined;
+  } catch {}
+}
+
+/** Reads the served release, at most once a minute; another release than
+ * this build's marks the update. A build without a release (local dev, MSW)
+ * reads nothing. */
+export async function checkServedRelease() {
+  if (!RELEASE || Date.now() - lastCheck < CHECK_INTERVAL_MS) return;
+  lastCheck = Date.now();
+  const served = await servedRelease();
+  if (served && served !== RELEASE) available = served;
+}
+
+/** Checks the served release whenever the tab becomes visible or focused. */
+export function checkReleaseOnFocus() {
+  const check = () => {
+    if (document.visibilityState === 'visible') void checkServedRelease();
+  };
+  document.addEventListener('visibilitychange', check);
+  window.addEventListener('focus', check);
 }
 
 /** This build's client protocol was refused (an editor's or reader's room,
@@ -49,7 +73,8 @@ export function takeUpdateLoad(): boolean {
 /** Makes the next path change a full page load once an update is available
  * (`?file=` and other search changes stay in the page). The router has
  * already pushed the new URL, so a reload loads it (assigning it would only
- * scroll to a `#fragment`). */
+ * scroll to a `#fragment`). Offline the page stays: a load would land on the
+ * browser's offline page, so the first path change back online loads. */
 export function loadUpdateOnPathChange(router: {
   subscribe: (
     event: 'onBeforeNavigate',
@@ -57,7 +82,8 @@ export function loadUpdateOnPathChange(router: {
   ) => () => void;
 }) {
   return router.subscribe('onBeforeNavigate', ({ pathChanged }) => {
-    if (pathChanged && takeUpdateLoad()) window.location.reload();
+    if (pathChanged && navigator.onLine && takeUpdateLoad())
+      window.location.reload();
   });
 }
 
@@ -67,14 +93,7 @@ export function loadUpdateOnPathChange(router: {
  * published, or the check failed).
  */
 export async function reloadIntoNewRelease(): Promise<boolean> {
-  let served: string | undefined;
-  try {
-    const response = await fetch('/', { cache: 'no-store' });
-    const meta = RELEASE_META.exec(await response.text())?.[0];
-    served = meta && CONTENT.exec(meta)?.[1];
-  } catch {
-    return false;
-  }
+  const served = await servedRelease();
   if (!served || served === RELEASE) return false;
   window.location.reload();
   return true;

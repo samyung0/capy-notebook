@@ -903,7 +903,7 @@ already-durable Yjs command.
 ### Client protocol and the release nudge
 
 Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
-design, option d).
+design, option d), and the nudge's release file on 2026-10-17.
 
 - **The gate.** Every JOIN carries the build's client protocol after the
   token (`room, token, varuint protocol`), and every draft send carries it as
@@ -951,28 +951,35 @@ design, option d).
 - **Readers** (the live View, study pages) are gated too: a refused read
   room stops and keeps what it painted (the stored copy or the last live
   value), with no strip. The nudge reloads the page later.
-- **Reload waits for the new app.** It fetches `/` with `cache: 'no-store'`
-  and compares its `<meta name="capy-release">` with the tab's
-  `VITE_RELEASE_SHA` (`reloadIntoNewRelease`, `src/lib/appRelease.ts`):
+- **Reload waits for the new app.** It reads the release file below and
+  compares it with the tab's `VITE_RELEASE_SHA` (`reloadIntoNewRelease`,
+  `src/lib/appRelease.ts`):
   - another release reloads the page;
   - the same release, or a failed check, changes the strip to "The update is
     still being published. Try again in a minute." The new SPA is served
     about 2 to 3 minutes after the new collaboration server starts refusing.
 - **The draft sweep** sends `X-Capy-Protocol`. An `outdated` answer stops
   sweeps for the page load, marks no row and marks the update available.
-- **The release nudge.** The site Worker stamps the SPA release it serves on
-  every `/api/*` response: `X-Capy-App-Release`, from
-  `--var APP_RELEASE:<revision>` at the SPA Worker deploy (unset locally and
-  under MSW, so nothing happens there).
-  - `request()`, the event stream and the chat stream compare it with
-    `VITE_RELEASE_SHA`.
-  - When it differs, the next path change becomes a full page load, with
-    nothing shown. A `?file=` or other search change stays in the page, so a
-    streaming chat turn is not cut.
+- **The release nudge.** The client build writes its `VITE_RELEASE_SHA` (the
+  same value as the HTML's `capy-release` meta) to `/release.txt`
+  (`vite.config.ts`); `public/_headers` serves it `no-store`, and it is a
+  static asset, so the SPA fallback never answers it on a deploy. Local dev
+  and MSW have no release file and read nothing.
+  - When the tab becomes visible or regains focus, at most once a minute, it
+    fetches `/release.txt` with `cache: 'no-store'` (`checkReleaseOnFocus`).
+    Only a full revision counts: a 404, the SPA fallback's HTML or a failed
+    fetch change nothing.
+  - When it differs from `VITE_RELEASE_SHA`, the next path change becomes a
+    full page load, with nothing shown. A `?file=` or other search change
+    stays in the page, so a streaming chat turn is not cut. While offline the
+    page stays (a load would land on the browser's offline page); the first
+    path change back online loads.
   - It loads once per served release per tab (sessionStorage
     `capy-update-load`), so a stale edge cannot loop it.
-  - The Worker is the source, not the gateway: the gateway goes live minutes
-    before the new SPA.
+  - The site's file is the source, not the gateway: the gateway goes live
+    minutes before the new SPA. Deployed `/api/*` bypasses the site Worker,
+    so a header on API responses could not carry it. The offline round's
+    service-worker update check replaces this read when it lands.
 - **Rollout.** Refusal starts when the new collaboration server starts. The
   first rollout set `CLIENT_PROTOCOL` and both minimums to 1, so tabs from
   before the gate show Offline until reloaded, with their edits kept.

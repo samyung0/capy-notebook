@@ -133,6 +133,20 @@ export default defineConfig(({ isSsrBuild, mode }) => {
         resolveId: (id: string) =>
           BROWSER_ONLY.test(id) ? '\0browser-only' : undefined,
       },
+      // The release an open tab compares with its own when it regains focus
+      // (src/lib/appRelease.ts); public/_headers serves it uncached.
+      !isSsrBuild && {
+        apply: 'build' as const,
+        generateBundle() {
+          if (env.VITE_RELEASE_SHA)
+            this.emitFile({
+              fileName: 'release.txt',
+              source: env.VITE_RELEASE_SHA,
+              type: 'asset',
+            });
+        },
+        name: 'release-file',
+      },
       react(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),

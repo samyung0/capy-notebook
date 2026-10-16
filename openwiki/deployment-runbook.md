@@ -88,10 +88,13 @@ device. So:
 - a rollback to an older SHA lowers the server's own protocol: newer tabs are
   refused as above it and reload into the older SPA once it is served.
 
-The SPA Worker deploy passes `--var APP_RELEASE:<revision>`; the Worker
-stamps it on `/api/*` responses (`X-Capy-App-Release`), and an open tab whose
-build differs loads the new SPA at its next page change. A deploy without it
-still works, but open tabs then stay on their release until they reload.
+The SPA build writes its revision to `dist/release.txt`, served `no-store`
+(`public/_headers`). An open tab reads it when it regains focus, at most
+once a minute, and a tab whose build differs loads the new SPA at its next
+page change ([plate-editor "Client protocol and the release
+nudge"](frontend/plate-editor.md#client-protocol-and-the-release-nudge)).
+Nothing in the deploy passes it: it ships with the assets, so a tab sees the
+new release once the site job has published them.
 
 ---
 
@@ -161,7 +164,10 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
    request, SPA fallbacks included, is served by the asset layer without an
    invocation. `public/_headers` marks the avatar/workspace `/icons/*`
-   `max-age=31536000, immutable` (stable artwork, kept names); everything else,
+   `max-age=31536000, immutable` (stable artwork, kept names) and
+   `/release.txt` `no-store` (open tabs compare it with their own release, so
+   no cache may answer it, and as a real file it never gets the SPA
+   fallback); everything else,
    the content-hashed `/assets/*` bundles included, keeps the Workers Assets
    default of `public, max-age=0, must-revalidate` with an `ETag`. `/assets/*`
    is not immutable because the SPA fallback answers an unknown asset name
