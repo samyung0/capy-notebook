@@ -3787,8 +3787,16 @@ the snapshot conflicts on `rag_contents` and the clone retries as a
 serialization failure (3 attempts in all, then 409 `clone_source_changed`;
 see [authorization](authorization-permissions-lifecycles.md)). A standalone material has no index.
 
-That transaction uses one repeatable-read source snapshot. Only ready source
-files are copied; pending, processing, and failed rows are omitted. Ready editor
+That transaction uses one repeatable-read source snapshot. Ready source files
+are copied, and so are partial ones (`failed` with a served ready index, a part
+missing; parts design Q2): the copy keeps `failed`, `indexed`, `content_hash`,
+`parse_mode` and `ever_parsed_successfully`, and its content travels like any
+other, so a NULL `pipeline_identity` stays NULL (still no donor) and a missing
+summary row stays missing. The copy's owner can then Retry processing it,
+which routes its missing parts as for the source; job rows (and so the job's
+note) are never copied. On a pin mismatch a partial copy is queued for ingest
+like a ready one. Pending, processing, and failed files without a served index
+are omitted. Ready editor
 assets are copied with new logical ids, and material nodes that reference any
 uncopied editor asset are removed rather than becoming dangling references.
 Materials have no snapshot history to copy. Relational comment threads are

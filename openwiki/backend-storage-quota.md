@@ -416,8 +416,9 @@ Workspace clones snapshot the source, gate the total file + saved edit state +
 material + ready editor-asset payload against the **cloner's** quota, copy ready asset rows
 with new logical IDs (rewriting embedded references; each asset names the
 clone of its material, and a trashed material's assets are left out), and reuse physical blob
-paths under reference counting. Only `ready` source files are copied; pending,
-processing, and failed files are omitted. A file past the cloner's per-file
+paths under reference counting. `ready` source files are copied, and partial
+ones (`failed` with a served index, parts design Q2) under the same gates;
+pending, processing, and other failed files are omitted. A file past the cloner's per-file
 plan cap (`plan_limits.source_file_max_bytes`, the upload cap) refuses the
 whole clone (`file_too_large`), like its other limits. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned

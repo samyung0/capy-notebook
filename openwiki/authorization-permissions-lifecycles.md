@@ -623,6 +623,13 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   of landing. A copy in a workspace belongs to that workspace's owner, who pays
   for it (and whose plan's per-file cap applies to a file, as for an upload);
   `created_by` is the cloner. A standalone copy is the cloner's and private.
+- File clones (single and workspace) copy ready files and partial ones
+  (`failed` with a served index, a part missing), which stay partial in the
+  copy so its owner, who alone may Retry processing, can retry them (parts
+  design Q2); pending, processing and other failed files are not copied (a
+  single clone answers 404). The file row menu, the open file's header and
+  the dashboard's recent items offer Clone on those files only
+  (`fileCanClone`).
 - The dialog prefills `Name (copy)` (before a file's extension) while the
   destination is the source's own workspace and the plain name elsewhere,
   until the user types one. A material title is unique per workspace, so a
