@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -26,7 +27,8 @@ type failingBody struct{}
 func (failingBody) Read([]byte) (int, error) { return 0, errors.New(leakedSecret) }
 
 // Unexpected server errors answer a fixed message and the request's trace
-// id, never the cause's text; typed refusals keep their codes.
+// id, never the cause's text; typed refusals keep their codes and carry no
+// cause's text either.
 func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 	r := chi.NewRouter()
 	r.Use(obs.Middleware)
@@ -47,6 +49,10 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 		fail(hErr(errors.Join(store.ErrAuthorityUnavailable, errors.New(leakedSecret)))))
 	reg(h, http.MethodPost, "/busy", "busy", "test", "test", 200, fail(hErr(&providerBusyError{RetryAfterSeconds: 10})))
 	reg(h, http.MethodPost, "/conflict", "conflict", "test", "test", 200, fail(hErr(store.ErrTitleTaken)))
+	reg(h, http.MethodPost, "/paused", "paused", "test", "test", 200,
+		fail(hErr(fmt.Errorf("%s: %w", leakedSecret, store.ErrOfficeEditingPaused))))
+	reg(h, http.MethodPost, "/unreadable", "unreadable", "test", "test", 200,
+		fail(materialContentError(context.Background(), "m1", errors.New(leakedSecret))))
 	type bodyInput struct {
 		Body struct {
 			Name string `json:"name"`
@@ -81,6 +87,8 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 		{"/bank", 503, "bank_unavailable"},
 		{"/typed-middleware", 503, "ai_unavailable"},
 		{"/conflict", 409, "title_taken"},
+		{"/paused", 423, "office_editing_paused"},
+		{"/unreadable", 422, "material_content_unreadable"},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, tc.path, nil)

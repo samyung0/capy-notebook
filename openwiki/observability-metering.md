@@ -44,7 +44,7 @@ under that id. A typed 5xx carries only codes from one short list in
 `errors[]` (`typedServerCodes`: `provider_busy`, `ai_unavailable`,
 `generate_empty`, `bank_unavailable`; `src/lib/errors.ts` keeps the same list),
 so an error's text there, even one word, still gets the generic answer. Every
-4xx keeps its answer. One rule covers every path
+4xx keeps its status and code. One rule covers every path
 (`server/internal/httpapi/huma_register.go`, `server.go`):
 
 - `publicError` at the end of `reportHandlerError`, for huma handlers;
@@ -59,6 +59,11 @@ so an error's text there, even one word, still gets the generic answer. Every
 The status is kept: an untyped 503 stays 503. Internal service routes share
 `fail`, so their unexpected failures answer the same body; the calling service
 already holds the trace id it sent.
+
+`office_editing_paused` (423) and `material_content_unreadable` (422) answer
+fixed text whatever error caused them: the pause's own sentence, and for the
+second only its code and a fixed `detail`, its decode error going to the log
+(`material content unreadable`).
 
 The browser keeps a failed request's id on `ApiError.traceId` (the body's
 `traceId`, else `X-Request-Id`, else the id it sent, for an answer from a
