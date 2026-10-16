@@ -205,9 +205,27 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `/assets/*` bundles bypass the Worker and use
    `public, max-age=31536000, immutable`; staging copies the dedicated
    `workers/office/_headers` policy, including `nosniff`, `no-referrer`, noindex,
-   and a CSP that prevents framing asset URLs. Missing assets still reach the
-   Worker's rejection checks; the static layer rejects unsupported methods on
-   existing assets with 405. Do not proxy `/api`, issue authentication cookies, or set
+   and a CSP that prevents framing asset URLs. The exceptions are the WASM
+   modules and the uncompressed fonts (`.wasm`, `.ttf`, `.otf`): staging
+   (`workers/office/stage.mjs`) compresses each once with brotli at quality
+   11 into `<name>.br` and removes the original, and `run_worker_first`
+   sends `/assets/*.wasm`, `*.ttf` and `*.otf` to the Worker, which serves
+   the `.br` file whole with `Content-Encoding: br` (`encodeBody: "manual"`,
+   so the runtime does not compress it again), its real type
+   (`application/wasm`, `font/ttf`, `font/otf`), the same year-long immutable
+   caching and the Worker's security headers. The static layer would
+   recompress them on the fly at about quality 4: quality 11 is 20-25%
+   smaller for WASM and 12-18% for fonts (the CJK faces 16-18%; a 2026-09
+   build's 55 files: 19.0 MB → 15.1 MB), and costs about a minute of the
+   deploy's site job.
+   WOFF/WOFF2 are compressed inside and stay static files. A client that
+   does not accept brotli gets the bytes decoded by the Workers runtime
+   (Cloudflare's Workers `fetch` documentation; local workerd answers an
+   `Accept-Encoding: identity` request with the plain WASM). Only these
+   requests and the runtime HTML are Worker requests. Missing assets still
+   reach the Worker's rejection checks, and a missing `.br` file is a 404
+   `no-store`; the static layer rejects unsupported methods on existing
+   assets with 405. Do not proxy `/api`, issue authentication cookies, or set
    parent-domain cookies on this hostname. The Office host transfers protected
    bytes by exact-origin `postMessage`; it does not need CORS access to the API.
 2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or

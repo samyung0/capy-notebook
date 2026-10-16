@@ -4,6 +4,13 @@ interface OfficeEnv {
 }
 
 const ASSET_PATH = /^\/assets\/[A-Za-z0-9_./-]+$/;
+// Files stage.mjs stores only as `<name>.br` (brotli 11), by extension, with
+// the type they are served as; run_worker_first sends them here.
+const PRECOMPRESSED = new Map([
+  ['otf', 'font/otf'],
+  ['ttf', 'font/ttf'],
+  ['wasm', 'application/wasm'],
+]);
 
 export default {
   async fetch(request: Request, env: OfficeEnv): Promise<Response> {
@@ -48,18 +55,20 @@ export default {
     ) {
       return new Response(null, { headers, status: 404 });
     }
+    const type = PRECOMPRESSED.get(
+      url.pathname.slice(url.pathname.lastIndexOf('.') + 1)
+    );
     // Forward only cache/range negotiation, never app credentials or cookies.
+    // A brotli file is always sent whole.
     const assetHeaders = new Headers();
-    for (const key of [
-      'If-None-Match',
-      'If-Modified-Since',
-      'Range',
-      'If-Range',
-    ]) {
+    for (const key of type
+      ? ['If-None-Match', 'If-Modified-Since']
+      : ['If-None-Match', 'If-Modified-Since', 'Range', 'If-Range']) {
       const value = request.headers.get(key);
       if (value) assetHeaders.set(key, value);
     }
     url.search = '';
+    if (type) url.pathname += '.br';
     const asset = await env.ASSETS.fetch(
       new Request(url, { headers: assetHeaders, method: request.method })
     );
@@ -81,9 +90,19 @@ export default {
       headers.delete('Content-Encoding');
       return new Response(null, { headers, status: 404 });
     }
-    return new Response(request.method === 'HEAD' ? null : asset.body, {
+    // `encodeBody` is Workers-only: send the stored brotli bytes as they are;
+    // the edge decodes them for a client that does not accept br.
+    const init: ResponseInit & { encodeBody?: 'manual' } = {
       headers,
       status: asset.status,
-    });
+    };
+    if (type) {
+      headers.set('Cache-Control', 'public, max-age=31536000, immutable');
+      headers.set('Content-Type', type);
+      headers.set('Content-Encoding', 'br');
+      headers.delete('Accept-Ranges');
+      init.encodeBody = 'manual';
+    }
+    return new Response(request.method === 'HEAD' ? null : asset.body, init);
   },
 };

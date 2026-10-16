@@ -251,6 +251,15 @@ Clerk development instance. Point a local gateway at the UAT database only with
   returns `200` with `Cache-Control: public, max-age=31536000, immutable`. A
   `200 text/html` for the missing name means the route is not attached: the
   SPA fallback is answering, and the year-long header would pin it.
+- The Office runtime's WASM and uncompressed fonts come precompressed from
+  the Office Worker (deployment-runbook §1). With `W` a `.wasm` URL on
+  `uat-office.capynotebook.com` (from the Network panel of a DOCX open, or the
+  build's `dist/assets/*.wasm` names): `curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' "$W"`
+  shows `200`, `content-type: application/wasm`, `content-encoding: br`,
+  `cache-control: public, max-age=31536000, immutable` and a `content-length`
+  about a fifth below the on-the-fly size; `curl -s -H 'Accept-Encoding: identity' "$W" | head -c 4 | od -c`
+  prints `\0 a s m` (decoded for a client without brotli). A Carlito `.ttf`
+  answers the same with `font/ttf`.
 - GitHub configuration sync/readback passed before deployment. Managed Coolify
   variables are literal, non-preview and readable for verification; unset ones
   are blank. Neither values nor fingerprints appear in runner logs.

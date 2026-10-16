@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { brotliDecompressSync } from 'node:zlib';
 import { describe, expect, it, vi } from 'vitest';
 import worker from './index';
 
@@ -163,10 +164,67 @@ describe('isolated Office runtime', () => {
     expect(response.headers.has('location')).toBe(false);
     expect(response.headers.has('content-length')).toBe(false);
   });
+  it('serves WASM and uncompressed fonts from their brotli files, whole and cached for a year', async () => {
+    for (const [name, type] of [
+      ['docx_bg-1.wasm', 'application/wasm'],
+      ['Carlito-Regular-1.ttf', 'font/ttf'],
+      ['NotoSansJP-Regular-1.otf', 'font/otf'],
+    ]) {
+      const bindings = env();
+      bindings.ASSETS.fetch.mockResolvedValue(
+        new Response('brotli', {
+          headers: {
+            'Accept-Ranges': 'bytes',
+            'Content-Length': '6',
+            'Content-Type': 'application/octet-stream',
+            ETag: 'W/"br"',
+          },
+        })
+      );
+      const response = await worker.fetch(
+        new Request(`${origin}/assets/${name}?v=1`, {
+          headers: { 'If-None-Match': 'W/"old"', Range: 'bytes=0-1' },
+        }),
+        bindings
+      );
+      expect(response.status).toBe(200);
+      expect(await response.text()).toBe('brotli');
+      expect(Object.fromEntries(response.headers)).toMatchObject({
+        'cache-control': 'public, max-age=31536000, immutable',
+        'content-encoding': 'br',
+        'content-length': '6',
+        'content-type': type,
+        etag: 'W/"br"',
+        'x-content-type-options': 'nosniff',
+      });
+      expect(response.headers.has('accept-ranges')).toBe(false);
+      const forwarded = bindings.ASSETS.fetch.mock.calls[0][0];
+      expect(new URL(forwarded.url).pathname).toBe(`/assets/${name}.br`);
+      expect(new URL(forwarded.url).search).toBe('');
+      expect([...forwarded.headers.keys()]).toEqual(['if-none-match']);
+    }
+    // A missing brotli file is an uncached 404, never labelled br.
+    const bindings = env();
+    bindings.ASSETS.fetch.mockResolvedValue(
+      new Response(null, { status: 404 })
+    );
+    const missing = await worker.fetch(
+      new Request(`${origin}/assets/gone.wasm`),
+      bindings
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('cache-control')).toBe('no-store');
+    expect(missing.headers.has('content-encoding')).toBe(false);
+  });
   it('serves bundles directly with dedicated security/cache headers and stages only the allowed build entries', () => {
     const config = JSON.parse(readFileSync('wrangler.office.jsonc', 'utf8'));
     for (const target of [config, config.env.uat, config.env.production]) {
-      expect(target.assets.run_worker_first).toEqual(['/office-runtime.html']);
+      expect(target.assets.run_worker_first).toEqual([
+        '/office-runtime.html',
+        '/assets/*.wasm',
+        '/assets/*.ttf',
+        '/assets/*.otf',
+      ]);
       expect(target.assets.not_found_handling).toBe('none');
       expect(target.assets.html_handling).toBe('none');
     }
@@ -184,6 +242,8 @@ describe('isolated Office runtime', () => {
       ])
         writeFileSync(join(source, name), name);
       writeFileSync(join(source, 'assets/runtime.js'), 'runtime');
+      for (const name of ['a.wasm', 'b.ttf', 'c.otf', 'd.woff2'])
+        writeFileSync(join(source, 'assets', name), name.repeat(100));
       execFileSync(process.execPath, [
         'workers/office/stage.mjs',
         source,
@@ -194,6 +254,21 @@ describe('isolated Office runtime', () => {
         'assets',
         'office-runtime.html',
       ]);
+      // WASM and uncompressed fonts are stored only as brotli; woff2 is
+      // already brotli inside and stays a static file.
+      expect(readdirSync(join(target, 'assets')).sort()).toEqual([
+        'a.wasm.br',
+        'b.ttf.br',
+        'c.otf.br',
+        'd.woff2',
+        'runtime.js',
+      ]);
+      for (const name of ['a.wasm', 'b.ttf', 'c.otf'])
+        expect(
+          brotliDecompressSync(
+            readFileSync(join(target, 'assets', `${name}.br`))
+          ).toString()
+        ).toBe(name.repeat(100));
       const headers = readFileSync(join(target, '_headers'), 'utf8');
       expect(headers).toContain('/assets/*');
       expect(headers).toContain('public, max-age=31536000, immutable');
