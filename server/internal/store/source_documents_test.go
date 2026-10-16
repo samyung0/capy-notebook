@@ -594,6 +594,9 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	if _, err = s.RequestSourceRefresh(ctx, owner, partial, true); err != nil {
 		t.Fatalf("automatic refresh of a partial file: %v", err)
 	}
+	if _, err = s.RequestSourceRefresh(ctx, owner, textPartial, true); err != nil {
+		t.Fatalf("automatic refresh of a partial text file: %v", err)
+	}
 }
 
 func TestSourceRefreshParseFeeAndSystemPayer(t *testing.T) {

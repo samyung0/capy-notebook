@@ -312,22 +312,32 @@ async def test_a_failed_retry_stays_indexed_while_its_previous_index_serves(
 
 async def test_an_account_deletion_keeps_a_served_index(workspace, fakes):
     """cancel_user_async_work sets indexed as db.SERVES_INDEX does: a cancelled
-    re-ingest keeps answering search with its previous index."""
+    re-ingest keeps answering search with its previous index; a first ingest
+    whose alias points at its own processing content serves nothing."""
     served = workspace.add_file("report.pdf")
     await _publish(workspace, served, _chunks(), "job_first")
     fresh = workspace.add_file("new.pdf")
+    claimed = workspace.add_file("draft.pdf")
     _set(
         workspace,
-        "UPDATE files SET status='processing', indexed=false WHERE id IN (%s, %s)",
-        (served, fresh),
+        "UPDATE files SET status='processing', indexed=false WHERE id IN (%s, %s, %s)",
+        (served, fresh, claimed),
     )
-    for file_id in (served, fresh):
+    for file_id in (served, fresh, claimed):
         _job(workspace, file_id, f"job_cancelled_{file_id}")
+    draft = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=claimed,
+        content_hash="draft-hash",
+        claim_job_id=f"job_cancelled_{claimed}",
+    )
+    assert _alias(workspace, claimed) == draft["content_id"]
 
     _set(workspace, "SELECT cancel_user_async_work(%s)", (workspace.user_id,))
 
     assert _file(workspace, served) == ("failed", True)
     assert _file(workspace, fresh) == ("failed", False)
+    assert _file(workspace, claimed) == ("failed", False)
 
 
 async def test_a_file_over_a_limit_drops_its_previous_index(workspace, fakes):
