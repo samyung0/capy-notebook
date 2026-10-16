@@ -1393,10 +1393,10 @@ those services start.
    `CAPY_PARSE_MAX_PAGES`. Set `CAPY_PARSE_MAX_PAGES=1400` and
    `CAPY_PARSE_OCR_PAGE_CAP=500` in the `uat` and `production` GitHub
    environments before deploying this change. The default time hierarchy is
-   a 900-second per-document deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`), a
-   1,920-second parser request (`PARSER_TIMEOUT`: one 900 s wait for a parse
-   child, the 900 s parse and 120 s, see agentic-retrieval's Parse capacity)
-   and a 2,100-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
+   a 600-second per-document deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`), a
+   1,320-second parser request (`PARSER_TIMEOUT`: one 600 s wait for a parse
+   child, the 600 s parse and 120 s, see agentic-retrieval's Parse capacity)
+   and a 1,500-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
    20-minute bound. Queue wait does not spend the parse deadline. The job worker
    refuses to start with a `PARSER_TIMEOUT` that is not below `CAPY_PARSE_JOB_TIMEOUT`;
    retrieval, which reads `PARSER_TIMEOUT` only for page captures, does not check it. The parser container
@@ -1580,8 +1580,9 @@ calls in flight across the host), so the parser has no OCR stage or OCR
 backlog. The parse child counts each document's pages before parsing it, and
 the API process opens no source, and no file a child wrote, with MuPDF. A
 document with more than 500 text-less pages fails as
-`parse_too_many_scanned_pages` (terminal), and one with more than 1,400 pages
-as `parse_too_many_pages`. The OpenDataLoader accuracy record is the September 2026 series
+`parse_too_many_scanned_pages` (terminal), one with more than 1,400 pages
+as `parse_too_many_pages`, and one past the element limits (figures, vector
+shapes, Office rows or shapes; `odl/elements.py`) as `parse_too_many_elements`. The OpenDataLoader accuracy record is the September 2026 series
 under `bench/parsers/reports/` (`2026-09-09-odl-accuracy-third-pass.md` and the
 per-repair experiments it cites); the acceptance oracle is the refined corpus
 on the ingest host. The capacity run found CPU and the deadline, not memory,
@@ -1635,7 +1636,7 @@ cutovers. A restart drops in-flight connections, but ordinary parser errors get
 one retry and the client recovers an atomically published spool artifact when
 publication completed before the disconnect.
 
-Each document has a 900-second limit that begins when it leaves the queue,
+Each document has a 600-second limit that begins when it leaves the queue,
 before LibreOffice normalisation and the Java run, and ends when the API has
 read the child's result, page renders included. A timed-out document is
 quarantined (`parse_hard_timeout`) and its parse child is killed with its

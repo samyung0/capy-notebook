@@ -144,6 +144,15 @@ describe('transfer status', () => {
       kind: 'info',
     });
     expect(
+      transferStatus(
+        transfer,
+        file({ indexed: false, indexLimit: 'element_limit', status: 'ready' })
+      )
+    ).toMatchObject({
+      detail: m.files_not_indexed_too_many_elements(),
+      kind: 'info',
+    });
+    expect(
       transferStatus(transfer, file({ indexed: false, status: 'failed' }))
     ).toMatchObject({ detail: m.files_not_indexed_failed(), kind: 'error' });
     // A failed file that is still indexed (a part missing) keeps answering

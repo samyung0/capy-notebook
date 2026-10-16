@@ -923,7 +923,10 @@ export const SetAutoReloadBody = zod.object({
   "thresholdCredits": zod.int().min(setAutoReloadBodyThresholdCreditsMin).max(setAutoReloadBodyThresholdCreditsMax)
 })
 
-export const SetAutoReloadResponse = zod.void()
+export const SetAutoReloadResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "armed": zod.boolean()
+})
 
 
 /**
@@ -1616,7 +1619,7 @@ export const ListOwnedFilesResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -1712,7 +1715,7 @@ export const GetFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -1797,7 +1800,7 @@ export const UpdateFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -2082,7 +2085,7 @@ export const CloneFileResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -6286,7 +6289,7 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -6678,7 +6681,7 @@ export const ListWorkspaceRecentResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),
@@ -7049,7 +7052,7 @@ export const CompleteSourceUploadResponse = zod.object({
   "chapterId": zod.string().nullable(),
   "hasBytes": zod.boolean(),
   "id": zod.string(),
-  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
+  "indexLimit": zod.enum(['page_limit', 'scanned_page_limit', 'element_limit', 'image_pixel_limit', 'tabular_column_limit', 'tabular_text_limit']).optional(),
   "indexed": zod.boolean(),
   "kind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']),
   "name": zod.string(),

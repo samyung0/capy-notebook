@@ -384,6 +384,7 @@ def test_format_mismatch_response_is_its_own_terminal_error(monkeypatch, parser_
     [
         ("parse_too_many_scanned_pages", "ParserTooManyScannedPagesError"),
         ("parse_too_many_pages", "ParserTooManyPagesError"),
+        ("parse_too_many_elements", "ParserTooManyElementsError"),
         ("parse_unreadable", "ParserUnreadableError"),
     ],
 )

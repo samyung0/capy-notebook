@@ -465,7 +465,7 @@ func main() {
 		Handler:           httpapi.New(st, blobStore, pipe, rdb, parser, cfg),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
-	runUsageWorkers(ctx, st, reconcile.Config{
+	runUsageWorkers(ctx, st, rdb, reconcile.Config{
 		StripeSecretKey: cfg.StripeSecretKey,
 		StripePricePro:  cfg.StripePricePro,
 	})

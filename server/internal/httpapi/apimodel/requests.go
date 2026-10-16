@@ -434,6 +434,13 @@ type URLResp struct {
 	URL string `json:"url"`
 }
 
+// AutoReloadResp says whether a reload is armed after the save. Turning
+// auto-reload on never arms one, so false after a failed reload means it
+// waits for a top-up.
+type AutoReloadResp struct {
+	Armed bool `json:"armed"`
+}
+
 // AccessTokenResp is returned by the Google picker-token endpoint.
 type AccessTokenResp struct {
 	AccessToken string `json:"accessToken"`

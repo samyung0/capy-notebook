@@ -29,6 +29,7 @@ export * from './attemptDetailAnswers.ts';
 export * from './attemptDetailQuestionsItem.ts';
 export * from './attemptsOutputBody.ts';
 export * from './autoReloadReq.ts';
+export * from './autoReloadResp.ts';
 export * from './bankAssetOutputBody.ts';
 export * from './bankBatchBody.ts';
 export * from './bankCommentInputBody.ts';

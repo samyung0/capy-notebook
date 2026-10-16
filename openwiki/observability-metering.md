@@ -288,9 +288,10 @@ error-boundary rendering do not add another capture call.
 Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
-file over a documented limit (page or scanned-page count, image pixels,
-CSV/TSV columns per row or searchable text) fails the job with the limit's
-attempt `error_code` (`page_limit`, `scanned_page_limit`, `image_pixel_limit`,
+file over a documented limit (page or scanned-page count, figures and table
+rows, image pixels, CSV/TSV columns per row or searchable text) fails the job
+with the limit's attempt `error_code` (`page_limit`, `scanned_page_limit`,
+`element_limit`, `image_pixel_limit`,
 `tabular_column_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in
@@ -758,11 +759,14 @@ Checkout in setup mode (card and Link, billing address required) and returns to
 `?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
 reload invoice Stripe is still retrying. Turning auto-reload off voids it too.
 
-Auto-reload fires once per arming (`reload_armed`): turning it on, a paid
-top-up, a new card, or a paid reload that leaves credits above the threshold
-arms it; starting a reload disarms it; the monthly allowance never re-arms it,
-so after Stripe gives up (or never retries) no reload starts until the user
-tops up or changes card. The worker (`billing.RunDueReloads`, every 5 s when
+Auto-reload fires once per arming (`reload_armed`). An account starts armed;
+a paid top-up, a new card, a paid reload that leaves credits above the
+threshold, or a paid Pro invoice (`invoice.paid` with an amount above zero,
+`ArmReload`) re-arms it; starting a reload disarms it. Turning auto-reload on
+or saving its settings never arms it, so after Stripe gives up (or never
+retries) no reload starts until one of those events. `PUT
+/api/billing/auto-reload` answers `{armed}`, and turning it on while disarmed
+shows a warning toast asking for a top-up first. The worker (`billing.RunDueReloads`, every 5 s when
 Stripe is configured, open accounts only) handles each armed or
 request-started reload under the counter lock (`StartReload`, effective plan):
 an armed one starts when credits reach the threshold. Over the spending limit
@@ -778,8 +782,16 @@ stops (`invoice.payment_failed`), and the switch stays on. A reload left
 and card; after 23 hours it is reported to Sentry, its invoice voided and
 marked `failed`. `GET /api/billing` returns
 `creditsPurchasedMicros`, `creditsCarriedMicros` and `creditSettings` (switch,
-amount, threshold, saved method, limit, this month's spend, latest reload);
-the client polls it every 3 s while a reload is charging.
+amount, threshold, saved method, limit, this month's spend, latest reload).
+
+**Live billing.** Whatever Stripe or the reload worker changes reaches open
+tabs as a `{"type":"billing"}` event on the user's `notif:{userId}` stream
+(`publishBillingChanged`, from the credit webhooks and after each reload the
+worker processes or skips); the tab refetches billing, also on every stream
+connect, so the return from a top-up Checkout needs no polling. Billing saves
+(`useSetAutoReload`, `useSetSpendingLimit`) show at once, share the
+`qk.billing` mutation key and refetch only when the last one settles; a
+`billing` event during a pending save is left to that refetch.
 
 **Spending limit.** `PUT /api/billing/spending-limit` (`limitCents`, 0 removes
 it) counts paid and charging pre-tax dollars per UTC calendar month of payment
@@ -791,7 +803,11 @@ the auto-reload" from "over the limit".
 arrived: it re-reads every reload invoice still `retrying` or `failed`, or
 `charging` for over an hour, from the last 90 days, and records it paid
 (crediting it once), void, retrying or failed; and it credits paid top-up
-Checkouts from the last 7 days through the idempotent `GrantTopUp`. Each
+Checkouts from the last 7 days through the idempotent `GrantTopUp`. After
+those grants it re-applies refunds and disputes created in the last 7 days
+(`billing.ListReversals`) through the same idempotent calls as the webhooks,
+so a reversal whose webhook arrived before its purchase was recorded is taken
+back a day later; an open or lost dispute holds, a won one releases. Each
 repair writes a `stripe_credit_drift` report row and each failure a
 `stripe_credit_error` row. Re-reading an old failed reload never ends a newer
 reload's 60-second window: only the reload that was charging clears it.

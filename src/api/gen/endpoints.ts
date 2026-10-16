@@ -16,6 +16,7 @@ import type {
   AttemptDetail,
   AttemptsOutputBody,
   AutoReloadReq,
+  AutoReloadResp,
   BankAssetOutputBody,
   BankBatchBody,
   BankCommentInputBody,
@@ -1216,17 +1217,17 @@ export const getBilling = async ( options?: RequestInit): Promise<getBillingResp
 
 
 
-export type setAutoReloadResponse204 = {
-  data: void
-  status: 204
+export type setAutoReloadResponse200 = {
+  data: AutoReloadResp
+  status: 200
 }
 
 export type setAutoReloadResponseDefault = {
   data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 204>
+  status: Exclude<HTTPStatusCodes, 200>
 }
 
-export type setAutoReloadResponseSuccess = (setAutoReloadResponse204) & {
+export type setAutoReloadResponseSuccess = (setAutoReloadResponse200) & {
   headers: Headers;
 };
 export type setAutoReloadResponseError = (setAutoReloadResponseDefault) & {
@@ -1260,7 +1261,7 @@ export const setAutoReload = async (autoReloadReq: NonReadonly<AutoReloadReq>, o
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setAutoReloadResponse['data'] = body ? JSON.parse(body) : undefined
+  const data: setAutoReloadResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as setAutoReloadResponse
 }
 

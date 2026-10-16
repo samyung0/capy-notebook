@@ -159,6 +159,10 @@ func TestReloadChargesOncePaidAndBlocksWhileStripeRetries(t *testing.T) {
 	if again, err := s.StartReload(ctx, userID); err != nil || again != nil {
 		t.Fatalf("second start while charging: charge=%v err=%v", again, err)
 	}
+	// Saving the settings keeps the charging reload disarmed.
+	if armed, err := s.SetAutoReload(ctx, userID, true, 1000, 0); err != nil || armed {
+		t.Fatalf("a save re-armed the charging reload: armed=%v err=%v", armed, err)
+	}
 	next := time.Now().Add(24 * time.Hour)
 	if err := s.MarkReloadFailed(ctx, charge.ID, "in_"+userID, next, "card_declined"); err != nil {
 		t.Fatal(err)
@@ -208,7 +212,12 @@ func TestReloadStripeGaveUpOnWaitsForATopUp(t *testing.T) {
 	if again, err := s.StartReload(ctx, userID); err != nil || again != nil {
 		t.Fatalf("worker must not charge again: charge=%v err=%v", again, err)
 	}
-	// The new month's allowance does not re-arm it; a top-up does.
+	// Turning it off and on again buys no new try; a top-up re-arms it.
+	for _, enabled := range []bool{false, true} {
+		if armed, err := s.SetAutoReload(ctx, userID, enabled, 1000, 0); err != nil || armed {
+			t.Fatalf("enabled=%v armed=%v err=%v, want it left disarmed", enabled, armed, err)
+		}
+	}
 	if _, _, err := s.GrantTopUp(ctx, userID, "cs_"+userID, "pi_"+userID, 800); err != nil {
 		t.Fatal(err)
 	}
@@ -233,8 +242,8 @@ func TestReloadOverTheSpendingLimitIsSkippedAndEmailed(t *testing.T) {
 	}
 
 	charge, err := s.StartReload(ctx, userID)
-	if err != nil || charge != nil {
-		t.Fatalf("$8 spent + $10 reload over a $15 limit: charge=%v err=%v", charge, err)
+	if err != nil || charge == nil || !charge.Skipped {
+		t.Fatalf("$8 spent + $10 reload over a $15 limit: charge=%+v err=%v", charge, err)
 	}
 	var emails int
 	if err := s.pool.QueryRow(ctx, `SELECT count(*) FROM email_outbox
@@ -270,24 +279,47 @@ func TestTopUpGrantsOnceAndRefundsAndDisputesTakeCreditsBack(t *testing.T) {
 		t.Fatalf("purchased=%d, want one $20 top-up", got)
 	}
 	for range 2 { // Stripe reports amount_refunded cumulatively
-		if err := s.ReverseRefund(ctx, "pi_"+userID, 1000, 2000); err != nil {
+		if _, err := s.ReverseRefund(ctx, "pi_"+userID, 1000, 2000); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if got := purchased(); got != 10_000*credit {
 		t.Fatalf("after a half refund purchased=%d", got)
 	}
-	if err := s.HoldDispute(ctx, "pi_"+userID); err != nil {
+	if _, err := s.HoldDispute(ctx, "pi_"+userID); err != nil {
 		t.Fatal(err)
 	}
 	if got := purchased(); got != 0 {
 		t.Fatalf("dispute holds what is left: purchased=%d", got)
 	}
-	if err := s.ReleaseDispute(ctx, "pi_"+userID); err != nil {
+	if _, err := s.ReleaseDispute(ctx, "pi_"+userID); err != nil {
 		t.Fatal(err)
 	}
 	if got := purchased(); got != 10_000*credit {
 		t.Fatalf("a won dispute gives it back: purchased=%d", got)
+	}
+}
+
+func TestDisputeBeforeItsPurchaseIsTakenBackOnTheDailyReread(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	seedCredits(t, s, userID, 0, 0)
+	if moved, err := s.HoldDispute(ctx, "pi_"+userID); err != nil || moved != "" {
+		t.Fatalf("no purchase yet: moved=%q err=%v", moved, err)
+	}
+	if _, _, err := s.GrantTopUp(ctx, userID, "cs_"+userID, "pi_"+userID, 1000); err != nil {
+		t.Fatal(err)
+	}
+	// The daily reconciliation re-applies it; a second pass changes nothing.
+	for pass, want := range []string{userID, ""} {
+		moved, err := s.HoldDispute(ctx, "pi_"+userID)
+		if err != nil || moved != want {
+			t.Fatalf("pass %d: moved=%q err=%v", pass, moved, err)
+		}
+	}
+	if got := mustBalance(t, s, userID).PurchasedMicros; got != 0 {
+		t.Fatalf("purchased=%d, want the disputed top-up held", got)
 	}
 }
 

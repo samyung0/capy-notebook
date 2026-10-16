@@ -85,6 +85,7 @@ export type {
   AddChapterReq,
   Attempt,
   AutoReloadReq,
+  AutoReloadResp,
   BillingCheckoutReq,
   BillingInfo,
   Canvas as ThinkingCanvas,

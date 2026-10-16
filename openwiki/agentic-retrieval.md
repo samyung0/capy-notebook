@@ -833,7 +833,7 @@ children are the outer cap.
 
 | Route | Host | Parser admission | Deadlines | JVM heap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | depth 8, 7 parse children, at most 500 text-less pages per document | 900 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
+| fast | one 8-core / 16 GiB VM | depth 8, 7 parse children, at most 500 text-less pages per document | 600 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
 
 The v16 recalibration on the ingest host
 ([`2026-10-16-parser-v16-recalibration.md`](../bench/parsers/reports/2026-10-16-parser-v16-recalibration.md),
@@ -867,10 +867,28 @@ more than `CAPY_PARSE_MAX_PAGES` (1,400) pages fails as the terminal
 `parse_too_many_pages`, a PDF that cannot be counted (broken, no pages, an
 open password) as the terminal `parse_unreadable`, and a count that hangs runs
 into the parse deadline (`parse_hard_timeout`, quarantined). There is no count
-at admission, and the API process opens no source with MuPDF. The
-coordinator maps both page codes to an input limit (`scanned_page_limit`,
-`page_limit`) carrying the parser's reason (no quarantine, no retry): the file
-ends ready and unindexed, see Ingest limits below. The API serves the same two env
+at admission, and the API process opens no source with MuPDF.
+
+The parse child also checks element limits (`odl/elements.py`), cheap counts
+that refuse floods of figures, shapes or table rows as the terminal
+`parse_too_many_elements` before the costly work. A DOCX or PPTX is counted in
+its package XML before LibreOffice, tags of any namespace prefix: more than
+2,000 table rows (`tr`) or 2,000 pictures and drawings (`drawing`, `pict`) in a
+DOCX, more than 2,000 shapes and pictures (`sp`, `cxnSp`, `pic`) in a PPTX.
+Every PDF, an Office file's conversion included, is counted after the page
+count: more than 250,000 image placements in the file or 40,000 on one page
+(each `Do` and inline image, a form XObject counting what it draws times its
+draws), or more than 2,000,000 path-painting operators in the file. Legacy
+`.doc`/`.ppt`/`.xls`, XLSX and packages that don't open are not counted (the
+conversion timeout and the page cap hold them). The thresholds come from a
+census of 418 real PDFs and synthetic floods
+([report](../bench/parsers/reports/2026-10-16-element-limit.md)); the check
+takes about 3 ms a page.
+
+The coordinator maps the page and element codes to an input limit
+(`scanned_page_limit`, `page_limit`, `element_limit`) carrying the parser's
+reason (no quarantine, no retry): the file ends ready and unindexed, see Ingest
+limits below. The API serves the same two env
 values in the upload policy (`parseModes[fast].maxPages`, `maxOcrPages`) and
 refuses a fast-parse reservation whose claimed `pageCount` exceeds `maxPages`;
 the browser checks both caps before upload (see
@@ -886,7 +904,7 @@ without the automatic retry, as it does for a parse that yields no indexable
 content. A Java crash or any other child crash keeps the one retry; a
 LibreOffice timeout is final like the parse deadline (below).
 
-A document has a 900-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
+A document has a 600-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
 that starts when it leaves the queue, before LibreOffice normalisation of an
 Office source and the Java run, and ends when the API has read the child's
 result, renders included; queue wait does not spend it. The Java subprocess itself runs under the same timeout. If a
@@ -900,13 +918,15 @@ fingerprint fail immediately while that parser version is live. A parser-version
 `pipeline/parse/parser_client.py`) creates a new fingerprint and is the
 deliberate automatic way to retry the file after parser code changes.
 
-The whole-document parser request has a 1,920-second bound (`PARSER_TIMEOUT`:
-one wait for a parse child and the parse itself, 900 s each with eight
+The whole-document parser request has a 1,320-second bound (`PARSER_TIMEOUT`:
+one wait for a parse child and the parse itself, 600 s each with eight
 admitted over seven children, plus a 120 s margin) and the parse job a
-2,100-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
+1,500-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
 continuation, which includes the VLM page reads, has a 1,200-second bound.
-Until the OCR stage left the parser the bounds were 4,420 s and 4,600 s, with
-500 OCR pages at up to 5 s inside the request. A later attempt for the same
+The 600 s deadline is twice the slowest parse and the longest wait measured
+at seven children (about 300 s each, a 1,400-page book among seven). Until the
+OCR stage left the parser the bounds were 4,420 s and 4,600 s, with 500 OCR
+pages at up to 5 s inside the request. A later attempt for the same
 fingerprint joins the parse already in flight. A timed-out coordinator or
 ingest process records its retry and exits; the supervisor or Docker replaces
 only that process, so a cancelled blocking thread cannot overlap a later job.
@@ -1071,13 +1091,15 @@ viewer.
 
 #### Ingest limits
 
-Five limits are checked on the real content during ingest. A file over one is
+Six limits are checked on the real content during ingest. A file over one is
 not failed: the worker raises `InputLimitError(code)`, the job and its attempt
 fail with that `error_code` (logged at info, no Sentry event), and the file
 ends `ready`, `indexed=false`, with `files.index_limit` set to the code
-(migrations `0072`, `0081`). It opens, downloads, edits and clones like any file; only
+(migrations `0072`, `0081`, `0089`). It opens, downloads, edits and clones like any file; only
 search, chat and generate skip it. The file banner and the upload panel say it
-is too large to index (`files_not_indexed_too_large`), Retry processing is not
+is too large to index (`files_not_indexed_too_large`; for `element_limit`,
+`files_not_indexed_too_many_elements`, and the upload panel also raises one
+warning toast per file, `source_transfer_too_many_elements`), Retry processing is not
 offered (that is for `failed` files), and the Indexing tab counts it as not
 indexable. A new published source (a source refresh or a maintenance
 republish) clears `index_limit`. An edited source over a limit is a refused
@@ -1088,6 +1110,7 @@ Indexing tab lists the change as failed.
 | --- | --- | --- | --- |
 | `page_limit` | Pages in a fast-parse PDF/DOCX/PPTX/XLSX | `CAPY_PARSE_MAX_PAGES` (1,400) | Browser analysis blocks submit; the reservation refuses a claimed `pageCount` over it. Imports and edited Office sources are only checked by the parser. |
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
+| `element_limit` | Image placements, vector paint operators (PDF); table rows, pictures, shapes (DOCX/PPTX) | `odl/elements.py`: 250,000 placements a file and 40,000 a page, 2,000,000 paints; 2,000 each in Office | No |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
 | `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |
@@ -3984,7 +4007,7 @@ current chunk, with full coverage in the large-document reduction path.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 900 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,920 s per request and 2,100 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
 | Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |

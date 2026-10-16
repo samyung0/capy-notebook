@@ -162,3 +162,23 @@ func TestStripeWebhook_RefundsAndDisputesReachThePurchase(t *testing.T) {
 		t.Fatalf("calls = %q, want %q", f.creditCalls, want)
 	}
 }
+
+func TestStripeWebhook_PaidProInvoiceRearmsAutoReload(t *testing.T) {
+	f := newFakeStore()
+	f.stripeCustomers["cus_1"] = "user_1"
+	srv, _ := newCreditTestServer(t, f, billing.ReloadResult{})
+	pro := func(id string, paid int64) map[string]any {
+		return map[string]any{
+			"id": id, "customer": "cus_1", "amount_paid": paid,
+			"parent": map[string]any{
+				"type":                 "subscription_details",
+				"subscription_details": map[string]any{"subscription": map[string]any{"id": "sub_1"}},
+			},
+		}
+	}
+	sendStripe(t, srv, "evt_free_month", "invoice.paid", pro("in_zero", 0))
+	sendStripe(t, srv, "evt_renewal", "invoice.paid", pro("in_paid", 1000))
+	if !slices.Equal(f.creditCalls, []string{"arm user_1"}) {
+		t.Fatalf("calls = %q, want one arm for the paid invoice", f.creditCalls)
+	}
+}
