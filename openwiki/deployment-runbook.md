@@ -501,6 +501,19 @@ The prod file runs `/migrate` once per deploy, starts the API with
    7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
    lean on swap; they bound a runaway call, not the expected footprint.
 
+   The collaboration service runs with `MALLOC_ARENA_MAX=2`,
+   `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
+   (`docker-compose.prod.yml`, UAT and production; the engine processes
+   inherit them, Epo 2026-10-17). Room loads replay on tokio's blocking
+   threads, each with its own glibc arena, and glibc raises its mmap
+   threshold as large blocks are freed, so without them memory freed after
+   peers leave stays in the process: 411-467 MiB kept, against ~90 MiB with
+   them, and a peak of ~180 MiB instead of ~520, at the same marker latency
+   (`bench/collaboration/reports/2026-10-17-collaboration-allocator.md`).
+   After a deploy that changes them, compare the container's memory
+   (`docker stats --no-stream $(docker ps -qf name=collaboration)`) at idle
+   and after a busy period with the numbers from before.
+
    Every client socket, gateway call and database connection is an open
    file. The compose files give the collaboration service `nofile` 524288,
    and the server raises its soft limit to the hard one at startup, as Go and

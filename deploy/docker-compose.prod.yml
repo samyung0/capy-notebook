@@ -175,6 +175,13 @@ services:
       COLLABORATION_ENGINE_SAVE_PROCESSES: ${COLLABORATION_ENGINE_SAVE_PROCESSES:?set COLLABORATION_ENGINE_SAVE_PROCESSES}
       COLLABORATION_ENGINE_BACKGROUND_PROCESSES: ${COLLABORATION_ENGINE_BACKGROUND_PROCESSES:?set COLLABORATION_ENGINE_BACKGROUND_PROCESSES}
       COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES: ${COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES:?set COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES}
+      # glibc keeps freed room memory spread over up to 8 arenas per core and
+      # raises its mmap threshold as large blocks are freed; two arenas and
+      # fixed 128 KiB thresholds return it after peers leave (~90 MiB kept
+      # instead of 411-467). The engine processes inherit them.
+      MALLOC_ARENA_MAX: "2"
+      MALLOC_TRIM_THRESHOLD_: "131072"
+      MALLOC_MMAP_THRESHOLD_: "131072"
       SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
       # Copied bank questions link their figures here (questions.ts).
       BANK_ASSETS_URL: ${BANK_ASSETS_URL:-}
