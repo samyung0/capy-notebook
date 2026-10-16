@@ -3111,7 +3111,8 @@ and no details, a 409 the pipeline does not retry; a lost, killed or
 panicking engine process and any other engine failure stay a 503
 `outcome_unknown` ([Office files](frontend/office-files.md)). A
 write whose retries run out and whose receipt is absent says what the service
-last answered (`the service answered 503 (…) on 4 tries; nothing was saved`).
+last answered (`the service answered 503 (…) on 3 tries; nothing was saved`);
+the POST makes at most 3 attempts, 0.25 s and 0.5 s apart (parts design Q12).
 A `chapter_id` naming no chapter of the workspace is refused in the pipeline
 before anything is built (`tools.unknown_chapter`, for notes, decks and new
 quizzes).

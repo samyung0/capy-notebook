@@ -1519,6 +1519,11 @@ def landed(ctx: ToolContext, excerpt_ids: list[str]) -> None:
     ctx.library_evidence.wrote(excerpt_ids)
 
 
+# Agent write POSTs make at most this many attempts before the receipt read
+# (parts design Q12, 2026-10-15).
+_POST_ATTEMPTS = 3
+
+
 async def _post_operation(
     path: str,
     payload: dict[str, Any],
@@ -1540,7 +1545,7 @@ async def _post_operation(
     last_status = 0
     last_detail = ""
     last_event_id = None
-    for attempt in range(4):
+    for attempt in range(_POST_ATTEMPTS):
         try:
 
             def _post() -> requests.Response:
@@ -1575,7 +1580,7 @@ async def _post_operation(
             last_exc = exc
             last_event_id = None
             log.warning("operation POST attempt failed: %s", exc)
-        if attempt < 3:
+        if attempt < _POST_ATTEMPTS - 1:
             await asyncio.sleep(0.25 * (2**attempt))
     if last_exc is not None:
         log.warning(
@@ -1596,7 +1601,9 @@ async def _post_operation(
             if last_status
             else "the service could not be reached"
         )
-        return _failed(f"Could not {failure}: {why} on 4 tries; nothing was saved.")
+        return _failed(
+            f"Could not {failure}: {why} on {_POST_ATTEMPTS} tries; nothing was saved."
+        )
     return _receipt_result(recovered)
 
 

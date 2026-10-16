@@ -1545,7 +1545,8 @@ async def test_material_confirmed_404_is_a_tool_failure(monkeypatch):
         {"kind": "note", "_tool_call_id": "call_1"}, ctx
     )
     assert result.failed and result.outcome == "failed"
-    assert posts["n"] == 4
+    assert posts["n"] == 3
+    assert "on 3 tries; nothing was saved" in result.error
     assert got["params"] == {"workspaceId": "ws_1", "userId": "u1"}
     assert got["url"].endswith(
         "/api/internal/agent-operations/" + tools.operation_id("m_1", "call_1")
