@@ -9,6 +9,7 @@ lab's ``refined-final-r1`` outputs is checked against the ingest host, not here.
 from __future__ import annotations
 
 import copy
+import errno
 import itertools
 import json
 import math
@@ -875,10 +876,21 @@ def test_a_reference_cycle_hashes_and_ends() -> None:
     assert len(pictures._stored_hash(document, image, {})) == 32
 
 
-@pytest.mark.parametrize("error", [OSError("read failed"), MemoryError()])
+@pytest.mark.parametrize(
+    ("error", "fails_the_parse"),
+    [
+        (OSError("read failed"), False),
+        (MemoryError(), True),
+        (OSError(errno.ENOMEM, "Cannot allocate memory"), True),
+        (RuntimeError("code=2: malloc (400000000 bytes) failed"), True),
+    ],
+    ids=["broken", "python", "enomem", "mupdf"],
+)
 def test_a_failed_hash_is_no_identity_but_running_out_of_memory_still_raises(
-    monkeypatch: pytest.MonkeyPatch, error: BaseException
+    monkeypatch: pytest.MonkeyPatch, error: BaseException, fails_the_parse: bool
 ) -> None:
+    """Running out of memory (as the parse's ParseOOM path reads it) goes on;
+    any other error is no identity."""
     document = pymupdf.open()
     for _ in range(5):
         document.new_page(width=600, height=800)
@@ -887,8 +899,8 @@ def test_a_failed_hash_is_no_identity_but_running_out_of_memory_still_raises(
         raise error
 
     monkeypatch.setattr(pictures, "_stored_hash", fail)
-    if isinstance(error, MemoryError):
-        with pytest.raises(MemoryError):
+    if fails_the_parse:
+        with pytest.raises(type(error)):
             _badges(document, [7] * 5)
     else:
         assert [block["type"] for block in _badges(document, [7] * 5)] == (

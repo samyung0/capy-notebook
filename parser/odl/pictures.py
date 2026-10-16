@@ -40,6 +40,7 @@ from collections import Counter, defaultdict
 import pymupdf
 
 from . import page_text
+from .memory import out_of_memory
 
 REPEAT_PAGES = 5
 HASH_CHUNK = 1 << 16  # bytes read at a time when hashing a stored image
@@ -247,10 +248,10 @@ def classify(
     def stored(xref: int) -> bytes | None:
         try:
             return _stored_hash(document, xref, memo)
-        except MemoryError:
-            raise  # the parse's out-of-memory path
-        except Exception:  # noqa: BLE001 - a broken image object is never a repeat
-            return None
+        except Exception as exc:
+            if out_of_memory(exc):
+                raise  # the parse's out-of-memory path
+            return None  # a broken image object is never a repeat
 
     hashes = {xref: stored(xref) for xref in set(xrefs.values())}
     identity = {

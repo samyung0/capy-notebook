@@ -23,7 +23,6 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
-import errno
 import gc
 import hashlib
 import hmac
@@ -58,6 +57,7 @@ from odl.document import (
     SourceUnreadable,
 )
 from odl.java import JavaKilled, JavaTimeout
+from odl.memory import out_of_memory
 
 try:
     import resource
@@ -132,10 +132,6 @@ PARSE_OOM_SCORE_ADJ = 1000
 # starts; Java lifts it (odl/java.py), its heap bounded by -Xmx. A document
 # that needs more fails as parse_oom instead of crowding the other children.
 PARSE_CHILD_MAX_BYTES = 2 << 30
-# MuPDF's failed allocation as PyMuPDF raises it: its message starts with
-# MuPDF's error code (text inside another error, such as Java's output, is
-# not one).
-_ALLOCATION_FAILED = re.compile(r"code=\d+: (?:m|c|re)alloc \([^)]*\) failed")
 # A child's answer on its pipe: a status and small payloads.
 # A longer one ends that child.
 MESSAGE_MAX_BYTES = 1 << 24
@@ -392,16 +388,6 @@ def _limit_address_space(limit: int) -> None:
     resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
 
 
-def _out_of_memory(exc: Exception) -> bool:
-    """Past the child's address-space limit: Python's MemoryError, an OS call
-    refused with ENOMEM, or MuPDF's failed allocation."""
-    return (
-        isinstance(exc, MemoryError)
-        or (isinstance(exc, OSError) and exc.errno == errno.ENOMEM)
-        or bool(_ALLOCATION_FAILED.match(str(exc)))
-    )
-
-
 def _parse_worker_main(
     requests: Connection, responses: Connection, work_dir: str
 ) -> None:
@@ -433,7 +419,7 @@ def _parse_worker_main(
             _write_worker_result(Path(result_path), result)
             _send(responses, "ok", None)
         except Exception as exc:  # noqa: BLE001 - returned to API supervisor
-            if _out_of_memory(exc):
+            if out_of_memory(exc):
                 exc = ParseOOM(
                     f"the parse needed more than {PARSE_CHILD_MAX_BYTES >> 30} GiB "
                     f"of address space: {exc}"
