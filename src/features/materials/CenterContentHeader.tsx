@@ -75,7 +75,7 @@ export interface OneColumnChrome {
   workspaceName: string;
 }
 
-/** The title as the button that opens the Files drawer, chevron after it. */
+/** The title as the button that opens the Files dropdown, chevron after it. */
 export function FilesTitleButton({
   chrome,
   children,

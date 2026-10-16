@@ -60,9 +60,7 @@ export function ChatDock({
   const sm = useMediaQuery('(min-width: 640px)');
   const fieldOnly = sm && !office;
   const [expanded, setExpanded] = useState(false);
-  // A filled field scrolled out of the way; scrolling back up returns it.
-  const [away, setAway] = useState(false);
-  const open = fieldOnly || (expanded && !away);
+  const open = fieldOnly || expanded;
   const draft = text.trim().length > 0;
   const fieldRef = useRef<HTMLTextAreaElement>(null);
   const rowRef = useRef<HTMLDivElement>(null);
@@ -76,8 +74,20 @@ export function ChatDock({
     const row = rowRef.current;
     const field = fieldBox.current;
     if (!(row && field)) return;
-    const measure = () =>
-      setSize({ height: field.offsetHeight, width: row.offsetWidth });
+    let height = field.offsetHeight;
+    const measure = () => {
+      // A line added or removed while open: the text starts where it was and
+      // slides with the surface's height transition instead of jumping. Runs
+      // before paint, so the jump is never drawn.
+      const delta = field.offsetHeight - height;
+      height = field.offsetHeight;
+      if (delta && field.closest('[data-open=true]'))
+        fieldRef.current?.animate(
+          [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
+          { duration: 350, easing: 'cubic-bezier(0.34, 1.25, 0.64, 1)' }
+        );
+      setSize({ height, width: row.offsetWidth });
+    };
     measure();
     const observer = new ResizeObserver(measure);
     observer.observe(row);
@@ -95,10 +105,10 @@ export function ChatDock({
     return () => viewport.removeEventListener('resize', settle);
   }, []);
 
-  // With a draft, scrolling the page down folds the field into the button and
-  // scrolling up brings it back, focused or not. Positions are tracked from
-  // mount, so the first scroll after typing already has a direction.
-  const folds = !fieldOnly && expanded && draft;
+  // Scrolling the page either way folds the field into the button, focused or
+  // not; a draft stays and shows as the button's dot. Positions are tracked
+  // from mount, so the first scroll after opening already has a distance.
+  const folds = !fieldOnly && expanded;
   const foldsRef = useRef(folds);
   foldsRef.current = folds;
   useEffect(() => {
@@ -111,10 +121,10 @@ export function ChatDock({
       const previous = last.get(scroller) ?? top;
       last.set(scroller, top);
       if (!foldsRef.current || performance.now() < settledAt.current) return;
-      if (top - previous > 4) {
+      if (Math.abs(top - previous) > 4) {
         fieldRef.current?.blur();
-        setAway(true);
-      } else if (previous - top > 4) setAway(false);
+        setExpanded(false);
+      }
     };
     document.addEventListener('scroll', onScroll, {
       capture: true,
@@ -127,10 +137,7 @@ export function ChatDock({
   function expand() {
     // Synchronous, so the focus below still counts as the tap's own and the
     // phone opens its keyboard.
-    flushSync(() => {
-      setExpanded(true);
-      setAway(false);
-    });
+    flushSync(() => setExpanded(true));
     fieldRef.current?.focus();
   }
 
@@ -159,14 +166,14 @@ export function ChatDock({
         {back && (
           <div
             className={cn(
-              'pointer-events-auto absolute left-0 flex h-9 items-center rounded-button bg-overlay pl-1 shadow-pop ring-1 ring-overlay-line',
+              'pointer-events-auto absolute left-0 flex h-9 min-w-40 items-center rounded-button bg-overlay pl-1 shadow-pop ring-1 ring-overlay-line',
               open
-                ? 'bottom-[calc(100%+8px)] max-w-full'
-                : 'bottom-2 max-w-[calc(100%-60px)]'
+                ? 'bottom-[calc(100%+8px)] max-w-[min(18rem,100%)]'
+                : 'bottom-2 max-w-[min(18rem,calc(100%-60px))]'
             )}
           >
             <button
-              className="flex min-w-0 items-center gap-2 px-2 font-semibold text-sm text-tint-accent-1-fg"
+              className="flex min-w-0 flex-1 items-center gap-2 px-2 font-semibold text-sm text-tint-accent-1-fg"
               onClick={back.onOpen}
               type="button"
             >
@@ -206,7 +213,7 @@ export function ChatDock({
             >
               <Icon name="message" size={22} />
               {draft && (
-                <span className="absolute top-1.5 right-1.5 size-2.5 rounded-full bg-solid-accent-1 ring-2 ring-overlay" />
+                <span className="absolute top-3 right-3 size-2.5 rounded-full bg-solid-accent-1 ring-2 ring-overlay" />
               )}
             </button>
           )}

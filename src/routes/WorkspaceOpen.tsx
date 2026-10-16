@@ -22,7 +22,6 @@ import { Panel } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
-import { Drawer, DrawerContent, DrawerTitle } from '@/components/ui/Drawer';
 import {
   FloatingBarContext,
   OfficeInsetContext,
@@ -30,6 +29,11 @@ import {
 import { Icon } from '@/components/ui/Icon';
 import type { MenuItem } from '@/components/ui/Menu';
 import { NameFormDialog } from '@/components/ui/NameFormDialog';
+import {
+  Popover,
+  PopoverAnchor,
+  PopoverContent,
+} from '@/components/ui/Popover';
 import {
   ResizableHandle,
   ResizablePanel,
@@ -306,16 +310,13 @@ export default function WorkspaceOpen() {
       onClick: rowProps.onOpenSettings,
     },
   ];
+  // The Files dropdown hangs from the header, which lives in CenterContent.
+  const filesAnchor = useRef<HTMLElement | null>(null);
   function openFiles() {
-    const header = viewerBox.current?.querySelector(
-      '[data-testid=content-header],[data-slot=center-header]'
-    );
-    // On the root: the drawer and its scrim are portalled apart, and the
-    // scrim starts under the header too, which stays readable.
-    document.documentElement.style.setProperty(
-      '--files-top',
-      `${header?.getBoundingClientRect().bottom ?? 0}px`
-    );
+    filesAnchor.current =
+      viewerBox.current?.querySelector<HTMLElement>(
+        '[data-testid=content-header],[data-slot=center-header]'
+      ) ?? null;
     setFilesOpen(true);
   }
   const oneColumn: OneColumnChrome | undefined =
@@ -391,15 +392,15 @@ export default function WorkspaceOpen() {
   // Every tab stays mounted so chat keeps its state while hidden; only the
   // visible one draws the tab row.
   const noRow = () => null;
-  // The top drawer's tree: the workspace as a plain row the size of a file
+  // The Files dropdown's tree: the workspace as a plain row the size of a file
   // row (no switcher; Back leaves the workspace), Workspace settings pinned
   // under it, and the add actions in the header's ⋮ instead of the plus.
-  const filesDrawer = (
+  const filesDropdown = (
     <FilesPanel
       beforeReplace={confirmViewerReplacement}
       className="h-auto flex-1"
       footer={
-        <div className="flex shrink-0 flex-col border-divider border-t px-2.5">
+        <div className="flex shrink-0 flex-col border-divider border-t px-2.5 py-1.5">
           {[
             ...settingsItems,
             ...(readOnly && canClone
@@ -623,25 +624,29 @@ export default function WorkspaceOpen() {
           )}
         </ResizablePanelGroup>
         {layout === 'one' && (
-          <Drawer
-            onOpenChange={setFilesOpen}
-            open={filesOpen}
-            swipeDirection="up"
-          >
-            {/* Part of the header it opens from: it unrolls from under the
-                header's edge (a clip, not a slide over it), in the page's
-                colour with no shadow above; full width on phones, a 400px
-                column from sm. */}
-            <DrawerContent
-              className="inset-x-1.5! top-(--files-top)! rounded-none! rounded-b-card-xl! bg-surface transition-[clip-path,transform]! [--closed-transform:none]! [--drawer-content-max-height:min(70dvh,calc(100dvh-var(--files-top)-4rem))]! [--drawer-inset:0px] [clip-path:inset(0_-3rem_-3rem)] sm:right-auto! sm:left-2.5! sm:w-100 data-ending-style:[clip-path:inset(0_-3rem_100%)] data-starting-style:[clip-path:inset(0_-3rem_100%)]"
-              overlayClassName="top-(--files-top)! min-h-0! supports-backdrop-filter:backdrop-blur-none"
+          <Popover modal onOpenChange={setFilesOpen} open={filesOpen}>
+            <PopoverAnchor
+              virtualRef={{
+                current: {
+                  getBoundingClientRect: () =>
+                    filesAnchor.current?.getBoundingClientRect() ??
+                    new DOMRect(),
+                },
+              }}
+            />
+            {/* A plain dropdown under the header, its workspace row in line
+                with the header title; full width on phones, a 400px column from sm. */}
+            <PopoverContent
+              align="start"
+              alignOffset={16}
+              aria-label={m.workspace_tab_files()}
+              className="max-h-[min(70dvh,var(--radix-popover-content-available-height))] w-[calc(100vw-1rem)] gap-0 overflow-hidden p-0 sm:w-100"
+              collisionPadding={8}
+              sideOffset={4}
             >
-              <DrawerTitle className="sr-only">
-                {m.workspace_tab_files()}
-              </DrawerTitle>
-              {filesDrawer}
-            </DrawerContent>
-          </Drawer>
+              {filesDropdown}
+            </PopoverContent>
+          </Popover>
         )}
       </div>
       <WorkspaceSettingsDialog

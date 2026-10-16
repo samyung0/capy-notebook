@@ -44,7 +44,7 @@ test('the title opens Files from the top and ⋮ carries the workspace actions',
   await page.keyboard.press('Escape');
 
   await title.click();
-  // The open drawer hides the page behind it from the accessibility tree.
+  // The open dropdown is modal: the page behind it leaves the accessibility tree.
   await expect(header.locator('h2 button')).toHaveAttribute(
     'aria-expanded',
     'true'
@@ -73,6 +73,8 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
     name: m.workspace_tab_chat(),
   });
   const field = dock.getByRole('textbox', { name: m.chat_placeholder() });
+  // Folded, the field is only transparent: the surface says which it is.
+  const surface = dock.locator('.motion-chat-dock');
   // The note first, so the page has something to scroll.
   await expect(
     page.getByRole('heading', { name: 'Prokaryotes vs eukaryotes' })
@@ -87,13 +89,21 @@ test('chat docks as a button, keeps a draft, and grows into its page on send', a
   await field.fill('What do mitochondria do?');
   await field.blur();
   await expect(field).toBeVisible();
-  // Scrolling down folds it into the button, scrolling up brings it back.
+  // Scrolling either way folds it into the button; the draft waits there.
+  // Scrolls right after a focus are the browser making room, not the reader.
+  // The first scroll only records where the page starts.
   await page.mouse.move(180, 300);
+  await page.waitForTimeout(700);
   await page.mouse.wheel(0, 200);
   await page.mouse.wheel(0, 300);
-  await expect(button).toBeVisible();
+  await expect(surface).toHaveAttribute('data-open', 'false');
+  await button.click();
+  await page.waitForTimeout(700);
+  // Off the dock again: the click left the mouse over it.
+  await page.mouse.move(180, 300);
   await page.mouse.wheel(0, -150);
-  await page.mouse.wheel(0, -150);
+  await expect(surface).toHaveAttribute('data-open', 'false');
+  await button.click();
   await expect(field).toHaveValue('What do mitochondria do?');
 
   await dock.getByRole('button', { name: m.chat_send() }).click();

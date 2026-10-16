@@ -62,7 +62,7 @@ const isChapterMap = (value: unknown): value is Record<string, boolean> =>
 const DND_TYPES = ['application/x-capy-material', 'application/x-capy-file'];
 
 /** The chapter tree with its files and materials. Lives in the right panel's
- * Files tab, as its own column when pinned, or in the top drawer below lg;
+ * Files tab, as its own column when pinned, or in the header's dropdown below lg;
  * `renderTabRow` draws whichever header that placement needs. */
 export function FilesPanel({
   workspaceId,
@@ -93,10 +93,10 @@ export function FilesPanel({
   renderTabRow: (actions: TabAction[]) => ReactNode;
   /** The tree's first row, scrolling with it, e.g. the workspace switcher. */
   header?: ReactNode;
-  /** Pinned under the tree, e.g. the top drawer's Workspace settings row. */
+  /** Pinned under the tree, e.g. the dropdown's Workspace settings row. */
   footer?: ReactNode;
   className?: string;
-  /** Rows' hover ⋮; the touch drawer leaves them out. */
+  /** Rows' hover ⋮; the dropdown leaves them out. */
   rowMenus?: boolean;
   onAddSource?: (mode: AddSourceMode) => void;
   onAddChapter?: () => void;
