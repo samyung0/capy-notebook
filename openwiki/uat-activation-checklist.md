@@ -259,7 +259,10 @@ Clerk development instance. Point a local gateway at the UAT database only with
   `cache-control: public, max-age=31536000, immutable` and a `content-length`
   about a fifth below the on-the-fly size; `curl -s -H 'Accept-Encoding: identity' "$W" | head -c 4 | od -c`
   prints `\0 a s m` (decoded for a client without brotli). A Carlito `.ttf`
-  answers the same with `font/ttf`.
+  answers the same with `font/ttf`. Repeating the first request shows
+  `cf-cache-status: HIT` with an `age` (Workers Cache; the first request
+  after a deploy may be `MISS`), and the identity request still prints
+  `\0 a s m` once the file is a hit.
 - GitHub configuration sync/readback passed before deployment. Managed Coolify
   variables are literal, non-preview and readable for verification; unset ones
   are blank. Neither values nor fingerprints appear in runner logs.

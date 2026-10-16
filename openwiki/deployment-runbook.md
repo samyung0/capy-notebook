@@ -229,7 +229,14 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    does not accept brotli gets the bytes decoded by the Workers runtime
    (Cloudflare's Workers `fetch` documentation; local workerd answers an
    `Accept-Encoding: identity` request with the plain WASM). Only these
-   requests and the runtime HTML are Worker requests. Missing assets still
+   requests and the runtime HTML run the Worker, and Workers Cache
+   (`cache.enabled` in `wrangler.office.jsonc`, every environment) keeps the
+   brotli files for a year in its tiers, so a hit skips the Worker
+   (`CF-Cache-Status: HIT`) and each deploy fills it once per file (its key
+   includes the Worker version); the runtime HTML and every refusal are
+   `no-store` and bypass it. With it on, every Office-host request, the
+   static scripts included, is billed at the Workers request rate, with no
+   CPU time for hits and static files. Missing assets still
    reach the Worker's rejection checks, and a missing `.br` file is a 404
    `no-store`; the static layer rejects unsupported methods on existing
    assets with 405. Do not proxy `/api`, issue authentication cookies, or set

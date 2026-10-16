@@ -228,6 +228,11 @@ describe('isolated Office runtime', () => {
       expect(target.assets.not_found_handling).toBe('none');
       expect(target.assets.html_handling).toBe('none');
     }
+    // Workers Cache serves the immutable brotli files without running the
+    // Worker, in every environment (inherited, never overridden).
+    expect(config.cache).toEqual({ enabled: true });
+    expect(config.env.uat.cache).toBeUndefined();
+    expect(config.env.production.cache).toBeUndefined();
     const temp = mkdtempSync(join(tmpdir(), 'capy-office-test-'));
     try {
       const source = join(temp, 'dist');

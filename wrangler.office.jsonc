@@ -17,6 +17,9 @@
       "/assets/*.otf"
     ]
   },
+  "cache": {
+    "enabled": true
+  },
   "vars": {
     "PARENT_ORIGINS": ""
   },
