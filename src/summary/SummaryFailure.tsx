@@ -7,11 +7,7 @@ export function SummaryFailure({ status }: { status: number }) {
   return (
     <ErrorState
       action={
-        <ErrorAction
-          asChild
-          iconLeft={unavailable ? 'navigationBack' : 'refresh'}
-          iconLeftClassName="me-1"
-        >
+        <ErrorAction asChild back={unavailable}>
           <a href={unavailable ? '/' : ''}>
             {unavailable ? m.error_action_go_back() : m.summary_retry()}
           </a>

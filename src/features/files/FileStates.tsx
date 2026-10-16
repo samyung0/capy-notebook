@@ -43,11 +43,7 @@ export function FileError({
   return (
     <ErrorState
       action={
-        onRetry && (
-          <ErrorAction iconLeftClassName="me-1.5" onClick={onRetry}>
-            {retryLabel}
-          </ErrorAction>
-        )
+        onRetry && <ErrorAction onClick={onRetry}>{retryLabel}</ErrorAction>
       }
       description={message}
       icon={icon}

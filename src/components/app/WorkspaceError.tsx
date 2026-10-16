@@ -21,11 +21,7 @@ export function WorkspaceError({
       <ErrorState
         action={
           backTo ? (
-            <ErrorAction
-              asChild
-              iconLeft="navigationBack"
-              iconLeftClassName="me-1"
-            >
+            <ErrorAction asChild back>
               <Link preload="intent" to={backTo}>
                 {backLabel}
               </Link>

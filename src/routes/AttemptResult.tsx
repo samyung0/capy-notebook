@@ -62,11 +62,7 @@ export default function AttemptResult() {
       <PanelWithInvertedRadius>
         <ErrorState
           action={
-            <ErrorAction
-              asChild
-              iconLeft="navigationBack"
-              iconLeftClassName="me-1"
-            >
+            <ErrorAction asChild back>
               <Link preload="intent" to="/learning">
                 {m.quiz_back()}
               </Link>

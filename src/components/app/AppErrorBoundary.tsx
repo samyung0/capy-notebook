@@ -126,7 +126,6 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
         <ErrorState
           action={
             <ErrorAction
-              iconLeftClassName="me-1"
               onClick={reload ? () => window.location.reload() : this.reset}
             >
               {reload ? m.error_action_reload() : m.error_action_retry()}
@@ -187,7 +186,6 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
       <ErrorState
         action={
           <ErrorAction
-            iconLeftClassName="me-1"
             onClick={reload ? () => window.location.reload() : retry}
           >
             {reload ? m.error_action_reload() : m.error_action_retry()}
@@ -207,11 +205,7 @@ export function RouteNotFoundComponent() {
     <FallbackFrame className="h-full overflow-hidden p-1.5 sm:p-2.5">
       <ErrorState
         action={
-          <ErrorAction
-            asChild
-            iconLeft="navigationBack"
-            iconLeftClassName="me-1"
-          >
+          <ErrorAction asChild back>
             <Link to="/">{m.error_action_go_back()}</Link>
           </ErrorAction>
         }

@@ -90,7 +90,7 @@ export function DetailsTab() {
     <ErrorState
       {...describeError(error)}
       action={
-        <ErrorAction iconLeftClassName="me-1" onClick={() => void refetch()}>
+        <ErrorAction onClick={() => void refetch()}>
           {m.error_action_retry()}
         </ErrorAction>
       }

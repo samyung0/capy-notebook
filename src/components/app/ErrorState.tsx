@@ -90,7 +90,7 @@ export function InlineErrorState({
       role="alert"
     >
       <p className="text-fg-muted">{message}</p>
-      <ErrorAction iconLeftClassName="me-1" onClick={onRetry} size="sm">
+      <ErrorAction onClick={onRetry} size="sm">
         {m.error_action_retry()}
       </ErrorAction>
     </div>

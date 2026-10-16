@@ -68,16 +68,27 @@ export interface ButtonProps
   iconRightClassName?: string;
 }
 
-/** Shared recovery action; navigation and draft actions supply their own icon. */
+/** Shared recovery action: a retry with the refresh icon after the label, or
+ * with `back` a way out with the back arrow before it. */
 export function ErrorAction({
-  iconLeft = 'refresh',
+  back,
   className,
   ...props
-}: Omit<ButtonProps, 'variant'>) {
+}: Omit<
+  ButtonProps,
+  | 'variant'
+  | 'iconLeft'
+  | 'iconLeftClassName'
+  | 'iconRight'
+  | 'iconRightClassName'
+> & { back?: boolean }) {
   return (
     <Button
       className={cn('font-bold', className)}
-      iconLeft={iconLeft}
+      iconLeft={back ? 'navigationBack' : undefined}
+      iconLeftClassName="me-1"
+      iconRight={back ? undefined : 'refresh'}
+      iconRightClassName="ms-1"
       variant="ghost-hover"
       {...props}
     />

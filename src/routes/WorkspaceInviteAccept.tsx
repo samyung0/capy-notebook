@@ -2,9 +2,10 @@ import { useNavigate, useParams } from '@tanstack/react-router';
 import { isApiError } from '@/api/client';
 import { useAcceptWorkspaceInvite } from '@/api/hooks';
 import { AuthGate } from '@/components/app/AuthProvider';
+import { ErrorState } from '@/components/app/ErrorState';
 import { Panel } from '@/components/app/layout';
 import { WorkspaceError } from '@/components/app/WorkspaceError';
-import { Button } from '@/components/ui/Button';
+import { Button, ErrorAction } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { describeError, isNonDisclosing } from '@/lib/errors';
@@ -50,7 +51,31 @@ function InviteContent() {
     );
   }
 
-  const retryError = acceptIsError ? describeError(acceptError) : null;
+  if (acceptIsError) {
+    return (
+      <ErrorState
+        {...describeError(acceptError)}
+        action={
+          <div className="flex gap-2">
+            <Button
+              onClick={() => navigate({ to: '/workspaces' })}
+              variant="ghost-hover"
+            >
+              {m.action_cancel()}
+            </Button>
+            <ErrorAction
+              disabled={acceptIsPending}
+              onClick={() => accept(token)}
+            >
+              {m.error_action_retry()}
+            </ErrorAction>
+          </div>
+        }
+        testId="invite-accept-error"
+        variant="page"
+      />
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-xl">
@@ -60,17 +85,6 @@ function InviteContent() {
         </span>
         <h1 className="t-large-card-title">{m.invite_title()}</h1>
         <p className="mt-2 max-w-md text-fg-muted text-sm">{m.invite_body()}</p>
-
-        {retryError && (
-          <div
-            className="mt-5 max-w-md rounded-card bg-tint-error px-4 py-3 text-tint-error-fg"
-            data-testid="invite-accept-error"
-            role="alert"
-          >
-            <p className="font-semibold text-sm">{retryError.title}</p>
-            <p className="mt-1 text-sm">{retryError.description}</p>
-          </div>
-        )}
 
         {acceptIsSuccess ? (
           <Button
@@ -95,16 +109,10 @@ function InviteContent() {
             </Button>
             <Button
               disabled={acceptIsPending || !token}
-              iconLeft={retryError ? 'refresh' : undefined}
-              iconLeftClassName="me-1"
               onClick={() => accept(token)}
-              variant={retryError ? 'ghost-hover' : 'accent'}
+              variant="accent"
             >
-              {acceptIsPending
-                ? m.invite_accepting()
-                : retryError
-                  ? m.error_action_retry()
-                  : m.invite_accept()}
+              {acceptIsPending ? m.invite_accepting() : m.invite_accept()}
             </Button>
           </div>
         )}
