@@ -1,9 +1,9 @@
 # Optional Qwen book-review batches
 
-Sol completes its initial book work and emits self-contained text packets.
+The intake owner completes its initial book work and emits self-contained text packets.
 `qwen_batch.py` sends selected packets to Qwen3.8-Max when the developer chooses.
 Another person or agent can assess the saved responses later. Nothing here
-updates book tags, publishes books, starts Sol, or waits for a review verdict
+updates book tags, publishes books, starts intake work, or waits for a review verdict
 before initial processing can finish.
 
 Run commands from the repository root. The existing ignored `.env.local` must
@@ -23,7 +23,7 @@ Choose `--thinking` or `--no-thinking` explicitly. Both use strict JSON Schema
 and omit `max_tokens`, `max_completion_tokens` and `thinking_budget`. Preparation
 is offline and reads no credentials. It copies full packets, prompt, settings
 and schema, then writes the exact request JSONL and a hash manifest. The example
-uses thinking, which handled the large saved Sol packet better in the comparison;
+uses thinking, which handled the large saved packet better in the comparison;
 the non-thinking fixture settings remain unchanged.
 
 Submit that frozen input once:
@@ -65,7 +65,7 @@ before resuming. Normal `Ctrl+C` releases locks automatically.
 
 | File | Contents |
 | --- | --- |
-| `manifest.json`, `packets/`, `prompt/`, `input.jsonl` | Immutable inputs, selected thinking mode and hashes. Original Sol files can change later. |
+| `manifest.json`, `packets/`, `prompt/`, `input.jsonl` | Immutable inputs, selected thinking mode and hashes. Original intake files can change later. |
 | `state.json` | Input/file/batch IDs, bound provider endpoint and latest state. |
 | `batch.json`, `poll.json` | Last complete provider job response, including batch errors, and last check time. |
 | `output.jsonl`, `errors.jsonl` | Original downloads, including partial output from failed, expired or cancelled jobs. |
@@ -105,7 +105,7 @@ The [Alibaba batch guide](https://help.aliyun.com/en/model-studio/batch-inferenc
 lists Qwen3.8-Max for Beijing batch inference. It requires one model and thinking
 mode per file, at most 50,000 requests, 500 MB per file, 1 MB per line and a 256K
 context limit for this model. Preparation checks file/line sizes; it does not
-estimate Qwen tokens. Oversized packets need smaller explicit Sol scopes while
+estimate Qwen tokens. Oversized packets need smaller explicit scopes while
 preserving required linked context. Source text is never silently truncated.
 These are provider input limits, not caller output-token caps.
 

@@ -1,6 +1,6 @@
 # Source-backed extraction repair
 
-The developer authorized Sol to repair recoverable extraction defects, including
+The developer authorized the intake owner to repair recoverable extraction defects, including
 those recorded by earlier annotation-only assignments. This permission overrides
 an older assignment's instruction to leave recoverable source text unchanged.
 Canonical data and frozen input snapshots remain read-only to scope workers.

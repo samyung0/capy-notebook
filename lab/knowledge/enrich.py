@@ -410,9 +410,7 @@ def main() -> None:
             backup / "expected-state.json",
             {
                 "status": "complete",
-                "transport": artifact["model_provenance"].get(
-                    "transport", "codex-subagent"
-                ),
+                "transport": artifact["model_provenance"].get("transport"),
                 "model": model_name(artifact["model_provenance"]),
                 "model_provenance": artifact["model_provenance"],
                 "review_artifact": str(args.artifact.resolve()),

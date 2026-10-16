@@ -234,9 +234,10 @@ def test_delegated_topics_export_import_and_stale_review(tmp_path, monkeypatch):
     artifact = {
         "input": context["input"],
         "model_provenance": {
-            "model": "gpt-5.6-sol",
-            "reasoning_effort": "medium",
+            "model": "claude-sonnet-5-5",
+            "reasoning_effort": "high",
             "agent_id": "trial",
+            "transport": "claude-code-subagent",
         },
         "reused": ["sampling"],
         "proposed": [proposal("regression", "Linear regression")],
@@ -254,7 +255,7 @@ def test_delegated_topics_export_import_and_stale_review(tmp_path, monkeypatch):
         "business-models",
     ]
     assert candidate["shared"] == ["business-models"]
-    assert candidate["model"]["endpoint"] == "codex-subagent"
+    assert candidate["model"]["endpoint"] == "claude-code-subagent"
     assert candidate["model"]["usage"] is None
     assert not (tmp_path / "topics.json").exists()
     reviewed_bytes = review.read_bytes()
@@ -367,6 +368,7 @@ def test_a_proposal_names_shared_topics_as_a_list(tmp_path):
             "model": "m",
             "reasoning_effort": "medium",
             "agent_id": "a",
+            "transport": "t",
         },
         "reused": [],
         "proposed": [],

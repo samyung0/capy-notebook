@@ -1,4 +1,4 @@
-# Sol book-processing examples
+# Book-processing examples
 
 Read these before working on a book. They illustrate the review contract; they
 are not source evidence and must not be copied into unrelated books. Decide
@@ -114,7 +114,7 @@ Observed repair cases from the existing-book backfill:
   passages from different books merely because their examples are similar.
 - *Phylogenetic Comparative Methods*: an initial repair pass left six excerpts
   with flattened nested equations. Reopening PDF pages 166, 180, 181, 182, 185
-  and 194 at 2448 by 3168 pixels allowed Sol to restore the readable fractions,
+  and 194 at 2448 by 3168 pixels allowed the owner to restore the readable fractions,
   products, integrals, matrices and subscripts. Do reopen or enlarge the exact
   page before treating layout complexity as an unrecoverable limit. Use explicit
   LaTeX or unambiguous mathematical text. Don't leave a readable equation damaged
@@ -194,8 +194,8 @@ A book has 236 excerpts assigned as 79, 79 and 78.
 - If 35 distinct pages were inspected, report those 35 exact PDF page numbers,
   observations and paths. Don't claim that every formula in a 457-page book was
   verified. One image cannot validate other pages or every claim on that page.
-- Page checks belong to Sol's initial work. Qwen is optional later text review;
-  Sol never submits, polls, waits for or repairs Qwen responses.
+- Page checks belong to the owner's initial work. Qwen is optional later text review;
+  The owner never submits, polls, waits for or repairs Qwen responses.
 
 Observed overclaims: the literature page prints `177273`; the trial reported
 `1772-73` as visually verified. Do record the printed string and uncertainty;
