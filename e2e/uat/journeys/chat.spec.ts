@@ -26,6 +26,7 @@ import {
   type CatalogRow,
   onRow,
   type ProviderCall,
+  rerankOnRow,
   sessionCalls,
   slotDefault,
 } from './models';
@@ -311,7 +312,9 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
     run,
     `${workspaceId}-chat`,
     `provider_sessions p WHERE p.workspace_id=%s AND p.surface='chat'`,
-    [workspaceId]
+    [workspaceId],
+    false,
+    true
   );
   assert.equal(sessions.length, 3);
   const retrieval = await slotDefault(run, 'retrieval');
@@ -340,19 +343,25 @@ test('chat: a real turn on the chat default, then every runnable tool from scrip
   );
   onRow(kind(answered, 'llm'), chat, true);
   onRow(kind(answered, 'embedding'), pin, false);
-  if (rerank) onRow(kind(answered, 'rerank'), rerank, false);
-  else assert.equal(kind(answered, 'rerank').length, 0);
+  // A rerank may time out (open or receipt_timeout, uncharged); every other
+  // call must be applied.
+  const toleratedReranks = rerank
+    ? rerankOnRow(kind(answered, 'rerank'), rerank)
+    : [];
+  if (!rerank) assert.equal(kind(answered, 'rerank').length, 0);
   assert.deepEqual(
     reads.map((call) => call.kind).sort(),
     rerank ? ['embedding', 'rerank'] : ['embedding']
   );
   onRow(kind(reads, 'embedding'), pin, false);
-  if (rerank) onRow(kind(reads, 'rerank'), rerank, false);
+  if (rerank)
+    toleratedReranks.push(...rerankOnRow(kind(reads, 'rerank'), rerank));
   assert.deepEqual(edits, [], 'the second scripted turn made a provider call');
   await run.attach(`${workspaceId}-chat`, {
     answered,
     cited,
     reads,
     sessions: rows,
+    toleratedReranks,
   });
 });

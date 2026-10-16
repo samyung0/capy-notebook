@@ -494,7 +494,10 @@ export async function settledSessions(
   label: string,
   from: string,
   params: unknown[],
-  noCalls = false
+  noCalls = false,
+  // Chat: a timed-out rerank stays open until its receipt deadline; the
+  // caller checks it with `rerankOnRow` instead of waiting.
+  openRerank = false
 ) {
   // A timed-out provider attempt can outlive its settled parent session.
   // Ingest allows 120 s plus 5 min for its receipt, then a minutely sweep.
@@ -503,7 +506,7 @@ export async function settledSessions(
     () =>
       run.query(
         `SELECT DISTINCT p.id,p.status,p.settled_at,p.created_at,
-    (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id AND c.status='open') AS open_calls,
+    (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id AND c.status='open'${openRerank ? " AND c.kind<>'rerank'" : ''}) AS open_calls,
     (SELECT count(*)::int FROM provider_calls c WHERE c.reservation_id=p.id) AS calls,
     (SELECT count(*)::int FROM usage_events u WHERE u.reservation_id=p.id) AS receipts
     FROM ${from} ORDER BY p.created_at`,
