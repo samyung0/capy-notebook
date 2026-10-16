@@ -18,6 +18,7 @@ import {
   useRecentItems,
 } from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
+import { unexpectedErrorId } from '@/lib/errors';
 import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
@@ -68,6 +69,7 @@ function WorkspacesSection() {
       ) : !data && error ? (
         <InlineErrorState
           className="pt-10 pb-6"
+          errorId={unexpectedErrorId(error)}
           message={m.dashboard_recent_workspaces_error()}
           onRetry={() => void refetch()}
         />

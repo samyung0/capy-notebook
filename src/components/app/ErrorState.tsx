@@ -81,10 +81,13 @@ export function ErrorState({
  * Retry, where the panel's icon tile would not fit. */
 export function InlineErrorState({
   className,
+  errorId,
   message,
   onRetry,
 }: {
   className?: string;
+  /** An unexpected failure's trace id (`unexpectedErrorId`). */
+  errorId?: string | null;
   message: ReactNode;
   onRetry: () => void;
 }) {
@@ -95,6 +98,7 @@ export function InlineErrorState({
       role="alert"
     >
       <p className="text-fg-muted">{message}</p>
+      {errorId && <ErrorId className="text-fg-muted" id={errorId} />}
       <ErrorAction onClick={onRetry} size="sm">
         {m.error_action_retry()}
       </ErrorAction>

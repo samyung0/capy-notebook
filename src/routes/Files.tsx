@@ -59,7 +59,7 @@ import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
 import { AccountStatusButton } from '@/features/workspace/WorkspaceHealth';
 import { getLocale, m } from '@/i18n';
-import { describeError, unexpectedErrorId } from '@/lib/errors';
+import { describeError } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import {
   csv,
@@ -543,7 +543,6 @@ function TrashTab({
           <ErrorAction onClick={() => refetch()}>{m.trash_retry()}</ErrorAction>
         }
         className="py-16"
-        errorId={unexpectedErrorId(error)}
         title={m.trash_load_failed()}
         variant="panel"
       />
