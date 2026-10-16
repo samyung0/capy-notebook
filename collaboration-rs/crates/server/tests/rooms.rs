@@ -1027,13 +1027,7 @@ async fn an_edit_of_a_room_being_compacted_is_a_known_refusal() {
             serde_json::json!({ "code": "unavailable_target", "message": "collaboration room is being compacted" })
         )
     );
-    assert_eq!(
-        commanded,
-        (
-            503,
-            serde_json::json!({ "message": "collaboration room is being compacted" })
-        )
-    );
+    assert_eq!(commanded, edited);
 }
 
 #[tokio::test]

@@ -300,9 +300,13 @@ expected outcome: the ingest worker logs the refused publication
 (`office_rebuild_refused`), and neither captures it. So is an agent edit, its
 Undo or a replace-block command refused because its room is being reset or
 compacted: nothing applied, so the caller may retry. Collaboration answers 503
-(`unavailable_target` for an edit or Undo) and logs `edit refused: room
-unavailable` without capturing it (`DocumentError::Unavailable` in
-`collaboration-rs/crates/server/src/edits.rs`). Sentry holds failures
+`unavailable_target` and logs `edit refused: room unavailable` without
+capturing it (`DocumentError::Unavailable` in
+`collaboration-rs/crates/server/src/edits.rs`). The gateway marks that answer
+expected (`authorityFailure` in `server/internal/store/collaboration_documents.go`)
+and answers its own caller as for any unavailable authority (503,
+`outcome_unknown` to the pipeline), reporting nothing; any other 503 from the
+authority is still reported. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal

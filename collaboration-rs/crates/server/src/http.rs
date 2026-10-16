@@ -347,7 +347,7 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
             unavailable(
                 "/internal/commands",
                 &message,
-                json!({ "message": message }),
+                json!({ "code": "unavailable_target", "message": message }),
             )
         }
         Err(message) => {
@@ -644,10 +644,7 @@ mod tests {
             json!({ "code": "unavailable_target", "message": crate::edits::ROOM_RESET })
         );
         assert_eq!(*command_status, StatusCode::SERVICE_UNAVAILABLE);
-        assert_eq!(
-            *command_body,
-            json!({ "message": crate::edits::ROOM_RESET })
-        );
+        assert_eq!(*command_body, *edit_body);
     }
 
     /// Sockets read through 8 KiB (REVIEW5 final N4): the upgrade sets the

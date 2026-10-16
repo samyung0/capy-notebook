@@ -287,7 +287,8 @@ func documentHTTPError(err error) error {
 	case errors.As(err, &refusal):
 		return conflictError(string(refusal.Code), refusal.Message)
 	case errors.Is(err, store.ErrAuthorityUnavailable):
-		return huma.Error503ServiceUnavailable("the document authority is unavailable")
+		// The cause rides along, so an expected one (a room being reset) is not reported.
+		return &handlerError{error: huma.Error503ServiceUnavailable("the document authority is unavailable"), cause: err}
 	}
 	return hErr(err)
 }
