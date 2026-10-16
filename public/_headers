@@ -3,6 +3,11 @@
 # the SPA's index.html, and an immutable header would pin that HTML under the
 # chunk's URL for a year (human/deployment-runbook.md, 2026-10-13).
 
+# The build's release (vite.config.ts), read by open tabs to learn a new app
+# is served: never from a cache.
+/release.txt
+  Cache-Control: no-store
+
 # Avatar and workspace icons keep their names, and their artwork is stable:
 # cached for a year like /assets/*, so a changed icon can stay stale.
 /icons/*

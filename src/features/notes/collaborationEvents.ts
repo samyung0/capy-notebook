@@ -12,6 +12,9 @@ export const COLLABORATION_READ_ONLY_REASON = 'collaboration-read-only';
  * Any other refusal is retried with a fresh token (roomConnection.ts). */
 export const COLLABORATION_NOT_FOUND_REASON = 'collaboration-not-found';
 export const COLLABORATION_FORBIDDEN_REASON = 'collaboration-forbidden';
+/** Refusal reason for a client protocol its room family no longer (or not
+ * yet) accepts: the editor stops and asks for a reload (the version gate). */
+export const COLLABORATION_OUTDATED_REASON = 'collaboration-outdated';
 
 /** Why a room is read-only for this writer, when the room says: the stored
  * document holds a block this version cannot edit (Epo 2026-10-13). */

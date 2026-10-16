@@ -68,6 +68,7 @@ import {
   materialListParams,
   sortSearch,
 } from '@/lib/listSearch';
+import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 function locationLabel(location: MaterialListLocation): string {
@@ -399,7 +400,7 @@ export function MaterialsTab({
         className="w-full shrink-0 grow px-4 pt-2 pb-6 sm:px-6"
         onClick={clearOnBlank(selection.clear)}
       >
-        {fetchStatus === 'paused' && !data ? (
+        {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
           view === 'grid' ? (

@@ -38,6 +38,12 @@ type Subscription struct {
 // customer.subscription.deleted, and the status becomes canceled.
 const entitlingStatuses = `('active','trialing','past_due')`
 
+// renewalTolerance keeps an entitling period live past current_period_end, so
+// a renewal webhook landing after period end never lapses a paying account.
+// Grace still counts from current_period_end. Mirrored in pipeline/store/db.py
+// and collaboration-rs access.rs.
+const renewalTolerance = `interval '48 hours'`
+
 func subscriptionEntitles(status string) bool {
 	return status == "active" || status == "trialing" || status == "past_due"
 }
@@ -108,9 +114,14 @@ func (s *Store) upsertAttributedSubscription(
 	}
 
 	var existingUserID string
-	err = tx.QueryRow(ctx, `SELECT user_id FROM user_subscriptions
+	// A live Pro row ending without cancel-at-period-end (Stripe cancelling
+	// after its last failed retry) gets the "Pro ended" mail.
+	var proEnding bool
+	err = tx.QueryRow(ctx, `SELECT user_id,
+		plan_tier='pro' AND status IN `+entitlingStatuses+` AND NOT cancel_at_period_end
+		FROM user_subscriptions
 		WHERE stripe_subscription_id=$1 FOR UPDATE`, sub.StripeSubscriptionID).
-		Scan(&existingUserID)
+		Scan(&existingUserID, &proEnding)
 	if err != nil && !isNoRows(err) {
 		return err
 	}
@@ -128,7 +139,7 @@ func (s *Store) upsertAttributedSubscription(
 		}
 	}
 	closed := deletionRequestedAt != nil || deletedAt != nil || suspendedAt != nil
-	changed, err := upsertSubscriptionTx(ctx, tx, sub)
+	changed, err := upsertSubscriptionTx(ctx, tx, &sub)
 	if err != nil {
 		return err
 	}
@@ -160,7 +171,7 @@ func (s *Store) upsertAttributedSubscription(
 		}
 		return tx.Commit(ctx)
 	}
-	if err := enqueueSubscriptionEmailTx(ctx, tx, sub); err != nil {
+	if err := enqueueSubscriptionEmailTx(ctx, tx, sub, proEnding); err != nil {
 		return err
 	}
 	if err := s.deriveUserPlanTx(ctx, tx, sub.UserID); err != nil {
@@ -169,18 +180,32 @@ func (s *Store) upsertAttributedSubscription(
 	return tx.Commit(ctx)
 }
 
-// enqueueSubscriptionEmailTx sends "Pro started" once per subscription and
-// "Pro cancelled" once per period end that cancel-at-period-end points at. The
-// idempotency keys absorb Stripe's redeliveries and the monthly renewals.
-func enqueueSubscriptionEmailTx(ctx context.Context, tx pgx.Tx, sub Subscription) error {
-	if sub.PlanTier != PlanPro || !subscriptionEntitles(sub.Status) || sub.CurrentPeriodEnd == nil {
+// enqueueSubscriptionEmailTx sends "Pro started" once per subscription,
+// "Pro cancelled" once per period end that cancel-at-period-end points at, and
+// "Pro ended" once per subscription when a live Pro row it was not set to
+// cancel ends (proEnding). The idempotency keys absorb Stripe's redeliveries
+// and the monthly renewals.
+func enqueueSubscriptionEmailTx(ctx context.Context, tx pgx.Tx, sub Subscription, proEnding bool) error {
+	var template, key string
+	var at *time.Time
+	switch {
+	case proEnding && !subscriptionEntitles(sub.Status):
+		template = "subscription-ended"
+		key = template + ":" + sub.StripeSubscriptionID
+		at = sub.EndedAt
+	case sub.PlanTier != PlanPro || !subscriptionEntitles(sub.Status) || sub.CurrentPeriodEnd == nil:
 		return nil
-	}
-	template := "subscription-started"
-	key := template + ":" + sub.StripeSubscriptionID
-	if sub.CancelAtPeriodEnd {
+	case sub.CancelAtPeriodEnd:
 		template = "subscription-cancelled"
 		key = fmt.Sprintf("%s:%s:%d", template, sub.StripeSubscriptionID, sub.CurrentPeriodEnd.Unix())
+		at = sub.CurrentPeriodEnd
+	default:
+		template = "subscription-started"
+		key = template + ":" + sub.StripeSubscriptionID
+		at = sub.CurrentPeriodEnd
+	}
+	if at == nil {
+		return nil
 	}
 	var email *string
 	var locale string
@@ -191,7 +216,7 @@ func enqueueSubscriptionEmailTx(ctx context.Context, tx pgx.Tx, sub Subscription
 		return err
 	}
 	payload, err := json.Marshal(map[string]any{
-		"periodEnd":        sub.CurrentPeriodEnd.UTC().Format(time.RFC3339),
+		"periodEnd":        at.UTC().Format(time.RFC3339),
 		"storageUsedBytes": usedBytes,
 	})
 	if err != nil {
@@ -215,7 +240,14 @@ func enqueueSubscriptionEmailTx(ctx context.Context, tx pgx.Tx, sub Subscription
 
 // upsertSubscriptionTx writes the row and reports whether it won the ordering
 // guard. It does not touch the projection; callers do that once.
-func upsertSubscriptionTx(ctx context.Context, tx pgx.Tx, sub Subscription) (bool, error) {
+func upsertSubscriptionTx(ctx context.Context, tx pgx.Tx, sub *Subscription) (bool, error) {
+	// The first non-entitling event fixes the end time, which grace, the
+	// over-quota notices and the "Pro ended" mail count from. Stripe sends none
+	// for unpaid, and later events for the same subscription must not move it.
+	if !subscriptionEntitles(sub.Status) && sub.EndedAt == nil && sub.StripeEventCreated > 0 {
+		at := time.Unix(sub.StripeEventCreated, 0).UTC()
+		sub.EndedAt = &at
+	}
 	tag, err := tx.Exec(ctx, `INSERT INTO user_subscriptions
 		(stripe_subscription_id, user_id, status, price_id, plan_tier,
 		 current_period_end, cancel_at_period_end, canceled_at, ended_at,
@@ -233,7 +265,12 @@ func upsertSubscriptionTx(ctx context.Context, tx pgx.Tx, sub Subscription) (boo
 			current_period_end = excluded.current_period_end,
 			cancel_at_period_end = excluded.cancel_at_period_end,
 			canceled_at = excluded.canceled_at,
-			ended_at = excluded.ended_at,
+			ended_at = CASE
+				WHEN excluded.status NOT IN `+entitlingStatuses+`
+					AND user_subscriptions.status NOT IN `+entitlingStatuses+`
+				THEN COALESCE(user_subscriptions.ended_at, excluded.ended_at)
+				ELSE excluded.ended_at
+			END,
 			stripe_event_created = excluded.stripe_event_created,
 			updated_at = now()
 		WHERE user_subscriptions.user_id = excluded.user_id
@@ -325,7 +362,7 @@ func (s *Store) deriveUserPlanTx(ctx context.Context, tx pgx.Tx, userID string) 
 			SELECT plan_tier, status
 			FROM user_subscriptions
 			WHERE user_id = $1 AND status IN `+entitlingStatuses+`
-			  AND (current_period_end IS NULL OR current_period_end > now())
+			  AND (current_period_end IS NULL OR current_period_end > now() - `+renewalTolerance+`)
 			ORDER BY (plan_tier = 'pro') DESC, current_period_end DESC NULLS LAST
 			LIMIT 1
 		)
@@ -481,7 +518,7 @@ func (s *Store) SubscriptionForUser(ctx context.Context, userID string) (*Subscr
 			plan_tier, current_period_end, cancel_at_period_end, canceled_at, ended_at
 		FROM user_subscriptions
 		WHERE user_id = $1 AND status IN `+entitlingStatuses+`
-			AND (current_period_end IS NULL OR current_period_end > now())
+			AND (current_period_end IS NULL OR current_period_end > now() - `+renewalTolerance+`)
 		ORDER BY (plan_tier = 'pro') DESC, current_period_end DESC NULLS LAST
 		LIMIT 1`, userID).
 		Scan(&sub.StripeSubscriptionID, &sub.Status, &sub.PriceID, &sub.PlanTier,
@@ -602,19 +639,44 @@ func (s *Store) SyncSubscriptionsFromStripe(
 	}
 	// Anything else we still believe is live has been cancelled behind our back,
 	// most likely by a webhook we never received.
-	tag, err := tx.Exec(ctx, `UPDATE user_subscriptions
+	rows, err := tx.Query(ctx, `UPDATE user_subscriptions
 		SET status = 'canceled',
 		    ended_at = COALESCE(ended_at, now()),
 		    stripe_event_created = greatest(stripe_event_created, $3),
 		    updated_at = now()
 		WHERE user_id = $1
 		  AND NOT (stripe_subscription_id = ANY($2))
-		  AND status IN `+entitlingStatuses,
+		  AND status IN `+entitlingStatuses+`
+		RETURNING stripe_subscription_id, plan_tier, cancel_at_period_end, ended_at`,
 		userID, keep, authoritativeAt)
 	if err != nil {
 		return false, err
 	}
-	changed = changed || tag.RowsAffected() > 0
+	// Rows that end a live Pro period nobody set to cancel get "Pro ended".
+	var proEnded []Subscription
+	for rows.Next() {
+		sub := Subscription{UserID: userID, Status: "canceled"}
+		var cancelAtPeriodEnd bool
+		if err := rows.Scan(&sub.StripeSubscriptionID, &sub.PlanTier, &cancelAtPeriodEnd, &sub.EndedAt); err != nil {
+			rows.Close()
+			return false, err
+		}
+		changed = true
+		if sub.PlanTier == PlanPro && !cancelAtPeriodEnd {
+			proEnded = append(proEnded, sub)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return false, err
+	}
+	if !lifecycleClosed {
+		for _, sub := range proEnded {
+			if err := enqueueSubscriptionEmailTx(ctx, tx, sub, true); err != nil {
+				return false, err
+			}
+		}
+	}
 	if lifecycleClosed {
 		if err := s.projectClosedUserPlanTx(ctx, tx, userID); err != nil {
 			return false, err

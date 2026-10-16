@@ -24,6 +24,7 @@ use axum::routing::{get, put};
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
 use serde_json::{Value, json};
+use sources::edit::EditInput;
 use sources::engine::PoolConfig;
 use sources::handoff::{Handoff, PUBLICATION_HOLD_MARKER, SourcePublish};
 use sources::text::{TEXT_ROOT, text_doc};
@@ -41,6 +42,8 @@ struct Fake {
     uploads: Arc<Mutex<HashMap<String, Vec<u8>>>>,
     failures: Arc<Mutex<Vec<Value>>>,
     published: Arc<Mutex<Vec<Value>>>,
+    /// Files whose checkpoint always moved: the refused CAS POSTs per file.
+    moved: Arc<Mutex<HashMap<String, usize>>>,
 }
 
 fn refuse(status: u16, code: &str) -> Response {
@@ -173,6 +176,10 @@ async fn route_post(
 
 /// The delta-save checkpoint (Go SaveSourceCheckpoint with `update`).
 async fn checkpoint(fake: Fake, id: String, body: Value) -> Response {
+    if let Some(refused) = fake.moved.lock().unwrap().get_mut(&id) {
+        *refused += 1;
+        return refuse(409, "checkpoint_moved");
+    }
     let mut client = fake.db.get().await.unwrap();
     let txn = client.transaction().await.unwrap();
     let row = txn
@@ -292,6 +299,7 @@ async fn harness() -> Harness {
         uploads: Arc::default(),
         failures: Arc::default(),
         published: Arc::default(),
+        moved: Arc::default(),
     };
     let app = Router::new()
         .route(
@@ -593,6 +601,45 @@ async fn a_moved_checkpoint_measures_again_over_the_rows_saved_meanwhile() {
     let effects: Value = h.row(&room).await.get(5);
     assert_eq!(effects[0]["before"], "abc");
     assert_eq!(effects[0]["after"], ">abc!");
+}
+
+/// A checkpoint that keeps moving refuses the save after 3 CAS attempts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn a_checkpoint_that_keeps_moving_refuses_the_save_after_three_attempts() {
+    let h = harness().await;
+    let room = h.file("text", "notes.md", b"abc").await;
+    let doc = text_doc(100);
+    h.sources.load(&room, &h.user, &doc).await.unwrap();
+    let mut durable = doc.transact().state_vector();
+    h.fake.moved.lock().unwrap().insert(room.file_id.clone(), 0);
+    type_into(&doc, 7, 0, ">");
+    let error = save_text(&h, &room, &doc, &mut durable).await.unwrap_err();
+    assert_eq!(error.status(), Some(409), "{error:?}");
+    assert_eq!(h.fake.moved.lock().unwrap()[&room.file_id], 3);
+}
+
+/// An agent edit on a checkpoint that keeps moving stops after 3 attempts.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "needs Postgres and Redis (docker compose -p rust-sources)"]
+async fn an_agent_edit_on_a_checkpoint_that_keeps_moving_stops_after_three_attempts() {
+    let h = harness().await;
+    let room = h.file("text", "notes.md", b"abc").await;
+    h.fake.moved.lock().unwrap().insert(room.file_id.clone(), 0);
+    let input = EditInput {
+        actor_user_id: h.user.clone(),
+        commands: vec![json!({ "type": "replace_text", "expectedText": "abc", "text": "abd" })],
+        epoch: None,
+        file_id: room.file_id.clone(),
+        operation: json!({ "id": "op_moving", "requestHash": "h1" }),
+        undo: None,
+    };
+    let live = |_: &str| -> BoxFuture<Option<Vec<u8>>> { Box::pin(async { None }) };
+    let Err(error) = h.sources.apply_edit(input, live).await else {
+        panic!("the edit committed");
+    };
+    assert_eq!(error.status(), Some(409), "{error:?}");
+    assert_eq!(h.fake.moved.lock().unwrap()[&room.file_id], 3);
 }
 
 /// A trashed file waits for no rebuild, though its room unloading (its

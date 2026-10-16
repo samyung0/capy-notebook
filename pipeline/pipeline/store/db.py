@@ -811,28 +811,31 @@ def _cancel_pipeline_heartbeat_claim(
     fail_pipeline_file_if_current(cur, payload)
 
 
-def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool:
-    """Fail only the file revision named by a cancelled pipeline claim."""
+def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool | None:
+    """Fail only the file revision named by a cancelled pipeline claim.
+    Returns the written ``indexed``, or None when no file failed."""
     if payload.get("sourceRefresh") is True:
-        return False
+        return None
     file_id = str(payload.get("fileId") or "")
     source_etag = str(payload.get("sourceETag") or "")
     try:
         source_revision = int(payload.get("sourceRevision"))
     except (TypeError, ValueError):
-        return False
+        return None
     if not file_id:
-        return False
+        return None
     cur.execute(
         f"""
         UPDATE files
         SET status='failed', indexed={SERVES_INDEX}
         WHERE id=%s AND revision=%s AND COALESCE(source_etag, '')=%s
           AND status IN ('pending','processing') AND trashed_at IS NULL
+        RETURNING indexed
         """,
         (file_id, source_revision, source_etag),
     )
-    return bool(cur.rowcount)
+    row = cur.fetchone()
+    return None if row is None else bool(row[0])
 
 
 def heartbeat_job(cur, job_id: str, lease_s: int, attempt: int) -> bool:
@@ -1222,9 +1225,9 @@ def reclaim_expired_leases(
                 backoff_s=base * (2 ** max(int(attempts) - 1, 0)),
             )
             retryable = True
-        file_failed = False
+        file_indexed = None
         if outcome == "failed" and job_type in {"parse", "ingest"}:
-            file_failed = fail_pipeline_file_if_current(cur, payload)
+            file_indexed = fail_pipeline_file_if_current(cur, payload)
             discard_source_candidate(cur, payload, job_id, note, stale=False)
             close_credit_reservation(cur, str(payload.get("reservationId") or ""))
         cur.execute(
@@ -1253,7 +1256,8 @@ def reclaim_expired_leases(
                 "payload": payload,
                 "attempts": attempts,
                 "outcome": outcome,
-                "file_failed": file_failed,
+                "file_failed": file_indexed is not None,
+                "file_indexed": file_indexed is True,
             }
         )
     return reclaimed
@@ -1291,13 +1295,17 @@ SERVES_INDEX = """EXISTS(SELECT 1 FROM rag_file_contents fc
     WHERE fc.file_id=files.id)"""
 
 
-def set_file_indexed_as_served(cur, file_id: str) -> None:
+def set_file_indexed_as_served(cur, file_id: str) -> bool:
+    """Set and return ``indexed``; a refresh writes nothing (False)."""
     if source_refresh_for(file_id) is not None:
-        return
+        return False
     cur.execute(
-        f"UPDATE files SET indexed={SERVES_INDEX} WHERE id=%s AND trashed_at IS NULL",
+        f"UPDATE files SET indexed={SERVES_INDEX} WHERE id=%s AND trashed_at IS NULL"
+        " RETURNING indexed",
         (file_id,),
     )
+    row = cur.fetchone()
+    return bool(row and row[0])
 
 
 def set_file_index_limit(cur, file_id: str, code: str) -> None:
@@ -2302,7 +2310,7 @@ def account_allows_ingest(cur, user_id: str) -> bool:
                    WHERE live.user_id=u.id
                      AND live.status IN ('active','trialing','past_due')
                      AND (live.current_period_end IS NULL
-                       OR live.current_period_end > now())
+                       OR live.current_period_end > now() - interval '48 hours')
                    ORDER BY (live.plan_tier='pro') DESC,
                      live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
                END,
@@ -2310,16 +2318,7 @@ def account_allows_ingest(cur, user_id: str) -> bool:
                COALESCE(st.used_bytes, 0) + COALESCE(
                    (SELECT sum(delta_bytes) FROM user_storage_deltas d
                     WHERE d.user_id = u.id), 0
-               ) + COALESCE(st.reserved_bytes, 0) AS effective_used,
-               (SELECT max(s.current_period_end)
-                  FROM user_subscriptions s
-                 WHERE s.user_id = u.id
-                   AND s.status IN ('active','trialing','past_due')
-                   AND s.current_period_end IS NOT NULL) AS period_end,
-               EXISTS(SELECT 1 FROM user_subscriptions s WHERE s.user_id=u.id),
-               EXISTS(SELECT 1 FROM user_subscriptions s
-                   WHERE s.user_id=u.id
-                     AND s.status IN ('active','trialing','past_due'))
+               ) + COALESCE(st.reserved_bytes, 0) AS effective_used
         FROM users u
         LEFT JOIN user_storage st ON st.user_id = u.id
         WHERE u.id = %s
@@ -2335,9 +2334,6 @@ def account_allows_ingest(cur, user_id: str) -> bool:
         suspended_at,
         deletion_requested_at,
         effective_used,
-        period_end,
-        has_subscriptions,
-        has_entitling_subscription,
     ) = row
     if (
         deleted_at is not None
@@ -2345,17 +2341,6 @@ def account_allows_ingest(cur, user_id: str) -> bool:
         or deletion_requested_at is not None
     ):
         return False
-    from datetime import datetime, timezone
-
-    if has_subscriptions and not has_entitling_subscription:
-        plan_tier = "free"
-    elif period_end is not None:
-        now = datetime.now(timezone.utc)
-        end = (
-            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
-        )
-        if end <= now:
-            plan_tier = "free"
     return effective_used <= plan_limits.for_tier(plan_tier).storage_bytes
 
 
@@ -2401,7 +2386,10 @@ def ingest_accounts_active(cur, file_id: str, actor_user_id: str) -> bool:
 
 
 def effective_plan_tier(cur, user_id: str) -> str:
-    """The plan whose limits apply now, as the gateway's effectivePlanTier."""
+    """The plan whose limits apply now, as the gateway's effectivePlanTier.
+
+    The 48 hours mirror Go's renewalTolerance: a late renewal webhook keeps Pro.
+    """
     cur.execute(
         """
         SELECT CASE
@@ -2412,19 +2400,10 @@ def effective_plan_tier(cur, user_id: str) -> str:
                    WHERE live.user_id=u.id
                      AND live.status IN ('active','trialing','past_due')
                      AND (live.current_period_end IS NULL
-                       OR live.current_period_end > now())
+                       OR live.current_period_end > now() - interval '48 hours')
                    ORDER BY (live.plan_tier='pro') DESC,
                      live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
-               END,
-               (SELECT max(s.current_period_end)
-                  FROM user_subscriptions s
-                 WHERE s.user_id = u.id
-                   AND s.status IN ('active','trialing','past_due')
-                   AND s.current_period_end IS NOT NULL) AS period_end,
-               EXISTS(SELECT 1 FROM user_subscriptions s WHERE s.user_id=u.id),
-               EXISTS(SELECT 1 FROM user_subscriptions s
-                   WHERE s.user_id=u.id
-                     AND s.status IN ('active','trialing','past_due'))
+               END
           FROM users u
          WHERE u.id = %s
         """,
@@ -2433,18 +2412,7 @@ def effective_plan_tier(cur, user_id: str) -> str:
     row = cur.fetchone()
     if not row:
         raise RuntimeError(f"user {user_id!r} not found")
-    plan_tier, period_end, has_subscriptions, has_entitling_subscription = row
-    from datetime import datetime, timezone
-
-    if has_subscriptions and not has_entitling_subscription:
-        return "free"
-    if period_end is not None:
-        end = (
-            period_end if period_end.tzinfo else period_end.replace(tzinfo=timezone.utc)
-        )
-        if end <= datetime.now(timezone.utc):
-            return "free"
-    return plan_tier
+    return row[0]
 
 
 def _credit_limit_micros(cur, user_id: str) -> int:

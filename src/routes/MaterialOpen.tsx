@@ -9,6 +9,7 @@ import { FileError, FileLoading } from '@/features/files/FileStates';
 import { useOfficeEditGuard } from '@/features/files/useOfficeEditGuard';
 import { CenterContent } from '@/features/materials/CenterContent';
 import { m } from '@/i18n';
+import { waitsForConnection } from '@/lib/online';
 
 /** Library items retain their ownership; this route only changes their frame. */
 export default function MaterialOpen() {
@@ -43,7 +44,7 @@ export default function MaterialOpen() {
     <div className="flex h-full min-h-0 flex-col gap-1.5">
       <PhoneTopRow className="shrink-0 px-1 pt-1 pb-2" />
       <Panel sectionClassName="h-full gap-0">
-        {fetchStatus === 'paused' && !data ? (
+        {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isPending ? (
           <FileLoading />

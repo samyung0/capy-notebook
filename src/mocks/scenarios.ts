@@ -7,7 +7,6 @@ import {
   accountStatus,
   discussions,
   files,
-  flashcardCards,
   flashcardSetFromMaterial,
   learnerMaterial,
   listWorkspaces,
@@ -907,17 +906,8 @@ const contentWrites: [RegExp, (id: string) => string | null][] = [
     (id) => files.find((row) => row.id === id)?.workspaceId || null,
   ],
   [
-    /^PATCH \/api\/(?:quizzes|flashcards)\/([^/]+)\/content$/,
-    materialWorkspace,
-  ],
-  [/^POST \/api\/flashcards\/([^/]+)\/cards$/, materialWorkspace],
-  [
     /^POST \/api\/materials\/([^/]+)\/editor-assets\/uploads$/,
     materialWorkspace,
-  ],
-  [
-    /^(?:PATCH \/api\/flashcards\/cards\/([^/]+)\/content|DELETE \/api\/flashcards\/cards\/([^/]+))$/,
-    (id) => materialWorkspace(flashcardCards[id]?.materialId),
   ],
 ];
 

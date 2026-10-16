@@ -83,8 +83,17 @@ def test_the_parser_budget_runs_the_image_with_the_same_flags(name: str) -> None
         "--security-opt no-new-privileges:true",
         "--read-only",
         *(f"--tmpfs {entry} " for entry in parser["tmpfs"]),
+        f"-e MALLOC_ARENA_MAX={parser['environment']['MALLOC_ARENA_MAX']} ",
     ):
         assert flag in budget
+
+
+@pytest.mark.parametrize("name", COMPOSE)
+def test_the_parser_runs_with_two_malloc_arenas(name: str) -> None:
+    """LibreOffice and the JVM then fit the parse child's address space."""
+    _, parser = _parser(name)
+
+    assert parser["environment"]["MALLOC_ARENA_MAX"] == "2"
 
 
 @pytest.mark.parametrize(("name", "targets"), COMPOSE.items())

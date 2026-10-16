@@ -190,6 +190,7 @@ export function SourceTextView({
                 source.handoff ||
                 source.replaced ||
                 source.offlineLimit ||
+                source.outdated ||
                 source.status === 'recovery'
               }
               registerFlush={source.flushHandler}

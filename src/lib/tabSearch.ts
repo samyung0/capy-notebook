@@ -20,13 +20,12 @@ export const BILLING_TABS = ['usage', 'details', 'subscription'] as const;
 export type BillingTab = (typeof BILLING_TABS)[number];
 const billingTab = tabSearch(BILLING_TABS);
 /** `reload=method` marks the return from saving the auto-reload card, which
- * reopens the auto-reload dialog; `topup=done` the return from a paid top-up. */
+ * reopens the auto-reload dialog. */
 export const parseBillingSearch = (
   search: Record<string, unknown>
-): { tab?: BillingTab; reload?: 'method'; topup?: 'done' } => ({
+): { tab?: BillingTab; reload?: 'method' } => ({
   ...billingTab(search),
   ...(search.reload === 'method' ? { reload: 'method' as const } : {}),
-  ...(search.topup === 'done' ? { topup: 'done' as const } : {}),
 });
 
 export const LEARNING_TABS = ['progress', 'review', 'past', 'results'] as const;

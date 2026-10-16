@@ -3,15 +3,18 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
@@ -116,6 +119,24 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 	}
 	if got := blobRefCount(t, s, path); got != 0 {
 		t.Fatalf("deleted path refcount = %d, want 0", got)
+	}
+}
+
+// A clone transaction that keeps failing on serialization runs three times in
+// all, then tells the user the source changed (409 clone_source_changed), so
+// they can clone again.
+func TestCloneStopsAfterThreeSerializationFailures(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, code := range []string{"40001", "40P01"} {
+		calls := 0
+		err := retryClone(ctx, func() error {
+			calls++
+			return &pgconn.PgError{Code: code}
+		})
+		if calls != 3 || !errors.Is(err, ErrCloneSourceChanged) {
+			t.Fatalf("%s: %d transactions, error %v; want 3 and ErrCloneSourceChanged", code, calls, err)
+		}
 	}
 }
 
@@ -591,7 +612,13 @@ func TestWorkspaceCloneDoesNotWaitForSourceRow(t *testing.T) {
 	}
 }
 
-func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
+// A suspended owner's shared content is no clone source, as a deleted or
+// deletion-pending owner's is not, it leaves Explore, and a member cannot copy
+// into that owner's workspace; a copy made before the suspension is the
+// cloner's and stays readable (Epo 2026-10-16). Security regression: fails if
+// a clone or Explore still reaches the owner's content, or a refusal answers
+// the owner's account state.
+func TestSuspendedOwnerHidesCloneSources(t *testing.T) {
 	s := openMaterialTestStore(t)
 	ctx := context.Background()
 	ownerID := newBlobTestUser(t, s, "u_clone_suspended_source")
@@ -615,25 +642,27 @@ func TestSuspendedSourceOwnerDoesNotHideSharedCloneSources(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET suspended_at=now(),
-		suspended_reason='operator hold' WHERE id=$1`, ownerID); err != nil {
+	earlier, err := s.CloneMaterial(ctx, targetID, source.ID, CloneTarget{Name: "Earlier copy"})
+	if err != nil {
 		t.Fatal(err)
 	}
+	lockOwner(t, s, ownerID, "suspended")
 
-	materialClone, err := s.CloneMaterial(ctx, targetID, source.ID, CloneTarget{Name: "Clone"})
-	if err != nil {
-		t.Fatalf("material clone from suspended shared owner: %v", err)
+	if _, err := s.CloneMaterial(ctx, targetID, source.ID, CloneTarget{Name: "Clone"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("material clone from a suspended owner = %v, want not found", err)
 	}
-	if materialClone.WorkspaceID != "" || materialClone.Privacy != PrivacyPrivate {
-		t.Fatalf("material clone workspace=%q privacy=%q",
-			materialClone.WorkspaceID, materialClone.Privacy)
+	if _, err := s.CloneWorkspace(ctx, targetID, workspace.ID, WorkspaceCreate{Name: "Clone"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("workspace clone from a suspended owner = %v, want not found", err)
 	}
-	workspaceClone, err := s.CloneWorkspace(ctx, targetID, workspace.ID, WorkspaceCreate{Name: "Clone"})
-	if err != nil {
-		t.Fatalf("workspace clone from suspended shared owner: %v", err)
+	if _, err := s.CloneMaterial(ctx, targetID, earlier.ID, CloneTarget{WorkspaceID: workspace.ID, Name: "Back"}); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("copy into a suspended owner's workspace = %v, want not found", err)
 	}
-	if workspaceClone.Privacy != PrivacyPrivate {
-		t.Fatalf("workspace clone privacy=%q", workspaceClone.Privacy)
+	explore, err := s.ListPublicWorkspaces(ctx, targetID)
+	if err != nil || slices.ContainsFunc(explore, func(w PublicWorkspace) bool { return w.ID == workspace.ID }) {
+		t.Fatalf("explore = %v (%v), want the workspace left out", explore, err)
+	}
+	if role, err := s.MaterialEffectiveRole(ctx, targetID, earlier.ID); err != nil || role != RoleOwner {
+		t.Fatalf("earlier copy role = %q (%v), want the cloner's own", role, err)
 	}
 }
 

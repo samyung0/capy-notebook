@@ -5,6 +5,8 @@ import (
 	"errors"
 	"time"
 
+	"github.com/stripe/stripe-go/v82"
+
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -175,6 +177,9 @@ func (r *Runner) reconcileStripe(
 	if err != nil {
 		return result, err
 	}
+	if err := r.reconcileCredits(ctx, run, &result); err != nil {
+		return result, err
+	}
 	for _, customer := range customers {
 		result.ScannedCount++
 		changed, live, err := r.reconcileStripeCustomer(ctx, run, customer)
@@ -220,6 +225,148 @@ func (r *Runner) reconcileStripe(
 		}
 	}
 	return result, nil
+}
+
+// topUpLookback covers Stripe's own webhook redelivery window (3 days) with
+// room for a missed daily run.
+const topUpLookback = 7 * 24 * time.Hour
+
+// reconcileCredits settles credit purchases whose webhooks never arrived:
+// reload invoices are re-read and recorded paid, void, retrying or failed, and
+// paid top-up Checkouts are credited (GrantTopUp is idempotent per session).
+// A per-purchase failure is reported and the run carries on.
+func (r *Runner) reconcileCredits(
+	ctx context.Context,
+	run store.ReconcileRun,
+	result *store.ReconcileResult,
+) error {
+	// fail reports per user, or per payment when the user is unknown.
+	fail := func(err error, userID, purchase string) error {
+		result.ErrorCount++
+		result.Status = store.ReconcileStatusPartial
+		obs.CaptureErr(ctx, err, map[string]string{"stage": "stripe_credit_reconciliation", "userId": userID})
+		subjectType, subjectID := "user", userID
+		if userID == "" {
+			subjectType, subjectID = "payment", purchase
+		}
+		return r.store.InsertReconciliationReport(ctx, run, "stripe_credit_error", subjectType,
+			subjectID, userID, map[string]any{"outcome": "error", "purchase": purchase})
+	}
+	repaired := func(userID string, metadata map[string]any) error {
+		result.RepairedCount++
+		metadata["outcome"] = "repaired"
+		return r.store.InsertReconciliationReport(ctx, run, "stripe_credit_drift", "user",
+			userID, userID, metadata)
+	}
+
+	reloads, err := r.store.UnsettledReloads(ctx)
+	if err != nil {
+		return err
+	}
+	for _, p := range reloads {
+		result.ScannedCount++
+		out, err := billing.ReloadOutcome(p.InvoiceID)
+		status := p.Status
+		switch {
+		case err != nil:
+		case out.Paid:
+			status, err = "paid", r.store.MarkReloadPaid(ctx, p.ID, p.InvoiceID, out.PaymentIntentID)
+		case out.Void:
+			status, err = "void", r.store.MarkReloadVoid(ctx, p.InvoiceID)
+		case out.Processing:
+		case out.NextAttempt.IsZero():
+			status, err = "failed", r.store.MarkReloadFailed(ctx, p.ID, p.InvoiceID, out.NextAttempt, out.DeclineReason)
+		default:
+			status, err = "retrying", r.store.MarkReloadFailed(ctx, p.ID, p.InvoiceID, out.NextAttempt, out.DeclineReason)
+		}
+		if err != nil {
+			if reportErr := fail(err, p.UserID, p.ID); reportErr != nil {
+				return reportErr
+			}
+			continue
+		}
+		if status != p.Status {
+			if err := repaired(p.UserID, map[string]any{
+				"purchase": p.ID, "kind": "reload", "from": p.Status, "to": status,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+
+	topUps, err := billing.ListPaidTopUps(time.Now().Add(-topUpLookback))
+	if err != nil {
+		return err
+	}
+	for _, t := range topUps {
+		result.ScannedCount++
+		userID, err := r.store.UserIDByStripeCustomer(ctx, t.CustomerID)
+		if errors.Is(err, store.ErrNotFound) {
+			continue // another lane's customer
+		}
+		if err == nil && t.UserID != "" && t.UserID != userID {
+			err = store.ErrConflict
+		}
+		var granted bool
+		var retrying []string
+		if err == nil {
+			granted, retrying, err = r.store.GrantTopUp(ctx, userID, t.SessionID, t.PaymentIntentID, t.AmountCents)
+		}
+		for _, invoiceID := range retrying {
+			if !granted || err != nil {
+				break
+			}
+			if err = billing.VoidInvoice(invoiceID); err == nil {
+				err = r.store.MarkReloadVoid(ctx, invoiceID)
+			}
+		}
+		if err != nil {
+			if reportErr := fail(err, userID, t.SessionID); reportErr != nil {
+				return reportErr
+			}
+			continue
+		}
+		if granted {
+			if err := repaired(userID, map[string]any{"session": t.SessionID, "kind": "topup"}); err != nil {
+				return err
+			}
+		}
+	}
+
+	// After the grants above, so a purchase recorded late is there to adjust.
+	reversals, err := billing.ListReversals(time.Now().Add(-topUpLookback))
+	if err != nil {
+		return err
+	}
+	for _, v := range reversals {
+		var userID string
+		// The same calls the webhooks make; an inquiry moves no funds.
+		switch v.Dispute {
+		case "":
+			userID, err = r.store.ReverseRefund(ctx, v.PaymentIntentID, v.RefundedCents, v.ChargedCents)
+		case stripe.DisputeStatusNeedsResponse, stripe.DisputeStatusUnderReview, stripe.DisputeStatusLost:
+			userID, err = r.store.HoldDispute(ctx, v.PaymentIntentID)
+		case stripe.DisputeStatusWon:
+			userID, err = r.store.ReleaseDispute(ctx, v.PaymentIntentID)
+		default:
+			continue
+		}
+		result.ScannedCount++
+		if err != nil {
+			if reportErr := fail(err, "", v.PaymentIntentID); reportErr != nil {
+				return reportErr
+			}
+			continue
+		}
+		if userID != "" {
+			if err := repaired(userID, map[string]any{
+				"paymentIntent": v.PaymentIntentID, "kind": "reversal", "dispute": string(v.Dispute),
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func (r *Runner) reconcileStripeCustomer(

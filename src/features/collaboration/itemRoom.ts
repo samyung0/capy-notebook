@@ -2,7 +2,10 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { getMaterialCollaborationToken } from '@/api/hooks';
-import type { SaveBannerState } from '@/components/banners/SaveBanner';
+import {
+  isOutdatedBanner,
+  type SaveBannerState,
+} from '@/components/banners/SaveBanner';
 import { userToast } from '@/components/ui/userToast';
 import {
   type ReadOnlyCode,
@@ -19,6 +22,7 @@ import {
   type ReaderLists,
 } from '@/features/quizzes/liveQuiz';
 import { m } from '@/i18n';
+import { markUpdateAvailable } from '@/lib/appRelease';
 import { MATERIAL_DOCUMENT_LIMITS } from '@/lib/const';
 import {
   applyDrafts,
@@ -68,10 +72,16 @@ export interface ItemRoomSnapshot {
   access: 'read' | 'write' | null;
   /** Bumped when the readers' lists change (`lists`). */
   listsVersion: number;
-  /** The offline banner while the room cannot be reached (an editor's). */
+  /** An editor's save strip while the room cannot be used: unreachable
+   * (`offline…`), or refusing this build (`outdated…`, until the page
+   * reloads). */
   offline: Extract<
     SaveBannerState,
-    'offline' | 'offline-unstored' | 'offline-limit'
+    | 'offline'
+    | 'offline-unstored'
+    | 'offline-limit'
+    | 'outdated'
+    | 'outdated-unstored'
   > | null;
   /** Why the room is read-only for this writer, when it said (a block
    * this version cannot edit). */
@@ -81,6 +91,12 @@ export interface ItemRoomSnapshot {
   status: ItemRoomStatus;
   /** The document holds the room's state (painted from it, editable). */
   synced: boolean;
+}
+
+/** Whether an item editor stops taking edits: offline past the bound this
+ * device may hold, or refused as outdated. */
+export function itemEditingStopped(offline: ItemRoomSnapshot['offline']) {
+  return offline === 'offline-limit' || isOutdatedBanner(offline);
 }
 
 /** What a room needs of its provider (the MSW stand-in implements it too). */
@@ -162,6 +178,8 @@ export class ItemRoom {
   private recorder: DraftRecorder | null = null;
   private storageOk = true;
   private overLimit = false;
+  /** The room refuses this build (the version gate). */
+  private stale = false;
   /** Checkpoint requests waiting for a receipt: id -> local edit count. */
   private readonly pending = new Map<string, number>();
   /** The mode of the eviction notice that came before a close. */
@@ -256,6 +274,10 @@ export class ItemRoom {
         this.tokenError = null;
         if (refusal === 'notFound' || refusal === 'forbidden') {
           this.unavailable();
+          return;
+        }
+        if (refusal === 'outdated') {
+          this.outdated();
           return;
         }
         if (reason.includes('collaboration room moved')) return;
@@ -421,7 +443,7 @@ export class ItemRoom {
   }
 
   private showOffline() {
-    if (!this.snapshot.offline) return;
+    if (!this.snapshot.offline || this.stale) return;
     this.set({
       offline: this.overLimit
         ? 'offline-limit'
@@ -432,6 +454,7 @@ export class ItemRoom {
   }
 
   private goOffline() {
+    if (this.stale) return;
     this.set({ status: 'offline' });
     this.markUnsent();
     if (!this.recorder || this.snapshot.offline) return;
@@ -554,6 +577,22 @@ export class ItemRoom {
    * keep failing. */
   private rejoin() {
     this.reconnector.refused();
+  }
+
+  /** Capy was updated and the room refuses this build: it stops for the
+   * page load. An editor turns read-only under the outdated strip, its unsent
+   * edits kept for the reloaded page to send (leaving still asks when this
+   * device could not store them); a reader keeps what it painted. */
+  private outdated() {
+    if (this.destroyed || this.stale) return;
+    this.stale = true;
+    this.reconnector.dispose();
+    this.provider?.disconnect();
+    markUpdateAvailable();
+    const unstored = !this.storageOk && !!this.recorder?.unsaved;
+    this.markUnsent(unstored);
+    if (this.recorder)
+      this.set({ offline: unstored ? 'outdated-unstored' : 'outdated' });
   }
 
   /** The item is gone or no longer this user's: the room stops for good. */

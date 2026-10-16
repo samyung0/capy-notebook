@@ -56,11 +56,18 @@ from odl.document import (
     OfficeFormatMismatch,
     SourceUnreadable,
 )
+from odl.elements import TooManyElements, check_office, check_pdf
 from odl.java import JavaKilled, JavaTimeout
+from odl.memory import out_of_memory
+
+try:
+    import resource
+except ImportError:  # Not POSIX.
+    resource = None
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 # Bump when parse output changes: it names the output in the ingest donor key.
-PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v15"
+PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v17"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
     r"[0-9a-f]{40}", RELEASE_SHA
@@ -107,7 +114,7 @@ PARSE_WORKERS = int(os.environ.get("CAPY_PARSE_WORKERS") or 0)
 # Wall clock for one document in its parse child, started when it leaves the
 # queue. The Java step gets the remaining budget as its own subprocess timeout.
 PARSE_DOCUMENT_TIMEOUT_S = max(
-    1, int(os.environ.get("CAPY_PARSE_DOCUMENT_TIMEOUT", "900"))
+    1, int(os.environ.get("CAPY_PARSE_DOCUMENT_TIMEOUT", "600"))
 )
 # Text-less pages one document may hand the ingest worker's VLM; a document
 # with more is refused. The API serves the same value in the upload policy.
@@ -122,6 +129,10 @@ RESTART_BACKSTOP_S = 1.0
 # The kernel OOM-kills the highest oom_score first: a parse child (one document)
 # before the API.
 PARSE_OOM_SCORE_ADJ = 1000
+# Address space (a soft RLIMIT_AS) of a parse child and the LibreOffice it
+# starts; Java lifts it (odl/java.py), its heap bounded by -Xmx. A document
+# that needs more fails as parse_oom instead of crowding the other children.
+PARSE_CHILD_MAX_BYTES = 2 << 30
 # A child's answer on its pipe: a status and small payloads.
 # A longer one ends that child.
 MESSAGE_MAX_BYTES = 1 << 24
@@ -241,6 +252,10 @@ def run_document(document: Document) -> dict[str, Any]:
     from odl.document import normalize_document, pdf_page_count
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
+    # The element limits: an Office package before LibreOffice, every PDF
+    # (an Office file's conversion too) before the parse.
+    if document.capture is None:
+        check_office(document.data, document.name)
     normalized = normalize_document(document.data, document.name, WORK_DIR)
     if document.capture is not None:
         from odl.capture import capture_page
@@ -249,6 +264,7 @@ def run_document(document: Document) -> dict[str, Any]:
     # The only page count: every document, before the parse (an Office
     # document's pages exist only after LibreOffice).
     _check_page_count(pdf_page_count(normalized.data))
+    check_pdf(normalized.data)
     from odl.refine import parse_pdf
 
     work = Path(tempfile.mkdtemp(prefix="doc-", dir=WORK_DIR))
@@ -275,7 +291,14 @@ def run_document(document: Document) -> dict[str, Any]:
         "_stages": output.stages,
         "_repaired_fonts": output.repaired_fonts,
         "_furniture": output.furniture,
+        "_drawing_steps": output.drawing_steps,
     }
+    if output.drawings_stopped_at is not None:
+        print(
+            f"drawing clusters stopped on page {output.drawings_stopped_at} after "
+            f"{output.drawing_steps} steps: {document.fingerprint or '-'}",
+            flush=True,
+        )
     # The list-card thumbnail comes from the PDF this parse holds (an Office
     # file's conversion, or the repaired bytes), inside this bounded child, so
     # ingest neither converts nor renders anything for it. Optional: it never
@@ -362,6 +385,15 @@ def _kill_session(sid: int) -> None:
             continue
 
 
+def _limit_address_space(limit: int) -> None:
+    """A soft limit, so a subprocess may lift it to the hard one."""
+    if resource is None:
+        return
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    soft = limit if hard == resource.RLIM_INFINITY else min(limit, hard)
+    resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+
+
 def _parse_worker_main(
     requests: Connection, responses: Connection, work_dir: str
 ) -> None:
@@ -372,6 +404,7 @@ def _parse_worker_main(
     except OSError:
         pass
     _set_oom_score_adj(PARSE_OOM_SCORE_ADJ)
+    _limit_address_space(PARSE_CHILD_MAX_BYTES)
     WORK_DIR = Path(work_dir)
 
     while True:
@@ -392,6 +425,11 @@ def _parse_worker_main(
             _write_worker_result(Path(result_path), result)
             _send(responses, "ok", None)
         except Exception as exc:  # noqa: BLE001 - returned to API supervisor
+            if out_of_memory(exc):
+                exc = ParseOOM(
+                    f"the parse needed more than {PARSE_CHILD_MAX_BYTES >> 30} GiB "
+                    f"of address space: {exc}"
+                )
             _send_error(responses, exc)
         finally:
             document = result = None
@@ -411,6 +449,8 @@ _CHILD_ERRORS: dict[str, type[Exception]] = {
         ParseTooManyPages,
         ParseTooManyScannedPages,
         SourceUnreadable,
+        TooManyElements,
+        ParseOOM,
     )
 }
 
@@ -830,6 +870,12 @@ class ParserRuntime:
         if isinstance(exc, JavaTimeout):
             self._expire(slot, work)
             return
+        # Past the child's own address-space limit: this document asked for
+        # the memory. The child answered, so it is replaced, not killed.
+        if isinstance(exc, ParseOOM):
+            slot.restart = True
+            _quarantine_and_fail(work, "parse_oom", exc)
+            return
         # The kernel kills the process with the highest oom_score, so a
         # document whose child, or Java inside it, died by SIGKILL while the
         # cgroup's oom_kill count rose is the one that was using the memory.
@@ -1044,6 +1090,8 @@ def _measurements(
         "_stages": {
             k: round(float(v), 3) for k, v in (result.get("_stages") or {}).items()
         },
+        # Steps the drawing clusters took (pictures.VECTOR_MAX_STEPS bounds them).
+        "_drawing_steps": max(0, int(result.get("_drawing_steps") or 0)),
     }
     values.update(
         {f"_parser_{key}": value for key, value in _process_tree_memory().items()}
@@ -1403,6 +1451,8 @@ def _failure_response(
         code, status = "parse_too_many_scanned_pages", 422
     elif isinstance(exc, ParseTooManyPages):
         code, status = "parse_too_many_pages", 422
+    elif isinstance(exc, TooManyElements):
+        code, status = "parse_too_many_elements", 422
     elif isinstance(exc, ParseOOM):
         code, status = "parse_oom", 422
     elif isinstance(exc, OfficeFormatMismatch):
@@ -1677,6 +1727,15 @@ async def _produce_artifact(
         return (
             {
                 "code": "parse_too_many_pages",
+                "detail": str(exc),
+                "source_fingerprint": fingerprint,
+            },
+            422,
+        )
+    except TooManyElements as exc:
+        return (
+            {
+                "code": "parse_too_many_elements",
                 "detail": str(exc),
                 "source_fingerprint": fingerprint,
             },

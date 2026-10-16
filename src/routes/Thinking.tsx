@@ -14,6 +14,7 @@ import {
   useAccountFrozen,
 } from '@/features/workspace/WorkspaceHealth';
 import { getLocale, m } from '@/i18n';
+import { waitsForConnection } from '@/lib/online';
 
 export default function Thinking() {
   const { data, fetchStatus, isLoading } = useCanvases();
@@ -42,7 +43,7 @@ export default function Thinking() {
       }
     >
       <div className="flex-1 px-4 py-5 sm:px-6">
-        {fetchStatus === 'paused' ? (
+        {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
           <SkeletonCardGrid cardHeight={172} count={6} />

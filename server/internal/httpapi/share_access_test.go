@@ -422,26 +422,10 @@ func TestQuizAndFlashcardCapabilitiesSeparateEditorsFromOwners(t *testing.T) {
 	}
 }
 
-func TestStudyToolMutationPathsSeparateContentMetadataAndSharing(t *testing.T) {
+func TestStudyToolMutationPathsSeparateMetadataAndSharing(t *testing.T) {
 	h := openShareHTTP(t)
 
-	quizQuestions := []map[string]any{{
-		"id": "q_mut_2", "stem": []any{}, "layout": "paper", "labels": "letters",
-		"parts": []any{map[string]any{"id": "q_mut_2:part:1", "blocks": []any{map[string]any{"type": "text", "text": "Updated workspace question?"}}, "answer": map[string]any{"type": "boolean", "correct": true}, "marks": 1, "solution": []any{}}},
-	}}
-	rec := doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
-		"questions": quizQuestions,
-	})
-	if rec.Code != http.StatusOK {
-		t.Fatalf("workspace quiz content update = %d body=%s", rec.Code, rec.Body.String())
-	}
-	rec = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/content", "u_editor", map[string]any{
-		"questions": quizQuestions, "privacy": "public",
-	})
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("privacy on quiz content path = %d body=%s", rec.Code, rec.Body.String())
-	}
-	rec = doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/sharing", "u_owner", map[string]any{
+	rec := doReq(t, h, http.MethodPatch, "/api/quizzes/qz_e2e_private/sharing", "u_owner", map[string]any{
 		"privacy": "public",
 	})
 	if rec.Code != http.StatusNotFound {
@@ -470,14 +454,6 @@ func TestStudyToolMutationPathsSeparateContentMetadataAndSharing(t *testing.T) {
 	})
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("workspace flashcard sharing update = %d body=%s", rec.Code, rec.Body.String())
-	}
-	rec = doReq(t, h, http.MethodPatch, "/api/flashcards/dk_e2e_private/content", "u_editor", map[string]any{
-		"cards": []map[string]any{{
-			"id": "c_e2e_priv_1", "front": "Updated front", "back": "Updated back", "known": true,
-		}},
-	})
-	if rec.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("unknown field on card authoring path = %d body=%s", rec.Code, rec.Body.String())
 	}
 }
 

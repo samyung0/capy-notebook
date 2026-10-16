@@ -7,7 +7,6 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
-	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
@@ -25,10 +24,6 @@ type updateFlashcardSetInput struct {
 	Body apimodel.UpdateFlashcardSetReq
 }
 
-type updateFlashcardContentInput struct {
-	ID   string `path:"id"`
-	Body apimodel.UpdateFlashcardContentReq
-}
 type updateFlashcardSetSharingInput struct {
 	ID   string `path:"id"`
 	Body apimodel.UpdateStandaloneSharingReq
@@ -42,7 +37,6 @@ func (a *api) registerFlashcards(api huma.API) {
 	reg(api, http.MethodPost, "/api/flashcards", "createFlashcardSet", tag, "Create flashcards", http.StatusCreated, a.createFlashcardSet)
 	reg(api, http.MethodGet, "/api/flashcards/{id}", "getFlashcardSet", tag, "Get flashcards", http.StatusOK, a.getFlashcardSet)
 	reg(api, http.MethodPatch, "/api/flashcards/{id}/metadata", "updateFlashcardSet", tag, "Update flashcard metadata", http.StatusOK, a.updateFlashcardSet)
-	regWithMaxBody(api, http.MethodPatch, "/api/flashcards/{id}/content", "updateFlashcardContent", tag, "Update flashcard content", http.StatusOK, materialRequestMaxBytes, a.updateFlashcardContent)
 	reg(api, http.MethodPatch, "/api/flashcards/{id}/sharing", "updateFlashcardSetSharing", tag, "Update standalone flashcard sharing", http.StatusOK, a.updateFlashcardSetSharing)
 	reg(api, http.MethodGet, "/api/flashcards/{id}/cards", "listCards", tag, "List cards", http.StatusOK, a.listCards)
 }
@@ -133,24 +127,6 @@ func (a *api) listCards(ctx context.Context, in *flashcardSetIDInput) (*cardsOut
 		return nil, hErr(err)
 	}
 	res, err := a.s.ListCards(ctx, in.ID)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return &cardsOutput{Body: res}, nil
-}
-
-func (a *api) updateFlashcardContent(ctx context.Context, in *updateFlashcardContentInput) (*cardsOutput, error) {
-	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	cards := make([]materialdoc.Card, len(in.Body.Cards))
-	for i, card := range in.Body.Cards {
-		cards[i] = materialdoc.Card{ID: card.ID, Front: card.Front, Back: card.Back}
-		if card.Image != nil {
-			cards[i].Image = &materialdoc.CardImage{AssetID: card.Image.AssetID}
-		}
-	}
-	res, err := a.s.UpdateFlashcardContent(ctx, userID(ctx), in.ID, cards)
 	if err != nil {
 		return nil, hErr(err)
 	}

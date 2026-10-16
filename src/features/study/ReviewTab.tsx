@@ -10,6 +10,7 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { iconUrl } from '@/lib/icon-catalog';
+import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 import type { ReviewSearch } from './reviewSearch';
 import { groupName, itemCount, REVIEW_MODE, reviewReason } from './reviewText';
@@ -20,7 +21,7 @@ export function ReviewTab() {
   const { data, fetchStatus, isLoading } = useReviewOverview();
   const revealRef = useLoadingReveal(isLoading);
   const navigate = useNavigate();
-  if (fetchStatus === 'paused' && !data) return <QueryPausedState />;
+  if (waitsForConnection(fetchStatus, data)) return <QueryPausedState />;
   if (isLoading) return <SkeletonList count={5} rowHeight={72} />;
   if (!data?.workspaces.length && !data?.unfinished.length)
     return (

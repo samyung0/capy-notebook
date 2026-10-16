@@ -10,6 +10,7 @@ import {
   useAccountFrozen,
 } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
+import { waitsForConnection } from '@/lib/online';
 
 const CanvasEditor = lazy(() => import('@/features/thinking/CanvasEditor'));
 
@@ -37,7 +38,7 @@ export default function Canvas() {
         <AccountStatusButton />
       </div>
       <div className="min-h-0 flex-1">
-        {fetchStatus === 'paused' ? (
+        {waitsForConnection(fetchStatus, canvas) ? (
           <QueryPausedState className="h-full" />
         ) : isLoading ? (
           <Skeleton className="h-full w-full rounded-none" />

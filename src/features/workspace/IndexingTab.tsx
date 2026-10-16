@@ -1,5 +1,10 @@
 import { type ReactNode, useState } from 'react';
-import { useFiles, useUpdateWorkspace } from '@/api/hooks';
+import {
+  useFiles,
+  useRetryFileProcessing,
+  useRetryingFileIds,
+  useUpdateWorkspace,
+} from '@/api/hooks';
 import type {
   FileChange,
   SourceFile,
@@ -22,6 +27,7 @@ import { m } from '@/i18n';
 import { fileIconName } from '@/lib/fileIcons';
 import { userColorPair } from '@/lib/userColor';
 import { AddSourceDialog } from './AddSourceDialog';
+import { retryFailedFile } from './retryProcessing';
 import {
   useCancelFileChanges,
   useProcessFileChanges,
@@ -163,7 +169,8 @@ function FileChanges({
 }
 
 /** Files whose processing failed. Automatic processing skips them; the owner
- * retries one through the upload dialog's Retry processing. */
+ * retries one through the upload dialog's Retry processing, or in one click
+ * when it is still indexed (a part missing, parts design Q8). */
 function FailedFiles({
   owner,
   workspaceId,
@@ -173,6 +180,8 @@ function FailedFiles({
 }) {
   const { data: files } = useFiles(workspaceId, { errorBoundary: false });
   const [retrying, setRetrying] = useState<SourceFile | null>(null);
+  const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
+  const retryingIds = useRetryingFileIds(workspaceId);
   const failed = files?.filter((file) => file.status === 'failed') ?? [];
   if (!failed.length) return null;
   return (
@@ -196,7 +205,12 @@ function FailedFiles({
             {owner && (
               <Button
                 className="col-start-3 row-span-2 row-start-1"
-                onClick={() => setRetrying(file)}
+                disabled={retryingIds.includes(file.id)}
+                onClick={() =>
+                  retryFailedFile(file, retryProcessing, () =>
+                    setRetrying(file)
+                  )
+                }
                 size="sm"
                 variant="outline"
               >

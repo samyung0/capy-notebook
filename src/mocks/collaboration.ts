@@ -34,6 +34,7 @@ import {
   type MaterialValue,
   quizNode,
 } from '@/features/materials/document';
+import { COLLABORATION_OUTDATED_REASON } from '@/features/notes/collaborationEvents';
 import { withoutBlanks } from '@/features/questions/types';
 import { validateQuestion } from '@/features/questions/validation';
 import {
@@ -570,8 +571,14 @@ interface MockCollaborationOptions {
   initialValue: MaterialValue;
   materialId: string;
   name: string;
+  onAuthenticationFailed?: (event: { reason: string }) => void;
   onStateless?: (event: { payload: string }) => void;
 }
+
+const outdated = { reason: COLLABORATION_OUTDATED_REASON };
+// Set by refuseThisBuild(): a note room refuses every join until the page
+// reloads (the reloaded page is the new build).
+let buildRefused = false;
 
 class MockCollaborationProvider implements UnifiedProvider {
   readonly awareness: UnifiedProvider['awareness'];
@@ -624,6 +631,10 @@ class MockCollaborationProvider implements UnifiedProvider {
   connect = () => {
     this.wanted = true;
     if (this.isConnected || !reachable()) return;
+    if (buildRefused) {
+      this.options.onAuthenticationFailed?.(outdated);
+      return;
+    }
     // The room moved while this editor was away: its token request names the
     // new room, and the editor remounts onto it (NoteEditorCore's token()).
     if (this.options.name !== mockMaterialRoom(this.options.materialId)) {
@@ -679,6 +690,11 @@ class MockCollaborationProvider implements UnifiedProvider {
         window.removeEventListener(type, this.onReachability);
     this.disconnect();
   };
+
+  announceOutdated() {
+    this.disconnect();
+    this.options.onAuthenticationFailed?.(outdated);
+  }
 
   announceReadOnly() {
     // The service refused this writer's pending update: nothing after the
@@ -817,6 +833,11 @@ class MockSourceProvider implements SourceProvider {
     if (this.isAuthenticated) this.disconnect();
   }
 
+  announceOutdated() {
+    this.disconnect();
+    this.config.onAuthenticationFailed?.(outdated);
+  }
+
   announceReadOnly() {
     // As for a note: the refused update never reaches the durable room.
     this.room.retired = true;
@@ -843,6 +864,19 @@ class MockSourceProvider implements SourceProvider {
 
 const sourceProviders = new Set<MockSourceProvider>();
 const materialProviders = new Set<MockCollaborationProvider>();
+const itemProviders = new Set<MockItemProvider>();
+/** A deploy that raised the client protocol: every open room's socket drops
+ * and the room refuses this build (`collaboration-outdated`) when it joins
+ * again, as a note room does every later join until the page reloads. */
+export function refuseThisBuild() {
+  buildRefused = true;
+  for (const provider of [
+    ...materialProviders,
+    ...sourceProviders,
+    ...itemProviders,
+  ])
+    provider.announceOutdated();
+}
 /** The collaboration service's refusal once the account freezes: every open
  * room turns read-only for its writer. */
 export function announceReadOnly() {
@@ -1090,6 +1124,7 @@ class MockItemProvider implements ItemProvider {
 
   constructor(config: RoomProviderConfig) {
     this.config = config;
+    itemProviders.add(this);
     const room = itemRoom(config.name);
     this.leave = join(room, {
       document: config.document,
@@ -1127,9 +1162,15 @@ class MockItemProvider implements ItemProvider {
 
   connect() {}
 
+  announceOutdated() {
+    this.disconnect();
+    this.config.onAuthenticationFailed?.(outdated);
+  }
+
   disconnect() {
     if (!this.joined) return;
     this.joined = false;
+    itemProviders.delete(this);
     readers.get(this.config.name)?.delete(this);
     this.leave();
     this.config.onDisconnect?.();

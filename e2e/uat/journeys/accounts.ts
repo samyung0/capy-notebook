@@ -16,8 +16,17 @@ function setupFailure(error: unknown, stage: string) {
     typeof error.status === 'number'
       ? ` (${error.status})`
       : '';
+  // Only a fixed transport kind (a known Node error code, or Playwright's timeout
+  // or closed-context words) from the first line: the call log after it carries
+  // the bearer token.
+  const kind =
+    error instanceof Error
+      ? /\b(E(?:CONNRESET|CONNREFUSED|CONNABORTED|TIMEDOUT|NOTFOUND|AI_AGAIN|PIPE|PROTO|HOSTUNREACH|NETUNREACH)|socket hang up|Timeout \d+ms exceeded|has been closed|disposed)\b/.exec(
+          error.message.split('\n', 1)[0]
+        )?.[1]
+      : undefined;
   return new Error(
-    `${stage} failed${status}; browser/provider details are omitted to keep credentials out of artifacts`
+    `${stage} failed${status}${kind ? ` [${kind}]` : ''}; browser/provider details are omitted to keep credentials out of artifacts`
   );
 }
 
@@ -140,7 +149,7 @@ function actorFor(
     email,
     id,
     page,
-    async request(path, method = 'GET', body?: unknown) {
+    async request(path, method = 'GET', body?: unknown, timeout?: number) {
       if (!path.startsWith('/api/'))
         throw new Error('UAT actor request must use an application API path');
       // Navigation can finish before Clerk restores this actor's session.
@@ -160,11 +169,15 @@ function actorFor(
             traceparent: `00-${trace}-${randomBytes(8).toString('hex')}-01`,
           },
           method,
+          timeout,
         })
         .catch((error: unknown) => {
           throw setupFailure(error, 'Authenticated API request');
         });
       const text = await response.text();
+      // An event stream (the editor's AI command) is returned as its text.
+      if (response.headers()['content-type']?.startsWith('text/event-stream'))
+        return { body: text, status: response.status() };
       let parsed: unknown = null;
       if (text) {
         try {
@@ -291,6 +304,25 @@ export async function createSecondaryActor(
     label,
     registration: 'backend-ticket',
   });
+  const { context, page } = await ticketContext(run, browser, user.id);
+  try {
+    const actor = actorFor(run, context, page, user.id, email);
+    await waitForApplicationUser(run, actor);
+    return actor;
+  } catch (error) {
+    await closeActorContext(context);
+    throw setupFailure(error, 'Secondary actor sign-in');
+  }
+}
+
+/** `actor` signed in again in a new browser context: empty HTTP cache and storage. */
+export async function signInAgain(run: UatRun, browser: Browser, actor: Actor) {
+  const { context, page } = await ticketContext(run, browser, actor.id);
+  return actorFor(run, context, page, actor.id, actor.email);
+}
+
+/** A new browser context signed in as `userId` with a short-lived Clerk sign-in ticket. */
+async function ticketContext(run: UatRun, browser: Browser, userId: string) {
   const context = await actorContext(run.env, browser).catch(
     (error: unknown) => {
       throw setupFailure(error, 'Clerk browser setup');
@@ -303,9 +335,10 @@ export async function createSecondaryActor(
       () =>
         (window as unknown as { Clerk?: BrowserClerk }).Clerk?.loaded === true
     );
+    const client = createClerkClient({ secretKey: run.env.clerkSecretKey });
     const ticket = await client.signInTokens.createSignInToken({
       expiresInSeconds: 60,
-      userId: user.id,
+      userId,
     });
     try {
       await page.evaluate(async (value) => {
@@ -327,13 +360,11 @@ export async function createSecondaryActor(
       )
         throw error;
     }
-    await sessionReady(page, user.id);
-    const actor = actorFor(run, context, page, user.id, email);
-    await waitForApplicationUser(run, actor);
-    return actor;
+    await sessionReady(page, userId);
+    return { context, page };
   } catch (error) {
     await closeActorContext(context);
-    throw setupFailure(error, 'Secondary actor sign-in');
+    throw setupFailure(error, 'Ticket sign-in');
   }
 }
 

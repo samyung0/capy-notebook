@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
+import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
 import type { DraftMessage, DraftReply } from './draftStore';
 
 // The drafts worker, run in this process: messages are copied as
@@ -1499,6 +1500,44 @@ describe('the draft sweep sending', () => {
     await sweepDrafts('u_switch', api, { current: () => signedIn });
     expect(requests).toHaveLength(0);
     expect(await readDrafts(key)).toHaveLength(2);
+  });
+
+  it('sends the client protocol, and stops for the page load once refused as outdated, marking no row', async () => {
+    const page = await nextPageLoad();
+    const { takeUpdateLoad } = await import('./appRelease');
+    const first = 'u_stale:material:mat_1';
+    const second = 'u_stale:material:mat_2';
+    await leftRows(first);
+    await leftRows(second);
+    requests.length = 0;
+    answer(426, 'outdated');
+    await page.sweepDrafts('u_stale', tokens(ROOM));
+    expect(requests).toHaveLength(1);
+    expect(requests[0].headers.get('x-capy-protocol')).toBe(
+      String(CLIENT_PROTOCOL)
+    );
+    // Kept as they were, for the reloaded page to send.
+    for (const key of [first, second]) {
+      const rows = await readDrafts(key);
+      expect(rows).toHaveLength(2);
+      expect(rows.some((row) => row.held || row.refused)).toBe(false);
+    }
+    // No later trigger of this page load sends anything.
+    await page.sweepDrafts('u_stale', tokens(ROOM), { cleanup: false });
+    expect(requests).toHaveLength(1);
+    // The next page change loads the new app.
+    Object.defineProperty(globalThis, 'sessionStorage', {
+      configurable: true,
+      value: { getItem: () => null, setItem: () => undefined },
+    });
+    expect(takeUpdateLoad()).toBe(true);
+    Reflect.deleteProperty(globalThis, 'sessionStorage');
+    // The reloaded page (the new build) sends them through its checks.
+    const reloaded = await nextPageLoad();
+    await reloaded.sweepDrafts('u_stale', tokens(ROOM));
+    expect(requests).toHaveLength(3);
+    expect(await readDrafts(first)).toEqual([]);
+    expect(await readDrafts(second)).toEqual([]);
   });
 
   it('runs one sweep at a time, whichever trigger starts it', async () => {

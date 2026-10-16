@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { Icon } from '@/components/ui/Icon';
 import { Input, InputError } from '@/components/ui/Input';
+import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { paymentMethodLabel, shortDate } from './creditLabels';
 import { creditsForCents } from './credits';
@@ -128,11 +129,20 @@ export function AutoReloadDialog({
   });
   const pm = settings.paymentMethod;
   const submit = handleSubmit(async (v) => {
-    await save({
+    const wasOn = settings.autoReload;
+    const { armed } = await save({
       amountCents: dollarsToCents(v.amount),
       enabled: true,
       thresholdCredits: Number(v.threshold),
     });
+    // Turning it on arms nothing: after a failed reload it waits for a top-up.
+    if (!(wasOn || armed)) {
+      userToast({
+        description: m.billing_reload_disarmed_body(),
+        title: m.billing_reload_disarmed_title(),
+        variant: 'warning',
+      });
+    }
     onClose();
   });
 

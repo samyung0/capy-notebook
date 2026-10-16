@@ -71,6 +71,31 @@ until the gateway is updated. The other order is safe: an older
 collaboration service sends no `preview`, which a newer gateway does not
 require.
 
+**Client protocol bumps** (Epo 2026-10-16; when to bump:
+[plate-editor "When to bump"](frontend/plate-editor.md#when-to-bump)). A
+deploy that raises `CLIENT_PROTOCOL` and a family's minimum starts refusing
+that family's open editors (`collaboration-outdated`) the moment the new
+collaboration server starts, while the new SPA is only served once the site
+job finishes, about 2 to 3 minutes later. In that window a refused editor's
+Reload says the update is still being published; its edits stay on the
+device. So:
+
+- the deploy request names the bump ("client protocol: material 3 → 4"), so
+  the deployer knows that family's stale editors pause for those minutes;
+- a site job that fails after a bumping backend deploy leaves that family's
+  stale editors blocked until it succeeds: re-run it promptly (its build
+  artifact lives one day);
+- a rollback to an older SHA lowers the server's own protocol: newer tabs are
+  refused as above it and reload into the older SPA once it is served.
+
+The SPA build writes its revision to `dist/release.txt`, served `no-store`
+(`public/_headers`). An open tab reads it when it regains focus, at most
+once a minute, and a tab whose build differs loads the new SPA at its next
+page change ([plate-editor "Client protocol and the release
+nudge"](frontend/plate-editor.md#client-protocol-and-the-release-nudge)).
+Nothing in the deploy passes it: it ships with the assets, so a tab sees the
+new release once the site job has published them.
+
 ---
 
 ## 1. DNS & hostnames
@@ -139,7 +164,10 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    KV/R2 cache. Only the `run_worker_first` paths reach the Worker; every other
    request, SPA fallbacks included, is served by the asset layer without an
    invocation. `public/_headers` marks the avatar/workspace `/icons/*`
-   `max-age=31536000, immutable` (stable artwork, kept names); everything else,
+   `max-age=31536000, immutable` (stable artwork, kept names) and
+   `/release.txt` `no-store` (open tabs compare it with their own release, so
+   no cache may answer it, and as a real file it never gets the SPA
+   fallback); everything else,
    the content-hashed `/assets/*` bundles included, keeps the Workers Assets
    default of `public, max-age=0, must-revalidate` with an `ETag`. `/assets/*`
    is not immutable because the SPA fallback answers an unknown asset name
@@ -1380,7 +1408,7 @@ those services start.
    Configure its platform model capacities through Ops (§1.4) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
-   Production limits are eight coordinator processes, five parse children
+   Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document
    (`CAPY_PARSE_OCR_PAGE_CAP`, a name older than the VLM read; more fails as
@@ -1393,10 +1421,10 @@ those services start.
    `CAPY_PARSE_MAX_PAGES`. Set `CAPY_PARSE_MAX_PAGES=1400` and
    `CAPY_PARSE_OCR_PAGE_CAP=500` in the `uat` and `production` GitHub
    environments before deploying this change. The default time hierarchy is
-   a 900-second per-document deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`), a
-   1,920-second parser request (`PARSER_TIMEOUT`: one 900 s wait for a parse
-   child, the 900 s parse and 120 s, see agentic-retrieval's Parse capacity)
-   and a 2,100-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
+   a 600-second per-document deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`), a
+   1,320-second parser request (`PARSER_TIMEOUT`: one 600 s wait for a parse
+   child, the 600 s parse and 120 s, see agentic-retrieval's Parse capacity)
+   and a 1,500-second parse job (`CAPY_PARSE_JOB_TIMEOUT`). Its ingest continuation has a separate
    20-minute bound. Queue wait does not spend the parse deadline. The job worker
    refuses to start with a `PARSER_TIMEOUT` that is not below `CAPY_PARSE_JOB_TIMEOUT`;
    retrieval, which reads `PARSER_TIMEOUT` only for page captures, does not check it. The parser container
@@ -1580,8 +1608,9 @@ calls in flight across the host), so the parser has no OCR stage or OCR
 backlog. The parse child counts each document's pages before parsing it, and
 the API process opens no source, and no file a child wrote, with MuPDF. A
 document with more than 500 text-less pages fails as
-`parse_too_many_scanned_pages` (terminal), and one with more than 1,400 pages
-as `parse_too_many_pages`. The OpenDataLoader accuracy record is the September 2026 series
+`parse_too_many_scanned_pages` (terminal), one with more than 1,400 pages
+as `parse_too_many_pages`, and one past the element limits (figures, vector
+shapes, Office rows or shapes; `odl/elements.py`) as `parse_too_many_elements`. The OpenDataLoader accuracy record is the September 2026 series
 under `bench/parsers/reports/` (`2026-09-09-odl-accuracy-third-pass.md` and the
 per-repair experiments it cites); the acceptance oracle is the refined corpus
 on the ingest host. The capacity run found CPU and the deadline, not memory,
@@ -1596,8 +1625,13 @@ document; a trimmed idle child holds about 0.55 GiB. The v14 rerun
 RapidOCR process) peaked at 8.6 of 14 GiB with five 1,400-page books and a
 150-page scan at once (v11: 13.1). Each book finished in under 400 s of the
 900 s deadline. One parse or OCR child
-reached 1.44 GiB RSS and 4.91 GiB virtual size, so a per-child RLIMIT_AS has to
-allow about 5 GiB plus headroom.
+reached 1.44 GiB RSS and 4.91 GiB virtual size; most of that was the RapidOCR
+process, which left the parser on 2026-10-15. With `MALLOC_ARENA_MAX=2` a parse
+child peaked at 0.64 GiB of virtual size, alone on the 1,400-page book and with
+five of them beside a 150-page scan (scenario C on a 14 GiB, 8-CPU container:
+6 of 6 parsed, peak 7.0 GiB), and LibreOffice at 0.88 GiB, so each child runs
+under a 2 GiB address-space limit (Java lifts it; its heap is bounded by
+`-Xmx`).
 
 Each of the four production ingest workers has a 1 CPU, 1 GiB RAM, 1.25 GiB
 total memory-plus-swap, and 128-process ceiling. A separate 120 MiB
@@ -1630,7 +1664,7 @@ cutovers. A restart drops in-flight connections, but ordinary parser errors get
 one retry and the client recovers an atomically published spool artifact when
 publication completed before the disconnect.
 
-Each document has a 900-second limit that begins when it leaves the queue,
+Each document has a 600-second limit that begins when it leaves the queue,
 before LibreOffice normalisation and the Java run, and ends when the API has
 read the child's result, page renders included. A timed-out document is
 quarantined (`parse_hard_timeout`) and its parse child is killed with its
@@ -2498,6 +2532,11 @@ them). Billing → Invoices → Retries → Card payments: a custom schedule of 
 retries one day apart for one-off invoices (auto-reload), separate from the
 subscription retries under Revenue recovery; after the last failure the invoice is
 marked uncollectible, so a stale reload cannot be paid later from the hosted link.
+Billing → Revenue recovery → Retries → Subscriptions: if all retries fail,
+**Cancel the subscription** and mark the invoice uncollectible, in live and UAT.
+The app's grace model assumes it: "Mark as unpaid" would leave a second Pro
+Checkout open next to the unpaid subscription, and "Leave as past due" keeps
+Pro without payment, since `past_due` still entitles.
 Failed-payment emails link to the Stripe-hosted page, and the 3DS confirmation
 link email is on. Public details: name `Capy Notebook`, descriptor
 `CAPY NOTEBOOK`, support `support@capynotebook.com`.
@@ -2551,6 +2590,14 @@ Pay link, and paying later credits it); failed-payment emails with the hosted
 invoice link and 3D Secure confirmation links are on. Card and Link must be
 enabled payment methods. The reload worker runs only where
 `STRIPE_SECRET_KEY` is set.
+
+Plan credit limits are data, not migrations: the Free monthly allowance is
+200 credits (`UPDATE plan_limits SET credit_limit_micros = 200000000 WHERE
+plan_tier = 'free';`, Epo 2026-10-16), and the one-off 800-credit starter grant
+is the `user_credits` column default from migration 0088. A database built from
+migrations still seeds the older values, so set the row by hand in each
+environment, **before** the deploy that restarts the API and the ingest worker:
+both read `plan_limits` once at startup (or restart them after the change).
 
 There is no Team product in any environment and no `STRIPE_PRICE_TEAM`
 setting: `plan_limits` restricts `plan_tier` to `free` and `pro`

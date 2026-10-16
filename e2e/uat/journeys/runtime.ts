@@ -4,6 +4,7 @@ import {
   closeActorContext,
   createPrimaryActor,
   createSecondaryActor,
+  signInAgain,
 } from './accounts';
 import { loadEnvironment, type UatEnvironment } from './environment';
 import {
@@ -23,10 +24,12 @@ export type Actor = {
   email: string;
   page: Page;
   context: BrowserContext;
+  /** An event stream's body is its text. `timeout` overrides the 30 s default. */
   request(
     path: string,
     method?: string,
-    body?: unknown
+    body?: unknown,
+    timeout?: number
   ): Promise<{ status: number; body: unknown }>;
 };
 
@@ -60,6 +63,13 @@ export class UatRun {
     );
     this.actors.push(actor);
     return actor;
+  }
+
+  /** `actor` in a new browser context of its own (empty cache), closed with the run. */
+  async signInAgain(actor: Actor) {
+    const again = await signInAgain(this, this.browser, actor);
+    this.actors.push(again);
+    return again;
   }
 
   query<T extends Record<string, unknown> = Record<string, unknown>>(

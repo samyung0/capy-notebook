@@ -415,7 +415,7 @@ async fn load(
     app: &Shared,
     name: &RoomName,
     actor: &str,
-) -> Result<(Doc, Kindly, ydoc::Durable), String> {
+) -> Result<(Doc, Kindly, ydoc::Durable, Option<sources::LoadTimes>), String> {
     match name {
         RoomName::Material {
             material_id,
@@ -536,7 +536,7 @@ async fn load(
                 base_bytes,
                 folding: false,
             };
-            Ok((doc, Kindly::Note(Box::new(note)), durable))
+            Ok((doc, Kindly::Note(Box::new(note)), durable, None))
         }
         RoomName::Source { .. } => {
             let room = name
@@ -576,7 +576,12 @@ async fn load(
                 generation: loaded.generation,
                 base_sha256: loaded.session.base_source_sha256,
             };
-            Ok((doc, Kindly::Source(Box::new(source)), durable))
+            Ok((
+                doc,
+                Kindly::Source(Box::new(source)),
+                durable,
+                Some(loaded.times),
+            ))
         }
     }
 }
@@ -630,7 +635,7 @@ async fn run(
     let room_name = name.to_string();
     let started = Instant::now();
     let loaded = load(&app, &name, &actor).await;
-    let (doc, kind, durable) = match loaded {
+    let (doc, kind, durable, times) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
             observe::capture(
@@ -657,11 +662,12 @@ async fn run(
             return;
         }
     };
-    log(
-        Level::Info,
-        "room_load",
-        json!({ "bytes": stored_bytes(&kind), "ms": started.elapsed().as_millis() as u64, "room": room_name }),
-    );
+    let mut fields = json!({ "bytes": stored_bytes(&kind), "ms": started.elapsed().as_millis() as u64, "room": room_name });
+    if let Some(times) = times {
+        // A source room's stages, so a slow open shows its cause.
+        fields["stages"] = json!(times);
+    }
+    log(Level::Info, "room_load", fields);
     let mut room = Room {
         markers: Markers::new(&app.instance_id),
         app,

@@ -60,8 +60,10 @@ such as workspace `filesLimit`, upload-policy `maxBytes`, and billing counters.
 
 Subscription projection remains owned by the Stripe lifecycle code. Request
 gates do not trust a stale projected Pro tier past the latest paid
-`current_period_end`: Go and Python both apply Free limits at that boundary,
-even before a delayed webhook reconciles `users.plan_tier`. Accounts without a
+`current_period_end`: Go, Python and the collaboration server apply Free limits
+48 hours after that boundary (the renewal tolerance, so a late renewal webhook
+never lapses a paying account), even before a delayed webhook reconciles
+`users.plan_tier`. Accounts without a
 dated subscription retain their stored tier for local/operator fixtures.
 
 ## What counts
@@ -375,8 +377,8 @@ The minute covers a shared note: the image node's asset id reaches the server
 a moment after the upload completes, and a collaborator's save in that window
 must not trash it; an image removed within the minute goes at a later save.
 The same save trashes an interrupted flow's leftovers: an upload or paste copy
-whose node never landed (the tab closed) and quiz or flashcard images uploaded
-by a Save whose content PATCH failed. Embedded quiz and flashcard rows follow
+whose node never landed (the tab closed), including quiz and flashcard
+images whose question or card never reached the live room. Embedded quiz and flashcard rows follow
 the same rule (trashed for a day, see
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
 Pending reservations are left to the upload expiry. Purging the material
@@ -420,8 +422,9 @@ Workspace clones snapshot the source, gate the total file + saved edit state +
 material + ready editor-asset payload against the **cloner's** quota, copy ready asset rows
 with new logical IDs (rewriting embedded references; each asset names the
 clone of its material, and a trashed material's assets are left out), and reuse physical blob
-paths under reference counting. Only `ready` source files are copied; pending,
-processing, and failed files are omitted. A file past the cloner's per-file
+paths under reference counting. `ready` source files are copied, and partial
+ones (`failed` with a served index, parts design Q2) under the same gates;
+pending, processing, and other failed files are omitted. A file past the cloner's per-file
 plan cap (`plan_limits.source_file_max_bytes`, the upload cap) refuses the
 whole clone (`file_too_large`), like its other limits. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
@@ -472,7 +475,10 @@ unloads or the log passes `max(256 KiB, state bytes)` or 1,000 rows; the
 document row keeps `log_bytes` and `log_rows`). Idle rooms whose state plus log
 is at least `max(256 KiB, material.size_bytes * 4)` are compaction candidates.
 Source documents keep the same log in `source_document_updates`, charged in
-`storage_bytes` with the state (migration 0075).
+`storage_bytes` with the state (migration 0075). A source save appends its row
+through the checkpoint compare-and-swap; a moved checkpoint re-reads the rows
+saved meanwhile and appends again, 3 attempts in all
+(`collaboration-rs/crates/sources/src/store.rs`).
 
 Source text states are not compacted. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not
@@ -564,8 +570,8 @@ direction.
 
 User-typed values are rejected with a 422; the source details dialog refuses
 oversized file names before upload. Values the user did not type are clamped
-before insert: Clerk profile names on the first insert (the profile sync runs
-on every authenticated request, so a rejection would lock the account out; an
+before insert: Clerk profile names on the first insert (the profile sync
+provisions the account on its first request, so a rejection would lock the account out; an
 oversized Clerk email is dropped and the stored email kept; a name typed later
 through `PATCH /api/me` is user input and gets the 422),
 LLM-authored material titles and editor asset names (both

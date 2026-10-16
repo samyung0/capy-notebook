@@ -7,6 +7,8 @@ import {
   useMoveMaterial,
   useReorderChapters,
   useReorderContent,
+  useRetryFileProcessing,
+  useRetryingFileIds,
   useWorkspace,
 } from '@/api/hooks';
 import type {
@@ -108,6 +110,9 @@ export function FilesPanel({
   });
   const { data: materials } = useMaterials(workspaceId);
   const { mutate: reorder } = useReorderChapters(workspaceId);
+  // One Retry processing mutation for every row.
+  const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
+  const retryingIds = useRetryingFileIds(workspaceId);
   const { mutate: delChapter } = useDeleteChapter(workspaceId);
   const { mutate: moveMaterial } = useMoveMaterial(workspaceId);
   const { mutate: reorderContent } = useReorderContent(workspaceId);
@@ -389,7 +394,6 @@ export function FilesPanel({
             active={isFileActive(item.id)}
             beforeDelete={isFileActive(item.id) ? beforeReplace : undefined}
             canClone={!!workspace?.canClone}
-            canRetry={!!workspace?.isOwner}
             chapters={chapters}
             color="purple"
             file={item.data}
@@ -397,6 +401,8 @@ export function FilesPanel({
             onDeleted={onFileDeleted}
             onOpen={openLink}
             readOnly={readOnly}
+            retry={workspace?.isOwner ? retryProcessing : undefined}
+            retryPending={retryingIds.includes(item.id)}
             study={studyRow({ id: item.id, kind: 'file' })}
             workspaceId={workspaceId}
           />

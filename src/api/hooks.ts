@@ -6,6 +6,7 @@ import {
   queryOptions,
   useInfiniteQuery,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query';
@@ -36,6 +37,7 @@ import type {
   AttemptDetail,
   AttemptParams,
   AutoReloadReq,
+  AutoReloadResp,
   BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
@@ -193,6 +195,9 @@ export const meQuery = () =>
     ...persisted,
     queryFn: () => api.get<User>('/me'),
     queryKey: qk.me,
+    // Plan and account banners follow a plan change made in another tab
+    // (Checkout, the portal, Stripe's emails).
+    refetchOnWindowFocus: 'always',
   });
 export const useMe = (options?: QueryUiOptions) =>
   useQuery({ ...meQuery(), meta: queryMeta(options) });
@@ -319,6 +324,13 @@ export function applyNotificationEvent(
   qc: QueryClient,
   event: NotificationStreamEvent
 ) {
+  // Stripe or the reload worker changed billing. A pending billing save
+  // refetches when it settles, so it is left to that refetch.
+  if (event.type === 'billing') {
+    if (qc.isMutating({ mutationKey: qk.billing }) === 0)
+      void qc.invalidateQueries({ queryKey: qk.billing });
+    return;
+  }
   // The list joins each row's workspace and member for its icon, which a
   // pushed row lacks, so a new notification refetches instead of inserting.
   if (event.type === 'created') {
@@ -392,7 +404,11 @@ export function useEventStream(wsId: string) {
     const setStatus = (status: EventStreamState['status']) =>
       qc.setQueryData<EventStreamState>(qk.eventStream, { status });
     const reconcile = () => {
-      const keys: QueryKey[] = [qk.notifications, qk.notificationUnread];
+      const keys: QueryKey[] = [
+        qk.notifications,
+        qk.notificationUnread,
+        qk.billing,
+      ];
       if (wsId) {
         keys.push(qk.files(wsId), qk.materials(wsId), qk.chapters(wsId));
       }
@@ -616,16 +632,9 @@ export const billingQuery = () =>
     queryFn: () => api.get<BillingInfo>('/billing'),
     queryKey: qk.billing,
   });
+/** Kept current by the event stream's `billing` events (useEventStream). */
 export const useBilling = (options?: QueryUiOptions) =>
-  useQuery({
-    ...billingQuery(),
-    meta: queryMeta(options),
-    // A reload charge settles within seconds; poll until it does.
-    refetchInterval: (query) =>
-      query.state.data?.creditSettings.reload.status === 'charging'
-        ? 3000
-        : false,
-  });
+  useQuery({ ...billingQuery(), meta: queryMeta(options) });
 
 export const usageQuery = () =>
   queryOptions({
@@ -688,12 +697,38 @@ export function usePaymentMethodCheckout() {
   });
 }
 
+/** Shows a credit setting at once; billing saves share qk.billing so only
+ * the last to settle refetches, and stream refetches wait for them. */
+async function setCreditSettings(
+  qc: QueryClient,
+  patch: Partial<BillingInfo['creditSettings']>
+) {
+  await qc.cancelQueries({ queryKey: qk.billing });
+  qc.setQueryData<BillingInfo>(qk.billing, (billing) =>
+    billing
+      ? { ...billing, creditSettings: { ...billing.creditSettings, ...patch } }
+      : billing
+  );
+}
+
+const refetchBillingIfLast = (qc: QueryClient) =>
+  refetchIfLast(qc, qk.billing, () =>
+    qc.invalidateQueries({ queryKey: qk.billing })
+  );
+
 export function useSetAutoReload() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: AutoReloadReq) =>
-      api.put<void>('/billing/auto-reload', body),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.billing }),
+      api.put<AutoReloadResp>('/billing/auto-reload', body),
+    mutationKey: qk.billing,
+    onMutate: (body) =>
+      setCreditSettings(qc, {
+        autoReload: body.enabled,
+        reloadAmountCents: body.amountCents,
+        reloadThresholdMicros: body.thresholdCredits * 1_000_000,
+      }),
+    onSettled: () => refetchBillingIfLast(qc),
   });
 }
 
@@ -702,7 +737,10 @@ export function useSetSpendingLimit() {
   return useMutation({
     mutationFn: (limitCents: SpendingLimitReq['limitCents']) =>
       api.put<void>('/billing/spending-limit', { limitCents }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: qk.billing }),
+    mutationKey: qk.billing,
+    onMutate: (limitCents) =>
+      setCreditSettings(qc, { spendingLimitCents: limitCents || undefined }),
+    onSettled: () => refetchBillingIfLast(qc),
   });
 }
 
@@ -1108,6 +1146,8 @@ export function useDeleteFile(wsId: string) {
   });
 }
 
+const retryProcessingKey = (wsId: string) => ['retryProcessing', wsId] as const;
+
 /** Process a failed file again on its stored bytes (owner only, charged like
  * automatic reprocessing). The file list shows it pending once it lands. */
 export function useRetryFileProcessing(wsId: string) {
@@ -1117,12 +1157,26 @@ export function useRetryFileProcessing(wsId: string) {
       api.post<void>(`/files/${encodeURIComponent(id)}/retry-processing`, {
         parseMode,
       } satisfies RetryProcessingReq),
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: qk.files(wsId) });
-      qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) });
-    },
+    mutationKey: retryProcessingKey(wsId),
+    // Awaited, so the retry stays pending until the refetched list shows the
+    // file out of `failed` (useRetryingFileIds).
+    onSettled: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: qk.files(wsId) }),
+        qc.invalidateQueries({ queryKey: qk.workspaceStats(wsId) }),
+      ]),
   });
 }
+
+/** Files whose Retry processing is still running: the POST, then the list
+ * refetch. Their Retry stays off, so no second click meets the queued job's
+ * 409. */
+export const useRetryingFileIds = (wsId: string) =>
+  useMutationState({
+    filters: { mutationKey: retryProcessingKey(wsId), status: 'pending' },
+    select: (mutation) =>
+      (mutation.state.variables as Pick<SourceFile, 'id'>).id,
+  });
 
 export function useDeleteOwnedFile() {
   const qc = useQueryClient();

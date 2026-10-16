@@ -21,6 +21,29 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+### Error ids where the error stays
+
+An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
+without one of the typed codes `provider_busy`, `ai_unavailable`,
+`generate_empty`, `bank_unavailable`, or an unknown status without a code)
+shows its request's trace id under the copy as a small "Error ID: …" line with
+a copy button (`ErrorId`), so a user can quote it and an operator can find the
+logs and Sentry event. Only the surfaces where the error stays on screen show
+it, through `ErrorState`'s `errorId`:
+
+- boundary screens (`AppErrorBoundary`, `RouteErrorComponent`);
+- a page or pane whose read failed, with Retry: the dashboard's recent
+  workspaces, the billing usage and invoice tabs, the workspace statistics tab,
+  the question bank, a review session, a quiz result, a file's download links
+  (`FileError`'s `errorId`) and a note's collaboration token;
+- form errors (`FormAlert`'s `errorId`).
+
+Typed refusals, exceptions without a request, toasts and status banners show
+none. The id comes from `ApiError.traceId` (see the trace id in
+`observability-metering.md`). These surfaces are alerts, so the id text is
+hidden from screen readers (the copy button names it), and a copy is announced
+through the line's own polite status.
+
 ### Form dialogs keep their errors
 
 A dialog that submits a form (the clone dialogs, `CloneItemDialog` and
@@ -33,7 +56,7 @@ inline, not as a toast, so the draft and its context stay on screen:
   `title_taken`).
 - Anything else shows in `FormAlert` (src/components/ui/FormAlert.tsx) at the
   bottom of the form; `cloneErrorMessage` maps storage, plan-cap, credit and
-  access refusals to their copy.
+  access refusals to their copy. An unexpected failure adds its error id.
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
   failure is reported once.
 
@@ -68,7 +91,9 @@ included, until that one request settles, which serialized `/me` and the shell's
 other reads a round trip behind each page's first query. `page()` in
 `src/router.ts` discards any return value; hand-written routes use block
 bodies. The auth-shell route itself prefetches `/me`, so every page starts it in
-the first wave.
+the first wave. `/me` alone refetches on every window focus, stale or not, so
+plan and account banners follow a plan change made in Checkout, the billing
+portal or another tab when the user returns.
 File and material detail queries also use five seconds, but retain the global
 disabled focus refetching. Reopening stale details refreshes them; live material
 editing continues to receive content through Yjs.
@@ -131,8 +156,11 @@ conflict. Zod's own messages follow the UI locale (`z.config` in
 copy.
 
 `too_many_ingest_leases` is kind `ingest`, distinct from `llm_credits_exhausted`
-and `too_many_streams`. The add-source dialog toasts it and keeps the unsent
-tail. Do not map it onto credits or the file-cap copy.
+and `too_many_streams`. An upload reservation answered 429 waits out
+`retryAfterSeconds` (at most 30 s) and gets 3 attempts in all, as does an
+import request after a network error, 408, 429 or 5xx
+(`src/features/workspace/sourceUpload.ts`, `sourceImport.ts`). The add-source
+dialog toasts it and keeps the unsent tail. Do not map it onto credits or the file-cap copy.
 
 Browser analysis of a fast-parse row reports inline on that row, never as a
 toast: one message each for a user-password PDF, a damaged file, more pages
@@ -186,7 +214,7 @@ not offline use: without a service worker the app itself does not load offline.
 
 - The root `AppErrorBoundary` protects the router and development probes. It
   renders a full-page fallback and recognizes chunk-load errors as requiring a
-  reload.
+  reload, except while offline, when any failure reads as offline.
 - Router error components protect route-level lazy loading and loader/render
   failures.
 - Feature and pane boundaries protect independently recoverable regions such as
@@ -205,6 +233,19 @@ outside the shell (the root boundary, a public route) the fallback is the
 A route chunk that comes back as HTML (a site deploy still propagating answers
 a missing `/assets/*` name with the SPA's `index.html`) fails as a chunk-load
 error: the router reloads once, then shows "An update is ready" with Reload.
+
+An open tab stays usable when the connection drops (Epo 2026-10-17). A page
+change whose code is not loaded yet fails offline as an `OfflineError`
+(`lazyPage` in `src/router.ts`) instead of TanStack's reload, which would
+land on the browser's offline page: the route's error component shows the
+offline state inside the shell. Retry and reconnect reset the boundary and
+reload the route (`router.invalidate()`). The browser keeps a failed import
+for the document, so back online that retry fails again as a chunk-load
+error and TanStack's one reload loads the page, now online. The release
+nudge's page load waits for the connection the same way (plate-editor
+"Client protocol and the release nudge"). The check is `navigator.onLine`:
+a connection that is down while the browser reports online still takes
+TanStack's reload.
 
 ## Shared-resource security
 
@@ -304,9 +345,14 @@ resubscribed), while renaming, moving and deleting still work.
 TanStack Query's `onlineManager` pauses network work until connectivity
 returns; loading UI should describe that it is waiting rather than escalating
 the pause to an error. A paused query is not loading (`isLoading` is false), so
-a page gated on it checks `fetchStatus === 'paused'` before its missing state
-and shows `QueryPausedState`; the workspace page does this, so opening a
-workspace offline reads "Waiting for connection", not private or unavailable.
+a page gated on it checks `waitsForConnection(fetchStatus, data)`
+(`src/lib/online.ts`) before its missing state and shows `QueryPausedState`;
+the workspace page does this, so opening a workspace offline reads "Waiting
+for connection", not private or unavailable. The waiting state is only for a
+query without data (Epo 2026-10-17): a page or list holding data, such as a
+stale or restored list whose refetch is paused, keeps showing it. Quiz
+attempts and flashcard study read fresh on purpose (`fresh: true`, drawn only
+after a read in this visit) and keep their waiting state while paused.
 
 A query that throws to `AppErrorBoundary` or `RouteErrorComponent` loses its
 observer, so neither `refetchOnReconnect` nor the event stream's reconnect
@@ -583,16 +629,29 @@ with `processing_started`. Editors see the list without actions.
 A source file whose processing failed (`files.status='failed'`) is processed
 again only by its owner: automatic processing never picks it, even with Auto
 process edits on (the collaboration scheduler and `RequestSourceRefresh` skip
-it unless the owner asked). The file row's menu offers Retry processing in the
-warning tint (`MenuItem.warning`), and the Indexing tab lists every failed
-file under Failed files with the same action. Both open the upload dialog in a
-retry mode (`AddSourceDialog` `retryFile`): one fixed row read from the stored
-bytes through the file's presigned link, so the fast-parse check and estimate
-run as for an upload, then `POST /api/files/{id}/retry-processing` with the
-chosen parse mode. The server queues the file's first processing again on its
-stored bytes, charged to the owner like automatic reprocessing; `none` just
-stores it, a file that is not failed or already has a job answers 409, a mode
-the format does not offer 400 (`RetryFileProcessing`).
+it unless the owner asked), unless it is partial: still `indexed`, with a part
+(the descriptor or a page's VLM read) missing, which the next automatic
+refresh of an edited source may fill. The file row's menu offers Retry
+processing in the warning tint (`MenuItem.warning`), and the Indexing tab lists
+every failed file under Failed files with the same action. For a file that is
+not indexed both open the upload dialog in a retry mode (`AddSourceDialog`
+`retryFile`): one fixed row read from the stored bytes through the file's
+presigned link, so the fast-parse check and estimate run as for an upload, then
+`POST /api/files/{id}/retry-processing` with the chosen parse mode. A failed
+file that is still indexed retries in one click, with no dialog, no parse-mode
+choice and no estimate (parts design Q8, `retryFailedFile`): it sends `fast`,
+the route every indexed file was processed on (direct routes ignore the mode),
+and a success toast follows; a refusal shows the default mutation error toast.
+The file's Retry stays disabled, in both places and per file, until the file
+leaves `failed`: each list has one retry mutation (`useRetryFileProcessing`,
+keyed per workspace), its settle awaits the files refetch, and
+`useRetryingFileIds` lists the files whose mutation is still pending, so a
+second click never meets the queued job's 409. The server queues the file's processing again on its stored bytes, charged to
+the owner like automatic reprocessing; `none` just stores it, a file that is
+not failed or already has a parse, ingest or source refresh job answers 409, a
+mode the format does not offer 400 (`RetryFileProcessing`). A partial file
+keeps its index and re-runs only its missing parts in its own parse mode (see
+[agentic-retrieval.md](../agentic-retrieval.md), "Parts").
 If a published source changes while an answer or generation request gathers
 evidence, `source_changed` asks the user to retry. The Go relay preserves both
 codes for HTTP responses and chat events; neither starts an automatic retry.
@@ -619,6 +678,10 @@ it (and below dialogs), lists those entries: waiting, uploading (bar), importing
 status read from the files cache (queued, parsing with `ingestPct`, ready,
 parsing failed, or "not searchable" for a ready file without an index, shown as
 neutral information because it is usually a file the user chose not to parse).
+Parsing failed reads "AI won't know about its contents" only for a file without
+an index; a failed file that is still indexed keeps answering search (a partial
+file, or a failed retry over its previous index) and reads "Error processing
+file" (parts design Q1, `transferStatus`).
 Each status label takes its icon's colour. The event stream only follows the open workspace,
 so the panel polls the files list every four seconds for other workspaces with
 unfinished rows, and the runner's wave gate polls every five. Closing the panel

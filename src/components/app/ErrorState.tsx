@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { ErrorAction } from '@/components/ui/Button';
+import { ErrorId } from '@/components/ui/ErrorId';
 import { Icon, type IconName } from '@/components/ui/Icon';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -8,6 +9,7 @@ export function ErrorState({
   action,
   className,
   description,
+  errorId,
   icon = 'error',
   kind,
   testId,
@@ -17,6 +19,8 @@ export function ErrorState({
   action?: ReactNode;
   className?: string;
   description?: ReactNode;
+  /** An unexpected failure's trace id (`unexpectedErrorId`). */
+  errorId?: string | null;
   icon?: IconName;
   /** What failed, for tests (`data-error-kind`). */
   kind?: string;
@@ -64,6 +68,7 @@ export function ErrorState({
             {description}
           </p>
         )}
+        {errorId && <ErrorId className="text-fg-muted" id={errorId} />}
       </div>
       {action && (
         <div className={variant === 'page' ? 'mt-4' : 'mt-3'}>{action}</div>

@@ -126,7 +126,7 @@ func (a *api) materialResponse(
 	}
 	body, err := apimodel.FromMaterial(material)
 	if err != nil {
-		return nil, materialContentError(err)
+		return nil, materialContentError(ctx, material.ID, err)
 	}
 	body.SharePath = a.s.MaterialSharePath(material)
 	// A note's footer also credits its live embeds: the app unions them with

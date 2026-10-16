@@ -109,7 +109,7 @@ func (s *Store) effectiveSubscriptionStateForUser(
 			WHERE any_sub.user_id=u.id) THEN u.plan_tier
 		ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
 			WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
-				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
 			ORDER BY (live.plan_tier='pro') DESC,
 				live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
 		END,
@@ -118,7 +118,7 @@ func (s *Store) effectiveSubscriptionStateForUser(
 			WHERE any_sub.user_id=u.id) THEN u.subscription_status
 		ELSE COALESCE((SELECT live.status FROM user_subscriptions live
 			WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
-				AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
 			ORDER BY (live.plan_tier='pro') DESC,
 				live.current_period_end DESC NULLS FIRST LIMIT 1), 'canceled')
 		END
@@ -177,7 +177,8 @@ func (s *Store) storageOwnerTx(ctx context.Context, tx pgx.Tx, workspaceID strin
 // lockWorkspaceMutationTx is the common final-admission boundary for an
 // authenticated workspace mutation. It makes ownership immutable, then locks
 // the actor and storage owner in stable ID order so suspension/deletion cannot
-// commit while the mutation is still in flight.
+// commit while the mutation is still in flight. A locked owner's workspace is
+// not found for any other actor (ownerHidden).
 func (s *Store) lockWorkspaceMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -191,7 +192,7 @@ func (s *Store) lockWorkspaceMutationTx(
 		actorID = ownerID
 	}
 	if err := s.lockAccountSessionsTx(ctx, tx, ownerID, actorID); err != nil {
-		return "", err
+		return "", ownerHidden(err, ownerID, actorID)
 	}
 	return ownerID, nil
 }

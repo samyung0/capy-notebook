@@ -1281,22 +1281,6 @@ func IncomingMermaidSource(content string) string {
 	return fenced(content, "mermaid")
 }
 
-func ReplaceQuiz(raw string, questions json.RawMessage, timeLimit *int) (string, error) {
-	replacement, err := QuizDocument(questions, timeLimit)
-	if err != nil {
-		return "", err
-	}
-	return replaceCustom(raw, replacement, "quiz", func(map[string]any, map[string]any) {})
-}
-
-func ReplaceFlashcards(raw string, cards []Card) (string, error) {
-	replacement, err := FlashcardsDocument(cards)
-	if err != nil {
-		return "", err
-	}
-	return replaceCustom(raw, replacement, "flashcards", preserveFlashcardText)
-}
-
 // RewriteFlashcardIDs re-keys cards in place, preserving all rich-text leaves
 // and marks. idMap makes the mapping stable across cloned revision history.
 func RewriteFlashcardIDs(raw string, idMap map[string]string, mint func() string) (string, []string, error) {
@@ -1442,45 +1426,6 @@ func RewriteClonedEditorAssetIDs(raw string, idMap map[string]string) (string, e
 	return Marshal(doc)
 }
 
-func replaceCustom(raw, replacement, typ string, preserve func(map[string]any, map[string]any)) (string, error) {
-	doc, err := Parse(raw)
-	if err != nil {
-		return "", err
-	}
-	repl, err := Parse(replacement)
-	if err != nil {
-		return "", err
-	}
-	custom := find(repl.Value, typ)
-	if current := find(doc.Value, typ); current != nil {
-		custom["id"] = current["id"]
-		preserve(current, custom)
-	}
-	if !replace(doc.Value, typ, custom) {
-		doc.Value = append(doc.Value, custom)
-	}
-	return Marshal(doc)
-}
-
-func preserveFlashcardText(current, replacement map[string]any) {
-	oldCards := byID(current["children"].([]any))
-	for _, raw := range replacement["children"].([]any) {
-		card := raw.(map[string]any)
-		if old := oldCards[card["id"].(string)]; old != nil {
-			preserveMatchingText(old, card, "flashcard_front")
-			preserveMatchingText(old, card, "flashcard_back")
-		}
-	}
-}
-
-func preserveMatchingText(current, replacement map[string]any, typ string) {
-	oldChild := firstChild(current, typ)
-	newChild := firstChild(replacement, typ)
-	if oldChild != nil && newChild != nil && nodeText(oldChild) == nodeText(newChild) {
-		newChild["children"] = oldChild["children"]
-	}
-}
-
 func find(nodes []map[string]any, typ string) map[string]any {
 	for _, node := range nodes {
 		if node["type"] == typ {
@@ -1493,54 +1438,6 @@ func find(nodes []map[string]any, typ string) map[string]any {
 		}
 	}
 	return nil
-}
-
-func replace(nodes []map[string]any, typ string, replacement map[string]any) bool {
-	for i, node := range nodes {
-		if node["type"] == typ {
-			nodes[i] = replacement
-			return true
-		}
-		values, ok := node["children"].([]any)
-		if !ok {
-			continue
-		}
-		for j, raw := range values {
-			child, ok := raw.(map[string]any)
-			if !ok {
-				continue
-			}
-			if child["type"] == typ {
-				values[j] = replacement
-				return true
-			}
-			if replaceInNode(child, typ, replacement) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func replaceInNode(node map[string]any, typ string, replacement map[string]any) bool {
-	values, ok := node["children"].([]any)
-	if !ok {
-		return false
-	}
-	for i, raw := range values {
-		child, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if child["type"] == typ {
-			values[i] = replacement
-			return true
-		}
-		if replaceInNode(child, typ, replacement) {
-			return true
-		}
-	}
-	return false
 }
 
 // FromLegacyMarkdown is only used at generator boundaries that still produce
@@ -1707,20 +1604,6 @@ func childrenAnyOfType(node map[string]any, typ string) []any {
 		out[i] = values[i]
 	}
 	return out
-}
-
-func byID(values []any) map[string]map[string]any {
-	result := map[string]map[string]any{}
-	for _, raw := range values {
-		value, ok := raw.(map[string]any)
-		if !ok {
-			continue
-		}
-		if id, ok := value["id"].(string); ok {
-			result[id] = value
-		}
-	}
-	return result
 }
 
 func newID(prefix string) string {

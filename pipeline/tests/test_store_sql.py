@@ -1885,6 +1885,7 @@ def test_terminal_reclaim_commits_file_claim_and_credit_cleanup(workspace):
         "attempts": 1,
         "outcome": "failed",
         "file_failed": True,
+        "file_indexed": False,
     }
     with workspace._connect() as conn:
         state = conn.execute(
@@ -2010,7 +2011,7 @@ def test_cancelled_pipeline_file_write_is_revision_and_etag_fenced(workspace):
         "sourceETag": "etag-a",
     }
     with workspace._connect() as conn, conn.cursor() as cur:
-        assert not db.fail_pipeline_file_if_current(cur, old_payload)
+        assert db.fail_pipeline_file_if_current(cur, old_payload) is None
         conn.commit()
     assert (
         workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,))
@@ -2023,7 +2024,7 @@ def test_cancelled_pipeline_file_write_is_revision_and_etag_fenced(workspace):
         "sourceETag": "etag-b",
     }
     with workspace._connect() as conn, conn.cursor() as cur:
-        assert db.fail_pipeline_file_if_current(cur, current_payload)
+        assert db.fail_pipeline_file_if_current(cur, current_payload) is False
         conn.commit()
     assert (
         workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,)) == "failed"
@@ -2037,9 +2038,12 @@ def test_cancelled_legacy_multipart_file_uses_empty_etag_fence(workspace):
         (file_id,),
     )
     with workspace._connect() as conn, conn.cursor() as cur:
-        assert db.fail_pipeline_file_if_current(
-            cur,
-            {"fileId": file_id, "sourceRevision": 1, "sourceETag": ""},
+        assert (
+            db.fail_pipeline_file_if_current(
+                cur,
+                {"fileId": file_id, "sourceRevision": 1, "sourceETag": ""},
+            )
+            is False
         )
         conn.commit()
     assert workspace.scalar("SELECT status FROM files WHERE id=%s", (file_id,)) == (
@@ -3582,3 +3586,26 @@ def test_provider_busy_repend_hands_the_attempt_back_and_counts_the_wait(workspa
         conn.commit()
     assert claimed is not None
     assert claimed["id"] == job_id and claimed["provider_waits"] == 1
+
+
+@pytest.mark.parametrize(("hours_past_end", "tier"), [(1, "pro"), (49, "free")])
+def test_effective_plan_tier_keeps_pro_through_renewal_tolerance(
+    workspace, hours_past_end: int, tier: str
+) -> None:
+    """A renewal webhook landing after period end keeps Pro for 48 hours."""
+    import psycopg
+
+    user_id = f"u_{secrets.token_hex(6)}"
+    with psycopg.connect(workspace.dsn) as conn:
+        conn.execute(
+            "INSERT INTO users (id, name, email) VALUES (%s,'Renewing',%s)",
+            (user_id, f"{user_id}@example.com"),
+        )
+        conn.execute(
+            "INSERT INTO user_subscriptions "
+            "(stripe_subscription_id, user_id, status, plan_tier, current_period_end) "
+            "VALUES (%s,%s,'active','pro',now() - make_interval(hours => %s))",
+            (f"sub_{user_id}", user_id, hours_past_end),
+        )
+        with conn.cursor() as cur:
+            assert db.effective_plan_tier(cur, user_id) == tier

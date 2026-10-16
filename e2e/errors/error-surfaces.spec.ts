@@ -17,9 +17,14 @@ test.describe('standardized error surfaces', () => {
     const workspace = await workspaceFactory.create({
       name: 'Error surface workspace',
     });
+    // The gateway's generic answer to an unexpected failure.
+    const traceId = 'e2e0'.repeat(8);
     await ownerPage.route(`**/api/workspaces/${workspace.id}`, (route) =>
       route.fulfill({
-        body: JSON.stringify(apiError(500, 'Injected workspace failure.')),
+        body: JSON.stringify({
+          ...apiError(500, 'Something went wrong'),
+          traceId,
+        }),
         contentType: 'application/json',
         status: 500,
       })
@@ -33,6 +38,7 @@ test.describe('standardized error surfaces', () => {
     await expect(
       surface.getByRole('button', { name: m.error_action_retry() })
     ).toBeVisible();
+    await expect(surface.getByTestId('error-id')).toContainText(traceId);
   });
 
   test('private and missing workspace summaries stay non-disclosing', async ({

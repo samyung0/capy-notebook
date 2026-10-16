@@ -166,7 +166,6 @@ export async function streamChat(
     reportError(errorCopy(e, m.chat_failed()));
     return;
   }
-
   if (!res.ok || !res.body) {
     const payload = res.ok ? null : await res.json().catch(() => null);
     const fallback = res.ok

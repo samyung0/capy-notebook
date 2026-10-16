@@ -30,6 +30,7 @@ import {
   type WorkspacesSearch,
   workspaceListParams,
 } from '@/lib/listSearch';
+import { waitsForConnection } from '@/lib/online';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 export default function Workspaces() {
@@ -120,7 +121,7 @@ export default function Workspaces() {
       />
 
       <div className="w-full shrink-0 grow px-4 pt-4 pb-6 sm:px-6 sm:pt-2">
-        {fetchStatus === 'paused' ? (
+        {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
           <div

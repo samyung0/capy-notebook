@@ -219,6 +219,32 @@ fn varbytes(out: &mut Vec<u8>, bytes: &[u8]) {
     out.extend_from_slice(bytes);
 }
 
+/// The client protocol an up-to-date browser sends: the server's own
+/// (`CLIENT_PROTOCOL` in `protocol.rs`).
+fn client_protocol() -> u64 {
+    include_str!("../src/protocol.rs")
+        .lines()
+        .find_map(|line| {
+            line.strip_prefix("pub const CLIENT_PROTOCOL: u32 = ")?
+                .strip_suffix(';')?
+                .parse()
+                .ok()
+        })
+        .expect("CLIENT_PROTOCOL in protocol.rs")
+}
+
+/// A JOIN's payload: the room, the token and the client protocol (none from
+/// a tab before the version gate).
+fn join_payload(room: &str, token: &str, protocol: Option<u64>) -> Vec<u8> {
+    let mut payload = Vec::new();
+    varbytes(&mut payload, room.as_bytes());
+    varbytes(&mut payload, token.as_bytes());
+    if let Some(protocol) = protocol {
+        var(&mut payload, protocol);
+    }
+    payload
+}
+
 fn frame(channel: u64, kind: u8, payload: &[u8]) -> Vec<u8> {
     let mut out = Vec::new();
     var(&mut out, channel);
@@ -275,10 +301,8 @@ impl Client {
     }
 
     async fn join(&mut self, room: &str, token: &str) {
-        let mut payload = Vec::new();
-        varbytes(&mut payload, room.as_bytes());
-        varbytes(&mut payload, token.as_bytes());
-        self.send(0, &payload).await;
+        self.send(0, &join_payload(room, token, Some(client_protocol())))
+            .await;
     }
 
     /// Reads messages until one of `kind` arrives (applying syncs), or times out.
@@ -561,6 +585,138 @@ async fn refusals_carry_the_reasons_the_editor_acts_on() {
     client.join(&room, "not-a-token").await;
     let reason = text_payload(&client.until(2).await.expect("refused"));
     assert_eq!(reason, "permission-denied");
+}
+
+/// The version gate: a JOIN or draft send without the client protocol (a tab
+/// from before the gate) or above the server's own (a rollback) is refused as
+/// `collaboration-outdated` before any lookup, in material and source rooms
+/// alike; a refused draft send stores nothing and is counted by family.
+#[tokio::test]
+async fn a_client_outside_the_protocol_range_is_refused_as_outdated() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let (user, material) = note(&env, "base").await;
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut client = Client::open(server.port).await;
+    for protocol in [None, Some(client_protocol() + 1)] {
+        client.send(0, &join_payload(&room, &write, protocol)).await;
+        let reason = text_payload(&client.until(2).await.expect("refused"));
+        assert_eq!(reason, "collaboration-outdated", "{protocol:?}");
+    }
+    // Before the gateway is asked about a file it does not know.
+    let source = "source:file_outdated:epoch:1";
+    client
+        .send(
+            0,
+            &join_payload(source, &token(source, &user, "write"), None),
+        )
+        .await;
+    let reason = text_payload(&client.until(2).await.expect("refused"));
+    assert_eq!(reason, "collaboration-outdated");
+    // The current protocol joins.
+    assert_eq!(client.joined(&room, &write).await, 1);
+    assert!(client.settle(|c| c.block_text() == "base").await);
+
+    let response = reqwest::Client::new()
+        .post(format!("http://127.0.0.1:{}/drafts", server.port))
+        .header("content-type", "application/octet-stream")
+        .header("x-capy-room", &room)
+        .header("origin", ORIGIN)
+        .bearer_auth(&write)
+        .body(drafted(&client.doc, typed_into_note(" stale")))
+        .send()
+        .await
+        .expect("draft send");
+    assert_eq!(response.status().as_u16(), 426);
+    assert_eq!(
+        response.json::<serde_json::Value>().await.expect("answer"),
+        serde_json::json!({ "class": "outdated" })
+    );
+    assert!(
+        !client.settle(|c| c.block_text() != "base").await,
+        "the refused send reached the room: {}",
+        client.block_text()
+    );
+    let metrics = metrics_text(server.port).await;
+    for line in [
+        "capy_collaboration_outdated_refusals_total{family=\"material\"} 3",
+        "capy_collaboration_outdated_refusals_total{family=\"source\"} 1",
+        "capy_collaboration_draft_refusals_total{class=\"outdated\"} 1",
+    ] {
+        assert!(
+            metrics.lines().any(|known| known == line),
+            "{line} in {metrics}"
+        );
+    }
+}
+
+/// Security regression (Epo 2026-10-16): a suspended owner's note is not
+/// found for a reader or a workspace editor, as a deleted owner's is, even
+/// with tokens minted before the suspension, while the owner joining is
+/// refused as a locked account (their drafts kept). Fails if the room still
+/// admits the others, or answers the owner not found.
+#[tokio::test]
+async fn a_suspended_owners_note_is_not_found_for_its_readers() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let client = db(&env).await;
+    let (owner, editor, reader) = (user(&env).await, user(&env).await, user(&env).await);
+    let workspace = format!("ws_it_{}", uuid_like());
+    client
+        .execute(
+            "INSERT INTO workspaces (id,user_id,name,privacy) VALUES ($1,$2,'IT','public')",
+            &[&workspace, &owner],
+        )
+        .await
+        .expect("workspace");
+    client
+        .execute(
+            "INSERT INTO workspace_members (workspace_id,user_id,role) VALUES ($1,$2,'editor')",
+            &[&workspace, &editor],
+        )
+        .await
+        .expect("member");
+    let material = format!("m_it_{}", uuid_like());
+    let content = serde_json::json!({
+        "schemaVersion": 1,
+        "value": [{ "type": "p", "id": "b1", "children": [{ "text": "shared" }] }],
+    });
+    client
+        .execute(
+            "INSERT INTO materials (id, created_by, workspace_id, workspace_name, kind, title, content) VALUES ($1, $2, $3, 'IT', 'note', 'IT', $4)",
+            &[&material, &owner, &workspace, &content],
+        )
+        .await
+        .expect("material");
+    let room = format!("material:{material}:schema:1");
+    let read = token(&room, &reader, "read");
+    let write = token(&room, &editor, "write");
+    let mut before = Client::open(server.port).await;
+    assert_eq!(before.joined(&room, &read).await, 0);
+    let mut writer = Client::open(server.port).await;
+    assert_eq!(writer.joined(&room, &write).await, 1);
+    client
+        .execute(
+            "UPDATE users SET suspended_at=now(), suspended_reason='it' WHERE id=$1",
+            &[&owner],
+        )
+        .await
+        .expect("suspend");
+    for (who, joining, want) in [
+        ("reader", read, "collaboration-not-found"),
+        ("editor", write, "collaboration-not-found"),
+        (
+            "owner",
+            token(&room, &owner, "write"),
+            "collaboration-forbidden",
+        ),
+    ] {
+        let mut after = Client::open(server.port).await;
+        after.join(&room, &joining).await;
+        let reason = text_payload(&after.until(2).await.expect("refused"));
+        assert_eq!(reason, want, "{who}");
+    }
 }
 
 /// Security regression (cutover-reset REVIEW1 L1): a material without a Yjs
@@ -973,6 +1129,61 @@ async fn internal(port: u16, path: &str, body: &serde_json::Value) -> (u16, serd
         status,
         response.json().await.unwrap_or(serde_json::Value::Null),
     )
+}
+
+/// A room under the eviction lease (a compaction or a publication) refuses
+/// an agent edit and the replace-block command before anything applies,
+/// with the known 503 a room being reset answers (the report side:
+/// `http.rs` `a_room_being_reset_refuses_edits_without_a_report`).
+#[tokio::test]
+async fn an_edit_of_a_room_being_compacted_is_a_known_refusal() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let room = "material:compacting:schema:1";
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let lease = format!("capy:collaboration:evicting:{room}");
+    let _: () = redis::cmd("SET")
+        .arg(&lease)
+        .arg("test")
+        .arg("EX")
+        .arg(60)
+        .query_async(&mut connection)
+        .await
+        .expect("lease");
+    let edit = serde_json::json!({
+        "actorUserId": "u1",
+        "commands": [],
+        "operation": { "id": "op_compacting", "requestHash": "h1" },
+        "room": room,
+        "target": { "id": "compacting", "kind": "material" },
+    });
+    let command = serde_json::json!({
+        "type": "replace-block",
+        "actorUserId": "u1",
+        "materialId": "compacting",
+        "room": room,
+        "expectedBlock": {},
+        "replacementBlock": {},
+    });
+    let edited = internal(server.port, "/internal/documents/edit", &edit).await;
+    let commanded = internal(server.port, "/internal/commands", &command).await;
+    let _: i64 = redis::cmd("DEL")
+        .arg(&lease)
+        .query_async(&mut connection)
+        .await
+        .expect("release");
+    assert_eq!(
+        edited,
+        (
+            503,
+            serde_json::json!({ "code": "unavailable_target", "message": "collaboration room is being compacted" })
+        )
+    );
+    assert_eq!(commanded, edited);
 }
 
 #[tokio::test]
@@ -1760,10 +1971,11 @@ async fn a_socket_keeps_serving_its_rooms_while_another_room_loads() {
         .expect("connect");
     let mut pending = std::collections::VecDeque::new();
     let join = |channel: u64, room: &str, token: &str| {
-        let mut payload = Vec::new();
-        varbytes(&mut payload, room.as_bytes());
-        varbytes(&mut payload, token.as_bytes());
-        frame(channel, 0, &payload)
+        frame(
+            channel,
+            0,
+            &join_payload(room, token, Some(client_protocol())),
+        )
     };
     ws.send(Ws::Binary(
         join(1, &note_room, &token(&note_room, &user, "write")).into(),
@@ -3647,6 +3859,7 @@ async fn send_drafts_over(
         .post(format!("http://127.0.0.1:{port}/drafts"))
         .header("content-type", "application/octet-stream")
         .header("x-capy-room", room)
+        .header("x-capy-protocol", client_protocol().to_string())
         .body(body);
     if let Some(token) = token {
         request = request.bearer_auth(token);
@@ -4065,7 +4278,7 @@ async fn a_draft_preflight_answers_an_allowed_origin_alone() {
             .header("access-control-request-method", "POST")
             .header(
                 "access-control-request-headers",
-                "authorization,content-type,x-capy-room,x-capy-base",
+                "authorization,content-type,x-capy-room,x-capy-base,x-capy-protocol",
             )
             .send()
     };
@@ -4086,6 +4299,7 @@ async fn a_draft_preflight_answers_an_allowed_origin_alone() {
         "content-type",
         "x-capy-room",
         "x-capy-base",
+        "x-capy-protocol",
     ] {
         assert!(
             header("access-control-allow-headers").contains(name),
@@ -4156,7 +4370,8 @@ async fn a_draft_send_is_refused_while_an_eviction_lease_is_held() {
         .await
         .expect("connect");
     let head = format!(
-        "POST /drafts HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: {ORIGIN}\r\nAuthorization: Bearer {write}\r\nX-Capy-Room: {room}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        "POST /drafts HTTP/1.1\r\nHost: 127.0.0.1\r\nOrigin: {ORIGIN}\r\nAuthorization: Bearer {write}\r\nX-Capy-Room: {room}\r\nX-Capy-Protocol: {}\r\nContent-Type: application/octet-stream\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        client_protocol(),
         drafts.len()
     );
     stream.write_all(head.as_bytes()).await.expect("head");

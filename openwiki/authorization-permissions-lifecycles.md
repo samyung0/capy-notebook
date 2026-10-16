@@ -463,8 +463,10 @@ and [material editor checks](../server/internal/store/share.go#L209).
   without a roster still sees who wrote what.
 - Collaboration tokens encode `write` or `read` access; a `read` token exists
   only as the downgrade an editor receives when the storage owner's account is
-  suspended, frozen or at its storage limit (`full`, grace included), or the
-  editor's own account is frozen. The collaboration
+  frozen or at its storage limit (`full`, grace included), or the editor's own
+  account is frozen. A deleted, deletion-pending or suspended owner's material
+  gets no token (`404`), and the collaboration server refuses its room as not
+  found to everyone but the owner. The collaboration
   server rechecks actor lifecycle,
   current membership/share role, owner lifecycle, and current quota state when
   admitting a connection, synchronizing a refreshed token, and persisting each
@@ -561,13 +563,13 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   account lifecycle and storage-owner gates as the unified material API.
   Standalone quizzes and flashcards remain owner-controlled.
 - Mutation contracts keep authorities separate. Material title/filing/scope use
-  `/metadata`. Quiz questions/time limit use `/content`, quiz name/scope use
-  `/metadata`, and standalone visibility uses `/sharing`. Flashcard-set
-  metadata uses `/metadata`, the whole card list (text and images) uses
-  `/flashcards/{id}/content`, and standalone sharing uses `/sharing`;
-  ratings go to `POST /api/review/ratings` with read access only. Content/metadata paths do not accept
-  privacy, and sharing rejects workspace-contained materials before writing
-  anything.
+  `/metadata`. Quiz name/scope use `/metadata` and standalone visibility uses
+  `/sharing`; flashcard-set metadata uses `/metadata` and standalone sharing
+  uses `/sharing`. Quiz questions and a set's cards have no REST write: live
+  item rooms are their only writers (Epo 2026-10-16), under the collaboration
+  server's writer checks. Ratings go to `POST /api/review/ratings` with read
+  access only. Metadata paths do not accept privacy, and sharing rejects
+  workspace-contained materials before writing anything.
 - Signed-in viewers can read a shared quiz or flashcards, but cannot change
   its questions or cards.
 - An embedded quiz or flashcard set (`parent_material_id` set) has no lifecycle
@@ -623,6 +625,13 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   of landing. A copy in a workspace belongs to that workspace's owner, who pays
   for it (and whose plan's per-file cap applies to a file, as for an upload);
   `created_by` is the cloner. A standalone copy is the cloner's and private.
+- File clones (single and workspace) copy ready files and partial ones
+  (`failed` with a served index, a part missing), which stay partial in the
+  copy so its owner, who alone may Retry processing, can retry them (parts
+  design Q2); pending, processing and other failed files are not copied (a
+  single clone answers 404). The file row menu, the open file's header and
+  the dashboard's recent items offer Clone on those files only
+  (`fileCanClone`).
 - The dialog prefills `Name (copy)` (before a file's extension) while the
   destination is the source's own workspace and the plain name elsewhere,
   until the user types one. A material title is unique per workspace, so a
@@ -649,16 +658,39 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   source workspace/material as a source (a copy into the source's own workspace
   takes its row as the destination, like any write) or wait for Yjs
   persistence/projection; a stale SQL projection is an explicitly accepted
-  result. A transaction that loses a race retries. Clone counters live on separate
-  rows, while source-owner and target account locks are acquired in canonical ID
-  order.
+  result.
+- Clones queue instead of colliding (Epo 2026-10-16). Before its snapshot a
+  clone takes session advisory locks on its connection: the source's fence
+  (a workspace exclusively; a file or material exclusively under its
+  workspace's shared fence) and its payer's (`clone-payer:<id>`: the actor for
+  a workspace or standalone copy, the target workspace's owner otherwise).
+  Copies of one source, and copies one account pays for, therefore run one
+  after another and never meet on blob reference counts or the payer's
+  storage counter. The clone counter is bumped after the copy commits, in its
+  own statement under the fence, so it cannot fail the copy; a crash in
+  between loses one count. Source-owner and target account locks are acquired
+  in canonical ID order.
+- Writers outside clones still meet a clone's snapshot. The one that matters
+  is the payer's storage counter (`user_storage`): an upload reservation or
+  release of the payer committing while the clone runs fails the clone's
+  storage gate with a serialization failure (measured: with a busy writer
+  every clone spent its attempts). The clone then runs again, 3 attempts in
+  all, and once they are spent the user gets 409 `clone_source_changed`
+  ("The original changed while it was being copied. Try again.") (`retryClone`
+  in `server/internal/store/share.go`). Clones of different sources that share
+  a blob (a file and an earlier copy of it, or workspaces sharing an editor
+  asset) hold different fences, so with different payers they can still meet
+  on that blob's reference row and fall to the same backstop.
+- A clone reads the new row only after its fence's connection is back in the
+  pool, so clones never hold one connection while waiting for another.
 - Referenced ready media of a cloned material is rehomed under fresh asset IDs
   owned by the copy (in its destination workspace, or standalone); it never
   retains authorization-bearing asset IDs from the source workspace.
-- Suspension blocks the suspended actor's own API access, but it does not hide
-  content they already shared from another active user's clone. Material and
-  workspace clones apply that rule consistently; deletion pending and deletion
-  still make the source unavailable.
+- A deleted, deletion-pending or suspended owner's workspaces and materials
+  are no clone source: material, file and workspace clones answer `404`, and
+  so does a copy into that owner's workspace (see "What everyone else sees"
+  under Account lifecycle gates). Copies other users made earlier are theirs
+  and stay readable.
 
 Sources: [quiz read/attempt rules](../server/internal/httpapi/huma_quizzes.go#L74),
 [flashcard guards](../server/internal/httpapi/huma_flashcards.go#L60), and
@@ -786,6 +818,29 @@ E2E identities.
 | `suspended`         | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 | `deleted`           | No                 | No API access        | No                                                                     | No                                                                                   | No                                 | No                                                 |
 
+**What everyone else sees** (Epo 2026-10-16). A deleted, deletion-pending or
+suspended owner's workspaces and their content answer the same non-disclosing
+`404` to members, other signed-in users and anonymous link or public viewers on
+every content path: the workspace itself and the lists (workspace list,
+search, member-scope Files, Explore), files (source sessions, view sessions,
+downloads, previews, thumbnails), notes and materials (reads, collaboration
+tokens and live rooms), editor assets, comments, chat, study pages and clone
+sources, and a copy into that owner's workspace. The answer comes before
+anything that could reveal the owner's state: the role read
+(`workspaceRoles`, `materialEffectiveAccess`, `sourceActorsAllowed`) leaves the
+workspace out, and a write that locks accounts before reading roles maps the
+owner's locked account to not found (`ownerHidden`). Becoming locked evicts
+the owner's note and source rooms with `discard` (`user_acl_eviction_trigger`,
+source rooms since migration 0090), so open viewers reconnect through that
+check. A member's unsynced edits in that owner's notes and files are dropped
+on the 404, as for a deleted owner: the browser cannot tell it from a
+deletion. The owner keeps the locked-account answer of their own session, so
+their own drafts are kept. Copies other users already made belong to them and
+stay readable. The 404 applies to new requests: presigned links handed out
+before stay valid until they expire (about five minutes for file and asset
+links, up to two hours for thumbnail links), and shared pages the edge cached
+are served for up to five minutes.
+
 Grace and frozen accounts may still open a Pro Checkout session: resubscribing
 is a recovery action, not content creation. Checkout completion retrieves the
 full Stripe subscription when the event carries only its expandable ID before
@@ -812,6 +867,29 @@ state deletes content. The states exist only when the paid period has lapsed
 **and** stored bytes exceed the applicable limit. A concurrent live Free
 subscription selects Free limits but does not erase the most recent expired Pro
 boundary used to derive grace or frozen.
+
+**Renewals and failed payments.** An `active`, `trialing` or `past_due` row
+stays live until `current_period_end` + 48 hours (`renewalTolerance` in
+`store/subscriptions.go`, mirrored in `pipeline/store/db.py` and
+`collaboration-rs` `access.rs`). Stripe moves the period forward when it
+renews, but its webhook can land after the old period end; without the
+tolerance an over-Free Pro account would briefly drop into grace, fail ingest
+jobs and receive an over-quota notice that cannot be withdrawn. A row still
+expired after the tolerance (a missed renewal or cancellation, until the daily
+reconciliation repairs it) lapses with grace counted from `current_period_end`.
+During Stripe's retries the subscription is `past_due` and keeps Pro, with no
+banner or notice; a retry that succeeds turns it `active` with nothing to
+revert. After the last failed retry Stripe cancels the subscription (the
+configured final action, runbook §12.4) and the 14-day grace starts from its
+`ended_at`. A subscription's end time is fixed by its first non-entitling event
+(Stripe's `ended_at`, else that event's time, which covers `unpaid`, stored as
+`canceled`); later events never move it and returning to an entitling status
+clears it, so the grace start and the over-quota notices keyed to it stay put.
+A live Pro subscription that ends without cancel-at-period-end, from a webhook
+or from reconciliation closing a row Stripe no longer reports, sends the "Pro
+ended" email (`subscription-ended`) once per subscription; a cancel-at-period-end
+subscription already sent "Pro cancelled" and gets none. Notifications and
+emails already sent stay sent when an account recovers.
 
 Store-level enforcement sits in the workspace edit lock
 (`lockWorkspaceEditorMutationTx`, which checks both actor and owner; trash and
@@ -848,14 +926,30 @@ refreshes email and avatar only. `PATCH /api/me` stores the name the user
 typed, trimmed, 1 to 60 runes, rejected with `422` otherwise. Stripe customers
 are created with that same name because no separate legal name is stored.
 
+Every Clerk-authenticated request reads the account once
+(`ClerkSession` in `store/account_state.go`): the lifecycle verdict, whether
+the starter workspace is pending and whether the profile is due. The API reads
+the Clerk profile (`user.Get`, a Backend API round trip of about 180 ms on UAT)
+only to provision an identity with no local row, and then at most once an hour
+per account as a backstop for missed `user.updated` webhooks (Epo 2026-10-17).
+`users.profile_synced_at` (migration 0091) holds the last read; a new row
+counts as just read. When it is over an hour old, the request first claims the
+read with a conditional update, so one request per account and hour wins it
+across gateway processes, a burst of page-load requests reads once, and a
+failed read waits for the next hour. A locked account is refused before any
+profile read, on every request. Requests that read the profile or create the
+starter workspace check the lifecycle state again afterwards, since that work
+can race a deletion or suspension.
+
 Clerk profile retrieval and local identity provisioning are separate gates. A
 temporary profile-read failure skips synchronization for an existing local
 account, preserving its stored name, email, and avatar. If profile retrieval or
 upsert fails while the identity is still unknown locally, the request fails
 retryably with `503 account_state_unavailable`. Starter-workspace completion is
 stored separately on the user row. A failed workspace insert also returns the
-retryable 503, and the next authenticated profile sync retries it. Once marked
-complete, deleting every workspace does not recreate the starter workspace.
+retryable 503, and the next authenticated request retries it, without a
+profile read. Once marked complete, deleting every workspace does not recreate
+the starter workspace.
 Starter provisioning locks the same user row as ordinary creation, then checks
 for an existing workspace, inserts if needed, and stores the marker in one
 transaction. If ordinary creation commits first, provisioning records only the
@@ -917,8 +1011,8 @@ fail closed with `503 account_state_unavailable`. Database failure is not
 treated as an active account and is distinct from a real `403` account lock.
 
 Sources: [lifecycle states and gate methods](../server/internal/store/account_state.go#L11),
-[session rejection](../server/internal/store/account_state.go#L174),
-[middleware enforcement](../server/internal/auth/middleware.go#L174), and
+[session rejection](../server/internal/store/account_state.go#L267),
+[middleware enforcement](../server/internal/auth/middleware.go#L237), and
 [over-quota API behavior test](../server/internal/httpapi/account_gates_test.go), and
 [frozen and grace store matrix](../server/internal/store/collaboration_owner_test.go).
 
@@ -1143,7 +1237,7 @@ operation; remaining items stay selected for a manual retry.
 default: files and materials in their own workspaces plus their standalone
 materials, which is what Files and Create show. `scope=member` adds every
 workspace where the caller is an explicit member, under the workspace list's
-rule that a deleted or deletion-pending owner hides the workspace. Link or
+rule that a deleted, deletion-pending or suspended owner hides the workspace. Link or
 public workspaces the caller has only opened never appear, and neither do other
 users' standalone materials. The dashboard's Recent Files uses member scope and
 offers Rename/Properties/Delete only where the workspace's `capabilities` allow
@@ -1215,8 +1309,8 @@ parse, and provider reservations are cancelled. The owner's workspaces
 and materials immediately disappear from member lists, Explore, direct shared
 reads, and clone endpoints. Long-running chat, generate, editor-AI, and ingest
 streams recheck both the actor session and workspace access and cancel when
-either boundary closes. Suspension does not hide another user's shared content
-this way. Clerk revocation reads explicit pages into a complete sweep before it
+either boundary closes. A suspension hides them the same way while it lasts
+(see "What everyone else sees" under Account lifecycle gates). Clerk revocation reads explicit pages into a complete sweep before it
 revokes them, then repeats until no active session remains. A page or sweep
 safety limit is a retryable failure, never success. A confirmed empty active
 session listing is success even if an earlier revoke returned an uncertain

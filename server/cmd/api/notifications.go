@@ -11,6 +11,15 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
+// publishBillingChanged tells the user's open tabs to refetch billing; the
+// gateway's own copy is in httpapi (sse_events.go).
+func publishBillingChanged(ctx context.Context, rdb *redis.Client, userID string) {
+	if rdb == nil || userID == "" {
+		return
+	}
+	_ = rdb.Publish(ctx, "notif:"+userID, `{"type":"billing"}`).Err()
+}
+
 type notificationRemovalEvent struct {
 	Type string   `json:"type"`
 	IDs  []string `json:"ids"`

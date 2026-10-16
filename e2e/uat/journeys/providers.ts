@@ -194,6 +194,34 @@ export async function expireStripeCheckout(
     );
 }
 
+/** Every object of a Stripe list endpoint with `status`, scoped to the exact
+ * manifest-owned customer (clock customers included). */
+async function customerObjects(
+  env: UatEnvironment,
+  path: string,
+  customerId: string,
+  status: string
+) {
+  const objects: Record<string, unknown>[] = [];
+  let cursor = '';
+  for (;;) {
+    const params = new URLSearchParams({
+      customer: customerId,
+      limit: '100',
+      status,
+    });
+    if (cursor) params.set('starting_after', cursor);
+    const page = await stripeRequest(env, `${path}?${params}`);
+    const data = arrayField(page, 'data').map(object);
+    for (const item of data)
+      if (item.customer !== customerId || item.livemode !== false)
+        throw new Error('Stripe cleanup ownership mismatch');
+    objects.push(...data);
+    if (page.has_more !== true) return objects;
+    cursor = stringField(data.at(-1), 'id');
+  }
+}
+
 export async function cleanupStripeCustomer(
   env: UatEnvironment,
   customerId: string,
@@ -209,38 +237,51 @@ export async function cleanupStripeCustomer(
     throw error;
   }
   if (customer.deleted === true) return;
-  // Scope every page to the exact manifest-owned customer, including clock customers.
-  let cursor = '';
-  for (;;) {
-    const params = new URLSearchParams({
-      customer: customerId,
-      limit: '100',
-      status: 'all',
-    });
-    if (cursor) params.set('starting_after', cursor);
-    const page = await stripeRequest(env, `/v1/subscriptions?${params}`);
-    const subscriptions = arrayField(page, 'data');
-    for (const value of subscriptions) {
-      const subscription = object(value);
-      if (
-        subscription.customer !== customerId ||
-        subscription.livemode !== false
+  // Credit top-ups and card saving leave hosted Checkout sessions open.
+  for (const session of await customerObjects(
+    env,
+    '/v1/checkout/sessions',
+    customerId,
+    'open'
+  ))
+    await stripeRequest(
+      env,
+      `/v1/checkout/sessions/${stringField(session, 'id')}/expire`,
+      'POST',
+      {}
+    );
+  for (const subscription of await customerObjects(
+    env,
+    '/v1/subscriptions',
+    customerId,
+    'all'
+  ))
+    if (
+      !['canceled', 'incomplete_expired'].includes(
+        stringField(subscription, 'status')
       )
-        throw new Error('Stripe subscription cleanup ownership mismatch');
-      if (
-        !['canceled', 'incomplete_expired'].includes(
-          stringField(subscription, 'status')
-        )
-      )
-        await stripeRequest(
-          env,
-          `/v1/subscriptions/${stringField(subscription, 'id')}`,
-          'DELETE'
-        );
-    }
-    if (page.has_more !== true) break;
-    cursor = stringField(subscriptions.at(-1), 'id');
-  }
+    )
+      await stripeRequest(
+        env,
+        `/v1/subscriptions/${stringField(subscription, 'id')}`,
+        'DELETE'
+      );
+  // Auto-reload invoices Stripe still retries, or that could still be paid.
+  for (const status of ['draft', 'open', 'uncollectible'])
+    for (const invoice of await customerObjects(
+      env,
+      '/v1/invoices',
+      customerId,
+      status
+    ))
+      await stripeRequest(
+        env,
+        status === 'draft'
+          ? `/v1/invoices/${stringField(invoice, 'id')}`
+          : `/v1/invoices/${stringField(invoice, 'id')}/void`,
+        status === 'draft' ? 'DELETE' : 'POST',
+        status === 'draft' ? undefined : {}
+      );
   await stripeRequest(
     env,
     `/v1/customers/${encodeURIComponent(customerId)}`,
@@ -294,11 +335,12 @@ export async function verifyOutboxDelivery(
     () =>
       run.query<{
         id: string;
+        locale: string;
         provider_message_id: string | null;
         status: string;
         to_email: string;
       }>(
-        'SELECT id,provider_message_id,status,to_email FROM email_outbox WHERE user_id=%s AND template=%s ORDER BY created_at DESC LIMIT 1',
+        'SELECT id,locale,provider_message_id,status,to_email FROM email_outbox WHERE user_id=%s AND template=%s ORDER BY created_at DESC LIMIT 1',
         [userId, template]
       ),
     (values) =>
@@ -345,11 +387,13 @@ export async function verifyOutboxDelivery(
   if (!(message.subject && (message.html || message.text)))
     throw new Error('Inbox message has no subject or content');
   await run.attach(`email-${template}`, {
+    locale: row.locale,
     outboxId: row.id,
     providerMessageId: messageId,
     receivedAt: message.receivedAt,
     template,
   });
+  return { locale: row.locale, subject: String(message.subject) };
 }
 
 export type SentryScope = {

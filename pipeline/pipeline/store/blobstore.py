@@ -21,7 +21,6 @@ import logging
 import os
 import re
 import tempfile
-import time
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 
@@ -30,12 +29,16 @@ from ..config import cfg
 log = logging.getLogger("capy.blob")
 
 _client = None
+_once_client = None
 _library_client = None
-_WRITE_ATTEMPTS = 3
+# Every S3 call gets 3 attempts in all, the SDK's own retries included; the
+# thumbnail PUT gets one.
+_ATTEMPTS = 3
 
 
-def _make_client(endpoint: str, region: str, key_id: str, app_key: str):
+def _make_client(endpoint: str, region: str, key_id: str, app_key: str, attempts: int):
     import boto3  # imported lazily to defer client initialization
+    from botocore.config import Config
 
     return boto3.client(
         "s3",
@@ -43,6 +46,7 @@ def _make_client(endpoint: str, region: str, key_id: str, app_key: str):
         region_name=region or None,
         aws_access_key_id=key_id or None,
         aws_secret_access_key=app_key or None,
+        config=Config(retries={"mode": "standard", "total_max_attempts": attempts}),
     )
 
 
@@ -50,9 +54,19 @@ def _s3_client():
     global _client
     if _client is None:
         _client = _make_client(
-            cfg.b2_endpoint, cfg.b2_region, cfg.b2_key_id, cfg.b2_app_key
+            cfg.b2_endpoint, cfg.b2_region, cfg.b2_key_id, cfg.b2_app_key, _ATTEMPTS
         )
     return _client
+
+
+def _s3_client_once():
+    """The app bucket with a single attempt per call (the thumbnail PUT)."""
+    global _once_client
+    if _once_client is None:
+        _once_client = _make_client(
+            cfg.b2_endpoint, cfg.b2_region, cfg.b2_key_id, cfg.b2_app_key, 1
+        )
+    return _once_client
 
 
 def library_client():
@@ -66,6 +80,7 @@ def library_client():
             cfg.knowledge_base_b2_region,
             cfg.knowledge_base_b2_key_id,
             cfg.knowledge_base_b2_app_key,
+            _ATTEMPTS,
         )
     return _library_client
 
@@ -232,33 +247,20 @@ def read_bytes(blob_path: str, max_bytes: int | None = None) -> bytes | None:
 
 
 def write_bytes(blob_path: str, data: bytes | bytearray, content_type: str) -> None:
-    for attempt in range(1, _WRITE_ATTEMPTS + 1):
-        try:
-            _s3_client().put_object(
-                Bucket=cfg.b2_bucket,
-                Key=blob_path,
-                Body=data,
-                ContentType=content_type,
-            )
-            return
-        except Exception:
-            if attempt == _WRITE_ATTEMPTS:
-                raise
-            log.warning(
-                "B2 cache write failed for %s; retrying (%s/%s)",
-                blob_path,
-                attempt,
-                _WRITE_ATTEMPTS,
-                exc_info=True,
-            )
-            time.sleep(0.1 * attempt)
+    """One PUT; the client's 3 attempts are its only retries."""
+    _s3_client().put_object(
+        Bucket=cfg.b2_bucket,
+        Key=blob_path,
+        Body=data,
+        ContentType=content_type,
+    )
 
 
 def put_object(
     blob_path: str, data: bytes, content_type: str, cache_control: str
 ) -> None:
-    """One write with response metadata, no retry (a thumbnail capture)."""
-    _s3_client().put_object(
+    """One write with response metadata, one attempt (a thumbnail capture)."""
+    _s3_client_once().put_object(
         Bucket=cfg.b2_bucket,
         Key=blob_path,
         Body=data,

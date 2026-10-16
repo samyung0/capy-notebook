@@ -7,10 +7,14 @@ import { StudyMark, type StudyRow } from '@/features/study/studyItems';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
+import {
+  type RetryProcessing,
+  retryFailedFile,
+} from '@/features/workspace/retryProcessing';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
-import { fileIsIngesting } from './fileUtils';
+import { fileCanClone, fileIsIngesting } from './fileUtils';
 
 /** A file row in the workspace sidebar. Opens the file in the center pane, shows
  * ingest progress, and exposes a hover action menu (rename / properties /
@@ -26,7 +30,8 @@ export function FileListItem({
   onDeleted,
   readOnly = false,
   canClone = false,
-  canRetry = false,
+  retry,
+  retryPending = false,
   study,
   menu = true,
 }: {
@@ -43,8 +48,11 @@ export function FileListItem({
   readOnly?: boolean;
   /** Members and editors may copy the file elsewhere (workspace.canClone). */
   canClone?: boolean;
-  /** The workspace owner may retry a failed file's processing. */
-  canRetry?: boolean;
+  /** The owner's Retry processing for a failed file, one mutation for the
+   * whole list; absent when the reader may not retry. */
+  retry?: RetryProcessing;
+  /** This file's Retry processing is still running (useRetryingFileIds). */
+  retryPending?: boolean;
   /** The reader's own progress on this file, while progress is on. */
   study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out and act
@@ -93,7 +101,7 @@ export function FileListItem({
         {menu && (!readOnly || canClone) && (
           <ContentActions
             beforeDelete={beforeDelete}
-            canClone={canClone && file.status === 'ready'}
+            canClone={canClone && fileCanClone(file)}
             chapters={chapters}
             color={color}
             content={toFileActionTarget(file)}
@@ -107,12 +115,16 @@ export function FileListItem({
               readOnly
                 ? []
                 : [
-                    ...(failed && canRetry
+                    ...(failed && retry
                       ? [
                           {
+                            disabled: retryPending,
                             icon: 'refresh' as const,
                             label: m.files_retry_processing(),
-                            onClick: () => setRetrying(true),
+                            onClick: () =>
+                              retryFailedFile(file, retry, () =>
+                                setRetrying(true)
+                              ),
                             warning: true,
                           },
                         ]

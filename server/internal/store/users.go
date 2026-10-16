@@ -385,11 +385,11 @@ func (s *Store) accountModelPrefs(ctx context.Context) (chat, editor models.Ref,
 // whether the account still needs its one-time starter workspace. Keeping that
 // state on the user row lets a later request retry a failed first provision.
 //
-// The profile sync deliberately skips locked rows. This runs before the auth
-// middleware's lifecycle check on every authenticated request, so without the
-// guard a stale Clerk token could refresh PII after deletion was requested or
-// while an operator suspension was in force. Purged tombstones must never be
-// repopulated either.
+// The profile sync deliberately skips locked rows: the Clerk webhook and the
+// auth middleware's provisioning or hourly refresh (Epo 2026-10-17) can race a
+// lifecycle change, and without the guard a stale Clerk token or a late event
+// could refresh PII after deletion was requested or while an operator
+// suspension was in force. Purged tombstones must never be repopulated either.
 func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatarURL string) (bool, error) {
 	if name == "" {
 		name = email
@@ -399,8 +399,8 @@ func (s *Store) UpsertUserFromClerk(ctx context.Context, id, name, email, avatar
 		_ = s.pool.QueryRow(ctx, `SELECT locale FROM users WHERE id=$1`, id).Scan(&locale)
 		name = copytext.T(locale, copytext.User)
 	}
-	// Clerk-sourced values must fit the column: this runs on every
-	// authenticated request, so a rejected write would lock the account out.
+	// Clerk-sourced values must fit the column: this provisions the account on
+	// its first request, so a rejected write would lock the account out.
 	name = fieldlimits.Clamp(name, fieldlimits.UserName)
 	if utf8.RuneCountInString(email) > fieldlimits.Email {
 		email = ""
@@ -761,14 +761,14 @@ func (s *Store) ListStripeCustomers(ctx context.Context) ([]StripeCustomer, erro
 				WHERE any_sub.user_id=u.id) THEN u.plan_tier
 			ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
 				WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
-				  AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				  AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
 				ORDER BY (live.plan_tier='pro') DESC,
 				  live.current_period_end DESC NULLS FIRST LIMIT 1), 'free') END,
 		CASE WHEN NOT EXISTS(SELECT 1 FROM user_subscriptions any_sub
 				WHERE any_sub.user_id=u.id) THEN u.subscription_status
 			ELSE COALESCE((SELECT live.status FROM user_subscriptions live
 				WHERE live.user_id=u.id AND live.status IN `+entitlingStatuses+`
-				  AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				  AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`)
 				ORDER BY (live.plan_tier='pro') DESC,
 				  live.current_period_end DESC NULLS FIRST LIMIT 1), 'canceled') END,
 		(u.deletion_requested_at IS NOT NULL OR u.deleted_at IS NOT NULL OR

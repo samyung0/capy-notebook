@@ -3,18 +3,23 @@ import {
   type QueryClient,
   useQueryClient,
 } from '@tanstack/react-query';
-import { type ErrorComponentProps, Link } from '@tanstack/react-router';
+import {
+  type ErrorComponentProps,
+  Link,
+  useRouter,
+} from '@tanstack/react-router';
 import {
   Component,
   createContext,
   type ErrorInfo,
   type ReactNode,
+  useCallback,
   useContext,
   useEffect,
 } from 'react';
 import { ErrorAction } from '@/components/ui/Button';
 import { m } from '@/i18n';
-import { describeError } from '@/lib/errors';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { ErrorState } from './ErrorState';
 import { Panel } from './layout';
 
@@ -135,6 +140,7 @@ class BoundaryCore extends Component<BoundaryCoreProps, BoundaryState> {
             this.props.variant === 'page' ? 'h-full w-full' : undefined
           }
           description={description.description}
+          errorId={unexpectedErrorId(this.state.error)}
           icon={description.icon}
           title={description.title}
           variant={this.props.variant ?? 'panel'}
@@ -163,22 +169,24 @@ export function AppErrorBoundary({
 
 export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
   const queryClient = useQueryClient();
+  const router = useRouter();
   const description = describeError(error);
   const reload = description.action === 'reload';
-  const retry = () => {
+  // Reloading the route also loads a page whose code failed offline again
+  // (src/router.ts), and reruns its loader.
+  const retry = useCallback(() => {
     resetFailedQueries(queryClient);
     reset();
-  };
+    void router.invalidate();
+  }, [queryClient, reset, router]);
 
   // Same as BoundaryCore: retry when the connection comes back.
   useEffect(
     () =>
       onlineManager.subscribe((online) => {
-        if (!online) return;
-        resetFailedQueries(queryClient);
-        reset();
+        if (online) retry();
       }),
-    [queryClient, reset]
+    [retry]
   );
 
   return (
@@ -192,6 +200,7 @@ export function RouteErrorComponent({ error, reset }: ErrorComponentProps) {
           </ErrorAction>
         }
         description={description.description}
+        errorId={unexpectedErrorId(error)}
         icon={description.icon}
         title={description.title}
         variant="page"

@@ -277,25 +277,67 @@ async def test_a_failed_retry_stays_indexed_while_its_previous_index_serves(
     )
 
     for file_id in (served, fresh):
+        # The terminal progress event publishes the indexed it returns.
         assert worker._finish_fail(
             file_id,
             f"job_fail_{file_id}",
             "parse failed",
             actor_user_id=workspace.user_id,
             workspace_id=workspace.id,
-        )
+        ) is (file_id == served)
 
     assert _file(workspace, served) == ("failed", True)
     assert _file(workspace, fresh) == ("failed", False)
-    # The lease reaper's failure follows the same rule.
-    revision = workspace.scalar("SELECT revision FROM files WHERE id = %s", (served,))
+    # The lease reaper's failure follows the same rule, and hands the written
+    # indexed to the reclaimed job's announcement.
     _set(workspace, "UPDATE files SET status='processing' WHERE id = %s", (served,))
+    _job(workspace, served, "job_reaped")
+    _set(
+        workspace,
+        "UPDATE jobs SET lease_expires_at = now() - interval '1 minute' WHERE id = %s",
+        ("job_reaped",),
+    )
     with psycopg.connect(workspace.dsn) as conn, conn.cursor() as cur:
-        assert db.fail_pipeline_file_if_current(
-            cur, {"fileId": served, "sourceRevision": revision, "sourceETag": ""}
+        reclaimed = db.reclaim_expired_leases(
+            cur, max_attempts={"ingest": 1}, backoff_base_s={"ingest": 30}
         )
         conn.commit()
+    assert [
+        (row["file_failed"], row["file_indexed"])
+        for row in reclaimed
+        if row["id"] == "job_reaped"
+    ] == [(True, True)]
     assert _file(workspace, served) == ("failed", True)
+
+
+async def test_an_account_deletion_keeps_a_served_index(workspace, fakes):
+    """cancel_user_async_work sets indexed as db.SERVES_INDEX does: a cancelled
+    re-ingest keeps answering search with its previous index; a first ingest
+    whose alias points at its own processing content serves nothing."""
+    served = workspace.add_file("report.pdf")
+    await _publish(workspace, served, _chunks(), "job_first")
+    fresh = workspace.add_file("new.pdf")
+    claimed = workspace.add_file("draft.pdf")
+    _set(
+        workspace,
+        "UPDATE files SET status='processing', indexed=false WHERE id IN (%s, %s, %s)",
+        (served, fresh, claimed),
+    )
+    for file_id in (served, fresh, claimed):
+        _job(workspace, file_id, f"job_cancelled_{file_id}")
+    draft = await store.attach_file_content(
+        workspace_id=workspace.id,
+        file_id=claimed,
+        content_hash="draft-hash",
+        claim_job_id=f"job_cancelled_{claimed}",
+    )
+    assert _alias(workspace, claimed) == draft["content_id"]
+
+    _set(workspace, "SELECT cancel_user_async_work(%s)", (workspace.user_id,))
+
+    assert _file(workspace, served) == ("failed", True)
+    assert _file(workspace, fresh) == ("failed", False)
+    assert _file(workspace, claimed) == ("failed", False)
 
 
 async def test_a_file_over_a_limit_drops_its_previous_index(workspace, fakes):
@@ -304,13 +346,16 @@ async def test_a_file_over_a_limit_drops_its_previous_index(workspace, fakes):
         "content_id"
     ]
 
-    assert worker._finish_fail(
-        file_id,
-        "job_limit",
-        "over the page limit",
-        actor_user_id=workspace.user_id,
-        workspace_id=workspace.id,
-        index_limit="page_limit",
+    assert (
+        worker._finish_fail(
+            file_id,
+            "job_limit",
+            "over the page limit",
+            actor_user_id=workspace.user_id,
+            workspace_id=workspace.id,
+            index_limit="page_limit",
+        )
+        is False
     )
 
     assert _file(workspace, file_id) == ("ready", False)

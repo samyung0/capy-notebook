@@ -12,7 +12,7 @@ import { TabHeader } from '@/components/app/tabPanel';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { getLocale, m } from '@/i18n';
 import { track } from '@/lib/analytics';
-import { describeError } from '@/lib/errors';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 import {
   type BillingColumn,
   BillingTable,
@@ -132,6 +132,7 @@ function Invoices() {
             {m.error_action_retry()}
           </ErrorAction>
         }
+        errorId={unexpectedErrorId(error)}
         variant="panel"
       />
     );
@@ -144,14 +145,16 @@ function Invoices() {
     <BillingTable
       columns={columns}
       rows={data.items.map((invoice) => {
-        // An unpaid reload failed: Stripe retries it (a next attempt) or gave
-        // up (uncollectible); either can still be paid from its hosted page.
-        // One that is open with no next attempt is still being charged.
+        // An unpaid invoice with a next attempt failed and Stripe retries it;
+        // it can be paid from its hosted page. A reload Stripe gave up on
+        // (uncollectible) can still be paid, a Pro one cannot: the subscription
+        // is cancelled by then, so it shows Failed with View. A reload that is
+        // open with no next attempt is still being charged.
         const reload = invoice.kind === 'reload';
-        const retrying =
-          reload && invoice.status === 'open' && !!invoice.nextAttemptAt;
-        const failed =
-          retrying || (reload && invoice.status === 'uncollectible');
+        const retrying = invoice.status === 'open' && !!invoice.nextAttemptAt;
+        const gaveUp = invoice.status === 'uncollectible';
+        const payable = retrying || (reload && gaveUp);
+        const failed = retrying || gaveUp;
         const status =
           retrying && invoice.nextAttemptAt
             ? m.billing_invoice_status_retrying({
@@ -175,7 +178,7 @@ function Invoices() {
                 rel="noreferrer"
                 target="_blank"
               >
-                {failed ? m.billing_invoice_pay() : m.billing_invoice_view()}
+                {payable ? m.billing_invoice_pay() : m.billing_invoice_view()}
               </a>
             ),
           },

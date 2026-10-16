@@ -19,7 +19,9 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
    leftovers of earlier runs (everything named `Perf share page …`).
 2. Creates, through the API, a link-shared workspace with four store-only
    files in two chapters (`e2e/fixtures/files/basic/`), a quiz
-   (`fixtures/quiz.json`), a flashcard set (`fixtures/cards.json`) and a
+   (`fixtures/quiz.json`), a flashcard set (`fixtures/cards.json`, written
+   through the set's live room as its editor does, since live rooms are the
+   only writers of set content) and a
    standalone note: the every-block note
    (`server/internal/materialdoc/testdata/every-block-note.json`) without its
    uploaded assets and material links, plus a second copy that also leaves

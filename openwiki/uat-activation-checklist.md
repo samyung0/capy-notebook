@@ -97,9 +97,10 @@ Verify with a real signup, not with the dashboard's test button alone:
 
 The user row and default workspace appear either way, because the first
 authenticated request provisions them (`server/internal/auth/middleware.go`
-`syncClerkAccount`). A `200` in the delivery log is the only proof the webhook
-itself works. Until it does, profile edits made in Clerk never reach the
-database and deleted identities are never purged.
+`admitClerkIdentity`). A `200` in the delivery log is the only proof the webhook
+itself works. Until it does, profile edits made in Clerk reach the database
+only through the API's hourly profile read, and deleted identities are never
+purged.
 
 A `401` from the endpoint means the signing secret does not match the instance
 that sent the delivery. A `503` means `CLERK_WEBHOOK_SECRET` is still blank.
@@ -136,6 +137,14 @@ The endpoint payload API version must be `2025-08-27.basil`, matching the
 deployed `stripe-go/v82` SDK. Confirm a real subscription event receives HTTP
 200 and appears processed in `webhook_events`; an enabled endpoint alone does
 not establish delivery compatibility.
+
+The endpoint subscribes to exactly the ten events listed in
+[deployment-runbook.md](deployment-runbook.md) ("The event selection in every
+lane"), including the five that came with credit top-ups (`invoice.paid`,
+`charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`,
+`checkout.session.async_payment_succeeded`); after a sandbox top-up,
+`invoice.paid` answers 200 and is processed in `webhook_events`. The Free row of
+`plan_limits` holds the 200-credit monthly allowance.
 
 Confirm the edge does not rate-limit or challenge `/webhooks/`. Both providers
 burst on retry and will trip a WAF rule written for browser traffic.
@@ -304,4 +313,8 @@ Clerk development instance. Point a local gateway at the UAT database only with
 
 ## Manual critical-path gate
 
-After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify that both lane jobs (`office` and `app`) passed: every journey and each lane's cleanup and release checks. Review each lane's retained-resource report (artifact `uat-journeys-<run id>-<attempt>-<lane>`), including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md).
+After app and nonproduction ingest are on the same candidate SHA, run **Deterministic UAT quality** with `critical_paths: true`. Verify that every lane job (`office`, `app` and `billing`) passed: every journey and each lane's cleanup and release checks. Review each lane's retained-resource report (artifact `uat-journeys-<run id>-<attempt>-<lane>`), including delayed B2 deletions and provider history. Production promotion reruns this gate. Prerequisites and cleanup retry commands are in the [journey guide](../e2e/uat/journeys/README.md).
+
+Before launch, also run the manual top-up journey headed (`pnpm e2e:uat:journeys --project=manual --headed`,
+[Hosted payment-form entry](../e2e/uat/journeys/README.md#hosted-payment-form-entry)): CI cannot fill
+Stripe's payment Checkout.

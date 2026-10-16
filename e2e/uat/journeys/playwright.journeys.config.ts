@@ -14,7 +14,25 @@ process.env.UAT_RUN_ID ??=
 // Lanes: uat-quality runs each project as its own job with its own run id.
 // A new spec lands in `app`; `refresh` waits for its specs (an empty project
 // fails with "No tests found"). Without --project every lane runs serially.
-const office = ['files.spec.ts', 'chat.spec.ts', 'officeRefusal.spec.ts'];
+const office = [
+  'files.spec.ts',
+  'chat.spec.ts',
+  'officeRefusal.spec.ts',
+  'scannedPdf.spec.ts',
+  'partialIngest.spec.ts',
+];
+// Stripe-heavy journeys: the credits ones alone take 35–40 min.
+const billing = [
+  'billing.spec.ts',
+  'credits.spec.ts',
+  'renewalFailure.spec.ts',
+];
+// Run by hand only, headed (hosted payment Checkout meets Stripe's hCaptcha
+// headless); uat-quality never names this project.
+const manual = ['creditsManual.spec.ts'];
+// Office open times, results only; uat-quality runs it alone when dispatched
+// with measure_office_load, never beside the other lanes.
+const measure = ['officeLoad.spec.ts'];
 const refresh = [
   'officeLifecycle.spec.ts',
   'noteIndex.spec.ts',
@@ -33,7 +51,14 @@ export default defineConfig({
   projects: [
     { name: 'office', testMatch: office, use: chromium },
     { name: 'refresh', testMatch: refresh, use: chromium },
-    { name: 'app', testIgnore: [...office, ...refresh], use: chromium },
+    { name: 'billing', testMatch: billing, use: chromium },
+    { name: 'manual', testMatch: manual, use: chromium },
+    { name: 'measure', testMatch: measure, use: chromium },
+    {
+      name: 'app',
+      testIgnore: [...office, ...refresh, ...billing, ...manual, ...measure],
+      use: chromium,
+    },
   ],
   reporter: 'list',
   retries: 0,

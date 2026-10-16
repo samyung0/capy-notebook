@@ -37,6 +37,42 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
 failed request.
 
+**Unexpected errors answer the id, not the cause.** A gateway 5xx that is not
+typed answers `{"title", "status", "detail": "Something went wrong",
+"traceId"}`, never the error's own text; the cause stays in the logs and Sentry
+under that id. A typed 5xx carries only codes from one short list in
+`errors[]` (`typedServerCodes`: `provider_busy`, `ai_unavailable`,
+`generate_empty`, `bank_unavailable`; `src/lib/errors.ts` keeps the same list),
+so an error's text there, even one word, still gets the generic answer. Every
+4xx keeps its status and code. One rule covers every path
+(`server/internal/httpapi/huma_register.go`, `server.go`):
+
+- `publicError` at the end of `reportHandlerError`, for huma handlers;
+- the `huma.NewErrorWithContext` override, for the errors huma builds itself
+  (a body it could not read, `writeStatusErr`), which records their cause with
+  `obs.RecordHTTPError` and lets a typed 5xx through;
+- `writeUnexpected`, for raw handlers (the fallback of `fail`, the event and
+  chat streams) and for a recovered panic (`recoverer`, which replaces chi's
+  Recoverer; the Sentry middleware inside it captures the panic first, and a
+  stream already under way is left as it is).
+
+The status is kept: an untyped 503 stays 503. Internal service routes share
+`fail`, so their unexpected failures answer the same body; the calling service
+already holds the trace id it sent.
+
+`office_editing_paused` (423) and `material_content_unreadable` (422) answer
+fixed text whatever error caused them: the pause's own sentence, and for the
+second only its code and a fixed `detail`, its decode error going to the log
+(`material content unreadable`).
+
+The browser keeps a failed request's id on `ApiError.traceId` (the body's
+`traceId`, else `X-Request-Id`, else the id it sent, for an answer from a
+proxy) and shows it, small and copyable, only where the error stays on
+screen: boundary screens, a page or pane that failed with Retry, and form
+errors (`FormAlert`), for an unexpected failure (`unexpectedErrorId` in
+`src/lib/errors.ts`). Toasts and status banners show none (see
+`frontend/error-handling.md`).
+
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as
 a `trace_id` **tag** instead, so a single string searches Sentry, greps the
@@ -105,7 +141,7 @@ again:
 | --- | --- | --- |
 | `slow_save` (warn) | a material or source save took 2 s or more (`SLOW_SAVE_MS`, `health.ts`), failed ones included | `room`, `kind` (`material`, `source`), `ms`, `ok`, `bytes` (the saved state) |
 | `slow_office_call` (warn) | an Office engine call ran 2 s or more (`SLOW_OFFICE_CALL_MS`, `officeRuntime.ts`), a timeout included | `method`, `ms` (running), `wait_ms` (queued before it), `bytes` (its byte arguments: the base or exported file) |
-| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (the room's stored bytes, its base and log rows, as the room knows them; no encode of the document), `ms` (load only) |
+| `room_load` / `room_unload` (info) | a room loaded or unloaded on this instance | `room`, `bytes` (the room's stored bytes, its base and log rows, as the room knows them; no encode of the document), `ms` (load only); a source room's load adds `stages` in ms: `session` (the gateway's source session), `base` (the base bytes, a bucket read unless this instance holds them), `stored` (state and rows), `seed` (seed(base), an Office engine call unless cached, the first after a start also warming the engine process) and `replay` |
 
 PostHog gets nothing from editing.
 
@@ -252,16 +288,34 @@ error-boundary rendering do not add another capture call.
 Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
-file over a documented limit (page or scanned-page count, image pixels,
-CSV/TSV columns per row or searchable text) fails the job with the limit's
-attempt `error_code` (`page_limit`, `scanned_page_limit`, `image_pixel_limit`,
+file over a documented limit (page or scanned-page count, figures and table
+rows, image pixels, CSV/TSV columns per row or searchable text) fails the job
+with the limit's attempt `error_code` (`page_limit`, `scanned_page_limit`,
+`element_limit`, `image_pixel_limit`,
 `tabular_column_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in
 [agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of
 expected outcome: the ingest worker logs the refused publication
 (`office_rebase_refused`) and collaboration logs a refused rebuild
-(`office_rebuild_refused`), and neither captures it. Sentry holds failures
+(`office_rebuild_refused`), and neither captures it. So is an agent edit, its
+Undo or a replace-block command refused because its room is being reset or
+compacted: nothing applied, so the caller may retry. Collaboration answers 503
+`unavailable_target` and logs `edit refused: room unavailable` without
+capturing it (`DocumentError::Unavailable` in
+`collaboration-rs/crates/server/src/edits.rs`). The gateway marks that answer
+expected (`authorityFailure` in `server/internal/store/collaboration_documents.go`)
+and answers its own caller as for any unavailable authority (503,
+`outcome_unknown` to the pipeline), reporting nothing; any other 503 from the
+authority is still reported. A JOIN or draft send refused for its client
+protocol (`collaboration-outdated`, the version gate in
+[plate-editor.md](frontend/plate-editor.md#client-protocol-and-the-release-nudge))
+is expected after every bumping deploy: collaboration logs it at warn
+(`authentication rejected` or `draft send refused`), never captures it, and
+counts it in `capy_collaboration_outdated_refusals_total{family}` (material,
+source) and, for a draft send, `capy_collaboration_draft_refusals_total{class="outdated"}`
+on `/metrics`; the browser shows the outdated strip and reports nothing.
+That counter is how many stale tabs remain after a deploy. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal
@@ -640,8 +694,9 @@ Every account also starts with 800 purchased credits (below).
 The Go gateway and Python ingest worker do not query that table while admitting
 or claiming work. A stale monthly counter is rolled over inside the same row
 lock used by reads, reservations, and direct usage recording. Once the latest
-paid period ends, both runtimes apply the Free credit and storage limits even
-if a delayed webhook has not yet changed `users.plan_tier`.
+paid period ends and its 48-hour renewal tolerance passes, both runtimes apply
+the Free credit and storage limits even if a delayed webhook has not yet
+changed `users.plan_tier`.
 
 The signed-in billing page reads this ledger directly. `GET /api/billing` now
 includes the current credit counter (`creditsUsedMicros` / reserved / limit /
@@ -658,8 +713,11 @@ invoices live for the Subscription tab (a user with no Stripe customer gets an
 empty list; a Stripe failure is a 503 the tab shows with Retry). Checkout and the
 billing portal return to `/billing?tab=subscription`. Each invoice carries a
 `kind` (`plan`, `topup`, `reload`) for the tab's Type column and Stripe's
-`nextAttemptAt`; an unpaid reload invoice shows as Failed (retrying on that
-date, or with a Pay link once Stripe stops). The operator dashboard
+`nextAttemptAt`. Any open invoice with a next attempt shows "Retrying <date>"
+with a Pay link (a failed reload or Pro renewal). Once Stripe stops
+(uncollectible) the invoice shows Failed: a reload keeps its Pay link, a Pro
+invoice shows View only, since its subscription is cancelled by then and paying
+it would not restore Pro. The operator dashboard
 also reads bounded
 `usage_events` ranges directly; there is no periodic usage rollup while the
 ledger is small enough for indexed live queries.
@@ -709,11 +767,14 @@ Checkout in setup mode (card and Link, billing address required) and returns to
 `?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
 reload invoice Stripe is still retrying. Turning auto-reload off voids it too.
 
-Auto-reload fires once per arming (`reload_armed`): turning it on, a paid
-top-up, a new card, or a paid reload that leaves credits above the threshold
-arms it; starting a reload disarms it; the monthly allowance never re-arms it,
-so after Stripe gives up (or never retries) no reload starts until the user
-tops up or changes card. The worker (`billing.RunDueReloads`, every 5 s when
+Auto-reload fires once per arming (`reload_armed`). An account starts armed;
+a paid top-up, a new card, a paid reload that leaves credits above the
+threshold, or a paid Pro invoice (`invoice.paid` with an amount above zero,
+`ArmReload`) re-arms it; starting a reload disarms it. Turning auto-reload on
+or saving its settings never arms it, so after Stripe gives up (or never
+retries) no reload starts until one of those events. `PUT
+/api/billing/auto-reload` answers `{armed}`, and turning it on while disarmed
+shows a warning toast asking for a top-up first. The worker (`billing.RunDueReloads`, every 5 s when
 Stripe is configured, open accounts only) handles each armed or
 request-started reload under the counter lock (`StartReload`, effective plan):
 an armed one starts when credits reach the threshold. Over the spending limit
@@ -729,13 +790,35 @@ stops (`invoice.payment_failed`), and the switch stays on. A reload left
 and card; after 23 hours it is reported to Sentry, its invoice voided and
 marked `failed`. `GET /api/billing` returns
 `creditsPurchasedMicros`, `creditsCarriedMicros` and `creditSettings` (switch,
-amount, threshold, saved method, limit, this month's spend, latest reload);
-the client polls it every 3 s while a reload is charging.
+amount, threshold, saved method, limit, this month's spend, latest reload).
+
+**Live billing.** Whatever Stripe or the reload worker changes reaches open
+tabs as a `{"type":"billing"}` event on the user's `notif:{userId}` stream
+(`publishBillingChanged`, from the credit webhooks and after each reload the
+worker processes or skips); the tab refetches billing, also on every stream
+connect, so the return from a top-up Checkout needs no polling. Billing saves
+(`useSetAutoReload`, `useSetSpendingLimit`) show at once, share the
+`qk.billing` mutation key and refetch only when the last one settles; a
+`billing` event during a pending save is left to that refetch.
 
 **Spending limit.** `PUT /api/billing/spending-limit` (`limitCents`, 0 removes
 it) counts paid and charging pre-tax dollars per UTC calendar month of payment
 and clears a skip. The 409 carries `spentCents` so the toast can tell "wait for
 the auto-reload" from "over the limit".
+
+**Daily reconciliation.** The UTC-daily Stripe run (`reconcile.Runner`,
+`reconcileCredits`) also settles credit purchases whose webhooks never
+arrived: it re-reads every reload invoice still `retrying` or `failed`, or
+`charging` for over an hour, from the last 90 days, and records it paid
+(crediting it once), void, retrying or failed; and it credits paid top-up
+Checkouts from the last 7 days through the idempotent `GrantTopUp`. After
+those grants it re-applies refunds and disputes created in the last 7 days
+(`billing.ListReversals`) through the same idempotent calls as the webhooks,
+so a reversal whose webhook arrived before its purchase was recorded is taken
+back a day later; an open or lost dispute holds, a won one releases. Each
+repair writes a `stripe_credit_drift` report row and each failure a
+`stripe_credit_error` row. Re-reading an old failed reload never ends a newer
+reload's 60-second window: only the reload that was charging clears it.
 
 **Reversals.** `charge.refunded` takes credits back in proportion to Stripe's
 cumulative `amount_refunded`; `charge.dispute.created` holds what is left of the
@@ -1083,7 +1166,10 @@ parse without the fee still records its pages: `credit_micros` 0 and
 `metadata.parseFee=false` on the parse event. The owner then pays only the
 refresh's provider calls (embeddings of changed chunks, and a descriptor when
 the reuse gate regenerates it), and refresh admission keeps its credit check
-for those. Uploads always pay the fee.
+for those. Uploads always pay the fee. Retry processing of a partial file with
+unread pages sends `parseFee` the same way (`!ever_parsed_successfully`, parts
+design Q6), and `_parse_fee` honours the payload for every job type; a full
+retry carries none and pays like an upload.
 
 `provider_sessions.paid_by` names who pays: `platform` (platform keys, the
 actor is charged credits; every ordinary ingest session), `user` (BYOK, zero

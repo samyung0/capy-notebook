@@ -72,9 +72,9 @@ type collaborationTokenResponse struct {
 	Room  string `json:"room"`
 	URL   string `json:"url"`
 	// read is what a viewer gets (signed-in viewers watch the room live, Epo
-	// 2026-10-10), and the downgrade an editor gets when a frozen or locked
-	// account (their own, or the storage owner's) makes the material
-	// read-only, or the storage owner is at its limit (view-only).
+	// 2026-10-10), and the downgrade an editor gets when a frozen account
+	// (their own, or the storage owner's) makes the material read-only, or the
+	// storage owner is at its limit (view-only).
 	Access    string `json:"access" enum:"write,read"`
 	ExpiresAt int64  `json:"expiresAt"`
 }
@@ -265,10 +265,11 @@ func (a *api) createMaterialCollaborationToken(
 	// a connection may do, so lifecycle restrictions have to be resolved here.
 	// Tokens are short-lived, which bounds how long a stale grant survives.
 	//
-	// The role above decided that this user may write. A frozen or locked
-	// account on either side leaves the room read-only: a frozen actor edits
-	// nowhere, and nobody edits what a frozen owner pays for. An owner at its
-	// storage limit makes the material view-only too.
+	// The role above decided that this user may write. A frozen account on
+	// either side leaves the room read-only: a frozen actor edits nowhere, and
+	// nobody edits what a frozen owner pays for. An owner at its storage limit
+	// makes the material view-only too. (A locked owner's material was already
+	// not found above.)
 	owner, err := a.s.MaterialOwnerAccess(ctx, in.ID)
 	if err != nil {
 		return nil, collaborationError(err)
@@ -313,7 +314,7 @@ func (a *api) createMaterialCollaborationToken(
 	claims := newCollaborationClaims(uid, room, access, me.Name, me.AvatarURL, randID("collab"), schema)
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("collaboration service unavailable", err)
+		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}
 	}
 	return &collaborationTokenOutput{Body: collaborationTokenResponse{
 		Token: token, Room: room, URL: a.cfg.CollaborationURL, Access: access,

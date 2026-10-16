@@ -18,11 +18,12 @@ var ErrInvalidCursor = errors.New("invalid cursor")
 // workspace the caller belongs to, as the dashboard recents do.
 
 // memberWorkspace is the Member predicate on a workspace id column: the
-// caller ($1) is a member and the owner's account is live, the same rule as
-// ListWorkspaces. The query must JOIN users AS owner on the workspace owner.
+// caller ($1) is a member and the owner's account is live (not deleted,
+// pending deletion or suspended), the same rule as ListWorkspaces. The query
+// must JOIN users AS owner on the workspace owner.
 func memberWorkspace(column string) string {
 	return `EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=` + column + ` AND wm.user_id=$1)
-		AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL`
+		AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL`
 }
 
 const listPageMax = 100

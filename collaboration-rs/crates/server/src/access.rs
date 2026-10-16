@@ -13,9 +13,14 @@ pub const NOT_FOUND_REASON: &str = "collaboration-not-found";
 pub const FORBIDDEN_REASON: &str = "collaboration-forbidden";
 pub const READ_ONLY_REASON: &str = "collaboration-read-only";
 
+/// Go's renewalTolerance: an entitling period stays live this long past
+/// current_period_end, so a late renewal webhook never lapses a paying owner.
+const RENEWAL_TOLERANCE: &str = "interval '48 hours'";
+
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum AccessError {
-    /// A missing or trashed material, or an owner being deleted.
+    /// A missing or trashed material, or an owner deleted, being deleted or
+    /// suspended.
     #[error("{0}")]
     NotFound(String),
     #[error("{0}")]
@@ -88,14 +93,14 @@ pub fn frozen_sql(user: &str, storage: &str) -> String {
           AND live_sub.plan_tier='pro'
           AND live_sub.status IN ('active','trialing','past_due')
           AND (live_sub.current_period_end IS NULL
-            OR live_sub.current_period_end > now()))
+            OR live_sub.current_period_end > now() - {RENEWAL_TOLERANCE}))
       AND COALESCE(GREATEST(
         (SELECT max(expired_sub.current_period_end)
           FROM user_subscriptions expired_sub
           WHERE expired_sub.user_id={user}.id
             AND expired_sub.plan_tier='pro'
             AND expired_sub.status IN ('active','trialing','past_due')
-            AND expired_sub.current_period_end <= now()),
+            AND expired_sub.current_period_end <= now() - {RENEWAL_TOLERANCE}),
         (SELECT max(LEAST(
             COALESCE(closed_sub.current_period_end, closed_sub.ended_at,
               closed_sub.canceled_at,
@@ -132,7 +137,7 @@ pub fn full_sql(user: &str, storage: &str) -> String {
             WHERE live.user_id={user}.id
               AND live.status IN ('active','trialing','past_due')
               AND (live.current_period_end IS NULL
-                OR live.current_period_end > now())
+                OR live.current_period_end > now() - {RENEWAL_TOLERANCE})
             ORDER BY (live.plan_tier='pro') DESC,
               live.current_period_end DESC NULLS FIRST LIMIT 1), 'free')
           END)"
@@ -146,12 +151,11 @@ pub struct LiveAccess {
     pub editor: bool,
     pub frozen: bool,
     pub full: bool,
-    pub suspended: bool,
 }
 
 impl LiveAccess {
     pub fn access(self) -> Access {
-        if !self.editor || self.suspended || self.frozen || self.full {
+        if !self.editor || self.frozen || self.full {
             Access::Read
         } else {
             Access::Write
@@ -217,7 +221,12 @@ pub async fn live_access<C: GenericClient>(
     let owner_id: String = row.get("owner_user_id");
     let material_privacy: String = row.get("privacy");
     let workspace_id: Option<String> = row.get("workspace_id");
-    if row.get::<_, bool>("owner_gone") {
+    // A deleted or deletion-pending owner's material is gone for everyone, a
+    // suspended owner's for everyone but the owner (refused below as a locked
+    // actor), as in Go's materialEffectiveAccess.
+    if row.get::<_, bool>("owner_gone")
+        || (row.get::<_, bool>("owner_suspended") && owner_id != actor)
+    {
         return Err(AccessError::NotFound("material not found".into()));
     }
     if row.get::<_, bool>("actor_locked") {
@@ -251,7 +260,6 @@ pub async fn live_access<C: GenericClient>(
         editor: rank(&role) >= rank("editor"),
         frozen: row.get::<_, bool>("owner_frozen") || row.get::<_, bool>("actor_frozen"),
         full: row.get("owner_full"),
-        suspended: row.get("owner_suspended"),
     })
 }
 
@@ -403,7 +411,6 @@ mod tests {
             editor: true,
             frozen: false,
             full: false,
-            suspended: false,
         };
         assert_eq!(open.access(), Access::Write);
         for narrowed in [
@@ -412,10 +419,6 @@ mod tests {
                 ..open
             },
             LiveAccess { full: true, ..open },
-            LiveAccess {
-                suspended: true,
-                ..open
-            },
             LiveAccess {
                 editor: false,
                 ..open

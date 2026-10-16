@@ -69,8 +69,9 @@ The permission boundary is layered:
 3. The collaboration server checks the browser origin at the upgrade and, per
    room, the token's signature, issuer, audience, expiry, exact room, schema
    and access.
-4. It joins `read` channels (the downgrade an editor receives while the
-   storage owner's account is locked) read-only: a step 2 or update holding
+4. It joins `read` channels (a viewer's, and the downgrade an editor receives
+   while their own or the storage owner's account is frozen, or the storage
+   owner is at its storage limit) read-only: a step 2 or update holding
    anything new closes the channel, so a modified browser cannot send Yjs
    document updates.
 5. View mounts only the static preview, without editor plugins or comment controls.
@@ -840,8 +841,10 @@ under the read-only strip (it names no reason: a demoted viewer, a frozen
 account and a full owner all see it, and the account banner explains the
 account cases), `collaboration-not-found` (trashed or deleted) and
 `collaboration-forbidden` (lost access) replace the editor with the
-file-missing or no-access panel, and anything else (an expired token, a room
-being reset or compacted) is retried. A loss still unresolved after 30 s while
+file-missing or no-access panel, `collaboration-outdated` stops the editor
+for the page load (see [Client protocol](#client-protocol-and-the-release-nudge)),
+and anything else (an expired token, a room being reset or compacted) is
+retried. A loss still unresolved after 30 s while
 online puts an editor that synced once into offline mode (before the first
 sync it turns the status red). A failed first token request shows the panel for its status (not found,
 no access, or unavailable with Retry). A member removed from the workspace gets
@@ -891,11 +894,123 @@ orphan an earlier request.
 
 The old REST content autosave, local revision refs, full-document replacement,
 draft unload warning, and five-second PATCH debounce do not exist. Public
-`PATCH /api/materials/{id}/metadata` updates metadata only. Study-tool commands
-that intentionally replace a stable quiz/card block use content-only endpoints;
-relational metadata and standalone sharing use separate endpoints so a privacy
-or metadata failure cannot be reported as though it rolled back an
+`PATCH /api/materials/{id}/metadata` updates metadata only. Quiz and
+flashcard content has no REST write either: live item rooms are its only
+writers. Relational metadata and standalone sharing use separate endpoints so a
+privacy or metadata failure cannot be reported as though it rolled back an
 already-durable Yjs command.
+
+### Client protocol and the release nudge
+
+Developer Epo decided the gate and the nudge on 2026-10-16 (the version-gate
+design, option d), and the nudge's release file on 2026-10-17.
+
+- **The gate.** Every JOIN carries the build's client protocol after the
+  token (`room, token, varuint protocol`), and every draft send carries it as
+  `X-Capy-Protocol`. The number is `CLIENT_PROTOCOL` in
+  `src/features/collaboration/protocol.ts` and
+  `collaboration-rs/crates/server/src/protocol.rs`; a vitest keeps them equal.
+  - The server keeps one minimum per room family:
+    - material rooms (`material:`, `keys:`: notes, mindmaps, diagrams,
+      quizzes, quiz keys, flashcard sets): `MIN_MATERIAL`;
+    - source rooms (`source:`: Office and text): `MIN_SOURCE`.
+  - `socket::authenticate` checks it right after parsing the room name,
+    before any lookup. A client below its family's minimum, or above the
+    server's own protocol (a newer tab after a rollback), is refused as
+    `collaboration-outdated`. A client from before the gate sends none, read
+    as 0.
+  - A draft send answers `426 {"class":"outdated"}`.
+  - Each refusal is logged at warn, never reported, and counted in
+    `capy_collaboration_outdated_refusals_total{family}`: how many stale tabs
+    remain after a deploy.
+- **A refused editor** stops for the page load and turns read-only:
+  - notes reuse the `offline-limit` machinery (content `readOnly`, toolbar
+    inert, no palette or AI menu, `canEdit` off);
+  - item editors show their list or diagram read-only;
+  - a source keeps its view, with Office `set-capabilities` turning editing
+    off.
+
+  The one-row `outdated` save strip reads "Capy was updated. Reload to keep
+  editing. Your edits are saved on this device and will sync after you
+  reload.", with Reload in the close button's place. When this device could
+  not store the unsent edits (`outdated-unstored`), it says so instead: "This
+  device couldn't store your unsent edits, so reloading loses them." The
+  header status is Collaboration unavailable, as in recovery. An item room or
+  source session
+  refused before it synced shows the strip alone (a source shows its base
+  and this device's drafts, read-only).
+- **Its drafts stay.** Nothing is discarded, refused or marked. The reloaded
+  page applies them before it joins (or the sweep sends them), so they go
+  through the new version's checks as offline edits do; a refusal there
+  gives the usual refused draft. A source whose edits this device stored no
+  longer counts as unsaved, so Reload brings no "Leave site?" prompt (a
+  source or item editor whose storage failed still asks).
+- **The next page change loads the new app**: any refused room (an editor's
+  or a reader's) marks the update available, as the nudge below does. Drafts made by a refused client never carry
+  normalization damage: it never synced the new content.
+- **Readers** (the live View, study pages) are gated too: a refused read
+  room stops and keeps what it painted (the stored copy or the last live
+  value), with no strip. The nudge reloads the page later.
+- **Reload waits for the new app.** It reads the release file below and
+  compares it with the tab's `VITE_RELEASE_SHA` (`reloadIntoNewRelease`,
+  `src/lib/appRelease.ts`):
+  - another release reloads the page;
+  - the same release, or a failed check, changes the strip to "The update is
+    still being published. Try again in a minute." The new SPA is served
+    about 2 to 3 minutes after the new collaboration server starts refusing.
+- **The draft sweep** sends `X-Capy-Protocol`. An `outdated` answer stops
+  sweeps for the page load, marks no row and marks the update available.
+- **The release nudge.** The client build writes its `VITE_RELEASE_SHA` (the
+  same value as the HTML's `capy-release` meta) to `/release.txt`
+  (`vite.config.ts`); `public/_headers` serves it `no-store`, and it is a
+  static asset, so the SPA fallback never answers it on a deploy. Local dev
+  and MSW have no release file and read nothing.
+  - When the tab becomes visible or regains focus, at most once a minute, it
+    fetches `/release.txt` with `cache: 'no-store'` (`checkReleaseOnFocus`).
+    Only a full revision counts: a 404, the SPA fallback's HTML or a failed
+    fetch change nothing.
+  - When it differs from `VITE_RELEASE_SHA`, the next path change becomes a
+    full page load, with nothing shown. A `?file=` or other search change
+    stays in the page, so a streaming chat turn is not cut. While offline the
+    page stays (a load would land on the browser's offline page); the first
+    path change back online loads.
+  - It loads once per served release per tab (sessionStorage
+    `capy-update-load`), so a stale edge cannot loop it.
+  - The site's file is the source, not the gateway: the gateway goes live
+    minutes before the new SPA. Deployed `/api/*` bypasses the site Worker,
+    so a header on API responses could not carry it. The offline round's
+    service-worker update check replaces this read when it lands.
+- **Rollout.** Refusal starts when the new collaboration server starts. The
+  first rollout set `CLIENT_PROTOCOL` and both minimums to 1, so tabs from
+  before the gate show Offline until reloaded, with their edits kept.
+
+#### When to bump
+
+A change that breaks family F raises `CLIENT_PROTOCOL` to N+1 and sets F's
+minimum to N+1 in the same commit. The other family keeps its minimum, so its
+editors are untouched. The deploy request names the bump ("client protocol:
+material 3 → 4"); the [deployment runbook](../deployment-runbook.md) has the
+deploy order.
+
+- **Must bump**, because the damage is otherwise silent or hits co-editors:
+  - any capy-sync framing or message change, or a stateless message the
+    client acts on (both families);
+  - a new element type an older editor would normalize or misplace: any new
+    inline type, a void/inline change, a new shared-text key, a slate-yjs
+    patch change, an id-plugin change. An older Slate editor unwraps an
+    inline element it does not know as soon as it syncs, and admission takes
+    that as an ordinary edit;
+  - a changed meaning of an existing key or value;
+  - a rule the store applies but admission does not;
+  - item document shapes an older item editor would rewrite;
+  - every BetterOffice pin bump and every `OFFICE_PROTOCOL_VERSION` bump,
+    which raise the source family's minimum (office-files "Pin bump
+    checklist").
+- **Should bump**, because it is otherwise loud but confusing: removing a
+  type, key or value an older client can still write; a policy enforced only
+  in the client.
+- **No bump:** optional data older editors carry through untouched,
+  server-only changes, read paths, REST.
 
 ## Offline editing and drafts
 
@@ -903,8 +1018,9 @@ An editor that can edit keeps editing while its room cannot be reached: the
 browser went offline, or reconnecting failed for 30 s. Its header shows
 Offline and the `offline` save banner reads "Can't connect to Capy. Your edits
 are saved on this device and will sync when you reconnect. They may be
-rejected or lost." until the room syncs again. Note View never joins a room and
-is unchanged; opening the app offline is not supported.
+rejected or lost." until the room syncs again. Readers (Note View, study
+pages) hold no edits and keep what they painted; opening the app offline is not
+supported.
 
 Unsaved work lives in IndexedDB (`src/lib/editDrafts.ts`, database
 `capy-edit-drafts`, shared with Office and text sources), written by a
@@ -1035,7 +1151,7 @@ thread pays about 4 ms for a 20 MB Office state, against 160-192 ms with a
 collaboration service's `/drafts` on the host of the token's URL, the same
 URL for every document (so one preflight, kept 2 h, covers a sweep):
 `Authorization: Bearer <token>`, `X-Capy-Room: <room>`, `X-Capy-Base: <sha>`
-for a source, the update as the body
+for a source, `X-Capy-Protocol: <client protocol>`, the update as the body
 (`collaboration-rs/crates/server/src/drafts.rs`). A note group past the
 4 MiB sync cap is not uploaded.
 
@@ -1069,6 +1185,9 @@ detail with the room and counts it by class
 - `unheld` (409, the room lacks the update's base), `too_large` (413) and
   `lineage` (409, a token for another room, a schema or epoch that moved on,
   another Office base): marked `held`, left for the editor;
+- `outdated` (426, the page's client protocol is refused): kept unmarked,
+  and no sweep runs again until the page reloads (see
+  [Client protocol](#client-protocol-and-the-release-nudge));
 - `permission` (403), `unavailable` (503) and any other answer: kept, and
   not sent again until the next page load;
 - no answer (offline) or rows that changed meanwhile: kept for the next
@@ -1567,12 +1686,12 @@ open-answer hints never count against it, but a part needs one block with
 content. The bank dialog's Save drops them too (`withoutBlanks`). Readers
 (the attempt page, the workspace quiz View, note embeds in View) paint the stored questions and then follow the content room
 (`liveQuizReads.ts`); a learner's answer that no longer points at what a part
-holds (a removed option, a changed set of ordering items) is dropped (D9). The
-save API (`PATCH /api/quizzes/{id}/content`) takes no revision (D7): it
-writes what differs in the questions that differ, texts as the fewest changes
-and lists by position, so an editor typing in the same question keeps their
-characters; agent question commands work the same way, with inverses and
-question guards.
+holds (a removed option, a changed set of ordering items) is dropped (D9).
+Live rooms are the only writers of quiz content (Epo 2026-10-16: the REST
+content write is gone). Agent question commands write what differs in the
+questions that differ, texts as the fewest changes and lists by position, so
+an editor typing in the same question keeps their characters, with inverses
+and question guards.
 
 Item rooms (`ItemRoom`, `src/features/collaboration/itemRoom.ts`) keep an
 editor's unsent edits on the device as notes do (`editDrafts`, Epo
@@ -1623,11 +1742,10 @@ holds JOINs past the eight the server authenticates at once (`socket.ts`), since
 a ninth pending JOIN closes the whole socket. Readers (the
 study page, View, note embeds in View) paint the stored cards first, then follow
 the room (`liveReads.ts`), loading the room code after first paint.
-`PATCH /api/flashcards/{id}/content` stays for API and agent writers: it takes
-no revision (D7) and the server diffs the whole set into the live document,
-keeping ids. There are no single-card endpoints. The caps
+Live rooms are the only writers of set content (Epo 2026-10-16: the REST
+content write is gone); there are no single-card endpoints. The caps
 (`fieldlimits.CardFront` and `CardBack`, counted in runes) hold on every path:
-the content API, Go's document check (`ValidateCardText`), the agent's
+Go's document check (`ValidateCardText`), the agent's
 `create_material` cards and card commands (refused up front, contract 19) and
 the collaboration server (`CARD_FRONT_MAX`/`CARD_BACK_MAX`, which a Go test
 reads), with a card image exactly `{assetId}`.

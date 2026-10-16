@@ -26,7 +26,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then reads a parse bundle's text-less page renders with the VLM, chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs (`parser/odl/`); five parse children over one FIFO, depth 8; renders text-less pages as JPEGs for the ingest worker's VLM; normalizes Office through LibreOffice |
+| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs (`parser/odl/`); seven parse children over one FIFO, depth 8; renders text-less pages as JPEGs for the ingest worker's VLM; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -290,6 +290,31 @@ repairs, picture triage, table-cell styles, column reading order, hidden-OCR-lay
 and table context, footer ancestry, list geometry and text-overprint repair,
 exponents, column continuations, source-geometry table recovery and negation
 composition, and formula pictures retyped with a `[formula]` placeholder. Pages
+Before Java, dense vector figures are flattened in the parse copy
+(`flatten.py`, parser v17, decision 2026-10-16): plotting tools draw scatter
+markers, image pixels and curves as thousands of tiny paths, and OpenDataLoader
+keeps an object per path segment for the whole document, so plot-heavy books
+exhausted its 1 GiB heap (the five largest library books did). On a page with
+at least 800 path segments, each path's segments count toward the 12 pt cell
+under its centre; touching cells with at least 15 segments form a region, kept
+from 300 segments. Paths wider and taller than half the page (frames,
+backgrounds) never join one, and a region whose words cover more than 15% of
+it (a ruled table, a text box) stays vector. Each region is rendered at 150 dpi,
+the vector art it fully covers is removed (text and images stay, as text) and
+the render goes beneath the remaining content; rotated pages are skipped. The
+upload is unchanged; the flattened copy is what Java and the repairs read and
+the bundle's `parsed.pdf`. After picture triage, `pictures.flattened_figures`
+makes each region one `image` block with `_source_role: flattened-figure` in
+the region's box (ODL's picture of the render, or a new one), drops pieces ODL
+read as pictures or formulas, and folds the text inside and short labels
+beside it (at most six words, no `=`, within 30 pt, as for vector figures) into
+`figure_labels` (a source line into `image_footnote`); a sentence stays in the
+body. On 669 books it touches 2–3% of pages and takes 0.5–25 s a book. On 11
+books that parsed before, 8 of 4,279 headings left (mostly figure labels v16
+had promoted), 15 label headings appeared and at most 206 words a book left
+the text; the five failing books parse in 78–262 s, and floods of 1.76 and 2
+million paint operators parse in 16–23 s
+([report](../bench/parsers/reports/2026-10-16-element-limit.md)). Pages
 with fewer than 40 kept characters (blank pages included) are text-less
 (`textless.textless_pages`); the parse renders each as a grey JPEG and the
 ingest worker's VLM reads it ([VLM page read](#vlm-page-read)). The parser holds
@@ -304,7 +329,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v15` plus the release SHA (the donor key uses the first
+`odl-2.5.7-refined-vlm-v17` plus the release SHA (the donor key uses the first
 part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in
@@ -330,10 +355,18 @@ Parser v7 (decision 2026-09-24; evidence in
   split by `|`.
 - **Picture triage** (`pictures.classify`, right after adaptation). An image
   block with a side under 1 pt, or a short side under 1% of its long side, is
-  dropped: rules and spacer pixels drawn as images. The same rendered picture
-  on 5 or more pages becomes `discarded` furniture. Other pictures stay image
-  blocks until v12 retypes formula pictures (below). Triage reads ODL's image
-  files in the parse work directory; no image bytes leave it.
+  dropped: rules and spacer pixels drawn as images. Other pictures stay image
+  blocks until v12 retypes formula pictures (below). The same stored image on 5
+  or more pages becomes `discarded` furniture: ODL reports the object each
+  picture draws (`capy-images.json`), and its identity is a SHA-256 of that
+  object as the PDF stores it: its dictionary without `/Length`, each object
+  it references (palette, soft mask) hashed the same way by content, then its
+  still-encoded stream read 64 KiB at a time, so no pixels are decoded and a
+  badge each page stores as its own copy still matches. The stream alone is
+  not enough: tiny one-colour pictures share their compressed bytes and
+  differ only in size or palette. Until v16 the test was MuPDF's pixel
+  digest, which also caught inline images and the same pixels stored with
+  different bytes (decision 2026-10-16).
 
 Parser v8 (decision 2026-09-24; gate in
 `bench/parsers/reports/2026-09-24-parser-v8-gate.md`) adds:
@@ -576,7 +609,28 @@ empty tables, plus the speed work and the Java entry point:
 - **Vector figures** (`pictures.add_vector_figures`, after picture triage).
   veraPDF chunks placed images only, so a diagram drawn with paths reached the
   index as loose labels. Drawing paths within 8 pt of each other form a
-  cluster (page-wide rules, frames and white fills excluded). A cluster of at
+  cluster (page-wide rules, frames and white fills excluded): each path in
+  turn joins every cluster whose box its own box, grown by 8 pt, meets, then
+  clusters whose boxes meet merge until none do. Since v16 a grid of 16 pt
+  cells holds each cluster's box and union-find tracks the merges, so a path
+  is compared only with the clusters in the cells it covers and nothing is
+  rescanned (the grouping is the earlier all-pairs one, checked page for page
+  on the bench corpus and 288 library books; decision 2026-10-15). A cluster
+  spanning more than 64 cells stays out of the grid and is compared with every
+  path, as is every cluster for a path whose grown box spans more cells than
+  there are clusters. Clustering stays near linear in the paths: 5,000
+  separate strokes take 0.13 s where the all-pairs scan took 94 s, and the
+  288 library books' clustering time fell from 215 to 84 s. Drawings off the
+  page get cells of their own like any other; a path whose box has a NaN or
+  infinite coordinate (content under a huge matrix) is left out, as the
+  all-pairs test never let such a box meet anything. A backstop of 20 million steps
+  per document (`VECTOR_MAX_STEPS`: a grid cell read or written, a box
+  compared, paid before the cells are touched; the costliest library book
+  takes 10.6 million) ends clustering for
+  the rest of a document past it, with one log line naming the page, the steps
+  and the fingerprint; the receipt's `_drawing_steps` counts the steps
+  (decision 2026-10-16). Layout heading recall reads the same
+  clusters (`Drawings`, each page's computed once per document). A cluster of at
   least 3% of the page and 12 path segments, with words covering at most 25%
   of it and clear of image, table and equation blocks, becomes an `image`
   block with `_source_role: vector-figure`. Text blocks inside it, and short
@@ -706,13 +760,9 @@ empty tables, plus the speed work and the Java entry point:
 ODL runs as a library under `parser/java/CapyMain.java` (built by
 `parser/java/build.sh`, in the image by a JDK build stage; the runtime keeps a
 JRE): the same options and JSON as ODL's CLI, plus `capy-images.json`, the PDF
-object of the image each picture element draws. veraPDF resolves it while
-parsing; picture triage digests each object once instead of replaying every
-page in MuPDF to find its images (18.6 s of the textbook's parse), and replays
-only pages with inline images, where an exact box key (the image's
-placement) answers almost every picture: a 3,311-page manual has pages with
-17,561 inline-image pictures, which an all-pairs overlap search turned into
-hours.
+object of the image each picture element draws, which veraPDF resolves while
+parsing: picture triage hashes that object's stored bytes for repeats. One document per JVM, which
+exits without ODL's static cleanup.
 
 Speed (same output). Inside `parse_pdf`, `page_text.session` extracts each
 page's text once: the first stage to read a page takes MuPDF's `rawdict` and
@@ -795,7 +845,7 @@ their shape; there are no slices.
 
 ### Parse capacity
 
-`CAPY_PARSE_WORKERS` (5) persistent parse children each take one document at
+`CAPY_PARSE_WORKERS` (7) persistent parse children each take one document at
 a time from one FIFO and run all of it: LibreOffice for an Office source, the
 page count, `parse_pdf`, the page-1 thumbnail and the text-less page renders.
 `CAPY_PARSE_QUEUE_DEPTH` (8) counts documents in a parse child and waiting, and
@@ -803,17 +853,22 @@ must be at least the worker count (checked at startup); one more concurrent requ
 `429` and the coordinator returns its job to `pending` as a capacity wait
 without spending an attempt (`YIELD_BACKOFF_S`, 2 s). There is no Redis
 admission gate and no page slicing: a 610-page textbook is one Java run plus
-the repairs, about 14 s of which is table recovery. The eight coordinator
+the repairs, about 7 s of which is table recovery. The eight coordinator
 children are the outer cap.
 
 | Route | Host | Parser admission | Deadlines | JVM heap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | depth 8, 5 parse children, at most 500 text-less pages per document | 900 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
+| fast | one 8-core / 16 GiB VM | depth 8, 7 parse children, at most 500 text-less pages per document | 600 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
 
-The capacity run on the ingest host (14 GiB, 8 CPUs, 1g heap) found CPU and
-the deadline, not memory, to be the limit: each 1,216-page book adds about
-1.45 GiB and nothing was OOM-killed up to eight slots, and six native slots
-parsed 13.3 pages/s against 3.3 for one.
+The v16 recalibration on the ingest host
+([`2026-10-16-parser-v16-recalibration.md`](../bench/parsers/reports/2026-10-16-parser-v16-recalibration.md),
+14 GiB, 8 CPUs, 1g heap) set seven children: a 1,400-page book uses about one
+core, so seven saturate the CPUs (eight would not help), and each running book
+adds about 1.2 GiB, mostly its JVM. Seven 1,400-page books at once took
+294–307 s and peaked at 10.8 of 14 GiB with no swap; an eighth waited one
+round (293 s). Office files are light: three 705-page workbooks, two decks and
+two handbooks beside a book peaked at 4.3 GiB, LibreOffice at 0.88 GiB of its
+2 GiB address-space cap. The host is shared with the UAT stack, which is light.
 
 A new document upload lands `files.status=pending` with a pending `parse` row.
 Eight coordinator children claim only parse rows and flip the file to
@@ -837,10 +892,28 @@ more than `CAPY_PARSE_MAX_PAGES` (1,400) pages fails as the terminal
 `parse_too_many_pages`, a PDF that cannot be counted (broken, no pages, an
 open password) as the terminal `parse_unreadable`, and a count that hangs runs
 into the parse deadline (`parse_hard_timeout`, quarantined). There is no count
-at admission, and the API process opens no source with MuPDF. The
-coordinator maps both page codes to an input limit (`scanned_page_limit`,
-`page_limit`) carrying the parser's reason (no quarantine, no retry): the file
-ends ready and unindexed, see Ingest limits below. The API serves the same two env
+at admission, and the API process opens no source with MuPDF.
+
+The parse child also checks element limits (`odl/elements.py`), cheap counts
+that refuse floods of figures, shapes or table rows as the terminal
+`parse_too_many_elements` before the costly work. A DOCX or PPTX is counted in
+its package XML before LibreOffice, tags of any namespace prefix: more than
+2,000 table rows (`tr`) or 2,000 pictures and drawings (`drawing`, `pict`) in a
+DOCX, more than 2,000 shapes and pictures (`sp`, `cxnSp`, `pic`) in a PPTX.
+Every PDF, an Office file's conversion included, is counted after the page
+count: more than 250,000 image placements in the file or 40,000 on one page
+(each `Do` and inline image, a form XObject counting what it draws times its
+draws), or more than 2,000,000 path-painting operators in the file. Legacy
+`.doc`/`.ppt`/`.xls`, XLSX and packages that don't open are not counted (the
+conversion timeout and the page cap hold them). The thresholds come from a
+census of 418 real PDFs and synthetic floods
+([report](../bench/parsers/reports/2026-10-16-element-limit.md)); the check
+takes about 3 ms a page.
+
+The coordinator maps the page and element codes to an input limit
+(`scanned_page_limit`, `page_limit`, `element_limit`) carrying the parser's
+reason (no quarantine, no retry): the file ends ready and unindexed, see Ingest
+limits below. The API serves the same two env
 values in the upload policy (`parseModes[fast].maxPages`, `maxOcrPages`) and
 refuses a fast-parse reservation whose claimed `pageCount` exceeds `maxPages`;
 the browser checks both caps before upload (see
@@ -856,7 +929,7 @@ without the automatic retry, as it does for a parse that yields no indexable
 content. A Java crash or any other child crash keeps the one retry; a
 LibreOffice timeout is final like the parse deadline (below).
 
-A document has a 900-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
+A document has a 600-second hard deadline (`CAPY_PARSE_DOCUMENT_TIMEOUT`)
 that starts when it leaves the queue, before LibreOffice normalisation of an
 Office source and the Java run, and ends when the API has read the child's
 result, renders included; queue wait does not spend it. The Java subprocess itself runs under the same timeout. If a
@@ -870,13 +943,15 @@ fingerprint fail immediately while that parser version is live. A parser-version
 `pipeline/parse/parser_client.py`) creates a new fingerprint and is the
 deliberate automatic way to retry the file after parser code changes.
 
-The whole-document parser request has a 1,920-second bound (`PARSER_TIMEOUT`:
-one wait for a parse child and the parse itself, 900 s each with eight
-admitted over five children, plus a 120 s margin) and the parse job a
-2,100-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
+The whole-document parser request has a 1,320-second bound (`PARSER_TIMEOUT`:
+one wait for a parse child and the parse itself, 600 s each with eight
+admitted over seven children, plus a 120 s margin) and the parse job a
+1,500-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
 continuation, which includes the VLM page reads, has a 1,200-second bound.
-Until the OCR stage left the parser the bounds were 4,420 s and 4,600 s, with
-500 OCR pages at up to 5 s inside the request. A later attempt for the same
+The 600 s deadline is twice the slowest parse and the longest wait measured
+at seven children (about 300 s each, a 1,400-page book among seven). Until the
+OCR stage left the parser the bounds were 4,420 s and 4,600 s, with 500 OCR
+pages at up to 5 s inside the request. A later attempt for the same
 fingerprint joins the parse already in flight. A timed-out coordinator or
 ingest process records its retry and exits; the supervisor or Docker replaces
 only that process, so a cancelled blocking thread cannot overlap a later job.
@@ -886,6 +961,19 @@ persistent spawned parse child owns LibreOffice, Java and the repairs for one
 document at a time, in its own session (`setsid`; LibreOffice runs in its own
 process group inside it) with Linux `oom_score_adj` 1000 and a work directory
 `slot-N` under `CAPY_PARSE_WORK_DIR` that is wiped when the child is respawned.
+The child runs under a 2 GiB soft address-space limit (`RLIMIT_AS`,
+`PARSE_CHILD_MAX_BYTES`), which LibreOffice inherits; Java lifts it to the hard
+limit when it starts, its heap bounded by `-Xmx` (decision 2026-10-15). The
+container sets `MALLOC_ARENA_MAX=2` and the parse child starts LibreOffice with
+it too, so the multithreaded LibreOffice and JVM reserve far less address
+space: LibreOffice's peak on the 224k-cell gradebook fell from 2.18 to
+0.52 GiB, and without the setting that workbook fails to convert under the
+limit. A parse child reached 0.64 GiB on a 1,400-page book. A parse that needs more address space fails in the child (Python's
+`MemoryError`, an OS call refused with `ENOMEM`, or MuPDF's failed `malloc`)
+and answers `parse_oom`: its fingerprint is quarantined and the child replaced
+before the next document. LibreOffice past the limit fails its conversion,
+which is final (the terminal `parse_unreadable`, no retry; decision
+2026-10-16).
 Mode-0600 temporary files carry the source and the result (JSON, then the
 repaired PDF and page-image bytes, then one JPEG per text-less page, each after
 its length); small pipe messages carry only status and paths. Children answer in JSON (an answer over 16 MiB ends that
@@ -893,7 +981,8 @@ child), and the API never unpickles anything a child writes; it refuses a
 result file larger than a bundle may expand to, or one listing more text-less
 pages than the cap. The errors it classifies (a
 Java timeout or kill, a failed or timed-out LibreOffice conversion, a format
-mismatch, both page caps, an unreadable source) keep their kind by name; any other arrives as a runtime error naming
+mismatch, both page caps, an unreadable source, a parse past the address-space
+limit) keep their kind by name; any other arrives as a runtime error naming
 its type. The API opens nothing a child wrote with MuPDF: an Office source's
 page evidence is computed in the parse child from its own parse, without the
 VLM-read pages (their text arrives later, in ingest). The API process makes
@@ -959,8 +1048,8 @@ ingest reads: image blocks keep their geometry and caption but no file, since
 figures are reached at question time by rendering the source page
 (`capture_page`). ODL runs with `--format json --image-output off`: it writes no
 image files or Markdown (decoding and re-encoding every picture was 85% of its
-time on a figure-heavy textbook), and picture triage identifies repeats by
-MuPDF's image digest instead. The worker rejects any
+time on a figure-heavy textbook), and picture triage identifies repeats by the
+stored bytes of the image object ODL reports instead. The worker rejects any
 other entry. Office bundles contain no PDF. The parser freezes page text and visible-heading proofs before
 discarding the temporary conversion, preserving downstream confidence/heading checks.
 The evidence leaves out the VLM-read pages, so a heading on an image-only page
@@ -1027,13 +1116,15 @@ viewer.
 
 #### Ingest limits
 
-Five limits are checked on the real content during ingest. A file over one is
+Six limits are checked on the real content during ingest. A file over one is
 not failed: the worker raises `InputLimitError(code)`, the job and its attempt
 fail with that `error_code` (logged at info, no Sentry event), and the file
 ends `ready`, `indexed=false`, with `files.index_limit` set to the code
-(migrations `0072`, `0081`). It opens, downloads, edits and clones like any file; only
+(migrations `0072`, `0081`, `0089`). It opens, downloads, edits and clones like any file; only
 search, chat and generate skip it. The file banner and the upload panel say it
-is too large to index (`files_not_indexed_too_large`), Retry processing is not
+is too large to index (`files_not_indexed_too_large`; for `element_limit`,
+`files_not_indexed_too_many_elements`, and the upload panel also raises one
+warning toast per file, `source_transfer_too_many_elements`), Retry processing is not
 offered (that is for `failed` files), and the Indexing tab counts it as not
 indexable. A new published source (a source refresh or a maintenance
 republish) clears `index_limit`. An edited source over a limit is a refused
@@ -1044,6 +1135,7 @@ Indexing tab lists the change as failed.
 | --- | --- | --- | --- |
 | `page_limit` | Pages in a fast-parse PDF/DOCX/PPTX/XLSX | `CAPY_PARSE_MAX_PAGES` (1,400) | Browser analysis blocks submit; the reservation refuses a claimed `pageCount` over it. Imports and edited Office sources are only checked by the parser. |
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
+| `element_limit` | Image placements, vector paint operators (PDF); table rows, pictures, shapes (DOCX/PPTX) | `odl/elements.py`: 250,000 placements a file and 40,000 a page, 2,000,000 paints; 2,000 each in Office | No |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
 | `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |
@@ -1157,7 +1249,9 @@ performs the planned work:
 Image captions use the containing-resource associations described below.
 
 These B2 objects are reuse caches, not ingest success conditions. Each cache
-write makes three `put_object` attempts. If all three fail, the worker logs the
+write is one `put_object` through the pipeline's S3 client, which gives every
+call 3 attempts in all (botocore standard mode, its own retries included;
+`pipeline/pipeline/store/blobstore.py`). If all three fail, the worker logs the
 failure and continues indexing from the provider result already in memory. It
 does not register an artifact key. Database registration has the same
 best-effort rule. Updating `files.caption_blob_path` is diagnostic and follows
@@ -1309,7 +1403,10 @@ provider error (5xx, a connection reset) take the next call, as for the file
 descriptor (parts design Q7); after the third, or at once on a definitive
 client error (400, 401, 403, 404, 422), the page is unread. A busy provider
 past its budget raises `ProviderBusy` instead and the job re-pends once; pages
-already read are cached. One job reads at most 10 pages
+already read are cached. On the re-claim (`last_wait`: the job's
+`provider_waits` at `PROVIDER_WAITS_MAX`) a page still busy is unread instead,
+so the file ends partial rather than failing `provider_busy` (parts design
+§6). One job reads at most 10 pages
 at once (`VLM_PAGES_PER_JOB`), and all ingest workers share a gate of
 its own: capacity leases under the fixed key `vlm_page`, at most 20 calls in
 flight (`VLM_PAGE_CAPACITY`), taken in place of the GLM `model_capacities` row,
@@ -1347,11 +1444,10 @@ cached page and a failed read cost nothing, and the parse does not charge
 these pages the digital rate as well. Unread pages are a missing part (see
 "Parts" under Indexing one file): the readable pages are indexed and
 searchable, but the file ends `failed` (still `indexed`) and the job note
-names the unread pages (the first 20, then a count). Retry processing runs the
-file again (until Go's retry routing, parts design step 5, sends the page fee
-by `ever_parsed_successfully`, a parse redone because its bundle left the
-spool is charged like any retry) and only the unread pages reach the VLM; the others come from the
-cache. Its new content attaches beside the old one, which keeps serving search
+names the unread pages (the first 20, then a count). Retry processing parses
+the file again, with no digital page fee once it parsed successfully (`parseFee`
+follows `ever_parsed_successfully`, Q6), and only the unread pages reach the
+VLM; the others come from the cache. Its new content attaches beside the old one, which keeps serving search
 and lends its vectors until the new content publishes. A document with no
 indexable content besides its unread pages fails terminally with the same note.
 
@@ -1644,7 +1740,8 @@ exists; the local bundle is gone once the first ingest finished.
   An accounting error is not a part failure: `_descriptor` and
   `summarize_file` propagate `AccountingError` (a rejected receipt,
   `SettlementError`, among them) unchanged: a configuration or settlement
-  failure fails the job; it is not a missing part. A blank published descriptor
+  failure fails the job without its retry (another attempt fails the same);
+  it is not a missing part. A blank published descriptor
   is not kept over a failure: the descriptor is then pending.
 5. Publish: `store.publish_file_content` marks the content ready and moves the
   file's alias onto it in one transaction, fenced to the job's file revision;
@@ -1679,7 +1776,9 @@ the part lives (no migration, Q10): a pending descriptor is a missing
 - A busy summary provider past its in-call budget re-pends the job once
   (`PROVIDER_WAITS_MAX`) after the content is published; the re-claim finds
   the same content ready and only fills the descriptor. Busy again, the
-  descriptor is missing.
+  descriptor is missing. A busy VLM page re-pends the job the same way
+  before anything is published; on the re-claim the cached pages are free and
+  a page still busy is unread.
 - The content-reuse path (step 1's ready content) and an ingest worker's donor
   path fill a pending descriptor inline with `indexing.fill_descriptor`: the
   stored chunks, one summary call, no parse or embedding, and an insert that
@@ -1692,19 +1791,36 @@ the part lives (no migration, Q10): a pending descriptor is a missing
   this job never saw which), so such a file is never marked ready. The parse
   coordinator's donor path sends one (and leaves `ever_parsed_successfully` to
   the continuation's `_finish_ok`, as any donor reuse does); Retry processing
-  of a file whose only missing part is its descriptor is to send one once Go
-  routes retries by missing part.
+  sends one for a file whose only missing part is its descriptor.
+- Retry processing (Go `RetryFileProcessing`) routes a partial file by its
+  missing parts. Partial means `failed` with `indexed` true, its alias on ready
+  content whose `content_hash` equals `files.content_hash` (every revision
+  bump drops or moves the alias), and that content's `pipeline_identity`
+  naming the route of the file's own `parse_mode` (or NULL; a processed
+  store-only upload's `none` counts as `fast`, as in `reprocessTx`). With a NULL
+  identity (unread pages) it queues a parse job with `parseFee` set to
+  `!ever_parsed_successfully` (Q6; `_parse_fee` honours it for every job
+  type); with an identity and no summary row, a `partsOnly` ingest job; with
+  both parts present it sets the file ready and queues nothing. These jobs run
+  in the file's own mode and leave `indexed` and `parse_mode` as they are; the
+  file is `pending` meanwhile. The requested mode is no choice for a partial
+  file, so a `none` request routes the same way instead of storing it
+  unindexed. Anything else is a full retry in the requested mode, which resets
+  `indexed`. The job's revision, blob path and ETag are read with the file
+  locked. A parse, ingest or `source_refresh` job pending
+  or running for the file answers 409.
 - `_finish_ok` checks, under `FOR UPDATE`, that the file still aliases the
   content the job published (else the job ends superseded and statuses stay),
   and once the content is complete, by the job and by its row (a summary row
   and a non-NULL `pipeline_identity`), it sets every other file aliasing it
   that is `failed` with `indexed` true to `ready` in the same transaction, so
   one fill completes duplicate uploads.
-- A job that fails (`_finish_fail`, or the lease reaper's
-  `fail_pipeline_file_if_current`) leaves `indexed` true exactly when the
-  file's alias still serves ready content (`db.SERVES_INDEX`): a failed retry
-  of a partial or indexed file keeps answering search with its previous
-  index. A file over an ingest limit drops its alias instead, so it is
+- A job that fails (`_finish_fail`, the lease reaper's
+  `fail_pipeline_file_if_current`, or account deletion's
+  `cancel_user_async_work`, migration 0087) leaves `indexed` true exactly when
+  the file's alias still serves ready content (`db.SERVES_INDEX`): a failed
+  retry of a partial or indexed file keeps answering search with its previous
+  index. The terminal progress event carries the `indexed` written. A file over an ingest limit drops its alias instead, so it is
   `ready`, unindexed and carries its `index_limit`.
 - On UAT, `CAPY_UAT_FAIL_PARTS` fails the descriptor of a file named with
   `[uat-fail-summary]` with no provider call. It bites only when the file has
@@ -1749,8 +1865,9 @@ call: a file reaching `ready` (indexed, duplicate or stored-only) counts done
 and `failed` counts failed (`files.batch_id` is cleared, so a file counts
 once); an upload session expiring without a file (abandoned PUT, failed import)
 counts failed, as does an upload reservation or import request the handler
-refuses (other than the statuses the browser retries: 429 for uploads; 408, 429
-and 5xx for imports, whose exhausted retries are left to the idle sweep). The settle that reaches `total` writes the notification. The
+refuses (other than the statuses the browser retries, 3 attempts in all: 429
+for uploads; network errors, 408, 429 and 5xx for imports; a request whose
+attempts run out is left to the idle sweep). The settle that reaches `total` writes the notification. The
 API's `runSourceBatchWorker` polls every second: it closes batches idle for an
 hour (unsent or unsettled files count failed), then deletes notified rows and
 publishes their notifications to `notif:{userId}`.
@@ -3374,7 +3491,8 @@ counts as drift; the durable copy drops the room's server-owned contributor
 markers while the delta sent back to the room keeps them, so the room's own
 store still asserts each contributor's access. A source edit reads state and
 checkpoint from one session and commits with that checkpoint's CAS, so a
-commit landing in between conflicts and the edit retries from fresh state. There is no revision precondition: expected content compared under
+commit landing in between conflicts and the edit retries from fresh state,
+3 attempts in all. There is no revision precondition: expected content compared under
 the lock catches target drift, the lock and the source checkpoint CAS serialize
 concurrent commits, and the server-resolved room incarnation fences trash,
 restore and rebase. Each edit stores an inverse command list and target guards
@@ -3724,10 +3842,19 @@ marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
 of bytes an export-only publication left unindexed is reprocessed like its
 source. A pipeline ingest that adds the same content to the destination after
 the snapshot conflicts on `rag_contents` and the clone retries as a
-serialization failure. A standalone material has no index.
+serialization failure (3 attempts in all, then 409 `clone_source_changed`;
+see [authorization](authorization-permissions-lifecycles.md)). A standalone material has no index.
 
-That transaction uses one repeatable-read source snapshot. Only ready source
-files are copied; pending, processing, and failed rows are omitted. Ready editor
+That transaction uses one repeatable-read source snapshot. Ready source files
+are copied, and so are partial ones (`failed` with a served ready index, a part
+missing; parts design Q2): the copy keeps `failed`, `indexed`, `content_hash`,
+`parse_mode` and `ever_parsed_successfully`, and its content travels like any
+other, so a NULL `pipeline_identity` stays NULL (still no donor) and a missing
+summary row stays missing. The copy's owner can then Retry processing it,
+which routes its missing parts as for the source; job rows (and so the job's
+note) are never copied. On a pin mismatch a partial copy is queued for ingest
+like a ready one. Pending, processing, and failed files without a served index
+are omitted. Ready editor
 assets are copied with new logical ids, and material nodes that reference any
 uncopied editor asset are removed rather than becoming dangling references.
 Materials have no snapshot history to copy. Relational comment threads are
@@ -3803,7 +3930,10 @@ due files. Each 5 s pass then claims and exports the two oldest claimable
 refreshes (`EXPORT_JOBS_SQL`). A file has one running candidate and one
 coalesced desired checkpoint. Turning a switch off prevents new automatic
 admission; current leased work can finish. Failed processing leaves authored
-state intact and exposes manual processing. A refresh that raises
+state intact and exposes manual processing. Neither the scheduler nor Go
+admission picks a failed file automatically, unless it is partial (still
+`indexed`, a part missing: parts design Q1), so the next refresh of an edited
+source can fill the part. A refresh that raises
 `SourceSupersededError` while its source recheck still passes (nothing replaced
 it) fails as `source_refresh_refused` with `refresh_error`, so the scheduler
 leaves the file until its next save; finishing it as superseded would leave it
@@ -3838,6 +3968,10 @@ seed(export) of the captured export, and compares-and-swaps that saved
 checkpoint. A newer save retries local rebase with the same completed parse. A
 rebase the engine refuses answers 422, which ends the refresh job without a
 retry (see [Office files](frontend/office-files.md)).
+Publication sets the file `indexed` and derives its status from the candidate
+content, since a refresh's pipeline writes none: `failed` (a partial result,
+shown like any other, Q3) when the candidate has no `rag_content_summaries` row
+or a NULL `pipeline_identity`, else `ready`.
 Publication advances the indexed checkpoint and retains the current checkpoint
 and residual changes; the rebuild (or a maintenance handoff) increments the
 editing epoch and clears Undo/Redo. The
@@ -3903,8 +4037,8 @@ current chunk, with full coverage in the large-document reduction path.
 | --- | --- | --- |
 | Gateway callback | `GATEWAY_URL`, `PIPELINE_SECRET` | Unset disables `generate_material`. The same secret is required on every inbound retrieval request except `/healthz`. |
 | User provider keys | `LLM_CREDENTIALS_KEY` | Same 32-byte hex/base64 value as Go. Retrieval decrypts `user_llm_credentials`. Platform keys use the `platformEnv` name in `elitellm_providers.json`; user keys are request-scoped and never written to process env. |
-| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 900 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,920 s per request and 2,100 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
-| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy`. Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
+| Parse | `PARSER_URL`, `PARSER_TOKEN`, `PARSER_TIMEOUT`, `CAPY_PARSE_COORDINATOR_CONCURRENCY`, `CAPY_PARSE_JOB_TIMEOUT`, `CAPY_OFFICE_PREVIEW_MAX_BYTES`; parser container `CAPY_PARSE_WORKERS`, `CAPY_PARSE_QUEUE_DEPTH`, `CAPY_PARSE_OCR_PAGE_CAP`, `CAPY_PARSE_MAX_PAGES` (both page caps also read by the API, no default), `CAPY_PARSE_DOCUMENT_TIMEOUT`, `CAPY_PARSER_JVM_MAX_HEAP`, `RELEASE_SHA` | OpenDataLoader parser service on the Netcup host. Production defaults to eight coordinator processes, parser depth 8 over `CAPY_PARSE_WORKERS` parse children (required, 5 in production, 1 in the shared non-production compose), 600 s per document, at most 500 text-less pages per document (`CAPY_PARSE_OCR_PAGE_CAP`; the name is older than the VLM read), 1,320 s per request and 1,500 s per parse job (see Parse capacity for the derivation). Route, parser implementation string and artifact schema form the artifact identity; there is no parse method knob. |
+| Post-parse ingest | `WORKER_REPLICAS`, `CAPY_INGEST_TIMEOUT`, `RELACE_INGEST_API_KEY` | `RELACE_INGEST_API_KEY` is the ingest account's Relace key in GitHub, rendered into the ingest queue env as `RELACE_API_KEY` (see VLM page read). Dedicated-host defaults are four isolated one-job containers and 20 minutes per attempt. Model stages are sequential within each job. A provider busy past the in-call retry budget (three attempts, two minutes) re-pends the job without spending an attempt, at most once per job (`jobs.provider_waits`), then fails the file as `provider_busy` (a part, the descriptor or a VLM page, is left missing instead; see Parts). Ops-managed `model_capacities` caps outbound calls per transport model across catalog versions, ingest using total minus interactive reserve. Every admission reads current DB limits; missing capacity fails explicitly. |
 | Shared nonproduction capacity | `CAPY_SHARED_CAPACITY_LOCK_DIR` | Unset in production. The shared local/UAT Compose project sets one spool directory for both environments. A queue consumer takes the `parse` or `ingest` file lock before claiming a row, which leaves the other environment's job pending and caps active work at one job per role. |
 | Chunk size | `CAPY_CHUNK_*` | Estimated-token budgets (`estimate_tokens`), not a real tokenizer |
 | Embedding | `EMBEDDING_DIM` | The shipped width, matching `halfvec(N)`. The *model* is never env: it is a `model_configs` row pinned per workspace |

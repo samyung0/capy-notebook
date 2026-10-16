@@ -12,6 +12,7 @@ import { FileIcon } from '@/components/ui/FileIcon';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { userToast } from '@/components/ui/userToast';
 import { fileIsIngesting } from '@/features/files/fileUtils';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -134,6 +135,32 @@ function useUnsentBeforeUnload(unsent: number) {
   }, [unsent]);
 }
 
+// Transfers whose file was refused for its figures or tables, toasted once.
+const elementLimitToasted = new Set<string>();
+
+/** A file the parser refused for too many figures or tables gets its own
+ * toast, besides its row. */
+function useElementLimitToasts(
+  rows: { file: SourceFile | undefined; transfer: SourceTransfer }[]
+) {
+  useEffect(() => {
+    for (const { file, transfer } of rows) {
+      if (
+        file?.indexLimit !== 'element_limit' ||
+        elementLimitToasted.has(transfer.key)
+      ) {
+        continue;
+      }
+      elementLimitToasted.add(transfer.key);
+      userToast({
+        description: transfer.name,
+        title: m.source_transfer_too_many_elements(),
+        variant: 'warning',
+      });
+    }
+  });
+}
+
 /** Bottom-right list of every upload and import, from the first byte to the
  * parsed file. Closing it only hides the rows; the transfers keep running. */
 export function SourceTransferPanel() {
@@ -162,7 +189,6 @@ export function SourceTransferPanel() {
           : false,
     })),
   });
-  if (transfers.length === 0) return null;
   const files = new Map(
     fileLists.flatMap(({ data }) => data ?? []).map((file) => [file.id, file])
   );
@@ -170,6 +196,8 @@ export function SourceTransferPanel() {
     file: transfer.fileId ? files.get(transfer.fileId) : undefined,
     transfer,
   }));
+  useElementLimitToasts(rows);
+  if (transfers.length === 0) return null;
   const finished = rows.filter(({ file, transfer }) => {
     const { kind } = transferStatus(transfer, file);
     return kind !== 'progress' && kind !== 'indeterminate';

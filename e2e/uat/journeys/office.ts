@@ -16,18 +16,28 @@ import {
 } from './files';
 import type { Actor, UatRun } from './runtime';
 
-/** A menu of the Office file header: Capy's labels in PPTX, BetterOffice's in DOCX and XLSX. */
-function officeMenu(page: Page, format: OfficeFormat, name: 'File' | 'Edit') {
+/** The Office file header's menu bar and one menu's label: Capy's in PPTX, BetterOffice's in DOCX and XLSX. */
+export function officeMenuLabels(format: OfficeFormat, name: 'File' | 'Edit') {
   const pptx =
     name === 'File'
       ? m.files_office_pptx_menu_file()
       : m.files_office_pptx_menu_edit();
+  return {
+    bar: m.files_office_menu_bar(),
+    item: format === 'pptx' ? pptx : name,
+  };
+}
+
+/** A menu of the Office file header. */
+export function officeMenu(
+  page: Page,
+  format: OfficeFormat,
+  name: 'File' | 'Edit'
+) {
+  const { bar, item } = officeMenuLabels(format, name);
   return page
-    .getByRole('menubar', { name: m.files_office_menu_bar() })
-    .getByRole('menuitem', {
-      exact: true,
-      name: format === 'pptx' ? pptx : name,
-    });
+    .getByRole('menubar', { name: bar })
+    .getByRole('menuitem', { exact: true, name: item });
 }
 
 /** File › Save in the Office file header (the Save button is gone). */

@@ -159,6 +159,18 @@ describe('source import request retries', () => {
     expect(wait).toHaveBeenCalledWith(1000);
   });
 
+  it('gives a request that keeps failing three attempts in all', async () => {
+    const error = new ApiError(503, 'Service Unavailable', undefined, null);
+    const request = vi.fn().mockRejectedValue(error);
+    const wait = vi.fn().mockResolvedValue(undefined);
+
+    await expect(withSourceImportRequestRetry(request, wait)).rejects.toBe(
+      error
+    );
+    expect(request).toHaveBeenCalledTimes(3);
+    expect(wait.mock.calls).toEqual([[1000], [2000]]);
+  });
+
   it('does not retry a terminal request error', async () => {
     const error = new ApiError(400, 'Bad Request', undefined, null);
     const request = vi.fn().mockRejectedValue(error);

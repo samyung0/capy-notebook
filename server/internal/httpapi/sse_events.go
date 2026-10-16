@@ -41,6 +41,12 @@ func (a *api) publishNotificationEvent(ctx context.Context, userID string, event
 	_ = a.rdb.Publish(ctx, "notif:"+userID, payload).Err()
 }
 
+// publishBillingChanged tells the user's open tabs to refetch billing after
+// Stripe or the reload worker changed it; the event carries no billing data.
+func (a *api) publishBillingChanged(ctx context.Context, userID string) {
+	a.publishNotificationEvent(ctx, userID, notificationEvent{Type: "billing"})
+}
+
 func (a *api) publishNotificationRemovals(ctx context.Context, removals []store.NotificationRemoval) {
 	byUser := make(map[string][]string)
 	for _, removal := range removals {
@@ -59,7 +65,8 @@ func (a *api) publishNotificationRemovals(ctx context.Context, removals []store.
 
 // stream is the one SSE stream a signed-in tab holds open. It always carries
 // the user's notifications (`notif:{userId}`, published by this gateway and
-// the Python worker). With `?workspace=` it also carries that workspace's
+// the Python worker), including `billing` events that ask the tab to refetch
+// billing. With `?workspace=` it also carries that workspace's
 // ingest progress (`ingest:{workspaceId}`, published by the worker) and tree
 // changes (`tree:{workspaceId}`, raised by the Postgres triggers in migration
 // 0004 and relayed by listenWorkspaceTree). Each event names its source in
@@ -73,7 +80,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.broker == nil {
-		http.Error(w, "redis not configured", http.StatusServiceUnavailable)
+		writeUnexpected(w, http.StatusServiceUnavailable)
 		return
 	}
 	wsID := r.URL.Query().Get("workspace")
@@ -82,7 +89,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !a.treeLive.Load() {
-			http.Error(w, "event stream unavailable", http.StatusServiceUnavailable)
+			writeUnexpected(w, http.StatusServiceUnavailable)
 			return
 		}
 	}
@@ -99,7 +106,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 
 	flusher, ok := w.(http.Flusher)
 	if !ok {
-		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		writeUnexpected(w, http.StatusInternalServerError)
 		return
 	}
 
@@ -108,7 +115,7 @@ func (a *api) stream(w http.ResponseWriter, r *http.Request) {
 	open := func(channel string) *subscription {
 		sub, err := a.broker.subscribe(ctx, channel)
 		if err != nil && ctx.Err() == nil {
-			http.Error(w, "event stream unavailable", http.StatusServiceUnavailable)
+			writeUnexpected(w, http.StatusServiceUnavailable)
 		}
 		return sub
 	}

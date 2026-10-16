@@ -371,7 +371,7 @@ export function useOfficeRuntime({
       (!source.doc ||
         !source.session ||
         !source.bytes ||
-        (!source.synced && source.status !== 'recovery'))
+        (!source.synced && source.status !== 'recovery' && !source.outdated))
     )
       return;
     if (mode === 'view' && !viewBytes) return;
@@ -443,6 +443,7 @@ export function useOfficeRuntime({
     !source.handoff &&
     !source.replaced &&
     !source.offlineLimit &&
+    !source.outdated &&
     source.status !== 'recovery' &&
     // `connecting` pauses only before the first sync: the document exists
     // only from then (each session start clears it), and the first save

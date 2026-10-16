@@ -1,0 +1,129 @@
+# Element limit: census and flood measurements
+
+2026-10-16. Sets the thresholds of the parser's element limit (decision
+2026-10-16 in `human/agentic-retrieval.md`): a PDF or Office file with more
+figures, shapes or table rows than a limit is refused before the parse. Two
+inputs: a census of real files (`scripts/element_census.py`) and synthetic
+floods parsed alone by `odl-2.5.7-refined-vlm-v16` on the ingest host.
+
+## Decision
+
+The developer signed off the PDF limits as proposed and tightened the Office
+ones to 2,000 each (`parser/odl/elements.py`), refused above:
+
+| Count | Refused above | Largest real file | Flood cost measured |
+| --- | ---: | ---: | --- |
+| PDF image placements (`Do` + inline images), file | 250,000 | 53,668 | 400k: 62–73 s; 1M: 179 s |
+| PDF image placements, one page | 40,000 | 17,561 | 100k on a page: out of memory at 40 s |
+| PDF vector paint operators, file | 2,000,000 | 1,305,605 | 1.5M parses; 2M, 3M, 4M, 10M: Java heap OOM in ~20 s |
+| DOCX table rows | 2,000 | 89 | 2k: 7 s; 5k: 28 s; 10k: 142 s; 20k: conversion timeout (180 s) |
+| DOCX pictures and drawings | 2,000 | 8 | 5k: 9 s; 20k: 120 s |
+| PPTX shapes and pictures | 2,000 | 729 | 10k: 24–56 s |
+
+Counted before the parse, from the PDF content streams (form XObjects
+expanded by how often they are drawn) or the Office package XML (before
+LibreOffice). Every flood above a limit is refused in under 2 s; none of the
+594 real files on the Mac is.
+
+No limit for:
+
+- **Vector operators on one page**: 300,000 on a page parse in 9 s.
+- **PDF table rows**: a PDF has no rows before the parse. Dense ruled tables
+  cost 0.2–0.8 s a page (3,200 cells a page: 81 s for 100 pages), held by the
+  page cap, the character budget and the 600 s deadline.
+- **XLSX cells**: 1M cells convert in 16 s and then stop at the 1,400-page cap;
+  the 224k-cell gradebook parses in 46 s.
+
+Without the limit, the Java heap failure reaches the worker as a generic 500
+and is retried, and the LibreOffice timeout holds a parse child for 180 s; the
+limit refuses those files before that work. Between 1.5 and 2 million paint
+operators (exactly 2,000,000 included) a file still passes the check and may
+exhaust the Java heap.
+
+## Flattening dense figures (parser v17)
+
+The paint-operator count is a weak proxy for what exhausts OpenDataLoader's
+1 GiB heap: all six real books above 650,000 operators failed on v16 (five
+with `OutOfMemoryError: Java heap space`, one past the deadline) while a flood
+of 1.5 million bare rectangles parsed. Java keeps an object per path
+*segment*; the culprits are plotting-tool figures drawn as tiny paths: image
+pixels as 1 pt squares (189,030 on one page), scatter markers as two strokes
+each, and circles or curves as hundreds of 0.1 pt segments. With every vector
+removed, Evidence-Based Software Engineering parsed (454 pages, 190 s).
+
+`parser/odl/flatten.py` renders each dense region (segments per 12 pt cell,
+see openwiki) beneath the page and removes its vector art before Java;
+`pictures.flattened_figures` makes it one figure and folds its labels in.
+
+| Book | Pages | v16 | v17 |
+| --- | ---: | --- | --- |
+| 9d4f16ca (EBSE) | 454 | Java heap OOM at 16 s | 262 s (flatten 25 s, Java 14 s) |
+| afdf2621 | 922 | Java heap OOM | 170 s |
+| 0252fae1 | 682 | Java heap OOM | 78 s |
+| 90f7c22f | 674 | Java heap OOM | 80 s |
+| b38f53b6 | 964 | past 700 s | 130 s |
+| 1.76M / 2M rectangles, 2M strokes | 5–100 | Java heap OOM | 16–23 s |
+
+Dry run: 81 of 381 Mac PDFs and 85 of 288 library books touched, 2–3% of
+their pages. On 11 books that parse on v16, v17 is as fast or faster
+(unstats 20 → 11 s, os4 69 → 64 s, the flatten included), 8 of 4,279 headings
+left (mostly figure labels v16 had promoted), 15 label headings appeared, and
+at most 206 words a book left the text (labels count as text). A ruled table
+and a page-sized frame were early false regions, fixed by the text-share and
+frame rules. With flattening the paint limit stays 2,000,000: the largest real
+book has 1.51 million and a 2-million flood now parses.
+
+## Census
+
+418 distinct real PDFs up to 1,400 pages (the bench corpus, fixtures,
+downloads and the 288 knowledge-base books) and 44 Office files (fixtures and
+budget files; the knowledge base holds no Office files). Holdout paths
+skipped.
+
+| PDF metric | p99 file | Largest file | Largest page |
+| --- | ---: | ---: | ---: |
+| Image placements (`Do` + inline) | 17,825 | 53,668 (11 pages) | 17,561 |
+| Image XObjects | 17,602 | 64,256 | 1,548 |
+| Paint operators | 267,175 | 1,305,605 (922 pages) | 126,076 |
+| MuPDF drawings | 934,769 | 1,512,506 | 266,750 |
+| Content stream KiB | 66,509 | 206,397 | 59,402 |
+| Characters | 2,858,299 | 3,614,042 | 77,816 |
+
+The cheap counts (page content plus `get_images`) took 85 s over the bench corpus's 64,408 pages,
+about 1.3 ms a page; MuPDF's own placed-image, drawing and character counts
+took three times that.
+
+## Floods
+
+Generated by `make_attacks.py`, each under the 30 MiB Pro source cap (most
+under 10 MiB), parsed one at a time by `run_document` in a fresh process with
+the parse child's 2 GiB address-space cap, the production image and hardening.
+
+| File | Size | Result |
+| --- | ---: | --- |
+| one image drawn 20k times a page, 20 pages | 1.0 MiB | 62 s |
+| one image drawn 10k times a page, 100 pages | 2.5 MiB | 179 s |
+| one image drawn 100k times a page, 20 pages | 4.9 MiB | MemoryError at 40 s |
+| 20k distinct images on one page | 4.0 MiB | 6 s |
+| 20k inline images a page, 5 pages | 0.5 MiB | 18 s |
+| 80k inline images a page, 5 pages | 1.9 MiB | 73 s |
+| 100k rectangles a page, 10 pages | 2.5 MiB | 30 s |
+| 100k diagonal strokes a page, 10 pages | 4.9 MiB | 28 s |
+| 200k / 300k rectangles, one page | 0.5 / 0.7 MiB | 7 s / 9 s |
+| 20k rectangles a page, 75 pages (1.5M) | 3.6 MiB | parses |
+| 20k rectangles a page, 100 / 150 / 300 / 500 pages | 4.8–24 MiB | Java heap OOM, 14–22 s |
+| 400k rectangles or strokes a page, 5–10 pages | 9.8 MiB | Java heap OOM, ~20 s |
+| ruled 80×12 table a page, 300 pages | 0.9 MiB | 62 s |
+| ruled 160×20 table a page, 100 pages | 0.6 MiB | 81 s |
+| DOCX table 2k / 5k / 10k / 20k rows | ≤0.3 MiB | 7 s / 28 s / 142 s / timeout 180 s |
+| DOCX 5k / 20k pictures | ≤0.2 MiB | 9 s / 120 s |
+| PPTX 5×2,000 / 20×500 shapes | ≤0.2 MiB | 24 s / 56 s |
+| XLSX 100k×10 cells | 2.9 MiB | 4,168 pages, page cap at 16 s |
+
+## Reproduction
+
+Census rows, flood generator, runner and logs are in the ignored
+`reports/local/2026-10-16-element-limit/`; on the host the work directory is
+`/opt/capy-element-limit-20261016`. Census:
+
+    python element_census.py PATH ... --out census.jsonl

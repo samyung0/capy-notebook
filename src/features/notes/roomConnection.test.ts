@@ -14,6 +14,7 @@ describe('roomRefusal', () => {
     expect(roomRefusal('collaboration-read-only')).toBe('readOnly');
     expect(roomRefusal('collaboration-not-found')).toBe('notFound');
     expect(roomRefusal('collaboration-forbidden')).toBe('forbidden');
+    expect(roomRefusal('collaboration-outdated')).toBe('outdated');
     expect(
       roomRefusal('Failed to get token', new ApiError(404, 'Not Found'))
     ).toBe('notFound');

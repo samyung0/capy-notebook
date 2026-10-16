@@ -26,6 +26,7 @@ export function FileLoading({
 }
 
 export function FileError({
+  errorId,
   icon = 'fileError',
   kind,
   title = m.error_file_title(),
@@ -33,6 +34,8 @@ export function FileError({
   onRetry,
   retryLabel = m.error_action_retry(),
 }: {
+  /** An unexpected API failure's trace id (`unexpectedErrorId`). */
+  errorId?: string | null;
   icon?: IconName;
   kind?: 'sheet' | 'text';
   title?: string;
@@ -46,6 +49,7 @@ export function FileError({
         onRetry && <ErrorAction onClick={onRetry}>{retryLabel}</ErrorAction>
       }
       description={message}
+      errorId={errorId}
       icon={icon}
       kind={kind}
       title={title}

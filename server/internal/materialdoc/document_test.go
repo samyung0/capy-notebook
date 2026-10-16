@@ -197,37 +197,6 @@ func TestFillQuestionTypeIsRejected(t *testing.T) {
 	}
 }
 
-func TestFlashcardsReplacePreservesCardIDsAndAnnotations(t *testing.T) {
-	raw, err := FlashcardsDocument([]Card{{ID: "c_1", Front: "A", Back: "B"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, _ := Parse(raw)
-	back := firstChild(find(doc.Value, "flashcard"), "flashcard_back")
-	back["children"] = []any{map[string]any{"text": "B", "highlight": true}}
-	raw, err = Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw, err = ReplaceFlashcards(raw, []Card{{ID: "c_1", Front: "A2", Back: "B"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	cards, err := ExtractFlashcards(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(cards) != 1 || cards[0].ID != "c_1" || cards[0].Front != "A2" {
-		t.Fatalf("unexpected cards: %#v", cards)
-	}
-	doc, _ = Parse(raw)
-	back = firstChild(find(doc.Value, "flashcard"), "flashcard_back")
-	leaf := back["children"].([]any)[0].(map[string]any)
-	if leaf["highlight"] != true {
-		t.Fatalf("unchanged back annotations were lost: %#v", leaf)
-	}
-}
-
 func TestRewriteFlashcardIDsStripsRuntimeCommentMarks(t *testing.T) {
 	raw, err := FlashcardsDocument([]Card{{ID: "c_old", Front: "Front", Back: "Back"}})
 	if err != nil {

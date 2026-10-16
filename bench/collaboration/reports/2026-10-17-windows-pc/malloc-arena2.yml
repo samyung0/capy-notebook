@@ -1,0 +1,4 @@
+services:
+  collaboration:
+    environment:
+      MALLOC_ARENA_MAX: "2"

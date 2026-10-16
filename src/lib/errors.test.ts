@@ -10,7 +10,9 @@ import {
   isAbortError,
   isChunkLoadError,
   isNonDisclosing,
+  OfflineError,
   toastKeyFor,
+  unexpectedErrorId,
 } from './errors';
 
 describe('frontend error normalization', () => {
@@ -52,7 +54,7 @@ describe('frontend error normalization', () => {
         )
       );
     vi.stubGlobal('fetch', reply('revision_conflict', 409));
-    const stale = await api.patch('/quizzes/q/content', {}).catch((e) => e);
+    const stale = await api.patch('/materials/m/metadata', {}).catch((e) => e);
     vi.stubGlobal('fetch', reply('workspace_limit_exceeded', 403));
     const workspaces = await api.post('/workspaces', {}).catch((e) => e);
     vi.stubGlobal('fetch', reply('account_deletion_busy', 409));
@@ -196,6 +198,23 @@ describe('frontend error normalization', () => {
     expect(describeError(error).action).toBe('reload');
   });
 
+  it('describes code that failed to load offline as offline, not as an update', () => {
+    const chunk = new TypeError(
+      'Failed to fetch dynamically imported module: /assets/page.js'
+    );
+    vi.stubGlobal('navigator', { onLine: false });
+    try {
+      expect(errorKind(chunk)).toBe('offline');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    // Back online, a page's offline failure stays offline until its retry
+    // replaces it.
+    const offline = new OfflineError('Offline', { cause: chunk });
+    expect(errorKind(offline)).toBe('offline');
+    expect(describeError(offline).icon).toBe('wifiOff');
+  });
+
   it('treats authorization and missing-resource failures as non-disclosing', () => {
     expect(isNonDisclosing(new ApiError(401, 'Unauthorized'))).toBe(true);
     expect(isNonDisclosing(new ApiError(403, 'Forbidden'))).toBe(true);
@@ -211,6 +230,58 @@ describe('frontend error normalization', () => {
     expect(toastKeyFor(new TypeError('Failed to fetch'))).toBe(
       toastKeyFor(new Error('network error'))
     );
+  });
+});
+
+describe('error ids', () => {
+  const id = 'a'.repeat(32);
+  it.each([
+    [
+      'a 500',
+      new ApiError(500, 'Internal Server Error', undefined, null, id),
+      id,
+    ],
+    [
+      'an uncoded 503',
+      new ApiError(503, 'Service Unavailable', undefined, null, id),
+      id,
+    ],
+    [
+      'an unknown status',
+      new ApiError(418, "I'm a teapot", undefined, null, id),
+      id,
+    ],
+    [
+      'a 5xx whose errors[] carry one word',
+      new ApiError(
+        503,
+        'Service Unavailable',
+        undefined,
+        { code: 'timeout' },
+        id
+      ),
+      id,
+    ],
+    [
+      'a typed 5xx',
+      new ApiError(
+        503,
+        'Service Unavailable',
+        undefined,
+        { code: 'ai_unavailable' },
+        id
+      ),
+      null,
+    ],
+    [
+      'a typed refusal',
+      new ApiError(409, 'Conflict', undefined, { code: 'title_taken' }, id),
+      null,
+    ],
+    ['a 404', new ApiError(404, 'Not Found', undefined, null, id), null],
+    ['an exception', new TypeError('x is undefined'), null],
+  ])('%s shows %s', (_, error, shown) => {
+    expect(unexpectedErrorId(error)).toBe(shown);
   });
 });
 

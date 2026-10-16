@@ -28,11 +28,16 @@ trap 'rm -rf "$temporary_dir"' EXIT
 
 app_body="$temporary_dir/app.html"
 api_headers="$temporary_dir/api.headers"
+collab_headers="$temporary_dir/collab.headers"
 collab_health="${DEPLOYMENT_COLLAB_URL/#wss:/https:}"
+
+release_header() {
+  awk 'tolower($0) ~ /^x-capy-release:/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit }' "$1"
+}
 
 last_error=""
 check_release() {
-  local app_code app_revision api_code api_revision collab_code
+  local app_code app_revision api_code api_revision collab_code collab_revision
 
   if ! app_code="$(curl --silent --show-error --location --max-time 30 \
     --output "$app_body" --write-out '%{http_code}' \
@@ -60,20 +65,25 @@ check_release() {
     last_error="gateway health returned HTTP $api_code"
     return 1
   fi
-  api_revision="$(awk 'tolower($0) ~ /^x-capy-release:/ { sub(/^[^:]+:[[:space:]]*/, ""); sub(/\r$/, ""); print; exit }' "$api_headers")"
+  api_revision="$(release_header "$api_headers")"
   if [[ "$api_revision" != "$EXPECTED_REVISION" ]]; then
     last_error="gateway reports revision '${api_revision:-missing}', expected $EXPECTED_REVISION"
     return 1
   fi
 
   if ! collab_code="$(curl --silent --show-error --max-time 30 \
-    --output /dev/null --write-out '%{http_code}' \
-    "${collab_health%/}/healthz")"; then
+    --dump-header "$collab_headers" --output /dev/null --write-out '%{http_code}' \
+    "${collab_health%/}/healthz?capy_release=$EXPECTED_REVISION")"; then
     last_error="collaboration health request failed"
     return 1
   fi
   if [[ ! "$collab_code" =~ ^2[0-9][0-9]$ ]]; then
     last_error="collaboration health returned HTTP $collab_code"
+    return 1
+  fi
+  collab_revision="$(release_header "$collab_headers")"
+  if [[ "$collab_revision" != "$EXPECTED_REVISION" ]]; then
+    last_error="collaboration reports revision '${collab_revision:-missing}', expected $EXPECTED_REVISION"
     return 1
   fi
 }
@@ -92,4 +102,4 @@ until check_release; do
   sleep "$verify_interval"
 done
 
-printf 'Verified application and gateway revision %s; collaboration is healthy.\n' "$EXPECTED_REVISION"
+printf 'Verified application, gateway and collaboration revision %s.\n' "$EXPECTED_REVISION"

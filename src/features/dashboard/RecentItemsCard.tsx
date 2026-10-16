@@ -27,6 +27,7 @@ import {
 import { getLocale, m } from '@/i18n';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
 import { PREF_KEYS } from '@/lib/localPrefs';
+import { waitsForConnection } from '@/lib/online';
 import { mergeRecentItems, type RecentItem } from './recentItems';
 
 /** The row's one hint line: when it was last added or edited. Materials
@@ -135,11 +136,10 @@ export function useRecentItems() {
     materials?.pages[0]?.items ?? [],
     workspaces ?? []
   );
-  const paused = [
-    filesFetchStatus,
-    materialsFetchStatus,
-    workspacesFetchStatus,
-  ].includes('paused');
+  const paused =
+    waitsForConnection(filesFetchStatus, files) ||
+    waitsForConnection(materialsFetchStatus, materials) ||
+    waitsForConnection(workspacesFetchStatus, workspaces);
   const isLoading = filesLoading || materialsLoading || workspacesLoading;
   // A list without data would drop its rows silently; a failed refresh keeps
   // the cached list, so only a missing one counts.

@@ -111,7 +111,7 @@ func (s *Store) ReserveStripeCheckout(
 	var subscribed bool
 	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM user_subscriptions
 		WHERE user_id=$1 AND status IN `+entitlingStatuses+`
-		  AND (current_period_end IS NULL OR current_period_end>now()))`, userID).
+		  AND (current_period_end IS NULL OR current_period_end > now() - `+renewalTolerance+`))`, userID).
 		Scan(&subscribed); err != nil {
 		return "", AccountStatus{}, err
 	}

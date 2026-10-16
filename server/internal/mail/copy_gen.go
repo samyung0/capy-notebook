@@ -16,6 +16,8 @@ var subjectTemplates = map[string]string{
 	"office-maintenance.zh":         "Capy Notebook 的 Office 编辑将因升级暂停",
 	"subscription-cancelled.en":     "Your Capy Notebook Pro plan ends on {{.EndsOn}}",
 	"subscription-cancelled.zh":     "你的 Capy Notebook Pro 计划将于 {{.EndsOn}} 结束",
+	"subscription-ended.en":         "Your Capy Notebook Pro plan has ended",
+	"subscription-ended.zh":         "你的 Capy Notebook Pro 计划已结束",
 	"subscription-frozen.en":        "Your Capy Notebook account is read-only",
 	"subscription-frozen.zh":        "你的 Capy Notebook 账户已变为只读",
 	"subscription-over-quota.en":    "Free up space in Capy Notebook by {{.GraceEndsAt}}",

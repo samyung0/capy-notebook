@@ -13,6 +13,9 @@ type lockedSessionStore struct{ code string }
 func (s lockedSessionStore) AccountSessionAllowed(context.Context, string) (bool, string, error) {
 	return false, s.code, nil
 }
+func (s lockedSessionStore) ClerkSession(context.Context, string) (bool, string, bool, bool, error) {
+	return false, s.code, false, false, nil
+}
 func (lockedSessionStore) UpsertUserFromClerk(context.Context, string, string, string, string) (bool, error) {
 	return false, nil
 }
@@ -25,6 +28,9 @@ type unavailableSessionStore struct{}
 
 func (unavailableSessionStore) AccountSessionAllowed(context.Context, string) (bool, string, error) {
 	return false, "", errors.New("database unavailable")
+}
+func (unavailableSessionStore) ClerkSession(context.Context, string) (bool, string, bool, bool, error) {
+	return false, "", false, false, errors.New("database unavailable")
 }
 func (unavailableSessionStore) UpsertUserFromClerk(context.Context, string, string, string, string) (bool, error) {
 	return false, nil
@@ -46,6 +52,9 @@ type provisioningStore struct {
 
 func (s *provisioningStore) AccountSessionAllowed(context.Context, string) (bool, string, error) {
 	return true, "", nil
+}
+func (s *provisioningStore) ClerkSession(context.Context, string) (bool, string, bool, bool, error) {
+	return true, "", true, s.needsDefaultWorkspace, nil
 }
 func (s *provisioningStore) UpsertUserFromClerk(context.Context, string, string, string, string) (bool, error) {
 	s.upsertCalls++

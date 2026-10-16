@@ -181,15 +181,15 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 
 // sourceActorsAllowed refuses an actor without read (edit: write) access to
 // the workspace, and every actor while the workspace owner is deleted or
-// pending deletion: that content is gone for members too, as on every other
-// path.
+// pending deletion, every actor but the owner while the owner is suspended:
+// that content is gone for members too, as on every other path.
 func sourceActorsAllowed(ctx context.Context, q rowQueryer, ws string, actors []string, edit bool) error {
 	for _, actor := range actors {
 		if actor == "" {
 			return ErrForbidden
 		}
 		var allowed bool
-		err := q.QueryRow(ctx, `SELECT (w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND (NOT $3 OR m.role IN ('owner','editor'))) OR (w.privacy IN ('link','public') AND (NOT $3 OR w.share_role='editor'))) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL FROM workspaces w JOIN users owner ON owner.id=w.user_id WHERE w.id=$1`, ws, actor, edit).Scan(&allowed)
+		err := q.QueryRow(ctx, `SELECT (w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND (NOT $3 OR m.role IN ('owner','editor'))) OR (w.privacy IN ('link','public') AND (NOT $3 OR w.share_role='editor'))) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (owner.suspended_at IS NULL OR owner.id=$2) FROM workspaces w JOIN users owner ON owner.id=w.user_id WHERE w.id=$1`, ws, actor, edit).Scan(&allowed)
 		if err != nil {
 			return err
 		}
@@ -618,8 +618,10 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 			return s.reprocessTx(ctx, tx, result, ws, owner, name, kind, mode)
 		}
 		// A failed file is processed only when the owner asks (Retry
-		// processing, or Process queued behind a running job).
-		if refreshError != nil || (status == string(FileFailed) && !manual) {
+		// processing, or Process queued behind a running job), unless it is
+		// partial: still indexed with a part missing (parts design Q1), which
+		// the next refresh may fill.
+		if refreshError != nil || (status == string(FileFailed) && !indexed && !manual) {
 			return result, ErrConflict
 		}
 		// An Office list of moves only (reordered entries) is worth 0 tokens

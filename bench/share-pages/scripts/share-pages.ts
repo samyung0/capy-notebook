@@ -26,7 +26,13 @@ import { fileURLToPath } from 'node:url';
 import { chromium, type Page } from '@playwright/test';
 import lighthouse from 'lighthouse';
 import desktopConfig from 'lighthouse/core/config/desktop-config.js';
+import * as Y from 'yjs';
 import { signIn } from '../../../e2e/uat/support';
+import { RoomProvider } from '../../../src/features/collaboration/roomProvider';
+import { CollabSocket } from '../../../src/features/collaboration/socket';
+import { seedCards } from '../../../src/features/flashcards/liveSet';
+import type { FlashcardContent } from '../../../src/features/materials/blocks';
+import { uid } from '../../../src/lib/id';
 import { buildBiologyLoadTestValue } from '../../../src/mocks/noteContent/loadTest';
 import { compareStyles } from './styles';
 
@@ -58,6 +64,96 @@ if (
 
 type Json = Record<string, unknown>;
 type Shared = { kind: string; path: string; publicApi: string };
+
+class OriginWebSocket extends WebSocket {
+  constructor(url: string | URL, protocols?: string | string[]) {
+    // Node's WebSocket takes headers; the browser one sends Origin itself,
+    // and the collaboration service admits the app's origin only.
+    super(url, {
+      headers: { Origin: appUrl },
+      protocols,
+    } as unknown as string[]);
+  }
+}
+
+/** Writes a set's cards through its live room, as its editor does: live item
+ * rooms are the only writers of set content. Resolves once a store holds
+ * them. */
+async function seedSet(page: Page, setId: string, cards: FlashcardContent[]) {
+  const first = (await api(
+    page,
+    `/api/materials/${setId}/collaboration-token`,
+    'POST',
+    {}
+  )) as { room: string; token: string; url: string };
+  const doc = new Y.Doc();
+  const request = randomUUID();
+  let synced!: () => void;
+  let stored!: () => void;
+  let failed!: (error: Error) => void;
+  const joined = new Promise<void>((resolve, reject) => {
+    synced = resolve;
+    failed = reject;
+  });
+  const saved = new Promise<void>((resolve) => {
+    stored = resolve;
+  });
+  const provider = new RoomProvider({
+    document: doc,
+    name: first.room,
+    onAuthenticationFailed: ({ reason }) =>
+      failed(new Error(`Flashcards room refused: ${reason}`)),
+    onStateless: ({ payload }) => {
+      const event = JSON.parse(payload) as {
+        checkpointIds?: string[];
+        type?: string;
+      };
+      if (
+        event.type === 'checkpoint-persisted' &&
+        event.checkpointIds?.includes(request)
+      )
+        stored();
+    },
+    onSynced: ({ state }) => {
+      if (state) synced();
+    },
+    socket: CollabSocket.create(first.url),
+    token: async () => first.token,
+    url: first.url,
+  });
+  const within = async (promise: Promise<void>, what: string) => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        promise,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`${what} took over 60 s`)),
+            60_000
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+  // The room provider opens its socket with the global constructor.
+  const NodeWebSocket = globalThis.WebSocket;
+  globalThis.WebSocket = OriginWebSocket;
+  try {
+    provider.connect();
+    await within(joined, 'Joining the flashcards room');
+    seedCards(doc, cards);
+    // After the cards on the same channel, so the receipt covers them.
+    provider.sendStateless(
+      JSON.stringify({ id: request, type: 'checkpoint-request' })
+    );
+    await within(saved, 'Storing the cards');
+  } finally {
+    provider.destroy();
+    globalThis.WebSocket = NodeWebSocket;
+  }
+}
 
 /** An authenticated API call with a fresh Clerk session token. */
 async function api(
@@ -165,12 +261,14 @@ async function provision(page: Page, run: string): Promise<Shared[]> {
   const set = await api(page, '/api/flashcards', 'POST', {
     name: `${PREFIX} ${run} cards`,
   });
-  await api(page, `/api/flashcards/${set.id}/content`, 'PATCH', {
-    cards: JSON.parse(
-      await readFile(path.join(fixtures, 'cards.json'), 'utf8')
-    ),
-    expectedRevision: set.revision,
-  });
+  const cards = JSON.parse(
+    await readFile(path.join(fixtures, 'cards.json'), 'utf8')
+  ) as Omit<FlashcardContent, 'id'>[];
+  await seedSet(
+    page,
+    String(set.id),
+    cards.map((card) => ({ ...card, id: uid('c') }))
+  );
   const sharedSet = await api(
     page,
     `/api/flashcards/${set.id}/sharing`,

@@ -26,10 +26,6 @@ type quizDeleteInput struct {
 type createQuizInput struct {
 	Body apimodel.CreateQuizReq
 }
-type updateQuizContentInput struct {
-	ID   string `path:"id"`
-	Body apimodel.UpdateQuizContentReq
-}
 type updateQuizMetadataInput struct {
 	ID   string `path:"id"`
 	Body apimodel.UpdateQuizMetadataReq
@@ -67,7 +63,6 @@ func (a *api) registerQuizzes(api huma.API) {
 	regWithMaxBody(api, http.MethodPost, "/api/quizzes", "createQuiz", tag, "Create a quiz", http.StatusCreated, materialRequestMaxBytes, a.createQuiz)
 	reg(api, http.MethodGet, "/api/quizzes/{id}", "getQuiz", tag, "Get a quiz to view or take, without answers", http.StatusOK, a.getQuiz)
 	reg(api, http.MethodGet, "/api/quizzes/{id}/edit", "getQuizForEdit", tag, "Get a quiz with its answers to edit it", http.StatusOK, a.getQuizForEdit)
-	regWithMaxBody(api, http.MethodPatch, "/api/quizzes/{id}/content", "updateQuizContent", tag, "Update quiz content", http.StatusOK, materialRequestMaxBytes, a.updateQuizContent)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/metadata", "updateQuizMetadata", tag, "Update quiz metadata", http.StatusOK, a.updateQuizMetadata)
 	reg(api, http.MethodPatch, "/api/quizzes/{id}/sharing", "updateQuizSharing", tag, "Update standalone quiz sharing", http.StatusOK, a.updateQuizSharing)
 	reg(api, http.MethodDelete, "/api/quizzes/{id}", "deleteQuiz", tag, "Delete a quiz", http.StatusNoContent, a.deleteQuiz)
@@ -144,22 +139,6 @@ func (a *api) createQuiz(ctx context.Context, in *createQuizInput) (*quizOutput,
 	}
 	res.CanEdit, res.CanEditContent = true, true
 	return &quizOutput{Body: apimodel.FromQuiz(res)}, nil
-}
-
-func (a *api) updateQuizContent(ctx context.Context, in *updateQuizContentInput) (*quizOutput, error) {
-	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
-		return nil, hErr(err)
-	}
-	p := store.QuizContentPatch{TimeLimitMin: nil, UpdatedBy: userID(ctx)}
-	if in.Body.Questions != nil {
-		raw := apimodel.EncodeQuestions(*in.Body.Questions)
-		p.Questions = &raw
-	}
-	res, err := a.s.UpdateQuizContent(ctx, in.ID, p)
-	if err != nil {
-		return nil, hErr(err)
-	}
-	return a.quizOutputWithAccess(ctx, in.ID, res)
 }
 
 func (a *api) updateQuizMetadata(ctx context.Context, in *updateQuizMetadataInput) (*quizOutput, error) {

@@ -157,3 +157,9 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
    read), `liveQuiz.test.ts` (every question block written and read back;
    an unknown one throws), `pendingRefs.test.ts` and `AppEmbed.test.tsx`
    (each item kind drawn as itself; an unknown one throws).
+3. Decide the client protocol bump in the same commit: a new inline type, a
+   void/inline change, a new shared-text key or a changed meaning of a key
+   breaks the material family for older editors, so it raises
+   `CLIENT_PROTOCOL` and `MIN_MATERIAL`; optional data older editors carry
+   through untouched needs none
+   ([plate-editor "When to bump"](frontend/plate-editor.md#when-to-bump)).

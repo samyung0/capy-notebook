@@ -45,11 +45,6 @@ type ChapterPatch struct {
 	Name  *string `json:"name"`
 	Order *int    `json:"order"`
 }
-type QuizContentPatch struct {
-	Questions    *json.RawMessage `json:"questions"`
-	TimeLimitMin *int             `json:"timeLimitMin"`
-	UpdatedBy    string           `json:"-"`
-}
 type QuizMetadataPatch struct {
 	Name      *string   `json:"name"`
 	Chapters  *[]string `json:"chapters"`
@@ -85,7 +80,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		WHERE (w.user_id=$2 OR EXISTS (SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=w.id AND wm.user_id=$2))
-			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+			AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND (lower(w.name) LIKE $1
 			OR EXISTS (SELECT 1 FROM entity_tags et JOIN tags t ON t.id=et.tag_id
 				WHERE et.workspace_id=w.id AND lower(t.name) LIKE $1))`, like, userID)
@@ -136,7 +131,7 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 		JOIN users owner ON owner.id=m.owner_user_id
 		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
-		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL
+		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1`, like, userID)
 	if err != nil {
 		return nil, err
@@ -185,7 +180,7 @@ const wsCols = `w.id, w.name, w.description, w.privacy, w.share_role,
 			ELSE COALESCE((SELECT live.plan_tier FROM user_subscriptions live
 				WHERE live.user_id=u.id
 				  AND live.status IN ('active','trialing','past_due')
-				  AND (live.current_period_end IS NULL OR live.current_period_end > now())
+				  AND (live.current_period_end IS NULL OR live.current_period_end > now() - ` + renewalTolerance + `)
 				ORDER BY (live.plan_tier='pro') DESC,
 				  live.current_period_end DESC NULLS FIRST LIMIT 1), 'free') END
 		 FROM users u WHERE u.id=w.user_id),
@@ -233,7 +228,10 @@ func splitCSVQuery(s string) []string {
 }
 
 func (s *Store) ListWorkspaces(ctx context.Context, userID, q, sortKey, tag string) ([]Workspace, error) {
-	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND (w.user_id=$1 OR me.user_id IS NOT NULL)"
+	// The id set is the user's own workspaces plus their memberships, read
+	// through both user indexes; an OR across the member join scanned every
+	// workspace in the database.
+	sb := "SELECT " + wsCols + ", " + memberRoleCol + " FROM workspaces w JOIN users owner ON owner.id=w.user_id LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1 WHERE owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL AND w.id IN (SELECT id FROM workspaces WHERE user_id=$1 UNION ALL SELECT workspace_id FROM workspace_members WHERE user_id=$1)"
 	args := []any{userID}
 	if q != "" {
 		args = append(args, "%"+strings.ToLower(q)+"%")
@@ -1926,38 +1924,6 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	return created, nil
 }
 
-func (s *Store) UpdateQuizContent(ctx context.Context, id string, p QuizContentPatch) (Quiz, error) {
-	mt, err := s.GetMaterial(ctx, id)
-	if err != nil {
-		return Quiz{}, err
-	}
-	if mt.Kind != "quiz" {
-		return Quiz{}, ErrNotFound
-	}
-	cur, err := s.quizFromMaterial(mt)
-	if err != nil {
-		return Quiz{}, err
-	}
-	questions, timeLimit := cur.Questions, cur.TimeLimitMin
-	if p.Questions != nil {
-		questions = *p.Questions
-	}
-	if p.TimeLimitMin != nil {
-		timeLimit = p.TimeLimitMin
-	}
-	content, err := materialdoc.ReplaceQuiz(mt.Content, questions, timeLimit)
-	if err != nil {
-		return Quiz{}, err
-	}
-	// The collaboration server diffs the questions into the live documents.
-	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{
-		Content: &content, UpdatedBy: p.UpdatedBy,
-	}); err != nil {
-		return Quiz{}, err
-	}
-	return s.GetQuiz(ctx, id)
-}
-
 func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadataPatch) (Quiz, error) {
 	mt, err := s.GetMaterial(ctx, id)
 	if err != nil {
@@ -2228,43 +2194,6 @@ func (s *Store) ListCards(ctx context.Context, flashcardSetID string) ([]Flashca
 		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Revision: mt.Revision, Front: c.Front, Back: c.Back, Image: c.Image})
 	}
 	return out, nil
-}
-
-// UpdateFlashcardContent writes the whole set as the fewest changes to its live
-// document (the collaboration server diffs it in), with no revision check:
-// editors edit the set live, so there is no stale form to refuse (Epo,
-// 2026-10-10, D7).
-func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, cards []materialdoc.Card) ([]Flashcard, error) {
-	mt, err := s.GetMaterial(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if mt.Kind != "flashcards" {
-		return nil, ErrNotFound
-	}
-	current, err := materialdoc.ExtractFlashcards(mt.Content)
-	if err != nil {
-		return nil, err
-	}
-	known := make(map[string]bool, len(current))
-	for _, card := range current {
-		known[card.ID] = true
-	}
-	for i := range cards {
-		if cards[i].ID == "" {
-			cards[i].ID = uid("c")
-		} else if !known[cards[i].ID] {
-			return nil, ErrConflict
-		}
-	}
-	content, err := materialdoc.ReplaceFlashcards(mt.Content, cards)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{Content: &content, UpdatedBy: actorID}); err != nil {
-		return nil, err
-	}
-	return s.ListCards(ctx, id)
 }
 
 // syncFlashcardCardsTx keeps the card -> set lookup aligned with the

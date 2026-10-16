@@ -167,6 +167,11 @@ pub fn metrics(app: &Shared) -> String {
             )
         })
         .collect::<String>()
+        + &format!(
+            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {}\ncapy_collaboration_outdated_refusals_total{{family=\"source\"}} {}\n",
+            stats.outdated_refusals[0].load(Ordering::Relaxed),
+            stats.outdated_refusals[1].load(Ordering::Relaxed),
+        )
 }
 
 /// Resident set size from /proc (0 where there is none, as on Windows).

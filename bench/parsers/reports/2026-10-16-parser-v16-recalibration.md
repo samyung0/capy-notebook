@@ -11,7 +11,10 @@ It also carries the parsercaps changes: figure clustering on a grid index, the
 
 ## Decision
 
-None yet. Findings for the developer:
+The developer chose seven parse children (2026-10-16), with the 2 GiB
+per-process caps unchanged: UAT load on the shared host is light. The
+developer then chose option B for `PARSER_TIMEOUT`: a 600 s deadline and
+wait term (1,320 s request, 1,500 s job). Findings:
 
 - **Scanned pages cost the parser almost nothing now.** A 150-page scan
   parses in 5 s (3.7 s of it rendering the page JPEGs, 23 MiB for 150 pages);
@@ -39,7 +42,7 @@ None yet. Findings for the developer:
   0.79–0.84 GiB on the books and 0.50 GiB on the Office mix; LibreOffice's
   0.88 GiB (the gradebook); Java's 2.8 GiB is bounded by its 1g heap, not the
   cap. No `drawing clusters stopped` line appeared.
-- **Office files are cheap under load.** The 62-page handbook DOCX converts and
+- **Office files are cheap under load.** The handbook DOCX (72 pages once converted) converts and
   parses in 7–9 s, the 84-slide PPTX in 18–23 s, and the 224k-cell gradebook
   XLSX (705 pages once converted) in 43–46 s, next to three 608-page books. The
   whole Office mix finished in 92 s at every child count, peaking at 4–5 GiB.
@@ -74,6 +77,61 @@ parser still holds it, so the two move together.
 Five and six behave the same for this queue shape; six only helps when the
 queue holds exactly six large documents. Seven is the CPU ceiling.
 
+Two passes checked seven children after the choice:
+- **Eight 1,400-page books** (a full queue, so the eighth waits a round):
+  553 s, seven books together in 294–307 s and the eighth waiting 293 s, then
+  parsing in 260 s. Peak 10.77 of 14 GiB (anon 9.78), Java 8.40, no container
+  swap, no OOM kill; host available fell to 3.37 GiB and host swap touched
+  0.45 GiB once. **The longest real wait at seven children is one round of
+  about 300 s.**
+- **Office-heavy**: three gradebooks, two decks, two handbooks and a
+  1,400-page book at once: 270 s (the book), the Office files as fast as alone
+  (DOCX 9–10 s, PPTX 19 s, XLSX 43 s). Peak 4.32 GiB; LibreOffice VmPeak
+  0.88 GiB, as alone. Seven concurrent conversions do not move a conversion
+  closer to its cap, so the caps need no trim.
+
+## Where the time goes
+
+Profiled alone inside the v16 image on the same host
+(`office_profile.py`, `book_stages.py` in the local folder).
+
+**Office conversion** (fresh LibreOffice and profile per document, the
+production path):
+
+| File | Conversion | Import and layout only | PDF export with 150 dpi images | Page evidence | Parse after conversion (under load) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| DOCX handbook, 72 pages | 1.5 s | 1.0 s | 1.3 s | 0.08 s | 3.6 s |
+| PPTX deck, 84 slides, 23 MiB | 10.3 s | 4.7 s | 11.1 s | 0.05 s | 4.6 s |
+| XLSX gradebook, 705 pages | 4.9 s | 2.0 s | 4.5 s | 0.57 s | 36.0 s |
+
+- Starting LibreOffice with a fresh profile costs about 1 s; a warmed profile
+  saves nothing (10.3 against 10.2 s on the deck).
+- Only the deck's conversion is large. Half of it is importing and laying out
+  the slides, half the PDF export, and downsampling images to 150 dpi does not
+  shorten it: the export writes 5,628 image objects for 84 slides (67 a
+  slide), so the cost is the number of drawing objects, not image resolution.
+- The gradebook's time is the parser's repairs on 705 dense table pages, not
+  its conversion.
+- Under load the untimed part (conversion plus evidence) roughly doubled:
+  DOCX 3.9 s, PPTX 13.4 s, XLSX 6.4 s.
+
+**The 610-page textbook, alone: 77 s** (v14 alone: 96 s; v11: 157 s). Java
+8.0 s, structure 31.2 s, repairs 36.4 s. The slowest refinement stages, in
+seconds and milliseconds a page:
+
+| Stage | s | ms/page |
+| --- | ---: | ---: |
+| `pictures.classify` | 14.9 | 24.5 |
+| `scripts.restore_structure` | 11.6 | 19.1 |
+| `tables.recover_tables` | 6.5 | 10.7 |
+| `source_text.join_split_ligatures` | 5.9 | 9.7 |
+| `layout_headings.recall_headings` | 5.0 | 8.2 |
+| `pictures.add_vector_figures` | 3.5 | 5.7 |
+| `order.repair` | 2.6 | 4.3 |
+| `headings.correct_roles` | 2.3 | 3.8 |
+| `styles.annotate` | 2.0 | 3.2 |
+| everything else | 13.0 | 21.4 |
+
 ## Setup
 
 - Image built on the ingest host from `0cecfcd8` (`parser/` only, the
@@ -96,7 +154,7 @@ queue holds exactly six large documents. Seven is the CPU ceiling.
 - **C**, as in v14: a 150-page scan and five 1,400-page books.
 - **D**, a full queue: the scan and seven 1,400-page books (8 documents, the
   queue depth).
-- **O**, Office under load: the 62-page handbook DOCX, the 224k-cell gradebook
+- **O**, Office under load: the handbook DOCX (72 pages converted), the 224k-cell gradebook
   XLSX and the 84-slide Japanese PPTX from the budget fixtures, the 42-page
   lecture with two scanned pages, a 300-page scan and three 608-page books.
 
@@ -117,6 +175,8 @@ to 1,400 pages; the scans are its clean 150 dpi renders (inputs of the
 | O, 5 | 92 s | 1,972 | 9 s | 92 s | 3.98 (3.48) | 2.36 | 1.35 | 9.58 | 4.1 |
 | O, 6 | 92 s | 1,981 | 3 s | 92 s | 4.91 (4.57) | 3.50 | 1.44 | 8.42 | 4.2 |
 | O, 7 | 93 s | 1,951 | 0 s | 93 s | 4.94 (4.64) | 3.37 | 1.53 | 8.49 | 4.2 |
+| Office-heavy, 7 | 270 s | 852 | 8 s | 269 s | 4.32 (4.12) | 2.44 | 1.37 | 9.11 | — |
+| 8 books, 7 | 553 s | 1,215 | 293 s | 307 s | 10.77 (9.78) | 8.40 | 4.99 | 3.37 | — |
 
 Memory in GiB. "Longest parse" is the parser's own time for a document minus
 its queue wait. Every pass: all documents succeeded, no container swap, no OOM
@@ -140,5 +200,6 @@ mix), LibreOffice 0.88 GiB, Java 2.80–2.83 GiB.
 Runner, manifests, per-document results and 250 ms samples are in the ignored
 `reports/local/2026-10-16-parser-v16-recalibration/`. On the host the work
 directory is `/opt/capy-parser-recal-20261016`; `recal.sh` runs the passes
-(`PASSES="5:c 6:c 7:c 5:d 6:d 7:d 5:o 6:o 7:o"`), scenario C reading the
-2026-09-28 `stage-c.json`.
+(`PASSES="5:c 6:c 7:c 5:d 6:d 7:d 5:o 6:o 7:o"`, then `7:x 7:e` into
+`recal2.log`), scenario C reading the 2026-09-28 `stage-c.json`. The profiles
+ran in the image with `--entrypoint python` against the same inputs.

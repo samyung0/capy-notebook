@@ -1,13 +1,21 @@
 package store
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
+	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/obs"
 )
 
 // The authority's limit refusals reach the model with a reason it can act on:
@@ -97,5 +105,64 @@ func TestAuthorityEditNoticeTravelsWithTheReceipt(t *testing.T) {
 	}
 	if err := json.Unmarshal(written, &answer); err != nil || answer.OperationID != "op_1" || answer.Notice != notice {
 		t.Fatalf("wrote %s", written)
+	}
+}
+
+type sentryCount struct{ events atomic.Int32 }
+
+func (t *sentryCount) Configure(sentry.ClientOptions)        {}
+func (t *sentryCount) SendEvent(*sentry.Event)               { t.events.Add(1) }
+func (t *sentryCount) Flush(time.Duration) bool              { return true }
+func (t *sentryCount) FlushWithContext(context.Context) bool { return true }
+func (t *sentryCount) Close()                                {}
+
+// A replace-block command refused because its room is being reset or
+// compacted (the authority's 503 unavailable_target) applied nothing: an
+// expected outcome, so its error is not reported, while any other authority
+// 503 still is. The caller's answer is the unavailable authority's either way.
+func TestRoomUnavailableContentCommandIsNotReported(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	current, err := materialdoc.QuizDocument(json.RawMessage(`[{"id":"q1","stem":[],"parts":[{"id":"q1:part:1","blocks":[{"type":"text","text":"Before"}],"answer":{"type":"boolean","correct":true},"marks":1,"solution":[]}],"layout":"paper","labels":"letters"}]`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	desired := strings.Replace(current, "Before", "After", 1)
+	material, err := s.CreateMaterial(ctx, Material{CreatedBy: "u_owner", Kind: "quiz", Title: "Quiz", Content: current})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var answer atomic.Value
+	sidecar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(answer.Load().(string)))
+	}))
+	t.Cleanup(sidecar.Close)
+	s.ConfigureCollaboration(sidecar.URL, "command-secret")
+	events := &sentryCount{}
+	client, err := sentry.NewClient(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: events})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reporting := sentry.SetHubOnContext(ctx, sentry.NewHub(client, sentry.NewScope()))
+
+	for _, tc := range []struct {
+		answer string
+		events int32
+	}{
+		{`{"code":"unavailable_target","message":"collaboration room is being reset"}`, 0},
+		{`{"message":"collaboration room unavailable"}`, 1},
+	} {
+		answer.Store(tc.answer)
+		events.events.Store(0)
+		handled, err := s.applyAuthoritativeContentCommand(ctx, material.ID, "u_owner", current, desired, nil)
+		if !handled || !errors.Is(err, ErrAuthorityUnavailable) {
+			t.Fatalf("%s: handled=%v err=%v", tc.answer, handled, err)
+		}
+		obs.CaptureErr(reporting, err, nil)
+		if got := events.events.Load(); got != tc.events {
+			t.Fatalf("%s: %d Sentry events, want %d", tc.answer, got, tc.events)
+		}
 	}
 }

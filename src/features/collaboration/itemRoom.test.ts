@@ -35,6 +35,7 @@ vi.mock('@/api/hooks', () => ({
 const drafts = vi.hoisted(() => ({
   discarded: 0,
   disposed: 0,
+  onStorage: undefined as ((ok: boolean) => void) | undefined,
   refused: 0,
   rows: [] as unknown[],
 }));
@@ -53,28 +54,35 @@ vi.mock('@/lib/editDrafts', () => ({
   draftKey: (actor: string, kind: string, id: string) =>
     `${actor}:${kind}:${id}`,
   readDrafts: vi.fn(async () => drafts.rows),
-  recordDrafts: () => ({
-    connected() {},
-    covered: async () => undefined,
-    discard: async () => {
-      drafts.discarded += 1;
-    },
-    disconnected() {},
-    dispose: async () => {
-      drafts.disposed += 1;
-    },
-    refuse() {
-      drafts.refused += 1;
-    },
-    sequence: 1,
-    unsaved: true,
-  }),
+  recordDrafts: (options: { onStorage: (ok: boolean) => void }) => {
+    drafts.onStorage = options.onStorage;
+    return {
+      connected() {},
+      covered: async () => undefined,
+      discard: async () => {
+        drafts.discarded += 1;
+      },
+      disconnected() {},
+      dispose: async () => {
+        drafts.disposed += 1;
+      },
+      refuse() {
+        drafts.refused += 1;
+      },
+      sequence: 1,
+      unsaved: true,
+    };
+  },
   recoveryDocument: () => new Y.Doc(),
 }));
 vi.mock('@/components/ui/userToast', () => ({ userToast: vi.fn() }));
+vi.mock('@/lib/appRelease', () => ({ markUpdateAvailable: vi.fn() }));
+vi.mock('./unsentItems', () => ({ markUnsent: vi.fn() }));
 
 const { ItemRoom } = await import('./itemRoom');
 const { applyDrafts } = await import('@/lib/editDrafts');
+const { markUpdateAvailable } = await import('@/lib/appRelease');
+const { markUnsent } = await import('./unsentItems');
 
 beforeEach(() => {
   vi.useFakeTimers();
@@ -297,5 +305,52 @@ it('stops on a refused token and backs off on a failing one', async () => {
   await vi.advanceTimersByTimeAsync(120_000);
   expect(provider.connects).toBe(3);
   expect(room.getSnapshot().status).toBe('unavailable');
+  room.destroy();
+});
+
+// The version gate (Epo 2026-10-16): a room that refuses this build stops
+// for the page load. A writer turns read-only under the outdated strip and
+// keeps its unsent edits stored for the reloaded page; a reader keeps what
+// it painted and shows no strip.
+it('stops when refused as outdated, a writer keeping its edits stored', async () => {
+  const { onReplace, room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  provider.config.onAuthenticationFailed?.({
+    reason: 'collaboration-outdated',
+  });
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(provider.connects).toBe(1);
+  expect(onReplace).not.toHaveBeenCalled();
+  expect(room.getSnapshot().offline).toBe('outdated');
+  expect(drafts).toMatchObject({ discarded: 0, refused: 0 });
+  // The next page change loads the new app.
+  expect(markUpdateAvailable).toHaveBeenCalledOnce();
+  room.destroy();
+  expect(drafts.disposed).toBe(1);
+
+  const reader = new ItemRoom('q', { read: true });
+  await reader.start();
+  providers[1].config.onAuthenticationFailed?.({
+    reason: 'collaboration-outdated',
+  });
+  await vi.advanceTimersByTimeAsync(120_000);
+  expect(providers[1].connects).toBe(1);
+  expect(reader.getSnapshot().offline).toBeNull();
+  reader.destroy();
+});
+
+// Edits this device could not store are lost on the reload: the strip says
+// so and leaving still asks.
+it('says the reload loses edits this device could not store', async () => {
+  const { room } = await started();
+  const [provider] = providers;
+  provider.config.onSynced?.({ state: true });
+  drafts.onStorage?.(false);
+  provider.config.onAuthenticationFailed?.({
+    reason: 'collaboration-outdated',
+  });
+  expect(room.getSnapshot().offline).toBe('outdated-unstored');
+  expect(markUnsent).toHaveBeenLastCalledWith(room, true);
   room.destroy();
 });

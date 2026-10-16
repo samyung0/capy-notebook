@@ -25,6 +25,7 @@ import {
 import { settledSpend } from './files';
 import { refresh, replaySaved, savedExport, savedUpdates } from './office';
 import { REFUSAL_PREFIX, republication } from './officeRefusal';
+import { cleanupStripeCustomer } from './providers';
 import type { UatRun } from './runtime';
 
 test('settled ingest spend waits for an uncertain attempt to reach its receipt deadline', async () => {
@@ -462,9 +463,10 @@ test('saved-token transport errors omit the runtime-issued credential', async ()
       ),
       (error: unknown) => {
         assert(error instanceof Error);
+        // Only a fixed transport kind may follow the stage name.
         assert.equal(
           error.message,
-          'Saved-token authorization probe failed; browser/provider details are omitted to keep credentials out of artifacts'
+          'Saved-token authorization probe failed [ECONNREFUSED]; browser/provider details are omitted to keep credentials out of artifacts'
         );
         assert(!String(error.stack).includes('SYNTHETIC_UAT_CREDENTIAL'));
         assert(!('cause' in error));
@@ -473,6 +475,64 @@ test('saved-token transport errors omit the runtime-issued credential', async ()
     );
   } finally {
     await context.dispose();
+  }
+});
+
+test('Stripe customer cleanup expires, voids and deletes only the exact run-owned customer', async () => {
+  const env = {
+    stripeAccountId: 'acct_fixture',
+    stripeSecretKey: 'sk_test_fixture',
+  } as UatEnvironment;
+  const own = (id: string) => ({ customer: 'cus_run', id, livemode: false });
+  const lists: Record<string, unknown[]> = {
+    '/v1/checkout/sessions open': [own('cs_open')],
+    '/v1/invoices draft': [own('in_draft')],
+    '/v1/invoices open': [own('in_retrying')],
+    '/v1/invoices uncollectible': [own('in_gave_up')],
+    '/v1/subscriptions all': [],
+  };
+  const writes: string[] = [];
+  const fetchBefore = globalThis.fetch;
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(String(input));
+    const method = init?.method ?? 'GET';
+    if (url.pathname === '/v1/account')
+      return Response.json({ id: 'acct_fixture' });
+    if (url.pathname === '/v1/customers/cus_run' && method === 'GET')
+      return Response.json({
+        id: 'cus_run',
+        livemode: false,
+        metadata: { capyUatRunId: 'run-fixture', user_id: 'user_fixture' },
+      });
+    const list = lists[`${url.pathname} ${url.searchParams.get('status')}`];
+    if (method === 'GET' && list) {
+      assert.equal(url.searchParams.get('customer'), 'cus_run');
+      return Response.json({ data: list, has_more: false });
+    }
+    assert.notEqual(method, 'GET', `Unexpected read ${url.pathname}`);
+    writes.push(`${method} ${url.pathname}`);
+    return Response.json({});
+  };
+  try {
+    await cleanupStripeCustomer(env, 'cus_run', 'run-fixture', 'user_fixture');
+    assert.deepEqual(writes, [
+      'POST /v1/checkout/sessions/cs_open/expire',
+      'DELETE /v1/invoices/in_draft',
+      'POST /v1/invoices/in_retrying/void',
+      'POST /v1/invoices/in_gave_up/void',
+      'DELETE /v1/customers/cus_run',
+    ]);
+    // Another customer's object in a scoped page stops cleanup before it voids
+    // or deletes anything.
+    lists['/v1/invoices draft'] = [{ ...own('in_other'), customer: 'cus_x' }];
+    writes.length = 0;
+    await assert.rejects(
+      cleanupStripeCustomer(env, 'cus_run', 'run-fixture', 'user_fixture'),
+      /ownership mismatch/
+    );
+    assert.deepEqual(writes, ['POST /v1/checkout/sessions/cs_open/expire']);
+  } finally {
+    globalThis.fetch = fetchBefore;
   }
 });
 

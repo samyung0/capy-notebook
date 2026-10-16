@@ -50,9 +50,18 @@ pub enum DocumentError {
     Quota(String),
     /// A source refusal: its status, its code by status.
     Source { status: u16, message: String },
+    /// 503 `unavailable_target`: the room is being reset or compacted. The
+    /// edit was refused before anything applied, so the outcome is known and
+    /// the caller may retry; logged, not reported.
+    Unavailable(&'static str),
     /// 503 `outcome_unknown` (reported).
     Unknown(String),
 }
+
+/// An edit's refusal while its room is reset or discarded ([DocumentError::Unavailable]).
+pub const ROOM_RESET: &str = "collaboration room is being reset";
+/// An edit's refusal while its room is under the eviction lease.
+pub const ROOM_COMPACTING: &str = "collaboration room is being compacted";
 
 impl DocumentError {
     pub fn status_and_body(&self) -> (u16, Value) {
@@ -86,6 +95,10 @@ impl DocumentError {
                 };
                 (*status, json!({ "code": code, "message": message }))
             }
+            DocumentError::Unavailable(message) => (
+                503,
+                json!({ "code": "unavailable_target", "message": message }),
+            ),
             DocumentError::Unknown(_) => (
                 503,
                 json!({ "code": "outcome_unknown", "message": "document edit failed" }),
@@ -101,6 +114,7 @@ impl DocumentError {
             | DocumentError::Quota(message)
             | DocumentError::Unknown(message) => message,
             DocumentError::Edit { message, .. } | DocumentError::Source { message, .. } => message,
+            DocumentError::Unavailable(message) => message,
         }
     }
 
@@ -724,17 +738,13 @@ pub async fn edit_material(
         .clone()
         .ok_or_else(|| DocumentError::edit("invalid_input", "operation identity is required"))?;
     if app.evictions.blocks(&room, false) {
-        return Err(DocumentError::Unknown(
-            "collaboration room is being reset".into(),
-        ));
+        return Err(DocumentError::Unavailable(ROOM_RESET));
     }
     if crate::socket::room_evicting(app, &room)
         .await
         .map_err(DocumentError::Unknown)?
     {
-        return Err(DocumentError::Unknown(
-            "collaboration room is being compacted".into(),
-        ));
+        return Err(DocumentError::Unavailable(ROOM_COMPACTING));
     }
     let (commands, guards) = match &undo {
         Some(undo) => (
@@ -1058,13 +1068,13 @@ pub async fn replace_block(app: &Shared, command: Value) -> Result<(), String> {
         return Err("collaboration command room does not match material".into());
     }
     if app.evictions.blocks(&command.room, false) {
-        return Err("collaboration room is being reset".into());
+        return Err(ROOM_RESET.into());
     }
     if crate::socket::room_evicting(app, &command.room).await? {
         return Err(if command.expected_revision.is_some() {
             "material changed concurrently".into()
         } else {
-            "collaboration room is being compacted".into()
+            ROOM_COMPACTING.into()
         });
     }
     let live = live_state(app, &command.room).await;

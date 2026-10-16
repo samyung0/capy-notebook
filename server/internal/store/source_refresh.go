@@ -408,7 +408,12 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if _, err = tx.Exec(ctx, `INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3) ON CONFLICT(file_id) DO UPDATE SET content_id=EXCLUDED.content_id`, fileID, ws, in.ContentID); err != nil {
 		return doc, err
 	}
-	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=$6,indexed=true,index_limit=NULL,status='ready',revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $7,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.ContentHash, doc.Format != "text")
+	// The pipeline writes no status for a refresh: the published result is
+	// partial (failed, still indexed) when the candidate lacks a part, a
+	// descriptor row or a pipeline_identity (unread pages) (parts design Q3).
+	publishedRow, err := tx.Exec(ctx, `UPDATE files SET blob_path=$2,source_sha256=$3,size_bytes=$4,source_etag=$5,content_hash=$6,indexed=true,index_limit=NULL,
+		status=CASE WHEN EXISTS(SELECT 1 FROM rag_contents rc JOIN rag_content_summaries s ON s.content_id=rc.id WHERE rc.id=$8 AND rc.pipeline_identity IS NOT NULL) THEN 'ready' ELSE 'failed' END,
+		revision=revision+1,ever_parsed_successfully=ever_parsed_successfully OR $7,caption_blob_path=NULL WHERE id=$1 AND trashed_at IS NULL`, fileID, source, sha, size, in.SourceETag, in.ContentHash, doc.Format != "text", in.ContentID)
 	if err != nil {
 		return doc, err
 	}

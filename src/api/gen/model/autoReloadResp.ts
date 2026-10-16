@@ -4,10 +4,9 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
-import type { UpdateQuizContentReqQuestionsItem } from './updateQuizContentReqQuestionsItem.ts';
 
-export interface UpdateQuizContentReq {
+export interface AutoReloadResp {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  questions?: UpdateQuizContentReqQuestionsItem[];
+  armed: boolean;
 }

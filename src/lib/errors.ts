@@ -57,6 +57,11 @@ export function isAbortError(error: unknown): boolean {
   );
 }
 
+/** Work that failed because this device is offline, such as a page whose
+ * code could not load (src/router.ts): described as offline even once the
+ * connection is back, until the retry replaces it. */
+export class OfflineError extends Error {}
+
 export function isChunkLoadError(error: unknown): boolean {
   return error instanceof Error && CHUNK_LOAD_PATTERN.test(error.message);
 }
@@ -67,8 +72,9 @@ function browserIsOffline(): boolean {
 
 export function errorKind(error: unknown): ErrorKind {
   if (isAbortError(error)) return 'cancelled';
+  // Offline first: code that failed to load offline is no update to reload.
+  if (error instanceof OfflineError || browserIsOffline()) return 'offline';
   if (isChunkLoadError(error)) return 'chunkLoad';
-  if (browserIsOffline()) return 'offline';
   if (isStorageQuotaError(error)) return 'quota';
   if (isFileLimitError(error)) return 'files';
   if (isWorkspaceLimitError(error)) return 'quota';
@@ -355,6 +361,30 @@ export function describeError(error: unknown): ErrorDescription {
         title: m.error_generic_title(),
       };
   }
+}
+
+/** The 5xx codes with their own copy; the gateway keeps the same list
+ * (`typedServerCodes`). Any other 5xx is unexpected, whatever it carries. */
+const TYPED_SERVER_CODES = new Set([
+  'ai_unavailable',
+  'bank_unavailable',
+  'generate_empty',
+  'provider_busy',
+]);
+
+/** The trace id an error that stays on screen shows (a boundary, FormAlert,
+ * a failed page or pane with Retry): only for an unexpected API failure, a
+ * 5xx without a typed code or an unknown status without a code. Typed
+ * refusals and toasts show none. */
+export function unexpectedErrorId(error: unknown): string | null {
+  if (!isApiError(error)) return null;
+  const typed =
+    error.status >= 500
+      ? TYPED_SERVER_CODES.has(error.code ?? '')
+      : error.code !== null;
+  if (typed) return null;
+  const kind = errorKind(error);
+  return kind === 'server' || kind === 'unknown' ? error.traceId : null;
 }
 
 export { CopyError } from './copyError';

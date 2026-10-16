@@ -149,12 +149,41 @@ pub fn message(channel: u64, kind: Kind, payload: &[u8]) -> Bytes {
     out.freeze()
 }
 
-/// JOIN's payload: the room name and the token.
-pub fn decode_join(payload: &[u8]) -> Result<(String, String), FrameError> {
+/// The client protocol this server speaks; the SPA's `CLIENT_PROTOCOL`
+/// (src/features/collaboration/protocol.ts, a test keeps them equal) rides
+/// every JOIN and draft send. A change an older client would break (openwiki
+/// plate-editor "Client protocol") raises it to N+1 and sets the broken
+/// family's minimum to N+1; the other family keeps its minimum.
+pub const CLIENT_PROTOCOL: u32 = 1;
+/// The oldest client material rooms accept (`material:`, `keys:`: notes,
+/// mindmaps, diagrams, quizzes, quiz keys, flashcard sets).
+pub const MIN_MATERIAL: u32 = 1;
+/// The oldest client source rooms accept (`source:`: Office and text); every
+/// BetterOffice pin bump and Office protocol bump raises it.
+pub const MIN_SOURCE: u32 = 1;
+// A minimum above the server's own protocol would refuse every client.
+const _: () = assert!(MIN_MATERIAL <= CLIENT_PROTOCOL && MIN_SOURCE <= CLIENT_PROTOCOL);
+
+/// Whether a client's protocol is refused: below its room family's minimum,
+/// or above this server's own (a newer tab after a rollback). A client from
+/// before the gate sends none, read as 0.
+pub fn outdated(minimum: u32, client: Option<u32>) -> bool {
+    let client = client.unwrap_or(0);
+    client < minimum || client > CLIENT_PROTOCOL
+}
+
+/// JOIN's payload: the room name, the token and the client protocol (none
+/// from a client before the version gate).
+pub fn decode_join(payload: &[u8]) -> Result<(String, String, Option<u32>), FrameError> {
     let mut at = 0;
     let room = read_string(payload, &mut at)?.to_owned();
     let token = read_string(payload, &mut at)?.to_owned();
-    Ok((room, token))
+    let protocol = if at < payload.len() {
+        Some(u32::try_from(read_var(payload, &mut at)?).map_err(|_| FrameError::Payload)?)
+    } else {
+        None
+    };
+    Ok((room, token, protocol))
 }
 
 /// A varstring payload (REFUSED, STATELESS, TOKEN).
@@ -316,14 +345,32 @@ mod tests {
     }
 
     #[test]
-    fn join_and_awareness_payloads() {
+    fn join_carries_the_client_protocol_after_the_token() {
         let mut payload = Vec::new();
         write_string(&mut payload, "material:abc:schema:1");
         write_string(&mut payload, "token");
+        let room = ("material:abc:schema:1".to_owned(), "token".to_owned());
+        // A client from before the gate sends two fields.
         assert_eq!(
             decode_join(&payload).unwrap(),
-            ("material:abc:schema:1".to_owned(), "token".to_owned())
+            (room.0.clone(), room.1.clone(), None)
         );
+        write_var(&mut payload, 300);
+        assert_eq!(decode_join(&payload).unwrap(), (room.0, room.1, Some(300)));
+    }
+
+    #[test]
+    fn protocols_below_the_minimum_or_above_the_server_are_outdated() {
+        assert!(outdated(1, None));
+        assert!(outdated(1, Some(0)));
+        assert!(!outdated(1, Some(1)));
+        assert!(!outdated(CLIENT_PROTOCOL, Some(CLIENT_PROTOCOL)));
+        assert!(outdated(1, Some(CLIENT_PROTOCOL + 1)));
+        assert!(outdated(CLIENT_PROTOCOL + 1, Some(CLIENT_PROTOCOL)));
+    }
+
+    #[test]
+    fn awareness_payloads() {
         let entries = vec![
             awareness::Entry {
                 client: 3_000_000_000,

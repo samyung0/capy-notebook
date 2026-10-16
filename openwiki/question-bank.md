@@ -416,7 +416,7 @@ malformed question loses fields instead of failing the read.
 | `GET /api/workspaces/{id}/review` | workspace readers; question items | none |
 | `GET /api/bank/questions/{id}`, `GET /api/bank/questions?ids=` | bank readers, editors included (View mode); `editor` still reports the grant | none |
 | `GET /api/bank/questions/{id}/edit` | bank editors on an editable bank; others 404 | full |
-| Create, content/metadata/sharing PATCH, clone, bank save and review marker | editors and a copy's new owner | full |
+| Create, metadata/sharing PATCH, clone, bank save and review marker (content goes through the live rooms) | editors and a copy's new owner | full |
 | Chat `inspect_document` on a quiz | the acting user | full only for a material editor |
 
 Copies keep keys because their owner edits them: clones and Copy to quiz

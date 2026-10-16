@@ -197,12 +197,6 @@ type CreateQuizReq struct {
 	Privacy     store.Privacy    `json:"privacy,omitempty"`
 }
 
-// UpdateQuizContentReq takes no revision: editors edit a quiz live, so
-// there is no stale form to refuse (Epo 2026-10-10, D7).
-type UpdateQuizContentReq struct {
-	Questions *[]map[string]any `json:"questions,omitempty"`
-}
-
 type UpdateQuizMetadataReq struct {
 	Name     *MaterialTitle `json:"name,omitempty" minLength:"1"`
 	Chapters *[]string      `json:"chapters,omitempty"`
@@ -345,24 +339,6 @@ type UpdateFlashcardSetReq struct {
 	Color *store.UserColor `json:"color,omitempty"`
 }
 
-type FlashcardContentInput struct {
-	ID    string `json:"id,omitempty"`
-	Front string `json:"front" minLength:"1" maxLength:"4000"`
-	// A back holds at most 2,000 characters (human/frontend/plate-editor.md).
-	Back  string          `json:"back" minLength:"1" maxLength:"2000"`
-	Image *FlashcardImage `json:"image,omitempty"`
-}
-
-// FlashcardImage is a card's one image: an editor asset uploaded through the
-// set, shown on the front under the text.
-type FlashcardImage struct {
-	AssetID string `json:"assetId" minLength:"1" maxLength:"128"`
-}
-
-type UpdateFlashcardContentReq struct {
-	Cards []FlashcardContentInput `json:"cards" minItems:"1"`
-}
-
 type CreateEventReq struct {
 	Title    EventTitle     `json:"title" minLength:"1"`
 	Start    time.Time      `json:"start"`
@@ -432,6 +408,13 @@ type SpendingLimitReq struct {
 // URLResp is returned by billing checkout/portal (a redirect target).
 type URLResp struct {
 	URL string `json:"url"`
+}
+
+// AutoReloadResp says whether a reload is armed after the save. Turning
+// auto-reload on never arms one, so false after a failed reload means it
+// waits for a top-up.
+type AutoReloadResp struct {
+	Armed bool `json:"armed"`
 }
 
 // AccessTokenResp is returned by the Google picker-token endpoint.

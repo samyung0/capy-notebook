@@ -58,7 +58,7 @@ ROUTE_FAST = "fast"
 # the ingest worker's VLM page read (prompts/captioning.py VLM_PAGE_PROMPT)
 # changes output. With the release SHA it forms the artifact version, so a
 # parser from another release is refused.
-PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v15"}
+PARSER_IMPLEMENTATIONS = {ROUTE_FAST: "odl-2.5.7-refined-vlm-v17"}
 OFFICE_SUFFIXES = frozenset({".doc", ".docx", ".ppt", ".pptx", ".xls", ".xlsx"})
 
 
@@ -79,11 +79,16 @@ class ParserOOMError(ParserTerminalResourceError):
 
 
 class ParserTooManyScannedPagesError(ParserClientError):
-    """More pages lack a text layer than the parser's OCR stage admits."""
+    """More pages lack a text layer than the parser renders for the VLM read."""
 
 
 class ParserTooManyPagesError(ParserClientError):
     """The document has more pages than the parser reads (CAPY_PARSE_MAX_PAGES)."""
+
+
+class ParserTooManyElementsError(ParserClientError):
+    """The file draws more images, vector shapes, table rows or pictures than
+    the parser reads (parser/odl/elements.py)."""
 
 
 class ParserFormatMismatchError(ParserClientError):
@@ -312,6 +317,8 @@ def _request_artifact(
                 raise ParserTooManyScannedPagesError(str(detail))
             if payload.get("code") == "parse_too_many_pages":
                 raise ParserTooManyPagesError(str(detail))
+            if payload.get("code") == "parse_too_many_elements":
+                raise ParserTooManyElementsError(str(detail))
             if payload.get("code") == "parse_format_mismatch":
                 raise ParserFormatMismatchError(str(detail))
             if payload.get("code") == "parse_unreadable":

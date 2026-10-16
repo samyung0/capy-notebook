@@ -4,6 +4,8 @@ import (
 	"context"
 	"time"
 
+	"github.com/redis/go-redis/v9"
+
 	"github.com/samyung0/capy-notebook/server/internal/billing"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/reconcile"
@@ -28,6 +30,7 @@ const (
 func runUsageWorkers(
 	ctx context.Context,
 	st *store.Store,
+	rdb *redis.Client,
 	reconcileConfig reconcile.Config,
 ) {
 	go loop(ctx, reservationSweepInterval, "credit_sweeper", func(ctx context.Context) {
@@ -50,15 +53,16 @@ func runUsageWorkers(
 	})
 
 	if reconcileConfig.StripeSecretKey != "" {
+		billingChanged := func(userID string) { publishBillingChanged(ctx, rdb, userID) }
 		// Auto-reload starts within a few seconds of credits reaching the
 		// threshold; the gate admits work at zero until then.
 		go loop(ctx, reloadPollInterval, "credit_reload", func(ctx context.Context) {
-			if err := billing.RunDueReloads(ctx, st); err != nil {
+			if err := billing.RunDueReloads(ctx, st, billingChanged); err != nil {
 				obs.CaptureErr(ctx, err, map[string]string{"stage": "credit_reload"})
 			}
 		})
 		go loop(ctx, time.Minute, "credit_reload_resume", func(ctx context.Context) {
-			if err := billing.ResumeStaleReloads(ctx, st); err != nil {
+			if err := billing.ResumeStaleReloads(ctx, st, billingChanged); err != nil {
 				obs.CaptureErr(ctx, err, map[string]string{"stage": "credit_reload_resume"})
 			}
 		})

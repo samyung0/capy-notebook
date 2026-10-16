@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useMaterial, useQuiz, useSubmitAttempt } from '@/api/hooks';
 import type { Material } from '@/api/types';
 import { FileBanner } from '@/components/banners/FileBanner';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
+import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import { useNearScreen } from '@/features/collaboration/useNearScreen';
 import { LiveFlashcards } from '@/features/flashcards/LiveFlashcards';
 import { useLiveSetCards } from '@/features/flashcards/liveReads';
@@ -276,7 +277,7 @@ function EmbedQuizEditor({
       ) : rooms.ready && rooms.content && rooms.keys ? (
         <div className="grid gap-4">
           {rooms.offline && <SaveBanner state={rooms.offline} />}
-          {rooms.offline === 'offline-limit' ? (
+          {itemEditingStopped(rooms.offline) ? (
             <QuizQuestionList disabled questions={questions} showAnswerKey />
           ) : (
             <QuizForm
@@ -291,6 +292,9 @@ function EmbedQuizEditor({
             />
           )}
         </div>
+      ) : isOutdatedBanner(rooms.offline) ? (
+        // Refused as outdated before it synced: nothing of the rooms to show.
+        <SaveBanner state="outdated" />
       ) : (
         <EmbedLoading />
       )}

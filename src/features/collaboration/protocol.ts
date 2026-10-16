@@ -172,8 +172,17 @@ export function readSync(payload: Uint8Array) {
   return { body: reader.varBytes(), kind };
 }
 
+/**
+ * The client protocol this build speaks, sent on every JOIN and draft send.
+ * The collaboration server refuses a client below its room family's minimum
+ * or above its own number (`collaboration-outdated`); its `CLIENT_PROTOCOL`
+ * in protocol.rs is the same number (a test keeps them equal). When to bump:
+ * openwiki/frontend/plate-editor.md "Client protocol".
+ */
+export const CLIENT_PROTOCOL = 1;
+
 export const joinPayload = (room: string, token: string) =>
-  new Writer().varString(room).varString(token).done();
+  new Writer().varString(room).varString(token).varUint(CLIENT_PROTOCOL).done();
 
 export const closedPayload = (code: number, reason: string) =>
   new Writer().varUint(code).varString(reason).done();

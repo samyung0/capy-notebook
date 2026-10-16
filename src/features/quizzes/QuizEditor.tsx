@@ -2,8 +2,9 @@ import { type ReactNode, useContext, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { FileBanner } from '@/components/banners/FileBanner';
-import { SaveBanner } from '@/components/banners/SaveBanner';
+import { isOutdatedBanner, SaveBanner } from '@/components/banners/SaveBanner';
 import { Skeleton } from '@/components/ui/feedback';
+import { itemEditingStopped } from '@/features/collaboration/itemRoom';
 import {
   itemSaveState,
   UndoButtons,
@@ -40,9 +41,11 @@ export function QuizEditor({
   const questions = useQuizQuestions(rooms.content?.doc, rooms.keys?.doc);
   const headerActions = useContext(FileActionsTarget);
   useEffect(() => {
-    const saveState = rooms.recovery ? 'error' : itemSaveState(rooms.status);
+    const saveState = rooms.recovery
+      ? 'error'
+      : itemSaveState(rooms.status, rooms.offline);
     onStatusChange?.(saveState ? { saveState } : null);
-  }, [rooms.status, rooms.recovery, onStatusChange]);
+  }, [rooms.status, rooms.recovery, rooms.offline, onStatusChange]);
   useEffect(() => () => onStatusChange?.(null), [onStatusChange]);
 
   if (rooms.status === 'unavailable')
@@ -51,6 +54,7 @@ export function QuizEditor({
     <div className="flex flex-col gap-7">
       {rooms.undo &&
         headerActions &&
+        !itemEditingStopped(rooms.offline) &&
         createPortal(
           <UndoButtons header manager={rooms.undo} />,
           headerActions
@@ -62,7 +66,7 @@ export function QuizEditor({
       {rooms.recovery ? (
         <QuizRecovery recovery={rooms.recovery} rooms={rooms} />
       ) : rooms.ready ? (
-        rooms.access !== 'write' || rooms.offline === 'offline-limit' ? (
+        rooms.access !== 'write' || itemEditingStopped(rooms.offline) ? (
           <div className="grid gap-6">
             {rooms.readOnlyCode === 'unsupported_block' && (
               <FileBanner message={m.editor_unsupported_block_strip()} />
@@ -90,6 +94,9 @@ export function QuizEditor({
         ) : (
           <Skeleton className="h-64 w-full" />
         )
+      ) : isOutdatedBanner(rooms.offline) ? (
+        // Refused as outdated before it synced: nothing of the rooms to show.
+        <SaveBanner state="outdated" />
       ) : rooms.status === 'offline' ? (
         // Opened offline (or the server failed): it joins once back.
         <QueryPausedState />

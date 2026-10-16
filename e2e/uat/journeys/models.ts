@@ -42,13 +42,16 @@ export type ProviderCall = {
   status: string;
   provider: string;
   model: string;
+  opened_at: string;
+  abandoned_at: string | null;
+  error_code: string | null;
   catalog_provider_slug: string | null;
   catalog_model_slug: string | null;
   model_version: number | null;
   credit_micros: string | null;
 };
 
-const CALLS = `SELECT DISTINCT c.id,c.kind,c.purpose,c.status,c.provider,c.model,c.opened_at,
+const CALLS = `SELECT DISTINCT c.id,c.kind,c.purpose,c.status,c.provider,c.model,c.opened_at,c.abandoned_at,c.error_code,
   u.catalog_provider_slug,u.catalog_model_slug,u.model_version,u.credit_micros
   FROM provider_calls c
   LEFT JOIN usage_events u ON u.provider_call_id=c.id AND u.reservation_id=c.reservation_id`;
@@ -86,6 +89,41 @@ export function onRow(
     if (charged) assert(Number(call.credit_micros) > 0, `${call.id} is free`);
     else assert.equal(Number(call.credit_micros), 0);
   }
+}
+
+/**
+ * Rerank calls on `row`. Applied ones as `onRow` (free); one that timed out
+ * (still open, or abandoned `receipt_timeout`) has no usage row and no charge,
+ * since search keeps fused order by design (Epo 2026-10-17). Returns those
+ * tolerated calls for the evidence.
+ */
+export function rerankOnRow(calls: ProviderCall[], row: CatalogRow) {
+  onRow(
+    calls.filter((call) => call.status === 'applied'),
+    row,
+    false
+  );
+  const tolerated = calls.filter((call) => call.status !== 'applied');
+  for (const call of tolerated) {
+    assert(
+      call.status === 'open' ||
+        (call.status === 'abandoned' && call.error_code === 'receipt_timeout'),
+      `rerank call ${call.id} is ${call.status} (${call.error_code})`
+    );
+    assert.equal(call.provider, transport(row));
+    assert.equal(call.model, row.model_slug);
+    assert.deepEqual(
+      [call.catalog_provider_slug, call.credit_micros],
+      [null, null],
+      `unanswered rerank call ${call.id} has a usage row`
+    );
+  }
+  return tolerated.map(({ abandoned_at, id, opened_at, status }) => ({
+    abandoned_at,
+    id,
+    opened_at,
+    status,
+  }));
 }
 
 /** A standalone image's caption was one applied call on the captioning

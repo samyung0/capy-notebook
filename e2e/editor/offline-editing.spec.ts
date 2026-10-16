@@ -202,3 +202,109 @@ test('edits from a room that moved on open read-only for copying until Reload', 
   await expect(banner).toHaveCount(0);
   await expect.poll(() => storedDrafts(page)).toBe(0);
 });
+
+test('an editor refused as outdated stays read-only with its edits kept, which the reloaded page saves', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await openNote(page);
+  // The deploy: the service goes away while this tab types (nothing is
+  // saved), then refuses this build when the tab joins again.
+  await setReachable(page, false);
+  await type(page, ' Typed before the update.');
+  await expect.poll(() => storedDrafts(page)).toBeGreaterThan(0);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { refuseThisBuild } = await import(path);
+    refuseThisBuild();
+  });
+  await setReachable(page, true);
+  const banner = page.locator(
+    '[data-testid="save-banner"][data-kind="outdated"]'
+  );
+  await expect(banner).toContainText(m.editor_outdated());
+  const content = page.locator('[data-slate-editor]').first();
+  await expect(content).toHaveAttribute('contenteditable', 'false');
+  await expect(content).toContainText('Typed before the update.');
+  const stored = await storedDrafts(page);
+  expect(stored).toBeGreaterThan(0);
+  // The next page change loads the new app.
+  expect(
+    await page.evaluate(async () => {
+      const path = '/src/lib/appRelease.ts';
+      const { takeUpdateLoad } = await import(path);
+      return takeUpdateLoad();
+    })
+  ).toBe(true);
+  await shot(page, 'outdated');
+  await page.setViewportSize({ height: 740, width: 360 });
+  await shot(page, 'outdated-360');
+  await page.setViewportSize({ height: 720, width: 1280 });
+  // The same app is still served (the new one is being published): Reload
+  // waits, and nothing was sent or deleted meanwhile.
+  await banner.getByRole('button', { name: m.error_action_reload() }).click();
+  await expect(banner).toContainText(m.editor_outdated_publishing());
+  expect(await storedDrafts(page)).toBe(stored);
+
+  // The reloaded page (the new build) applies the edits and saves them.
+  await page.reload();
+  await expect(page.locator('[contenteditable="true"]').first()).toContainText(
+    'Typed before the update.',
+    { timeout: 30_000 }
+  );
+  await expect(page.getByTestId('editor-save-state')).toHaveAttribute(
+    'data-save-state',
+    'saved'
+  );
+  await expect.poll(() => storedDrafts(page)).toBe(0);
+});
+
+test('a source refused as outdated keeps its stored edits and leaves without a prompt', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_scenarios?file=mock-scenario-text&mode=edit');
+  const input = page.getByRole('textbox', { name: m.source_edit_raw() });
+  await expect(input).not.toHaveValue('', { timeout: 30_000 });
+  // Unsaved: the room holds the receipts back, as a busy store does.
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { holdSourceSaveReceipts } = await import(path);
+    holdSourceSaveReceipts(true);
+  });
+  await input.fill(`${await input.inputValue()}\nTyped before the update.`);
+  const fileRows = () =>
+    page.evaluate(async () => {
+      const draftsPath = '/src/lib/editDrafts.ts';
+      const dbPath = '/src/mocks/db.ts';
+      const { draftKey, readDrafts } = await import(draftsPath);
+      const { user } = await import(dbPath);
+      return (await readDrafts(draftKey(user.id, 'file', 'mock-scenario-text')))
+        .length;
+    });
+  await expect.poll(fileRows).toBeGreaterThan(0);
+  await page.evaluate(async () => {
+    const path = '/src/mocks/collaboration.ts';
+    const { refuseThisBuild } = await import(path);
+    refuseThisBuild();
+  });
+  await expect(
+    page.locator('[data-testid="save-banner"][data-kind="outdated"]')
+  ).toContainText(m.editor_outdated());
+  expect(await fileRows()).toBeGreaterThan(0);
+  // The edits are on this device for the reloaded page: leaving asks nothing.
+  const prompted = await page.evaluate(() => {
+    const leaving = new Event('beforeunload', { cancelable: true });
+    window.dispatchEvent(leaving);
+    return leaving.defaultPrevented;
+  });
+  expect(prompted).toBe(false);
+  // The next page change loads the new app.
+  expect(
+    await page.evaluate(async () => {
+      const path = '/src/lib/appRelease.ts';
+      const { takeUpdateLoad } = await import(path);
+      return takeUpdateLoad();
+    })
+  ).toBe(true);
+});

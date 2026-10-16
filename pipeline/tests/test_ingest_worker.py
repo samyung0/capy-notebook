@@ -410,9 +410,11 @@ def test_a_refresh_of_a_parsed_file_records_its_pages_without_the_page_fee(
     first_parse = _ingest_payload(sourceRefresh=True, parseFee=True)
     # An export-only file's reprocess: a plain parse at platform cost.
     reprocess = _ingest_payload(paidBy="system")
+    # Retry processing of a partial file that parsed before (parts design Q6).
+    retry = _ingest_payload(parseFee=False)
     token = worker._resource_rates.set(upload["resourceRates"])
     try:
-        for payload in (upload, refresh, first_parse, reprocess):
+        for payload in (upload, refresh, first_parse, reprocess, retry):
             worker._record_parse_usage_tx(
                 None,
                 usage=worker.obs.ParseUsage(pages=3),
@@ -428,11 +430,12 @@ def test_a_refresh_of_a_parsed_file_records_its_pages_without_the_page_fee(
     finally:
         worker._resource_rates.reset(token)
 
-    assert [event["parse_pages"] for event in recorded] == [3, 3, 3, 3]
+    assert [event["parse_pages"] for event in recorded] == [3, 3, 3, 3, 3]
     assert [event["credit_micros"] for event in recorded] == [
         3_000_000,
         0,
         3_000_000,
+        0,
         0,
     ]
 
@@ -666,7 +669,11 @@ async def test_admission_refusal_passes_the_full_source_identity(monkeypatch):
     monkeypatch.setattr(
         worker, "_finish_fail", lambda **values: failed.append(values) or True
     )
-    monkeypatch.setattr(worker.progress, "publish", lambda *_a, **_k: None)
+    events: list[dict] = []
+    monkeypatch.setattr(worker.db, "source_refresh_for", lambda _f: None)
+    monkeypatch.setattr(
+        worker.progress, "publish", lambda *_a, **kwargs: events.append(kwargs)
+    )
 
     await worker._process_ingest_job(
         {"id": "job_refused", "type": "ingest", "attempts": 1},
@@ -692,6 +699,8 @@ async def test_admission_refusal_passes_the_full_source_identity(monkeypatch):
             "error_code": "ingest_admission_refused",
         }
     ]
+    # Its event carries the indexed _finish_fail wrote.
+    assert events[-1]["status"] == "failed" and events[-1]["indexed"] is True
 
 
 async def test_lost_claim_does_not_publish_a_stale_terminal_progress(monkeypatch):
@@ -746,6 +755,37 @@ def test_a_refused_office_rebase_publishes_no_failed_progress(
     )
 
     assert [args[2] for args in events] == (["failed"] if published else [])
+
+
+@pytest.mark.parametrize("indexed", [True, False])
+def test_failed_file_events_carry_the_written_indexed(monkeypatch, indexed):
+    """A failed retry whose previous index still serves stays indexed, and its
+    terminal event says so, from the worker and from the lease reaper."""
+    events: list[dict] = []
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "report.pdf")
+    monkeypatch.setattr(worker, "_finish_fail", lambda **_k: indexed)
+    monkeypatch.setattr(worker, "_cleanup_payload_source", lambda _p: None)
+    monkeypatch.setattr(worker.db, "source_refresh_for", lambda _f: None)
+    monkeypatch.setattr(
+        worker.progress, "publish", lambda *_a, **kwargs: events.append(kwargs)
+    )
+
+    worker._notify_ingest_terminal(
+        "f_1", "ws_1", "job_1", "parse failed", 1, _ingest_payload()
+    )
+    worker._announce_reclaimed(
+        {
+            "id": "job_2",
+            "type": "ingest",
+            "attempts": 2,
+            "outcome": "failed",
+            "file_failed": True,
+            "file_indexed": indexed,
+            "payload": _ingest_payload(),
+        }
+    )
+
+    assert [(e["status"], e["indexed"]) for e in events] == [("failed", indexed)] * 2
 
 
 def test_a_file_over_a_limit_publishes_a_ready_unindexed_event(monkeypatch):
@@ -1470,7 +1510,15 @@ async def test_post_parse_resource_failure_retries_without_parse_quarantine(
     assert events == [("requeue", "job_ingest")]
 
 
-async def test_final_provider_receipt_failure_does_not_requeue_ingest(monkeypatch):
+@pytest.mark.parametrize(
+    "error",
+    [
+        worker.accounting.SettlementError("receipt rejected"),
+        # Not a settlement failure, but deterministic all the same.
+        worker.accounting.AccountingError("model capacity is not configured for p:m"),
+    ],
+)
+async def test_an_accounting_error_does_not_requeue_ingest(monkeypatch, error):
     events: list[tuple[str, str]] = []
     monkeypatch.setattr(worker, "_release_parse_artifact", lambda _p: None)
     monkeypatch.setattr(worker, "_require_current_source", lambda *_a: None)
@@ -1493,7 +1541,7 @@ async def test_final_provider_receipt_failure_does_not_requeue_ingest(monkeypatc
             "attempts": 1,
             "payload": _ingest_payload(),
         },
-        worker.accounting.SettlementError("receipt rejected"),
+        error,
     )
 
     assert events == [("terminal", "job_ingest")]
@@ -1568,15 +1616,20 @@ def test_finish_fail_keeps_a_file_over_a_limit_ready(monkeypatch, index_limit):
         "close_credit_reservation",
     ):
         monkeypatch.setattr(
-            worker.db, name, lambda _cur, *a, _n=name: writes.append((_n, *a))
+            worker.db,
+            name,
+            lambda _cur, *a, _n=name: writes.append((_n, *a)) or False,
         )
     monkeypatch.setattr(worker.db, "finish_job_attempt", lambda _cur, **_k: None)
 
-    assert worker._finish_fail(
-        file_id="f_1",
-        job_id="job_1",
-        error="delimited table exceeds the column limit",
-        index_limit=index_limit,
+    assert (
+        worker._finish_fail(
+            file_id="f_1",
+            job_id="job_1",
+            error="delimited table exceeds the column limit",
+            index_limit=index_limit,
+        )
+        is False
     )
 
     file_writes = [w for w in writes if w[0].startswith(("set_file", "DELETE"))]
@@ -2058,6 +2111,43 @@ async def test_vlm_pages_join_their_page_and_unread_ones_are_reported(
     assert unread == [4]
 
 
+async def test_a_busy_vlm_page_on_the_last_wait_stays_unread(
+    monkeypatch, tmp_path: Path
+):
+    """Parts design §6: a page still busy once the job's re-pend is spent is
+    unread (the file ends partial), not a provider_busy failure."""
+    from pipeline import elitellm
+
+    (tmp_path / "vlm").mkdir()
+    for page in (0, 2):
+        (tmp_path / "vlm" / f"{page}.jpg").write_bytes(str(page).encode())
+
+    async def caption(*, data_url: str, read, **_kwargs):
+        return (await read(data_url)) or "", "", 0, False
+
+    async def read_page(data_url: str, *, credit_micros: int):
+        if base64.b64decode(data_url.split(",", 1)[1]) == b"2":
+            raise elitellm.ProviderBusy("VLM is busy")
+        return "Scanned page one"
+
+    monkeypatch.setattr(worker.caption_cache, "caption", caption)
+    monkeypatch.setattr(worker.models, "read_page", read_page)
+    token = worker._resource_rates.set(
+        {worker._RESOURCE_VLM_PAGE: {"version": 1, "creditMicrosPerUnit": 1_000_000}}
+    )
+    try:
+        with pytest.raises(elitellm.ProviderBusy):
+            await worker._read_vlm_pages([], tmp_path, "f_1", "scan.pdf")
+        blocks, unread = await worker._read_vlm_pages(
+            [], tmp_path, "f_1", "scan.pdf", last_wait=True
+        )
+    finally:
+        worker._resource_rates.reset(token)
+
+    assert [b["text"] for b in blocks] == ["Scanned page one"]
+    assert unread == [3]
+
+
 async def test_refresh_reads_vlm_pages_through_the_caption_cache(
     monkeypatch, tmp_path: Path
 ):
@@ -2249,6 +2339,32 @@ async def test_summary_busy_publishes_then_repends_once(monkeypatch):
     seen = _summary_path(monkeypatch, ready=True, summary_error=None)
     await _run_text_ingest(waits=1)
     assert seen["finish"][0]["missing"] == worker.COMPLETE
+
+
+@pytest.mark.parametrize("waits", [0, 1])
+async def test_the_spent_re_pend_reaches_the_vlm_page_reads(
+    monkeypatch, parse_stub, waits
+):
+    chunks_for = worker._chunks_for
+    _summary_path(monkeypatch, ready=False, summary_error=None)
+    monkeypatch.setattr(worker, "_chunks_for", chunks_for)
+    monkeypatch.setattr(worker, "_read_name", lambda *_a: "scan.pdf")
+    last_waits = []
+
+    async def _read(content_list, *_args, last_wait):
+        last_waits.append(last_wait)
+        return content_list, []
+
+    monkeypatch.setattr(worker, "_read_vlm_pages", _read)
+    await worker._process_ingest_job(
+        {"id": "job_1", "type": "ingest", "attempts": 1, "provider_waits": waits},
+        _ingest_payload(parseArtifact=_artifact()),
+        "f_1",
+        "ws_1",
+        "pdf",
+        _plan(),
+    )
+    assert last_waits == [waits >= worker.PROVIDER_WAITS_MAX]
 
 
 async def test_a_failed_summary_finishes_the_file_with_the_summary_missing(

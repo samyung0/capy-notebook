@@ -216,7 +216,8 @@ func emailCategory(template string) string {
 	case "workspace-invite", "workspace-invite-accepted":
 		return "workspace_invite"
 	case "subscription-over-quota", "subscription-frozen",
-		"subscription-started", "subscription-cancelled", "credit-reload-skipped":
+		"subscription-started", "subscription-cancelled", "subscription-ended",
+		"credit-reload-skipped":
 		return "billing"
 	}
 	return ""
@@ -282,7 +283,8 @@ func emailTemplateData(template, locale string, payload map[string]any, appURL, 
 		// site / app root where support contact lives.
 		data["OpenURL"] = appURL
 	case "subscription-over-quota", "subscription-frozen",
-		"subscription-started", "subscription-cancelled", "credit-reload-skipped":
+		"subscription-started", "subscription-cancelled", "subscription-ended",
+		"credit-reload-skipped":
 		data["OpenURL"] = appURL + "/billing?tab=subscription"
 	default:
 		if workspaceID := stringValue(payload, "workspaceId"); workspaceID != "" {

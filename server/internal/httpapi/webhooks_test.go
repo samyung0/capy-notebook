@@ -230,13 +230,18 @@ func (f *fakeStore) MarkReloadFailed(
 	return nil
 }
 
-func (f *fakeStore) ReverseRefund(_ context.Context, paymentIntentID string, refunded, charged int64) error {
+func (f *fakeStore) ReverseRefund(_ context.Context, paymentIntentID string, refunded, charged int64) (string, error) {
 	f.creditCalls = append(f.creditCalls, fmt.Sprintf("refund %s %d/%d", paymentIntentID, refunded, charged))
-	return nil
+	return "", nil
 }
 
-func (f *fakeStore) HoldDispute(_ context.Context, paymentIntentID string) error {
+func (f *fakeStore) HoldDispute(_ context.Context, paymentIntentID string) (string, error) {
 	f.creditCalls = append(f.creditCalls, "hold "+paymentIntentID)
+	return "", nil
+}
+
+func (f *fakeStore) ArmReload(_ context.Context, userID string) error {
+	f.creditCalls = append(f.creditCalls, "arm "+userID)
 	return nil
 }
 
@@ -244,9 +249,9 @@ func (f *fakeStore) RetryingReloadInvoices(_ context.Context, userID string) ([]
 	return f.retryingReloads, nil
 }
 
-func (f *fakeStore) ReleaseDispute(_ context.Context, paymentIntentID string) error {
+func (f *fakeStore) ReleaseDispute(_ context.Context, paymentIntentID string) (string, error) {
 	f.creditCalls = append(f.creditCalls, "release "+paymentIntentID)
-	return nil
+	return "", nil
 }
 
 func (f *fakeStore) AccountAccess(_ context.Context, userID string) (store.AccountStatus, error) {

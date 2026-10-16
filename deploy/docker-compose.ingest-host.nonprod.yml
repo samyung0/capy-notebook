@@ -12,12 +12,15 @@ x-parser-env:
   &parser-env # Local and UAT share one parser: one document executes, one more waits.
   CAPY_PARSE_WORKERS: "1"
   CAPY_PARSE_QUEUE_DEPTH: "2"
-  CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-900}
+  CAPY_PARSE_DOCUMENT_TIMEOUT: ${CAPY_PARSE_DOCUMENT_TIMEOUT:-600}
   CAPY_PARSE_OCR_PAGE_CAP: ${CAPY_PARSE_OCR_PAGE_CAP:-500}
   # Page cap, the same value the API serves in the upload policy.
   CAPY_PARSE_MAX_PAGES: ${CAPY_PARSE_MAX_PAGES:?set CAPY_PARSE_MAX_PAGES}
   # Per-document JVM heap; 1g parsed 15 to 1,220 pages as fast as 8g.
   CAPY_PARSER_JVM_MAX_HEAP: ${CAPY_PARSER_JVM_MAX_HEAP:-1g}
+  # Two malloc arenas per process: LibreOffice and the JVM reserve far
+  # less address space, which a parse child's limit also binds.
+  MALLOC_ARENA_MAX: "2"
   CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
   CAPY_OFFICE_CONVERT_TIMEOUT: ${CAPY_OFFICE_CONVERT_TIMEOUT:-180}
   CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
@@ -33,10 +36,10 @@ x-worker-env: &worker-env
   LOG_FORMAT: json
   PARSER_URL: http://${PARSER_BIND_ADDRESS:?set the private WireGuard bind address}:${PARSER_PORT:-8091}/file_parse
   PARSER_TOKEN: ${PARSER_TOKEN:?set the shared non-production parser token}
-  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-1920}
+  PARSER_TIMEOUT: ${PARSER_TIMEOUT:-1320}
   CAPY_PARSE_SHARED_DIR: /var/lib/capy-parse
   CAPY_SHARED_CAPACITY_LOCK_DIR: /var/lib/capy-parse/capacity
-  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-2100}
+  CAPY_PARSE_JOB_TIMEOUT: ${CAPY_PARSE_JOB_TIMEOUT:-1500}
   CAPY_INGEST_TIMEOUT: ${CAPY_INGEST_TIMEOUT:-1200}
   CAPY_OFFICE_PREVIEW_MAX_BYTES: ${CAPY_OFFICE_PREVIEW_MAX_BYTES:-134217728}
   CAPY_PARSE_ARTIFACT_MAX_BYTES: ${CAPY_PARSE_ARTIFACT_MAX_BYTES:-268435456}

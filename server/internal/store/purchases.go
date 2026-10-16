@@ -149,37 +149,47 @@ func (s *Store) CreditSettings(ctx context.Context, userID string) (CreditSettin
 
 // SetAutoReload saves the auto-reload switch, amount and threshold. Turning it
 // on needs a saved instant payment method.
-func (s *Store) SetAutoReload(ctx context.Context, userID string, enabled bool, amountCents, thresholdMicros int64) error {
+func (s *Store) SetAutoReload(
+	ctx context.Context, userID string, enabled bool, amountCents, thresholdMicros int64,
+) (armed bool, err error) {
 	if amountCents < TopUpMinCents || amountCents > TopUpMaxCents || thresholdMicros < 0 {
-		return errInvalidCreditSetting
+		return false, errInvalidCreditSetting
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := s.lockedCreditUsageTx(ctx, tx, userID); err != nil {
-		return err
+		return false, err
 	}
 	var pmType *string
 	if err := tx.QueryRow(ctx, `SELECT reload_pm_type FROM user_credits WHERE user_id = $1`, userID).
 		Scan(&pmType); err != nil {
-		return err
+		return false, err
 	}
 	if enabled && pmType == nil {
-		return ErrNoPaymentMethod
+		return false, ErrNoPaymentMethod
 	}
 	if enabled && !(PaymentMethod{Type: *pmType}).Instant() {
-		return ErrPaymentMethodNotInstant
+		return false, ErrPaymentMethodNotInstant
 	}
-	// Turning it on (or saving it on) arms one reload.
-	if _, err := tx.Exec(ctx, `UPDATE user_credits
+	// Saving never arms a reload (turning it off and on must not buy another
+	// try after a failure); it reports the arming the save leaves.
+	if err := tx.QueryRow(ctx, `UPDATE user_credits
 		SET auto_reload_enabled = $2, reload_amount_cents = $3, reload_threshold_micros = $4,
-		    reload_skipped_at = NULL, reload_armed = reload_armed OR $2, updated_at = now()
-		WHERE user_id = $1`, userID, enabled, amountCents, thresholdMicros); err != nil {
-		return err
+		    reload_skipped_at = NULL, updated_at = now()
+		WHERE user_id = $1 RETURNING reload_armed`, userID, enabled, amountCents, thresholdMicros).
+		Scan(&armed); err != nil {
+		return false, err
 	}
-	return tx.Commit(ctx)
+	return armed, tx.Commit(ctx)
+}
+
+// ArmReload re-arms auto-reload after a paid Pro subscription invoice.
+func (s *Store) ArmReload(ctx context.Context, userID string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE user_credits SET reload_armed = true WHERE user_id = $1`, userID)
+	return err
 }
 
 // SetSpendingLimit sets the monthly limit in cents; 0 removes it. A changed
@@ -348,6 +358,8 @@ type ReloadCharge struct {
 	CustomerID      string
 	PaymentMethodID string
 	AmountCents     int64
+	// Skipped: the spending limit stopped it; there is nothing to charge.
+	Skipped bool
 }
 
 // ReloadCandidates lists open accounts whose auto-reload is armed, or was
@@ -423,7 +435,10 @@ func (s *Store) StartReload(ctx context.Context, userID string) (*ReloadCharge, 
 			return nil, err
 		}
 		if spent+amount > *limit {
-			return nil, s.skipReloadTx(ctx, tx, userID, amount, *limit)
+			if err := s.skipReloadTx(ctx, tx, userID, amount, *limit); err != nil {
+				return nil, err
+			}
+			return &ReloadCharge{UserID: userID, Skipped: true}, nil
 		}
 	}
 	charge := &ReloadCharge{
@@ -495,6 +510,35 @@ func (s *Store) StaleReloadCharges(ctx context.Context, olderThan time.Duration)
 		var c ReloadCharge
 		err := row.Scan(&c.ID, &c.UserID, &c.CustomerID, &c.PaymentMethodID, &c.AmountCents)
 		return c, err
+	})
+}
+
+// UnsettledReload is a reload invoice the app has not seen settle.
+type UnsettledReload struct {
+	ID        string
+	UserID    string
+	InvoiceID string
+	Status    string
+}
+
+// UnsettledReloads are the reload invoices the daily reconciliation re-reads:
+// retrying or failed, and charging ones the worker has left for an hour, from
+// the last 90 days.
+func (s *Store) UnsettledReloads(ctx context.Context) ([]UnsettledReload, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, user_id, stripe_invoice_id, status
+		FROM credit_purchases
+		WHERE kind = 'reload' AND stripe_invoice_id IS NOT NULL
+		  AND created_at > now() - interval '90 days'
+		  AND (status IN ('retrying', 'failed')
+		    OR (status = 'charging' AND created_at < now() - interval '1 hour'))
+		ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (UnsettledReload, error) {
+		var r UnsettledReload
+		err := row.Scan(&r.ID, &r.UserID, &r.InvoiceID, &r.Status)
+		return r, err
 	})
 }
 
@@ -583,22 +627,32 @@ func (s *Store) MarkReloadFailed(
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var userID string
-	err = tx.QueryRow(ctx, `UPDATE credit_purchases
+	var userID, was string
+	err = tx.QueryRow(ctx, `WITH before AS (
+		  SELECT id, status FROM credit_purchases
+		  WHERE (id = $1 OR stripe_invoice_id = $2) AND kind = 'reload'
+		    AND status IN ('charging', 'retrying', 'failed')
+		  FOR UPDATE
+		)
+		UPDATE credit_purchases p
 		SET status = $3, next_attempt_at = $4, decline_reason = NULLIF($5, ''),
-		    stripe_invoice_id = COALESCE(stripe_invoice_id, NULLIF($2, ''))
-		WHERE (id = $1 OR stripe_invoice_id = $2) AND kind = 'reload'
-		  AND status IN ('charging', 'retrying', 'failed')
-		RETURNING user_id`, purchaseID, invoiceID, status, next, declineReason).Scan(&userID)
+		    stripe_invoice_id = COALESCE(p.stripe_invoice_id, NULLIF($2, ''))
+		FROM before WHERE p.id = before.id
+		RETURNING p.user_id, before.status`, purchaseID, invoiceID, status, next, declineReason).
+		Scan(&userID, &was)
 	if isNoRows(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE user_credits SET reload_started_at = NULL
-		WHERE user_id = $1`, userID); err != nil {
-		return err
+	// Only the reload that was charging ends the window; re-reading an older
+	// failed one (daily reconciliation) leaves a newer reload's window alone.
+	if was == "charging" {
+		if _, err := tx.Exec(ctx, `UPDATE user_credits SET reload_started_at = NULL
+			WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }
@@ -607,9 +661,9 @@ func (s *Store) MarkReloadFailed(
 
 // ReverseRefund takes back credits in proportion to the amount refunded so
 // far (Stripe reports it cumulatively, so redeliveries change nothing).
-func (s *Store) ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) error {
+func (s *Store) ReverseRefund(ctx context.Context, paymentIntentID string, refundedCents, chargedCents int64) (string, error) {
 	if chargedCents <= 0 {
-		return nil
+		return "", nil
 	}
 	return s.adjustPurchase(ctx, paymentIntentID, func(credits, refunded, _ int64) (int64, int64) {
 		target := min(credits, credits*refundedCents/chargedCents)
@@ -618,7 +672,7 @@ func (s *Store) ReverseRefund(ctx context.Context, paymentIntentID string, refun
 }
 
 // HoldDispute takes back what is left of a purchase when a dispute opens.
-func (s *Store) HoldDispute(ctx context.Context, paymentIntentID string) error {
+func (s *Store) HoldDispute(ctx context.Context, paymentIntentID string) (string, error) {
 	return s.adjustPurchase(ctx, paymentIntentID, func(credits, refunded, disputed int64) (int64, int64) {
 		if disputed > 0 {
 			return disputed, 0
@@ -629,22 +683,23 @@ func (s *Store) HoldDispute(ctx context.Context, paymentIntentID string) error {
 }
 
 // ReleaseDispute gives the held credits back when a dispute closes won.
-func (s *Store) ReleaseDispute(ctx context.Context, paymentIntentID string) error {
+func (s *Store) ReleaseDispute(ctx context.Context, paymentIntentID string) (string, error) {
 	return s.adjustPurchase(ctx, paymentIntentID, func(_, _, disputed int64) (int64, int64) {
 		return 0, disputed
 	}, "disputed_micros")
 }
 
 // adjustPurchase sets one reversal column and moves the purchased balance by
-// the delta next returns, under the purchase row lock. An unknown payment
-// intent (a Pro subscription charge) is ignored.
+// the delta next returns, under the purchase row lock. It returns the user
+// whose credits moved, or "" when nothing changed. An unknown payment intent
+// (a Pro subscription charge) is ignored.
 func (s *Store) adjustPurchase(
 	ctx context.Context, paymentIntentID string,
 	next func(credits, refunded, disputed int64) (column, delta int64), column string,
-) error {
+) (string, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return "", err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var id, userID string
@@ -653,19 +708,20 @@ func (s *Store) adjustPurchase(
 		FROM credit_purchases WHERE stripe_payment_intent_id = $1 FOR UPDATE`, paymentIntentID).
 		Scan(&id, &userID, &credits, &refunded, &disputed)
 	if isNoRows(err) {
-		return nil
+		return "", nil
 	}
 	if err != nil {
-		return err
+		return "", err
 	}
 	value, delta := next(credits, refunded, disputed)
+	if delta == 0 {
+		return "", nil
+	}
 	if _, err := tx.Exec(ctx, `UPDATE credit_purchases SET `+column+` = $2 WHERE id = $1`, id, value); err != nil {
-		return err
+		return "", err
 	}
-	if delta != 0 {
-		if err := addPurchasedTx(ctx, tx, userID, delta); err != nil {
-			return err
-		}
+	if err := addPurchasedTx(ctx, tx, userID, delta); err != nil {
+		return "", err
 	}
-	return tx.Commit(ctx)
+	return userID, tx.Commit(ctx)
 }

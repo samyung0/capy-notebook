@@ -26,7 +26,7 @@ func (s *Store) SweepOverQuotaNotices(ctx context.Context) (int, error) {
 		GREATEST(
 			max(s.current_period_end) FILTER (
 				WHERE s.plan_tier='pro' AND s.status IN `+entitlingStatuses+`
-					AND s.current_period_end <= now()),
+					AND s.current_period_end <= now() - `+renewalTolerance+`),
 			max(LEAST(
 				COALESCE(s.current_period_end, s.ended_at, s.canceled_at,
 					to_timestamp(NULLIF(s.stripe_event_created, 0)), s.updated_at),
@@ -43,11 +43,11 @@ func (s *Store) SweepOverQuotaNotices(ctx context.Context) (int, error) {
 		HAVING NOT EXISTS(SELECT 1 FROM user_subscriptions live
 			WHERE live.user_id=u.id AND live.plan_tier='pro'
 				AND live.status IN `+entitlingStatuses+`
-				AND (live.current_period_end IS NULL OR live.current_period_end > now()))
+				AND (live.current_period_end IS NULL OR live.current_period_end > now() - `+renewalTolerance+`))
 			AND GREATEST(
 				max(s.current_period_end) FILTER (
 					WHERE s.plan_tier='pro' AND s.status IN `+entitlingStatuses+`
-						AND s.current_period_end <= now()),
+						AND s.current_period_end <= now() - `+renewalTolerance+`),
 				max(LEAST(
 					COALESCE(s.current_period_end, s.ended_at, s.canceled_at,
 						to_timestamp(NULLIF(s.stripe_event_created, 0)), s.updated_at),
