@@ -46,7 +46,9 @@ for the errors huma builds itself (a body it could not read, `writeStatusErr`),
 and `writeUnexpected` for raw handlers (the fallback of `fail`, the event and
 chat streams) (`server/internal/httpapi/huma_register.go`, `server.go`). A
 typed 5xx keeps its code (`provider_busy`, `ai_unavailable`,
-`generate_empty`, `bank_unavailable`), as does every 4xx. Internal
+`generate_empty`, `bank_unavailable`), as does every 4xx; a 5xx is typed only
+when its `errors[]` hold nothing but machine codes, so an error's text placed
+there still gets the generic answer. Internal
 service routes share `fail`, so their unexpected failures answer the same
 body; the calling service already holds the trace id it sent.
 

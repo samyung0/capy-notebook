@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
@@ -353,9 +355,13 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 	}
 }
 
+// errorCode is a machine code in errors[].message, as the browser reads one.
+var errorCode = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+
 // publicError is the answer for a handler's error: a 5xx without a machine
 // code (or an error huma would answer as 500) becomes the generic answer; a
 // typed 5xx (provider_busy, ai_unavailable, …) and every 4xx stay as they are.
+// A 5xx whose errors[] carry anything but codes (an error's text) is not typed.
 func publicError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -368,7 +374,10 @@ func publicError(ctx context.Context, err error) error {
 		return err
 	}
 	var model *huma.ErrorModel
-	if errors.As(err, &model) && len(model.Errors) > 0 {
+	if errors.As(err, &model) && len(model.Errors) > 0 &&
+		!slices.ContainsFunc(model.Errors, func(detail *huma.ErrorDetail) bool {
+			return !errorCode.MatchString(detail.Message)
+		}) {
 		return err
 	}
 	return newUnexpectedError(status.GetStatus(), obs.TraceID(ctx))

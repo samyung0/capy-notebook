@@ -36,6 +36,8 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 	reg(h, http.MethodPost, "/mapped", "mapped", "test", "test", 200, fail(hErr(errors.New(leakedSecret))))
 	reg(h, http.MethodPost, "/raw", "raw", "test", "test", 200, fail(errors.New(leakedSecret)))
 	reg(h, http.MethodPost, "/uncoded", "uncoded", "test", "test", 200, fail(huma.Error503ServiceUnavailable(leakedSecret)))
+	reg(h, http.MethodPost, "/detailed", "detailed", "test", "test", 200,
+		fail(huma.Error503ServiceUnavailable("unavailable", errors.New(leakedSecret))))
 	reg(h, http.MethodPost, "/authority", "authority", "test", "test", 200,
 		fail(hErr(errors.Join(store.ErrAuthorityUnavailable, errors.New(leakedSecret)))))
 	reg(h, http.MethodPost, "/busy", "busy", "test", "test", 200, fail(hErr(&providerBusyError{RetryAfterSeconds: 10})))
@@ -60,6 +62,7 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 		{"/mapped", 500, ""},
 		{"/raw", 500, ""},
 		{"/uncoded", 503, ""},
+		{"/detailed", 503, ""},
 		{"/authority", 503, ""},
 		{"/body", 500, ""},
 		{"/middleware", 500, ""},
