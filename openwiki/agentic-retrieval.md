@@ -1706,8 +1706,11 @@ the part lives (no migration, Q10): a pending descriptor is a missing
   type); with an identity and no summary row, a `partsOnly` ingest job; with
   both parts present it sets the file ready and queues nothing. These jobs run
   in the file's own mode and leave `indexed` and `parse_mode` as they are; the
-  file is `pending` meanwhile. Anything else is a full retry in the requested
-  mode, which resets `indexed`. A parse, ingest or `source_refresh` job pending
+  file is `pending` meanwhile. The requested mode is no choice for a partial
+  file, so a `none` request routes the same way instead of storing it
+  unindexed. Anything else is a full retry in the requested mode, which resets
+  `indexed`. The job's revision, blob path and ETag are read with the file
+  locked. A parse, ingest or `source_refresh` job pending
   or running for the file answers 409.
 - `_finish_ok` checks, under `FOR UPDATE`, that the file still aliases the
   content the job published (else the job ends superseded and statuses stay),
