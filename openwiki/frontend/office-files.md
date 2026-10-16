@@ -286,8 +286,8 @@ raw Yrs updates with that parent through a versioned message protocol, and waits
 for provider sync before restoring its replica. The iframe receives base bytes
 and shared state, never an authentication token or protected source URL.
 
-The parent's Y.Doc runs no formatting cleanup, matching yrs in the editor and
-the room. Stock Yjs, after every remote update to a text with formatting,
+The parent's Y.Doc runs no formatting cleanup, matching yrs in the DOCX and
+PPTX editors (`docx-edit`, `pptx-edit`) and the room. Stock Yjs, after every remote update to a text with formatting,
 deletes the redundant format markers it leaves in a new local transaction,
 which the provider and the iframe relay would send on. Yjs 13.6.31 carries a
 Capy pnpm patch (`patches/yjs@13.6.31.patch`) that skips that cleanup for a
