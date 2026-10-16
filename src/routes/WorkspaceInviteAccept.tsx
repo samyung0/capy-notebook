@@ -8,7 +8,11 @@ import { WorkspaceError } from '@/components/app/WorkspaceError';
 import { Button, ErrorAction } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { m } from '@/i18n';
-import { describeError, isNonDisclosing } from '@/lib/errors';
+import {
+  describeError,
+  isNonDisclosing,
+  unexpectedErrorId,
+} from '@/lib/errors';
 
 export function isUnavailableWorkspaceInviteError(error: unknown): boolean {
   // The reader's own frozen account is theirs to hear about.
@@ -71,6 +75,7 @@ function InviteContent() {
             </ErrorAction>
           </div>
         }
+        errorId={unexpectedErrorId(acceptError)}
         testId="invite-accept-error"
         variant="page"
       />
