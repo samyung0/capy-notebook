@@ -559,22 +559,24 @@ type workspaceCloneFile struct {
 	sourceBytes    int64
 }
 
-// snapshotCloneFilesTx reads the ready files a clone copies, filtered by
-// where ($1). indexed counts only an index that is ready.
+// snapshotCloneFilesTx reads the files a clone copies, filtered by where
+// ($1): ready files, and partial ones (failed with a served index, a part
+// missing), which copy as partial so the copy's owner can retry them (parts
+// design Q2). indexed counts only an index that is ready.
 func snapshotCloneFilesTx(ctx context.Context, tx pgx.Tx, where string, arg any) ([]workspaceCloneFile, error) {
 	rows, err := tx.Query(ctx,
 		`SELECT f.id, f.chapter_id, f.position, f.name, f.kind, f.size_bytes, f.status,
-			(f.indexed AND EXISTS (
-				SELECT 1 FROM rag_file_contents fc
-				JOIN rag_contents rc ON rc.id=fc.content_id
-				WHERE fc.file_id=f.id AND rc.status='ready'
-			)),
-			f.parser, f.blob_path, f.source_etag,
+			i.served, f.parser, f.blob_path, f.source_etag,
 			f.content_hash, f.source_sha256, f.parse_mode, f.ever_parsed_successfully,
 			f.index_limit, f.provenance, f.thumbnail_key, f.preview, f.revision,
 			d.base_blob_path, COALESCE(d.storage_bytes, 0)
 		 FROM files f LEFT JOIN source_documents d ON d.file_id=f.id
-		 WHERE f.status='ready' AND f.trashed_at IS NULL AND `+where,
+		 CROSS JOIN LATERAL (SELECT f.indexed AND EXISTS (
+				SELECT 1 FROM rag_file_contents fc
+				JOIN rag_contents rc ON rc.id=fc.content_id
+				WHERE fc.file_id=f.id AND rc.status='ready'
+			) AS served) i
+		 WHERE (f.status='ready' OR (f.status='failed' AND i.served)) AND f.trashed_at IS NULL AND `+where,
 		arg,
 	)
 	if err != nil {
@@ -1670,10 +1672,10 @@ func sourceOwnerHidden(err error, sourceOwnerID string) error {
 	return err
 }
 
-// CloneFile copies one ready file into a workspace the actor edits (files
-// live in workspaces only): its published bytes (blob shared, reference
-// counted), saved edit state, captions, provenance and index, plus the
-// thumbnail the caller copies after the commit. The target owner pays.
+// CloneFile copies one ready or partial file into a workspace the actor
+// edits (files live in workspaces only): its published bytes (blob shared,
+// reference counted), saved edit state, captions, provenance and index, plus
+// the thumbnail the caller copies after the commit. The target owner pays.
 func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
 	payer, err := s.clonePayerLock(ctx, userID, target.WorkspaceID)
 	if err != nil {

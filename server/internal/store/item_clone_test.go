@@ -522,6 +522,148 @@ func TestFileClonePinMismatchQueuesIngest(t *testing.T) {
 	}
 }
 
+// Clones copy a partial file as partial (parts design Q2): failed and
+// indexed, its content aliased and searchable in the destination, a missing
+// descriptor still missing and unread pages' NULL identity still NULL, so
+// Retry processing by the copy's owner re-runs only the missing parts. A
+// failed file without an index is not copied.
+func TestClonesCopyPartialFiles(t *testing.T) {
+	s := maintenanceTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "u_partial_clone_owner")
+	targetOwner := newBlobTestUser(t, s, "u_partial_clone_target")
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	source, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Source"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	newFile := func(name string) File {
+		t.Helper()
+		file, err := s.createReadyFile(ctx, source.ID, owner, name, "pdf", nil, "", 100, "sources/"+uid("base"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return file
+	}
+	// partial is a failed file served by ready content of its revision (its
+	// content_hash) built on its fast parse_mode, with a part missing.
+	partial := func(name, identity string, summarized bool) File {
+		t.Helper()
+		file := newFile(name)
+		content := itemCloneIndex(t, s, source.ID, file.ID, name)
+		exec(`UPDATE rag_contents SET pipeline_identity=NULLIF($2,'') WHERE id=$1`, content, identity)
+		if summarized {
+			exec(`INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor) VALUES($1,$2,'A lesson.')`, content, source.ID)
+		}
+		exec(`UPDATE files SET status='failed',parse_mode='fast',ever_parsed_successfully=true,content_hash=$2 WHERE id=$1`, file.ID, name)
+		return file
+	}
+	const parsed = "plan-v2:fast:odl-test:v12"
+	summaryPartial := partial("summary.pdf", parsed, false)
+	pagesPartial := partial("pages.pdf", "", true)
+	unindexed := newFile("unindexed.pdf")
+	exec(`UPDATE files SET status='failed' WHERE id=$1`, unindexed.ID)
+
+	type want struct {
+		identity   string // "" is NULL
+		summarized bool
+		jobType    string
+		partsOnly  string
+		parseFee   string
+	}
+	wants := map[string]want{
+		"summary.pdf": {identity: parsed, jobType: "ingest", partsOnly: "true"},
+		"pages.pdf":   {summarized: true, jobType: "parse", parseFee: "false"},
+	}
+	check := func(t *testing.T, copyID, workspaceID, workspaceOwner string, w want) {
+		t.Helper()
+		var status string
+		var indexed bool
+		var identity *string
+		var vectors, summaries int
+		if err := s.pool.QueryRow(ctx, `SELECT f.status, f.indexed, rc.pipeline_identity,
+				(SELECT count(*) FROM rag_chunks c JOIN rag_chunk_vectors_2560 v ON v.chunk_id=c.id WHERE c.content_id=rc.id),
+				(SELECT count(*) FROM rag_content_summaries s WHERE s.content_id=rc.id)
+			FROM files f
+			JOIN rag_file_contents fc ON fc.file_id=f.id
+			JOIN rag_contents rc ON rc.id=fc.content_id AND rc.status='ready' AND rc.content_hash=f.content_hash
+			WHERE f.id=$1 AND rc.workspace_id=$2`, copyID, workspaceID).
+			Scan(&status, &indexed, &identity, &vectors, &summaries); err != nil {
+			t.Fatalf("copy's served content: %v", err)
+		}
+		gotIdentity := ""
+		if identity != nil {
+			gotIdentity = *identity
+		}
+		if status != "failed" || !indexed || vectors != 1 || gotIdentity != w.identity || (summaries == 1) != w.summarized {
+			t.Fatalf("copy %s indexed=%v vectors=%d identity=%q summaries=%d, want failed, indexed, 1 vector, %q, summarized=%v",
+				status, indexed, vectors, gotIdentity, summaries, w.identity, w.summarized)
+		}
+		if err := s.RetryFileProcessing(ctx, workspaceOwner, copyID, "fast", "test"); err != nil {
+			t.Fatal(err)
+		}
+		var jobType, partsOnly, parseFee string
+		if err := s.pool.QueryRow(ctx, `SELECT type,COALESCE(payload->>'partsOnly',''),COALESCE(payload->>'parseFee','')
+			FROM jobs WHERE payload->>'fileId'=$1`, copyID).Scan(&jobType, &partsOnly, &parseFee); err != nil {
+			t.Fatal(err)
+		}
+		if jobType != w.jobType || partsOnly != w.partsOnly || parseFee != w.parseFee {
+			t.Fatalf("retry job %q partsOnly=%q parseFee=%q, want %q %q %q", jobType, partsOnly, parseFee, w.jobType, w.partsOnly, w.parseFee)
+		}
+	}
+
+	t.Run("workspace clone", func(t *testing.T) {
+		clone, err := s.CloneWorkspace(ctx, owner, source.ID, WorkspaceCreate{Name: "Copy"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		rows, err := s.pool.Query(ctx, `SELECT id, name FROM files WHERE workspace_id=$1 ORDER BY name`, clone.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		copies := map[string]string{}
+		for rows.Next() {
+			var id, name string
+			if err := rows.Scan(&id, &name); err != nil {
+				t.Fatal(err)
+			}
+			copies[name] = id
+		}
+		rows.Close()
+		if len(copies) != 2 || copies["summary.pdf"] == "" || copies["pages.pdf"] == "" {
+			t.Fatalf("workspace clone files = %v, want the two partial files only", copies)
+		}
+		for name, w := range wants {
+			t.Run(name, func(t *testing.T) { check(t, copies[name], clone.ID, owner, w) })
+		}
+	})
+
+	t.Run("file clone", func(t *testing.T) {
+		target, err := s.CreateWorkspace(ctx, targetOwner, WorkspaceCreate{Name: "Target"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		itemCloneMember(t, s, target.ID, owner, "editor")
+		for _, file := range []File{summaryPartial, pagesPartial} {
+			t.Run(file.Name, func(t *testing.T) {
+				clone, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: file.Name})
+				if err != nil {
+					t.Fatal(err)
+				}
+				check(t, clone.ID, target.ID, targetOwner, wants[file.Name])
+			})
+		}
+		if _, _, err := s.CloneFile(ctx, owner, unindexed.ID, CloneTarget{WorkspaceID: target.ID, Name: "unindexed.pdf"}); !errors.Is(err, ErrNotFound) {
+			t.Fatalf("clone of a failed unindexed file = %v, want not found", err)
+		}
+	})
+}
+
 // A clone honours the per-file cap of the plan that pays for it, as an upload
 // does (Epo 2026-10-12): the file clone and the workspace clone are refused.
 func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
