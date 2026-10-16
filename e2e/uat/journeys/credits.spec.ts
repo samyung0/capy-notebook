@@ -397,7 +397,21 @@ async function completeCheckout(run: UatRun, page: Page, card: string) {
   const number = page.locator('#cardNumber');
   // With Link enabled the card form can sit behind its accordion item.
   const cardItem = page.getByTestId('card-accordion-item-button');
-  await expect(number.or(cardItem).first()).toBeVisible({ timeout: 60_000 });
+  try {
+    await expect(number.or(cardItem).first()).toBeVisible({ timeout: 60_000 });
+  } catch (error) {
+    // A customer with saved cards gets another layout; name what is there.
+    await run.attach('checkout-without-card-form', {
+      buttons: await page.getByRole('button').allInnerTexts(),
+      captchaFrames: await page.locator('iframe[src*="hcaptcha"]').count(),
+      testIds: await page
+        .locator('[data-testid]')
+        .evaluateAll((nodes) =>
+          nodes.map((node) => node.getAttribute('data-testid'))
+        ),
+    });
+    throw error;
+  }
   if (!(await number.isVisible())) await cardItem.click();
   await number.fill(card);
   await page.locator('#cardExpiry').fill('12 / 34');

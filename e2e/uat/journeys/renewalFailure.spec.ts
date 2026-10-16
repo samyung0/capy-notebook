@@ -33,8 +33,10 @@ import { type Actor, expect, test, type UatRun } from './runtime';
 const DAY = 86_400;
 /** overQuotaBufferDays (server/internal/store/account_state.go). */
 const GRACE_DAYS = 14;
-/** Clock moves while Stripe retries the renewal before it gives up. */
-const MAX_RETRY_STEPS = 15;
+/** Clock moves while Stripe retries the renewal before it gives up: each
+ * move passes every retry due for A and B, so Stripe's retry count (Smart
+ * Retries, at most 8) bounds it. */
+const MAX_RETRY_STEPS = 12;
 
 type Owner = {
   actor: Actor;
@@ -499,38 +501,44 @@ test('a failed Pro renewal keeps Pro while Stripe retries, recovers when paid, a
   expect(await mails(run, c, 'subscription-ended')).toBe(0);
 
   // 3b. A and B keep declining. The clock follows Stripe's own retry
-  // schedule (each invoice's next_payment_attempt, a day at a time once none
-  // is left) until Stripe cancels both subscriptions after the last retry.
+  // schedule: each move passes the later of their next attempts (Smart
+  // Retries times each invoice on its own), a day once none is left, until
+  // Stripe cancels both after the last retry.
   const declining = [ownerA, ownerB];
   const steps: Record<string, unknown>[] = [];
-  for (let step = 0; ; step++) {
+  for (;;) {
     const subscriptions = await Promise.all(
       declining.map((owner) =>
         stripeRequest(run.env, `/v1/subscriptions/${owner.subscriptionId}`)
       )
-    );
-    if (subscriptions.every((value) => value.status === 'canceled')) break;
-    expect(step, 'clock moves before Stripe gives up').toBeLessThan(
-      MAX_RETRY_STEPS
     );
     const invoices = await Promise.all(
       declining.map((owner) =>
         stripeRequest(run.env, `/v1/invoices/${renewals.get(owner)}`)
       )
     );
-    const next = invoices
-      .map((invoice) => Number(invoice.next_payment_attempt))
-      .filter((at) => at > 0);
     const now = Number(
       (await stripeRequest(run.env, `/v1/test_helpers/test_clocks/${clockId}`))
         .frozen_time
     );
-    const target = next.length ? Math.min(...next) + 3600 : now + DAY;
     steps.push({
       attempts: invoices.map((invoice) => invoice.attempt_count),
-      target,
+      clock: now,
+      next: invoices.map((invoice) => invoice.next_payment_attempt),
+      statuses: subscriptions.map((value) => value.status),
     });
-    await advanceStripeClock(run, clockId, Math.max(target, now + 60));
+    if (subscriptions.every((value) => value.status === 'canceled')) break;
+    if (steps.length > MAX_RETRY_STEPS) {
+      await run.attach('renewal-retry-steps', steps);
+      throw new Error(
+        `Stripe had not cancelled after ${MAX_RETRY_STEPS} clock moves`
+      );
+    }
+    const next = invoices
+      .map((invoice) => Number(invoice.next_payment_attempt))
+      .filter((at) => at > 0);
+    const target = next.length ? Math.max(...next) + 3600 : now + DAY;
+    await advanceStripeClock(run, clockId, Math.max(target, now + 3600));
   }
   await run.attach('renewal-retry-steps', steps);
   for (const owner of declining) {
