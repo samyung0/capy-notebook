@@ -12,10 +12,11 @@ formulas set as pictures arrive as images
   and passing the six precision tests (``_not_formula``). Retyped ``equation``:
   a display formula's text is PLACEHOLDER, an inline one is spliced into its
   paragraph by ``place_inline`` or else carries PLACEHOLDER itself.
-- Repeat: the same image object (ODL's report of the object a picture draws,
-  no pixels decoded) on REPEAT_PAGES or more pages (licence badges, logos,
-  icons, chapter bars). Kept as ``discarded`` page furniture, unless it is a
-  glyph-sized formula among different words each time.
+- Repeat: the same stored image (a hash of the image object as the PDF stores
+  it, palette and mask included, no pixels decoded) on REPEAT_PAGES or more pages (licence
+  badges, logos, icons, chapter bars, also when each page stores its own copy).
+  Kept as ``discarded`` page furniture, unless it is a glyph-sized formula
+  among different words each time.
 
 ``add_vector_figures`` adds the figures ODL never sees: veraPDF makes chunks of
 placed images only, so a diagram drawn with paths reached the index as its loose
@@ -29,6 +30,7 @@ frame, a table or a text box and stays text.
 
 from __future__ import annotations
 
+import hashlib
 import math
 import re
 import statistics
@@ -40,6 +42,8 @@ import pymupdf
 from . import page_text
 
 REPEAT_PAGES = 5
+HASH_CHUNK = 1 << 16  # bytes read at a time when hashing a stored image
+STORED_DEPTH = 8  # reference levels a stored image's hash follows (mask, palette)
 MIN_SIDE_PT = 1.0
 SUBTLE_ASPECT = 0.01
 PLACEHOLDER = "[formula]"
@@ -171,25 +175,82 @@ def empty_table(block: dict) -> bool:
     )
 
 
+_REFERENCE = re.compile(r"(\d+) \d+ R")
+_LENGTH = re.compile(r"/Length (?:\d+ \d+ R|\d+)")
+
+
+def _stored_hash(
+    document: pymupdf.Document, xref: int, memo: dict[int, bytes], depth: int = 0
+) -> bytes:
+    """SHA-256 of an object as the PDF stores it, no pixels decoded: its
+    dictionary without /Length, each reference replaced by the referenced
+    object's own hash (a palette or soft mask counts by content, not object
+    number), then its stream's still-encoded bytes read HASH_CHUNK at a time,
+    so the largest image costs no more memory than the chunk. ``memo`` keeps
+    a document's finished hashes; a reference back to an object in progress
+    hashes as empty. Raises ValueError past STORED_DEPTH references and
+    MuPDF's errors for a broken object, leaving ``memo`` without it."""
+    if xref in memo:
+        return memo[xref]
+    if depth > STORED_DEPTH:
+        raise ValueError("references nest too deep")
+    memo[xref] = b""
+    try:
+        text = _LENGTH.sub("", document.xref_object(xref, compressed=True))
+        text = _REFERENCE.sub(
+            lambda ref: _stored_hash(document, int(ref[1]), memo, depth + 1).hex(),
+            text,
+        )
+        digest = hashlib.sha256(text.encode())
+        if document.xref_is_stream(xref):
+            mupdf = pymupdf.mupdf
+            chunk = bytearray(HASH_CHUNK)
+            data = mupdf.python_mutable_buffer_data(chunk)
+            stream = mupdf.pdf_open_raw_stream_number(
+                mupdf.pdf_document_from_fz_document(document.this), xref
+            )
+            while read := mupdf.ll_fz_read(stream.m_internal, data, HASH_CHUNK):
+                digest.update(memoryview(chunk)[:read])
+    except BaseException:
+        del memo[xref]
+        raise
+    memo[xref] = digest.digest()
+    return memo[xref]
+
+
 def classify(
     blocks: list[dict], document: pymupdf.Document, objects: dict[int, int]
 ) -> list[dict]:
     """``objects``: ODL's element id -> the PDF object of the image a picture
-    draws (``java.image_objects``); a picture's identity for repeats, read
-    without decoding the image. An inline image has none and never repeats."""
+    draws (``java.image_objects``). A picture's identity for repeats is the
+    hash of that object as stored (``_stored_hash``), so copies stored as
+    separate objects match. An inline image or a broken object has none and
+    never repeats."""
     images = {
         index
         for index, block in enumerate(blocks)
         if block.get("type") == "image" and len(block.get("bbox") or []) == 4
     }
-    identity = {
+    xrefs = {
         index: xref
         for index in images
         if (xref := objects.get(blocks[index].get("_native_id"))) is not None
     }
-    pages: dict[int, set[int]] = defaultdict(set)
-    for index, xref in identity.items():
-        pages[xref].add(blocks[index]["page_idx"])
+    memo: dict[int, bytes] = {}
+
+    def stored(xref: int) -> bytes | None:
+        try:
+            return _stored_hash(document, xref, memo)
+        except (RuntimeError, ValueError, pymupdf.mupdf.FzErrorBase):
+            return None
+
+    hashes = {xref: stored(xref) for xref in set(xrefs.values())}
+    identity = {
+        index: hashes[xref] for index, xref in xrefs.items() if hashes[xref] is not None
+    }
+    pages: dict[bytes, set[int]] = defaultdict(set)
+    for index, key in identity.items():
+        pages[key].add(blocks[index]["page_idx"])
     facts: dict[int, tuple | None] = {}
 
     def page_facts(page: pymupdf.Page) -> tuple | None:
@@ -209,7 +270,7 @@ def classify(
     # A repeat with the same words beside it in most placements is furniture (a
     # licence badge after the same licence sentence); a reused formula glyph such
     # as x or dx sits among different words each time.
-    contexts: dict[int, Counter] = defaultdict(Counter)
+    contexts: dict[bytes, Counter] = defaultdict(Counter)
     for index in sorted(images):
         page = document[blocks[index]["page_idx"]]
         if repeated(index) and (page_fact := page_facts(page)):

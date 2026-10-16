@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import copy
 import json
+import random
 import re
 import sys
 from collections import Counter
@@ -706,6 +707,8 @@ def test_picture_triage_drops_slivers_and_discards_repeats() -> None:
         *icons,
         figure,
     ]
+    # Stored bytes are read from the file, as the parse opens it.
+    document = pymupdf.open("pdf", document.tobytes())
     result = pictures.classify(blocks, document, objects)
     assert result == [
         text,
@@ -713,6 +716,52 @@ def test_picture_triage_drops_slivers_and_discards_repeats() -> None:
         *icons,
         figure,
     ]
+
+
+def test_separate_image_objects_with_the_same_stored_bytes_repeat() -> None:
+    # Six one-page documents each store a badge as their own object; merged,
+    # five hold identical bytes and the sixth differs in its last pixel, past
+    # the first read chunk.
+    noise = random.Random(0).randbytes(200 * 200 * 3)
+    merged = pymupdf.open()
+    for samples in [noise] * 5 + [noise[:-1] + bytes([noise[-1] ^ 1])]:
+        with pymupdf.open() as one:
+            badge = pymupdf.Pixmap(pymupdf.csRGB, 200, 200, samples, False)
+            page = one.new_page(width=600, height=800)
+            page.insert_image((60, 80, 180, 160), pixmap=badge)
+            merged.insert_pdf(one)
+    document = pymupdf.open("pdf", merged.tobytes())
+    xrefs = [page.get_images()[0][0] for page in document]
+    assert len(set(xrefs)) == 6
+    assert len(document.xref_stream_raw(xrefs[0])) > pictures.HASH_CHUNK
+    blocks = [
+        {**_picture("badge", p, (60, 80, 180, 160)), "_native_id": p} for p in range(6)
+    ]
+    result = pictures.classify(blocks, document, dict(enumerate(xrefs)))
+    assert [block["type"] for block in result] == ["discarded"] * 5 + ["image"]
+
+
+def test_a_stored_image_hashes_its_palette_by_content_not_object_number() -> None:
+    # The same index bytes in each image; palettes are separate objects.
+    document = pymupdf.open()
+    document.new_page()
+    images = []
+    for colour in (b"\xff\x00\x00", b"\xff\x00\x00", b"\x00\x00\xff"):
+        palette = document.get_new_xref()
+        document.update_object(palette, "<<>>")
+        document.update_stream(palette, colour)
+        image = document.get_new_xref()
+        document.update_object(
+            image,
+            "<</Type/XObject/Subtype/Image/Width 4/Height 4/BitsPerComponent 8"
+            f"/ColorSpace[/Indexed/DeviceRGB 0 {palette} 0 R]>>",
+        )
+        document.update_stream(image, bytes(16))
+        images.append(image)
+    document = pymupdf.open("pdf", document.tobytes())
+    memo: dict[int, bytes] = {}
+    red, copy, blue = (pictures._stored_hash(document, x, memo) for x in images)
+    assert red == copy != blue
 
 
 def test_vector_figures_become_image_blocks_and_ruled_grids_do_not() -> None:
@@ -1214,6 +1263,7 @@ def test_repeated_pictures_stay_formulas_only_when_glyph_sized_among_new_words()
             # ODL reports the image object each picture draws: one per key.
             objects[len(objects)] = page.get_images()[-1][0]
             blocks.append({**_picture(name, p, rect), "_native_id": len(objects) - 1})
+    document = pymupdf.open("pdf", document.tobytes())
     result = pictures.classify(blocks, document, objects)
     assert [(b["type"], b["name"]) for b in result] == [
         (kind, name)

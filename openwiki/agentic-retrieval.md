@@ -331,11 +331,17 @@ Parser v7 (decision 2026-09-24; evidence in
 - **Picture triage** (`pictures.classify`, right after adaptation). An image
   block with a side under 1 pt, or a short side under 1% of its long side, is
   dropped: rules and spacer pixels drawn as images. Other pictures stay image
-  blocks until v12 retypes formula pictures (below). The same image object on
-  5 or more pages becomes `discarded` furniture: ODL reports the object each
-  picture draws (`capy-images.json`), so nothing is decoded. Until v16 the test
-  was MuPDF's pixel digest, which also caught inline images and identical
-  images stored as separate objects (decision 2026-10-16).
+  blocks until v12 retypes formula pictures (below). The same stored image on 5
+  or more pages becomes `discarded` furniture: ODL reports the object each
+  picture draws (`capy-images.json`), and its identity is a SHA-256 of that
+  object as the PDF stores it: its dictionary without `/Length`, each object
+  it references (palette, soft mask) hashed the same way by content, then its
+  still-encoded stream read 64 KiB at a time, so no pixels are decoded and a
+  badge each page stores as its own copy still matches. The stream alone is
+  not enough: tiny one-colour pictures share their compressed bytes and
+  differ only in size or palette. Until v16 the test was MuPDF's pixel
+  digest, which also caught inline images and the same pixels stored with
+  different bytes (decision 2026-10-16).
 
 Parser v8 (decision 2026-09-24; gate in
 `bench/parsers/reports/2026-09-24-parser-v8-gate.md`) adds:
@@ -727,7 +733,7 @@ ODL runs as a library under `parser/java/CapyMain.java` (built by
 `parser/java/build.sh`, in the image by a JDK build stage; the runtime keeps a
 JRE): the same options and JSON as ODL's CLI, plus `capy-images.json`, the PDF
 object of the image each picture element draws, which veraPDF resolves while
-parsing: picture triage's identity for repeats. One document per JVM, which
+parsing: picture triage hashes that object's stored bytes for repeats. One document per JVM, which
 exits without ODL's static cleanup.
 
 Speed (same output). Inside `parse_pdf`, `page_text.session` extracts each
@@ -990,7 +996,7 @@ figures are reached at question time by rendering the source page
 (`capture_page`). ODL runs with `--format json --image-output off`: it writes no
 image files or Markdown (decoding and re-encoding every picture was 85% of its
 time on a figure-heavy textbook), and picture triage identifies repeats by the
-image object ODL reports instead. The worker rejects any
+stored bytes of the image object ODL reports instead. The worker rejects any
 other entry. Office bundles contain no PDF. The parser freezes page text and visible-heading proofs before
 discarding the temporary conversion, preserving downstream confidence/heading checks.
 The evidence leaves out the VLM-read pages, so a heading on an image-only page
