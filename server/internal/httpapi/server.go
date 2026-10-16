@@ -491,7 +491,14 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
+	writeUnexpected(w, http.StatusInternalServerError)
+}
+
+// writeUnexpected is the raw handlers' generic answer to an unexpected
+// failure (publicError's): the trace id comes from the X-Request-Id the trace
+// middleware already set on this response.
+func writeUnexpected(w http.ResponseWriter, status int) {
+	writeJSON(w, status, newUnexpectedError(status, w.Header().Get(obs.HeaderRequestID)))
 }
 
 func id(r *http.Request) string { return chi.URLParam(r, "id") }

@@ -357,6 +357,15 @@ export function describeError(error: unknown): ErrorDescription {
   }
 }
 
+/** The trace id an error that stays on screen shows (a boundary, FormAlert):
+ * only for an unexpected API failure, a 5xx or unknown status without a
+ * machine code. Typed refusals and toasts show none. */
+export function unexpectedErrorId(error: unknown): string | null {
+  if (!isApiError(error) || error.code) return null;
+  const kind = errorKind(error);
+  return kind === 'server' || kind === 'unknown' ? error.traceId : null;
+}
+
 export { CopyError } from './copyError';
 
 /** Copy for a caught failure: a CopyError's own copy, API and connection

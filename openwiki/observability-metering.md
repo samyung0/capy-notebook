@@ -37,6 +37,26 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
 failed request.
 
+**Unexpected errors answer the id, not the cause.** A gateway 5xx without a
+machine code answers `{"title", "status", "detail": "Something went wrong",
+"traceId"}`, never the error's own text; the cause stays in the logs and Sentry
+under that id. One rule covers every path: `publicError` at the end of
+`reportHandlerError` for huma handlers, the `huma.NewErrorWithContext` override
+for the errors huma builds itself (a body it could not read, `writeStatusErr`),
+and `writeUnexpected` for raw handlers (the fallback of `fail`, the event and
+chat streams) (`server/internal/httpapi/huma_register.go`, `server.go`). A
+typed 5xx keeps its code (`provider_busy`, `ai_unavailable`,
+`generate_empty`, `bank_unavailable`), as does every 4xx. Internal
+service routes share `fail`, so their unexpected failures answer the same
+body; the calling service already holds the trace id it sent.
+
+The browser keeps a failed request's id on `ApiError.traceId` (the body's
+`traceId`, else `X-Request-Id`, else the id it sent, for an answer from a
+proxy) and shows it, small and copyable, only where the error stays on
+screen: boundary screens and form errors (`FormAlert`) for an unexpected
+failure (`unexpectedErrorId` in `src/lib/errors.ts`). Toasts and status
+banners show none (see `frontend/error-handling.md`).
+
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as
 a `trace_id` **tag** instead, so a single string searches Sentry, greps the

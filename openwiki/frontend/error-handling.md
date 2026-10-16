@@ -21,6 +21,18 @@ tags: [frontend, errors, react-query, msw, playwright]
 
 Do not report the same failure through multiple surfaces.
 
+### Error ids where the error stays
+
+An unexpected failure (an API 5xx or unknown status without a machine code,
+`unexpectedErrorId` in `src/lib/errors.ts`) shows its request's trace id under
+the copy as a small "Error ID: …" line with a copy button (`ErrorId`), so a
+user can quote it and an operator can find the logs and Sentry event. Only the
+surfaces where the error stays on screen show it: boundary screens
+(`AppErrorBoundary`, `RouteErrorComponent`, through `ErrorState`'s `errorId`)
+and form errors (`FormAlert`'s `errorId`). Typed refusals, exceptions without
+a request, toasts and status banners show none. The id comes from
+`ApiError.traceId` (see the trace id in `observability-metering.md`).
+
 ### Form dialogs keep their errors
 
 A dialog that submits a form (the clone dialogs, `CloneItemDialog` and
@@ -33,7 +45,7 @@ inline, not as a toast, so the draft and its context stay on screen:
   `title_taken`).
 - Anything else shows in `FormAlert` (src/components/ui/FormAlert.tsx) at the
   bottom of the form; `cloneErrorMessage` maps storage, plan-cap, credit and
-  access refusals to their copy.
+  access refusals to their copy. An unexpected failure adds its error id.
 - Such a mutation opts out of the global toast (`errorToast: false`), so the
   failure is reported once.
 

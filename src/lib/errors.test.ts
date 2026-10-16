@@ -11,6 +11,7 @@ import {
   isChunkLoadError,
   isNonDisclosing,
   toastKeyFor,
+  unexpectedErrorId,
 } from './errors';
 
 describe('frontend error normalization', () => {
@@ -211,6 +212,47 @@ describe('frontend error normalization', () => {
     expect(toastKeyFor(new TypeError('Failed to fetch'))).toBe(
       toastKeyFor(new Error('network error'))
     );
+  });
+});
+
+describe('error ids', () => {
+  const id = 'a'.repeat(32);
+  it.each([
+    [
+      'a 500',
+      new ApiError(500, 'Internal Server Error', undefined, null, id),
+      id,
+    ],
+    [
+      'an uncoded 503',
+      new ApiError(503, 'Service Unavailable', undefined, null, id),
+      id,
+    ],
+    [
+      'an unknown status',
+      new ApiError(418, "I'm a teapot", undefined, null, id),
+      id,
+    ],
+    [
+      'a typed 5xx',
+      new ApiError(
+        503,
+        'Service Unavailable',
+        undefined,
+        { code: 'ai_unavailable' },
+        id
+      ),
+      null,
+    ],
+    [
+      'a typed refusal',
+      new ApiError(409, 'Conflict', undefined, { code: 'title_taken' }, id),
+      null,
+    ],
+    ['a 404', new ApiError(404, 'Not Found', undefined, null, id), null],
+    ['an exception', new TypeError('x is undefined'), null],
+  ])('%s shows %s', (_, error, shown) => {
+    expect(unexpectedErrorId(error)).toBe(shown);
   });
 });
 

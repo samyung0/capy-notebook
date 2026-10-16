@@ -211,7 +211,7 @@ func (a *api) createSourceCollaborationToken(ctx context.Context, in *collaborat
 	claims := newCollaborationClaims(userID(ctx), session.Room, session.Access, me.Name, me.AvatarURL, randID("collab"), int(session.Epoch))
 	token, err := signCollaborationToken(a.cfg.CollaborationSecret, claims)
 	if err != nil {
-		return nil, huma.Error503ServiceUnavailable("collaboration service unavailable", err)
+		return nil, &handlerError{error: huma.Error503ServiceUnavailable("collaboration service unavailable"), cause: err}
 	}
 	return &sourceTokenOutput{Body: SourceCollaborationToken{Token: token, Room: session.Room, URL: a.cfg.CollaborationURL, Access: session.Access, ExpiresAt: claims.ExpiresAt, Epoch: session.Epoch}}, nil
 }
