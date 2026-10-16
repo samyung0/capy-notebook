@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
+	"github.com/samyung0/capy-notebook/server/internal/testdb"
 )
 
 // countCloneRetries returns the serialization failures clone transactions ran
@@ -204,7 +205,11 @@ func TestCloneCounterCannotFailTheCopy(t *testing.T) {
 		}, clonerID, source.ID, WorkspaceCreate{Name: "Clone"})
 		result <- err
 	}()
-	<-reached
+	select {
+	case <-reached:
+	case err := <-result:
+		t.Fatalf("clone ended before the pause: %v", err)
+	}
 	if _, err := s.pool.Exec(ctx, `UPDATE workspace_clone_counts SET clone_count=clone_count+1
 		WHERE workspace_id=$1`, source.ID); err != nil {
 		t.Fatal(err)
@@ -213,4 +218,61 @@ func TestCloneCounterCannotFailTheCopy(t *testing.T) {
 	if err := <-result; err != nil {
 		t.Fatalf("clone with a concurrent counter bump: %v", err)
 	}
+}
+
+// A clone gives its fence's connection back before it reads the copy. With as
+// many clones holding fences as the pool has connections, a clone that took a
+// second connection while holding the first would wait for ever, and so would
+// every other request. Pool size + 1 clones of different sources by different
+// payers must all finish.
+func TestClonesDoNotHoldTheirFenceAcrossASecondConnection(t *testing.T) {
+	s := openMaterialTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+	small, err := Open(ctx, testdb.URL(t)+"&pool_max_conns=4")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(small.Close)
+	if err := small.LoadPlanLimits(ctx); err != nil {
+		t.Fatal(err)
+	}
+	n := int(small.pool.Config().MaxConns) + 1
+	ownerID := newBlobTestUser(t, s, "u_pool_owner")
+	shared := publicCloneSource(t, s, ownerID, "Pool source")
+	content, err := materialdoc.Marshal(materialdoc.Empty())
+	if err != nil {
+		t.Fatal(err)
+	}
+	cloners := make([]string, n)
+	targets := make([]Workspace, n)
+	files := make([]File, n)
+	notes := make([]Material, n)
+	sources := make([]Workspace, n)
+	for i := range n {
+		cloners[i] = newBlobTestUser(t, s, "u_pool_cloner")
+		if targets[i], err = s.CreateWorkspace(ctx, cloners[i], WorkspaceCreate{Name: "Pool target"}); err != nil {
+			t.Fatal(err)
+		}
+		files[i], _ = readyCloneFile(t, s, ownerID, shared.ID, fmt.Sprintf("sheet %d.pdf", i))
+		if notes[i], err = s.CreateMaterial(ctx, Material{
+			CreatedBy: ownerID, WorkspaceID: shared.ID, Kind: "note", Title: fmt.Sprintf("Note %d", i), Content: content,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		sourceOwner := newBlobTestUser(t, s, "u_pool_source")
+		sources[i] = publicCloneSource(t, s, sourceOwner, fmt.Sprintf("Source %d", i))
+	}
+	inParallel(t, "file clones", n, func(i int) error {
+		_, _, err := small.CloneFile(ctx, cloners[i], files[i].ID, CloneTarget{WorkspaceID: targets[i].ID, Name: "sheet copy.pdf"})
+		return err
+	})
+	inParallel(t, "material clones", n, func(i int) error {
+		_, err := small.CloneMaterial(ctx, cloners[i], notes[i].ID, CloneTarget{WorkspaceID: targets[i].ID, Name: "Note copy"})
+		return err
+	})
+	inParallel(t, "workspace clones", n, func(i int) error {
+		_, err := small.CloneWorkspace(ctx, cloners[i], sources[i].ID, WorkspaceCreate{Name: "Copy"})
+		return err
+	})
 }

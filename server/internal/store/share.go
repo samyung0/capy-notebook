@@ -986,32 +986,41 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 	if input.IconID != nil && !ValidIconID(*input.IconID) {
 		return Workspace{}, nil, ErrNotFound
 	}
-	// A workspace snapshot owns the hierarchy fence so contained material
-	// deletion cannot race its counter and blob-reference copy.
 	payer, err := s.clonePayerLock(ctx, userID, "")
 	if err != nil {
 		return Workspace{}, nil, err
 	}
-	conn, unlock, err := s.lockCloneSources(ctx, []cloneSourceLock{{
-		key: cloneSourceLockKey("workspace", srcID),
-	}, payer})
-	if err != nil {
-		return Workspace{}, nil, err
-	}
-	defer unlock()
-	var workspace Workspace
+	var newID string
 	var copies []ThumbnailCopy
-	err = retryClone(ctx, func() (err error) {
-		workspace, copies, err = s.cloneWorkspaceOnce(ctx, conn, userID, srcID, input)
-		return err
-	})
+	err = func() error {
+		// A workspace snapshot owns the hierarchy fence so contained material
+		// deletion cannot race its counter and blob-reference copy.
+		conn, unlock, err := s.lockCloneSources(ctx, []cloneSourceLock{{
+			key: cloneSourceLockKey("workspace", srcID),
+		}, payer})
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		if err := retryClone(ctx, func() (err error) {
+			newID, copies, err = s.cloneWorkspaceOnce(ctx, conn, userID, srcID, input)
+			return err
+		}); err != nil {
+			return err
+		}
+		bumpCloneCount(context.WithoutCancel(ctx), conn, `INSERT INTO workspace_clone_counts (workspace_id, clone_count)
+			VALUES ($1,1) ON CONFLICT (workspace_id) DO UPDATE
+			SET clone_count=workspace_clone_counts.clone_count+1`, srcID)
+		return nil
+	}()
 	if err != nil {
 		return Workspace{}, nil, err
 	}
-	bumpCloneCount(ctx, conn, `INSERT INTO workspace_clone_counts (workspace_id, clone_count)
-		VALUES ($1,1) ON CONFLICT (workspace_id) DO UPDATE
-		SET clone_count=workspace_clone_counts.clone_count+1`, srcID)
-	return workspace, copies, nil
+	// Read with the fence's connection back in the pool (as below for files
+	// and materials): holding it across a second acquire lets a few
+	// concurrent clones take every connection and stall the API.
+	workspace, err := s.GetWorkspace(ctx, userID, newID, false)
+	return workspace, copies, err
 }
 
 // SetCloneThumbnail points a cloned file at its copied thumbnail. A file that
@@ -1089,8 +1098,9 @@ func bumpCloneCount(ctx context.Context, starter cloneTxStarter, query, sourceID
 // clonePayerLock queues the clones one account pays for behind each other, so
 // they never collide on its storage counter: the actor pays for a workspace or
 // standalone copy, the target workspace's owner for a copy into it. The owner
-// read takes no lock; a transfer in between only names the old owner's queue,
-// and the transaction checks the payer itself.
+// read takes no lock; after a transfer in between the clone queues with the
+// old owner's clones (the backstop absorbs a collision), and the transaction
+// reads the payer again under the workspace row lock.
 func (s *Store) clonePayerLock(ctx context.Context, actorID, targetWorkspaceID string) (cloneSourceLock, error) {
 	payerID := actorID
 	if targetWorkspaceID != "" {
@@ -1122,10 +1132,10 @@ func (s *Store) cloneWorkspaceOnce(
 	starter cloneTxStarter,
 	userID, srcID string,
 	input WorkspaceCreate,
-) (Workspace, []ThumbnailCopy, error) {
+) (string, []ThumbnailCopy, error) {
 	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	defer tx.Rollback(ctx)
 
@@ -1139,24 +1149,24 @@ func (s *Store) cloneWorkspaceOnce(
 		  AND source_owner.deleted_at IS NULL
 		  AND source_owner.deletion_requested_at IS NULL`, srcID))
 	if isNoRows(err) {
-		return Workspace{}, nil, ErrNotFound
+		return "", nil, ErrNotFound
 	}
 	if err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	if err := lockCloneAccountsTx(ctx, tx, src.OwnerUserID, userID); err != nil {
 		var locked *AccountLockedError
 		if errors.As(err, &locked) && locked.UserID == src.OwnerUserID {
-			return Workspace{}, nil, ErrNotFound
+			return "", nil, ErrNotFound
 		}
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	if err := assertCloneSourceTx(ctx, tx, userID, srcID); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	limits, err := s.gateOwnedWorkspacesTx(ctx, tx, userID, 1)
 	if err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	// The target account lock above freezes both its current plan and its
 	// history-retention limit before we select any source revisions. Otherwise a
@@ -1164,16 +1174,16 @@ func (s *Store) cloneWorkspaceOnce(
 	// the larger pre-downgrade snapshot afterward.
 	snapshot, err := s.snapshotWorkspaceForClone(ctx, tx, srcID, userID)
 	if err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	// Physical paths are shared, so keep the refcount rows locked until the clone
 	// references commit. A concurrent last-reference delete then happens either
 	// before this repeatable-read snapshot or after the clone is durable.
 	if err := lockCloneBlobPathsTx(ctx, tx, workspaceCloneBlobPaths(snapshot)); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	if len(snapshot.files) > limits.FilesPerWorkspace {
-		return Workspace{}, nil, &FileLimitExceededError{
+		return "", nil, &FileLimitExceededError{
 			WorkspaceID: srcID,
 			Used:        0,
 			Requested:   len(snapshot.files),
@@ -1184,11 +1194,11 @@ func (s *Store) cloneWorkspaceOnce(
 	// The cloner's plan caps each file as it caps an upload (Epo 2026-10-12).
 	for _, file := range snapshot.files {
 		if file.sizeBytes > limits.SourceFileBytes {
-			return Workspace{}, nil, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
+			return "", nil, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
 		}
 	}
 	if err := s.gateStorageTx(ctx, tx, userID, snapshot.bytes); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 
 	newID := uid("ws")
@@ -1203,13 +1213,13 @@ func (s *Store) cloneWorkspaceOnce(
 		`SELECT embedding_provider_slug, embedding_model_slug, embedding_model_version, embedding_dim
 		   FROM workspaces WHERE id = $1`, srcID,
 	).Scan(&srcEmbed.Pin.ProviderSlug, &srcEmbed.Pin.ModelSlug, &srcEmbed.Pin.Version, &srcEmbed.Dim); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	if err := s.insertWorkspaceTx(ctx, tx, newID, userID, input.Name, input.Tags, srcEmbed); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	if err := setWorkspaceAppearanceTx(ctx, tx, newID, input); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 
 	// Chapters (old id -> new id).
@@ -1220,7 +1230,7 @@ func (s *Store) cloneWorkspaceOnce(
 			chapterMap[c.id] = nid
 			if _, err := tx.Exec(ctx, `INSERT INTO chapters (id, workspace_id, name, position) VALUES ($1,$2,$3,$4)`,
 				nid, newID, c.name, c.position); err != nil {
-				return Workspace{}, nil, err
+				return "", nil, err
 			}
 		}
 	}
@@ -1240,7 +1250,7 @@ func (s *Store) cloneWorkspaceOnce(
 		}
 		thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, newID, userID, chapterID, f.name, f.position)
 		if err != nil {
-			return Workspace{}, nil, err
+			return "", nil, err
 		}
 		if thumbnail != nil {
 			thumbnailCopies = append(thumbnailCopies, *thumbnail)
@@ -1290,7 +1300,7 @@ func (s *Store) cloneWorkspaceOnce(
 			if mt.Provenance != nil {
 				provenance, err = json.Marshal(mt.Provenance)
 				if err != nil {
-					return Workspace{}, nil, err
+					return "", nil, err
 				}
 			}
 			if _, err := tx.Exec(ctx, `INSERT INTO materials
@@ -1301,12 +1311,12 @@ func (s *Store) cloneWorkspaceOnce(
 				nid, userID, newID, input.Name, mt.Kind, title, json.RawMessage(content), chapterID,
 				mt.Position, mt.ScopeChapters, mt.ScopeFileNames, mt.Color, metrics.NodeCount,
 				metrics.MaxDepth, createdAt, mt.Revision, provenance, parentID, materialSnapshot.preview); err != nil {
-				return Workspace{}, nil, err
+				return "", nil, err
 			}
 			for _, cid := range materialSnapshot.cardIDs {
 				if _, err := tx.Exec(ctx, `INSERT INTO flashcard_cards (card_id, material_id) VALUES ($1,$2)`,
 					cid, nid); err != nil {
-					return Workspace{}, nil, err
+					return "", nil, err
 				}
 			}
 		}
@@ -1324,7 +1334,7 @@ func (s *Store) cloneWorkspaceOnce(
 			asset.newID, newID, nullStr(snapshot.materialIDs[asset.materialID]), userID, asset.name, asset.purpose,
 			asset.objectPath, asset.contentType, asset.sizeBytes, asset.etag,
 			asset.createdAt, asset.completedAt); err != nil {
-			return Workspace{}, nil, err
+			return "", nil, err
 		}
 	}
 
@@ -1338,19 +1348,18 @@ func (s *Store) cloneWorkspaceOnce(
 		}
 	}
 	if _, err := cloneRetrievalIndex(ctx, tx, srcID, newID, fileMap, indexedMaterials); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE materials m SET index_dirty_at=now()
 		WHERE m.workspace_id=$1 AND m.kind='note'
 		  AND NOT EXISTS (SELECT 1 FROM rag_material_contents mc WHERE mc.material_id=m.id)`, newID); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
 
 	if err := tx.Commit(ctx); err != nil {
-		return Workspace{}, nil, err
+		return "", nil, err
 	}
-	workspace, err := s.GetWorkspace(ctx, userID, newID, false)
-	return workspace, thumbnailCopies, err
+	return newID, thumbnailCopies, nil
 }
 
 // cloneRetrievalIndex gives copied files and notes the source's ready index,
@@ -1670,28 +1679,34 @@ func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target Clo
 	if err != nil {
 		return File{}, nil, err
 	}
-	// Copies of one file queue on its fence, so they never collide on its
-	// blob references.
-	conn, unlock, err := s.lockContainedCloneSource(ctx, "file", fileID, false, payer)
+	var newID string
+	var copies []ThumbnailCopy
+	err = func() error {
+		// Copies of one file queue on its fence, so they never collide on its
+		// blob references.
+		conn, unlock, err := s.lockContainedCloneSource(ctx, "file", fileID, false, payer)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		return retryClone(ctx, func() (err error) {
+			newID, copies, err = s.cloneFileOnce(ctx, conn, userID, fileID, target)
+			return err
+		})
+	}()
 	if err != nil {
 		return File{}, nil, err
 	}
-	defer unlock()
-	var file File
-	var copies []ThumbnailCopy
-	err = retryClone(ctx, func() (err error) {
-		file, copies, err = s.cloneFileOnce(ctx, conn, userID, fileID, target)
-		return err
-	})
+	file, err := s.GetFile(ctx, newID)
 	return file, copies, err
 }
 
-func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
+func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userID, fileID string, target CloneTarget) (string, []ThumbnailCopy, error) {
 	// Repeatable read: one consistent snapshot of the file, its saved state
 	// and its index, without waiting on collaboration.
 	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	defer tx.Rollback(ctx)
 	var sourceWorkspaceID, sourceOwnerID string
@@ -1699,72 +1714,71 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 		JOIN workspaces w ON w.id=f.workspace_id
 		WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID).
 		Scan(&sourceWorkspaceID, &sourceOwnerID); isNoRows(err) {
-		return File{}, nil, ErrNotFound
+		return "", nil, ErrNotFound
 	} else if err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	if err := assertCloneSourceTx(ctx, tx, userID, sourceWorkspaceID); err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	dest, err := s.lockCloneTargetTx(ctx, tx, sourceOwnerID, userID, target)
 	if err != nil {
-		return File{}, nil, sourceOwnerHidden(err, sourceOwnerID)
+		return "", nil, sourceOwnerHidden(err, sourceOwnerID)
 	}
 	files, err := snapshotCloneFilesTx(ctx, tx, `f.id=$1`, fileID)
 	if err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	if len(files) == 0 {
-		return File{}, nil, ErrNotFound
+		return "", nil, ErrNotFound
 	}
 	f := files[0]
 	if err := lockCloneBlobPathsTx(ctx, tx, cloneFileBlobPaths(files)); err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	if err := s.gateWorkspaceFilesTx(ctx, tx, dest.workspaceID, 1); err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	// The payer's plan caps one file as it caps an upload (Epo 2026-10-12).
 	tier, err := s.effectivePlanTierForUser(ctx, tx, dest.payerID)
 	if err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	limits, err := s.PlanLimits(tier)
 	if err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	if f.sizeBytes > limits.SourceFileBytes {
-		return File{}, nil, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
+		return "", nil, &FileTooLargeError{LimitBytes: limits.SourceFileBytes}
 	}
 	if err := s.gateStorageTx(ctx, tx, dest.payerID, f.sizeBytes+f.sourceBytes); err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	nid := uid("f")
 	thumbnail, err := insertCloneFileTx(ctx, tx, f, nid, dest.workspaceID, userID, dest.chapterID,
 		target.Name, time.Now().UnixMicro())
 	if err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	if f.indexed {
 		indexed, err := cloneRetrievalIndex(ctx, tx, sourceWorkspaceID, dest.workspaceID, map[string]string{f.id: nid}, nil)
 		if err != nil {
-			return File{}, nil, err
+			return "", nil, err
 		}
 		if !indexed[nid] {
 			if err := s.queueCloneIngestTx(ctx, tx, userID, dest.workspaceID, nid, f); err != nil {
-				return File{}, nil, err
+				return "", nil, err
 			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return File{}, nil, err
+		return "", nil, err
 	}
 	var copies []ThumbnailCopy
 	if thumbnail != nil {
 		copies = append(copies, *thumbnail)
 	}
-	file, err := s.GetFile(ctx, nid)
-	return file, copies, err
+	return nid, copies, nil
 }
 
 // queueCloneIngestTx processes a copied file again, as an upload is, when its
@@ -1827,23 +1841,28 @@ func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target 
 	if err != nil {
 		return Material{}, err
 	}
-	conn, unlock, err := s.lockContainedCloneSource(ctx, "material", matID, false, payer)
+	var newID string
+	err = func() error {
+		conn, unlock, err := s.lockContainedCloneSource(ctx, "material", matID, false, payer)
+		if err != nil {
+			return err
+		}
+		defer unlock()
+		if err := retryClone(ctx, func() (err error) {
+			newID, err = s.cloneMaterialOnce(ctx, conn, userID, matID, target)
+			return err
+		}); err != nil {
+			return err
+		}
+		bumpCloneCount(context.WithoutCancel(ctx), conn, `INSERT INTO material_clone_counts (material_id, clone_count)
+			VALUES ($1,1) ON CONFLICT (material_id) DO UPDATE
+			SET clone_count=material_clone_counts.clone_count+1`, matID)
+		return nil
+	}()
 	if err != nil {
 		return Material{}, err
 	}
-	defer unlock()
-	var material Material
-	err = retryClone(ctx, func() (err error) {
-		material, err = s.cloneMaterialOnce(ctx, conn, userID, matID, target)
-		return err
-	})
-	if err != nil {
-		return Material{}, err
-	}
-	bumpCloneCount(ctx, conn, `INSERT INTO material_clone_counts (material_id, clone_count)
-		VALUES ($1,1) ON CONFLICT (material_id) DO UPDATE
-		SET clone_count=material_clone_counts.clone_count+1`, matID)
-	return material, nil
+	return s.GetMaterial(ctx, newID)
 }
 
 func (s *Store) cloneMaterialOnce(
@@ -1851,37 +1870,37 @@ func (s *Store) cloneMaterialOnce(
 	starter cloneTxStarter,
 	userID, matID string,
 	target CloneTarget,
-) (Material, error) {
+) (string, error) {
 	tx, err := starter.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.RepeatableRead})
 	if err != nil {
-		return Material{}, err
+		return "", err
 	}
 	defer tx.Rollback(ctx)
 	src, err := scanMaterial(tx.QueryRow(ctx, `SELECT `+materialCols+`
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, matID))
 	if isNoRows(err) {
-		return Material{}, ErrNotFound
+		return "", ErrNotFound
 	}
 	if err != nil {
-		return Material{}, err
+		return "", err
 	}
 	// An embedded row is copied only with its note.
 	if src.ParentMaterialID != "" {
-		return Material{}, ErrNotFound
+		return "", ErrNotFound
 	}
 	if _, err := materialEffectiveAccess(ctx, tx, userID, matID); err != nil {
-		return Material{}, err
+		return "", err
 	}
 	if src.WorkspaceID != "" {
 		if err := assertCloneSourceTx(ctx, tx, userID, src.WorkspaceID); err != nil {
-			return Material{}, err
+			return "", err
 		}
 	}
 	// Account lifecycle is the only source-side serialization. The material and
 	// its workspace remain unlocked so accepted collaboration stores can finish.
 	dest, err := s.lockCloneTargetTx(ctx, tx, src.OwnerUserID, userID, target)
 	if err != nil {
-		return Material{}, sourceOwnerHidden(err, src.OwnerUserID)
+		return "", sourceOwnerHidden(err, src.OwnerUserID)
 	}
 
 	// A note brings its embedded rows along; their references are rewritten
@@ -1891,19 +1910,19 @@ func (s *Store) cloneMaterialOnce(
 		childRows, err := tx.Query(ctx, `SELECT `+materialCols+`
 			FROM materials WHERE parent_material_id=$1 AND trashed_at IS NULL ORDER BY created_at`, matID)
 		if err != nil {
-			return Material{}, err
+			return "", err
 		}
 		for childRows.Next() {
 			child, err := scanMaterial(childRows)
 			if err != nil {
 				childRows.Close()
-				return Material{}, err
+				return "", err
 			}
 			embedded = append(embedded, child)
 		}
 		childRows.Close()
 		if err := childRows.Err(); err != nil {
-			return Material{}, err
+			return "", err
 		}
 	}
 	contents := []string{src.Content}
@@ -1916,14 +1935,14 @@ func (s *Store) cloneMaterialOnce(
 		ctx, tx, src, childIDs, contents,
 	)
 	if err != nil {
-		return Material{}, err
+		return "", err
 	}
 	assetPaths := make([]string, len(assets))
 	for i, asset := range assets {
 		assetPaths[i] = asset.objectPath
 	}
 	if err := lockCloneBlobPathsTx(ctx, tx, assetPaths); err != nil {
-		return Material{}, err
+		return "", err
 	}
 
 	// rewrite applies every clone rewrite but the note's references.
@@ -1968,31 +1987,31 @@ func (s *Store) cloneMaterialOnce(
 		clone := materialClone{src: child, newID: uid("mat")}
 		embeddedIDs[child.ID] = clone.newID
 		if clone.content, clone.cardIDs, err = rewrite(child); err != nil {
-			return Material{}, err
+			return "", err
 		}
 		size, err := measure(&clone)
 		if err != nil {
-			return Material{}, err
+			return "", err
 		}
 		bytes += size
 		clones = append(clones, clone)
 	}
 	root := materialClone{src: src, newID: uid("mat")}
 	if root.content, root.cardIDs, err = rewrite(src); err != nil {
-		return Material{}, err
+		return "", err
 	}
 	if src.Kind == "note" {
 		if root.content, err = materialdoc.RewriteMaterialRefIDs(root.content, embeddedIDs); err != nil {
-			return Material{}, err
+			return "", err
 		}
 	}
 	size, err := measure(&root)
 	if err != nil {
-		return Material{}, err
+		return "", err
 	}
 	bytes += size
 	if err := s.gateStorageTx(ctx, tx, dest.payerID, bytes); err != nil {
-		return Material{}, err
+		return "", err
 	}
 
 	// Scope names chapters and files of the source's workspace: kept only in it.
@@ -2033,12 +2052,12 @@ func (s *Store) cloneMaterialOnce(
 		return nil
 	}
 	if err := insert(root, target.Name, dest.chapterID, nil, scopeChapters, scopeFileNames); err != nil {
-		return Material{}, err
+		return "", err
 	}
 	for _, clone := range clones {
 		// An embed's own credits travel with it, like the note's.
 		if err := insert(clone, embeddedName(), nil, &root.newID, []string{}, []string{}); err != nil {
-			return Material{}, err
+			return "", err
 		}
 	}
 	for _, asset := range assets {
@@ -2053,7 +2072,7 @@ func (s *Store) cloneMaterialOnce(
 			asset.newID, nullStr(dest.workspaceID), home, userID, asset.name, asset.purpose, asset.objectPath,
 			asset.contentType, asset.sizeBytes, asset.etag, asset.createdAt,
 			asset.completedAt); err != nil {
-			return Material{}, err
+			return "", err
 		}
 	}
 	// A workspace note shares the source's index when it reads the same,
@@ -2063,25 +2082,25 @@ func (s *Store) cloneMaterialOnce(
 		if src.WorkspaceID != "" {
 			same, err := sameIndexText(src.Content, root.content)
 			if err != nil {
-				return Material{}, err
+				return "", err
 			}
 			if same {
 				if indexed, err = cloneRetrievalIndex(ctx, tx, src.WorkspaceID, dest.workspaceID,
 					nil, map[string]string{src.ID: root.newID}); err != nil {
-					return Material{}, err
+					return "", err
 				}
 			}
 		}
 		if !indexed[root.newID] {
 			if _, err := tx.Exec(ctx, `UPDATE materials SET index_dirty_at=now() WHERE id=$1`, root.newID); err != nil {
-				return Material{}, err
+				return "", err
 			}
 		}
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return Material{}, err
+		return "", err
 	}
-	return s.GetMaterial(ctx, root.newID)
+	return root.newID, nil
 }
 
 // lockCloneAccountsTx follows the normal ordered account lock discipline over
