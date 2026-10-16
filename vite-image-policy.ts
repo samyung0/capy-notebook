@@ -38,18 +38,27 @@ export function imagePolicy(env: Env): string {
   return withReport(env, [imageSources(env)]);
 }
 
+/** The environment bucket's origin, as Go's presigner addresses it
+ * (`B2_FORCE_PATH_STYLE`), or undefined without one. */
+export function bucketOrigin(env: Env): string | undefined {
+  if (!(env.B2_BUCKET && env.B2_ENDPOINT)) return;
+  const endpoint = new URL(env.B2_ENDPOINT);
+  return env.B2_FORCE_PATH_STYLE === 'true'
+    ? endpoint.origin
+    : `${endpoint.protocol}//${env.B2_BUCKET}.${endpoint.host}`;
+}
+
 function imageSources(env: Env): string {
   const sources = ["'self'", 'data:', 'blob:'];
-  if (env.B2_BUCKET && env.B2_ENDPOINT) {
-    const endpoint = new URL(env.B2_ENDPOINT);
-    // Path style shares its host with every bucket in the region, so the
-    // source names this bucket's path.
+  const bucket = bucketOrigin(env);
+  // Path style shares its host with every bucket in the region, so the
+  // source names this bucket's path.
+  if (bucket)
     sources.push(
       env.B2_FORCE_PATH_STYLE === 'true'
-        ? `${endpoint.origin}/${env.B2_BUCKET}/`
-        : `${endpoint.protocol}//${env.B2_BUCKET}.${endpoint.host}`
+        ? `${bucket}/${env.B2_BUCKET}/`
+        : bucket
     );
-  }
   if (env.VITE_BANK_ASSETS_URL) {
     // A base under a path (a shared host) allows only that path.
     const bank = new URL(env.VITE_BANK_ASSETS_URL);

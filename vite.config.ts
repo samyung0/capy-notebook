@@ -8,7 +8,7 @@ import { defineConfig, loadEnv } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
 import { summaryVitePlugin } from './src/summary/vite';
 import { embedFrame } from './vite-embed';
-import { policyHeaders } from './vite-image-policy';
+import { bucketOrigin, policyHeaders } from './vite-image-policy';
 import { mathliveFonts } from './vite-mathlive';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
@@ -37,6 +37,19 @@ const WATCH_DIRECTORIES = [
   'vendor/betteroffice/packages',
   'workers/site',
 ];
+
+/** The origins an Office open connects to first, when the build knows them. */
+function preconnects(env: Record<string, string>) {
+  const origins: { crossorigin: boolean; href: string }[] = [];
+  if (env.VITE_OFFICE_RUNTIME_ORIGIN)
+    origins.push({
+      crossorigin: false,
+      href: new URL(env.VITE_OFFICE_RUNTIME_ORIGIN).origin,
+    });
+  const bucket = bucketOrigin(env);
+  if (bucket) origins.push({ crossorigin: true, href: bucket });
+  return origins;
+}
 
 export default defineConfig(({ command, isSsrBuild, mode }) => {
   const env = loadEnv(mode, ENV_DIR, '');
@@ -162,6 +175,27 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             });
         },
         name: 'release-file',
+      },
+      // The Office open's connections start while the app boots: the
+      // runtime's origin (its frame, with credentials) and the bucket (the
+      // source bytes, fetched without). Only the app page opens files.
+      !isSsrBuild && {
+        name: 'office-preconnect',
+        transformIndexHtml: (
+          _html: string,
+          { path: page }: { path: string }
+        ) =>
+          page === '/index.html'
+            ? preconnects(env).map(({ crossorigin, href }) => ({
+                attrs: {
+                  href,
+                  rel: 'preconnect',
+                  ...(crossorigin && { crossorigin: '' }),
+                },
+                injectTo: 'head' as const,
+                tag: 'link',
+              }))
+            : [],
       },
       react(),
       mathliveFonts(),
