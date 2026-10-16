@@ -79,6 +79,22 @@ pub struct Loaded {
     /// This load's record; [`Sources::forget`] removes only that one, never a
     /// later load's under the same room name.
     pub generation: u64,
+    pub times: LoadTimes,
+}
+
+/// Where a room load's time went, in ms (the `room_load` log line).
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct LoadTimes {
+    /// The gateway's source session.
+    pub session: u64,
+    /// The base bytes: a bucket read unless this instance holds them.
+    pub base: u64,
+    /// The stored state and rows.
+    pub stored: u64,
+    /// seed(base), an engine call unless cached, and the layers over it.
+    pub seed: u64,
+    /// The layers applied to the room's document.
+    pub replay: u64,
 }
 
 /// One store of a room: its update since the durable state and what the
@@ -460,9 +476,18 @@ impl Sources {
         actor: &str,
         doc: &Doc,
     ) -> Result<Loaded, SourceError> {
+        let mut times = LoadTimes::default();
+        let mut lap = std::time::Instant::now();
+        let mut stage = |slot: &mut u64| {
+            *slot = lap.elapsed().as_millis() as u64;
+            lap = std::time::Instant::now();
+        };
         let mut session = self.session_for_room(room, actor, false).await?;
+        stage(&mut times.session);
         let (base, sha) = self.bound_base(&session).await?;
+        stage(&mut times.base);
         let stored = self.stored(&room.file_id, None).await?;
+        stage(&mut times.stored);
         if stored.epoch != room.epoch {
             return Err(SourceError::epoch_changed());
         }
@@ -475,12 +500,14 @@ impl Sources {
         let (_, layers) = self
             .layers(session.format, &base, &sha, &stored, Some(&name))
             .await?;
+        stage(&mut times.seed);
         let target = doc.clone();
         let layers = Arc::new(layers);
         let applied = layers.clone();
         tokio::task::spawn_blocking(move || replay(&target, applied.iter().map(Vec::as_slice)))
             .await
             .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
+        stage(&mut times.replay);
         let generation = self
             .generations
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -517,6 +544,7 @@ impl Sources {
             row_bytes: stored.rows.iter().map(|(_, row)| row.len() as u64).sum(),
             generation,
             session,
+            times,
         })
     }
 
