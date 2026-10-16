@@ -18,6 +18,7 @@ import type { Answer } from '@/features/quizzes/grade';
 import { QuizQuestionList, QuizScore } from '@/features/quizzes/QuizPage';
 import { QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
 import { getLocale, m } from '@/i18n';
+import { unexpectedErrorId } from '@/lib/errors';
 
 export default function AttemptResult() {
   const params = useParams({ strict: false });
@@ -25,6 +26,7 @@ export default function AttemptResult() {
   const navigate = useNavigate();
   const {
     data: attempt,
+    error,
     fetchStatus,
     isLoading,
     isError,
@@ -72,6 +74,7 @@ export default function AttemptResult() {
               </Link>
             </ErrorAction>
           }
+          errorId={unexpectedErrorId(error)}
           title={m.quiz_attempt_unavailable()}
           variant="page"
         />

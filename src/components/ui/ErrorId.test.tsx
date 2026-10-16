@@ -4,6 +4,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import { ApiError } from '@/api/client';
 import { RouteErrorComponent } from '@/components/app/AppErrorBoundary';
+import { FileError } from '@/features/files/FileStates';
 import { unexpectedErrorId } from '@/lib/errors';
 import { FormAlert } from './FormAlert';
 
@@ -36,6 +37,15 @@ describe('the error id shows only for unexpected errors', () => {
     expect(boundary(typed)).not.toContain('data-testid="error-id"');
   });
 
+  it('on a failed pane with Retry', () => {
+    const pane = (error: ApiError) =>
+      renderToStaticMarkup(
+        <FileError errorId={unexpectedErrorId(error)} onRetry={() => {}} />
+      );
+    expect(pane(unexpected)).toContain(`Error ID: ${id}`);
+    expect(pane(typed)).not.toContain('data-testid="error-id"');
+  });
+
   it('in a form alert', () => {
     const alert = (error: ApiError) =>
       renderToStaticMarkup(
@@ -44,4 +54,14 @@ describe('the error id shows only for unexpected errors', () => {
     expect(alert(unexpected)).toContain(`Error ID: ${id}`);
     expect(alert(typed)).not.toContain('data-testid="error-id"');
   });
+});
+
+it('keeps the id out of the alert announcement and announces a copy politely', () => {
+  const html = renderToStaticMarkup(
+    <FormAlert errorId={id} message="Failed" />
+  );
+  expect(html).toMatch(
+    new RegExp(`<span aria-hidden="true"[^>]*>Error ID: ${id}</span>`)
+  );
+  expect(html).toContain('role="status"');
 });

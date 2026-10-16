@@ -8,7 +8,7 @@ import { TabHeader } from '@/components/app/tabPanel';
 import { ErrorAction } from '@/components/ui/Button';
 import { IconButton } from '@/components/ui/IconButton';
 import { getLocale, m } from '@/i18n';
-import { describeError } from '@/lib/errors';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 import {
   type BillingColumn,
   BillingTable,
@@ -94,6 +94,7 @@ export function DetailsTab() {
           {m.error_action_retry()}
         </ErrorAction>
       }
+      errorId={unexpectedErrorId(error)}
       variant="panel"
     />
   ) : isPending ? (

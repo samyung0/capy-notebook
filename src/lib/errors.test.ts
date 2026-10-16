@@ -234,6 +234,17 @@ describe('error ids', () => {
       id,
     ],
     [
+      'a 5xx whose errors[] carry one word',
+      new ApiError(
+        503,
+        'Service Unavailable',
+        undefined,
+        { code: 'timeout' },
+        id
+      ),
+      id,
+    ],
+    [
       'a typed 5xx',
       new ApiError(
         503,

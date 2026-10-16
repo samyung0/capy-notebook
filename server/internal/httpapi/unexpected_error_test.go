@@ -11,6 +11,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humachi"
+	"github.com/getsentry/sentry-go"
 	"github.com/go-chi/chi/v5"
 
 	"github.com/samyung0/capy-notebook/server/internal/obs"
@@ -38,6 +39,10 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 	reg(h, http.MethodPost, "/uncoded", "uncoded", "test", "test", 200, fail(huma.Error503ServiceUnavailable(leakedSecret)))
 	reg(h, http.MethodPost, "/detailed", "detailed", "test", "test", 200,
 		fail(huma.Error503ServiceUnavailable("unavailable", errors.New(leakedSecret))))
+	// A one-word cause looks like a code but is not a typed one.
+	reg(h, http.MethodPost, "/oneword", "oneword", "test", "test", 200,
+		fail(huma.Error503ServiceUnavailable("unavailable", errors.New("timeout"))))
+	reg(h, http.MethodPost, "/bank", "bank", "test", "test", 200, fail(bankHTTPError(errors.New(leakedSecret))))
 	reg(h, http.MethodPost, "/authority", "authority", "test", "test", 200,
 		fail(hErr(errors.Join(store.ErrAuthorityUnavailable, errors.New(leakedSecret)))))
 	reg(h, http.MethodPost, "/busy", "busy", "test", "test", 200, fail(hErr(&providerBusyError{RetryAfterSeconds: 10})))
@@ -52,6 +57,10 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 		Middlewares: huma.Middlewares{func(ctx huma.Context, _ func(huma.Context)) {
 			writeStatusErr(h, ctx, errors.New(leakedSecret))
 		}}}, fail(nil))
+	huma.Register(h, huma.Operation{OperationID: "typed-middleware", Method: http.MethodPost, Path: "/typed-middleware",
+		Middlewares: huma.Middlewares{func(ctx huma.Context, _ func(huma.Context)) {
+			writeStatusErr(h, ctx, hErr(errAIUnavailable))
+		}}}, fail(nil))
 	r.Post("/raw-handler", func(w http.ResponseWriter, _ *http.Request) { (&api{}).fail(w, errors.New(leakedSecret)) })
 
 	for _, tc := range []struct {
@@ -63,11 +72,14 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 		{"/raw", 500, ""},
 		{"/uncoded", 503, ""},
 		{"/detailed", 503, ""},
+		{"/oneword", 503, ""},
 		{"/authority", 503, ""},
 		{"/body", 500, ""},
 		{"/middleware", 500, ""},
 		{"/raw-handler", 500, ""},
 		{"/busy", 503, "provider_busy"},
+		{"/bank", 503, "bank_unavailable"},
+		{"/typed-middleware", 503, "ai_unavailable"},
 		{"/conflict", 409, "title_taken"},
 	} {
 		t.Run(tc.path, func(t *testing.T) {
@@ -79,7 +91,7 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 			response := httptest.NewRecorder()
 			r.ServeHTTP(response, request)
 			text := response.Body.String()
-			if response.Code != tc.status || strings.Contains(text, "s3cr3t") {
+			if response.Code != tc.status || strings.Contains(text, "s3cr3t") || strings.Contains(text, `"timeout"`) {
 				t.Fatalf("status=%d body=%s", response.Code, text)
 			}
 			var body struct {
@@ -104,4 +116,56 @@ func TestUnexpectedErrorsAnswerTraceIDNotCause(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The cause of a failure huma answers itself, and of a panic, still reaches
+// Sentry while the body stays generic.
+func TestUnexpectedErrorsKeepTheirCause(t *testing.T) {
+	previous := sentry.CurrentHub().Client()
+	defer sentry.CurrentHub().BindClient(previous)
+	transport := &sentryTestTransport{}
+	if err := sentry.Init(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: transport}); err != nil {
+		t.Fatal(err)
+	}
+	r := chi.NewRouter()
+	r.Use(obs.Middleware, obs.AccessLog, recoverer, obs.SentryMiddleware)
+	h := humachi.New(r, humaConfig())
+	type bodyInput struct {
+		Body struct {
+			Name string `json:"name"`
+		}
+	}
+	reg(h, http.MethodPost, "/body", "body", "test", "test", 200, func(context.Context, *bodyInput) (*Empty, error) { return &Empty{}, nil })
+	r.Post("/panic", func(http.ResponseWriter, *http.Request) { panic(leakedSecret) })
+
+	for _, path := range []string{"/body", "/panic"} {
+		t.Run(path, func(t *testing.T) {
+			transport.events = nil
+			request := httptest.NewRequest(http.MethodPost, path, failingBody{})
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			r.ServeHTTP(response, request)
+			var body struct {
+				Detail  string `json:"detail"`
+				TraceID string `json:"traceId"`
+			}
+			_ = json.Unmarshal(response.Body.Bytes(), &body)
+			if response.Code != 500 || body.Detail != "Something went wrong" ||
+				body.TraceID == "" || body.TraceID != response.Header().Get(obs.HeaderRequestID) ||
+				strings.Contains(response.Body.String(), "s3cr3t") {
+				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
+			}
+			if len(transport.events) != 1 || !strings.Contains(eventText(transport.events[0]), "s3cr3t") {
+				t.Fatalf("events=%d, cause not captured", len(transport.events))
+			}
+		})
+	}
+}
+
+func eventText(event *sentry.Event) string {
+	text := event.Message
+	for _, exception := range event.Exception {
+		text += " " + exception.Value
+	}
+	return text
 }

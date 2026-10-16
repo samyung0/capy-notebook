@@ -37,27 +37,36 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
 failed request.
 
-**Unexpected errors answer the id, not the cause.** A gateway 5xx without a
-machine code answers `{"title", "status", "detail": "Something went wrong",
+**Unexpected errors answer the id, not the cause.** A gateway 5xx that is not
+typed answers `{"title", "status", "detail": "Something went wrong",
 "traceId"}`, never the error's own text; the cause stays in the logs and Sentry
-under that id. One rule covers every path: `publicError` at the end of
-`reportHandlerError` for huma handlers, the `huma.NewErrorWithContext` override
-for the errors huma builds itself (a body it could not read, `writeStatusErr`),
-and `writeUnexpected` for raw handlers (the fallback of `fail`, the event and
-chat streams) (`server/internal/httpapi/huma_register.go`, `server.go`). A
-typed 5xx keeps its code (`provider_busy`, `ai_unavailable`,
-`generate_empty`, `bank_unavailable`), as does every 4xx; a 5xx is typed only
-when its `errors[]` hold nothing but machine codes, so an error's text placed
-there still gets the generic answer. Internal
-service routes share `fail`, so their unexpected failures answer the same
-body; the calling service already holds the trace id it sent.
+under that id. A typed 5xx carries only codes from one short list in
+`errors[]` (`typedServerCodes`: `provider_busy`, `ai_unavailable`,
+`generate_empty`, `bank_unavailable`; `src/lib/errors.ts` keeps the same list),
+so an error's text there, even one word, still gets the generic answer. Every
+4xx keeps its answer. One rule covers every path
+(`server/internal/httpapi/huma_register.go`, `server.go`):
+
+- `publicError` at the end of `reportHandlerError`, for huma handlers;
+- the `huma.NewErrorWithContext` override, for the errors huma builds itself
+  (a body it could not read, `writeStatusErr`), which records their cause with
+  `obs.RecordHTTPError` and lets a typed 5xx through;
+- `writeUnexpected`, for raw handlers (the fallback of `fail`, the event and
+  chat streams) and for a recovered panic (`recoverer`, which replaces chi's
+  Recoverer; the Sentry middleware inside it captures the panic first, and a
+  stream already under way is left as it is).
+
+The status is kept: an untyped 503 stays 503. Internal service routes share
+`fail`, so their unexpected failures answer the same body; the calling service
+already holds the trace id it sent.
 
 The browser keeps a failed request's id on `ApiError.traceId` (the body's
 `traceId`, else `X-Request-Id`, else the id it sent, for an answer from a
 proxy) and shows it, small and copyable, only where the error stays on
-screen: boundary screens and form errors (`FormAlert`) for an unexpected
-failure (`unexpectedErrorId` in `src/lib/errors.ts`). Toasts and status
-banners show none (see `frontend/error-handling.md`).
+screen: boundary screens, a page or pane that failed with Retry, and form
+errors (`FormAlert`), for an unexpected failure (`unexpectedErrorId` in
+`src/lib/errors.ts`). Toasts and status banners show none (see
+`frontend/error-handling.md`).
 
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as

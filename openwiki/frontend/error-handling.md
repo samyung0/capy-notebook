@@ -23,15 +23,26 @@ Do not report the same failure through multiple surfaces.
 
 ### Error ids where the error stays
 
-An unexpected failure (an API 5xx or unknown status without a machine code,
-`unexpectedErrorId` in `src/lib/errors.ts`) shows its request's trace id under
-the copy as a small "Error ID: …" line with a copy button (`ErrorId`), so a
-user can quote it and an operator can find the logs and Sentry event. Only the
-surfaces where the error stays on screen show it: boundary screens
-(`AppErrorBoundary`, `RouteErrorComponent`, through `ErrorState`'s `errorId`)
-and form errors (`FormAlert`'s `errorId`). Typed refusals, exceptions without
-a request, toasts and status banners show none. The id comes from
-`ApiError.traceId` (see the trace id in `observability-metering.md`).
+An unexpected failure (`unexpectedErrorId` in `src/lib/errors.ts`: an API 5xx
+without one of the typed codes `provider_busy`, `ai_unavailable`,
+`generate_empty`, `bank_unavailable`, or an unknown status without a code)
+shows its request's trace id under the copy as a small "Error ID: …" line with
+a copy button (`ErrorId`), so a user can quote it and an operator can find the
+logs and Sentry event. Only the surfaces where the error stays on screen show
+it, through `ErrorState`'s `errorId`:
+
+- boundary screens (`AppErrorBoundary`, `RouteErrorComponent`);
+- a page or pane whose read failed, with Retry: the dashboard's recent
+  workspaces, the billing usage and invoice tabs, the workspace statistics tab,
+  the question bank, a review session, a quiz result, a file's download links
+  (`FileError`'s `errorId`) and a note's collaboration token;
+- form errors (`FormAlert`'s `errorId`).
+
+Typed refusals, exceptions without a request, toasts and status banners show
+none. The id comes from `ApiError.traceId` (see the trace id in
+`observability-metering.md`). These surfaces are alerts, so the id text is
+hidden from screen readers (the copy button names it), and a copy is announced
+through the line's own polite status.
 
 ### Form dialogs keep their errors
 

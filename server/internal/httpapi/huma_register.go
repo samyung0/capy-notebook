@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"regexp"
 	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -355,13 +354,20 @@ func newUnexpectedError(status int, traceID string) *unexpectedError {
 	}
 }
 
-// errorCode is a machine code in errors[].message, as the browser reads one.
-var errorCode = regexp.MustCompile(`^[a-z][a-z0-9_]*$`)
+// typedServerCodes are the 5xx codes the browser gives their own copy; a 5xx
+// carrying anything else in errors[] (an error's text, even one word) is
+// unexpected. src/lib/errors.ts keeps the same list.
+var typedServerCodes = []string{"provider_busy", "ai_unavailable", "generate_empty", "bank_unavailable"}
 
-// publicError is the answer for a handler's error: a 5xx without a machine
-// code (or an error huma would answer as 500) becomes the generic answer; a
-// typed 5xx (provider_busy, ai_unavailable, …) and every 4xx stay as they are.
-// A 5xx whose errors[] carry anything but codes (an error's text) is not typed.
+func typedServerError(details []*huma.ErrorDetail) bool {
+	return len(details) > 0 && !slices.ContainsFunc(details, func(detail *huma.ErrorDetail) bool {
+		return detail == nil || !slices.Contains(typedServerCodes, detail.Message)
+	})
+}
+
+// publicError is the answer for a handler's error: a 5xx that is not typed
+// (or an error huma would answer as 500) becomes the generic answer; a typed
+// 5xx and every 4xx stay as they are.
 func publicError(ctx context.Context, err error) error {
 	if err == nil {
 		return nil
@@ -374,10 +380,7 @@ func publicError(ctx context.Context, err error) error {
 		return err
 	}
 	var model *huma.ErrorModel
-	if errors.As(err, &model) && len(model.Errors) > 0 &&
-		!slices.ContainsFunc(model.Errors, func(detail *huma.ErrorDetail) bool {
-			return !errorCode.MatchString(detail.Message)
-		}) {
+	if errors.As(err, &model) && typedServerError(model.Errors) {
 		return err
 	}
 	return newUnexpectedError(status.GetStatus(), obs.TraceID(ctx))
@@ -385,12 +388,17 @@ func publicError(ctx context.Context, err error) error {
 
 func init() {
 	// The errors huma builds itself (a request body it could not read,
-	// writeStatusErr) follow the same rule.
+	// writeStatusErr) follow the same rule; their cause goes to the logs and
+	// Sentry instead of the body.
 	huma.NewErrorWithContext = func(ctx huma.Context, status int, msg string, errs ...error) huma.StatusError {
-		if status >= http.StatusInternalServerError {
-			return newUnexpectedError(status, obs.TraceID(ctx.Context()))
+		built := huma.NewError(status, msg, errs...)
+		if model, ok := built.(*huma.ErrorModel); status < http.StatusInternalServerError || ok && typedServerError(model.Errors) {
+			return built
 		}
-		return huma.NewError(status, msg, errs...)
+		if cause := errors.Join(errs...); cause != nil {
+			obs.RecordHTTPError(ctx.Context(), fmt.Errorf("%s: %w", msg, cause))
+		}
+		return newUnexpectedError(status, obs.TraceID(ctx.Context()))
 	}
 }
 
@@ -529,7 +537,8 @@ func writeStatusErr(api huma.API, ctx huma.Context, err error) {
 	err = reportHandlerError(ctx.Context(), err)
 	var model *huma.ErrorModel
 	if !errors.As(err, &model) {
-		// The generic answer (see huma.NewErrorWithContext in init).
+		// The generic answer (see huma.NewErrorWithContext in init); a typed
+		// 5xx below keeps its code there.
 		_ = huma.WriteErr(api, ctx, errorStatus(err), "")
 		return
 	}
