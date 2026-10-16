@@ -19,10 +19,11 @@ const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
 const BROWSER_ONLY =
   /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
-/** MSW's entry points (src/main.tsx, src/share). A build never runs them, but
- * Rollup loads every dynamic import, dead code included, and loading the mocks
- * emits their `?url` fixtures (Office files up to 23 MB) into dist/: a build
- * gets an empty module instead. MSW and e2e run on the dev server. */
+/** MSW's entry points (src/main.tsx, src/share). A build without MSW never
+ * runs them, but Rollup loads every dynamic import, dead code included, and
+ * loading the mocks emits their `?url` fixtures (Office files up to 23 MB) into
+ * dist/: such a build gets an empty module instead. The editor benches build
+ * with MSW on (`--mode development`) and keep them. */
 const MSW_ENTRIES =
   /\/mocks\/(browser|collaboration)$|\/dev\/MockScenarioPanel$/;
 
@@ -139,13 +140,15 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
         resolveId: (id: string) =>
           BROWSER_ONLY.test(id) ? '\0browser-only' : undefined,
       },
-      command === 'build' && {
-        enforce: 'pre' as const,
-        load: (id: string) => (id === '\0no-mocks' ? 'export {};' : undefined),
-        name: 'no-mocks-in-builds',
-        resolveId: (id: string) =>
-          MSW_ENTRIES.test(id) ? '\0no-mocks' : undefined,
-      },
+      command === 'build' &&
+        !useMsw && {
+          enforce: 'pre' as const,
+          load: (id: string) =>
+            id === '\0no-mocks' ? 'export {};' : undefined,
+          name: 'no-mocks-in-builds',
+          resolveId: (id: string) =>
+            MSW_ENTRIES.test(id) ? '\0no-mocks' : undefined,
+        },
       // The release an open tab compares with its own when it regains focus
       // (src/lib/appRelease.ts); public/_headers serves it uncached.
       !isSsrBuild && {
