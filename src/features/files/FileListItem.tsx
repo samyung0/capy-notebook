@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { type MouseEventHandler, useState } from 'react';
+import { useRetryFileProcessing } from '@/api/hooks';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -7,6 +8,7 @@ import { StudyMark, type StudyRow } from '@/features/study/studyItems';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
+import { retryFailedFile } from '@/features/workspace/retryProcessing';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
@@ -55,6 +57,7 @@ export function FileListItem({
   const waitingForBytes = ingesting && !file.hasBytes;
   const failed = file.status === 'failed';
   const [retrying, setRetrying] = useState(false);
+  const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
 
   return (
     <div className="relative flex flex-col">
@@ -112,7 +115,10 @@ export function FileListItem({
                           {
                             icon: 'refresh' as const,
                             label: m.files_retry_processing(),
-                            onClick: () => setRetrying(true),
+                            onClick: () =>
+                              retryFailedFile(file, retryProcessing, () =>
+                                setRetrying(true)
+                              ),
                             warning: true,
                           },
                         ]
