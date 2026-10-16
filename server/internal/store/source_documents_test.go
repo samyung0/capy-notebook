@@ -333,10 +333,13 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 		})
 	}
 
+	// Another owner: one workspace per case reaches the owned-workspace limit.
+	other := newBlobTestUser(t, s, "retry_partial_other")
+
 	// The job names the revision current under Retry's locks: a publication
 	// that commits while Retry waits on the workspace lock is what it runs on.
 	t.Run("revision read under the lock", func(t *testing.T) {
-		ws, file := sourceTestFile(t, s, owner, "lesson.pdf", "pdf")
+		ws, file := sourceTestFile(t, s, other, "lesson.pdf", "pdf")
 		exec(`UPDATE files SET status='failed' WHERE id=$1`, file.ID)
 		hold, err := s.pool.Begin(ctx)
 		if err != nil {
@@ -347,7 +350,7 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 			t.Fatal(err)
 		}
 		done := make(chan error, 1)
-		go func() { done <- s.RetryFileProcessing(ctx, owner, file.ID, "fast", "test") }()
+		go func() { done <- s.RetryFileProcessing(ctx, other, file.ID, "fast", "test") }()
 		for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
 			var waiting bool
 			if err = s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE NOT granted)`).Scan(&waiting); err != nil {
@@ -379,10 +382,10 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 	})
 
 	// A running source refresh holds the file like a parse or ingest job.
-	ws, file := sourceTestFile(t, s, owner, "lesson.pdf", "pdf")
+	ws, file := sourceTestFile(t, s, other, "lesson.pdf", "pdf")
 	exec(`UPDATE files SET status='failed' WHERE id=$1`, file.ID)
 	exec(`INSERT INTO jobs(id,type,payload,status) VALUES($1,'source_refresh',jsonb_build_object('fileId',$2::text,'workspaceId',$3::text),'running')`, uid("job"), file.ID, ws.ID)
-	if err := s.RetryFileProcessing(ctx, owner, file.ID, "fast", "test"); !errors.Is(err, ErrConflict) {
+	if err := s.RetryFileProcessing(ctx, other, file.ID, "fast", "test"); !errors.Is(err, ErrConflict) {
 		t.Fatalf("retry during a source refresh: %v, want conflict", err)
 	}
 }
