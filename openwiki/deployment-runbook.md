@@ -2601,8 +2601,16 @@ or complaint handling reopens the same per-environment question Stripe has.
 
 Onboarding wrote `_dmarc.uat` as `v=DMARC1; p=reject;`, so mail claiming the
 UAT domain without Cloudflare's signature is refused. `capynotebook.com` itself
-publishes no DMARC record yet. When production gets one, remember that
-subdomains without a record of their own (such as `inbox.uat`) inherit it.
+was onboarded on 2026-10-16 so the support Gmail can send as
+`support@capynotebook.com` through Email Service SMTP
+(`smtp.mx.cloudflare.net:465`, user `api_token`), and that wrote
+`_dmarc.capynotebook.com` as `v=DMARC1; p=reject;` too. Subdomains without a
+record of their own (such as `inbox.uat`) inherit it, and anything else sending
+as the root domain must sign with its own aligned DKIM, as Clerk does through
+`clk._domainkey` and `clkmail`. Incoming `support@capynotebook.com` is an Email
+Routing rule forwarding to `support.capynotebook@gmail.com`. That Gmail's
+"Send mail as" entry authenticates with the same token as UAT's
+`CLOUDFLARE_EMAIL_TOKEN`, so rotating or revoking it also stops support replies.
 
 **Resend is retired.** The account journey passed on Cloudflare on 2026-10-13
 (UAT quality run 38359470612), and the GitHub `uat` entries `RESEND_API_KEY`,

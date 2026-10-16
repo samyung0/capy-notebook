@@ -29,7 +29,7 @@ are not approvals.
 
 The developer selected layout A, a single reading column with workspace metadata
 above the chapter/file outline. Mockups: https://pyd4moxcoz68.postplan.dev.
-Support uses `support@stablestudio.org`; the company is Stable Studio Limited
+Support uses `support@capynotebook.com`; the company is Stable Studio Limited
 and the product is Capy Notebook.
 
 ## Starting inventory

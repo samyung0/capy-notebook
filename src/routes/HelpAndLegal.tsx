@@ -147,7 +147,7 @@ export default function HelpAndLegal() {
               </p>
             </div>
             <Button asChild iconLeft="message" variant="accent">
-              <a href="mailto:support@stablestudio.org">
+              <a href="mailto:support@capynotebook.com">
                 {m.support_contact()}
               </a>
             </Button>

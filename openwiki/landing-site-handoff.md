@@ -45,7 +45,7 @@ These are proposed routes. Keep `/privacy` and `/terms` stable because the exist
 | --- | --- |
 | `/` | Product story, short demonstration and launch action. |
 | `/help-and-legal` | Public hub for support, FAQs, terms, privacy and credits. Every item has an ordinary, shareable link. |
-| `/support` | Working contact channel and a small set of verified FAQs. Initial recommendation: the existing `support@stablestudio.org` mail link and visible address. |
+| `/support` | Working contact channel and a small set of verified FAQs. Initial recommendation: the `support@capynotebook.com` mail link and visible address. |
 | `/terms` | Owner-approved terms with a visible effective date. |
 | `/privacy` | Owner-approved description of the product's actual data practices with a visible effective date. |
 | `/credits` | Attribution, source links, licence links, adaptations and required notices for assets used by the website. Clearly label any broader app attribution included here. |
