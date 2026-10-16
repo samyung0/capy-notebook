@@ -649,12 +649,26 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   source workspace/material as a source (a copy into the source's own workspace
   takes its row as the destination, like any write) or wait for Yjs
   persistence/projection; a stale SQL projection is an explicitly accepted
-  result. A transaction that loses a race (a serialization failure, 40001 or
-  40P01) runs again, 3 attempts in all; then the error goes to the user, who
-  can clone again (`retryClone` in `server/internal/store/share.go`). Clone
-  counters live on separate
-  rows, while source-owner and target account locks are acquired in canonical ID
-  order.
+  result.
+- Clones queue instead of colliding (Epo 2026-10-16). Before its snapshot a
+  clone takes session advisory locks on its connection: the source's fence
+  (a workspace exclusively; a file or material exclusively under its
+  workspace's shared fence) and its payer's (`clone-payer:<id>`: the actor for
+  a workspace or standalone copy, the target workspace's owner otherwise).
+  Copies of one source, and copies one account pays for, therefore run one
+  after another and never meet on blob reference counts or the payer's
+  storage counter. The clone counter is bumped after the copy commits, in its
+  own statement under the fence, so it cannot fail the copy; a crash in
+  between loses one count. Source-owner and target account locks are acquired
+  in canonical ID order.
+- Writers outside clones still meet a clone's snapshot. The one that matters
+  is the payer's storage counter (`user_storage`): an upload reservation or
+  release of the payer committing while the clone runs fails the clone's
+  storage gate with a serialization failure (measured: with a busy writer
+  every clone spent its attempts). The clone then runs again, 3 attempts in
+  all, and once they are spent the user gets 409 `clone_source_changed`
+  ("The original changed while it was being copied. Try again.") (`retryClone`
+  in `server/internal/store/share.go`).
 - Referenced ready media of a cloned material is rehomed under fresh asset IDs
   owned by the copy (in its destination workspace, or standalone); it never
   retains authorization-bearing asset IDs from the source workspace.

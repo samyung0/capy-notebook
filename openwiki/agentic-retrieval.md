@@ -3728,8 +3728,8 @@ marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
 of bytes an export-only publication left unindexed is reprocessed like its
 source. A pipeline ingest that adds the same content to the destination after
 the snapshot conflicts on `rag_contents` and the clone retries as a
-serialization failure (3 attempts in all, see
-[authorization](authorization-permissions-lifecycles.md)). A standalone material has no index.
+serialization failure (3 attempts in all, then 409 `clone_source_changed`;
+see [authorization](authorization-permissions-lifecycles.md)). A standalone material has no index.
 
 That transaction uses one repeatable-read source snapshot. Only ready source
 files are copied; pending, processing, and failed rows are omitted. Ready editor
