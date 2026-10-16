@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/models"
@@ -273,6 +274,7 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 		summarized bool
 		ever       bool
 		setup      string // extra SQL on the file ($1) before the retry
+		request    string // the requested parse mode, "fast" when empty
 		jobType    string // "" is no job
 		partsOnly  string
 		parseFee   string
@@ -283,6 +285,8 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 		{name: "pages missing", summarized: true, ever: true, jobType: "parse", parseFee: "false", status: "pending", indexed: true},
 		{name: "pages missing, never parsed", summarized: true, jobType: "parse", parseFee: "true", status: "pending", indexed: true},
 		{name: "parts complete", identity: parsed, summarized: true, ever: true, status: "ready", indexed: true},
+		// 'none' (No parsing) is no choice for a partial file: its index stays.
+		{name: "none requested", identity: parsed, ever: true, request: "none", jobType: "ingest", partsOnly: "true", status: "pending", indexed: true},
 		// A processed store-only upload keeps parse_mode 'none' but was parsed fast.
 		{name: "processed store-only", identity: parsed, ever: true, setup: `UPDATE files SET parse_mode='none' WHERE id=$1`, jobType: "ingest", partsOnly: "true", status: "pending", indexed: true},
 		// The alias content is not the file's current revision.
@@ -303,7 +307,11 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 			if c.setup != "" {
 				exec(c.setup, file.ID)
 			}
-			if err := s.RetryFileProcessing(ctx, owner, file.ID, "fast", "test"); err != nil {
+			request := c.request
+			if request == "" {
+				request = "fast"
+			}
+			if err := s.RetryFileProcessing(ctx, owner, file.ID, request, "test"); err != nil {
 				t.Fatal(err)
 			}
 			var status string
@@ -324,6 +332,51 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 			}
 		})
 	}
+
+	// The job names the revision current under Retry's locks: a publication
+	// that commits while Retry waits on the workspace lock is what it runs on.
+	t.Run("revision read under the lock", func(t *testing.T) {
+		ws, file := sourceTestFile(t, s, owner, "lesson.pdf", "pdf")
+		exec(`UPDATE files SET status='failed' WHERE id=$1`, file.ID)
+		hold, err := s.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer hold.Rollback(ctx)
+		if _, err = hold.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`, ws.ID); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- s.RetryFileProcessing(ctx, owner, file.ID, "fast", "test") }()
+		for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+			var waiting bool
+			if err = s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE NOT granted)`).Scan(&waiting); err != nil {
+				t.Fatal(err)
+			}
+			if waiting {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("retry never waited on the workspace lock")
+			}
+		}
+		if _, err = hold.Exec(ctx, `UPDATE files SET revision=revision+1,source_etag='etag-published' WHERE id=$1`, file.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err = hold.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err = <-done; err != nil {
+			t.Fatal(err)
+		}
+		var revision, etag string
+		if err = s.pool.QueryRow(ctx, `SELECT payload->>'sourceRevision',payload->>'sourceETag' FROM jobs WHERE payload->>'fileId'=$1`, file.ID).Scan(&revision, &etag); err != nil {
+			t.Fatal(err)
+		}
+		if revision != "2" || etag != "etag-published" {
+			t.Fatalf("job for revision %s etag %q, want 2 and the published etag", revision, etag)
+		}
+	})
 
 	// A running source refresh holds the file like a parse or ingest job.
 	ws, file := sourceTestFile(t, s, owner, "lesson.pdf", "pdf")

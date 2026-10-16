@@ -1,6 +1,5 @@
 import { Link } from '@tanstack/react-router';
 import { type MouseEventHandler, useState } from 'react';
-import { useRetryFileProcessing } from '@/api/hooks';
 import type { Chapter, SourceFile, UserColor } from '@/api/types';
 import { FileIcon } from '@/components/ui/FileIcon';
 import { ProgressBar } from '@/components/ui/ProgressBar';
@@ -8,7 +7,10 @@ import { StudyMark, type StudyRow } from '@/features/study/studyItems';
 import { AddSourceDialog } from '@/features/workspace/AddSourceDialog';
 import { ContentActions } from '@/features/workspace/ContentActions';
 import { toFileActionTarget } from '@/features/workspace/contentActionTarget';
-import { retryFailedFile } from '@/features/workspace/retryProcessing';
+import {
+  type RetryProcessing,
+  retryFailedFile,
+} from '@/features/workspace/retryProcessing';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { fileIconName } from '@/lib/fileIcons';
@@ -28,7 +30,7 @@ export function FileListItem({
   onDeleted,
   readOnly = false,
   canClone = false,
-  canRetry = false,
+  retry,
   study,
   menu = true,
 }: {
@@ -45,8 +47,9 @@ export function FileListItem({
   readOnly?: boolean;
   /** Members and editors may copy the file elsewhere (workspace.canClone). */
   canClone?: boolean;
-  /** The workspace owner may retry a failed file's processing. */
-  canRetry?: boolean;
+  /** The owner's Retry processing for a failed file, one mutation for the
+   * whole list; absent when the reader may not retry. */
+  retry?: RetryProcessing;
   /** The reader's own progress on this file, while progress is on. */
   study?: StudyRow;
   /** The hover ⋮; touch lists (the top Files drawer) leave it out and act
@@ -57,7 +60,6 @@ export function FileListItem({
   const waitingForBytes = ingesting && !file.hasBytes;
   const failed = file.status === 'failed';
   const [retrying, setRetrying] = useState(false);
-  const { mutateAsync: retryProcessing } = useRetryFileProcessing(workspaceId);
 
   return (
     <div className="relative flex flex-col">
@@ -110,13 +112,13 @@ export function FileListItem({
               readOnly
                 ? []
                 : [
-                    ...(failed && canRetry
+                    ...(failed && retry
                       ? [
                           {
                             icon: 'refresh' as const,
                             label: m.files_retry_processing(),
                             onClick: () =>
-                              retryFailedFile(file, retryProcessing, () =>
+                              retryFailedFile(file, retry, () =>
                                 setRetrying(true)
                               ),
                             warning: true,

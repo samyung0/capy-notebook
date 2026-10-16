@@ -3,6 +3,11 @@ import type { SourceFile } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 
+/** The Retry processing mutation, created once per list. */
+export type RetryProcessing = ReturnType<
+  typeof useRetryFileProcessing
+>['mutateAsync'];
+
 /** The toast once Retry processing is queued. */
 export function retryStartedToast() {
   userToast({
@@ -20,7 +25,7 @@ export function retryStartedToast() {
  * the dialog to pick a parse mode. */
 export function retryFailedFile(
   file: Pick<SourceFile, 'id' | 'indexed'>,
-  retryProcessing: ReturnType<typeof useRetryFileProcessing>['mutateAsync'],
+  retryProcessing: RetryProcessing,
   openDialog: () => void
 ) {
   if (!file.indexed) {
