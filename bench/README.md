@@ -122,7 +122,13 @@ measures the Office engine worker keeping each XLSX room's workbook open. The
 repeats the ladder for the Rust collaboration server against Node. The
 [2026-10-17 allocator run](collaboration/reports/2026-10-17-collaboration-allocator.md)
 measures the memory the server keeps after its peers leave, per glibc setting
-and with mimalloc.
+and with mimalloc. The
+[2026-10-17 Office room run](collaboration/reports/2026-10-17-office-room-memory.md)
+measures one Office room in process (`collaboration/scripts/office-room-memory/`,
+a standalone cargo crate; `run.sh <out-dir>`): memory held by the room's yrs
+document, encoded state, whole-state encode time, folds and the XLSX replica,
+after 1,000 and 10,000 edits made through docx-edit, pptx-edit and the XLSX
+workbook.
 
 `bench/collaboration/scripts/chaos-peers.ts` (`pnpm chaos:peers`) is not a
 measurement: it joins synthetic collaborators to one live room of the Rust
