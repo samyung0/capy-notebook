@@ -975,6 +975,67 @@ async fn internal(port: u16, path: &str, body: &serde_json::Value) -> (u16, serd
     )
 }
 
+/// A room under the eviction lease (a compaction or a publication) refuses
+/// an agent edit and the replace-block command before anything applies,
+/// with the known 503 a room being reset answers (the report side:
+/// `http.rs` `a_room_being_reset_refuses_edits_without_a_report`).
+#[tokio::test]
+async fn an_edit_of_a_room_being_compacted_is_a_known_refusal() {
+    let Some(env) = env() else { return };
+    let server = start(&env).await;
+    let room = "material:compacting:schema:1";
+    let redis = redis::Client::open(env.redis.as_str()).expect("redis");
+    let mut connection = redis
+        .get_multiplexed_async_connection()
+        .await
+        .expect("redis connection");
+    let lease = format!("capy:collaboration:evicting:{room}");
+    let _: () = redis::cmd("SET")
+        .arg(&lease)
+        .arg("test")
+        .arg("EX")
+        .arg(60)
+        .query_async(&mut connection)
+        .await
+        .expect("lease");
+    let edit = serde_json::json!({
+        "actorUserId": "u1",
+        "commands": [],
+        "operation": { "id": "op_compacting", "requestHash": "h1" },
+        "room": room,
+        "target": { "id": "compacting", "kind": "material" },
+    });
+    let command = serde_json::json!({
+        "type": "replace-block",
+        "actorUserId": "u1",
+        "materialId": "compacting",
+        "room": room,
+        "expectedBlock": {},
+        "replacementBlock": {},
+    });
+    let edited = internal(server.port, "/internal/documents/edit", &edit).await;
+    let commanded = internal(server.port, "/internal/commands", &command).await;
+    let _: i64 = redis::cmd("DEL")
+        .arg(&lease)
+        .query_async(&mut connection)
+        .await
+        .expect("release");
+    assert_eq!(
+        edited,
+        (
+            503,
+            serde_json::json!({ "code": "unavailable_target", "message": "collaboration room is being compacted" })
+        )
+    );
+    assert_eq!(
+        commanded,
+        (
+            503,
+            serde_json::json!({ "message": "collaboration room is being compacted" })
+        )
+    );
+}
+
 #[tokio::test]
 async fn an_agent_edit_commits_its_row_reaches_the_live_room_and_replays_by_operation() {
     let Some(env) = env() else { return };
