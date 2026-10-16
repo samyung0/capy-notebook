@@ -124,20 +124,22 @@ const shortDate = (seconds: number) =>
     timeZone: 'UTC',
   });
 
-/** The Subscription tab's row whose link is the invoice's hosted page. */
+/** The Subscription tab's row of a Stripe invoice. Its hosted-page link is
+ * signed anew on every read, so it cannot name the row: the tab lists
+ * invoices in the order the app's API returns them, under one header row. */
 async function expectInvoiceRow(
   run: UatRun,
-  page: Page,
+  actor: Actor,
   invoice: Record<string, unknown>,
   status: string,
   link: string
 ) {
-  await page.goto(`${run.env.appUrl}/billing?tab=subscription`);
-  const row = page.getByRole('row').filter({
-    has: page.locator(
-      `a[href="${stringField(invoice, 'hosted_invoice_url')}"]`
-    ),
-  });
+  await actor.page.goto(`${run.env.appUrl}/billing?tab=subscription`);
+  const index = arrayField(await api(actor, '/api/billing/invoices'), 'items')
+    .map(object)
+    .findIndex((item) => item.id === invoice.id);
+  expect(index, 'the invoice is listed').toBeGreaterThanOrEqual(0);
+  const row = actor.page.getByRole('row').nth(index + 1);
   await expect(row).toContainText(m.billing_invoice_kind_plan());
   await expect(row).toContainText(status);
   await expect(row.getByRole('link')).toHaveText(link);
@@ -381,7 +383,7 @@ test('a failed Pro renewal keeps Pro while Stripe retries, recovers when paid, a
   expect(firstInvoice.status).toBe('paid');
   await expectInvoiceRow(
     run,
-    a.page,
+    a,
     firstInvoice,
     m.billing_invoice_status_paid(),
     m.billing_invoice_view()
@@ -451,7 +453,7 @@ test('a failed Pro renewal keeps Pro while Stripe retries, recovers when paid, a
   );
   await expectInvoiceRow(
     run,
-    a.page,
+    a,
     retryingA,
     m.billing_invoice_status_retrying({
       date: shortDate(Number(retryingA.next_payment_attempt)),
@@ -580,7 +582,7 @@ test('a failed Pro renewal keeps Pro while Stripe retries, recovers when paid, a
   );
   await expectInvoiceRow(
     run,
-    a.page,
+    a,
     gaveUp,
     m.billing_invoice_status_failed(),
     m.billing_invoice_view()

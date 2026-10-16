@@ -138,6 +138,36 @@ async function settledReload(run: UatRun, actor: Actor, index: number) {
   return { invoice, reload };
 }
 
+/**
+ * The `index`th auto-reload, declined, once its invoice.payment_failed is
+ * processed. The worker records the decline right after its charge, before
+ * Stripe has scheduled the retry, so it first reads `failed`; the webhook
+ * then records Stripe's next attempt. `recordedFirst` is what the worker
+ * wrote.
+ */
+async function declinedReload(
+  run: UatRun,
+  actor: Actor,
+  index: number,
+  since: number
+) {
+  const { reload: recorded } = await settledReload(run, actor, index);
+  await processedEvent(
+    run,
+    'invoice.payment_failed',
+    since,
+    (value) => value.id === recorded.stripe_invoice_id
+  );
+  const [reload] = (await purchases(run, actor)).filter(
+    (p) => p.id === recorded.id
+  );
+  const invoice = await stripeRequest(
+    run.env,
+    `/v1/invoices/${invoiceId(reload)}`
+  );
+  return { invoice, recordedFirst: recorded.status, reload };
+}
+
 async function billing(actor: Actor) {
   const response = await actor.request('/api/billing');
   expect(response.status).toBe(200);
@@ -215,19 +245,23 @@ async function openSubscription(run: UatRun, page: Page, locale?: Locale) {
 const notice = (page: Page, title: string) =>
   page.getByRole('status').filter({ hasText: title });
 
-/** The Invoices row whose View or Pay link is the invoice's hosted page. */
+/** The Invoices row of a Stripe invoice. Its hosted-page link is signed anew
+ * on every read, so it cannot name the row: the tab lists invoices in the
+ * order the app's API returns them, under one header row. */
 async function expectInvoice(
-  page: Page,
+  actor: Actor,
   invoice: Record<string, unknown>,
   type: string,
   status: string,
   link: string
 ) {
-  const row = page.getByRole('row').filter({
-    has: page.locator(
-      `a[href="${stringField(invoice, 'hosted_invoice_url')}"]`
-    ),
-  });
+  const listed = await actor.request('/api/billing/invoices');
+  expect(listed.status).toBe(200);
+  const index = arrayField(listed.body, 'items')
+    .map(object)
+    .findIndex((item) => item.id === invoice.id);
+  expect(index, 'the invoice is listed').toBeGreaterThanOrEqual(0);
+  const row = actor.page.getByRole('row').nth(index + 1);
   await expect(row).toContainText(type);
   await expect(row).toContainText(status);
   await expect(row.getByRole('link')).toHaveText(link);
@@ -358,7 +392,7 @@ async function startCheckout(
  * be back on the Subscription tab. Only top-up and card-saving Checkout land
  * here: they have no API equivalent.
  */
-async function completeCheckout(page: Page, card: string) {
+async function completeCheckout(run: UatRun, page: Page, card: string) {
   await page.waitForURL(/^https:\/\/checkout\.stripe\.com\//);
   const number = page.locator('#cardNumber');
   // With Link enabled the card form can sit behind its accordion item.
@@ -389,8 +423,31 @@ async function completeCheckout(page: Page, card: string) {
   const link = page.locator('#enableStripePass');
   if ((await link.count()) > 0 && (await link.isChecked()))
     await link.uncheck();
-  await page.getByTestId('hosted-payment-submit-button').click();
-  await page.waitForURL(/\/billing\?tab=subscription/, { timeout: 90_000 });
+  const submit = page.getByTestId('hosted-payment-submit-button');
+  await expect(submit).toBeEnabled();
+  const returned = page
+    .waitForURL(/\/billing\?tab=subscription/, { timeout: 90_000 })
+    .then(
+      () => undefined,
+      (error: unknown) => error
+    );
+  await submit.click();
+  const failure = await returned;
+  if (failure === undefined) return;
+  // What the page shows instead: Stripe's field errors, a challenge, or the
+  // Link sign-up's phone number. No card or address values are kept.
+  const at = new URL(page.url());
+  await run.attach('checkout-not-returned', {
+    alerts: await page.getByRole('alert').allInnerTexts(),
+    captchaFrames: await page.locator('iframe[src*="hcaptcha"]').count(),
+    invalidFields: await page
+      .locator('[aria-invalid="true"]')
+      .evaluateAll((fields) => fields.map((field) => field.id)),
+    page: `${at.host}${at.pathname}`,
+    phoneField: await page.locator('#phoneNumber').count(),
+    submitText: await submit.innerText(),
+  });
+  throw failure;
 }
 
 /** The Stripe event of `type` about one object: delivered to every endpoint
@@ -449,7 +506,7 @@ async function expectVoided(run: UatRun, actor: Actor, reload: Purchase) {
   expect(invoice.status).toBe('void');
   await openSubscription(run, actor.page);
   await expectInvoice(
-    actor.page,
+    actor,
     invoice,
     m.billing_invoice_kind_reload(),
     m.billing_invoice_status_void(),
@@ -666,7 +723,7 @@ test('starter credits, a hosted-Checkout top-up, the monthly limit, auto-reload,
   expect(nested(session.automatic_tax, 'enabled')).toBe(true);
   expect(nested(session.invoice_creation, 'enabled')).toBe(true);
   expect(nested(session.adaptive_pricing, 'enabled')).toBe(false);
-  await completeCheckout(page, VISA);
+  await completeCheckout(run, page, VISA);
   // Checkout returns to the plain Subscription tab.
   expect([...new URL(page.url()).searchParams.keys()]).toEqual(['tab']);
   const topUp = await purchaseWhere(
@@ -720,7 +777,7 @@ test('starter credits, a hosted-Checkout top-up, the monthly limit, auto-reload,
   });
   await openSubscription(run, page);
   await expectInvoice(
-    page,
+    owner,
     topUpInvoice,
     m.billing_invoice_kind_topup(),
     m.billing_invoice_status_paid(),
@@ -799,7 +856,7 @@ test('starter credits, a hosted-Checkout top-up, the monthly limit, auto-reload,
   );
   await openSubscription(run, page);
   await expectInvoice(
-    page,
+    owner,
     reloadInvoice,
     m.billing_invoice_kind_reload(),
     m.billing_invoice_status_paid(),
@@ -881,14 +938,14 @@ test('starter credits, a hosted-Checkout top-up, the monthly limit, auto-reload,
     page.getByText(m.billing_monthly_limit({}, zh), { exact: true })
   ).toBeVisible();
   await expectInvoice(
-    page,
+    owner,
     topUpInvoice,
     m.billing_invoice_kind_topup({}, zh),
     m.billing_invoice_status_paid({}, zh),
     m.billing_invoice_view({}, zh)
   );
   await expectInvoice(
-    page,
+    owner,
     reloadInvoice,
     m.billing_invoice_kind_reload({}, zh),
     m.billing_invoice_status_paid({}, zh),
@@ -1005,7 +1062,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
     mode: 'setup',
     payment_method_types: ['card', 'link'],
   });
-  await completeCheckout(page, DECLINES);
+  await completeCheckout(run, page, DECLINES);
   // The return reopens the dialog, which shows the new card once the
   // webhook's billing event has refetched billing.
   await expect(dialog.getByText(visa('0341'))).toBeVisible({ timeout: 60_000 });
@@ -1029,11 +1086,11 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
   // (a new account starts armed) and the worker starts a reload, which
   // declines.
   expect(await saveAutoReload(page, await thresholdNow(owner))).toBe(true);
-  const { invoice: firstInvoice, reload: first } = await settledReload(
-    run,
-    owner,
-    0
-  );
+  const {
+    invoice: firstInvoice,
+    recordedFirst,
+    reload: first,
+  } = await declinedReload(run, owner, 0, since);
   // Handoff question 2: after our own invoices/pay fails, Stripe still has a
   // next attempt and sends invoice.payment_failed.
   await run.attach('q2-declined-reload', {
@@ -1044,6 +1101,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
     nextAttemptAt: first.next_attempt_at,
     nextPaymentAttempt: firstInvoice.next_payment_attempt,
     purchaseStatus: first.status,
+    workerRecorded: recordedFirst,
   });
   expect(first).toMatchObject({
     reload_pm_id: declining.reload_pm_id,
@@ -1052,12 +1110,6 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
   expect(firstInvoice.status).toBe('open');
   expect(Date.parse(String(first.next_attempt_at)) / 1000).toBe(
     firstInvoice.next_payment_attempt
-  );
-  await processedEvent(
-    run,
-    'invoice.payment_failed',
-    since,
-    (value) => value.id === firstInvoice.id
   );
   const retryDate = shortDate(
     new Date(Number(firstInvoice.next_payment_attempt) * 1000)
@@ -1072,7 +1124,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
   // The invoice list is read once per load.
   await openSubscription(run, page);
   await expectInvoice(
-    page,
+    owner,
     firstInvoice,
     m.billing_invoice_kind_reload(),
     m.billing_invoice_status_retrying({ date: retryDate }),
@@ -1100,7 +1152,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
   expect(uncollectible.status).toBe('uncollectible');
   await openSubscription(run, page);
   await expectInvoice(
-    page,
+    owner,
     uncollectible,
     m.billing_invoice_kind_reload(),
     m.billing_invoice_status_failed(),
@@ -1219,7 +1271,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
   // next reload declines on the saved card. A manual top-up voids it,
   // re-arms auto-reload and keeps the saved card.
   await setAutoReload(page, await thresholdNow(owner));
-  const { reload: second } = await settledReload(run, owner, 1);
+  const { reload: second } = await declinedReload(run, owner, 1, since);
   expect(second.status).toBe('retrying');
   await openSubscription(run, page);
   const field = page.getByLabel(m.billing_top_up(), { exact: true });
@@ -1236,7 +1288,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
         .getByRole('button', { exact: true, name: m.billing_top_up() })
         .click()
   );
-  await completeCheckout(page, VISA);
+  await completeCheckout(run, page, VISA);
   const topUp = await purchaseWhere(
     run,
     owner,
@@ -1254,7 +1306,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
   // Another declined reload at the new balance; a new card through Change
   // voids it, and the reload it re-arms charges the new card.
   await setAutoReload(page, await thresholdNow(owner));
-  const { reload: third } = await settledReload(run, owner, 2);
+  const { reload: third } = await declinedReload(run, owner, 2, since);
   expect(third.status).toBe('retrying');
   await openSubscription(run, page);
   await page
@@ -1266,7 +1318,7 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
       .getByRole('button', { exact: true, name: m.billing_payment_change() })
       .click()
   );
-  await completeCheckout(page, VISA);
+  await completeCheckout(run, page, VISA);
   // The reopened dialog shows the new card by itself.
   await expect(dialog.getByText(visa('4242'))).toBeVisible({ timeout: 60_000 });
   await dialog
@@ -1295,19 +1347,12 @@ test('a declined auto-reload retries; a top-up and a new card void it; a reload 
   );
   await openSubscription(run, page);
   await expectInvoice(
-    page,
+    owner,
     fourthInvoice,
     m.billing_invoice_kind_reload(),
     m.billing_invoice_status_paid(),
     m.billing_invoice_view()
   );
-  for (const declined of [second, third])
-    await processedEvent(
-      run,
-      'invoice.payment_failed',
-      since,
-      (value) => value.id === declined.stripe_invoice_id
-    );
   await run.attach('declined-reload-journey', {
     customerId,
     reloads: [first, second, third, fourth].map((p) => ({
@@ -1339,7 +1384,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
       .getByRole('button', { exact: true, name: m.billing_payment_add() })
       .click()
   );
-  await completeCheckout(page, DECLINES);
+  await completeCheckout(run, page, DECLINES);
   await expect(dialog.getByText(visa('0341'))).toBeVisible({ timeout: 60_000 });
   await dialog
     .getByRole('button', { exact: true, name: m.action_cancel() })
@@ -1460,11 +1505,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
   const atZero = await aiCommand(owner, workspaceId, ['Spend check.']);
   const atZeroAnswered = new Date().toISOString();
   expectAnswered(atZero);
-  const { invoice: declinedInvoice, reload: declined } = await settledReload(
-    run,
-    owner,
-    0
-  );
+  const { reload: declined } = await declinedReload(run, owner, 0, since);
   await run.attach('reload-at-zero', {
     reloadCreatedAt: declined.created_at,
     requestAnsweredAt: atZeroAnswered,
@@ -1508,7 +1549,7 @@ test('spent to zero through the app: work at zero is refused, the request that f
         .getByRole('button', { exact: true, name: m.billing_top_up() })
         .click()
   );
-  await completeCheckout(page, VISA);
+  await completeCheckout(run, page, VISA);
   await purchaseWhere(
     run,
     owner,
@@ -1522,17 +1563,11 @@ test('spent to zero through the app: work at zero is refused, the request that f
   expect(availableOf(await billing(owner))).toBeGreaterThan(0);
   expectAnswered(await aiCommand(owner, workspaceId, ['Spend check.']));
   expect(await setAutoReload(page, await thresholdNow(owner))).toBe(true);
-  const { reload: atThreshold } = await settledReload(run, owner, 1);
+  const { reload: atThreshold } = await declinedReload(run, owner, 1, since);
   expect(atThreshold).toMatchObject({
     reload_pm_id: declined.reload_pm_id,
     status: 'retrying',
   });
-  await processedEvent(
-    run,
-    'invoice.payment_failed',
-    since,
-    (value) => value.id === declinedInvoice.id
-  );
 });
 
 test('saving auto-reload again during a charge arms nothing, and a paid Pro renewal re-arms it', async ({
@@ -1636,7 +1671,7 @@ test('saving auto-reload again during a charge arms nothing, and a paid Pro rene
       .getByRole('button', { exact: true, name: m.billing_payment_add() })
       .click()
   );
-  await completeCheckout(page, VISA);
+  await completeCheckout(run, page, VISA);
   await expect(dialog.getByText(visa('4242'))).toBeVisible({ timeout: 60_000 });
   const threshold = setAutoReloadBodyThresholdCreditsMax;
   expect(await saveAutoReload(page, threshold)).toBe(true);
