@@ -67,6 +67,7 @@ GRANT SELECT ON TABLE
     public.agent_edit_inverses,
     public.edit_incidents,
     public.user_credits,
+    public.credit_purchases,
     public.webhook_events,
     public.email_outbox,
     public.user_subscriptions,
