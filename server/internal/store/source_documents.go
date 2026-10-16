@@ -618,8 +618,10 @@ func (s *Store) requestSourceRefresh(ctx context.Context, actor, fileID string, 
 			return s.reprocessTx(ctx, tx, result, ws, owner, name, kind, mode)
 		}
 		// A failed file is processed only when the owner asks (Retry
-		// processing, or Process queued behind a running job).
-		if refreshError != nil || (status == string(FileFailed) && !manual) {
+		// processing, or Process queued behind a running job), unless it is
+		// partial: still indexed with a part missing (parts design Q1), which
+		// the next refresh may fill.
+		if refreshError != nil || (status == string(FileFailed) && !indexed && !manual) {
 			return result, ErrConflict
 		}
 		// An Office list of moves only (reordered entries) is worth 0 tokens
