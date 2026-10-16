@@ -66,7 +66,7 @@ export function WorkspaceSettingsDialog({
     <ErrorState
       {...describeError(error)}
       action={
-        <ErrorAction iconLeftClassName="me-1" onClick={() => void refetch()}>
+        <ErrorAction onClick={() => void refetch()}>
           {m.error_action_retry()}
         </ErrorAction>
       }
@@ -104,7 +104,8 @@ export function WorkspaceSettingsDialog({
         ]}
         value={tab}
       />
-      <div className="mt-1 flex-1 py-5 sm:px-3">
+      {/* No bottom padding: the dialog's own sits under the General footer. */}
+      <div className="mt-1 flex-1 pt-5">
         {tab === 'general' && (
           <WorkspaceFormEditDialog
             embedded

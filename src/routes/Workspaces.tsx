@@ -10,9 +10,11 @@ import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { SkeletonCardGrid } from '@/components/ui/feedback';
 import { Icon } from '@/components/ui/Icon';
-import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
+import {
+  WorkspaceCard,
+  WorkspaceCardSkeleton,
+} from '@/components/ui/WorkspaceCard';
 import { WorkspaceFormCreateDialog } from '@/features/workspace/WorkspaceFormCreateDialog';
 import {
   AccountStatusButton,
@@ -121,7 +123,15 @@ export default function Workspaces() {
         {fetchStatus === 'paused' ? (
           <QueryPausedState />
         ) : isLoading ? (
-          <SkeletonCardGrid count={6} />
+          <div
+            aria-label={m.a11y_loading()}
+            className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"
+            role="status"
+          >
+            {Array.from({ length: 6 }, (_, i) => (
+              <WorkspaceCardSkeleton key={i} />
+            ))}
+          </div>
         ) : (
           <div
             className="grid w-full grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-4"

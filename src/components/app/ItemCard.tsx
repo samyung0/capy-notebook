@@ -219,7 +219,7 @@ export function ItemCard({
       interactive={!!link && !pickable}
     >
       {overlay}
-      <div className="flex min-w-0 items-center gap-2 pb-1.5 pl-1.5">
+      <div className="flex h-8.5 min-w-0 items-center gap-2 pb-1.5 pl-1.5">
         <FileIcon className="size-4 shrink-0 -translate-y-px" name={icon} />
         <Title
           className="min-w-0 flex-1 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card"
@@ -231,9 +231,7 @@ export function ItemCard({
           <div className="relative z-10 -my-0.5 shrink-0 [&_button]:p-1.5">
             {actions}
           </div>
-        ) : (
-          <span className="h-7" />
-        )}
+        ) : null}
       </div>
       <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
       {/* A fixed-height line, so cards with and without a workspace match. */}
@@ -368,7 +366,7 @@ export function ItemSkeletonGrid({
           className="@container rounded-card border border-transparent p-1.5"
           key={i}
         >
-          <div className="flex h-7 items-center gap-2 pb-1.5 pl-1.5">
+          <div className="flex h-8.5 items-center gap-2 pb-1.5 pl-1.5">
             <Skeleton className="size-4 shrink-0" />
             <Skeleton className="h-3.5 w-2/3" />
           </div>

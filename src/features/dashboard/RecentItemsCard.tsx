@@ -105,9 +105,8 @@ function recentLink(item: RecentItem) {
 }
 
 /** Newest files and materials across the caller's member workspaces plus
- * their standalone materials. Renders once all three lists have loaded. */
-export function RecentItemsCard() {
-  const [view, setView] = useListView(PREF_KEYS.recentsView);
+ * their standalone materials, merged once all three lists have loaded. */
+export function useRecentItems() {
   const meta = { errorBoundary: false as const };
   const {
     data: files,
@@ -150,7 +149,15 @@ export function RecentItemsCard() {
     [workspaces, workspacesFailed, refetchWorkspaces],
   ] as const;
   const missing = failed.filter(([data, isError]) => !data && isError);
+  return { isLoading, items, missing, paused, workspaces };
+}
 
+export type RecentItems = ReturnType<typeof useRecentItems>;
+
+/** The dashboard leaves it out while `recent.items` is empty and loaded. */
+export function RecentItemsCard({ recent }: { recent: RecentItems }) {
+  const [view, setView] = useListView(PREF_KEYS.recentsView);
+  const { isLoading, items, missing, paused, workspaces } = recent;
   return (
     <section className="flex flex-col gap-3">
       <div className="flex items-center justify-between">
@@ -163,7 +170,7 @@ export function RecentItemsCard() {
         view === 'grid' ? (
           <ItemSkeletonGrid count={8} dense />
         ) : (
-          <SkeletonList count={8} rowHeight={52} />
+          <SkeletonList className="gap-0.5" count={8} rowHeight={52} />
         )
       ) : missing.length ? (
         <InlineErrorState
@@ -173,10 +180,6 @@ export function RecentItemsCard() {
             for (const [, , refetch] of missing) void refetch();
           }}
         />
-      ) : items.length === 0 ? (
-        <p className="pt-10 pb-6 text-center text-fg-muted">
-          {m.dashboard_recent_empty()}
-        </p>
       ) : view === 'grid' ? (
         <ItemGrid>
           {items.map((item) => {

@@ -208,7 +208,7 @@ export function Sidebar({
         // The logo smokes out as the rail widens and the app name fades in
         // in line with the row icons, as on the full sidebar; narrowing drops
         // the name at once and the logo fades back.
-        <div className="relative flex items-center px-0.75 pb-3">
+        <div className="relative flex items-center px-0.75 pb-5">
           <span className="motion-smoke rail-open:motion-smoked shrink-0 group-hover/rail:delay-100">
             <LogoMark size={36} />
           </span>
@@ -217,7 +217,7 @@ export function Sidebar({
           </p>
         </div>
       ) : (
-        <div className="flex items-center justify-between px-3 pt-1 pb-3">
+        <div className="flex items-center justify-between px-3 pt-1 pb-5">
           <p className="t-card-title font-extrabold tracking-tight">
             {m.app_name()}
           </p>
@@ -312,7 +312,7 @@ export function Sidebar({
           asChild
           className={cn(
             RAIL_LABELS,
-            'absolute inset-y-2.5 left-1 z-40 flex rail-open:w-52 w-[70px] items-stretch gap-0 overflow-y-auto overflow-x-hidden px-3.5 pt-4 pb-1 transition-[width,box-shadow] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out) group-hover/rail:shadow-pop group-hover/rail:delay-100'
+            'absolute inset-y-2.5 left-1 z-40 flex rail-open:w-56 w-[70px] items-stretch gap-0 overflow-y-auto overflow-x-hidden px-3.5 pt-4 pb-2.5 transition-[width,box-shadow] duration-(--motion-duration-fast) ease-(--motion-ease-smooth-out) group-hover/rail:shadow-pop group-hover/rail:delay-100'
           )}
           radius="card-xl"
           theme="page"
@@ -326,7 +326,7 @@ export function Sidebar({
     <Card
       asChild
       className={cn(
-        'm-2.5 mr-0 ml-1 flex w-52 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 pt-4 pb-1',
+        'm-2.5 mr-0 ml-1 flex w-56 shrink-0 items-stretch gap-0 overflow-y-auto px-2.5 pt-4 pb-2.5',
         className
       )}
       radius="card-xl"

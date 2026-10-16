@@ -1,29 +1,32 @@
-import { cva, type VariantProps } from 'class-variance-authority';
 import { toast as sonnerToast } from 'sonner';
+import {
+  CALLOUT_ICON,
+  CALLOUT_VARIANT_CLASS,
+} from '@/features/notes/richBlockConfig';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { Button } from './Button';
-import { Card } from './Card';
 import { ContentSwap } from './ContentSwap';
 import { Icon } from './Icon';
 import { IconButton } from './IconButton';
 
-const sonnerCardVariants = cva(
-  'pointer-events-auto relative z-9999 w-full min-w-0 max-w-96 flex-row items-start gap-4 rounded-card p-3.5 shadow-card',
-  {
-    defaultVariants: {
-      variant: 'default',
-    },
-    variants: {
-      variant: {
-        default: 'bg-overlay',
-        error: 'motion-error-shake border-tint-error bg-tint-error delay-750',
-        success: 'border-tint-success bg-tint-success',
-        warning: 'border-tint-warning bg-tint-warning',
-      },
-    },
-  }
-);
+type ToastVariant = 'default' | 'error' | 'success' | 'warning';
+
+/** Toasts share the callout look, except the default toast is grey where a
+ * callout would use the blue info tint. */
+const TOAST_CALLOUT = {
+  default: 'info',
+  error: 'danger',
+  success: 'success',
+  warning: 'warning',
+} as const;
+
+const TOAST_VARIANT_CLASS: Record<ToastVariant, string> = {
+  default: 'border-line bg-surface-hover-bg text-fg',
+  error: cn(CALLOUT_VARIANT_CLASS.danger, 'motion-error-shake delay-750'),
+  success: CALLOUT_VARIANT_CLASS.success,
+  warning: CALLOUT_VARIANT_CLASS.warning,
+};
 
 function Toast(props: ToastProps) {
   const {
@@ -35,34 +38,24 @@ function Toast(props: ToastProps) {
     variant = 'default',
   } = props;
   return (
-    <Card
-      border="solid"
-      className={cn(sonnerCardVariants({ variant }))}
-      radius="row"
-      theme="transparent"
+    <div
+      className={cn(
+        'pointer-events-auto relative z-9999 flex w-full min-w-[280px] max-w-96 flex-row items-start gap-3 rounded-lg border p-3.5 shadow-card',
+        TOAST_VARIANT_CLASS[variant]
+      )}
     >
       <div className="flex min-w-0 flex-1 items-start gap-2.5">
-        {(variant === 'error' ||
-          variant === 'warning' ||
-          variant === 'success') && (
-          <Icon
-            className={cn(
-              'size-5 shrink-0',
-              variant === 'error' && 'text-tint-error-fg',
-              variant === 'warning' && 'text-tint-warning-fg',
-              variant === 'success' && 'text-tint-success-fg'
-            )}
-            name={variant === 'success' ? 'check' : 'error'}
-            strokeWidth={2}
-          />
-        )}
+        <Icon
+          className="mt-0.5 size-4.5 shrink-0 -translate-y-px"
+          name={CALLOUT_ICON[TOAST_CALLOUT[variant]]}
+        />
         <ContentSwap
           className="wrap-anywhere min-w-0 flex-1"
           contentKey={JSON.stringify([title, description])}
         >
-          <span className="block font-bold text-sm leading-5">{title}</span>
+          <span className="block font-bold text-sm">{title}</span>
           {description && (
-            <span className="mt-0.75 block whitespace-pre-line font-medium text-[13px] text-fg-secondary leading-4.5">
+            <span className="mt-0.5 block whitespace-pre-line text-[13px]">
               {description}
             </span>
           )}
@@ -95,11 +88,11 @@ function Toast(props: ToastProps) {
           type="button"
         />
       )}
-    </Card>
+    </div>
   );
 }
 
-interface ToastProps extends VariantProps<typeof sonnerCardVariants> {
+interface ToastProps {
   button?: {
     label: string;
     onClick: () => void;
@@ -108,6 +101,7 @@ interface ToastProps extends VariantProps<typeof sonnerCardVariants> {
   id: string | number;
   showCloseButton?: boolean;
   title: string;
+  variant?: ToastVariant;
 }
 
 export { Toast, type ToastProps };

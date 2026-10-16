@@ -53,8 +53,8 @@ export function creditsLabel(value: string): string {
   });
 }
 
-/** Cancel on the left, its text lined up with the content edge, and the
- * accented primary on the right. */
+/** Cancel then the accented primary, both on the right; DialogFooter moves
+ * Cancel to the left edge on phones. */
 function DialogActions({
   onCancel,
   primary,
@@ -64,13 +64,7 @@ function DialogActions({
 }) {
   return (
     <>
-      <Button
-        className="mr-auto -ml-6.5"
-        onClick={onCancel}
-        size="lg"
-        type="button"
-        variant="ghost-hover"
-      >
+      <Button onClick={onCancel} size="lg" type="button" variant="ghost-hover">
         {m.action_cancel()}
       </Button>
       {primary}
@@ -163,7 +157,7 @@ export function AutoReloadDialog({
       onSubmit={submit}
       open={open}
       title={m.billing_auto_reload()}
-      width={448}
+      width={560}
     >
       <Field label={m.billing_reload_amount()}>
         <Input
@@ -283,7 +277,7 @@ export function MonthlyLimitDialog({
       onSubmit={submit}
       open={open}
       title={m.billing_monthly_limit()}
-      width={448}
+      width={560}
     >
       <Field label={m.billing_limit_dialog_label()}>
         <Input
@@ -353,7 +347,7 @@ export function ReloadPendingDialog({
       onClose={onClose}
       open={open}
       title={m.billing_reload_pending_title()}
-      width={448}
+      width={560}
     >
       <p className="text-fg-secondary">
         {m.billing_reload_pending_body({ amount: formatDollars(amountCents) })}

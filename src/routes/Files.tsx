@@ -15,6 +15,7 @@ import type {
   TrashItem,
   Workspace,
 } from '@/api/types';
+import { ErrorState } from '@/components/app/ErrorState';
 import {
   ItemCard,
   ItemList,
@@ -292,7 +293,7 @@ function ActiveFiles({
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
       <div
-        className="shrink-0 grow px-2.5 pt-2 pb-5 sm:px-4"
+        className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6"
         onClick={clearOnBlank(selection.clear)}
       >
         {fetchStatus === 'paused' && !data ? (
@@ -535,21 +536,15 @@ function TrashTab({
   if (fetchStatus === 'paused' && !data) return <QueryPausedState />;
   if (isError && !data) {
     return (
-      <div
-        className="rounded-card border border-tint-error bg-tint-error px-3 py-2 text-sm text-solid-error"
-        data-error-surface="panel"
-        role="alert"
-      >
-        <p>{m.trash_load_failed()}</p>
-        <p className="t-meta">{describeError(error).description}</p>
-        <ErrorAction
-          iconLeftClassName="me-1"
-          onClick={() => refetch()}
-          size="sm"
-        >
-          {m.trash_retry()}
-        </ErrorAction>
-      </div>
+      <ErrorState
+        {...describeError(error)}
+        action={
+          <ErrorAction onClick={() => refetch()}>{m.trash_retry()}</ErrorAction>
+        }
+        className="py-16"
+        title={m.trash_load_failed()}
+        variant="panel"
+      />
     );
   }
   return (
@@ -606,7 +601,7 @@ function TrashTab({
       </div>
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
       <div
-        className="shrink-0 grow px-2.5 pt-2 pb-5 sm:px-4"
+        className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6"
         onClick={clearOnBlank(selection.clear)}
       >
         <div className="flex flex-col gap-3">

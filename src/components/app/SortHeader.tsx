@@ -24,7 +24,7 @@ export function SortChevrons({
       <svg
         className={cn(
           'h-[4.5px] w-[7px]',
-          direction === 'asc' ? 'fill-fg' : 'fill-placeholder'
+          direction === 'asc' ? 'fill-fg' : 'fill-placeholder/50'
         )}
         viewBox="0 0 8 5"
       >
@@ -33,7 +33,7 @@ export function SortChevrons({
       <svg
         className={cn(
           'h-[4.5px] w-[7px]',
-          direction === 'desc' ? 'fill-fg' : 'fill-placeholder'
+          direction === 'desc' ? 'fill-fg' : 'fill-placeholder/50'
         )}
         viewBox="0 0 8 5"
       >

@@ -1,13 +1,15 @@
 import { useClerk } from '@clerk/react';
-import { useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { USE_MSW } from '@/api/auth';
 import { useMe } from '@/api/hooks';
 import { Avatar } from '@/components/ui/Avatar';
+import { BASE_BUTTON_STYLE } from '@/components/ui/Button';
 import { Skeleton } from '@/components/ui/feedback';
 import { IconButton } from '@/components/ui/IconButton';
 import { Menu } from '@/components/ui/Menu';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import { ProfilePillButton } from './ProfilePillButton';
 import { ThemeSwitchDrawer } from './ThemeSwitchDrawer';
 
@@ -98,8 +100,9 @@ function ProfileMenuInner({
   );
 }
 
-/** The sidebar's foot: avatar and name with a log out button, no menu, since
- * the sidebar already lists Settings and Billing. */
+/** The sidebar's foot: avatar and name linking to account settings, with a
+ * log out button, no menu, since the sidebar already lists Settings and
+ * Billing. */
 export function ProfileRow() {
   if (!CLERK_ACTIVE) return <ProfileRowInner />;
   return <ClerkProfileRow />;
@@ -113,29 +116,42 @@ function ClerkProfileRow() {
 function ProfileRowInner({ onLogout }: { onLogout?: () => void }) {
   const { data: me, isPending } = useMe({ errorBoundary: false });
   return (
-    <div className="flex h-9 w-full items-center gap-2.5 overflow-hidden px-2">
-      {isPending ? (
-        <Skeleton className="size-6.5 shrink-0 rounded-full" />
-      ) : (
-        <Avatar
-          aria-hidden
-          className="size-6.5 text-[10.4px]"
-          name={me?.name}
-          src={me?.avatarUrl}
-        />
-      )}
-      {isPending ? (
-        <Skeleton className="h-4 min-w-0 flex-1" />
-      ) : (
-        <span
-          className="t-body min-w-0 flex-1 translate-y-px truncate font-bold leading-none"
-          data-label
-          title={me?.name}
-        >
-          {me?.name ?? '—'}
-        </span>
-      )}
-      <span className="-mr-1 shrink-0" data-label>
+    <div className="flex h-9 w-full items-center overflow-hidden">
+      {/* min-w keeps the avatar whole in the 70px rail, where the log out
+          button is clipped instead. */}
+      <Link
+        aria-label={m.settings_tab_account()}
+        className={cn(
+          BASE_BUTTON_STYLE,
+          'h-full min-w-10.5 flex-1 justify-start gap-2.5 px-2 text-fg hover:bg-page-hover'
+        )}
+        preload="intent"
+        search={{ tab: 'account' }}
+        to="/settings"
+      >
+        {isPending ? (
+          <Skeleton className="size-6.5 shrink-0 rounded-full" />
+        ) : (
+          <Avatar
+            aria-hidden
+            className="size-6.5 text-[10.4px]"
+            name={me?.name}
+            src={me?.avatarUrl}
+          />
+        )}
+        {isPending ? (
+          <Skeleton className="h-4 min-w-0 flex-1" />
+        ) : (
+          <span
+            className="t-body min-w-0 flex-1 translate-y-px truncate font-bold leading-none"
+            data-label
+            title={me?.name}
+          >
+            {me?.name ?? '—'}
+          </span>
+        )}
+      </Link>
+      <span className="shrink-0" data-label>
         <IconButton
           icon="logout"
           label={m.profile_menu_logout()}

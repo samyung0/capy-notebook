@@ -9,7 +9,10 @@
 @layer components {
   .spinner {
     position: relative;
-    display: inline-block;
+    /* Block, not inline-block: inside an inline wrapper (the dialogs' submit
+       buttons) an inline-block sits on the text baseline, 1.5px above the
+       button's centre. */
+    display: block;
     flex-shrink: 0;
     width: 18px;
     height: 18px;

@@ -205,13 +205,11 @@ function BuyCredits({
   return (
     <div className="min-w-0">
       <p className="t-subtitle font-bold">{m.billing_buy_credits()}</p>
-      <p className="t-meta mt-1 text-fg-muted">
-        {view.owed > 0
-          ? m.billing_purchased_owed({ amount: formatCredits(view.owed) })
-          : m.billing_purchased_left({
-              amount: formatCredits(billing.creditsPurchasedMicros),
-            })}
-      </p>
+      {view.owed > 0 && (
+        <p className="t-meta mt-1 text-fg-muted">
+          {m.billing_purchased_owed({ amount: formatCredits(view.owed) })}
+        </p>
+      )}
       <form noValidate onSubmit={submit}>
         <label
           className="mt-5 mb-1.5 block text-fg-secondary text-sm"

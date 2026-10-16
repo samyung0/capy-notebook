@@ -63,14 +63,16 @@ export function PanelWithInvertedRadius({
             <div />
           </Card>
           <div className="relative flex h-full flex-col gap-2">
+            {/* Both scrollers keep the scrollbar's gutter, so content that
+                grows past the panel does not narrow it (and reflow grids). */}
             <div
-              className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto xl:overflow-visible"
+              className="flex min-h-0 flex-1 flex-col gap-2 overflow-auto [scrollbar-gutter:stable] xl:overflow-visible"
               ref={outerRef}
             >
               <PhoneTopRow className="shrink-0 px-4 pt-3 pb-2" />
               {header && <div className="shrink-0">{header}</div>}
               <div
-                className="flex flex-1 flex-col items-stretch gap-2 p-0 pb-10 xl:min-h-0 xl:overflow-auto"
+                className="flex flex-1 flex-col items-stretch gap-2 p-0 pb-10 [scrollbar-gutter:stable] xl:min-h-0 xl:overflow-auto"
                 ref={bodyRef}
               >
                 <PanelScrollRoot.Provider value={xl ? bodyRef : outerRef}>

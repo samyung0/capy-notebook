@@ -75,15 +75,21 @@ export interface InputProps
   actionVariant?: IconButtonProps['variant'];
   endText?: React.ReactNode;
   leftIcon?: IconName;
+  /** Nudges the left icon, e.g. onto the text's optical centre. */
+  leftIconClassName?: string;
   rightIcon?: IconName;
   /** Muted text inside the field, before and after the value ("$", "credits"). */
   startText?: React.ReactNode;
   wrapperClassName?: string;
 }
 
-const InlineIcon = ({ name }: { name: IconName }) => (
-  <Icon className={cn('size-4.5 text-fg-muted')} name={name} />
-);
+const InlineIcon = ({
+  name,
+  className,
+}: {
+  name: IconName;
+  className?: string;
+}) => <Icon className={cn('size-4.5 text-fg-muted', className)} name={name} />;
 
 const InlineAction = ({
   name,
@@ -112,6 +118,7 @@ const InlineAction = ({
 
 export function Input({
   leftIcon,
+  leftIconClassName,
   rightIcon,
   startText,
   endText,
@@ -138,7 +145,7 @@ export function Input({
         wrapperClassName
       )}
     >
-      {leftIcon && <InlineIcon name={leftIcon} />}
+      {leftIcon && <InlineIcon className={leftIconClassName} name={leftIcon} />}
       {startText != null && <span className="text-fg-muted">{startText}</span>}
       {actionIcon && actionShowIcon && actionSide === 'left' && (
         <InlineAction

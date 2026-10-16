@@ -2,19 +2,22 @@ import { Link } from '@tanstack/react-router';
 import { USE_MSW } from '@/api/auth';
 import { useWorkspaces } from '@/api/hooks';
 import { CloneLinkDialog } from '@/components/app/CloneLinkDialog';
-import { ErrorState } from '@/components/app/ErrorState';
+import { InlineErrorState } from '@/components/app/ErrorState';
 import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import DashboardBanner from '@/components/banners/DashboardBanner';
-import { Button, ErrorAction } from '@/components/ui/Button';
-import { Skeleton } from '@/components/ui/feedback';
+import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import { WorkspaceCard } from '@/components/ui/WorkspaceCard';
+import {
+  WorkspaceCard,
+  WorkspaceCardSkeleton,
+} from '@/components/ui/WorkspaceCard';
 import { OnboardingDialog } from '@/features/auth/OnboardingDialog';
-import { RecentItemsCard } from '@/features/dashboard/RecentItemsCard';
+import {
+  RecentItemsCard,
+  useRecentItems,
+} from '@/features/dashboard/RecentItemsCard';
 import { m } from '@/i18n';
-import { cn } from '@/lib/cn';
-import { describeError } from '@/lib/errors';
 import { useLoadingReveal } from '@/lib/useLoadingReveal';
 
 const CLERK_ACTIVE = !USE_MSW && !!import.meta.env.VITE_CLERK_PUBLISHABLE_KEY;
@@ -58,44 +61,15 @@ function WorkspacesSection() {
       ) : isLoading ? (
         <div className={SLIDER_CLASS}>
           {Array.from({ length: 4 }, (_, i) => (
-            <Skeleton
-              className={cn(SLIDE_CLASS, 'h-37.5 rounded-card-lg')}
-              key={i}
-            />
+            <WorkspaceCardSkeleton className={SLIDE_CLASS} key={i} />
           ))}
         </div>
       ) : !data && error ? (
-        <ErrorState
-          {...describeError(error)}
-          action={
-            <ErrorAction
-              iconLeftClassName="me-1"
-              onClick={() => void refetch()}
-            >
-              {m.error_action_retry()}
-            </ErrorAction>
-          }
-          variant="panel"
+        <InlineErrorState
+          className="pt-10 pb-6"
+          message={m.dashboard_recent_workspaces_error()}
+          onRetry={() => void refetch()}
         />
-      ) : !recent || recent.length === 0 ? (
-        <div
-          // The skeleton row's height, so the empty state sits in its middle.
-          className="flex h-37.5 w-full flex-col items-center justify-center gap-4 text-center"
-          ref={revealRef}
-        >
-          <p className="t-subtitle">{m.workspaces_empty()}</p>
-          <Button
-            asChild
-            className="t-subtitle! underline hover:bg-surface-hover-bg/80"
-            iconRight="sparkles"
-            size="sm"
-            variant="ghost-link"
-          >
-            <Link preload="intent" to="/workspaces">
-              {m.dashboard_empty_cta()}
-            </Link>
-          </Button>
-        </div>
       ) : (
         <div className={SLIDER_CLASS} ref={revealRef}>
           {recent?.map((w) => (
@@ -121,7 +95,37 @@ function WorkspacesSection() {
   );
 }
 
+/** A new account's dashboard: both lists are empty, so neither section
+ * shows, and this sits in the middle of the page instead. */
+function DashboardEmpty() {
+  return (
+    <div className="flex flex-1 flex-col items-center justify-center gap-4 py-10 text-center">
+      <p className="t-subtitle">{m.workspaces_empty()}</p>
+      <Button
+        asChild
+        className="t-subtitle! underline hover:bg-surface-hover-bg/80"
+        iconRight="sparkles"
+        size="sm"
+        variant="ghost-link"
+      >
+        <Link preload="intent" to="/workspaces">
+          {m.dashboard_empty_cta()}
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
 export default function Dashboard() {
+  const recent = useRecentItems();
+  // Only loaded, empty lists hide: loading, paused and failed lists keep
+  // their section so the skeleton or error still shows.
+  const workspacesEmpty = recent.workspaces?.length === 0;
+  const recentEmpty =
+    !recent.isLoading &&
+    !recent.paused &&
+    recent.missing.length === 0 &&
+    recent.items.length === 0;
   return (
     <>
       <PanelWithInvertedRadius
@@ -132,11 +136,17 @@ export default function Dashboard() {
           />
         }
       >
-        <div className="flex flex-col gap-6 px-4 pt-5 pb-6 sm:gap-8 sm:px-6 sm:pt-6">
+        <div className="flex flex-1 flex-col gap-6 px-4 pt-5 pb-6 sm:gap-8 sm:px-6 sm:pt-6">
           {/* <CloudConnectBanner /> */}
           <DashboardBanner />
-          <WorkspacesSection />
-          <RecentItemsCard />
+          {workspacesEmpty && recentEmpty ? (
+            <DashboardEmpty />
+          ) : (
+            <>
+              {!workspacesEmpty && <WorkspacesSection />}
+              {!recentEmpty && <RecentItemsCard recent={recent} />}
+            </>
+          )}
         </div>
       </PanelWithInvertedRadius>
       {CLERK_ACTIVE && <OnboardingDialog />}

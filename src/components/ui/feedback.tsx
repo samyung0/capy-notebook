@@ -31,9 +31,12 @@ export function PaneLoading({ message }: { message: string }) {
 export function Skeleton({
   className,
   style,
+  children,
 }: {
   className?: string;
   style?: React.CSSProperties;
+  /** Invisible spacers that size the block like the content it stands for. */
+  children?: React.ReactNode;
 }) {
   return (
     <div
@@ -42,7 +45,9 @@ export function Skeleton({
         className
       )}
       style={style}
-    />
+    >
+      {children}
+    </div>
   );
 }
 

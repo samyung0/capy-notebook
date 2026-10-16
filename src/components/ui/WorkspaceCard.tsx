@@ -15,6 +15,7 @@ import { iconUrl } from '@/lib/icon-catalog';
 import { Badge } from './Badge';
 import { Card } from './Card';
 import { CoverArt } from './CoverArt';
+import { Skeleton } from './feedback';
 
 export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   const { mutate: deleteWorkspace } = useDeleteWorkspace();
@@ -70,8 +71,9 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
       : []),
   ];
   return (
-    <div className="group/ws relative">
+    <div className="group/ws relative h-full">
       <Link
+        className="block h-full"
         key={workspace.id}
         params={{ workspaceId: workspace.id }}
         preload="intent"
@@ -140,6 +142,25 @@ export function WorkspaceCard({ workspace }: { workspace: Workspace }) {
   );
 }
 
+/** A loading card built from the face's padding and line heights, so the
+ * row keeps its height when cards arrive. */
+export function WorkspaceCardSkeleton({ className }: { className?: string }) {
+  return (
+    <Skeleton
+      className={cn(
+        'rounded-card border border-transparent p-4 xl:p-5',
+        className
+      )}
+    >
+      <div aria-hidden className="invisible">
+        <p className="t-card-title h-[2lh] leading-tight" />
+        <p className="t-meta mt-2.5">&nbsp;</p>
+        <div className="mt-2.5 h-5.5" />
+      </div>
+    </Skeleton>
+  );
+}
+
 /** The fields a card shows; the settings cover picker previews them too. */
 export type WorkspaceCardFields = Pick<
   Workspace,
@@ -185,14 +206,16 @@ export function WorkspaceCardFace({
           src={iconUrl(workspace.iconId)}
           width={36}
         />
+        {/* Always two lines tall, so long names do not grow the card; a
+            one-line name stays centred beside the icon. */}
         <h3
           className={cn(
-            't-card-title line-clamp-2 pr-7',
+            't-card-title flex h-[2lh] items-center pr-7 leading-tight',
             ink === 'dark' && 'text-white',
             ink === 'light' && 'text-[#1d1d1f]'
           )}
         >
-          {workspace.name}
+          <span className="line-clamp-2">{workspace.name}</span>
         </h3>
         <p
           className={cn(
@@ -206,19 +229,10 @@ export function WorkspaceCardFace({
             files: String(workspace.fileCount),
           })}
         </p>
-        <div className="col-span-2 mt-2.5 -ml-1 flex flex-wrap gap-1">
-          {workspace.tags.map((t) => (
-            <Badge
-              className={cn(
-                ink === 'dark' && 'bg-white/18 text-white',
-                ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
-              )}
-              key={t.value}
-              size="sm"
-            >
-              # {t.value}
-            </Badge>
-          ))}
+        {/* One badge high, so every card and the skeleton share a height:
+            badges that do not fit wrap to a hidden second line. Access comes
+            first so it is never the one hidden. */}
+        <div className="col-span-2 mt-2.5 -ml-1 flex h-5.5 flex-wrap gap-1 overflow-hidden">
           {workspace.privacy !== 'private' && (
             // Access keeps its colour on covers so it stands apart from tags.
             <Badge
@@ -230,6 +244,20 @@ export function WorkspaceCardFace({
                 : m.workspace_privacy_shared()}
             </Badge>
           )}
+          {workspace.tags.map((t) => (
+            <Badge
+              className={cn(
+                'max-w-full',
+                ink === 'dark' && 'bg-white/18 text-white',
+                ink === 'light' && 'bg-black/8 text-[#1d1d1f]'
+              )}
+              key={t.value}
+              size="sm"
+            >
+              {/* A 35-character tag is wider than a phone card. */}
+              <span className="truncate"># {t.value}</span>
+            </Badge>
+          ))}
         </div>
       </div>
     </Card>

@@ -396,7 +396,7 @@ export function MaterialsTab({
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
       <div
-        className="w-full shrink-0 grow px-2.5 pt-2 pb-6 sm:px-4"
+        className="w-full shrink-0 grow px-4 pt-2 pb-6 sm:px-6"
         onClick={clearOnBlank(selection.clear)}
       >
         {fetchStatus === 'paused' && !data ? (

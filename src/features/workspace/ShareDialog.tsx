@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/Select';
 import { Separator } from '@/components/ui/Separator';
+import { UnderlineLink } from '@/components/ui/UnderlineLink';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
 import { track } from '@/lib/analytics';
@@ -319,48 +320,26 @@ export function ShareDialog({
               value={absoluteLink}
               wrapperClassName="has-disabled:pointer-events-auto has-disabled:cursor-auto min-w-0 flex-1"
             />
-            {/* Phones show the icons alone so the buttons fit beside the link. */}
             <Button
-              className="aspect-square px-0 sm:aspect-auto sm:rounded-button-lg sm:px-5"
+              aria-label={copied ? m.action_copied() : m.action_copy()}
+              className="aspect-square px-0"
               onClick={copy}
               variant="outline"
             >
               <ContentSwap contentKey={String(copied)} kind="icon">
                 <Icon name={copied ? 'check' : 'copy'} />
               </ContentSwap>
-              {/* Both labels sit hidden in the same cell so the button keeps the wider width. */}
-              <span className="sr-only sm:not-sr-only sm:inline-grid">
-                <span aria-hidden className="invisible col-start-1 row-start-1">
-                  {m.action_copy()}
-                </span>
-                <span aria-hidden className="invisible col-start-1 row-start-1">
-                  {m.action_copied()}
-                </span>
-                <ContentSwap
-                  className="col-start-1 row-start-1"
-                  contentKey={String(copied)}
-                >
-                  {copied ? m.action_copied() : m.action_copy()}
-                </ContentSwap>
-              </span>
             </Button>
             {workspaceId && (
-              <Button
-                asChild
-                className="aspect-square px-0 sm:aspect-auto sm:rounded-button-lg sm:px-5"
-                variant="outline"
-              >
+              <UnderlineLink accent asChild>
                 <a
                   href={absoluteLink}
                   rel="noopener noreferrer"
                   target="_blank"
                 >
-                  <span className="sr-only sm:not-sr-only">
-                    {m.summary_preview()}
-                  </span>
-                  <Icon name="navigationForward" />
+                  {m.summary_preview()}
                 </a>
-              </Button>
+              </UnderlineLink>
             )}
           </div>
         )}

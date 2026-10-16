@@ -252,8 +252,11 @@ function SimpleDialog({
       >
         {onSubmit ? (
           <form
+            // min-h-full and shrink-0, not h-full: a form taller than the
+            // dialog grows and scrolls with the card's bottom padding below its
+            // footer, instead of overflowing past it.
             className={cn(
-              'flex h-full min-h-0 w-full flex-col items-stretch gap-4',
+              'flex min-h-full w-full shrink-0 flex-col items-stretch gap-4',
               formClassName
             )}
             onSubmit={onSubmit}

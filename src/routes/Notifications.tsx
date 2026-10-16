@@ -107,8 +107,10 @@ export default function Notifications() {
     <PanelWithInvertedRadius
       header={<PageHeader title={m.notifications_title()} />}
     >
-      <div className="flex w-full max-w-3xl flex-col px-4 sm:px-6">
-        <div className="flex items-center justify-end gap-1">
+      {/* Learning's padding; the actions sit at the panel's right edge, the
+       * list keeps its reading width. */}
+      <div className="flex w-full flex-col px-4 sm:px-6 lg:px-10 xl:px-16">
+        <div className="flex items-center justify-end">
           <Button
             disabled={!unread?.count}
             iconLeft="tickDouble"
@@ -129,40 +131,44 @@ export default function Notifications() {
             <Link search={{ tab: 'notifications' }} to="/settings" />
           </IconButton>
         </div>
-        {!data &&
-          (fetchStatus === 'paused' ? (
-            <QueryPausedState />
-          ) : (
-            <SkeletonList className="mt-4" count={6} rowHeight={64} />
-          ))}
-        {data && !items.length && (
-          <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
-            <Icon className="text-fg-muted" name="bell" size={28} />
-            <p className="t-subtitle font-bold">{m.notifications_empty()}</p>
-            <p className="text-fg-secondary">{m.notifications_empty_body()}</p>
-          </div>
-        )}
-        {byDay(items).map((day) => (
-          <section className="mt-3.5" key={day.label}>
-            <h2 className="t-label pb-1.5 text-fg-muted">{day.label}</h2>
-            <div className="-mx-3 flex flex-col">
-              {day.items.map((n) => (
-                <Row key={n.id} notification={n} self={me} />
-              ))}
+        <div className="flex max-w-3xl flex-col">
+          {!data &&
+            (fetchStatus === 'paused' ? (
+              <QueryPausedState />
+            ) : (
+              <SkeletonList className="mt-4" count={6} rowHeight={64} />
+            ))}
+          {data && !items.length && (
+            <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+              <Icon className="text-fg-muted" name="bell" size={28} />
+              <p className="t-subtitle font-bold">{m.notifications_empty()}</p>
+              <p className="text-fg-secondary">
+                {m.notifications_empty_body()}
+              </p>
             </div>
-          </section>
-        ))}
-        <ListEnd
-          fetchNextPage={fetchNextPage}
-          hasNextPage={hasNextPage}
-          isFetchingNextPage={isFetchingNextPage}
-          isFetchNextPageError={isFetchNextPageError}
-        />
-        {!hasNextPage && items.length > 0 && (
-          <p className="t-meta pt-4 text-center text-fg-muted">
-            {m.notifications_end()}
-          </p>
-        )}
+          )}
+          {byDay(items).map((day) => (
+            <section className="mt-3.5" key={day.label}>
+              <h2 className="t-label pb-1.5 text-fg-muted">{day.label}</h2>
+              <div className="-mx-3 flex flex-col">
+                {day.items.map((n) => (
+                  <Row key={n.id} notification={n} self={me} />
+                ))}
+              </div>
+            </section>
+          ))}
+          <ListEnd
+            fetchNextPage={fetchNextPage}
+            hasNextPage={hasNextPage}
+            isFetchingNextPage={isFetchingNextPage}
+            isFetchNextPageError={isFetchNextPageError}
+          />
+          {!hasNextPage && items.length > 0 && (
+            <p className="t-meta pt-4 text-center text-fg-muted">
+              {m.notifications_end()}
+            </p>
+          )}
+        </div>
       </div>
     </PanelWithInvertedRadius>
   );
