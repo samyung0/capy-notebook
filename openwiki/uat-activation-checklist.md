@@ -137,6 +137,14 @@ deployed `stripe-go/v82` SDK. Confirm a real subscription event receives HTTP
 200 and appears processed in `webhook_events`; an enabled endpoint alone does
 not establish delivery compatibility.
 
+The endpoint subscribes to exactly the ten events listed in
+[deployment-runbook.md](deployment-runbook.md) ("The event selection in every
+lane"), including the five that came with credit top-ups (`invoice.paid`,
+`charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`,
+`checkout.session.async_payment_succeeded`); after a sandbox top-up,
+`invoice.paid` answers 200 and is processed in `webhook_events`. The Free row of
+`plan_limits` holds the 200-credit monthly allowance.
+
 Confirm the edge does not rate-limit or challenge `/webhooks/`. Both providers
 burst on retry and will trip a WAF rule written for browser traffic.
 

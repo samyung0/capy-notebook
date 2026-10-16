@@ -2557,6 +2557,14 @@ invoice link and 3D Secure confirmation links are on. Card and Link must be
 enabled payment methods. The reload worker runs only where
 `STRIPE_SECRET_KEY` is set.
 
+Plan credit limits are data, not migrations: the Free monthly allowance is
+200 credits (`UPDATE plan_limits SET credit_limit_micros = 200000000 WHERE
+plan_tier = 'free';`, Epo 2026-10-16), and the one-off 800-credit starter grant
+is the `user_credits` column default from migration 0088. A database built from
+migrations still seeds the older values, so set the row by hand in each
+environment, **before** the deploy that restarts the API and the ingest worker:
+both read `plan_limits` once at startup (or restart them after the change).
+
 There is no Team product in any environment and no `STRIPE_PRICE_TEAM`
 setting: `plan_limits` restricts `plan_tier` to `free` and `pro`
 (`server/migrations/0001_init.sql`). Add the price and the variable together
