@@ -84,12 +84,13 @@ import {
   topicPath,
   uploadBankAsset,
 } from '@/features/questions/bank';
-import {
-  type SyllabusHit,
-  searchSyllabus,
-} from '@/features/questions/bankSearch';
+import { searchSyllabus } from '@/features/questions/bankSearch';
 import { CopyToQuizDialog } from '@/features/questions/CopyToQuizDialog';
-import { ExamPicker, ExamStrip } from '@/features/questions/ExamPicker';
+import {
+  ExamPicker,
+  ExamStrip,
+  topicCount,
+} from '@/features/questions/ExamPicker';
 import { answerLabels } from '@/features/questions/editorFields';
 import {
   QuestionListRow,
@@ -148,12 +149,12 @@ export default function QuestionBank() {
   const summary = Boolean(matchRoute({ to: '/qb/$topicId/summary' }));
   const [showTopics, setShowTopics] = useState(!topicId);
   const [navOpen, setNavOpen] = useState(false);
-  // From lg the side panel shows the same nav, so a sheet left open while
+  // From xl the side panel shows the same nav, so a sheet left open while
   // the window widens closes instead of covering the page.
-  const lg = useMediaQuery('(min-width: 1024px)');
+  const xl = useMediaQuery('(min-width: 1280px)');
   useEffect(() => {
-    if (lg) setNavOpen(false);
-  }, [lg]);
+    if (xl) setNavOpen(false);
+  }, [xl]);
   const [topicFilter, setTopicFilter] = useState('');
   const [filter, setFilter] = useState('');
   const [unreviewed, setUnreviewed] = useState(false);
@@ -607,11 +608,11 @@ export default function QuestionBank() {
     );
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 lg:flex-row">
-      {/* The topics panel from lg, under the top bar from xl (below it the
-          sidebar has the bar's items). */}
-      <div className="order-last hidden h-full shrink-0 flex-col gap-2.5 lg:flex lg:w-(--top-inset-bar-width)">
-        <TopInsetBar className="hidden xl:flex" />
+    <div className="flex h-full min-h-0 flex-col gap-1.5 sm:gap-2.5 xl:flex-row">
+      {/* The topics panel and the top bar above it from xl; below it the
+          sidebar has the bar's items and the page is one column. */}
+      <div className="order-last hidden h-full shrink-0 flex-col gap-2.5 xl:flex xl:w-(--top-inset-bar-width)">
+        <TopInsetBar />
         <Panel
           className="min-h-0 flex-1"
           sectionClassName="scroll-fade-y h-full px-2 py-5 [--scroll-fade-bottom-padding:--spacing(5)]"
@@ -646,11 +647,13 @@ export default function QuestionBank() {
                       >
                         {mode === 'edit'
                           ? m.question_ui_view_mode()
-                          : m.question_ui_edit_mode()}
+                          : m.question_ui_edit()}
                       </Button>
                     )
                   )
                 }
+                // Dashboard's padding, as on the bank's main page.
+                className="lg:px-6 xl:px-6"
                 meta={
                   place &&
                   [
@@ -686,7 +689,8 @@ export default function QuestionBank() {
                 }
                 trail={trail}
               />
-              <div className="px-4 pt-8 pb-28 sm:px-6 lg:pb-10">
+              {/* Learning's page padding (40/64px), as the bank's topic lists. */}
+              <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 xl:px-16 xl:pb-10">
                 <div className="max-w-3xl">{body}</div>
               </div>
             </>
@@ -703,7 +707,7 @@ export default function QuestionBank() {
                     >
                       {mode === 'edit'
                         ? m.question_ui_view_mode()
-                        : m.question_ui_edit_mode()}
+                        : m.question_ui_edit()}
                     </Button>
                   )
                 }
@@ -712,20 +716,18 @@ export default function QuestionBank() {
                 subtitle={m.question_ui_bank_hint()}
                 title={m.question_ui_question_bank()}
               />
-              {/* The title's side padding: the side panel already narrows
-                  the page, so it does not grow with the screen. */}
-              <div className="px-4 pt-5 pb-28 sm:px-6 sm:pt-8 lg:pb-10">
+              <div className="px-4 pt-5 pb-28 sm:px-6 sm:pt-8 xl:pb-10">
                 {body}
               </div>
             </>
           )}
         </Panel>
-        {/* Without the side panel (below lg) it becomes a floating bar and a
+        {/* Without the side panel (below xl) it becomes a floating bar and a
             bottom sheet, as in WorkspaceOpen's single-column layout. */}
         {syllabus && (
           <PageFloatingBar
             aria-label={m.question_ui_bank_navigation()}
-            className="lg:hidden"
+            className="xl:hidden"
             open={!navOpen}
           >
             <PageFloatingBarButton
@@ -1214,14 +1216,14 @@ function PanelHeading({
             actionLabel={m.question_ui_close_search()}
             aria-label={searchLabel}
             autoFocus
-            className="py-0"
             leftIcon="search"
+            leftIconClassName="-translate-y-px"
             maxLength={bankQuestionsQueryQMax}
             onChange={(event) => onFilter(event.target.value)}
             placeholder={searchLabel}
-            size="sm"
             value={filter}
-            wrapperClassName="h-9 w-full text-sm"
+            variant="underline"
+            wrapperClassName="h-9 w-full gap-2.5 px-2 text-sm"
           />
         </div>
       ) : tabs ? (
@@ -1291,25 +1293,117 @@ function TopicTree({
   );
   const exam = syllabus.exams.find((item) => item.id === examId);
   const needle = filter.trim().toLocaleLowerCase();
-  const hits = needle ? searchSyllabus(syllabus.exams, needle) : [];
-  const here = exam
-    ? hits.filter((hit) => hit.kind === 'topic' && hit.exam.id === exam.id)
-    : [];
-  const away = exam ? hits.filter((hit) => hit.exam.id !== exam.id) : hits;
   const count = (item: BankTopic) => (
     <span className="shrink-0 font-semibold text-fg-muted text-xs">
       {edit ? `${item.reviewed}/${item.total}` : item.total}
     </span>
   );
-  // A topic hit's exam (unless it is the open one) and subject, unless the
-  // exam hides its one subject.
-  const hitTrail = (hit: SyllabusHit & { kind: 'topic' }) =>
-    [
-      hit.exam.id !== exam?.id && hit.exam.label,
-      !soleSubject(hit.exam) && hit.subject.label,
-    ]
-      .filter(Boolean)
-      .join(' · ');
+  // The open exam's subjects and topics come first in their sections.
+  const mineFirst = <T extends { exam: BankExam }>(list: T[]) =>
+    exam
+      ? [
+          ...list.filter((hit) => hit.exam.id === exam.id),
+          ...list.filter((hit) => hit.exam.id !== exam.id),
+        ]
+      : list;
+  const found = needle ? searchSyllabus(syllabus.exams, needle) : undefined;
+  const sections = found && [
+    {
+      key: 'exams',
+      label: m.question_ui_exams(),
+      rows: found.exams
+        .filter((hit) => hit.exam.id !== exam?.id)
+        .map((hit) => (
+          <button
+            className="flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+            key={hit.exam.id}
+            onClick={() => {
+              onFilter('');
+              onExam(hit.exam.id);
+            }}
+            type="button"
+          >
+            <span className="min-w-0 flex-1 translate-y-px truncate">
+              <Highlight needle={needle} text={hit.exam.label} />
+            </span>
+            <span className="shrink-0 text-fg-muted text-xs">
+              {topicCount(hit.exam)}
+            </span>
+          </button>
+        )),
+    },
+    {
+      key: 'subjects',
+      label: m.question_ui_subjects(),
+      rows: mineFirst(found.subjects).map((hit) => (
+        <button
+          className="flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg"
+          key={hit.subject.id}
+          onClick={() => {
+            onFilter('');
+            setOpen((prev) => new Set(prev).add(hit.subject.id));
+            onExam(hit.exam.id);
+          }}
+          type="button"
+        >
+          <span className="min-w-0 flex-1">
+            <span className="block truncate">
+              <Highlight needle={needle} text={hit.subject.label} />
+            </span>
+            {hit.exam.id !== exam?.id && (
+              <span className="t-meta block truncate text-fg-muted">
+                {hit.exam.label}
+              </span>
+            )}
+          </span>
+          <span className="shrink-0 font-semibold text-fg-muted text-xs">
+            {hit.subject.topics.reduce((sum, item) => sum + item.total, 0)}
+          </span>
+        </button>
+      )),
+    },
+    {
+      key: 'topics',
+      label: m.question_ui_topics(),
+      rows: mineFirst(found.topics).map((hit) => {
+        // The topic's exam (unless it is the open one) and subject, unless
+        // the exam hides its one subject.
+        const trail = [
+          hit.exam.id !== exam?.id && hit.exam.label,
+          !soleSubject(hit.exam) && hit.subject.label,
+        ]
+          .filter(Boolean)
+          .join(' · ');
+        return (
+          <button
+            aria-current={hit.item.id === topicId ? 'page' : undefined}
+            className={cn(
+              'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
+              hit.item.id === topicId && 'bg-surface-hover-bg'
+            )}
+            key={hit.item.id}
+            onClick={() => {
+              setOpen((prev) => new Set(prev).add(hit.subject.id));
+              onTopic(hit.item.id);
+            }}
+            type="button"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block truncate">
+                <Highlight needle={needle} text={hit.item.label} />
+              </span>
+              {trail && (
+                <span className="t-meta block truncate text-fg-muted">
+                  {trail}
+                </span>
+              )}
+            </span>
+            {count(hit.item)}
+          </button>
+        );
+      }),
+    },
+  ];
   const topicRow = (item: BankTopic) => (
     <li key={item.id}>
       <button
@@ -1328,48 +1422,6 @@ function TopicTree({
       </button>
     </li>
   );
-  const hitRow = (hit: SyllabusHit) =>
-    hit.kind === 'exam' ? (
-      // Spaced like the exam list (12px apart, flush with the heading).
-      <div
-        className={cn('py-[5px] first:pt-0', !tabs && 'mx-3')}
-        key={hit.exam.id}
-      >
-        <ExamStrip
-          exam={hit.exam}
-          onClick={() => {
-            onFilter('');
-            onExam(hit.exam.id);
-          }}
-        />
-      </div>
-    ) : (
-      <button
-        aria-current={hit.item.id === topicId ? 'page' : undefined}
-        className={cn(
-          'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left hover:bg-surface-hover-bg',
-          hit.item.id === topicId && 'bg-surface-hover-bg'
-        )}
-        key={hit.item.id}
-        onClick={() => {
-          setOpen((prev) => new Set(prev).add(hit.subject.id));
-          onTopic(hit.item.id);
-        }}
-        type="button"
-      >
-        <span className="min-w-0 flex-1">
-          <span className="block truncate">
-            <Highlight needle={needle} text={hit.item.label} />
-          </span>
-          {hitTrail(hit) && (
-            <span className="t-meta block truncate text-fg-muted">
-              {hitTrail(hit)}
-            </span>
-          )}
-        </span>
-        {count(hit.item)}
-      </button>
-    );
   return (
     <nav
       aria-label={m.question_ui_exams_and_topics()}
@@ -1397,15 +1449,19 @@ function TopicTree({
           <ExamPicker exam={exam} exams={syllabus.exams} onPick={onExam} />
         </div>
       )}
-      {needle ? (
-        <div className="flex flex-col gap-0.5">
-          {here.map(hitRow)}
-          {exam && away.length > 0 && (
-            <p className="t-label px-2 pt-3 pb-1 text-fg-muted uppercase">
-              {m.question_ui_in_other_exams()}
-            </p>
+      {sections ? (
+        <div className="flex flex-col gap-4">
+          {sections.map(
+            (section) =>
+              section.rows.length > 0 && (
+                <section className="flex flex-col gap-0.5" key={section.key}>
+                  <h4 className="t-label px-2 pb-1 text-fg-muted uppercase">
+                    {section.label}
+                  </h4>
+                  {section.rows}
+                </section>
+              )
           )}
-          {away.map(hitRow)}
         </div>
       ) : exam && soleSubject(exam) ? (
         <ul className="flex flex-col gap-0.5">
@@ -1471,7 +1527,9 @@ function TopicTree({
           ))}
         </div>
       )}
-      {(needle ? !hits.length : !syllabus.exams.length) && (
+      {(sections
+        ? sections.every((section) => !section.rows.length)
+        : !syllabus.exams.length) && (
         <p className="px-2 text-fg-muted">
           {needle
             ? m.question_ui_no_topics_match()
@@ -1815,34 +1873,39 @@ function BankLanding({
           others={going.filter((topic) => topic !== lead)}
         />
         {listed.length > 0 && (
-          <section>
+          // Inset and columned like the Other topics list, heading included, so
+          // the date and Summary line up with its count and Continue.
+          <section className="lg:px-4 xl:px-10">
             <h2 className="t-card-title mb-3">{m.question_ui_finished()}</h2>
-            {listed.map((topic) => (
-              <div
-                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-divider border-t py-3 last:border-b sm:grid-cols-[minmax(0,1fr)_4.5rem_auto]"
-                key={topic.topicId}
-              >
-                <TopicName exams={exams} topic={topic} />
-                <time
-                  className="hidden text-right text-fg-secondary text-sm sm:block"
-                  dateTime={topic.lastAnsweredAt}
+            <div>
+              {listed.map((topic) => (
+                <div
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)] items-center gap-x-4 border-divider border-t py-3 last:border-b sm:grid-cols-[minmax(0,1fr)_4.5rem_minmax(4.5rem,auto)]"
+                  key={topic.topicId}
                 >
-                  {new Date(topic.lastAnsweredAt).toLocaleDateString(
-                    getLocale(),
-                    {
-                      day: 'numeric',
-                      month: 'short',
-                    }
-                  )}
-                </time>
-                <UnderlineLink
-                  iconRight={undefined}
-                  onClick={() => onOpen(topic.topicId, null)}
-                >
-                  {m.question_ui_summary()}
-                </UnderlineLink>
-              </div>
-            ))}
+                  <TopicName exams={exams} topic={topic} />
+                  <time
+                    className="hidden text-right text-fg-secondary text-sm sm:block"
+                    dateTime={topic.lastAnsweredAt}
+                  >
+                    {new Date(topic.lastAnsweredAt).toLocaleDateString(
+                      getLocale(),
+                      {
+                        day: 'numeric',
+                        month: 'short',
+                      }
+                    )}
+                  </time>
+                  <UnderlineLink
+                    className="justify-self-end"
+                    iconRight={undefined}
+                    onClick={() => onOpen(topic.topicId, null)}
+                  >
+                    {m.question_ui_summary()}
+                  </UnderlineLink>
+                </div>
+              ))}
+            </div>
           </section>
         )}
       </div>
@@ -1986,29 +2049,33 @@ function ContinueSection({
         </UnderlineLink>
       </div>
       {others.length > 0 && (
-        // Rows lay out by the list's width: the side panel narrows it on wide screens.
-        <div className="@container mt-8">
+        // Rows lay out by the list's width: the side panel narrows it on wide
+        // screens. The trail shares the row's spare width with the name (3:2)
+        // so it shrinks to its 150px floor before the row wraps.
+        // From lg the list sits at Learning's page padding (40/64px), inset
+        // from the section's 24px.
+        <div className="@container mt-8 lg:px-4 xl:px-10">
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
             {m.question_ui_other_topics()}
           </h3>
           {others.map((topic) => (
             <div
-              className="grid @2xl:grid-cols-[minmax(0,1fr)_minmax(150px,240px)_4.5rem_auto] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3"
+              className="grid @lg:grid-cols-[minmax(0,3fr)_minmax(150px,2fr)_4.5rem_minmax(4.5rem,auto)] @sm:grid-cols-[minmax(0,3fr)_minmax(150px,2fr)_minmax(4.5rem,auto)] grid-cols-[minmax(0,1fr)_minmax(4.5rem,auto)] items-center gap-x-4 gap-y-1.5 border-divider border-t py-3"
               key={topic.topicId}
             >
               <TopicName exams={exams} topic={topic} />
-              <div className="@2xl:col-span-1 col-span-2 @2xl:row-start-auto row-start-2 max-w-[240px]">
+              <div className="@sm:col-span-1 col-span-2 @sm:row-start-auto row-start-2 w-full max-w-[240px] @sm:justify-self-end">
                 <MiniTrail
                   answered={topic.answered}
                   topicId={topic.topicId}
                   total={topic.total}
                 />
               </div>
-              <div className="@2xl:block hidden text-right text-fg-secondary text-sm">
+              <div className="@lg:block hidden text-right text-fg-secondary text-sm">
                 {m.study_of({ done: topic.answered, total: topic.total })}
               </div>
               <UnderlineLink
-                className="@2xl:col-start-auto col-start-2 @2xl:row-start-auto row-start-1"
+                className="@sm:col-start-auto col-start-2 @sm:row-start-auto row-start-1 justify-self-end"
                 iconRight={undefined}
                 onClick={() => onOpen(topic.topicId, topic.nextQuestionId)}
               >

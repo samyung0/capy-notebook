@@ -354,6 +354,27 @@ function Choices({
   return null;
 }
 
+/** A number or part label. Each stacks the question's other labels unseen,
+ * so the label column is as wide as the widest and every text beside one
+ * starts at the same x; no labels at all leave the column (and gap) empty. */
+function Label({ all, text }: { all: string[]; text: string }) {
+  if (all.length === 0) return <span />;
+  return (
+    <span className="grid pr-1.5 font-bold md:pr-2">
+      {all.map((item) => (
+        <span
+          aria-hidden
+          className="invisible col-start-1 row-start-1"
+          key={item}
+        >
+          {item}
+        </span>
+      ))}
+      <span className="col-start-1 row-start-1">{text}</span>
+    </span>
+  );
+}
+
 export interface QuestionViewProps {
   question: Question | LearnerQuestion;
   questionNumber?: number;
@@ -403,15 +424,24 @@ export function QuestionView({
     ));
   const partBlocks = (part: QuestionPart | LearnerPart) =>
     part.blocks.slice(partOffset);
+  const partLabel = (index: number) =>
+    question.labels === 'letters'
+      ? `(${String.fromCharCode(97 + index)})`
+      : `${index + 1}.`;
+  const labels = [
+    ...new Set([
+      ...(questionNumber == null ? [] : [`${questionNumber}.`]),
+      ...(lone ? [] : question.parts.map((_, index) => partLabel(index))),
+    ]),
+  ];
+  const label = (text: string) => <Label all={labels} text={text} />;
   // 1A: number, part label and text share one column grid so every text line
-  // starts at the same x; marks stay smaller than the question text. Phones
-  // use the tighter B′ columns.
+  // starts at the same x; marks stay smaller than the question text. The
+  // label column is as wide as the question's widest label.
   return (
     <article className="min-w-0 space-y-4 text-[15px] leading-relaxed">
-      <header className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] items-baseline gap-x-1.5 md:grid-cols-[1.75rem_minmax(0,1fr)_auto] md:gap-x-2">
-        <span className="font-bold">
-          {questionNumber != null && `${questionNumber}.`}
-        </span>
+      <header className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-baseline">
+        {label(questionNumber == null ? '' : `${questionNumber}.`)}
         <div className="min-w-0">
           {firstInHeader &&
             blocks(
@@ -419,7 +449,7 @@ export function QuestionView({
               merged ? { partId: question.parts[0].id } : {}
             )}
         </div>
-        <span className="flex items-center gap-1 whitespace-nowrap text-fg-muted text-xs">
+        <span className="flex items-center gap-1 whitespace-nowrap pl-1.5 text-fg-muted text-xs md:pl-2">
           {lone && renderMarks
             ? renderMarks(question.parts[0])
             : showTotalMarks &&
@@ -438,36 +468,35 @@ export function QuestionView({
         {question.stem.length > Number(firstInHeader) && (
           <div
             className={cn(
-              'min-w-0 space-y-4',
-              question.layout === 'paper' && 'pl-7.5 md:pl-9'
+              'min-w-0',
+              question.layout === 'paper' &&
+                'grid grid-cols-[auto_minmax(0,1fr)]'
             )}
           >
-            {blocks(
-              question.stem.slice(Number(firstInHeader)),
-              {},
-              Number(firstInHeader)
-            )}
+            {question.layout === 'paper' && label('')}
+            <div className="min-w-0 space-y-4">
+              {blocks(
+                question.stem.slice(Number(firstInHeader)),
+                {},
+                Number(firstInHeader)
+              )}
+            </div>
           </div>
         )}
         <ol className="min-w-0 space-y-6">
           {question.parts.map((part, index) => (
             <li
-              className="grid grid-cols-[1.5rem_minmax(0,1fr)_auto] gap-x-1.5 gap-y-3 md:grid-cols-[1.75rem_minmax(0,1fr)_auto] md:gap-x-2"
+              className="grid grid-cols-[auto_minmax(0,1fr)_auto] gap-y-3"
               key={part.id}
             >
-              <span className="font-bold">
-                {!lone &&
-                  (question.labels === 'letters'
-                    ? `(${String.fromCharCode(97 + index)})`
-                    : `${index + 1}.`)}
-              </span>
+              {label(lone ? '' : partLabel(index))}
               {partBlocks(part).length > 0 && (
                 <div className="min-w-0 space-y-3">
                   {blocks(partBlocks(part), { partId: part.id }, partOffset)}
                 </div>
               )}
               {!lone && (
-                <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 text-fg-muted text-xs">
+                <span className="col-start-3 flex items-start gap-1 whitespace-nowrap pt-1 pl-1.5 text-fg-muted text-xs md:pl-2">
                   {renderMarks ? renderMarks(part) : `[${part.marks}]`}
                   {titleAside?.(part.id)}
                 </span>

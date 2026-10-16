@@ -14,12 +14,6 @@ import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { type BankExam, soleSubject, soleTopic } from './bank';
 
-// A soft corner fade keeps white text readable on dark art without the strip
-// standing out against a light page; light covers take dark text and no fade,
-// as in the switcher.
-const FADE =
-  'radial-gradient(ellipse 130% 190% at 0% 100%, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0.18) 60%, transparent 95%)';
-
 const questionCount = (exam: BankExam) => {
   const count = exam.subjects.reduce(
     (sum, subject) =>
@@ -32,7 +26,7 @@ const questionCount = (exam: BankExam) => {
 };
 
 /** The exam's topic count, or its question count when it has one topic. */
-const topicCount = (exam: BankExam) => {
+export const topicCount = (exam: BankExam) => {
   const count = exam.subjects.reduce(
     (sum, subject) => sum + subject.topics.length,
     0
@@ -43,24 +37,19 @@ const topicCount = (exam: BankExam) => {
 };
 
 /**
- * An exam as a low cover strip: name, a description of at most two lines and
- * the topic count, centred against the text. Used by the panel's exam list,
- * its search, the exam switcher and (with `detail` and `trailing` swapped for
- * counts and a chevron) the switcher's trigger. `active` marks the keyboard's
- * option.
+ * An exam as a low strip with its cover art fading in from the right: name, a
+ * description of at most two lines and the topic count in a pill over the art.
+ * Used by the panel's exam list, its search and (with `detail` and `trailing`
+ * swapped for counts and a chevron) the exam switcher's trigger.
  */
 export function ExamStrip({
   exam,
-  active,
-  selected,
   detail,
   trailing,
   className,
   ...rest
 }: {
   exam: BankExam;
-  active?: boolean;
-  selected?: boolean;
   /** Replaces the description. */
   detail?: ReactNode;
   /** Replaces the topic count. */
@@ -70,57 +59,33 @@ export function ExamStrip({
   return (
     <button
       className={cn(
-        'group relative flex w-full items-end overflow-hidden rounded-button px-3 pt-3 pb-2 text-left outline-none focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
-        paint.light ? 'text-[#1d1d1f]' : 'text-white',
-        active &&
-          (paint.light
-            ? 'ring-2 ring-black/30 ring-inset'
-            : 'ring-2 ring-white/70 ring-inset'),
+        'group relative isolate flex w-full items-center gap-2.5 overflow-hidden rounded-button px-3 py-2.5 text-left outline-none hover:bg-surface-hover-bg focus-visible:ring-2 focus-visible:ring-tint-accent-1-fg',
         className
       )}
       type="button"
       {...rest}
     >
+      {/* Like a Discord nameplate: the art fills the right side and fades out
+          before the text, so the text keeps the theme's colours. Paper covers
+          are dimmed in dark mode so the cream does not glare. */}
       <span
         aria-hidden
         className={cn(
-          'absolute inset-0 transition-[filter] group-hover:brightness-110',
-          active && 'brightness-110'
+          'absolute inset-y-0 right-0 left-[30%] -z-10 [mask-image:linear-gradient(to_right,transparent,#000_75%)] dark:opacity-85',
+          paint.light && 'dark:brightness-55 dark:saturate-80'
         )}
         style={coverBackground(paint)}
       />
-      {!paint.light && (
-        <span
-          aria-hidden
-          className="absolute inset-0"
-          style={{ backgroundImage: FADE }}
-        />
-      )}
-      <span className="relative flex w-full min-w-0 items-center gap-2.5">
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-bold leading-snug">
-            {exam.label}
-          </span>
-          <span
-            className={cn(
-              'line-clamp-2 text-xs leading-[1.3]',
-              paint.light ? 'text-[#4b4b4b]' : 'text-white/85'
-            )}
-          >
-            {detail ?? exam.description}
-          </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-bold leading-snug">
+          {exam.label}
         </span>
-        <span
-          className={cn(
-            'shrink-0 whitespace-nowrap',
-            paint.light
-              ? 'text-[#4b4b4b]'
-              : 'text-white/90 [text-shadow:0_1px_3px_rgb(0_0_0/0.55)]'
-          )}
-        >
-          {trailing ?? topicCount(exam)}
+        <span className="line-clamp-2 text-fg-muted text-xs leading-[1.3]">
+          {detail ?? exam.description}
         </span>
-        {selected && <Icon className="size-4 shrink-0" name="tick" />}
+      </span>
+      <span className="flex shrink-0 items-center whitespace-nowrap rounded-md bg-surface/80 px-2 py-0.5 font-semibold text-xs backdrop-blur-sm">
+        {trailing ?? topicCount(exam)}
       </span>
     </button>
   );
@@ -215,8 +180,8 @@ export function ExamPicker({
           aria-expanded
           aria-label={m.question_ui_find_an_exam()}
           autoComplete="off"
-          className="py-0"
           leftIcon="search"
+          leftIconClassName="-translate-y-px"
           onChange={(event) => {
             setQuery(event.target.value);
             setActive(0);
@@ -224,28 +189,40 @@ export function ExamPicker({
           onKeyDown={onKeyDown}
           placeholder={m.question_ui_find_an_exam()}
           role="combobox"
-          size="sm"
           value={query}
-          wrapperClassName="h-9 w-full text-sm"
+          variant="underline"
+          wrapperClassName="h-9 w-full gap-2.5 px-2 text-sm"
         />
         <div
-          className="flex max-h-96 flex-col gap-2.5 overflow-auto"
+          className="flex max-h-96 flex-col overflow-auto"
           id={listId}
           role="listbox"
         >
           {matches.map((item, i) => (
-            <ExamStrip
-              active={i === activeIdx}
+            <button
               aria-selected={item.id === exam.id}
-              exam={item}
+              className={cn(
+                'flex w-full items-center gap-2 rounded-button px-2 py-1.5 text-left outline-none hover:bg-surface-hover-bg',
+                i === activeIdx && 'bg-surface-hover-bg'
+              )}
               id={`${listId}-${i}`}
               key={item.id}
               onClick={() => pick(item.id)}
               onMouseEnter={() => setActive(i)}
               role="option"
-              selected={item.id === exam.id}
               tabIndex={-1}
-            />
+              type="button"
+            >
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {item.label}
+              </span>
+              <span className="shrink-0 text-fg-muted text-xs">
+                {topicCount(item)}
+              </span>
+              {item.id === exam.id && (
+                <Icon className="size-4 shrink-0" name="tick" />
+              )}
+            </button>
           ))}
         </div>
         {!matches.length && (

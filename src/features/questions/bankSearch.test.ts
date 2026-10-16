@@ -39,26 +39,48 @@ const exams = [
   ]),
   exam('drive', 'Driving', 'One paper on road rules.', ['Theory paper']),
 ];
-const order = (needle: string) =>
-  searchSyllabus(exams, needle).map((hit) =>
-    hit.kind === 'exam' ? hit.exam.id : hit.item.id
-  );
+exams[0].subjects.push({
+  id: 'dse-maths',
+  label: 'Mathematics',
+  topics: [{ id: 'Mensuration', label: 'Mensuration', reviewed: 0, total: 1 }],
+});
+const ids = (needle: string) => {
+  const hits = searchSyllabus(exams, needle);
+  return {
+    exams: hits.exams.map((hit) => hit.exam.id),
+    subjects: hits.subjects.map((hit) => hit.subject.id),
+    topics: hits.topics.map((hit) => hit.item.id),
+  };
+};
 
 describe('searchSyllabus', () => {
-  it('ranks start, word start, inside, then parent-only matches', () => {
-    expect(order('area')).toEqual(['Area practice', 'Surface area']);
-    // English is a description word start; Arc length only contains "eng".
-    expect(order('eng')).toEqual(['ielts', 'Arc length']);
-    // The exam itself first, then its topics through the exam's name.
-    expect(order('ielts')).toEqual([
-      'ielts',
-      'Matching headings',
-      'Summary completion',
-    ]);
+  it('ranks start, word start, then inside matches', () => {
+    expect(ids('area').topics).toEqual(['Area practice', 'Surface area']);
+    // English is a description word start.
+    expect(ids('eng')).toEqual({
+      exams: ['ielts'],
+      subjects: [],
+      topics: ['Arc length'],
+    });
   });
 
-  it('lists a single-topic exam without its topic', () => {
-    expect(order('driving')).toEqual(['drive']);
-    expect(order('theory')).toEqual([]);
+  it('matches each level by its own name', () => {
+    expect(ids('ielts')).toEqual({
+      exams: ['ielts'],
+      subjects: [],
+      topics: [],
+    });
+    expect(ids('math')).toEqual({
+      exams: [],
+      subjects: ['dse-maths'],
+      topics: [],
+    });
+  });
+
+  it('leaves out levels an exam hides', () => {
+    expect(ids('driving').exams).toEqual(['drive']);
+    expect(ids('theory').topics).toEqual([]);
+    // IELTS has one subject, so its name is not a hit.
+    expect(ids('subject').subjects).toEqual(['dse-subject']);
   });
 });

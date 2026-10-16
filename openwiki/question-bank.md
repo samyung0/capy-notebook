@@ -39,11 +39,14 @@ panel shows the exam list. Page trails, search hits and the landing's progress
 rows drop the hidden labels too. Above a topic's title the trail's segments
 link to the bank and to the exam (the subject opens its exam too), and the back
 arrow goes to the nearest one. The header search (`searchSyllabus` in
-`src/features/questions/bankSearch.ts`) lists exams and topics together, best
-first: the name exactly, at its start, at a later word's start, anywhere (an
-exam's full name or description counts from the word-start rank), then topics
-whose subject or exam matches; ties put exams first, then syllabus order. With
-an exam open its topics come first and the rest go under "In other exams". It
+`src/features/questions/bankSearch.ts`) lists hits in three sections, Exams,
+Subjects and Topics, each matched by its own name and ranked best first: the
+name exactly, at its start, at a later word's start, anywhere (an exam's full
+name or description counts from the word-start rank); ties keep syllabus order.
+Hidden levels are not hits. With an exam open, that exam is left out of Exams
+and its subjects and topics come first in their sections; a subject hit opens
+its exam with the subject expanded. Exam hits are plain rows, and so is the
+exam switcher's list (name and count, no description). It
 filters the syllabus already loaded, so it sends no request.
 
 The syllabus gives each exam `fullLabel`, a 12 to 15 word `description` (bank

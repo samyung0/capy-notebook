@@ -2,6 +2,7 @@ import {
   type BankExam,
   type BankSubject,
   type BankTopic,
+  soleSubject,
   soleTopic,
 } from './bank';
 
@@ -19,45 +20,43 @@ function matchRank(label: string, needle: string) {
   return text.split(WORD_BREAK).some((word) => word.startsWith(needle)) ? 3 : 4;
 }
 
-export type SyllabusHit =
-  | { kind: 'exam'; rank: number; exam: BankExam }
-  | {
-      kind: 'topic';
-      rank: number;
-      exam: BankExam;
-      subject: BankSubject;
-      item: BankTopic;
-    };
+export type ExamHit = { rank: number; exam: BankExam };
+export type SubjectHit = ExamHit & { subject: BankSubject };
+export type TopicHit = SubjectHit & { item: BankTopic };
 
 /**
- * Exams and topics matching a search, best first. An exam ranks by its name,
- * or at best 3 by its full name or description; a topic by its own name, or 5
- * when only its subject or exam matches; a single-topic exam lists only
- * itself. Ties keep exams first, then syllabus order. The syllabus is already loaded, so search needs no request.
+ * Exams, subjects and topics matching a search, each list best first. An exam
+ * ranks by its name, or at best 3 by its full name or description; subjects
+ * and topics by their own names. Levels an exam hides (its one subject, or the
+ * one topic of a single-topic exam) are left out. Ties keep syllabus order. The
+ * syllabus is already loaded, so search needs no request.
  */
 export function searchSyllabus(exams: BankExam[], needle: string) {
-  const hits: SyllabusHit[] = [];
+  const hits = {
+    exams: [] as ExamHit[],
+    subjects: [] as SubjectHit[],
+    topics: [] as TopicHit[],
+  };
   for (const exam of exams) {
-    const own = matchRank(exam.label, needle);
-    const more = [exam.fullLabel, exam.description]
-      .map((label) => matchRank(label, needle))
-      .filter(Boolean)
-      .map((rank) => Math.max(rank, 3));
-    const examRank = Math.min(...[own, ...more].filter(Boolean));
-    if (examRank !== Number.POSITIVE_INFINITY)
-      hits.push({ exam, kind: 'exam', rank: examRank });
+    const ranks = [
+      matchRank(exam.label, needle),
+      ...[exam.fullLabel, exam.description]
+        .map((label) => matchRank(label, needle))
+        .filter(Boolean)
+        .map((rank) => Math.max(rank, 3)),
+    ].filter(Boolean);
+    if (ranks.length) hits.exams.push({ exam, rank: Math.min(...ranks) });
     if (soleTopic(exam)) continue;
-    for (const subject of exam.subjects)
+    for (const subject of exam.subjects) {
+      const rank = soleSubject(exam) ? 0 : matchRank(subject.label, needle);
+      if (rank) hits.subjects.push({ exam, rank, subject });
       for (const item of subject.topics) {
-        const rank =
-          matchRank(item.label, needle) ||
-          (matchRank(subject.label, needle) || own ? 5 : 0);
-        if (rank) hits.push({ exam, item, kind: 'topic', rank, subject });
+        const rank = matchRank(item.label, needle);
+        if (rank) hits.topics.push({ exam, item, rank, subject });
       }
+    }
   }
   // Array sort is stable, so equal hits keep syllabus order.
-  return hits.sort(
-    (a, b) =>
-      a.rank - b.rank || Number(a.kind === 'topic') - Number(b.kind === 'topic')
-  );
+  for (const list of Object.values(hits)) list.sort((a, b) => a.rank - b.rank);
+  return hits;
 }

@@ -1,0 +1,338 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Exam Strip Blending</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Fustat:wght@400..800&display=swap" rel="stylesheet">
+<style>
+:root{--page:#eceef1;--panel:#fff;--ink:#1d1d1f;--muted:#5f6168;--line:#e2e4e8;--pill:rgb(255 255 255/.82)}
+*{box-sizing:border-box}body{margin:0;background:#f6f6f7;color:#1d1d1f;font-family:Fustat,system-ui,sans-serif}
+header,section{max-width:1100px;margin:0 auto;padding:24px 16px}
+h1{font-size:26px;margin:0 0 8px}h2{font-size:20px;margin:0 0 4px}p{line-height:1.5}
+nav{display:flex;flex-wrap:wrap;gap:16px;margin-top:8px}nav a{color:#3f5a92}
+.blurb{color:#5f6168;max-width:720px;margin:0 0 16px}
+.row{display:flex;flex-wrap:wrap;gap:24px;align-items:flex-start}
+details{margin-top:16px}summary{cursor:pointer;color:#3f5a92}details .row{margin-top:16px}
+.frame{max-width:100%}
+.frame[data-theme=dark]{--page:#111214;--panel:#1c1d20;--ink:#ececee;--muted:#a3a6ad;--line:#2c2e33;--pill:rgb(28 29 32/.78)}
+.panel{background:var(--panel);color:var(--ink);border-radius:20px;padding:16px 12px 20px;outline:8px solid var(--page)}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:4px 4px 12px}
+.ph h3{margin:0;font-size:18px}.ico{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round}
+.cap{font-size:12px;color:#5f6168;margin:16px 0 0}
+.list{display:flex;flex-direction:column;gap:12px}
+.strip{position:relative;display:flex;align-items:center;gap:10px;width:100%;overflow:hidden;border:0;border-radius:12px;padding:10px 12px;text-align:left;font:inherit;color:var(--ink);background:transparent;cursor:pointer;isolation:isolate}
+.strip .art{position:absolute;inset:0;z-index:-1}
+.body{flex:1;min-width:0}.name{display:block;font-weight:700;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.desc{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;font-size:12px;line-height:1.3;color:var(--muted)}
+.count{flex:none;font-size:13px}
+
+/* Today */
+.now{color:#fff;padding:12px 12px 8px}.now .desc{color:rgb(255 255 255/.85)}
+.now .fade{position:absolute;inset:0;z-index:-1;background:radial-gradient(ellipse 130% 190% at 0% 100%,rgb(0 0 0/.42),rgb(0 0 0/.18) 60%,transparent 95%)}
+.now.paper{color:#1d1d1f}.now.paper .desc{color:#4b4b4b}
+.now:hover .art{filter:brightness(1.1)}
+
+/* Discord takes: art on the right, masked out to the left */
+.A .art,.B .art,.C .art{left:30%;-webkit-mask-image:linear-gradient(to right,transparent,#000 75%);mask-image:linear-gradient(to right,transparent,#000 75%);transition:opacity .15s}
+.A .count,.B .count,.C .count{padding:2px 8px;border-radius:6px;background:var(--pill);font-size:12px;font-weight:600;backdrop-filter:blur(4px)}
+[data-theme=dark] .paper .art{filter:brightness(.55) saturate(.8)}
+[data-theme=dark] .art{opacity:.85}
+.A:hover{background:color-mix(in srgb,var(--ink) 6%,transparent)}
+.B,.C{background:color-mix(in srgb,var(--cover) 12%,var(--panel))}
+.paper.B,.paper.C{background:color-mix(in srgb,var(--accent) 7%,var(--panel))}
+[data-theme=dark] .B,[data-theme=dark] .C{background:color-mix(in srgb,var(--cover) 18%,var(--panel))}
+[data-theme=dark] .paper.B,[data-theme=dark] .paper.C{background:color-mix(in srgb,var(--accent) 16%,var(--panel))}
+.B:hover,.C:hover{background:color-mix(in srgb,var(--cover) 20%,var(--panel))}
+.paper.B:hover,.paper.C:hover{background:color-mix(in srgb,var(--accent) 12%,var(--panel))}
+.C .name{color:var(--accent)}
+[data-theme=dark] .C .name{color:color-mix(in srgb,var(--accent) 55%,#fff)}
+ul{line-height:1.6}
+.art-hkdse{background-color:#7866cf;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20344%2076%22%20preserveAspectRatio%3D%22xMidYMid%20slice%22%3E%3Crect%20width%3D%22344%22%20height%3D%2276%22%20fill%3D%22%237866cf%22%2F%3E%3Cg%20fill%3D%22%23fff%22%20font-family%3D%22'Times%20New%20Roman'%2C'STIX%20Two%20Text'%2CGeorgia%2Cserif%22%20font-style%3D%22italic%22%3E%3Ctext%20x%3D%2230.1%22%20y%3D%2231.6%22%20font-size%3D%2225.6%22%20fill-opacity%3D%220.30%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(4%2030.1%2031.6)%22%3E%E2%88%91%3C%2Ftext%3E%3Ctext%20x%3D%2256.8%22%20y%3D%2228.7%22%20font-size%3D%2227.0%22%20fill-opacity%3D%220.20%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(-1%2056.8%2028.7)%22%3E%E2%88%AB%3C%2Ftext%3E%3Ctext%20x%3D%2293.6%22%20y%3D%2215.1%22%20font-size%3D%2227.8%22%20fill-opacity%3D%220.20%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(5%2093.6%2015.1)%22%3E%CF%80%3C%2Ftext%3E%3Ctext%20x%3D%22135.2%22%20y%3D%2219.6%22%20font-size%3D%2219.1%22%20fill-opacity%3D%220.16%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(16%20135.2%2019.6)%22%3E%E2%88%9Ax%3C%2Ftext%3E%3Ctext%20x%3D%22161.5%22%20y%3D%2223.5%22%20font-size%3D%2221.9%22%20fill-opacity%3D%220.32%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(11%20161.5%2023.5)%22%3E%E2%88%9E%3C%2Ftext%3E%3Ctext%20x%3D%22212.1%22%20y%3D%2226.0%22%20font-size%3D%2224.0%22%20fill-opacity%3D%220.19%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(14%20212.1%2026.0)%22%3E%E2%89%88%3C%2Ftext%3E%3Ctext%20x%3D%22251.3%22%20y%3D%2215.6%22%20font-size%3D%2215.8%22%20fill-opacity%3D%220.29%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(-9%20251.3%2015.6)%22%3E%E2%96%B3%3C%2Ftext%3E%3Ctext%20x%3D%22290.7%22%20y%3D%2231.5%22%20font-size%3D%2220.3%22%20fill-opacity%3D%220.26%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(-15%20290.7%2031.5)%22%3Ex%C2%B2%3C%2Ftext%3E%3Ctext%20x%3D%22321.2%22%20y%3D%2232.1%22%20font-size%3D%2217.0%22%20fill-opacity%3D%220.24%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(14%20321.2%2032.1)%22%3E%CE%B8%3C%2Ftext%3E%3Ctext%20x%3D%2216.6%22%20y%3D%2269.7%22%20font-size%3D%2227.3%22%20fill-opacity%3D%220.26%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(5%2016.6%2069.7)%22%3E%E2%88%A0%3C%2Ftext%3E%3Ctext%20x%3D%2255.2%22%20y%3D%2258.3%22%20font-size%3D%2214.8%22%20fill-opacity%3D%220.36%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(-13%2055.2%2058.3)%22%3E%C2%B1%3C%2Ftext%3E%3Ctext%20x%3D%2296.5%22%20y%3D%2252.8%22%20font-size%3D%2220.2%22%20fill-opacity%3D%220.35%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(2%2096.5%2052.8)%22%3Esin%3C%2Ftext%3E%3Ctext%20x%3D%22144.9%22%20y%3D%2258.1%22%20font-size%3D%2220.8%22%20fill-opacity%3D%220.29%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(16%20144.9%2058.1)%22%3Ef(x)%3C%2Ftext%3E%3Ctext%20x%3D%22162.0%22%20y%3D%2269.4%22%20font-size%3D%2215.5%22%20fill-opacity%3D%220.16%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(-4%20162.0%2069.4)%22%3E%CE%94%3C%2Ftext%3E%3Ctext%20x%3D%22217.9%22%20y%3D%2264.3%22%20font-size%3D%2229.2%22%20fill-opacity%3D%220.36%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(7%20217.9%2064.3)%22%3E%CE%BB%3C%2Ftext%3E%3Ctext%20x%3D%22242.3%22%20y%3D%2253.6%22%20font-size%3D%2226.5%22%20fill-opacity%3D%220.25%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(15%20242.3%2053.6)%22%3E%C3%B7%3C%2Ftext%3E%3Ctext%20x%3D%22282.1%22%20y%3D%2268.6%22%20font-size%3D%2217.1%22%20fill-opacity%3D%220.30%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(14%20282.1%2068.6)%22%3E%CE%BC%3C%2Ftext%3E%3Ctext%20x%3D%22332.4%22%20y%3D%2266.0%22%20font-size%3D%2231.0%22%20fill-opacity%3D%220.23%22%20text-anchor%3D%22middle%22%20transform%3D%22rotate(-8%20332.4%2066.0)%22%3E%E2%89%A4%3C%2Ftext%3E%3C%2Fg%3E%3C%2Fsvg%3E");background-position:center;background-size:cover}.x-hkdse{--cover:#7866cf;--accent:#7866cf}.art-ielts{background-color:#fbf9f3;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20344%2076%22%20preserveAspectRatio%3D%22xMaxYMid%20slice%22%3E%3Crect%20width%3D%22344%22%20height%3D%2276%22%20fill%3D%22%23fbf9f3%22%2F%3E%3Cpath%20d%3D%22M0%2018H344M0%2036H344M0%2054H344M0%2072H344%22%20stroke%3D%22%236f8fbf%22%20stroke-opacity%3D%22.3%22%2F%3E%3Cg%20fill%3D%22none%22%20stroke%3D%22%23b98a6a%22%20stroke-opacity%3D%22.45%22%3E%3C%2Fg%3E%3Cpath%20d%3D%22M26%200V76%22%20stroke%3D%22%23e0505e%22%20stroke-opacity%3D%22.55%22%2F%3E%3Ctext%20x%3D%22330%22%20y%3D%2222%22%20text-anchor%3D%22end%22%20font-size%3D%2215%22%20fill%3D%22%232f4f86%22%20fill-opacity%3D%22.85%22%20font-family%3D%22'Times%20New%20Roman'%2C'STIX%20Two%20Text'%2CGeorgia%2Cserif%22%20font-style%3D%22italic%22%20transform%3D%22rotate(-3%20330%2022)%22%3EParaphrase%2C%20then%20summarise.%3C%2Ftext%3E%3C%2Fsvg%3E");background-position:right center;background-size:cover}.x-ielts{--cover:#fbf9f3;--accent:#3f5a92}.art-abrsm{background-color:#2f6f5e;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20344%2076%22%20preserveAspectRatio%3D%22xMidYMid%20slice%22%3E%3Cdefs%3E%3Csymbol%20id%3D%22i0%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M7.99978%203.5H6.60021C4.43183%203.5%203.34764%203.5%202.67399%204.17362C2.00034%204.84724%202.00029%205.93144%202.00021%208.09982L2%2013.3998C1.99992%2015.5684%201.99987%2016.6526%202.67353%2017.3263C3.34719%2018%204.43146%2018%206.6%2018H8.95042C10.4329%2018%2011.7092%2019.0464%2011.9999%2020.5V5.5C11.0556%204.24097%209.99989%203.5%207.99978%203.5Z%22%2F%3E%3Cpath%20d%3D%22M16.0001%203.5H17.3997C19.5681%203.5%2020.6523%203.5%2021.3259%204.17362C21.9996%204.84724%2021.9996%205.93144%2021.9997%208.09982L21.9999%2013.3998C22%2015.5684%2022%2016.6526%2021.3264%2017.3263C20.6527%2018%2019.5684%2018%2017.3999%2018H15.0495C13.567%2018%2012.2907%2019.0464%2012%2020.5V5.5C12.9443%204.24097%2014%203.5%2016.0001%203.5Z%22%2F%3E%3C%2Fsymbol%3E%3Csymbol%20id%3D%22i1%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M20.0849%2017C20.5849%2015.5%2021%2013.4368%2021%2012C21%207.02944%2016.9706%203%2012%203C7.02944%203%203%207.02944%203%2012C3%2013.4368%203.41512%2015.5%203.91512%2017%22%2F%3E%3Cpath%20d%3D%22M8.97651%2019.6043L7.23857%2014.6127C7.05341%2014.1466%206.4617%2013.9131%205.97493%2014.0297C4.46441%2014.5333%203.6462%2016.1718%204.14742%2017.6895L4.58543%2019.0158C5.08664%2020.5334%206.71747%2021.3555%208.22799%2020.8519C8.68896%2020.6556%209.10449%2020.0897%208.97651%2019.6043Z%22%2F%3E%3Cpath%20d%3D%22M15.0235%2019.6043L16.7614%2014.6127C16.9466%2014.1466%2017.5383%2013.9131%2018.0251%2014.0297C19.5356%2014.5333%2020.3538%2016.1718%2019.8526%2017.6895L19.4146%2019.0158C18.9134%2020.5334%2017.2825%2021.3555%2015.772%2020.8519C15.311%2020.6556%2014.8955%2020.0897%2015.0235%2019.6043Z%22%2F%3E%3C%2Fsymbol%3E%3Csymbol%20id%3D%22i2%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M7%206.5C7%204.01472%209.01472%202%2011.5%202C13.9853%202%2016%204.01472%2016%206.5V11.5C16%2013.9853%2013.9853%2016%2011.5%2016C9.01472%2016%207%2013.9853%207%2011.5V6.5Z%22%2F%3E%3Cpath%20d%3D%22M11.5%2019H11.0828C7.57267%2019%204.57706%2016.4623%204%2013M11.5%2019H11.9172C15.4273%2019%2018.4229%2016.4623%2019%2013M11.5%2019V22%22%2F%3E%3C%2Fsymbol%3E%3Csymbol%20id%3D%22i3%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M5.07579%2017C4.08939%204.54502%2012.9123%201.0121%2019.9734%202.22417C20.2585%206.35185%2018.2389%207.89748%2014.3926%208.61125C15.1353%209.38731%2016.4477%2010.3639%2016.3061%2011.5847C16.2054%2012.4534%2015.6154%2012.8797%2014.4355%2013.7322C11.8497%2015.6004%208.85421%2016.7785%205.07579%2017Z%22%2F%3E%3Cpath%20d%3D%22M4%2022C4%2015.5%207.84848%2012.1818%2010.5%2010%22%2F%3E%3C%2Fsymbol%3E%3Csymbol%20id%3D%22i4%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M8%2013.5H16M8%208.5H12%22%2F%3E%3Cpath%20d%3D%22M6.09881%2019C4.7987%2018.8721%203.82475%2018.4816%203.17157%2017.8284C2%2016.6569%202%2014.7712%202%2011V10.5C2%206.72876%202%204.84315%203.17157%203.67157C4.34315%202.5%206.22876%202.5%2010%202.5H14C17.7712%202.5%2019.6569%202.5%2020.8284%203.67157C22%204.84315%2022%206.72876%2022%2010.5V11C22%2014.7712%2022%2016.6569%2020.8284%2017.8284C19.6569%2019%2017.7712%2019%2014%2019C13.4395%2019.0125%2012.9931%2019.0551%2012.5546%2019.155C11.3562%2019.4309%2010.2465%2020.0441%209.14987%2020.5789C7.58729%2021.3408%206.806%2021.7218%206.31569%2021.3651C5.37769%2020.6665%206.29454%2018.5019%206.5%2017.5%22%2F%3E%3C%2Fsymbol%3E%3Csymbol%20id%3D%22i5%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M12.5%2019L12.5%2022%22%2F%3E%3Cpath%20d%3D%22M10.5%2022H14.5%22%2F%3E%3Ccircle%20cx%3D%227%22%20cy%3D%227%22%20r%3D%227%22%2F%3E%3Cpath%20d%3D%22M8.5%204C9.15431%204.0385%209.49236%204.35899%2010.0735%204.97301C11.1231%206.08206%2012.1727%206.1746%2012.8724%205.80492C13.922%205.2504%2013.04%204.35221%2014.2719%203.86409C15.0748%203.54595%2015.1868%202.68026%2014.7399%202%22%2F%3E%3Cpath%20d%3D%22M20%2010C18.5%2010%2018.2338%2011.2468%2017%2011C14.5%2010.5%2013.7916%2011.0589%2013.7916%2012.2511C13.7916%2013.4432%2013.7916%2013.4432%2013.2717%2014.3373C12.9335%2014.9189%2012.8153%2015.5004%2013.4894%2016%22%2F%3E%3Cpath%20d%3D%22M6.5%202C4.64864%203.79995%203.5%206.3082%203.5%209.08251C3.5%2014.5598%207.97715%2019%2013.5%2019C16.2255%2019%2018.6962%2017.9187%2020.5%2016.165%22%2F%3E%3C%2Fsymbol%3E%3Csymbol%20id%3D%22i6%22%20viewBox%3D%220%200%2024%2024%22%3E%3Ccircle%20cx%3D%2212%22%20cy%3D%2212%22%20r%3D%2210%22%2F%3E%3Cpath%20d%3D%22M12%208V12L14%2014%22%2F%3E%3C%2Fsymbol%3E%3Csymbol%20id%3D%22i7%22%20viewBox%3D%220%200%2024%2024%22%3E%3Cpath%20d%3D%22M15.8667%203.7804C16.7931%203.03188%2017.8307%202.98644%2018.9644%203.00233C19.5508%203.01055%2019.844%203.01467%2020.0792%203.10588C20.4524%203.2506%2020.7494%203.54764%2020.8941%203.92081C20.9853%204.15601%2020.9894%204.4492%2020.9977%205.03557C21.0136%206.16926%2020.9681%207.20686%2020.2196%208.13326C19.5893%208.91337%2018.5059%209.32101%2017.9846%2010.1821C17.5866%2010.8395%2017.772%2011.5203%2017.943%2012.2209L19.2228%2017.4662C19.4779%2018.5115%2019.2838%2019.1815%2018.5529%2019.9124C18.164%2020.3013%2017.8405%2020.2816%2017.5251%2019.779L13.6627%2013.6249L11.8181%2015.0911C11.1493%2015.6228%2010.8149%2015.8886%2010.6392%2016.2627C10.2276%2017.1388%2010.4889%2018.4547%2010.5022%2019.4046C10.5096%2019.9296%2010.0559%2020.9644%209.41391%2020.9993C9.01756%2021.0209%208.88283%2020.5468%208.75481%2020.2558L7.52234%2017.4544C7.2276%2016.7845%207.21552%2016.7724%206.54556%2016.4777L3.74415%2015.2452C3.45318%2015.1172%202.97914%2014.9824%203.00071%2014.5861C3.03565%2013.9441%204.07036%2013.4904%204.59536%2013.4978C5.54532%2013.5111%206.86122%2013.7724%207.73734%2013.3608C8.11142%2013.1851%208.37724%2012.8507%208.90888%2012.1819L10.3751%2010.3373L4.22103%206.47489C3.71845%206.15946%203.69872%205.83597%204.08755%205.44715C4.8185%204.7162%205.48851%204.52214%206.53377%204.77718L11.7791%206.05703C12.4797%206.22798%2013.1605%206.41343%2013.8179%206.0154C14.679%205.49411%2015.0866%204.41074%2015.8667%203.7804Z%22%2F%3E%3C%2Fsymbol%3E%3C%2Fdefs%3E%3Crect%20width%3D%22344%22%20height%3D%2276%22%20fill%3D%22%232f6f5e%22%2F%3E%3Cg%20stroke%3D%22%23fff%22%20stroke-opacity%3D%22.28%22%20fill%3D%22none%22%20stroke-width%3D%221.8%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cuse%20href%3D%22%23i0%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(-9%20-6)%20rotate(-13%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i1%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(26%20-3)%20rotate(-3%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i2%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(64%20-2)%20rotate(2%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i3%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(94%20-2)%20rotate(-7%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i4%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(128%20-6)%20rotate(8%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i5%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(166%20-2)%20rotate(15%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i6%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(197%20-1)%20rotate(8%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i7%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(234%20-4)%20rotate(8%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i0%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(267%20-4)%20rotate(14%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i1%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(300%20-2)%20rotate(12%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i2%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(334%20-3)%20rotate(-15%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i3%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(9%2024)%20rotate(-15%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i4%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(46%2022)%20rotate(-12%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i5%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(82%2023)%20rotate(-4%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i6%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(113%2022)%20rotate(-3%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i7%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(144%2024)%20rotate(-12%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i0%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(184%2025)%20rotate(-6%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i1%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(215%2021)%20rotate(15%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i2%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(247%2023)%20rotate(-4%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i3%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(285%2024)%20rotate(-19%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i4%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(319%2021)%20rotate(-0%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i5%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(351%2027)%20rotate(9%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i6%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(-9%2051)%20rotate(9%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i7%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(31%2049)%20rotate(11%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i0%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(61%2049)%20rotate(-14%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i1%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(95%2052)%20rotate(-6%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i2%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(130%2051)%20rotate(11%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i3%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(164%2052)%20rotate(-9%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i4%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(200%2050)%20rotate(-1%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i5%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(230%2054)%20rotate(-19%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i6%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(264%2050)%20rotate(-19%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i7%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(298%2052)%20rotate(-14%209%209)%22%2F%3E%3Cuse%20href%3D%22%23i0%22%20width%3D%2218%22%20height%3D%2218%22%20transform%3D%22translate(331%2050)%20rotate(-3%209%209)%22%2F%3E%3C%2Fg%3E%3C%2Fsvg%3E");background-position:center;background-size:cover}.x-abrsm{--cover:#2f6f5e;--accent:#2f6f5e}.art-driving{background-color:#c2410c;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20viewBox%3D%220%200%20344%2076%22%20preserveAspectRatio%3D%22xMaxYMid%20slice%22%3E%3Crect%20width%3D%22344%22%20height%3D%2276%22%20fill%3D%22%23c2410c%22%2F%3E%3Ctext%20x%3D%22350%22%20y%3D%2298%22%20font-size%3D%22104%22%20font-weight%3D%22800%22%20font-family%3D%22system-ui%2Csans-serif%22%20letter-spacing%3D%22-4%22%20text-anchor%3D%22end%22%20fill%3D%22%23fff%22%20fill-opacity%3D%22.16%22%3EDriving%3C%2Ftext%3E%3Ctext%20x%3D%22274%22%20y%3D%2246%22%20font-size%3D%22104%22%20font-weight%3D%22800%22%20font-family%3D%22system-ui%2Csans-serif%22%20letter-spacing%3D%22-4%22%20text-anchor%3D%22end%22%20fill%3D%22none%22%20stroke%3D%22%23fff%22%20stroke-opacity%3D%22.12%22%3EDriving%3C%2Ftext%3E%3C%2Fsvg%3E");background-position:right center;background-size:cover}.x-driving{--cover:#c2410c;--accent:#c2410c}</style></head><body>
+<header><h1>Exam strips, Discord-style blending</h1>
+<p>Discord's nameplates keep the row on the page colour and let the decoration sit on the right, fading out towards the name. These three takes apply that to the /qb exam strips, using each exam's real cover art. Hover a strip to see its hover state.</p>
+<nav><a href="#now">Today</a><a href="#A">A · Neutral row</a><a href="#B">B · Tinted row</a><a href="#C">C · Tinted, coloured name</a></nav></header>
+<section id="now"><h2>Today</h2><p class="blurb">Full-cover strips with the corner shade.</p><div class="row"><div class="frame" data-theme="light" style="width:360px"><div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div><div class="list"><button class="strip now x-hkdse" type="button"><span class="art art-hkdse" aria-hidden="true"></span><span class="fade" aria-hidden="true"></span><span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span><span class="count">10 topics</span></button><button class="strip now x-ielts paper" type="button"><span class="art art-ielts" aria-hidden="true"></span><span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span><span class="count">4 topics</span></button><button class="strip now x-abrsm" type="button"><span class="art art-abrsm" aria-hidden="true"></span><span class="fade" aria-hidden="true"></span><span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span><span class="count">3 topics</span></button><button class="strip now x-driving" type="button"><span class="art art-driving" aria-hidden="true"></span><span class="fade" aria-hidden="true"></span><span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span><span class="count">25 questions</span></button></div></div><p class="cap">light · 360px</p></div></div></section>
+<section id="A"><h2>A · Neutral row</h2><p class="blurb">The row is the panel colour. The cover art fills the right 65% and fades out to the left, so the name and description sit on plain background in normal text colour. Count sits in a small pill over the art, like Discord’s tag chip.</p><div class="row"><div class="frame" data-theme="light" style="width:360px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip A x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip A x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip A x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip A x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">light · 360px</p>
+</div><div class="frame" data-theme="dark" style="width:360px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip A x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip A x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip A x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip A x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">dark · 360px</p>
+</div></div>
+<details><summary>Wider panel (420px)</summary><div class="row"><div class="frame" data-theme="light" style="width:420px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip A x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip A x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip A x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip A x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">light · 420px</p>
+</div><div class="frame" data-theme="dark" style="width:420px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip A x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip A x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip A x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip A x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">dark · 420px</p>
+</div></div></details></section>
+<section id="B"><h2>B · Tinted row</h2><p class="blurb">Same fade, but the whole row takes a light wash of the cover colour, so each exam still reads as its colour from across the list (Discord’s profile-colour rows).</p><div class="row"><div class="frame" data-theme="light" style="width:360px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip B x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip B x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip B x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip B x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">light · 360px</p>
+</div><div class="frame" data-theme="dark" style="width:360px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip B x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip B x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip B x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip B x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">dark · 360px</p>
+</div></div>
+<details><summary>Wider panel (420px)</summary><div class="row"><div class="frame" data-theme="light" style="width:420px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip B x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip B x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip B x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip B x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">light · 420px</p>
+</div><div class="frame" data-theme="dark" style="width:420px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip B x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip B x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip B x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip B x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">dark · 420px</p>
+</div></div></details></section>
+<section id="C"><h2>C · Tinted, coloured name</h2><p class="blurb">B plus the exam name in its cover colour, like Discord role colours. Paper covers (IELTS) use their ink blue since cream would be unreadable.</p><div class="row"><div class="frame" data-theme="light" style="width:360px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip C x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip C x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip C x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip C x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">light · 360px</p>
+</div><div class="frame" data-theme="dark" style="width:360px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip C x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip C x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip C x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip C x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">dark · 360px</p>
+</div></div>
+<details><summary>Wider panel (420px)</summary><div class="row"><div class="frame" data-theme="light" style="width:420px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip C x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip C x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip C x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip C x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">light · 420px</p>
+</div><div class="frame" data-theme="dark" style="width:420px">
+  <div class="panel"><div class="ph"><h3>Exams and topics</h3><svg class="ico" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg></div>
+  <div class="list"><button class="strip C x-hkdse" type="button">
+  <span class="art art-hkdse" aria-hidden="true"></span>
+  <span class="body"><span class="name">HKDSE</span><span class="desc">Hong Kong&#x27;s university entrance exam, taken at the end of secondary school.</span></span>
+  <span class="count">10 topics</span>
+</button>
+<button class="strip C x-ielts paper" type="button">
+  <span class="art art-ielts" aria-hidden="true"></span>
+  <span class="body"><span class="name">IELTS</span><span class="desc">English test for study, work and migration, scored in bands from 1 to 9.</span></span>
+  <span class="count">4 topics</span>
+</button>
+<button class="strip C x-abrsm" type="button">
+  <span class="art art-abrsm" aria-hidden="true"></span>
+  <span class="body"><span class="name">ABRSM</span><span class="desc">Graded music exams; Grade 5 theory is needed before the higher practical grades.</span></span>
+  <span class="count">3 topics</span>
+</button>
+<button class="strip C x-driving" type="button">
+  <span class="art art-driving" aria-hidden="true"></span>
+  <span class="body"><span class="name">Driving</span><span class="desc">The written test for a private car licence: one paper on rules, signs and safe driving.</span></span>
+  <span class="count">25 questions</span>
+</button></div></div>
+  <p class="cap">dark · 420px</p>
+</div></div></details></section>
+<section><h2>Open questions</h2><ul>
+<li>Does the dropdown trigger (the strip at the top of the topic panel) follow the same take, or keep today’s full cover?</li>
+<li>Count: pill over the art (as drawn), or plain text after the description?</li>
+<li>Dark mode dims paper covers so the cream does not glare; is that acceptable, or should paper covers get their own dark tone?</li></ul></section>
+</body></html>

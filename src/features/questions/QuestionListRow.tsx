@@ -39,10 +39,9 @@ export function QuestionListRow({
       aria-checked={selected}
       aria-current={current ? 'true' : undefined}
       className={cn(
-        'grid w-full grid-cols-[1.5rem_minmax(0,1fr)] rounded-button py-2 pr-1 pl-2 text-left text-sm hover:bg-surface-hover-bg',
+        'grid w-full grid-cols-[auto_minmax(0,1fr)] rounded-button py-2 pr-1 pl-2 text-left text-sm hover:bg-surface-hover-bg',
         // The result circle or checkbox sits 2px left of the panel's icons.
-        (marked || picking) &&
-          'grid-cols-[1.75rem_1.5rem_minmax(0,1fr)] pl-3.5',
+        (marked || picking) && 'grid-cols-[1.75rem_auto_minmax(0,1fr)] pl-3.5',
         current && 'bg-surface-hover-bg'
       )}
       data-result={marked ? status : undefined}
@@ -79,7 +78,7 @@ export function QuestionListRow({
             size={16}
           />
         ))}
-      <span className="font-bold">{row.position}.</span>
+      <span className="mr-1.5 font-bold">{row.position}.</span>
       <span className="line-clamp-2">
         {row.preview ? (
           <TextView text={row.preview} />
