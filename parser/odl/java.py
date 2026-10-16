@@ -2,7 +2,7 @@
 
 ODL runs as a library under ``parser/java/CapyMain.java`` (built by
 ``parser/java/build.sh``; the image sets ``CAPY_ODL_ENTRY_JAR``): the same
-options and JSON as ODL's CLI, one document per JVM.
+options and JSON as ODL's CLI, plus the facts the JSON leaves out.
 """
 
 from __future__ import annotations
@@ -13,6 +13,11 @@ import signal
 import subprocess
 from importlib import resources
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:  # Not POSIX.
+    resource = None
 
 # The lab configuration: cluster table detection, header and footer blocks kept,
 # one Java worker thread (more threads gave the same output and no speed). JSON
@@ -62,8 +67,6 @@ def _lift_address_space() -> None:
     """The parse child's soft address-space limit is for MuPDF and
     LibreOffice; -Xmx bounds the JVM, which reserves far more address space
     than it uses."""
-    import resource
-
     _, hard = resource.getrlimit(resource.RLIMIT_AS)
     resource.setrlimit(resource.RLIMIT_AS, (hard, hard))
 
@@ -101,7 +104,7 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
             timeout=timeout_s,
             check=False,
             # The parse child runs no other thread, so preexec_fn is safe.
-            preexec_fn=_lift_address_space if os.name == "posix" else None,
+            preexec_fn=_lift_address_space if resource else None,
         )
     except subprocess.TimeoutExpired as exc:
         raise JavaTimeout(f"OpenDataLoader exceeded {timeout_s:.0f} seconds") from exc
@@ -118,3 +121,10 @@ def run(pdf: Path, out_dir: Path, *, timeout_s: float) -> dict:
         )
     native_path = out_dir / f"{pdf.stem}.json"
     return json.loads(native_path.read_text(encoding="utf-8"))
+
+
+def image_objects(out_dir: Path) -> dict[int, int]:
+    """JSON element id -> PDF object number of the image a picture draws
+    (inline images have none), as CapyMain wrote it."""
+    raw = json.loads((out_dir / "capy-images.json").read_text(encoding="utf-8"))
+    return {int(key): value for key, value in raw.items()}

@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import asyncio
 import ctypes
+import errno
 import gc
 import hashlib
 import hmac
@@ -57,6 +58,11 @@ from odl.document import (
     SourceUnreadable,
 )
 from odl.java import JavaKilled, JavaTimeout
+
+try:
+    import resource
+except ImportError:  # Not POSIX.
+    resource = None
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 # Bump when parse output changes: it names the output in the ingest donor key.
@@ -126,8 +132,10 @@ PARSE_OOM_SCORE_ADJ = 1000
 # starts; Java lifts it (odl/java.py), its heap bounded by -Xmx. A document
 # that needs more fails as parse_oom instead of crowding the other children.
 PARSE_CHILD_MAX_BYTES = 2 << 30
-# MuPDF's failed allocation, as PyMuPDF passes it on.
-_ALLOCATION_FAILED = re.compile(r"\b(?:m|c|re)alloc \([^)]*\) failed")
+# MuPDF's failed allocation as PyMuPDF raises it: its message starts with
+# MuPDF's error code (text inside another error, such as Java's output, is
+# not one).
+_ALLOCATION_FAILED = re.compile(r"code=\d+: (?:m|c|re)alloc \([^)]*\) failed")
 # A child's answer on its pipe: a status and small payloads.
 # A longer one ends that child.
 MESSAGE_MAX_BYTES = 1 << 24
@@ -281,7 +289,14 @@ def run_document(document: Document) -> dict[str, Any]:
         "_stages": output.stages,
         "_repaired_fonts": output.repaired_fonts,
         "_furniture": output.furniture,
+        "_drawing_steps": output.drawing_steps,
     }
+    if output.drawings_stopped_at is not None:
+        print(
+            f"drawing clusters stopped on page {output.drawings_stopped_at} after "
+            f"{output.drawing_steps} steps: {document.fingerprint or '-'}",
+            flush=True,
+        )
     # The list-card thumbnail comes from the PDF this parse holds (an Office
     # file's conversion, or the repaired bytes), inside this bounded child, so
     # ingest neither converts nor renders anything for it. Optional: it never
@@ -370,13 +385,21 @@ def _kill_session(sid: int) -> None:
 
 def _limit_address_space(limit: int) -> None:
     """A soft limit, so a subprocess may lift it to the hard one."""
-    try:
-        import resource
-    except ImportError:
-        return  # Not POSIX.
+    if resource is None:
+        return
     _, hard = resource.getrlimit(resource.RLIMIT_AS)
     soft = limit if hard == resource.RLIM_INFINITY else min(limit, hard)
     resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+
+
+def _out_of_memory(exc: Exception) -> bool:
+    """Past the child's address-space limit: Python's MemoryError, an OS call
+    refused with ENOMEM, or MuPDF's failed allocation."""
+    return (
+        isinstance(exc, MemoryError)
+        or (isinstance(exc, OSError) and exc.errno == errno.ENOMEM)
+        or bool(_ALLOCATION_FAILED.match(str(exc)))
+    )
 
 
 def _parse_worker_main(
@@ -410,7 +433,7 @@ def _parse_worker_main(
             _write_worker_result(Path(result_path), result)
             _send(responses, "ok", None)
         except Exception as exc:  # noqa: BLE001 - returned to API supervisor
-            if isinstance(exc, MemoryError) or _ALLOCATION_FAILED.search(str(exc)):
+            if _out_of_memory(exc):
                 exc = ParseOOM(
                     f"the parse needed more than {PARSE_CHILD_MAX_BYTES >> 30} GiB "
                     f"of address space: {exc}"
@@ -1074,6 +1097,8 @@ def _measurements(
         "_stages": {
             k: round(float(v), 3) for k, v in (result.get("_stages") or {}).items()
         },
+        # Steps the drawing clusters took (pictures.VECTOR_MAX_STEPS bounds them).
+        "_drawing_steps": max(0, int(result.get("_drawing_steps") or 0)),
     }
     values.update(
         {f"_parser_{key}": value for key, value in _process_tree_memory().items()}

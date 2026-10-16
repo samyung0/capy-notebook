@@ -121,6 +121,7 @@ def test_reader_retry_preserves_source_encryption_in_a_fresh_directory(
         if len(calls) == 1:
             clock[0] = 2.0
             raise java.JavaPageTreeError("unknown type of page tree node")
+        (out_dir / "capy-images.json").write_text("{}")
         return {"number of pages": 1, "kids": []}
 
     monkeypatch.setattr(java, "run", run)
@@ -156,6 +157,7 @@ def test_reader_retry_is_bounded_and_leaves_other_outcomes_alone(
     def run(pdf, out_dir, *, timeout_s):
         calls.append(out_dir.name)
         if outcome == "success":
+            (out_dir / "capy-images.json").write_text("{}")
             return {"number of pages": 1, "kids": []}
         if outcome == "other-error":
             raise RuntimeError("unrelated parser failure")

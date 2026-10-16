@@ -211,6 +211,7 @@ def run_service(args, fixtures: list[dict], out: Path) -> list[dict]:
                 "ocr_pages": payload.get("_ocr_page_count"),
                 "phases": payload.get("_phases"),
                 "stages": payload.get("_stages"),
+                "drawing_steps": payload.get("_drawing_steps"),
                 # Anonymous memory is what the parser holds; the cgroup total
                 # also counts reclaimable page cache from reading the fixtures.
                 "peak_gib": window.get("peak_anon_gib"),

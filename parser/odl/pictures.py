@@ -12,6 +12,10 @@ formulas set as pictures arrive as images
   and passing the six precision tests (``_not_formula``). Retyped ``equation``:
   a display formula's text is PLACEHOLDER, an inline one is spliced into its
   paragraph by ``place_inline`` or else carries PLACEHOLDER itself.
+- Repeat: the same image object (ODL's report of the object a picture draws,
+  no pixels decoded) on REPEAT_PAGES or more pages (licence badges, logos,
+  icons, chapter bars). Kept as ``discarded`` page furniture, unless it is a
+  glyph-sized formula among different words each time.
 
 ``add_vector_figures`` adds the figures ODL never sees: veraPDF makes chunks of
 placed images only, so a diagram drawn with paths reached the index as its loose
@@ -25,15 +29,17 @@ frame, a table or a text box and stays text.
 
 from __future__ import annotations
 
+import math
 import re
 import statistics
 import struct
-from collections import defaultdict
+from collections import Counter, defaultdict
 
 import pymupdf
 
 from . import page_text
 
+REPEAT_PAGES = 5
 MIN_SIDE_PT = 1.0
 SUBTLE_ASPECT = 0.01
 PLACEHOLDER = "[formula]"
@@ -165,7 +171,25 @@ def empty_table(block: dict) -> bool:
     )
 
 
-def classify(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
+def classify(
+    blocks: list[dict], document: pymupdf.Document, objects: dict[int, int]
+) -> list[dict]:
+    """``objects``: ODL's element id -> the PDF object of the image a picture
+    draws (``java.image_objects``); a picture's identity for repeats, read
+    without decoding the image. An inline image has none and never repeats."""
+    images = {
+        index
+        for index, block in enumerate(blocks)
+        if block.get("type") == "image" and len(block.get("bbox") or []) == 4
+    }
+    identity = {
+        index: xref
+        for index in images
+        if (xref := objects.get(blocks[index].get("_native_id"))) is not None
+    }
+    pages: dict[int, set[int]] = defaultdict(set)
+    for index, xref in identity.items():
+        pages[xref].add(blocks[index]["page_idx"])
     facts: dict[int, tuple | None] = {}
 
     def page_facts(page: pymupdf.Page) -> tuple | None:
@@ -179,9 +203,27 @@ def classify(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
             facts[page.number] = _page_facts(page)
         return facts[page.number]
 
+    def repeated(index: int) -> bool:
+        return index in identity and len(pages[identity[index]]) >= REPEAT_PAGES
+
+    # A repeat with the same words beside it in most placements is furniture (a
+    # licence badge after the same licence sentence); a reused formula glyph such
+    # as x or dx sits among different words each time.
+    contexts: dict[int, Counter] = defaultdict(Counter)
+    for index in sorted(images):
+        page = document[blocks[index]["page_idx"]]
+        if repeated(index) and (page_fact := page_facts(page)):
+            beside = _words_beside(_rect(blocks[index], page), page_fact[3])
+            contexts[identity[index]][beside] += 1
+    fixed = {
+        key
+        for key, seen in contexts.items()
+        if seen.most_common(1)[0][1] >= 0.6 * seen.total()
+    }
+
     out: list[dict] = []
-    for block in blocks:
-        if block.get("type") != "image" or len(block.get("bbox") or []) != 4:
+    for index, block in enumerate(blocks):
+        if index not in images:
             out.append(block)
             continue
         page = document[block["page_idx"]]
@@ -192,11 +234,19 @@ def classify(blocks: list[dict], document: pymupdf.Document) -> list[dict]:
         kind = None
         if page_fact := page_facts(page):
             kind = _formula_kind(rect, [r for r, _ in page_fact[0]], page_fact[1])
+        if (
+            kind
+            and repeated(index)
+            and (identity[index] in fixed or rect.height > 1.6 * page_fact[2])
+        ):
+            kind = None
         if kind and _not_formula(page, rect, page_fact):
             kind = None
         if kind:
             text = PLACEHOLDER if kind == "display" else ""
             block = {**block, "type": "equation", "text": text, "_picture": kind}
+        elif repeated(index):
+            block = {**block, "type": "discarded"}
         out.append(block)
     return out
 
@@ -265,12 +315,20 @@ class Drawings:
     read no others."""
 
     def __init__(self, steps: int = VECTOR_MAX_STEPS) -> None:
-        self.left = steps
+        self.steps = self.left = steps
         self.pages: dict[int, list[tuple[pymupdf.Rect, int, int]]] = {}
+        # The page where the steps ran out, for the parse's log line.
+        self.stopped_at: int | None = None
+
+    @property
+    def spent(self) -> int:
+        return self.steps - self.left
 
     def clusters(self, page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
         if page.number not in self.pages:
             found = _figure_clusters(page, self) if self.left >= 0 else []
+            if self.left < 0 and self.stopped_at is None:
+                self.stopped_at = page.number
             self.pages[page.number] = [
                 cluster for cluster in found if cluster[1] >= VECTOR_MIN_SEGMENTS
             ]
@@ -292,16 +350,13 @@ def _figure_clusters(
     meet merge until none do. Clusters come in the order of the cluster each
     one began as, as a list of them appended to on every merge would hold.
 
-    A grid of VECTOR_CELL cells holds each cluster in the cells its box covers
-    (cells off the page fold into the edge ones; big clusters stay out, see
-    VECTOR_BIG_CELLS), so a path compares only the clusters in the cells its
-    grown box covers, and union-find lets a merged cluster be found from the
+    A grid of VECTOR_CELL cells holds each cluster in the cells its box covers,
+    on the page or off it (big clusters stay out, see VECTOR_BIG_CELLS), so a
+    path compares only the clusters in the cells its grown box covers, and union-find lets a merged cluster be found from the
     cells of the clusters it took in. Boxes are
     float tuples with pymupdf's own tests and union (``_meets``, ``_union``).
     Empty once ``drawings`` has spent its steps."""
     width, height = page.rect.width, page.rect.height
-    gx0, gy0 = page.rect.x0 // VECTOR_CELL, page.rect.y0 // VECTOR_CELL
-    gx1, gy1 = page.rect.x1 // VECTOR_CELL, page.rect.y1 // VECTOR_CELL
     parent: list[int] = []
     boxes: list[tuple[float, float, float, float]] = []
     spans: list = []  # each cluster's span
@@ -312,15 +367,16 @@ def _figure_clusters(
     big: set[int] = set()  # clusters wider than VECTOR_BIG_CELLS, held here only
 
     def span(box: tuple) -> tuple[int, int, int, int]:
-        """The cells a box covers, folded onto the page's (NaN to the first)."""
-        x0, y0 = box[0] // VECTOR_CELL, box[1] // VECTOR_CELL
-        x1, y1 = box[2] // VECTOR_CELL, box[3] // VECTOR_CELL
-        return (
-            int(gx0 if not x0 >= gx0 else min(x0, gx1)),
-            int(gy0 if not y0 >= gy0 else min(y0, gy1)),
-            int(gx0 if not x1 >= gx0 else min(x1, gx1)),
-            int(gy0 if not y1 >= gy0 else min(y1, gy1)),
-        )
+        """The cells a box covers."""
+        try:
+            return (
+                int(box[0] // VECTOR_CELL),
+                int(box[1] // VECTOR_CELL),
+                int(box[2] // VECTOR_CELL),
+                int(box[3] // VECTOR_CELL),
+            )
+        except (OverflowError, ValueError):  # an infinite or NaN coordinate
+            return (_cell(box[0]), _cell(box[1]), _cell(box[2]), _cell(box[3]))
 
     def find(node: int) -> int:
         while parent[node] != node:
@@ -449,6 +505,19 @@ def _cells(area: tuple[int, int, int, int]) -> int:
     return (area[2] - area[0] + 1) * (area[3] - area[1] + 1)
 
 
+# Past the cell of any finite coordinate (the largest double over VECTOR_CELL).
+_FAR = 10**310
+
+
+def _cell(value: float) -> int:
+    """The cell of an infinite coordinate: past every finite one on its side,
+    so the box spans them all (a big cluster); a NaN one meets nothing, so
+    any cell does."""
+    if math.isnan(value):
+        return 0
+    return _FAR if value > 0 else -_FAR
+
+
 _INFINITE = (
     pymupdf.FZ_MIN_INF_RECT,
     pymupdf.FZ_MIN_INF_RECT,
@@ -460,6 +529,10 @@ _C_FLOATS = struct.Struct("4f")
 
 def _empty(box: tuple) -> bool:
     return box[0] >= box[2] or box[1] >= box[3]
+
+
+def _inverted(box: tuple) -> bool:
+    return box[0] > box[2] or box[1] > box[3]
 
 
 def _meets(a: tuple, b: tuple) -> bool:
@@ -483,9 +556,10 @@ def _union(a: tuple, b: tuple) -> tuple:
     if _empty(a):
         return b
     a, b = _C_FLOATS.unpack(_C_FLOATS.pack(*a)), _C_FLOATS.unpack(_C_FLOATS.pack(*b))
-    if _empty(b) or a == _INFINITE:
+    # MuPDF's own test: only an inverted box is empty there.
+    if _inverted(b) or a == _INFINITE:
         return a
-    if _empty(a) or b == _INFINITE:
+    if _inverted(a) or b == _INFINITE:
         return b
     return (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
 
