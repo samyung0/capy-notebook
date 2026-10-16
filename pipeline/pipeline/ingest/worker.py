@@ -170,7 +170,7 @@ def _announce_reclaimed(row: dict) -> None:
             100,
             status="failed",
             message=error[:200],
-            indexed=False,
+            indexed=row.get("file_indexed") is True,
         )
     log.info("ingest %s failed terminally: %s", file_id, error)
 
@@ -586,11 +586,12 @@ def _finish_fail(
     error_category: str = "",
     error_code: str = "",
     index_limit: str = "",
-) -> bool:
+) -> bool | None:
     """Fail the job. The file fails too, still indexed while its alias serves
     a previous index, unless ``index_limit`` names the ingest limit its content
     is over: then it is ready and unindexed (its alias dropped), still usable,
-    and only search and chat skip it."""
+    and only search and chat skip it. Returns the file's written ``indexed``
+    (False without a file), or None when the claim was lost."""
     with db.connect() as conn:
         with conn.cursor() as cur:
             boundary_payload = None
@@ -604,7 +605,8 @@ def _finish_fail(
                     "workspaceId": workspace_id,
                 }
             if _lost_claim(cur, job_id, attempt, boundary_payload):
-                return False
+                return None
+            indexed = False
             if file_id:
                 if source_revision is not None and boundary_payload is None:
                     db.require_current_file_source(
@@ -618,7 +620,7 @@ def _finish_fail(
                     )
                     db.set_file_index_limit(cur, file_id, index_limit)
                 db.set_file_status(cur, file_id, "ready" if index_limit else "failed")
-                db.set_file_indexed_as_served(cur, file_id)
+                indexed = db.set_file_indexed_as_served(cur, file_id)
             db.set_job(cur, job_id, "failed", error[:500])
             db.close_credit_reservation(cur, reservation_id)
             if file_id:
@@ -642,7 +644,7 @@ def _finish_fail(
                 error_code=error_code,
             )
         conn.commit()
-    return True
+    return indexed
 
 
 def _finish_job_ok(job_id: str, attempt: int | None = None) -> None:
@@ -762,7 +764,7 @@ def _notify_ingest_terminal(
         return
     name = _read_name(file_id)
     source_revision = payload.get("sourceRevision") if payload else None
-    committed = _finish_fail(
+    indexed = _finish_fail(
         file_id=file_id,
         job_id=job_id,
         error=error,
@@ -776,7 +778,7 @@ def _notify_ingest_terminal(
         error_code=error_code,
         index_limit=index_limit,
     )
-    if not committed:
+    if indexed is None:
         return
     if index_limit:
         if ws:
@@ -793,7 +795,7 @@ def _notify_ingest_terminal(
             100,
             status="failed",
             message=error[:200],
-            indexed=False,
+            indexed=indexed,
         )
     log.info("ingest %s failed terminally: %s", name, error)
 
@@ -1217,11 +1219,14 @@ def _pipeline_identity(
 
 def _parse_fee(payload: dict) -> bool:
     """Whether this job's parse pays the page fee. Go decides it for each
-    source refresh at admission; an upload's parse is its first and pays; a
-    system-paid job (an export-only file's reprocess) never does."""
+    source refresh at admission and for a partial file's Retry processing
+    (parts design Q6); an upload's parse is its first and pays; a system-paid
+    job (an export-only file's reprocess) never does."""
     if payload.get("paidBy") == "system":
         return False
-    return payload.get("sourceRefresh") is not True or payload["parseFee"] is True
+    if payload.get("sourceRefresh") is True:
+        return payload["parseFee"] is True
+    return payload.get("parseFee", True) is True
 
 
 def _record_parse_usage_tx(
@@ -2264,7 +2269,7 @@ async def _process_ingest_job(
         _account_allows_ingest, file_id, payload, _first_claim(job, payload)
     ):
         note = f"{name}: ingest refused because the account is locked or over quota."
-        committed = await asyncio.to_thread(
+        indexed = await asyncio.to_thread(
             _finish_fail,
             file_id=file_id,
             job_id=job["id"],
@@ -2278,10 +2283,10 @@ async def _process_ingest_job(
             error_category="accounting",
             error_code="ingest_admission_refused",
         )
-        if not committed:
+        if indexed is None:
             return
         _publish_progress(
-            ws, file_id, "failed", 100, status="failed", message=note, indexed=False
+            ws, file_id, "failed", 100, status="failed", message=note, indexed=indexed
         )
         return
     if payload.get("partsOnly") is True:
@@ -2861,9 +2866,12 @@ async def _handle_job_failure_bound(job: dict, exc: BaseException) -> None:
             return
         error_category, error_code = "provider", "provider_busy"
         exc = TerminalError(f"the model stayed busy across {waits} waits: {exc}")
+    # An accounting error fails the job: a settlement failure is never re-run
+    # over a charged response, and missing capacity or accounting
+    # configuration fails the same on another attempt.
     retry = (
         policy is not None
-        and not isinstance(exc, accounting.SettlementError)
+        and not isinstance(exc, accounting.AccountingError)
         and is_retryable(exc)
         and attempts < policy.max_attempts
     )
