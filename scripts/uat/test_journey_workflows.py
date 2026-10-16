@@ -138,11 +138,23 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import YAML from 'yaml';
-const job = YAML.parse(fs.readFileSync('.github/workflows/uat-quality.yml', 'utf8')).jobs.critical_paths;
+const quality = YAML.parse(fs.readFileSync('.github/workflows/uat-quality.yml', 'utf8'));
+const job = quality.jobs.critical_paths;
 assert.equal(job.strategy['fail-fast'], false);
-const lanes = job.strategy.matrix.lane;
+// The normal lanes, or the Office load measurement alone (a dispatch input
+// that defaults off and that promotion's workflow_call cannot set).
+const matrix = job.strategy.matrix.lane.match(
+  /^\$\{\{ fromJSON\(inputs\.measure_office_load && '(\[[^']*\])' \|\| '(\[[^']*\])'\) \}\}$/);
+assert(matrix, job.strategy.matrix.lane);
+const [measured, lanes] = [JSON.parse(matrix[1]), JSON.parse(matrix[2])];
+assert.deepEqual(measured, ['measure']);
+assert.equal(job.if, 'inputs.critical_paths || inputs.measure_office_load');
+const input = quality.on.workflow_dispatch.inputs.measure_office_load;
+assert.equal(input.type, 'boolean');
+assert.equal(input.default, false);
+assert(!('measure_office_load' in quality.on.workflow_call.inputs));
 // The run id names the run directory, which must be lowercase (evidence.ts).
-for (const lane of lanes) assert.match(lane, /^[a-z]+$/);
+for (const lane of [...lanes, ...measured]) assert.match(lane, /^[a-z]+$/);
 assert.equal(job.env.UAT_RUN_ID, '${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}');
 assert.equal(job.steps.find(s => s.name === 'Run critical-path journeys').run,
   'pnpm e2e:uat:journeys --project=${{ matrix.lane }}');
@@ -154,15 +166,23 @@ const list = spawnSync(process.execPath, ['node_modules/@playwright/test/cli.js'
   { encoding: 'utf8' });
 assert.equal(list.status, 0, list.stderr);
 const counts = {};
+const projects = {};
 const walk = (suite) => {
   for (const spec of suite.specs ?? [])
-    for (const test of spec.tests) counts[test.projectName] = (counts[test.projectName] ?? 0) + 1;
+    for (const test of spec.tests) {
+      counts[test.projectName] = (counts[test.projectName] ?? 0) + 1;
+      (projects[spec.file] ??= new Set()).add(test.projectName);
+    }
   for (const child of suite.suites ?? []) walk(child);
 };
 JSON.parse(list.stdout).suites.forEach(walk);
-for (const lane of lanes) assert(counts[lane] > 0, `lane ${lane} has no journeys`);
-// The hosted top-up journey runs by hand (Stripe's hCaptcha stops it headless).
+for (const lane of [...lanes, ...measured]) assert(counts[lane] > 0, `lane ${lane} has no journeys`);
+// The hosted top-up journey runs by hand (Stripe's hCaptcha stops it headless),
+// and the Office load measurement only on request; no other project runs them.
 assert(!lanes.includes('manual') && counts.manual > 0, 'manual journeys stay out of the lanes');
+assert(!lanes.includes('measure'), 'the Office load measurement stays out of the lanes');
+assert.deepEqual([...projects['creditsManual.spec.ts']], ['manual']);
+assert.deepEqual([...projects['officeLoad.spec.ts']], ['measure']);
 """,
         )
         self.assertEqual(result.returncode, 0, result.stderr)

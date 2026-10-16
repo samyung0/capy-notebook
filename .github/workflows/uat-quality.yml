@@ -17,6 +17,11 @@ on:
         required: false
         default: true
         type: boolean
+      measure_office_load:
+        description: Instead of the journey lanes, only measure Office open times (the measure lane)
+        required: false
+        default: false
+        type: boolean
   workflow_call:
     inputs:
       revision:
@@ -130,17 +135,18 @@ jobs:
           retention-days: 30
 
   critical_paths:
-    if: inputs.critical_paths
+    if: inputs.critical_paths || inputs.measure_office_load
     needs: smoke
     runs-on: ubuntu-24.04
     environment: uat
     timeout-minutes: 150
     # One job per lane (a Playwright project), each with its own run id,
     # manifest, cleanup and Sentry gate; one lane failing does not stop another.
+    # The Office load measurement runs alone, never as a normal lane.
     strategy:
       fail-fast: false
       matrix:
-        lane: [office, app, billing]
+        lane: ${{ fromJSON(inputs.measure_office_load && '["measure"]' || '["office","app","billing"]') }}
     env:
       UAT_RUN_ID: ${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.lane }}
       EXPECTED_REVISION: ${{ needs.smoke.outputs.revision }}

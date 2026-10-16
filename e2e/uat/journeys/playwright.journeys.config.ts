@@ -30,6 +30,9 @@ const billing = [
 // Run by hand only, headed (hosted payment Checkout meets Stripe's hCaptcha
 // headless); uat-quality never names this project.
 const manual = ['creditsManual.spec.ts'];
+// Office open times, results only; uat-quality runs it alone when dispatched
+// with measure_office_load, never beside the other lanes.
+const measure = ['officeLoad.spec.ts'];
 const refresh = [
   'officeLifecycle.spec.ts',
   'noteIndex.spec.ts',
@@ -50,9 +53,10 @@ export default defineConfig({
     { name: 'refresh', testMatch: refresh, use: chromium },
     { name: 'billing', testMatch: billing, use: chromium },
     { name: 'manual', testMatch: manual, use: chromium },
+    { name: 'measure', testMatch: measure, use: chromium },
     {
       name: 'app',
-      testIgnore: [...office, ...refresh, ...billing, ...manual],
+      testIgnore: [...office, ...refresh, ...billing, ...manual, ...measure],
       use: chromium,
     },
   ],

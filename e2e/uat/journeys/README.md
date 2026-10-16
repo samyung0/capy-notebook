@@ -2,7 +2,8 @@
 
 Run these twenty-eight journeys deliberately through **Deterministic UAT quality**.
 One more, the hosted top-up journey, runs by hand before launch (see
-[Hosted payment-form entry](#hosted-payment-form-entry)).
+[Hosted payment-form entry](#hosted-payment-form-entry)), and the Office load
+measurement only on request ([Office load measurement](#office-load-measurement)).
 Its `critical_paths` input defaults to true for manual dispatch and false for
 the lightweight deploy check. **Promote revision to production** requires it.
 Normal pull-request CI does not contact UAT or these providers.
@@ -92,6 +93,69 @@ top-up waits up to ten minutes), then run cleanup as for any lane:
 pnpm e2e:uat:journeys --project=manual --headed
 ```
 
+### Office load measurement
+
+`officeLoad.spec.ts` (project `measure`) times Office opens on UAT. It asserts
+only that every open reaches the editor (the Office header's Edit menu, as
+`openEditor` waits for), never a time; a stuck open records its stage and the
+journey fails once the other opens are measured.
+
+- **Files**, uploaded store-only by one disposable owner (nothing to parse, so
+  ready to open at once, with no ingest or model spend; Edit opens them as it
+  opens a parsed file): small `basic/` `lesson.docx`, `grades.xlsx` and
+  `lesson.pptx`, the fixed cost of an open; large `long-handbook.docx` (62
+  pages) and `large-gradebook.xlsx` (224k cells) from `bench/editor/fixtures/office/`
+  and `rich-content/lecture.pptx` (20 slides, 25 pictures), the Office bench's
+  files, so the numbers compare with its local medians
+  ([editor-perf](../../../openwiki/editor-perf.md)).
+- **Cold**: a new browser context signed in with a Clerk ticket, its HTTP
+  cache cleared after the sign-in page (CDP `Network.clearBrowserCache`;
+  cookies and storage stay), then a new tab. **Warm**: the cold tab closed,
+  a new tab in the same context (its HTTP cache and IndexedDB as the cold open
+  left them; the server's room may still be loaded).
+- Each open goes to the file in Edit and waits up to 240 s.
+
+Dispatch **Deterministic UAT quality** with `measure_office_load` on: the job
+runs only the `measure` lane (run id `<run id>-<attempt>-measure`) with its
+own manifest, cleanup, Sentry gate and artifact, and skips the normal lanes.
+Untick `browser_suite` to keep UAT quiet meanwhile. Locally, as in
+[Running and cleanup](#running-and-cleanup) with `--project=measure`.
+
+The artifact's `evidence/` holds `office-load.md` (a row per open with the
+milestones and the bytes and cache hits of bundles, WASM and fonts),
+`office-load-<format>-<size>-<open>-<id>.json` (every milestone, the runtime's
+own `timings`, the header's save states, WASM compiles, fonts and every
+resource of the page, the runtime frame and its workers: origin and path,
+start, end, sizes and cache state) and `office-load-<format>-<size>-<open>.zip`,
+the Playwright trace with screenshots (`npx playwright show-trace <zip>`;
+its screencast costs every open alike). Traces keep the run's short-lived
+session headers; cleanup deletes the accounts before the upload.
+
+All times are milliseconds after the tab's navigation start:
+
+| Milestone | Signal |
+| --- | --- |
+| HTML, DOMContentLoaded, load | The page's Navigation Timing |
+| SPA ready | The runtime iframe's navigation start: the SPA loaded, Clerk restored the session and the file view mounted its frame |
+| Frame loaded, initialized | The frame's Navigation Timing `loadEventEnd`; the runtime's `initialized` message |
+| Grant | Resource Timing of `POST /api/files/{id}/collaboration-token` (and `GET …/source-session`) |
+| Source bytes | Resource Timing of the presigned B2 read of the file |
+| Room | The collaboration WebSocket created, opened and first answering (an init script wraps `WebSocket`), then the header's `data-save-state` leaving `connecting` (synced); the frame's `load` from the host follows |
+| WASM | Resource Timing of each `.wasm` in the page, the frame and its workers; compile and instantiate from a wrapped `WebAssembly` in the frame |
+| Fonts | Resource Timing of font files; the frame's `document.fonts.add` calls and FontFaceSet `loadingdone` events |
+| First page painted | The runtime's `ready` message, sent once the first pages, grid or slide are painted, with its own `timings` |
+| Replica, editable | The runtime's `collaboration-ready`; the Edit menu appearing, with the `set-capabilities` the frame got |
+
+Not observable without a product hook: WASM compiled inside a worker
+(Playwright runs no script in a worker before the worker's own; a
+`performance.mark` around the engine's WASM init would be readable from the
+worker's timeline); sizes and cache state of cross-origin responses without
+`Timing-Allow-Origin` (API, B2, Clerk: start and end only); and
+`document.fonts.ready`, which resolves at once because the runtime loads
+each face from bytes before adding it (the last face added stands in).
+Clerk's `/v1` calls pass through the journeys' testing-token route, a Node
+round trip a real browser does not make.
+
 ### Failed renewal: Stripe's event sequence
 
 `renewalFailure.spec.ts` attaches every Stripe event about its three
@@ -178,6 +242,7 @@ each lane in its matrix as its own job, in parallel:
 | `office` | `files.spec.ts`, `chat.spec.ts`, `officeRefusal.spec.ts`, `scannedPdf.spec.ts`, `partialIngest.spec.ts` | Yes |
 | `billing` | `billing.spec.ts`, `credits.spec.ts`, `renewalFailure.spec.ts` (Stripe sandbox: subscriptions, auto-reload, failed renewals; about 60 min) | Yes |
 | `manual` | `creditsManual.spec.ts` (hosted payment Checkout, headed, by hand) | Never; every other project ignores it |
+| `measure` | `officeLoad.spec.ts` (Office open times, results only) | Only when dispatched with `measure_office_load`, and then alone; every other project ignores it |
 | `app` | Every other spec; a new spec lands here unless a lane names it | Yes |
 | `refresh` | `officeLifecycle.spec.ts` (J2), `noteIndex.spec.ts` (J4), `textLifecycle.spec.ts` (J5) | Not until those specs exist: an empty project fails with "No tests found" after preflight |
 

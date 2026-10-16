@@ -295,6 +295,25 @@ export async function createSecondaryActor(
     label,
     registration: 'backend-ticket',
   });
+  const { context, page } = await ticketContext(run, browser, user.id);
+  try {
+    const actor = actorFor(run, context, page, user.id, email);
+    await waitForApplicationUser(run, actor);
+    return actor;
+  } catch (error) {
+    await closeActorContext(context);
+    throw setupFailure(error, 'Secondary actor sign-in');
+  }
+}
+
+/** `actor` signed in again in a new browser context: empty HTTP cache and storage. */
+export async function signInAgain(run: UatRun, browser: Browser, actor: Actor) {
+  const { context, page } = await ticketContext(run, browser, actor.id);
+  return actorFor(run, context, page, actor.id, actor.email);
+}
+
+/** A new browser context signed in as `userId` with a short-lived Clerk sign-in ticket. */
+async function ticketContext(run: UatRun, browser: Browser, userId: string) {
   const context = await actorContext(run.env, browser).catch(
     (error: unknown) => {
       throw setupFailure(error, 'Clerk browser setup');
@@ -307,9 +326,10 @@ export async function createSecondaryActor(
       () =>
         (window as unknown as { Clerk?: BrowserClerk }).Clerk?.loaded === true
     );
+    const client = createClerkClient({ secretKey: run.env.clerkSecretKey });
     const ticket = await client.signInTokens.createSignInToken({
       expiresInSeconds: 60,
-      userId: user.id,
+      userId,
     });
     try {
       await page.evaluate(async (value) => {
@@ -331,13 +351,11 @@ export async function createSecondaryActor(
       )
         throw error;
     }
-    await sessionReady(page, user.id);
-    const actor = actorFor(run, context, page, user.id, email);
-    await waitForApplicationUser(run, actor);
-    return actor;
+    await sessionReady(page, userId);
+    return { context, page };
   } catch (error) {
     await closeActorContext(context);
-    throw setupFailure(error, 'Secondary actor sign-in');
+    throw setupFailure(error, 'Ticket sign-in');
   }
 }
 

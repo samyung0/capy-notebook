@@ -4,6 +4,7 @@ import {
   closeActorContext,
   createPrimaryActor,
   createSecondaryActor,
+  signInAgain,
 } from './accounts';
 import { loadEnvironment, type UatEnvironment } from './environment';
 import {
@@ -62,6 +63,13 @@ export class UatRun {
     );
     this.actors.push(actor);
     return actor;
+  }
+
+  /** `actor` in a new browser context of its own (empty cache), closed with the run. */
+  async signInAgain(actor: Actor) {
+    const again = await signInAgain(this, this.browser, actor);
+    this.actors.push(again);
+    return again;
   }
 
   query<T extends Record<string, unknown> = Record<string, unknown>>(
