@@ -463,9 +463,10 @@ test('saved-token transport errors omit the runtime-issued credential', async ()
       ),
       (error: unknown) => {
         assert(error instanceof Error);
+        // Only a fixed transport kind may follow the stage name.
         assert.equal(
           error.message,
-          'Saved-token authorization probe failed; browser/provider details are omitted to keep credentials out of artifacts'
+          'Saved-token authorization probe failed [ECONNREFUSED]; browser/provider details are omitted to keep credentials out of artifacts'
         );
         assert(!String(error.stack).includes('SYNTHETIC_UAT_CREDENTIAL'));
         assert(!('cause' in error));
