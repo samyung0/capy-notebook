@@ -867,10 +867,28 @@ more than `CAPY_PARSE_MAX_PAGES` (1,400) pages fails as the terminal
 `parse_too_many_pages`, a PDF that cannot be counted (broken, no pages, an
 open password) as the terminal `parse_unreadable`, and a count that hangs runs
 into the parse deadline (`parse_hard_timeout`, quarantined). There is no count
-at admission, and the API process opens no source with MuPDF. The
-coordinator maps both page codes to an input limit (`scanned_page_limit`,
-`page_limit`) carrying the parser's reason (no quarantine, no retry): the file
-ends ready and unindexed, see Ingest limits below. The API serves the same two env
+at admission, and the API process opens no source with MuPDF.
+
+The parse child also checks element limits (`odl/elements.py`), cheap counts
+that refuse floods of figures, shapes or table rows as the terminal
+`parse_too_many_elements` before the costly work. A DOCX or PPTX is counted in
+its package XML before LibreOffice, tags of any namespace prefix: more than
+2,000 table rows (`tr`) or 2,000 pictures and drawings (`drawing`, `pict`) in a
+DOCX, more than 2,000 shapes and pictures (`sp`, `cxnSp`, `pic`) in a PPTX.
+Every PDF, an Office file's conversion included, is counted after the page
+count: more than 250,000 image placements in the file or 40,000 on one page
+(each `Do` and inline image, a form XObject counting what it draws times its
+draws), or more than 2,000,000 path-painting operators in the file. Legacy
+`.doc`/`.ppt`/`.xls`, XLSX and packages that don't open are not counted (the
+conversion timeout and the page cap hold them). The thresholds come from a
+census of 418 real PDFs and synthetic floods
+([report](../bench/parsers/reports/2026-10-16-element-limit.md)); the check
+takes about 3 ms a page.
+
+The coordinator maps the page and element codes to an input limit
+(`scanned_page_limit`, `page_limit`, `element_limit`) carrying the parser's
+reason (no quarantine, no retry): the file ends ready and unindexed, see Ingest
+limits below. The API serves the same two env
 values in the upload policy (`parseModes[fast].maxPages`, `maxOcrPages`) and
 refuses a fast-parse reservation whose claimed `pageCount` exceeds `maxPages`;
 the browser checks both caps before upload (see
@@ -1073,13 +1091,15 @@ viewer.
 
 #### Ingest limits
 
-Five limits are checked on the real content during ingest. A file over one is
+Six limits are checked on the real content during ingest. A file over one is
 not failed: the worker raises `InputLimitError(code)`, the job and its attempt
 fail with that `error_code` (logged at info, no Sentry event), and the file
 ends `ready`, `indexed=false`, with `files.index_limit` set to the code
-(migrations `0072`, `0081`). It opens, downloads, edits and clones like any file; only
+(migrations `0072`, `0081`, `0089`). It opens, downloads, edits and clones like any file; only
 search, chat and generate skip it. The file banner and the upload panel say it
-is too large to index (`files_not_indexed_too_large`), Retry processing is not
+is too large to index (`files_not_indexed_too_large`; for `element_limit`,
+`files_not_indexed_too_many_elements`, and the upload panel also raises one
+warning toast per file, `source_transfer_too_many_elements`), Retry processing is not
 offered (that is for `failed` files), and the Indexing tab counts it as not
 indexable. A new published source (a source refresh or a maintenance
 republish) clears `index_limit`. An edited source over a limit is a refused
@@ -1090,6 +1110,7 @@ Indexing tab lists the change as failed.
 | --- | --- | --- | --- |
 | `page_limit` | Pages in a fast-parse PDF/DOCX/PPTX/XLSX | `CAPY_PARSE_MAX_PAGES` (1,400) | Browser analysis blocks submit; the reservation refuses a claimed `pageCount` over it. Imports and edited Office sources are only checked by the parser. |
 | `scanned_page_limit` | Text-less pages in one document | `CAPY_PARSE_OCR_PAGE_CAP` (500) | Browser blocks a PDF estimated over 105% of it and warns from 95%; Office only warns. The server does not check. |
+| `element_limit` | Image placements, vector paint operators (PDF); table rows, pictures, shapes (DOCX/PPTX) | `odl/elements.py`: 250,000 placements a file and 40,000 a page, 2,000,000 paints; 2,000 each in Office | No |
 | `image_pixel_limit` | Decoded pixels of an image, all frames of an animated one | `CAPY_IMAGE_MAX_PIXELS` (100M) | No |
 | `tabular_column_limit` | Columns in one CSV/TSV row, counted as raw delimiters (quoted ones too) before the row is parsed | 1,000 | No |
 | `tabular_text_limit` | Estimated tokens of rendered CSV/TSV row text, counted while rendering, before chunking or embedding | 1,000,000 | No |

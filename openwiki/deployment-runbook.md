@@ -1580,8 +1580,9 @@ calls in flight across the host), so the parser has no OCR stage or OCR
 backlog. The parse child counts each document's pages before parsing it, and
 the API process opens no source, and no file a child wrote, with MuPDF. A
 document with more than 500 text-less pages fails as
-`parse_too_many_scanned_pages` (terminal), and one with more than 1,400 pages
-as `parse_too_many_pages`. The OpenDataLoader accuracy record is the September 2026 series
+`parse_too_many_scanned_pages` (terminal), one with more than 1,400 pages
+as `parse_too_many_pages`, and one past the element limits (figures, vector
+shapes, Office rows or shapes; `odl/elements.py`) as `parse_too_many_elements`. The OpenDataLoader accuracy record is the September 2026 series
 under `bench/parsers/reports/` (`2026-09-09-odl-accuracy-third-pass.md` and the
 per-repair experiments it cites); the acceptance oracle is the refined corpus
 on the ingest host. The capacity run found CPU and the deadline, not memory,

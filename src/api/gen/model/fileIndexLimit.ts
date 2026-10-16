@@ -11,6 +11,7 @@ export type FileIndexLimit = typeof FileIndexLimit[keyof typeof FileIndexLimit];
 export const FileIndexLimit = {
   page_limit: 'page_limit',
   scanned_page_limit: 'scanned_page_limit',
+  element_limit: 'element_limit',
   image_pixel_limit: 'image_pixel_limit',
   tabular_column_limit: 'tabular_column_limit',
   tabular_text_limit: 'tabular_text_limit',

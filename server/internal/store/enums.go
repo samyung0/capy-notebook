@@ -286,8 +286,8 @@ func (FileStatus) Schema(r huma.Registry) *huma.Schema {
 type FileIndexLimit string
 
 func (FileIndexLimit) Schema(r huma.Registry) *huma.Schema {
-	return enumRef(r, "FileIndexLimit", "page_limit", "scanned_page_limit", "image_pixel_limit",
-		"tabular_column_limit", "tabular_text_limit")
+	return enumRef(r, "FileIndexLimit", "page_limit", "scanned_page_limit", "element_limit",
+		"image_pixel_limit", "tabular_column_limit", "tabular_text_limit")
 }
 
 // NotificationKind categorises an in-app notification.

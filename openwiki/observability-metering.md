@@ -288,9 +288,10 @@ error-boundary rendering do not add another capture call.
 Expected 4xx responses, interactive provider-busy responses, and client aborts
 stay quiet. Ingest retryable failures still requeue without capture; terminal
 ingest failures keep their explicit reporting, except `InputLimitError`: a user
-file over a documented limit (page or scanned-page count, image pixels,
-CSV/TSV columns per row or searchable text) fails the job with the limit's
-attempt `error_code` (`page_limit`, `scanned_page_limit`, `image_pixel_limit`,
+file over a documented limit (page or scanned-page count, figures and table
+rows, image pixels, CSV/TSV columns per row or searchable text) fails the job
+with the limit's attempt `error_code` (`page_limit`, `scanned_page_limit`,
+`element_limit`, `image_pixel_limit`,
 `tabular_column_limit`, `tabular_text_limit`) and logs at
 info, with no Sentry event. The file itself ends ready and unindexed with
 `files.index_limit` (see Ingest limits in

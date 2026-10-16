@@ -31,7 +31,7 @@ DO = re.compile(rb"(?<![^\s])Do(?=\s)")
 OFFICE_COUNTS = {
     ".docx": {"rows": b"<w:tr", "cells": b"<w:tc", "drawings": b"<w:drawing", "vml_shapes": b"<v:shape"},
     ".pptx": {"rows": b"<a:tr", "cells": b"<a:tc", "shapes": b"<p:sp", "pictures": b"<p:pic", "tables": b"<a:tbl"},
-    ".xlsx": {"rows": b"<row", "cells": b"<c ", "pictures": b"<xdr:pic", "shapes": b"<xdr:sp"},
+    ".xlsx": {"rows": b"<row", "cells": b"<c", "pictures": b"<xdr:pic", "shapes": b"<xdr:sp"},
 }
 
 

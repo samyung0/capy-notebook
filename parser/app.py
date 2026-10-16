@@ -56,6 +56,7 @@ from odl.document import (
     OfficeFormatMismatch,
     SourceUnreadable,
 )
+from odl.elements import TooManyElements, check_office, check_pdf
 from odl.java import JavaKilled, JavaTimeout
 from odl.memory import out_of_memory
 
@@ -251,6 +252,10 @@ def run_document(document: Document) -> dict[str, Any]:
     from odl.document import normalize_document, pdf_page_count
 
     WORK_DIR.mkdir(parents=True, exist_ok=True)
+    # The element limits: an Office package before LibreOffice, every PDF
+    # (an Office file's conversion too) before the parse.
+    if document.capture is None:
+        check_office(document.data, document.name)
     normalized = normalize_document(document.data, document.name, WORK_DIR)
     if document.capture is not None:
         from odl.capture import capture_page
@@ -259,6 +264,7 @@ def run_document(document: Document) -> dict[str, Any]:
     # The only page count: every document, before the parse (an Office
     # document's pages exist only after LibreOffice).
     _check_page_count(pdf_page_count(normalized.data))
+    check_pdf(normalized.data)
     from odl.refine import parse_pdf
 
     work = Path(tempfile.mkdtemp(prefix="doc-", dir=WORK_DIR))
@@ -443,6 +449,7 @@ _CHILD_ERRORS: dict[str, type[Exception]] = {
         ParseTooManyPages,
         ParseTooManyScannedPages,
         SourceUnreadable,
+        TooManyElements,
         ParseOOM,
     )
 }
@@ -1444,6 +1451,8 @@ def _failure_response(
         code, status = "parse_too_many_scanned_pages", 422
     elif isinstance(exc, ParseTooManyPages):
         code, status = "parse_too_many_pages", 422
+    elif isinstance(exc, TooManyElements):
+        code, status = "parse_too_many_elements", 422
     elif isinstance(exc, ParseOOM):
         code, status = "parse_oom", 422
     elif isinstance(exc, OfficeFormatMismatch):
@@ -1718,6 +1727,15 @@ async def _produce_artifact(
         return (
             {
                 "code": "parse_too_many_pages",
+                "detail": str(exc),
+                "source_fingerprint": fingerprint,
+            },
+            422,
+        )
+    except TooManyElements as exc:
+        return (
+            {
+                "code": "parse_too_many_elements",
                 "detail": str(exc),
                 "source_fingerprint": fingerprint,
             },

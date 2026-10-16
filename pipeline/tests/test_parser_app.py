@@ -679,6 +679,10 @@ async def test_child_answers_are_read_as_data_never_unpickled(tmp_path: Path) ->
         ),
         (parser_app.ParseTooManyPages("1500 pages"), parser_app.ParseTooManyPages),
         (
+            parser_app.TooManyElements("more than 2,000 table rows"),
+            parser_app.TooManyElements,
+        ),
+        (
             parser_app.ParseTooManyScannedPages("501 pages have no text layer"),
             parser_app.ParseTooManyScannedPages,
         ),
@@ -1100,6 +1104,7 @@ async def test_artifact_request_rejects_a_foreign_parser_version() -> None:
         (parser_app.ParseHardTimeout("too slow"), "parse_hard_timeout"),
         # Refused before LibreOffice; nothing to retry.
         (parser_app.OfficeFormatMismatch("not a .docx"), "parse_format_mismatch"),
+        (parser_app.TooManyElements("more than 2,000 rows"), "parse_too_many_elements"),
         # Broken, zero-page or open-password PDFs and LibreOffice refusals.
         (parser_app.SourceUnreadable("not a PDF"), "parse_unreadable"),
         (parser_app.OfficeConversionFailed("no PDF"), "parse_unreadable"),

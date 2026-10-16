@@ -1476,6 +1476,8 @@ async def _ensure_document_artifact(
         raise InputLimitError("scanned_page_limit", str(exc)) from exc
     except parser_client.ParserTooManyPagesError as exc:
         raise InputLimitError("page_limit", str(exc)) from exc
+    except parser_client.ParserTooManyElementsError as exc:
+        raise InputLimitError("element_limit", str(exc)) from exc
     except parser_client.ParserTerminalResourceError as exc:
         raise TerminalError(
             "this file hit a terminal parser resource limit and is "
