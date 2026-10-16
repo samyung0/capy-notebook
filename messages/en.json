@@ -1947,6 +1947,8 @@
   "billing_reload_pending_title": "Auto-reload in progress",
   "billing_reload_pending_body": "Stripe is charging an auto-reload of {amount} right now. If you top up too, you pay for both.",
   "billing_top_up_anyway": "Top up anyway",
+  "billing_reload_disarmed_title": "Top up to start auto-reload",
+  "billing_reload_disarmed_body": "Auto-reload starts working again after your next top-up.",
   "billing_limit_toast_wait_title": "Wait for the auto-reload",
   "billing_limit_toast_wait_body": "This top-up and the {amount} auto-reload being charged would go over your {limit} monthly limit.",
   "billing_limit_toast_over_title": "Over your monthly limit",

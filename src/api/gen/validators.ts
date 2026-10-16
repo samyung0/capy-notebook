@@ -923,7 +923,10 @@ export const SetAutoReloadBody = zod.object({
   "thresholdCredits": zod.int().min(setAutoReloadBodyThresholdCreditsMin).max(setAutoReloadBodyThresholdCreditsMax)
 })
 
-export const SetAutoReloadResponse = zod.void()
+export const SetAutoReloadResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "armed": zod.boolean()
+})
 
 
 /**

@@ -159,12 +159,9 @@ func TestReloadChargesOncePaidAndBlocksWhileStripeRetries(t *testing.T) {
 	if again, err := s.StartReload(ctx, userID); err != nil || again != nil {
 		t.Fatalf("second start while charging: charge=%v err=%v", again, err)
 	}
-	// Saving the settings while it is on keeps the charging reload disarmed.
-	if err := s.SetAutoReload(ctx, userID, true, 1000, 0); err != nil {
-		t.Fatal(err)
-	}
-	if _, armed := reloadState(t, s, userID); armed {
-		t.Fatal("a save while on re-armed the charging reload")
+	// Saving the settings keeps the charging reload disarmed.
+	if armed, err := s.SetAutoReload(ctx, userID, true, 1000, 0); err != nil || armed {
+		t.Fatalf("a save re-armed the charging reload: armed=%v err=%v", armed, err)
 	}
 	next := time.Now().Add(24 * time.Hour)
 	if err := s.MarkReloadFailed(ctx, charge.ID, "in_"+userID, next, "card_declined"); err != nil {
@@ -215,7 +212,12 @@ func TestReloadStripeGaveUpOnWaitsForATopUp(t *testing.T) {
 	if again, err := s.StartReload(ctx, userID); err != nil || again != nil {
 		t.Fatalf("worker must not charge again: charge=%v err=%v", again, err)
 	}
-	// The new month's allowance does not re-arm it; a top-up does.
+	// Turning it off and on again buys no new try; a top-up re-arms it.
+	for _, enabled := range []bool{false, true} {
+		if armed, err := s.SetAutoReload(ctx, userID, enabled, 1000, 0); err != nil || armed {
+			t.Fatalf("enabled=%v armed=%v err=%v, want it left disarmed", enabled, armed, err)
+		}
+	}
 	if _, _, err := s.GrantTopUp(ctx, userID, "cs_"+userID, "pi_"+userID, 800); err != nil {
 		t.Fatal(err)
 	}

@@ -755,12 +755,14 @@ Checkout in setup mode (card and Link, billing address required) and returns to
 `?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
 reload invoice Stripe is still retrying. Turning auto-reload off voids it too.
 
-Auto-reload fires once per arming (`reload_armed`): turning it on (a save
-while it is already on leaves the arming alone), a paid
-top-up, a new card, or a paid reload that leaves credits above the threshold
-arms it; starting a reload disarms it; the monthly allowance never re-arms it,
-so after Stripe gives up (or never retries) no reload starts until the user
-tops up or changes card. The worker (`billing.RunDueReloads`, every 5 s when
+Auto-reload fires once per arming (`reload_armed`). An account starts armed;
+a paid top-up, a new card, a paid reload that leaves credits above the
+threshold, or a paid Pro invoice (`invoice.paid` with an amount above zero,
+`ArmReload`) re-arms it; starting a reload disarms it. Turning auto-reload on
+or saving its settings never arms it, so after Stripe gives up (or never
+retries) no reload starts until one of those events. `PUT
+/api/billing/auto-reload` answers `{armed}`, and turning it on while disarmed
+shows a warning toast asking for a top-up first. The worker (`billing.RunDueReloads`, every 5 s when
 Stripe is configured, open accounts only) handles each armed or
 request-started reload under the counter lock (`StartReload`, effective plan):
 an armed one starts when credits reach the threshold. Over the spending limit

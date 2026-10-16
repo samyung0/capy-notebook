@@ -3210,7 +3210,7 @@ export const handlers = [
     mockCreditSettings.reloadAmountCents = body.amountCents;
     mockCreditSettings.reloadThresholdMicros =
       body.thresholdCredits * 1_000_000;
-    return new HttpResponse(null, { status: 204 });
+    return HttpResponse.json({ armed: true });
   }),
   http.put('/api/billing/spending-limit', async ({ request }) => {
     const { limitCents } = (await request.json()) as { limitCents: number };

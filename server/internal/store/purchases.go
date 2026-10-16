@@ -149,39 +149,47 @@ func (s *Store) CreditSettings(ctx context.Context, userID string) (CreditSettin
 
 // SetAutoReload saves the auto-reload switch, amount and threshold. Turning it
 // on needs a saved instant payment method.
-func (s *Store) SetAutoReload(ctx context.Context, userID string, enabled bool, amountCents, thresholdMicros int64) error {
+func (s *Store) SetAutoReload(
+	ctx context.Context, userID string, enabled bool, amountCents, thresholdMicros int64,
+) (armed bool, err error) {
 	if amountCents < TopUpMinCents || amountCents > TopUpMaxCents || thresholdMicros < 0 {
-		return errInvalidCreditSetting
+		return false, errInvalidCreditSetting
 	}
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	if _, err := s.lockedCreditUsageTx(ctx, tx, userID); err != nil {
-		return err
+		return false, err
 	}
 	var pmType *string
 	if err := tx.QueryRow(ctx, `SELECT reload_pm_type FROM user_credits WHERE user_id = $1`, userID).
 		Scan(&pmType); err != nil {
-		return err
+		return false, err
 	}
 	if enabled && pmType == nil {
-		return ErrNoPaymentMethod
+		return false, ErrNoPaymentMethod
 	}
 	if enabled && !(PaymentMethod{Type: *pmType}).Instant() {
-		return ErrPaymentMethodNotInstant
+		return false, ErrPaymentMethodNotInstant
 	}
-	// Turning it on arms one reload; saving it while on keeps the arming, so
-	// a save during a charging reload never chains a second one.
-	if _, err := tx.Exec(ctx, `UPDATE user_credits
+	// Saving never arms a reload (turning it off and on must not buy another
+	// try after a failure); it reports the arming the save leaves.
+	if err := tx.QueryRow(ctx, `UPDATE user_credits
 		SET auto_reload_enabled = $2, reload_amount_cents = $3, reload_threshold_micros = $4,
-		    reload_skipped_at = NULL, updated_at = now(),
-		    reload_armed = reload_armed OR ($2 AND NOT auto_reload_enabled)
-		WHERE user_id = $1`, userID, enabled, amountCents, thresholdMicros); err != nil {
-		return err
+		    reload_skipped_at = NULL, updated_at = now()
+		WHERE user_id = $1 RETURNING reload_armed`, userID, enabled, amountCents, thresholdMicros).
+		Scan(&armed); err != nil {
+		return false, err
 	}
-	return tx.Commit(ctx)
+	return armed, tx.Commit(ctx)
+}
+
+// ArmReload re-arms auto-reload after a paid Pro subscription invoice.
+func (s *Store) ArmReload(ctx context.Context, userID string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE user_credits SET reload_armed = true WHERE user_id = $1`, userID)
+	return err
 }
 
 // SetSpendingLimit sets the monthly limit in cents; 0 removes it. A changed

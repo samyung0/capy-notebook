@@ -36,6 +36,7 @@ import type {
   AttemptDetail,
   AttemptParams,
   AutoReloadReq,
+  AutoReloadResp,
   BillingCheckoutReq,
   BillingInfo,
   CalendarEvent,
@@ -715,7 +716,7 @@ export function useSetAutoReload() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: (body: AutoReloadReq) =>
-      api.put<void>('/billing/auto-reload', body),
+      api.put<AutoReloadResp>('/billing/auto-reload', body),
     mutationKey: qk.billing,
     onMutate: (body) =>
       setCreditSettings(qc, {

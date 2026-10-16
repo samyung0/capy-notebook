@@ -96,6 +96,9 @@ type spendingLimitInput struct {
 type urlOutput struct {
 	Body apimodel.URLResp
 }
+type autoReloadOutput struct {
+	Body apimodel.AutoReloadResp
+}
 type integrationsOutput struct {
 	Body apimodel.IntegrationsStatus
 }
@@ -147,7 +150,7 @@ func (a *api) registerBillingIntegrations(api huma.API) {
 	reg(api, http.MethodPost, "/api/billing/portal", "billingPortal", tag, "Open billing portal", http.StatusOK, a.billingPortal)
 	reg(api, http.MethodPost, "/api/billing/top-up", "billingTopUp", tag, "Start a credit top-up checkout", http.StatusOK, a.billingTopUp)
 	reg(api, http.MethodPost, "/api/billing/payment-method", "billingPaymentMethod", tag, "Start a checkout that saves the auto-reload card", http.StatusOK, a.billingPaymentMethod)
-	reg(api, http.MethodPut, "/api/billing/auto-reload", "setAutoReload", tag, "Save auto-reload", http.StatusNoContent, a.setAutoReload)
+	reg(api, http.MethodPut, "/api/billing/auto-reload", "setAutoReload", tag, "Save auto-reload", http.StatusOK, a.setAutoReload)
 	reg(api, http.MethodPut, "/api/billing/spending-limit", "setSpendingLimit", tag, "Set the monthly spending limit", http.StatusNoContent, a.setSpendingLimit)
 	reg(api, http.MethodGet, "/api/integrations", "getIntegrations", tag, "Integration status", http.StatusOK, a.getIntegrations)
 	reg(api, http.MethodGet, "/api/integrations/microsoft/drive", "microsoftDrive", tag, "OneDrive host for File Picker", http.StatusOK, a.microsoftDrive)
@@ -565,15 +568,16 @@ func (a *api) billingPaymentMethod(ctx context.Context, _ *struct{}) (*urlOutput
 	return &urlOutput{Body: apimodel.URLResp{URL: url}}, nil
 }
 
-func (a *api) setAutoReload(ctx context.Context, in *autoReloadInput) (*Empty, error) {
+func (a *api) setAutoReload(ctx context.Context, in *autoReloadInput) (*autoReloadOutput, error) {
 	uid := userID(ctx)
-	err := a.s.SetAutoReload(ctx, uid, in.Body.Enabled, in.Body.AmountCents,
+	armed, err := a.s.SetAutoReload(ctx, uid, in.Body.Enabled, in.Body.AmountCents,
 		in.Body.ThresholdCredits*store.MicrosPerCredit)
 	if err != nil {
 		return nil, hErr(err)
 	}
+	out := &autoReloadOutput{Body: apimodel.AutoReloadResp{Armed: armed}}
 	if in.Body.Enabled {
-		return &Empty{}, nil
+		return out, nil
 	}
 	// Turning it off cancels Stripe's retries of a failed reload.
 	retrying, err := a.s.RetryingReloadInvoices(ctx, uid)
@@ -583,7 +587,7 @@ func (a *api) setAutoReload(ctx context.Context, in *autoReloadInput) (*Empty, e
 	if err != nil {
 		return nil, hErr(err)
 	}
-	return &Empty{}, nil
+	return out, nil
 }
 
 func (a *api) setSpendingLimit(ctx context.Context, in *spendingLimitInput) (*Empty, error) {

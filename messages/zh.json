@@ -1947,6 +1947,8 @@
   "billing_reload_pending_title": "自动充值进行中",
   "billing_reload_pending_body": "Stripe 正在扣款 {amount} 的自动充值。如果你现在也充值，两笔都会扣款。",
   "billing_top_up_anyway": "仍然充值",
+  "billing_reload_disarmed_title": "充值后才能启用自动充值",
+  "billing_reload_disarmed_body": "下次手动充值后，自动充值将重新生效。",
   "billing_limit_toast_wait_title": "请等待自动充值完成",
   "billing_limit_toast_wait_body": "这次充值加上正在扣款的 {amount} 自动充值会超过你每月 {limit} 的上限。",
   "billing_limit_toast_over_title": "超过每月上限",

@@ -44,6 +44,7 @@ type webhookStore interface {
 	HoldDispute(ctx context.Context, paymentIntentID string) (string, error)
 	ReleaseDispute(ctx context.Context, paymentIntentID string) (string, error)
 	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
+	ArmReload(ctx context.Context, userID string) error
 }
 
 var errStripeSubscriptionNotReady = errors.New("stripe subscription mapping is not ready")
@@ -452,6 +453,10 @@ func (a *api) stripeWebhook(w http.ResponseWriter, r *http.Request) {
 			procErr = err
 			break
 		}
+		if invoiceSubscriptionID(&invoice) != "" {
+			procErr = a.subscriptionInvoicePaid(r.Context(), &invoice)
+			break
+		}
 		procErr = a.reloadInvoiceChanged(r.Context(), &invoice)
 	case "charge.refunded":
 		var charge stripe.Charge
@@ -654,6 +659,26 @@ func (a *api) voidReloads(ctx context.Context, invoiceIDs []string) error {
 			return err
 		}
 	}
+	return nil
+}
+
+// subscriptionInvoicePaid re-arms auto-reload after a paid Pro invoice; a
+// zero-amount invoice buys nothing and arms nothing.
+func (a *api) subscriptionInvoicePaid(ctx context.Context, inv *stripe.Invoice) error {
+	if inv.AmountPaid <= 0 || inv.Customer == nil {
+		return nil
+	}
+	userID, err := a.wh.UserIDByStripeCustomer(ctx, inv.Customer.ID)
+	if errors.Is(err, store.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if err := a.wh.ArmReload(ctx, userID); err != nil {
+		return err
+	}
+	a.publishBillingChanged(ctx, userID)
 	return nil
 }
 

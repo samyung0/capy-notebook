@@ -509,6 +509,20 @@ components:
         - amountCents
         - thresholdCredits
       type: object
+    AutoReloadResp:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/AutoReloadResp.json
+          format: uri
+          readOnly: true
+          type: string
+        armed:
+          type: boolean
+      required:
+        - armed
+      type: object
     BankAssetOutputBody:
       additionalProperties: false
       properties:
@@ -7458,8 +7472,12 @@ paths:
               $ref: "#/components/schemas/AutoReloadReq"
         required: true
       responses:
-        "204":
-          description: No Content
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AutoReloadResp"
+          description: OK
         default:
           content:
             application/problem+json:

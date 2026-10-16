@@ -240,6 +240,11 @@ func (f *fakeStore) HoldDispute(_ context.Context, paymentIntentID string) (stri
 	return "", nil
 }
 
+func (f *fakeStore) ArmReload(_ context.Context, userID string) error {
+	f.creditCalls = append(f.creditCalls, "arm "+userID)
+	return nil
+}
+
 func (f *fakeStore) RetryingReloadInvoices(_ context.Context, userID string) ([]string, error) {
 	return f.retryingReloads, nil
 }
