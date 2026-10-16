@@ -154,6 +154,8 @@ type ReloadResult struct {
 	// Processing is a payment Stripe has not settled yet: the reload stays
 	// charging until invoice.paid or the next resume reads it again.
 	Processing bool
+	// Void is an invoice voided in Stripe (by a top-up, a new card, or by hand).
+	Void bool
 	// NextAttempt is when Stripe retries a failed charge; zero means it stopped.
 	NextAttempt   time.Time
 	DeclineReason string
@@ -219,7 +221,11 @@ func ReloadOutcome(invoiceID string) (ReloadResult, error) {
 	if err != nil {
 		return ReloadResult{InvoiceID: invoiceID}, err
 	}
-	out := ReloadResult{InvoiceID: inv.ID, Paid: inv.Status == stripe.InvoiceStatusPaid}
+	out := ReloadResult{
+		InvoiceID: inv.ID,
+		Paid:      inv.Status == stripe.InvoiceStatusPaid,
+		Void:      inv.Status == stripe.InvoiceStatusVoid,
+	}
 	if inv.NextPaymentAttempt > 0 {
 		out.NextAttempt = time.Unix(inv.NextPaymentAttempt, 0).UTC()
 	}
@@ -341,4 +347,40 @@ func ProcessReload(ctx context.Context, st *store.Store, charge store.ReloadChar
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_record"})
 	}
+}
+
+// PaidTopUp is a paid top-up Checkout, as the daily reconciliation reads it.
+type PaidTopUp struct {
+	SessionID       string
+	CustomerID      string
+	UserID          string
+	PaymentIntentID string
+	AmountCents     int64
+}
+
+// ListPaidTopUps returns paid top-up Checkouts completed since the given time,
+// for the daily reconciliation to credit any whose webhook never arrived.
+func ListPaidTopUps(since time.Time) ([]PaidTopUp, error) {
+	params := &stripe.CheckoutSessionListParams{
+		Status:       stripe.String(string(stripe.CheckoutSessionStatusComplete)),
+		CreatedRange: &stripe.RangeQueryParams{GreaterThanOrEqual: since.Unix()},
+	}
+	var out []PaidTopUp
+	iter := session.List(params)
+	for iter.Next() {
+		s := iter.CheckoutSession()
+		if s.Mode != stripe.CheckoutSessionModePayment || s.Metadata["kind"] != KindTopUp ||
+			s.PaymentStatus != stripe.CheckoutSessionPaymentStatusPaid ||
+			s.Customer == nil || s.PaymentIntent == nil {
+			continue
+		}
+		out = append(out, PaidTopUp{
+			SessionID:       s.ID,
+			CustomerID:      s.Customer.ID,
+			UserID:          s.Metadata["user_id"],
+			PaymentIntentID: s.PaymentIntent.ID,
+			AmountCents:     s.AmountSubtotal,
+		})
+	}
+	return out, iter.Err()
 }

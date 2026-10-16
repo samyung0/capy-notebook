@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -230,19 +231,27 @@ func (s *Store) ingestJobPayload(ctx context.Context, q rowsQueryer, actorUserID
 // RetryFileProcessing runs a failed file's processing again on its stored
 // bytes, in the parse mode the owner picked ('none' just stores it). Only the
 // owner retries and pays, as automatic reprocessing charges the owner; the
-// automatic scheduler never retries a failed file. A file that is not failed,
-// has no bytes or already has a parse or ingest job queued answers
-// ErrConflict.
+// automatic scheduler never retries a failed file unless it is partial (still
+// indexed). A file that is not failed,
+// has no bytes or already has a parse, ingest or source refresh job queued or
+// running answers ErrConflict.
+//
+// A partial file (parts design Q1: failed and indexed, its alias on ready
+// content of its current revision built on its own parse_mode's route) keeps
+// its index and re-runs only its missing parts in that mode (Q8): unread pages
+// (no pipeline_identity) parse again, without the page fee once the file
+// parsed successfully (Q6); a missing descriptor alone is a partsOnly ingest
+// job; with both parts present the file is set ready. The requested mode is
+// no choice for a partial file, so 'none' cannot leave its served index
+// unindexed. Anything else is a full retry.
 func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseMode, parser string) error {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback(ctx)
-	var wsID, name, kind, status, blobPath, etag string
-	var revision int64
-	err = tx.QueryRow(ctx, `SELECT workspace_id,name,kind,status,COALESCE(blob_path,''),COALESCE(source_etag,''),revision
-		FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID, &name, &kind, &status, &blobPath, &etag, &revision)
+	var wsID string
+	err = tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, fileID).Scan(&wsID)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
@@ -256,9 +265,23 @@ func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseM
 	if actorID != ownerID {
 		return ErrForbidden
 	}
-	var queued bool
-	err = tx.QueryRow(ctx, `SELECT status,EXISTS(SELECT 1 FROM jobs WHERE payload->>'fileId'=$1 AND type IN ('parse','ingest') AND status IN ('pending','running'))
-		FROM files WHERE id=$1 FOR UPDATE`, fileID).Scan(&status, &queued)
+	var name, kind, status, blobPath, etag, mode string
+	var revision int64
+	var queued, indexed, ever, current, summarized bool
+	var identity *string
+	// Read under the file lock, so the job names the revision it runs on.
+	// current: the alias serves ready content of the file's revision (every
+	// revision bump drops or moves the alias and resets content_hash).
+	err = tx.QueryRow(ctx, `SELECT f.name,f.kind,f.status,COALESCE(f.blob_path,''),COALESCE(f.source_etag,''),f.revision,f.indexed,f.parse_mode,f.ever_parsed_successfully,
+		EXISTS(SELECT 1 FROM jobs WHERE payload->>'fileId'=$1 AND type IN ('parse','ingest','source_refresh') AND status IN ('pending','running')),
+		rc.id IS NOT NULL,rc.pipeline_identity,EXISTS(SELECT 1 FROM rag_content_summaries s WHERE s.content_id=rc.id)
+		FROM files f
+		LEFT JOIN rag_file_contents fc ON fc.file_id=f.id
+		LEFT JOIN rag_contents rc ON rc.id=fc.content_id AND rc.status='ready' AND rc.content_hash=f.content_hash
+		WHERE f.id=$1 AND f.trashed_at IS NULL FOR UPDATE OF f`, fileID).Scan(&name, &kind, &status, &blobPath, &etag, &revision, &indexed, &mode, &ever, &queued, &current, &identity, &summarized)
+	if isNoRows(err) {
+		return ErrNotFound
+	}
 	if err != nil {
 		return err
 	}
@@ -269,30 +292,82 @@ func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseM
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrParseModeUnsupported, err)
 	}
-	if plan.Route == sourceupload.RouteStoreOnly {
+	// A processed store-only upload keeps parse_mode 'none' but was parsed
+	// fast (see reprocessTx, queueCloneIngestTx).
+	if mode == sourceupload.ParseModeNone && ever {
+		mode = sourceupload.ParseModeFast
+	}
+	own, partial := partialRetryPlan(name, kind, mode, identity)
+	partial = partial && indexed && current
+	if partial && identity != nil && summarized {
+		if _, err = tx.Exec(ctx, `UPDATE files SET status='ready' WHERE id=$1`, fileID); err != nil {
+			return err
+		}
+		return tx.Commit(ctx)
+	}
+	if !partial && plan.Route == sourceupload.RouteStoreOnly {
 		_, err = tx.Exec(ctx, `UPDATE files SET status='ready',indexed=false,parse_mode=$2 WHERE id=$1`, fileID, parseMode)
 		if err != nil {
 			return err
 		}
 		return tx.Commit(ctx)
 	}
+	jobType := initialPipelineJobType(plan)
+	base := map[string]any{
+		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
+		"parser": parser, "parseMode": parseMode, "processingPlan": plan,
+		"sourceETag": etag, "sourceRevision": revision,
+	}
+	if partial {
+		base["parseMode"], base["processingPlan"] = mode, own
+		jobType = initialPipelineJobType(own)
+		if identity == nil {
+			base["parseFee"] = !ever
+		} else {
+			base["partsOnly"] = true
+			jobType = "ingest"
+		}
+	}
 	reservation, err := s.beginIngestSpendTx(ctx, tx, ownerID, wsID)
 	if err != nil {
 		return err
 	}
-	payload, err := s.ingestJobPayload(ctx, tx, ownerID, map[string]any{
-		"fileId": fileID, "workspaceId": wsID, "blobPath": blobPath, "kind": kind,
-		"parser": parser, "parseMode": parseMode, "processingPlan": plan,
-		"sourceETag": etag, "sourceRevision": revision, "reservationId": reservation,
-	})
+	base["reservationId"] = reservation
+	payload, err := s.ingestJobPayload(ctx, tx, ownerID, base)
 	if err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,$2,$3)`, uid("job"), initialPipelineJobType(plan), payload); err != nil {
+	if _, err = tx.Exec(ctx, `INSERT INTO jobs(id,type,payload) VALUES($1,$2,$3)`, uid("job"), jobType, payload); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE files SET status='pending',indexed=false,parse_mode=$2 WHERE id=$1`, fileID, parseMode); err != nil {
+	if partial {
+		_, err = tx.Exec(ctx, `UPDATE files SET status='pending' WHERE id=$1`, fileID)
+	} else {
+		_, err = tx.Exec(ctx, `UPDATE files SET status='pending',indexed=false,parse_mode=$2 WHERE id=$1`, fileID, parseMode)
+	}
+	if err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
+}
+
+// partialRetryPlan is the plan a partial file re-runs its missing parts on:
+// its own parse_mode's, when the alias content was built on that route. The
+// pipeline names the route second in pipeline_identity ("plan-v2:fast:…",
+// "plan-v2:direct:…", worker._pipeline_identity); content with unread pages
+// has none.
+func partialRetryPlan(name, kind, mode string, identity *string) (sourceupload.ProcessingPlan, bool) {
+	plan, err := sourceupload.BuildProcessingPlan(name, kind, mode)
+	if err != nil || plan.Route == sourceupload.RouteStoreOnly {
+		return plan, false
+	}
+	if identity == nil {
+		return plan, true
+	}
+	route := "direct"
+	if plan.Route == sourceupload.RouteDocumentParse {
+		route = plan.ParserRoute
+	}
+	parts := strings.SplitN(*identity, ":", 3)
+	return plan, len(parts) == 3 && parts[1] == route
 }

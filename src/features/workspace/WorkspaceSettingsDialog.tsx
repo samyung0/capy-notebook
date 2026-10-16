@@ -16,7 +16,7 @@ import { Skeleton } from '@/components/ui/feedback';
 import { NumberPopIn } from '@/components/ui/NumberPopIn';
 import { Tabs } from '@/components/ui/Tabs';
 import { m } from '@/i18n';
-import { describeError } from '@/lib/errors';
+import { describeError, unexpectedErrorId } from '@/lib/errors';
 import { canManageWorkspaceSettings } from './access';
 import { CloneWorkspaceDialog } from './CloneWorkspaceDialog';
 import { IndexingTab } from './IndexingTab';
@@ -70,6 +70,7 @@ export function WorkspaceSettingsDialog({
           {m.error_action_retry()}
         </ErrorAction>
       }
+      errorId={unexpectedErrorId(error)}
       variant="panel"
     />
   ) : null;

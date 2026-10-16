@@ -133,7 +133,10 @@ def normalize_document(data: bytes, name: str, work_dir: Path) -> NormalizedDocu
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env={**os.environ, "TMPDIR": tmp_name},
+            # Two malloc arenas: LibreOffice then fits the parse child's
+            # address-space limit it inherits (2.18 GiB of address space for
+            # a 224k-cell workbook, 0.52 GiB with two).
+            env={**os.environ, "TMPDIR": tmp_name, "MALLOC_ARENA_MAX": "2"},
             # Its own group for the timeout kill below, inside the parse
             # child's session so ending a parse child ends LibreOffice too.
             process_group=0,

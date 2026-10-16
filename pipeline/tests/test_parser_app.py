@@ -6,6 +6,7 @@ contract."""
 from __future__ import annotations
 
 import asyncio
+import errno
 import hashlib
 import importlib.util
 import io
@@ -484,6 +485,8 @@ def _parsed(data: bytes, textless: list[int], preview: bool = False):
         repaired_fonts=[],
         furniture=[],
         parsed_pdf=None,
+        drawing_steps=0,
+        drawings_stopped_at=None,
     )
     return normalized, output
 
@@ -529,6 +532,28 @@ def test_text_less_pages_go_into_the_bundle_as_grey_renders_for_the_vlm(
         assert "vlm/0.jpg" not in archive.namelist()
     with Image.open(io.BytesIO(render)) as image:
         assert (image.format, image.mode, image.size) == ("JPEG", "L", (960, 1280))
+
+
+def test_a_drawing_step_backstop_trip_is_logged_and_counted(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Once per parse: the page where the steps ran out, the steps and the
+    fingerprint; the receipt counts the steps."""
+    from odl import document, refine
+
+    normalized, output = _parsed(_two_pages(), [])
+    output.drawing_steps, output.drawings_stopped_at = 20_000_123, 1
+    monkeypatch.setattr(document, "normalize_document", lambda *_args: normalized)
+    monkeypatch.setattr(refine, "parse_pdf", lambda *_args, **_kwargs: output)
+    result = parser_app.run_document(parser_app.Document(b"%PDF", "a.pdf", "fp-1"))
+
+    assert (
+        capsys.readouterr().out.count(
+            "drawing clusters stopped on page 1 after 20000123 steps: fp-1"
+        )
+        == 1
+    )
+    assert parser_app._measurements(result, 1.0, 0)["_drawing_steps"] == 20_000_123
 
 
 def test_a_document_over_the_scanned_page_cap_is_refused(
@@ -662,6 +687,7 @@ async def test_child_answers_are_read_as_data_never_unpickled(tmp_path: Path) ->
             parser_app.OfficeConversionTimeout,
         ),
         (parser_app.SourceUnreadable("no pages"), parser_app.SourceUnreadable),
+        (parser_app.ParseOOM("past the address space"), parser_app.ParseOOM),
         (ValueError("broken PDF"), RuntimeError),
     ],
 )
@@ -750,6 +776,92 @@ async def test_a_conversion_past_its_timeout_is_final_like_the_parse_deadline(
     assert marker["reason"] == code and child.terminations == 1
     if code == "parse_hard_timeout":
         assert "LibreOffice conversion exceeded 180 seconds" in str(raised.value)
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="RLIMIT_AS is Linux")
+@pytest.mark.asyncio
+async def test_a_parse_child_runs_under_its_address_space_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(parser_app, "WORK_DIR", tmp_path)
+    runtime = parser_app.ParserRuntime()
+    await runtime.start()
+    try:
+        # The child sets it first thing; a parse round trip is past that.
+        with pytest.raises(parser_app.SourceUnreadable):
+            await runtime.parse(parser_app.Document(b"not a document", "a.txt"))
+        pid = runtime._slots[0].process._process.pid
+        limits = Path(f"/proc/{pid}/limits").read_text()
+    finally:
+        await runtime.close()
+    [line] = [line for line in limits.splitlines() if "Max address space" in line]
+    assert line.split()[3:5] == [str(parser_app.PARSE_CHILD_MAX_BYTES), "unlimited"]
+
+
+@pytest.mark.parametrize(
+    ("error", "kind"),
+    [
+        (MemoryError(), "ParseOOM"),
+        (OSError(errno.ENOMEM, "Cannot allocate memory"), "ParseOOM"),
+        (RuntimeError("code=2: malloc (400000000 bytes) failed"), "ParseOOM"),
+        # Java's output tail is not MuPDF's allocation failure.
+        (
+            RuntimeError("OpenDataLoader exited 1: malloc (8 bytes) failed"),
+            "RuntimeError",
+        ),
+    ],
+    ids=["python", "enomem", "mupdf", "java-output"],
+)
+def test_a_parse_past_the_address_space_answers_parse_oom(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, error: Exception, kind: str
+) -> None:
+    """In the child, a failed allocation (Python's, the OS's or MuPDF's)
+    becomes ParseOOM; other errors keep their kind."""
+
+    def fails(_document):
+        raise error
+
+    monkeypatch.setattr(parser_app, "run_document", fails)
+    # Not this test process's own limits.
+    monkeypatch.setattr(parser_app, "_limit_address_space", lambda _limit: None)
+    monkeypatch.setattr(parser_app, "_set_oom_score_adj", lambda _value: None)
+    monkeypatch.setattr(parser_app.os, "setsid", lambda: None, raising=False)
+    child_requests, requests = multiprocessing.Pipe(duplex=False)
+    responses, child_responses = multiprocessing.Pipe(duplex=False)
+    source = tmp_path / "a.pdf"
+    source.write_bytes(b"%PDF")
+    requests.send((str(source), str(tmp_path / "a.result"), "a.pdf", "fp", None))
+    requests.send(None)
+    parser_app._parse_worker_main(child_requests, child_responses, str(tmp_path))
+    assert json.loads(responses.recv_bytes())[1][0] == kind
+
+
+@pytest.mark.asyncio
+async def test_parse_oom_from_the_child_is_quarantined_and_the_child_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(parser_app, "SHARED_DIR", tmp_path)
+
+    async def handler(document):
+        if document.name == "big.pdf":
+            raise parser_app.ParseOOM("past the address space")
+        return _result()
+
+    runtime, (child,) = _runtime(monkeypatch, handler)
+    await runtime.start()
+    try:
+        with pytest.raises(parser_app.ParseOOM) as raised:
+            await runtime.parse(parser_app.Document(b"", "big.pdf", "big-fp"))
+        await runtime.parse(parser_app.Document(b"", "next.pdf", "next-fp"))
+    finally:
+        await runtime.close()
+    assert json.loads(parser_app._failure_response(raised.value).body)["code"] == (
+        "parse_oom"
+    )
+    marker = json.loads((tmp_path / "quarantine" / "big-fp.json").read_text())
+    assert marker["reason"] == "parse_oom"
+    # It answered, so it is replaced before the next document, not killed.
+    assert child.terminations == 0 and child.starts == 2
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="prctl is Linux")
@@ -1410,6 +1522,8 @@ def test_office_run_keeps_only_evidence_in_bundle(monkeypatch, tmp_path):
             stages={},
             repaired_fonts=[],
             furniture=[],
+            drawing_steps=0,
+            drawings_stopped_at=None,
             parsed_pdf=data,
         ),
     )
@@ -1463,6 +1577,8 @@ def test_a_pdf_parse_bundles_page_one_from_its_repaired_bytes(monkeypatch, tmp_p
             stages={},
             repaired_fonts=["F1"],
             furniture=[],
+            drawing_steps=0,
+            drawings_stopped_at=None,
             parsed_pdf=pdf(800, 400),
         ),
     )
@@ -1504,6 +1620,8 @@ def test_a_failed_page_render_leaves_the_parse_and_bundle_intact(monkeypatch, tm
             stages={},
             repaired_fonts=[],
             furniture=[],
+            drawing_steps=0,
+            drawings_stopped_at=None,
             parsed_pdf=None,
         ),
     )

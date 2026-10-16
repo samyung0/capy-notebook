@@ -55,7 +55,8 @@ interface WaitForSourceImportOptions {
 const DEFAULT_INITIAL_POLL_MILLISECONDS = 750;
 const DEFAULT_MAX_POLL_MILLISECONDS = 10_000;
 const DEFAULT_MAX_WAIT_MILLISECONDS = 15 * 60 * 1000;
-const MAX_IMPORT_REQUEST_RETRIES = 4;
+/** An import request gets 3 attempts in all. */
+const IMPORT_REQUEST_ATTEMPTS = 3;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -205,7 +206,7 @@ function sourceImportRequestRetryDelay(
   error: unknown,
   attempt: number
 ): number | null {
-  if (attempt >= MAX_IMPORT_REQUEST_RETRIES) return null;
+  if (attempt + 1 >= IMPORT_REQUEST_ATTEMPTS) return null;
   if (error instanceof TypeError) {
     return Math.min(10_000, 1000 * 2 ** attempt);
   }

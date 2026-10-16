@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/Tooltip';
 import {
   clampImageZoom,
+  fileCanClone,
   IMAGE_MAX_ZOOM,
   IMAGE_MIN_ZOOM,
   IMAGE_ZOOM_STEP,
@@ -229,7 +230,7 @@ function useHeader(
   });
   if (item.kind === 'file') {
     return {
-      canClone: fileData?.status === 'ready' && !!workspace?.canClone,
+      canClone: !!fileData && fileCanClone(fileData) && !!workspace?.canClone,
       file: fileData,
       icon: fileData ? fileIconName(fileData) : '_file',
       showImageZoom: !!fileData && isImageFile(fileData),

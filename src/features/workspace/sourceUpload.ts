@@ -183,6 +183,9 @@ export async function mapWithConcurrency<T, R>(
   return results;
 }
 
+/** An upload reservation answered 429 gets 3 attempts in all. */
+const UPLOAD_ATTEMPTS = 3;
+
 export function retryAfterMs(error: unknown): number | null {
   if (!isApiError(error) || error.status !== 429) return null;
   const seconds = Number(error.body?.retryAfterSeconds);
@@ -200,7 +203,7 @@ export async function withUploadRetry<T>(
       return await fn();
     } catch (error) {
       const delay = retryAfterMs(error);
-      if (delay == null || attempt >= 4) throw error;
+      if (delay == null || attempt + 1 >= UPLOAD_ATTEMPTS) throw error;
       await wait(delay);
     }
   }

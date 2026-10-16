@@ -35,7 +35,7 @@ const BASELINE_CACHE_BYTES: u64 = 64 << 20;
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 /// Checkpoint CAS attempts per save (a moved checkpoint reloads and retries).
-const SAVE_ATTEMPTS: usize = 4;
+const SAVE_ATTEMPTS: usize = 3;
 
 pub struct SourcesConfig {
     pub api_url: String,
@@ -713,7 +713,7 @@ impl Sources {
     /// Stores a room's update since its durable state (a delta save): its
     /// effects measured, then appended through the checkpoint CAS. A moved
     /// checkpoint re-reads the session and the rows saved meanwhile, measures
-    /// again over them and appends again (4 attempts); an ended epoch never
+    /// again over them and appends again (3 attempts); an ended epoch never
     /// will.
     pub async fn store(&self, room: &SourceRoom, save: Save) -> Result<Saved, SourceError> {
         let name = room.name();

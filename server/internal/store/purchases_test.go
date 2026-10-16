@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 	"time"
 )
@@ -287,5 +288,52 @@ func TestTopUpGrantsOnceAndRefundsAndDisputesTakeCreditsBack(t *testing.T) {
 	}
 	if got := purchased(); got != 10_000*credit {
 		t.Fatalf("a won dispute gives it back: purchased=%d", got)
+	}
+}
+
+func TestDailySyncRereadsUnsettledReloadsWithoutEndingANewWindow(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	userID := newCreditsTestUser(t, s)
+	seedCredits(t, s, userID, 0, 0)
+	insert := func(id, status, age string) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, `INSERT INTO credit_purchases
+			(id, user_id, kind, status, amount_cents, credits_micros, stripe_invoice_id, created_at)
+			VALUES ($1, $2, 'reload', $3, 1000, $4, 'in_'||$1, now() - $5::interval)`,
+			id, userID, status, CreditsMicrosForCents(1000), age); err != nil {
+			t.Fatal(err)
+		}
+	}
+	insert("cp_"+userID+"_retry", "retrying", "2 days")
+	insert("cp_"+userID+"_failed", "failed", "10 days")
+	insert("cp_"+userID+"_stuck", "charging", "2 hours")
+	insert("cp_"+userID+"_live", "charging", "10 seconds")
+	insert("cp_"+userID+"_paid", "paid", "1 day")
+	insert("cp_"+userID+"_old", "failed", "100 days")
+
+	reloads, err := s.UnsettledReloads(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for _, r := range reloads {
+		if r.UserID == userID {
+			got = append(got, r.ID[len("cp_"+userID+"_"):])
+		}
+	}
+	if len(got) != 3 || slices.Contains(got, "old") || slices.Contains(got, "live") {
+		t.Fatalf("re-read %v, want retry, failed and the hour-old charging one", got)
+	}
+
+	if _, err := s.pool.Exec(ctx, `UPDATE user_credits SET reload_started_at = now()
+		WHERE user_id = $1`, userID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MarkReloadFailed(ctx, "cp_"+userID+"_failed", "", time.Time{}, "expired_card"); err != nil {
+		t.Fatal(err)
+	}
+	if started, _ := reloadState(t, s, userID); !started {
+		t.Fatal("re-reading an old failed reload ended the live reload's window")
 	}
 }

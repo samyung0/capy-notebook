@@ -57,6 +57,14 @@ export function fileIsIngesting(status?: string) {
   return status === 'pending' || status === 'processing';
 }
 
+/** Whether Clone is offered on a file (the workspace's canClone aside): a
+ * processed file, or a partial one (failed but still indexed, a part
+ * missing), which copies as partial so its new owner can retry it (parts
+ * design Q2). The server copies no other file. */
+export function fileCanClone(file: Pick<SourceFile, 'status' | 'indexed'>) {
+  return file.status === 'ready' || (file.status === 'failed' && file.indexed);
+}
+
 /** Why a ready file is not searchable: its content is over an ingest limit,
  * or it was stored without processing. */
 export function notIndexedMessage(file: Pick<SourceFile, 'indexLimit'>) {

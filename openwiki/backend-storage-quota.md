@@ -420,8 +420,9 @@ Workspace clones snapshot the source, gate the total file + saved edit state +
 material + ready editor-asset payload against the **cloner's** quota, copy ready asset rows
 with new logical IDs (rewriting embedded references; each asset names the
 clone of its material, and a trashed material's assets are left out), and reuse physical blob
-paths under reference counting. Only `ready` source files are copied; pending,
-processing, and failed files are omitted. A file past the cloner's per-file
+paths under reference counting. `ready` source files are copied, and partial
+ones (`failed` with a served index, parts design Q2) under the same gates;
+pending, processing, and other failed files are omitted. A file past the cloner's per-file
 plan cap (`plan_limits.source_file_max_bytes`, the upload cap) refuses the
 whole clone (`file_too_large`), like its other limits. Material nodes (and quiz image blocks; a card keeps its text and loses only its image) referring to a pending,
 failed, missing, or otherwise uncopied editor asset are removed from the cloned
@@ -472,7 +473,10 @@ unloads or the log passes `max(256 KiB, state bytes)` or 1,000 rows; the
 document row keeps `log_bytes` and `log_rows`). Idle rooms whose state plus log
 is at least `max(256 KiB, material.size_bytes * 4)` are compaction candidates.
 Source documents keep the same log in `source_document_updates`, charged in
-`storage_bytes` with the state (migration 0075).
+`storage_bytes` with the state (migration 0075). A source save appends its row
+through the checkpoint compare-and-swap; a moved checkpoint re-reads the rows
+saved meanwhile and appends again, 3 attempts in all
+(`collaboration-rs/crates/sources/src/store.rs`).
 
 Source text states are not compacted. Their history grows with the number of
 separate edits (and the contributor markers each save writes and clears), not

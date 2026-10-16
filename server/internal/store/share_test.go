@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
@@ -116,6 +118,24 @@ func TestWorkspaceCloneRejectsAPathReapedAfterItsSnapshot(t *testing.T) {
 	}
 	if got := blobRefCount(t, s, path); got != 0 {
 		t.Fatalf("deleted path refcount = %d, want 0", got)
+	}
+}
+
+// A clone transaction that keeps failing on serialization runs three times in
+// all, then tells the user the source changed (409 clone_source_changed), so
+// they can clone again.
+func TestCloneStopsAfterThreeSerializationFailures(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, code := range []string{"40001", "40P01"} {
+		calls := 0
+		err := retryClone(ctx, func() error {
+			calls++
+			return &pgconn.PgError{Code: code}
+		})
+		if calls != 3 || !errors.Is(err, ErrCloneSourceChanged) {
+			t.Fatalf("%s: %d transactions, error %v; want 3 and ErrCloneSourceChanged", code, calls, err)
+		}
 	}
 }
 

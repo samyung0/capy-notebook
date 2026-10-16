@@ -1380,7 +1380,7 @@ those services start.
    Configure its platform model capacities through Ops (§1.4) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
-   Production limits are eight coordinator processes, five parse children
+   Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document
    (`CAPY_PARSE_OCR_PAGE_CAP`, a name older than the VLM read; more fails as
@@ -1596,8 +1596,13 @@ document; a trimmed idle child holds about 0.55 GiB. The v14 rerun
 RapidOCR process) peaked at 8.6 of 14 GiB with five 1,400-page books and a
 150-page scan at once (v11: 13.1). Each book finished in under 400 s of the
 900 s deadline. One parse or OCR child
-reached 1.44 GiB RSS and 4.91 GiB virtual size, so a per-child RLIMIT_AS has to
-allow about 5 GiB plus headroom.
+reached 1.44 GiB RSS and 4.91 GiB virtual size; most of that was the RapidOCR
+process, which left the parser on 2026-10-15. With `MALLOC_ARENA_MAX=2` a parse
+child peaked at 0.64 GiB of virtual size, alone on the 1,400-page book and with
+five of them beside a 150-page scan (scenario C on a 14 GiB, 8-CPU container:
+6 of 6 parsed, peak 7.0 GiB), and LibreOffice at 0.88 GiB, so each child runs
+under a 2 GiB address-space limit (Java lifts it; its heap is bounded by
+`-Xmx`).
 
 Each of the four production ingest workers has a 1 CPU, 1 GiB RAM, 1.25 GiB
 total memory-plus-swap, and 128-process ceiling. A separate 120 MiB
@@ -2551,6 +2556,14 @@ Pay link, and paying later credits it); failed-payment emails with the hosted
 invoice link and 3D Secure confirmation links are on. Card and Link must be
 enabled payment methods. The reload worker runs only where
 `STRIPE_SECRET_KEY` is set.
+
+Plan credit limits are data, not migrations: the Free monthly allowance is
+200 credits (`UPDATE plan_limits SET credit_limit_micros = 200000000 WHERE
+plan_tier = 'free';`, Epo 2026-10-16), and the one-off 800-credit starter grant
+is the `user_credits` column default from migration 0088. A database built from
+migrations still seeds the older values, so set the row by hand in each
+environment, **before** the deploy that restarts the API and the ingest worker:
+both read `plan_limits` once at startup (or restart them after the change).
 
 There is no Team product in any environment and no `STRIPE_PRICE_TEAM`
 setting: `plan_limits` restricts `plan_tier` to `free` and `pro`

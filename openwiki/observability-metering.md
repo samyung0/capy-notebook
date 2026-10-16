@@ -37,6 +37,42 @@ browser  →  Go gateway  →  Python retrieval  →  provider
 The gateway echoes it as `X-Request-Id`, so a user can quote the id from a
 failed request.
 
+**Unexpected errors answer the id, not the cause.** A gateway 5xx that is not
+typed answers `{"title", "status", "detail": "Something went wrong",
+"traceId"}`, never the error's own text; the cause stays in the logs and Sentry
+under that id. A typed 5xx carries only codes from one short list in
+`errors[]` (`typedServerCodes`: `provider_busy`, `ai_unavailable`,
+`generate_empty`, `bank_unavailable`; `src/lib/errors.ts` keeps the same list),
+so an error's text there, even one word, still gets the generic answer. Every
+4xx keeps its status and code. One rule covers every path
+(`server/internal/httpapi/huma_register.go`, `server.go`):
+
+- `publicError` at the end of `reportHandlerError`, for huma handlers;
+- the `huma.NewErrorWithContext` override, for the errors huma builds itself
+  (a body it could not read, `writeStatusErr`), which records their cause with
+  `obs.RecordHTTPError` and lets a typed 5xx through;
+- `writeUnexpected`, for raw handlers (the fallback of `fail`, the event and
+  chat streams) and for a recovered panic (`recoverer`, which replaces chi's
+  Recoverer; the Sentry middleware inside it captures the panic first, and a
+  stream already under way is left as it is).
+
+The status is kept: an untyped 503 stays 503. Internal service routes share
+`fail`, so their unexpected failures answer the same body; the calling service
+already holds the trace id it sent.
+
+`office_editing_paused` (423) and `material_content_unreadable` (422) answer
+fixed text whatever error caused them: the pause's own sentence, and for the
+second only its code and a fixed `detail`, its decode error going to the log
+(`material content unreadable`).
+
+The browser keeps a failed request's id on `ApiError.traceId` (the body's
+`traceId`, else `X-Request-Id`, else the id it sent, for an answer from a
+proxy) and shows it, small and copyable, only where the error stays on
+screen: boundary screens, a page or pane that failed with Retry, and form
+errors (`FormAlert`), for an unexpected failure (`unexpectedErrorId` in
+`src/lib/errors.ts`). Toasts and status banners show none (see
+`frontend/error-handling.md`).
+
 **One id, not two.** Sentry's own distributed tracing is deliberately not
 enabled to stitch services together. The W3C id is attached to Sentry events as
 a `trace_id` **tag** instead, so a single string searches Sentry, greps the
@@ -261,7 +297,16 @@ info, with no Sentry event. The file itself ends ready and unindexed with
 [agentic-retrieval.md](agentic-retrieval.md)). A refused Office rebase is the same kind of
 expected outcome: the ingest worker logs the refused publication
 (`office_rebase_refused`) and collaboration logs a refused rebuild
-(`office_rebuild_refused`), and neither captures it. Sentry holds failures
+(`office_rebuild_refused`), and neither captures it. So is an agent edit, its
+Undo or a replace-block command refused because its room is being reset or
+compacted: nothing applied, so the caller may retry. Collaboration answers 503
+`unavailable_target` and logs `edit refused: room unavailable` without
+capturing it (`DocumentError::Unavailable` in
+`collaboration-rs/crates/server/src/edits.rs`). The gateway marks that answer
+expected (`authorityFailure` in `server/internal/store/collaboration_documents.go`)
+and answers its own caller as for any unavailable authority (503,
+`outcome_unknown` to the pipeline), reporting nothing; any other 503 from the
+authority is still reported. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal
@@ -737,6 +782,16 @@ it) counts paid and charging pre-tax dollars per UTC calendar month of payment
 and clears a skip. The 409 carries `spentCents` so the toast can tell "wait for
 the auto-reload" from "over the limit".
 
+**Daily reconciliation.** The UTC-daily Stripe run (`reconcile.Runner`,
+`reconcileCredits`) also settles credit purchases whose webhooks never
+arrived: it re-reads every reload invoice still `retrying` or `failed`, or
+`charging` for over an hour, from the last 90 days, and records it paid
+(crediting it once), void, retrying or failed; and it credits paid top-up
+Checkouts from the last 7 days through the idempotent `GrantTopUp`. Each
+repair writes a `stripe_credit_drift` report row and each failure a
+`stripe_credit_error` row. Re-reading an old failed reload never ends a newer
+reload's 60-second window: only the reload that was charging clears it.
+
 **Reversals.** `charge.refunded` takes credits back in proportion to Stripe's
 cumulative `amount_refunded`; `charge.dispute.created` holds what is left of the
 purchase and `charge.dispute.closed` with `won` gives it back; an inquiry
@@ -1083,7 +1138,10 @@ parse without the fee still records its pages: `credit_micros` 0 and
 `metadata.parseFee=false` on the parse event. The owner then pays only the
 refresh's provider calls (embeddings of changed chunks, and a descriptor when
 the reuse gate regenerates it), and refresh admission keeps its credit check
-for those. Uploads always pay the fee.
+for those. Uploads always pay the fee. Retry processing of a partial file with
+unread pages sends `parseFee` the same way (`!ever_parsed_successfully`, parts
+design Q6), and `_parse_fee` honours the payload for every job type; a full
+retry carries none and pays like an upload.
 
 `provider_sessions.paid_by` names who pays: `platform` (platform keys, the
 actor is charged credits; every ordinary ingest session), `user` (BYOK, zero

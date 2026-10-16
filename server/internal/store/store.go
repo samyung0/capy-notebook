@@ -346,38 +346,51 @@ func (s *Store) lockWorkspaceCloneSource(
 }
 
 // lockMaterialCloneSource orders a workspace-contained material under its
-// workspace fence. The returned connection is also the transaction starter so
-// the session locks cannot migrate to a different pooled connection.
+// workspace fence.
 func (s *Store) lockMaterialCloneSource(
 	ctx context.Context,
 	materialID string,
 	shared bool,
 ) (*pgxpool.Conn, func(), error) {
+	return s.lockContainedCloneSource(ctx, "material", materialID, shared)
+}
+
+// lockContainedCloneSource orders a workspace-contained material or file
+// (kind) under its workspace fence, then takes any extra locks. The returned
+// connection is also the transaction starter so the session locks cannot
+// migrate to a different pooled connection.
+func (s *Store) lockContainedCloneSource(
+	ctx context.Context,
+	kind, id string,
+	shared bool,
+	extra ...cloneSourceLock,
+) (*pgxpool.Conn, func(), error) {
+	table := map[string]string{"material": "materials", "file": "files"}[kind]
 	for attempt := 0; ; attempt++ {
 		var workspaceID *string
 		if err := s.pool.QueryRow(ctx,
-			`SELECT workspace_id FROM materials WHERE id=$1`, materialID,
+			`SELECT workspace_id FROM `+table+` WHERE id=$1`, id,
 		).Scan(&workspaceID); isNoRows(err) {
 			return nil, nil, ErrNotFound
 		} else if err != nil {
 			return nil, nil, err
 		}
-		locks := make([]cloneSourceLock, 0, 2)
+		locks := make([]cloneSourceLock, 0, 2+len(extra))
 		if workspaceID != nil {
 			locks = append(locks, cloneSourceLock{
 				key: cloneSourceLockKey("workspace", *workspaceID), shared: true,
 			})
 		}
 		locks = append(locks, cloneSourceLock{
-			key: cloneSourceLockKey("material", materialID), shared: shared,
+			key: cloneSourceLockKey(kind, id), shared: shared,
 		})
-		conn, unlock, err := s.lockCloneSources(ctx, locks)
+		conn, unlock, err := s.lockCloneSources(ctx, append(locks, extra...))
 		if err != nil {
 			return nil, nil, err
 		}
 		var placementUnchanged bool
 		err = conn.QueryRow(ctx, `SELECT workspace_id IS NOT DISTINCT FROM $2::text
-			FROM materials WHERE id=$1`, materialID, workspaceID).
+			FROM `+table+` WHERE id=$1`, id, workspaceID).
 			Scan(&placementUnchanged)
 		if isNoRows(err) {
 			unlock()

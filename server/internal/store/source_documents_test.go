@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/models"
@@ -248,6 +249,147 @@ func TestRetryFileProcessing(t *testing.T) {
 	}
 }
 
+// Retry processing of a partial file (failed, indexed, alias on content of its
+// revision) re-runs only the missing parts and keeps the index (parts design
+// Q1/Q6/Q8); anything else is a full retry.
+func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "retry_partial_owner")
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const parsed = "plan-v2:fast:odl-test:v12"
+	for _, c := range []struct {
+		name       string
+		identity   string // "" is NULL: unread pages
+		summarized bool
+		ever       bool
+		setup      string // extra SQL on the file ($1) before the retry
+		request    string // the requested parse mode, "fast" when empty
+		jobType    string // "" is no job
+		partsOnly  string
+		parseFee   string
+		status     string
+		indexed    bool
+	}{
+		{name: "summary missing", identity: parsed, ever: true, jobType: "ingest", partsOnly: "true", status: "pending", indexed: true},
+		{name: "pages missing", summarized: true, ever: true, jobType: "parse", parseFee: "false", status: "pending", indexed: true},
+		{name: "pages missing, never parsed", summarized: true, jobType: "parse", parseFee: "true", status: "pending", indexed: true},
+		{name: "parts complete", identity: parsed, summarized: true, ever: true, status: "ready", indexed: true},
+		// 'none' (No parsing) is no choice for a partial file: its index stays.
+		{name: "none requested", identity: parsed, ever: true, request: "none", jobType: "ingest", partsOnly: "true", status: "pending", indexed: true},
+		// A processed store-only upload keeps parse_mode 'none' but was parsed fast.
+		{name: "processed store-only", identity: parsed, ever: true, setup: `UPDATE files SET parse_mode='none' WHERE id=$1`, jobType: "ingest", partsOnly: "true", status: "pending", indexed: true},
+		// The alias content is not the file's current revision.
+		{name: "stale content", identity: parsed, ever: true, setup: `UPDATE files SET content_hash='other' WHERE id=$1`, jobType: "parse", status: "pending"},
+		// Content built on another route than the file's parse_mode.
+		{name: "other route", identity: "plan-v2:direct:text:v12", ever: true, jobType: "parse", status: "pending"},
+		{name: "not indexed", identity: parsed, ever: true, setup: `UPDATE files SET indexed=false WHERE id=$1`, jobType: "parse", status: "pending"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ws, file := sourceTestFile(t, s, owner, "lesson.pdf", "pdf")
+			content := uid("rc")
+			exec(`INSERT INTO rag_contents(id,workspace_id,content_hash,status,pipeline_identity) VALUES($1,$2,$1,'ready',NULLIF($3,''))`, content, ws.ID, c.identity)
+			exec(`INSERT INTO rag_file_contents(file_id,workspace_id,content_id) VALUES($1,$2,$3)`, file.ID, ws.ID, content)
+			if c.summarized {
+				exec(`INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor) VALUES($1,$2,'A lesson.')`, content, ws.ID)
+			}
+			exec(`UPDATE files SET status='failed',indexed=true,parse_mode='fast',ever_parsed_successfully=$2,content_hash=$3 WHERE id=$1`, file.ID, c.ever, content)
+			if c.setup != "" {
+				exec(c.setup, file.ID)
+			}
+			request := c.request
+			if request == "" {
+				request = "fast"
+			}
+			if err := s.RetryFileProcessing(ctx, owner, file.ID, request, "test"); err != nil {
+				t.Fatal(err)
+			}
+			var status string
+			var indexed bool
+			if err := s.pool.QueryRow(ctx, `SELECT status,indexed FROM files WHERE id=$1`, file.ID).Scan(&status, &indexed); err != nil {
+				t.Fatal(err)
+			}
+			var jobType, partsOnly, parseFee string
+			err := s.pool.QueryRow(ctx, `SELECT type,COALESCE(payload->>'partsOnly',''),COALESCE(payload->>'parseFee','') FROM jobs WHERE payload->>'fileId'=$1`, file.ID).Scan(&jobType, &partsOnly, &parseFee)
+			if isNoRows(err) {
+				err = nil
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status != c.status || indexed != c.indexed || jobType != c.jobType || partsOnly != c.partsOnly || parseFee != c.parseFee {
+				t.Fatalf("file %s indexed=%v, job %q partsOnly=%q parseFee=%q; want %s %v %q %q %q", status, indexed, jobType, partsOnly, parseFee, c.status, c.indexed, c.jobType, c.partsOnly, c.parseFee)
+			}
+		})
+	}
+
+	// Another owner: one workspace per case reaches the owned-workspace limit.
+	other := newBlobTestUser(t, s, "retry_partial_other")
+
+	// The job names the revision current under Retry's locks: a publication
+	// that commits while Retry waits on the workspace lock is what it runs on.
+	t.Run("revision read under the lock", func(t *testing.T) {
+		ws, file := sourceTestFile(t, s, other, "lesson.pdf", "pdf")
+		exec(`UPDATE files SET status='failed' WHERE id=$1`, file.ID)
+		hold, err := s.pool.Begin(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer hold.Rollback(ctx)
+		if _, err = hold.Exec(ctx, `SELECT 1 FROM workspaces WHERE id=$1 FOR UPDATE`, ws.ID); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- s.RetryFileProcessing(ctx, other, file.ID, "fast", "test") }()
+		for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+			var waiting bool
+			if err = s.pool.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_locks WHERE NOT granted)`).Scan(&waiting); err != nil {
+				t.Fatal(err)
+			}
+			if waiting {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("retry never waited on the workspace lock")
+			}
+		}
+		if _, err = hold.Exec(ctx, `UPDATE files SET revision=revision+1,source_etag='etag-published' WHERE id=$1`, file.ID); err != nil {
+			t.Fatal(err)
+		}
+		if err = hold.Commit(ctx); err != nil {
+			t.Fatal(err)
+		}
+		if err = <-done; err != nil {
+			t.Fatal(err)
+		}
+		var revision, etag string
+		if err = s.pool.QueryRow(ctx, `SELECT payload->>'sourceRevision',payload->>'sourceETag' FROM jobs WHERE payload->>'fileId'=$1`, file.ID).Scan(&revision, &etag); err != nil {
+			t.Fatal(err)
+		}
+		if revision != "2" || etag != "etag-published" {
+			t.Fatalf("job for revision %s etag %q, want 2 and the published etag", revision, etag)
+		}
+	})
+
+	// A running source refresh holds the file like a parse or ingest job.
+	ws, file := sourceTestFile(t, s, other, "lesson.pdf", "pdf")
+	exec(`UPDATE files SET status='failed' WHERE id=$1`, file.ID)
+	exec(`INSERT INTO jobs(id,type,payload,status) VALUES($1,'source_refresh',jsonb_build_object('fileId',$2::text,'workspaceId',$3::text),'running')`, uid("job"), file.ID, ws.ID)
+	if err := s.RetryFileProcessing(ctx, other, file.ID, "fast", "test"); !errors.Is(err, ErrConflict) {
+		t.Fatalf("retry during a source refresh: %v, want conflict", err)
+	}
+}
+
 func TestOfficeAutomaticRefreshAdmission(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()
@@ -380,6 +522,13 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed' WHERE id=$1`, failed); err != nil {
 		t.Fatal(err)
 	}
+	// Failed but still indexed (partial, parts design Q1): a refresh may fill
+	// its missing part, Office and text alike.
+	partial := edited(3000, "4 minutes", "")
+	textPartial := editedAs("notes.txt", "txt", 5, "35 seconds", "")
+	if _, err := s.pool.Exec(ctx, `UPDATE files SET status='failed',indexed=true WHERE id=ANY($1)`, []string{partial, textPartial}); err != nil {
+		t.Fatal(err)
+	}
 	// Text is due once its saves pause 30 s (textRefreshIdle), however long
 	// ago its last refresh was requested.
 	textPaused := editedAs("notes.txt", "txt", 5, "31 seconds", "")
@@ -393,7 +542,7 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	}
 	defer tx.Rollback(ctx)
 	// Only this test's rows compete for the batch; the rollback restores the rest.
-	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited, failed, textPaused, textTyping}); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE source_documents SET refresh_error='other test' WHERE NOT file_id=ANY($1)`, []string{due, worthless, reordered, unedited, failed, partial, textPartial, textPaused, textTyping}); err != nil {
 		t.Fatal(err)
 	}
 	candidates := func() []string {
@@ -418,14 +567,14 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 		}
 		return files
 	}
-	if got := candidates(); !slices.Equal(got, []string{reordered, unedited, due, textPaused}) {
-		t.Fatalf("candidates %v, want the reordered file, the unedited one, the due one, then the paused text", got)
+	if got := candidates(); !slices.Equal(got, []string{reordered, unedited, partial, due, textPartial, textPaused}) {
+		t.Fatalf("candidates %v, want the reordered file, the unedited one, the partial one, the due one, then the partial and the paused text", got)
 	}
 	// A 429 (owner at the ingest-job limit) rotates the file behind the others.
 	if _, err = tx.Exec(ctx, deferSQL, unedited); err != nil {
 		t.Fatal(err)
 	}
-	if got := candidates(); !slices.Equal(got, []string{reordered, due, textPaused, unedited}) {
+	if got := candidates(); !slices.Equal(got, []string{reordered, partial, due, textPartial, textPaused, unedited}) {
 		t.Fatalf("candidates after a 429 %v, want the refused file last", got)
 	}
 	if err = tx.Rollback(ctx); err != nil {
@@ -437,6 +586,13 @@ func TestRefreshSchedulerQuery(t *testing.T) {
 	}
 	if _, err = s.RequestSourceRefresh(ctx, owner, textPaused, true); err != nil {
 		t.Fatalf("automatic text refresh after saves paused: %v", err)
+	}
+	// Go admission agrees: a wholly failed file waits for its owner.
+	if _, err = s.RequestSourceRefresh(ctx, owner, failed, true); !errors.Is(err, ErrConflict) {
+		t.Fatalf("automatic refresh of a failed file: %v", err)
+	}
+	if _, err = s.RequestSourceRefresh(ctx, owner, partial, true); err != nil {
+		t.Fatalf("automatic refresh of a partial file: %v", err)
 	}
 }
 
@@ -1307,6 +1463,70 @@ func TestSourceTextPublishesCapturedStateWithExactRemainingEffects(t *testing.T)
 	}
 	if published.Epoch != 1 || published.Checkpoint != 2 || published.IndexedCheckpoint != 1 || sourceTestDocument(published) != "state-b+state-a-again" || published.NetTokens != 2 {
 		t.Fatalf("text residual or lineage lost: %+v", published)
+	}
+}
+
+// A refresh's published result is partial (failed, still indexed) when its
+// candidate content lacks a part: a descriptor row or a pipeline_identity
+// (parts design Q3).
+func TestSourceRefreshPublicationDerivesThePartialStatus(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	reg, err := models.New(ctx, s.Pool())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.SetModelRegistry(reg)
+	owner := newBlobTestUser(t, s, "source_refresh_parts")
+	exec := func(sql string, args ...any) {
+		t.Helper()
+		if _, err := s.pool.Exec(ctx, sql, args...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		name, identity string
+		summarized     bool
+		status         string
+	}{
+		{"complete", "plan-v2:direct:text:v12", true, "ready"},
+		{"summary missing", "plan-v2:direct:text:v12", false, "failed"},
+		{"pages unread", "", true, "failed"},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			ws, file := sourceTestFile(t, s, owner, "lesson.txt", "txt")
+			doc := sourceTestEdit(t, s, owner, sourceTestSeed(t, s, owner, file.ID), "state-b")
+			exec(`UPDATE source_documents SET last_edited_at=now()-interval '31 seconds' WHERE file_id=$1`, file.ID)
+			job, err := s.RequestSourceRefresh(ctx, owner, file.ID, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate, err := s.ClaimSourceRefresh(ctx, file.ID, job.JobID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = s.FinalizeSourceRefresh(ctx, file.ID, SourceRefreshFinalize{JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceSHA256: strings.Repeat("b", 64), SizeBytes: 120, SourceETag: "etag-text", State: []byte("state-b")}); err != nil {
+				t.Fatal(err)
+			}
+			exec(`UPDATE jobs SET status='running',attempts=1,lease_expires_at=now()+interval '5 minutes' WHERE id=$1`, job.JobID)
+			content := uid("rc")
+			exec(`INSERT INTO rag_contents(id,workspace_id,content_hash,status,pipeline_identity) VALUES($1,$2,$1,'ready',NULLIF($3,''))`, content, ws.ID, c.identity)
+			if c.summarized {
+				exec(`INSERT INTO rag_content_summaries(content_id,workspace_id,descriptor) VALUES($1,$2,'A lesson.')`, content, ws.ID)
+			}
+			exec(`UPDATE source_refresh_candidates SET content_id=$2,content_hash=$2 WHERE file_id=$1`, file.ID, content)
+			if _, err = s.PublishSourceRefresh(ctx, file.ID, SourceRefreshPublish{AttemptID: sourceTestAttempt(t, s, job.JobID), JobID: job.JobID, Epoch: doc.Epoch, Checkpoint: doc.Checkpoint, LeaseToken: candidate.LeaseToken, SourceETag: "etag-text", ContentID: content, ContentHash: content, PendingEffects: json.RawMessage(`[]`), ExpectedLatestCheckpoint: doc.Checkpoint}); err != nil {
+				t.Fatal(err)
+			}
+			var status string
+			var indexed bool
+			if err = s.pool.QueryRow(ctx, `SELECT status,indexed FROM files WHERE id=$1`, file.ID).Scan(&status, &indexed); err != nil {
+				t.Fatal(err)
+			}
+			if status != c.status || !indexed {
+				t.Fatalf("published file %s indexed=%v, want %s and indexed", status, indexed, c.status)
+			}
+		})
 	}
 }
 

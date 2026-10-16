@@ -6,7 +6,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
+
+	"github.com/getsentry/sentry-go"
 
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
@@ -324,5 +329,85 @@ func TestEditReceiptKeepsRelocatedInserts(t *testing.T) {
 	})
 	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"relocated":[{"anchor":"b2","after":"b9","end":true}]`) {
 		t.Fatalf("edit status = %d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// sentryEvents counts the Sentry events a test's requests send.
+type sentryEvents struct {
+	mu     sync.Mutex
+	events int
+}
+
+func (t *sentryEvents) Configure(sentry.ClientOptions) {}
+func (t *sentryEvents) SendEvent(*sentry.Event) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.events++
+}
+func (t *sentryEvents) Flush(time.Duration) bool              { return true }
+func (t *sentryEvents) FlushWithContext(context.Context) bool { return true }
+func (t *sentryEvents) Close()                                {}
+func (t *sentryEvents) take() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	n := t.events
+	t.events = 0
+	return n
+}
+
+// A room being reset or compacted refuses an agent edit before anything
+// applies (the authority's 503 unavailable_target): an expected outcome, so
+// the pipeline gets the unavailable authority's usual answer and Sentry gets
+// nothing, while any other authority 503 is still reported.
+func TestRoomUnavailableEditIsNotReported(t *testing.T) {
+	previous := sentry.CurrentHub().Client()
+	defer sentry.CurrentHub().BindClient(previous)
+	events := &sentryEvents{}
+	if err := sentry.Init(sentry.ClientOptions{Dsn: "https://test@example.invalid/1", Transport: events}); err != nil {
+		t.Fatal(err)
+	}
+	h, st := openInternalHTTP(t)
+	msgID := seedAssistantMessage(t, st, "u_editor", "ws_e2e_private")
+	rec := doInternal(t, h, http.MethodPost, "/api/internal/materials", pipeSecret,
+		noteBody(msgID, "call_unavailable_note", "Unavailable "+msgID, "# Lecture\n\nAlpha beta."))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d body=%s", rec.Code, rec.Body.String())
+	}
+	noteID := decodeReceipt(t, rec).Effect.Resource.ID
+	cleanupMaterial(t, st, noteID)
+	var answer atomic.Value
+	authority := httptest.NewServer(withConverter(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(answer.Load().(string)))
+	})))
+	t.Cleanup(authority.Close)
+	st.ConfigureCollaboration(authority.URL, "collab-test-secret")
+
+	for i, tc := range []struct {
+		answer string
+		events int
+	}{
+		{`{"code":"unavailable_target","message":"collaboration room is being reset"}`, 0},
+		{`{"code":"outcome_unknown","message":"document edit failed"}`, 1},
+	} {
+		answer.Store(tc.answer)
+		events.take()
+		rec = doInternal(t, h, http.MethodPost, "/api/internal/documents/edit", pipeSecret, map[string]any{
+			"workspaceId": "ws_e2e_private", "userId": "u_editor",
+			"assistantMessageId": msgID, "toolCallId": "call_unavailable_edit_" + string(rune('a'+i)),
+			"target":   map[string]any{"kind": "material", "id": noteID},
+			"commands": []map[string]any{{"type": "replace_text", "target_id": "b1", "expected_text": "Alpha", "text": "Gamma"}},
+		})
+		var body struct {
+			Code string `json:"code"`
+		}
+		_ = json.Unmarshal(rec.Body.Bytes(), &body)
+		if rec.Code != http.StatusServiceUnavailable || body.Code != "outcome_unknown" {
+			t.Fatalf("%s: status = %d body=%s", tc.answer, rec.Code, rec.Body.String())
+		}
+		if got := events.take(); got != tc.events {
+			t.Fatalf("%s: %d Sentry events, want %d", tc.answer, got, tc.events)
+		}
 	}
 }

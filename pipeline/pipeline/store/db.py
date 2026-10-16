@@ -811,28 +811,31 @@ def _cancel_pipeline_heartbeat_claim(
     fail_pipeline_file_if_current(cur, payload)
 
 
-def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool:
-    """Fail only the file revision named by a cancelled pipeline claim."""
+def fail_pipeline_file_if_current(cur, payload: dict[str, Any]) -> bool | None:
+    """Fail only the file revision named by a cancelled pipeline claim.
+    Returns the written ``indexed``, or None when no file failed."""
     if payload.get("sourceRefresh") is True:
-        return False
+        return None
     file_id = str(payload.get("fileId") or "")
     source_etag = str(payload.get("sourceETag") or "")
     try:
         source_revision = int(payload.get("sourceRevision"))
     except (TypeError, ValueError):
-        return False
+        return None
     if not file_id:
-        return False
+        return None
     cur.execute(
         f"""
         UPDATE files
         SET status='failed', indexed={SERVES_INDEX}
         WHERE id=%s AND revision=%s AND COALESCE(source_etag, '')=%s
           AND status IN ('pending','processing') AND trashed_at IS NULL
+        RETURNING indexed
         """,
         (file_id, source_revision, source_etag),
     )
-    return bool(cur.rowcount)
+    row = cur.fetchone()
+    return None if row is None else bool(row[0])
 
 
 def heartbeat_job(cur, job_id: str, lease_s: int, attempt: int) -> bool:
@@ -1222,9 +1225,9 @@ def reclaim_expired_leases(
                 backoff_s=base * (2 ** max(int(attempts) - 1, 0)),
             )
             retryable = True
-        file_failed = False
+        file_indexed = None
         if outcome == "failed" and job_type in {"parse", "ingest"}:
-            file_failed = fail_pipeline_file_if_current(cur, payload)
+            file_indexed = fail_pipeline_file_if_current(cur, payload)
             discard_source_candidate(cur, payload, job_id, note, stale=False)
             close_credit_reservation(cur, str(payload.get("reservationId") or ""))
         cur.execute(
@@ -1253,7 +1256,8 @@ def reclaim_expired_leases(
                 "payload": payload,
                 "attempts": attempts,
                 "outcome": outcome,
-                "file_failed": file_failed,
+                "file_failed": file_indexed is not None,
+                "file_indexed": file_indexed is True,
             }
         )
     return reclaimed
@@ -1291,13 +1295,17 @@ SERVES_INDEX = """EXISTS(SELECT 1 FROM rag_file_contents fc
     WHERE fc.file_id=files.id)"""
 
 
-def set_file_indexed_as_served(cur, file_id: str) -> None:
+def set_file_indexed_as_served(cur, file_id: str) -> bool:
+    """Set and return ``indexed``; a refresh writes nothing (False)."""
     if source_refresh_for(file_id) is not None:
-        return
+        return False
     cur.execute(
-        f"UPDATE files SET indexed={SERVES_INDEX} WHERE id=%s AND trashed_at IS NULL",
+        f"UPDATE files SET indexed={SERVES_INDEX} WHERE id=%s AND trashed_at IS NULL"
+        " RETURNING indexed",
         (file_id,),
     )
+    row = cur.fetchone()
+    return bool(row and row[0])
 
 
 def set_file_index_limit(cur, file_id: str, code: str) -> None:

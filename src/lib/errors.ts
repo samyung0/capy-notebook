@@ -357,6 +357,30 @@ export function describeError(error: unknown): ErrorDescription {
   }
 }
 
+/** The 5xx codes with their own copy; the gateway keeps the same list
+ * (`typedServerCodes`). Any other 5xx is unexpected, whatever it carries. */
+const TYPED_SERVER_CODES = new Set([
+  'ai_unavailable',
+  'bank_unavailable',
+  'generate_empty',
+  'provider_busy',
+]);
+
+/** The trace id an error that stays on screen shows (a boundary, FormAlert,
+ * a failed page or pane with Retry): only for an unexpected API failure, a
+ * 5xx without a typed code or an unknown status without a code. Typed
+ * refusals and toasts show none. */
+export function unexpectedErrorId(error: unknown): string | null {
+  if (!isApiError(error)) return null;
+  const typed =
+    error.status >= 500
+      ? TYPED_SERVER_CODES.has(error.code ?? '')
+      : error.code !== null;
+  if (typed) return null;
+  const kind = errorKind(error);
+  return kind === 'server' || kind === 'unknown' ? error.traceId : null;
+}
+
 export { CopyError } from './copyError';
 
 /** Copy for a caught failure: a CopyError's own copy, API and connection

@@ -186,7 +186,7 @@ func New(s *store.Store, b blob.Store, pipe *pipeline.Client, rdb *redis.Client,
 	// the request; access logging second so it records panics as 500s.
 	r.Use(obs.Middleware)
 	r.Use(obs.AccessLog)
-	r.Use(middleware.Recoverer)
+	r.Use(recoverer)
 	r.Use(obs.SentryMiddleware)
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins: corsOrigins(cfg.AllowedOrigins),
@@ -502,7 +502,39 @@ func (a *api) fail(w http.ResponseWriter, err error) {
 		})
 		return
 	}
-	writeJSON(w, http.StatusInternalServerError, map[string]string{"message": err.Error()})
+	writeUnexpected(w, http.StatusInternalServerError)
+}
+
+// writeUnexpected is the raw handlers' generic answer to an unexpected
+// failure (publicError's): the trace id comes from the X-Request-Id the trace
+// middleware already set on this response.
+func writeUnexpected(w http.ResponseWriter, status int) {
+	writeJSON(w, status, newUnexpectedError(status, w.Header().Get(obs.HeaderRequestID)))
+}
+
+// recoverer is chi's Recoverer answering the generic unexpected error: the
+// Sentry middleware inside it has already captured the panic. A response
+// already under way (a stream) is left as it is.
+func recoverer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			if recovered == http.ErrAbortHandler {
+				panic(recovered)
+			}
+			middleware.PrintPrettyStack(recovered)
+			if started, ok := w.(interface{ Status() int }); ok && started.Status() != 0 {
+				return
+			}
+			if r.Header.Get("Connection") != "Upgrade" {
+				writeUnexpected(w, http.StatusInternalServerError)
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func id(r *http.Request) string { return chi.URLParam(r, "id") }

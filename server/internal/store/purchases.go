@@ -498,6 +498,35 @@ func (s *Store) StaleReloadCharges(ctx context.Context, olderThan time.Duration)
 	})
 }
 
+// UnsettledReload is a reload invoice the app has not seen settle.
+type UnsettledReload struct {
+	ID        string
+	UserID    string
+	InvoiceID string
+	Status    string
+}
+
+// UnsettledReloads are the reload invoices the daily reconciliation re-reads:
+// retrying or failed, and charging ones the worker has left for an hour, from
+// the last 90 days.
+func (s *Store) UnsettledReloads(ctx context.Context) ([]UnsettledReload, error) {
+	rows, err := s.pool.Query(ctx, `SELECT id, user_id, stripe_invoice_id, status
+		FROM credit_purchases
+		WHERE kind = 'reload' AND stripe_invoice_id IS NOT NULL
+		  AND created_at > now() - interval '90 days'
+		  AND (status IN ('retrying', 'failed')
+		    OR (status = 'charging' AND created_at < now() - interval '1 hour'))
+		ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, func(row pgx.CollectableRow) (UnsettledReload, error) {
+		var r UnsettledReload
+		err := row.Scan(&r.ID, &r.UserID, &r.InvoiceID, &r.Status)
+		return r, err
+	})
+}
+
 // StuckReload is a reload still charging after its idempotency keys expired.
 type StuckReload struct {
 	ID        string
@@ -583,22 +612,32 @@ func (s *Store) MarkReloadFailed(
 		return err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	var userID string
-	err = tx.QueryRow(ctx, `UPDATE credit_purchases
+	var userID, was string
+	err = tx.QueryRow(ctx, `WITH before AS (
+		  SELECT id, status FROM credit_purchases
+		  WHERE (id = $1 OR stripe_invoice_id = $2) AND kind = 'reload'
+		    AND status IN ('charging', 'retrying', 'failed')
+		  FOR UPDATE
+		)
+		UPDATE credit_purchases p
 		SET status = $3, next_attempt_at = $4, decline_reason = NULLIF($5, ''),
-		    stripe_invoice_id = COALESCE(stripe_invoice_id, NULLIF($2, ''))
-		WHERE (id = $1 OR stripe_invoice_id = $2) AND kind = 'reload'
-		  AND status IN ('charging', 'retrying', 'failed')
-		RETURNING user_id`, purchaseID, invoiceID, status, next, declineReason).Scan(&userID)
+		    stripe_invoice_id = COALESCE(p.stripe_invoice_id, NULLIF($2, ''))
+		FROM before WHERE p.id = before.id
+		RETURNING p.user_id, before.status`, purchaseID, invoiceID, status, next, declineReason).
+		Scan(&userID, &was)
 	if isNoRows(err) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	if _, err := tx.Exec(ctx, `UPDATE user_credits SET reload_started_at = NULL
-		WHERE user_id = $1`, userID); err != nil {
-		return err
+	// Only the reload that was charging ends the window; re-reading an older
+	// failed one (daily reconciliation) leaves a newer reload's window alone.
+	if was == "charging" {
+		if _, err := tx.Exec(ctx, `UPDATE user_credits SET reload_started_at = NULL
+			WHERE user_id = $1`, userID); err != nil {
+			return err
+		}
 	}
 	return tx.Commit(ctx)
 }

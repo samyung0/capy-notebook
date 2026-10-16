@@ -1,48 +1,63 @@
 from __future__ import annotations
 
 import io
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
+from botocore.exceptions import ClientError
 
 from pipeline.store import blobstore
 
 
-def test_cache_write_retries_twice_before_succeeding(monkeypatch) -> None:
-    calls = 0
+class _FailingB2(BaseHTTPRequestHandler):
+    """A B2 stand-in that answers every request 500 and counts them."""
 
-    class Client:
-        def put_object(self, **_kwargs) -> None:
-            nonlocal calls
-            calls += 1
-            if calls < 3:
-                raise OSError("temporary B2 failure")
+    protocol_version = "HTTP/1.1"
 
-    monkeypatch.setattr(blobstore, "_client", Client())
-    monkeypatch.setattr(blobstore.time, "sleep", lambda _seconds: None)
+    def do_PUT(self) -> None:
+        self.server.requests += 1
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.send_response(500)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
 
-    blobstore.write_bytes("derived-text/source/result.json", b"{}", "application/json")
-
-    assert calls == 3
+    def log_message(self, *_args) -> None:
+        pass
 
 
-def test_cache_write_raises_after_three_attempts(monkeypatch) -> None:
-    calls = 0
+@pytest.fixture
+def failing_b2(monkeypatch):
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _FailingB2)
+    server.requests = 0
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    endpoint = f"http://127.0.0.1:{server.server_port}"
+    monkeypatch.setattr(blobstore.cfg, "b2_endpoint", endpoint)
+    monkeypatch.setattr(blobstore.cfg, "b2_region", "us-east-1")
+    monkeypatch.setattr(blobstore.cfg, "b2_bucket", "capy")
+    monkeypatch.setattr(blobstore.cfg, "b2_key_id", "key")
+    monkeypatch.setattr(blobstore.cfg, "b2_app_key", "secret")
+    monkeypatch.setattr(blobstore, "_client", None)
+    monkeypatch.setattr(blobstore, "_once_client", None)
+    yield server
+    server.shutdown()
+    server.server_close()
 
-    class Client:
-        def put_object(self, **_kwargs) -> None:
-            nonlocal calls
-            calls += 1
-            raise OSError("B2 unavailable")
 
-    monkeypatch.setattr(blobstore, "_client", Client())
-    monkeypatch.setattr(blobstore.time, "sleep", lambda _seconds: None)
-
-    with pytest.raises(OSError, match="B2 unavailable"):
+def test_a_cache_write_sends_three_puts_in_all(failing_b2) -> None:
+    with pytest.raises(ClientError):
         blobstore.write_bytes(
             "derived-text/source/result.json", b"{}", "application/json"
         )
 
-    assert calls == 3
+    assert failing_b2.requests == 3
+
+
+def test_a_thumbnail_put_is_a_single_attempt(failing_b2) -> None:
+    with pytest.raises(ClientError):
+        blobstore.put_object("thumbs/f_1/aa.webp", b"webp", "image/webp", "no-cache")
+
+    assert failing_b2.requests == 1
 
 
 def test_cache_download_is_bounded_and_cleans_a_partial_file(

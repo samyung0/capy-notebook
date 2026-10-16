@@ -85,6 +85,7 @@ import {
 import { CreateFilePanel } from './CreateFilePanel';
 import { GenerateFilePanel } from './GenerateFilePanel';
 import type { GenerateMode } from './GenerateForm';
+import { retryStartedToast } from './retryProcessing';
 import { ProviderIcon } from './SourceTransferPanel';
 import {
   calculateParseCreditMicros,
@@ -921,15 +922,7 @@ export function AddSourceDialog({
     void retryProcessing({
       id: retryFile.id,
       parseMode: source.parseMode,
-    }).then(
-      () =>
-        userToast({
-          description: m.files_retry_started_body(),
-          title: m.files_process_started_title(),
-          variant: 'success',
-        }),
-      () => {}
-    );
+    }).then(retryStartedToast, () => {});
   }
 
   /** Hands the tab's rows to the transfer panel. The dialog stays open while

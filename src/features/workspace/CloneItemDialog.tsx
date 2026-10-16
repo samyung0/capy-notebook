@@ -33,7 +33,7 @@ import {
 import { m } from '@/i18n';
 import { trackQuotaBlocked } from '@/lib/analytics';
 import { cn } from '@/lib/cn';
-import { errorCopy } from '@/lib/errors';
+import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { iconUrl } from '@/lib/icon-catalog';
 import { textLength } from '@/lib/textLength';
 import { ChapterSelect, chapterByName, NewChapterInput } from './ChapterSelect';
@@ -134,7 +134,10 @@ export function CloneItemDialog({
   }>({ chapterId: null, chapterName: null });
   const [newChapter, setNewChapter] = useState<string | null>(null);
   const [nameEdited, setNameEdited] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
+  const [formError, setFormError] = useState<{
+    errorId: string | null;
+    message: string;
+  } | null>(null);
   const { mutateAsync: cloneFile } = useCloneFile({ errorToast: false });
   const { mutateAsync: cloneMaterial } = useCloneMaterial({
     errorToast: false,
@@ -205,7 +208,10 @@ export function CloneItemDialog({
         setError('name', { message: m.error_title_taken_body() });
         return;
       }
-      setFormError(cloneErrorMessage(error));
+      setFormError({
+        errorId: unexpectedErrorId(error),
+        message: cloneErrorMessage(error),
+      });
     }
   });
 
@@ -386,7 +392,10 @@ export function CloneItemDialog({
               </label>
             )}
           />
-          <FormAlert message={formError} />
+          <FormAlert
+            errorId={formError?.errorId}
+            message={formError?.message ?? null}
+          />
         </div>
       )}
     </SimpleDialog>

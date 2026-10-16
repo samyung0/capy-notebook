@@ -57,10 +57,16 @@ from odl.document import (
     SourceUnreadable,
 )
 from odl.java import JavaKilled, JavaTimeout
+from odl.memory import out_of_memory
+
+try:
+    import resource
+except ImportError:  # Not POSIX.
+    resource = None
 
 ARTIFACT_SCHEMA = "capy-parser-bundle-v6"
 # Bump when parse output changes: it names the output in the ingest donor key.
-PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v15"
+PARSER_IMPLEMENTATION = "odl-2.5.7-refined-vlm-v16"
 RELEASE_SHA = os.environ.get("RELEASE_SHA", "dev").strip() or "dev"
 if os.environ.get("APP_ENV") == "production" and not re.fullmatch(
     r"[0-9a-f]{40}", RELEASE_SHA
@@ -122,6 +128,10 @@ RESTART_BACKSTOP_S = 1.0
 # The kernel OOM-kills the highest oom_score first: a parse child (one document)
 # before the API.
 PARSE_OOM_SCORE_ADJ = 1000
+# Address space (a soft RLIMIT_AS) of a parse child and the LibreOffice it
+# starts; Java lifts it (odl/java.py), its heap bounded by -Xmx. A document
+# that needs more fails as parse_oom instead of crowding the other children.
+PARSE_CHILD_MAX_BYTES = 2 << 30
 # A child's answer on its pipe: a status and small payloads.
 # A longer one ends that child.
 MESSAGE_MAX_BYTES = 1 << 24
@@ -275,7 +285,14 @@ def run_document(document: Document) -> dict[str, Any]:
         "_stages": output.stages,
         "_repaired_fonts": output.repaired_fonts,
         "_furniture": output.furniture,
+        "_drawing_steps": output.drawing_steps,
     }
+    if output.drawings_stopped_at is not None:
+        print(
+            f"drawing clusters stopped on page {output.drawings_stopped_at} after "
+            f"{output.drawing_steps} steps: {document.fingerprint or '-'}",
+            flush=True,
+        )
     # The list-card thumbnail comes from the PDF this parse holds (an Office
     # file's conversion, or the repaired bytes), inside this bounded child, so
     # ingest neither converts nor renders anything for it. Optional: it never
@@ -362,6 +379,15 @@ def _kill_session(sid: int) -> None:
             continue
 
 
+def _limit_address_space(limit: int) -> None:
+    """A soft limit, so a subprocess may lift it to the hard one."""
+    if resource is None:
+        return
+    _, hard = resource.getrlimit(resource.RLIMIT_AS)
+    soft = limit if hard == resource.RLIM_INFINITY else min(limit, hard)
+    resource.setrlimit(resource.RLIMIT_AS, (soft, hard))
+
+
 def _parse_worker_main(
     requests: Connection, responses: Connection, work_dir: str
 ) -> None:
@@ -372,6 +398,7 @@ def _parse_worker_main(
     except OSError:
         pass
     _set_oom_score_adj(PARSE_OOM_SCORE_ADJ)
+    _limit_address_space(PARSE_CHILD_MAX_BYTES)
     WORK_DIR = Path(work_dir)
 
     while True:
@@ -392,6 +419,11 @@ def _parse_worker_main(
             _write_worker_result(Path(result_path), result)
             _send(responses, "ok", None)
         except Exception as exc:  # noqa: BLE001 - returned to API supervisor
+            if out_of_memory(exc):
+                exc = ParseOOM(
+                    f"the parse needed more than {PARSE_CHILD_MAX_BYTES >> 30} GiB "
+                    f"of address space: {exc}"
+                )
             _send_error(responses, exc)
         finally:
             document = result = None
@@ -411,6 +443,7 @@ _CHILD_ERRORS: dict[str, type[Exception]] = {
         ParseTooManyPages,
         ParseTooManyScannedPages,
         SourceUnreadable,
+        ParseOOM,
     )
 }
 
@@ -830,6 +863,12 @@ class ParserRuntime:
         if isinstance(exc, JavaTimeout):
             self._expire(slot, work)
             return
+        # Past the child's own address-space limit: this document asked for
+        # the memory. The child answered, so it is replaced, not killed.
+        if isinstance(exc, ParseOOM):
+            slot.restart = True
+            _quarantine_and_fail(work, "parse_oom", exc)
+            return
         # The kernel kills the process with the highest oom_score, so a
         # document whose child, or Java inside it, died by SIGKILL while the
         # cgroup's oom_kill count rose is the one that was using the memory.
@@ -1044,6 +1083,8 @@ def _measurements(
         "_stages": {
             k: round(float(v), 3) for k, v in (result.get("_stages") or {}).items()
         },
+        # Steps the drawing clusters took (pictures.VECTOR_MAX_STEPS bounds them).
+        "_drawing_steps": max(0, int(result.get("_drawing_steps") or 0)),
     }
     values.update(
         {f"_parser_{key}": value for key, value in _process_tree_memory().items()}
