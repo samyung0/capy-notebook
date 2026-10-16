@@ -2449,46 +2449,6 @@ export const ListCardsResponse = zod.array(ListCardsResponseItem)
 
 
 /**
- * @summary Update flashcard content
- */
-export const UpdateFlashcardContentParams = zod.object({
-  "id": zod.string()
-})
-
-export const updateFlashcardContentBodyCardsItemBackMax = 2000;
-
-export const updateFlashcardContentBodyCardsItemFrontMax = 4000;
-
-export const updateFlashcardContentBodyCardsItemImageAssetIdMax = 128;
-
-
-
-
-export const UpdateFlashcardContentBody = zod.object({
-  "cards": zod.array(zod.object({
-  "back": zod.string().min(1).max(updateFlashcardContentBodyCardsItemBackMax),
-  "front": zod.string().min(1).max(updateFlashcardContentBodyCardsItemFrontMax),
-  "id": zod.string().optional(),
-  "image": zod.object({
-  "assetId": zod.string().min(1).max(updateFlashcardContentBodyCardsItemImageAssetIdMax)
-}).optional()
-})).min(1).nullable()
-})
-
-export const UpdateFlashcardContentResponseItem = zod.object({
-  "back": zod.string(),
-  "front": zod.string(),
-  "id": zod.string(),
-  "image": zod.object({
-  "assetId": zod.string()
-}).optional(),
-  "materialId": zod.string(),
-  "revision": zod.int()
-})
-export const UpdateFlashcardContentResponse = zod.array(UpdateFlashcardContentResponseItem)
-
-
-/**
  * @summary Update flashcard metadata
  */
 export const UpdateFlashcardSetParams = zod.object({
@@ -4728,86 +4688,6 @@ export const CreateAttemptResponse = zod.object({
   "takenAt": zod.iso.datetime({"offset":true}),
   "total": zod.number(),
   "workspaceId": zod.string().nullable(),
-  "workspaceName": zod.string()
-})
-
-
-/**
- * @summary Update quiz content
- */
-export const UpdateQuizContentParams = zod.object({
-  "id": zod.string()
-})
-
-export const UpdateQuizContentBody = zod.object({
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())).optional()
-})
-
-export const UpdateQuizContentResponse = zod.object({
-  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
-  "author": zod.object({
-  "avatarUrl": zod.string().optional(),
-  "name": zod.string()
-}).optional(),
-  "canEdit": zod.boolean(),
-  "canEditContent": zod.boolean(),
-  "chapters": zod.array(zod.string()),
-  "createdAt": zod.iso.datetime({"offset":true}),
-  "id": zod.string(),
-  "isOwner": zod.boolean(),
-  "name": zod.string(),
-  "parentMaterialId": zod.string().optional(),
-  "privacy": zod.enum(['private', 'public', 'link']),
-  "provenance": zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "questions": zod.record(zod.string(), zod.object({
-  "books": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "edition": zod.string().optional(),
-  "excerptIds": zod.array(zod.string()),
-  "id": zod.string(),
-  "license": zod.string().optional(),
-  "licenseUrl": zod.string().optional(),
-  "sourceUrl": zod.string().optional(),
-  "title": zod.string(),
-  "version": zod.int()
-})),
-  "license": zod.string().optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-})).optional(),
-  "web": zod.array(zod.object({
-  "authors": zod.array(zod.string()),
-  "license": zod.string(),
-  "licenseUrl": zod.string().optional(),
-  "publisher": zod.string().optional(),
-  "retrievedAt": zod.string(),
-  "title": zod.string(),
-  "url": zod.string()
-})).nullish()
-}).optional(),
-  "questions": zod.array(zod.record(zod.string(), zod.unknown())),
-  "revision": zod.int(),
-  "sharePath": zod.string().optional(),
-  "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
 

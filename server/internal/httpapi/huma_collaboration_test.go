@@ -10,6 +10,20 @@ import (
 	"github.com/samyung0/capy-notebook/server/internal/store"
 )
 
+// Live item rooms are the only writers of quiz and flashcard set content
+// (Epo 2026-10-16): the REST content writes are gone.
+func TestStudyToolContentHasNoRESTWrite(t *testing.T) {
+	spec, err := SpecYAML()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{"/api/quizzes/{id}/content:", "/api/flashcards/{id}/content:"} {
+		if strings.Contains(string(spec), path) {
+			t.Errorf("OpenAPI still registers %q", path)
+		}
+	}
+}
+
 func TestCollaborationContractsAreRegistered(t *testing.T) {
 	spec, err := SpecYAML()
 	if err != nil {

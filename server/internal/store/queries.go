@@ -45,11 +45,6 @@ type ChapterPatch struct {
 	Name  *string `json:"name"`
 	Order *int    `json:"order"`
 }
-type QuizContentPatch struct {
-	Questions    *json.RawMessage `json:"questions"`
-	TimeLimitMin *int             `json:"timeLimitMin"`
-	UpdatedBy    string           `json:"-"`
-}
 type QuizMetadataPatch struct {
 	Name      *string   `json:"name"`
 	Chapters  *[]string `json:"chapters"`
@@ -1926,38 +1921,6 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	return created, nil
 }
 
-func (s *Store) UpdateQuizContent(ctx context.Context, id string, p QuizContentPatch) (Quiz, error) {
-	mt, err := s.GetMaterial(ctx, id)
-	if err != nil {
-		return Quiz{}, err
-	}
-	if mt.Kind != "quiz" {
-		return Quiz{}, ErrNotFound
-	}
-	cur, err := s.quizFromMaterial(mt)
-	if err != nil {
-		return Quiz{}, err
-	}
-	questions, timeLimit := cur.Questions, cur.TimeLimitMin
-	if p.Questions != nil {
-		questions = *p.Questions
-	}
-	if p.TimeLimitMin != nil {
-		timeLimit = p.TimeLimitMin
-	}
-	content, err := materialdoc.ReplaceQuiz(mt.Content, questions, timeLimit)
-	if err != nil {
-		return Quiz{}, err
-	}
-	// The collaboration server diffs the questions into the live documents.
-	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{
-		Content: &content, UpdatedBy: p.UpdatedBy,
-	}); err != nil {
-		return Quiz{}, err
-	}
-	return s.GetQuiz(ctx, id)
-}
-
 func (s *Store) UpdateQuizMetadata(ctx context.Context, id string, p QuizMetadataPatch) (Quiz, error) {
 	mt, err := s.GetMaterial(ctx, id)
 	if err != nil {
@@ -2228,43 +2191,6 @@ func (s *Store) ListCards(ctx context.Context, flashcardSetID string) ([]Flashca
 		out = append(out, Flashcard{ID: c.ID, MaterialID: flashcardSetID, Revision: mt.Revision, Front: c.Front, Back: c.Back, Image: c.Image})
 	}
 	return out, nil
-}
-
-// UpdateFlashcardContent writes the whole set as the fewest changes to its live
-// document (the collaboration server diffs it in), with no revision check:
-// editors edit the set live, so there is no stale form to refuse (Epo,
-// 2026-10-10, D7).
-func (s *Store) UpdateFlashcardContent(ctx context.Context, actorID, id string, cards []materialdoc.Card) ([]Flashcard, error) {
-	mt, err := s.GetMaterial(ctx, id)
-	if err != nil {
-		return nil, err
-	}
-	if mt.Kind != "flashcards" {
-		return nil, ErrNotFound
-	}
-	current, err := materialdoc.ExtractFlashcards(mt.Content)
-	if err != nil {
-		return nil, err
-	}
-	known := make(map[string]bool, len(current))
-	for _, card := range current {
-		known[card.ID] = true
-	}
-	for i := range cards {
-		if cards[i].ID == "" {
-			cards[i].ID = uid("c")
-		} else if !known[cards[i].ID] {
-			return nil, ErrConflict
-		}
-	}
-	content, err := materialdoc.ReplaceFlashcards(mt.Content, cards)
-	if err != nil {
-		return nil, err
-	}
-	if _, err := s.UpdateMaterial(ctx, id, MaterialPatch{Content: &content, UpdatedBy: actorID}); err != nil {
-		return nil, err
-	}
-	return s.ListCards(ctx, id)
 }
 
 // syncFlashcardCardsTx keeps the card -> set lookup aligned with the

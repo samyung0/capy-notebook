@@ -377,8 +377,8 @@ The minute covers a shared note: the image node's asset id reaches the server
 a moment after the upload completes, and a collaborator's save in that window
 must not trash it; an image removed within the minute goes at a later save.
 The same save trashes an interrupted flow's leftovers: an upload or paste copy
-whose node never landed (the tab closed) and quiz or flashcard images uploaded
-by a Save whose content PATCH failed. Embedded quiz and flashcard rows follow
+whose node never landed (the tab closed), including quiz and flashcard
+images whose question or card never reached the live room. Embedded quiz and flashcard rows follow
 the same rule (trashed for a day, see
 [authorization-permissions-lifecycles.md](authorization-permissions-lifecycles.md)).
 Pending reservations are left to the upload expiry. Purging the material

@@ -9,8 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/samyung0/capy-notebook/server/internal/materialdoc"
 )
 
 // pushOverQuota puts a user into over_quota_grace the way production does: a
@@ -210,11 +208,6 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			set, err := s.CreateFlashcardSetWithCards(ctx, owner, "Cards", "blue", ws.ID, [][2]string{{"a", "b"}}, "", nil, nil)
-			if err != nil {
-				t.Fatal(err)
-			}
-
 			reach(owner, ws.ID)
 
 			for _, who := range []string{owner, member} {
@@ -225,9 +218,7 @@ func TestViewOnlyAtTheStorageLimit(t *testing.T) {
 						t.Fatalf("%s by %s = %v, want the owner's storage limit", what, who, err)
 					}
 				}
-				_, err := s.UpdateFlashcardContent(ctx, who, set.ID, []materialdoc.Card{{Front: "c", Back: "d"}})
-				want("card edit", err)
-				_, err = s.CreateCommentDiscussion(ctx, note.ID, who, nil, nil, nil, 1, "", rich)
+				_, err := s.CreateCommentDiscussion(ctx, note.ID, who, nil, nil, nil, 1, "", rich)
 				want("comment", err)
 				_, err = s.SavePDFAnnotation(ctx, who, pdf.ID, "", mark)
 				want("PDF mark", err)
@@ -423,8 +414,6 @@ func TestFrozenEdges(t *testing.T) {
 	if err := s.RateItem(ctx, frozenUser, Rating{MaterialID: set.ID, ItemID: cards[0].ID, Rating: &good}, time.Now()); err != nil {
 		t.Fatalf("frozen study progress: %v", err)
 	}
-	_, err = s.UpdateFlashcardContent(ctx, frozenUser, set.ID, nil)
-	wantOverQuotaLock(t, "removing every flashcard", err)
 	if _, err := s.TrashMaterial(ctx, frozenUser, set.ID, "", AgentOperation{}); err != nil {
 		t.Fatalf("trashing the whole set: %v", err)
 	}

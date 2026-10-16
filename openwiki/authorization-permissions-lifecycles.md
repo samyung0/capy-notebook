@@ -561,13 +561,13 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   account lifecycle and storage-owner gates as the unified material API.
   Standalone quizzes and flashcards remain owner-controlled.
 - Mutation contracts keep authorities separate. Material title/filing/scope use
-  `/metadata`. Quiz questions/time limit use `/content`, quiz name/scope use
-  `/metadata`, and standalone visibility uses `/sharing`. Flashcard-set
-  metadata uses `/metadata`, the whole card list (text and images) uses
-  `/flashcards/{id}/content`, and standalone sharing uses `/sharing`;
-  ratings go to `POST /api/review/ratings` with read access only. Content/metadata paths do not accept
-  privacy, and sharing rejects workspace-contained materials before writing
-  anything.
+  `/metadata`. Quiz name/scope use `/metadata` and standalone visibility uses
+  `/sharing`; flashcard-set metadata uses `/metadata` and standalone sharing
+  uses `/sharing`. Quiz questions and a set's cards have no REST write: live
+  item rooms are their only writers (Epo 2026-10-16), under the collaboration
+  server's writer checks. Ratings go to `POST /api/review/ratings` with read
+  access only. Metadata paths do not accept privacy, and sharing rejects
+  workspace-contained materials before writing anything.
 - Signed-in viewers can read a shared quiz or flashcards, but cannot change
   its questions or cards.
 - An embedded quiz or flashcard set (`parent_material_id` set) has no lifecycle

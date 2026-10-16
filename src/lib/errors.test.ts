@@ -53,7 +53,7 @@ describe('frontend error normalization', () => {
         )
       );
     vi.stubGlobal('fetch', reply('revision_conflict', 409));
-    const stale = await api.patch('/quizzes/q/content', {}).catch((e) => e);
+    const stale = await api.patch('/materials/m/metadata', {}).catch((e) => e);
     vi.stubGlobal('fetch', reply('workspace_limit_exceeded', 403));
     const workspaces = await api.post('/workspaces', {}).catch((e) => e);
     vi.stubGlobal('fetch', reply('account_deletion_busy', 409));

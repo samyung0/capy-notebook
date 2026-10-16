@@ -1281,14 +1281,6 @@ func IncomingMermaidSource(content string) string {
 	return fenced(content, "mermaid")
 }
 
-func ReplaceQuiz(raw string, questions json.RawMessage, timeLimit *int) (string, error) {
-	replacement, err := QuizDocument(questions, timeLimit)
-	if err != nil {
-		return "", err
-	}
-	return replaceCustom(raw, replacement, "quiz", func(map[string]any, map[string]any) {})
-}
-
 func ReplaceFlashcards(raw string, cards []Card) (string, error) {
 	replacement, err := FlashcardsDocument(cards)
 	if err != nil {

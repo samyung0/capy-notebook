@@ -906,10 +906,6 @@ const contentWrites: [RegExp, (id: string) => string | null][] = [
     /^(?:POST|PATCH|DELETE) \/api\/files\/([^/]+)\/annotations(?:\/|$)/,
     (id) => files.find((row) => row.id === id)?.workspaceId || null,
   ],
-  [
-    /^PATCH \/api\/(?:quizzes|flashcards)\/([^/]+)\/content$/,
-    materialWorkspace,
-  ],
   [/^POST \/api\/flashcards\/([^/]+)\/cards$/, materialWorkspace],
   [
     /^POST \/api\/materials\/([^/]+)\/editor-assets\/uploads$/,

@@ -2088,35 +2088,6 @@ components:
         - front
         - back
       type: object
-    FlashcardContentInput:
-      additionalProperties: false
-      properties:
-        back:
-          maxLength: 2000
-          minLength: 1
-          type: string
-        front:
-          maxLength: 4000
-          minLength: 1
-          type: string
-        id:
-          type: string
-        image:
-          $ref: "#/components/schemas/FlashcardImage"
-      required:
-        - front
-        - back
-      type: object
-    FlashcardImage:
-      additionalProperties: false
-      properties:
-        assetId:
-          maxLength: 128
-          minLength: 1
-          type: string
-      required:
-        - assetId
-      type: object
     FlashcardSet:
       additionalProperties: false
       properties:
@@ -6197,24 +6168,6 @@ components:
           minLength: 1
           type: string
       type: object
-    UpdateFlashcardContentReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateFlashcardContentReq.json
-          format: uri
-          readOnly: true
-          type: string
-        cards:
-          items:
-            $ref: "#/components/schemas/FlashcardContentInput"
-          minItems: 1
-          nullable: true
-          type: array
-      required:
-        - cards
-      type: object
     UpdateFlashcardSetReq:
       additionalProperties: false
       properties:
@@ -6292,21 +6245,6 @@ components:
           type: string
       required:
         - name
-      type: object
-    UpdateQuizContentReq:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/UpdateQuizContentReq.json
-          format: uri
-          readOnly: true
-          type: string
-        questions:
-          items:
-            additionalProperties: {}
-            type: object
-          type: array
       type: object
     UpdateQuizMetadataReq:
       additionalProperties: false
@@ -8606,39 +8544,6 @@ paths:
       summary: List cards
       tags:
         - Flashcards
-  /api/flashcards/{id}/content:
-    patch:
-      operationId: updateFlashcardContent
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateFlashcardContentReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                items:
-                  $ref: "#/components/schemas/Flashcard"
-                type: array
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update flashcard content
-      tags:
-        - Flashcards
   /api/flashcards/{id}/metadata:
     patch:
       operationId: updateFlashcardSet
@@ -10099,37 +10004,6 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Grade and record a quiz attempt
-      tags:
-        - Quizzes
-  /api/quizzes/{id}/content:
-    patch:
-      operationId: updateQuizContent
-      parameters:
-        - in: path
-          name: id
-          required: true
-          schema:
-            type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/UpdateQuizContentReq"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/Quiz"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ErrorModel"
-          description: Error
-      summary: Update quiz content
       tags:
         - Quizzes
   /api/quizzes/{id}/edit:

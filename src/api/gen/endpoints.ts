@@ -177,12 +177,10 @@ import type {
   UpdateCommentReq,
   UpdateEventReq,
   UpdateFileReq,
-  UpdateFlashcardContentReq,
   UpdateFlashcardSetReq,
   UpdateLabelReq,
   UpdateMaterialReq,
   UpdateMeReq,
-  UpdateQuizContentReq,
   UpdateQuizMetadataReq,
   UpdateStandaloneSharingReq,
   UpdateTaskReq,
@@ -3407,57 +3405,6 @@ export const listCards = async (id: string, options?: RequestInit): Promise<list
 
 
 
-export type updateFlashcardContentResponse200 = {
-  data: Flashcard[]
-  status: 200
-}
-
-export type updateFlashcardContentResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateFlashcardContentResponseSuccess = (updateFlashcardContentResponse200) & {
-  headers: Headers;
-};
-export type updateFlashcardContentResponseError = (updateFlashcardContentResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateFlashcardContentResponse = (updateFlashcardContentResponseSuccess | updateFlashcardContentResponseError)
-
-export const getUpdateFlashcardContentUrl = (id: string,) => {
-
-
-
-
-  return `/api/flashcards/${id}/content`
-}
-
-/**
- * @summary Update flashcard content
- */
-export const updateFlashcardContent = async (id: string,
-    updateFlashcardContentReq: NonReadonly<UpdateFlashcardContentReq>, options?: RequestInit): Promise<updateFlashcardContentResponse> => {
-
-  const res = await fetch(getUpdateFlashcardContentUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateFlashcardContentReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateFlashcardContentResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateFlashcardContentResponse
-}
-
-
-
 export type updateFlashcardSetResponse200 = {
   data: FlashcardSet
   status: 200
@@ -6270,57 +6217,6 @@ export const createAttempt = async (id: string,
 
   const data: createAttemptResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as createAttemptResponse
-}
-
-
-
-export type updateQuizContentResponse200 = {
-  data: Quiz
-  status: 200
-}
-
-export type updateQuizContentResponseDefault = {
-  data: ErrorModel
-  status: Exclude<HTTPStatusCodes, 200>
-}
-
-export type updateQuizContentResponseSuccess = (updateQuizContentResponse200) & {
-  headers: Headers;
-};
-export type updateQuizContentResponseError = (updateQuizContentResponseDefault) & {
-  headers: Headers;
-};
-
-export type updateQuizContentResponse = (updateQuizContentResponseSuccess | updateQuizContentResponseError)
-
-export const getUpdateQuizContentUrl = (id: string,) => {
-
-
-
-
-  return `/api/quizzes/${id}/content`
-}
-
-/**
- * @summary Update quiz content
- */
-export const updateQuizContent = async (id: string,
-    updateQuizContentReq: NonReadonly<UpdateQuizContentReq>, options?: RequestInit): Promise<updateQuizContentResponse> => {
-
-  const res = await fetch(getUpdateQuizContentUrl(id),
-  {
-    ...options,
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(updateQuizContentReq)
-  }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-
-  const data: updateQuizContentResponse['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateQuizContentResponse
 }
 
 
