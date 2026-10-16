@@ -668,7 +668,12 @@ and [material mode end-to-end coverage](../e2e/sharing/material-modes.spec.ts#L2
   every clone spent its attempts). The clone then runs again, 3 attempts in
   all, and once they are spent the user gets 409 `clone_source_changed`
   ("The original changed while it was being copied. Try again.") (`retryClone`
-  in `server/internal/store/share.go`).
+  in `server/internal/store/share.go`). Clones of different sources that share
+  a blob (a file and an earlier copy of it, or workspaces sharing an editor
+  asset) hold different fences, so with different payers they can still meet
+  on that blob's reference row and fall to the same backstop.
+- A clone reads the new row only after its fence's connection is back in the
+  pool, so clones never hold one connection while waiting for another.
 - Referenced ready media of a cloned material is rehomed under fresh asset IDs
   owned by the copy (in its destination workspace, or standalone); it never
   retains authorization-bearing asset IDs from the source workspace.
