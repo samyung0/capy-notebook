@@ -1380,7 +1380,7 @@ those services start.
    Configure its platform model capacities through Ops (§1.4) before ingest.
    `CAPY_PARSE_COORDINATOR_CONCURRENCY` is a production-only input listed in
    `.env.prod.example` and `ingest-host.env.example`; local/UAT Compose fixes it at one.
-   Production limits are eight coordinator processes, five parse children
+   Production limits are eight coordinator processes, seven parse children
    (`CAPY_PARSE_WORKERS`), parser depth 8 (`CAPY_PARSE_QUEUE_DEPTH`, parsing
    plus waiting) and 500 text-less pages per document
    (`CAPY_PARSE_OCR_PAGE_CAP`, a name older than the VLM read; more fails as

@@ -71,8 +71,10 @@ services:
       RELEASE_SHA: ${RELEASE_SHA:?set the exact 40-character release SHA}
       PARSER_BIND_ADDRESS: ${PARSER_BIND_ADDRESS:?set the WireGuard bind address}
       PARSER_TOKEN: ${PARSER_TOKEN:?set PARSER_TOKEN}
-      # Parse children, one document each.
-      CAPY_PARSE_WORKERS: ${CAPY_PARSE_WORKERS:-5}
+      # Parse children, one document each. Seven is the 8-CPU host's CPU
+      # ceiling (a 1,400-page book uses about one core; seven peaked at
+      # 10.8 of 14 GiB): bench/parsers/reports/2026-10-16-parser-v16-recalibration.md.
+      CAPY_PARSE_WORKERS: ${CAPY_PARSE_WORKERS:-7}
       # Depth counts documents in a parse child and waiting.
       # One more is 429 and the coordinator re-pends without spending an
       # attempt.

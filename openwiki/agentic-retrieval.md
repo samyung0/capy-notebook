@@ -26,7 +26,7 @@ The Python services share one Postgres schema owned by Go migrations
 | Parse coordinator | `python -m pipeline.ingest.parse_worker` | Supervises eight isolated one-job coordinator processes. They validate and hash document sources, reuse an exact donor when possible, wait for the parser, then atomically enqueue an immutable artifact handoff |
 | Ingest worker | `python -m pipeline.ingest.worker` | Claims only post-parse and direct-route jobs, then reads a parse bundle's text-less page renders with the VLM, chunks (with heading retention and extraction confidence), captions standalone images, embeds, and writes the file descriptor. Each replica runs one job at a time |
 | Retrieval service | `uvicorn pipeline.retrieve.service:app` | `/chat/stream`, `/generate`, `/plate-ai/*` over the same index |
-| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs (`parser/odl/`); five parse children over one FIFO, depth 8; renders text-less pages as JPEGs for the ingest worker's VLM; normalizes Office through LibreOffice |
+| Parser service | `uvicorn parser/app.py` | OpenDataLoader 2.5.7 (Java) with the refined native repairs (`parser/odl/`); seven parse children over one FIFO, depth 8; renders text-less pages as JPEGs for the ingest worker's VLM; normalizes Office through LibreOffice |
 | Host sampler | `python -m pipeline.ingest.host_sampler` | Persists compact whole-host and parser admission/resource samples without document identity |
 
 The Go gateway is the public face: it authenticates the user, proxies chat and
@@ -820,7 +820,7 @@ their shape; there are no slices.
 
 ### Parse capacity
 
-`CAPY_PARSE_WORKERS` (5) persistent parse children each take one document at
+`CAPY_PARSE_WORKERS` (7) persistent parse children each take one document at
 a time from one FIFO and run all of it: LibreOffice for an Office source, the
 page count, `parse_pdf`, the page-1 thumbnail and the text-less page renders.
 `CAPY_PARSE_QUEUE_DEPTH` (8) counts documents in a parse child and waiting, and
@@ -828,17 +828,22 @@ must be at least the worker count (checked at startup); one more concurrent requ
 `429` and the coordinator returns its job to `pending` as a capacity wait
 without spending an attempt (`YIELD_BACKOFF_S`, 2 s). There is no Redis
 admission gate and no page slicing: a 610-page textbook is one Java run plus
-the repairs, about 14 s of which is table recovery. The eight coordinator
+the repairs, about 7 s of which is table recovery. The eight coordinator
 children are the outer cap.
 
 | Route | Host | Parser admission | Deadlines | JVM heap |
 | --- | --- | --- | --- | --- |
-| fast | one 8-core / 16 GiB VM | depth 8, 5 parse children, at most 500 text-less pages per document | 900 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
+| fast | one 8-core / 16 GiB VM | depth 8, 7 parse children, at most 500 text-less pages per document | 900 s per document | `CAPY_PARSER_JVM_MAX_HEAP` (1g) |
 
-The capacity run on the ingest host (14 GiB, 8 CPUs, 1g heap) found CPU and
-the deadline, not memory, to be the limit: each 1,216-page book adds about
-1.45 GiB and nothing was OOM-killed up to eight slots, and six native slots
-parsed 13.3 pages/s against 3.3 for one.
+The v16 recalibration on the ingest host
+([`2026-10-16-parser-v16-recalibration.md`](../bench/parsers/reports/2026-10-16-parser-v16-recalibration.md),
+14 GiB, 8 CPUs, 1g heap) set seven children: a 1,400-page book uses about one
+core, so seven saturate the CPUs (eight would not help), and each running book
+adds about 1.2 GiB, mostly its JVM. Seven 1,400-page books at once took
+294–307 s and peaked at 10.8 of 14 GiB with no swap; an eighth waited one
+round (293 s). Office files are light: three 705-page workbooks, two decks and
+two handbooks beside a book peaked at 4.3 GiB, LibreOffice at 0.88 GiB of its
+2 GiB address-space cap. The host is shared with the UAT stack, which is light.
 
 A new document upload lands `files.status=pending` with a pending `parse` row.
 Eight coordinator children claim only parse rows and flip the file to
@@ -897,7 +902,7 @@ deliberate automatic way to retry the file after parser code changes.
 
 The whole-document parser request has a 1,920-second bound (`PARSER_TIMEOUT`:
 one wait for a parse child and the parse itself, 900 s each with eight
-admitted over five children, plus a 120 s margin) and the parse job a
+admitted over seven children, plus a 120 s margin) and the parse job a
 2,100-second bound (`CAPY_PARSE_JOB_TIMEOUT`); the independent ingest
 continuation, which includes the VLM page reads, has a 1,200-second bound.
 Until the OCR stage left the parser the bounds were 4,420 s and 4,600 s, with
