@@ -108,12 +108,18 @@ journey fails once the other opens are measured.
   and `rich-content/lecture.pptx` (20 slides, 25 pictures), the Office bench's
   files, so the numbers compare with its local medians
   ([editor-perf](../../../openwiki/editor-perf.md)).
-- **Cold**: a new browser context signed in with a Clerk ticket, its HTTP
-  cache cleared after the sign-in page (CDP `Network.clearBrowserCache`;
-  cookies and storage stay), then a new tab. **Warm**: the cold tab closed,
-  a new tab in the same context (its HTTP cache and IndexedDB as the cold open
-  left them; the server's room may still be loaded).
-- Each open goes to the file in Edit and waits up to 240 s.
+- **Cold**: a new browser context signed in with a Clerk ticket, the
+  journeys' Clerk testing-token route then removed (any Playwright route turns
+  the context's HTTP cache off: the first run, uat-quality 38934968702, cached
+  nothing even warm; the session keeps working without it, as in the
+  authorization suite) and its HTTP cache cleared (CDP
+  `Network.clearBrowserCache`; cookies and storage stay), then a new tab.
+  **Warm**: the cold tab closed, a new tab in the same context (its HTTP cache
+  and IndexedDB as the cold open left them; the server's room may still be
+  loaded).
+- Each open goes to the file in Edit and waits up to 240 s for the Edit menu,
+  then up to 30 s for the first page painted (DOCX paints after its fonts,
+  which can follow the Edit menu).
 
 Dispatch **Deterministic UAT quality** with `measure_office_load` on: the job
 runs only the `measure` lane (run id `<run id>-<attempt>-measure`) with its
@@ -153,8 +159,6 @@ worker's timeline); sizes and cache state of cross-origin responses without
 `Timing-Allow-Origin` (API, B2, Clerk: start and end only); and
 `document.fonts.ready`, which resolves at once because the runtime loads
 each face from bytes before adding it (the last face added stands in).
-Clerk's `/v1` calls pass through the journeys' testing-token route, a Node
-round trip a real browser does not make.
 
 ### Failed renewal: Stripe's event sequence
 

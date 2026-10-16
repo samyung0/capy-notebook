@@ -36,6 +36,8 @@ const FILES: [OfficeFormat, 'small' | 'large', string][] = [
 
 /** Per open, from navigation to the Edit menu. */
 const OPEN_TIMEOUT = 240_000;
+/** Then, for the first page painted. */
+const PAINT_GRACE = 30_000;
 
 /** Milestones in dependency order: a failed open is stuck at the first one missing. */
 const STAGES = [
@@ -375,11 +377,18 @@ function summarize(
   const probe = app?.probe;
   const runtime = frame?.probe;
   const editable = at(app, probe?.editable);
+  const painted = at(app, probe?.runtime.ready);
+  // The open is done once editable and painted (DOCX paints after its fonts,
+  // which can follow the Edit menu); later fetches are not the open's.
+  const done =
+    editable === null || painted === null
+      ? editable
+      : Math.max(editable, painted);
   const latest = (times: (number | null)[]) =>
     times.reduce<number | null>(
       (last, time) =>
         time !== null &&
-        (editable === null || time <= editable) &&
+        (done === null || time <= done) &&
         (last === null || time > last)
           ? time
           : last,
@@ -414,7 +423,7 @@ function summarize(
     documentLoaded: at(app, app?.navigation?.load),
     domContentLoaded: at(app, app?.navigation?.domContentLoaded),
     editable,
-    firstPagePainted: at(app, probe?.runtime.ready),
+    firstPagePainted: painted,
     fontsAdded: latest(fontsAdded),
     fontsFetched: latest(fonts.map((entry) => entry.end)),
     htmlReceived: at(app, app?.navigation?.responseEnd),
@@ -511,6 +520,17 @@ async function measure(
           timeout: OPEN_TIMEOUT,
         })
     );
+    // DOCX posts `ready` (first page painted) after its fonts, which can come
+    // after the Edit menu; without it by then the milestone stays unavailable.
+    await actor.page
+      .waitForFunction(
+        () =>
+          (globalThis as typeof globalThis & { __officeLoad?: Probe })
+            .__officeLoad?.runtime.ready !== undefined,
+        undefined,
+        { timeout: PAINT_GRACE }
+      )
+      .catch(() => {});
   } catch (caught) {
     error = String(caught instanceof Error ? caught.message : caught)
       .split('\n')[0]
@@ -532,6 +552,8 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
     '# Office open times',
     '',
     `Run \`${run.id}\` on ${run.env.expectedRevision}. Milliseconds after the tab's navigation start; – is not reached or not observable. Cold: a new browser context, signed in, its HTTP cache cleared. Warm: a new tab in that context after the cold tab closed. Detail per open in \`office-load-*.json\`, traces in \`office-load-*.zip\` (\`npx playwright show-trace\`).`,
+    '',
+    'HTTP cache live: the opens run without the Clerk testing-token route, which turned the cache off in the first run (uat-quality 38934968702: nothing cached, even warm). The first page painted is waited for up to 30 s after the Edit menu (DOCX paints after its fonts).',
     '',
     '| File | Open | SPA ready | Frame initialized | Grant | Source bytes | Synced | WASM fetched | Fonts fetched | First page | Replica | Editable | Stuck at |',
     '| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |',
@@ -555,7 +577,7 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
     '',
     '## Transfer and cache',
     '',
-    'Entries / KB over the network / entries from the HTTP cache, read once the editor was ready. Cross-origin responses without `Timing-Allow-Origin` report no size (`opaque` in the JSON).',
+    'Entries / KB over the network / entries from the HTTP cache, read once the editor was ready and its first page painted. Cross-origin responses without `Timing-Allow-Origin` report no size (`opaque` in the JSON).',
     '',
     '| File | Open | Bundles (JS, CSS) | WASM | Fonts |',
     '| --- | --- | --- | --- | --- |',
@@ -602,6 +624,11 @@ test('Office open times: DOCX, XLSX and PPTX, small and large, cold and warm', a
   for (const file of files) {
     const actor = await run.signInAgain(run.owner);
     const { context } = actor;
+    // Any Playwright route turns the context's HTTP cache off, so the opens
+    // run without the Clerk testing-token route. The token only gets the
+    // sign-in past bot protection; the session it made keeps working without
+    // it, as in the authorization suite, which never routes Clerk.
+    await context.unrouteAll({ behavior: 'wait' });
     // Cold: nothing the sign-in page loaded stays in the HTTP cache; cookies
     // and storage (the session) stay.
     const cdp = await context.newCDPSession(actor.page);
