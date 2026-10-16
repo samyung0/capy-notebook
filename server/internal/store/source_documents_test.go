@@ -283,6 +283,8 @@ func TestRetryFileProcessingRoutesPartialFiles(t *testing.T) {
 		{name: "pages missing", summarized: true, ever: true, jobType: "parse", parseFee: "false", status: "pending", indexed: true},
 		{name: "pages missing, never parsed", summarized: true, jobType: "parse", parseFee: "true", status: "pending", indexed: true},
 		{name: "parts complete", identity: parsed, summarized: true, ever: true, status: "ready", indexed: true},
+		// A processed store-only upload keeps parse_mode 'none' but was parsed fast.
+		{name: "processed store-only", identity: parsed, ever: true, setup: `UPDATE files SET parse_mode='none' WHERE id=$1`, jobType: "ingest", partsOnly: "true", status: "pending", indexed: true},
 		// The alias content is not the file's current revision.
 		{name: "stale content", identity: parsed, ever: true, setup: `UPDATE files SET content_hash='other' WHERE id=$1`, jobType: "parse", status: "pending"},
 		// Content built on another route than the file's parse_mode.

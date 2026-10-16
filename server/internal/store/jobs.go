@@ -300,6 +300,11 @@ func (s *Store) RetryFileProcessing(ctx context.Context, actorID, fileID, parseM
 		"parser": parser, "parseMode": parseMode, "processingPlan": plan,
 		"sourceETag": etag, "sourceRevision": revision,
 	}
+	// A processed store-only upload keeps parse_mode 'none' but was parsed
+	// fast (see reprocessTx, queueCloneIngestTx).
+	if mode == sourceupload.ParseModeNone && ever {
+		mode = sourceupload.ParseModeFast
+	}
 	own, partial := partialRetryPlan(name, kind, mode, identity)
 	partial = partial && indexed && current
 	if partial {

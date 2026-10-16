@@ -1699,7 +1699,8 @@ the part lives (no migration, Q10): a pending descriptor is a missing
   missing parts. Partial means `failed` with `indexed` true, its alias on ready
   content whose `content_hash` equals `files.content_hash` (every revision
   bump drops or moves the alias), and that content's `pipeline_identity`
-  naming the route of the file's own `parse_mode` (or NULL). With a NULL
+  naming the route of the file's own `parse_mode` (or NULL; a processed
+  store-only upload's `none` counts as `fast`, as in `reprocessTx`). With a NULL
   identity (unread pages) it queues a parse job with `parseFee` set to
   `!ever_parsed_successfully` (Q6; `_parse_fee` honours it for every job
   type); with an identity and no summary row, a `partsOnly` ingest job; with
