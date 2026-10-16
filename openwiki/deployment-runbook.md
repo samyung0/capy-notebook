@@ -153,6 +153,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    keyed by path, query string and Worker version (each deploy starts cold),
    never by cookies or headers, so a render must not read the request; hits
    carry `CF-Cache-Status: HIT` and `Age`. Zone cache rules do not apply to it.
+   Its two tiers are built in (a lower tier in the visitor's data center, an
+   upper tier every lower tier asks on a miss), so the zone's Tiered Cache
+   topology does not govern it; the host is not part of the key, so both UAT
+   app hosts share entries; a hit is served before the Worker's placement
+   region applies. With Workers Cache on, every request to the Worker is
+   billed at the Workers request rate, its static files included, while hits
+   and static files use no CPU time (Cloudflare's Workers Cache pricing).
    A query string makes its own entry, so each new one renders once. Failure
    pages stay `no-store`, and link summaries are `noindex, nofollow`. The
    `/p/*` routes serve signed-out shared quizzes', flashcards' and notes'
@@ -899,6 +906,21 @@ with a console error.
 `ops.capynotebook.com` entirely. A cached SSE or WebSocket response breaks
 streaming. Cached operator responses can disclose one operator's data to
 another.
+
+**Worker caching checks** (read-only; nothing here is set by Wrangler):
+
+- Workers Routes for the zone list each app host's `/assets/*` on the
+  assets Worker (`capy-notebook-assets-uat` / `-production`), the host's
+  `/*` on the app Worker and `/api/*` on no script (§1.0.1).
+- No Cache Rule, Page Rule or Compression Rule matches the app hosts'
+  `/assets/*` or the Office host, and no Transform Rule adds
+  `Cache-Control: no-transform` there: the edge decodes the Office Worker's
+  brotli files for a client without brotli only while the response allows
+  transforms.
+- Caching → Tiered Cache governs only zone-cached, proxied origins (the
+  bank assets host, for one); Smart Tiered Cache is available on every plan
+  and is the setting to keep on. Workers Cache and Workers static assets
+  tier on their own, and Regional Tiered Cache is an Enterprise add-on.
 
 For `ops.capynotebook.com`, add a response-header rule with
 `Cache-Control: private, no-store` and
