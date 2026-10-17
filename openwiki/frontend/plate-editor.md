@@ -647,7 +647,7 @@ schema, so a refused block fails the agent's write); the agent's note format
 [question-bank](../question-bank.md#editing-and-assets)), drawn as curves or, with
 `kind: "scatter"`, as dots, comes from the agent, a pasted fence or the Plot
 command (slash menu and all-blocks menu, beside Chart and Graph), which opens
-the figure dialog on a line of one point at the origin and inserts the block
+the figure dialog on a line through (0, 0) and (1, 1) and inserts the block
 on Save, as Chart and Graph do (Epo 2026-10-17); its hover toolbar has Edit,
 Copy and Delete like a chart's, Edit opening the plot editor in the figure
 dialog (`VisualBlockDialog`), and exports draw it like a chart with its points

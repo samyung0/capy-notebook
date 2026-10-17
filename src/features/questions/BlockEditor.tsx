@@ -665,7 +665,21 @@ export function PlotEditor({
                 onClick={() =>
                   onChange({
                     ...block,
-                    series: [...block.series, { name: '', points: [[0, 0]] }],
+                    series: [
+                      ...block.series,
+                      // A line starts with the two points it needs, a
+                      // scatter with one (Epo 2026-10-17).
+                      {
+                        name: '',
+                        points:
+                          block.kind === 'scatter'
+                            ? [[0, 0]]
+                            : [
+                                [0, 0],
+                                [1, 1],
+                              ],
+                      },
+                    ],
                   })
                 }
                 size="sm"

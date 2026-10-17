@@ -48,11 +48,19 @@ function newVisualBlock(type: NoteVisualBlock['type']): NoteVisualBlock {
         title: '',
         type,
       };
-    // A line from one point at the origin (Epo 2026-10-17).
+    // A line through (0, 0) and (1, 1), which saves as it opens (Epo 2026-10-17).
     case 'plot':
       return {
         kind: 'line',
-        series: [{ name: '', points: [[0, 0]] }],
+        series: [
+          {
+            name: '',
+            points: [
+              [0, 0],
+              [1, 1],
+            ],
+          },
+        ],
         title: '',
         type,
         xTitle: '',

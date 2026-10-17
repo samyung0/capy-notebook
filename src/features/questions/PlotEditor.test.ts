@@ -117,9 +117,21 @@ it('fills new rows from the row before them, so Save stays on', () => {
   expect(added.series[0].points.at(-1)).toEqual([2, -80]);
   expect(added.lines?.at(-1)).toEqual({ axis: 'y', value: -55 });
   expect(added.marks?.at(-1)).toEqual({ label: '', x: 1, y: 30 });
-  expect(click(added, m.question_ui_add_series()).series.at(-1)).toEqual({
+  // A new line series has the two points a line needs, a scatter's one.
+  const line = click(added, m.question_ui_add_series());
+  expect(line.series.at(-1)).toEqual({
     name: '',
-    points: [[0, 0]],
+    points: [
+      [0, 0],
+      [1, 1],
+    ],
   });
+  const scatter = click(
+    { ...added, kind: 'scatter' },
+    m.question_ui_add_series()
+  );
+  expect(scatter.series.at(-1)).toEqual({ name: '', points: [[0, 0]] });
+  expect(blockIssues(line)).toEqual([]);
+  expect(blockIssues(scatter)).toEqual([]);
   expect(blockIssues(added)).toEqual([]);
 });
