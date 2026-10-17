@@ -8,7 +8,9 @@ inferred from the parser output alone.
 from __future__ import annotations
 
 import copy
+import ctypes
 import itertools
+import math
 import re
 from collections import Counter
 from pathlib import Path
@@ -38,8 +40,38 @@ def rect_for(block: dict, page: pymupdf.Page) -> pymupdf.Rect:
     )
 
 
+# The largest single-precision float; MuPDF's bindings refuse a finite
+# coordinate past it.
+_FLT_MAX = 3.4028234663852886e38
+
+
+def c_float(value: float, error: type[Exception]) -> float:
+    """``value`` as MuPDF holds it, a C float; a finite value past the float
+    range raises ``error``, as the binding does."""
+    if abs(value) > _FLT_MAX and math.isfinite(value):
+        raise error(f"{value} is out of range for a C float")
+    return ctypes.c_float(value).value
+
+
+def c_center(box) -> tuple[float, float] | None:
+    """The box's centre as C floats, as ``center_inside`` tests it; None when
+    a coordinate is past the float range (``center_inside`` raises there)."""
+    x, y = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    if (abs(x) > _FLT_MAX and math.isfinite(x)) or (
+        abs(y) > _FLT_MAX and math.isfinite(y)
+    ):
+        return None
+    return ctypes.c_float(x).value, ctypes.c_float(y).value
+
+
 def center_inside(box, area: pymupdf.Rect) -> bool:
-    return area.contains(pymupdf.Point((box[0] + box[2]) / 2, (box[1] + box[3]) / 2))
+    """``area.contains(Point(centre of box))``: MuPDF's point-in-rect test on
+    single-precision floats, without a binding call per glyph (the column
+    repair tests millions)."""
+    x = c_float((box[0] + box[2]) / 2, TypeError)
+    y = c_float((box[1] + box[3]) / 2, TypeError)
+    x0, y0, x1, y1 = (c_float(v, OverflowError) for v in area)
+    return x0 <= x < x1 and y0 <= y < y1
 
 
 def disjoint(box, area: pymupdf.Rect) -> bool:
