@@ -1734,7 +1734,7 @@ East Asian face loaded for Latin text is left out), one face per family,
 weight and style (the first loaded, the rule the frame's registration always
 had: two FontFaces with the same descriptors paint with the later one), and
 the frame registers those from the bytes, never fetching a face a second
-time. The runtime's own
+time and adding each family, weight and style once per frame. The runtime's own
 interface names only Fustat and generic families
 (`office-runtime.css`), so a document's family never repaints it. PPTX loads
 the Liberation Sans faces as `Arial` and Caladea as `Cambria`. A PPTX viewer

@@ -92,19 +92,32 @@ export function usedOfficeFaces(displayList: unknown): OfficeFace[] {
   return paintedFaces(used.values(), displayList);
 }
 
+// The faces registered in this window, by family, weight and style.
+const registered = new Set<string>();
+
 /**
  * Registers faces from their bytes as FontFaces under their Office family
- * names in this window. The runtime's own interface names only generic
+ * names in this window, each family, weight and style once (the first wins,
+ * as `registerBundledFontFace` keys them; a viewer opening again in the same
+ * frame adds nothing). The runtime's own interface names only generic
  * families (office-runtime.css), so no document family can repaint it.
  */
 export function registerOfficeFaces(faces: readonly OfficeFace[]) {
   return Promise.all(
     faces.map(async ({ bytes, face, family }) => {
+      const key = `${family}|${face.weight}|${face.style}`;
+      if (registered.has(key)) return;
+      registered.add(key);
       const fontFace = new FontFace(family, bytes, {
         style: face.style,
         weight: String(face.weight),
       });
-      await fontFace.load();
+      try {
+        await fontFace.load();
+      } catch (error) {
+        registered.delete(key);
+        throw error;
+      }
       document.fonts.add(fontFace);
     })
   );
