@@ -61,8 +61,8 @@ impl Seed {
 }
 
 /// Whom a base, seed or baseline is read for: the disk store's rules.
-#[derive(Clone, Copy, Debug)]
-pub(crate) enum Reader {
+#[derive(Clone, Copy)]
+pub(crate) enum Reader<'a> {
     /// A room load (its generation): it takes the files, a miss is written
     /// and counts against the cap, and a full store refuses the load.
     Load(u64),
@@ -72,17 +72,23 @@ pub(crate) enum Reader {
     /// A roomless job (a fold, export, inspection, rebuild, rebase, refresh,
     /// agent edit): it reads what is on disk, else keeps its own copy for
     /// the job, and writes nothing.
-    Job,
+    Job(&'a Job),
 }
 
-impl Reader {
+impl Reader<'_> {
     fn holder(self) -> Option<u64> {
         match self {
             Reader::Load(generation) | Reader::Room(generation) => Some(generation),
-            Reader::Job => None,
+            Reader::Job(_) => None,
         }
     }
 }
+
+/// A roomless job's copies of the bases and seeds it read (Epo 2026-10-17:
+/// roomless jobs read into memory per job): each is downloaded, read or
+/// seeded once per job and dropped with it, never shared between jobs.
+#[derive(Default)]
+pub(crate) struct Job(Mutex<HashMap<Key, (Vec<u8>, String)>>);
 
 /// What this instance knows of a loaded room between its saves.
 struct RoomRecord {
@@ -352,19 +358,35 @@ impl Sources {
         &self.db
     }
 
+    /// A file from the job's copies, else the disk store (see [`Reader`]).
+    async fn kept(&self, key: &Key, reader: Reader<'_>) -> Option<(Vec<u8>, String)> {
+        let Reader::Job(job) = reader else {
+            return self.disk.get(key, reader.holder()).await;
+        };
+        if let Some(found) = lock(&job.0).get(key).cloned() {
+            return Some(found);
+        }
+        let found = self.disk.get(key, None).await?;
+        lock(&job.0).insert(key.clone(), found.clone());
+        Some(found)
+    }
+
     /// Writes a file a loaded room read or built (see [`Reader`]); a
-    /// roomless job writes nothing.
+    /// roomless job keeps its own copy and writes nothing.
     async fn keep(
         &self,
         key: &Key,
         bytes: &[u8],
         sha256: &str,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<(), SourceError> {
         let (holder, load) = match reader {
             Reader::Load(generation) => (generation, true),
             Reader::Room(generation) => (generation, false),
-            Reader::Job => return Ok(()),
+            Reader::Job(job) => {
+                lock(&job.0).insert(key.clone(), (bytes.to_vec(), sha256.to_owned()));
+                return Ok(());
+            }
         };
         match self.disk.put(key, bytes, sha256, holder).await {
             Ok(()) => Ok(()),
@@ -386,10 +408,10 @@ impl Sources {
         &self,
         url: &str,
         sha: &str,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<(Vec<u8>, String), SourceError> {
         if let Some(key) = Key::base(sha)
-            && let Some(found) = self.disk.get(&key, reader.holder()).await
+            && let Some(found) = self.kept(&key, reader).await
         {
             return Ok(found);
         }
@@ -418,11 +440,11 @@ impl Sources {
         base: &[u8],
         sha: &str,
         room: Option<&str>,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<Seed, SourceError> {
         let key = Key::seed(format, sha);
         if let Some(key) = &key
-            && let Some((state, sha256)) = self.disk.get(key, reader.holder()).await
+            && let Some((state, sha256)) = self.kept(key, reader).await
         {
             return Ok(Seed { state, sha256 });
         }
@@ -457,7 +479,7 @@ impl Sources {
     pub(crate) async fn bound_base(
         &self,
         session: &SourceSession,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<(Vec<u8>, String), SourceError> {
         self.base(&session.source_url, &session.base_source_sha256, reader)
             .await
@@ -537,7 +559,7 @@ impl Sources {
         sha: &str,
         stored: &Stored,
         room: Option<&str>,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<(Seed, Vec<Vec<u8>>), SourceError> {
         let seed = self.seed(format, base, sha, room, reader).await?;
         let mut layers = Vec::new();
@@ -723,8 +745,9 @@ impl Sources {
         session: &SourceSession,
         base: &[u8],
         sha: &str,
+        job: &Job,
     ) -> Result<Vec<u8>, SourceError> {
-        let layers = self.durable_layers(session, base, sha).await?;
+        let layers = self.durable_layers(session, base, sha, job).await?;
         whole(session.format, layers).await
     }
 
@@ -734,13 +757,14 @@ impl Sources {
         session: &SourceSession,
         base: &[u8],
         sha: &str,
+        job: &Job,
     ) -> Result<Vec<Vec<u8>>, SourceError> {
         let stored = self.stored(&session.file_id, None).await?;
         if stored.epoch != session.epoch {
             return Err(SourceError::epoch_changed());
         }
         let (_, layers) = self
-            .layers(session.format, base, sha, &stored, None, Reader::Job)
+            .layers(session.format, base, sha, &stored, None, Reader::Job(job))
             .await?;
         Ok(layers)
     }
@@ -754,7 +778,7 @@ impl Sources {
         sha: &str,
         state: Option<&[u8]>,
         state_seed_sha256: Option<&str>,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<Vec<u8>, SourceError> {
         let seed = self.seed(format, base, sha, None, reader).await?;
         let Some(state) = state else {
@@ -781,7 +805,7 @@ impl Sources {
         base: &[u8],
         sha: &str,
         room: &str,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<Vec<BaselineEntry>, SourceError> {
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
@@ -851,7 +875,7 @@ impl Sources {
         sha: &str,
         state: &[u8],
         room: &str,
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<Vec<NetEffect>, SourceError> {
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
@@ -910,9 +934,12 @@ impl Sources {
         });
         // The loaded room's files; a save for a room not loaded here reads
         // as a roomless job.
-        let reader = known.as_ref().map_or(Reader::Job, |(_, _, _, generation)| {
-            Reader::Room(*generation)
-        });
+        let job = Job::default();
+        let reader = known
+            .as_ref()
+            .map_or(Reader::Job(&job), |(_, _, _, generation)| {
+                Reader::Room(*generation)
+            });
         let mut text = save.text.clone();
         for attempt in 0..SAVE_ATTEMPTS {
             let (session, expected, seeded, merged_rows) = match (&known, attempt) {
@@ -1076,7 +1103,7 @@ impl Sources {
         base: &[u8],
         sha: &str,
         row: &[u8],
-        reader: Reader,
+        reader: Reader<'_>,
     ) -> Result<TextSave, SourceError> {
         let stored = self.stored(&session.file_id, None).await?;
         let (_, mut layers) = self
@@ -1199,9 +1226,10 @@ impl Sources {
                 .map(|row| (row.get::<_, i64>(0) as u64, row.get(1)))
                 .collect(),
         };
-        let base = self.base_by_sha(&room.file_id, &sha).await?;
+        let job = Job::default();
+        let base = self.base_by_sha(&room.file_id, &sha, &job).await?;
         let (seed, layers) = self
-            .layers(format, &base, &sha, &stored, None, Reader::Job)
+            .layers(format, &base, &sha, &stored, None, Reader::Job(&job))
             .await?;
         let folded_bytes: i64 = stored.rows.iter().map(|(_, row)| row.len() as i64).sum();
         let folded_rows = stored.rows.len() as i64;
@@ -1275,15 +1303,23 @@ impl Sources {
 
     /// The base of a file by its bound SHA for a fold (the disk store, else
     /// the file's current blob URL through the bootstrap of its owner).
-    async fn base_by_sha(&self, file_id: &str, sha: &str) -> Result<Vec<u8>, SourceError> {
+    async fn base_by_sha(
+        &self,
+        file_id: &str,
+        sha: &str,
+        job: &Job,
+    ) -> Result<Vec<u8>, SourceError> {
         if let Some(key) = Key::base(sha)
-            && let Some((bytes, _)) = self.disk.get(&key, None).await
+            && let Some((bytes, _)) = self.kept(&key, Reader::Job(job)).await
         {
             return Ok(bytes);
         }
         let owner = self.owner(file_id).await?;
         let session = self.gateway.session(file_id, &owner).await?;
-        Ok(self.base(&session.source_url, sha, Reader::Job).await?.0)
+        Ok(self
+            .base(&session.source_url, sha, Reader::Job(job))
+            .await?
+            .0)
     }
 
     async fn owner(&self, file_id: &str) -> Result<String, SourceError> {
@@ -1320,8 +1356,9 @@ impl Sources {
         F: FnOnce(String) -> BoxFuture<Option<Vec<u8>>>,
     {
         let session = self.gateway.session(file_id, actor).await?;
-        let (base, sha) = self.bound_base(&session, Reader::Job).await?;
-        let mut layers = self.durable_layers(&session, &base, &sha).await?;
+        let job = Job::default();
+        let (base, sha) = self.bound_base(&session, Reader::Job(&job)).await?;
+        let mut layers = self.durable_layers(&session, &base, &sha, &job).await?;
         let room = SourceRoom {
             file_id: file_id.to_owned(),
             epoch: session.epoch,
@@ -1372,8 +1409,9 @@ impl Sources {
             .find(|effect| effect.id == input.change_id)
             .and_then(|effect| effect.asset_ref.clone())
             .ok_or_else(|| SourceError::request(404, "Source image unavailable", None))?;
-        let (base, sha) = self.bound_base(&session, Reader::Job).await?;
-        let state = self.durable_state(&session, &base, &sha).await?;
+        let job = Job::default();
+        let (base, sha) = self.bound_base(&session, Reader::Job(&job)).await?;
+        let state = self.durable_state(&session, &base, &sha, &job).await?;
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
         let (bytes, mime_type, sha256) = self
@@ -1433,25 +1471,26 @@ impl Sources {
                 }
             })?;
         let mut publishing = false;
+        let job = Job::default();
         let result: Result<(), SourceError> = async {
             let (base, sha) = self
                 .base(
                     &candidate.base_source_url,
                     &candidate.base_source_sha256,
-                    Reader::Job,
+                    Reader::Job(&job),
                 )
                 .await?;
-            let (captured, captured_seed) = self.capture(&candidate, &base, &sha).await?;
+            let (captured, captured_seed) = self.capture(&candidate, &base, &sha, &job).await?;
             let state = match &captured {
                 Some(change) if office(candidate.format).is_some() => {
                     let seed = self
-                        .seed(candidate.format, &base, &sha, None, Reader::Job)
+                        .seed(candidate.format, &base, &sha, None, Reader::Job(&job))
                         .await?;
                     whole(candidate.format, vec![seed.state, change.clone()]).await?
                 }
                 Some(text) => text.clone(),
                 None => {
-                    self.seed(candidate.format, &base, &sha, None, Reader::Job)
+                    self.seed(candidate.format, &base, &sha, None, Reader::Job(&job))
                         .await?
                         .state
                 }
@@ -1581,6 +1620,7 @@ impl Sources {
         candidate: &RefreshCandidate,
         base: &[u8],
         sha: &str,
+        job: &Job,
     ) -> Result<(Option<Vec<u8>>, Option<String>), SourceError> {
         let stored = self.stored(&candidate.file_id, None).await?;
         if stored.epoch != candidate.epoch || stored.checkpoint < candidate.checkpoint {
@@ -1597,7 +1637,7 @@ impl Sources {
         }
         let stored = Stored { rows, ..stored };
         let (seed, layers) = self
-            .layers(candidate.format, base, sha, &stored, None, Reader::Job)
+            .layers(candidate.format, base, sha, &stored, None, Reader::Job(job))
             .await?;
         let is_office = office(candidate.format).is_some();
         let seed_sha = is_office.then(|| seed.sha256.clone());
@@ -1782,8 +1822,9 @@ impl Sources {
     ) -> Result<SourceRebase, SourceError> {
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("Office rebase requires an Office source".into()))?;
-        let (old, sha) = self.bound_base(session, Reader::Job).await?;
-        let (new_base, _) = self.base(exported.0, exported.1, Reader::Job).await?;
+        let job = Job::default();
+        let (old, sha) = self.bound_base(session, Reader::Job(&job)).await?;
+        let (new_base, _) = self.base(exported.0, exported.1, Reader::Job(&job)).await?;
         let captured = self
             .captured_state(
                 session.format,
@@ -1791,10 +1832,10 @@ impl Sources {
                 &sha,
                 captured.0,
                 captured.1,
-                Reader::Job,
+                Reader::Job(&job),
             )
             .await?;
-        let latest = self.durable_state(session, &old, &sha).await?;
+        let latest = self.durable_state(session, &old, &sha, &job).await?;
         let (state, effects) = self
             .engines
             .rebase(
@@ -1818,7 +1859,13 @@ impl Sources {
             })?;
         let effects: Vec<NetEffect> = effects.into_iter().map(trim_effect).collect();
         let seed = self
-            .seed(session.format, &new_base, exported.1, None, Reader::Job)
+            .seed(
+                session.format,
+                &new_base,
+                exported.1,
+                None,
+                Reader::Job(&job),
+            )
             .await?;
         let seed_sha = seed.sha256.clone();
         let change = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, SourceError> {
@@ -1848,12 +1895,20 @@ impl Sources {
         &self,
         session: &SourceSession,
         from: Option<&[u16]>,
+        job: &Job,
     ) -> Result<Vec<NetEffect>, SourceError> {
-        let (base, sha) = self.bound_base(session, Reader::Job).await?;
-        let state = self.durable_state(session, &base, &sha).await?;
+        let (base, sha) = self.bound_base(session, Reader::Job(job)).await?;
+        let state = self.durable_state(session, &base, &sha, job).await?;
         if office(session.format).is_some() {
             return self
-                .office_effects(session, &base, &sha, &state, &session.room, Reader::Job)
+                .office_effects(
+                    session,
+                    &base,
+                    &sha,
+                    &state,
+                    &session.room,
+                    Reader::Job(job),
+                )
                 .await;
         }
         let text = crate::text::text_state(&state)
@@ -1870,10 +1925,11 @@ impl Sources {
         &self,
         session: &SourceSession,
         state: Option<&[u8]>,
+        job: &Job,
     ) -> Result<Vec<u16>, SourceError> {
-        let (base, sha) = self.bound_base(session, Reader::Job).await?;
+        let (base, sha) = self.bound_base(session, Reader::Job(job)).await?;
         let state = self
-            .captured_state(session.format, &base, &sha, state, None, Reader::Job)
+            .captured_state(session.format, &base, &sha, state, None, Reader::Job(job))
             .await?;
         Ok(utf16(
             &crate::text::text_state(&state)
@@ -2051,10 +2107,11 @@ mod tests {
         let sources = sources(&folder, 1 << 20);
         let (url, downloads) = blob().await;
         let sha = office_service::sha256_hex(TEXT);
-        let (bytes, hash) = sources.base(&url, &sha, Reader::Job).await.unwrap();
+        let job = Job::default();
+        let (bytes, hash) = sources.base(&url, &sha, Reader::Job(&job)).await.unwrap();
         assert_eq!((bytes.as_slice(), hash.as_str()), (TEXT, sha.as_str()));
         let seed = sources
-            .seed(SourceFormat::Text, TEXT, &sha, None, Reader::Job)
+            .seed(SourceFormat::Text, TEXT, &sha, None, Reader::Job(&job))
             .await
             .unwrap();
         assert_eq!(seed.state, text_seed(TEXT).unwrap());
@@ -2063,9 +2120,41 @@ mod tests {
         sources.base(&url, "", Reader::Load(1)).await.unwrap();
         assert_eq!(folder.files(), [format!("base-{sha}")]);
         assert_eq!(downloads.load(Ordering::Relaxed), 2);
-        let (bytes, _) = sources.base(&url, &sha, Reader::Job).await.unwrap();
+        let next = Job::default();
+        let (bytes, _) = sources.base(&url, &sha, Reader::Job(&next)).await.unwrap();
         assert_eq!(bytes, TEXT);
         assert_eq!(downloads.load(Ordering::Relaxed), 2);
+    }
+
+    // Epo 2026-10-17: a roomless job downloads and seeds each file once, for
+    // itself only; the next job reads and seeds again.
+    #[tokio::test]
+    async fn a_job_reads_and_seeds_each_file_once_for_itself_only() {
+        let folder = Folder::new("once");
+        let sources = sources(&folder, 1 << 20);
+        let (url, downloads) = blob().await;
+        let sha = office_service::sha256_hex(TEXT);
+        let job = Job::default();
+        for _ in 0..3 {
+            let (bytes, _) = sources.base(&url, &sha, Reader::Job(&job)).await.unwrap();
+            assert_eq!(bytes, TEXT);
+        }
+        assert_eq!(downloads.load(Ordering::Relaxed), 1);
+        // Other bytes under the same SHA show which call seeded.
+        let other = b"other bytes";
+        let seed = |bytes: &'static [u8], job| {
+            sources.seed(SourceFormat::Text, bytes, &sha, None, Reader::Job(job))
+        };
+        let first = seed(TEXT, &job).await.unwrap();
+        assert_eq!(seed(other, &job).await.unwrap().state, first.state);
+        let next = Job::default();
+        sources.base(&url, &sha, Reader::Job(&next)).await.unwrap();
+        assert_eq!(downloads.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            seed(other, &next).await.unwrap().state,
+            text_seed(other).unwrap()
+        );
+        assert!(folder.files().is_empty());
     }
 
     // Epo 2026-10-17: a room load is refused only when loaded rooms' files
@@ -2084,7 +2173,8 @@ mod tests {
                 cap: TEXT.len() as u64 - 1
             }
         );
-        for reader in [Reader::Room(1), Reader::Job] {
+        let job = Job::default();
+        for reader in [Reader::Room(1), Reader::Job(&job)] {
             let (bytes, _) = sources.base(&url, &sha, reader).await.unwrap();
             assert_eq!(bytes, TEXT);
         }
