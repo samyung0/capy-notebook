@@ -343,9 +343,9 @@ func Embeds() []Embed {
 			Fence: Fence{Lang: "plot", Body: "json"}, Chat: "Plot",
 			QuestionBlock: true, QuestionMedia: true,
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
-			// No plot editor yet (Epo 2026-10-13): users can only remove one.
+			// Notes edit a plot (Epo 2026-10-17); a quiz shows one.
 			Edit: Edit{
-				User:  []string{},
+				User:  []string{SurfaceNote},
 				Agent: []string{"create_material", "edit_document", "add_question_media"},
 			},
 			Schema: plotSchema(),

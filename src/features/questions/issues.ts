@@ -51,13 +51,29 @@ function blockMessage(
   return m.question_issue_generic();
 }
 
-/** A standalone block's issues (a note's chart or graph), each listed once. */
+/** A note's plot issue its editor can leave (an empty cell, a line of one
+ * point); a quiz shows its plots uneditable, so there it is the generic line. */
+function plotMessage(block: QuestionBlock, issue: z.core.$ZodIssue) {
+  if (
+    block.type === 'plot' &&
+    (issue.message === m.question_validation_plot_number() ||
+      issue.message === m.question_validation_plot_line_points())
+  )
+    return m.question_issue_plot({ message: issue.message });
+}
+
+/** A standalone block's issues (a note's chart, plot or graph), each listed
+ * once. */
 export function blockIssues(block: QuestionBlock): string[] {
   const normal = blockWithoutBlanks(block);
   const parsed = questionBlockSchema.safeParse(normal);
   if (parsed.success) return [];
   return [
-    ...new Set(parsed.error.issues.map((issue) => blockMessage(normal, issue))),
+    ...new Set(
+      parsed.error.issues.map(
+        (issue) => plotMessage(normal, issue) ?? blockMessage(normal, issue)
+      )
+    ),
   ];
 }
 const blank = (block: QuestionBlock) =>

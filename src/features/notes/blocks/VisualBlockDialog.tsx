@@ -13,13 +13,20 @@ import {
   blockWithoutBlanks,
   type ChartBlock,
   type GraphBlock,
+  type PlotBlock,
   type QuestionBlock,
 } from '@/features/questions/types';
 import { questionBlockSchema } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
 
-export type NoteVisualBlock = ChartBlock | GraphBlock;
+export type NoteVisualBlock = ChartBlock | PlotBlock | GraphBlock;
+
+const titles = {
+  chart: m.editor_chart,
+  graph: m.editor_graph,
+  plot: m.editor_plot,
+} satisfies Record<NoteVisualBlock['type'], () => string>;
 
 const blockResolver = zodResolver(z.object({ block: questionBlockSchema }));
 
@@ -54,7 +61,11 @@ export default function VisualBlockDialog({
   const issues = blockIssues(useWatch({ control, name: 'block' }));
   const save = handleSubmit(async ({ block: draft }) => {
     try {
-      if (draft.type !== 'graph' && draft.type !== 'chart')
+      if (
+        draft.type !== 'graph' &&
+        draft.type !== 'chart' &&
+        draft.type !== 'plot'
+      )
         throw new Error('Unsupported note block');
       if (!exportHost.current) return;
       const next =
@@ -101,7 +112,7 @@ export default function VisualBlockDialog({
       }}
       onSubmit={save}
       open
-      title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
+      title={titles[block.type]()}
       width={1040}
     >
       <IssueSummary className="mb-4" messages={issues} />
@@ -112,6 +123,7 @@ export default function VisualBlockDialog({
           render={({ field }) => (
             <BlockEditor
               block={field.value}
+              editPlot
               onChange={field.onChange}
               onInvalidChange={setInvalid}
             />

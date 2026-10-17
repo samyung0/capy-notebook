@@ -35,8 +35,11 @@ storage class rather than the kind:
   trash, clone, share, assets and quota for it.
 
 Chart, plot and graph are also question blocks (one schema for quizzes, notes
-and chat). Plot has no editor anywhere (Epo 2026-10-13: not now): agents write
-it, the question dialog and notes show it view-only, and users can remove it.
+and chat). Plot is edited in notes only (Epo 2026-10-17): a note's plot has
+Edit, which opens the plot editor in the figure dialog; agents write it, and
+the question dialog shows it view-only and can remove it. Its text is bounded
+as a chart's (title, axis titles and unit 100, series names and line and mark
+labels 60, every layer, Epo 2026-10-17).
 
 The fence parser is already single: the collaboration server runs the editor's
 own `markdownConvert.ts` in V8. Everything else repeats the kind list by hand:
@@ -289,8 +292,8 @@ Asked for as one round in its own session: all embeds unified across chat
 effects. That means:
 
 - live edits for charts and graphs (today an inline value replaced whole, so
-  two editors' changes do not merge) and a plot editor UI (plot had none:
-  "not now", 2026-10-13);
+  two editors' changes do not merge) and a plot editor UI (landed for notes on
+  `embeds/plot`, 2026-10-17; quizzes still show plots view-only);
 - one component set for chat and notes per kind;
 - each kind's text in the note's index text, so the agent sees its changes
   through note effects.

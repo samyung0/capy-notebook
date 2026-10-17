@@ -313,18 +313,31 @@ the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4
 `series` of `{name, points: [[x, y], …]}` (2–60 finite points drawn as straight
 segments in x order, or 1–60 drawn as dots for a scatter, Epo 2026-10-14), and optional `lines`
 (`{axis: x|y, value, label?}`, dashed reference lines) and `marks`
-(`{x, y, label}`), at most 8 of each (`QUESTION_PLOT_*` in fieldlimits).
+(`{x, y, label}`), at most 8 of each (`QUESTION_PLOT_*` in fieldlimits). Its
+text is bounded as a chart's (Epo 2026-10-17): title, axis titles and unit at
+`QUESTION_PLOT_TITLE_MAX` (100), each series name and line or mark label at
+`QUESTION_PLOT_LABEL_MAX` (60) code points, on every layer.
 `PlotChart` (beside `CategoryChart`, same frame, theme variables and ticks) draws
-it in quizzes, notes and chat. It has no editor: the question dialog shows a plot
-and can remove it, but the add menu does not offer one. Go and the browser
+it in quizzes, notes and chat. Notes edit it (the embed catalog's plot
+`edit.user` is `[note]`): the note's figure dialog shows `PlotEditor`
+(`BlockEditor.tsx`, the chart editor's frame) with the type (line or scatter),
+title, axis titles and unit, a points table per series (a series keeps one
+point; add and remove rows and series up to the bounds), and under Advanced
+the reference lines (added as horizontal or vertical), labelled points and the
+description, the plot drawn beside them once every cell holds a number. An
+emptied cell is `NaN` in the draft, which the dialog's issue strip names
+("Plot error: …", `blockIssues`) and which holds Save. Quizzes do not edit a
+plot: the question dialog shows it (BlockEditor without `editPlot`) and can
+remove it, and its add menu does not offer one. Go and the browser
 validate it, and so does the Rust collaboration server (`questions.rs`,
 `material.rs`: a live quiz question holding a plot and a note's `plot` embed,
 with Go's bounds; Node's validator never knew it, Epo 2026-10-12). A live quiz
 room keeps a plot as one value, as it keeps a chart (`items/src/quiz.rs`,
 `liveQuiz.ts`; before 2026-10-13 the room's reader dropped it, so an agent's
-plot vanished from the projection). A valid plot is in the shared fixtures
-(`plot.json`), so the live quiz round trip and the browser/server parity
-corpus carry one; refused plot cases are tested in each validator. Grading text lists its curves' points and labels. User quizzes and notes keep validated
+plot vanished from the projection). Valid plots are in the shared fixtures
+(`plot.json`, `plot-at-limits.json`), so the live quiz round trip and the
+browser/server parity corpus carry them; refused plot cases are tested in each
+validator, the text bounds by the shared `plot-long-*-rejected.json` fixtures. Grading text lists its curves' points and labels. User quizzes and notes keep validated
 SVG, at most 256 KiB, in their document. Bank graphs store the recipe in the
 database and the SVG in the public bucket. Image and graph blocks both keep
 their source under `image`: bank images use `{ url }`, a public content-hashed

@@ -2,9 +2,10 @@ import { Collapsible } from 'radix-ui';
 import { useState } from 'react';
 import * as limits from '@/api/limits.generated';
 import { CategoryChart } from '@/components/charts/CategoryChart';
+import { PlotChart } from '@/components/charts/PlotChart';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
-import { Input } from '@/components/ui/Input';
+import { Input, type InputProps } from '@/components/ui/Input';
 import { Toolbar, ToolbarGroup } from '@/components/ui/Toolbar';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { m } from '@/i18n';
@@ -20,6 +21,7 @@ import {
   CHART_KINDS,
   type ChartBlock,
   type ChartKind,
+  type PlotBlock,
   type QuestionBlock,
 } from './types';
 
@@ -371,9 +373,526 @@ function ChartEditor({
   );
 }
 
+type PlotKind = NonNullable<PlotBlock['kind']>;
+
+const plotLabels = {
+  line: m.question_ui_plot_line,
+  scatter: m.question_ui_plot_scatter,
+} satisfies Record<PlotKind, () => string>;
+
+/** A borderless input filling a table cell, as the chart's cells are; no
+ * width of its own, so a 360px dialog fits the plot's tables. */
+function CellInput(props: InputProps) {
+  return (
+    <Input
+      className="w-0 py-1.5 text-sm"
+      wrapperClassName="rounded-none border-0 bg-transparent px-2 focus-within:ring-1 focus-within:ring-action-accent focus-within:ring-inset"
+      {...props}
+    />
+  );
+}
+
+/** A number cell: an empty cell is NaN, which the plot's issues name, until
+ * a number is typed. */
+function NumberCell({
+  value,
+  onValue,
+  ...props
+}: Omit<InputProps, 'value' | 'onChange' | 'type'> & {
+  value: number;
+  onValue: (value: number) => void;
+}) {
+  return (
+    <CellInput
+      onChange={(event) => onValue(event.target.valueAsNumber)}
+      type="number"
+      value={Number.isNaN(value) ? '' : value}
+      {...props}
+    />
+  );
+}
+
+/** A table row's remove button, in the cell before its inputs. */
+function RemoveCell({
+  label,
+  disabled,
+  onClick,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <td className="w-0 pr-1">
+      <ToolbarButton disabled={disabled} label={label} onClick={onClick}>
+        <Icon name="trash" />
+      </ToolbarButton>
+    </td>
+  );
+}
+
+function HeaderCell({ children }: { children?: string }) {
+  return (
+    <th className="border border-divider bg-surface-hover-bg p-2 text-left">
+      {children}
+    </th>
+  );
+}
+
+/** Line or scatter series of [x, y] points, in the chart editor's frame:
+ * fields and tables on the left, the plot on the right once it can be drawn.
+ * Reference lines and labelled points sit under Advanced. Hook-free, so its
+ * test calls it and drives the inputs' handlers. */
+export function PlotEditor({
+  block,
+  onChange,
+  descriptionMax,
+}: {
+  block: PlotBlock;
+  onChange: (block: PlotBlock) => void;
+  descriptionMax: number;
+}) {
+  const lines = block.lines ?? [];
+  const marks = block.marks ?? [];
+  const setSeries = (index: number, series: PlotBlock['series'][number]) =>
+    onChange({
+      ...block,
+      series: block.series.map((item, i) => (i === index ? series : item)),
+    });
+  // An emptied list leaves the block, as an agent writes one without it.
+  const setLines = (next: NonNullable<PlotBlock['lines']>) =>
+    onChange({ ...block, lines: next.length ? next : undefined });
+  const setMarks = (next: NonNullable<PlotBlock['marks']>) =>
+    onChange({ ...block, marks: next.length ? next : undefined });
+  const drawable = [
+    ...block.series.flatMap((series) => series.points.flat()),
+    ...lines.map((line) => line.value),
+    ...marks.flatMap((mark) => [mark.x, mark.y]),
+  ].every(Number.isFinite);
+  return (
+    <div className="@container min-w-0">
+      <div className="grid min-w-0 @4xl:grid-cols-2 items-start gap-6">
+        <div className="min-w-0 space-y-4">
+          <SelectField
+            className="w-44"
+            label={m.question_ui_plot_type()}
+            onChange={(kind) => onChange({ ...block, kind: kind as PlotKind })}
+            options={(['line', 'scatter'] as const).map((kind) => ({
+              label: plotLabels[kind](),
+              value: kind,
+            }))}
+            value={block.kind ?? 'line'}
+          />
+          <Field
+            count={{
+              max: limits.QUESTION_PLOT_TITLE_MAX,
+              value: textLength(block.title),
+            }}
+            label={m.question_ui_title()}
+          >
+            <FieldInput
+              maxLength={limits.QUESTION_PLOT_TITLE_MAX}
+              onChange={(event) =>
+                onChange({ ...block, title: event.target.value })
+              }
+              value={block.title}
+            />
+          </Field>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {(['xTitle', 'yTitle', 'unit'] as const).map((key) => (
+              <Field
+                count={{
+                  max: limits.QUESTION_PLOT_TITLE_MAX,
+                  value: textLength(block[key] ?? ''),
+                }}
+                key={key}
+                label={
+                  key === 'xTitle'
+                    ? m.question_ui_x_axis()
+                    : key === 'yTitle'
+                      ? m.question_ui_y_axis()
+                      : m.question_ui_unit()
+                }
+              >
+                <FieldInput
+                  maxLength={limits.QUESTION_PLOT_TITLE_MAX}
+                  onChange={(event) =>
+                    onChange({
+                      ...block,
+                      // The unit is optional; the axis titles are not.
+                      [key]:
+                        key === 'unit'
+                          ? event.target.value || undefined
+                          : event.target.value,
+                    })
+                  }
+                  value={block[key] ?? ''}
+                />
+              </Field>
+            ))}
+          </div>
+          {block.series.map((series, index) => (
+            <div className="space-y-1" key={index}>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-sm">
+                  <thead>
+                    <tr>
+                      <RemoveCell
+                        disabled={block.series.length <= 1}
+                        label={m.question_ui_remove_series({
+                          number: index + 1,
+                        })}
+                        onClick={() =>
+                          onChange({
+                            ...block,
+                            series: block.series.filter((_, i) => i !== index),
+                          })
+                        }
+                      />
+                      <th
+                        className="border border-divider bg-surface-hover-bg"
+                        colSpan={2}
+                      >
+                        <CellInput
+                          aria-label={m.question_ui_series_name({
+                            number: index + 1,
+                          })}
+                          maxLength={limits.QUESTION_PLOT_LABEL_MAX}
+                          onChange={(event) =>
+                            setSeries(index, {
+                              ...series,
+                              name: event.target.value,
+                            })
+                          }
+                          placeholder={m.question_ui_series_name({
+                            number: index + 1,
+                          })}
+                          value={series.name}
+                        />
+                      </th>
+                    </tr>
+                    <tr>
+                      <th className="w-0" />
+                      <HeaderCell>{m.question_ui_plot_x()}</HeaderCell>
+                      <HeaderCell>{m.question_ui_plot_y()}</HeaderCell>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {series.points.map(([x, y], row) => {
+                      const setPoint = (point: [number, number]) =>
+                        setSeries(index, {
+                          ...series,
+                          points: series.points.map((item, i) =>
+                            i === row ? point : item
+                          ),
+                        });
+                      const at = { number: row + 1, series: index + 1 };
+                      return (
+                        <tr key={row}>
+                          {/* A series keeps one point at least. */}
+                          <RemoveCell
+                            disabled={series.points.length <= 1}
+                            label={m.question_ui_remove_point(at)}
+                            onClick={() =>
+                              setSeries(index, {
+                                ...series,
+                                points: series.points.filter(
+                                  (_, i) => i !== row
+                                ),
+                              })
+                            }
+                          />
+                          <td className="min-w-24 border border-divider">
+                            <NumberCell
+                              aria-label={m.question_ui_plot_point_x(at)}
+                              onValue={(value) => setPoint([value, y])}
+                              value={x}
+                            />
+                          </td>
+                          <td className="min-w-24 border border-divider">
+                            <NumberCell
+                              aria-label={m.question_ui_plot_point_y(at)}
+                              onValue={(value) => setPoint([x, value])}
+                              value={y}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <Button
+                className="-ml-4"
+                disabled={
+                  series.points.length >= limits.QUESTION_PLOT_POINTS_MAX
+                }
+                iconLeft="plus"
+                onClick={() =>
+                  setSeries(index, {
+                    ...series,
+                    points: [...series.points, [Number.NaN, Number.NaN]],
+                  })
+                }
+                size="sm"
+                type="button"
+                variant="ghost-hover"
+              >
+                {m.question_ui_add_point()}
+              </Button>
+            </div>
+          ))}
+          <div className="space-y-3">
+            <div className="-ml-4 flex flex-wrap gap-2">
+              <Button
+                disabled={
+                  block.series.length >= limits.QUESTION_PLOT_SERIES_MAX
+                }
+                iconLeft="plus"
+                onClick={() =>
+                  onChange({
+                    ...block,
+                    series: [
+                      ...block.series,
+                      { name: '', points: [[Number.NaN, Number.NaN]] },
+                    ],
+                  })
+                }
+                size="sm"
+                type="button"
+                variant="ghost-hover"
+              >
+                {m.question_ui_add_series()}
+              </Button>
+            </div>
+            {/* Opens on its own when the plot already has any of these. */}
+            <Collapsible.Root
+              defaultOpen={Boolean(
+                block.description || lines.length || marks.length
+              )}
+            >
+              <Collapsible.Trigger asChild>
+                <Button
+                  className="-ml-4"
+                  iconLeft="chevronDown"
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {m.question_ui_advanced()}
+                </Button>
+              </Collapsible.Trigger>
+              {/* Nudged under the chevron's ink, which sits inside its box. */}
+              <Collapsible.Content className="translate-x-0.5 space-y-4 pt-3">
+                <div className="space-y-1">
+                  <p className="t-label">{m.question_ui_reference_lines()}</p>
+                  {lines.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr>
+                            <th className="w-0" />
+                            <HeaderCell>
+                              {m.question_ui_reference_line()}
+                            </HeaderCell>
+                            <HeaderCell>{m.question_ui_value()}</HeaderCell>
+                            <HeaderCell>{m.question_ui_label()}</HeaderCell>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {lines.map((line, row) => {
+                            const setLine = (next: typeof line) =>
+                              setLines(
+                                lines.map((item, i) =>
+                                  i === row ? next : item
+                                )
+                              );
+                            const at = { number: row + 1 };
+                            return (
+                              <tr key={row}>
+                                <RemoveCell
+                                  label={m.question_ui_remove_reference_line(
+                                    at
+                                  )}
+                                  onClick={() =>
+                                    setLines(lines.filter((_, i) => i !== row))
+                                  }
+                                />
+                                <td className="border border-divider px-2">
+                                  {line.axis === 'y'
+                                    ? m.question_ui_reference_line_horizontal()
+                                    : m.question_ui_reference_line_vertical()}
+                                </td>
+                                <td className="min-w-16 border border-divider">
+                                  <NumberCell
+                                    aria-label={m.question_ui_reference_line_value(
+                                      at
+                                    )}
+                                    onValue={(value) =>
+                                      setLine({ ...line, value })
+                                    }
+                                    value={line.value}
+                                  />
+                                </td>
+                                <td className="min-w-24 border border-divider">
+                                  <CellInput
+                                    aria-label={m.question_ui_reference_line_label(
+                                      at
+                                    )}
+                                    maxLength={limits.QUESTION_PLOT_LABEL_MAX}
+                                    onChange={(event) =>
+                                      setLine({
+                                        ...line,
+                                        label: event.target.value || undefined,
+                                      })
+                                    }
+                                    value={line.label ?? ''}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <div className="-ml-4 flex flex-wrap gap-2">
+                    {(['y', 'x'] as const).map((axis) => (
+                      <Button
+                        disabled={
+                          lines.length >= limits.QUESTION_PLOT_MARKS_MAX
+                        }
+                        iconLeft="plus"
+                        key={axis}
+                        onClick={() =>
+                          setLines([...lines, { axis, value: Number.NaN }])
+                        }
+                        size="sm"
+                        type="button"
+                        variant="ghost-hover"
+                      >
+                        {axis === 'y'
+                          ? m.question_ui_add_horizontal_line()
+                          : m.question_ui_add_vertical_line()}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <p className="t-label">{m.question_ui_plot_marks()}</p>
+                  {marks.length > 0 && (
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse text-sm">
+                        <thead>
+                          <tr>
+                            <th className="w-0" />
+                            <HeaderCell>{m.question_ui_plot_x()}</HeaderCell>
+                            <HeaderCell>{m.question_ui_plot_y()}</HeaderCell>
+                            <HeaderCell>{m.question_ui_label()}</HeaderCell>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {marks.map((mark, row) => {
+                            const setMark = (next: typeof mark) =>
+                              setMarks(
+                                marks.map((item, i) =>
+                                  i === row ? next : item
+                                )
+                              );
+                            const at = { number: row + 1 };
+                            return (
+                              <tr key={row}>
+                                <RemoveCell
+                                  label={m.question_ui_remove_plot_mark(at)}
+                                  onClick={() =>
+                                    setMarks(marks.filter((_, i) => i !== row))
+                                  }
+                                />
+                                <td className="min-w-16 border border-divider">
+                                  <NumberCell
+                                    aria-label={m.question_ui_plot_mark_x(at)}
+                                    onValue={(x) => setMark({ ...mark, x })}
+                                    value={mark.x}
+                                  />
+                                </td>
+                                <td className="min-w-16 border border-divider">
+                                  <NumberCell
+                                    aria-label={m.question_ui_plot_mark_y(at)}
+                                    onValue={(y) => setMark({ ...mark, y })}
+                                    value={mark.y}
+                                  />
+                                </td>
+                                <td className="min-w-24 border border-divider">
+                                  <CellInput
+                                    aria-label={m.question_ui_plot_mark_label(
+                                      at
+                                    )}
+                                    maxLength={limits.QUESTION_PLOT_LABEL_MAX}
+                                    onChange={(event) =>
+                                      setMark({
+                                        ...mark,
+                                        label: event.target.value,
+                                      })
+                                    }
+                                    value={mark.label}
+                                  />
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                  <Button
+                    className="-ml-4"
+                    disabled={marks.length >= limits.QUESTION_PLOT_MARKS_MAX}
+                    iconLeft="plus"
+                    onClick={() =>
+                      setMarks([
+                        ...marks,
+                        { label: '', x: Number.NaN, y: Number.NaN },
+                      ])
+                    }
+                    size="sm"
+                    type="button"
+                    variant="ghost-hover"
+                  >
+                    {m.question_ui_add_plot_mark()}
+                  </Button>
+                </div>
+                <Field
+                  count={{
+                    max: descriptionMax,
+                    value: textLength(block.description ?? ''),
+                  }}
+                  label={m.question_ui_description()}
+                >
+                  <FieldInput
+                    maxLength={descriptionMax}
+                    onChange={(event) =>
+                      onChange({
+                        ...block,
+                        description: event.target.value || undefined,
+                      })
+                    }
+                    value={block.description ?? ''}
+                  />
+                </Field>
+              </Collapsible.Content>
+            </Collapsible.Root>
+          </div>
+        </div>
+        <div className="min-w-0">{drawable && <PlotChart data={block} />}</div>
+      </div>
+    </div>
+  );
+}
+
 export function BlockEditor({
   bank,
   block,
+  editPlot,
   onChange,
   uploadAsset,
   onBusyChange,
@@ -383,6 +902,8 @@ export function BlockEditor({
   /** A bank question: figure descriptions take the bank's longer bound. */
   bank?: boolean;
   block: QuestionBlock;
+  /** Notes edit a plot; quizzes show it (the catalog's plot `edit.user`). */
+  editPlot?: boolean;
   onChange: (block: QuestionBlock) => void;
   uploadAsset?: UploadQuestionAsset;
   onBusyChange?: (busy: boolean) => void;
@@ -453,8 +974,16 @@ export function BlockEditor({
         onChange={onChange}
       />
     );
-  // Plots come from the agent and chat; the dialog shows them and can remove them.
-  if (block.type === 'plot') return <QuestionBlockView block={block} />;
+  if (block.type === 'plot')
+    return editPlot ? (
+      <PlotEditor
+        block={block}
+        descriptionMax={descriptionMax}
+        onChange={onChange}
+      />
+    ) : (
+      <QuestionBlockView block={block} />
+    );
   if (block.type === 'graph')
     return (
       <GraphEditor

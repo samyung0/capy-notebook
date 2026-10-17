@@ -759,7 +759,9 @@
         "export"
       ],
       "edit": {
-        "user": [],
+        "user": [
+          "note"
+        ],
         "agent": [
           "create_material",
           "edit_document",

@@ -88,6 +88,10 @@ const chartText = (max: number) =>
 const chartTitle = chartText(limits.QUESTION_CHART_TITLE_MAX);
 const plotTitle = chartText(limits.QUESTION_PLOT_TITLE_MAX);
 const plotLabel = chartText(limits.QUESTION_PLOT_LABEL_MAX);
+// A plot's coordinate or line value; an empty cell in its editor is NaN.
+const plotNumber = z.number({
+  error: () => m.question_validation_plot_number(),
+});
 const finite = z.number().finite();
 const index = z.number().int().nonnegative();
 const coords = z.tuple([finite, finite]);
@@ -333,20 +337,25 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
           z.strictObject({
             axis: z.enum(['x', 'y']),
             label: plotLabel.optional(),
-            value: finite,
+            value: plotNumber,
           })
         )
         .max(limits.QUESTION_PLOT_MARKS_MAX)
         .optional(),
       marks: z
-        .array(z.strictObject({ label: plotLabel, x: finite, y: finite }))
+        .array(
+          z.strictObject({ label: plotLabel, x: plotNumber, y: plotNumber })
+        )
         .max(limits.QUESTION_PLOT_MARKS_MAX)
         .optional(),
       series: z
         .array(
           z.strictObject({
             name: plotLabel,
-            points: z.array(coords).min(1).max(limits.QUESTION_PLOT_POINTS_MAX),
+            points: z
+              .array(z.tuple([plotNumber, plotNumber]))
+              .min(1)
+              .max(limits.QUESTION_PLOT_POINTS_MAX),
           })
         )
         .min(1)

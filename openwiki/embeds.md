@@ -112,6 +112,11 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   | quiz | item | `material_ref` | ```` ```quiz ```` YAML | – | quiz |
   | flashcards | item | `material_ref` | ```` ```flashcards ```` YAML | – | flashcards |
 
+  Users edit chart and graph in notes and quizzes, plot in notes only (a
+  quiz's question dialog shows one, Epo 2026-10-17), html_embed in notes, and
+  mermaid, quiz and flashcards in notes and as their own materials
+  (`edit.user`).
+
   A **value** is an attribute of its node, replaced whole. A **live source**
   keeps its source in shared text. An **item** is a child material row with
   its own rooms, which a note references through `material_ref` with

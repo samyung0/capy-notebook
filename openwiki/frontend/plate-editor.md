@@ -638,17 +638,18 @@ Chart, plot and graph nodes store their question block under `block`, an optiona
 A figure's description shows under it as a muted caption (`MEDIA_CAPTION_CLASS`)
 and is the figure's accessible label: optional on every figure, images and
 graphs included (Epo 2026-10-14; a blank one is dropped on Save; the chart
-editor's Description field, no plot editor yet; the agent contract does not
-offer it for charts and plots), at most `QUESTION_DESCRIPTION_MAX` outside the
-bank.
+and plot editors' Description field; the agent contract does not offer it for
+charts and plots), at most `QUESTION_DESCRIPTION_MAX` outside the bank.
 Their Markdown fences (` ```chart `, ` ```plot `, ` ```graph `) hold that block's
 JSON (`customBlockNode` in `blocks/shared.ts`, checked by the shared question block
 schema, so a refused block fails the agent's write); the agent's note format
 (`noteMarkdownDescription`) documents the chart and plot fences. A plot (see
 [question-bank](../question-bank.md#editing-and-assets)), drawn as curves or, with
-`kind: "scatter"`, as dots, comes only from the agent and has no editor: its hover
-toolbar has Copy and Delete but no Edit, and exports draw it like a chart with its
-points as the table. Inline
+`kind: "scatter"`, as dots, comes from the agent or a pasted fence (no slash
+command inserts one); its hover toolbar has Edit, Copy and Delete like a
+chart's, Edit opening the plot editor in the figure dialog
+(`VisualBlockDialog`, Epo 2026-10-17), and exports draw it like a chart with
+its points as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
 ## Interactive HTML blocks

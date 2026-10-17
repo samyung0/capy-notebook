@@ -760,7 +760,9 @@ export const EMBED_CATALOG = {
         "export"
       ],
       "edit": {
-        "user": [],
+        "user": [
+          "note"
+        ],
         "agent": [
           "create_material",
           "edit_document",
