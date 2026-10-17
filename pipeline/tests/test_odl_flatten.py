@@ -54,6 +54,22 @@ def test_a_scatter_plot_becomes_one_picture_and_its_text_stays() -> None:
     assert "Body text above" in page.get_text() and "Age (days)" in page.get_text()
 
 
+def test_two_plots_on_a_page_become_two_pictures() -> None:
+    left, right = pymupdf.Rect(40, 400, 280, 640), pymupdf.Rect(330, 400, 570, 640)
+
+    def build(page):
+        _scatter(page, left)
+        _scatter(page, right)
+
+    out, regions = flatten.flatten(_pdf(build))
+    assert len(regions[0]) == 2
+    page = pymupdf.open(stream=out, filetype="pdf")[0]
+    assert len(page.get_images()) == 2
+    # Both plots' markers gone but the top row's strokes, which reach past
+    # the path box pymupdf reports (it leaves out every moveto but the first).
+    assert sum(len(d["items"]) for d in page.get_cdrawings()) < 100
+
+
 def test_a_book_without_dense_figures_is_returned_byte_for_byte() -> None:
     def build(page):
         page.insert_text((72, 100), "Only text and a rule.")
