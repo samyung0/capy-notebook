@@ -232,9 +232,9 @@ jobs:
       # Worker has: put it back so the two Workers stay on one release. A step
       # that failed after its new version went live (a later part, such as
       # its routes) is left to the manual rollback of both Workers
-      # (human/deployment-runbook.md, 2026-10-17): a SPA step that did serves
-      # the new /release.txt, whose index.html needs the new assets, and a
-      # failed assets step never gets here.
+      # (human/deployment-runbook.md, 2026-10-17): the check rolls back only
+      # when every successful read of /release.txt shows the old revision, and
+      # a failed assets step never gets here.
       - name: Roll the SPA assets Worker back after a failed SPA Worker deploy
         if: failure() && steps.assets_worker.outcome == 'success' && steps.app_worker.outcome == 'failure'
         env:
@@ -244,10 +244,7 @@ jobs:
           DEPLOY_REVISION: ${{ inputs.revision }}
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
         run: |
-          if [ "$(curl -fsS --max-time 30 "${DEPLOYMENT_APP_URL%/}/release.txt" || true)" = "$DEPLOY_REVISION" ]; then
-            echo "::error::The app host already serves $DEPLOY_REVISION: no automatic rollback; roll back both Workers by hand (deployment-runbook §1)"
-            exit 1
-          fi
+          scripts/deploy/assets-rollback-check.sh
           npx --yes wrangler@4.149.0 rollback \
             --config wrangler.assets.jsonc \
             --env "$TARGET_ENVIRONMENT" \

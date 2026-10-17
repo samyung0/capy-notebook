@@ -198,10 +198,15 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    to its previous deployment (`wrangler rollback --config
    wrangler.assets.jsonc --env <env>`): the old `index.html`, still served,
    names chunks only that deployment has. It first reads the app host's
-   `/release.txt`: when that already shows the new revision (the app Worker
-   step failed after its new version went live, in a later part such as its
-   routes), the new `index.html` needs the new assets, so the step leaves
-   both Workers and fails for the manual rollback. An assets Worker step that
+   `/release.txt` up to 3 times over about 30 s
+   (`scripts/deploy/assets-rollback-check.sh`; a failed request, an error
+   status or a body that is no revision is no read) and rolls back only when
+   a read succeeded and every successful read shows the old revision. When a
+   read shows the new revision (the app Worker step failed after its new
+   version went live, in a later part such as its routes), the new
+   `index.html` needs the new assets, and when no read succeeds the step
+   cannot tell: either way it leaves both Workers and fails for the manual
+   rollback. An assets Worker step that
    fails after its version went live gets no automatic action either (Epo
    2026-10-17). Roll back by hand the same way,
    both Workers back to back (`capy-notebook-<env>` and
