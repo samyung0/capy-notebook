@@ -42,7 +42,7 @@ import type {
   BillingInfo,
   CalendarEvent,
   Chapter,
-  ChatSteps,
+  ChatPrefs,
   CloneFileReq,
   CloneMaterialReq,
   CloneWorkspaceResult,
@@ -220,19 +220,72 @@ export const modelsQuery = (slot: ModelSlot) =>
 export const useModels = (slot: ModelSlot, options?: QueryUiOptions) =>
   useQuery({ ...modelsQuery(slot), meta: queryMeta(options) });
 
+const modelPrefsKey = ['models'] as const;
+
+/** Saves model choices, shown at once in the models and me caches. Saves go
+ * out in order and only the last one to settle refetches, so a slower earlier
+ * response never shows an older choice. */
 export function useSetModelPrefs() {
   const qc = useQueryClient();
+  const queue = useRef(Promise.resolve());
   return useMutation({
-    mutationFn: (body: SetModelPrefsReq) => api.patch<void>('/me/models', body),
-    // Stays pending until the refetch lands, so the pickers never re-enable
-    // showing the old choice.
-    onSuccess: () =>
-      Promise.all([
-        qc.invalidateQueries({ queryKey: qk.me }),
-        qc.invalidateQueries({ queryKey: ['models'] }),
-      ]),
+    mutationFn: (body: SetModelPrefsReq) => {
+      const request = queue.current.then(() =>
+        api.patch<void>('/me/models', body)
+      );
+      queue.current = request.then(
+        () => undefined,
+        () => undefined
+      );
+      return request;
+    },
+    mutationKey: modelPrefsKey,
+    onMutate: async ({ chatModel, chatThinking, editorModel }) => {
+      await Promise.all([
+        qc.cancelQueries({ queryKey: modelPrefsKey }),
+        qc.cancelQueries({ queryKey: qk.me }),
+      ]);
+      qc.setQueryData<ModelsResponse>(qk.models('chat'), (models) =>
+        models
+          ? {
+              ...models,
+              selectedModel: chatModel ?? models.selectedModel,
+              selectedThinking: chatThinking ?? models.selectedThinking,
+            }
+          : models
+      );
+      if (editorModel)
+        qc.setQueryData<ModelsResponse>(qk.models('editor'), (models) =>
+          models ? { ...models, selectedModel: editorModel } : models
+        );
+      qc.setQueryData<User>(qk.me, (me) =>
+        me
+          ? {
+              ...me,
+              chatModel: chatModel ?? me.chatModel,
+              editorModel: editorModel ?? me.editorModel,
+            }
+          : me
+      );
+    },
+    onSettled: () =>
+      refetchIfLast(qc, modelPrefsKey, () =>
+        Promise.all([
+          qc.invalidateQueries({ queryKey: qk.me }),
+          qc.invalidateQueries({ queryKey: modelPrefsKey }),
+        ])
+      ),
   });
 }
+
+/** True while a chat model change is saving: the Thinking levels it offers
+ * belong to the new model, and its stored level arrives with the refetch. */
+export const useChatModelSaving = () =>
+  useMutationState({
+    filters: { mutationKey: modelPrefsKey, status: 'pending' },
+    select: (mutation) =>
+      (mutation.state.variables as SetModelPrefsReq).chatModel !== undefined,
+  }).some(Boolean);
 
 export const deletionPreflightQuery = () =>
   queryOptions({
@@ -538,10 +591,17 @@ export function useSetNotificationPrefs() {
       );
       return request;
     },
-    onSettled: () => {
-      void qc.invalidateQueries({ queryKey: qk.notificationPrefs });
+    mutationKey: qk.notificationPrefs,
+    // Each save carries the whole set, built from this cache, so a quick
+    // second toggle keeps the first.
+    onMutate: async (prefs) => {
+      await qc.cancelQueries({ queryKey: qk.notificationPrefs });
+      qc.setQueryData(qk.notificationPrefs, prefs);
     },
-    onSuccess: (prefs) => qc.setQueryData(qk.notificationPrefs, prefs),
+    onSettled: () =>
+      refetchIfLast(qc, qk.notificationPrefs, () =>
+        qc.invalidateQueries({ queryKey: qk.notificationPrefs })
+      ),
   });
 }
 
@@ -573,14 +633,14 @@ export function useSetStudyPreferences() {
   });
 }
 
-/** Saves the chat's Steps setting, shown at once through the me cache. */
-export function useSetChatSteps() {
+/** Saves the Settings → Chat choices, shown at once through the me cache. */
+export function useSetChatPrefs() {
   const qc = useQueryClient();
   const queue = useRef(Promise.resolve());
   return useMutation({
-    mutationFn: (steps: ChatSteps) => {
+    mutationFn: (prefs: ChatPrefs) => {
       const request = queue.current.then(() =>
-        api.patch<void>('/me/chat-steps', { steps })
+        api.patch<void>('/me/chat', prefs)
       );
       queue.current = request.then(
         () => undefined,
@@ -589,10 +649,16 @@ export function useSetChatSteps() {
       return request;
     },
     mutationKey: qk.me,
-    onMutate: async (steps) => {
+    onMutate: async ({ sendKey, steps }) => {
       await qc.cancelQueries({ queryKey: qk.me });
       qc.setQueryData<User>(qk.me, (me) =>
-        me ? { ...me, chatSteps: steps } : me
+        me
+          ? {
+              ...me,
+              chatSendKey: sendKey ?? me.chatSendKey,
+              chatSteps: steps ?? me.chatSteps,
+            }
+          : me
       );
     },
     onSettled: () =>

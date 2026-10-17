@@ -1320,7 +1320,7 @@
         },
         "labels": {
           "items": {
-            "maxLength": 12000,
+            "maxLength": 60,
             "type": "string"
           },
           "maxItems": 50,
@@ -1332,11 +1332,13 @@
             "additionalProperties": false,
             "properties": {
               "name": {
-                "maxLength": 1000,
+                "maxLength": 60,
                 "type": "string"
               },
               "values": {
                 "items": {
+                  "maximum": 1000000000000,
+                  "minimum": -1000000000000,
                   "type": [
                     "number",
                     "null"
@@ -1351,23 +1353,23 @@
             ],
             "type": "object"
           },
-          "maxItems": 8,
+          "maxItems": 6,
           "minItems": 1,
           "type": "array"
         },
         "title": {
-          "maxLength": 1000,
+          "maxLength": 100,
           "type": "string"
         },
         "type": {
           "const": "chart"
         },
         "xTitle": {
-          "maxLength": 1000,
+          "maxLength": 100,
           "type": "string"
         },
         "yTitle": {
-          "maxLength": 1000,
+          "maxLength": 100,
           "type": "string"
         }
       },

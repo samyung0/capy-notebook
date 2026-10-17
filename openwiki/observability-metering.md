@@ -315,7 +315,19 @@ is expected after every bumping deploy: collaboration logs it at warn
 counts it in `capy_collaboration_outdated_refusals_total{family}` (material,
 source) and, for a draft send, `capy_collaboration_draft_refusals_total{class="outdated"}`
 on `/metrics`; the browser shows the outdated strip and reports nothing.
-That counter is how many stale tabs remain after a deploy. Sentry holds failures
+That counter is how many stale tabs remain after a deploy. A source room load
+refused because loaded rooms' files fill the disk store (its cap,
+[office-files](frontend/office-files.md)) is expected the same way:
+collaboration logs `source room refused: disk store full` at warn with the
+held and capped bytes, never captures it, and counts it in
+`capy_collaboration_source_disk_refusals_total` (not in
+`capy_collaboration_authentication_failures_total`, and with no
+`authentication rejected` line); Edit retries and shows collaboration
+unavailable. A steady count means the cap is too small for the
+rooms open at once. Next to it, the gauge
+`capy_collaboration_source_disk_held_bytes` is the bytes of the files loaded
+rooms hold, which is what a refusal compares with the cap (idle files go
+first and are not in it). Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal

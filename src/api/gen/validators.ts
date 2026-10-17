@@ -3727,6 +3727,7 @@ export const GetMeResponse = zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
 }),
+  "chatSendKey": zod.enum(['enter', 'shift_enter']),
   "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
   "editorModel": zod.object({
@@ -3790,6 +3791,7 @@ export const UpdateMeResponse = zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
 }),
+  "chatSendKey": zod.enum(['enter', 'shift_enter']),
   "chatSteps": zod.enum(['normal', 'verbose']),
   "classLabel": zod.string().optional(),
   "editorModel": zod.object({
@@ -3820,13 +3822,14 @@ export const UpdateMeResponse = zod.object({
 
 
 /**
- * @summary Set how much of its tool work the chat shows
+ * @summary Set the chat settings
  */
-export const SetChatStepsBody = zod.object({
-  "steps": zod.enum(['normal', 'verbose'])
+export const SetChatPrefsBody = zod.object({
+  "sendKey": zod.enum(['enter', 'shift_enter']).optional().describe('The key that sends a message; the other adds a new line'),
+  "steps": zod.enum(['normal', 'verbose']).optional().describe('How much of a turn\'s tool work the chat shows')
 })
 
-export const SetChatStepsResponse = zod.void()
+export const SetChatPrefsResponse = zod.void()
 
 
 /**

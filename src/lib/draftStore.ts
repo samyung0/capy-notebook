@@ -1,5 +1,6 @@
 import * as Y from 'yjs';
 import type { EditDraft } from './editDrafts';
+import { evictOldestSource } from './sourceCache';
 
 /**
  * The draft store's IndexedDB side, run in the drafts worker
@@ -424,6 +425,28 @@ function run(name: string, message: DraftRequest): Promise<unknown> {
   }
 }
 
+/**
+ * Runs a request; one the storage quota refuses deletes the device copy of
+ * the least recently opened source file (sourceCache.ts) and runs again, one
+ * copy at a time, until it lands or no copy is left, when it fails as before:
+ * offline drafts come first in the quota (Epo 2026-10-17). A transaction that
+ * failed changed nothing, so running it again is safe.
+ */
+async function runFreeingQuota(
+  name: string,
+  message: DraftRequest
+): Promise<unknown> {
+  while (true) {
+    try {
+      return await run(name, message);
+    } catch (error) {
+      const quota =
+        error instanceof DOMException && error.name === 'QuotaExceededError';
+      if (!(quota && (await evictOldestSource()))) throw error;
+    }
+  }
+}
+
 function storageError(error: unknown): StorageError {
   return error instanceof Error || error instanceof DOMException
     ? { message: error.message, name: error.name }
@@ -441,7 +464,7 @@ export function handleDraftMessage(
   queue ??= migrateSourceDrafts(message.database, message.sourceDatabase).catch(
     (error) => console.warn('Draft migration failed:', error)
   );
-  const next = queue.then(() => run(message.database, message));
+  const next = queue.then(() => runFreeingQuota(message.database, message));
   queue = next.catch(() => undefined);
   next.then(
     (result) => {

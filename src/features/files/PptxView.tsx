@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { ViewableFile } from '@/api/types';
+import type { SourceFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -19,7 +19,7 @@ export default function PptxView({
 }: {
   canEdit: boolean;
   citation?: OfficeCitation;
-  file: ViewableFile;
+  file: SourceFile;
   onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
 }) {
@@ -55,7 +55,11 @@ export default function PptxView({
 
   if (runtime.error && !runtime.analysis && runtime.mode === 'view') {
     return (
-      <FileError onRetry={runtime.retryView} title={m.files_pptx_failed()} />
+      <FileError
+        errorId={runtime.errorId}
+        onRetry={runtime.retryView}
+        title={m.files_pptx_failed()}
+      />
     );
   }
   return (

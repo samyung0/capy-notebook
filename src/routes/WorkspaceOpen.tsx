@@ -208,7 +208,8 @@ export default function WorkspaceOpen() {
       });
       return;
     }
-    const regions = citation.regions ?? [];
+    // A copy per click: PdfView scrolls and flashes once per regions array.
+    const regions = [...(citation.regions ?? [])];
     const regionPage = regions.find((region) => region.page > 0)?.page;
     setCitationTarget({
       citation: citation.snippet
@@ -217,8 +218,11 @@ export default function WorkspaceOpen() {
       fileId: citation.fileId,
       regions,
     });
+    // The router's scroll reset would abort the viewer's smooth scroll to
+    // the cited box.
     navigate({
       replace: true,
+      resetScroll: false,
       search: {
         ...searchFromOpenItem({
           id: citation.fileId,
@@ -358,7 +362,7 @@ export default function WorkspaceOpen() {
   // The workspace switcher is the first row of the file tree and scrolls
   // with it.
   const picker = (
-    <div className="-mx-2.5 mt-3 mb-1 flex flex-col">
+    <div className="mt-2.5 flex flex-col">
       <WorkspacePicker
         onClone={readOnly && canClone ? () => setCloneOpen(true) : undefined}
         onOpenSettings={rowProps.onOpenSettings}

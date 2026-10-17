@@ -1,8 +1,9 @@
 //! Environment configuration (the Node server's `config.ts`): the same names
 //! and local-dev values, plus the Rust server's own (projection idle, folds,
-//! the Office engine pool, the markdown bundle). The engine pool has no
-//! default: each environment sets it (scripts/env/config.py, the compose
-//! files), as Epo decided its sizes per environment.
+//! the Office engine pool, the markdown bundle, the source disk store). The
+//! engine pool and the disk store have no default: each environment sets
+//! them (scripts/env/config.py, the compose files, the image), as Epo decided
+//! their sizes per environment.
 
 use std::collections::{BTreeSet, HashMap};
 use std::time::Duration;
@@ -49,6 +50,11 @@ pub struct Config {
     pub markdown_bundle: Option<String>,
     /// The `collab_health` interval (capacity runs log more often).
     pub health_interval: Duration,
+    /// The source rooms' disk store (Epo 2026-10-17): its folder, wiped at
+    /// start (the image sets it), and its cap per environment (production
+    /// 10 GiB, UAT 5 GiB). No default.
+    pub source_disk_dir: std::path::PathBuf,
+    pub source_disk_bytes: u64,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -167,6 +173,18 @@ impl Config {
                 .map(|path| path.trim().to_owned())
                 .filter(|path| !path.is_empty()),
             health_interval: millis(env, "COLLAB_HEALTH_INTERVAL_MS", 60_000)?,
+            source_disk_dir: match env
+                .get("COLLABORATION_SOURCE_DISK_DIR")
+                .map(|dir| dir.trim())
+            {
+                Some(dir) if !dir.is_empty() => dir.into(),
+                _ => {
+                    return Err(ConfigError(
+                        "COLLABORATION_SOURCE_DISK_DIR is required".into(),
+                    ));
+                }
+            },
+            source_disk_bytes: required(env, "COLLABORATION_SOURCE_DISK_BYTES")?,
         })
     }
 
@@ -181,12 +199,14 @@ impl Config {
 mod tests {
     use super::*;
 
-    /// `pairs` plus the engine pool every environment sets.
+    /// `pairs` plus the engine pool and disk store every environment sets.
     fn env(pairs: &[(&str, &str)]) -> HashMap<String, String> {
         [
             ("COLLABORATION_ENGINE_SAVE_PROCESSES", "1"),
             ("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1"),
             ("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "3221225472"),
+            ("COLLABORATION_SOURCE_DISK_DIR", "/var/lib/capy/sources"),
+            ("COLLABORATION_SOURCE_DISK_BYTES", "5368709120"),
         ]
         .iter()
         .chain(pairs)
@@ -267,6 +287,27 @@ mod tests {
             ),
             (1, 1, 3 << 30)
         );
+    }
+
+    #[test]
+    fn the_source_disk_store_has_no_default() {
+        for name in [
+            "COLLABORATION_SOURCE_DISK_DIR",
+            "COLLABORATION_SOURCE_DISK_BYTES",
+        ] {
+            let mut values = env(&[]);
+            values.remove(name);
+            assert_eq!(
+                Config::load(&values).unwrap_err().to_string(),
+                format!("{name} is required")
+            );
+        }
+        let config = Config::load(&env(&[])).unwrap();
+        assert_eq!(
+            config.source_disk_dir,
+            std::path::PathBuf::from("/var/lib/capy/sources")
+        );
+        assert_eq!(config.source_disk_bytes, 5 << 30);
     }
 
     #[test]

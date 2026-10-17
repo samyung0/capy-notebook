@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { ViewableFile } from '@/api/types';
+import type { SourceFile } from '@/api/types';
 import DocxView from './DocxView';
 import { FileHeaderTarget } from './fileModeContext';
 import { useOfficeRuntime } from './useOfficeRuntime';
@@ -28,7 +28,7 @@ function render(
   } as Runtime);
   return renderToStaticMarkup(
     <FileHeaderTarget.Provider value={headerTarget}>
-      <DocxView canEdit file={{ id: 'f', name: 'plan.docx' } as ViewableFile} />
+      <DocxView canEdit file={{ id: 'f', name: 'plan.docx' } as SourceFile} />
     </FileHeaderTarget.Provider>
   );
 }
@@ -58,6 +58,12 @@ describe('DocxView header', () => {
     );
     // Without a file header a row of its own keeps the count and the toggle.
     expect(render({ analysis, ready: true })).toMatch(HEADER_ROW);
+  });
+
+  it('shows the error id when the view read fails', () => {
+    const markup = render({ error: 'x', errorId: 'trace-1', mode: 'view' });
+    expect(markup).toContain('trace-1');
+    expect(markup).not.toContain('<iframe');
   });
 
   it('asks for a reload when the Office runtime speaks another protocol version', () => {

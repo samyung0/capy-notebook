@@ -1118,7 +1118,10 @@ upload returns the already-created file. Concurrent duplicate completions may
 race before either database commit. If one request has already moved the
 incoming object, the other accepts the stable object only when its recorded
 size and content type match, then converges through the same idempotent
-finalization transaction.
+finalization transaction. For a file with source sessions the gateway reads
+the promoted object back once and records its SHA-256 in that transaction;
+it never takes a hash from the browser, since the collaboration server checks
+the originals it loads against it ([backend-storage-quota](backend-storage-quota.md#reservations-and-clones)).
 
 The upload sweeper runs once on server startup and every minute afterward. It
 finds pending sessions whose presigned deadline has passed, marks each one

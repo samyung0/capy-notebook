@@ -60,9 +60,11 @@ import type {
   UpdateWorkspaceMemberReq as GenUpdateWorkspaceMemberReq,
   MaterialKind,
   ResourceEffect,
-  SetChatStepsReqSteps,
+  SetChatPrefsReq,
   ToolError,
   UndoRefStatus,
+  UserChatSendKey,
+  UserChatSteps,
   UserColor,
   WorkspaceRole,
 } from './gen/model';
@@ -471,7 +473,11 @@ export type {
 } from './gen/model';
 export type ToolOutcome = ActivityBlockOutcome;
 /** How much of a turn's tool work the chat shows (`User.chatSteps`). */
-export type ChatSteps = SetChatStepsReqSteps;
+export type ChatSteps = UserChatSteps;
+/** Which key sends a chat message (`User.chatSendKey`). */
+export type ChatSendKey = UserChatSendKey;
+/** The Settings → Chat choices to save; omitted ones keep their value. */
+export type ChatPrefs = SetChatPrefsReq;
 export type ResourceEffectOperation = GenResourceEffectOperation;
 export type UndoStatus = UndoRefStatus;
 

@@ -357,6 +357,106 @@ test('workspace PDF mode survives reload and retains the citation page', async (
   });
 });
 
+type CitationFlash = {
+  centerOffset: number;
+  end?: number;
+  painted: boolean;
+  start: number;
+};
+
+/** Records each flash of a PDF citation box: when it starts and ends, whether
+ * its page had painted, and how far its centre sat from the viewer's centre
+ * when it started. */
+function recordCitationFlashes(page: Page) {
+  return page.evaluate(() => {
+    const flashes: CitationFlash[] = [];
+    (globalThis as unknown as { flashes: CitationFlash[] }).flashes = flashes;
+    new MutationObserver((records) => {
+      for (const { target } of records) {
+        if (!(target instanceof HTMLElement)) continue;
+        if (target.dataset.flash === undefined) {
+          const last = flashes.at(-1);
+          if (last) last.end = performance.now();
+          continue;
+        }
+        const scroller = target.closest('.overflow-auto');
+        if (!scroller) throw new Error('Missing scroller');
+        const box = target.getBoundingClientRect();
+        const pane = scroller.getBoundingClientRect();
+        flashes.push({
+          centerOffset: box.top + box.height / 2 - (pane.top + pane.height / 2),
+          painted: !!target.closest('[data-page][data-painted]'),
+          start: performance.now(),
+        });
+      }
+    }).observe(document.body, {
+      attributeFilter: ['data-flash'],
+      attributes: true,
+      subtree: true,
+    });
+  });
+}
+
+const endedFlashes = (page: Page) =>
+  page.evaluate(() =>
+    (globalThis as unknown as { flashes: CitationFlash[] }).flashes.filter(
+      (flash) => flash.end
+    )
+  );
+
+test('a chat citation opens the PDF, scrolls its box to the middle, then flashes it', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto('/workspaces/ws_scenarios');
+  // The scenario sends a chat whose source 2 is Scenario annotations.pdf,
+  // cited mid-page 2 (chatFixtures' scenarioPdfRegion).
+  const panel = page.getByTestId('mock-scenario-panel');
+  await panel.locator('summary').click({ timeout: 60_000 });
+  await panel.locator('[data-scenario="chat-openui-overview"]').click();
+  const source = page.getByTitle(m.chat_source_number({ n: 2 })).first();
+  await expect(source).toBeVisible({ timeout: 60_000 });
+  await recordCitationFlashes(page);
+  await source.click();
+  await expect(page).toHaveURL(/file=mock-scenario-pdf&page=2/);
+
+  // The flash starts once the page has painted and the scroll has settled
+  // with the box in the middle, and ends after its 1.6 s.
+  await expect
+    .poll(() => endedFlashes(page), { timeout: 30_000 })
+    .toHaveLength(1);
+  const [flash] = await endedFlashes(page);
+  expect(flash.painted).toBe(true);
+  expect(Math.abs(flash.centerOffset)).toBeLessThan(4);
+  expect(flash.end! - flash.start).toBeGreaterThanOrEqual(1500);
+
+  // The box is on the cited line.
+  const box = await page
+    .locator('[data-citation-region-index="0"]')
+    .boundingBox();
+  const line = await page
+    .locator('[data-page="2"] .react-pdf__Page__textContent')
+    .getByText('Osmosis moves water across the membrane.', { exact: true })
+    .boundingBox();
+  if (!box || !line) throw new Error('Missing boxes');
+  expect(box.x).toBeLessThanOrEqual(line.x);
+  expect(box.y).toBeLessThanOrEqual(line.y);
+  expect(box.x + box.width).toBeGreaterThanOrEqual(line.x + line.width);
+  expect(box.y + box.height).toBeGreaterThanOrEqual(line.y + line.height);
+
+  // From the top of the file, the same citation scrolls and flashes again.
+  await page
+    .locator('[data-page="1"]')
+    .evaluate((node) => node.scrollIntoView({ block: 'start' }));
+  await source.click();
+  await expect
+    .poll(() => endedFlashes(page), { timeout: 30_000 })
+    .toHaveLength(2);
+  const [, again] = await endedFlashes(page);
+  expect(again.painted).toBe(true);
+  expect(Math.abs(again.centerOffset)).toBeLessThan(4);
+});
+
 test('workspace links remember each file and material mode independently', async ({
   page,
 }) => {

@@ -54,7 +54,7 @@ const STAGES = [
 /** What no signal shows without a product hook (README). */
 const UNAVAILABLE = {
   crossOriginSizes:
-    'Sizes and cache state of cross-origin responses without Timing-Allow-Origin (API, B2 source bytes, Clerk): only start and end. Needs Timing-Allow-Origin on those responses.',
+    'Sizes, cache state, requestStart, responseStart and protocol of cross-origin responses without Timing-Allow-Origin (API, B2 source bytes, Clerk): only start and end (their status and Cloudflare headers come from the network). Needs Timing-Allow-Origin on those responses.',
   documentFontsReady:
     "document.fonts.ready: the runtime loads each face from bytes before adding it, so the frame's FontFaceSet reports no loading; fontsAdded (the last face added) stands in.",
   workerWasmCompile:
@@ -257,12 +257,29 @@ function timeline() {
   const navigation = performance.getEntriesByType('navigation')[0] as
     | PerformanceNavigationTiming
     | undefined;
+  // Cross-origin entries without Timing-Allow-Origin report 0 for the sizes,
+  // requestStart, responseStart and nextHopProtocol.
+  const timing = (
+    entry: PerformanceResourceTiming & { deliveryType?: string }
+  ) => ({
+    decodedBodySize: entry.decodedBodySize,
+    deliveryType: entry.deliveryType ?? '',
+    encodedBodySize: entry.encodedBodySize,
+    end: entry.responseEnd,
+    initiatorType: entry.initiatorType,
+    name: entry.name,
+    nextHopProtocol: entry.nextHopProtocol,
+    requestStart: entry.requestStart,
+    responseStart: entry.responseStart,
+    start: entry.startTime,
+    transferSize: entry.transferSize,
+  });
   return {
     navigation: navigation
       ? {
+          ...timing(navigation),
           domContentLoaded: navigation.domContentLoadedEventEnd,
           load: navigation.loadEventEnd,
-          responseEnd: navigation.responseEnd,
         }
       : null,
     origin: performance.timeOrigin,
@@ -270,23 +287,43 @@ function timeline() {
       (globalThis as typeof globalThis & { __officeLoad?: Probe })
         .__officeLoad ?? null,
     resources: (
-      performance.getEntriesByType('resource') as (PerformanceResourceTiming & {
-        deliveryType?: string;
-      })[]
-    ).map((entry) => ({
-      deliveryType: entry.deliveryType ?? '',
-      encodedBodySize: entry.encodedBodySize,
-      end: entry.responseEnd,
-      initiatorType: entry.initiatorType,
-      name: entry.name,
-      start: entry.startTime,
-      transferSize: entry.transferSize,
-    })),
+      performance.getEntriesByType('resource') as PerformanceResourceTiming[]
+    ).map(timing),
   };
 }
 
 type Timeline = ReturnType<typeof timeline>;
 type Realm = Timeline & { name: string };
+
+/** A response's status and Cloudflare headers; an HTTP-cache hit shows the stored ones. */
+type Network = {
+  age: number | null;
+  cacheStatus: string | null;
+  /** The cf-ray suffix: the Cloudflare data centre that answered. */
+  colo: string | null;
+  status: number;
+};
+
+/**
+ * Every response the tab sees, its frames' and their dedicated workers'
+ * included (Chromium), by full URL in arrival order. Only the status and the
+ * three headers are kept: never request headers, cookies or the query.
+ */
+function listen(page: Page) {
+  const responses = new Map<string, Network[]>();
+  page.on('response', (response) => {
+    const headers = response.headers();
+    const list = responses.get(response.url()) ?? [];
+    list.push({
+      age: headers.age === undefined ? null : Number(headers.age),
+      cacheStatus: headers['cf-cache-status'] ?? null,
+      colo: headers['cf-ray']?.split('-').at(-1) ?? null,
+      status: response.status(),
+    });
+    responses.set(response.url(), list);
+  });
+  return responses;
+}
 
 /** The app page, its frames and every worker the page or the runtime started. */
 async function timelines(page: Page) {
@@ -353,6 +390,7 @@ function summarize(
   file: MeasuredFile,
   open: 'cold' | 'warm',
   realms: Realm[],
+  responses: Map<string, Network[]>,
   error: string | null
 ) {
   const app = realms.find((realm) => realm.name === 'app');
@@ -361,18 +399,32 @@ function summarize(
   /** A time on `realm`'s clock, in ms after the app's navigation start. */
   const at = (realm: Realm | undefined, time: number | undefined) =>
     app && realm && time ? Math.round(realm.origin + time - zero) : null;
-  const resources = realms.flatMap((realm) =>
-    realm.resources.map((entry) => ({
-      cache: cacheState(entry),
-      encodedBodySize: entry.encodedBodySize,
-      end: at(realm, entry.end),
-      initiatorType: entry.initiatorType,
-      realm: realm.name,
-      start: at(realm, entry.start),
-      transferSize: entry.transferSize,
-      url: address(entry.name),
-    }))
-  );
+  const request = (realm: Realm, entry: Timeline['resources'][number]) => ({
+    cache: cacheState(entry),
+    decodedBodySize: entry.decodedBodySize,
+    encodedBodySize: entry.encodedBodySize,
+    end: at(realm, entry.end),
+    initiatorType: entry.initiatorType,
+    // The next response seen for this URL: entries are matched in start order.
+    network: responses.get(entry.name)?.shift() ?? null,
+    nextHopProtocol: entry.nextHopProtocol,
+    realm: realm.name,
+    requestStart: at(realm, entry.requestStart),
+    responseStart: at(realm, entry.responseStart),
+    start: at(realm, entry.start),
+    transferSize: entry.transferSize,
+    url: address(entry.name),
+  });
+  const indexHtml = app?.navigation
+    ? { ...request(app, app.navigation), start: 0 }
+    : null;
+  const resources = realms
+    .flatMap((realm) => realm.resources.map((entry) => ({ entry, realm })))
+    .sort(
+      (a, b) =>
+        a.realm.origin + a.entry.start - (b.realm.origin + b.entry.start)
+    )
+    .map(({ entry, realm }) => request(realm, entry));
   type Resource = (typeof resources)[number];
   const probe = app?.probe;
   const runtime = frame?.probe;
@@ -426,7 +478,7 @@ function summarize(
     firstPagePainted: painted,
     fontsAdded: latest(fontsAdded),
     fontsFetched: latest(fonts.map((entry) => entry.end)),
-    htmlReceived: at(app, app?.navigation?.responseEnd),
+    htmlReceived: at(app, app?.navigation?.end),
     loadArrived: at(frame, runtime?.host.load),
     replicaReady: at(app, probe?.runtime['collaboration-ready']),
     roomSocket: socket
@@ -474,6 +526,7 @@ function summarize(
         at(frame, time)
       ),
     },
+    indexHtml,
     milestones,
     navigationStart: app ? new Date(zero).toISOString() : null,
     open,
@@ -508,6 +561,7 @@ async function measure(
   file: MeasuredFile,
   open: 'cold' | 'warm'
 ) {
+  const responses = listen(actor.page);
   let error: string | null = null;
   try {
     await openFile(run, actor, workspaceId, file.id, 'edit');
@@ -536,7 +590,8 @@ async function measure(
       .split('\n')[0]
       .slice(0, 300);
   }
-  return summarize(run, file, open, await timelines(actor.page), error);
+  const realms = await timelines(actor.page);
+  return summarize(run, file, open, realms, responses, error);
 }
 
 /** Rewritten after every open, so a run that stops early keeps its rows. */
@@ -544,6 +599,8 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
   const ms = (value: number | null | undefined) =>
     value === null || value === undefined ? '–' : String(value);
   const kb = (bytes: number) => Math.round(bytes / 1024);
+  const gap = (from: number | null, to: number | null) =>
+    from === null || to === null ? null : to - from;
   const sent = (total: OpenResult['totals']['wasm']) =>
     `${total.count} / ${kb(total.transferBytes)} KB / ${total.cached} cached`;
   const name = ({ file }: OpenResult) =>
@@ -585,6 +642,40 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
       (result) =>
         `| ${name(result)} | ${result.open} | ${sent(result.totals.bundles)} | ${sent(result.totals.wasm)} | ${sent(result.totals.fonts)} |`
     ),
+    '',
+    '## Key requests',
+    '',
+    'Per open: the document, the SPA entry chunk, each WASM fetched and the largest font. Start, TTFB (responseStart − requestStart) and download (end − responseStart) in ms; – where the realm reports no detail. cf-cache-status, age and colo (the cf-ray suffix) are the response headers as Playwright saw them; an HTTP-cache hit shows those stored with it.',
+    '',
+    '| Open | Request | Start | TTFB | Download | Transfer KB | Encoded / decoded KB | cf-cache-status | Age | Colo |',
+    '| --- | --- | ---: | ---: | ---: | ---: | ---: | --- | ---: | --- |',
+    ...results.flatMap((result) => {
+      const requests = [
+        result.indexHtml,
+        result.resources.find(
+          (entry) =>
+            entry.realm === 'app' && /\/assets\/main-[^/]*\.js$/.test(entry.url)
+        ),
+        ...result.wasm.fetches,
+        [...result.fonts.fetches].sort(
+          (a, b) => b.decodedBodySize - a.decodedBodySize
+        )[0],
+      ].filter((entry) => entry !== null && entry !== undefined);
+      const open = `${result.file.format} ${result.file.size} ${result.open}`;
+      return requests.map((entry) => {
+        const label =
+          entry === result.indexHtml
+            ? 'index.html'
+            : entry.url.split('/').at(-1);
+        const times = [
+          entry.start,
+          gap(entry.requestStart, entry.responseStart),
+          gap(entry.responseStart, entry.end),
+        ];
+        const { network } = entry;
+        return `| ${open} | ${label} | ${times.map(ms).join(' | ')} | ${kb(entry.transferSize)} | ${kb(entry.encodedBodySize)} / ${kb(entry.decodedBodySize)} | ${network?.cacheStatus ?? '–'} | ${ms(network?.age)} | ${network?.colo ?? '–'} |`;
+      });
+    }),
   ];
   writeFileSync(
     path.join(directory, 'office-load.md'),

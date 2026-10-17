@@ -40,19 +40,34 @@ const (
 	QuestionMetadata  = 1_000
 	// QuestionDescription bounds an image's or graph's description outside
 	// the bank (quizzes and notes); bank questions take QuestionText.
-	QuestionDescription   = 500
-	QuestionAnswers       = 100
-	QuestionMarkscheme    = 20
-	QuestionMarkItem      = 1_000
-	QuestionMarks         = 20
-	QuestionUnit          = 100
-	QuestionTableRows     = 30
-	QuestionTableColumns  = 10
-	QuestionChartLabels   = 50
-	QuestionChartSeries   = 8
-	QuestionGraphElements = 60
-	QuestionGraphTerm     = 200
-	QuestionGraphPolygon  = 12
+	QuestionDescription  = 500
+	QuestionAnswers      = 100
+	QuestionMarkscheme   = 20
+	QuestionMarkItem     = 1_000
+	QuestionMarks        = 20
+	QuestionUnit         = 100
+	QuestionTableRows    = 30
+	QuestionTableColumns = 10
+	QuestionChartLabels  = 50
+	QuestionChartSeries  = 6
+	// A chart's title and axis titles, each series name and category label,
+	// and each value's magnitude (Epo 2026-10-17).
+	QuestionChartTitle      = 100
+	QuestionChartSeriesName = 60
+	QuestionChartLabel      = 60
+	QuestionChartValue      = 1_000_000_000_000
+	QuestionGraphElements   = 60
+	QuestionGraphTerm       = 200
+	QuestionGraphPolygon    = 12
+	// A graph's label text (wrapped on the board) and its point names and
+	// angle labels (Epo 2026-10-17).
+	QuestionGraphLabel = 60
+	QuestionGraphName  = 20
+	// A graph's width and height in pixels: its text is drawn at 12px, so a
+	// larger board shrinks it past reading in a note column; 120 keeps short
+	// box plots (Epo 2026-10-17).
+	QuestionGraphDimensionMin = 120
+	QuestionGraphDimensionMax = 1_200
 	// A plot block: curves of [x, y] points, and reference lines and
 	// labelled points, each list at most QuestionPlotMarks long.
 	QuestionPlotSeries     = 4
@@ -80,36 +95,44 @@ const (
 // QuestionBounds is exported into frontend and pipeline contracts; the
 // collaboration server reads them from the embed catalog (internal/embeds).
 var QuestionBounds = map[string]int{
-	"QUESTION_COUNT_MAX":           QuestionCount,
-	"QUESTION_ID_MAX":              QuestionID,
-	"QUESTION_PARTS_MAX":           QuestionParts,
-	"QUESTION_BLOCKS_MAX":          QuestionBlocks,
-	"QUESTION_TEXT_MAX":            QuestionText,
-	"QUESTION_METADATA_MAX":        QuestionMetadata,
-	"QUESTION_DESCRIPTION_MAX":     QuestionDescription,
-	"QUESTION_ANSWERS_MAX":         QuestionAnswers,
-	"QUESTION_MARKSCHEME_MAX":      QuestionMarkscheme,
-	"QUESTION_MARK_ITEM_MAX":       QuestionMarkItem,
-	"QUESTION_MARKS_MAX":           QuestionMarks,
-	"QUESTION_UNIT_MAX":            QuestionUnit,
-	"QUESTION_TABLE_ROWS_MAX":      QuestionTableRows,
-	"QUESTION_TABLE_COLUMNS_MAX":   QuestionTableColumns,
-	"QUESTION_CHART_LABELS_MAX":    QuestionChartLabels,
-	"QUESTION_CHART_SERIES_MAX":    QuestionChartSeries,
-	"QUESTION_GRAPH_ELEMENTS_MAX":  QuestionGraphElements,
-	"QUESTION_GRAPH_TERM_MAX":      QuestionGraphTerm,
-	"QUESTION_GRAPH_POLYGON_MAX":   QuestionGraphPolygon,
-	"QUESTION_PLOT_SERIES_MAX":     QuestionPlotSeries,
-	"QUESTION_PLOT_POINTS_MAX":     QuestionPlotPoints,
-	"QUESTION_PLOT_MARKS_MAX":      QuestionPlotMarks,
-	"QUESTION_SVG_BYTES_MAX":       QuestionSVGBytes,
-	"QUESTION_IMAGE_DIMENSION_MAX": QuestionImageDimension,
-	"QUESTION_ASSET_URL_MAX":       QuestionAssetURL,
-	"QUIZ_PARTS_MAX":               QuizParts,
-	"QUIZ_QUESTION_PARTS_MAX":      QuizQuestionParts,
-	"QUIZ_OPEN_PARTS_MAX":          QuizOpenParts,
-	"QUIZ_MARKSCHEME_MAX":          QuizMarkscheme,
-	"QUIZ_OPEN_ANSWER_MAX":         QuizOpenAnswer,
+	"QUESTION_COUNT_MAX":             QuestionCount,
+	"QUESTION_ID_MAX":                QuestionID,
+	"QUESTION_PARTS_MAX":             QuestionParts,
+	"QUESTION_BLOCKS_MAX":            QuestionBlocks,
+	"QUESTION_TEXT_MAX":              QuestionText,
+	"QUESTION_METADATA_MAX":          QuestionMetadata,
+	"QUESTION_DESCRIPTION_MAX":       QuestionDescription,
+	"QUESTION_ANSWERS_MAX":           QuestionAnswers,
+	"QUESTION_MARKSCHEME_MAX":        QuestionMarkscheme,
+	"QUESTION_MARK_ITEM_MAX":         QuestionMarkItem,
+	"QUESTION_MARKS_MAX":             QuestionMarks,
+	"QUESTION_UNIT_MAX":              QuestionUnit,
+	"QUESTION_TABLE_ROWS_MAX":        QuestionTableRows,
+	"QUESTION_TABLE_COLUMNS_MAX":     QuestionTableColumns,
+	"QUESTION_CHART_LABELS_MAX":      QuestionChartLabels,
+	"QUESTION_CHART_SERIES_MAX":      QuestionChartSeries,
+	"QUESTION_CHART_TITLE_MAX":       QuestionChartTitle,
+	"QUESTION_CHART_SERIES_NAME_MAX": QuestionChartSeriesName,
+	"QUESTION_CHART_LABEL_MAX":       QuestionChartLabel,
+	"QUESTION_CHART_VALUE_MAX":       QuestionChartValue,
+	"QUESTION_GRAPH_ELEMENTS_MAX":    QuestionGraphElements,
+	"QUESTION_GRAPH_TERM_MAX":        QuestionGraphTerm,
+	"QUESTION_GRAPH_POLYGON_MAX":     QuestionGraphPolygon,
+	"QUESTION_GRAPH_LABEL_MAX":       QuestionGraphLabel,
+	"QUESTION_GRAPH_NAME_MAX":        QuestionGraphName,
+	"QUESTION_GRAPH_DIMENSION_MIN":   QuestionGraphDimensionMin,
+	"QUESTION_GRAPH_DIMENSION_MAX":   QuestionGraphDimensionMax,
+	"QUESTION_PLOT_SERIES_MAX":       QuestionPlotSeries,
+	"QUESTION_PLOT_POINTS_MAX":       QuestionPlotPoints,
+	"QUESTION_PLOT_MARKS_MAX":        QuestionPlotMarks,
+	"QUESTION_SVG_BYTES_MAX":         QuestionSVGBytes,
+	"QUESTION_IMAGE_DIMENSION_MAX":   QuestionImageDimension,
+	"QUESTION_ASSET_URL_MAX":         QuestionAssetURL,
+	"QUIZ_PARTS_MAX":                 QuizParts,
+	"QUIZ_QUESTION_PARTS_MAX":        QuizQuestionParts,
+	"QUIZ_OPEN_PARTS_MAX":            QuizOpenParts,
+	"QUIZ_MARKSCHEME_MAX":            QuizMarkscheme,
+	"QUIZ_OPEN_ANSWER_MAX":           QuizOpenAnswer,
 }
 
 // QuestionBoundNames lists QuestionBounds' names in order, for generated files.

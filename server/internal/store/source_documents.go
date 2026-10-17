@@ -430,9 +430,11 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 	if revision != baseRevision || in.BaseRevision != baseRevision {
 		return out, ErrCheckpointMoved
 	}
-	// The first save over seed(base) binds the source SHA once, and a text
-	// source records its seed's size then; later saves carry neither, and
-	// Office sources never carry a seed size.
+	// The first save over seed(base) binds the session's base SHA once (the
+	// one the upload recorded, when there is one), and a text source records
+	// its seed's size then; later saves carry neither, and Office sources never
+	// carry a seed size. The file's own SHA is the upload's and ingest's to
+	// write (Epo 2026-10-17).
 	text := format == "text"
 	if (seeded && text) != (in.SeedBytes > 0) || (!seeded && in.BaseSourceSHA256 != "") {
 		return out, ErrInvalidCheckpoint
@@ -447,9 +449,6 @@ func (s *Store) SaveSourceCheckpoint(ctx context.Context, fileID string, in Sour
 		sha = in.BaseSourceSHA256
 		if text {
 			seedBytes = in.SeedBytes
-		}
-		if _, err = tx.Exec(ctx, `UPDATE files SET source_sha256=$2 WHERE id=$1 AND source_sha256 IS NULL`, fileID, sha); err != nil {
-			return out, err
 		}
 	}
 	// An Office document is a change over seed(base), every row over the seed

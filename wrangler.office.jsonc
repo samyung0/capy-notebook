@@ -10,7 +10,15 @@
     "binding": "ASSETS",
     "html_handling": "none",
     "not_found_handling": "none",
-    "run_worker_first": ["/office-runtime.html"]
+    "run_worker_first": [
+      "/office-runtime.html",
+      "/assets/*.wasm",
+      "/assets/*.ttf",
+      "/assets/*.otf"
+    ]
+  },
+  "cache": {
+    "enabled": true
   },
   "vars": {
     "PARENT_ORIGINS": ""
@@ -28,7 +36,12 @@
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "none",
-        "run_worker_first": ["/office-runtime.html"]
+        "run_worker_first": [
+          "/office-runtime.html",
+          "/assets/*.wasm",
+          "/assets/*.ttf",
+          "/assets/*.otf"
+        ]
       },
       "routes": [
         {
@@ -55,7 +68,12 @@
         "binding": "ASSETS",
         "html_handling": "none",
         "not_found_handling": "none",
-        "run_worker_first": ["/office-runtime.html"]
+        "run_worker_first": [
+          "/office-runtime.html",
+          "/assets/*.wasm",
+          "/assets/*.ttf",
+          "/assets/*.otf"
+        ]
       }
     }
   }

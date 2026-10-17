@@ -168,6 +168,7 @@ export const user: Omit<User, 'account'> = {
     modelSlug: 'deepseek-flash',
     providerSlug: 'deepseek',
   },
+  chatSendKey: 'enter',
   chatSteps: 'normal',
   classLabel: 'Grade 11 · Science',
   editorModel: {

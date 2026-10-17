@@ -243,6 +243,34 @@ Clerk development instance. Point a local gateway at the UAT database only with
   include `X-Robots-Tag: noindex, nofollow`. Changing to private returns the
   same 404 as a missing workspace once the cached copy expires (five minutes). Full file/material/quiz routes
   reject anonymous requests.
+- `/assets/*` on both app hosts is Worker `capy-notebook-assets-uat`
+  (deployment-runbook §1): `curl -sI https://app.uat.capynotebook.com/assets/capy-missing.js`
+  returns `404` with `Cache-Control: no-store` and no `text/html` (Deploy UAT's
+  release check does the same), and a chunk the page loads (find one in
+  `curl -s https://app.uat.capynotebook.com/ | grep -o '/assets/[^"]*\.js' | head -1`)
+  returns `200` with `Cache-Control: public, max-age=31536000, immutable`. A
+  `200 text/html` for the missing name means the route is not attached: the
+  SPA fallback is answering, and the year-long header would pin it.
+- The Office runtime's WASM and uncompressed fonts come precompressed from
+  the Office Worker (deployment-runbook §1). With `W` a `.wasm` URL on
+  `uat-office.capynotebook.com` (Deploy UAT's "Stage the isolated Office
+  runtime" step logs every compressed file with its sizes), first, while the
+  file is cold after the deploy, a HEAD and a conditional request:
+  `curl -sI -H 'Accept-Encoding: br, gzip' "$W"` answers `200` with
+  `content-encoding: br` and the year-long `cache-control`, and
+  `curl -s -o /dev/null -w '%{http_code} %{size_download}\n' -H 'Accept-Encoding: br, gzip' -H 'If-None-Match: "capy-check"' -H 'If-Modified-Since: Sat, 17 Oct 2026 00:00:00 GMT' "$W"`
+  answers `200` with the full compressed size (the Worker never answers a
+  brotli file with a 304 or an empty body, so neither can sit in Workers
+  Cache). Then `curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' "$W"`
+  shows `200`, `content-type: application/wasm`, `content-encoding: br`,
+  `cache-control: public, max-age=31536000, immutable` and a `content-length`
+  about a fifth below the on-the-fly size (never 0, which would be an
+  answer without a body kept in the cache); `curl -s -H 'Accept-Encoding: identity' "$W" | head -c 4 | od -c`
+  prints `\0 a s m` (decoded for a client without brotli). A Carlito `.ttf`
+  answers the same with `font/ttf`. Repeating the plain GET shows
+  `cf-cache-status: HIT` with an `age` (Workers Cache), and the identity
+  request still prints
+  `\0 a s m` once the file is a hit.
 - GitHub configuration sync/readback passed before deployment. Managed Coolify
   variables are literal, non-preview and readable for verification; unset ones
   are blank. Neither values nor fingerprints appear in runner logs.
@@ -266,7 +294,9 @@ Clerk development instance. Point a local gateway at the UAT database only with
   also carries `script-src 'self' https://clerk.uat.capynotebook.com/npm/@clerk/ …`. If
   `/` and the deep link lack it while the summary has it, Workers Assets does
   not apply `_headers` to the SPA fallback: tell the Editor session (runbook
-  §2.4 has the fallback plan). Then open a workspace with a PDF, an image
+  §2.4 has the fallback plan). A `curl -sI` on an `/assets/…` chunk and on
+  `/favicon.svg` returns no `Content-Security-Policy-Report-Only`. Then open
+  a workspace with a PDF, an image
   source, a note with images, a YouTube block, a diagram and a bank-copied
   quiz, and the same note shared signed out: the console shows no
   `[Report Only]` image message and `capy-web` gets no image report. Script

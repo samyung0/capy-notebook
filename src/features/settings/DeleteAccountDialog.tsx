@@ -15,7 +15,7 @@ import {
 import type { RequestAccountDeletionReq } from '@/api/types';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
-import { Spinner } from '@/components/ui/feedback';
+import { Skeleton, Spinner } from '@/components/ui/feedback';
 import { Input, InputError } from '@/components/ui/Input';
 import { userToast } from '@/components/ui/userToast';
 import { m } from '@/i18n';
@@ -42,8 +42,12 @@ function DeleteAccountDialogInner({
   signOut,
 }: Props & { signOut?: () => Promise<unknown> }) {
   const { data: meData } = useMe();
-  const { data: preflightData, isSuccess: preflightIsSuccess } =
-    useDeletionPreflight();
+  const {
+    data: preflightData,
+    isSuccess: preflightIsSuccess,
+    isPending: preflightIsPending,
+    isFetching: preflightIsFetching,
+  } = useDeletionPreflight();
   const { mutateAsync: requestDeletion } = useRequestAccountDeletion();
 
   const deletionSchema = useMemo(
@@ -71,8 +75,13 @@ function DeleteAccountDialogInner({
     resolver: zodResolver(deletionSchema),
   });
 
+  // A cached preflight may be stale (workspaces joined since), so wait for
+  // the refetch the dialog's mount starts before allowing the request.
   const canDelete =
-    preflightData?.canDelete === true && isValid && !isSubmitting;
+    preflightData?.canDelete === true &&
+    !preflightIsFetching &&
+    isValid &&
+    !isSubmitting;
 
   const submit = handleSubmit(async (v) => {
     if (!preflightData) return;
@@ -144,6 +153,18 @@ function DeleteAccountDialogInner({
           days: String(preflightData?.graceDays ?? 30),
         })}
       </p>
+      {preflightIsPending && (
+        <div
+          aria-label={m.a11y_loading()}
+          className="flex flex-col gap-2"
+          role="status"
+        >
+          <Skeleton className="h-5 w-[240px] max-w-full" />
+          <Skeleton className="h-4 w-[160px]" />
+          <Skeleton className="h-4 w-[200px]" />
+          <Skeleton className="h-4 w-[140px]" />
+        </div>
+      )}
       {preflightIsSuccess && (
         <div className="flex flex-col gap-3 text-sm">
           {subscription && (

@@ -18,7 +18,7 @@ use crate::effects::{effect_tokens, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, FailureKind};
 use crate::gateway::{CheckpointBody, CheckpointSaved};
-use crate::store::{office, replay, text_of};
+use crate::store::{Job, Reader, office, replay, text_of};
 use crate::text::{TEXT_ROOT, full_text_effects};
 use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceRoom, Sources};
 
@@ -225,8 +225,9 @@ impl Sources {
             operation["toolVersion"] = json!(1);
         }
         let mut last = None;
+        let job = Job::default();
         for _ in 0..ATTEMPTS {
-            match self.edit_once(&input, &operation, &live).await {
+            match self.edit_once(&input, &operation, &live, &job).await {
                 Ok(result) => return Ok(result),
                 // A moved checkpoint applies again on the new state; an ended
                 // epoch never will.
@@ -247,6 +248,7 @@ impl Sources {
         input: &EditInput,
         operation: &Value,
         live: &F,
+        job: &Job,
     ) -> Result<EditResult, SourceError>
     where
         F: Fn(&str) -> BoxFuture<Option<Vec<u8>>>,
@@ -273,7 +275,7 @@ impl Sources {
                 "the source was rebased since this edit",
             ));
         }
-        let (base, sha) = self.bound_base(&session).await?;
+        let (base, sha) = self.bound_base(&session, Reader::Job(job)).await?;
         let stored = self.stored(&input.file_id, None).await?;
         if stored.epoch != session.epoch {
             return Err(SourceError::epoch_changed());
@@ -287,7 +289,14 @@ impl Sources {
         }
         let seeded = stored.state.is_none() && stored.rows.is_empty();
         let (seed, layers) = self
-            .layers(session.format, &base, &sha, &stored, Some(&name))
+            .layers(
+                session.format,
+                &base,
+                &sha,
+                &stored,
+                Some(&name),
+                Reader::Job(job),
+            )
             .await?;
         let live_state = live(&name).await;
         // The durable document, then the live room's (both off the runtime).
@@ -406,7 +415,7 @@ impl Sources {
         }
         let (effects, preview) = match office(session.format) {
             Some(_) => (
-                self.office_effects(&session, &base, &sha, &whole, &name)
+                self.office_effects(&session, &base, &sha, &whole, &name, Reader::Job(job))
                     .await?,
                 None,
             ),

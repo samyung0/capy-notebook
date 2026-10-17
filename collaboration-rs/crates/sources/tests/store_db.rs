@@ -270,6 +270,16 @@ struct Harness {
     sources: Arc<Sources>,
     user: String,
     workspace: String,
+    _disk: Disk,
+}
+
+/// A disk store folder under the target's temp dir, removed with the guard.
+struct Disk(PathBuf);
+
+impl Drop for Disk {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
 }
 
 fn unique(prefix: &str) -> String {
@@ -312,7 +322,8 @@ async fn harness() -> Harness {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     *fake.url.lock().unwrap() = format!("http://{}", listener.local_addr().unwrap());
     tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-    let sources = Arc::new(sources_on(&fake, db.clone()));
+    let (sources, disk) = sources_on(&fake, db.clone());
+    let sources = Arc::new(sources);
     let user = unique("u");
     let workspace = unique("ws");
     let client = db.get().await.unwrap();
@@ -335,12 +346,14 @@ async fn harness() -> Harness {
         sources,
         user,
         workspace,
+        _disk: disk,
     }
 }
 
-/// A `Sources` against the stand-in gateway on `db`, its caches empty.
-fn sources_on(fake: &Fake, db: deadpool_postgres::Pool) -> Sources {
-    Sources::new(
+/// A `Sources` against the stand-in gateway on `db`, its disk store empty.
+fn sources_on(fake: &Fake, db: deadpool_postgres::Pool) -> (Sources, Disk) {
+    let disk = Disk(PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(unique("disk")));
+    let sources = Sources::new(
         SourcesConfig {
             api_url: fake.url.lock().unwrap().clone(),
             secret: "secret".into(),
@@ -353,10 +366,14 @@ fn sources_on(fake: &Fake, db: deadpool_postgres::Pool) -> Sources {
                 replica_budget_bytes: 1 << 30,
                 memory_limit_bytes: None,
             },
+            disk_dir: disk.0.clone(),
+            disk_bytes: 1 << 30,
         },
         db,
         reqwest::Client::new(),
     )
+    .unwrap();
+    (sources, disk)
 }
 
 impl Harness {
@@ -882,7 +899,7 @@ async fn cold_folds_outnumbering_the_pool_connections_all_finish() {
             tokio_postgres::NoTls,
         )
         .unwrap();
-    let cold = sources_on(&h.fake, small);
+    let (cold, _cold_disk) = sources_on(&h.fake, small);
     let folds = futures::future::join_all(rooms.iter().map(|room| cold.fold(room)));
     let folded = tokio::time::timeout(Duration::from_secs(60), folds)
         .await
@@ -908,9 +925,9 @@ async fn an_unloaded_room_forgets_only_its_own_record() {
         .load(&room, &h.user, &text_doc(101))
         .await
         .unwrap();
-    h.sources.forget(&room, first.generation).await;
+    h.sources.forget(&room, first.hold.generation()).await;
     assert_eq!(h.sources.known_checkpoint(&room), Some(0));
-    h.sources.forget(&room, second.generation).await;
+    h.sources.forget(&room, second.hold.generation()).await;
     assert_eq!(h.sources.known_checkpoint(&room), None);
 }
 

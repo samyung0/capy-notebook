@@ -1,4 +1,5 @@
-import { appendFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { appendFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 import { posthogApiHost, posthogScriptHost } from './src/lib/posthogHost';
@@ -8,6 +9,9 @@ type Env = Record<string, string | undefined>;
 const TRAILING_SLASH = /\/+$/;
 const KEY_END = /\$$/;
 const CLERK_HOST = /^[a-z0-9.-]+$/i;
+/** An inline script, as the site Worker finds them (workers/site/handler.ts). */
+const INLINE_SCRIPT = /<script\b(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g;
+const SCRIPT_SRC = /script-src [^;]*/;
 
 /** What a deployed build's policy cannot leave out: its bucket and where it
  * reports. */
@@ -34,18 +38,27 @@ export function imagePolicy(env: Env): string {
   return withReport(env, [imageSources(env)]);
 }
 
+/** The environment bucket's origin, as Go's presigner addresses it
+ * (`B2_FORCE_PATH_STYLE`), or undefined without one. */
+export function bucketOrigin(env: Env): string | undefined {
+  if (!(env.B2_BUCKET && env.B2_ENDPOINT)) return;
+  const endpoint = new URL(env.B2_ENDPOINT);
+  return env.B2_FORCE_PATH_STYLE === 'true'
+    ? endpoint.origin
+    : `${endpoint.protocol}//${env.B2_BUCKET}.${endpoint.host}`;
+}
+
 function imageSources(env: Env): string {
   const sources = ["'self'", 'data:', 'blob:'];
-  if (env.B2_BUCKET && env.B2_ENDPOINT) {
-    const endpoint = new URL(env.B2_ENDPOINT);
-    // Path style shares its host with every bucket in the region, so the
-    // source names this bucket's path.
+  const bucket = bucketOrigin(env);
+  // Path style shares its host with every bucket in the region, so the
+  // source names this bucket's path.
+  if (bucket)
     sources.push(
       env.B2_FORCE_PATH_STYLE === 'true'
-        ? `${endpoint.origin}/${env.B2_BUCKET}/`
-        : `${endpoint.protocol}//${env.B2_BUCKET}.${endpoint.host}`
+        ? `${bucket}/${env.B2_BUCKET}/`
+        : bucket
     );
-  }
   if (env.VITE_BANK_ASSETS_URL) {
     // A base under a path (a shared host) allows only that path.
     const bank = new URL(env.VITE_BANK_ASSETS_URL);
@@ -137,6 +150,17 @@ export function appPolicy(env: Env): string {
   ]);
 }
 
+/** `policy` with each inline script of `html` added to its `script-src` by
+ * SHA-256: the built index.html keeps two, the theme and boot-failure scripts
+ * that run before the bundle. */
+function allowInlineScripts(policy: string, html: string): string {
+  const hashes = [...html.matchAll(INLINE_SCRIPT)].map(
+    ([, code]) =>
+      ` 'sha256-${createHash('sha256').update(code).digest('base64')}'`
+  );
+  return policy.replace(SCRIPT_SRC, (directive) => directive + hashes.join(''));
+}
+
 /** `directives` reporting to the Sentry security endpoint, when there is one. */
 function withReport(env: Env, directives: string[]): string {
   const report = sentrySecurityUrl(env.VITE_SENTRY_DSN, env.VITE_APP_ENV);
@@ -159,13 +183,21 @@ function sentrySecurityUrl(dsn?: string, environment?: string) {
   return report.href;
 }
 
+/** The app's static files; of these, only worker scripts would apply a policy. */
+const STATIC_PATHS = ['/assets/*', '/icons/*', '/mathlive/*', '/favicon.svg'];
+
 /**
  * Sends the policies with the app's pages. Workers Assets serves the SPA's
  * HTML with `dist/_headers`, which the client build extends with `appPolicy`,
- * report-only. The site Worker's pages read `imagePolicy` (report-only) and
- * `pagePolicy` (enforced) from the share renderer bundle as `IMAGE_POLICY`
- * and `PAGE_POLICY` (src/share/server.tsx). A `uat` or `production` build
- * without its bucket or report endpoint fails here.
+ * report-only, plus the hashes of the built index.html's inline scripts. The
+ * SPA answers any path, so the rule is `/*`; `STATIC_PATHS` detach it again,
+ * since only documents and workers apply a policy and the header otherwise
+ * adds its bytes to every chunk, stylesheet and font. Worker scripts under
+ * /assets/ go without it (Epo 2026-10-17). The site Worker's pages read
+ * `imagePolicy` (report-only) and `pagePolicy`
+ * (enforced) from the share renderer bundle as `IMAGE_POLICY` and
+ * `PAGE_POLICY` (src/share/server.tsx). A `uat` or `production` build without
+ * its bucket or report endpoint fails here.
  */
 export function policyHeaders(env: Env): Plugin {
   const image = imagePolicy(env);
@@ -188,13 +220,20 @@ export function policyHeaders(env: Env): Plugin {
         );
     },
     name: 'page-policies',
-    // After Vite copied public/_headers into the output.
+    // After Vite copied public/_headers and wrote index.html.
     writeBundle() {
-      if (headersFile)
-        appendFileSync(
-          headersFile,
-          `\n# Image and script sources, report-only (vite-image-policy.ts).\n/*\n  Content-Security-Policy-Report-Only: ${app}\n`
-        );
+      if (!headersFile) return;
+      const html = readFileSync(
+        path.join(path.dirname(headersFile), 'index.html'),
+        'utf8'
+      );
+      const detached = STATIC_PATHS.map(
+        (rule) => `${rule}\n  ! Content-Security-Policy-Report-Only\n`
+      ).join('');
+      appendFileSync(
+        headersFile,
+        `\n# Image and script sources, report-only (vite-image-policy.ts).\n/*\n  Content-Security-Policy-Report-Only: ${allowInlineScripts(app, html)}\n${detached}`
+      );
     },
   };
 }

@@ -3,6 +3,8 @@ package httpapi_test
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -77,6 +79,14 @@ func TestImportCompleteSettlesActualSizeAndRejectsOversize(t *testing.T) {
 	if err != nil || done.Status != "succeeded" || done.FileID == nil ||
 		done.DeclaredSize != int64(len(payload)) {
 		t.Fatalf("completed job=%+v err=%v", done, err)
+	}
+	// The completion records the stored bytes' SHA-256 for a file with source
+	// sessions (text here), as a direct upload's does (Epo 2026-10-17).
+	sum := sha256.Sum256(payload)
+	var sha *string
+	if err := st.Pool().QueryRow(ctx, `SELECT source_sha256 FROM files WHERE id=$1`, *done.FileID).Scan(&sha); err != nil ||
+		sha == nil || *sha != hex.EncodeToString(sum[:]) {
+		t.Fatalf("imported file source_sha256=%v err=%v, want %x", sha, err, sum)
 	}
 	// A retry arriving after the winning commit must replay without touching blobs
 	// or changing the settled size, even if its reported estimate differs.

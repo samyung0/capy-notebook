@@ -1,13 +1,13 @@
 import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import * as Y from 'yjs';
 import { authHeaders } from '@/api/auth';
-import { api } from '@/api/client';
-import type { SourceFile, SourceSession, ViewableFile } from '@/api/types';
+import type { SourceFile } from '@/api/types';
 import { OfficeInsetContext } from '@/components/ui/floatingBarContext';
 import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
-import { errorCopy } from '@/lib/errors';
+import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
+import { officeMark } from '@/lib/officeMarks';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useTheme } from '@/theme/theme';
 import { useFileMode } from './FileModeControl';
@@ -35,8 +35,10 @@ import {
 import {
   getOfficeRuntimeConfig,
   openPresenterWindow,
+  runtimeFrameUrl,
 } from './officeRuntimeConfig';
 import { printPages } from './printPages';
+import { holdSource, takeSourceOpen } from './sourceOpen';
 import { savedSourceUpdate } from './sourceState';
 import {
   canEncodeWebp,
@@ -55,7 +57,7 @@ import {
 interface OfficeRuntimeOptions {
   canEdit: boolean;
   citation?: OfficeCitation;
-  file: ViewableFile;
+  file: SourceFile;
   format: OfficeFormat;
   initialMode?: OfficeMode;
   revision: number;
@@ -116,6 +118,8 @@ export function useOfficeRuntime({
   } | null>(null);
   const [analysis, setAnalysis] = useState<OfficeAnalysis | null>(null);
   const [error, setError] = useState<string | null>(config.error);
+  // A failed view read's trace id, which the error panel shows.
+  const [errorId, setErrorId] = useState<string | null>(null);
   const [outdated, setOutdated] = useState(false);
   // The runtime's menu bar and header actions; each frame sends its own.
   const [menus, setMenus] = useState<{
@@ -317,6 +321,7 @@ export function useOfficeRuntime({
     setViewBytes(null);
     setAnalysis(null);
     setError(config.error);
+    setErrorId(null);
   }, [revision, mode, config.error]);
 
   const retryView = () => {
@@ -328,7 +333,11 @@ export function useOfficeRuntime({
     setViewBytes(null);
     setAnalysis(null);
     setError(config.error);
+    setErrorId(null);
   };
+
+  // The route started this file's open (sourceOpen.ts) unless a view shows it.
+  useEffect(() => holdSource(file.id), [file.id]);
 
   // View mode reads the published base plus the saved checkpoint, so a viewer
   // sees what was last saved rather than what was last published. The
@@ -337,14 +346,9 @@ export function useOfficeRuntime({
   useEffect(() => {
     if (mode !== 'view' || viewBytes || config.error) return;
     const controller = new AbortController();
-    void api
-      .get<SourceSession>(`/files/${file.id}/source-session?view=true`)
-      .then(async (session) => {
-        const response = await fetch(session.sourceURL, {
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const bytes = await response.arrayBuffer();
+    void takeSourceOpen(file.id, 'view', controller.signal)
+      .then(async ({ base, session }) => {
+        const bytes = (await base).buffer;
         const saved =
           session.checkpoint === session.indexedCheckpoint
             ? null
@@ -358,8 +362,9 @@ export function useOfficeRuntime({
           setViewBytes({ bytes, checkpoint, checkpointSeedSHA256 });
       })
       .catch((value: unknown) => {
-        if (!controller.signal.aborted)
-          setError(errorCopy(value, m.error_file_body()));
+        if (controller.signal.aborted) return;
+        setError(errorCopy(value, m.error_file_body()));
+        setErrorId(unexpectedErrorId(value));
       });
     return () => controller.abort();
   }, [file.id, revision, mode, config.error, viewBytes, frameGeneration]);
@@ -398,6 +403,12 @@ export function useOfficeRuntime({
       return;
     }
     frameDoc.current = mode === 'edit' ? source.doc! : null;
+    officeMark('load-posted', {
+      bytes: bytes.byteLength,
+      checkpointBytes: checkpoint?.byteLength ?? 0,
+      initialUpdateBytes: collaboration?.initialUpdate.byteLength ?? 0,
+      mode,
+    });
     post(
       {
         bytes,
@@ -517,6 +528,7 @@ export function useOfficeRuntime({
       const message = event.data,
         active = sourceRef.current;
       if (message.type === 'initialized') {
+        officeMark('runtime-initialized');
         notices.frame();
         setReplicaReady(false);
         setMenus(null);
@@ -572,9 +584,13 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'ready') {
+        officeMark('ready');
         setAnalysis(message.analysis);
         // Edit frames report ready too (for their timings); their errors stay.
-        if (modeRef.current === 'view') setError(null);
+        if (modeRef.current === 'view') {
+          setError(null);
+          setErrorId(null);
+        }
         return;
       }
       if (message.type === 'notice') {
@@ -595,6 +611,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'collaboration-ready') {
+        officeMark('collaboration-ready');
         setReplicaReady(true);
         // A newly opened DOCX editor takes the focus (it waits for its frame
         // to get it) unless Capy's focus is somewhere it keeps (the chat box,
@@ -867,6 +884,16 @@ export function useOfficeRuntime({
 
   useEffect(() => () => reportInset?.(0), [reportInset]);
 
+  // Each frame's URL names the format and the mode it opened in, fixed for
+  // its lifetime: a changed src reloads the frame, and the pause's drop to
+  // View keeps the frame opened for Edit.
+  const frameUrl = useRef({ generation: -1, url: '' });
+  if (frameUrl.current.generation !== frameGeneration)
+    frameUrl.current = {
+      generation: frameGeneration,
+      url: runtimeFrameUrl(config.url, format, mode),
+    };
+
   useEffect(
     () => () => {
       for (const waiters of [frameRequests, renderRequests]) {
@@ -886,12 +913,13 @@ export function useOfficeRuntime({
     discarding: source.discarding,
     downloadDraft,
     error: error ?? source.error,
+    errorId: error ? errorId : null,
     handoff: source.handoff,
     iframeAllow: config.allow,
     iframeKey: `${file.id}:${frameGeneration}`,
     iframeRef,
     iframeSandbox: config.sandbox,
-    iframeUrl: config.url,
+    iframeUrl: frameUrl.current.url,
     menus,
     mode,
     paused: source.paused,

@@ -75,9 +75,9 @@ func TestUpdateMeName(t *testing.T) {
 	}
 }
 
-// PATCH /api/me/chat-steps saves the chat's Steps setting, which GET /api/me
-// returns; anything but normal or verbose is refused.
-func TestChatSteps(t *testing.T) {
+// PATCH /api/me/chat saves the chat's Steps and Send with settings, keeping
+// an omitted one, and GET /api/me returns both.
+func TestChatPrefs(t *testing.T) {
 	dsn := testdb.URL(t)
 	ctx := context.Background()
 	st, err := store.New(ctx, dsn)
@@ -85,8 +85,8 @@ func TestChatSteps(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(st.Close)
-	userID := fmt.Sprintf("u_chat_steps_%d", time.Now().UnixNano())
-	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Steps',$2)`,
+	userID := fmt.Sprintf("u_chat_prefs_%d", time.Now().UnixNano())
+	if _, err := st.Pool().Exec(ctx, `INSERT INTO users (id,name,email) VALUES ($1,'Chat',$2)`,
 		userID, userID+"@example.test"); err != nil {
 		t.Fatal(err)
 	}
@@ -95,29 +95,32 @@ func TestChatSteps(t *testing.T) {
 	})
 	h := httpapi.New(st, blob.NewMemory(), nil, nil, "docling",
 		httpapi.Config{AuthDisabled: true, DevUserID: userID})
-	steps := func() string {
+	prefs := func() (string, string) {
 		t.Helper()
 		var me struct {
-			ChatSteps string `json:"chatSteps"`
+			ChatSteps   string `json:"chatSteps"`
+			ChatSendKey string `json:"chatSendKey"`
 		}
 		rec := doReq(t, h, http.MethodGet, "/api/me", "", nil)
 		if err := json.Unmarshal(rec.Body.Bytes(), &me); err != nil {
 			t.Fatal(err)
 		}
-		return me.ChatSteps
+		return me.ChatSteps, me.ChatSendKey
 	}
-	if got := steps(); got != "normal" {
-		t.Fatalf("default chatSteps = %q", got)
+	if steps, key := prefs(); steps != "normal" || key != "enter" {
+		t.Fatalf("defaults = %q, %q", steps, key)
 	}
-	for _, bad := range []any{"loud", "", nil} {
-		if rec := doReq(t, h, http.MethodPatch, "/api/me/chat-steps", "", map[string]any{"steps": bad}); rec.Code != http.StatusUnprocessableEntity {
-			t.Fatalf("steps %v: status %d, want 422", bad, rec.Code)
+	for _, bad := range []map[string]any{{"steps": "loud"}, {"steps": ""}, {"sendKey": "space"}} {
+		if rec := doReq(t, h, http.MethodPatch, "/api/me/chat", "", bad); rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("%v: status %d, want 422", bad, rec.Code)
 		}
 	}
-	if rec := doReq(t, h, http.MethodPatch, "/api/me/chat-steps", "", map[string]any{"steps": "verbose"}); rec.Code != http.StatusNoContent {
-		t.Fatalf("status %d: %s", rec.Code, rec.Body.String())
+	for _, body := range []map[string]any{{"steps": "verbose"}, {"sendKey": "shift_enter"}} {
+		if rec := doReq(t, h, http.MethodPatch, "/api/me/chat", "", body); rec.Code != http.StatusNoContent {
+			t.Fatalf("%v: status %d: %s", body, rec.Code, rec.Body.String())
+		}
 	}
-	if got := steps(); got != "verbose" {
-		t.Fatalf("chatSteps = %q", got)
+	if steps, key := prefs(); steps != "verbose" || key != "shift_enter" {
+		t.Fatalf("prefs = %q, %q", steps, key)
 	}
 }

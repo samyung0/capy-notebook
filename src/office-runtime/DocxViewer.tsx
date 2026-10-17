@@ -15,8 +15,10 @@ import type {
   OfficeRenderedPage,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
+import { officeMark, officeMarkAt } from '@/lib/officeMarks';
 import { CITATION_FILL, docxCitation } from './citations';
 import { docxT, downloadMenu, printItem } from './docxMenus';
+import { takeDocxViewerWorker } from './docxViewerWorker';
 import { type OfficeFace, registerOfficeFaces } from './officeFonts';
 import {
   canvasPage,
@@ -31,6 +33,7 @@ type WorkerResponse =
       displayList: DisplayList;
       faces: OfficeFace[];
       id: number;
+      marks: Record<string, number>;
       type: 'ready';
     }
   | { id: number; message: string; type: 'error' };
@@ -133,10 +136,6 @@ export function DocxViewer({
   }, [displayList, onRenderer]);
 
   useEffect(() => {
-    const worker = new Worker(
-      new URL('./DocxViewer.worker.ts', import.meta.url),
-      { type: 'module' }
-    );
     const id = 1;
     let stopped = false;
     let cancelled = false;
@@ -145,6 +144,11 @@ export function DocxViewer({
       stopped = true;
       worker.terminate();
     };
+    // Made at boot when the frame was opened for a DOCX view.
+    const worker = takeDocxViewerWorker((message) => {
+      stopWorker();
+      onError(new Error(message));
+    });
     setDisplayList(null);
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       if (event.data.id !== id) return;
@@ -157,10 +161,15 @@ export function DocxViewer({
       // parser, transient Yrs projection, and viewer WASM memory are released
       // during ordinary reading rather than waiting for edit/unmount.
       stopWorker();
-      const { displayList, faces } = event.data;
-      // Paint with the faces the worker measured, under their Office names.
+      const { displayList, faces, marks } = event.data;
+      for (const [stage, epoch] of Object.entries(marks))
+        officeMarkAt(stage, epoch);
+      // Paint with the faces the worker measured, under their Office names,
+      // from the bytes it fetched.
+      officeMark('fonts:start', { faces: faces.length });
       void registerOfficeFaces(faces).then(
         () => {
+          officeMark('fonts:end');
           if (!cancelled) setDisplayList(displayList);
         },
         (value: unknown) => {
@@ -168,10 +177,6 @@ export function DocxViewer({
             onError(value instanceof Error ? value : new Error(String(value)));
         }
       );
-    };
-    worker.onerror = (event) => {
-      stopWorker();
-      onError(new Error(event.message));
     };
     const transferable = bytes.slice().buffer;
     worker.postMessage({ bytes: transferable, id }, [transferable]);

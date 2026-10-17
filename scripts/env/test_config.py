@@ -237,6 +237,25 @@ class ConfigTest(unittest.TestCase):
                     pool,
                 )
 
+    def test_render_caps_the_source_disk_store_per_environment(self):
+        values = {
+            key: "explicit"
+            for key, rule in config.MANIFEST.items()
+            if rule.get("required_for")
+        }
+        values.update(
+            POSTGRES_PASSWORD="secret",
+            CAPY_PRIVATE_BIND_ADDRESS="10.77.0.3",
+            CLERK_PUBLISHABLE_KEY="pk_public",
+            DEPLOYMENT_APP_URL="https://app.example.com",
+        )
+        for environment, cap in (("production", 10 << 30), ("uat", 5 << 30)):
+            with tempfile.TemporaryDirectory() as temp:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    config.render(values, environment, temp, "a" * 40)
+                coolify = json.loads(Path(temp, "coolify.json").read_text())
+                self.assertEqual(coolify["COLLABORATION_SOURCE_DISK_BYTES"], str(cap))
+
     def test_render_requires_the_embed_frame_origin_for_the_build(self):
         values = {
             key: "explicit"

@@ -15,6 +15,8 @@ const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 /** A socket with no room left closes after this long (a quick remount reuses it). */
 const IDLE_CLOSE_MS = 5000;
+/** How long `warm` holds a socket open for the room expected on it. */
+const WARM_MS = 10_000;
 /** Joins the server authenticates at once per socket; it closes the socket on
  * one more (`MAX_PENDING_JOINS`, collaboration-rs/crates/server/src/socket.rs).
  * A note with many embeds on screen queues the rest here. */
@@ -40,6 +42,19 @@ export class CollabSocket {
       CollabSocket.sockets.set(url, socket);
     }
     return socket;
+  }
+
+  /** Opens the tab's socket now for a room about to join on it (its token
+   * just arrived), so the join does not wait for the connection. */
+  static warm(url: string) {
+    const socket = CollabSocket.for(url);
+    const holder: ChannelHandler = {
+      onMessage() {},
+      onSocketClose() {},
+      onSocketOpen() {},
+    };
+    socket.attach(holder);
+    setTimeout(() => socket.detach(holder), WARM_MS);
   }
 
   status: SocketStatus = 'disconnected';

@@ -253,6 +253,20 @@ Direct B2 uploads and editor-asset reservations call `reserveStorageTx`
 before the client receives a signed PUT URL. Reserved bytes count toward the
 gate immediately so concurrent uploads cannot double-spend remaining quota.
 Finalize converts reservation → used (via status transitions / triggers).
+Completion (`completeSourceUpload`, and a drive import's internal completion)
+checks the object's size and type by HEAD, promotes it to its `sources/` key,
+and, for a file with source sessions (DOCX, XLSX, PPTX and text), reads it
+back once and records its SHA-256 as `files.source_sha256` in the finalize
+transaction (Epo 2026-10-17), so the first source session names its base and
+the browser's device copy works from the first reopen. The gateway hashes the
+stored bytes itself: Backblaze documents no checksum header on PutObject that
+the bucket would verify, and the collaboration server checks every original
+it loads against this SHA, so a browser-sent hash is never trusted. Bytes read
+back at another size than the HEAD reported refuse the completion (409; the
+upload stays pending). A PDF, image or other file without source sessions is
+not read. Ingest still hashes its own download and writes the same value (its
+cache key, and the SHA of files uploaded before this); the first save no longer
+writes the file's SHA.
 Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).

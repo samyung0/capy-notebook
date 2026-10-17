@@ -309,9 +309,26 @@ export async function switchAutoReloadOff(page: Page) {
   expect((await saved).status()).toBe(200);
 }
 
-/** Buy credits' balance line, which shows the purchased balance. */
-export const purchasedLeft = (page: Page, micros: number) =>
-  page.getByText(m.billing_purchased_left({ amount: credits(micros) }));
+/** The purchased balance in the line under Usage's credits bar, the only
+ * place that shows it. Callers are Free owners who have spent none of the
+ * monthly allowance, so the purchased pool is the balance and the line ends
+ * with the starter sentence. Switches tabs in the app, without reloading the
+ * page, and goes back to Subscription. */
+export async function expectPurchasedOnUsage(page: Page, micros: number) {
+  // Exact: "Detailed usage" contains "Usage".
+  await page
+    .getByRole('tab', { exact: true, name: m.billing_tab_usage() })
+    .click();
+  await expect(
+    page.getByText(
+      m.billing_credits_hint_then_starter({ amount: credits(micros) })
+    )
+  ).toBeVisible({ timeout: 60_000 });
+  await page.getByRole('tab', { name: m.subscription_title() }).click();
+  await expect(
+    page.getByText(m.billing_buy_credits(), { exact: true })
+  ).toBeVisible();
+}
 
 export async function setLimit(
   page: Page,

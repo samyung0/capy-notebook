@@ -148,19 +148,29 @@ async fn serve(config: Config) -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
     let address = format!("{}:{}", config.host, config.port);
-    let sources = Arc::new(sources::Sources::new(
-        sources::SourcesConfig {
-            api_url: config.api_url.clone(),
-            secret: config.secret.clone(),
-            engine: engine_pool(
-                config.engine_save_processes as usize,
-                config.engine_background_processes as usize,
-                Some(config.engine_memory_limit_bytes),
-            )?,
-        },
-        db.clone(),
-        http.clone(),
-    ));
+    let sources = Arc::new(
+        sources::Sources::new(
+            sources::SourcesConfig {
+                api_url: config.api_url.clone(),
+                secret: config.secret.clone(),
+                engine: engine_pool(
+                    config.engine_save_processes as usize,
+                    config.engine_background_processes as usize,
+                    Some(config.engine_memory_limit_bytes),
+                )?,
+                disk_dir: config.source_disk_dir.clone(),
+                disk_bytes: config.source_disk_bytes,
+            },
+            db.clone(),
+            http.clone(),
+        )
+        .map_err(|error| {
+            format!(
+                "source disk store {}: {error}",
+                config.source_disk_dir.display()
+            )
+        })?,
+    );
     let markdown = match &config.markdown_bundle {
         None => None,
         Some(path) => {
@@ -358,7 +368,8 @@ async fn shutdown_signal() {
 }
 
 /// Every loaded room stores what it holds before the process exits (the
-/// container's shutdown grace period covers it).
+/// container's shutdown grace period covers it), then the source disk store's
+/// files go (Epo 2026-10-17; a crash leaves them for the next start's wipe).
 async fn shutdown(app: &app::Shared) {
     let mut waits = Vec::new();
     for name in app.rooms.names() {
@@ -372,14 +383,41 @@ async fn shutdown(app: &app::Shared) {
     for wait in waits {
         let _ = wait.await;
     }
+    if let Err(error) = app.sources.clear_disk().await {
+        log(
+            Level::Warn,
+            "source disk store not cleared",
+            json!({ "error": error.to_string() }),
+        );
+    }
 }
 
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
 mod tests {
+    // Epo 2026-10-17: a graceful stop deletes the source disk store's files
+    // once the rooms stored, by the start wipe's name rule.
+    #[tokio::test]
+    async fn a_graceful_stop_deletes_the_source_disk_stores_files() {
+        let app = crate::http::tests::offline_app();
+        let dir = app.config.source_disk_dir.clone();
+        let ours = format!("base-{}", "a".repeat(64));
+        for name in [ours.as_str(), "tmp-3", "notes.txt"] {
+            std::fs::write(dir.join(name), b"left").unwrap();
+        }
+        super::shutdown(&app).await;
+        let left: Vec<String> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .collect();
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(left, ["notes.txt"]);
+    }
+
     /// The kernel's own view (`/proc/self/limits`) after the raise: soft
     /// equals hard (prod Phase B: soft 1024 under a hard 524288). The soft
     /// limit is lowered first, as a container starts it, so a raise that does
     /// nothing fails here even where the runner's soft already equals hard.
+    #[cfg(target_os = "linux")]
     #[test]
     fn the_open_file_limit_is_raised_to_the_hard_limit() {
         let (_, hard) = rlimit::Resource::NOFILE.get().expect("read");

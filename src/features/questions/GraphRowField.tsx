@@ -2,6 +2,7 @@ import type { MathfieldElement } from 'mathlive';
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { getLocale } from '@/i18n';
 import { COMMAND_SHORTCUTS } from './graphSyntax';
+import mathFieldStyles from './mathField.css?inline';
 
 export interface GraphRowFieldProps {
   autoFocus?: boolean;
@@ -53,7 +54,7 @@ export function GraphRowField({
       element.smartFence = true;
       element.mathVirtualKeyboardPolicy = 'auto';
       element.style.cssText =
-        'display:block;width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:1.21em;line-height:1.3;';
+        'display:block;width:100%;padding:0;background:transparent;border:0;outline:0;color:inherit;font-size:1.21em;line-height:1.2;';
       const input = () =>
         callbacks.current.onChange(
           element.value,
@@ -85,6 +86,10 @@ export function GraphRowField({
       element.addEventListener('keydown', key, true);
       element.addEventListener('move-out', moveOut);
       host.current.append(element);
+      // The note formula's caret and selection colours.
+      const styles = document.createElement('style');
+      styles.textContent = mathFieldStyles;
+      element.shadowRoot?.append(styles);
       element.menuItems = [];
       element.inlineShortcuts = {
         ...element.inlineShortcuts,

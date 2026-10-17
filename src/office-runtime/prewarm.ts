@@ -1,0 +1,84 @@
+import type { OfficeFormat, OfficeMode } from '@/features/files/officeProtocol';
+import { officeMark } from '@/lib/officeMarks';
+import xlsxEditWasmUrl from '../../vendor/betteroffice/packages/xlsx/src/wasm/generated/xlsx_wasm_bg.wasm?url';
+import { prewarmDocxViewerWorker } from './docxViewerWorker';
+
+type RuntimeKey = `${OfficeFormat}:${OfficeMode}`;
+
+/** `load` once, marking `<name>:start` and `:end`; a failure is forgotten, so
+ * the next caller loads again (a boot head start that failed costs nothing). */
+function once<T>(name: string, load: () => Promise<T>) {
+  let loading: Promise<T> | undefined;
+  return () => {
+    if (!loading) {
+      officeMark(`${name}:start`);
+      const started = load().then((value) => {
+        officeMark(`${name}:end`);
+        return value;
+      });
+      loading = started;
+      started.catch(() => {
+        if (loading === started) loading = undefined;
+      });
+    }
+    return loading;
+  };
+}
+
+/** Each viewer's and editor's module, imported once. */
+export const runtimeChunks = {
+  'docx:edit': once('chunk:docx-edit', () => import('./DocxEditorHost')),
+  'docx:view': once('chunk:docx-view', () => import('./DocxViewer')),
+  'pptx:edit': once('chunk:pptx-edit', () => import('./PptxEditorHost')),
+  'pptx:view': once('chunk:pptx-view', () => import('./PptxViewer')),
+  'xlsx:edit': once('chunk:xlsx-edit', () => import('./XlsxEditorHost')),
+  'xlsx:view': once('chunk:xlsx-view', () => import('./XlsxViewer')),
+} satisfies Record<RuntimeKey, () => Promise<unknown>>;
+
+/** The engines Capy starts itself (the same instances the viewers and
+ * editors then use); the DOCX viewer's runs in its worker, and the XLSX
+ * editor's in its workbook worker, which reads it from the HTTP cache: the
+ * warm-up reads the body to fill that cache and keeps none of it (5 MB). */
+export const runtimeEngines = {
+  'docx:edit': once('wasm:docx-edit', () =>
+    import('@betteroffice/docx/wasm/edit').then((module) =>
+      module.preloadEditWasm()
+    )
+  ),
+  'docx:view': async () => prewarmDocxViewerWorker(),
+  'pptx:edit': once('wasm:pptx-edit', () =>
+    import('@betteroffice/pptx').then((module) => module.initWasm())
+  ),
+  'pptx:view': once('wasm:pptx-view', () =>
+    import('@betteroffice/pptx/viewer').then((module) => module.initWasm())
+  ),
+  'xlsx:edit': once('wasm:xlsx-edit-fetch', () =>
+    fetch(xlsxEditWasmUrl)
+      .then((response) => response.arrayBuffer())
+      .then(() => undefined)
+  ),
+  'xlsx:view': once('wasm:xlsx-view', () =>
+    import('@betteroffice/xlsx/viewer').then((module) => module.initWasm())
+  ),
+} satisfies Record<RuntimeKey, () => Promise<unknown>>;
+
+/**
+ * The frame was opened for `format` in `mode`: its module and engine load
+ * now, while Capy still reads the file and the room. Nothing here waits; the
+ * `load` message decides what opens.
+ */
+export function prewarmRuntime(format: OfficeFormat, mode: OfficeMode) {
+  const key: RuntimeKey = `${format}:${mode}`;
+  void runtimeChunks[key]().catch(() => {});
+  void runtimeEngines[key]().catch(() => {});
+  // An editor takes every face; a viewer the ones any deck needs, the rest
+  // once it reads the deck.
+  if (format === 'pptx')
+    void import('./pptxFonts')
+      .then((fonts) =>
+        mode === 'edit'
+          ? fonts.loadPptxFonts()
+          : Promise.all(fonts.pptxDeckFaces([]).map(fonts.loadPptxFace))
+      )
+      .catch(() => {});
+}

@@ -26,6 +26,7 @@ import {
 import {
   parentOriginFromRuntimeUrl,
   presenterTokenFromUrl,
+  runtimeHintFromUrl,
 } from '@/features/files/officeRuntimeConfig';
 import { m, setLocale } from '@/i18n';
 import {
@@ -33,8 +34,10 @@ import {
   ImageTooLargeError,
   ImageUnreadableError,
 } from '@/lib/fitImage';
+import { officeMark } from '@/lib/officeMarks';
 import { THEMES } from '@/theme/theme';
 import { useBottomInset } from './bottomInset';
+import { dropDocxViewerWorker } from './docxViewerWorker';
 import { exportCheckpoint } from './exportCheckpoint';
 import type {
   OfficeExporter,
@@ -42,6 +45,7 @@ import type {
   OfficeReplica,
 } from './officeCollaboration';
 import { handOverPresenterWindow, PRESENTER_VIEW } from './presenterWindow';
+import { prewarmRuntime, runtimeChunks } from './prewarm';
 import {
   type OfficeCaptureScope,
   type OfficeMenuSource,
@@ -58,27 +62,32 @@ import './office-runtime.css';
 const parentOrigin = parentOriginFromRuntimeUrl();
 
 const DocxViewer = lazy(() =>
-  import('./DocxViewer').then((module) => ({ default: module.DocxViewer }))
+  runtimeChunks['docx:view']().then((module) => ({
+    default: module.DocxViewer,
+  }))
 );
-
 const XlsxViewer = lazy(() =>
-  import('./XlsxViewer').then((module) => ({ default: module.XlsxViewer }))
+  runtimeChunks['xlsx:view']().then((module) => ({
+    default: module.XlsxViewer,
+  }))
 );
 const PptxViewer = lazy(() =>
-  import('./PptxViewer').then((module) => ({ default: module.PptxViewer }))
+  runtimeChunks['pptx:view']().then((module) => ({
+    default: module.PptxViewer,
+  }))
 );
 const XlsxEditorHost = lazy(() =>
-  import('./XlsxEditorHost').then((module) => ({
+  runtimeChunks['xlsx:edit']().then((module) => ({
     default: module.XlsxEditorHost,
   }))
 );
 const PptxEditorHost = lazy(() =>
-  import('./PptxEditorHost').then((module) => ({
+  runtimeChunks['pptx:edit']().then((module) => ({
     default: module.PptxEditorHost,
   }))
 );
 const DocxEditorHost = lazy(() =>
-  import('./DocxEditorHost').then((module) => ({
+  runtimeChunks['docx:edit']().then((module) => ({
     default: module.DocxEditorHost,
   }))
 );
@@ -366,6 +375,13 @@ function OfficeRuntime() {
         const nextMode =
           message.mode === 'edit' && message.canEdit ? 'edit' : 'view';
         if (revisionRef.current !== null) return;
+        officeMark('load-received', {
+          bytes: message.bytes.byteLength,
+          mode: nextMode,
+        });
+        // A head start for another format or mode is not used.
+        if (message.format !== 'docx' || nextMode !== 'view')
+          dropDocxViewerWorker();
         loadedAtRef.current = performance.now();
         revisionRef.current = message.revision;
         zoomSentRef.current = message.zoom;
@@ -804,4 +820,9 @@ function post(message: OfficeRuntimePayload, transfer: Transferable[] = []) {
 // The same page, opened by Capy as a PPTX presenter window, only hands itself over.
 const presenterToken = presenterTokenFromUrl();
 if (presenterToken) handOverPresenterWindow(presenterToken);
-else createRoot(document.getElementById('root')!).render(<OfficeRuntime />);
+else {
+  officeMark('runtime-boot');
+  const hint = runtimeHintFromUrl();
+  if (hint) prewarmRuntime(hint.format, hint.mode);
+  createRoot(document.getElementById('root')!).render(<OfficeRuntime />);
+}

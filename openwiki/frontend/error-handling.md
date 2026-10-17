@@ -35,7 +35,8 @@ it, through `ErrorState`'s `errorId`:
 - a page or pane whose read failed, with Retry: the dashboard's recent
   workspaces, the billing usage and invoice tabs, the workspace statistics tab,
   the question bank, a review session, a quiz result, a file's download links
-  (`FileError`'s `errorId`) and a note's collaboration token;
+  or an Office file's view session (`FileError`'s `errorId`) and a note's
+  collaboration token;
 - form errors (`FormAlert`'s `errorId`).
 
 Typed refusals, exceptions without a request, toasts and status banners show
@@ -230,9 +231,33 @@ A page has one main landmark. `AppShell` owns it and marks its children with
 outside the shell (the root boundary, a public route) the fallback is the
 `main`.
 
-A route chunk that comes back as HTML (a site deploy still propagating answers
-a missing `/assets/*` name with the SPA's `index.html`) fails as a chunk-load
-error: the router reloads once, then shows "An update is ready" with Reload.
+A route chunk the deploy removed (a missing `/assets/*` name is a 404
+`no-store` from the assets Worker, deployment-runbook §1) fails as a
+chunk-load error: the router reloads once, then shows "An update is ready"
+with Reload.
+
+A page whose entry script, a chunk it needs or a stylesheet fails to load
+while the boot spinner shows (a fresh load in the deploy window, whose old
+`index.html` names files the new release removed, or any later failed entry
+load) shows the same message from `index.html` itself (Epo 2026-10-17). A
+classic inline script there, which runs before the entry and stays out of
+the bundle, waits for a load error from a same-origin module script,
+`modulepreload` link or stylesheet link and replaces the spinner with the
+title, body and Reload in the app's locale (the stored Paraglide choice,
+then the browser's languages). A file in `<head>` that fails before the
+body is parsed shows it once the document turns interactive. The entry
+waits for the head's stylesheets, so after a failed one it still runs; it
+then finds the message in `#root` and does not mount the app
+(`src/main.tsx`), which would otherwise boot unstyled over it. The
+script's English and Chinese strings are copies of `error_chunk_title`,
+`error_chunk_body` and `error_action_reload`
+(`e2e/editor/boot-failure.spec.ts` fails if they drift). Cross-origin
+files, other scripts, and any failure after React's first render leave the
+page alone. The SPA's report-only script policy allows the script by its
+hash (`vite-image-policy.ts`), so it sends no reports. The theme script
+before it is classic and inline too, so the spinner and the message use
+the chosen style and theme from the first paint (Epo 2026-10-17); Vite
+would bundle a module script into the entry.
 
 An open tab stays usable when the connection drops (Epo 2026-10-17). A page
 change whose code is not loaded yet fails offline as an `OfflineError`
@@ -729,8 +754,10 @@ reader cannot draw keeps the icon too.
 File previews use `FileError` for Office, CSV/TSV, text/Markdown/JSON, image,
 audio and PDF failures. Manual retry refreshes signed links and restarts only
 the preview, even when the URL is unchanged. CSV/text retries retain their
-`SourceTextView` session. Office retry is view-only and reloads the source
-session, bytes and iframe. The Office iframe reports errors to the host,
+`SourceTextView` session. An Office view reads no download link: its
+source session (and bytes) failing shows its `FileError` with the error id.
+Office retry is view-only and reloads the source session, bytes and iframe.
+The Office iframe reports errors to the host,
 which owns error presentation; recoverable errors keep editors mounted. A
 refusal is a `notice` message instead, and the editor shows nothing of its
 own. The host shows each notice's message as a default toast from one table

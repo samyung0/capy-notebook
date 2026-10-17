@@ -416,8 +416,8 @@ function groupSteps(rows: TraceRow[]): TraceRow[] {
 const isReceipt = (row: TraceRow) =>
   row.type === 'created' || row.type === 'edited';
 
-/** Normal mode once the answer starts: every step behind one summary row,
- * the receipts below it. */
+/** Normal mode once the answer starts: the steps behind summary rows, the
+ * receipts below them. */
 export function foldTrace(input: Omit<TraceInput, 'receipts'>): {
   rows: TraceRow[];
   receipts: TraceRow[];
@@ -470,9 +470,17 @@ export function latestStep(
   }
 }
 
-/** Normal mode while the turn runs: only the step it is on. */
-export function currentRow(rows: readonly TraceRow[]): TraceRow | undefined {
-  return [...rows].reverse().find((row) => row.type !== 'narration');
+/** Normal mode: the rows split at each narration, which stays as text, so a
+ * fold (or the live row) only ever covers the steps between them. */
+export function foldSegments(rows: readonly TraceRow[]): TraceRow[][] {
+  const out: TraceRow[][] = [];
+  for (const row of rows) {
+    const last = out.at(-1);
+    if (row.type !== 'narration' && last && last[0].type !== 'narration') {
+      last.push(row);
+    } else out.push([row]);
+  }
+  return out;
 }
 
 /** Undo reverses created, edited and restored; Redo reverses an Undo. */

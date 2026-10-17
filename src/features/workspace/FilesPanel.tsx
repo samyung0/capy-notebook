@@ -421,13 +421,18 @@ export function FilesPanel({
     reorder(ids);
   }
 
+  // Collapses all chapters, or expands them all once every one is collapsed.
+  const allCollapsed =
+    !!chapters?.length && chapters.every((c) => openChapters[c.id] === false);
   const actions: TabAction[] = [
     {
-      icon: 'folderCollapse',
-      label: m.workspace_collapse_chapters(),
+      icon: allCollapsed ? 'folderExpand' : 'folderCollapse',
+      label: allCollapsed
+        ? m.workspace_expand_chapters()
+        : m.workspace_collapse_chapters(),
       onClick: () =>
         setOpenChapters(
-          Object.fromEntries((chapters ?? []).map((c) => [c.id, false]))
+          Object.fromEntries((chapters ?? []).map((c) => [c.id, allCollapsed]))
         ),
     },
   ];

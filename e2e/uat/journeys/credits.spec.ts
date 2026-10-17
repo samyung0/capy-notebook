@@ -28,6 +28,7 @@ import {
   dollars,
   expectAnswered,
   expectInvoice,
+  expectPurchasedOnUsage,
   expectRefusedAtZero,
   expectVoided,
   invoiceId,
@@ -38,7 +39,6 @@ import {
   notice,
   openSubscription,
   processedEvent,
-  purchasedLeft,
   purchases,
   purchaseWhere,
   RELOAD_CENTS,
@@ -200,8 +200,8 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
 
   // Saved from that dialog at the balance as threshold, auto-reload turns on
   // (a new account starts armed) and the worker charges $10 to the card. The
-  // paid reload leaves credits above the threshold, which re-arms it; the tab
-  // shows the new balance by itself.
+  // paid reload leaves credits above the threshold, which re-arms it; Usage
+  // shows the new purchased balance without a page reload.
   const beforeReload = saved.purchased_micros;
   expect(await saveAutoReload(page, await thresholdNow(owner))).toBe(true);
   const { invoice: reloadInvoice, reload } = await settledReload(run, owner, 0);
@@ -215,7 +215,7 @@ test('starter credits, the monthly limit, a card saved through setup Checkout, a
   expect(afterReload.purchased_micros - beforeReload).toBe(
     reload.credits_micros
   );
-  await expect(purchasedLeft(page, afterReload.purchased_micros)).toBeVisible();
+  await expectPurchasedOnUsage(page, afterReload.purchased_micros);
   expect(reloadInvoice.status).toBe('paid');
   await processedEvent(
     run,

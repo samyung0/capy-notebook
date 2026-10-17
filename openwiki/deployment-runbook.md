@@ -153,6 +153,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    keyed by path, query string and Worker version (each deploy starts cold),
    never by cookies or headers, so a render must not read the request; hits
    carry `CF-Cache-Status: HIT` and `Age`. Zone cache rules do not apply to it.
+   Its two tiers are built in (a lower tier in the visitor's data center, an
+   upper tier every lower tier asks on a miss), so the zone's Tiered Cache
+   topology does not govern it; the host is not part of the key, so both UAT
+   app hosts share entries; a hit is served before the Worker's placement
+   region applies. With Workers Cache on, every request to the Worker is
+   billed at the Workers request rate, its static files included, while hits
+   and static files use no CPU time (Cloudflare's Workers Cache pricing).
    A query string makes its own entry, so each new one renders once. Failure
    pages stay `no-store`, and link summaries are `noindex, nofollow`. The
    `/p/*` routes serve signed-out shared quizzes', flashcards' and notes'
@@ -167,12 +174,55 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `max-age=31536000, immutable` (stable artwork, kept names) and
    `/release.txt` `no-store` (open tabs compare it with their own release, so
    no cache may answer it, and as a real file it never gets the SPA
-   fallback); everything else,
-   the content-hashed `/assets/*` bundles included, keeps the Workers Assets
-   default of `public, max-age=0, must-revalidate` with an `ETag`. `/assets/*`
-   is not immutable because the SPA fallback answers an unknown asset name
-   with `index.html` (200), and during a deploy some edge locations do that
-   for new chunk names; an immutable header would pin that HTML for a year.
+   fallback) and the content-hashed `/assets/*` bundles
+   `max-age=31536000, immutable` (Vite renames a changed file and never
+   reuses a name); everything else keeps the Workers Assets default of
+   `public, max-age=0, must-revalidate` with an `ETag`. Every app host's
+   `/assets/*` is the route of a separate assets Worker
+   (`wrangler.assets.jsonc`; the route is more specific than the app Worker's
+   `/*`, so it wins). Its static files are the build's `dist/assets` with
+   `dist/_headers`, and its script (`workers/site/assets.ts`) runs only when
+   no file matches: an empty 404 with `no-store`. The SPA fallback therefore
+   never answers a chunk's URL, which it did during deploys while the app
+   Worker served `/assets/*`, and which a year-long header would have pinned.
+   The deploy stages `dist/assets` and `dist/_headers` and publishes this
+   Worker right before the app Worker, so a new `index.html` never names a
+   chunk the edge cannot serve. In the minute between the two, a fresh load
+   gets the old `index.html`, whose entry chunk 404s: `index.html`'s own boot
+   script then replaces the loading spinner with the reload message
+   ([error-handling](frontend/error-handling.md#boundary-tiers)), and an open
+   tab that lazy-loads an old chunk shows the app's. A reload once the app
+   Worker is live loads the new release. The deploy checks the app Worker's
+   secrets before publishing either Worker, and when the app Worker step
+   fails after the assets Worker went live, it rolls the assets Worker back
+   to its previous deployment (`wrangler rollback --config
+   wrangler.assets.jsonc --env <env>`): the old `index.html`, still served,
+   names chunks only that deployment has. It first reads the app host's
+   `/release.txt` up to 3 times over about 30 s
+   (`scripts/deploy/assets-rollback-check.sh`; a failed request, an error
+   status or a body that is no revision is no read) and rolls back only when
+   a read succeeded and every successful read shows the old revision. When a
+   read shows the new revision (the app Worker step failed after its new
+   version went live, in a later part such as its routes), the new
+   `index.html` needs the new assets, and when no read succeeds the step
+   cannot tell: either way it leaves both Workers and fails for the manual
+   rollback. An assets Worker step that
+   fails after its version went live gets no automatic action either (Epo
+   2026-10-17). Roll back by hand the same way,
+   both Workers back to back (`capy-notebook-<env>` and
+   `capy-notebook-assets-<env>`, in the dashboard or with `wrangler
+   rollback`), never one alone; redeploying a previous SHA moves both.
+   `scripts/deploy/verify-release.sh` checks the
+   404 `no-store` after every deploy. The assets Worker has no Workers Cache
+   block, so its static hits stay free requests. The app Worker keeps
+   `dist/assets` as well: share pages read their stylesheets through its
+   `ASSETS` binding. The first deploy creates the routes with the same token
+   and zone permissions the app Worker's routes use. On that first deploy
+   the assets Worker has no earlier version, so the automatic rollback fails
+   ("Could not find stable Worker Version to rollback to"): if the app Worker
+   step failed there, rerun the site job, or remove the assets Worker's
+   routes so the app Worker, still on the old release, serves `/assets/*`
+   again.
    The Office viewer/editor needs its own cookie-less hostname in production,
    such as `office.capynotebook.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
@@ -190,9 +240,43 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    `/assets/*` bundles bypass the Worker and use
    `public, max-age=31536000, immutable`; staging copies the dedicated
    `workers/office/_headers` policy, including `nosniff`, `no-referrer`, noindex,
-   and a CSP that prevents framing asset URLs. Missing assets still reach the
-   Worker's rejection checks; the static layer rejects unsupported methods on
-   existing assets with 405. Do not proxy `/api`, issue authentication cookies, or set
+   and a CSP that prevents framing asset URLs. The exceptions are the WASM
+   modules and the uncompressed fonts (`.wasm`, `.ttf`, `.otf`): staging
+   (`workers/office/stage.mjs`) compresses each once with brotli at quality
+   11 into `<name>.br` and removes the original, and `run_worker_first`
+   sends `/assets/*.wasm`, `*.ttf` and `*.otf` to the Worker, which serves
+   the `.br` file whole with `Content-Encoding: br` (`encodeBody: "manual"`,
+   so the runtime does not compress it again), its real type
+   (`application/wasm`, `font/ttf`, `font/otf`), the same year-long immutable
+   caching and the Worker's security headers. It reads the `.br` file by GET
+   with no validators or range whatever the request asks, so a conditional
+   or HEAD request on a cache miss still gets the full `200` (the runtime
+   drops a HEAD's body; Workers Cache converts a HEAD on a cold cache to a
+   GET and stores the full file, per Cloudflare's Workers Cache "Cache keys"
+   and "Limitations" pages),
+   never a `304` or an empty body that the cache could keep for a year; the
+   cache answers conditional requests from its stored copy. The static layer would
+   recompress them on the fly at about quality 4: quality 11 is 20-25%
+   smaller for WASM and 12-18% for fonts (the CJK faces 16-18%; a 2026-09
+   build's 55 files: 19.0 MB → 15.1 MB), and costs about a minute of the
+   deploy's site job.
+   WOFF/WOFF2 are compressed inside and stay static files. A client that
+   does not accept brotli gets the bytes decoded by Cloudflare's edge, which
+   on a Workers Cache hit decodes the stored copy without running the Worker
+   (Cloudflare's Workers `fetch` documentation; local workerd answers an
+   `Accept-Encoding: identity` request with the plain WASM; the UAT checklist
+   checks it on a hit). Only these
+   requests and the runtime HTML run the Worker, and Workers Cache
+   (`cache.enabled` in `wrangler.office.jsonc`, every environment) keeps the
+   brotli files for a year in its tiers, so a hit skips the Worker
+   (`CF-Cache-Status: HIT`) and each deploy fills it once per file (its key
+   includes the Worker version); the runtime HTML and every refusal are
+   `no-store` and bypass it. With it on, every Office-host request, the
+   static scripts included, is billed at the Workers request rate, with no
+   CPU time for hits and static files. Missing assets still
+   reach the Worker's rejection checks, and a missing `.br` file is a 404
+   `no-store`; the static layer rejects unsupported methods on existing
+   assets with 405. Do not proxy `/api`, issue authentication cookies, or set
    parent-domain cookies on this hostname. The Office host transfers protected
    bytes by exact-origin `postMessage`; it does not need CORS access to the API.
 2. **API + collab.** Pick one of §1.1 Coolify (typical), §1.2 bare compose, or
@@ -229,6 +313,7 @@ summary renders keep using the existing `capy-notebook-uat` deployment.
 | Proxied `app.uat` CNAME | `3abcfdb8-68f3-4b11-b475-7b0379a1affe.cfargotunnel.com` |
 | Worker Route | `app.uat.capynotebook.com/*` → `capy-notebook-uat` |
 | More-specific zone route | `app.uat.capynotebook.com/api/*` → **None**, no script |
+| More-specific Worker Route | `app.uat.capynotebook.com/assets/*` → `capy-notebook-assets-uat` (from `wrangler.assets.jsonc`; the old host has the same) |
 | Tunnel ingress | Host `app.uat.capynotebook.com`, path `^/api/`, service `http://localhost:80` |
 | Ingress HTTP Host Header | `uat-api.capynotebook.com` |
 
@@ -466,6 +551,57 @@ The prod file runs `/migrate` once per deploy, starts the API with
    and agent markdown's V8 (~0.8 GiB, its heap capped). Production has
    7.6 GiB of RAM and 12 GiB of swap, UAT 3.9 GB and 6 GiB, so the engine caps
    lean on swap; they bound a runaway call, not the expected footprint.
+
+   The collaboration service runs with `MALLOC_ARENA_MAX=2`,
+   `MALLOC_TRIM_THRESHOLD_=131072` and `MALLOC_MMAP_THRESHOLD_=131072`
+   (`docker-compose.prod.yml`, UAT and production; the engine processes
+   inherit them, Epo 2026-10-17). Room loads replay on tokio's blocking
+   threads, each with its own glibc arena, and glibc raises its mmap
+   threshold as large blocks are freed, so without them memory freed after
+   peers leave stays in the process: 411-467 MiB kept, against ~90 MiB with
+   them, and a peak of ~180 MiB instead of ~520, at the same marker latency
+   (`bench/collaboration/reports/2026-10-17-collaboration-allocator.md`).
+   After a deploy that changes them, compare the container's memory
+   (`docker stats --no-stream $(docker ps -qf name=collaboration)`) at idle
+   and after a busy period with the numbers from before.
+
+   Open source rooms keep their original files, seeds and baselines on disk,
+   not in memory (Epo 2026-10-17; the disk store in
+   [office-files](frontend/office-files.md)). The folder is the image's
+   `/var/lib/capy/sources` (`COLLABORATION_SOURCE_DISK_DIR`, set in
+   `collaboration-rs/Dockerfile`) on the named volume
+   `capy_collaboration_sources` (`docker-compose.prod.yml`): disk-backed, never
+   tmpfs. Docker creates the volume with the image folder's owner (the
+   service user `nobody`) and mode 0700. The server deletes the files it wrote
+   there when it stops gracefully, once the rooms stored (a crash leaves them),
+   and wipes them at every start. One collaboration process per environment uses
+   it. The image sets the folder because the path is the image's layout, the
+   same in every environment; the cap has no default, and the server refuses
+   to start without it. The cap is `COLLABORATION_SOURCE_DISK_BYTES`, rendered
+   by `scripts/env/config.py`: production 10 GiB (10737418240), UAT 5 GiB
+   (5368709120); the local compose files use UAT's. Nothing is set by hand:
+   every Deploy UAT and production promotion runs `deploy-environment.yml`,
+   whose deploy job renders `coolify.json` (the cap included), applies it to
+   Coolify with `config.py apply-coolify` and reads it back before
+   `coolify-deploy.sh` starts the deploy. A deploy that skipped that sync
+   would fail on the compose file's `${COLLABORATION_SOURCE_DISK_BYTES:?}`
+   rather than run without a cap. Size the disk for the
+   cap: at the decision production had 50 of 75 GB free and UAT 29 of 78 GB
+   (UAT shrinks with deploy images until the weekly cleanup). When loaded
+   rooms' files fill the cap, new source rooms are refused
+   (`capy_collaboration_source_disk_refusals_total` on `/metrics`, a
+   `source room refused: disk store full` warn line);
+   `capy_collaboration_source_disk_held_bytes` shows how much of the cap the
+   open rooms hold. Raise the cap only with the free space to back it. To
+   check the folder after a deploy:
+
+   ```bash
+   c=$(docker ps -qf name=collaboration)
+   docker exec "$c" sh -c 'stat -c "%U %a" /var/lib/capy/sources; du -sh /var/lib/capy/sources'
+   ```
+
+   It prints `nobody 700` and the bytes on disk: the open rooms' files plus
+   idle ones still in their 3-minute grace (a few KB right after a restart).
 
    Every client socket, gateway call and database connection is an open
    file. The compose files give the collaboration service `nofile` 524288,
@@ -853,6 +989,21 @@ with a console error.
 streaming. Cached operator responses can disclose one operator's data to
 another.
 
+**Worker caching checks** (read-only; nothing here is set by Wrangler):
+
+- Workers Routes for the zone list each app host's `/assets/*` on the
+  assets Worker (`capy-notebook-assets-uat` / `-production`), the host's
+  `/*` on the app Worker and `/api/*` on no script (§1.0.1).
+- No Cache Rule, Page Rule or Compression Rule matches the app hosts'
+  `/assets/*` or the Office host, and no Transform Rule adds
+  `Cache-Control: no-transform` there: the edge decodes the Office Worker's
+  brotli files for a client without brotli only while the response allows
+  transforms.
+- Caching → Tiered Cache governs only zone-cached, proxied origins (the
+  bank assets host, for one); Smart Tiered Cache is available on every plan
+  and is the setting to keep on. Workers Cache and Workers static assets
+  tier on their own, and Regional Tiered Cache is an Enterprise add-on.
+
 For `ops.capynotebook.com`, add a response-header rule with
 `Cache-Control: private, no-store` and
 `X-Robots-Tag: noindex, nofollow, noarchive`. Keep the dashboard's HTML
@@ -1052,12 +1203,18 @@ Two content security policies, both built once per SPA build by
     `/array/{VITE_POSTHOG_KEY}/config.js` on the host posthog-js loads them
     from, `src/lib/posthogHost.ts`: `https://{eu|us}-assets.i.posthog.com` for
     PostHog Cloud, the proxy itself otherwise). No `'unsafe-inline'` and no
-    `'unsafe-eval'`: the Worker adds the SHA-256 of each inline script its
-    own template holds (a build's templates hold none, Vite bundles them; the
-    dev server's carry React's refresh preamble), so markup a render writes
-    into the page never runs. The SPA's and the share pages' scripts set Zod
-    to `jitless` first (`src/lib/zodJitless.ts`), so Zod never probes
-    `new Function` (the summary and error pages' script builds no schema);
+    `'unsafe-eval'`: the Worker adds the SHA-256 of each inline script its own
+    template holds, so markup a render writes into the page never runs. A
+    build's `share.html` and `summary.html` (the error pages' template) hold
+    one, the classic theme script, kept inline so the page paints in the
+    chosen style and theme from the first frame instead of after its bundle
+    loads (Epo 2026-10-17; Vite would bundle a module script into the entry).
+    The templates are never pages of their own: `/share.html`, `/summary.html`
+    and `/summary` run the Worker first and answer the 404 page.
+    The dev server's templates also carry React's refresh preamble. The SPA's
+    and the share pages' scripts set Zod to `jitless` first
+    (`src/lib/zodJitless.ts`), so Zod never probes `new Function` (the summary
+    and error pages' script builds no schema);
   - `script-src-attr 'none'` (no event-handler attributes),
     `worker-src 'self' blob:` (clerk-js's timer worker),
     `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;
@@ -1084,7 +1241,13 @@ policy. The values reach the pages two ways:
   check can see (UAT checklist §7). If it does not, the fallback plan is to
   run the site Worker first on every path but the static files
   (`run_worker_first` with exclusions such as `!/assets/*`) and set the
-  header there, at the cost of one Worker call per page load.
+  header there, at the cost of one Worker call per page load. Rules after it
+  detach the header (`! Content-Security-Policy-Report-Only`) from the static
+  files (`/assets/*`, `/icons/*`, `/mathlive/*`, `/favicon.svg`): only
+  documents and workers apply a policy, and on every chunk, stylesheet and
+  font it cost about 18 KB of headers per shared page. The worker scripts
+  under `/assets/` (drafts, source analysis and PDF.js, CSV, DOCX, export,
+  the Office engine) therefore run without it.
 - Worker responses get no `_headers`, so the share, summary and error pages
   the site Worker renders read both values from the share renderer bundle
   (`IMAGE_POLICY` and `PAGE_POLICY`, `src/share/server.tsx`) and set them in
@@ -1729,9 +1892,9 @@ stays retained behind it. Nothing is pinned per environment.
    repository or in chat.
 5. Backups. `/etc/cron.d/capy-library-db` runs `library-db-backup.sh` at
    03:15 Europe/Berlin (01:15 UTC during summer, 02:15 UTC during winter): a
-   custom-format `pg_dump` into `/opt/capy-library-db/backups`,
-   kept seven days. The library is rebuildable from its PDFs and builder
-   receipts, so local dumps are enough until it is not; add a B2 upload then.
+   custom-format `pg_dump` of the library and of the bank into
+   `/opt/capy-library-db/backups`, each uploaded to the private bank bucket
+   (step 5 of the bank setup), keeping the two newest of each on the host.
 6. Sizing. The host has 15 GiB and the parser is capped at 6 GiB; the
    container is capped at 3 GiB with `shared_buffers` 768 MB and
    `maintenance_work_mem` 512 MB. Raise `LIBRARY_DB_MAINTENANCE_WORK_MEM` for
@@ -1810,7 +1973,8 @@ content. Never point the ordinary app migrator at `bank`.
 5. Install the updated `library-db-backup.sh` only after the bank exists. Add
    the `BANK_PRIVATE_B2_*` entries from `deploy/library-db.env.example` to the
    host's mode-0600 `.env`. Use a bucket-scoped write-only backup key. The script
-   runs rclone in a container and writes `backups/bank-<UTC>.dump`. Apply a
+   runs rclone in a container and writes `backups/library-<UTC>.dump` and
+   `backups/bank-<UTC>.dump`. Apply a
    **backups-prefix-only** lifecycle rule retaining 30 days; keep references
    and run records. Verify one dump upload and restore it to a disposable
    database with `pg_restore` before relying on the cron.
@@ -2366,7 +2530,8 @@ authentication strategy.
    the next **Deploy ingest**; the manifest scopes them to `uat`, a production
    render with either set fails, and a pipeline process refuses to start with
    one unless `SENTRY_ENVIRONMENT=uat`.
-6. The deployment publishes Worker `capy-notebook-uat` with the built assets and
+6. The deployment publishes Worker `capy-notebook-assets-uat` (the app hosts'
+   `/assets/*`), then Worker `capy-notebook-uat` with the built assets and
    live summary handler. Attach only the UAT site domain after verifying it,
    following the route and hostname transition order in §1. No summary storage service is needed.
 7. Deploy once, inspect the `migrate` container, and verify all public routes

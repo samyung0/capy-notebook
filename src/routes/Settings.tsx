@@ -20,7 +20,7 @@ import {
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { AccountTab } from '@/features/settings/AccountTab';
-import { ChatStepsSection } from '@/features/settings/ChatStepsSection';
+import { ChatSection } from '@/features/settings/ChatSection';
 import { DeleteAccountDialog } from '@/features/settings/DeleteAccountDialog';
 import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
@@ -90,7 +90,7 @@ function CustomizationsTab() {
             </SelectContent>
           </Select>
         </SettingRow>
-        <ChatStepsSection />
+        <ChatSection />
       </div>
     </>
   );
@@ -115,7 +115,7 @@ const NOTIFICATION_ROWS: {
 
 function NotificationsTab() {
   const { data: prefs, isSuccess } = useNotificationPrefs();
-  const { isPending, mutate: setPrefs } = useSetNotificationPrefs();
+  const { mutate: setPrefs } = useSetNotificationPrefs();
   return (
     <>
       <TabHeader title={m.settings_tab_notifications()} />
@@ -125,9 +125,9 @@ function NotificationsTab() {
             <Switch
               aria-label={row.title()}
               checked={prefs?.[row.field] ?? false}
-              disabled={!isSuccess || isPending}
+              disabled={!isSuccess}
               onCheckedChange={(checked) => {
-                if (!prefs || isPending) return;
+                if (!prefs) return;
                 setPrefs({ ...prefs, [row.field]: checked });
               }}
             />

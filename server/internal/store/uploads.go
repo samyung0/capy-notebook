@@ -174,7 +174,9 @@ func (s *Store) GetUploadSession(ctx context.Context, id string) (UploadSession,
 
 // FinalizeUploadSession creates the source and its first pipeline job exactly once. The
 // B2 promotion happens before this transaction and is safe to retry.
-func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag, parser string) (File, error) {
+// sourceSHA256 is the stored object's SHA-256 as the gateway hashed it ("" for
+// a file without source sessions); a replayed completion ignores it.
+func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag, sourceSHA256, parser string) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return File{}, err
@@ -218,7 +220,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 	}
 
 	file, err := s.finalizeUploadSessionTx(
-		ctx, tx, uploadID, sourceETag, parser,
+		ctx, tx, uploadID, sourceETag, sourceSHA256, parser,
 	)
 	if err != nil {
 		return File{}, err
@@ -232,7 +234,7 @@ func (s *Store) FinalizeUploadSession(ctx context.Context, uploadID, sourceETag,
 func (s *Store) finalizeUploadSessionTx(
 	ctx context.Context,
 	tx pgx.Tx,
-	uploadID, sourceETag, parser string,
+	uploadID, sourceETag, sourceSHA256, parser string,
 ) (File, error) {
 	u, err := scanUploadSession(tx.QueryRow(ctx,
 		`SELECT `+uploadSessionCols+uploadSessionFrom+`id=$1 FOR UPDATE`, uploadID))
@@ -272,12 +274,14 @@ func (s *Store) finalizeUploadSessionTx(
 	if ready {
 		status = "ready"
 	}
+	// The SHA-256 every source session names from the first open (Epo
+	// 2026-10-17); ingest and the first save write the same value.
 	_, err = tx.Exec(ctx, `INSERT INTO files
-		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id)
+		(id, workspace_id, user_id, created_by, chapter_id, name, kind, size_bytes, added_at, status, parser, blob_path, source_etag, parse_mode, batch_id, source_sha256)
 		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,
-			(SELECT batch_id FROM upload_sessions WHERE id=$15))`,
+			(SELECT batch_id FROM upload_sessions WHERE id=$15),NULLIF($16,''))`,
 		fileID, u.WorkspaceID, u.UserID, u.CreatedBy, chapterID, u.Name, u.Kind, u.DeclaredSize,
-		now, status, parser, u.FinalPath, sourceETag, u.ParseMode, u.ID)
+		now, status, parser, u.FinalPath, sourceETag, u.ParseMode, u.ID, sourceSHA256)
 	if err != nil {
 		return File{}, err
 	}

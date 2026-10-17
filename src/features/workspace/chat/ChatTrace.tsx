@@ -24,7 +24,7 @@ import { LangAnswer } from './LangAnswer';
 import {
   type ActivityIconKind,
   buildTrace,
-  currentRow,
+  foldSegments,
   foldTrace,
   groupTitle,
   latestStep,
@@ -257,7 +257,7 @@ function toastRefusal(effect: Undoable, code: string) {
   });
 }
 
-/** Undo on created, edited and restored effects; Redo once undone. Disabled
+/** Undo on created, edited and restored effects; Redo once undone. Hidden
  * unless the server says the step is available. */
 function UndoButton({
   effect,
@@ -268,11 +268,12 @@ function UndoButton({
 }) {
   const { mutate: undo, isPending } = useUndoEdit();
   const redo = undoAction(effect.operation) === 'redo';
-  const { operationId } = effect.undo;
+  const { operationId, status } = effect.undo;
+  if (status !== 'available') return null;
   return (
     <Button
-      className="px-1.5"
-      disabled={isPending || effect.undo.status !== 'available'}
+      className="px-1.5 py-1"
+      disabled={isPending}
       onClick={() =>
         undo(operationId, {
           onError: (error) => {
@@ -452,7 +453,29 @@ function Row({
   }
 }
 
-/** Rows in lists 8px apart; narration, in answer text, sits between lists 24px away. */
+const isReceipt = (row: TraceRow) =>
+  row.type === 'created' || row.type === 'edited';
+
+/** A turn's created and edited files, set apart from the steps and the
+ * answer between hairlines. */
+function Receipts({
+  rows,
+  handlers,
+}: {
+  rows: TraceRow[];
+  handlers: UndoHandlers;
+}) {
+  return (
+    <div className="my-2 flex flex-col gap-2.5 border-line border-y py-3">
+      {rows.map((row) => (
+        <Row handlers={handlers} key={row.id} row={row} />
+      ))}
+    </div>
+  );
+}
+
+/** Rows in lists 8px apart, consecutive receipts in one block; narration, in
+ * answer text, sits between lists 24px away. */
 function TraceList({
   rows,
   handlers,
@@ -473,18 +496,33 @@ function TraceList({
     <div className="flex flex-col gap-6">
       {lists.map((list) => (
         <div className="flex flex-col gap-2" key={list[0].id}>
-          {list.map((row) => (
-            <Row
-              citations={citations}
-              handlers={handlers}
-              key={row.id}
-              row={row}
-            />
-          ))}
+          {runs(list).map((run) =>
+            isReceipt(run[0]) ? (
+              <Receipts handlers={handlers} key={run[0].id} rows={run} />
+            ) : (
+              <Row
+                citations={citations}
+                handlers={handlers}
+                key={run[0].id}
+                row={run[0]}
+              />
+            )
+          )}
         </div>
       ))}
     </div>
   );
+}
+
+/** Each receipt run as one item, every other row on its own. */
+function runs(rows: TraceRow[]): TraceRow[][] {
+  const out: TraceRow[][] = [];
+  for (const row of rows) {
+    const last = out.at(-1);
+    if (last && isReceipt(row) && isReceipt(last[0])) last.push(row);
+    else out.push([row]);
+  }
+  return out;
 }
 
 /** The model is between steps: no tool running, no text streaming. */
@@ -497,9 +535,36 @@ export function isThinking(msg: ChatMessage, live: boolean): boolean {
   );
 }
 
+/** The steps between two narrations behind one line that names the latest
+ * step; the steps before it open above that line, the ones after it below. */
+function StepsFold({
+  rows,
+  citations,
+  handlers,
+}: {
+  rows: TraceRow[];
+  citations?: Citation[];
+  handlers: UndoHandlers;
+}) {
+  const latest = latestStep(rows);
+  return latest ? (
+    <FoldRow
+      after={rows.slice(latest.index + 1)}
+      before={rows.slice(0, latest.index)}
+      citations={citations}
+      handlers={handlers}
+      icon={latest.icon}
+      title={latest.text}
+    />
+  ) : (
+    <TraceList citations={citations} handlers={handlers} rows={rows} />
+  );
+}
+
 /** A turn's tool calls and thinking as trace rows. Verbose keeps every row;
- * Normal shows only the current step, then folds the steps into one row when
- * the answer starts. Receipts stay visible in both. */
+ * Normal shows only the current step, folding the steps between narrations
+ * into one row each; narration stays as text. Receipts stay visible in both,
+ * Normal adding them once the answer starts. */
 export function ChatTrace({
   msg,
   live,
@@ -522,54 +587,57 @@ export function ChatTrace({
   };
   const answering = !live || msg.phase === 'answering' || !!msg.content;
 
-  if (mode === 'verbose' || !answering) {
-    const rows = buildTrace({ ...input, receipts: mode === 'verbose' });
-    if (mode === 'verbose') {
-      return rows.length ? (
-        <div className="mb-4">
-          <TraceList
-            citations={msg.citations}
-            handlers={handlers}
-            rows={rows}
-          />
-        </div>
-      ) : null;
-    }
-    // Normal while it works: only the step it is on, swapping in place.
-    const row = currentRow(rows);
-    return row ? (
-      <div className="trace-enter mb-4" key={row.id}>
-        <Row handlers={handlers} row={row} />
+  if (mode === 'verbose') {
+    const rows = buildTrace(input);
+    return rows.length ? (
+      <div className="mb-4">
+        <TraceList citations={msg.citations} handlers={handlers} rows={rows} />
       </div>
     ) : null;
   }
 
   const fold = foldTrace(input);
-  if (!fold.rows.length && !fold.receipts.length) return null;
-  // Normal folds every step behind one line that names the latest step; the
-  // steps before it open above that line, the ones after it below.
-  const latest = latestStep(fold.rows);
+  const receipts = answering ? fold.receipts : [];
+  const segments = foldSegments(fold.rows);
+  if (!segments.length && !receipts.length) return null;
   return (
     <div className="mb-4 flex flex-col gap-2">
-      {latest ? (
-        <FoldRow
-          after={fold.rows.slice(latest.index + 1)}
-          before={fold.rows.slice(0, latest.index)}
-          citations={msg.citations}
-          handlers={handlers}
-          icon={latest.icon}
-          title={latest.text}
-        />
-      ) : (
-        <TraceList
-          citations={msg.citations}
-          handlers={handlers}
-          rows={fold.rows}
-        />
-      )}
-      {fold.receipts.map((row) => (
-        <Row handlers={handlers} key={row.id} row={row} />
-      ))}
+      <div className="flex flex-col gap-6 empty:hidden">
+        {segments.map((rows, index) => {
+          const row = rows.at(-1);
+          if (!row) return null;
+          if (row.type === 'narration') {
+            return (
+              <Row
+                citations={msg.citations}
+                handlers={handlers}
+                key={row.id}
+                row={row}
+              />
+            );
+          }
+          // While it works, the last steps show only the one it is on,
+          // swapping in place.
+          if (!answering && index === segments.length - 1) {
+            return (
+              <div className="trace-enter" key={row.id}>
+                <Row handlers={handlers} row={row} />
+              </div>
+            );
+          }
+          return (
+            <StepsFold
+              citations={msg.citations}
+              handlers={handlers}
+              key={rows[0].id}
+              rows={rows}
+            />
+          );
+        })}
+      </div>
+      {receipts.length ? (
+        <Receipts handlers={handlers} rows={receipts} />
+      ) : null}
     </div>
   );
 }

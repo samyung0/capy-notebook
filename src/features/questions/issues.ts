@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import {
+  blockWithoutBlanks,
   type Question,
   type QuestionBlock,
   type QuestionPart,
@@ -9,6 +10,7 @@ import {
 } from './types';
 import {
   type QuestionPolicy,
+  questionBlockSchema,
   questionSchema,
   type RuleIssue,
   ruleIssues,
@@ -32,6 +34,32 @@ export type QuestionIssue = {
 };
 
 type Section = 'stem' | 'blocks' | 'solution';
+
+/** A block's schema issue in the dialog's words; the generic line for rules
+ * its editor cannot break. */
+function blockMessage(
+  block: QuestionBlock | undefined,
+  issue: z.core.$ZodIssue
+) {
+  if (
+    block?.type === 'chart' &&
+    issue.message === m.question_validation_pie_series()
+  )
+    return m.question_issue_pie();
+  if (block?.type === 'graph' && issue.code === 'custom')
+    return m.question_issue_graph({ message: issue.message });
+  return m.question_issue_generic();
+}
+
+/** A standalone block's issues (a note's chart or graph), each listed once. */
+export function blockIssues(block: QuestionBlock): string[] {
+  const normal = blockWithoutBlanks(block);
+  const parsed = questionBlockSchema.safeParse(normal);
+  if (parsed.success) return [];
+  return [
+    ...new Set(parsed.error.issues.map((issue) => blockMessage(normal, issue))),
+  ];
+}
 const blank = (block: QuestionBlock) =>
   block.type === 'text' && !block.text.trim();
 const letter = (index: number) => String.fromCharCode(65 + index);
@@ -94,13 +122,7 @@ export function questionIssues(
       section === 'stem'
         ? normal.stem[index]
         : normal.parts.find((item) => item.id === part?.id)?.[section][index];
-    const message =
-      block?.type === 'chart' &&
-      issue.message === m.question_validation_pie_series()
-        ? m.question_issue_pie()
-        : block?.type === 'graph' && issue.code === 'custom'
-          ? m.question_issue_graph({ message: issue.message })
-          : generic;
+    const message = blockMessage(block, issue);
     add({
       message,
       partId: message === generic ? undefined : part?.id,

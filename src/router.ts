@@ -46,6 +46,7 @@ import {
   RouteNotFoundComponent,
 } from '@/components/app/AppErrorBoundary';
 import { AuthShellRoute, RootRoute } from '@/components/app/RouteComponents';
+import { prefetchOfficeFile } from '@/features/files/prefetchOfficeFile';
 import {
   parseDocumentModeSearch,
   parseWorkspaceOpenSearch,
@@ -261,7 +262,14 @@ const appRoutes = [
     component: lazyPage(() => import('@/routes/WorkspaceOpen')),
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => ({ file: search.file }),
-    loader: ({ context: { queryClient: qc }, deps, params }) => {
+    loader: ({
+      abortController,
+      context: { queryClient: qc },
+      deps,
+      location,
+      params,
+      preload,
+    }) => {
       const id = params.workspaceId;
       qc.prefetchQuery(workspaceQuery(id));
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
@@ -272,7 +280,15 @@ const appRoutes = [
       // The open file rides the first wave instead of waiting for the page to
       // render. An open material is left out on purpose: its body is the
       // document itself, and the heavy-document gate must see the list first.
-      if (deps.file) qc.prefetchQuery(fileQuery(deps.file));
+      if (deps.file) {
+        qc.prefetchQuery(fileQuery(deps.file));
+        // An Office file's open starts once its row arrives.
+        prefetchOfficeFile(qc, deps.file, {
+          abortController,
+          location,
+          preload,
+        });
+      }
     },
     path: '/workspaces/$workspaceId',
     staticData: { hideSidebar: true },
@@ -341,6 +357,20 @@ const appRoutes = [
   createRoute({
     component: lazyPage(() => import('@/routes/MaterialOpen')),
     getParentRoute: () => authShellRoute,
+    loader: ({
+      abortController,
+      context: { queryClient: qc },
+      location,
+      params,
+      preload,
+    }) => {
+      qc.prefetchQuery(fileQuery(params.fileId));
+      prefetchOfficeFile(qc, params.fileId, {
+        abortController,
+        location,
+        preload,
+      });
+    },
     path: '/files/$fileId',
     validateSearch: parseDocumentModeSearch,
   }),

@@ -1,4 +1,4 @@
-import { useSetModelPrefs } from '@/api/hooks';
+import { useChatModelSaving } from '@/api/hooks';
 import type { ModelOption } from '@/api/types';
 import {
   Select,
@@ -19,27 +19,23 @@ const THINKING_LABEL: Record<string, () => string> = {
 };
 
 export function ReasoningControls({
-  disabled,
+  onChange,
   selected,
   stored,
 }: {
-  disabled?: boolean;
+  onChange: (thinking: string) => void;
   selected: ModelOption | undefined;
   stored: string;
 }) {
-  const { isPending, mutate } = useSetModelPrefs();
+  // Locked only while a model change saves: the new model's stored level
+  // arrives with the refetch.
+  const modelSaving = useChatModelSaving();
   if (!hasThinkingControls(selected?.thinking)) return null;
   const spec = selected.thinking;
-  const busy = disabled || isPending || !selected.available;
+  const busy = modelSaving || !selected.available;
 
   return (
-    <Select
-      disabled={busy}
-      onValueChange={(next) => {
-        mutate({ chatThinking: next });
-      }}
-      value={stored}
-    >
+    <Select disabled={busy} onValueChange={onChange} value={stored}>
       <SelectTrigger
         aria-label={m.settings_llm_thinking()}
         className="w-auto shrink-0 sm:w-34"

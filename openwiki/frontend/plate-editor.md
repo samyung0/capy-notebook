@@ -1041,7 +1041,12 @@ store, not the transaction work queued after it; whole-task deltas between
 blocks swing by more than the typing itself (±10–250 ms per key) and decide
 nothing. The worker runs requests in the order they were posted, so a
 read sees every write posted before it and a receipt's delete lands after the
-updates it covers. Each editor mount is a session; each of its local Yjs
+updates it covers. Drafts come before the device copies of opened source
+files in the storage quota (Epo 2026-10-17): a request the quota refuses
+(`QuotaExceededError`) deletes the least recently opened copy
+(`evictOldestSource`, [office-files](office-files.md)) and runs again, one
+copy at a time, until it lands; with no copy left it fails as any storage
+failure does. Each editor mount is a session; each of its local Yjs
 updates (origin neither the room provider nor a restore) is one `update` row,
 posted as it happens; every 64 of a session's rows are merged into the run's
 last one (reopening 10k one-edit rows took over a second, 50k 39 s: one

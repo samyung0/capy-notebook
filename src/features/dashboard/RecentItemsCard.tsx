@@ -27,6 +27,7 @@ import {
 import { getLocale, m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { fileIconName, materialIconName } from '@/lib/fileIcons';
+import { iconUrl } from '@/lib/icon-catalog';
 import { PREF_KEYS } from '@/lib/localPrefs';
 import { waitsForConnection } from '@/lib/online';
 import { mergeRecentItems, type RecentItem } from './recentItems';
@@ -174,7 +175,7 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
         view === 'grid' ? (
           <ItemSkeletonGrid count={8} dense />
         ) : (
-          <SkeletonList className="gap-0.5" count={8} rowHeight={52} />
+          <SkeletonList className="gap-0.5" count={8} rowHeight={54} />
         )
       ) : missing.length ? (
         <InlineErrorState
@@ -215,33 +216,58 @@ export function RecentItemsCard({ recent }: { recent: RecentItems }) {
         </ItemGrid>
       ) : (
         <div className="-mx-1.5 flex flex-col gap-0.5">
-          {items.map((item) => (
-            <div
-              className="group relative flex items-center justify-between rounded-button hover:bg-surface-hover-bg"
-              key={`${item.kind}-${item.id}`}
-            >
-              <Link
-                className="flex min-w-0 flex-1 items-center gap-3 rounded-button px-1.5 py-1.5"
-                preload="intent"
-                {...recentLink(item)}
+          {items.map((item) => {
+            const workspace = workspaces?.find(
+              (ws) => ws.id === item.workspaceId
+            );
+            return (
+              <div
+                className="group relative flex items-center justify-between rounded-button hover:bg-surface-hover-bg"
+                key={`${item.kind}-${item.id}`}
               >
-                <ThumbnailPanel
-                  icon={recentIcon(item)}
-                  small
-                  {...recentThumbnail(item)}
-                />
-                <span className="min-w-0 flex-1 leading-tight">
-                  <span className="line-clamp-2 font-semibold text-fg">
-                    {item.title}
+                <Link
+                  className="flex min-w-0 flex-1 items-center gap-3 rounded-button px-1.5 py-1.5"
+                  preload="intent"
+                  {...recentLink(item)}
+                >
+                  <ThumbnailPanel
+                    icon={recentIcon(item)}
+                    small
+                    {...recentThumbnail(item)}
+                  />
+                  <span className="flex min-w-0 flex-1 flex-col gap-1 leading-tight">
+                    <span className="line-clamp-2 font-semibold text-fg">
+                      {item.title}
+                    </span>
+                    {/* Like the grid card's hint: workspace · date. */}
+                    <span className="flex min-w-0 items-center gap-1.5 text-sm">
+                      {workspace && (
+                        <>
+                          <img
+                            alt=""
+                            className="size-4 shrink-0 -translate-y-px rounded-[3px]"
+                            height={16}
+                            src={iconUrl(workspace.iconId)}
+                            width={16}
+                          />
+                          <span className="min-w-0 truncate text-fg">
+                            {workspace.name}
+                          </span>
+                          <span aria-hidden className="shrink-0 text-fg-muted">
+                            ·
+                          </span>
+                        </>
+                      )}
+                      <span className="shrink-0 whitespace-nowrap text-fg-muted">
+                        {recentHint(item)}
+                      </span>
+                    </span>
                   </span>
-                  <span className="line-clamp-1 text-fg-muted text-sm">
-                    {recentHint(item)}
-                  </span>
-                </span>
-              </Link>
-              <RecentActions display="hover" item={item} />
-            </div>
-          ))}
+                </Link>
+                <RecentActions display="hover" item={item} />
+              </div>
+            );
+          })}
         </div>
       )}
     </section>

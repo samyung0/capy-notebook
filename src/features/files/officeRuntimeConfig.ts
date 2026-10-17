@@ -1,3 +1,5 @@
+import type { OfficeFormat, OfficeMode } from './officeProtocol';
+
 export interface OfficeRuntimeConfig {
   /** Permissions policy: the editors' Cut, Copy and Paste menu items use the clipboard. */
   allow: string;
@@ -50,6 +52,33 @@ export function getOfficeRuntimeConfig(): OfficeRuntimeConfig {
     configuredOrigin: String(import.meta.env.VITE_OFFICE_RUNTIME_ORIGIN ?? ''),
     production: import.meta.env.PROD,
   });
+}
+
+/** A frame for `format` in `mode`: the runtime starts that format's code
+ * and engine while the host still reads the file (`runtimeHintFromUrl`). */
+export function runtimeFrameUrl(
+  url: string,
+  format: OfficeFormat,
+  mode: OfficeMode
+) {
+  const frame = new URL(url);
+  frame.searchParams.set('format', format);
+  frame.searchParams.set('mode', mode);
+  return frame.href;
+}
+
+/** The format and mode a frame was opened for, or null. Only a head start:
+ * the `load` message decides what opens. */
+export function runtimeHintFromUrl(
+  search = window.location.search
+): { format: OfficeFormat; mode: OfficeMode } | null {
+  const params = new URLSearchParams(search);
+  const format = params.get('format');
+  const mode = params.get('mode');
+  return (format === 'docx' || format === 'xlsx' || format === 'pptx') &&
+    (mode === 'view' || mode === 'edit')
+    ? { format, mode }
+    : null;
 }
 
 export function parentOriginFromRuntimeUrl(): string | null {

@@ -5,7 +5,6 @@ import {
   cellAtPoint,
   cellRect,
   type DisplayList,
-  initWasm,
   openWorkbook,
   paintDisplayList,
   rangeRect,
@@ -29,6 +28,7 @@ import type {
 } from '@/features/files/officeProtocol';
 import { m } from '@/i18n';
 import { CITATION_FILL } from './citations';
+import { runtimeEngines } from './prewarm';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
 import { type CellCitation, xlsxCitation } from './xlsxCitation';
 import { xlsxViewMenus } from './xlsxMenus';
@@ -214,7 +214,7 @@ export function XlsxViewer({
         canvasRef.current.height
       );
     }
-    void initWasm().then(
+    void runtimeEngines['xlsx:view']().then(
       () => {
         if (disposed) return;
         try {

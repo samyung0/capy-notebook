@@ -18,8 +18,13 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
 import { FileEmpty, FileError, FileLoading } from './FileStates';
-import { fileExt, IMAGE_MIN_ZOOM, isImageFile } from './fileUtils';
-import type { OfficeCitation } from './officeProtocol';
+import {
+  fileExt,
+  IMAGE_MIN_ZOOM,
+  isImageFile,
+  officeFormatOf,
+} from './fileUtils';
+import type { OfficeCitation, OfficeFormat } from './officeProtocol';
 import { SourceTextView } from './SourceTextView';
 import { officeRuntimeKey } from './useOfficeRuntime';
 import { pdfAnnotationsQuery } from './usePdfAnnotations';
@@ -44,8 +49,7 @@ const AUDIO_EXTS = new Set([
   'mpga',
   'opus',
 ]);
-const SHEET_EXTS = new Set(['csv', 'tsv', 'xlsx']);
-const SLIDE_EXTS = new Set(['pptx']);
+const SHEET_EXTS = new Set(['csv', 'tsv']);
 const TEXT_EXTS = new Set(['txt', 'md', 'markdown', 'mdx', 'mdc', 'json']);
 function lazyView(node: ReactNode) {
   return <Suspense fallback={<FileLoading />}>{node}</Suspense>;
@@ -144,10 +148,14 @@ function FileViewerContent({
   regions,
   citation,
 }: FileViewerProps) {
-  const { data: workspace } = useWorkspace(file?.workspaceId ?? '', {
-    errorBoundary: false,
-  });
+  const { data: workspace, isPending: workspacePending } = useWorkspace(
+    file?.workspaceId ?? '',
+    { errorBoundary: false }
+  );
   const frozen = useAccountFrozen();
+  // An Office file opens from its source session (sourceOpen.ts), never from
+  // the published file's link.
+  const office = file?.hasBytes ? officeFormatOf(file) : null;
   // The row only says bytes exist; B2 needs a presigned link the
   // bearer-authenticated API hands out per file.
   const {
@@ -156,7 +164,9 @@ function FileViewerContent({
     isPending: linksPending,
     isError: linksFailed,
     refetch: refetchLinks,
-  } = useFileLinks(file?.hasBytes ? file.id : '', { errorBoundary: false });
+  } = useFileLinks(file?.hasBytes && !office ? file.id : '', {
+    errorBoundary: false,
+  });
   // Private marks need only the file id. Reading them here runs alongside the
   // link fetch instead of after the whole PDF downloads; the overlay draws them
   // once the pages exist, so the document never waits on this.
@@ -204,6 +214,20 @@ function FileViewerContent({
   }
 
   if (!file.hasBytes) return <FileEmpty />;
+  const canEdit = !!workspace?.capabilities.canEditContent;
+  if (office) {
+    // The capability picks View or Edit once, when the view mounts.
+    if (workspacePending) return <FileLoading />;
+    return (
+      <OfficeFileView
+        canEdit={canEdit}
+        citation={citation}
+        file={file}
+        format={office}
+        onDirtyChange={onDirtyChange}
+      />
+    );
+  }
   if (linksPending) return <FileLoading />;
   if (linksFailed || !links) {
     return (
@@ -220,8 +244,7 @@ function FileViewerContent({
         workspace?.storageOwnerState === AccountState.over_quota_frozen ||
         workspace?.storageOwnerUsage === StorageUsageLevel.full
       }
-      canEdit={!!workspace?.capabilities.canEditContent}
-      citation={citation}
+      canEdit={canEdit}
       file={{ ...file, url: links.url }}
       imageZoom={imageZoom}
       onDirtyChange={onDirtyChange}
@@ -231,6 +254,24 @@ function FileViewerContent({
       regions={regions}
     />
   );
+}
+
+/** DOCX, XLSX and PPTX in the Office runtime, keyed by the file so a switch
+ * leaves no session or frame of the previous one. */
+function OfficeFileView({
+  format,
+  ...props
+}: {
+  canEdit: boolean;
+  citation?: OfficeCitation;
+  file: SourceFile;
+  format: OfficeFormat;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
+  const key = officeRuntimeKey(props.file, props.file.revision);
+  if (format === 'xlsx') return lazyView(<SheetView key={key} {...props} />);
+  if (format === 'docx') return lazyView(<DocxView key={key} {...props} />);
+  return lazyView(<PptxView key={key} {...props} />);
 }
 
 function ResolvedFileView({
@@ -243,8 +284,7 @@ function ResolvedFileView({
   onRetryLinks,
   page,
   regions,
-  citation,
-}: Omit<FileViewerProps, 'file' | 'imageZoom'> & {
+}: Omit<FileViewerProps, 'citation' | 'file' | 'imageZoom'> & {
   /** PDF marks are open to every reader but not to a frozen account or while
    * the owner is at its storage limit. */
   annotationsReadOnly: boolean;
@@ -263,7 +303,6 @@ function ResolvedFileView({
     setPreviewAttempt((attempt) => attempt + 1);
   };
   const ext = fileExt(file.name);
-  const officeRuntimeIdentity = officeRuntimeKey(file, file.revision);
 
   if (file.kind === 'pdf' || ext === 'pdf') {
     return lazyView(
@@ -319,43 +358,13 @@ function ResolvedFileView({
           )}
         />
       );
-    if (ext !== 'xlsx') return <UnsupportedPreview file={file} />;
-    return lazyView(
-      <SheetView
-        canEdit={canEdit}
-        citation={citation}
-        file={file}
-        key={officeRuntimeIdentity}
-        onDirtyChange={onDirtyChange}
-      />
-    );
+    // XLSX opens in OfficeFileView.
+    return <UnsupportedPreview file={file} />;
   }
 
-  // DOCX uses the same read-first Office runtime; legacy binary .doc stays downloadable.
-  if (ext === 'docx') {
-    return lazyView(
-      <DocxView
-        canEdit={canEdit}
-        citation={citation}
-        file={file}
-        key={officeRuntimeIdentity}
-        onDirtyChange={onDirtyChange}
-      />
-    );
-  }
-
-  if (file.kind === 'slides' || SLIDE_EXTS.has(ext)) {
-    if (ext !== 'pptx') return <UnsupportedPreview file={file} />;
-    return lazyView(
-      <PptxView
-        canEdit={canEdit}
-        citation={citation}
-        file={file}
-        key={officeRuntimeIdentity}
-        onDirtyChange={onDirtyChange}
-      />
-    );
-  }
+  // PPTX opens in OfficeFileView; legacy binary .ppt (and .doc) stays
+  // downloadable.
+  if (file.kind === 'slides') return <UnsupportedPreview file={file} />;
 
   const isMarkdown = file.kind === 'md' || ext === 'md' || ext === 'markdown';
   const isText =

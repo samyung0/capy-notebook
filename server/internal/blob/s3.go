@@ -286,6 +286,17 @@ func (s *B2) ReadPrefix(ctx context.Context, path string, maxBytes int64) ([]byt
 	return data, nil
 }
 
+func (s *B2) Open(ctx context.Context, path string) (io.ReadCloser, error) {
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(path),
+	})
+	if err != nil {
+		return nil, err
+	}
+	return out.Body, nil
+}
+
 // Promote copies an upload from the short-lived incoming prefix to its stable
 // source key, then removes the incoming object. Copying is performed inside B2;
 // no object bytes pass through the gateway.

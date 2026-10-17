@@ -797,11 +797,21 @@ export const handlers = [
     db.user.studyPreferences = (await request.json()) as StudyPreferences;
     return new HttpResponse(null, { status: 204 });
   }),
-  http.patch('/api/me/chat-steps', async ({ request }) => {
-    const { steps } = (await request.json()) as { steps?: string };
-    if (steps !== 'normal' && steps !== 'verbose')
+  http.patch('/api/me/chat', async ({ request }) => {
+    const { sendKey, steps } = (await request.json()) as {
+      sendKey?: string;
+      steps?: string;
+    };
+    if (steps !== undefined && steps !== 'normal' && steps !== 'verbose')
       return HttpResponse.json({ detail: 'invalid steps' }, { status: 422 });
-    db.user.chatSteps = steps;
+    if (
+      sendKey !== undefined &&
+      sendKey !== 'enter' &&
+      sendKey !== 'shift_enter'
+    )
+      return HttpResponse.json({ detail: 'invalid sendKey' }, { status: 422 });
+    if (steps) db.user.chatSteps = steps;
+    if (sendKey) db.user.chatSendKey = sendKey;
     return new HttpResponse(null, { status: 204 });
   }),
   http.patch('/api/me/study-progress', async ({ request }) => {

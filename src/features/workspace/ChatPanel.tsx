@@ -104,16 +104,15 @@ function AssistantBubble({
   onOpenCitation?: (citation: Citation) => void;
 }) {
   const live = streaming && msg.status === 'streaming';
-  const draft =
-    msg.phase === 'answering' || msg.currentBlockId
-      ? msg.currentBlockText
-      : undefined;
+  // Text streaming before the answer phase is narration, drawn below the
+  // trace until its block ends and the trace takes it.
+  const draft = msg.phase === 'answering' ? msg.currentBlockText : undefined;
   const answer = msg.content || draft || '';
   return (
     <div className="py-2.5">
       <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
-        <div className="mb-6">
+        <div className="mt-6 mb-4">
           <LangAnswer
             citations={msg.citations}
             complete={false}
@@ -202,6 +201,7 @@ export function ChatPanel({
   } = useChatStream(workspaceId);
   const { data: me } = useMe({ errorBoundary: false });
   const mode: ChatSteps = me?.chatSteps ?? 'normal';
+  const sendKey = me?.chatSendKey ?? 'enter';
   // Dock only: the chat page is open, or a chip leads back to it after a
   // citation or a created file took the learner to the file.
   const [pageOpen, setPageOpen] = useState(false);
@@ -458,6 +458,14 @@ export function ChatPanel({
                 'max-h-[7lh] min-h-[2lh] resize-none rounded-none border-0 bg-transparent px-0 py-0 text-fg focus:border-0 max-sm:text-base'
               )}
               onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => {
+                // The chosen send key sends; the other one adds a new line.
+                // An IME's Enter confirms its candidate and never sends.
+                if (e.key !== 'Enter' || e.nativeEvent.isComposing) return;
+                if (e.shiftKey !== (sendKey === 'shift_enter')) return;
+                e.preventDefault();
+                submit();
+              }}
               placeholder={m.chat_placeholder()}
               rows={2}
               value={text}

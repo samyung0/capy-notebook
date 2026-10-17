@@ -9,6 +9,7 @@ import type { PlanTier } from './planTier.ts';
 import type { Ref } from './ref.ts';
 import type { StudyPreferences } from './studyPreferences.ts';
 import type { SubscriptionStatus } from './subscriptionStatus.ts';
+import type { UserChatSendKey } from './userChatSendKey.ts';
 import type { UserChatSteps } from './userChatSteps.ts';
 
 export interface User {
@@ -18,6 +19,7 @@ export interface User {
   avatarIconId?: string;
   avatarUrl?: string;
   chatModel: Ref;
+  chatSendKey: UserChatSendKey;
   chatSteps: UserChatSteps;
   classLabel?: string;
   editorModel: Ref;

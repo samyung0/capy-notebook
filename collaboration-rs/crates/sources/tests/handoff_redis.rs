@@ -93,7 +93,23 @@ fn writer(id: ChannelId) -> Channel {
     }
 }
 
-async fn setup() -> (Arc<Handoff>, Arc<FakeRooms>, redis::aio::ConnectionManager) {
+static DISKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// A disk store folder under the target's temp dir, removed with the guard.
+struct Disk(PathBuf);
+
+impl Drop for Disk {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.0);
+    }
+}
+
+async fn setup() -> (
+    Arc<Handoff>,
+    Arc<FakeRooms>,
+    redis::aio::ConnectionManager,
+    Disk,
+) {
     let url = std::env::var("SOURCES_TEST_REDIS_URL").expect("SOURCES_TEST_REDIS_URL");
     let redis = redis::Client::open(url)
         .unwrap()
@@ -108,23 +124,33 @@ async fn setup() -> (Arc<Handoff>, Arc<FakeRooms>, redis::aio::ConnectionManager
             tokio_postgres::NoTls,
         )
         .unwrap();
-    let sources = Arc::new(Sources::new(
-        SourcesConfig {
-            api_url: "http://127.0.0.1:1".into(),
-            secret: "secret".into(),
-            engine: PoolConfig {
-                program: PathBuf::from(env!("CARGO_BIN_EXE_sources-test-engine")),
-                args: Vec::new(),
-                save_processes: 1,
-                background_processes: 1,
-                call_timeout: Duration::from_secs(120),
-                replica_budget_bytes: 0,
-                memory_limit_bytes: None,
+    let disk = Disk(PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+        "handoff-disk-{}-{}",
+        std::process::id(),
+        DISKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+    )));
+    let sources = Arc::new(
+        Sources::new(
+            SourcesConfig {
+                api_url: "http://127.0.0.1:1".into(),
+                secret: "secret".into(),
+                engine: PoolConfig {
+                    program: PathBuf::from(env!("CARGO_BIN_EXE_sources-test-engine")),
+                    args: Vec::new(),
+                    save_processes: 1,
+                    background_processes: 1,
+                    call_timeout: Duration::from_secs(120),
+                    replica_budget_bytes: 0,
+                    memory_limit_bytes: None,
+                },
+                disk_dir: disk.0.clone(),
+                disk_bytes: 1 << 30,
             },
-        },
-        db,
-        reqwest::Client::new(),
-    ));
+            db,
+            reqwest::Client::new(),
+        )
+        .unwrap(),
+    );
     let rooms = Arc::new(FakeRooms::default());
     let handoff = Handoff::new(
         "instance-1".into(),
@@ -133,7 +159,7 @@ async fn setup() -> (Arc<Handoff>, Arc<FakeRooms>, redis::aio::ConnectionManager
         rooms.clone(),
         false,
     );
-    (handoff, rooms, redis)
+    (handoff, rooms, redis, disk)
 }
 
 fn room() -> SourceRoom {
@@ -151,7 +177,7 @@ fn prepare(room: &SourceRoom, id: &str) -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Redis (docker compose -p rust-sources)"]
 async fn a_publication_prepare_waits_for_clean_ready_receipts_then_persists() {
-    let (handoff, rooms, mut redis) = setup().await;
+    let (handoff, rooms, mut redis, _disk) = setup().await;
     let room = room();
     *rooms.channels.lock().unwrap() = vec![
         writer(1),
@@ -201,7 +227,7 @@ async fn a_publication_prepare_waits_for_clean_ready_receipts_then_persists() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Redis (docker compose -p rust-sources)"]
 async fn a_silent_writer_is_closed_after_the_window_and_the_room_still_persists() {
-    let (handoff, rooms, mut redis) = setup().await;
+    let (handoff, rooms, mut redis, _disk) = setup().await;
     let room = room();
     *rooms.channels.lock().unwrap() = vec![writer(1)];
     handoff.handle(&prepare(&room, "h2")).await.unwrap();
@@ -224,7 +250,7 @@ async fn a_silent_writer_is_closed_after_the_window_and_the_room_still_persists(
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Redis (docker compose -p rust-sources)"]
 async fn the_pause_persists_tells_saved_writers_and_closes_them() {
-    let (handoff, rooms, _) = setup().await;
+    let (handoff, rooms, _, _disk) = setup().await;
     let room = room();
     *rooms.channels.lock().unwrap() = vec![Channel {
         id: 4,
@@ -237,7 +263,7 @@ async fn the_pause_persists_tells_saved_writers_and_closes_them() {
         ["persist", "broadcast source-editing-paused", "restore"]
     );
     // A failed persist closes the writers without claiming they were saved.
-    let (handoff, rooms, _) = setup().await;
+    let (handoff, rooms, _, _disk) = setup().await;
     *rooms.channels.lock().unwrap() = vec![Channel {
         id: 5,
         write: true,
@@ -258,7 +284,7 @@ async fn the_pause_persists_tells_saved_writers_and_closes_them() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "needs Redis (docker compose -p rust-sources)"]
 async fn probes_answer_busy_while_the_room_is_in_use_and_complete_moves_it_on() {
-    let (handoff, rooms, mut redis) = setup().await;
+    let (handoff, rooms, mut redis, _disk) = setup().await;
     let room = room();
     let probe = |id: &str, writers_only: bool| {
         json!({ "epoch": 2, "fileId": room.file_id, "id": id, "room": room.name(), "type": "probe", "writersOnly": writers_only })

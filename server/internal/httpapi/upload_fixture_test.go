@@ -22,5 +22,5 @@ func uploadSource(ctx context.Context, st *store.Store, wsID, actorID, name stri
 	}); err != nil {
 		return store.File{}, err
 	}
-	return st.FinalizeUploadSession(ctx, id, "etag-"+id, "")
+	return st.FinalizeUploadSession(ctx, id, "etag-"+id, "", "")
 }

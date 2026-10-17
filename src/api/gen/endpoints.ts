@@ -138,7 +138,7 @@ import type {
   SaveCanvasReq,
   SearchParams,
   SearchResult,
-  SetChatStepsReq,
+  SetChatPrefsReq,
   SetModelPrefsReq,
   SetStudyEnabledReq,
   SetStudyItemReq,
@@ -4587,52 +4587,52 @@ export const updateMe = async (updateMeReq: NonReadonly<UpdateMeReq>, options?: 
 
 
 
-export type setChatStepsResponse204 = {
+export type setChatPrefsResponse204 = {
   data: void
   status: 204
 }
 
-export type setChatStepsResponseDefault = {
+export type setChatPrefsResponseDefault = {
   data: ErrorModel
   status: Exclude<HTTPStatusCodes, 204>
 }
 
-export type setChatStepsResponseSuccess = (setChatStepsResponse204) & {
+export type setChatPrefsResponseSuccess = (setChatPrefsResponse204) & {
   headers: Headers;
 };
-export type setChatStepsResponseError = (setChatStepsResponseDefault) & {
+export type setChatPrefsResponseError = (setChatPrefsResponseDefault) & {
   headers: Headers;
 };
 
-export type setChatStepsResponse = (setChatStepsResponseSuccess | setChatStepsResponseError)
+export type setChatPrefsResponse = (setChatPrefsResponseSuccess | setChatPrefsResponseError)
 
-export const getSetChatStepsUrl = () => {
-
-
+export const getSetChatPrefsUrl = () => {
 
 
-  return `/api/me/chat-steps`
+
+
+  return `/api/me/chat`
 }
 
 /**
- * @summary Set how much of its tool work the chat shows
+ * @summary Set the chat settings
  */
-export const setChatSteps = async (setChatStepsReq: NonReadonly<SetChatStepsReq>, options?: RequestInit): Promise<setChatStepsResponse> => {
+export const setChatPrefs = async (setChatPrefsReq: NonReadonly<SetChatPrefsReq>, options?: RequestInit): Promise<setChatPrefsResponse> => {
 
-  const res = await fetch(getSetChatStepsUrl(),
+  const res = await fetch(getSetChatPrefsUrl(),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...options?.headers },
-    body: JSON.stringify(setChatStepsReq)
+    body: JSON.stringify(setChatPrefsReq)
   }
 )
 
 
   const body = [204, 205, 304].includes(res.status) ? null : await res.text();
 
-  const data: setChatStepsResponse['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as setChatStepsResponse
+  const data: setChatPrefsResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as setChatPrefsResponse
 }
 
 

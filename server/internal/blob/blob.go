@@ -63,6 +63,10 @@ type Store interface {
 	// ReadPrefix returns at most maxBytes from the beginning of an object.
 	// It is intended for bounded post-upload signature inspection.
 	ReadPrefix(ctx context.Context, path string, maxBytes int64) ([]byte, error)
+	// Open streams an object's bytes; the caller closes the reader. Used to
+	// hash a completed source upload once (B2's documented PutObject takes
+	// no checksum header the bucket would verify).
+	Open(ctx context.Context, path string) (io.ReadCloser, error)
 	Promote(ctx context.Context, from, to string) error
 	// Copy duplicates an object inside the bucket; no bytes pass through the
 	// gateway.

@@ -450,7 +450,11 @@ export async function renderExport(
           'svg' in block.image
             ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(block.image.svg)}`
             : safeExportUrl(block.image.url);
-        return `${await picture({ source, type: 'image' }, block.description ?? '', html)}${html ? `<p>${escapeHtml(block.attribution || '')}</p>` : `\n\n${escapeMd(block.attribution || '')}\n\n`}`;
+        return picture(
+          { source, type: 'image' },
+          block.description ?? '',
+          html
+        );
       }
       const table = questionBlocks([
         {

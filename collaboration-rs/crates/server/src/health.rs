@@ -145,7 +145,8 @@ pub async fn run(app: Shared) {
 }
 
 /// `/metrics` in the Prometheus text format, the Node server's names.
-pub fn metrics(app: &Shared) -> String {
+pub async fn metrics(app: &Shared) -> String {
+    let disk_held = app.sources.disk_held_bytes().await;
     let stats = &app.stats;
     let rss = memory_rss();
     format!(
@@ -168,9 +169,11 @@ pub fn metrics(app: &Shared) -> String {
         })
         .collect::<String>()
         + &format!(
-            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {}\ncapy_collaboration_outdated_refusals_total{{family=\"source\"}} {}\n",
+            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {}\ncapy_collaboration_outdated_refusals_total{{family=\"source\"}} {}\ncapy_collaboration_source_disk_refusals_total {}\ncapy_collaboration_source_disk_held_bytes {}\n",
             stats.outdated_refusals[0].load(Ordering::Relaxed),
             stats.outdated_refusals[1].load(Ordering::Relaxed),
+            stats.source_disk_refusals.load(Ordering::Relaxed),
+            disk_held,
         )
 }
 

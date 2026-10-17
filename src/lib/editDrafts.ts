@@ -410,8 +410,10 @@ function requestPersistence() {
 export interface DraftRecorderOptions {
   /** Rows of earlier sessions applied into `doc`: they count as edit 1. */
   adopted?: EditDraft[];
-  /** A source's base, stored once beside its rows. */
-  base?: { sha: string; bytes: Uint8Array };
+  /** A source's base, stored once beside its rows; its bytes may still be
+   * downloading (the room opens meanwhile), and a whole-document write then
+   * waits for them. */
+  base?: { sha: string; bytes: Uint8Array | Promise<Uint8Array> };
   doc: Y.Doc;
   /** Updates not to record: the room's own and restores. */
   ignore: (origin: unknown) => boolean;
@@ -506,6 +508,22 @@ export function recordDrafts({
     ...(base && { base: base.sha }),
     ...(refused && { refused }),
   });
+  // Rows go out in order once the base is in; until then a write waits for
+  // it. A base that failed to download is not stored: the rows still are.
+  let baseReady = base?.bytes instanceof Promise ? undefined : base?.bytes;
+  const basePending =
+    base?.bytes instanceof Promise
+      ? base.bytes.then(
+          (bytes) => {
+            baseReady = bytes;
+          },
+          () => {}
+        )
+      : null;
+  const putWithBase = (rows: EditDraft[]) =>
+    baseReady || !basePending
+      ? putDrafts(rows, baseReady)
+      : basePending.then(() => putDrafts(rows, baseReady));
   // What the offline bound counts.
   const boundBytes = () =>
     limitsState ? (state?.bytes ?? 0) + sinceState : updateBytes;
@@ -551,7 +569,7 @@ export function recordDrafts({
     snapshotDue = false;
     lastWhole = Date.now();
     if (offline) requestPersistence();
-    return write(putDrafts([row('state', sequence, data)], base?.bytes), true);
+    return write(putWithBase([row('state', sequence, data)]), true);
   };
   // A write failed: the whole document holds what it lost, tried at once and
   // then at most every RETRY_MS while storage keeps failing, and only while
@@ -699,9 +717,7 @@ export function recordDrafts({
       const data = Y.encodeStateAsUpdate(doc);
       stop();
       const refused = row('state', sequence, data, true);
-      void write(
-        Promise.all([deleteDrafts(previous), putDrafts([refused], base?.bytes)])
-      );
+      void write(Promise.all([deleteDrafts(previous), putWithBase([refused])]));
       return refused;
     },
     /** Local edits so far (1 for adopted rows): a checkpoint request

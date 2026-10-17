@@ -1,8 +1,22 @@
 import type { Citation, SourceFile } from '@/api/types';
 
+/** One tool call of a fixture's turn and the files or materials it changed.
+ * `undo` defaults to available; `unavailable` is a released inverse (the
+ * Undo is hidden), `none` a step that keeps no inverse at all. */
+export interface FixtureEdit {
+  changes: readonly {
+    id: string;
+    operation: 'created' | 'edited';
+    undo?: 'none' | 'unavailable';
+  }[];
+  tool: string;
+}
+
 export interface ChatFixture {
   closeEarly?: boolean;
   content: string;
+  /** Replaces the default turn's quiz and note edits. */
+  edits?: readonly FixtureEdit[];
   errorCode?: 'invalid_answer' | 'response_flagged';
   hint: string;
   id: string;
@@ -22,6 +36,11 @@ const overview = [
   'energy = Card("Mitochondria", "Transfer energy from food into ATP.", [2])',
   'summary = Callout("tip", "Remember the jobs", "Boundary, instructions, energy. Connect each organelle to its job.", [1, 2])',
 ].join('\n');
+
+const edited =
+  'root = Answer([Md("I updated the membrane wording in your notes and diagrams so they match the textbook.", [1, 2])])';
+const created =
+  'root = Answer([Md("Your study pack is ready: a quiz, a mindmap and a diagram, and the cheatsheet now links them.", [1, 2])])';
 
 export const chatFixtures = [
   {
@@ -286,6 +305,87 @@ export const chatFixtures = [
     prompt: 'Why is the exchange trip new this year?',
   },
   {
+    content: edited,
+    edits: [
+      {
+        changes: [
+          { id: 'f_2', operation: 'edited' },
+          { id: 'f_3', operation: 'edited' },
+        ],
+        tool: 'edit_document',
+      },
+      {
+        changes: [{ id: 'mat_1', operation: 'edited' }],
+        tool: 'edit_material',
+      },
+      {
+        changes: [{ id: 'mat_2', operation: 'edited' }],
+        tool: 'edit_material',
+      },
+    ],
+    hint: 'Biology 101: one step edits two notes, then a mindmap and a diagram are edited, each with Undo.',
+    id: 'chat-files-edited',
+    label: 'Files: several edited',
+    passages: [1, 2],
+    prompt: 'Fix the membrane wording everywhere.',
+  },
+  {
+    content: created,
+    edits: [
+      {
+        changes: [{ id: 'qz_1', operation: 'created' }],
+        tool: 'create_material',
+      },
+      {
+        changes: [{ id: 'qz_1', operation: 'edited', undo: 'none' }],
+        tool: 'add_questions',
+      },
+      {
+        changes: [{ id: 'mat_1', operation: 'created' }],
+        tool: 'create_material',
+      },
+      {
+        changes: [{ id: 'mat_2', operation: 'created' }],
+        tool: 'create_material',
+      },
+      { changes: [{ id: 'f_2', operation: 'edited' }], tool: 'edit_document' },
+    ],
+    hint: 'Biology 101: a quiz, a mindmap and a diagram created, then a note edited.',
+    id: 'chat-files-created',
+    label: 'Files: several created + edited',
+    passages: [1, 2],
+    prompt: 'Make me a study pack for cells.',
+  },
+  {
+    content: edited,
+    edits: [
+      {
+        changes: [{ id: 'qz_2', operation: 'created' }],
+        tool: 'create_material',
+      },
+      {
+        changes: [
+          { id: 'f_2', operation: 'edited' },
+          { id: 'f_3', operation: 'edited', undo: 'unavailable' },
+        ],
+        tool: 'edit_document',
+      },
+      {
+        changes: [{ id: 'mat_2', operation: 'edited', undo: 'none' }],
+        tool: 'edit_material',
+      },
+      {
+        changes: [{ id: 'mat_1', operation: 'edited', undo: 'unavailable' }],
+        tool: 'edit_material',
+      },
+    ],
+    hint: 'Biology 101: a quiz created, notes and a mindmap edited, some without Undo: hidden where the inverse was released, no receipt where none was kept.',
+    id: 'chat-files-no-undo',
+    label: 'Files: edits without Undo',
+    passages: [1, 2],
+    prompt: 'Rewrite my osmosis notes and the mindmap.',
+  },
+  {
     content: overview,
     hint: 'Slow chunks make progressive rendering and Stop easy to inspect. Reopen the conversation to see the saved partial answer.',
     id: 'chat-openui-slow',
@@ -302,6 +402,11 @@ export const chatFixtureOptions = chatFixtures.map(({ hint, id, label }) => ({
   label,
 }));
 
+// The scenario PDF (e2e/fixtures/files/basic/three-pages.pdf) is cited on
+// "Osmosis moves water across the membrane.", mid-page 2, so opening it
+// scrolls. The box is PDF.js's text position, padded a little.
+const scenarioPdfRegion = { bbox: [80, 505, 490, 538], page: 2 };
+
 export function fixtureCitations(
   fixture: ChatFixture,
   sources: Pick<SourceFile, 'id' | 'name' | 'indexed'>[]
@@ -312,9 +417,24 @@ export function fixtureCitations(
     const source = quoted
       ? sources.find(({ id }) => id === passage.fileId)
       : indexed[passage - 1];
+    // PDFs get a page-1 box so the viewer's citation overlay shows; each
+    // passage sits lower on the page than the one before.
+    const top = 120 + index * 220;
+    const { bbox, page } =
+      source?.id === 'mock-scenario-pdf'
+        ? scenarioPdfRegion
+        : { bbox: [90, top, 910, top + 160], page: 1 };
+    const region = source?.name.endsWith('.pdf')
+      ? {
+          pageEnd: page,
+          pageStart: page,
+          regions: [{ bbox, page, space: 'page-1000-topleft' }],
+        }
+      : {};
     return source
       ? [
           {
+            ...region,
             fileId: source.id,
             fileName: source.name,
             n: quoted ? index + 1 : passage,

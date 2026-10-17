@@ -4,6 +4,7 @@ import type {
   Point,
   TextAttributes,
 } from 'jsxgraph';
+import * as limits from '@/api/limits.generated';
 import { m } from '@/i18n';
 import { CopyError } from '@/lib/copyError';
 import { runtimeTerm } from './graphSyntax';
@@ -14,6 +15,47 @@ import { validGraphTerm } from './validation';
 export class GraphError extends CopyError {}
 
 const LOCAL_SVG_URL = /url\(\s*(['"]?)#([^)'"\s]+)\1\s*\)/g;
+
+/** Label text wraps at this width in board pixels (Epo 2026-10-17). */
+const LABEL_WIDTH = 200;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const AFTER_SPACE = /(?<=\s)/;
+const LEADING_MINUS = /^-/;
+let measureContext: CanvasRenderingContext2D | null = null;
+
+/** Greedy lines of at most LABEL_WIDTH in JSXGraph's 12px text; a word wider
+ * than that (or unspaced CJK) breaks between characters. */
+export function wrapLabel(
+  text: string,
+  measure: (line: string) => number
+): string[] {
+  const lines: string[] = [];
+  let line = '';
+  for (const word of text.split(AFTER_SPACE)) {
+    if (measure((line + word).trimEnd()) <= LABEL_WIDTH) {
+      line += word;
+      continue;
+    }
+    if (line.trim()) lines.push(line.trimEnd());
+    line = '';
+    for (const char of word) {
+      if (line && measure(line + char) > LABEL_WIDTH) {
+        lines.push(line);
+        line = '';
+      }
+      line += char;
+    }
+  }
+  if (line.trim()) lines.push(line.trimEnd());
+  return lines;
+}
+
+function measureLabel(line: string) {
+  measureContext ??= document.createElement('canvas').getContext('2d');
+  if (!measureContext) return 0;
+  measureContext.font = '12px Arial, Helvetica, Geneva, sans-serif';
+  return measureContext.measureText(line).width;
+}
 
 export function validateGraphTerm(term: string): void {
   if (!validGraphTerm(term))
@@ -30,13 +72,16 @@ export function validateGraphRecipe(graph: GraphBlock): void {
     ) ||
     left >= right ||
     bottom >= top ||
-    graph.width <= 0 ||
-    graph.height <= 0
+    ![graph.width, graph.height].every(
+      (n) =>
+        n >= limits.QUESTION_GRAPH_DIMENSION_MIN &&
+        n <= limits.QUESTION_GRAPH_DIMENSION_MAX
+    )
   )
     throw new GraphError(
       m.question_ui_enter_valid_graph_bounds_and_dimensions()
     );
-  if (graph.elements.length > 60)
+  if (graph.elements.length > limits.QUESTION_GRAPH_ELEMENTS_MAX)
     throw new GraphError(
       m.question_ui_a_graph_can_contain_at_most_60_elements()
     );
@@ -102,6 +147,57 @@ const sameBox = (a: number[], b: number[]) =>
       Math.abs(value - b[i]) <= 1e-9 * Math.max(1, Math.abs(a[0] - a[2]))
   );
 
+type Bbox = GraphBlock['board']['bbox'];
+
+/**
+ * JSXGraph treats anything under 1e-6 as zero and its grid breaks far from the
+ * origin, so the board draws in local units: a value is `origin + unit * board`.
+ * One unit for both axes keeps circles round; each origin sits on a multiple
+ * of every tick step so grid lines meet the ticks.
+ */
+type Frame = { ox: number; oy: number; unit: number };
+
+const magnitude = (span: number) => 10 ** Math.floor(Math.log10(span / 10));
+
+function frameFor([left, top, right, bottom]: Bbox): Frame {
+  const origin = (from: number, to: number) => {
+    const round = 100 * magnitude(to - from);
+    return Math.round((from + to) / 2 / round) * round;
+  };
+  return {
+    ox: origin(left, right),
+    oy: origin(bottom, top),
+    unit: magnitude(Math.min(right - left, top - bottom)),
+  };
+}
+
+/** GeoGebra's tick step: 100px worth of units rounded down to 1, 2 or 5 × 10ⁿ. */
+export function tickStep(pixelsPerUnit: number) {
+  const units = 100 / pixelsPerUnit;
+  const power = 10 ** Math.floor(Math.log10(units));
+  const n = units / power;
+  return (n > 5 ? 5 : n > 2 ? 2 : 1) * power;
+}
+
+/** A tick number as GeoGebra writes it: plain with enough decimals for the
+ * step, scientific (`5E8`) when the step is under 10⁻⁵ or over 10⁷, an en
+ * dash for minus; empty at 0, where the axes cross. */
+export function axisNumber(value: number, step: number) {
+  if (Math.abs(value) < step * 1e-9) return '';
+  const digits = Math.min(14, Math.max(-Math.floor(Math.log10(step)), 2));
+  return new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: digits,
+    useGrouping: false,
+    ...((step < 1e-5 || step > 1e7) && { notation: 'scientific' }),
+  })
+    .format(value)
+    .replace(LEADING_MINUS, '\u2013');
+}
+
+/** GeoGebra's zoom range, in pixels per unit. */
+const SCALE_MIN = 1e-15;
+const SCALE_MAX = 1e15;
+
 export async function createGraphBoard(
   container: HTMLElement,
   graph: GraphBlock,
@@ -110,20 +206,28 @@ export async function createGraphBoard(
   validateGraphRecipe(graph);
   const { default: JXG } = await import('jsxgraph');
   const interactive = Boolean(hooks);
+  let frame = frameFor(graph.board.bbox);
+  const toBoard = ([left, top, right, bottom]: Bbox): Bbox => [
+    (left - frame.ox) / frame.unit,
+    (top - frame.oy) / frame.unit,
+    (right - frame.ox) / frame.unit,
+    (bottom - frame.oy) / frame.unit,
+  ];
+  const boardX = (x: number) => (x - frame.ox) / frame.unit;
+  const boardY = (y: number) => (y - frame.oy) / frame.unit;
+  const userX = (x: number) => frame.ox + x * frame.unit;
+  const userY = (y: number) => frame.oy + y * frame.unit;
+  const view = (): Bbox => {
+    const [left, top, right, bottom] = board.getBoundingBox();
+    return [userX(left), userY(top), userX(right), userY(bottom)];
+  };
   const boardOptions: Partial<BoardAttributes> & {
     text: Partial<TextAttributes>;
   } = {
-    axis: graph.board.axis,
-    boundingbox: graph.board.bbox,
-    // Default axis ticks span the board (majorHeight -1), drawing a faint
-    // grid; without a grid they stay short marks on the axes.
-    ...(!graph.board.grid && {
-      defaultAxes: {
-        x: { ticks: { majorHeight: 10 } },
-        y: { ticks: { majorHeight: 10 } },
-      },
-    }),
-    grid: graph.board.grid,
+    // Axes and grid are drawn with the elements, in the frame's units.
+    axis: false,
+    boundingbox: toBoard(graph.board.bbox),
+    grid: false,
     // The editor pans by dragging and zooms with its own smooth wheel handler
     // (JSXGraph steps 25% per wheel event); pinches keep both axes in step.
     pan: { enabled: interactive, needShift: false, needTwoFingers: false },
@@ -142,17 +246,101 @@ export async function createGraphBoard(
   const board = JXG.JSXGraph.initBoard(container, boardOptions);
   let current = graph;
   let created: GeometryElement[] = [];
-  const draw = () => {
+  // SVG text never wraps: a long label becomes one tspan per line, each
+  // following the label's x when it moves.
+  let wrapped: { node: SVGTextElement; lines: string[] }[] = [];
+  const layoutLabels = () => {
+    for (const { node, lines } of wrapped) {
+      if (node.childElementCount !== lines.length) {
+        node.textContent = '';
+        lines.forEach((line, index) => {
+          const span = document.createElementNS(SVG_NS, 'tspan');
+          span.textContent = line;
+          if (index) span.setAttribute('dy', '1.2em');
+          node.append(span);
+        });
+      }
+      const x = node.getAttribute('x');
+      if (x) for (const span of node.children) span.setAttribute('x', x);
+    }
+  };
+  board.on('update', layoutLabels);
+  /** Tick and grid steps for the current zoom, in the graph's units. */
+  const guideSteps = () => [
+    tickStep(board.unitX / frame.unit),
+    tickStep(board.unitY / frame.unit),
+  ];
+  let steps = [0, 0];
+  /** Axes, grid and elements in the frame's units. */
+  const drawAll = () => {
     const points = new Map<string, Point>();
     const [left, top, right, bottom] = board.getBoundingBox();
     // Pixels per board unit; proportional boards have scaleX === scaleY.
     const scaleX = board.unitX;
     const scaleY = board.unitY;
     // Dragged elements land on the board's precision: 0.1 at the default zoom.
-    const step = 10 ** Math.floor(Math.log10(10 / scaleX));
+    const step = 10 ** Math.floor(Math.log10((10 * frame.unit) / scaleX));
     const snap = (value: number) =>
       Number((Math.round(value / step) * step).toPrecision(12));
     const graph = current;
+    const at = ([x, y]: [number, number]) => [boardX(x), boardY(y)];
+    // Ticks and grid lines every GeoGebra step, the grid on the numbered ticks.
+    const [stepX, stepY] = guideSteps();
+    steps = [stepX, stepY];
+    if (graph.board.grid)
+      board.create('grid', [], {
+        majorStep: [stepX / frame.unit, stepY / frame.unit],
+        minorElements: 0,
+      });
+    if (graph.board.axis) {
+      const { x, y } = JXG.Options.board.defaultAxes as Record<
+        'x' | 'y',
+        { ticks: object }
+      >;
+      const ticks = (
+        defaults: { ticks: object },
+        tick: number,
+        number: (tick: { usrCoords: number[] }) => string
+      ) => ({
+        ...defaults.ticks,
+        drawZero: true,
+        generateLabelText: number,
+        insertTicks: false,
+        majorHeight: 10,
+        minorHeight: 5,
+        minorTicks: 1,
+        ticksDistance: tick / frame.unit,
+      });
+      // Both axes pass through the true origin, wherever the frame sits; one
+      // off the view sticks to the nearer edge with its numbers inside.
+      const origin = [boardX(0), boardY(0)];
+      // JSXGraph converts a pixel anchorDist with the other axis's scale, so
+      // it gets board units.
+      const sticky = (inset: number) => ({
+        anchor: 'right left',
+        anchorDist: inset,
+        position: 'sticky',
+      });
+      const numberWidth = Math.max(
+        ...[top, bottom].map((edge) =>
+          measureLabel(axisNumber(userY(edge), stepY))
+        )
+      );
+      board.create('axis', [origin, [origin[0] + 1, origin[1]]], {
+        ...x,
+        ...sticky(24 / scaleY),
+        ticks: ticks(x, stepX, (tick) =>
+          axisNumber(userX(tick.usrCoords[1]), stepX)
+        ),
+      });
+      board.create('axis', [origin, [origin[0], origin[1] + 1]], {
+        ...y,
+        ...sticky((numberWidth + 14) / scaleX),
+        ticks: ticks(y, stepY, (tick) =>
+          axisNumber(userY(tick.usrCoords[2]), stepY)
+        ),
+      });
+    }
     // Point names sit on the side facing away from the figure's centre, so a
     // vertex label lands outside its polygon instead of on an edge.
     const named = graph.elements.filter(
@@ -167,8 +355,8 @@ export async function createGraphBoard(
           .map((sum) => sum / named.length)
       : [0, 0];
     const labelPlacement = ([x, y]: [number, number]) => {
-      const dx = (x - centre[0]) * scaleX;
-      const dy = (y - centre[1]) * scaleY;
+      const dx = ((x - centre[0]) * scaleX) / frame.unit;
+      const dy = ((y - centre[1]) * scaleY) / frame.unit;
       const length = Math.hypot(dx, dy);
       if (named.length < 3 || length < 1) return { offset: [8, 8] };
       return {
@@ -190,7 +378,10 @@ export async function createGraphBoard(
     ) => {
       if (!hooks) return;
       object.on('up', () => {
-        const coords: [number, number] = [snap(object.X()), snap(object.Y())];
+        const coords: [number, number] = [
+          snap(userX(object.X())),
+          snap(userY(object.Y())),
+        ];
         if (coords[0] !== element.coords[0] || coords[1] !== element.coords[1])
           hooks.onMove(element.id, coords);
       });
@@ -208,7 +399,7 @@ export async function createGraphBoard(
       };
       switch (element.type) {
         case 'point': {
-          const point = board.create('point', element.coords, {
+          const point = board.create('point', at(element.coords), {
             ...attributes,
             fixed: !interactive,
             label: {
@@ -230,9 +421,10 @@ export async function createGraphBoard(
             'x',
             false
           );
+          const local = (x: number) => boardY(fn(userX(x)));
           board.create(
             'functiongraph',
-            element.domain ? [fn, ...element.domain] : [fn],
+            element.domain ? [local, ...element.domain.map(boardX)] : [local],
             { ...attributes, fillColor: 'none', fillOpacity: 0 }
           );
           break;
@@ -263,23 +455,36 @@ export async function createGraphBoard(
           break;
         }
         case 'circle':
-          board.create('circle', [points.get(element.center), element.radius], {
-            ...attributes,
-            fillOpacity: 0,
-          });
+          board.create(
+            'circle',
+            [points.get(element.center), element.radius / frame.unit],
+            {
+              ...attributes,
+              fillOpacity: 0,
+            }
+          );
           break;
-        case 'text':
-          movable(
-            element,
-            board.create('text', [...element.coords, element.text], {
+        case 'text': {
+          const label = board.create(
+            'text',
+            [...at(element.coords), element.text],
+            {
               ...attributes,
               display: 'internal',
               fixed: !interactive,
               parse: false,
               useMathJax: false,
-            })
+            }
           );
+          movable(element, label);
+          const lines = wrapLabel(element.text, measureLabel);
+          if (lines.length > 1)
+            wrapped.push({
+              lines,
+              node: label.rendNode as unknown as SVGTextElement,
+            });
           break;
+        }
         case 'angle': {
           const [first, vertex, second] = element.points.map(
             (id) => points.get(id) as Point
@@ -374,15 +579,37 @@ export async function createGraphBoard(
           break;
       }
     };
+    graph.elements.filter((element) => element.type === 'point').forEach(add);
+    graph.elements.filter((element) => element.type !== 'point').forEach(add);
+  };
+  const draw = () => {
     const before = board.objectsList.length;
+    wrapped = [];
     board.suspendUpdate();
     try {
-      graph.elements.filter((element) => element.type === 'point').forEach(add);
-      graph.elements.filter((element) => element.type !== 'point').forEach(add);
+      drawAll();
     } finally {
       created = board.objectsList.slice(before) as GeometryElement[];
       board.unsuspendUpdate();
     }
+    layoutLabels();
+  };
+  /**
+   * Shows `bbox` in a frame that suits it, everything redrawn. The board is
+   * cleared first: a grid spaced for the old view would draw millions of
+   * lines across a far larger one.
+   */
+  let jumping = false;
+  const jump = (bbox: Bbox) => {
+    clear();
+    frame = frameFor(bbox);
+    jumping = true;
+    try {
+      board.setBoundingBox(toBoard(bbox), false);
+    } finally {
+      jumping = false;
+    }
+    draw();
   };
   const clear = () => {
     board.suspendUpdate();
@@ -399,34 +626,53 @@ export async function createGraphBoard(
     JXG.JSXGraph.freeBoard(board);
     throw error;
   }
+  // Ticks and grid follow a zoom as it happens, in a frame that suits the view.
+  board.on('boundingbox', () => {
+    const [stepX, stepY] = guideSteps();
+    if (!jumping && (stepX !== steps[0] || stepY !== steps[1])) jump(view());
+  });
   const cleanups: (() => void)[] = [];
   if (hooks) {
-    let scale = board.unitX;
+    let scale = board.unitX / frame.unit;
     let settle: ReturnType<typeof setTimeout> | undefined;
+    // The editor hears about the view once a pan or zoom settles: reporting
+    // every step re-rendered the whole dialog per wheel event.
     board.on('boundingbox', () => {
-      const bbox = board.getBoundingBox() as GraphBlock['board']['bbox'];
-      if (!sameBox(bbox, current.board.bbox)) hooks.onBoundingBox(bbox);
-      // Angle marks, hatches and label offsets are sized in pixels; redraw
-      // them once a zoom settles.
       clearTimeout(settle);
       settle = setTimeout(() => {
-        if (board.unitX === scale) return;
-        scale = board.unitX;
-        clear();
-        draw();
+        const bbox = view();
+        if (!sameBox(bbox, current.board.bbox)) hooks.onBoundingBox(bbox);
+        // Angle marks, hatches and label offsets are sized in pixels; a pan
+        // that drifted from the frame gets a new one.
+        const next = frameFor(bbox);
+        const drifted =
+          next.ox !== frame.ox ||
+          next.oy !== frame.oy ||
+          next.unit !== frame.unit;
+        if (!drifted && board.unitX / frame.unit === scale) return;
+        jump(bbox);
+        scale = board.unitX / frame.unit;
       }, 150);
     });
+    // Trackpads send wheel events faster than the screen refreshes; zoom
+    // once per frame by their combined factor, like Desmos.
+    let factor = 1;
+    let anchor: [number, number] = [0, 0];
+    let pending = 0;
     const wheel = (event: WheelEvent) => {
       event.preventDefault();
       const lines = event.deltaMode === 1 ? 16 : 1;
       // Trackpad pinches arrive as ctrl+wheel with small deltas.
       const rate = event.ctrlKey ? 0.01 : 0.002;
-      const [, x, y] = new JXG.Coords(
-        JXG.COORDS_BY_SCREEN,
-        board.getMousePosition(event),
-        board
-      ).usrCoords;
-      zoom(Math.exp(-event.deltaY * lines * rate), x, y);
+      factor *= Math.exp(-event.deltaY * lines * rate);
+      anchor = board.getMousePosition(event) as [number, number];
+      pending ||= requestAnimationFrame(() => {
+        pending = 0;
+        const [, x, y] = new JXG.Coords(JXG.COORDS_BY_SCREEN, anchor, board)
+          .usrCoords;
+        zoom(factor, x, y);
+        factor = 1;
+      });
     };
     const doubleClick = (event: MouseEvent) => {
       const [, x, y] = new JXG.Coords(
@@ -440,6 +686,7 @@ export async function createGraphBoard(
     container.addEventListener('dblclick', doubleClick);
     cleanups.push(() => {
       clearTimeout(settle);
+      cancelAnimationFrame(pending);
       container.removeEventListener('wheel', wheel);
       container.removeEventListener('dblclick', doubleClick);
     });
@@ -449,8 +696,8 @@ export async function createGraphBoard(
     const [l, t, r, b] = board.getBoundingBox();
     const cx = x ?? (l + r) / 2;
     const cy = y ?? (t + b) / 2;
-    const width = (r - l) / factor;
-    if (width < 1e-4 || width > 1e6) return;
+    const scale = (board.unitX * factor) / frame.unit;
+    if (scale < SCALE_MIN || scale > SCALE_MAX) return;
     board.setBoundingBox(
       [
         cx - (cx - l) / factor,
@@ -512,7 +759,7 @@ export async function createGraphBoard(
     },
     /** Frames every element, keeping the current units ratio. */
     fit() {
-      const box = figureBounds(current, board.getBoundingBox(), (term) =>
+      const box = figureBounds(current, view(), (term) =>
         board.jc.snippet(runtimeTerm(term), true, 'x', false)
       );
       if (!box) return;
@@ -526,10 +773,7 @@ export async function createGraphBoard(
       const height = (width * ratio * board.canvasHeight) / board.canvasWidth;
       const cx = (l + r) / 2;
       const cy = (t + b) / 2;
-      board.setBoundingBox(
-        [cx - width / 2, cy + height / 2, cx + width / 2, cy - height / 2],
-        false
-      );
+      jump([cx - width / 2, cy + height / 2, cx + width / 2, cy - height / 2]);
     },
     /** Redraws for a changed recipe; the board itself stays. */
     update(next: GraphBlock) {
@@ -537,10 +781,17 @@ export async function createGraphBoard(
       const previous = current;
       current = next;
       // Only a bbox typed elsewhere moves the board; one the board reported
-      // itself may arrive late, mid-pan.
-      if (!sameBox(next.board.bbox, previous.board.bbox))
-        board.setBoundingBox(next.board.bbox, false);
-      if (JSON.stringify(previous.elements) !== JSON.stringify(next.elements)) {
+      // itself may arrive late, mid-pan, or match where it already is.
+      if (
+        !sameBox(next.board.bbox, previous.board.bbox) &&
+        !sameBox(next.board.bbox, view())
+      )
+        jump(next.board.bbox);
+      else if (
+        JSON.stringify(previous.elements) !== JSON.stringify(next.elements) ||
+        previous.board.axis !== next.board.axis ||
+        previous.board.grid !== next.board.grid
+      ) {
         clear();
         draw();
       }

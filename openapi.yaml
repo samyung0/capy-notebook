@@ -4680,22 +4680,27 @@ components:
         - correct
         - total
       type: object
-    SetChatStepsReq:
+    SetChatPrefsReq:
       additionalProperties: false
       properties:
         $schema:
           description: A URL to the JSON Schema for this object.
-          example: https://example.com/schemas/SetChatStepsReq.json
+          example: https://example.com/schemas/SetChatPrefsReq.json
           format: uri
           readOnly: true
           type: string
+        sendKey:
+          description: The key that sends a message; the other adds a new line
+          enum:
+            - enter
+            - shift_enter
+          type: string
         steps:
+          description: How much of a turn's tool work the chat shows
           enum:
             - normal
             - verbose
           type: string
-      required:
-        - steps
       type: object
     SetModelPrefsReq:
       additionalProperties: false
@@ -6487,6 +6492,11 @@ components:
           type: string
         chatModel:
           $ref: "#/components/schemas/Ref"
+        chatSendKey:
+          enum:
+            - enter
+            - shift_enter
+          type: string
         chatSteps:
           enum:
             - normal
@@ -6525,6 +6535,7 @@ components:
         - studyProgress
         - studyPreferences
         - chatSteps
+        - chatSendKey
         - chatModel
         - editorModel
         - planTier
@@ -9203,14 +9214,14 @@ paths:
       summary: Update profile
       tags:
         - Account
-  /api/me/chat-steps:
+  /api/me/chat:
     patch:
-      operationId: setChatSteps
+      operationId: setChatPrefs
       requestBody:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/SetChatStepsReq"
+              $ref: "#/components/schemas/SetChatPrefsReq"
         required: true
       responses:
         "204":
@@ -9221,7 +9232,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
-      summary: Set how much of its tool work the chat shows
+      summary: Set the chat settings
       tags:
         - Account
   /api/me/ingest-slots:

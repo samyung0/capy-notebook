@@ -636,7 +636,7 @@ export const EMBED_CATALOG = {
           },
           "labels": {
             "items": {
-              "maxLength": 12000,
+              "maxLength": 60,
               "type": "string"
             },
             "maxItems": 50,
@@ -648,11 +648,13 @@ export const EMBED_CATALOG = {
               "additionalProperties": false,
               "properties": {
                 "name": {
-                  "maxLength": 1000,
+                  "maxLength": 60,
                   "type": "string"
                 },
                 "values": {
                   "items": {
+                    "maximum": 1000000000000,
+                    "minimum": -1000000000000,
                     "type": [
                       "number",
                       "null"
@@ -667,23 +669,23 @@ export const EMBED_CATALOG = {
               ],
               "type": "object"
             },
-            "maxItems": 8,
+            "maxItems": 6,
             "minItems": 1,
             "type": "array"
           },
           "title": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "type": {
             "const": "chart"
           },
           "xTitle": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "yTitle": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           }
         },
@@ -1022,10 +1024,18 @@ export const EMBED_CATALOG = {
     "QUESTION_ASSET_URL_MAX": 4096,
     "QUESTION_BLOCKS_MAX": 40,
     "QUESTION_CHART_LABELS_MAX": 50,
-    "QUESTION_CHART_SERIES_MAX": 8,
+    "QUESTION_CHART_LABEL_MAX": 60,
+    "QUESTION_CHART_SERIES_MAX": 6,
+    "QUESTION_CHART_SERIES_NAME_MAX": 60,
+    "QUESTION_CHART_TITLE_MAX": 100,
+    "QUESTION_CHART_VALUE_MAX": 1000000000000,
     "QUESTION_COUNT_MAX": 200,
     "QUESTION_DESCRIPTION_MAX": 500,
+    "QUESTION_GRAPH_DIMENSION_MAX": 1200,
+    "QUESTION_GRAPH_DIMENSION_MIN": 120,
     "QUESTION_GRAPH_ELEMENTS_MAX": 60,
+    "QUESTION_GRAPH_LABEL_MAX": 60,
+    "QUESTION_GRAPH_NAME_MAX": 20,
     "QUESTION_GRAPH_POLYGON_MAX": 12,
     "QUESTION_GRAPH_TERM_MAX": 200,
     "QUESTION_ID_MAX": 128,

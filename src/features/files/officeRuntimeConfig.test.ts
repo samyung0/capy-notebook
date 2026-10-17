@@ -4,6 +4,8 @@ import {
   presenterTokenFromUrl,
   presenterWindowUrl,
   resolveOfficeRuntimeConfig,
+  runtimeFrameUrl,
+  runtimeHintFromUrl,
 } from './officeRuntimeConfig';
 
 const SEPARATE_ORIGIN_PATTERN = /separate origin/;
@@ -66,4 +68,23 @@ describe('PPTX presenter window', () => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
+});
+
+describe('Office runtime frame URL', () => {
+  it('names the format and mode the frame opens for, read back by the runtime', () => {
+    const url = runtimeFrameUrl(
+      'https://office.example.com/office-runtime.html?parentOrigin=https%3A%2F%2Fapp.example.com',
+      'pptx',
+      'edit'
+    );
+    expect(runtimeHintFromUrl(new URL(url).search)).toEqual({
+      format: 'pptx',
+      mode: 'edit',
+    });
+    expect(new URL(url).searchParams.get('parentOrigin')).toBe(
+      'https://app.example.com'
+    );
+    expect(runtimeHintFromUrl('?format=pdf&mode=view')).toBeNull();
+    expect(runtimeHintFromUrl('')).toBeNull();
+  });
 });

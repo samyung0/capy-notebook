@@ -56,6 +56,9 @@ async function enableMocks() {
 }
 
 enableMocks().finally(() => {
+  // index.html replaced the boot spinner with its reload message: a stylesheet
+  // failed to load, and the app would boot unstyled over it.
+  if (document.querySelector('#root > .boot-loader[role="alert"]')) return;
   createRoot(document.getElementById('root')!, {
     onCaughtError: reportReactError,
     onUncaughtError: reportReactError,

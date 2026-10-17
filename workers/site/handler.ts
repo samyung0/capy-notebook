@@ -179,8 +179,9 @@ const serverTiming = (start: number, api: number) =>
 const IMAGE_POLICY_HEADER = 'Content-Security-Policy-Report-Only';
 const PAGE_POLICY_HEADER = 'Content-Security-Policy';
 
-/** An inline script. A build's templates have none (Vite bundles them); the
- * dev server's carry React's refresh preamble. */
+/** An inline script. A build's templates keep one, the classic theme script
+ * (share.html, summary.html); the dev server's also carry React's refresh
+ * preamble. */
 const INLINE_SCRIPT = /<script\b(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g;
 
 /** The script policy for a page rendered into `template`: the template's own
@@ -255,7 +256,12 @@ export async function handleSiteRequest(
     );
   };
   const isSummary = url.pathname.startsWith('/w/');
-  if (url.pathname === '/summary' || url.pathname === '/summary.html')
+  // The page templates are the Worker's, never pages of their own.
+  if (
+    url.pathname === '/summary' ||
+    url.pathname === '/summary.html' ||
+    url.pathname === '/share.html'
+  )
     return failure(404);
   try {
     if (url.pathname.startsWith('/api/')) {

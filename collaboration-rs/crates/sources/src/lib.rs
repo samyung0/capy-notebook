@@ -7,7 +7,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod admit;
-mod cache;
+mod disk;
 pub mod edit;
 pub mod effects;
 pub mod engine;
@@ -22,6 +22,7 @@ pub mod store;
 pub mod text;
 
 pub use admit::{Admission, Refusal, admit_update};
+pub use disk::Hold;
 pub use failure::SourceError;
 pub use store::{Folded, LoadTimes, Loaded, Save, Saved, Sources, SourcesConfig};
 
