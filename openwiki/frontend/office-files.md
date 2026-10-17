@@ -1943,8 +1943,10 @@ the same deterministic seed (text seeds under a fixed client too). A writer's
 sync writes its contributor marker even when it brings nothing new, so a save
 whose room adds nothing to the durable state but markers stores nothing and
 answers with the current checkpoint: Saved shows, and a NULL state stays NULL.
-The first save with an edit binds the source SHA of a never-parsed upload and,
-for text, records its seed's size (`seed_bytes`). An Office state that grew
+The first save with an edit binds the session's base SHA (equal to the one the
+upload recorded, when there is one) and, for text, records its seed's size
+(`seed_bytes`); it never writes the file's own SHA, which the upload's
+completion and ingest write (Epo 2026-10-17). An Office state that grew
 from seed(base) is stored as its Yjs change over that seed (the update past the
 seed's state vector, plus the whole delete set), with the seed's SHA-256 in
 `state_seed_sha256`: a one-edit DOCX or PPTX row is under 1 KB instead of the

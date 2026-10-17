@@ -264,9 +264,9 @@ the bucket would verify, and the collaboration server checks every original
 it loads against this SHA, so a browser-sent hash is never trusted. Bytes read
 back at another size than the HEAD reported refuse the completion (409; the
 upload stays pending). A PDF, image or other file without source sessions is
-not read. Ingest still hashes its own download and the first save still binds
-the SHA when the column is empty (files from before, and other ways a file is
-created); both write the same value.
+not read. Ingest still hashes its own download and writes the same value (its
+cache key, and the SHA of files uploaded before this); the first save no longer
+writes the file's SHA.
 Expiry marks the session expired and releases the reservation in the same
 transaction before best-effort blob cleanup (cleanup details in the
 authorization doc).
