@@ -128,11 +128,17 @@ Untick `browser_suite` to keep UAT quiet meanwhile. Locally, as in
 [Running and cleanup](#running-and-cleanup) with `--project=measure`.
 
 The artifact's `evidence/` holds `office-load.md` (a row per open with the
-milestones and the bytes and cache hits of bundles, WASM and fonts),
+milestones and the bytes and cache hits of bundles, WASM and fonts, then the
+open's key requests: the document, the SPA entry `main-*.js`, each WASM and
+the largest font with start, TTFB, download, sizes and Cloudflare headers),
 `office-load-<format>-<size>-<open>-<id>.json` (every milestone, the runtime's
-own `timings`, the header's save states, WASM compiles, fonts and every
-resource of the page, the runtime frame and its workers: origin and path,
-start, end, sizes and cache state) and `office-load-<format>-<size>-<open>.zip`,
+own `timings`, the header's save states, WASM compiles, fonts, the document as
+`indexHtml` and every resource of the page, the runtime frame and its
+workers, in start order: origin and path, realm, start, `requestStart`,
+`responseStart`, end (`responseEnd`), transfer, encoded and decoded sizes,
+`nextHopProtocol` and cache state from Resource Timing, and under `network`
+the status and `cf-cache-status`, `age` and the `cf-ray` colo of its
+response) and `office-load-<format>-<size>-<open>.zip`,
 the Playwright trace with screenshots (`npx playwright show-trace <zip>`;
 its screencast costs every open alike). Traces keep the run's short-lived
 session headers; cleanup deletes the accounts before the upload.
@@ -152,11 +158,19 @@ All times are milliseconds after the tab's navigation start:
 | First page painted | The runtime's `ready` message, sent once the first pages, grid or slide are painted, with its own `timings` |
 | Replica, editable | The runtime's `collaboration-ready`; the Edit menu appearing, with the `set-capabilities` the frame got |
 
+`network` comes from the tab's Playwright `response` events, which in
+Chromium include the runtime frame's and every dedicated worker's requests;
+a resource takes the next response seen for its full URL, in start order, and
+is `null` when none was seen. Nothing else of the exchange is kept: no request
+headers, cookies or query strings. An HTTP-cache hit reports the headers
+stored with it (`age` as it was when cached).
+
 Not observable without a product hook: WASM compiled inside a worker
 (Playwright runs no script in a worker before the worker's own; a
 `performance.mark` around the engine's WASM init would be readable from the
-worker's timeline); sizes and cache state of cross-origin responses without
-`Timing-Allow-Origin` (API, B2, Clerk: start and end only); and
+worker's timeline); sizes, cache state, TTFB and protocol of cross-origin
+responses without `Timing-Allow-Origin` (API, B2, Clerk: start and end, plus
+their `network` headers); and
 `document.fonts.ready`, which resolves at once because the runtime loads
 each face from bytes before adding it (the last face added stands in).
 
