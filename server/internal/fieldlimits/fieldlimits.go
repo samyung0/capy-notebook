@@ -64,9 +64,9 @@ const (
 	QuestionGraphLabel = 60
 	QuestionGraphName  = 20
 	// A graph's width and height in pixels: its text is drawn at 12px, so a
-	// larger board shrinks it past reading in a note column; 100 keeps short
+	// larger board shrinks it past reading in a note column; 120 keeps short
 	// box plots (Epo 2026-10-17).
-	QuestionGraphDimensionMin = 100
+	QuestionGraphDimensionMin = 120
 	QuestionGraphDimensionMax = 1_200
 	// A plot block: curves of [x, y] points, and reference lines and
 	// labelled points, each list at most QuestionPlotMarks long.
