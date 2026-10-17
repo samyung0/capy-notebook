@@ -43,6 +43,7 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
+import { takeSourceOpen } from './sourceOpen';
 import {
   createSourceProvider,
   OFFICE_EDITING_PAUSED_REASON,
@@ -267,6 +268,7 @@ export function useSourceSession(
     let recoveryDrafts: Pick<EditDraft, 'id' | 'key' | 'seq'>[] | null = null;
     let recorder: DraftRecorder | null = null;
     let cancelled = false;
+    const controller = new AbortController();
     let provider: SourceProvider | null = null;
     let doc: Y.Doc | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -340,23 +342,22 @@ export function useSourceSession(
     setOutdated(false);
     setLoaded(null);
     void (async () => {
-      const [session, credentials, storedDrafts] = await Promise.all([
-        api.get<SourceSession>(`/files/${fileId}/source-session`),
-        api.post<SourceCollaborationToken>(
-          `/files/${fileId}/collaboration-token`,
-          {}
-        ),
+      // The route may have started the session, token and base already.
+      const [open, storedDrafts] = await Promise.all([
+        takeSourceOpen(fileId, 'edit', controller.signal),
         bestEffort(() => readDrafts(draftKey)),
       ]);
       if (cancelled) return;
+      const { session } = open;
+      const credentials = open.credentials!;
       if (
         session.epoch !== credentials.epoch ||
         session.room !== credentials.room
-      )
+      ) {
+        controller.abort();
         throw new SourceSessionError(m.source_edit_session_changed());
-      const response = await fetch(session.sourceURL);
-      if (!response.ok) throw new SourceSessionError(m.error_file_body());
-      const bytes = new Uint8Array(await response.arrayBuffer());
+      }
+      const bytes = await open.base;
       if (cancelled) return;
       const docOptions = sourceDocOptions(session.format);
       const shared = new Y.Doc(docOptions);
@@ -933,6 +934,7 @@ export function useSourceSession(
     })().catch(fail);
     return () => {
       cancelled = true;
+      controller.abort();
       clearTimeout(timer);
       delay.dispose();
       window.removeEventListener('offline', offline);

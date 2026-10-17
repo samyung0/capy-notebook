@@ -3,6 +3,7 @@
 import type { DisplayList } from '@betteroffice/docx/layout/render';
 import {
   configureDefaultFonts,
+  initWasm,
   openDocumentViewer,
 } from '@betteroffice/docx/viewer';
 import {
@@ -28,6 +29,10 @@ let fontFailure: Error | undefined;
 onOfficeFontFailure((error) => {
   fontFailure ??= error;
 });
+
+// The engine loads as soon as the worker starts: the frame makes it before
+// the file arrives when it knows a DOCX view is coming.
+initWasm().catch(() => {});
 
 self.onmessage = (event: MessageEvent<Request>) => {
   const { bytes, id } = event.data;

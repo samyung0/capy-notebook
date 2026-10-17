@@ -17,6 +17,7 @@ import type {
 } from '@/features/files/officeProtocol';
 import { CITATION_FILL, docxCitation } from './citations';
 import { docxT, downloadMenu, printItem } from './docxMenus';
+import { takeDocxViewerWorker } from './docxViewerWorker';
 import { type OfficeFace, registerOfficeFaces } from './officeFonts';
 import {
   canvasPage,
@@ -133,10 +134,6 @@ export function DocxViewer({
   }, [displayList, onRenderer]);
 
   useEffect(() => {
-    const worker = new Worker(
-      new URL('./DocxViewer.worker.ts', import.meta.url),
-      { type: 'module' }
-    );
     const id = 1;
     let stopped = false;
     let cancelled = false;
@@ -145,6 +142,11 @@ export function DocxViewer({
       stopped = true;
       worker.terminate();
     };
+    // Made at boot when the frame was opened for a DOCX view.
+    const worker = takeDocxViewerWorker((message) => {
+      stopWorker();
+      onError(new Error(message));
+    });
     setDisplayList(null);
     worker.onmessage = (event: MessageEvent<WorkerResponse>) => {
       if (event.data.id !== id) return;
@@ -168,10 +170,6 @@ export function DocxViewer({
             onError(value instanceof Error ? value : new Error(String(value)));
         }
       );
-    };
-    worker.onerror = (event) => {
-      stopWorker();
-      onError(new Error(event.message));
     };
     const transferable = bytes.slice().buffer;
     worker.postMessage({ bytes: transferable, id }, [transferable]);

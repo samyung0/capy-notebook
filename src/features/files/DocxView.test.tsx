@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it, vi } from 'vitest';
-import type { ViewableFile } from '@/api/types';
+import type { SourceFile } from '@/api/types';
 import DocxView from './DocxView';
 import { FileHeaderTarget } from './fileModeContext';
 import { useOfficeRuntime } from './useOfficeRuntime';
@@ -28,7 +28,7 @@ function render(
   } as Runtime);
   return renderToStaticMarkup(
     <FileHeaderTarget.Provider value={headerTarget}>
-      <DocxView canEdit file={{ id: 'f', name: 'plan.docx' } as ViewableFile} />
+      <DocxView canEdit file={{ id: 'f', name: 'plan.docx' } as SourceFile} />
     </FileHeaderTarget.Provider>
   );
 }

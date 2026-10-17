@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import type { ViewableFile } from '@/api/types';
+import type { SourceFile } from '@/api/types';
 import { Skeleton } from '@/components/ui/feedback';
 import { m } from '@/i18n';
 import { FileError, FileUnavailable, SourceBanners } from './FileStates';
@@ -18,7 +18,7 @@ export default function SheetView({
 }: {
   canEdit: boolean;
   citation?: OfficeCitation;
-  file: ViewableFile;
+  file: SourceFile;
   onDirtyChange?: (dirty: boolean) => void;
   startEditing?: boolean;
 }) {
@@ -55,6 +55,7 @@ export default function SheetView({
   if (runtime.error && !runtime.analysis && runtime.mode === 'view') {
     return (
       <FileError
+        errorId={runtime.errorId}
         kind="sheet"
         onRetry={runtime.retryView}
         title={m.files_sheet_failed()}

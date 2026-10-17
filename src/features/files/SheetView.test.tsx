@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
-import type { ViewableFile } from '@/api/types';
+import type { SourceFile } from '@/api/types';
 import { FileHeaderTarget } from './fileModeContext';
 import SheetView from './SheetView';
 import { useOfficeRuntime } from './useOfficeRuntime';
@@ -27,10 +27,7 @@ function render(runtime: Partial<Runtime>, headerTarget: HTMLElement | null) {
   } as Runtime);
   return renderToStaticMarkup(
     <FileHeaderTarget.Provider value={headerTarget}>
-      <SheetView
-        canEdit
-        file={{ id: 'f', name: 'plan.xlsx' } as ViewableFile}
-      />
+      <SheetView canEdit file={{ id: 'f', name: 'plan.xlsx' } as SourceFile} />
     </FileHeaderTarget.Provider>
   );
 }
