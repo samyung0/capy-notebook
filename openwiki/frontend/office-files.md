@@ -1849,8 +1849,8 @@ previous engine) and requires that nothing stays pending. Text states are
 stored whole; every Office state names its seed (a CHECK since migration
 0043). No row stores a baseline: the indexed baseline always derives from the
 base, as the decoded text or the engine baseline of seed(base), and the service
-caches seeds (with their hashes) and derived baselines by base SHA next to the
-bases. A publication without later edits returns the state to NULL. The Go API
+keeps seeds and derived baselines by base SHA next to the bases in its disk
+store (see below). A publication without later edits returns the state to NULL. The Go API
 rechecks current source access, epoch and account state through a small
 access-only endpoint for incoming edits, at most every 5 s per connection. That
 check is a lock-free read (no file advisory lock, workspace or account row
@@ -2289,9 +2289,30 @@ refresh and notice columns start empty and no refresh candidate is copied, so
 edits saved since the last publication publish through the copy's own normal
 refresh. Unsaved state still in a room is not copied. Deleting a source fences its old
 room and cancels dependent work. Candidate sources live
-in B2; job-local downloads are temporary. Source base bytes are cached in the
-collaboration process by SHA within a bounded 128 MiB cache, their seeds and
-derived baselines within 64 MiB each. A refresh candidate is copy-on-write:
+in B2; job-local downloads are temporary. Source base bytes, their seeds and
+derived baselines live in the collaboration server's disk store, not in
+process memory (Epo 2026-10-17, `collaboration-rs/crates/sources/src/disk.rs`):
+one folder (`COLLABORATION_SOURCE_DISK_DIR`, a disk-backed named volume, see
+the [deployment runbook](../deployment-runbook.md)) with each as a file keyed
+by content SHA-256 (seeds by format and base SHA, baselines by base SHA and,
+while a rebuild is pending, the published capture's SHA). A room load takes
+its base and seed, downloading or seeding on a miss, and holds them until the
+room unloads; rooms of the same file share one copy, and a file no loaded room
+holds is deleted 3 minutes after the last unload unless a room takes it again.
+Every call reads the file into memory for that call only and checks its
+SHA-256; a file that fails is deleted and downloaded again (a base) or rebuilt
+(a seed or baseline). The folder is capped (`COLLABORATION_SOURCE_DISK_BYTES`:
+production 10 GiB, UAT 5 GiB): a write first deletes idle files, oldest
+first, and a room load is refused only when the files loaded rooms hold leave
+no room. Edit then shows collaboration unavailable and retries; View needs no
+room. The refusal is logged at warn (`source room refused: disk store full`),
+not captured, and counted in `capy_collaboration_source_disk_refusals_total`.
+A loaded room's save that misses a file (its first DOCX or PPTX baseline, say)
+writes it when the folder has room, and otherwise uses it for that call only.
+Roomless jobs (folds, exports, inspection, rebuilds, rebases, refreshes, agent
+edits) read what is on disk, else download or seed into memory for the job,
+and write nothing. The server wipes the folder at start. A seed's state vector
+is derived per use (a fold, capture or rebase decodes the seed). A refresh candidate is copy-on-write:
 admission stores no state, the save that first replaces the captured state
 copies it into the candidate, and readers take the row's state while no save
 has landed since the capture. The Office engines (the fork's native
