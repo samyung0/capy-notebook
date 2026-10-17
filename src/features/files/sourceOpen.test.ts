@@ -8,6 +8,7 @@ const { get, post, readCachedSource, cacheSource } = vi.hoisted(() => ({
 }));
 vi.mock('@/api/client', () => ({ api: { get, post } }));
 vi.mock('@/lib/sourceCache', () => ({ cacheSource, readCachedSource }));
+vi.mock('./sourceProvider', () => ({ warmSourceSocket: vi.fn() }));
 
 import {
   holdSource,

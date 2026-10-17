@@ -1,6 +1,7 @@
 import { api } from '@/api/client';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
 import { cacheSource, readCachedSource } from '@/lib/sourceCache';
+import { warmSourceSocket } from './sourceProvider';
 
 export type SourceOpenMode = 'view' | 'edit';
 
@@ -69,11 +70,17 @@ function startOpen(
   );
   const credentials =
     mode === 'edit'
-      ? api.post<SourceCollaborationToken>(
-          `/files/${fileId}/collaboration-token`,
-          {},
-          { signal }
-        )
+      ? api
+          .post<SourceCollaborationToken>(
+            `/files/${fileId}/collaboration-token`,
+            {},
+            { signal }
+          )
+          .then((value) => {
+            // The room joins on this socket when its editor takes the open.
+            warmSourceSocket(value.url);
+            return value;
+          })
       : undefined;
   // The download starts with the session, not after the token.
   const base = session.then((value) => sourceBase(value, signal));

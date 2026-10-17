@@ -2,6 +2,7 @@ import type * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import type { SourceSession } from '@/api/types';
 import { RoomProvider } from '@/features/collaboration/roomProvider';
+import { CollabSocket } from '@/features/collaboration/socket';
 
 /** Options for a source room's Y.Doc. An Office document skips Yjs's
  * after-transaction formatting cleanup (patches/yjs@13.6.31.patch), which
@@ -54,6 +55,12 @@ export const SOURCE_PUBLISHING_REASON = 'source-publishing';
 /** The refusal while Office editing is paused for maintenance. */
 export const OFFICE_EDITING_PAUSED_REASON = 'office-editing-paused';
 const PUBLISHING_RETRY_MS = 3000;
+
+/** Connects the tab's collaboration socket for a room about to open on it;
+ * under MSW the mock provider has no socket. */
+export function warmSourceSocket(url: string) {
+  if (!USE_MSW) CollabSocket.warm(url);
+}
 
 /** Under MSW the mock is the only allowed provider: a real socket would
  * point at `mock://collaboration` and fail for an unrelated reason. */
