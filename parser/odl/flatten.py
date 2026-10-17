@@ -11,6 +11,7 @@ images stay) and the render takes its place. The upload itself is unchanged;
 
 from __future__ import annotations
 
+import math
 from collections import deque
 
 import pymupdf
@@ -46,6 +47,10 @@ def page_regions(
     sized_w, sized_h = page.rect.width * PAGE_SIZED, page.rect.height * PAGE_SIZED
     for drawing in drawings:
         x0, y0, x1, y1 = drawing["rect"]
+        # A box that is not finite (content under a huge matrix) has no cell,
+        # as in pictures.Drawings.
+        if not all(map(math.isfinite, (x0, y0, x1, y1))):
+            continue
         if x1 - x0 > sized_w and y1 - y0 > sized_h:
             continue
         key = (int((x0 + x1) / 2 // CELL), int((y0 + y1) / 2 // CELL))

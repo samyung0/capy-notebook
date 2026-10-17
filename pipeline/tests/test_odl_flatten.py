@@ -3,6 +3,7 @@ flatten.py), and their labels join the figure (pictures.flattened_figures)."""
 
 from __future__ import annotations
 
+import math
 import sys
 from pathlib import Path
 
@@ -68,6 +69,28 @@ def test_two_plots_on_a_page_become_two_pictures() -> None:
     # Both plots' markers gone but the top row's strokes, which reach past
     # the path box pymupdf reports (it leaves out every moveto but the first).
     assert sum(len(d["items"]) for d in page.get_cdrawings()) < 100
+
+
+def test_a_path_without_a_finite_box_is_left_out() -> None:
+    doc = pymupdf.open()
+    page = doc.new_page()
+    _scatter(page, pymupdf.Rect(300, 400, 560, 640))
+    # A skewed huge matrix: the stroke's box is NaN and minus infinity.
+    huge = b"1000000000 0 -1000000000 1000000000 0 0 cm "
+    huge += b"1000000000 0 0 1000000000 0 0 cm " * 3
+    xref = doc.get_new_xref()
+    doc.update_object(xref, "<<>>")
+    doc.update_stream(xref, b"q " + huge + b"10000 10000 m 20000 20000 l S Q")
+    refs = " ".join(f"{x} 0 R" for x in page.get_contents())
+    doc.xref_set_key(page.xref, "Contents", f"[{refs} {xref} 0 R]")
+    data = doc.tobytes()
+    assert any(
+        not all(map(math.isfinite, d["rect"]))
+        for d in pymupdf.open(stream=data, filetype="pdf")[0].get_cdrawings()
+    )
+    _, regions = flatten.flatten(data)
+    (box,) = regions[0]
+    assert pymupdf.Rect(298, 398, 562, 642).contains(box)
 
 
 def test_a_book_without_dense_figures_is_returned_byte_for_byte() -> None:
