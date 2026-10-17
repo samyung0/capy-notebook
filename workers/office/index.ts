@@ -59,18 +59,28 @@ export default {
       url.pathname.slice(url.pathname.lastIndexOf('.') + 1)
     );
     // Forward only cache/range negotiation, never app credentials or cookies.
-    // A brotli file is always sent whole.
+    // A brotli file is read whole by GET with no validators, whatever the
+    // request, so its answer is a full 200 or a 404: Workers Cache never gets
+    // a 304 or an empty body under the year-long header, and answers
+    // conditional requests from what it stored.
     const assetHeaders = new Headers();
-    for (const key of type
-      ? ['If-None-Match', 'If-Modified-Since']
-      : ['If-None-Match', 'If-Modified-Since', 'Range', 'If-Range']) {
-      const value = request.headers.get(key);
-      if (value) assetHeaders.set(key, value);
-    }
+    if (!type)
+      for (const key of [
+        'If-None-Match',
+        'If-Modified-Since',
+        'Range',
+        'If-Range',
+      ]) {
+        const value = request.headers.get(key);
+        if (value) assetHeaders.set(key, value);
+      }
     url.search = '';
     if (type) url.pathname += '.br';
     const asset = await env.ASSETS.fetch(
-      new Request(url, { headers: assetHeaders, method: request.method })
+      new Request(url, {
+        headers: assetHeaders,
+        method: type ? 'GET' : request.method,
+      })
     );
     // Explicit allowlist prevents inherited _headers, cookies, CORS or redirects.
     for (const key of [
@@ -103,6 +113,11 @@ export default {
       headers.delete('Accept-Ranges');
       init.encodeBody = 'manual';
     }
-    return new Response(request.method === 'HEAD' ? null : asset.body, init);
+    // A HEAD for a brotli file keeps the body: the runtime sends only the
+    // headers, and a cache filling from it stores the whole file.
+    return new Response(
+      request.method === 'HEAD' && !type ? null : asset.body,
+      init
+    );
   },
 };

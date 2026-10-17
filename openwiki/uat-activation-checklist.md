@@ -254,14 +254,22 @@ Clerk development instance. Point a local gateway at the UAT database only with
 - The Office runtime's WASM and uncompressed fonts come precompressed from
   the Office Worker (deployment-runbook §1). With `W` a `.wasm` URL on
   `uat-office.capynotebook.com` (Deploy UAT's "Stage the isolated Office
-  runtime" step logs every compressed file with its sizes): `curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' "$W"`
+  runtime" step logs every compressed file with its sizes), first, while the
+  file is cold after the deploy, a HEAD and a conditional request:
+  `curl -sI -H 'Accept-Encoding: br, gzip' "$W"` answers `200` with
+  `content-encoding: br` and the year-long `cache-control`, and
+  `curl -s -o /dev/null -w '%{http_code} %{size_download}\n' -H 'Accept-Encoding: br, gzip' -H 'If-None-Match: "capy-check"' -H 'If-Modified-Since: Sat, 17 Oct 2026 00:00:00 GMT' "$W"`
+  answers `200` with the full compressed size (the Worker never answers a
+  brotli file with a 304 or an empty body, so neither can sit in Workers
+  Cache). Then `curl -s -o /dev/null -D - -H 'Accept-Encoding: br, gzip' "$W"`
   shows `200`, `content-type: application/wasm`, `content-encoding: br`,
   `cache-control: public, max-age=31536000, immutable` and a `content-length`
-  about a fifth below the on-the-fly size; `curl -s -H 'Accept-Encoding: identity' "$W" | head -c 4 | od -c`
+  about a fifth below the on-the-fly size (never 0, which would be an
+  answer without a body kept in the cache); `curl -s -H 'Accept-Encoding: identity' "$W" | head -c 4 | od -c`
   prints `\0 a s m` (decoded for a client without brotli). A Carlito `.ttf`
-  answers the same with `font/ttf`. Repeating the first request shows
-  `cf-cache-status: HIT` with an `age` (Workers Cache; the first request
-  after a deploy may be `MISS`), and the identity request still prints
+  answers the same with `font/ttf`. Repeating the plain GET shows
+  `cf-cache-status: HIT` with an `age` (Workers Cache), and the identity
+  request still prints
   `\0 a s m` once the file is a hit.
 - GitHub configuration sync/readback passed before deployment. Managed Coolify
   variables are literal, non-preview and readable for verification; unset ones

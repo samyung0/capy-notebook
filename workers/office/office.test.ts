@@ -179,10 +179,13 @@ describe('isolated Office runtime', () => {
     onTestFinished(() => {
       vi.unstubAllGlobals();
     });
-    for (const [name, type] of [
-      ['docx_bg-1.wasm', 'application/wasm'],
-      ['Carlito-Regular-1.ttf', 'font/ttf'],
-      ['NotoSansJP-Regular-1.otf', 'font/otf'],
+    // A conditional, ranged or HEAD request still gets the whole file from a
+    // GET, so a cache filling from it never stores a 304 or an empty body.
+    for (const [name, type, method] of [
+      ['docx_bg-1.wasm', 'application/wasm', 'GET'],
+      ['Carlito-Regular-1.ttf', 'font/ttf', 'GET'],
+      ['NotoSansJP-Regular-1.otf', 'font/otf', 'GET'],
+      ['docx_bg-1.wasm', 'application/wasm', 'HEAD'],
     ]) {
       const bindings = env();
       bindings.ASSETS.fetch.mockResolvedValue(
@@ -197,7 +200,12 @@ describe('isolated Office runtime', () => {
       );
       const response = await worker.fetch(
         new Request(`${origin}/assets/${name}?v=1`, {
-          headers: { 'If-None-Match': 'W/"old"', Range: 'bytes=0-1' },
+          headers: {
+            'If-Modified-Since': 'Sat, 17 Oct 2026 00:00:00 GMT',
+            'If-None-Match': 'W/"br"',
+            Range: 'bytes=0-1',
+          },
+          method,
         }),
         bindings
       );
@@ -218,7 +226,8 @@ describe('isolated Office runtime', () => {
       const forwarded = bindings.ASSETS.fetch.mock.calls[0][0];
       expect(new URL(forwarded.url).pathname).toBe(`/assets/${name}.br`);
       expect(new URL(forwarded.url).search).toBe('');
-      expect([...forwarded.headers.keys()]).toEqual(['if-none-match']);
+      expect(forwarded.method).toBe('GET');
+      expect([...forwarded.headers.keys()]).toEqual([]);
     }
     // A missing brotli file is an uncached 404, never labelled br.
     const bindings = env();
