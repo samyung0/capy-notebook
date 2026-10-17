@@ -43,31 +43,44 @@
       }
     })();
     </script>
-    <!-- A failed load of the entry script or a script chunk it needs while the
-         boot loader still shows (a fresh load during a deploy, whose old page
-         names files the new release removed) replaces the loader with the
-         app's reload message (messages/ error_chunk_title, error_chunk_body,
-         error_action_reload), in the app's locale (localStorage, then the
-         browser's languages). Classic and inline, so it runs before the entry
-         and stays out of the bundle; the SPA's script policy allows it by
-         hash (vite-image-policy.ts). -->
+    <!-- A failed load of the entry script, a script chunk it needs or a
+         stylesheet while the boot loader still shows (a fresh load during a
+         deploy, whose old page names files the new release removed) replaces
+         the loader with the app's reload message (messages/ error_chunk_title,
+         error_chunk_body, error_action_reload), in the app's locale
+         (localStorage, then the browser's languages); the entry then leaves
+         it there and never boots (src/main.tsx). Classic and inline, so it
+         runs before the entry and stays out of the bundle; the SPA's script
+         policy allows it by hash (vite-image-policy.ts). -->
     <script>
     'use strict';
     addEventListener(
       'error',
-      (event) => {
+      function onError(event) {
         const failed = event.target;
         const url =
           failed instanceof HTMLScriptElement && failed.type === 'module'
             ? failed.src
             : failed instanceof HTMLLinkElement &&
-                failed.rel === 'modulepreload'
+                (failed.rel === 'modulepreload' || failed.rel === 'stylesheet')
               ? failed.href
               : '';
+        if (!(url && new URL(url).origin === location.origin)) {
+          return;
+        }
+        // A file in <head> can fail before the parser reaches the loader: try
+        // again once the body is parsed. The document turns interactive ahead
+        // of the entry, which also waits for the head's stylesheets.
+        if (document.readyState === 'loading') {
+          document.addEventListener('readystatechange', () => onError(event), {
+            once: true,
+          });
+          return;
+        }
         const loader = document.querySelector(
           '#root > .boot-loader[role="status"]'
         );
-        if (!(url && loader && new URL(url).origin === location.origin)) {
+        if (!loader) {
           return;
         }
         let locale = '';

@@ -235,20 +235,25 @@ A route chunk the deploy removed (a missing `/assets/*` name is a 404
 chunk-load error: the router reloads once, then shows "An update is ready"
 with Reload.
 
-A page whose entry script or a chunk it needs fails to load while the boot
-spinner shows (a fresh load in the deploy window, whose old `index.html`
-names an entry the new release removed, or any later failed entry load)
-shows the same message from `index.html` itself (Epo 2026-10-17). A classic
-inline script there, which runs before the entry and stays out of the
-bundle, waits for a load error from a same-origin module script or
-`modulepreload` link and replaces the spinner with the title, body and
-Reload in the app's locale (the stored Paraglide choice, then the browser's
-languages). Its English and Chinese strings are copies of
-`error_chunk_title`, `error_chunk_body` and `error_action_reload`
-(`e2e/editor/boot-failure.spec.ts` fails if they drift). Other scripts and
-stylesheets, and any failure after React's first render, leave the page
-alone. The SPA's report-only script policy allows the script by its hash
-(`vite-image-policy.ts`), so it sends no reports.
+A page whose entry script, a chunk it needs or a stylesheet fails to load
+while the boot spinner shows (a fresh load in the deploy window, whose old
+`index.html` names files the new release removed, or any later failed entry
+load) shows the same message from `index.html` itself (Epo 2026-10-17). A
+classic inline script there, which runs before the entry and stays out of
+the bundle, waits for a load error from a same-origin module script,
+`modulepreload` link or stylesheet link and replaces the spinner with the
+title, body and Reload in the app's locale (the stored Paraglide choice,
+then the browser's languages). A file in `<head>` that fails before the
+body is parsed shows it once the document turns interactive. The entry
+waits for the head's stylesheets, so after a failed one it still runs; it
+then finds the message in `#root` and does not mount the app
+(`src/main.tsx`), which would otherwise boot unstyled over it. The
+script's English and Chinese strings are copies of `error_chunk_title`,
+`error_chunk_body` and `error_action_reload`
+(`e2e/editor/boot-failure.spec.ts` fails if they drift). Cross-origin
+files, other scripts, and any failure after React's first render leave the
+page alone. The SPA's report-only script policy allows the script by its
+hash (`vite-image-policy.ts`), so it sends no reports.
 
 An open tab stays usable when the connection drops (Epo 2026-10-17). A page
 change whose code is not loaded yet fails offline as an `OfflineError`
