@@ -1,0 +1,30 @@
+# Native side of the effects recorder: the server seed of a fixture and the
+# seed-compatibility check of a recorded case (admission, pending structs,
+# equality with the editor's replica, the engine's own effects and export).
+# Builds against collaboration-rs's crates and lockfile (Cargo.lock is a copy
+# of collaboration-rs/Cargo.lock) with the fork's patched yrs.
+[package]
+name = "effects-recorder-check"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[[bin]]
+name = "effects-recorder-check"
+path = "main.rs"
+
+[dependencies]
+office-service = { package = "betteroffice-office-service", path = "../../../../../vendor/betteroffice/crates/office-service" }
+serde_json = { version = "1", features = ["preserve_order"] }
+sources = { path = "../../../../../collaboration-rs/crates/sources" }
+ydoc = { path = "../../../../../collaboration-rs/crates/ydoc" }
+yrs = { path = "../../../../../vendor/betteroffice/third_party/yrs" }
+
+[patch.crates-io]
+yrs = { path = "../../../../../vendor/betteroffice/third_party/yrs" }
+
+[profile.release]
+debug = 0
+panic = "unwind"
+
+[workspace]
