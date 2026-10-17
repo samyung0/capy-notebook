@@ -177,10 +177,11 @@ function sentrySecurityUrl(dsn?: string, environment?: string) {
 /**
  * Sends the policies with the app's pages. Workers Assets serves the SPA's
  * HTML with `dist/_headers`, which the client build extends with `appPolicy`,
- * report-only, plus the hashes of the built index.html's inline scripts. The site Worker's pages read `imagePolicy` (report-only) and
- * `pagePolicy` (enforced) from the share renderer bundle as `IMAGE_POLICY`
- * and `PAGE_POLICY` (src/share/server.tsx). A `uat` or `production` build
- * without its bucket or report endpoint fails here.
+ * report-only, plus the hashes of the built index.html's inline scripts. The
+ * site Worker's pages read `imagePolicy` (report-only) and `pagePolicy`
+ * (enforced) from the share renderer bundle as `IMAGE_POLICY` and
+ * `PAGE_POLICY` (src/share/server.tsx). A `uat` or `production` build without
+ * its bucket or report endpoint fails here.
  */
 export function policyHeaders(env: Env): Plugin {
   const image = imagePolicy(env);

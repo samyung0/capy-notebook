@@ -246,7 +246,9 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    caching and the Worker's security headers. It reads the `.br` file by GET
    with no validators or range whatever the request asks, so a conditional
    or HEAD request on a cache miss still gets the full `200` (the runtime
-   drops a HEAD's body; Workers Cache fills a cold HEAD with a GET anyway),
+   drops a HEAD's body; Workers Cache converts a HEAD on a cold cache to a
+   GET and stores the full file, per Cloudflare's Workers Cache "Cache keys"
+   and "Limitations" pages),
    never a `304` or an empty body that the cache could keep for a year; the
    cache answers conditional requests from its stored copy. The static layer would
    recompress them on the fly at about quality 4: quality 11 is 20-25%
