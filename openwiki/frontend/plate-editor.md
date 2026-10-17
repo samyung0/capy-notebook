@@ -645,11 +645,13 @@ JSON (`customBlockNode` in `blocks/shared.ts`, checked by the shared question bl
 schema, so a refused block fails the agent's write); the agent's note format
 (`noteMarkdownDescription`) documents the chart and plot fences. A plot (see
 [question-bank](../question-bank.md#editing-and-assets)), drawn as curves or, with
-`kind: "scatter"`, as dots, comes from the agent or a pasted fence (no slash
-command inserts one); its hover toolbar has Edit, Copy and Delete like a
-chart's, Edit opening the plot editor in the figure dialog
-(`VisualBlockDialog`, Epo 2026-10-17), and exports draw it like a chart with
-its points as the table. Inline
+`kind: "scatter"`, as dots, comes from the agent, a pasted fence or the Plot
+command (slash menu and all-blocks menu, beside Chart and Graph), which opens
+the figure dialog on a line of one point at the origin and inserts the block
+on Save, as Chart and Graph do (Epo 2026-10-17); its hover toolbar has Edit,
+Copy and Delete like a chart's, Edit opening the plot editor in the figure
+dialog (`VisualBlockDialog`), and exports draw it like a chart with its points
+as the table. Inline
 and display equations use MathLive in both viewing and editing, including question-editing previews. The math toolbar inserts formulas and common symbol templates.
 
 ## Interactive HTML blocks

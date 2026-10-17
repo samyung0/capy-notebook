@@ -324,7 +324,11 @@ it in quizzes, notes and chat. Notes edit it (the embed catalog's plot
 title, axis titles and unit, a points table per series (a series keeps one
 point; add and remove rows and series up to the bounds), and under Advanced
 the reference lines (added as horizontal or vertical), labelled points and the
-description, the plot drawn beside them once every cell holds a number. An
+description, the plot drawn beside them once every cell holds a number. New
+rows come filled (Epo 2026-10-17): a point copies the row above it (or is
+[0, 0]), a series starts with the point [0, 0], a reference line takes the
+last value on its axis (or 0) and a labelled point the last one's place (or
+(0, 0)), names and labels starting empty, which every validator allows. An
 emptied cell is `NaN` in the draft, which the dialog's issue strip names
 ("Plot error: …", `blockIssues`) and which holds Save. Quizzes do not edit a
 plot: the question dialog shows it (BlockEditor without `editPlot`) and can

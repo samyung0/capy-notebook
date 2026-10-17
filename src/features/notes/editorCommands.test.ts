@@ -8,7 +8,7 @@ import {
 import { COLUMN_LAYOUTS } from './richBlockConfig';
 
 describe('editor insertion command catalog', () => {
-  it.each(['chart', 'graph'])(
+  it.each(['chart', 'plot', 'graph'])(
     'inserts a %s only after its block dialog saves',
     (kind) => {
       const openVisual = vi.fn<NoteBlockDialogsApi['openVisual']>();

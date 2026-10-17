@@ -10,11 +10,12 @@ type Cell = {
   'aria-label'?: string;
   children?: ReactNode;
   onChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onClick?: () => void;
   onValue?: (value: number) => void;
 };
 
-/** The input under `node` with this accessible label. PlotEditor holds no
- * hooks, so calling it returns its element tree. */
+/** The first input or button under `node` with this accessible label or
+ * text. PlotEditor holds no hooks, so calling it returns its element tree. */
 function input(node: ReactNode, label: string): Cell | undefined {
   if (Array.isArray(node)) {
     for (const child of node) {
@@ -24,7 +25,8 @@ function input(node: ReactNode, label: string): Cell | undefined {
     return;
   }
   if (!isValidElement<Cell>(node)) return;
-  if (node.props['aria-label'] === label) return node.props;
+  if (node.props['aria-label'] === label || node.props.children === label)
+    return node.props;
   return input(node.props.children, label);
 }
 
@@ -51,25 +53,26 @@ function edit(
   return next;
 }
 
+const plot: PlotBlock = {
+  lines: [{ axis: 'y', label: 'Threshold', value: -55 }],
+  marks: [{ label: 'Peak', x: 1, y: 30 }],
+  series: [
+    {
+      name: 'Vm',
+      points: [
+        [0, -70],
+        [1, 30],
+        [2, -80],
+      ],
+    },
+  ],
+  title: 'Action potential',
+  type: 'plot',
+  xTitle: 'Time (ms)',
+  yTitle: 'Membrane potential (mV)',
+};
+
 it('edits a point and a series name into a plot the note dialog saves', () => {
-  const plot: PlotBlock = {
-    lines: [{ axis: 'y', label: 'Threshold', value: -55 }],
-    marks: [{ label: 'Peak', x: 1, y: 30 }],
-    series: [
-      {
-        name: 'Vm',
-        points: [
-          [0, -70],
-          [1, 30],
-          [2, -80],
-        ],
-      },
-    ],
-    title: 'Action potential',
-    type: 'plot',
-    xTitle: 'Time (ms)',
-    yTitle: 'Membrane potential (mV)',
-  };
   const point = m.question_ui_plot_point_y({ number: 2, series: 1 });
   const renamed = edit(plot, m.question_ui_series_name({ number: 1 }), (cell) =>
     cell.onChange?.({
@@ -99,4 +102,24 @@ it('edits a point and a series name into a plot the note dialog saves', () => {
   ).toEqual([
     m.question_issue_plot({ message: m.question_validation_plot_number() }),
   ]);
+});
+
+it('fills new rows from the row before them, so Save stays on', () => {
+  const click = (block: PlotBlock, label: string) =>
+    edit(block, label, (cell) => cell.onClick?.());
+  const added = click(
+    click(
+      click(plot, m.question_ui_add_point()),
+      m.question_ui_add_horizontal_line()
+    ),
+    m.question_ui_add_plot_mark()
+  );
+  expect(added.series[0].points.at(-1)).toEqual([2, -80]);
+  expect(added.lines?.at(-1)).toEqual({ axis: 'y', value: -55 });
+  expect(added.marks?.at(-1)).toEqual({ label: '', x: 1, y: 30 });
+  expect(click(added, m.question_ui_add_series()).series.at(-1)).toEqual({
+    name: '',
+    points: [[0, 0]],
+  });
+  expect(blockIssues(added)).toEqual([]);
 });

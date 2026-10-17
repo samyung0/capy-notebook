@@ -38,16 +38,28 @@ export function emptyParagraph() {
   return { children: [{ text: '' }], type: 'p' };
 }
 
-function newVisualBlock(type: 'chart' | 'graph'): NoteVisualBlock {
-  return type === 'chart'
-    ? {
+function newVisualBlock(type: NoteVisualBlock['type']): NoteVisualBlock {
+  switch (type) {
+    case 'chart':
+      return {
         kind: 'bar',
         labels: [''],
         series: [{ name: '', values: [null] }],
         title: '',
         type,
-      }
-    : {
+      };
+    // A line from one point at the origin (Epo 2026-10-17).
+    case 'plot':
+      return {
+        kind: 'line',
+        series: [{ name: '', points: [[0, 0]] }],
+        title: '',
+        type,
+        xTitle: '',
+        yTitle: '',
+      };
+    case 'graph':
+      return {
         board: { axis: true, bbox: [-7.5, 5, 7.5, -5], grid: false },
         description: '',
         elements: [],
@@ -56,7 +68,14 @@ function newVisualBlock(type: 'chart' | 'graph'): NoteVisualBlock {
         type,
         width: 600,
       };
+  }
 }
+
+const visualLabels = {
+  chart: m.editor_chart,
+  graph: m.editor_graph,
+  plot: m.editor_plot,
+} satisfies Record<NoteVisualBlock['type'], () => string>;
 
 export function columnGroupFromWidths(widths: readonly string[]) {
   return {
@@ -509,16 +528,16 @@ export const EDITOR_COMMANDS: EditorCommand[] = [
 ];
 
 EDITOR_COMMANDS.push(
-  ...(['chart', 'graph'] as const).map(
+  ...(['chart', 'plot', 'graph'] as const).map(
     (type): EditorCommand => ({
       get description() {
-        return type === 'chart' ? m.editor_chart() : m.editor_graph();
+        return visualLabels[type]();
       },
       group: 'blockElements',
       icon: type,
       id: type,
       get label() {
-        return type === 'chart' ? m.editor_chart() : m.editor_graph();
+        return visualLabels[type]();
       },
       run: (editor, dialogs) => {
         if (insideContainer(editor)) return;
