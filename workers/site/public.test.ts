@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { IMAGE_POLICY } from 'capy-share-render';
 import { describe, expect, it, vi } from 'vitest';
 import { MATERIAL_SCHEMA_VERSION } from '../../src/lib/const';
@@ -44,6 +45,26 @@ describe('anonymous material routes', () => {
       expect(response.status).toBe(404);
     }
     expect(fetcher).not.toHaveBeenCalled();
+  });
+
+  it('answers the page templates with the not-found page, routed to the Worker', async () => {
+    const fetcher = vi.fn<typeof fetch>();
+    for (const path of ['/share.html', '/summary.html', '/summary']) {
+      const response = await handleSiteRequest(request(path), env, fetcher);
+      expect(response.status).toBe(404);
+    }
+    expect(fetcher).not.toHaveBeenCalled();
+    // Every environment sends them to the Worker, not to static assets.
+    const config = readFileSync(
+      new URL('../../wrangler.jsonc', import.meta.url),
+      'utf8'
+    );
+    const lists = config.match(/"run_worker_first": \[[^\]]*\]/g) ?? [];
+    expect(lists.length).toBeGreaterThan(0);
+    for (const list of lists) {
+      for (const path of ['/share.html', '/summary.html', '/summary'])
+        expect(list).toContain(`"${path}"`);
+    }
   });
 
   it('renders a shared page from one API read', async () => {

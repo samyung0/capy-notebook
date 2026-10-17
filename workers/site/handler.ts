@@ -256,7 +256,12 @@ export async function handleSiteRequest(
     );
   };
   const isSummary = url.pathname.startsWith('/w/');
-  if (url.pathname === '/summary' || url.pathname === '/summary.html')
+  // The page templates are the Worker's, never pages of their own.
+  if (
+    url.pathname === '/summary' ||
+    url.pathname === '/summary.html' ||
+    url.pathname === '/share.html'
+  )
     return failure(404);
   try {
     if (url.pathname.startsWith('/api/')) {

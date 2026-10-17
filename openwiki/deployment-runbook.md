@@ -1171,6 +1171,8 @@ Two content security policies, both built once per SPA build by
     one, the classic theme script, kept inline so the page paints in the
     chosen style and theme from the first frame instead of after its bundle
     loads (Epo 2026-10-17; Vite would bundle a module script into the entry).
+    The templates are never pages of their own: `/share.html`, `/summary.html`
+    and `/summary` run the Worker first and answer the 404 page.
     The dev server's templates also carry React's refresh preamble. The SPA's
     and the share pages' scripts set Zod to `jitless` first
     (`src/lib/zodJitless.ts`), so Zod never probes `new Function` (the summary

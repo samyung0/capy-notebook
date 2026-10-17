@@ -20,7 +20,8 @@
       "/p/*",
       "/share/*",
       "/summary",
-      "/summary.html"
+      "/summary.html",
+      "/share.html"
     ]
   },
   "observability": {
@@ -58,7 +59,8 @@
           "/p/*",
           "/share/*",
           "/summary",
-          "/summary.html"
+          "/summary.html",
+          "/share.html"
         ]
       },
       // Run the Worker beside the UAT VM (Netcup, Germany). Its one API read
@@ -112,7 +114,8 @@
           "/p/*",
           "/share/*",
           "/summary",
-          "/summary.html"
+          "/summary.html",
+          "/share.html"
         ]
       }
     }
