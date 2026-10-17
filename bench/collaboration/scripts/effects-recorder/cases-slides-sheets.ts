@@ -67,7 +67,7 @@ export const PPTX: Case[] = [
     id: 'pptx-backspace-merge',
     rows: ['pptx.edit.text'],
     fixtures: ['lecture'],
-    summary: 'the second slide 3 body paragraph is joined onto the first',
+    summary: 'Backspace at the start of numbered item 2 on slide 3: the first Backspace drops its numbering (text unchanged, paragraph properties change)',
     async run(d) {
       const a = d.peer();
       await d.step('A', 'shape', 'slide 3 start of "Quis nostrud exercitation"');
@@ -134,7 +134,7 @@ export const PPTX: Case[] = [
     id: 'pptx-undo-typing',
     rows: ['pptx.edit.undo'],
     fixtures: ['lecture'],
-    summary: 'typed text undone: no net change',
+    summary: 'typed " undo me" then one Ctrl+Z, which here takes back only the last typed character (" undo m" stays)',
     async run(d) {
       const a = d.peer();
       await a.shape(3, 'Owner sentence: The survey', 'end');
@@ -206,18 +206,29 @@ export const PPTX: Case[] = [
     },
   },
   {
-    id: 'pptx-shape-insert-type',
+    id: 'pptx-shape-insert',
     rows: ['pptx.edit.objects'],
     fixtures: ['feature-rich-pptx'],
-    summary: 'a new rectangle on slide 1 with "Recorder shape" as its text',
+    summary: 'a new rectangle on slide 1 (no text: a new shape has no text body to type into)',
     async run(d) {
       const a = d.peer();
       await a.slide(1);
       await d.step('A', 'menu', 'insert.shape:rect');
       await a.menu('insert.shape:rect');
       await a.slideClick(0.6, 0.8);
+    },
+  },
+  {
+    id: 'pptx-shape-text-type',
+    rows: ['pptx.edit.text', 'pptx.edit.objects'],
+    fixtures: ['feature-rich-pptx'],
+    summary: 'the text of an existing card shape ("Identify format and cheap metadata") gains " now"',
+    async run(d) {
+      const a = d.peer();
+      await d.step('A', 'shape', 'slide 1 card text "Identify format"');
+      await a.shape(1, 'Identify format and chea', 'paragraph-end');
       await d.step('A', 'type');
-      await a.type('Recorder shape');
+      await a.type(' now');
     },
   },
   {
@@ -322,6 +333,8 @@ export const PPTX: Case[] = [
     rows: ['pptx.view.tables'],
     fixtures: ['lecture'],
     summary: 'a table cell gains " recorder"',
+    blocked:
+      "the PPTX layout gives table cells no text hit regions (pptx-render layout.rs render_table drops each cell's render_text_box hit; only the frame is hit-testable), so clicks select the table and never enter a cell; cell edits are engine-only (pptx-edit tests)",
     async run(d) {
       const a = d.peer();
       await d.step('A', 'table cell');
@@ -416,11 +429,13 @@ export const XLSX: Case[] = [
     id: 'xlsx-cell-type-new',
     rows: ['xlsx.edit.entry'],
     fixtures: ['grades', 'course-guide'],
-    summary: 'empty cell H10 of the first sheet gets "recorded"',
-    async run(d) {
+    summary: 'a cell of the first sheet gets "recorded" (grades: empty E6, course-guide: H10)',
+    async run(d, f) {
       const a = d.peer();
-      await d.step('A', 'goto', 'H10');
-      await a.goto('H10');
+      // Keyboard reach ends two rows and five columns past the used range.
+      const cell = f.key === 'grades' ? 'E6' : 'H10';
+      await d.step('A', 'goto', cell);
+      await a.goto(cell);
       await d.step('A', 'type', 'recorded');
       await a.type('recorded');
       await a.press('Enter');
@@ -562,10 +577,10 @@ export const XLSX: Case[] = [
     id: 'xlsx-paste-block',
     rows: ['xlsx.edit.clipboard'],
     fixtures: ['grades', 'course-guide'],
-    summary: 'a 5x5 block pasted at H2 (25 cells)',
+    summary: 'a 5x5 block pasted at E2 (25 cells)',
     async run(d) {
       const a = d.peer();
-      await a.goto('H2');
+      await a.goto('E2');
       await d.step('A', 'paste', '5x5 TSV');
       await a.paste(TSV);
     },
@@ -574,15 +589,21 @@ export const XLSX: Case[] = [
     id: 'xlsx-format',
     rows: ['xlsx.edit.format', 'xlsx.view.numfmt'],
     fixtures: ['grades'],
-    summary: 'B2 bold and B3 percentage (formatting only)',
+    summary: 'B2 bold, B3 percentage, A4:B5 merged (formatting only; the merge hides B4/B5/A5 values if any)',
     async run(d) {
       const a = d.peer();
       await a.goto('B2');
-      await d.step('A', 'bold');
-      await a.press('ControlOrMeta+b');
+      await d.step('A', 'menu', 'bold');
+      await a.menu('bold');
       await a.goto('B3');
-      await d.step('A', 'menu', 'percent');
-      await a.menu('percent');
+      await d.step('A', 'menu', 'numberFormat:percent');
+      await a.menu('numberFormat:percent');
+      await d.step('A', 'select', 'A4:B5');
+      await a.goto('A4');
+      await a.press('Shift+ArrowRight');
+      await a.press('Shift+ArrowDown');
+      await d.step('A', 'menu', 'merge:all');
+      await a.menu('merge:all');
     },
   },
   {
@@ -604,17 +625,17 @@ export const XLSX: Case[] = [
     id: 'xlsx-undo-redo',
     rows: ['xlsx.edit.undo'],
     fixtures: ['grades'],
-    summary: 'H5 typed, undone and redone ("kept"); H6 typed and undone',
+    summary: 'E5 typed, undone and redone ("kept"); E6 typed and undone',
     async run(d) {
       const a = d.peer();
-      await a.goto('H5');
+      await a.goto('E5');
       await d.step('A', 'type', 'kept');
       await a.type('kept');
       await a.press('Enter');
       await d.step('A', 'undo, redo');
       await a.press('ControlOrMeta+z');
       await a.press('ControlOrMeta+Shift+z');
-      await a.goto('H6');
+      await a.goto('E6');
       await d.step('A', 'type', 'dropped');
       await a.type('dropped');
       await a.press('Enter');
@@ -630,8 +651,8 @@ export const XLSX: Case[] = [
     async run(d) {
       const a = d.peer();
       await a.goto('A2');
-      await d.step('A', 'menu', 'freezeRows');
-      await a.menu('freezeRows');
+      await d.step('A', 'menu', 'freezeRows:1');
+      await a.menu('freezeRows:1');
     },
   },
   {
@@ -679,12 +700,12 @@ export const XLSX: Case[] = [
     rows: ['xlsx.edit.entry'],
     fixtures: ['grades'],
     peers: ['A', 'B'],
-    summary: 'A types in H3 and B in I3 at once',
+    summary: 'A types in E3 and B in F3 at once',
     async run(d) {
       const [a, b] = [d.peer('A'), d.peer('B')];
       await d.hold();
-      await a.goto('H3');
-      await b.goto('I3');
+      await a.goto('E3');
+      await b.goto('F3');
       await d.step('A', 'type', 'from A');
       await a.type('from A');
       await a.press('Enter');
@@ -699,12 +720,12 @@ export const XLSX: Case[] = [
     rows: ['xlsx.edit.entry'],
     fixtures: ['grades'],
     peers: ['A', 'B'],
-    summary: 'A and B type in H4 at once (one value wins)',
+    summary: 'A and B type in E4 at once (one value wins)',
     async run(d) {
       const [a, b] = [d.peer('A'), d.peer('B')];
       await d.hold();
-      await a.goto('H4');
-      await b.goto('H4');
+      await a.goto('E4');
+      await b.goto('E4');
       await d.step('A', 'type', 'from A');
       await a.type('from A');
       await a.press('Enter');

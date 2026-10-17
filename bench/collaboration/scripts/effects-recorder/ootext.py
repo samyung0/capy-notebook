@@ -7,8 +7,8 @@
 Stories: DOCX `body`, `header1.xml`, `footnotes`, `comments`, ... (tables are
 paragraphs of their story; tracked deletions are left out, as a reader sees
 them); PPTX `slide:<n>` in presentation order plus `notes:<n>`; XLSX
-`sheet:<name>` with one "A1=value" line per non-empty cell (formulas as
-`A1==SUM(...)` before their cached value).
+`sheet:<name>` with one line per row up to the last used one: the cells of
+the row in column order joined by " | " (formulas as `=SUM(...) -> cached`).
 """
 
 import difflib
@@ -115,7 +115,7 @@ def xlsx_stories(z):
     stories = {}
     for sheet in book.iter(X + "sheet"):
         part = book_rels[sheet.get(R + "id")]
-        lines = []
+        rows = {}
         for c in ET.fromstring(z.read(part)).iter(X + "c"):
             ref, kind = c.get("r"), c.get("t")
             f, v = c.find(X + "f"), c.find(X + "v")
@@ -126,7 +126,18 @@ def xlsx_stories(z):
                 value = "".join(t.text or "" for t in c.iter(X + "t"))
             formula = f.text if f is not None and f.text else ""
             if value or formula:
-                lines.append(f"{ref}=" + (f"={formula} -> " if formula else "") + value)
+                col = "".join(ch for ch in ref if ch.isalpha())
+                row = int(ref[len(col):])
+                index = 0
+                for ch in col:
+                    index = index * 26 + ord(ch) - 64
+                rows.setdefault(row, {})[index] = (f"={formula} -> " if formula else "") + value
+        # One line per row (rows aligned by content, so an inserted or deleted
+        # row is one effect); cells in column order, empty ones kept as gaps.
+        lines = []
+        for row in range(1, max(rows, default=0) + 1):
+            cells = rows.get(row, {})
+            lines.append(" | ".join(cells.get(i, "") for i in range(1, max(cells, default=0) + 1)))
         stories[f"sheet:{sheet.get('name')}"] = lines
     return stories
 
@@ -141,7 +152,48 @@ def stories(path):
         return xlsx_stories(z)
 
 
+def paragraph_diff(story, a, b, out, extra=None):
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        if tag == "replace" and i2 - i1 == j2 - j1:
+            for k in range(i2 - i1):
+                out.append({"story": story, "op": "update", "index": i1 + k, "before": a[i1 + k], "after": b[j1 + k], **(extra or {})})
+            continue
+        out.append({"story": story, "op": {"insert": "insert", "delete": "delete"}.get(tag, "replace"),
+                    "index": i1, "before": a[i1:i2] or None, "after": b[j1:j2] or None, **(extra or {})})
+
+
+def deck_diff(before, after):
+    """Slides aligned by content (a moved slide is a delete plus an insert)."""
+    def slides(stories):
+        n = len([k for k in stories if k.startswith("slide:")])
+        return [(tuple(stories.get(f"slide:{i}", [])), tuple(stories.get(f"notes:{i}", []))) for i in range(1, n + 1)]
+
+    a, b = slides(before), slides(after)
+    out = []
+    matcher = difflib.SequenceMatcher(None, a, b, autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            continue
+        pairs = min(i2 - i1, j2 - j1) if tag == "replace" else 0
+        for k in range(pairs):
+            (sa, na), (sb, nb) = a[i1 + k], b[j1 + k]
+            where = {"slideBefore": i1 + k + 1, "slideAfter": j1 + k + 1}
+            paragraph_diff(f"slide:{j1 + k + 1}", list(sa), list(sb), out, where)
+            paragraph_diff(f"notes:{j1 + k + 1}", list(na), list(nb), out, where)
+        for k in range(i1 + pairs, i2):
+            out.append({"story": f"slide:{k + 1}", "op": "delete", "slideBefore": k + 1,
+                        "before": list(a[k][0]), "notesBefore": list(a[k][1]), "after": None})
+        for k in range(j1 + pairs, j2):
+            out.append({"story": f"slide:{k + 1}", "op": "insert", "slideAfter": k + 1,
+                        "before": None, "after": list(b[k][0]), "notesAfter": list(b[k][1])})
+    return out
+
+
 def diff(before, after):
+    if any(k.startswith("slide:") for k in list(before) + list(after)):
+        return deck_diff(before, after)
     out = []
     for story in list(before) + [s for s in after if s not in before]:
         a, b = before.get(story, []), after.get(story, [])

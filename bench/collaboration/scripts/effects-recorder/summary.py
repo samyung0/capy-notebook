@@ -15,4 +15,4 @@ for (fmt, status), n in sorted(by.items()):
 print("total", len(index))
 for e in index:
     if e["status"] != "ok":
-        print(f"  {e['status']:13} {e['caseId']}: {e.get('error', '')[:160]}")
+        print(f"  {e['status']:13} {e['caseId']}: {(e.get('error') or e.get('reason') or '')[:160]}")

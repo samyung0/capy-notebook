@@ -180,7 +180,7 @@ async function record(browser: Awaited<ReturnType<typeof startBrowser>>, kase: C
       expected: {
         summary: kase.summary,
         effects: textDiff,
-        note: 'effects = text diff of the editor\'s own export before and after (ootext.py); formatting-only changes show none',
+        note: 'effects = text diff (ootext.py) of the editor\'s export of the untouched file vs the engine\'s export of the recorded room (equal to the editors\' own exports when check.exportsClean); formatting-only changes show none',
       },
       client: {
         finalText: captured,
@@ -202,17 +202,33 @@ async function record(browser: Awaited<ReturnType<typeof startBrowser>>, kase: C
         typeof check.serverExport === 'string'
           ? ootext('same', path.join(dir, exports[peer]!), path.join(dir, check.serverExport))
           : { same: false, error: check.serverExport };
-    const clean =
+    // The stream is right when the room it builds equals every replica; a peer's
+    // own export can still miss a co-editor's change (an editor gap, kept apart).
+    const streamClean =
       check.unheld === 0 &&
       (check.refused as unknown[]).length === 0 &&
       check.pendingStructs === 0 &&
       check.pendingDeletes === 0 &&
-      peers.every((p) => check.clients[p]?.sameStateVectorAndDeleteSet && check.clients[p]?.rootsDiffering.length === 0) &&
-      peers.every((p) => (textSame[p] as { same?: boolean }).same);
-    manifest.check = { ...check, textMatchesClient: textSame, clean };
+      peers.every((p) => check.clients[p]?.sameStateVectorAndDeleteSet && check.clients[p]?.rootsDiffering.length === 0);
+    const exportsClean = peers.every((p) => (textSame[p] as { same?: boolean }).same);
+    const clean = streamClean && exportsClean;
+    // Expected effects follow the room (the engine's export, equal to the editors' own when clean).
+    if (typeof check.serverExport === 'string') {
+      const serverEffects = ootext('diff', beforeFile, path.join(dir, check.serverExport)) as unknown[];
+      (manifest.expected as Record<string, unknown>).effects = serverEffects;
+      textDiff.splice(0, textDiff.length, ...serverEffects);
+    }
+    manifest.check = { ...check, textMatchesClient: textSame, streamClean, exportsClean, clean };
     writeFileSync(path.join(dir, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
-    if (clean) for (const peer of peers) rmSync(states[peer]!, { force: true });
-    const status = updates.length === 0 && !kase.expectNoUpdates ? 'no-updates' : clean ? 'ok' : 'check-failed';
+    if (streamClean) for (const peer of peers) rmSync(states[peer]!, { force: true });
+    const status =
+      updates.length === 0 && !kase.expectNoUpdates
+        ? 'no-updates'
+        : clean
+          ? 'ok'
+          : streamClean
+            ? 'ok-export-gap'
+            : 'check-failed';
     updateIndex({
       caseId,
       case: kase.id,
@@ -242,6 +258,12 @@ try {
     for (const key of kase.fixtures) {
       if (onlyFixture && key !== onlyFixture) continue;
       const caseId = `${kase.id}@${key}`;
+      if (kase.blocked) {
+        rmSync(path.join(RECORDINGS, caseId), { force: true, recursive: true });
+        updateIndex({ caseId, case: kase.id, format: FIXTURES[key]!.format, fixture: key, parityRows: kase.rows, status: 'blocked', reason: kase.blocked });
+        results[caseId] = 'blocked';
+        continue;
+      }
       try {
         results[caseId] = await record(browser, kase, FIXTURES[key]!);
       } catch (error) {

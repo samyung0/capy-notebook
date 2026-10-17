@@ -61,6 +61,18 @@ export interface Peer {
   clickElement(selector: string, options?: { index?: number; count?: number; button?: 'left' | 'right'; dx?: number; dy?: number }): Promise<void>;
   /** DOCX: click the picture laid out just above the caption text `needle`. */
   clickImage(needle: string): Promise<void>;
+  /** Fill the input found by its placeholder (or label) in the frame. */
+  fill(placeholderOrLabel: string, value: string): Promise<void>;
+  /** DOCX find-and-replace dialog: Replace once. */
+  replaceOne(find: string, replace: string): Promise<void>;
+  /** Click the first element with this title in the frame. */
+  clickTitle(title: string): Promise<void>;
+  /** DOCX: open the header or footer holding `needle` for editing, caret at the needle's end. */
+  openHeaderFooter(needle: string, scope: 'header' | 'footer'): Promise<void>;
+  /** Click the first visible element whose text is `text` in the frame (sidebar, dialogs). */
+  clickText(text: string): Promise<void>;
+  /** Drag the centre of the element matching `selector` by (dx, dy) px. */
+  dragSelector(selector: string, dx: number, dy: number): Promise<void>;
   /** Focus the editor's text input again without moving its caret. */
   focus(): Promise<void>;
   /** DOCX find-and-replace dialog: Replace All. */
@@ -219,7 +231,7 @@ class FramePeer implements Peer {
     const canvas = await this.frame().getByTestId('pptx-slide-canvas').boundingBox();
     if (!canvas) throw new Error('no slide canvas');
     await this.session.page.mouse.click(canvas.x + canvas.width * fx, canvas.y + canvas.height * fy);
-    await this.session.page.waitForTimeout(300);
+    await this.session.page.waitForTimeout(200);
   }
 
   private findShape(n: number, needle: string) {
@@ -298,12 +310,13 @@ class FramePeer implements Peer {
       const table = shapes.shapes.find((s) => s.kind === 'table' && s.box);
       if (!table) continue;
       await this.slide(n);
+      // The first cell's text: a click selects the table, the next one enters the cell.
       const [x, y, cx, cy] = table.box!;
-      const point = await this.slidePoint(shapes, x + cx * 0.15, y + cy * 0.1);
-      await this.session.page.mouse.click(point.x, point.y);
-      await this.session.page.waitForTimeout(250);
-      await this.session.page.mouse.click(point.x, point.y, { clickCount: 2 });
-      await this.session.page.waitForTimeout(250);
+      const point = await this.slidePoint(shapes, x + cx * 0.25, y + cy * 0.25);
+      for (let i = 0; i < 2; i++) {
+        await this.session.page.mouse.click(point.x, point.y);
+        await this.session.page.waitForTimeout(400);
+      }
       await this.session.page.keyboard.press('End');
       return;
     }
@@ -319,14 +332,60 @@ class FramePeer implements Peer {
     await this.type(text);
   }
 
+  /**
+   * XLSX: select a cell by keyboard from A1 (the name box is read-only here),
+   * checked against the name box.
+   */
   async goto(ref: string) {
+    const frame = this.frame();
+    const nameBox = frame.getByTestId('xlsx-name-box');
+    const page = this.session.page;
+    const match = /^([A-Z]+)(\d+)$/.exec(ref);
+    if (!match) throw new Error('bad cell ' + ref);
+    const col = [...match[1]!].reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
+    const row = Number(match[2]);
+    // The editor runs in a worker: the name box catches up after the keys.
+    const settled = async () => {
+      let last = '';
+      let stableSince = Date.now();
+      for (const deadline = Date.now() + 8000; Date.now() < deadline; ) {
+        const value = (await nameBox.inputValue()).trim();
+        if (value !== last) {
+          last = value;
+          stableSince = Date.now();
+        } else if (Date.now() - stableSince > 350) break;
+        await page.waitForTimeout(60);
+      }
+      return last;
+    };
+    const rowOf = (value: string) => Number(/\d+$/.exec(value)?.[0] ?? 1);
+    if (this.focusState.peer !== this.name) await this.focus();
+    await page.keyboard.press('ControlOrMeta+Home');
+    await settled();
+    // Keys faster than the worker answers get dropped: one at a time, checked.
+    const step = async (key: string, times: number) => {
+      for (let i = 0; i < times; i++) {
+        await page.keyboard.press(key);
+        await page.waitForTimeout(60);
+      }
+    };
+    await step('ArrowRight', col - 1);
+    if (row > 200) {
+      for (let guard = 0; guard < 4000; guard++) {
+        await page.keyboard.press('PageDown');
+        if (rowOf(await settled()) >= row - 100) break;
+      }
+    }
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const delta = row - rowOf(await settled());
+      if (!delta) break;
+      await step(delta > 0 ? 'ArrowDown' : 'ArrowUp', Math.abs(delta));
+    }
+    const reached = await settled();
+    if (reached !== ref) throw new Error('goto ' + ref + ' reached ' + reached);
     this.focusState.peer = this.name;
-    const box = this.frame().getByTestId('xlsx-name-box');
-    await box.click();
-    await box.fill(ref);
-    await box.press('Enter');
-    await this.session.page.waitForTimeout(250);
   }
+
 
   frame() {
     return this.session.frame(this.name);
@@ -508,8 +567,110 @@ class FramePeer implements Peer {
     this.focusState.peer = this.name;
   }
 
+  async fill(placeholderOrLabel: string, value: string) {
+    const frame = this.frame();
+    // The first visible match (hidden popups can share a placeholder).
+    let input = frame.getByPlaceholder(placeholderOrLabel).filter({ visible: true }).first();
+    // Dialogs open a moment after the key or click that asks for them.
+    await input.waitFor({ state: 'visible', timeout: 5000 }).catch(() => {});
+    if (!(await input.count())) input = frame.getByLabel(placeholderOrLabel).filter({ visible: true }).first();
+    await input.click();
+    await input.fill(value);
+    this.focusState.peer = this.name;
+    await this.session.page.waitForTimeout(150);
+  }
+
+  async replaceOne(find: string, replace: string) {
+    await this.menu('find-replace');
+    const frame = this.frame();
+    await frame.getByLabel('Find text').fill(find);
+    const replaceBox = frame.getByLabel('Replace text');
+    if (!(await replaceBox.isVisible().catch(() => false))) await frame.getByText('+ Replace').click();
+    await replaceBox.fill(replace);
+    await frame.getByRole('button', { name: /^Replace$/ }).click();
+    await this.session.page.waitForTimeout(500);
+    await this.session.page.keyboard.press('Escape');
+  }
+
+  async clickText(text: string) {
+    await this.frame().getByText(text, { exact: true }).filter({ visible: true }).first().click();
+    this.focusState.peer = this.name;
+    await this.session.page.waitForTimeout(400);
+  }
+
+  async openHeaderFooter(needle: string, scope: 'header' | 'footer') {
+    const page = this.session.page;
+    const story = () => this.frame().locator('[data-testid=yrs-input]').getAttribute('data-yrs-story');
+    // A region without text (a footer holding only a PAGE field) is hit at its middle.
+    const target = async () => {
+      if (needle) return this.point(needle, { at: 3, scope });
+      const box = await this.origin();
+      const rect = await this.frame().evaluate((sel) => {
+        for (const region of document.querySelectorAll(sel)) {
+          const r = region.getBoundingClientRect();
+          if (r.top > 60 && r.bottom < window.innerHeight - 20) return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        }
+        const any = document.querySelector(sel);
+        any?.scrollIntoView({ block: 'center' });
+        return null;
+      }, `.layout-page-mirror:not(.layout-page-mirror-text) .layout-page-${scope}`);
+      if (!rect) {
+        await page.waitForTimeout(500);
+        return target();
+      }
+      return { x: box.x + rect.x, y: box.y + rect.y };
+    };
+    for (let attempt = 0; attempt < 3; attempt++) {
+      // A first click lets the caret, the comments column and the scroll settle;
+      // the double click then lands on the header where it now is.
+      const first = await target();
+      await page.mouse.click(first.x, first.y);
+      await page.waitForTimeout(900);
+      const second = await target();
+      await page.mouse.click(second.x, second.y, { clickCount: 2 });
+      await page.waitForTimeout(900);
+      if ((await story()) !== 'body') {
+        if (needle) {
+          const end = await this.point(needle, { at: 'end', scope });
+          await page.mouse.click(end.x, end.y);
+        }
+        await this.placed();
+        return;
+      }
+    }
+    throw new Error('could not open the ' + scope + ' holding ' + needle);
+  }
+
+  async clickTitle(title: string) {
+    await this.frame().getByTitle(title, { exact: true }).first().click();
+    this.focusState.peer = this.name;
+    await this.session.page.waitForTimeout(300);
+  }
+
+  async dragSelector(selector: string, dx: number, dy: number) {
+    const handle = this.frame().locator(selector).first();
+    const box = await handle.boundingBox();
+    if (!box) throw new Error('no element ' + selector);
+    const mouse = this.session.page.mouse;
+    const x = box.x + box.width / 2;
+    const y = box.y + box.height / 2;
+    await mouse.move(x, y);
+    await mouse.down();
+    await mouse.move(x + dx, y + dy, { steps: 12 });
+    await mouse.up();
+    this.focusState.peer = this.name;
+    await this.session.page.waitForTimeout(400);
+  }
+
   async focus() {
-    const selector = this.format === 'docx' ? '[data-testid=yrs-input]' : this.format === 'pptx' ? '[data-testid=pptx-text-input]' : '[data-testid=xlsx-scroll]';
+    if (this.format === 'xlsx') {
+      // The grid (tabIndex 0) takes the keys; a click would move the selection.
+      await this.frame().getByTestId('xlsx-scroll').focus();
+      this.focusState.peer = this.name;
+      await this.session.page.waitForTimeout(150);
+      return;
+    }
+    const selector = this.format === 'docx' ? '[data-testid=yrs-input]' : '[data-testid=pptx-text-input]';
     await this.frame().locator(selector).first().focus();
     this.focusState.peer = this.name;
     await this.session.page.waitForTimeout(100);

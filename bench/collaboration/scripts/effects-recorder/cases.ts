@@ -1,5 +1,6 @@
 // The scripted cases (edit-cases.md in the track folder is the plan). Each
 // runs on every fixture it lists; `SPOTS` name the text each fixture offers.
+import { MORE } from './cases-more';
 import { PPTX, XLSX } from './cases-slides-sheets';
 import type { Driver, Peer } from './drivers';
 import type { Fixture } from './session';
@@ -12,6 +13,8 @@ export interface Case {
   summary: string;
   /** A case whose correct outcome writes nothing (view tools, download). */
   expectNoUpdates?: boolean;
+  /** Not reachable through Capy's UI at this pin: listed, not recorded. */
+  blocked?: string;
   run(driver: Driver, fixture: Fixture): Promise<void>;
   capture?(fixture: Fixture): string[];
 }
@@ -37,10 +40,11 @@ const SPOTS: Record<string, Record<string, string>> = {
     para1: '名稱：東京四天工程交流團',
     para2: '機構：香港大學工程學院',
     para3: '日期：二零二三年四月七日',
-    heading: '活動背景',
+    heading: '1.1.  活動背景',
     title: '交流學習團活動計劃書',
     cell: '友邦保險',
     headerCell: '價錢',
+    footer: '',
   },
   comprehensive: {
     mid: 'Centered paragraph',
@@ -65,7 +69,7 @@ const SPOTS: Record<string, Record<string, string>> = {
 
 const spot = (fixture: Fixture, name: string) => {
   const value = SPOTS[fixture.key]?.[name];
-  if (!value) throw new Error(`no spot ${name} for ${fixture.key}`);
+  if (value === undefined) throw new Error(`no spot ${name} for ${fixture.key}`);
   return value;
 };
 
@@ -81,6 +85,23 @@ const typed = (f: Fixture) => (f.key === 'exchange-plan' ? '記錄' : ' recorder
 async function at(d: Driver, a: Peer, needle: string, where: 'start' | 'end' = 'end', scope?: 'body' | 'header' | 'footer' | 'notes') {
   await d.step(a.name, 'click', `${where} of "${needle}"${scope ? ` in ${scope}` : ''}`);
   await a.click(needle, { at: where, scope });
+}
+
+/**
+ * In a fresh frame a double click on a header or footer selects a body word
+ * elsewhere instead of opening it (seen headless on every DOCX fixture); once
+ * the frame has applied a remote update it opens. So header/footer cases run
+ * with two peers: A types one character in the body and deletes it (two small
+ * updates, no net text change), then B acts.
+ */
+export async function wakeHeaders(d: Driver, bodyNeedle: string) {
+  const a = d.peer('A');
+  await d.step('A', 'precondition', `type and delete one character after "${bodyNeedle}" so B's frame applies a remote update`);
+  await a.click(bodyNeedle, { at: 'end' });
+  await a.type('x');
+  await d.wait(400);
+  await a.press('Backspace');
+  await d.wait(1500);
 }
 
 const DOCX: Case[] = [
@@ -276,10 +297,8 @@ const DOCX: Case[] = [
     async run(d, f) {
       const a = d.peer();
       await at(d, a, spot(f, 'para2'), 'start');
-      await a.press('Home');
-      await d.step('A', 'select', 'Shift+Down');
-      await a.press('Shift+ArrowDown');
-      await a.press('Shift+Home');
+      await d.step('A', 'drag-select', 'to the start of para3');
+      await a.click(spot(f, 'para3'), { at: 'start', shift: true });
       await d.step('A', 'delete');
       await a.press('Delete');
     },
@@ -791,33 +810,39 @@ const DOCX: Case[] = [
   {
     id: 'docx-header-type',
     rows: ['docx.edit.headers'],
-    fixtures: ['comprehensive', 'feature-rich-docx'],
-    summary: 'the default header gains " (recorded)"',
+    fixtures: ['comprehensive'],
+    peers: ['A', 'B'],
+    summary: 'peer B adds " (recorded)" at the end of the default header (after A\'s one-character body round trip, see wakeHeaders)',
     async run(d, f) {
-      const a = d.peer();
-      await d.step('A', 'dblclick', 'header');
-      await a.click(spot(f, 'header'), { at: 'end', count: 2, scope: 'header' });
-      await a.press('End');
-      await d.step('A', 'type');
-      await a.type(' (recorded)');
-      await a.press('Escape');
+      const b = d.peer('B');
+      await wakeHeaders(d, f.key === 'comprehensive' ? 'Centered paragraph' : 'CAPY_SECTION_SENTINEL');
+      await d.step('B', 'dblclick', 'header');
+      await b.openHeaderFooter(spot(f, 'header'), 'header');
+      await d.step('B', 'type');
+      await b.type(' (recorded)');
+      await b.press('Escape');
     },
   },
+
   {
     id: 'docx-footer-type',
     rows: ['docx.edit.headers'],
     fixtures: ['comprehensive', 'exchange-plan'],
-    summary: 'the footer gains "Recorder footer "',
-    async run(d) {
-      const a = d.peer();
-      await d.step('A', 'dblclick', 'footer');
-      await a.clickElement('.layout-page-mirror .layout-page-footer', { count: 2 });
-      await a.press('Home');
-      await d.step('A', 'type');
-      await a.type('Recorder footer ');
-      await a.press('Escape');
+    peers: ['A', 'B'],
+    blocked:
+      'driver: a double click on a footer never opened it in the headless harness (comprehensive "Page N of M", exchange-plan PAGE-only footer), even after the remote-update precondition that makes headers open; footer typing is not recorded',
+    summary: 'peer B adds " (recorder footer)" to the footer (after A\'s one-character body round trip, see wakeHeaders)',
+    async run(d, f) {
+      const b = d.peer('B');
+      await wakeHeaders(d, f.key === 'comprehensive' ? 'Centered paragraph' : spot(f, 'mid'));
+      await d.step('B', 'dblclick', 'footer');
+      await b.openHeaderFooter(f.key === 'comprehensive' ? 'Page ' : spot(f, 'footer'), 'footer');
+      await d.step('B', 'type');
+      await b.type(' (recorder footer)');
+      await b.press('Escape');
     },
   },
+
   {
     id: 'docx-page-break',
     rows: ['docx.edit.breaks'],
@@ -875,28 +900,38 @@ const DOCX: Case[] = [
     id: 'docx-control-type',
     rows: ['docx.edit.controls'],
     fixtures: ['comprehensive'],
-    summary: 'the inline content control "Draft" gains text',
+    summary: 'p67 "Inline control: Draft." gains " v2" just before its final period (the end of the inline content control)',
     async run(d) {
       const a = d.peer();
-      await at(d, a, 'Draft');
+      await at(d, a, 'Inline control:', 'start');
+      await d.step('A', 'keys', 'End, ArrowLeft');
+      await a.press('End');
+      await a.press('ArrowLeft');
       await d.step('A', 'type', ' v2');
       await a.type(' v2');
     },
     capture: () => ['Inline control'],
   },
+
   {
     id: 'docx-textbox-type',
     rows: ['docx.view.shapes'],
     fixtures: ['comprehensive'],
-    summary: 'the text box story gains text',
+    summary: 'the text box story "A wrapped-square shape with its own story." gains " boxed"',
+    blocked:
+      'driver: clicks and double clicks inside the floating (wrap-square) text box put the caret in its host body paragraph, so the typed text landed in the body, not the text-box story; no text-box edit was recorded',
     async run(d, f) {
       const a = d.peer();
-      await d.step('A', 'click', 'text box');
+      // A text box opens for typing on a double click, as a header does.
+      await d.step('A', 'dblclick', 'text box');
+      await a.click(spot(f, 'textbox'), { at: 3, count: 2, scope: 'any' });
+      await d.wait(600);
       await a.click(spot(f, 'textbox'), { at: 'end', scope: 'any' });
       await d.step('A', 'type', ' boxed');
       await a.type(' boxed');
     },
   },
+
   {
     id: 'docx-footnote-type',
     rows: ['docx.view.notes'],
@@ -1068,7 +1103,7 @@ const DOCX: Case[] = [
       await d.step('A', 'type', ' body edit');
       await a.type(' body edit');
       await d.step('B', 'dblclick', 'header');
-      await b.click(spot(f, 'header'), { at: 'end', count: 2, scope: 'header' });
+      await b.openHeaderFooter(spot(f, 'header'), 'header');
       await d.step('B', 'type', ' header edit');
       await b.type(' header edit');
       await b.press('Escape');
@@ -1098,4 +1133,42 @@ const DOCX: Case[] = [
   },
 ];
 
-export const CASES: Case[] = [...DOCX, ...PPTX, ...XLSX];
+const noop = async () => {};
+
+/** Edit features no user can reach through Capy at this pin (edit-cases.md). */
+const BLOCKED: Case[] = [
+  {
+    id: 'docx-track-changes-on',
+    rows: ['docx.edit.review'],
+    fixtures: ['book-30p'],
+    summary: 'type with tracked changes on (suggesting mode)',
+    blocked: "Capy's DocxEditorHost never passes `mode`, so the editor is always 'editing'; users cannot create tracked changes",
+    run: noop,
+  },
+  {
+    id: 'docx-footnote-insert',
+    rows: ['docx.view.notes', 'docx.edit.other_refs'],
+    fixtures: ['comprehensive'],
+    summary: 'insert a new footnote',
+    blocked: 'no command inserts a footnote or endnote (parity notes); existing notes are edited in docx-footnote-type / docx-endnote-type',
+    run: noop,
+  },
+  {
+    id: 'docx-control-checkbox',
+    rows: ['docx.edit.controls'],
+    fixtures: ['comprehensive'],
+    summary: 'toggle a check-box content control',
+    blocked: 'no committed fixture has a check-box control (the comprehensive file has a rich-text and an inline text control, typed into in docx-control-type)',
+    run: noop,
+  },
+  {
+    id: 'docx-header-page-number',
+    rows: ['docx.edit.headers'],
+    fixtures: ['comprehensive'],
+    summary: 'insert a page number in a header',
+    blocked: 'the header Options menu offers only Remove: no onInsertField reaches InlineHeaderFooterEditor and no engine op inserts PAGE/NUMPAGES (parity notes)',
+    run: noop,
+  },
+];
+
+export const CASES: Case[] = [...DOCX, ...PPTX, ...XLSX, ...MORE, ...BLOCKED];

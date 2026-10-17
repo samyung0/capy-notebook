@@ -22,8 +22,18 @@ try {
         document.addEventListener(type, (event) => console.warn(`[frame] ${type} ${(event as KeyboardEvent).key ?? ''} prevented=${event.defaultPrevented}`), true);
     });
   const driver = driverFor(fixture, session, kase.peers ?? ['A'], []);
-  await kase.run(driver, fixture);
+  try {
+    await kase.run(driver, fixture);
+  } catch (error) {
+    log(`case error ${(error as Error).message}`);
+  }
   await driver.settle();
+  for (const peer of kase.peers ?? ['A']) {
+    const headers = await session.frame(peer).evaluate(() =>
+      [...new Set([...document.querySelectorAll('.layout-page-mirror .layout-page-header')].map((h) => (h.textContent ?? '').trim()))]
+    );
+    log(`headers ${peer}: ${JSON.stringify(headers)}`);
+  }
   const dump = (await session.page.evaluate(() => window.recorder.dump())) as Recording;
   log(`updates ${dump.updates.length}: ${dump.updates.map((u) => `${u.peer}${u.seq}:${u.source}`).join(' ')}`);
   log(`messages ${JSON.stringify(dump.messages)}`);
