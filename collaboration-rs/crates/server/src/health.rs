@@ -169,11 +169,12 @@ pub async fn metrics(app: &Shared) -> String {
         })
         .collect::<String>()
         + &format!(
-            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {}\ncapy_collaboration_outdated_refusals_total{{family=\"source\"}} {}\ncapy_collaboration_source_disk_refusals_total {}\ncapy_collaboration_source_disk_held_bytes {}\n",
+            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {}\ncapy_collaboration_outdated_refusals_total{{family=\"source\"}} {}\ncapy_collaboration_source_disk_refusals_total {}\ncapy_collaboration_source_disk_held_bytes {}\ncapy_collaboration_rate_limited_total {}\n",
             stats.outdated_refusals[0].load(Ordering::Relaxed),
             stats.outdated_refusals[1].load(Ordering::Relaxed),
             stats.source_disk_refusals.load(Ordering::Relaxed),
             disk_held,
+            stats.rate_limited.load(Ordering::Relaxed),
         )
 }
 

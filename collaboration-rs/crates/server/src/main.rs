@@ -23,6 +23,7 @@ mod observe;
 mod projection;
 mod protocol;
 mod pubsub;
+mod rate;
 mod room;
 mod socket;
 mod source_rooms;

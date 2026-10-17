@@ -21,6 +21,11 @@ const WARM_MS = 10_000;
  * one more (`MAX_PENDING_JOINS`, collaboration-rs/crates/server/src/socket.rs).
  * A note with many embeds on screen queues the rest here. */
 const MAX_PENDING_JOINS = 8;
+/** The server's close of a socket that sent updates past its rate limit
+ * (`TOO_FAST_CODE`, collaboration-rs/crates/server/src/socket.rs). Each one
+ * in the page load doubles the next reconnect's backoff, so a client that
+ * keeps tripping it never loops; its rooms resync on the reconnect. */
+export const TOO_FAST_CODE = 4429;
 
 /**
  * The tab's socket to one collaboration URL, shared by every room open in
@@ -66,6 +71,8 @@ export class CollabSocket {
   private queued: { bytes: Uint8Array<ArrayBuffer>; channel: number }[] = [];
   private nextChannel = 1;
   private attempts = 0;
+  /** Too-fast closes this page load (TOO_FAST_CODE). */
+  private tooFast = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
 
@@ -180,13 +187,14 @@ export class CollabSocket {
         this.channels.get(message.channel)?.onMessage(message);
       }
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (this.ws !== ws) return;
       this.ws = null;
       this.status = 'disconnected';
       this.channels.clear();
       this.forgetJoins();
       for (const handler of [...this.handlers]) handler.onSocketClose();
+      if (event.code === TOO_FAST_CODE) this.attempts = ++this.tooFast;
       if (this.handlers.size > 0) this.scheduleRetry();
     };
   }

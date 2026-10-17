@@ -2,13 +2,14 @@
 //! own (JOIN runs every `onAuthenticate` check, which a draft send runs too),
 //! their messages queue until JOINED and then go to the room in order; a
 //! writer's access is rechecked at most every 5 s before its updates go on;
-//! tokens refresh in band.
+//! tokens refresh in band. A socket sending SYNC messages past its allowance
+//! (`rate.rs`) closes as too fast.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use axum::extract::ws::{Message as WsMessage, WebSocket};
+use axum::extract::ws::{CloseFrame, Message as WsMessage, WebSocket};
 use bytes::Bytes;
 use serde_json::json;
 use tokio::sync::{mpsc, oneshot};
@@ -39,6 +40,11 @@ pub const DEFAULT_REFUSAL: &str = "permission-denied";
 /// A client protocol its room family no longer (or not yet) accepts: the
 /// client stops and asks for a reload.
 pub const OUTDATED_REASON: &str = "collaboration-outdated";
+/// The close of a socket over its update allowance; the client reconnects
+/// once its backoff (doubled by each such close) passes, and resyncs
+/// (`TOO_FAST_CODE` in src/features/collaboration/socket.ts).
+pub const TOO_FAST_CODE: u16 = 4429;
+pub const TOO_FAST_REASON: &str = "collaboration-too-fast";
 
 enum Channel {
     /// Queued messages and the JOIN attempt (a later JOIN on the channel
@@ -335,6 +341,10 @@ struct Connection {
     joined_once: bool,
     /// Token deadlines: (when, channel, expiry instead of refresh).
     timers: BTreeMap<(Instant, u64), bool>,
+    /// The SYNC messages this socket may still send (`rate.rs`).
+    allowance: crate::rate::Allowance,
+    /// Over the allowance: the socket closes as too fast.
+    too_fast: bool,
 }
 
 pub async fn serve(app: Shared, socket: WebSocket) {
@@ -356,6 +366,8 @@ pub async fn serve(app: Shared, socket: WebSocket) {
         attempts: 0,
         joined_once: false,
         timers: BTreeMap::new(),
+        allowance: crate::rate::Allowance::new(app.config.update_limits, Instant::now()),
+        too_fast: false,
     };
     let mut socket = socket;
     loop {
@@ -387,7 +399,11 @@ pub async fn serve(app: Shared, socket: WebSocket) {
                 connection.authenticated(channel, attempt, result);
             }
             Some((channel, attempt, name, context, result)) = join_rx.recv() => {
+                // Its queued messages go to the room now, and count.
                 connection.joined(channel, attempt, name, context, result).await;
+                if connection.too_fast {
+                    break;
+                }
             }
             () = overflow.notified() => {
                 log(Level::Warn, "slow connection closed", json!({ "socket_id": connection.socket_id }));
@@ -395,6 +411,13 @@ pub async fn serve(app: Shared, socket: WebSocket) {
             }
             () = sleep_until(next_timer) => connection.on_timers(),
         }
+    }
+    if connection.too_fast {
+        let close = CloseFrame {
+            code: TOO_FAST_CODE,
+            reason: TOO_FAST_REASON.into(),
+        };
+        let _ = socket.send(WsMessage::Close(Some(close))).await;
     }
     connection.close_all().await;
     app.stats.connections.fetch_sub(1, Ordering::Relaxed);
@@ -456,7 +479,7 @@ impl Connection {
             return false;
         };
         for message in messages {
-            if !self.on_message(message).await {
+            if !self.on_message(message).await || self.too_fast {
                 return false;
             }
         }
@@ -519,6 +542,9 @@ impl Connection {
     /// A joined channel's message goes to its room, after the writer recheck
     /// for updates.
     async fn forward(&mut self, message: Message) {
+        if self.too_fast {
+            return;
+        }
         let channel = message.channel;
         let Some(Channel::Joined {
             room,
@@ -534,6 +560,10 @@ impl Connection {
         let key = (self.id, channel);
         let command = match message.kind {
             Kind::Sync => {
+                if !self.allowance.take(message.payload.len(), Instant::now()) {
+                    self.over_allowance(&name, &context);
+                    return;
+                }
                 let writes = protocol::sync::decode(&message.payload)
                     .map(|(kind, _)| kind != protocol::sync::STEP1)
                     .unwrap_or(false);
@@ -584,6 +614,18 @@ impl Connection {
             _ => return,
         };
         let _ = room.tx.send(command).await;
+    }
+
+    /// Expected only from a runaway or hostile client: logged and counted,
+    /// not reported; the socket closes as too fast.
+    fn over_allowance(&mut self, name: &RoomName, context: &Context) {
+        self.too_fast = true;
+        self.app.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
+        log(
+            Level::Warn,
+            "connection over its update rate",
+            json!({ "room": name.to_string(), "socket_id": self.socket_id, "user_id": context.user_id }),
+        );
     }
 
     /// A writer whose access changed: `room-read-only` for a read-only

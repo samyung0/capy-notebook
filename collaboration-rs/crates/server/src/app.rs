@@ -248,6 +248,8 @@ pub struct Stats {
     /// Source room loads refused because loaded rooms' files fill the disk
     /// store (Epo 2026-10-17).
     pub source_disk_refusals: AtomicU64,
+    /// Sockets closed as too fast (`rate.rs`).
+    pub rate_limited: AtomicU64,
 }
 
 pub struct App {

@@ -55,6 +55,12 @@ pub struct Config {
     /// 10 GiB, UAT 5 GiB). No default.
     pub source_disk_dir: std::path::PathBuf,
     pub source_disk_bytes: u64,
+    /// Each connection's update allowance (Epo 2026-10-18, `rate.rs`),
+    /// the same everywhere: sized from what editors send
+    /// (bench/collaboration/reports/2026-10-18-update-rates.md), the burst
+    /// for a DOCX paste of about 5,000 paragraphs (two updates each), the
+    /// rate three times the fastest key repeat.
+    pub update_limits: crate::rate::Limits,
 }
 
 /// Local-dev values aligned with deploy/docker-compose.yml and the Go API.
@@ -185,6 +191,12 @@ impl Config {
                 }
             },
             source_disk_bytes: required(env, "COLLABORATION_SOURCE_DISK_BYTES")?,
+            update_limits: crate::rate::Limits {
+                burst_updates: positive(env, "COLLABORATION_UPDATE_BURST", 10_000)?,
+                burst_bytes: positive(env, "COLLABORATION_UPDATE_BURST_BYTES", 8 << 20)?,
+                updates_per_second: positive(env, "COLLABORATION_UPDATES_PER_SECOND", 200)?,
+                bytes_per_second: positive(env, "COLLABORATION_UPDATE_BYTES_PER_SECOND", 2 << 20)?,
+            },
         })
     }
 
@@ -228,6 +240,15 @@ mod tests {
         assert_eq!(config.port, 1234);
         assert_eq!(config.projection_idle, Duration::from_secs(30));
         assert_eq!(config.projection_cadence, Duration::from_secs(300));
+        assert_eq!(
+            config.update_limits,
+            crate::rate::Limits {
+                burst_updates: 10_000,
+                burst_bytes: 8 << 20,
+                updates_per_second: 200,
+                bytes_per_second: 2 << 20,
+            }
+        );
     }
 
     #[test]
