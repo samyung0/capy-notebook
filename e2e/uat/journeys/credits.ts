@@ -315,7 +315,10 @@ export async function switchAutoReloadOff(page: Page) {
  * with the starter sentence. Switches tabs in the app, without reloading the
  * page, and goes back to Subscription. */
 export async function expectPurchasedOnUsage(page: Page, micros: number) {
-  await page.getByRole('tab', { name: m.billing_tab_usage() }).click();
+  // Exact: "Detailed usage" contains "Usage".
+  await page
+    .getByRole('tab', { exact: true, name: m.billing_tab_usage() })
+    .click();
   await expect(
     page.getByText(
       m.billing_credits_hint_then_starter({ amount: credits(micros) })
