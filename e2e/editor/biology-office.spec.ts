@@ -1941,16 +1941,13 @@ test('closing DOCX header editing gives the document the focus back', async ({
   await expect(officeEditMenu(page, 'docx')).toBeVisible({ timeout: 30_000 });
   const box = await pageCanvas.boundingBox();
   if (!box) throw new Error('Missing page canvas');
-  // The header band near the page's top edge; try a few heights.
+  // One double click on the header band near the page's top edge opens it.
   const options = frame.getByRole('button', { name: /^Options/ });
   const openHeader = async () => {
-    for (const ratio of [0.06, 0.05, 0.08, 0.04, 0.1]) {
-      await pageCanvas.dblclick({
-        position: { x: box.width / 2, y: box.height * ratio },
-      });
-      if (await options.isVisible()) return;
-      await page.waitForTimeout(500);
-    }
+    await pageCanvas.dblclick({
+      position: { x: box.width / 2, y: box.height * 0.06 },
+    });
+    await expect(options).toBeVisible();
   };
   await openHeader();
   await options.click();
