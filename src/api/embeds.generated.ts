@@ -384,6 +384,12 @@ export const EMBED_CATALOG = {
         "children",
         "width"
       ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "series"
+      ],
       "resizable": true,
       "materials": [
         "note",
@@ -409,6 +415,12 @@ export const EMBED_CATALOG = {
         "children",
         "width"
       ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "series"
+      ],
       "resizable": true,
       "materials": [
         "note",
@@ -433,6 +445,12 @@ export const EMBED_CATALOG = {
         "block",
         "children",
         "width"
+      ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "elements"
       ],
       "resizable": true,
       "materials": [
@@ -630,7 +648,7 @@ export const EMBED_CATALOG = {
   "embeds": [
     {
       "kind": "chart",
-      "class": "value",
+      "class": "live_map",
       "element": "chart",
       "fence": {
         "lang": "chart",
@@ -743,7 +761,7 @@ export const EMBED_CATALOG = {
     },
     {
       "kind": "plot",
-      "class": "value",
+      "class": "live_map",
       "element": "plot",
       "fence": {
         "lang": "plot",
@@ -896,7 +914,7 @@ export const EMBED_CATALOG = {
     },
     {
       "kind": "graph",
-      "class": "value",
+      "class": "live_map",
       "element": "graph",
       "fence": {
         "lang": "graph",

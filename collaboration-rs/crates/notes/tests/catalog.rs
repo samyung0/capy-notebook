@@ -598,33 +598,76 @@ fn admission_checks_placement_values_and_the_embed_count() {
 
 /// The catalog's one shared-text key is the one the projection, the
 /// growth bound, admission and the seed hold as a text, and the seed makes it
-/// a text on that element alone.
+/// a text on that element alone; its shared maps (a figure's `block`) are
+/// maps on those elements alone, their lists lists of maps.
 #[test]
-fn the_shared_text_key_is_the_catalogs() {
+fn the_shared_keys_are_the_catalogs() {
     let shared: Vec<(&str, &[&str])> = catalog::ELEMENTS
         .iter()
         .filter(|element| !element.shared_text.is_empty())
         .map(|element| (element.name, element.shared_text))
         .collect();
-    assert_eq!(
-        shared,
-        [(plate::SHARED_TEXT_ELEMENT, &[plate::SHARED_TEXT_KEY][..])]
-    );
+    assert_eq!(shared, [("mermaid", &["source"][..])]);
+    assert!(plate::holds_text("mermaid", "source") && !plate::holds_text("p", "source"));
     let value = [
-        json!({ "type": plate::SHARED_TEXT_ELEMENT, "id": "m", "source": "flowchart LR", "children": [
+        json!({ "type": "mermaid", "id": "m", "source": "flowchart LR", "children": [
             { "type": "mermaid_caption", "children": [{ "text": "" }] },
         ] }),
         json!({ "type": "p", "id": "p", "source": "plain", "children": [{ "text": "x" }] }),
     ];
     let doc = room(&value);
     let txn = doc.transact();
-    let text = |index: usize| {
-        element_at(&txn, &[index])
-            .entry_item(plate::SHARED_TEXT_KEY)
-            .is_some_and(|item| matches!(item.content(), ItemContent::Type(branch) if matches!(branch.type_ref(), TypeRef::Text)))
+    let held = |index: usize, key: &str, kind: TypeRef| {
+        element_at(&txn, &[index]).entry_item(key).is_some_and(
+            |item| matches!(item.content(), ItemContent::Type(branch) if *branch.type_ref() == kind),
+        )
     };
-    assert!(text(0) && !text(1));
+    assert!(held(0, "source", TypeRef::Text) && !held(1, "source", TypeRef::Text));
     assert_eq!(plate::value(&txn).unwrap(), value);
+    drop(txn);
+
+    let docs = documents();
+    let figures: Vec<&catalog::Element> = catalog::ELEMENTS
+        .iter()
+        .filter(|element| !element.shared_map.is_empty())
+        .collect();
+    assert_eq!(
+        figures
+            .iter()
+            .map(|element| element.name)
+            .collect::<Vec<_>>(),
+        ["chart", "plot", "graph"]
+    );
+    for element in &figures {
+        assert_eq!(element.shared_map, ["block"]);
+        let node = docs["note"]
+            .iter()
+            .find(|node| node["type"] == element.name)
+            .unwrap();
+        let mut paragraph = node.clone();
+        paragraph["type"] = json!("p");
+        let value = [node.clone(), paragraph];
+        let doc = room(&value);
+        let txn = doc.transact();
+        assert!(map_held(&txn, 0, element.shared_lists), "{}", element.name);
+        assert!(!map_held(&txn, 1, &[]), "a paragraph's block");
+        assert_eq!(plate::value(&txn).unwrap(), value);
+    }
+    fn map_held<T: ReadTxn>(txn: &T, index: usize, lists: &[&str]) -> bool {
+        let Some(item) = element_at(txn, &[index]).entry_item("block") else {
+            return false;
+        };
+        let ItemContent::Type(map) = item.content() else {
+            return false;
+        };
+        let map = BranchPtr::from(map.as_ref());
+        *map.type_ref() == TypeRef::Map
+            && lists.iter().all(|key| {
+                map.entry_item(key).is_some_and(|list| {
+                    matches!(list.content(), ItemContent::Type(list) if *list.type_ref() == TypeRef::Array)
+                })
+            })
+    }
 }
 
 /// One media list: the blocks naming their file are the catalog's elements

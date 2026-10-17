@@ -97,6 +97,11 @@ pub struct Element {
     pub forbidden: &'static [&'static str],
     /// Keys held as shared text in a room, so typing merges.
     pub shared_text: &'static [&'static str],
+    /// Keys held as a shared map in a room, each entry replaced whole.
+    pub shared_map: &'static [&'static str],
+    /// Keys of a shared map's value held as a list of maps (entries with an
+    /// ` + "`id`" + ` matched by it, others by index).
+    pub shared_lists: &'static [&'static str],
     /// Paths naming editor assets (` + "`[]`" + ` walks a list).
     pub assets: &'static [&'static str],
     pub resizable: bool,
@@ -110,7 +115,7 @@ pub struct Element {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Embed {
     pub kind: &'static str,
-    /// ` + "`value`, `live_source` or `item`" + `.
+    /// ` + "`value`, `live_source`, `live_map` or `item`" + `.
     pub class: &'static str,
     /// The node type a note holds it as (` + "`material_ref`" + ` for an item).
     pub element: &'static str,
@@ -152,13 +157,15 @@ pub const ELEMENTS: &[Element] = &[
         fields: %s,
         forbidden: %s,
         shared_text: %s,
+        shared_map: %s,
+        shared_lists: %s,
         assets: %s,
         resizable: %t,
         children: %s,
         materials: %s,
     },
 `, e.Type, rustIndex(e.Index), e.Void, e.Inline, e.TopLevel, rustStrs(e.Required), fields, rustStrs(e.Forbidden),
-			rustStrs(e.SharedText), rustStrs(e.Assets), e.Resizable, rustStrs(e.Children), rustStrs(e.Materials))
+			rustStrs(e.SharedText), rustStrs(e.SharedMap), rustStrs(e.SharedLists), rustStrs(e.Assets), e.Resizable, rustStrs(e.Children), rustStrs(e.Materials))
 	}
 	out.WriteString("];\n\npub const EMBEDS: &[Embed] = &[\n")
 	for _, e := range Embeds() {

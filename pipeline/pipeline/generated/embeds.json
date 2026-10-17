@@ -383,6 +383,12 @@
         "children",
         "width"
       ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "series"
+      ],
       "resizable": true,
       "materials": [
         "note",
@@ -408,6 +414,12 @@
         "children",
         "width"
       ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "series"
+      ],
       "resizable": true,
       "materials": [
         "note",
@@ -432,6 +444,12 @@
         "block",
         "children",
         "width"
+      ],
+      "sharedMap": [
+        "block"
+      ],
+      "sharedLists": [
+        "elements"
       ],
       "resizable": true,
       "materials": [
@@ -629,7 +647,7 @@
   "embeds": [
     {
       "kind": "chart",
-      "class": "value",
+      "class": "live_map",
       "element": "chart",
       "fence": {
         "lang": "chart",
@@ -742,7 +760,7 @@
     },
     {
       "kind": "plot",
-      "class": "value",
+      "class": "live_map",
       "element": "plot",
       "fence": {
         "lang": "plot",
@@ -895,7 +913,7 @@
     },
     {
       "kind": "graph",
-      "class": "value",
+      "class": "live_map",
       "element": "graph",
       "fence": {
         "lang": "graph",

@@ -69,10 +69,13 @@ func TestCatalogIsConsistent(t *testing.T) {
 				t.Errorf("%s names unknown material kind %s", e.Type, m)
 			}
 		}
-		for _, key := range e.SharedText {
+		for _, key := range append(append([]string{}, e.SharedText...), e.SharedMap...) {
 			if !slices.Contains(e.Required, key) {
 				t.Errorf("%s shares %s, which it does not require", e.Type, key)
 			}
+		}
+		if len(e.SharedLists) > 0 && len(e.SharedMap) == 0 {
+			t.Errorf("%s holds shared lists outside a shared map", e.Type)
 		}
 		if e.Fields != nil {
 			for _, key := range e.Required {
@@ -104,6 +107,9 @@ func TestCatalogIsConsistent(t *testing.T) {
 		if index := elements[e.Element].Index; (index == embeds.IndexFigure) != e.QuestionBlock ||
 			(index == embeds.IndexItem) != item {
 			t.Errorf("embed %s is held by %s with index rule %s", e.Kind, e.Element, index)
+		}
+		if (e.Class == embeds.ClassLiveMap) != (len(elements[e.Element].SharedMap) > 0) {
+			t.Errorf("embed %s (%s) and its element's shared map disagree", e.Kind, e.Class)
 		}
 		if item && !kinds[e.Kind].Item {
 			t.Errorf("item embed %s has no item material kind", e.Kind)

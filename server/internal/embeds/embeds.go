@@ -52,6 +52,10 @@ const (
 	ClassValue Class = "value"
 	// ClassLiveSource keeps its source in a shared text, so typing merges.
 	ClassLiveSource Class = "live_source"
+	// ClassLiveMap keeps its value in a shared map (Element.SharedMap): each
+	// field, list entry and entry field is replaced whole on its own, so edits
+	// to different ones merge and the same one takes the last writer.
+	ClassLiveMap Class = "live_map"
 	// ClassItem is a child material row with its own rooms, referenced from a
 	// note by a material_ref node.
 	ClassItem Class = "item"
@@ -109,6 +113,13 @@ type Element struct {
 	Forbidden []string `json:"forbidden,omitempty"`
 	// SharedText keys are held as shared text in a room, so typing merges.
 	SharedText []string `json:"sharedText,omitempty"`
+	// SharedMap keys are held as a shared map in a room (a Y.Map), each entry
+	// replaced whole on its own, so edits to different fields merge.
+	SharedMap []string `json:"sharedMap,omitempty"`
+	// SharedLists are the keys of a SharedMap value held as a list of maps
+	// (a Y.Array of Y.Map), each entry's fields replaced whole on their own;
+	// entries carrying an `id` are matched by it, others by index.
+	SharedLists []string `json:"sharedLists,omitempty"`
 	// Assets are the paths naming editor assets ([] walks a list); the
 	// children pass, asset pruning and clone rewrites follow them.
 	Assets []string `json:"assets,omitempty"`
@@ -215,12 +226,16 @@ func media(typ string, resizable bool) Element {
 	return e
 }
 
-// figure is a chart, plot or graph: one question block under `block`.
-func figure(typ string) Element {
+// figure is a chart, plot or graph: one question block under `block`, held
+// live in rooms with its `list` (series, graph elements) entry by entry
+// (Epo 2026-10-17).
+func figure(typ, list string) Element {
 	e := void(typ, IndexFigure)
 	e.TopLevel = true
 	e.Required = []string{"id", "block"}
 	e.Fields = []string{"type", "id", "block", "children", "width"}
+	e.SharedMap = []string{"block"}
+	e.SharedLists = []string{list}
 	e.Resizable = true
 	return e
 }
@@ -314,7 +329,7 @@ func Elements() []Element {
 		video,
 		// An upload in progress holds nothing yet.
 		void("placeholder", IndexNone),
-		figure("chart"), figure("plot"), figure("graph"),
+		figure("chart", "series"), figure("plot", "series"), figure("graph", "elements"),
 		html,
 		mermaid, plain("mermaid_caption", IndexText),
 		ref,
@@ -328,7 +343,7 @@ func Embeds() []Embed {
 	writeNote := []string{"create_material", "edit_document"}
 	return []Embed{
 		{
-			Kind: "chart", Class: ClassValue, Element: "chart",
+			Kind: "chart", Class: ClassLiveMap, Element: "chart",
 			Fence: Fence{Lang: "chart", Body: "json"}, Chat: "Chart",
 			QuestionBlock: true, QuestionMedia: true,
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
@@ -339,7 +354,7 @@ func Embeds() []Embed {
 			Schema: chartSchema(),
 		},
 		{
-			Kind: "plot", Class: ClassValue, Element: "plot",
+			Kind: "plot", Class: ClassLiveMap, Element: "plot",
 			Fence: Fence{Lang: "plot", Body: "json"}, Chat: "Plot",
 			QuestionBlock: true, QuestionMedia: true,
 			Surfaces: []string{SurfaceChat, SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},
@@ -352,7 +367,7 @@ func Embeds() []Embed {
 		},
 		{
 			// The agent writes no graph; a fence still converts (paste, export).
-			Kind: "graph", Class: ClassValue, Element: "graph",
+			Kind: "graph", Class: ClassLiveMap, Element: "graph",
 			Fence:         Fence{Lang: "graph", Body: "json"},
 			QuestionBlock: true,
 			Surfaces:      []string{SurfaceNote, SurfaceQuiz, SurfaceShare, SurfaceExport},

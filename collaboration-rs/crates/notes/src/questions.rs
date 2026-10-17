@@ -1039,6 +1039,60 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
     Ok(())
 }
 
+/// A live chart, plot or graph as its merges are read (Epo 2026-10-17): two
+/// editors' changes to one figure merge entry by entry, which can leave what
+/// neither wrote and the validators refuse. Series and graph elements past
+/// their cap keep the first ones in document order; a chart series' values
+/// are padded with empty cells (null) or cut to its labels; a graph element
+/// naming a point that is gone is skipped (only points are referenced, so one
+/// pass). A block needing none of it is left as it is; anything else stays
+/// for the validators. The browser's `repairFigureBlock` is the same.
+pub fn repair_figure(block: &mut Value) {
+    let Some(map) = block.as_object_mut() else {
+        return;
+    };
+    let (list, cap) = match map.get("type").and_then(Value::as_str) {
+        Some("chart") => ("series", QUESTION_CHART_SERIES_MAX),
+        Some("plot") => ("series", QUESTION_PLOT_SERIES_MAX),
+        Some("graph") => ("elements", QUESTION_GRAPH_ELEMENTS_MAX),
+        _ => return,
+    };
+    let labels = (map.get("type").and_then(Value::as_str) == Some("chart"))
+        .then(|| map.get("labels").and_then(Value::as_array).map(Vec::len))
+        .flatten();
+    let graph = list == "elements";
+    let Some(Value::Array(entries)) = map.get_mut(list) else {
+        return;
+    };
+    entries.truncate(cap);
+    if let Some(labels) = labels {
+        for series in entries.iter_mut() {
+            if let Some(Value::Array(values)) = series.get_mut("values") {
+                values.resize(labels, Value::Null);
+            }
+        }
+    }
+    if graph {
+        let points: HashSet<String> = entries
+            .iter()
+            .filter(|element| element.get("type").and_then(Value::as_str) == Some("point"))
+            .filter_map(|element| element.get("id").and_then(Value::as_str))
+            .map(str::to_owned)
+            .collect();
+        entries.retain(|element| {
+            let named = element
+                .get("points")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .chain(element.get("center"));
+            named
+                .filter_map(Value::as_str)
+                .all(|id| points.contains(id))
+        });
+    }
+}
+
 /// One part as the schema leaves it.
 struct Part {
     id: String,
