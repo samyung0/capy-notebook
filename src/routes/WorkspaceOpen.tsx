@@ -161,6 +161,8 @@ export default function WorkspaceOpen() {
   const [tab, setTab] = useState<PanelTab>('files');
   // One column: Files drops from the top, under the header it was opened from.
   const [filesOpen, setFilesOpen] = useState(false);
+  // The Files dropdown hangs from the header, which lives in CenterContent.
+  const filesAnchor = useRef<HTMLElement | null>(null);
   const [citationTarget, setCitationTarget] = useState<{
     fileId: string;
     regions: Region[];
@@ -311,8 +313,6 @@ export default function WorkspaceOpen() {
       onClick: rowProps.onOpenSettings,
     },
   ];
-  // The Files dropdown hangs from the header, which lives in CenterContent.
-  const filesAnchor = useRef<HTMLElement | null>(null);
   function openFiles() {
     filesAnchor.current =
       viewerBox.current?.querySelector<HTMLElement>(
