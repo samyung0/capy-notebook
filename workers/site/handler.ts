@@ -179,8 +179,9 @@ const serverTiming = (start: number, api: number) =>
 const IMAGE_POLICY_HEADER = 'Content-Security-Policy-Report-Only';
 const PAGE_POLICY_HEADER = 'Content-Security-Policy';
 
-/** An inline script. A build's templates have none (Vite bundles them); the
- * dev server's carry React's refresh preamble. */
+/** An inline script. A build's templates keep one, the classic theme script
+ * (share.html, summary.html); the dev server's also carry React's refresh
+ * preamble. */
 const INLINE_SCRIPT = /<script\b(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g;
 
 /** The script policy for a page rendered into `template`: the template's own

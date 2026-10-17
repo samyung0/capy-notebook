@@ -1165,12 +1165,16 @@ Two content security policies, both built once per SPA build by
     `/array/{VITE_POSTHOG_KEY}/config.js` on the host posthog-js loads them
     from, `src/lib/posthogHost.ts`: `https://{eu|us}-assets.i.posthog.com` for
     PostHog Cloud, the proxy itself otherwise). No `'unsafe-inline'` and no
-    `'unsafe-eval'`: the Worker adds the SHA-256 of each inline script its
-    own template holds (a build's templates hold none, Vite bundles them; the
-    dev server's carry React's refresh preamble), so markup a render writes
-    into the page never runs. The SPA's and the share pages' scripts set Zod
-    to `jitless` first (`src/lib/zodJitless.ts`), so Zod never probes
-    `new Function` (the summary and error pages' script builds no schema);
+    `'unsafe-eval'`: the Worker adds the SHA-256 of each inline script its own
+    template holds, so markup a render writes into the page never runs. A
+    build's `share.html` and `summary.html` (the error pages' template) hold
+    one, the classic theme script, kept inline so the page paints in the
+    chosen style and theme from the first frame instead of after its bundle
+    loads (Epo 2026-10-17; Vite would bundle a module script into the entry).
+    The dev server's templates also carry React's refresh preamble. The SPA's
+    and the share pages' scripts set Zod to `jitless` first
+    (`src/lib/zodJitless.ts`), so Zod never probes `new Function` (the summary
+    and error pages' script builds no schema);
   - `script-src-attr 'none'` (no event-handler attributes),
     `worker-src 'self' blob:` (clerk-js's timer worker),
     `style-src 'self' 'unsafe-inline'` (the Worker inlines the page's CSS;

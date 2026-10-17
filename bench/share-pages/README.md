@@ -37,7 +37,8 @@ It needs `UAT_TARGET_AUTHORIZED=true`, `UAT_ALLOWED_HOSTS`, `UAT_APP_URL`,
 4. Inlined CSS check (fails the run): the Worker inlines only the rules a
    page's HTML uses (`workers/site/usedCss.ts`). Each page is loaded with only
    those rules and with the full stylesheets instead, page scripts blocked,
-   in light and dark, 412 px and 1366 px wide; every element's and
+   in light and dark (the inline theme script still runs, so a dark color
+   scheme gets the dark theme), 412 px and 1366 px wide; every element's and
    pseudo-element's computed style and the full-page screenshots must match
    (`scripts/styles.ts`). When the computed styles or the screenshots
    differ, both pages are loaded twice more: the inlined page passes if it

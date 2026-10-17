@@ -16,7 +16,12 @@
     >
     <link href="/src/styles/tailwind.css" rel="stylesheet">
     <link href="/src/summary/summary.css" rel="stylesheet">
-    <script blocking="render" type="module">
+    <!-- The chosen style and theme from the first paint. Classic and
+         inline: Vite would bundle a module script into the page's entry,
+         which runs only after it loads; the site Worker allows it by hash
+         (workers/site/handler.ts). -->
+    <script>
+    'use strict';
     (() => {
       try {
         const STYLES = ['classroom', 'notion'];
