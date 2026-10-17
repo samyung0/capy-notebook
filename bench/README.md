@@ -124,6 +124,19 @@ repeats the ladder for the Rust collaboration server against Node. The
 measures the memory the server keeps after its peers leave, per glibc setting
 and with mimalloc.
 
+`bench/collaboration/scripts/update-rates.rates.ts` (`pnpm bench:rates`,
+`playwright.rates.config.ts`) measures what one connection sends while a
+person edits: the Vite dev server with MSW and the perf seed, the real note
+and Office editors, and a counter on the mock rooms, which see exactly the
+updates the room provider sends one message each. Per scenario (typing at
+15 keys a second, keys held at 33 and 66 a second, undo and redo, pastes,
+photos, a DOCX paste of 100 to 2,500 paragraphs, a replayed session) it
+reports the most updates and bytes in any 1 s, the 99th percentile of 1 s
+windows, the most in 100 ms and the largest update, into the gitignored
+`collaboration/.results/rates.jsonl`. It sized the collaboration server's
+per-connection rate limit
+([2026-10-18 report](collaboration/reports/2026-10-18-update-rates.md)).
+
 `bench/collaboration/scripts/chaos-peers.ts` (`pnpm chaos:peers`) is not a
 measurement: it joins synthetic collaborators to one live room of the Rust
 server over capy-sync 1 (Slate edits and cursors in a note, inserts in a text
