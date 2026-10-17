@@ -172,7 +172,11 @@ the `outdated` save strip, and its drafts stay for the reloaded page
 The base bytes of an opened Office or text source (View and Edit reads
 alike) are kept in the browser's Cache Storage (`capy-source-bytes`), keyed
 by the base SHA-256 the session names, so a reopen skips the download and a
-changed file (a new base) is never served stale. Bytes are hashed before
+changed file (a new base) is never served stale. The server records an
+uploaded file's SHA-256 when its upload completes
+([backend-storage-quota](../backend-storage-quota.md#reservations-and-clones)),
+so the session names it from the first open, before ingest or a save; a
+session naming none reads as a miss. Bytes are hashed before
 they are stored (a download that does not hash to the session's base is not
 kept) and again when read (bytes that no longer match are deleted and
 downloaded again). The store keeps about 200 MB, least recently opened first

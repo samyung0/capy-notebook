@@ -144,6 +144,52 @@ func TestSourceCheckpointAuthorizationAndCreditIndependence(t *testing.T) {
 	}
 }
 
+// The SHA-256 an upload's completion recorded names the first session, and
+// the first save must bind the same one: a room whose original hashes to
+// another is refused (the collaboration server checks its originals against
+// the session's SHA).
+func TestUploadedSourceSHANamesTheFirstSessionAndBindsTheFirstSave(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	owner := newBlobTestUser(t, s, "upload_sha_owner")
+	ws, err := s.CreateWorkspace(ctx, owner, WorkspaceCreate{Name: "Upload SHA", Tags: []TagRef{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upload, err := s.CreateUploadSession(ctx, NewUploadSession{
+		ID: uid("up"), WorkspaceID: ws.ID, CreatedBy: owner,
+		ObjectPath: "incoming/" + uid("blob"), FinalPath: "sources/" + uid("blob"),
+		Name: "plan.docx", Kind: "doc", ContentType: "application/octet-stream",
+		DeclaredSize: 16, ParseMode: "none", ExpiresAt: time.Now().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded := strings.Repeat("b", 64)
+	file, err := s.FinalizeUploadSession(ctx, upload.ID, "etag", recorded, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if view, err := s.ViewSourceSession(ctx, file.ID); err != nil || view.BaseSourceSHA256 != recorded {
+		t.Fatalf("view session names %q (err %v), want the recorded SHA", view.BaseSourceSHA256, err)
+	}
+	doc := sourceTestSeed(t, s, owner, file.ID)
+	if doc.BaseSourceSHA256 != recorded {
+		t.Fatalf("editing session names %q, want the recorded SHA", doc.BaseSourceSHA256)
+	}
+	save := sourceTestSave(doc, owner, "edit")
+	if save.BaseSourceSHA256 == recorded {
+		t.Fatal("the mismatch case needs another SHA")
+	}
+	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, save); !errors.Is(err, ErrInvalidCheckpoint) {
+		t.Fatalf("a first save binding another SHA: %v", err)
+	}
+	save.BaseSourceSHA256 = recorded
+	if _, err := s.SaveSourceCheckpoint(ctx, file.ID, save); err != nil {
+		t.Fatalf("a first save binding the recorded SHA: %v", err)
+	}
+}
+
 // A caller without access to a source gets not found whatever the owner's
 // account state, never the owner's locked-account error, and so does a member
 // while the owner is suspended or pending deletion (Epo 2026-10-16). The

@@ -3,9 +3,11 @@ package httpapi
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -299,7 +301,7 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 		return nil, hErr(err)
 	}
 	if session.Status == "completed" {
-		res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, "", a.parser)
+		res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, "", "", a.parser)
 		if err != nil {
 			return nil, hErr(err)
 		}
@@ -333,7 +335,14 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 			return nil, hErr(err)
 		}
 	}
-	res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, info.ETag, a.parser)
+	sha, err := storedSourceSHA256(ctx, a.blob, session.Name, session.Kind, session.FinalPath, session.DeclaredSize)
+	if errors.Is(err, errStoredSourceChanged) {
+		return nil, huma.Error409Conflict(err.Error())
+	}
+	if err != nil {
+		return nil, hErr(err)
+	}
+	res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, info.ETag, sha, a.parser)
 	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrUploadState) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -343,6 +352,34 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 	log.Printf("direct upload completed upload=%s file=%s bytes=%d etag=%s",
 		in.UploadID, res.ID, info.Size, info.ETag)
 	return &sourceFileOutput{Status: http.StatusCreated, Body: res}, nil
+}
+
+var errStoredSourceChanged = errors.New("uploaded object changed during completion")
+
+// storedSourceSHA256 hashes a completed upload's stored object once, for a file
+// with source sessions (Office and text), so every session names its SHA-256
+// from the first open (Epo 2026-10-17); a file without them is not read ("").
+// The gateway hashes the bytes itself: B2's documented PutObject verifies no
+// client-sent checksum, and the collaboration server checks every original it
+// loads against this SHA, so a hash the browser sent would be trusted unseen.
+func storedSourceSHA256(ctx context.Context, objects blob.Store, name, kind, path string, size int64) (string, error) {
+	if store.SourceEditFormat(name, kind) == "" {
+		return "", nil
+	}
+	body, err := objects.Open(ctx, path)
+	if err != nil {
+		return "", err
+	}
+	defer body.Close()
+	hash := sha256.New()
+	read, err := io.Copy(hash, io.LimitReader(body, size+1))
+	if err != nil {
+		return "", err
+	}
+	if read != size {
+		return "", errStoredSourceChanged
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
 }
 
 // promoteUploadObject treats a matching stable object as success when another

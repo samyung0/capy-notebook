@@ -140,6 +140,16 @@ func (s *Memory) ReadPrefix(_ context.Context, path string, maxBytes int64) ([]b
 	return append([]byte(nil), obj.data...), nil
 }
 
+func (s *Memory) Open(_ context.Context, path string) (io.ReadCloser, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	obj, ok := s.objects[path]
+	if !ok {
+		return nil, errors.New("blob: object not found")
+	}
+	return io.NopCloser(bytes.NewReader(obj.data)), nil
+}
+
 func (s *Memory) Promote(_ context.Context, from, to string) error {
 	if from == to {
 		return nil
@@ -346,6 +356,14 @@ func (s *Disk) ReadPrefix(_ context.Context, path string, maxBytes int64) ([]byt
 	}
 	defer f.Close()
 	return io.ReadAll(io.LimitReader(f, maxBytes))
+}
+
+func (s *Disk) Open(_ context.Context, path string) (io.ReadCloser, error) {
+	full, err := s.resolve(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.Open(full)
 }
 
 func (s *Disk) Promote(_ context.Context, from, to string) error {

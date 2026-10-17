@@ -406,8 +406,17 @@ func (a *api) internalCompleteSourceImport(w http.ResponseWriter, r *http.Reques
 			return
 		}
 	}
+	sha, err := storedSourceSHA256(r.Context(), a.blob, job.Name, job.Kind, job.FinalPath, job.DeclaredSize)
+	if errors.Is(err, errStoredSourceChanged) {
+		writeJSON(w, http.StatusConflict, map[string]string{"code": "object_size_mismatch"})
+		return
+	}
+	if err != nil {
+		a.fail(w, err)
+		return
+	}
 	file, err := a.s.FinalizeSourceImport(
-		r.Context(), job.ID, req.AttemptToken, info.ETag, a.parser,
+		r.Context(), job.ID, req.AttemptToken, info.ETag, sha, a.parser,
 	)
 	if errors.Is(err, store.ErrImportLeaseLost) {
 		writeJSON(w, http.StatusConflict, map[string]string{"code": "import_lease_lost"})

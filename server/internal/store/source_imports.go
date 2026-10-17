@@ -691,11 +691,11 @@ func (s *Store) FenceSourceImportCompletion(
 // racing a replacement attempt through finalization.
 func (s *Store) FinalizeSourceImport(
 	ctx context.Context,
-	jobID, leaseToken, sourceETag, parser string,
+	jobID, leaseToken, sourceETag, sourceSHA256, parser string,
 ) (File, error) {
 	for range 3 {
 		file, err := s.finalizeSourceImport(
-			ctx, jobID, leaseToken, sourceETag, parser,
+			ctx, jobID, leaseToken, sourceETag, sourceSHA256, parser,
 		)
 		if errors.Is(err, errImportOwnerChanged) {
 			continue
@@ -707,7 +707,7 @@ func (s *Store) FinalizeSourceImport(
 
 func (s *Store) finalizeSourceImport(
 	ctx context.Context,
-	jobID, leaseToken, sourceETag, parser string,
+	jobID, leaseToken, sourceETag, sourceSHA256, parser string,
 ) (File, error) {
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
@@ -769,7 +769,7 @@ func (s *Store) finalizeSourceImport(
 	}
 
 	file, err := s.finalizeUploadSessionTx(
-		ctx, tx, job.UploadSessionID, sourceETag, parser,
+		ctx, tx, job.UploadSessionID, sourceETag, sourceSHA256, parser,
 	)
 	if err != nil {
 		return File{}, err
