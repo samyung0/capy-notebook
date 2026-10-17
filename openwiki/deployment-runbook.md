@@ -212,7 +212,12 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    block, so its static hits stay free requests. The app Worker keeps
    `dist/assets` as well: share pages read their stylesheets through its
    `ASSETS` binding. The first deploy creates the routes with the same token
-   and zone permissions the app Worker's routes use.
+   and zone permissions the app Worker's routes use. On that first deploy
+   the assets Worker has no earlier version, so the automatic rollback fails
+   ("Could not find stable Worker Version to rollback to"): if the app Worker
+   step failed there, rerun the site job, or remove the assets Worker's
+   routes so the app Worker, still on the old release, serves `/assets/*`
+   again.
    The Office viewer/editor needs its own cookie-less hostname in production,
    such as `office.capynotebook.com`. Serve only the built
    `office-runtime.html` and its `/assets/*` there (404 other routes), set
