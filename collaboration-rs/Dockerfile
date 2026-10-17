@@ -41,7 +41,9 @@ COPY --from=markdown /workspace/collaboration-rs/crates/notes/markdown/markdown.
 ENV COLLABORATION_MARKDOWN_BUNDLE=/usr/local/share/capy/markdown.bundle.js
 # The source rooms' disk store: a named volume mounted here takes this
 # folder's owner (the service user) and mode when Docker creates it.
-RUN mkdir -p /var/lib/capy/sources     && chown nobody:nogroup /var/lib/capy/sources     && chmod 0700 /var/lib/capy/sources
+RUN mkdir -p /var/lib/capy/sources \
+    && chown nobody:nogroup /var/lib/capy/sources \
+    && chmod 0700 /var/lib/capy/sources
 ENV COLLABORATION_SOURCE_DISK_DIR=/var/lib/capy/sources
 USER nobody
 EXPOSE 1234
