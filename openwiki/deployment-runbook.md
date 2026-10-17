@@ -187,9 +187,12 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    Worker served `/assets/*`, and which a year-long header would have pinned.
    The deploy stages `dist/assets` and `dist/_headers` and publishes this
    Worker right before the app Worker, so a new `index.html` never names a
-   chunk the edge cannot serve; in the minute between the two, a page still
-   on the old `index.html` gets 404 for old chunks it has not loaded and
-   shows the reload message. `scripts/deploy/verify-release.sh` checks the
+   chunk the edge cannot serve. In the minute between the two, a fresh load
+   gets the old `index.html`, whose entry chunk 404s: `index.html`'s own boot
+   script then replaces the loading spinner with the reload message
+   ([error-handling](frontend/error-handling.md#boundary-tiers)), and an open
+   tab that lazy-loads an old chunk shows the app's. A reload once the app
+   Worker is live loads the new release. `scripts/deploy/verify-release.sh` checks the
    404 `no-store` after every deploy. The assets Worker has no Workers Cache
    block, so its static hits stay free requests. The app Worker keeps
    `dist/assets` as well: share pages read their stylesheets through its

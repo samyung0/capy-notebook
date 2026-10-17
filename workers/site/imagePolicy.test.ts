@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -19,6 +20,7 @@ const DEPLOYED = {
 };
 
 const SPACES = /\s+/;
+const SCRIPT_SRC = /script-src [^;]*/;
 const directives = (policy: string) =>
   Object.fromEntries(
     policy.split(';').map((directive) => {
@@ -89,6 +91,13 @@ describe('image-source policy', () => {
   it('adds the policies to the built _headers and to the share renderer', () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'image-policy-'));
     writeFileSync(path.join(outDir, '_headers'), '/icons/*\n  X-Kept: yes\n');
+    // A build keeps index.html's classic inline script (the boot-failure
+    // message); Vite bundles its module scripts.
+    const boot = 'addEventListener("error", () => {}, true);';
+    writeFileSync(
+      path.join(outDir, 'index.html'),
+      `<head><script>${boot}</script><script type="module" crossorigin src="/assets/main.js"></script></head>`
+    );
     const plugin = policyHeaders(DEPLOYED);
     const config = plugin.config as () => { define: Record<string, string> };
     expect(config().define).toEqual({
@@ -104,8 +113,14 @@ describe('image-source policy', () => {
     (plugin.writeBundle as () => void)();
     const headers = readFileSync(path.join(outDir, '_headers'), 'utf8');
     expect(headers).toContain('/icons/*\n  X-Kept: yes\n');
+    const hash = createHash('sha256').update(boot).digest('base64');
+    const policy = appPolicy(DEPLOYED);
+    const scripts = SCRIPT_SRC.exec(policy)?.[0];
     expect(headers).toContain(
-      `/*\n  Content-Security-Policy-Report-Only: ${appPolicy(DEPLOYED)}\n`
+      `/*\n  Content-Security-Policy-Report-Only: ${policy.replace(
+        `${scripts};`,
+        `${scripts} 'sha256-${hash}';`
+      )}\n`
     );
   });
 });

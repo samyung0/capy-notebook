@@ -43,6 +43,75 @@
       }
     })();
     </script>
+    <!-- A failed load of the entry script or a script chunk it needs while the
+         boot loader still shows (a fresh load during a deploy, whose old page
+         names files the new release removed) replaces the loader with the
+         app's reload message (messages/ error_chunk_title, error_chunk_body,
+         error_action_reload), in the app's locale (localStorage, then the
+         browser's languages). Classic and inline, so it runs before the entry
+         and stays out of the bundle; the SPA's script policy allows it by
+         hash (vite-image-policy.ts). -->
+    <script>
+    'use strict';
+    addEventListener(
+      'error',
+      (event) => {
+        const failed = event.target;
+        const url =
+          failed instanceof HTMLScriptElement && failed.type === 'module'
+            ? failed.src
+            : failed instanceof HTMLLinkElement &&
+                failed.rel === 'modulepreload'
+              ? failed.href
+              : '';
+        const loader = document.querySelector(
+          '#root > .boot-loader[role="status"]'
+        );
+        if (!(url && loader && new URL(url).origin === location.origin)) {
+          return;
+        }
+        let locale = '';
+        try {
+          locale = localStorage.getItem('PARAGLIDE_LOCALE') || '';
+        } catch {
+          // ignore
+        }
+        if (locale !== 'en' && locale !== 'zh') {
+          locale =
+            (navigator.languages || [])
+              .map((tag) => tag.split('-')[0].toLowerCase())
+              .find((tag) => tag === 'en' || tag === 'zh') || 'en';
+        }
+        const [title, body, action] =
+          locale === 'zh'
+            ? [
+                '有可用更新',
+                '请重新加载页面以使用最新版本的 Capy Notebook。',
+                '重新加载',
+              ]
+            : [
+                'An update is ready',
+                'Reload the page to use the latest version of Capy Notebook.',
+                'Reload',
+              ];
+        const message = document.createElement('div');
+        const heading = document.createElement('h1');
+        const text = document.createElement('p');
+        const button = document.createElement('button');
+        heading.textContent = title;
+        text.textContent = body;
+        button.textContent = action;
+        button.type = 'button';
+        button.addEventListener('click', () => location.reload());
+        message.append(heading, text, button);
+        loader.lang = locale;
+        loader.setAttribute('role', 'alert');
+        loader.removeAttribute('aria-label');
+        loader.replaceChildren(message);
+      },
+      true
+    );
+    </script>
     <!-- Boot loader until React replaces #root: the Spinner's leapfrog
          (src/components/ui/feedback.css) at LoadingLarge's 28px, on the page
          colours of the style and theme set above. Own class names, because
@@ -102,6 +171,38 @@
     }
     .boot-loader i:nth-child(3) {
       animation-delay: calc(2.5s / -3);
+    }
+    /* The reload message the script above writes over the spinner. */
+    .boot-loader > div {
+      display: grid;
+      gap: 6px;
+      justify-items: center;
+      max-width: 42rem;
+      padding: 0 24px;
+      font:
+        500 16px / 1.5 system-ui,
+        sans-serif;
+      text-align: center;
+    }
+    .boot-loader h1 {
+      margin: 0;
+      font-size: 24px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+    .boot-loader p {
+      margin: 0;
+    }
+    .boot-loader button {
+      padding: 6px 14px;
+      margin-top: 26px;
+      font: inherit;
+      font-weight: 700;
+      color: inherit;
+      cursor: pointer;
+      background: none;
+      border: 1px solid;
+      border-radius: 8px;
     }
     @keyframes boot-leap {
       0% {
