@@ -993,6 +993,26 @@ describe('recording a source session', () => {
     ).toBe('one two three four five');
   });
 
+  it('stores the base beside a refused state once its download lands', async () => {
+    const key = 'u_1:file:base-downloading';
+    let land!: (bytes: Uint8Array) => void;
+    const bytes = new Promise<Uint8Array>((resolve) => {
+      land = resolve;
+    });
+    // The room opens while the base downloads (useSourceSession).
+    const { doc, recorder } = sourceRecorder(key, 'one', {
+      base: { bytes, sha: 'sha-late' },
+    });
+    doc.getText('source').insert(3, ' two');
+    const refused = recorder.refuse();
+    expect(await readDraftBase(key, 'sha-late')).toBeUndefined();
+    land(new Uint8Array([8]));
+    await vi.waitFor(async () =>
+      expect(await readDraftBase(key, 'sha-late')).toEqual(new Uint8Array([8]))
+    );
+    expect((await readDrafts(key)).map((row) => row.id)).toEqual([refused.id]);
+  });
+
   it('bounds a source by what is unsaved, not by everything typed since it opened', async () => {
     const key = 'u_1:file:saved-bound';
     const onLimit = vi.fn();

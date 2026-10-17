@@ -268,6 +268,8 @@ export function useSourceSession(
     let recoveryDrafts: Pick<EditDraft, 'id' | 'key' | 'seq'>[] | null = null;
     let recorder: DraftRecorder | null = null;
     let cancelled = false;
+    // The effect ended (unmount, another file or session generation).
+    let disposed = false;
     const controller = new AbortController();
     let provider: SourceProvider | null = null;
     let doc: Y.Doc | null = null;
@@ -348,7 +350,7 @@ export function useSourceSession(
         bestEffort(() => readDrafts(draftKey)),
       ]);
       if (cancelled) return;
-      const { session } = open;
+      const { base, session } = open;
       const credentials = open.credentials!;
       if (
         session.epoch !== credentials.epoch ||
@@ -357,8 +359,6 @@ export function useSourceSession(
         controller.abort();
         throw new SourceSessionError(m.source_edit_session_changed());
       }
-      const bytes = await open.base;
-      if (cancelled) return;
       const docOptions = sourceDocOptions(session.format);
       const shared = new Y.Doc(docOptions);
       doc = shared;
@@ -378,6 +378,8 @@ export function useSourceSession(
         : null;
       if (cancelled) return;
       if (draft && opened && typeof opened === 'object') {
+        // Recovery shows the edits over their own base.
+        controller.abort();
         reportRecoveryGroup(found, report);
         recoveryDrafts = found;
         shared.destroy();
@@ -405,6 +407,20 @@ export function useSourceSession(
       // read stays for the next open.
       if (opened === 'dropped') toastDraftsLost();
       recoveryDrafts = null;
+      // The room opens while the base downloads; the view gets the document
+      // with its base (`show`), however the room answers first.
+      let shown = false;
+      const show = async () => {
+        shown = true;
+        let bytes: Uint8Array;
+        try {
+          bytes = await base;
+        } catch {
+          // A failed base ends the session (`baseRead`).
+          return;
+        }
+        if (!disposed && shown) setLoaded({ bytes, doc: shared, session });
+      };
       // One update for all of them: a long session leaves a row per edit.
       applyDrafts(shared, restoredDrafts, RESTORE_ORIGIN);
       if (restoredDrafts.length) setDirty(true);
@@ -526,7 +542,7 @@ export function useSourceSession(
         recoveryDrafts = refused ? [refused] : [];
         rejectWaiters(new SourceSessionError(m.source_edit_recovery()));
         active.recovery = true;
-        setLoaded({ bytes, doc: shared, session });
+        void show();
         setStatus('recovery');
         setBanner('refused');
         setSynced(false);
@@ -547,7 +563,7 @@ export function useSourceSession(
         // Stored on this device for the reloaded page: leaving loses nothing,
         // so Reload asks nothing.
         if (storageOk) setDirty(false);
-        setLoaded({ bytes, doc: shared, session });
+        void show();
         setHandoff(false);
         setStatus('error');
         setBanner(storageOk ? 'outdated' : 'outdated-unstored');
@@ -587,6 +603,7 @@ export function useSourceSession(
           setError(null);
           void recorder?.discard();
           setBanner(null);
+          shown = false;
           setLoaded(null);
           setHandoff(false);
           setReadOnly(true);
@@ -623,7 +640,7 @@ export function useSourceSession(
                 .map((row) => row.id)
             )
           );
-          setLoaded({ bytes, doc: shared, session });
+          void show();
           setStatus('recovery');
           setBanner('changed');
           setSynced(false);
@@ -850,7 +867,7 @@ export function useSourceSession(
             // edits (restored drafts are edit 1) wait for the room's receipt.
             setStatus(everSynced || active.sequence > 0 ? 'saving' : 'saved');
             everSynced = true;
-            setLoaded({ bytes, doc: shared, session });
+            void show();
             setSynced(true);
             checkpoint(true);
           }
@@ -893,13 +910,25 @@ export function useSourceSession(
       active.provider = provider;
       runtime.current = active;
       disposeReconnect = reconnect.dispose;
+      // A base that cannot be read ends the session as its read did before.
+      const baseRead = async () => {
+        try {
+          await base;
+        } catch (value) {
+          if (controller.signal.aborted) return;
+          fail(value);
+          cancelled = true;
+          provider?.disconnect();
+        }
+      };
+      void baseRead();
       // Unsaved work is written as it happens (each local update, the whole
       // state once per offline episode and at unmount) and deleted by the
       // receipts that cover it. Storage that fails never blocks editing;
       // offline, the banner says the device holds nothing.
       recorder = recordDrafts({
         adopted: restoredDrafts,
-        base: { bytes, sha: session.baseSourceSHA256 },
+        base: { bytes: base, sha: session.baseSourceSHA256 },
         doc: shared,
         ignore: (origin) => origin === provider || origin === RESTORE_ORIGIN,
         key: draftKey,
@@ -934,6 +963,7 @@ export function useSourceSession(
     })().catch(fail);
     return () => {
       cancelled = true;
+      disposed = true;
       controller.abort();
       clearTimeout(timer);
       delay.dispose();
