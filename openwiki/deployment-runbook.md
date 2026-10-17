@@ -572,8 +572,9 @@ The prod file runs `/migrate` once per deploy, starts the API with
    `collaboration-rs/Dockerfile`) on the named volume
    `capy_collaboration_sources` (`docker-compose.prod.yml`): disk-backed, never
    tmpfs. Docker creates the volume with the image folder's owner (the
-   service user `nobody`) and mode 0700, and the server wipes the files it
-   wrote there at every start. One collaboration process per environment uses
+   service user `nobody`) and mode 0700. The server deletes the files it wrote
+   there when it stops gracefully, once the rooms stored (a crash leaves them),
+   and wipes them at every start. One collaboration process per environment uses
    it. The image sets the folder because the path is the image's layout, the
    same in every environment; the cap has no default, and the server refuses
    to start without it. The cap is `COLLABORATION_SOURCE_DISK_BYTES`, rendered

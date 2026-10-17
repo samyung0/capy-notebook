@@ -365,6 +365,11 @@ impl Sources {
         self.disk.held().await
     }
 
+    /// Deletes the disk store's files at a graceful stop.
+    pub async fn clear_disk(&self) -> std::io::Result<()> {
+        self.disk.clear().await
+    }
+
     /// A file from the job's copies, else the disk store (see [`Reader`]).
     async fn kept(&self, key: &Key, reader: Reader<'_>) -> Option<(Vec<u8>, String)> {
         let Reader::Job(job) = reader else {

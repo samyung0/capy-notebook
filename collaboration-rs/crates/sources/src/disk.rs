@@ -8,10 +8,10 @@
 //! loaded rooms write files, and the folder never holds more than its cap:
 //! idle files go first (oldest first), and a write is refused only when the
 //! files loaded rooms hold leave no room. The folder is wiped when the store
-//! opens (server start).
+//! opens (server start) and cleared at a graceful stop.
 
 use std::collections::{BTreeSet, HashMap};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -139,6 +139,21 @@ impl Index {
     }
 }
 
+/// Deletes the files in `dir` with a name this store writes (anything else
+/// stays).
+fn wipe(dir: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_name().to_str().is_some_and(Key::ours) {
+            match std::fs::remove_file(entry.path()) {
+                Err(error) if error.kind() != std::io::ErrorKind::NotFound => return Err(error),
+                _ => {}
+            }
+        }
+    }
+    Ok(())
+}
+
 fn held(entries: &HashMap<Key, Entry>) -> u64 {
     entries
         .values()
@@ -206,12 +221,7 @@ impl DiskStore {
             use std::os::unix::fs::PermissionsExt;
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
         }
-        for entry in std::fs::read_dir(&dir)? {
-            let entry = entry?;
-            if entry.file_name().to_str().is_some_and(Key::ours) {
-                std::fs::remove_file(entry.path())?;
-            }
-        }
+        wipe(&dir)?;
         Ok(DiskStore {
             dir,
             cap,
@@ -414,6 +424,19 @@ impl DiskStore {
             disk: self.clone(),
             generation,
         }
+    }
+
+    /// A graceful stop (Epo 2026-10-17): forgets every file and deletes the
+    /// names this store writes, as the start wipe does. A crash leaves them
+    /// for the next start; a write finishing after this deletes its own.
+    pub async fn clear(&self) -> std::io::Result<()> {
+        let mut index = self.index.lock().await;
+        index.entries.clear();
+        index.used = 0;
+        let dir = self.dir.clone();
+        tokio::task::spawn_blocking(move || wipe(&dir))
+            .await
+            .map_err(std::io::Error::other)?
     }
 
     #[cfg(test)]
