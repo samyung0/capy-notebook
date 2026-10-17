@@ -73,11 +73,13 @@ impl Key {
         &self.0
     }
 
-    /// Whether a file in the folder has a name this store writes: the start
+    /// Whether a file in the folder has a name this store writes (a key's,
+    /// or a write's temporary `tmp-<serial>`, which no key can be): the start
     /// wipe deletes those and leaves anything else alone.
     fn ours(name: &str) -> bool {
         let parts: Vec<&str> = name.split('-').collect();
         match parts.as_slice() {
+            ["tmp", serial] => !serial.is_empty() && serial.bytes().all(|b| b.is_ascii_digit()),
             ["base", sha] => sha_hex(sha),
             ["seed", format, sha] => FORMATS.contains(format) && sha_hex(sha),
             ["baseline", format, sha] => FORMATS.contains(format) && sha_hex(sha),
@@ -89,12 +91,15 @@ impl Key {
     }
 }
 
-/// A file on disk.
+/// A file on disk, or being written.
 struct File {
     bytes: u64,
     sha256: String,
     /// Which write made it, so a failed read deletes only the file it read.
     serial: u64,
+    /// Renamed into place. Until then reads miss, and its bytes count as
+    /// used (and held) so concurrent writes stay within the cap.
+    ready: bool,
 }
 
 #[derive(Default)]
@@ -173,7 +178,7 @@ impl DiskStore {
                 }
                 None => index.entries.get_mut(key)?,
             };
-            let file = entry.file.as_ref()?;
+            let file = entry.file.as_ref().filter(|file| file.ready)?;
             (file.sha256.clone(), file.serial)
         };
         let path = self.path(key);
@@ -242,7 +247,11 @@ impl DiskStore {
 
     /// Writes a loaded room's file, which it then holds. Idle files go first
     /// (oldest first) to make room; refused when the files loaded rooms hold
-    /// leave none. A file another room wrote meanwhile is kept as it is.
+    /// leave none. A file another room wrote, or is writing, is kept as it
+    /// is. The bytes go to a temporary file outside the lock (reads and other
+    /// writes go on meanwhile) and are renamed into place under it. No fsync:
+    /// the index is in memory and the start wipe deletes every file, so a
+    /// crash leaves nothing on disk to trust.
     pub async fn put(
         &self,
         key: &Key,
@@ -250,50 +259,82 @@ impl DiskStore {
         sha256: &str,
         holder: u64,
     ) -> Result<(), PutError> {
+        let serial = {
+            let mut index = self.index.lock().await;
+            let Index {
+                entries,
+                used,
+                serial,
+            } = &mut *index;
+            let entry = entries.entry(key.clone()).or_default();
+            entry.holders.insert(holder);
+            entry.idle_since = None;
+            if entry.file.is_some() {
+                return Ok(());
+            }
+            let need = bytes.len() as u64;
+            self.fits(entries, need)?;
+            let mut idle: Vec<(Instant, Key)> = entries
+                .iter()
+                .filter(|(_, entry)| entry.holders.is_empty() && entry.file.is_some())
+                .filter_map(|(key, entry)| Some((entry.idle_since?, key.clone())))
+                .collect();
+            idle.sort();
+            for (_, victim) in idle {
+                if *used + need <= self.cap {
+                    break;
+                }
+                if let Some(file) = entries.remove(&victim).and_then(|entry| entry.file) {
+                    *used -= file.bytes;
+                    self.remove(&victim).await;
+                }
+            }
+            *serial += 1;
+            *used += need;
+            if let Some(entry) = entries.get_mut(key) {
+                entry.file = Some(File {
+                    bytes: need,
+                    sha256: sha256.to_owned(),
+                    serial: *serial,
+                    ready: false,
+                });
+            }
+            *serial
+        };
+        let temp = self.dir.join(format!("tmp-{serial}"));
+        let written = tokio::fs::write(&temp, bytes).await;
         let mut index = self.index.lock().await;
-        let Index {
-            entries,
-            used,
-            serial,
-        } = &mut *index;
-        let entry = entries.entry(key.clone()).or_default();
-        entry.holders.insert(holder);
-        entry.idle_since = None;
-        if entry.file.is_some() {
+        let Index { entries, used, .. } = &mut *index;
+        // Its rooms let go meanwhile and a sweep or an eviction took it.
+        let Some(entry) = entries.get_mut(key).filter(|entry| {
+            entry
+                .file
+                .as_ref()
+                .is_some_and(|file| file.serial == serial)
+        }) else {
+            let _ = tokio::fs::remove_file(&temp).await;
             return Ok(());
+        };
+        let error = match written {
+            Ok(()) => match tokio::fs::rename(&temp, self.path(key)).await {
+                Ok(()) => {
+                    if let Some(file) = entry.file.as_mut() {
+                        file.ready = true;
+                    }
+                    return Ok(());
+                }
+                Err(error) => error,
+            },
+            Err(error) => error,
+        };
+        if let Some(file) = entry.file.take() {
+            *used -= file.bytes;
         }
-        let need = bytes.len() as u64;
-        self.fits(entries, need)?;
-        let mut idle: Vec<(Instant, Key)> = entries
-            .iter()
-            .filter(|(_, entry)| entry.holders.is_empty() && entry.file.is_some())
-            .filter_map(|(key, entry)| Some((entry.idle_since?, key.clone())))
-            .collect();
-        idle.sort();
-        for (_, victim) in idle {
-            if *used + need <= self.cap {
-                break;
-            }
-            if let Some(file) = entries.remove(&victim).and_then(|entry| entry.file) {
-                *used -= file.bytes;
-                self.remove(&victim).await;
-            }
+        if entry.holders.is_empty() {
+            entries.remove(key);
         }
-        let path = self.path(key);
-        if let Err(error) = tokio::fs::write(&path, bytes).await {
-            let _ = tokio::fs::remove_file(&path).await;
-            return Err(error.into());
-        }
-        *serial += 1;
-        if let Some(entry) = entries.get_mut(key) {
-            entry.file = Some(File {
-                bytes: need,
-                sha256: sha256.to_owned(),
-                serial: *serial,
-            });
-        }
-        *used += need;
-        Ok(())
+        let _ = tokio::fs::remove_file(&temp).await;
+        Err(error.into())
     }
 
     /// A loaded room unloaded (or its load failed): the files only it held
@@ -453,12 +494,15 @@ pub(crate) mod tests {
                 .unwrap()
                 .file_name()
                 .to_owned(),
+            // A write a crash cut short.
+            "tmp-7".to_owned(),
         ];
-        for name in ours.iter().map(String::as_str).chain(["notes.txt"]) {
+        let theirs = ["notes.txt", "tmp-", "tmp-notes"];
+        for name in ours.iter().map(String::as_str).chain(theirs) {
             std::fs::write(folder.0.join(name), b"left over").unwrap();
         }
         DiskStore::open(folder.0.clone(), 100).unwrap();
-        assert_eq!(folder.files(), ["notes.txt"]);
+        assert_eq!(folder.files(), theirs);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -548,6 +592,53 @@ pub(crate) mod tests {
         let mut expected = vec![held.file_name(), d.file_name(), e.file_name()];
         expected.sort();
         assert_eq!(folder.files(), expected);
+    }
+
+    #[tokio::test]
+    async fn a_write_that_fails_gives_its_room_back_and_leaves_no_file() {
+        let folder = Folder::new("unwritten");
+        let store = DiskStore::open(folder.0.clone(), 10).unwrap();
+        std::fs::remove_dir_all(&folder.0).unwrap();
+        let refused = store
+            .put(
+                &base('a'),
+                &[1; 10],
+                &office_service::sha256_hex([1; 10]),
+                1,
+            )
+            .await;
+        assert!(matches!(refused, Err(PutError::Io(_))), "{refused:?}");
+        std::fs::create_dir_all(&folder.0).unwrap();
+        put(&store, &base('b'), &[2; 10], 2).await;
+        assert_eq!(folder.files(), [base('b').file_name()]);
+    }
+
+    // The write runs outside the index lock: a read is served while another
+    // file's write waits on the disk (a FIFO where the file goes, which the
+    // write's rename replaces; a write in place would wait for a reader).
+    #[cfg(unix)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_read_is_served_while_another_file_is_written() {
+        let folder = Folder::new("unlocked");
+        let store = std::sync::Arc::new(DiskStore::open(folder.0.clone(), 100).unwrap());
+        let (served, written) = (base('a'), base('b'));
+        put(&store, &served, b"served", 1).await;
+        let fifo = folder.0.join(written.file_name());
+        let made = std::process::Command::new("mkfifo").arg(&fifo).status();
+        assert!(made.unwrap().success());
+        let writing = {
+            let (store, written) = (store.clone(), written.clone());
+            tokio::spawn(async move { put(&store, &written, b"written", 2).await })
+        };
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let read = tokio::time::timeout(Duration::from_secs(5), store.get(&served, None)).await;
+        if read.is_err() {
+            // Let a write stuck on the FIFO finish before failing.
+            let _ = tokio::task::spawn_blocking(move || std::fs::read(fifo)).await;
+        }
+        assert_eq!(read.expect("served").unwrap().0, b"served");
+        writing.await.unwrap();
+        assert_eq!(store.get(&written, None).await.unwrap().0, b"written");
     }
 
     #[tokio::test]
