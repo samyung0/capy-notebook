@@ -54,7 +54,13 @@ impl Drop for Server {
     fn drop(&mut self) {
         let _ = self.child.kill();
         let _ = self.child.wait();
+        let _ = std::fs::remove_dir_all(disk_dir(self.port));
     }
+}
+
+/// A server's disk store folder, one per port (removed with the server).
+fn disk_dir(port: u16) -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("disk-{port}"))
 }
 
 async fn start(env: &Env) -> Server {
@@ -92,10 +98,7 @@ async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) 
         .env("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1")
         .env("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "3221225472")
         // A disk store per server (it wipes its folder at start), UAT's cap.
-        .env(
-            "COLLABORATION_SOURCE_DISK_DIR",
-            std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("disk-{port}")),
-        )
+        .env("COLLABORATION_SOURCE_DISK_DIR", disk_dir(port))
         .env("COLLABORATION_SOURCE_DISK_BYTES", "5368709120")
         .envs(extra.iter().copied())
         .stdout(if std::env::var_os("CAPY_IT_LOGS").is_some() {
