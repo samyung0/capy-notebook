@@ -182,12 +182,19 @@ services:
       MALLOC_ARENA_MAX: "2"
       MALLOC_TRIM_THRESHOLD_: "131072"
       MALLOC_MMAP_THRESHOLD_: "131072"
+      # The source rooms' disk store cap per environment (scripts/env/config.py
+      # render, Epo 2026-10-17); its folder is the image's, on the volume below.
+      COLLABORATION_SOURCE_DISK_BYTES: ${COLLABORATION_SOURCE_DISK_BYTES:?set COLLABORATION_SOURCE_DISK_BYTES}
       SENTRY_DSN: ${SENTRY_DSN_COLLABORATION:-}
       # Copied bank questions link their figures here (questions.ts).
       BANK_ASSETS_URL: ${BANK_ASSETS_URL:-}
       # UAT only (the renderer refuses it in production): holds a publication
       # while its file's name contains [hold-publication], for the journey.
       COLLABORATION_UAT_PUBLICATION_HOLD: ${COLLABORATION_UAT_PUBLICATION_HOLD:-}
+    # Disk-backed, never tmpfs; created with the image folder's owner (the
+    # service user) and mode 0700; the server wipes it at start.
+    volumes:
+      - capy_collaboration_sources:/var/lib/capy/sources
     expose:
       - "1234"
     # Every client socket, gateway call and database connection is a
@@ -305,3 +312,4 @@ services:
 
 volumes:
   capy_pgdata:
+  capy_collaboration_sources:
