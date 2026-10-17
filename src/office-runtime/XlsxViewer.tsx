@@ -32,6 +32,7 @@ import { runtimeEngines } from './prewarm';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
 import { type CellCitation, xlsxCitation } from './xlsxCitation';
 import { xlsxViewMenus } from './xlsxMenus';
+import { nameBoxTarget, revealedExtent } from './xlsxNameBox';
 import { sheetPages, viewportPage } from './xlsxRender';
 import './xlsx-runtime.css';
 
@@ -93,6 +94,9 @@ export function XlsxViewer({
   const [extent, setExtent] = useState({ height: 0, width: 0 });
   // The read-only formula bar: the selected cell's address and full text.
   const [formula, setFormula] = useState({ address: '', text: '' });
+  // What is typed into the name box until Enter goes there, or Escape or a
+  // blur drops it.
+  const [nameDraft, setNameDraft] = useState<string | null>(null);
   // View › Zoom (1 = 100%); the host carries it to the next frame.
   const [zoom, setZoom] = useState(initialZoom);
   const zoomRef = useRef(zoom);
@@ -316,6 +320,47 @@ export function XlsxViewer({
     }
   };
 
+  // The name box's Enter: selects the cell an address names, opening its
+  // sheet, and scrolls to it, growing the scroll area past the used range as
+  // the editor does. False when the address names no cell.
+  const goToAddress = (address: string) => {
+    const handle = handleRef.current;
+    const scroll = scrollRef.current;
+    const target = nameBoxTarget(address, sheetNames, activeSheetRef.current);
+    if (!(handle && scroll && target)) return false;
+    try {
+      handle.setActiveSheet(target.sheet);
+      const info = handle.sheetInfo();
+      activeSheetRef.current = target.sheet;
+      setActiveSheet(target.sheet);
+      select(handle, target.cell);
+      const position = handle.cellPosition(
+        target.sheet,
+        target.cell.row,
+        target.cell.col
+      );
+      const zoom = zoomRef.current;
+      setExtent(
+        revealedExtent(
+          { height: info.contentHeight, width: info.contentWidth },
+          position,
+          {
+            height: scroll.clientHeight / zoom,
+            width: scroll.clientWidth / zoom,
+          }
+        )
+      );
+      // Applied once the scroll area has grown, as a citation's cell is shown.
+      sheetScrollRef.current = {
+        x: Math.max(0, position.x - 100),
+        y: Math.max(0, position.y - 100),
+      };
+    } catch (value) {
+      onError(toError(value));
+    }
+    return true;
+  };
+
   // After the scroll area takes the new size: the anchor goes back under the
   // top-left corner, and the grid is drawn at the new zoom.
   useLayoutEffect(() => {
@@ -439,8 +484,24 @@ export function XlsxViewer({
         <input
           aria-label={m.files_office_spreadsheet_name_box()}
           className="xlsx-name-box"
-          readOnly
-          value={formula.address}
+          disabled={!loaded}
+          onBlur={() => setNameDraft(null)}
+          onChange={(event) => setNameDraft(event.target.value)}
+          onFocus={(event) => event.currentTarget.select()}
+          onKeyDown={(event) => {
+            if (event.key !== 'Enter' && event.key !== 'Escape') return;
+            event.preventDefault();
+            // Text that names no cell stays in the box, as in the editor.
+            if (
+              event.key === 'Enter' &&
+              nameDraft !== null &&
+              !goToAddress(nameDraft)
+            )
+              return;
+            setNameDraft(null);
+            event.currentTarget.blur();
+          }}
+          value={nameDraft ?? formula.address}
         />
         <span aria-hidden="true" className="xlsx-formula-mark">
           fx
