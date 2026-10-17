@@ -1284,8 +1284,13 @@ XLSX keyboard moves (arrows, Home/End, Page Up/Down, Enter and Tab commits
 from the cell, Enter from the formula bar) and opening the in-cell editor
 (typing, F2, double click) scroll the active cell fully into view, moving as
 little as possible and clear of frozen panes; Ctrl/Cmd+A keeps the view, as
-the menu's Select all does. A cell the keyboard reaches past the used range
-grows the scroll area to it. An open cell edit keeps its input mounted and
+the menu's Select all does. Arrows, Page Up/Down, Enter and Tab reach any cell
+of the sheet, as in Excel (Tab and Shift+Tab stop at the sheet's edges), while
+Ctrl/Cmd+arrow, End, Ctrl/Cmd+End and Select all stop at the used range. A cell
+the keyboard reaches past the used range grows the scroll area to it. The name
+box takes a cell address (`B7`, `$B$7`, `'Sheet 2'!B7`; a range goes to its
+first cell) and Enter selects and reveals that cell, opening the other sheet
+when it names one, in View too; text that names no cell stays in the box. An open cell edit keeps its input mounted and
 focused while its cell scrolls away, so the next key that types, composition
 included, is typed into the edit and scrolls the cell back whole, as in Excel
 and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
@@ -2139,7 +2144,7 @@ int32 above the small ids Word writes; two editor ids, or one and an id from an
 earlier publication, colliding is possible but unlikely. The engine's suggesting-mode
 paragraph property changes (unused in Capy) save, but with the editor's
 resolved values as the previous pPr rather than the paragraph's own.
-PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
+PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Keystrokes in one text box less than 500 ms apart form one undo step (the browser engine reads `Date.now`); a caret move (a click or an arrow key) or any other edit (slide, shape, image, formatting) starts a new step, and Undo/Redo end the run. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
 DOCX's accepted input queue and PPTX image decoding report pending work to the
