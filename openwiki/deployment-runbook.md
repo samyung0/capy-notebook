@@ -574,16 +574,25 @@ The prod file runs `/migrate` once per deploy, starts the API with
    tmpfs. Docker creates the volume with the image folder's owner (the
    service user `nobody`) and mode 0700, and the server wipes the files it
    wrote there at every start. One collaboration process per environment uses
-   it. The cap is `COLLABORATION_SOURCE_DISK_BYTES`, rendered by
-   `scripts/env/config.py`: production 10 GiB (10737418240), UAT 5 GiB
-   (5368709120); the local compose files use UAT's. Size the disk for the
+   it. The image sets the folder because the path is the image's layout, the
+   same in every environment; the cap has no default, and the server refuses
+   to start without it. The cap is `COLLABORATION_SOURCE_DISK_BYTES`, rendered
+   by `scripts/env/config.py`: production 10 GiB (10737418240), UAT 5 GiB
+   (5368709120); the local compose files use UAT's. Nothing is set by hand:
+   every Deploy UAT and production promotion runs `deploy-environment.yml`,
+   whose deploy job renders `coolify.json` (the cap included), applies it to
+   Coolify with `config.py apply-coolify` and reads it back before
+   `coolify-deploy.sh` starts the deploy. A deploy that skipped that sync
+   would fail on the compose file's `${COLLABORATION_SOURCE_DISK_BYTES:?}`
+   rather than run without a cap. Size the disk for the
    cap: at the decision production had 50 of 75 GB free and UAT 29 of 78 GB
    (UAT shrinks with deploy images until the weekly cleanup). When loaded
    rooms' files fill the cap, new source rooms are refused
    (`capy_collaboration_source_disk_refusals_total` on `/metrics`, a
    `source room refused: disk store full` warn line);
    `capy_collaboration_source_disk_held_bytes` shows how much of the cap the
-   open rooms hold. Raise the cap only with the free space to back it. To check the folder after a deploy:
+   open rooms hold. Raise the cap only with the free space to back it. To
+   check the folder after a deploy:
 
    ```bash
    c=$(docker ps -qf name=collaboration)
