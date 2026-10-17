@@ -57,6 +57,9 @@ pub struct Refusal {
     pub message: String,
     /// What a draft send answers with (`drafts.rs`); a socket sends `reason`.
     pub class: Class,
+    /// Counted and logged as an authentication failure: every refusal but a
+    /// full source disk store's, which its room load logs and counts.
+    authentication: bool,
 }
 
 impl Refusal {
@@ -66,6 +69,7 @@ impl Refusal {
             reason: DEFAULT_REFUSAL.into(),
             message: message.into(),
             class: Class::Unavailable,
+            authentication: true,
         }
     }
 
@@ -77,6 +81,7 @@ impl Refusal {
                 AccessError::Database(_) => Class::Unavailable,
                 _ => Class::Permission,
             },
+            authentication: true,
         }
     }
 
@@ -125,6 +130,12 @@ async fn join_room(
         match answer.await {
             Ok(Ok(())) => return Ok(handle),
             Ok(Err(error)) if error == "room unloaded" => continue,
+            Ok(Err(error)) if error == room::DISK_FULL => {
+                return Err(Refusal {
+                    authentication: false,
+                    ..Refusal::plain(error)
+                });
+            }
             Ok(Err(error)) => return Err(Refusal::plain(error)),
             Err(_) => continue,
         }
@@ -171,6 +182,7 @@ pub async fn authenticate(
                 name.family()
             ),
             class: Class::Outdated,
+            authentication: true,
         });
     }
     if app.evictions.blocks(&room, false) {
@@ -401,16 +413,18 @@ impl Connection {
     }
 
     fn refuse(&mut self, channel: u64, refusal: &Refusal) {
-        self.app
-            .stats
-            .authentication_failures
-            .fetch_add(1, Ordering::Relaxed);
-        // Expected and frequent (expired tokens, stale tabs): logged, not reported.
-        log(
-            Level::Warn,
-            "authentication rejected",
-            json!({ "error": refusal.message }),
-        );
+        if refusal.authentication {
+            self.app
+                .stats
+                .authentication_failures
+                .fetch_add(1, Ordering::Relaxed);
+            // Expected and frequent (expired tokens, stale tabs): logged, not reported.
+            log(
+                Level::Warn,
+                "authentication rejected",
+                json!({ "error": refusal.message }),
+            );
+        }
         self.send(channel, Kind::Refused, &protocol::text(&refusal.reason));
         self.forget(channel);
     }

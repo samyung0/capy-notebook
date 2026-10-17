@@ -320,8 +320,10 @@ refused because loaded rooms' files fill the disk store (its cap,
 [office-files](frontend/office-files.md)) is expected the same way:
 collaboration logs `source room refused: disk store full` at warn with the
 held and capped bytes, never captures it, and counts it in
-`capy_collaboration_source_disk_refusals_total`; Edit retries and shows
-collaboration unavailable. A steady count means the cap is too small for the
+`capy_collaboration_source_disk_refusals_total` (not in
+`capy_collaboration_authentication_failures_total`, and with no
+`authentication rejected` line); Edit retries and shows collaboration
+unavailable. A steady count means the cap is too small for the
 rooms open at once. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
