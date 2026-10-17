@@ -63,9 +63,14 @@ export function prewarmRuntime(format: OfficeFormat, mode: OfficeMode) {
   const key: RuntimeKey = `${format}:${mode}`;
   void runtimeChunks[key]().catch(() => {});
   void runtimeEngines[key]().catch(() => {});
-  // A deck's viewer and editor both take every face.
+  // An editor takes every face; a viewer the ones any deck needs, the rest
+  // once it reads the deck.
   if (format === 'pptx')
     void import('./pptxFonts')
-      .then((fonts) => fonts.loadPptxFonts())
+      .then((fonts) =>
+        mode === 'edit'
+          ? fonts.loadPptxFonts()
+          : Promise.all(fonts.pptxDeckFaces([]).map(fonts.loadPptxFace))
+      )
       .catch(() => {});
 }

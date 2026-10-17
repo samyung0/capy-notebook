@@ -30,7 +30,7 @@ import type {
 import { m } from '@/i18n';
 import { CITATION_FILL, slideCitationItems, uniqueCitation } from './citations';
 import { runtimeNotesWindow } from './notesWindow';
-import { loadPptxFonts } from './pptxFonts';
+import { loadPptxDeckFonts } from './pptxFonts';
 import { pptxIcons } from './pptxIcons';
 import { PptxImageCache } from './pptxImageCache';
 import { pptxStrings, pptxT, presentAction, viewerMenus } from './pptxMenus';
@@ -172,7 +172,10 @@ export function PptxViewer({
     setSlides(null);
     setSlideIndex(0);
     pendingAnalysisRef.current = null;
-    void Promise.all([runtimeEngines['pptx:view'](), loadPptxFonts()]).then(
+    void Promise.all([
+      runtimeEngines['pptx:view'](),
+      loadPptxDeckFonts(bytes),
+    ]).then(
       async ([, fonts]) => {
         if (disposed) return;
         try {
