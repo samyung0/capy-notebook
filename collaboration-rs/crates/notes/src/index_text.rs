@@ -331,8 +331,15 @@ fn labelled(head: &str, tail: &str) -> String {
     }
 }
 
-/// A chart, plot or graph block, its fields on lines and empty ones left out.
+/// A chart, plot or graph block, its fields on lines and empty ones left out,
+/// read as it is drawn: repaired (`questions::repair_figure`, Epo
+/// 2026-10-18), whether it comes from a room (already repaired by
+/// `plate::block_value`) or from stored content a whole-document write left
+/// as sent. Go's `figureIndexText` repairs the same way.
 fn figure(block: &Value) -> String {
+    let mut repaired = block.clone();
+    crate::questions::repair_figure(&mut repaired);
+    let block = &repaired;
     let mut lines: Vec<String> = Vec::new();
     let mut add = |prefix: &str, value: &str| {
         if !value.is_empty() {

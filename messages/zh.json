@@ -1802,6 +1802,7 @@
   "question_ui_graph_label_at": "位于 ({x}, {y})",
   "question_ui_graph_row_issue": "第 {number} 行：{message}",
   "question_ui_chart_series_over": "每个图表最多包含 {max} 个数据系列。",
+  "question_ui_plot_series_over": "每个绘图最多包含 {max} 个数据系列。",
   "question_ui_graph_size_invalid": "宽度和高度须为 {min} 到 {max} 之间的整数。",
   "question_ui_graph_bounds_invalid": "每个最小值都须小于对应的最大值。",
   "question_ui_series_name": "数据系列 {number} 名称",

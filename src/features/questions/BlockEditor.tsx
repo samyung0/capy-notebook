@@ -523,6 +523,21 @@ export function PlotEditor({
     onChange({ ...block, lines: next.length ? next : undefined });
   const setMarks = (next: NonNullable<PlotBlock['marks']>) =>
     onChange({ ...block, marks: next.length ? next : undefined });
+  // What a merge of two editors' changes can leave (Epo 2026-10-18): series
+  // past the cap, a line's series of one point. Readers skip them.
+  const line = block.kind !== 'scatter';
+  const seriesIssues = (series: PlotBlock['series'][number], index: number) => [
+    ...(index >= limits.QUESTION_PLOT_SERIES_MAX
+      ? [
+          m.question_ui_plot_series_over({
+            max: limits.QUESTION_PLOT_SERIES_MAX,
+          }),
+        ]
+      : []),
+    ...(line && series.points.length < 2
+      ? [m.question_issue_plot_points()]
+      : []),
+  ];
   const drawable = [
     ...block.series.flatMap((series) => series.points.flat()),
     ...lines.map((line) => line.value),
@@ -615,6 +630,7 @@ export function PlotEditor({
                           className="border border-divider bg-surface-hover-bg"
                           colSpan={2}
                         >
+                          <IssueIcon messages={seriesIssues(series, index)} />
                           <CellInput
                             aria-label={m.question_ui_series_name({
                               number: index + 1,

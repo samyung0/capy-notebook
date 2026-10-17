@@ -1059,10 +1059,11 @@ func TestDiagramAndMindmapAreNotNodeTypes(t *testing.T) {
 }
 
 // TestLiveFiguresReadButAreNotWritten: what a merge of two editors' changes
-// leaves in a live figure and the repair keeps (Epo 2026-10-18), a chart or
-// plot without series and a pie without a positive total, is read in a
-// stored note and taken in a room's projection, while every write from
-// outside a room (ValidateKind, ParseWrite, a question block) refuses it.
+// leaves in a live figure (Epo 2026-10-18), a chart or plot without series,
+// a pie with no positive total, a negative value or a second series, a line
+// of one point, is read in a stored note, taken in a room's projection and in
+// a whole-document note write (ValidateKind), while an agent's blocks
+// (ParseWrite), another kind's document and a question block refuse it.
 func TestLiveFiguresReadButAreNotWritten(t *testing.T) {
 	figure := func(block map[string]any) string {
 		raw, err := json.Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{
@@ -1073,14 +1074,20 @@ func TestLiveFiguresReadButAreNotWritten(t *testing.T) {
 		}
 		return string(raw)
 	}
-	chart := func(kind string, series []any) map[string]any {
-		return map[string]any{"type": "chart", "kind": kind, "title": "T", "labels": []any{"a", "b"}, "series": series}
+	chart := func(kind string, series ...any) map[string]any {
+		return map[string]any{"type": "chart", "kind": kind, "title": "T", "labels": []any{"a", "b"}, "series": append([]any{}, series...)}
+	}
+	values := func(v ...any) map[string]any { return map[string]any{"name": "S", "values": v} }
+	plot := func(series ...any) map[string]any {
+		return map[string]any{"type": "plot", "title": "P", "xTitle": "x", "yTitle": "y", "series": append([]any{}, series...)}
 	}
 	merged := map[string]map[string]any{
-		"no series":             chart("bar", []any{}),
-		"no positive total":     chart("pie", []any{map[string]any{"name": "S", "values": []any{0, nil}}}),
-		"a negative pie":        chart("stacked", []any{map[string]any{"name": "S", "values": []any{2, -1}}}),
-		"a plot without series": {"type": "plot", "title": "P", "xTitle": "x", "yTitle": "y", "series": []any{}},
+		"no series":             chart("bar"),
+		"no positive total":     chart("pie", values(0, nil)),
+		"a negative pie":        chart("stacked", values(2, -1)),
+		"a second pie series":   chart("pie", values(1, 2), values(3, 4)),
+		"a plot without series": plot(),
+		"a line of one point":   plot(map[string]any{"name": "S", "points": []any{[]any{0, 0}}}),
 	}
 	for name, block := range merged {
 		raw := figure(block)
@@ -1094,8 +1101,8 @@ func TestLiveFiguresReadButAreNotWritten(t *testing.T) {
 		if _, err := NewProjection(doc); err != nil {
 			t.Errorf("%s: a room's projection is refused: %v", name, err)
 		}
-		if err := ValidateKind(raw, "note"); !errors.Is(err, ErrInvalid) {
-			t.Errorf("%s: a written note takes it: %v", name, err)
+		if err := ValidateKind(raw, "note"); err != nil {
+			t.Errorf("%s: a whole-document note write is refused: %v", name, err)
 		}
 		if _, err := ParseWrite(raw); !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: an agent's blocks take it: %v", name, err)
@@ -1104,12 +1111,8 @@ func TestLiveFiguresReadButAreNotWritten(t *testing.T) {
 			t.Errorf("%s: a question block takes it", name)
 		}
 	}
-	// A pie with a second series is no live figure: the repair keeps one.
-	two := chart("pie", []any{
-		map[string]any{"name": "S", "values": []any{1, 2}},
-		map[string]any{"name": "R", "values": []any{1, 2}},
-	})
-	if _, err := Parse(figure(two)); !errors.Is(err, ErrInvalid) {
-		t.Errorf("a pie with two series reads: %v", err)
+	// Beyond the kept states a note write is still checked.
+	if err := ValidateKind(figure(chart("radar", values(1, 2))), "note"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("an unknown chart kind is taken: %v", err)
 	}
 }

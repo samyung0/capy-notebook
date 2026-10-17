@@ -2,6 +2,7 @@ import { type ChangeEvent, isValidElement, type ReactNode } from 'react';
 import { expect, it } from 'vitest';
 import { m } from '@/i18n';
 import { PlotEditor } from './BlockEditor';
+import { IssueIcon } from './IssueViews';
 import { blockIssues } from './issues';
 import { blockWithoutBlanks, type PlotBlock } from './types';
 import { questionBlockSchema } from './validation';
@@ -134,4 +135,47 @@ it('fills new rows from the row before them, so Save stays on', () => {
   expect(blockIssues(line)).toEqual([]);
   expect(blockIssues(scatter)).toEqual([]);
   expect(blockIssues(added)).toEqual([]);
+});
+
+/** Every IssueIcon's messages under `node`. */
+function icons(node: ReactNode): string[] {
+  if (Array.isArray(node)) return node.flatMap(icons);
+  if (!isValidElement<{ children?: ReactNode; messages?: string[] }>(node))
+    return [];
+  if (node.type === IssueIcon) return node.props.messages ?? [];
+  return icons(node.props.children);
+}
+
+it('marks what a merge of two editors left: series past the cap, a line of one point', () => {
+  const series = (name: string, points: [number, number][]) => ({
+    name,
+    points,
+  });
+  const merged: PlotBlock = {
+    series: [
+      series('A', [[0, 0]]),
+      ...['B', 'C', 'D', 'E'].map((name) =>
+        series(name, [
+          [0, 0],
+          [1, 1],
+        ])
+      ),
+    ],
+    title: 'Merged',
+    type: 'plot',
+    xTitle: 'x',
+    yTitle: 'y',
+  };
+  const shown = icons(
+    PlotEditor({
+      block: merged,
+      descriptionMax: 500,
+      onChange: () => undefined,
+    })
+  );
+  expect(shown).toContain(m.question_issue_plot_points());
+  expect(shown).toContain(m.question_ui_plot_series_over({ max: 4 }));
+  expect(blockIssues(merged)).toEqual(
+    expect.arrayContaining([m.question_ui_plot_series_over({ max: 4 })])
+  );
 });

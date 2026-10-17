@@ -20,10 +20,13 @@ type Policy struct {
 	Bank          bool
 	BankAssetsURL string
 	Snapshot      bool
-	// Live takes a note figure as a room holds it, repaired (Epo 2026-10-18):
-	// a chart or plot may have no series, and a pie or stacked chart at most
-	// one, with any values. Only stored note documents (materialdoc.Parse)
-	// and room projections set it; agent writes, bank and quiz questions do not.
+	// Live takes a note figure in the states a merge of two editors leaves
+	// that readers draw around (Epo 2026-10-18): a chart or plot without
+	// series, a pie or stacked chart with extra series (its first is drawn)
+	// or any values, a line plot's series of one point (skipped). Stored note
+	// documents, room projections and whole-document note writes through the
+	// content API set it (materialdoc); agent block writes, bank and quiz
+	// questions and question media do not.
 	Live bool
 }
 
@@ -393,8 +396,9 @@ func validatePlot(b map[string]any, policy Policy) error {
 		return fail("invalid plot series")
 	}
 	// A scatter series needs one point, a line two (Epo 2026-10-14).
+	// A live line's one-point series is skipped where it is drawn.
 	minPoints := 2
-	if b["kind"] == "scatter" {
+	if b["kind"] == "scatter" || policy.Live {
 		minPoints = 1
 	}
 	for _, raw := range series {
@@ -522,7 +526,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			return fail("invalid chart series")
 		}
 		single := b["kind"] == "pie" || b["kind"] == "stacked"
-		if single && len(series) > 1 {
+		if single && len(series) > 1 && !policy.Live {
 			return fail("pie and stacked require one series")
 		}
 		for _, raw := range series {
@@ -1367,4 +1371,110 @@ func blocksText(blocks []any) string {
 		}
 	}
 	return strings.Join(out, "\n\n")
+}
+
+// RepairFigure is a live chart, plot or graph as readers draw it (Epo
+// 2026-10-17, 2026-10-18): series and graph elements past their cap keep the
+// first ones, a pie or stacked chart its first series; a chart series' values
+// are padded with null or cut to its labels; a line plot's series of fewer
+// than two points is skipped (before the cap); a graph element naming a point
+// that is gone is skipped. A block needing none of it comes back as it is;
+// the input is never changed. The collaboration server's repair_figure and
+// the browser's repairFigureBlock are the same; all three run
+// testdata/repairs/figures.json. Go draws nothing, so only its index text
+// uses it, for stored content a whole-document write left as sent.
+func RepairFigure(block map[string]any) map[string]any {
+	kind, _ := block["kind"].(string)
+	var list string
+	var max int
+	switch block["type"] {
+	case "chart":
+		list, max = "series", fieldlimits.QuestionChartSeries
+		if kind == "pie" || kind == "stacked" {
+			max = 1
+		}
+	case "plot":
+		list, max = "series", fieldlimits.QuestionPlotSeries
+	case "graph":
+		list, max = "elements", fieldlimits.QuestionGraphElements
+	default:
+		return block
+	}
+	entries, ok := block[list].([]any)
+	if !ok {
+		return block
+	}
+	changed := false
+	kept := entries
+	if block["type"] == "plot" && kind != "scatter" {
+		kept = []any{}
+		for _, raw := range entries {
+			s, _ := raw.(map[string]any)
+			if points, ok := s["points"].([]any); !ok || len(points) >= 2 {
+				kept = append(kept, raw)
+			}
+		}
+		changed = len(kept) != len(entries)
+	}
+	if len(kept) > max {
+		kept, changed = kept[:max], true
+	}
+	if labels, ok := block["labels"].([]any); ok && block["type"] == "chart" {
+		resized := make([]any, len(kept))
+		for i, raw := range kept {
+			resized[i] = raw
+			s, ok := raw.(map[string]any)
+			values, isList := s["values"].([]any)
+			if !ok || !isList || len(values) == len(labels) {
+				continue
+			}
+			padded := make([]any, len(labels))
+			copy(padded, values)
+			copied := make(map[string]any, len(s))
+			for key, value := range s {
+				copied[key] = value
+			}
+			copied["values"] = padded
+			resized[i], changed = copied, true
+		}
+		kept = resized
+	}
+	if block["type"] == "graph" {
+		points := map[string]bool{}
+		for _, raw := range kept {
+			if e, _ := raw.(map[string]any); e["type"] == "point" {
+				if id, ok := e["id"].(string); ok {
+					points[id] = true
+				}
+			}
+		}
+		named := []any{}
+		for _, raw := range kept {
+			e, _ := raw.(map[string]any)
+			refs, _ := e["points"].([]any)
+			if center, ok := e["center"]; ok {
+				refs = append(append([]any{}, refs...), center)
+			}
+			whole := true
+			for _, ref := range refs {
+				if id, ok := ref.(string); ok && !points[id] {
+					whole = false
+				}
+			}
+			if whole {
+				named = append(named, raw)
+			}
+		}
+		changed = changed || len(named) != len(kept)
+		kept = named
+	}
+	if !changed {
+		return block
+	}
+	out := make(map[string]any, len(block))
+	for key, value := range block {
+		out[key] = value
+	}
+	out[list] = kept
+	return out
 }

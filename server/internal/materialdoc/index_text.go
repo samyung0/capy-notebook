@@ -5,6 +5,8 @@ import (
 	"strings"
 
 	"github.com/samyung0/capy-notebook/server/internal/embeds"
+
+	"github.com/samyung0/capy-notebook/server/internal/questions"
 )
 
 // A note's index text is what retrieval chunks and note effects read: each
@@ -275,8 +277,10 @@ func strs(value any) []string {
 }
 
 // figureIndexText renders a chart, plot or graph block, its fields on lines
-// and empty ones left out.
+// and empty ones left out, as it is drawn: repaired (questions.RepairFigure,
+// Epo 2026-10-18), as the collaboration server's index text reads a room.
 func figureIndexText(block map[string]any) string {
+	block = questions.RepairFigure(block)
 	var lines []string
 	add := func(prefix, value string) {
 		if value != "" {

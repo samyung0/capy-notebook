@@ -1802,6 +1802,7 @@
   "question_ui_graph_label_at": "at ({x}, {y})",
   "question_ui_graph_row_issue": "Row {number}: {message}",
   "question_ui_chart_series_over": "A chart holds at most {max} series.",
+  "question_ui_plot_series_over": "A plot holds at most {max} series.",
   "question_ui_graph_size_invalid": "Width and height take whole numbers from {min} to {max}.",
   "question_ui_graph_bounds_invalid": "Each minimum must be below its maximum.",
   "question_ui_series_name": "Series {number} name",

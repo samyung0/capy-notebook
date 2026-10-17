@@ -2,6 +2,7 @@ import type { z } from 'zod';
 import {
   QUESTION_CHART_SERIES_MAX,
   QUESTION_MARKS_MAX,
+  QUESTION_PLOT_SERIES_MAX,
 } from '@/api/limits.generated';
 import { m } from '@/i18n';
 import {
@@ -69,6 +70,15 @@ function blockMessage(
     issue.message === m.question_validation_plot_line_points()
   )
     return m.question_issue_plot_points();
+  if (
+    live &&
+    block?.type === 'plot' &&
+    issue.code === 'too_big' &&
+    issue.path.at(-1) === 'series'
+  )
+    return m.question_ui_plot_series_over({
+      max: QUESTION_PLOT_SERIES_MAX,
+    });
   // What a merge of two editors' charts can leave (Epo 2026-10-17).
   if (
     block?.type === 'chart' &&

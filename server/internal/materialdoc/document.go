@@ -275,7 +275,7 @@ func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
 //
 // A stored note's figures are read as a room holds them (questions.Policy
 // Live, Epo 2026-10-18): the projection keeps what a merge leaves that the
-// repair keeps. ParseWrite and ValidateKind check a document a writer sends.
+// repair keeps. ParseWrite checks an agent's blocks strictly.
 func Parse(raw string) (Envelope, error) {
 	return parse(raw, true)
 }
@@ -377,9 +377,11 @@ func validate(doc Envelope, live bool) error {
 }
 
 // ValidateKind ensures artifact rows contain their canonical custom element:
-// a document a writer sends, its figures strictly.
+// a whole document a writer sends through the content API (create, update).
+// A note takes its figures as a room holds them (Epo 2026-10-18); agent
+// block writes check theirs with ParseWrite.
 func ValidateKind(raw, kind string) error {
-	doc, err := ParseWrite(raw)
+	doc, err := parse(raw, kind == "note")
 	if err != nil {
 		return err
 	}

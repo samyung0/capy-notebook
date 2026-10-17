@@ -173,7 +173,10 @@ A type the catalog does not list gives its text, as the read-only View shows
 an unsupported block's text. Inside a block's text an element whose rule is
 `none` gives nothing.
 
-**Formats.** Each field is on its own line, as stored; a missing or blank one
+**Formats.** A figure reads as it is drawn: repaired first (Go's
+`questions.RepairFigure`, Rust's `questions::repair_figure`; see [Live
+figures](#live-figures)), a room's block already so. Each field is on its own
+line, as stored; a missing or blank one
 is left out, as is a block with nothing left. Numbers are written in plain
 decimal, the shortest that reads back exactly, never with an exponent
 (`1000000000000`, `0.0000001`, `0.30000000000000004`), and `-0` as `0`: Go's
@@ -221,8 +224,8 @@ decimal, the shortest that reads back exactly, never with an exponent
   ids to load.
 
 `notes::index_text::from_doc` reads a room one top-level element at a time
-(`plate::element`, and a figure's `block` through `plate::block_value`, the
-one place a room's figure block is read for it), in a read transaction, with
+(`plate::element`, and a figure's `block` through `plate::block_value`, which
+reads its live map through `plate::map_value`, repaired), in a read transaction, with
 no encode and no JSON of the whole room. The rule is the generated
 `catalog::Index` enum, so an element without one, or a rule the extraction
 does not handle, does not build; the catalog tests in each language
@@ -261,44 +264,53 @@ figures).
   the cap); a graph element naming a point that is gone is skipped (only
   points are referenced, so one pass). Two states stay as they are: a chart
   or plot without series draws as an empty frame, and a pie or stacked chart
-  without a positive total (or with a negative value) draws through the
-  chart renderer's empty state, its values still listed. The same function
-  on both sides:
+  without a positive total draws through the chart renderer's empty state,
+  its values still listed; a negative value in a pie or stacked chart (a bar
+  chart switched to pie) stays too and draws as no slice. The same function
+  in each layer:
   `questions::repair_figure` in the collaboration server (called only by
   `plate::map_value`, the one place a block map is read, behind
   `plate::properties` and `plate::block_value`: the projection, the metrics,
   admission's check and the index text) and `repairFigureBlock`
   in the browser (`parseMaterialDocument`, the note's figure, a live View's
   blocks in `liveNoteBlocks.ts`, the chart editor's preview, the graph
-  redraw), both run on
-  `server/internal/questions/testdata/repairs/figures.json`. The projection
-  stores the repaired value. Go reads only that projection and repairs
-  nothing. Editors show the raw block with its issues, so the user fixes
+  redraw) and Go's `questions.RepairFigure` (its index text only), all run
+  on `server/internal/questions/testdata/repairs/figures.json`. The
+  projection stores the repaired value; a whole-document note write through
+  the content API stores what it sends, so the index text (Go's
+  `figureIndexText`, Rust's `index_text`) repairs what it reads, as it is
+  drawn. Editors show the raw block with its issues, so the user fixes
   them: the chart's rows past its labels, series and graph rows past the cap,
   graph rows naming a gone point, a pie's other series ("one series only"), a
   pie's negative or missing positive value, no series ("Add a series"), a
   line plot's one-point series ("each series needs two points"; the plot
   editor shows what `blockIssues` names).
-- **Where the relaxed check runs.** The two kept states are valid only for a
-  note figure read from a room or a stored note, never for a write from
-  outside a room:
+- **Where the relaxed check runs.** The kept states are valid for a note
+  figure a room or a whole-document note write holds, never for an agent's
+  block write or a question (Epo 2026-10-18):
   - live: room admission's copy check and the room's store check
     (`material::live_figure_block` through `assert_canonical`: every save,
-    the load check, an agent edit's whole-document check); Go's reads of a
-    stored note (`materialdoc.Parse`, `Metrics`: material reads, clones) and a
-    room's projection (`NewProjection`), both with `questions.Policy{Live:
-    true}`; the browser's `parseMaterialDocument` (`liveFigureSchema`);
+    the load check, an agent edit's whole-document check; the value it reads
+    is repaired, so only no series and a pie's values relax); Go's reads of a
+    stored note (`materialdoc.Parse`, `Metrics`: material reads, clones), a
+    room's projection (`NewProjection`) and a whole-document note write
+    through the content API (`ValidateKind` for a note: create with content,
+    `huma_materials.go`, and `UpdateMaterial`), all with
+    `questions.Policy{Live: true}`, which takes the raw states too (a pie's
+    extra series, a line's one-point series); the browser's
+    `parseMaterialDocument` (`liveFigureSchema`, after the repair);
   - strict: an agent's edit blocks in Rust (`edit.rs` `assert_node_shape`
     runs `material::figure_block` on every chart, plot and graph it writes)
-    and the content API's replacement block (`commands::replace_block`); Go's
-    `ValidateKind` (material create and update, API imports, an agent's
-    created notes), `ParseWrite` (an agent's markdown blocks) and
+    and the content API's replacement block (`commands::replace_block`, the
+    block a whole-document update changes in a live room); Go's `ParseWrite`
+    (an agent's note, `convertAgentNote`, and its markdown blocks) and
     `questions.ValidateBlock` for quiz and bank questions and question media;
-    the browser's `createMaterialDocument` (imports, saves).
-  A crafted update gets nothing more from the live check: it relaxes only a
-  chart's or plot's series count to none and a pie's or stacked chart's
-  value rule, everything else (keys, types, lengths, the labels, a pie's
-  second series, which the repair drops first) as before.
+    `ValidateKind` for other material kinds; the browser's
+    `createMaterialDocument` (imports, saves).
+  A crafted update gets nothing more from the live check: room admission
+  also checks every list entry the room holds, those a read drops included
+  (`questions::figure_entries`), and the relaxed check takes only the kept
+  states, everything else (keys, types, lengths, the labels) as before.
 - **Admission.** An update writing into a figure's map is checked on a copy
   of the room, measured exactly (a repair can make a deletion grow the
   value): the map sits on a chart, plot or graph only, holds plain entries
