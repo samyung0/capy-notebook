@@ -92,7 +92,8 @@ export async function readCachedSource(
 }
 
 /** Stores downloaded bytes under `sha` when they hash to it, then drops the
- * least recently used entries past `limit`. */
+ * least recently used entries past `limit`. Only a store an account claimed
+ * takes them: a download landing after sign-out stores nothing. */
 export async function cacheSource(
   sha: string,
   bytes: Uint8Array<ArrayBuffer>,
@@ -103,9 +104,9 @@ export async function cacheSource(
     if (!SHA256.test(key) || bytes.byteLength > limit) return;
     const cache = await open();
     if (!cache) return;
-    if ((await sha256Hex(bytes)) !== key) return;
-    await cache.put(entryKey(key), new Response(bytes));
     const index = await readIndex(cache);
+    if (!index.owner || (await sha256Hex(bytes)) !== key) return;
+    await cache.put(entryKey(key), new Response(bytes));
     const entries = [
       ...index.entries.filter((item) => item.sha !== key),
       { sha: key, size: bytes.byteLength, used: Date.now() },

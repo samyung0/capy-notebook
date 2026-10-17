@@ -11,6 +11,7 @@ vi.mock('@/lib/sourceCache', () => ({ cacheSource, readCachedSource }));
 vi.mock('./sourceProvider', () => ({ warmSourceSocket: vi.fn() }));
 
 import {
+  dropSourceOpens,
   holdSource,
   prefetchSourceOpen,
   type SourceOpen,
@@ -157,6 +158,18 @@ describe('opening a source from its route', () => {
     await (await takeSourceOpen('f_guess', 'view')).base;
     expect(fetches[0]?.signal?.aborted).toBe(true);
     expect(fetches).toHaveLength(2);
+  });
+
+  it("drops the previous account's started open when another account signs in", async () => {
+    get.mockResolvedValue(SESSION);
+    post.mockResolvedValue(TOKEN);
+    prefetchSourceOpen('f_account', 'edit');
+    await vi.waitFor(() => expect(fetches).toHaveLength(1));
+    dropSourceOpens();
+    expect(fetches[0]?.signal?.aborted).toBe(true);
+    // The new account's view reads its own session and token.
+    await takeSourceOpen('f_account', 'edit');
+    expect(post).toHaveBeenCalledTimes(2);
   });
 
   it('stops the download when the session or token is refused', async () => {

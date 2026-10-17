@@ -142,6 +142,12 @@ function dropPending() {
   pending = null;
 }
 
+/** Another account signed in (or none): the open started for the previous
+ * one, its room token included, goes untaken. */
+export function dropSourceOpens() {
+  dropPending();
+}
+
 /** The open the route started for this file and mode, or a new one; aborting
  * `signal` stops it either way. One the route started for the file in the
  * other mode (it guessed Edit, the view opens in View) is dropped, so the

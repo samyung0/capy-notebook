@@ -41,9 +41,10 @@ class MemoryStorage {
 }
 
 let storage: MemoryStorage;
-beforeEach(() => {
+beforeEach(async () => {
   storage = new MemoryStorage();
   vi.stubGlobal('caches', storage);
+  await claimSourceCache('user_a');
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -136,6 +137,9 @@ describe('source bytes kept on the device', () => {
     await cacheSource(deck.sha, deck.bytes);
     await claimSourceCache(null);
     expect(storage.caches.has('capy-source-bytes')).toBe(false);
+    // A download landing after sign-out stores nothing.
+    await cacheSource(deck.sha, deck.bytes);
+    expect(stored()).toEqual([]);
   });
 
   it('reads as a miss without Cache Storage (private mode, a failing store)', async () => {

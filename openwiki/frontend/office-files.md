@@ -178,7 +178,10 @@ kept) and again when read (bytes that no longer match are deleted and
 downloaded again). The store keeps about 200 MB, least recently opened first
 out, with its index (sizes, last use, owner) as one entry beside the bytes.
 It belongs to the account that filled it: signing out, or another account
-signing in, deletes it before any route loads (`AuthProvider`). Private mode
+signing in, deletes it before any route loads (`AuthProvider`), which also
+drops an open started for the previous account (`dropSourceOpens`); only a
+store an account claimed takes bytes, so a download landing after sign-out
+stores nothing. Private mode
 or a failing store reads as a miss and the open downloads, silently. Text
 views without an open session still render from the published file's link.
 
