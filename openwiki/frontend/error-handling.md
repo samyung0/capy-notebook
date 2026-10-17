@@ -253,7 +253,10 @@ script's English and Chinese strings are copies of `error_chunk_title`,
 (`e2e/editor/boot-failure.spec.ts` fails if they drift). Cross-origin
 files, other scripts, and any failure after React's first render leave the
 page alone. The SPA's report-only script policy allows the script by its
-hash (`vite-image-policy.ts`), so it sends no reports.
+hash (`vite-image-policy.ts`), so it sends no reports. The theme script
+before it is classic and inline too, so the spinner and the message use
+the chosen style and theme from the first paint (Epo 2026-10-17); Vite
+would bundle a module script into the entry.
 
 An open tab stays usable when the connection drops (Epo 2026-10-17). A page
 change whose code is not loaded yet fails offline as an `OfflineError`

@@ -10,7 +10,13 @@
     >
     <meta content="light dark" name="color-scheme">
     <title>Capy Notebook</title>
-    <script blocking="render" type="module">
+    <!-- The chosen style and theme from the first paint, so the boot loader
+         and its reload message use them. Classic and inline: Vite would
+         bundle a module script into the entry, which runs only after the
+         bundle loads; the SPA's script policy allows it by hash
+         (vite-image-policy.ts). -->
+    <script>
+    'use strict';
     (() => {
       try {
         const STYLES = ['classroom', 'notion'];

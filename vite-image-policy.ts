@@ -142,8 +142,8 @@ export function appPolicy(env: Env): string {
 }
 
 /** `policy` with each inline script of `html` added to its `script-src` by
- * SHA-256: the built index.html keeps one, the boot-failure script that runs
- * before the bundle. */
+ * SHA-256: the built index.html keeps two, the theme and boot-failure scripts
+ * that run before the bundle. */
 function allowInlineScripts(policy: string, html: string): string {
   const hashes = [...html.matchAll(INLINE_SCRIPT)].map(
     ([, code]) =>

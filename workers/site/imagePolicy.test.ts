@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import type { ResolvedConfig } from 'vite';
+import { build, type ResolvedConfig } from 'vite';
 import { describe, expect, it } from 'vitest';
 import {
   appPolicy,
@@ -21,6 +21,7 @@ const DEPLOYED = {
 
 const SPACES = /\s+/;
 const SCRIPT_SRC = /script-src [^;]*/;
+const INLINE_SCRIPT = /<script\b(?![^>]*\ssrc=)[^>]*>([\s\S]*?)<\/script>/g;
 const directives = (policy: string) =>
   Object.fromEntries(
     policy.split(';').map((directive) => {
@@ -91,8 +92,8 @@ describe('image-source policy', () => {
   it('adds the policies to the built _headers and to the share renderer', () => {
     const outDir = mkdtempSync(path.join(tmpdir(), 'image-policy-'));
     writeFileSync(path.join(outDir, '_headers'), '/icons/*\n  X-Kept: yes\n');
-    // A build keeps index.html's classic inline script (the boot-failure
-    // message); Vite bundles its module scripts.
+    // A build keeps index.html's classic inline scripts; Vite bundles its
+    // module scripts.
     const boot = 'addEventListener("error", () => {}, true);';
     writeFileSync(
       path.join(outDir, 'index.html'),
@@ -123,4 +124,38 @@ describe('image-source policy', () => {
       )}\n`
     );
   });
+
+  it("keeps index.html's inline scripts in the built page, each allowed by hash", async () => {
+    // The theme and boot-failure scripts run before the entry, so the boot
+    // loader and its reload message use the chosen theme (Epo 2026-10-17); a
+    // module script would be bundled into the entry.
+    const root = mkdtempSync(path.join(tmpdir(), 'inline-scripts-'));
+    const source = readFileSync(
+      path.resolve(import.meta.dirname, '../../index.html'),
+      'utf8'
+    );
+    writeFileSync(
+      path.join(root, 'index.html'),
+      source.replace('/src/main.tsx', '/main.js')
+    );
+    writeFileSync(path.join(root, 'main.js'), 'document.title = "";\n');
+    await build({
+      cacheDir: path.join(root, '.vite'),
+      configFile: false,
+      logLevel: 'silent',
+      plugins: [policyHeaders(DEPLOYED)],
+      root,
+    });
+    const built = readFileSync(path.join(root, 'dist', 'index.html'), 'utf8');
+    const headers = readFileSync(path.join(root, 'dist', '_headers'), 'utf8');
+    const scripts = [...source.matchAll(INLINE_SCRIPT)].map(([, code]) => code);
+    expect(scripts).toHaveLength(2);
+    expect(scripts.some((code) => code.includes("'capy.theme'"))).toBe(true);
+    for (const code of scripts) {
+      expect(built).toContain(`>${code}</script>`);
+      expect(headers).toContain(
+        `'sha256-${createHash('sha256').update(code).digest('base64')}'`
+      );
+    }
+  }, 30_000);
 });
