@@ -164,14 +164,14 @@ function OfficeRuntime() {
   const pointersRef = useRef(new Set<number>());
   const hostPendingRef = useRef(false);
   const interactionWaiters = useRef<(() => void)[]>([]);
+  // Pending input is the editors' own and an open composition. A held pointer
+  // is a gesture, not input: `flush` (save, export, handoff) waits for it, so
+  // a click with no edit leaves the header Saved and the mode switch enabled.
   const reportPending = useCallback(() => {
     const revision = revisionRef.current;
     if (revision !== null)
       post({
-        dirty:
-          hostPendingRef.current ||
-          composingRef.current ||
-          pointersRef.current.size > 0,
+        dirty: hostPendingRef.current || composingRef.current,
         revision,
         type: 'dirty',
       });
@@ -686,7 +686,6 @@ function OfficeRuntime() {
           return;
         }
         pointersRef.current.add(event.pointerId);
-        reportPending();
       }}
       onPointerUpCapture={(event) => {
         pointersRef.current.delete(event.pointerId);

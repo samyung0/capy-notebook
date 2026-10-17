@@ -2189,7 +2189,9 @@ go from any open Capy page without the file open, an Office file's only over
 the room's base (see
 [plate-editor.md](plate-editor.md#sending-drafts-without-the-editor-open)). Save, export and handoff first
 commit open spreadsheet inputs and wait for active composition or gestures.
-Pending input counts as unsaved even before it reaches the shared document.
+Pending input counts as unsaved even before it reaches the shared document; a
+held pointer is a gesture, not input, so a press with no edit leaves the header
+at Saved and the View/Edit switch enabled.
 Draft storage that fails (private mode, a full disk, a draft whose base is
 gone) is skipped, never an editing error; a reopened draft whose base is gone
 is dropped with "Some unsaved edits from your last session couldn't be
