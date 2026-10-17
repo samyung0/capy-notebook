@@ -243,9 +243,11 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    build's 55 files: 19.0 MB → 15.1 MB), and costs about a minute of the
    deploy's site job.
    WOFF/WOFF2 are compressed inside and stay static files. A client that
-   does not accept brotli gets the bytes decoded by the Workers runtime
+   does not accept brotli gets the bytes decoded by Cloudflare's edge, which
+   on a Workers Cache hit decodes the stored copy without running the Worker
    (Cloudflare's Workers `fetch` documentation; local workerd answers an
-   `Accept-Encoding: identity` request with the plain WASM). Only these
+   `Accept-Encoding: identity` request with the plain WASM; the UAT checklist
+   checks it on a hit). Only these
    requests and the runtime HTML run the Worker, and Workers Cache
    (`cache.enabled` in `wrangler.office.jsonc`, every environment) keeps the
    brotli files for a year in its tiers, so a hit skips the Worker
