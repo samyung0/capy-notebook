@@ -137,6 +137,15 @@ impl Index {
     }
 }
 
+fn held(entries: &HashMap<Key, Entry>) -> u64 {
+    entries
+        .values()
+        .filter(|entry| !entry.holders.is_empty())
+        .filter_map(|entry| entry.file.as_ref())
+        .map(|file| file.bytes)
+        .sum()
+}
+
 /// A room load's hold on the files it takes, by its generation. Dropping it
 /// lets them go: the room unloaded, its load failed, or a panic unwound
 /// either, so no path leaves them held against the cap.
@@ -279,13 +288,14 @@ impl DiskStore {
         self.fits(&self.index.lock().await.entries, need)
     }
 
+    /// The bytes of the files loaded rooms hold (what a refusal compares
+    /// with the cap; idle files are not counted).
+    pub async fn held(&self) -> u64 {
+        held(&self.index.lock().await.entries)
+    }
+
     fn fits(&self, entries: &HashMap<Key, Entry>, need: u64) -> Result<(), PutError> {
-        let held: u64 = entries
-            .values()
-            .filter(|entry| !entry.holders.is_empty())
-            .filter_map(|entry| entry.file.as_ref())
-            .map(|file| file.bytes)
-            .sum();
+        let held = held(entries);
         if held + need > self.cap {
             return Err(PutError::Full {
                 held,

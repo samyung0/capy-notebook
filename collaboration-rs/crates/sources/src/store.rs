@@ -360,6 +360,11 @@ impl Sources {
         &self.db
     }
 
+    /// The bytes of the disk store files loaded rooms hold (`/metrics`).
+    pub async fn disk_held_bytes(&self) -> u64 {
+        self.disk.held().await
+    }
+
     /// A file from the job's copies, else the disk store (see [`Reader`]).
     async fn kept(&self, key: &Key, reader: Reader<'_>) -> Option<(Vec<u8>, String)> {
         let Reader::Job(job) = reader else {

@@ -581,8 +581,9 @@ The prod file runs `/migrate` once per deploy, starts the API with
    (UAT shrinks with deploy images until the weekly cleanup). When loaded
    rooms' files fill the cap, new source rooms are refused
    (`capy_collaboration_source_disk_refusals_total` on `/metrics`, a
-   `source room refused: disk store full` warn line); raise the cap only with
-   the free space to back it. To check the folder after a deploy:
+   `source room refused: disk store full` warn line);
+   `capy_collaboration_source_disk_held_bytes` shows how much of the cap the
+   open rooms hold. Raise the cap only with the free space to back it. To check the folder after a deploy:
 
    ```bash
    c=$(docker ps -qf name=collaboration)
