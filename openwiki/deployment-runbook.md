@@ -1203,7 +1203,13 @@ policy. The values reach the pages two ways:
   check can see (UAT checklist §7). If it does not, the fallback plan is to
   run the site Worker first on every path but the static files
   (`run_worker_first` with exclusions such as `!/assets/*`) and set the
-  header there, at the cost of one Worker call per page load.
+  header there, at the cost of one Worker call per page load. Rules after it
+  detach the header (`! Content-Security-Policy-Report-Only`) from the static
+  files (`/assets/*`, `/icons/*`, `/mathlive/*`, `/favicon.svg`): only
+  documents and workers apply a policy, and on every chunk, stylesheet and
+  font it cost about 18 KB of headers per shared page. The worker scripts
+  under `/assets/` (drafts, source analysis and PDF.js, CSV, DOCX, export,
+  the Office engine) therefore run without it.
 - Worker responses get no `_headers`, so the share, summary and error pages
   the site Worker renders read both values from the share renderer bundle
   (`IMAGE_POLICY` and `PAGE_POLICY`, `src/share/server.tsx`) and set them in

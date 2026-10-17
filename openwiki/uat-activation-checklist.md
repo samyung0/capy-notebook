@@ -294,7 +294,9 @@ Clerk development instance. Point a local gateway at the UAT database only with
   also carries `script-src 'self' https://clerk.uat.capynotebook.com/npm/@clerk/ …`. If
   `/` and the deep link lack it while the summary has it, Workers Assets does
   not apply `_headers` to the SPA fallback: tell the Editor session (runbook
-  §2.4 has the fallback plan). Then open a workspace with a PDF, an image
+  §2.4 has the fallback plan). A `curl -sI` on an `/assets/…` chunk and on
+  `/favicon.svg` returns no `Content-Security-Policy-Report-Only`. Then open
+  a workspace with a PDF, an image
   source, a note with images, a YouTube block, a diagram and a bank-copied
   quiz, and the same note shared signed out: the console shows no
   `[Report Only]` image message and `capy-web` gets no image report. Script

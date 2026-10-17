@@ -151,6 +151,12 @@ describe('image-source policy', () => {
         `${scripts} 'sha256-${hash}';`
       )}\n`
     );
+    // Static files go without it: on the share pages it was about 18 KB of
+    // headers across their chunks, stylesheets and fonts (Epo 2026-10-17).
+    for (const rule of ['/assets/*', '/icons/*', '/mathlive/*', '/favicon.svg'])
+      expect(headers).toContain(
+        `\n${rule}\n  ! Content-Security-Policy-Report-Only\n`
+      );
   });
 
   it("keeps the HTML pages' inline scripts in the built pages, each allowed by hash", async () => {

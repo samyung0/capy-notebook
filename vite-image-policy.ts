@@ -174,11 +174,18 @@ function sentrySecurityUrl(dsn?: string, environment?: string) {
   return report.href;
 }
 
+/** The app's static files; of these, only worker scripts would apply a policy. */
+const STATIC_PATHS = ['/assets/*', '/icons/*', '/mathlive/*', '/favicon.svg'];
+
 /**
  * Sends the policies with the app's pages. Workers Assets serves the SPA's
  * HTML with `dist/_headers`, which the client build extends with `appPolicy`,
  * report-only, plus the hashes of the built index.html's inline scripts. The
- * site Worker's pages read `imagePolicy` (report-only) and `pagePolicy`
+ * SPA answers any path, so the rule is `/*`; `STATIC_PATHS` detach it again,
+ * since only documents and workers apply a policy and the header otherwise
+ * adds its bytes to every chunk, stylesheet and font. Worker scripts under
+ * /assets/ go without it (Epo 2026-10-17). The site Worker's pages read
+ * `imagePolicy` (report-only) and `pagePolicy`
  * (enforced) from the share renderer bundle as `IMAGE_POLICY` and
  * `PAGE_POLICY` (src/share/server.tsx). A `uat` or `production` build without
  * its bucket or report endpoint fails here.
@@ -211,9 +218,12 @@ export function policyHeaders(env: Env): Plugin {
         path.join(path.dirname(headersFile), 'index.html'),
         'utf8'
       );
+      const detached = STATIC_PATHS.map(
+        (rule) => `${rule}\n  ! Content-Security-Policy-Report-Only\n`
+      ).join('');
       appendFileSync(
         headersFile,
-        `\n# Image and script sources, report-only (vite-image-policy.ts).\n/*\n  Content-Security-Policy-Report-Only: ${allowInlineScripts(app, html)}\n`
+        `\n# Image and script sources, report-only (vite-image-policy.ts).\n/*\n  Content-Security-Policy-Report-Only: ${allowInlineScripts(app, html)}\n${detached}`
       );
     },
   };
