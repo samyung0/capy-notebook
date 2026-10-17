@@ -175,6 +175,9 @@ def render(values, environment, output, revision):
     coolify["COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES"] = str(
         (4 if production else 3) << 30
     )
+    # The source rooms' disk store cap: production 10 GiB, UAT 5 GiB
+    # (Epo 2026-10-17).
+    coolify["COLLABORATION_SOURCE_DISK_BYTES"] = str((10 if production else 5) << 30)
     private_write(output / "coolify.json", json.dumps(coolify))
     build = target_values(values, "build")
     build.update(
