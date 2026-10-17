@@ -565,6 +565,33 @@ The prod file runs `/migrate` once per deploy, starts the API with
    (`docker stats --no-stream $(docker ps -qf name=collaboration)`) at idle
    and after a busy period with the numbers from before.
 
+   Open source rooms keep their original files, seeds and baselines on disk,
+   not in memory (Epo 2026-10-17; the disk store in
+   [office-files](frontend/office-files.md)). The folder is the image's
+   `/var/lib/capy/sources` (`COLLABORATION_SOURCE_DISK_DIR`, set in
+   `collaboration-rs/Dockerfile`) on the named volume
+   `capy_collaboration_sources` (`docker-compose.prod.yml`): disk-backed, never
+   tmpfs. Docker creates the volume with the image folder's owner (the
+   service user `nobody`) and mode 0700, and the server wipes the files it
+   wrote there at every start. One collaboration process per environment uses
+   it. The cap is `COLLABORATION_SOURCE_DISK_BYTES`, rendered by
+   `scripts/env/config.py`: production 10 GiB (10737418240), UAT 5 GiB
+   (5368709120); the local compose files use UAT's. Size the disk for the
+   cap: at the decision production had 50 of 75 GB free and UAT 29 of 78 GB
+   (UAT shrinks with deploy images until the weekly cleanup). When loaded
+   rooms' files fill the cap, new source rooms are refused
+   (`capy_collaboration_source_disk_refusals_total` on `/metrics`, a
+   `source room refused: disk store full` warn line); raise the cap only with
+   the free space to back it. To check the folder after a deploy:
+
+   ```bash
+   c=$(docker ps -qf name=collaboration)
+   docker exec "$c" sh -c 'stat -c "%U %a" /var/lib/capy/sources; du -sh /var/lib/capy/sources'
+   ```
+
+   It prints `nobody 700` and the bytes the open rooms hold (a few KB right
+   after a restart).
+
    Every client socket, gateway call and database connection is an open
    file. The compose files give the collaboration service `nofile` 524288,
    and the server raises its soft limit to the hard one at startup, as Go and
