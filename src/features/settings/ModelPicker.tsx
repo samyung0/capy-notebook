@@ -70,7 +70,7 @@ export function ModelPicker({
   const { data, isPending: loading } = useModels(slot, {
     errorBoundary: false,
   });
-  const { isPending, mutate } = useSetModelPrefs();
+  const { mutate } = useSetModelPrefs();
   const models = sortModelOptions(data?.models ?? []);
   const selected = models.find((option) =>
     sameModel(
@@ -87,7 +87,7 @@ export function ModelPicker({
     >
       <div className="flex min-w-0 items-start gap-2">
         <Select
-          disabled={isPending || models.length === 0}
+          disabled={models.length === 0}
           onValueChange={(value) => {
             mutate({ [PREF_FIELD[slot]]: parseModelRef(value) });
           }}
@@ -149,7 +149,7 @@ export function ModelPicker({
           </Select>
         ) : slot === 'chat' ? (
           <ReasoningControls
-            disabled={isPending}
+            onChange={(chatThinking) => mutate({ chatThinking })}
             selected={selected}
             stored={data?.selectedThinking ?? ''}
           />

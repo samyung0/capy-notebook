@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildElements,
+  displayNumber,
   type GraphRow,
   parseRow,
   rowsFromElements,
@@ -169,4 +170,23 @@ describe('rows and elements', () => {
 it('spells constants the way JessieCode defines them at draw time', () => {
   expect(runtimeTerm('2*pi*x+e')).toBe('2*PI*x+EULER');
   expect(runtimeTerm('2x')).toBe('2*x');
+});
+
+describe('scientific numbers', () => {
+  it('write rows and labels as GeoGebra does, never with a bare e', () => {
+    const [row] = rowsFromElements([
+      { coords: [6.02e23, 3e-7], id: 'a', name: 'A', type: 'point' },
+    ]);
+    expect(row.kind === 'expression' && row.latex).toBe(
+      'A=\\left(6.02\\cdot 10^{23},3\\cdot 10^{-7}\\right)'
+    );
+    // MathLive's ASCII for that row reads back to the same point.
+    expect(parseRow('A=(6.02 * 10^(23),3 * 10^(-7))')).toEqual({
+      coords: [6.02e23, 3e-7],
+      kind: 'point',
+      name: 'A',
+    });
+    expect(displayNumber(-6.02e23)).toBe('-6.02 · 10²³');
+    expect(displayNumber(150_000_000)).toBe('150000000');
+  });
 });

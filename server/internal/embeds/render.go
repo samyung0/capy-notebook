@@ -47,6 +47,8 @@ func TypeScript() ([]byte, error) {
 // rustFloat names the bounds the collaboration server compares as numbers
 // from JSON (f64); every other limit is a count or a length (usize).
 var rustFloat = map[string]bool{
+	"QUESTION_GRAPH_DIMENSION_MIN": true,
+	"QUESTION_GRAPH_DIMENSION_MAX": true,
 	"QUESTION_IMAGE_DIMENSION_MAX": true,
 	"QUESTION_MARKS_MAX":           true,
 }

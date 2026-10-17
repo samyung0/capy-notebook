@@ -24,7 +24,7 @@ export function QuestionChartFrame({
 }: ChartFrameProps) {
   return (
     <figure className="mx-auto my-3 w-full min-w-0 max-w-md">
-      <figcaption className="mb-2 text-center font-semibold">
+      <figcaption className="wrap-anywhere mb-2 text-center font-semibold">
         {title}
         {unit && <span className="ml-2 font-normal text-fg-muted">{unit}</span>}
       </figcaption>
@@ -57,34 +57,53 @@ function runs(values: (number | null)[]) {
   return out;
 }
 
-/** Rough SVG text width; good enough to keep labels inside their slot. */
-const textWidth = (text: string, size: number) => text.length * size * 0.5;
+// CJK, Hangul and full-width forms take a whole em; Latin about half.
+const WIDE =
+  /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/u;
+
+/** Estimated SVG text width; close enough to keep labels inside their slot,
+ * and the same on the server, where nothing can be measured. */
+const textWidth = (text: string, size: number) => {
+  let ems = 0;
+  for (const char of text) ems += WIDE.test(char) ? 1 : 0.56;
+  return ems * size;
+};
 const SPACES = /\s+/;
 
-/** Up to `maxLines` lines of whole words within `width`, the last one cut
- * with an ellipsis when the label still does not fit. */
-function fitLabel(label: string, width: number, size: number, maxLines = 2) {
+/** Up to `maxLines` lines within `width`: whole words where they fit, a word
+ * wider than the line (or a run of CJK) broken between letters, the last
+ * line cut with an ellipsis when the label still does not fit. */
+function fitLabel(label: string, width: number, size: number, maxLines = 3) {
   const lines: string[] = [];
   let line = '';
   for (const word of label.split(SPACES).filter(Boolean)) {
     const next = line ? `${line} ${word}` : word;
-    if (line && textWidth(next, size) > width) {
-      lines.push(line);
-      line = word;
-    } else line = next;
+    if (textWidth(next, size) <= width) {
+      line = next;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = '';
+    for (const char of word) {
+      if (line && textWidth(line + char, size) > width) {
+        lines.push(line);
+        line = '';
+      }
+      line += char;
+    }
   }
   if (line) lines.push(line);
   if (lines.length > maxLines) {
     lines.length = maxLines;
-    lines[maxLines - 1] += ' …';
+    lines[maxLines - 1] += '…';
   }
   const last = lines.length - 1;
   while (
     last >= 0 &&
-    lines[last].length > 1 &&
+    [...lines[last]].length > 1 &&
     textWidth(lines[last], size) > width
   )
-    lines[last] = `${lines[last].slice(0, -2).trimEnd()}…`;
+    lines[last] = `${[...lines[last]].slice(0, -2).join('').trimEnd()}…`;
   return lines;
 }
 
@@ -145,17 +164,18 @@ function bar(x: number, y0: number, y1: number, width: number) {
   return `M${x},${y0} h${width} V${y1 - r} a${r},${r} 0 0 1 -${r},${r} h-${width - 2 * r} a${r},${r} 0 0 1 -${r},-${r} Z`;
 }
 
-function ChartLegend({ names }: { names: string[] }) {
-  if (names.length < 2) return null;
+/** Series names under the chart; a lone series shows only when named. */
+export function ChartLegend({ names }: { names: string[] }) {
+  if (names.length < 2 && !names[0]?.trim()) return null;
   return (
     <div className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-0.5 text-[11px] text-fg-secondary">
       {names.map((name, index) => (
         <span
-          className="inline-flex items-center gap-1"
+          className="wrap-anywhere inline-flex min-w-0 items-center gap-1"
           key={`${index}-${name}`}
         >
           <span
-            className="inline-block size-2 rounded-full"
+            className="inline-block size-2 shrink-0 rounded-full"
             style={{ background: color(index) }}
           />
           {name}
@@ -247,15 +267,19 @@ export function CategoryChart({
   if (!(labels.length && series.length)) return <Frame {...frame} />;
 
   if (props.kind === 'hbar') {
-    // Labels wrap within a quarter of the chart; the column is as wide as
-    // the longest wrapped line.
-    const labelLines = labels.map((label) => fitLabel(label, W * 0.25 - 10, 9));
+    // Labels wrap to two lines (a row's height) within a quarter of the
+    // chart; the column is as wide as the longest wrapped line.
+    const labelLines = labels.map((label) =>
+      fitLabel(label, W * 0.25 - 10, 9, 2)
+    );
     const left = Math.max(
       40,
       ...labelLines.flat().map((line) => textWidth(line, 9) + 10)
     );
-    const right = W - 12;
     const { min, max, ticks } = chartScale(all);
+    // The last tick's number is centred on the edge, so half of it must fit.
+    const right =
+      W - Math.max(12, Math.ceil(textWidth(format(max), 9) / 2) + 2);
     const x = (value: number) =>
       left + ((value - min) / (max - min)) * (right - left);
     const rowHeight = 22 * series.length + 8;
@@ -466,18 +490,23 @@ export function CategoryChart({
     );
   }
 
-  const left = 36;
+  const { min, max, ticks } = chartScale(all);
+  // The tick column is as wide as its widest number.
+  const left = Math.max(
+    36,
+    ...ticks.map((tick) => Math.ceil(textWidth(format(tick), 9)) + 8)
+  );
   const right = W - 12;
   const top = 8;
   const bottom = H - 24;
-  const { min, max, ticks } = chartScale(all);
   const y = (value: number) =>
     bottom - ((value - min) / (max - min)) * (bottom - top);
   const band = (right - left) / labels.length;
   const xCenter = (index: number) => left + band * (index + 0.5);
   const showLabels = authored || labels.length <= 8;
   const labelLines = labels.map((label) => fitLabel(label, band - 4, 9));
-  const height = labelLines.some((lines) => lines.length > 1) ? H + 11 : H;
+  const height =
+    H + (Math.max(...labelLines.map((lines) => lines.length)) - 1) * 11;
   const offset = props.yTitle ? TOP_TITLE : 0;
   const bottomTitle = height - 8 + BOTTOM_TITLE_GAP;
   return (

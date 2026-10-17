@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ActivityBlock, ResourceEffect } from '@/api/types';
 import {
   buildTrace,
-  currentRow,
+  foldSegments,
   foldTrace,
   latestStep,
   stepTitle,
@@ -190,15 +190,19 @@ describe('Normal mode', () => {
       text: stepTitle(tool('b', 'search_workspace'), 'done').text,
     });
   });
-  it('shows the step it is on while it works', () => {
-    const rows = buildTrace({
+  it('folds only the steps between narrations', () => {
+    const fold = foldTrace({
       ...base,
-      activity,
-      live: true,
-      receipts: false,
-      thinking: true,
+      activity: [
+        tool('a', 'list_sources'),
+        { id: 'n', kind: 'narration', text: 'Checking the textbook.' },
+        tool('b', 'search_knowledge'),
+      ],
+      startedAt: undefined,
     });
-    expect(currentRow(rows)).toMatchObject({ running: true, type: 'thinking' });
+    expect(
+      foldSegments(fold.rows).map((rows) => rows.map((row) => row.type))
+    ).toEqual([['thinking', 'step'], ['narration'], ['step']]);
   });
 });
 

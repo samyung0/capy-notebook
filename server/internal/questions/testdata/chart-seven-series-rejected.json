@@ -1,0 +1,104 @@
+{
+  "name": "chart-seven-series-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "chart",
+        "kind": "bar",
+        "title": "Rainfall (mm)",
+        "labels": [
+          "Jan",
+          "Feb",
+          "Mar"
+        ],
+        "series": [
+          {
+            "name": "0",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "1",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "2",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "3",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "4",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "5",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "6",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": [
+            "alpha"
+          ]
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "text": "Because."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

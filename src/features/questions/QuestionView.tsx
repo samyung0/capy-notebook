@@ -125,7 +125,7 @@ function Figure({
         src={src}
         width={block.width}
       />
-      {block.attribution && (
+      {block.type === 'image' && block.attribution && (
         <figcaption className="mt-1 text-fg-muted text-xs">
           {block.attribution}
         </figcaption>

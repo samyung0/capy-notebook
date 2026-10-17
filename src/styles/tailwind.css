@@ -707,6 +707,25 @@ math-field {
   }
 }
 
+/* A PDF citation box (CitationOverlay): fades in, pulses once, fades out.
+   Its length is CITATION_FLASH_MS. */
+@keyframes citation-flash {
+  0% {
+    opacity: 0;
+  }
+  12%,
+  45%,
+  80% {
+    opacity: 1;
+  }
+  28% {
+    opacity: 0.35;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 @keyframes nav-flash-a {
   from {
     background-color: var(--highlight-bg);

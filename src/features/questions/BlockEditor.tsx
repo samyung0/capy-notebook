@@ -78,13 +78,13 @@ function ChartEditor({
           />
           <Field
             count={{
-              max: limits.QUESTION_METADATA_MAX,
+              max: limits.QUESTION_CHART_TITLE_MAX,
               value: textLength(block.title),
             }}
             label={m.question_ui_title()}
           >
             <FieldInput
-              maxLength={limits.QUESTION_METADATA_MAX}
+              maxLength={limits.QUESTION_CHART_TITLE_MAX}
               onChange={(event) =>
                 onChange({ ...block, title: event.target.value })
               }
@@ -96,7 +96,7 @@ function ChartEditor({
               {(['xTitle', 'yTitle'] as const).map((key) => (
                 <Field
                   count={{
-                    max: limits.QUESTION_METADATA_MAX,
+                    max: limits.QUESTION_CHART_TITLE_MAX,
                     value: textLength(block[key]),
                   }}
                   key={key}
@@ -107,7 +107,7 @@ function ChartEditor({
                   }
                 >
                   <FieldInput
-                    maxLength={limits.QUESTION_METADATA_MAX}
+                    maxLength={limits.QUESTION_CHART_TITLE_MAX}
                     onChange={(event) =>
                       onChange({ ...block, [key]: event.target.value })
                     }
@@ -135,7 +135,7 @@ function ChartEditor({
                           number: i + 1,
                         })}
                         className="py-1.5 text-sm"
-                        maxLength={limits.QUESTION_METADATA_MAX}
+                        maxLength={limits.QUESTION_CHART_SERIES_NAME_MAX}
                         onChange={(event) =>
                           onChange({
                             ...block,
@@ -181,7 +181,7 @@ function ChartEditor({
                           number: row + 1,
                         })}
                         className="py-1.5 text-sm"
-                        maxLength={limits.QUESTION_TEXT_MAX}
+                        maxLength={limits.QUESTION_CHART_LABEL_MAX}
                         onChange={(event) =>
                           onChange({
                             ...block,
@@ -202,16 +202,24 @@ function ChartEditor({
                             number: row + 1,
                           })}
                           className="py-1.5 text-sm"
+                          max={limits.QUESTION_CHART_VALUE_MAX}
                           // Parts of a whole are never negative (Epo 2026-10-14).
-                          min={single ? 0 : undefined}
+                          min={single ? 0 : -limits.QUESTION_CHART_VALUE_MAX}
                           onChange={(event) => {
-                            // An empty cell is null and draws nothing.
+                            // An empty cell is null and draws nothing; a value
+                            // stops at the bounds as text stops at its length.
                             const typed = event.target.valueAsNumber;
                             const value = Number.isNaN(typed)
                               ? null
-                              : single
-                                ? Math.max(0, typed)
-                                : typed;
+                              : Math.min(
+                                  limits.QUESTION_CHART_VALUE_MAX,
+                                  Math.max(
+                                    single
+                                      ? 0
+                                      : -limits.QUESTION_CHART_VALUE_MAX,
+                                    typed
+                                  )
+                                );
                             onChange({
                               ...block,
                               series: block.series.map((item, i) =>
@@ -296,67 +304,66 @@ function ChartEditor({
                 </>
               )}
             </div>
-            {!single && (
-              <>
-                {/* Room for the open section, so opening it does not move the dialog. Gridlines are its only setting, and pie and stacked have none. */}
-                <Collapsible.Root className="min-h-23">
-                  <Collapsible.Trigger asChild>
-                    <Button
-                      className="-ml-4"
-                      iconLeft="chevronDown"
-                      size="sm"
-                      type="button"
-                      variant="ghost"
-                    >
-                      {m.question_ui_advanced()}
-                    </Button>
-                  </Collapsible.Trigger>
-                  {/* Nudged under the chevron's ink, which sits inside its box. */}
-                  <Collapsible.Content className="translate-x-0.5 space-y-3 pt-3">
-                    <SelectField
-                      className="w-44"
-                      label={m.question_ui_gridlines()}
-                      onChange={(value) =>
-                        onChange({
-                          ...block,
-                          gridlines: value as 'normal' | 'fine',
-                        })
-                      }
-                      options={[
-                        { label: m.question_ui_normal(), value: 'normal' },
-                        { label: m.question_ui_fine(), value: 'fine' },
-                      ]}
-                      value={block.gridlines ?? 'normal'}
-                    />
-                  </Collapsible.Content>
-                </Collapsible.Root>
-              </>
-            )}
-            <Field
-              count={{
-                max: descriptionMax,
-                value: textLength(block.description ?? ''),
-              }}
-              label={m.question_ui_description()}
-            >
-              <FieldInput
-                maxLength={descriptionMax}
-                onChange={(event) =>
-                  onChange({
-                    ...block,
-                    description: event.target.value || undefined,
-                  })
-                }
-                value={block.description ?? ''}
-              />
-            </Field>
+            {/* Opens on its own when the chart already has a description. */}
+            <Collapsible.Root defaultOpen={Boolean(block.description)}>
+              <Collapsible.Trigger asChild>
+                <Button
+                  className="-ml-4"
+                  iconLeft="chevronDown"
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {m.question_ui_advanced()}
+                </Button>
+              </Collapsible.Trigger>
+              {/* Nudged under the chevron's ink, which sits inside its box. */}
+              <Collapsible.Content className="translate-x-0.5 space-y-3 pt-3">
+                {/* Pie and stacked charts have no gridlines. */}
+                {!single && (
+                  <SelectField
+                    className="w-44"
+                    label={m.question_ui_gridlines()}
+                    onChange={(value) =>
+                      onChange({
+                        ...block,
+                        gridlines: value as 'normal' | 'fine',
+                      })
+                    }
+                    options={[
+                      { label: m.question_ui_normal(), value: 'normal' },
+                      { label: m.question_ui_fine(), value: 'fine' },
+                    ]}
+                    value={block.gridlines ?? 'normal'}
+                  />
+                )}
+                <Field
+                  count={{
+                    max: descriptionMax,
+                    value: textLength(block.description ?? ''),
+                  }}
+                  label={m.question_ui_description()}
+                >
+                  <FieldInput
+                    maxLength={descriptionMax}
+                    onChange={(event) =>
+                      onChange({
+                        ...block,
+                        description: event.target.value || undefined,
+                      })
+                    }
+                    value={block.description ?? ''}
+                  />
+                </Field>
+              </Collapsible.Content>
+            </Collapsible.Root>
           </div>
         </div>
         <div className="min-w-0">
           {block.labels.length > 0 &&
             block.series.length > 0 &&
             block.series.every((series) =>
-              series.values.every(Number.isFinite)
+              series.values.every((v) => v === null || Number.isFinite(v))
             ) && <CategoryChart data={block} />}
         </div>
       </div>

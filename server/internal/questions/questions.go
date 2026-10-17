@@ -482,7 +482,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if !optionalDescription(b, policy) {
 			return fail("invalid chart description")
 		}
-		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionMetadata, false) {
+		if !enum(b["kind"], "bar hbar line area pie stacked") || !str(b["title"], fieldlimits.QuestionChartTitle, false) {
 			return fail("invalid chart")
 		}
 		// Category labels may be empty (Epo 2026-10-14).
@@ -491,12 +491,12 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			return fail("invalid chart labels")
 		}
 		for _, label := range labels {
-			if !str(label, fieldlimits.QuestionText, false) {
+			if !str(label, fieldlimits.QuestionChartLabel, false) {
 				return fail("invalid chart label")
 			}
 		}
 		for _, key := range []string{"xTitle", "yTitle"} {
-			if !optionalString(b, key, fieldlimits.QuestionMetadata) {
+			if !optionalString(b, key, fieldlimits.QuestionChartTitle) {
 				return fail("invalid chart label")
 			}
 		}
@@ -518,7 +518,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			if err := keys(s, "name values", ""); err != nil {
 				return err
 			}
-			if !str(s["name"], fieldlimits.QuestionMetadata, false) {
+			if !str(s["name"], fieldlimits.QuestionChartSeriesName, false) {
 				return fail("invalid series name")
 			}
 			values, ok := array(s["values"], len(b["labels"].([]any)), len(b["labels"].([]any)))
@@ -531,7 +531,7 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 					continue
 				}
 				n, ok := num(v)
-				if !ok || ((b["kind"] == "pie" || b["kind"] == "stacked") && n < 0) {
+				if !ok || math.Abs(n) > fieldlimits.QuestionChartValue || ((b["kind"] == "pie" || b["kind"] == "stacked") && n < 0) {
 					return fail("invalid chart value")
 				}
 			}
@@ -579,11 +579,16 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 			}
 		}
 	case "graph":
-		if err := keys(b, "type board elements image width height", "description attribution"); err != nil {
+		if err := keys(b, "type board elements image width height", "description"); err != nil {
 			return err
 		}
 		if err := imageFields(b, policy); err != nil {
 			return err
+		}
+		for _, key := range []string{"width", "height"} {
+			if n, _ := num(b[key]); n < fieldlimits.QuestionGraphDimensionMin || n > fieldlimits.QuestionGraphDimensionMax {
+				return fail("invalid graph dimensions")
+			}
 		}
 		if err := graph(b); err != nil {
 			return err
@@ -772,10 +777,10 @@ func graph(b map[string]any) error {
 			if _, ok := tuple(e["coords"], 2); !ok {
 				return fail("invalid coordinates")
 			}
-			if !optionalString(e, "name", fieldlimits.QuestionMetadata) {
+			if !optionalString(e, "name", fieldlimits.QuestionGraphName) {
 				return fail("invalid point name")
 			}
-			if e["type"] == "text" && !str(e["text"], fieldlimits.QuestionText, true) {
+			if e["type"] == "text" && !str(e["text"], fieldlimits.QuestionGraphLabel, true) {
 				return fail("invalid graph text")
 			}
 		case "line", "segment", "angle", "arc", "sector", "polygon":
@@ -809,7 +814,7 @@ func graph(b map[string]any) error {
 					return fail("invalid arc center")
 				}
 			}
-			if !optionalString(e, "label", fieldlimits.QuestionMetadata) {
+			if !optionalString(e, "label", fieldlimits.QuestionGraphName) {
 				return fail("invalid angle label")
 			}
 		case "circle":

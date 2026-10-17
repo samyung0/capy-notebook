@@ -22,6 +22,48 @@ pdfjs.GlobalWorkerOptions.workerSrc = pdfWorkerUrl;
 const MAX_PAGE_WIDTH = 800;
 const PAGE_OVERSCAN_PX = 1200;
 const DEFAULT_PAGE_ASPECT_RATIO = 1 / Math.SQRT2;
+/** Quiet time after the last scroll event before a citation box flashes. */
+const SCROLL_SETTLE_MS = 120;
+/** How long a citation box shows; matches the overlay's animation. */
+const CITATION_FLASH_MS = 1600;
+
+// A fresh regions array per citation click (openCitation copies it), so a
+// second click on the same citation scrolls and flashes again.
+const citationClicks = new WeakMap<Region[], number>();
+let lastCitationClick = 0;
+function citationClick(regions: Region[] | undefined) {
+  if (!regions) return 0;
+  let click = citationClicks.get(regions);
+  if (click === undefined) {
+    click = ++lastCitationClick;
+    citationClicks.set(regions, click);
+  }
+  return click;
+}
+
+/** Calls `start` once nothing has scrolled for SCROLL_SETTLE_MS, then `end`
+ * after the flash. A smooth scrollIntoView moves every scrolling ancestor,
+ * so scrolls are heard on the whole document. Returns a cancel. */
+function flashAfterScroll(start: () => void, end: () => void) {
+  let timer = window.setTimeout(settle, SCROLL_SETTLE_MS);
+  function onScroll() {
+    window.clearTimeout(timer);
+    timer = window.setTimeout(settle, SCROLL_SETTLE_MS);
+  }
+  function settle() {
+    document.removeEventListener('scroll', onScroll, true);
+    start();
+    timer = window.setTimeout(end, CITATION_FLASH_MS);
+  }
+  document.addEventListener('scroll', onScroll, {
+    capture: true,
+    passive: true,
+  });
+  return () => {
+    window.clearTimeout(timer);
+    document.removeEventListener('scroll', onScroll, true);
+  };
+}
 
 type ObserveVisibility = (
   element: HTMLElement,
@@ -47,22 +89,28 @@ function LazyPdfPage({
   pageWidth,
   onAspectRatio,
   onMeasured,
+  onPainted,
   observeVisibility,
   placeholderAspectRatio,
   regions,
+  flashing,
 }: {
+  flashing: boolean;
   forceRender: boolean;
   onRetry: () => void;
   pageNumber: number;
   pageWidth: number;
   onAspectRatio?: (ratio: number) => void;
   onMeasured?: () => void;
+  onPainted?: () => void;
   observeVisibility: ObserveVisibility;
   placeholderAspectRatio: number;
   regions: ReturnType<typeof normalizeCitationRegions>;
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(forceRender);
+  // The canvas is drawn; an offscreen page drops it.
+  const [painted, setPainted] = useState(false);
   const [measuredAspectRatio, setMeasuredAspectRatio] = useState<number | null>(
     null
   );
@@ -77,13 +125,17 @@ function LazyPdfPage({
       setVisible(true);
       return;
     }
-    return observeVisibility(wrapper, setVisible);
+    return observeVisibility(wrapper, (next) => {
+      setVisible(next);
+      if (!next) setPainted(false);
+    });
   }, [forceRender, observeVisibility]);
 
   return (
     <div
       className="relative w-full"
       data-page={pageNumber}
+      data-painted={painted || undefined}
       ref={wrapperRef}
       style={{ aspectRatio: measuredAspectRatio ?? placeholderAspectRatio }}
     >
@@ -102,6 +154,10 @@ function LazyPdfPage({
               onMeasured?.();
             }
           }}
+          onRenderSuccess={() => {
+            setPainted(true);
+            onPainted?.();
+          }}
           pageNumber={pageNumber}
           renderAnnotationLayer={false}
           renderTextLayer
@@ -110,7 +166,7 @@ function LazyPdfPage({
       ) : (
         <div aria-hidden className="absolute inset-0 bg-white" />
       )}
-      <CitationOverlay regions={regions} />
+      <CitationOverlay flashing={flashing} regions={regions} />
     </div>
   );
 }
@@ -162,9 +218,12 @@ export default function PdfView({
   const [pageAspectRatio, setPageAspectRatio] = useState(
     DEFAULT_PAGE_ASPECT_RATIO
   );
-  const [measuredCitationKey, setMeasuredCitationKey] = useState<string | null>(
-    null
-  );
+  // Bumped when the cited page paints, to run the final citation scroll.
+  const [paintVersion, setPaintVersion] = useState(0);
+  // The citation whose box is flashing; it shows only during the flash.
+  const [flashKey, setFlashKey] = useState<string | null>(null);
+  const cancelFlashRef = useRef<() => void>(undefined);
+  useEffect(() => () => cancelFlashRef.current?.(), []);
   const visibilityObserverRef = useRef<IntersectionObserver | null>(null);
   const visibilityListenersRef = useRef(
     new Map<Element, (visible: boolean) => void>()
@@ -184,8 +243,8 @@ export default function PdfView({
           `${region.page}:${region.left}:${region.top}:${region.right}:${region.bottom}`
       )
       .join('|');
-    return `${url}:${targetPage}:${boxes}`;
-  }, [citationRegions, targetPage, url]);
+    return `${url}:${targetPage}:${citationClick(regions)}:${boxes}`;
+  }, [citationRegions, regions, targetPage, url]);
 
   const observeVisibility = useCallback<ObserveVisibility>(
     (element, listener) => {
@@ -232,12 +291,15 @@ export default function PdfView({
   }, []);
 
   // Place the cited box near the middle once its wrapper exists, then once
-  // more if PDF.js replaces the placeholder ratio with measured geometry.
-  // Resizing the pane does not pull a reader back after they scroll away.
+  // more when its page has painted with measured geometry; once that scroll
+  // settles, the box flashes. Resizing the pane does not pull a reader back
+  // after they scroll away.
   useEffect(() => {
     if (!citationKey || !numPages || !pageWidth) return;
-    const phase =
-      measuredCitationKey === citationKey ? 'measured' : 'placeholder';
+    const painted = !!containerRef.current?.querySelector(
+      `[data-page="${targetPage}"][data-painted]`
+    );
+    const phase = painted ? 'painted' : 'placeholder';
     const scrollKey = `${citationKey}:${phase}`;
     if (lastCitationScrollRef.current === scrollKey) return;
     const firstRegion = citationRegions.find(
@@ -253,13 +315,20 @@ export default function PdfView({
     if (!target) return;
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     lastCitationScrollRef.current = scrollKey;
+    if (!painted || !firstRegion) return;
+    cancelFlashRef.current?.();
+    cancelFlashRef.current = flashAfterScroll(
+      () => setFlashKey(citationKey),
+      () => setFlashKey(null)
+    );
   }, [
     citationKey,
     citationRegions,
-    measuredCitationKey,
     numPages,
     page,
+    paintVersion,
     pageWidth,
+    targetPage,
   ]);
 
   useEffect(() => {
@@ -368,11 +437,15 @@ export default function PdfView({
                       key={p}
                       observeVisibility={observeVisibility}
                       onAspectRatio={p === 1 ? setPageAspectRatio : undefined}
-                      onMeasured={() => {
-                        setPageMeasureVersion((value) => value + 1);
-                        if (p === targetPage && citationKey)
-                          setMeasuredCitationKey(citationKey);
-                      }}
+                      flashing={!!flashKey && flashKey === citationKey}
+                      onMeasured={() =>
+                        setPageMeasureVersion((value) => value + 1)
+                      }
+                      onPainted={
+                        p === targetPage
+                          ? () => setPaintVersion((value) => value + 1)
+                          : undefined
+                      }
                       onRetry={retry}
                       pageNumber={p}
                       pageWidth={pageWidth * zoom}

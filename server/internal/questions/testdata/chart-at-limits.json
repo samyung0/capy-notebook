@@ -1,0 +1,98 @@
+{
+  "name": "chart-at-limits",
+  "valid": true,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "chart",
+        "kind": "bar",
+        "title": "界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界界",
+        "labels": [
+          "類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類類",
+          "Feb",
+          "Mar"
+        ],
+        "series": [
+          {
+            "name": "名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名",
+            "values": [
+              1000000000000,
+              -1000000000000,
+              null
+            ]
+          },
+          {
+            "name": "名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          },
+          {
+            "name": "名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名名",
+            "values": [
+              1,
+              2,
+              3
+            ]
+          }
+        ],
+        "xTitle": "mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
+        "yTitle": "yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy"
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": [
+            "alpha"
+          ]
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "text": "Because."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

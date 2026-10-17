@@ -11,6 +11,7 @@ import { EditorIcon } from '@/features/notes/EditorIcon';
 import { MEDIA_CAPTION_CLASS } from '@/features/notes/nodeStyles';
 import { QuestionBlockView } from '@/features/questions/QuestionView';
 import { m } from '@/i18n';
+import { cn } from '@/lib/cn';
 import type {
   HtmlEmbedElement,
   MaterialRefElement,
@@ -198,8 +199,9 @@ export function FigureView({
       </MediaFrame>
       {/* A figure's description reads as its caption, like an image's. */}
       {block.description && (
+        // Clear of the chart's legend, which sits at the figure's foot.
         <p
-          className={MEDIA_CAPTION_CLASS}
+          className={cn(MEDIA_CAPTION_CLASS, 'mt-4')}
           style={{
             width:
               width ?? (block.type === 'graph' ? block.width : CHART_WIDTH),
@@ -209,42 +211,58 @@ export function FigureView({
         </p>
       )}
       {preview.opened && (
-        <Suspense fallback={null}>
-          <MediaPreview
-            onOpenChange={preview.setOpen}
-            open={preview.open}
-            title={
-              block.type === 'chart'
-                ? m.editor_chart()
-                : block.type === 'plot'
-                  ? m.question_ui_plot()
-                  : m.editor_graph()
-            }
-          >
-            {block.type === 'graph' ? (
-              <div
-                className="[&_img]:h-(--preview-height) [&_img]:w-auto"
-                style={
-                  {
-                    '--preview-height': previewHeight(
-                      block.width,
-                      block.height
-                    ),
-                  } as CSSProperties
-                }
-              >
-                <QuestionBlockView block={block} />
-              </div>
-            ) : (
-              // Chart text uses the page colours, so it keeps a page-coloured panel.
-              <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
-                <QuestionBlockView block={block} />
-              </div>
-            )}
-          </MediaPreview>
-        </Suspense>
+        <FigurePreview
+          block={block}
+          onOpenChange={preview.setOpen}
+          open={preview.open}
+        />
       )}
     </>
+  );
+}
+
+/** A chart, plot or graph full screen; the graph editor opens its live board
+ * here too. */
+export function FigurePreview({
+  block,
+  onOpenChange,
+  open,
+}: Pick<QuestionFigureElement, 'block'> & {
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+}) {
+  return (
+    <Suspense fallback={null}>
+      <MediaPreview
+        onOpenChange={onOpenChange}
+        open={open}
+        title={
+          block.type === 'chart'
+            ? m.editor_chart()
+            : block.type === 'plot'
+              ? m.question_ui_plot()
+              : m.editor_graph()
+        }
+      >
+        {block.type === 'graph' ? (
+          <div
+            className="[&_img]:h-(--preview-height) [&_img]:w-auto"
+            style={
+              {
+                '--preview-height': previewHeight(block.width, block.height),
+              } as CSSProperties
+            }
+          >
+            <QuestionBlockView block={block} />
+          </div>
+        ) : (
+          // Chart text uses the page colours, so it keeps a page-coloured panel.
+          <div className="w-[min(100%,56rem)] rounded-card bg-surface p-6 text-fg [&_figure]:my-0 [&_figure]:max-w-none">
+            <QuestionBlockView block={block} />
+          </div>
+        )}
+      </MediaPreview>
+    </Suspense>
   );
 }
 

@@ -96,7 +96,7 @@ export function QuestionBlock({
               onClick={() => show(index - 1)}
               size="xs"
             />
-            <span className="pt-1 text-[11px] text-fg-muted">
+            <span className="translate-y-px pt-1 font-semibold text-[11px]">
               {m.chat_question_progress({
                 count: questions.length,
                 index: index + 1,
@@ -157,6 +157,7 @@ export function QuestionBlock({
             : m.chat_question_type()
         }
         leftIcon="pencil"
+        leftIconClassName="-translate-y-px"
         onChange={(event) => {
           update({ other: event.target.value });
           if (event.target.value.trim()) {
@@ -188,10 +189,6 @@ export function QuestionBlock({
         <span className="ml-auto" />
         {overLimit ? (
           <CharCount max={CHAT_CHARACTER_LIMIT} value={composedLength} />
-        ) : questions.length > 1 ? (
-          <span className="text-[11px] text-fg-muted">
-            {m.chat_question_answered({ count: questions.length, done })}
-          </span>
         ) : null}
         <IconButton
           className="p-2.5"

@@ -466,16 +466,19 @@ func list(min, max int, items map[string]any) map[string]any {
 // chartSchema and plotSchema mirror questions.ValidateBlock, which stays the
 // backstop; the retrieval service checks agent media against them first.
 func chartSchema() map[string]any {
+	title := map[string]any{"type": "string", "maxLength": fieldlimits.QuestionChartTitle}
 	return obj(map[string]any{
 		"type":   map[string]any{"const": "chart"},
 		"kind":   map[string]any{"enum": []string{"bar", "hbar", "line", "area", "pie", "stacked"}},
-		"title":  label,
-		"labels": list(1, fieldlimits.QuestionChartLabels, map[string]any{"type": "string", "maxLength": fieldlimits.QuestionText}),
+		"title":  title,
+		"labels": list(1, fieldlimits.QuestionChartLabels, map[string]any{"type": "string", "maxLength": fieldlimits.QuestionChartLabel}),
 		"series": list(1, fieldlimits.QuestionChartSeries, obj(map[string]any{
 			// null is an empty cell, drawn as nothing.
-			"name": label, "values": map[string]any{"type": "array", "items": map[string]any{"type": []string{"number", "null"}}},
+			"name": map[string]any{"type": "string", "maxLength": fieldlimits.QuestionChartSeriesName}, "values": map[string]any{"type": "array", "items": map[string]any{
+				"type": []string{"number", "null"}, "minimum": -fieldlimits.QuestionChartValue, "maximum": fieldlimits.QuestionChartValue,
+			}},
 		}, "name", "values")),
-		"xTitle": label, "yTitle": label,
+		"xTitle": title, "yTitle": title,
 		"gridlines": map[string]any{"enum": []string{"normal", "fine"}},
 	}, "type", "kind", "title", "labels", "series")
 }
