@@ -263,8 +263,10 @@ struct Source {
     paused: bool,
     /// When this room's saves started failing without a success.
     failing_since: Option<Instant>,
-    /// The sources record this room's load made.
-    generation: u64,
+    /// This room's load: its sources record (by generation) and its hold on
+    /// the disk store files, which goes with the room, also when a panic
+    /// unwinds it.
+    hold: sources::Hold,
     /// The session's base, which an Office file's drafts must have grown over.
     base_sha256: String,
 }
@@ -591,8 +593,9 @@ async fn load(
             let durable = match durable {
                 Ok(durable) => durable,
                 Err(error) => {
-                    // The room never serves: its load lets go of its files.
-                    app.sources.forget(&room, loaded.generation).await;
+                    // The room never serves: its record goes, and its files
+                    // with `loaded`.
+                    app.sources.forget(&room, loaded.hold.generation()).await;
                     return Err(error.into());
                 }
             };
@@ -608,7 +611,7 @@ async fn load(
                 pending_reported: false,
                 paused: false,
                 failing_since: None,
-                generation: loaded.generation,
+                hold: loaded.hold,
                 base_sha256: loaded.session.base_source_sha256,
             };
             Ok((
@@ -3184,8 +3187,11 @@ impl Room {
             Kindly::Note(note) => note,
             Kindly::Source(source) => {
                 unlog_bytes(&self.app, source.log_bytes.max(0) as u64);
-                let (app, room, generation) =
-                    (self.app.clone(), source.room.clone(), source.generation);
+                let (app, room, generation) = (
+                    self.app.clone(),
+                    source.room.clone(),
+                    source.hold.generation(),
+                );
                 let discarded = self.discard_pending.take();
                 tokio::spawn(async move {
                     app.sources.forget(&room, generation).await;

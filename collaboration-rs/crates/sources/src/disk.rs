@@ -12,6 +12,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use serde_json::json;
@@ -118,6 +119,55 @@ struct Index {
     /// The bytes of the files on disk.
     used: u64,
     serial: u64,
+}
+
+impl Index {
+    /// A loaded room unloaded (or its load failed): the files only it held
+    /// go idle from `now`.
+    fn release(&mut self, holder: u64, now: Instant) {
+        self.entries.retain(|_, entry| {
+            if entry.holders.remove(&holder) && entry.holders.is_empty() {
+                if entry.file.is_none() {
+                    return false;
+                }
+                entry.idle_since = Some(now);
+            }
+            true
+        });
+    }
+}
+
+/// A room load's hold on the files it takes, by its generation. Dropping it
+/// lets them go: the room unloaded, its load failed, or a panic unwound
+/// either, so no path leaves them held against the cap.
+pub struct Hold {
+    disk: Arc<DiskStore>,
+    generation: u64,
+}
+
+impl Hold {
+    pub fn generation(&self) -> u64 {
+        self.generation
+    }
+}
+
+impl std::fmt::Debug for Hold {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("Hold").field(&self.generation).finish()
+    }
+}
+
+impl Drop for Hold {
+    fn drop(&mut self) {
+        let (generation, now) = (self.generation, Instant::now());
+        // At once when the index is free, else on a task (a drop cannot wait).
+        if let Ok(mut index) = self.disk.index.try_lock() {
+            index.release(generation, now);
+        } else if let Ok(runtime) = tokio::runtime::Handle::try_current() {
+            let disk = self.disk.clone();
+            runtime.spawn(async move { disk.index.lock().await.release(generation, now) });
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -337,19 +387,17 @@ impl DiskStore {
         Err(error.into())
     }
 
-    /// A loaded room unloaded (or its load failed): the files only it held
-    /// go idle from `now`.
+    /// The hold of a room load (its generation) on the files it takes.
+    pub fn hold(self: &Arc<Self>, generation: u64) -> Hold {
+        Hold {
+            disk: self.clone(),
+            generation,
+        }
+    }
+
+    #[cfg(test)]
     pub async fn release(&self, holder: u64, now: Instant) {
-        let mut index = self.index.lock().await;
-        index.entries.retain(|_, entry| {
-            if entry.holders.remove(&holder) && entry.holders.is_empty() {
-                if entry.file.is_none() {
-                    return false;
-                }
-                entry.idle_since = Some(now);
-            }
-            true
-        });
+        self.index.lock().await.release(holder, now);
     }
 
     /// Deletes the files no loaded room took again within [`GRACE`].
@@ -620,7 +668,7 @@ pub(crate) mod tests {
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn a_read_is_served_while_another_file_is_written() {
         let folder = Folder::new("unlocked");
-        let store = std::sync::Arc::new(DiskStore::open(folder.0.clone(), 100).unwrap());
+        let store = Arc::new(DiskStore::open(folder.0.clone(), 100).unwrap());
         let (served, written) = (base('a'), base('b'));
         put(&store, &served, b"served", 1).await;
         let fifo = folder.0.join(written.file_name());
@@ -639,6 +687,31 @@ pub(crate) mod tests {
         assert_eq!(read.expect("served").unwrap().0, b"served");
         writing.await.unwrap();
         assert_eq!(store.get(&written, None).await.unwrap().0, b"written");
+    }
+
+    // A load's hold lets go of its files when dropped: by a panic between
+    // the load and serving, and while the index is busy (a leaked hold would
+    // keep its bytes against the cap until a restart).
+    #[tokio::test]
+    async fn a_dropped_hold_lets_go_of_its_files_even_in_a_panic() {
+        let folder = Folder::new("hold");
+        let store = Arc::new(DiskStore::open(folder.0.clone(), 100).unwrap());
+        let hold = store.hold(1);
+        put(&store, &base('a'), b"first", 1).await;
+        let unwound = tokio::spawn(async move {
+            let _hold = hold;
+            panic!("between the load and serving");
+        });
+        assert!(unwound.await.unwrap_err().is_panic());
+        let hold = store.hold(2);
+        put(&store, &base('b'), b"second", 2).await;
+        {
+            let _busy = store.index.lock().await;
+            drop(hold);
+        }
+        tokio::task::yield_now().await;
+        store.sweep(Instant::now() + GRACE).await;
+        assert!(folder.files().is_empty());
     }
 
     #[tokio::test]

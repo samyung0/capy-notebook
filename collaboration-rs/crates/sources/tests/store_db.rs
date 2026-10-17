@@ -911,9 +911,9 @@ async fn an_unloaded_room_forgets_only_its_own_record() {
         .load(&room, &h.user, &text_doc(101))
         .await
         .unwrap();
-    h.sources.forget(&room, first.generation).await;
+    h.sources.forget(&room, first.hold.generation()).await;
     assert_eq!(h.sources.known_checkpoint(&room), Some(0));
-    h.sources.forget(&room, second.generation).await;
+    h.sources.forget(&room, second.hold.generation()).await;
     assert_eq!(h.sources.known_checkpoint(&room), None);
 }
 
