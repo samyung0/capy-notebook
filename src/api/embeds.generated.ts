@@ -4,6 +4,7 @@ export const EMBED_CATALOG = {
   "elements": [
     {
       "type": "p",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -14,6 +15,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h1",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -24,6 +26,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h2",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -34,6 +37,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h3",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -44,6 +48,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h4",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -54,6 +59,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h5",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -64,6 +70,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "h6",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -74,6 +81,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "blockquote",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -84,6 +92,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "hr",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -95,6 +104,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "code_block",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -105,6 +115,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "code_line",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -115,6 +126,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "table",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -125,6 +137,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "tr",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -135,6 +148,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "td",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -145,6 +159,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "th",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -155,6 +170,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "toc",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -166,6 +182,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "callout",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -176,6 +193,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "column_group",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -186,6 +204,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "column",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -196,6 +215,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "equation",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -207,6 +227,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "inline_equation",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -219,6 +240,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "a",
+      "index": "text",
       "inline": true,
       "materials": [
         "note",
@@ -230,6 +252,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mention",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -242,6 +265,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mention_input",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -254,6 +278,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "slash_input",
+      "index": "none",
       "void": true,
       "inline": true,
       "materials": [
@@ -266,6 +291,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "img",
+      "index": "none",
       "void": true,
       "required": [
         "assetId"
@@ -288,6 +314,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "audio",
+      "index": "none",
       "void": true,
       "required": [
         "assetId"
@@ -309,6 +336,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "video",
+      "index": "none",
       "void": true,
       "required": [
         "provider",
@@ -330,6 +358,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "placeholder",
+      "index": "none",
       "void": true,
       "materials": [
         "note",
@@ -341,6 +370,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "chart",
+      "index": "figure",
       "void": true,
       "topLevel": true,
       "required": [
@@ -365,6 +395,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "plot",
+      "index": "figure",
       "void": true,
       "topLevel": true,
       "required": [
@@ -389,6 +420,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "graph",
+      "index": "figure",
       "void": true,
       "topLevel": true,
       "required": [
@@ -413,6 +445,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "html_embed",
+      "index": "none",
       "void": true,
       "topLevel": true,
       "required": [
@@ -436,6 +469,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mermaid",
+      "index": "mermaid",
       "required": [
         "id",
         "source"
@@ -462,6 +496,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "mermaid_caption",
+      "index": "text",
       "materials": [
         "note",
         "quiz",
@@ -472,6 +507,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "material_ref",
+      "index": "item",
       "void": true,
       "topLevel": true,
       "required": [
@@ -488,6 +524,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "quiz",
+      "index": "text",
       "required": [
         "id"
       ],
@@ -506,6 +543,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "quiz_question",
+      "index": "question",
       "void": true,
       "required": [
         "id",
@@ -536,6 +574,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "flashcards",
+      "index": "text",
       "required": [
         "id"
       ],
@@ -553,6 +592,7 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "flashcard",
+      "index": "text",
       "required": [
         "id"
       ],
@@ -574,12 +614,14 @@ export const EMBED_CATALOG = {
     },
     {
       "type": "flashcard_front",
+      "index": "text",
       "materials": [
         "flashcards"
       ]
     },
     {
       "type": "flashcard_back",
+      "index": "text",
       "materials": [
         "flashcards"
       ]

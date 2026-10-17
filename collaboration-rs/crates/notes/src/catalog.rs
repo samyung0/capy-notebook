@@ -50,10 +50,22 @@ pub const QUIZ_OPEN_PARTS_MAX: usize = 20;
 pub const QUIZ_PARTS_MAX: usize = 100;
 pub const QUIZ_QUESTION_PARTS_MAX: usize = 7;
 
+/// What an element gives its document's index text (`index_text`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Index {
+    None,
+    Text,
+    Figure,
+    Mermaid,
+    Question,
+    Item,
+}
+
 /// One element type a material document may hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Element {
     pub name: &'static str,
+    pub index: Index,
     pub void: bool,
     pub inline: bool,
     /// Only stored as a top-level block.
@@ -106,6 +118,7 @@ pub struct MaterialKind {
 pub const ELEMENTS: &[Element] = &[
     Element {
         name: "p",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -120,6 +133,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h1",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -134,6 +148,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h2",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -148,6 +163,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h3",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -162,6 +178,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h4",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -176,6 +193,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h5",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -190,6 +208,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "h6",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -204,6 +223,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "blockquote",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -218,6 +238,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "hr",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -232,6 +253,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "code_block",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -246,6 +268,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "code_line",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -260,6 +283,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "table",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -274,6 +298,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "tr",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -288,6 +313,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "td",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -302,6 +328,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "th",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -316,6 +343,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "toc",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -330,6 +358,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "callout",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -344,6 +373,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "column_group",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -358,6 +388,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "column",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -372,6 +403,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "equation",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -386,6 +418,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "inline_equation",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -400,6 +433,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "a",
+        index: Index::Text,
         void: false,
         inline: true,
         top_level: false,
@@ -414,6 +448,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mention",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -428,6 +463,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mention_input",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -442,6 +478,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "slash_input",
+        index: Index::None,
         void: true,
         inline: true,
         top_level: false,
@@ -456,6 +493,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "img",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -470,6 +508,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "audio",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -484,6 +523,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "video",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -498,6 +538,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "placeholder",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: false,
@@ -512,6 +553,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "chart",
+        index: Index::Figure,
         void: true,
         inline: false,
         top_level: true,
@@ -526,6 +568,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "plot",
+        index: Index::Figure,
         void: true,
         inline: false,
         top_level: true,
@@ -540,6 +583,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "graph",
+        index: Index::Figure,
         void: true,
         inline: false,
         top_level: true,
@@ -554,6 +598,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "html_embed",
+        index: Index::None,
         void: true,
         inline: false,
         top_level: true,
@@ -568,6 +613,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mermaid",
+        index: Index::Mermaid,
         void: false,
         inline: false,
         top_level: false,
@@ -582,6 +628,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "mermaid_caption",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -596,6 +643,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "material_ref",
+        index: Index::Item,
         void: true,
         inline: false,
         top_level: true,
@@ -610,6 +658,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "quiz",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -624,6 +673,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "quiz_question",
+        index: Index::Question,
         void: true,
         inline: false,
         top_level: false,
@@ -638,6 +688,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcards",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -652,6 +703,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcard",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -666,6 +718,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcard_front",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,
@@ -680,6 +733,7 @@ pub const ELEMENTS: &[Element] = &[
     },
     Element {
         name: "flashcard_back",
+        index: Index::Text,
         void: false,
         inline: false,
         top_level: false,

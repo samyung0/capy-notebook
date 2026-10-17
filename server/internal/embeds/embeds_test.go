@@ -53,6 +53,9 @@ func TestCatalogIsConsistent(t *testing.T) {
 		}
 	}
 	for _, e := range c.Elements {
+		if !slices.Contains(embeds.IndexRules, e.Index) {
+			t.Errorf("%s has index rule %q, not one of %v", e.Type, e.Index, embeds.IndexRules)
+		}
 		for _, child := range e.Children {
 			if _, ok := elements[child]; !ok {
 				t.Errorf("%s holds unknown element %s", e.Type, child)
@@ -96,6 +99,11 @@ func TestCatalogIsConsistent(t *testing.T) {
 		item := e.Class == embeds.ClassItem
 		if item != (e.Element == "material_ref") || (!item && e.Element != e.Kind) {
 			t.Errorf("embed %s (%s) is held by %s", e.Kind, e.Class, e.Element)
+		}
+		// The figure rule renders question blocks; the item rule a reference.
+		if index := elements[e.Element].Index; (index == embeds.IndexFigure) != e.QuestionBlock ||
+			(index == embeds.IndexItem) != item {
+			t.Errorf("embed %s is held by %s with index rule %s", e.Kind, e.Element, index)
 		}
 		if item && !kinds[e.Kind].Item {
 			t.Errorf("item embed %s has no item material kind", e.Kind)

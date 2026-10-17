@@ -67,9 +67,35 @@ const (
 	SurfaceExport   = "export"   // DOCX, PDF and markdown export
 )
 
+// Index is what an element gives its document's index text, the text a
+// note is searched and its effects read by (openwiki/embeds.md "Index text").
+// Every element names one; there is no default.
+type Index string
+
+const (
+	// IndexNone gives nothing (media, equations, inline voids, html_embed).
+	IndexNone Index = "none"
+	// IndexText renders its children markdown-like: headings keep their level,
+	// list items their bullets, tables their rows, code its fence, and
+	// containers give each child's text.
+	IndexText Index = "text"
+	// IndexFigure renders a chart, plot or graph `block`.
+	IndexFigure Index = "figure"
+	// IndexMermaid gives the caption, then the source in a ```mermaid fence.
+	IndexMermaid Index = "mermaid"
+	// IndexQuestion renders a quiz question: stem, parts, options, solutions.
+	IndexQuestion Index = "question"
+	// IndexItem gives the referenced item's text at the reference's place.
+	IndexItem Index = "item"
+)
+
+// IndexRules lists every index rule.
+var IndexRules = []Index{IndexNone, IndexText, IndexFigure, IndexMermaid, IndexQuestion, IndexItem}
+
 // Element is one element type a material document may hold.
 type Element struct {
 	Type   string `json:"type"`
+	Index  Index  `json:"index"`
 	Void   bool   `json:"void,omitempty"`
 	Inline bool   `json:"inline,omitempty"`
 	// TopLevel elements are only stored as top-level blocks.
@@ -162,25 +188,26 @@ type Limit struct {
 	Value int    `json:"value"`
 }
 
-func plain(typ string) Element {
-	return Element{Type: typ, Materials: allMaterials}
+func plain(typ string, index Index) Element {
+	return Element{Type: typ, Index: index, Materials: allMaterials}
 }
 
-func void(typ string) Element {
-	e := plain(typ)
+func void(typ string, index Index) Element {
+	e := plain(typ, index)
 	e.Void = true
 	return e
 }
 
-func inline(typ string, isVoid bool) Element {
-	e := plain(typ)
+func inline(typ string, isVoid bool, index Index) Element {
+	e := plain(typ, index)
 	e.Inline, e.Void = true, isVoid
 	return e
 }
 
-// media is an uploaded file: it names its editor asset, never a URL.
+// media is an uploaded file: it names its editor asset, never a URL. Its
+// caption is not indexed.
 func media(typ string, resizable bool) Element {
-	e := void(typ)
+	e := void(typ, IndexNone)
 	e.Required = []string{"assetId"}
 	e.Forbidden = []string{"url", "src"}
 	e.Assets = []string{"assetId"}
@@ -190,7 +217,7 @@ func media(typ string, resizable bool) Element {
 
 // figure is a chart, plot or graph: one question block under `block`.
 func figure(typ string) Element {
-	e := void(typ)
+	e := void(typ, IndexFigure)
 	e.TopLevel = true
 	e.Required = []string{"id", "block"}
 	e.Fields = []string{"type", "id", "block", "children", "width"}
@@ -205,13 +232,14 @@ var opaque = []string{"questions", "cards", "code"}
 // transient ones (a media placeholder while it uploads, the mention and slash
 // inputs while typing) are documents' nodes too, so they are listed.
 func Elements() []Element {
-	quiz := plain("quiz")
+	// An item's own elements: a note gives their text at its reference.
+	quiz := plain("quiz", IndexText)
 	quiz.Required = []string{"id"}
 	quiz.Forbidden = append(append([]string{}, opaque...), "timeLimitMin")
 	quiz.Children = []string{"quiz_question"}
 	quiz.Materials = []string{Quiz}
 
-	question := void("quiz_question")
+	question := void("quiz_question", IndexQuestion)
 	question.Required = []string{"id", "question"}
 	question.Forbidden = append(append([]string{}, opaque...),
 		"questionType", "level", "points", "rubrics", "pairs", "acceptedAnswers", "hints",
@@ -223,67 +251,72 @@ func Elements() []Element {
 	}
 	question.Materials = []string{Quiz}
 
-	cards := plain("flashcards")
+	cards := plain("flashcards", IndexText)
 	cards.Required = []string{"id"}
 	cards.Forbidden = opaque
 	cards.Children = []string{"flashcard"}
 	cards.Materials = []string{Flashcards}
 
-	card := plain("flashcard")
+	card := plain("flashcard", IndexText)
 	card.Required = []string{"id"}
 	card.Forbidden = opaque
 	card.Children = []string{"flashcard_front", "flashcard_back"}
 	card.Assets = []string{"image.assetId"}
 	card.Materials = []string{Flashcards}
 
-	front, back := plain("flashcard_front"), plain("flashcard_back")
+	front, back := plain("flashcard_front", IndexText), plain("flashcard_back", IndexText)
 	front.Materials, back.Materials = []string{Flashcards}, []string{Flashcards}
 
-	mermaid := plain("mermaid")
+	mermaid := plain("mermaid", IndexMermaid)
 	mermaid.Required = []string{"id", "source"}
 	mermaid.Forbidden = opaque
 	mermaid.SharedText = []string{"source"}
 	mermaid.Resizable = true
 	mermaid.Children = []string{"mermaid_caption"}
 
-	html := void("html_embed")
+	// No live, index or effects work for html_embed (Epo 2026-10-17).
+	html := void("html_embed", IndexNone)
 	html.TopLevel = true
 	html.Required = []string{"id", "html"}
 	html.Fields = []string{"type", "id", "html", "caption", "children"}
 
-	ref := void("material_ref")
+	ref := void("material_ref", IndexItem)
 	ref.TopLevel = true
 	ref.Required = []string{"id", "materialId", "refKind"}
 	ref.Forbidden = []string{"pending"}
 	ref.Materials = []string{Note}
 
-	video := void("video")
+	video := void("video", IndexNone)
 	video.Required = []string{"provider", "videoId"}
 	video.Forbidden = []string{"assetId", "url", "src"}
 	video.Resizable = true
 
 	return []Element{
-		plain("p"),
-		plain("h1"), plain("h2"), plain("h3"), plain("h4"), plain("h5"), plain("h6"),
-		plain("blockquote"),
-		void("hr"),
-		plain("code_block"), plain("code_line"),
-		plain("table"), plain("tr"), plain("td"), plain("th"),
-		void("toc"),
-		plain("callout"),
-		plain("column_group"), plain("column"),
-		void("equation"),
-		inline("inline_equation", true),
-		inline("a", false),
-		inline("mention", true),
-		inline("mention_input", true),
-		inline("slash_input", true),
+		plain("p", IndexText),
+		plain("h1", IndexText), plain("h2", IndexText), plain("h3", IndexText),
+		plain("h4", IndexText), plain("h5", IndexText), plain("h6", IndexText),
+		plain("blockquote", IndexText),
+		void("hr", IndexNone),
+		plain("code_block", IndexText), plain("code_line", IndexText),
+		plain("table", IndexText), plain("tr", IndexText), plain("td", IndexText), plain("th", IndexText),
+		void("toc", IndexNone),
+		plain("callout", IndexText),
+		plain("column_group", IndexText), plain("column", IndexText),
+		void("equation", IndexNone),
+		// Inline voids hold no text of their own: an equation's TeX, a
+		// mention's name and the transient inputs stay out, as before.
+		inline("inline_equation", true, IndexNone),
+		inline("a", false, IndexText),
+		inline("mention", true, IndexNone),
+		inline("mention_input", true, IndexNone),
+		inline("slash_input", true, IndexNone),
 		media("img", true), media("audio", false),
 		video,
-		void("placeholder"),
+		// An upload in progress holds nothing yet.
+		void("placeholder", IndexNone),
 		figure("chart"), figure("plot"), figure("graph"),
 		html,
-		mermaid, plain("mermaid_caption"),
+		mermaid, plain("mermaid_caption", IndexText),
 		ref,
 		quiz, question,
 		cards, card, front, back,

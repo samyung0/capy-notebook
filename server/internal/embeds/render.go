@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 )
 
@@ -69,10 +70,22 @@ func Rust() []byte {
 	}
 
 	out.WriteString(`
+/// What an element gives its document's index text (` + "`index_text`" + `).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Index {
+    None,
+    Text,
+    Figure,
+    Mermaid,
+    Question,
+    Item,
+}
+
 /// One element type a material document may hold.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Element {
     pub name: &'static str,
+    pub index: Index,
     pub void: bool,
     pub inline: bool,
     /// Only stored as a top-level block.
@@ -131,6 +144,7 @@ pub const ELEMENTS: &[Element] = &[
 		}
 		fmt.Fprintf(&out, `    Element {
         name: %q,
+        index: Index::%s,
         void: %t,
         inline: %t,
         top_level: %t,
@@ -143,7 +157,7 @@ pub const ELEMENTS: &[Element] = &[
         children: %s,
         materials: %s,
     },
-`, e.Type, e.Void, e.Inline, e.TopLevel, rustStrs(e.Required), fields, rustStrs(e.Forbidden),
+`, e.Type, rustIndex(e.Index), e.Void, e.Inline, e.TopLevel, rustStrs(e.Required), fields, rustStrs(e.Forbidden),
 			rustStrs(e.SharedText), rustStrs(e.Assets), e.Resizable, rustStrs(e.Children), rustStrs(e.Materials))
 	}
 	out.WriteString("];\n\npub const EMBEDS: &[Embed] = &[\n")
@@ -189,6 +203,15 @@ pub fn material_kind(kind: &str) -> Option<&'static MaterialKind> {
 }
 `)
 	return out.Bytes()
+}
+
+// rustIndex is an index rule's Rust variant; an unknown rule stops the
+// generator (TestCatalogIsConsistent names it).
+func rustIndex(index Index) string {
+	if !slices.Contains(IndexRules, index) {
+		panic(fmt.Sprintf("unknown index rule %q", index))
+	}
+	return strings.ToUpper(string(index[:1])) + string(index[1:])
 }
 
 func rustStrs(values []string) string {
