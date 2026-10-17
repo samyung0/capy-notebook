@@ -198,3 +198,12 @@ Effects follow saves: 5 s after the last change, at most 30 s while typing
 4. The state cap: tie it to the plan's file cap, or to a multiple of the
    seed?
 5. Remove the unused `pendingEffects` from the editor session API?
+
+## Parked
+
+- Linked images: newly inserted DOCX/PPTX images stored as editor assets (B2) with only a `capy-image:<sha256>.<ext>`
+  link in the document and stored file; materialized on Download, ingest and capture_page. Feasible but about 25–31
+  days across the fork (DOCX parse/export and PPTX drop or corrupt links today), Go, pipeline and frontend; decisions
+  open (link format, link-only vs embedded preview + link, cleanup, offline, limits). Report: private harness
+  `2026-10-17-effects-misses/D-LINKED-IMAGES.md`. Parked by Epo 2026-10-17: images stay in the file with an
+  insert-time budget.
