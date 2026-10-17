@@ -327,7 +327,14 @@ unavailable. A steady count means the cap is too small for the
 rooms open at once. Next to it, the gauge
 `capy_collaboration_source_disk_held_bytes` is the bytes of the files loaded
 rooms hold, which is what a refusal compares with the cap (idle files go
-first and are not in it). Sentry holds failures
+first and are not in it). A socket closed for sending updates past its
+per-connection allowance (close 4429 `collaboration-too-fast`, the rate limit
+in [plate-editor.md](frontend/plate-editor.md#connection-lifetime-and-refusals))
+is logged at warn as `connection over its update rate` with the room, the
+socket and the user id (never content), counted in
+`capy_collaboration_rate_limited_total`, and never captured: no person's
+typing or pasting reaches the limit, so a count that keeps growing means a
+runaway or hostile client, and the warn lines name it. Sentry holds failures
 only, so the UAT journeys, which cause these outcomes on purpose, must leave
 no event: their cleanup fails on any Sentry event carrying a run trace, actor
 or file id. Collaboration tags its events `service: collaboration`, an internal

@@ -852,6 +852,38 @@ the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
 something they can't reach is blocked or gone.
 
+Each connection may send SYNC messages (updates, step 2 replies, its step
+1s) at a burst of 10,000 messages or 8 MiB, then 200 messages and 2 MiB a
+second (Epo 2026-10-18; `rate.rs`, `COLLABORATION_UPDATE_BURST`,
+`COLLABORATION_UPDATE_BURST_BYTES`, `COLLABORATION_UPDATES_PER_SECOND`,
+`COLLABORATION_UPDATE_BYTES_PER_SECOND`, the same in every environment).
+The sizes come from what the editors send
+(`bench/collaboration/reports/2026-10-18-update-rates.md`, `pnpm bench:rates`):
+notes and PPTX send one update per key, at most 68 a second with a key held
+at macOS's fastest repeat and 105 when keys come as fast as the page takes
+them; DOCX coalesces keys; a note, XLSX or PPTX paste, a photo and a
+reconnect's replayed drafts are one update each (1.5 MB at most measured);
+a DOCX paste is a burst of two updates per paragraph (4,999 in 0.7 s for
+2,500 lines), which the burst covers to about 5,000 paragraphs. Awareness,
+stateless, token and LEAVE messages do not count, nor does a draft send
+(`POST /drafts`, not a socket). A message is over the limit when either
+allowance is empty as it arrives; otherwise it takes one message and its
+bytes, the byte allowance possibly going into debt, so one message larger
+than the byte burst (still within the 4 MiB note sync cap or a source's
+frame cap) goes in on a full allowance and only a message sent while the
+debt lasts is over. A socket over the limit is closed with WebSocket close
+code 4429, reason `collaboration-too-fast`, and the message that tripped it
+is not applied; the server then reads what the client still sends for up
+to 2 s, until its close, since dropping a socket with unread frames resets
+it and the reset can lose the close frame. The tab's socket
+(`CollabSocket`) handles it as any drop: every room on it ends and rejoins
+once the socket reopens, its step 2 carrying the edits the server lacks, and
+unsent edits stay in drafts until a receipt covers them; only each such
+close in the page load doubles the backoff before that reconnect (2 s, 4 s,
+up to 30 s), so a client that keeps tripping the limit cannot loop. The server logs it at warn and counts it
+([observability](../observability-metering.md)); the user sees Reconnecting
+for those seconds.
+
 A transient store failure broadcasts `checkpoint-failed`; the editor keeps its
 pending receipts (the failed-store retry answers them), shows Not saved and,
 with unsaved work, the `delayed` save banner until a receipt covers every
