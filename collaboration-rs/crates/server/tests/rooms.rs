@@ -1866,8 +1866,9 @@ async fn a_clean_source_room_answers_a_checkpoint_request_after_a_reload() {
 
 /// Epo 2026-10-17: a source room load is refused only while loaded rooms'
 /// files fill the disk store. The JOIN gets the refusal the editor retries
-/// (it shows collaboration unavailable), the refusal is counted, and once
-/// the open room unloads its idle files make way for the next load.
+/// (it shows collaboration unavailable), the refusal is counted as such and
+/// not as an authentication failure, and once the open room unloads its
+/// idle files make way for the next load.
 #[tokio::test]
 async fn a_source_room_is_refused_while_loaded_rooms_fill_the_disk_store() {
     let Some(env) = env() else { return };
@@ -1903,9 +1904,11 @@ async fn a_source_room_is_refused_while_loaded_rooms_fill_the_disk_store() {
     b.join(&second_room, &second_token).await;
     let reason = text_payload(&b.until(2).await.expect("refused"));
     assert_eq!(reason, "permission-denied");
+    // Counted as a disk refusal, never as an authentication failure.
     let metrics = metrics_text(server.port).await;
     assert!(
-        metrics.contains("capy_collaboration_source_disk_refusals_total 1\n"),
+        metrics.contains("capy_collaboration_source_disk_refusals_total 1\n")
+            && metrics.contains("capy_collaboration_authentication_failures_total 0\n"),
         "{metrics}"
     );
     // The first room unloads; its files are idle and go for the second.

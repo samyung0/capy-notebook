@@ -413,11 +413,16 @@ fn fresh_doc(held: &StateVector) -> Doc {
     }
 }
 
-/// Why a room did not load: a failure (reported), or an expected refusal
-/// (logged and counted where it is refused).
+/// What a join waiting on a source room load the disk store refused is
+/// answered: the socket refuses it without counting an authentication
+/// failure (the load logged and counted it).
+pub const DISK_FULL: &str = "source disk store full";
+
+/// Why a room did not load: a failure (reported), or the disk store's
+/// refusal (logged and counted where it is refused).
 enum LoadError {
     Failed(String),
-    Refused(String),
+    DiskFull,
 }
 
 impl From<String> for LoadError {
@@ -572,7 +577,7 @@ async fn load(
                         "source room refused: disk store full",
                         json!({ "error": error.to_string(), "room": name.to_string() }),
                     );
-                    return Err(LoadError::Refused(error.to_string()));
+                    return Err(LoadError::DiskFull);
                 }
                 Err(error) => return Err(error.to_string().into()),
             };
@@ -685,7 +690,7 @@ async fn run(
                     );
                     error
                 }
-                LoadError::Refused(error) => error,
+                LoadError::DiskFull => DISK_FULL.to_owned(),
             };
             // Refuse every queued join and draft; the next one loads again.
             app.rooms.remove_if(&room_name, id, || true);
