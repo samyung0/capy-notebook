@@ -93,6 +93,8 @@ fn writer(id: ChannelId) -> Channel {
     }
 }
 
+static DISKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 async fn setup() -> (Arc<Handoff>, Arc<FakeRooms>, redis::aio::ConnectionManager) {
     let url = std::env::var("SOURCES_TEST_REDIS_URL").expect("SOURCES_TEST_REDIS_URL");
     let redis = redis::Client::open(url)
@@ -108,23 +110,32 @@ async fn setup() -> (Arc<Handoff>, Arc<FakeRooms>, redis::aio::ConnectionManager
             tokio_postgres::NoTls,
         )
         .unwrap();
-    let sources = Arc::new(Sources::new(
-        SourcesConfig {
-            api_url: "http://127.0.0.1:1".into(),
-            secret: "secret".into(),
-            engine: PoolConfig {
-                program: PathBuf::from(env!("CARGO_BIN_EXE_sources-test-engine")),
-                args: Vec::new(),
-                save_processes: 1,
-                background_processes: 1,
-                call_timeout: Duration::from_secs(120),
-                replica_budget_bytes: 0,
-                memory_limit_bytes: None,
+    let sources = Arc::new(
+        Sources::new(
+            SourcesConfig {
+                api_url: "http://127.0.0.1:1".into(),
+                secret: "secret".into(),
+                engine: PoolConfig {
+                    program: PathBuf::from(env!("CARGO_BIN_EXE_sources-test-engine")),
+                    args: Vec::new(),
+                    save_processes: 1,
+                    background_processes: 1,
+                    call_timeout: Duration::from_secs(120),
+                    replica_budget_bytes: 0,
+                    memory_limit_bytes: None,
+                },
+                disk_dir: PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
+                    "handoff-disk-{}-{}",
+                    std::process::id(),
+                    DISKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                )),
+                disk_bytes: 1 << 30,
             },
-        },
-        db,
-        reqwest::Client::new(),
-    ));
+            db,
+            reqwest::Client::new(),
+        )
+        .unwrap(),
+    );
     let rooms = Arc::new(FakeRooms::default());
     let handoff = Handoff::new(
         "instance-1".into(),

@@ -245,6 +245,9 @@ pub struct Stats {
     /// JOINs and draft sends refused for their client protocol: material
     /// rooms, then source rooms (stale tabs left after a deploy).
     pub outdated_refusals: [AtomicU64; 2],
+    /// Source room loads refused because loaded rooms' files fill the disk
+    /// store (Epo 2026-10-17).
+    pub source_disk_refusals: AtomicU64,
 }
 
 pub struct App {

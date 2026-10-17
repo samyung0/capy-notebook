@@ -273,7 +273,7 @@ impl Sources {
                 "the source was rebased since this edit",
             ));
         }
-        let (base, sha) = self.bound_base(&session).await?;
+        let (base, sha) = self.bound_base(&session, crate::store::Reader::Job).await?;
         let stored = self.stored(&input.file_id, None).await?;
         if stored.epoch != session.epoch {
             return Err(SourceError::epoch_changed());
@@ -287,7 +287,14 @@ impl Sources {
         }
         let seeded = stored.state.is_none() && stored.rows.is_empty();
         let (seed, layers) = self
-            .layers(session.format, &base, &sha, &stored, Some(&name))
+            .layers(
+                session.format,
+                &base,
+                &sha,
+                &stored,
+                Some(&name),
+                crate::store::Reader::Job,
+            )
             .await?;
         let live_state = live(&name).await;
         // The durable document, then the live room's (both off the runtime).
@@ -406,8 +413,15 @@ impl Sources {
         }
         let (effects, preview) = match office(session.format) {
             Some(_) => (
-                self.office_effects(&session, &base, &sha, &whole, &name)
-                    .await?,
+                self.office_effects(
+                    &session,
+                    &base,
+                    &sha,
+                    &whole,
+                    &name,
+                    crate::store::Reader::Job,
+                )
+                .await?,
                 None,
             ),
             None => {

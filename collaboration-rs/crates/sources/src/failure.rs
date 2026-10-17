@@ -57,6 +57,10 @@ pub enum SourceError {
         message: String,
         details: Option<serde_json::Value>,
     },
+    /// A room load found the disk store full of files loaded rooms hold
+    /// (Epo 2026-10-17): the room is refused until rooms unload.
+    #[error("loaded rooms' files fill the source disk store ({held} of {cap} bytes)")]
+    StoreFull { held: u64, cap: u64 },
     /// Anything else (network, timeouts, the database): slow.
     #[error("{0}")]
     Other(String),
@@ -170,6 +174,7 @@ impl SourceError {
                     .as_str(),
             ),
             SourceError::Edit { code, .. } => token(code),
+            SourceError::StoreFull { .. } => "store_full".into(),
             SourceError::Other(_) => "error".into(),
         }
     }

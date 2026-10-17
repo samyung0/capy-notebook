@@ -10,8 +10,9 @@
 //! checkpoint, update)` holds the rows appended since, one per checkpoint.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -21,7 +22,7 @@ use serde_json::{Value, json};
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, ReadTxn, StateVector, Transact, Update};
 
-use crate::cache::ByteCache;
+use crate::disk::{DiskStore, Key, PutError};
 use crate::effects::{effect_tokens, trim_effect, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
@@ -29,9 +30,8 @@ use crate::gateway::{CheckpointBody, CheckpointSaved, Gateway, RefreshCandidate,
 use crate::text::{TEXT_ROOT, TextSave, TextWindow, full_text_effects, text_doc, text_seed};
 use crate::{BoxFuture, MAX_SOURCE_STATE_BYTES, SourceError, SourceFormat, SourceRoom};
 
-const BASE_CACHE_BYTES: u64 = 128 << 20;
-const SEED_CACHE_BYTES: u64 = 64 << 20;
-const BASELINE_CACHE_BYTES: u64 = 64 << 20;
+/// How often the disk store deletes files past their grace.
+const SWEEP_EVERY: Duration = Duration::from_secs(15);
 const DOWNLOAD_TIMEOUT: Duration = Duration::from_secs(60);
 const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 /// Checkpoint CAS attempts per save (a moved checkpoint reloads and retries).
@@ -41,13 +41,47 @@ pub struct SourcesConfig {
     pub api_url: String,
     pub secret: String,
     pub engine: PoolConfig,
+    /// The disk store's folder (wiped at start) and its cap in bytes
+    /// (`COLLABORATION_SOURCE_DISK_DIR`, `COLLABORATION_SOURCE_DISK_BYTES`).
+    pub disk_dir: PathBuf,
+    pub disk_bytes: u64,
 }
 
-/// seed(base) and what is derived from it once.
+/// seed(base) for one call, and its SHA-256.
 pub(crate) struct Seed {
     pub(crate) state: Vec<u8>,
     pub(crate) sha256: String,
-    vector: StateVector,
+}
+
+impl Seed {
+    /// The seed's state vector, derived per use (a decode of the seed).
+    fn vector(&self) -> Result<StateVector, SourceError> {
+        Ok(decode(&self.state)?.state_vector())
+    }
+}
+
+/// Whom a base, seed or baseline is read for: the disk store's rules.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum Reader {
+    /// A room load (its generation): it takes the files, a miss is written
+    /// and counts against the cap, and a full store refuses the load.
+    Load(u64),
+    /// A loaded room's save: it holds the files; a miss is written when the
+    /// store has room, else kept for this call only.
+    Room(u64),
+    /// A roomless job (a fold, export, inspection, rebuild, rebase, refresh,
+    /// agent edit): it reads what is on disk, else keeps its own copy for
+    /// the job, and writes nothing.
+    Job,
+}
+
+impl Reader {
+    fn holder(self) -> Option<u64> {
+        match self {
+            Reader::Load(generation) | Reader::Room(generation) => Some(generation),
+            Reader::Job => None,
+        }
+    }
 }
 
 /// What this instance knows of a loaded room between its saves.
@@ -87,11 +121,12 @@ pub struct Loaded {
 pub struct LoadTimes {
     /// The gateway's source session.
     pub session: u64,
-    /// The base bytes: a bucket read unless this instance holds them.
+    /// The base bytes: a bucket read unless the disk store holds them.
     pub base: u64,
     /// The stored state and rows.
     pub stored: u64,
-    /// seed(base), an engine call unless cached, and the layers over it.
+    /// seed(base), an engine call unless the disk store holds it, and the
+    /// layers over it.
     pub seed: u64,
     /// The layers applied to the room's document.
     pub replay: u64,
@@ -260,26 +295,39 @@ pub struct Sources {
     gateway: Gateway,
     db: deadpool_postgres::Pool,
     engines: EnginePool,
-    bases: Mutex<ByteCache<Arc<Vec<u8>>>>,
-    seeds: Mutex<ByteCache<Arc<Seed>>>,
-    baselines: Mutex<ByteCache<Arc<Vec<BaselineEntry>>>>,
+    disk: Arc<DiskStore>,
     rooms: Mutex<HashMap<String, RoomRecord>>,
     generations: std::sync::atomic::AtomicU64,
 }
 
 impl Sources {
-    /// Needs a tokio runtime (the engine pool's supervisors).
-    pub fn new(config: SourcesConfig, db: deadpool_postgres::Pool, http: reqwest::Client) -> Self {
-        Self {
+    /// Needs a tokio runtime (the engine pool's supervisors, the disk
+    /// store's sweep). Wipes the disk store's folder.
+    pub fn new(
+        config: SourcesConfig,
+        db: deadpool_postgres::Pool,
+        http: reqwest::Client,
+    ) -> std::io::Result<Self> {
+        let disk = Arc::new(DiskStore::open(config.disk_dir, config.disk_bytes)?);
+        let sweeping = Arc::downgrade(&disk);
+        tokio::spawn(async move {
+            let mut tick = tokio::time::interval(SWEEP_EVERY);
+            loop {
+                tick.tick().await;
+                let Some(disk) = sweeping.upgrade() else {
+                    return;
+                };
+                disk.sweep(Instant::now()).await;
+            }
+        });
+        Ok(Self {
             gateway: Gateway::new(http, config.api_url, config.secret),
             db,
             engines: EnginePool::new(config.engine),
-            bases: Mutex::new(ByteCache::new(BASE_CACHE_BYTES)),
-            seeds: Mutex::new(ByteCache::new(SEED_CACHE_BYTES)),
-            baselines: Mutex::new(ByteCache::new(BASELINE_CACHE_BYTES)),
+            disk,
             rooms: Mutex::new(HashMap::new()),
             generations: std::sync::atomic::AtomicU64::new(0),
-        }
+        })
     }
 
     pub fn gateway(&self) -> &Gateway {
@@ -294,34 +342,74 @@ impl Sources {
         &self.db
     }
 
-    /// A base by its SHA (verified, cached); an unbound one is hashed.
-    pub(crate) async fn base(&self, url: &str, sha: &str) -> Result<Arc<Vec<u8>>, SourceError> {
-        if !sha.is_empty()
-            && let Some(bytes) = lock(&self.bases).get(sha)
+    /// Writes a file a loaded room read or built (see [`Reader`]); a
+    /// roomless job writes nothing.
+    async fn keep(
+        &self,
+        key: &Key,
+        bytes: &[u8],
+        sha256: &str,
+        reader: Reader,
+    ) -> Result<(), SourceError> {
+        let (holder, load) = match reader {
+            Reader::Load(generation) => (generation, true),
+            Reader::Room(generation) => (generation, false),
+            Reader::Job => return Ok(()),
+        };
+        match self.disk.put(key, bytes, sha256, holder).await {
+            Ok(()) => Ok(()),
+            Err(PutError::Full { held, cap }) if load => Err(SourceError::StoreFull { held, cap }),
+            Err(error) if load => Err(SourceError::Other(error.to_string())),
+            Err(error) => {
+                crate::observe::log(
+                    "warn",
+                    "source file kept for this call only",
+                    json!({ "error": error.to_string(), "file": key.file_name() }),
+                );
+                Ok(())
+            }
+        }
+    }
+
+    /// A base and its SHA-256 (verified against `sha`; an unbound one is
+    /// hashed): from the disk store, else downloaded.
+    pub(crate) async fn base(
+        &self,
+        url: &str,
+        sha: &str,
+        reader: Reader,
+    ) -> Result<(Vec<u8>, String), SourceError> {
+        if let Some(key) = Key::base(sha)
+            && let Some(found) = self.disk.get(&key, reader.holder()).await
         {
-            return Ok(bytes);
+            return Ok(found);
         }
         let bytes = read_source_bytes(self.gateway.http(), &self.gateway.object_url(url)).await?;
         let actual = office_service::sha256_hex(&bytes);
         if !sha.is_empty() && actual != sha {
             return Err(SourceError::Other("Source SHA mismatch".into()));
         }
-        let bytes = Arc::new(bytes);
-        lock(&self.bases).set(&actual, bytes.clone(), bytes.len() as u64);
-        Ok(bytes)
+        if let Some(key) = Key::base(&actual) {
+            self.keep(&key, &bytes, &actual, reader).await?;
+        }
+        Ok((bytes, actual))
     }
 
-    /// seed(base) (what a NULL state stands for), cached per format and base.
+    /// seed(base) (what a NULL state stands for): from the disk store, else
+    /// seeded.
     pub(crate) async fn seed(
         &self,
         format: SourceFormat,
         base: &[u8],
         sha: &str,
         room: Option<&str>,
-    ) -> Result<Arc<Seed>, SourceError> {
-        let key = format!("{format:?}:{sha}");
-        if let Some(seed) = lock(&self.seeds).get(&key) {
-            return Ok(seed);
+        reader: Reader,
+    ) -> Result<Seed, SourceError> {
+        let key = Key::seed(format, sha);
+        if let Some(key) = &key
+            && let Some((state, sha256)) = self.disk.get(key, reader.holder()).await
+        {
+            return Ok(Seed { state, sha256 });
         }
         let state = match office(format) {
             None => text_seed(base).map_err(|error| {
@@ -338,30 +426,21 @@ impl Sources {
                     .await?
             }
         };
-        let vector = decode(&state)?.state_vector();
-        let seed = Arc::new(Seed {
-            sha256: office_service::sha256_hex(&state),
-            vector,
-            state,
-        });
-        lock(&self.seeds).set(&key, seed.clone(), seed.state.len() as u64);
-        Ok(seed)
+        let sha256 = office_service::sha256_hex(&state);
+        if let Some(key) = &key {
+            self.keep(key, &state, &sha256, reader).await?;
+        }
+        Ok(Seed { state, sha256 })
     }
 
     /// The base of `session` with its SHA bound (hashed when the file has none yet).
     pub(crate) async fn bound_base(
         &self,
         session: &SourceSession,
-    ) -> Result<(Arc<Vec<u8>>, String), SourceError> {
-        let bytes = self
-            .base(&session.source_url, &session.base_source_sha256)
-            .await?;
-        let sha = if session.base_source_sha256.is_empty() {
-            office_service::sha256_hex(bytes.as_slice())
-        } else {
-            session.base_source_sha256.clone()
-        };
-        Ok((bytes, sha))
+        reader: Reader,
+    ) -> Result<(Vec<u8>, String), SourceError> {
+        self.base(&session.source_url, &session.base_source_sha256, reader)
+            .await
     }
 
     /// The session for a room's writer or reader, refused when its epoch ended
@@ -438,8 +517,9 @@ impl Sources {
         sha: &str,
         stored: &Stored,
         room: Option<&str>,
-    ) -> Result<(Arc<Seed>, Vec<Vec<u8>>), SourceError> {
-        let seed = self.seed(format, base, sha, room).await?;
+        reader: Reader,
+    ) -> Result<(Seed, Vec<Vec<u8>>), SourceError> {
+        let seed = self.seed(format, base, sha, room, reader).await?;
         let mut layers = Vec::new();
         if office(format).is_some() {
             if stored.state.is_some() || !stored.rows.is_empty() {
@@ -469,13 +549,33 @@ impl Sources {
     }
 
     /// Loads `room`'s durable state into `doc` (base + rows, checked) and
-    /// remembers the room for its saves.
+    /// remembers the room for its saves. The room holds its base and seed in
+    /// the disk store until [`Sources::forget`]; a store its loaded rooms'
+    /// files fill refuses the load ([`SourceError::StoreFull`]).
     pub async fn load(
         &self,
         room: &SourceRoom,
         actor: &str,
         doc: &Doc,
     ) -> Result<Loaded, SourceError> {
+        let generation = self
+            .generations
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let loaded = self.load_as(room, actor, doc, generation).await;
+        if loaded.is_err() {
+            self.disk.release(generation, Instant::now()).await;
+        }
+        loaded
+    }
+
+    async fn load_as(
+        &self,
+        room: &SourceRoom,
+        actor: &str,
+        doc: &Doc,
+        generation: u64,
+    ) -> Result<Loaded, SourceError> {
+        let reader = Reader::Load(generation);
         let mut times = LoadTimes::default();
         let mut lap = std::time::Instant::now();
         let mut stage = |slot: &mut u64| {
@@ -484,7 +584,7 @@ impl Sources {
         };
         let mut session = self.session_for_room(room, actor, false).await?;
         stage(&mut times.session);
-        let (base, sha) = self.bound_base(&session).await?;
+        let (base, sha) = self.bound_base(&session, reader).await?;
         stage(&mut times.base);
         let stored = self.stored(&room.file_id, None).await?;
         stage(&mut times.stored);
@@ -498,7 +598,7 @@ impl Sources {
         }
         let name = room.name();
         let (_, layers) = self
-            .layers(session.format, &base, &sha, &stored, Some(&name))
+            .layers(session.format, &base, &sha, &stored, Some(&name), reader)
             .await?;
         stage(&mut times.seed);
         let target = doc.clone();
@@ -508,9 +608,6 @@ impl Sources {
             .await
             .map_err(|error| SourceError::Other(format!("room load: {error}")))??;
         stage(&mut times.replay);
-        let generation = self
-            .generations
-            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let mut record = RoomRecord {
             generation,
             checkpoint: stored.checkpoint,
@@ -580,9 +677,11 @@ impl Sources {
             .map(|record| record.checkpoint)
     }
 
-    /// Drops a room's record and its XLSX replica (its room unloaded),
-    /// unless a later load of the same room replaced the record meanwhile.
+    /// Lets go of the disk store files this load held, and drops the room's
+    /// record and its XLSX replica (its room unloaded) unless a later load of
+    /// the same room replaced the record meanwhile.
     pub async fn forget(&self, room: &SourceRoom, generation: u64) {
+        self.disk.release(generation, Instant::now()).await;
         let name = room.name();
         {
             let mut rooms = lock(&self.rooms);
@@ -621,7 +720,7 @@ impl Sources {
             return Err(SourceError::epoch_changed());
         }
         let (_, layers) = self
-            .layers(session.format, base, sha, &stored, None)
+            .layers(session.format, base, sha, &stored, None, Reader::Job)
             .await?;
         Ok(layers)
     }
@@ -635,10 +734,11 @@ impl Sources {
         sha: &str,
         state: Option<&[u8]>,
         state_seed_sha256: Option<&str>,
+        reader: Reader,
     ) -> Result<Vec<u8>, SourceError> {
-        let seed = self.seed(format, base, sha, None).await?;
+        let seed = self.seed(format, base, sha, None, reader).await?;
         let Some(state) = state else {
-            return Ok(seed.state.clone());
+            return Ok(seed.state);
         };
         if office(format).is_none() {
             return Ok(state.to_vec());
@@ -648,19 +748,21 @@ impl Sources {
                 "An Office state is stored without the seed it is a change over".into(),
             )),
             Some(stored) if stored != seed.sha256 => Err(SourceError::SeedChanged),
-            Some(_) => whole(format, vec![seed.state.clone(), state.to_vec()]).await,
+            Some(_) => whole(format, vec![seed.state, state.to_vec()]).await,
         }
     }
 
     /// The indexed baseline Office effects compare against: the baseline of
     /// seed(base), or while a rebuild is pending, of the published capture.
+    /// From the disk store (as JSON), else built by the engine.
     async fn indexed_baseline(
         &self,
         session: &SourceSession,
         base: &[u8],
         sha: &str,
         room: &str,
-    ) -> Result<Arc<Vec<BaselineEntry>>, SourceError> {
+        reader: Reader,
+    ) -> Result<Vec<BaselineEntry>, SourceError> {
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
         let on = On {
@@ -669,38 +771,52 @@ impl Sources {
             base_sha256: sha,
             room: Some(room),
         };
-        let (key, state) = if session.rebuild_pending {
-            let published = self
-                .captured_state(
+        let published = if session.rebuild_pending {
+            Some(
+                self.captured_state(
                     session.format,
                     base,
                     sha,
                     session.published_state.as_deref(),
                     session.published_state_seed_sha256.as_deref(),
+                    reader,
                 )
-                .await?;
-            let key = format!(
-                "published:{format:?}:{sha}:{}",
-                office_service::sha256_hex(&published)
-            );
-            (key, Some(published))
+                .await?,
+            )
         } else {
-            (format!("{format:?}:{sha}"), None)
+            None
         };
-        if let Some(entries) = lock(&self.baselines).get(&key) {
-            return Ok(entries);
+        let key = Key::baseline(
+            session.format,
+            sha,
+            published
+                .as_ref()
+                .map(office_service::sha256_hex)
+                .as_deref(),
+        );
+        if let Some(key) = &key
+            && let Some((json, _)) = self.disk.get(key, reader.holder()).await
+        {
+            return serde_json::from_slice(&json)
+                .map_err(|error| SourceError::Other(format!("stored baseline: {error}")));
         }
-        let state = match state {
+        let state = match published {
             Some(state) => state,
-            None => self
-                .seed(session.format, base, sha, Some(room))
-                .await?
-                .state
-                .clone(),
+            None => {
+                self.seed(session.format, base, sha, Some(room), reader)
+                    .await?
+                    .state
+            }
         };
-        let entries = Arc::new(self.engines.baseline(on, &state).await?);
-        let bytes = serde_json::to_vec(entries.as_ref()).map_or(0, |json| json.len() as u64);
-        lock(&self.baselines).set(&key, entries.clone(), bytes);
+        let entries = self.engines.baseline(on, &state).await?;
+        if let Some(key) = &key
+            && reader.holder().is_some()
+        {
+            let json = serde_json::to_vec(&entries)
+                .map_err(|error| SourceError::Other(format!("baseline: {error}")))?;
+            self.keep(key, &json, &office_service::sha256_hex(&json), reader)
+                .await?;
+        }
         Ok(entries)
     }
 
@@ -715,6 +831,7 @@ impl Sources {
         sha: &str,
         state: &[u8],
         room: &str,
+        reader: Reader,
     ) -> Result<Vec<NetEffect>, SourceError> {
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
@@ -727,7 +844,9 @@ impl Sources {
         let effects = if format == Format::Xlsx && !session.rebuild_pending {
             self.engines.xlsx_pending_effects(on, state).await?
         } else {
-            let indexed = self.indexed_baseline(session, base, sha, room).await?;
+            let indexed = self
+                .indexed_baseline(session, base, sha, room, reader)
+                .await?;
             let current = self.engines.baseline(on, state).await?;
             if format == Format::Xlsx {
                 office_service::compare_baselines(&indexed, &current)
@@ -761,19 +880,29 @@ impl Sources {
                 None,
             ));
         }
-        let known = lock(&self.rooms)
-            .get(&name)
-            .map(|record| (record.session.clone(), record.checkpoint, record.seeded));
+        let known = lock(&self.rooms).get(&name).map(|record| {
+            (
+                record.session.clone(),
+                record.checkpoint,
+                record.seeded,
+                record.generation,
+            )
+        });
+        // The loaded room's files; a save for a room not loaded here reads
+        // as a roomless job.
+        let reader = known.as_ref().map_or(Reader::Job, |(_, _, _, generation)| {
+            Reader::Room(*generation)
+        });
         let mut text = save.text.clone();
         for attempt in 0..SAVE_ATTEMPTS {
             let (session, expected, seeded, merged_rows) = match (&known, attempt) {
-                (Some((session, checkpoint, seeded)), 0) => {
+                (Some((session, checkpoint, seeded, _)), 0) => {
                     (session.clone(), *checkpoint, *seeded, Vec::new())
                 }
                 _ => {
                     // Authorizes the writer again and reads what landed since.
                     let session = self.session_for_room(room, &save.actors[0], true).await?;
-                    let after = known.as_ref().map(|(_, checkpoint, _)| *checkpoint);
+                    let after = known.as_ref().map(|(_, checkpoint, _, _)| *checkpoint);
                     let stored = self.stored(&room.file_id, after).await?;
                     if stored.epoch != room.epoch {
                         return Err(SourceError::epoch_changed());
@@ -784,31 +913,33 @@ impl Sources {
                     (session, stored.checkpoint, seeded, stored.rows)
                 }
             };
-            let (base, sha) = self.bound_base(&session).await?;
+            let (base, sha) = self.bound_base(&session, reader).await?;
             let (effects, state_seed_sha256) = match office(session.format) {
                 Some(_) => {
                     let state = save.state.as_deref().ok_or_else(|| {
                         SourceError::Other("an Office save needs the room's state".into())
                     })?;
-                    let seed = self.seed(session.format, &base, &sha, Some(&name)).await?;
+                    let seed = self
+                        .seed(session.format, &base, &sha, Some(&name), reader)
+                        .await?;
                     let effects = if merged_rows.is_empty() {
-                        self.office_effects(&session, &base, &sha, state, &name)
+                        self.office_effects(&session, &base, &sha, state, &name, reader)
                             .await?
                     } else {
                         let mut layers = vec![state.to_vec()];
                         layers.extend(merged_rows.iter().map(|(_, row)| row.clone()));
                         let merged = whole(session.format, layers).await?;
-                        self.office_effects(&session, &base, &sha, &merged, &name)
+                        self.office_effects(&session, &base, &sha, &merged, &name, reader)
                             .await?
                     };
-                    (effects, Some(seed.sha256.clone()))
+                    (effects, Some(seed.sha256))
                 }
                 None => {
                     let effects = match &text {
                         Some(text) => text.effects.clone(),
                         None => {
                             let computed = self
-                                .text_effects_whole(&session, &base, &sha, &save.row)
+                                .text_effects_whole(&session, &base, &sha, &save.row, reader)
                                 .await?;
                             let effects = computed.effects.clone();
                             text = Some(computed);
@@ -821,25 +952,26 @@ impl Sources {
             // A text room's first row is whole, seed included: a text
             // publication moves the base while the rows stay, and seed(base)
             // would then name the new bytes.
-            let row = if seeded && office(session.format).is_none() {
-                let seed = self.seed(session.format, &base, &sha, None).await?;
-                whole(session.format, vec![seed.state.clone(), save.row.clone()]).await?
+            let text_seed = if seeded && office(session.format).is_none() {
+                Some(
+                    self.seed(session.format, &base, &sha, None, reader)
+                        .await?
+                        .state,
+                )
             } else {
-                save.row.clone()
+                None
             };
             let seed_report = if seeded {
-                let seed_bytes = match office(session.format) {
-                    None => Some(
-                        self.seed(session.format, &base, &sha, None)
-                            .await?
-                            .state
-                            .len() as u64,
-                    ),
-                    Some(_) => None,
-                };
-                (Some(sha.clone()), seed_bytes)
+                (
+                    Some(sha.clone()),
+                    text_seed.as_ref().map(|seed| seed.len() as u64),
+                )
             } else {
                 (None, None)
+            };
+            let row = match text_seed {
+                Some(seed) => whole(session.format, vec![seed, save.row.clone()]).await?,
+                None => save.row.clone(),
             };
             let row_bytes = row.len();
             // O(effect text): a text room's pending effect spans every edit
@@ -924,10 +1056,11 @@ impl Sources {
         base: &[u8],
         sha: &str,
         row: &[u8],
+        reader: Reader,
     ) -> Result<TextSave, SourceError> {
         let stored = self.stored(&session.file_id, None).await?;
         let (_, mut layers) = self
-            .layers(session.format, base, sha, &stored, None)
+            .layers(session.format, base, sha, &stored, None, reader)
             .await?;
         layers.push(row.to_vec());
         let baseline = utf16(text_of(base)?);
@@ -1047,7 +1180,9 @@ impl Sources {
                 .collect(),
         };
         let base = self.base_by_sha(&room.file_id, &sha).await?;
-        let (seed, layers) = self.layers(format, &base, &sha, &stored, None).await?;
+        let (seed, layers) = self
+            .layers(format, &base, &sha, &stored, None, Reader::Job)
+            .await?;
         let folded_bytes: i64 = stored.rows.iter().map(|(_, row)| row.len() as i64).sum();
         let folded_rows = stored.rows.len() as i64;
         let last = stored
@@ -1060,7 +1195,7 @@ impl Sources {
             replay(&doc, layers.iter().map(Vec::as_slice))?;
             let txn = doc.transact();
             Ok(if is_office {
-                txn.encode_state_as_update_v1(&seed.vector)
+                txn.encode_state_as_update_v1(&seed.vector()?)
             } else {
                 txn.encode_state_as_update_v1(&StateVector::default())
             })
@@ -1118,15 +1253,17 @@ impl Sources {
         })
     }
 
-    /// The base of a file by its bound SHA (the cache, else the file's
-    /// current blob URL through the bootstrap of its owner).
-    async fn base_by_sha(&self, file_id: &str, sha: &str) -> Result<Arc<Vec<u8>>, SourceError> {
-        if let Some(bytes) = lock(&self.bases).get(sha) {
+    /// The base of a file by its bound SHA for a fold (the disk store, else
+    /// the file's current blob URL through the bootstrap of its owner).
+    async fn base_by_sha(&self, file_id: &str, sha: &str) -> Result<Vec<u8>, SourceError> {
+        if let Some(key) = Key::base(sha)
+            && let Some((bytes, _)) = self.disk.get(&key, None).await
+        {
             return Ok(bytes);
         }
         let owner = self.owner(file_id).await?;
         let session = self.gateway.session(file_id, &owner).await?;
-        self.base(&session.source_url, sha).await
+        Ok(self.base(&session.source_url, sha, Reader::Job).await?.0)
     }
 
     async fn owner(&self, file_id: &str) -> Result<String, SourceError> {
@@ -1163,7 +1300,7 @@ impl Sources {
         F: FnOnce(String) -> BoxFuture<Option<Vec<u8>>>,
     {
         let session = self.gateway.session(file_id, actor).await?;
-        let (base, sha) = self.bound_base(&session).await?;
+        let (base, sha) = self.bound_base(&session, Reader::Job).await?;
         let mut layers = self.durable_layers(&session, &base, &sha).await?;
         let room = SourceRoom {
             file_id: file_id.to_owned(),
@@ -1215,7 +1352,7 @@ impl Sources {
             .find(|effect| effect.id == input.change_id)
             .and_then(|effect| effect.asset_ref.clone())
             .ok_or_else(|| SourceError::request(404, "Source image unavailable", None))?;
-        let (base, sha) = self.bound_base(&session).await?;
+        let (base, sha) = self.bound_base(&session, Reader::Job).await?;
         let state = self.durable_state(&session, &base, &sha).await?;
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("not an Office source".into()))?;
@@ -1277,26 +1414,27 @@ impl Sources {
             })?;
         let mut publishing = false;
         let result: Result<(), SourceError> = async {
-            let base = self
-                .base(&candidate.base_source_url, &candidate.base_source_sha256)
+            let (base, sha) = self
+                .base(
+                    &candidate.base_source_url,
+                    &candidate.base_source_sha256,
+                    Reader::Job,
+                )
                 .await?;
-            let sha = if candidate.base_source_sha256.is_empty() {
-                office_service::sha256_hex(base.as_slice())
-            } else {
-                candidate.base_source_sha256.clone()
-            };
             let (captured, captured_seed) = self.capture(&candidate, &base, &sha).await?;
             let state = match &captured {
                 Some(change) if office(candidate.format).is_some() => {
-                    let seed = self.seed(candidate.format, &base, &sha, None).await?;
-                    whole(candidate.format, vec![seed.state.clone(), change.clone()]).await?
+                    let seed = self
+                        .seed(candidate.format, &base, &sha, None, Reader::Job)
+                        .await?;
+                    whole(candidate.format, vec![seed.state, change.clone()]).await?
                 }
                 Some(text) => text.clone(),
-                None => self
-                    .seed(candidate.format, &base, &sha, None)
-                    .await?
-                    .state
-                    .clone(),
+                None => {
+                    self.seed(candidate.format, &base, &sha, None, Reader::Job)
+                        .await?
+                        .state
+                }
             };
             let bytes = match office(candidate.format) {
                 None => crate::text::text_state(&state)
@@ -1439,7 +1577,7 @@ impl Sources {
         }
         let stored = Stored { rows, ..stored };
         let (seed, layers) = self
-            .layers(candidate.format, base, sha, &stored, None)
+            .layers(candidate.format, base, sha, &stored, None, Reader::Job)
             .await?;
         let is_office = office(candidate.format).is_some();
         let seed_sha = is_office.then(|| seed.sha256.clone());
@@ -1448,7 +1586,8 @@ impl Sources {
             replay(&doc, layers.iter().map(Vec::as_slice))?;
             let txn = doc.transact();
             let none = StateVector::default();
-            Ok(txn.encode_state_as_update_v1(if is_office { &seed.vector } else { &none }))
+            let vector = if is_office { seed.vector()? } else { none };
+            Ok(txn.encode_state_as_update_v1(&vector))
         })
         .await
         .map_err(|error| SourceError::Other(format!("capture: {error}")))??;
@@ -1623,10 +1762,17 @@ impl Sources {
     ) -> Result<SourceRebase, SourceError> {
         let format = office(session.format)
             .ok_or_else(|| SourceError::Other("Office rebase requires an Office source".into()))?;
-        let (old, sha) = self.bound_base(session).await?;
-        let new_base = self.base(exported.0, exported.1).await?;
+        let (old, sha) = self.bound_base(session, Reader::Job).await?;
+        let (new_base, _) = self.base(exported.0, exported.1, Reader::Job).await?;
         let captured = self
-            .captured_state(session.format, &old, &sha, captured.0, captured.1)
+            .captured_state(
+                session.format,
+                &old,
+                &sha,
+                captured.0,
+                captured.1,
+                Reader::Job,
+            )
             .await?;
         let latest = self.durable_state(session, &old, &sha).await?;
         let (state, effects) = self
@@ -1652,13 +1798,13 @@ impl Sources {
             })?;
         let effects: Vec<NetEffect> = effects.into_iter().map(trim_effect).collect();
         let seed = self
-            .seed(session.format, &new_base, exported.1, None)
+            .seed(session.format, &new_base, exported.1, None, Reader::Job)
             .await?;
         let seed_sha = seed.sha256.clone();
         let change = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, SourceError> {
             let doc = working_doc(true);
             replay(&doc, [state.as_slice()])?;
-            let change = doc.transact().encode_state_as_update_v1(&seed.vector);
+            let change = doc.transact().encode_state_as_update_v1(&seed.vector()?);
             // Seed plus the change must load (the load check), never pending.
             replay(
                 &working_doc(true),
@@ -1683,11 +1829,11 @@ impl Sources {
         session: &SourceSession,
         from: Option<&[u16]>,
     ) -> Result<Vec<NetEffect>, SourceError> {
-        let (base, sha) = self.bound_base(session).await?;
+        let (base, sha) = self.bound_base(session, Reader::Job).await?;
         let state = self.durable_state(session, &base, &sha).await?;
         if office(session.format).is_some() {
             return self
-                .office_effects(session, &base, &sha, &state, &session.room)
+                .office_effects(session, &base, &sha, &state, &session.room, Reader::Job)
                 .await;
         }
         let text = crate::text::text_state(&state)
@@ -1705,9 +1851,9 @@ impl Sources {
         session: &SourceSession,
         state: Option<&[u8]>,
     ) -> Result<Vec<u16>, SourceError> {
-        let (base, sha) = self.bound_base(session).await?;
+        let (base, sha) = self.bound_base(session, Reader::Job).await?;
         let state = self
-            .captured_state(session.format, &base, &sha, state, None)
+            .captured_state(session.format, &base, &sha, state, None, Reader::Job)
             .await?;
         Ok(utf16(
             &crate::text::text_state(&state)
@@ -1811,5 +1957,157 @@ mod tests {
             replay(&doc, [seed.as_slice(), first.as_slice(), second.as_slice()]).unwrap();
             assert_eq!(live_format_markers(&doc), 4, "office {office}");
         }
+    }
+
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use crate::disk::tests::Folder;
+
+    const TEXT: &[u8] = b"a text source";
+
+    /// Serves `TEXT` at the returned URL and counts its downloads.
+    async fn blob() -> (String, Arc<AtomicUsize>) {
+        let downloads = Arc::new(AtomicUsize::new(0));
+        let counted = downloads.clone();
+        let app = axum::Router::new().route(
+            "/blob",
+            axum::routing::get(move || {
+                counted.fetch_add(1, Ordering::Relaxed);
+                async { TEXT }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/blob", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (url, downloads)
+    }
+
+    /// Sources whose database and engines are never reached.
+    fn sources(folder: &Folder, disk_bytes: u64) -> Sources {
+        let mut db = deadpool_postgres::Config::new();
+        db.url = Some("postgres://unused@127.0.0.1:1/unused".into());
+        let db = db
+            .create_pool(
+                Some(deadpool_postgres::Runtime::Tokio1),
+                tokio_postgres::NoTls,
+            )
+            .unwrap();
+        let engine = PoolConfig {
+            program: "unused".into(),
+            args: Vec::new(),
+            save_processes: 1,
+            background_processes: 1,
+            call_timeout: crate::engine::CALL_TIMEOUT,
+            replica_budget_bytes: 0,
+            memory_limit_bytes: None,
+        };
+        let config = SourcesConfig {
+            api_url: "http://127.0.0.1:1".into(),
+            secret: "secret".into(),
+            engine,
+            disk_dir: folder.0.clone(),
+            disk_bytes,
+        };
+        Sources::new(config, db, reqwest::Client::new()).unwrap()
+    }
+
+    // Epo 2026-10-17: roomless jobs read into memory per job; only a loaded
+    // room writes files, and a job reads the files rooms wrote.
+    #[tokio::test]
+    async fn roomless_jobs_write_no_files_and_read_what_rooms_wrote() {
+        let folder = Folder::new("jobs");
+        let sources = sources(&folder, 1 << 20);
+        let (url, downloads) = blob().await;
+        let sha = office_service::sha256_hex(TEXT);
+        let (bytes, hash) = sources.base(&url, &sha, Reader::Job).await.unwrap();
+        assert_eq!((bytes.as_slice(), hash.as_str()), (TEXT, sha.as_str()));
+        let seed = sources
+            .seed(SourceFormat::Text, TEXT, &sha, None, Reader::Job)
+            .await
+            .unwrap();
+        assert_eq!(seed.state, text_seed(TEXT).unwrap());
+        assert!(folder.files().is_empty());
+        // An unbound base a room loads is filed under its hash.
+        sources.base(&url, "", Reader::Load(1)).await.unwrap();
+        assert_eq!(folder.files(), [format!("base-{sha}")]);
+        assert_eq!(downloads.load(Ordering::Relaxed), 2);
+        let (bytes, _) = sources.base(&url, &sha, Reader::Job).await.unwrap();
+        assert_eq!(bytes, TEXT);
+        assert_eq!(downloads.load(Ordering::Relaxed), 2);
+    }
+
+    // Epo 2026-10-17: a room load is refused only when loaded rooms' files
+    // fill the cap; a loaded room's save and a job still get their bytes.
+    #[tokio::test]
+    async fn a_full_store_refuses_a_room_load_but_not_a_save_or_a_job() {
+        let folder = Folder::new("full");
+        let sources = sources(&folder, TEXT.len() as u64 - 1);
+        let (url, _) = blob().await;
+        let sha = office_service::sha256_hex(TEXT);
+        let refused = sources.base(&url, &sha, Reader::Load(1)).await;
+        assert_eq!(
+            refused.unwrap_err(),
+            SourceError::StoreFull {
+                held: 0,
+                cap: TEXT.len() as u64 - 1
+            }
+        );
+        for reader in [Reader::Room(1), Reader::Job] {
+            let (bytes, _) = sources.base(&url, &sha, reader).await.unwrap();
+            assert_eq!(bytes, TEXT);
+        }
+        assert!(folder.files().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_corrupted_original_is_downloaded_again_and_a_corrupted_seed_rebuilt() {
+        let folder = Folder::new("corrupt");
+        let sources = sources(&folder, 1 << 20);
+        let (url, downloads) = blob().await;
+        let sha = office_service::sha256_hex(TEXT);
+        sources.base(&url, &sha, Reader::Load(1)).await.unwrap();
+        let base_file = folder.0.join(format!("base-{sha}"));
+        std::fs::write(&base_file, &TEXT[..4]).unwrap();
+        let (bytes, _) = sources.base(&url, &sha, Reader::Room(1)).await.unwrap();
+        assert_eq!(bytes, TEXT);
+        assert_eq!(downloads.load(Ordering::Relaxed), 2);
+        assert_eq!(std::fs::read(&base_file).unwrap(), TEXT);
+        let seed = sources
+            .seed(SourceFormat::Text, TEXT, &sha, None, Reader::Load(1))
+            .await
+            .unwrap();
+        let seed_file = folder.0.join(format!("seed-text-{sha}"));
+        std::fs::write(&seed_file, vec![0; seed.state.len()]).unwrap();
+        let rebuilt = sources
+            .seed(SourceFormat::Text, TEXT, &sha, None, Reader::Room(1))
+            .await
+            .unwrap();
+        assert_eq!(
+            (rebuilt.state.as_slice(), rebuilt.sha256.as_str()),
+            (seed.state.as_slice(), seed.sha256.as_str())
+        );
+        assert_eq!(std::fs::read(&seed_file).unwrap(), seed.state);
+    }
+
+    #[tokio::test]
+    async fn keys_that_are_not_sha_hex_never_reach_the_folder() {
+        let folder = Folder::new("keys");
+        let sources = sources(&folder, 1 << 20);
+        let (url, _) = blob().await;
+        let sha = office_service::sha256_hex(TEXT);
+        for bad in ["../../escape", "..", &sha.to_uppercase(), &sha[1..]] {
+            let refused = sources.base(&url, bad, Reader::Load(1)).await;
+            assert_eq!(
+                refused.unwrap_err(),
+                SourceError::Other("Source SHA mismatch".into())
+            );
+            let seed = sources
+                .seed(SourceFormat::Text, TEXT, bad, None, Reader::Load(1))
+                .await
+                .unwrap();
+            assert_eq!(seed.state, text_seed(TEXT).unwrap());
+        }
+        assert!(folder.files().is_empty());
+        assert!(!folder.0.join("../../escape").exists());
     }
 }
