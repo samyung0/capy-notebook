@@ -7,6 +7,7 @@ import { userToast } from '@/components/ui/userToast';
 import { getLocale, m } from '@/i18n';
 import { errorCopy, unexpectedErrorId } from '@/lib/errors';
 import { imageLimit } from '@/lib/fitImage';
+import { officeMark } from '@/lib/officeMarks';
 import { useMediaQuery } from '@/lib/useMediaQuery';
 import { useTheme } from '@/theme/theme';
 import { useFileMode } from './FileModeControl';
@@ -402,6 +403,12 @@ export function useOfficeRuntime({
       return;
     }
     frameDoc.current = mode === 'edit' ? source.doc! : null;
+    officeMark('load-posted', {
+      bytes: bytes.byteLength,
+      checkpointBytes: checkpoint?.byteLength ?? 0,
+      initialUpdateBytes: collaboration?.initialUpdate.byteLength ?? 0,
+      mode,
+    });
     post(
       {
         bytes,
@@ -521,6 +528,7 @@ export function useOfficeRuntime({
       const message = event.data,
         active = sourceRef.current;
       if (message.type === 'initialized') {
+        officeMark('runtime-initialized');
         notices.frame();
         setReplicaReady(false);
         setMenus(null);
@@ -576,6 +584,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'ready') {
+        officeMark('ready');
         setAnalysis(message.analysis);
         // Edit frames report ready too (for their timings); their errors stay.
         if (modeRef.current === 'view') {
@@ -602,6 +611,7 @@ export function useOfficeRuntime({
         return;
       }
       if (message.type === 'collaboration-ready') {
+        officeMark('collaboration-ready');
         setReplicaReady(true);
         // A newly opened DOCX editor takes the focus (it waits for its frame
         // to get it) unless Capy's focus is somewhere it keeps (the chat box,

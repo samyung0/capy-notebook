@@ -1,16 +1,21 @@
 import type { OfficeFormat, OfficeMode } from '@/features/files/officeProtocol';
+import { officeMark } from '@/lib/officeMarks';
 import xlsxEditWasmUrl from '../../vendor/betteroffice/packages/xlsx/src/wasm/generated/xlsx_wasm_bg.wasm?url';
 import { prewarmDocxViewerWorker } from './docxViewerWorker';
 
 type RuntimeKey = `${OfficeFormat}:${OfficeMode}`;
 
-/** `load` once; a failure is forgotten, so the next caller loads again (a
- * boot head start that failed costs nothing). */
-function once<T>(load: () => Promise<T>) {
+/** `load` once, marking `<name>:start` and `:end`; a failure is forgotten, so
+ * the next caller loads again (a boot head start that failed costs nothing). */
+function once<T>(name: string, load: () => Promise<T>) {
   let loading: Promise<T> | undefined;
   return () => {
     if (!loading) {
-      const started = load();
+      officeMark(`${name}:start`);
+      const started = load().then((value) => {
+        officeMark(`${name}:end`);
+        return value;
+      });
       loading = started;
       started.catch(() => {
         if (loading === started) loading = undefined;
@@ -22,34 +27,34 @@ function once<T>(load: () => Promise<T>) {
 
 /** Each viewer's and editor's module, imported once. */
 export const runtimeChunks = {
-  'docx:edit': once(() => import('./DocxEditorHost')),
-  'docx:view': once(() => import('./DocxViewer')),
-  'pptx:edit': once(() => import('./PptxEditorHost')),
-  'pptx:view': once(() => import('./PptxViewer')),
-  'xlsx:edit': once(() => import('./XlsxEditorHost')),
-  'xlsx:view': once(() => import('./XlsxViewer')),
+  'docx:edit': once('chunk:docx-edit', () => import('./DocxEditorHost')),
+  'docx:view': once('chunk:docx-view', () => import('./DocxViewer')),
+  'pptx:edit': once('chunk:pptx-edit', () => import('./PptxEditorHost')),
+  'pptx:view': once('chunk:pptx-view', () => import('./PptxViewer')),
+  'xlsx:edit': once('chunk:xlsx-edit', () => import('./XlsxEditorHost')),
+  'xlsx:view': once('chunk:xlsx-view', () => import('./XlsxViewer')),
 } satisfies Record<RuntimeKey, () => Promise<unknown>>;
 
 /** The engines Capy starts itself (the same instances the viewers and
  * editors then use); the DOCX viewer's runs in its worker, and the XLSX
  * editor's in its workbook worker, which reads it from the HTTP cache. */
 export const runtimeEngines = {
-  'docx:edit': once(() =>
+  'docx:edit': once('wasm:docx-edit', () =>
     import('@betteroffice/docx/wasm/edit').then((module) =>
       module.preloadEditWasm()
     )
   ),
   'docx:view': async () => prewarmDocxViewerWorker(),
-  'pptx:edit': once(() =>
+  'pptx:edit': once('wasm:pptx-edit', () =>
     import('@betteroffice/pptx').then((module) => module.initWasm())
   ),
-  'pptx:view': once(() =>
+  'pptx:view': once('wasm:pptx-view', () =>
     import('@betteroffice/pptx/viewer').then((module) => module.initWasm())
   ),
-  'xlsx:edit': once(() =>
+  'xlsx:edit': once('wasm:xlsx-edit-fetch', () =>
     fetch(xlsxEditWasmUrl).then((response) => response.arrayBuffer())
   ),
-  'xlsx:view': once(() =>
+  'xlsx:view': once('wasm:xlsx-view', () =>
     import('@betteroffice/xlsx/viewer').then((module) => module.initWasm())
   ),
 } satisfies Record<RuntimeKey, () => Promise<unknown>>;

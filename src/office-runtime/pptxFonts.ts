@@ -1,5 +1,6 @@
 import type { PptxFontFace } from '@betteroffice/pptx/viewer';
 import { unzipSync } from 'fflate';
+import { officeMark } from '@/lib/officeMarks';
 import caladeaBoldUrl from '../../vendor/betteroffice/packages/fonts/assets/Caladea-Bold.ttf?url';
 import caladeaBoldItalicUrl from '../../vendor/betteroffice/packages/fonts/assets/Caladea-BoldItalic.ttf?url';
 import caladeaItalicUrl from '../../vendor/betteroffice/packages/fonts/assets/Caladea-Italic.ttf?url';
@@ -84,7 +85,9 @@ export async function loadPptxDeckFonts(
         file.name.startsWith('ppt/') && file.name.endsWith('.xml'),
     })
   ).map((part) => decoder.decode(part));
-  return Promise.all(pptxDeckFaces(parts).map(loadPptxFace));
+  const faces = pptxDeckFaces(parts);
+  officeMark('fonts:faces', { count: faces.length });
+  return Promise.all(faces.map(loadPptxFace));
 }
 
 async function loadFace({

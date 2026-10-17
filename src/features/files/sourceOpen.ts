@@ -1,5 +1,6 @@
 import { api } from '@/api/client';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
+import { clearOfficeMarks, officeMark } from '@/lib/officeMarks';
 import { cacheSource, readCachedSource } from '@/lib/sourceCache';
 import { warmSourceSocket } from './sourceProvider';
 
@@ -51,10 +52,14 @@ async function sourceBase(
   signal?: AbortSignal
 ): Promise<Uint8Array<ArrayBuffer>> {
   const cached = await readCachedSource(session.baseSourceSHA256);
-  if (cached) return cached;
+  if (cached) {
+    officeMark('base', { bytes: cached.byteLength, cached: true });
+    return cached;
+  }
   const response = await fetch(session.sourceURL, { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   const bytes = new Uint8Array(await response.arrayBuffer());
+  officeMark('base', { bytes: bytes.byteLength, cached: false });
   void cacheSource(session.baseSourceSHA256, bytes);
   return bytes;
 }
@@ -64,10 +69,17 @@ function startOpen(
   mode: SourceOpenMode,
   signal: AbortSignal
 ): Promise<SourceOpen> {
-  const session = api.get<SourceSession>(
-    `/files/${fileId}/source-session${mode === 'view' ? '?view=true' : ''}`,
-    { signal }
-  );
+  clearOfficeMarks();
+  officeMark('open', { mode });
+  const session = api
+    .get<SourceSession>(
+      `/files/${fileId}/source-session${mode === 'view' ? '?view=true' : ''}`,
+      { signal }
+    )
+    .then((value) => {
+      officeMark('session', { mode });
+      return value;
+    });
   const credentials =
     mode === 'edit'
       ? api
@@ -77,6 +89,7 @@ function startOpen(
             { signal }
           )
           .then((value) => {
+            officeMark('token');
             // The room joins on this socket when its editor takes the open.
             warmSourceSocket(value.url);
             return value;

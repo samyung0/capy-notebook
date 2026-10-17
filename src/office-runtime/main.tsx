@@ -34,6 +34,7 @@ import {
   ImageTooLargeError,
   ImageUnreadableError,
 } from '@/lib/fitImage';
+import { officeMark } from '@/lib/officeMarks';
 import { THEMES } from '@/theme/theme';
 import { useBottomInset } from './bottomInset';
 import { dropDocxViewerWorker } from './docxViewerWorker';
@@ -374,6 +375,10 @@ function OfficeRuntime() {
         const nextMode =
           message.mode === 'edit' && message.canEdit ? 'edit' : 'view';
         if (revisionRef.current !== null) return;
+        officeMark('load-received', {
+          bytes: message.bytes.byteLength,
+          mode: nextMode,
+        });
         // A head start for another format or mode is not used.
         if (message.format !== 'docx' || nextMode !== 'view')
           dropDocxViewerWorker();
@@ -816,6 +821,7 @@ function post(message: OfficeRuntimePayload, transfer: Transferable[] = []) {
 const presenterToken = presenterTokenFromUrl();
 if (presenterToken) handOverPresenterWindow(presenterToken);
 else {
+  officeMark('runtime-boot');
   const hint = runtimeHintFromUrl();
   if (hint) prewarmRuntime(hint.format, hint.mode);
   createRoot(document.getElementById('root')!).render(<OfficeRuntime />);

@@ -15,6 +15,7 @@ import type {
   OfficeRenderedPage,
   OfficeZoom,
 } from '@/features/files/officeProtocol';
+import { officeMark, officeMarkAt } from '@/lib/officeMarks';
 import { CITATION_FILL, docxCitation } from './citations';
 import { docxT, downloadMenu, printItem } from './docxMenus';
 import { takeDocxViewerWorker } from './docxViewerWorker';
@@ -32,6 +33,7 @@ type WorkerResponse =
       displayList: DisplayList;
       faces: OfficeFace[];
       id: number;
+      marks: Record<string, number>;
       type: 'ready';
     }
   | { id: number; message: string; type: 'error' };
@@ -159,11 +161,15 @@ export function DocxViewer({
       // parser, transient Yrs projection, and viewer WASM memory are released
       // during ordinary reading rather than waiting for edit/unmount.
       stopWorker();
-      const { displayList, faces } = event.data;
+      const { displayList, faces, marks } = event.data;
+      for (const [stage, epoch] of Object.entries(marks))
+        officeMarkAt(stage, epoch);
       // Paint with the faces the worker measured, under their Office names,
       // from the bytes it fetched.
+      officeMark('fonts:start', { faces: faces.length });
       void registerOfficeFaces(faces).then(
         () => {
+          officeMark('fonts:end');
           if (!cancelled) setDisplayList(displayList);
         },
         (value: unknown) => {

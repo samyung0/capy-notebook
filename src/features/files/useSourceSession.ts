@@ -43,6 +43,7 @@ import {
 } from '@/lib/editDrafts';
 import { editIncidentReporter } from '@/lib/editIncidents';
 import { CopyError, errorCopy } from '@/lib/errors';
+import { officeMark } from '@/lib/officeMarks';
 import { takeSourceOpen } from './sourceOpen';
 import {
   createSourceProvider,
@@ -866,6 +867,7 @@ export function useSourceSession(
             // Connecting ends at the first sync: Saved, or Saving while local
             // edits (restored drafts are edit 1) wait for the room's receipt.
             setStatus(everSynced || active.sequence > 0 ? 'saving' : 'saved');
+            if (!everSynced) officeMark('synced');
             everSynced = true;
             void show();
             setSynced(true);
@@ -907,6 +909,7 @@ export function useSourceSession(
         },
         url: credentials.url,
       });
+      officeMark('provider');
       active.provider = provider;
       runtime.current = active;
       disposeReconnect = reconnect.dispose;
