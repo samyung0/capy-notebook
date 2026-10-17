@@ -197,7 +197,13 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    fails after the assets Worker went live, it rolls the assets Worker back
    to its previous deployment (`wrangler rollback --config
    wrangler.assets.jsonc --env <env>`): the old `index.html`, still served,
-   names chunks only that deployment has. Roll back by hand the same way,
+   names chunks only that deployment has. It first reads the app host's
+   `/release.txt`: when that already shows the new revision (the app Worker
+   step failed after its new version went live, in a later part such as its
+   routes), the new `index.html` needs the new assets, so the step leaves
+   both Workers and fails for the manual rollback. An assets Worker step that
+   fails after its version went live gets no automatic action either (Epo
+   2026-10-17). Roll back by hand the same way,
    both Workers back to back (`capy-notebook-<env>` and
    `capy-notebook-assets-<env>`, in the dashboard or with `wrangler
    rollback`), never one alone; redeploying a previous SHA moves both.

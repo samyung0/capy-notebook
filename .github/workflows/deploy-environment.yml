@@ -229,20 +229,30 @@ jobs:
             --var "APP_ORIGIN:$APP_ORIGIN" \
             --secrets-file "$secrets_file"
       # The old index.html, still served, names chunks only the previous assets
-      # Worker has: put it back so the two Workers stay on one release.
+      # Worker has: put it back so the two Workers stay on one release. A step
+      # that failed after its new version went live (a later part, such as
+      # its routes) is left to the manual rollback of both Workers
+      # (human/deployment-runbook.md, 2026-10-17): a SPA step that did serves
+      # the new /release.txt, whose index.html needs the new assets, and a
+      # failed assets step never gets here.
       - name: Roll the SPA assets Worker back after a failed SPA Worker deploy
         if: failure() && steps.assets_worker.outcome == 'success' && steps.app_worker.outcome == 'failure'
         env:
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          DEPLOYMENT_APP_URL: ${{ vars.DEPLOYMENT_APP_URL }}
           DEPLOY_REVISION: ${{ inputs.revision }}
           TARGET_ENVIRONMENT: ${{ inputs.environment_name }}
-        run: >-
-          npx --yes wrangler@4.149.0 rollback
-          --config wrangler.assets.jsonc
-          --env "$TARGET_ENVIRONMENT"
-          --message "SPA Worker deploy of $DEPLOY_REVISION failed"
-          --yes
+        run: |
+          if [ "$(curl -fsS --max-time 30 "${DEPLOYMENT_APP_URL%/}/release.txt" || true)" = "$DEPLOY_REVISION" ]; then
+            echo "::error::The app host already serves $DEPLOY_REVISION: no automatic rollback; roll back both Workers by hand (deployment-runbook §1)"
+            exit 1
+          fi
+          npx --yes wrangler@4.149.0 rollback \
+            --config wrangler.assets.jsonc \
+            --env "$TARGET_ENVIRONMENT" \
+            --message "SPA Worker deploy of $DEPLOY_REVISION failed" \
+            --yes
       - name: Verify the public deployment revision
         env:
           DEPLOYMENT_API_URL: ${{ vars.DEPLOYMENT_API_URL }}
