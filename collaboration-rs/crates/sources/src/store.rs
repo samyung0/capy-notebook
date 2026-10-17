@@ -22,7 +22,7 @@ use serde_json::{Value, json};
 use yrs::updates::decoder::Decode;
 use yrs::{Doc, GetString, ReadTxn, StateVector, Transact, Update};
 
-use crate::disk::{DiskStore, Key, PutError};
+use crate::disk::{DiskStore, Hold, Key, PutError};
 use crate::effects::{effect_tokens, trim_effect, utf16};
 use crate::engine::office::calls::On;
 use crate::engine::{EngineError, EnginePool, FailureKind, PoolConfig};
@@ -92,7 +92,7 @@ pub(crate) struct Job(Mutex<HashMap<Key, (Vec<u8>, String)>>);
 
 /// What this instance knows of a loaded room between its saves.
 struct RoomRecord {
-    /// Which load made it (see [`Loaded::generation`]).
+    /// Which load made it (see [`Loaded::hold`]).
     generation: u64,
     session: SourceSession,
     /// The checkpoint the room's durable state is at.
@@ -116,9 +116,11 @@ pub struct Loaded {
     pub rows: u64,
     pub row_bytes: u64,
     pub session: SourceSession,
-    /// This load's record; [`Sources::forget`] removes only that one, never a
-    /// later load's under the same room name.
-    pub generation: u64,
+    /// This load's hold on its disk store files (dropping it lets them go:
+    /// the room keeps it until it unloads) and, by its generation, its
+    /// record: [`Sources::forget`] removes only that one, never a later
+    /// load's under the same room name.
+    pub hold: Hold,
     pub times: LoadTimes,
 }
 
@@ -592,8 +594,9 @@ impl Sources {
 
     /// Loads `room`'s durable state into `doc` (base + rows, checked) and
     /// remembers the room for its saves. The room holds its base and seed in
-    /// the disk store until [`Sources::forget`]; a store its loaded rooms'
-    /// files fill refuses the load ([`SourceError::StoreFull`]).
+    /// the disk store while it keeps [`Loaded::hold`]; a failed load drops
+    /// it at once. A store its loaded rooms' files fill refuses the load
+    /// ([`SourceError::StoreFull`]).
     pub async fn load(
         &self,
         room: &SourceRoom,
@@ -603,20 +606,7 @@ impl Sources {
         let generation = self
             .generations
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let loaded = self.load_as(room, actor, doc, generation).await;
-        if loaded.is_err() {
-            self.disk.release(generation, Instant::now()).await;
-        }
-        loaded
-    }
-
-    async fn load_as(
-        &self,
-        room: &SourceRoom,
-        actor: &str,
-        doc: &Doc,
-        generation: u64,
-    ) -> Result<Loaded, SourceError> {
+        let hold = self.disk.hold(generation);
         let reader = Reader::Load(generation);
         let mut times = LoadTimes::default();
         let mut lap = std::time::Instant::now();
@@ -681,7 +671,7 @@ impl Sources {
             base_bytes: stored.state.as_ref().map_or(0, |state| state.len() as u64),
             rows: stored.rows.len() as u64,
             row_bytes: stored.rows.iter().map(|(_, row)| row.len() as u64).sum(),
-            generation,
+            hold,
             session,
             times,
         })
@@ -719,11 +709,10 @@ impl Sources {
             .map(|record| record.checkpoint)
     }
 
-    /// Lets go of the disk store files this load held, and drops the room's
-    /// record and its XLSX replica (its room unloaded) unless a later load of
-    /// the same room replaced the record meanwhile.
+    /// Drops the room's record and its XLSX replica (its room unloaded)
+    /// unless a later load of the same room replaced the record meanwhile.
+    /// Its disk store files go with the load's [`Loaded::hold`].
     pub async fn forget(&self, room: &SourceRoom, generation: u64) {
-        self.disk.release(generation, Instant::now()).await;
         let name = room.name();
         {
             let mut rooms = lock(&self.rooms);
