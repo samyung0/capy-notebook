@@ -152,7 +152,7 @@ function ChartEditor({
                   </th>
                   {block.series.map((series, i) => (
                     <th
-                      className="min-w-24 border border-divider bg-surface-hover-bg"
+                      className="min-w-20 border border-divider bg-surface-hover-bg"
                       key={i}
                     >
                       {i >= limits.QUESTION_CHART_SERIES_MAX && (
@@ -170,11 +170,10 @@ function ChartEditor({
                       {i === 0 && pieIssue && (
                         <IssueIcon messages={[pieIssue]} />
                       )}
-                      <Input
+                      <CellInput
                         aria-label={m.question_ui_series_name({
                           number: i + 1,
                         })}
-                        className="py-1.5 text-sm"
                         maxLength={limits.QUESTION_CHART_SERIES_NAME_MAX}
                         onChange={(event) =>
                           onChange({
@@ -187,7 +186,6 @@ function ChartEditor({
                           })
                         }
                         value={series.name}
-                        wrapperClassName="rounded-none border-0 bg-transparent px-2 focus-within:ring-1 focus-within:ring-action-accent focus-within:ring-inset"
                       />
                     </th>
                   ))}
@@ -220,12 +218,11 @@ function ChartEditor({
                         <Icon name="trash" />
                       </ToolbarButton>
                     </td>
-                    <td className="min-w-24 border border-divider">
-                      <Input
+                    <td className="min-w-20 border border-divider">
+                      <CellInput
                         aria-label={m.question_ui_label_number({
                           number: row + 1,
                         })}
-                        className="py-1.5 text-sm"
                         maxLength={limits.QUESTION_CHART_LABEL_MAX}
                         onChange={(event) =>
                           onChange({
@@ -239,17 +236,18 @@ function ChartEditor({
                           })
                         }
                         value={block.labels[row] ?? ''}
-                        wrapperClassName="rounded-none border-0 bg-transparent px-2 focus-within:ring-1 focus-within:ring-action-accent focus-within:ring-inset"
                       />
                     </td>
                     {block.series.map((series, column) => (
-                      <td className="border border-divider" key={column}>
-                        <Input
+                      <td
+                        className="min-w-20 border border-divider"
+                        key={column}
+                      >
+                        <CellInput
                           aria-label={m.question_ui_series_row({
                             name: series.name,
                             number: row + 1,
                           })}
-                          className="py-1.5 text-sm"
                           max={limits.QUESTION_CHART_VALUE_MAX}
                           // Parts of a whole are never negative (Epo 2026-10-14).
                           min={single ? 0 : -limits.QUESTION_CHART_VALUE_MAX}
@@ -287,7 +285,6 @@ function ChartEditor({
                           }}
                           type="number"
                           value={series.values[row] ?? ''}
-                          wrapperClassName="rounded-none border-0 bg-transparent px-2 focus-within:ring-1 focus-within:ring-action-accent focus-within:ring-inset"
                         />
                       </td>
                     ))}

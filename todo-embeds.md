@@ -291,9 +291,10 @@ Asked for as one round in its own session: all embeds unified across chat
 (OpenUI) and Plate, and every embed with live editing, index text and note
 effects. That means:
 
-- live edits for charts and graphs (today an inline value replaced whole, so
-  two editors' changes do not merge) and a plot editor UI (landed for notes on
-  `embeds/plot`, 2026-10-17; quizzes still show plots view-only);
+- live edits for charts, plots and graphs: `block` is a Y.Map in rooms, merged
+  field by field, merges repaired on read with the type winning and never
+  refused (Epo 2026-10-17/18; `openwiki/embeds.md` "Live figures"), and a plot
+  editor UI with Insert plot in notes (quizzes still show plots view-only);
 - one component set for chat and notes per kind;
 - each kind's text in the note's index text, so the agent sees its changes
   through note effects.
@@ -312,7 +313,7 @@ collaboration server's `notes::index_text`, formats in `openwiki/embeds.md`
 | graph | description, then each visible element as stored (terms verbatim, points by name or coordinates, text, angle labels) |
 | mermaid | caption, then the whole source in a ```` ```mermaid ```` fence |
 | html_embed | none (out of the round) |
-| material_ref (quiz, flashcards) | the item's text at the reference: stems, part blocks and options (mcq options, matching prompts and choices); card fronts and backs. An item's save or room projection re-dirties the note. **Worked solutions and ordering items are left out pending Epo's call**: the 2026-10-17 decision lists solutions, but the 2026-10-06 answer-key rule keeps keys from viewers' chat, and workspace viewers chat over the index |
+| material_ref (quiz, flashcards) | the item's text at the reference: stems, part blocks and options (mcq options, matching prompts and choices); card fronts and backs. An item's save or room projection re-dirties the note. No answer keys: worked solutions and ordering items stay out (Epo 2026-10-18, the one answer-key rule); editors read keys through `inspect_document` |
 | img, audio, video, equation, inline_equation, toc, hr, mention, placeholder | none (image captions too) |
 
 Note effects (decided 2026-10-17, `human/agentic-retrieval.md`: the per-turn
@@ -332,3 +333,10 @@ note.
 The note effects themselves (pending effects plus the token threshold) are
 queued in the effects round (`todo-office-effects.md` and the decision
 above), so the two rounds share the Rust index-text extraction.
+
+Round status (2026-10-18): live figures, index text and the plot editor are
+built on `embeds/ymap` (all suites green); the chart editor's tables fit 360 px.
+Left to other rounds: note effects and `resolve_source_change` for notes (the
+effects round), chat-only style drift Epo did not take up (chat chart title
+size, Mermaid label and fixed theme; see the private harness's
+2026-10-17-embeds-live/PLAN.md "Render audit").
