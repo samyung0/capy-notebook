@@ -1751,6 +1751,23 @@ def test_a_raised_unit_exponent_is_restored_in_the_block_text() -> None:
     assert result["text"] == "The tank holds 10,597.5 ft^3 of water."
 
 
+def test_the_line_grid_returns_every_box_a_query_meets(monkeypatch) -> None:
+    # The index behind _lines_for_words and _needs_page: boxes across cell
+    # edges, touching the query, or without cells (not finite, wider than a
+    # page) come back; a box it cannot meet stays out.
+    monkeypatch.setattr(scripts, "ROW_INDEX", 1)
+    boxes = [
+        (15.9, 15.9, 16.1, 16.1),
+        (40.0, 40.0, 50.0, 50.0),
+        (math.nan, 0.0, 1.0, 1.0),
+        (0.0, 0.0, 2000.0, 1.0),
+        (200.0, 200.0, 210.0, 210.0),
+    ]
+    index = scripts._box_index(boxes)
+    assert scripts._beside(index, (16.0, 16.0, 40.0, 40.0), 5) == [0, 1, 2, 3]
+    assert scripts._beside(index, (math.inf, 0.0, 1.0, 1.0), 5) == range(5)
+
+
 def test_empty_tables_are_only_tables_without_any_cell_text_or_caption() -> None:
     empty = {
         "type": "table",
