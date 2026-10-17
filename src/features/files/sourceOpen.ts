@@ -1,5 +1,6 @@
 import { api } from '@/api/client';
 import type { SourceCollaborationToken, SourceSession } from '@/api/types';
+import { cacheSource, readCachedSource } from '@/lib/sourceCache';
 
 export type SourceOpenMode = 'view' | 'edit';
 
@@ -42,14 +43,19 @@ export function holdSource(fileId: string) {
   };
 }
 
-/** The base bytes the session names. */
+/** The base bytes: this device's copy when it still hashes to the session's
+ * base, else the download, kept for the next open. */
 async function sourceBase(
   session: SourceSession,
   signal?: AbortSignal
 ): Promise<Uint8Array<ArrayBuffer>> {
+  const cached = await readCachedSource(session.baseSourceSHA256);
+  if (cached) return cached;
   const response = await fetch(session.sourceURL, { signal });
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  return new Uint8Array(await response.arrayBuffer());
+  const bytes = new Uint8Array(await response.arrayBuffer());
+  void cacheSource(session.baseSourceSHA256, bytes);
+  return bytes;
 }
 
 function startOpen(

@@ -124,6 +124,8 @@ test('Office retry recovers from both session and parser failures', async ({
                 { status: 503 }
               )
             : HttpResponse.json({
+                // Not a SHA-256: the device copy is never read or kept.
+                baseSourceSHA256: 'retry-workbook',
                 checkpoint: 0,
                 indexedCheckpoint: 0,
                 sourceURL: url,

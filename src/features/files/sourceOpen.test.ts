@@ -1,7 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { get, post } = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }));
+const { get, post, readCachedSource, cacheSource } = vi.hoisted(() => ({
+  cacheSource: vi.fn(async () => {}),
+  get: vi.fn(),
+  post: vi.fn(),
+  readCachedSource: vi.fn(async (): Promise<Uint8Array | null> => null),
+}));
 vi.mock('@/api/client', () => ({ api: { get, post } }));
+vi.mock('@/lib/sourceCache', () => ({ cacheSource, readCachedSource }));
 
 import {
   holdSource,
@@ -79,6 +85,15 @@ describe('opening a source from its route', () => {
     const open: SourceOpen = await opening;
     expect(open.credentials).toBe(TOKEN);
     expect(order).toEqual(['session', 'base', 'token']);
+  });
+
+  it('serves the bytes kept on the device for the session base', async () => {
+    get.mockResolvedValue(SESSION);
+    readCachedSource.mockResolvedValueOnce(new Uint8Array([9]));
+    const open = await takeSourceOpen('f_cached', 'view');
+    expect(await open.base).toEqual(new Uint8Array([9]));
+    expect(readCachedSource).toHaveBeenLastCalledWith(SESSION.baseSourceSHA256);
+    expect(fetches).toEqual([]);
   });
 
   it('keeps one started open: a quick switch aborts the earlier download', async () => {
