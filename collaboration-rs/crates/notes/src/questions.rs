@@ -17,15 +17,17 @@ use serde_json::{Map, Value};
 // The question bounds every validator shares, from the embed catalog
 // (Go `fieldlimits.QuestionBounds`).
 pub use crate::catalog::{
-    QUESTION_ANSWERS_MAX, QUESTION_ASSET_URL_MAX, QUESTION_BLOCKS_MAX, QUESTION_CHART_LABELS_MAX,
-    QUESTION_CHART_SERIES_MAX, QUESTION_DESCRIPTION_MAX, QUESTION_GRAPH_ELEMENTS_MAX,
-    QUESTION_GRAPH_POLYGON_MAX, QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX,
-    QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX, QUESTION_MARKS_MAX,
-    QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX, QUESTION_PLOT_MARKS_MAX,
-    QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX, QUESTION_SVG_BYTES_MAX,
-    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_UNIT_MAX,
-    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
-    QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_ANSWERS_MAX, QUESTION_ASSET_URL_MAX, QUESTION_BLOCKS_MAX, QUESTION_CHART_LABEL_MAX,
+    QUESTION_CHART_LABELS_MAX, QUESTION_CHART_SERIES_MAX, QUESTION_CHART_SERIES_NAME_MAX,
+    QUESTION_CHART_TITLE_MAX, QUESTION_CHART_VALUE_MAX, QUESTION_DESCRIPTION_MAX,
+    QUESTION_GRAPH_DIMENSION_MAX, QUESTION_GRAPH_DIMENSION_MIN, QUESTION_GRAPH_ELEMENTS_MAX,
+    QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_NAME_MAX, QUESTION_GRAPH_POLYGON_MAX,
+    QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX,
+    QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
+    QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX,
+    QUESTION_SVG_BYTES_MAX, QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX,
+    QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX,
+    QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -180,6 +182,37 @@ fn meta(value: &Value, what: &str) -> Check {
     }
 }
 
+/// A chart's title, axis title or series name: at most `max` code points, as
+/// Go counts them.
+fn chart_text(value: &Value, max: usize, what: &str) -> Check {
+    match value.as_str() {
+        Some(raw) if code_points(raw) <= max => Ok(()),
+        Some(_) => fail(format!("{what}: too long")),
+        None => fail(format!("{what}: expected a string")),
+    }
+}
+
+/// A chart value: a finite number within ±QUESTION_CHART_VALUE_MAX.
+fn chart_value(value: &Value, what: &str) -> Result<f64, String> {
+    let n = number(value, what)?;
+    // 1e12 is exact as an f64.
+    #[allow(clippy::cast_precision_loss)]
+    if n.abs() > QUESTION_CHART_VALUE_MAX as f64 {
+        return fail(format!("{what}: value out of range"));
+    }
+    Ok(n)
+}
+
+/// A graph's point name or angle label: at most QUESTION_GRAPH_NAME_MAX code
+/// points, as Go counts them.
+fn graph_name(value: &Value, what: &str) -> Check {
+    match value.as_str() {
+        Some(raw) if code_points(raw) <= QUESTION_GRAPH_NAME_MAX => Ok(()),
+        Some(_) => fail(format!("{what}: too long")),
+        None => fail(format!("{what}: expected a string")),
+    }
+}
+
 fn optional<F: FnOnce(&Value) -> Check>(map: &Map<String, Value>, key: &str, check: F) -> Check {
     match present(map, key) {
         Some(value) => check(value),
@@ -251,6 +284,18 @@ fn coords(value: &Value, what: &str) -> Check {
     let items = array(value, what, 2, 2)?;
     for item in items {
         number(item, what)?;
+    }
+    Ok(())
+}
+
+/// A graph's width and height: whole pixels within the graph bounds, past
+/// image_size's whole-pixel check.
+fn graph_size(map: &Map<String, Value>, what: &str) -> Check {
+    for key in ["height", "width"] {
+        let n = integer(&map[key], what)?;
+        if !(QUESTION_GRAPH_DIMENSION_MIN..=QUESTION_GRAPH_DIMENSION_MAX).contains(&n) {
+            return fail(format!("{what}: {key} out of range"));
+        }
     }
     Ok(())
 }
@@ -451,7 +496,7 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             strict(map, what, &["coords", "id", "type"], &["hidden", "name"])?;
             coords(&map["coords"], what)?;
             optional(map, "hidden", |v| boolean(v, what))?;
-            optional(map, "name", |v| meta(v, what))?;
+            optional(map, "name", |v| graph_name(v, what))?;
             "point"
         }
         "line" | "segment" => {
@@ -497,12 +542,18 @@ fn graph_element(value: &Value) -> Result<GraphElement, String> {
             coords(&map["coords"], what)?;
             optional(map, "hidden", |v| boolean(v, what))?;
             text(&map["text"], what)?;
+            if map["text"]
+                .as_str()
+                .is_some_and(|raw| code_points(raw) > QUESTION_GRAPH_LABEL_MAX)
+            {
+                return fail(format!("{what}: Text is too long."));
+            }
             "text"
         }
         "angle" => {
             strict(map, what, &["id", "points", "type"], &["hidden", "label"])?;
             optional(map, "hidden", |v| boolean(v, what))?;
-            optional(map, "label", |v| meta(v, what))?;
+            optional(map, "label", |v| graph_name(v, what))?;
             for p in array(&map["points"], what, 3, 3)? {
                 points.push(identifier(p, what)?);
             }
@@ -626,21 +677,21 @@ pub fn block(value: &Value) -> Result<Block, String> {
             for entry in series {
                 let entry_map = object(entry, what)?;
                 strict(entry_map, what, &["name", "values"], &[])?;
-                meta(&entry_map["name"], what)?;
+                chart_text(&entry_map["name"], QUESTION_CHART_SERIES_NAME_MAX, what)?;
                 let values = array(&entry_map["values"], what, 1, QUESTION_CHART_LABELS_MAX)?;
                 // null is an empty cell, drawn as nothing (Epo 2026-10-14).
                 let mut numbers = Vec::new();
                 for value in values {
                     numbers.push(match value {
                         Value::Null => None,
-                        value => Some(number(value, what)?),
+                        value => Some(chart_value(value, what)?),
                     });
                 }
                 values_of.push(numbers);
             }
-            meta(&map["title"], what)?;
+            chart_text(&map["title"], QUESTION_CHART_TITLE_MAX, what)?;
             for key in ["xTitle", "yTitle"] {
-                optional(map, key, |v| meta(v, what))?;
+                optional(map, key, |v| chart_text(v, QUESTION_CHART_TITLE_MAX, what))?;
             }
             if values_of.iter().any(|v| v.len() != labels.len()) {
                 return fail("Each series needs a value for every label.");
@@ -739,7 +790,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 map,
                 what,
                 &["board", "elements", "height", "image", "type", "width"],
-                &["attribution", "description"],
+                &["description"],
             )?;
             let board = object(&map["board"], what)?;
             strict(board, what, &["axis", "bbox", "grid"], &[])?;
@@ -755,7 +806,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 .collect::<Result<_, _>>()?;
             let image = figure(&map["image"], true)?;
             image_size(map, what)?;
-            optional(map, "attribution", |v| meta(v, what))?;
+            graph_size(map, what)?;
             let description = optional_description(map, what)?;
             let (left, top, right, bottom) = (bbox[0], bbox[1], bbox[2], bbox[3]);
             if left >= right || bottom >= top {
@@ -843,6 +894,14 @@ fn cap_meta(map: &Map<String, Value>, key: &str, what: &str) -> Check {
     }
 }
 
+/// A string past `max` code points.
+fn cap_chars(map: &Map<String, Value>, key: &str, max: usize, what: &str) -> Check {
+    match map.get(key).and_then(Value::as_str) {
+        Some(raw) if code_points(raw) > max => fail(format!("{what}: {key} too long")),
+        _ => Ok(()),
+    }
+}
+
 /// A question text past its cap.
 fn cap_text(value: Option<&Value>, what: &str) -> Check {
     match value.and_then(Value::as_str) {
@@ -873,12 +932,13 @@ fn cap_description(map: &Map<String, Value>, what: &str) -> Check {
     }
 }
 
-/// `label`: a chart category label, `text` that may be empty (Epo 2026-10-14).
+/// `label`: a chart category label that may be empty (Epo 2026-10-14), at
+/// most QUESTION_CHART_LABEL_MAX code points (Epo 2026-10-17).
 fn label(value: &Value, what: &str) -> Check {
     let Some(raw) = value.as_str() else {
         return fail(format!("{what}: expected a string"));
     };
-    if code_points(js_trim(raw)) > QUESTION_TEXT_MAX {
+    if code_points(js_trim(raw)) > QUESTION_CHART_LABEL_MAX {
         return fail(format!("{what}: Text is too long."));
     }
     Ok(())
@@ -901,17 +961,22 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
         "chart" => {
             cap_description(map, what)?;
             for key in ["title", "xTitle", "yTitle"] {
-                cap_meta(map, key, what)?;
+                cap_chars(map, key, QUESTION_CHART_TITLE_MAX, what)?;
             }
             for label in cap_list(map.get("labels"), QUESTION_CHART_LABELS_MAX, what)? {
-                cap_text(Some(label), what)?;
+                if label
+                    .as_str()
+                    .is_some_and(|raw| code_points(raw) > QUESTION_CHART_LABEL_MAX)
+                {
+                    return fail(format!("{what}: label too long"));
+                }
             }
             for series in objects(cap_list(
                 map.get("series"),
                 QUESTION_CHART_SERIES_MAX,
                 what,
             )?) {
-                cap_meta(series, "name", what)?;
+                cap_chars(series, "name", QUESTION_CHART_SERIES_NAME_MAX, what)?;
                 cap_list(series.get("values"), QUESTION_CHART_LABELS_MAX, what)?;
             }
         }
@@ -931,7 +996,6 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
             }
         }
         "graph" => {
-            cap_meta(map, "attribution", what)?;
             cap_description(map, what)?;
             for element in objects(cap_list(
                 map.get("elements"),

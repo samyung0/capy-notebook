@@ -143,7 +143,6 @@ BLOCK = {
                 "width": NUMBER,
                 "height": NUMBER,
                 "description": TEXT,
-                "attribution": TEXT,
             },
             ["board", "elements", "image", "width", "height", "description"],
         ),

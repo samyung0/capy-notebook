@@ -307,7 +307,10 @@ function jessie(node: Node, runtime = false): string {
 function latex(node: Node): string {
   const wrap = (child: Node, min: number) => {
     const text = latex(child);
-    return precedence(child) < min ? `\\left(${text}\\right)` : text;
+    // A number in scientific notation reads as a product.
+    const level =
+      child.t === 'num' && text.includes('\\cdot') ? 2 : precedence(child);
+    return level < min ? `\\left(${text}\\right)` : text;
   };
   switch (node.t) {
     case 'num':
@@ -345,8 +348,28 @@ function latex(node: Node): string {
   }
 }
 
+const SUPERSCRIPTS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+
+/** A number as GeoGebra displays it in text: `6.02 · 10²³` where JavaScript
+ * would write e-notation. */
+export function displayNumber(value: number) {
+  const text = String(Number(value.toPrecision(12)));
+  const [mantissa, exponent] = text.split('e');
+  if (exponent === undefined) return text;
+  const power = [...String(Number(exponent))]
+    .map((char) => (char === '-' ? '⁻' : SUPERSCRIPTS[Number(char)]))
+    .join('');
+  return `${mantissa} · 10${power}`;
+}
+
+/** LaTeX for a number; where JavaScript would write e-notation, GeoGebra's
+ * `m · 10ⁿ`, since a bare `e` reads as Euler's number. */
 function formatNumber(value: number) {
-  return String(Number(value.toPrecision(12)));
+  const text = String(Number(value.toPrecision(12)));
+  const [mantissa, exponent] = text.split('e');
+  return exponent === undefined
+    ? text
+    : `${mantissa}\\cdot 10^{${Number(exponent)}}`;
 }
 
 /** Names a term reads; `x` is the only variable of a function row. */
@@ -493,7 +516,10 @@ function parseDomain(tokens: Token[]): [number, number] {
 }
 
 function functionRow(node: Node, domain?: [number, number]): ParsedRow {
-  return { domain, kind: 'function', term: functionTerm(node) };
+  const term = functionTerm(node);
+  if (term.length > limits.QUESTION_GRAPH_TERM_MAX)
+    throw new RowError(m.question_ui_graph_row_too_long());
+  return { domain, kind: 'function', term };
 }
 
 function pointRow(
@@ -503,6 +529,8 @@ function pointRow(
 ): ParsedRow {
   if (domain || node.items.length !== 2)
     throw new RowError(m.question_ui_graph_row_unreadable());
+  if (name && [...name].length > limits.QUESTION_GRAPH_NAME_MAX)
+    throw new RowError(m.question_ui_graph_row_name_too_long());
   return {
     coords: [number(node.items[0]), number(node.items[1])],
     kind: 'point',

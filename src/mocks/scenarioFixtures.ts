@@ -6,7 +6,7 @@ import {
   quizNode,
 } from '@/features/materials/document';
 import { deleteDocumentDrafts, draftKey } from '@/lib/editDrafts';
-import pdfURL from '../../e2e/fixtures/files/basic/digital.pdf?url';
+import pdfURL from '../../e2e/fixtures/files/basic/three-pages.pdf?url';
 import xlsxURL from '../../e2e/fixtures/files/basic/grades.xlsx?url';
 import docxURL from '../../e2e/fixtures/files/basic/lesson.docx?url';
 import pptxURL from '../../e2e/fixtures/files/basic/lesson.pptx?url';

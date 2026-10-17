@@ -62,6 +62,7 @@ import {
   FilePlusIcon,
   Files01Icon,
   FilterVerticalIcon,
+  FitToScreenIcon,
   FlashIcon,
   Flowchart01Icon,
   GeometricShapes01Icon,
@@ -167,8 +168,68 @@ import {
   WifiError02Icon,
   WifiOff02Icon,
 } from '@hugeicons/core-free-icons';
+import type { IconSvgElement } from '@hugeicons/react';
 import type { CSSProperties } from 'react';
 import { HugeIcon } from './HugeIcon';
+
+// Hugeicons ships only the down-up variant; this mirrors it with the chevrons pointing apart.
+const ListChevronsUpDownIcon = [
+  [
+    'path',
+    {
+      d: 'M15 9C15 9 17.2095 6 18 6C18.7906 6 21 9 21 9',
+      key: '0',
+      stroke: 'currentColor',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      strokeWidth: '1.5',
+    },
+  ],
+  [
+    'path',
+    {
+      d: 'M15 15C15 15 17.2095 18 18 18C18.7906 18 21 15 21 15',
+      key: '1',
+      stroke: 'currentColor',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      strokeWidth: '1.5',
+    },
+  ],
+  [
+    'path',
+    {
+      d: 'M11 6H3',
+      key: '2',
+      stroke: 'currentColor',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      strokeWidth: '1.5',
+    },
+  ],
+  [
+    'path',
+    {
+      d: 'M11 12H3',
+      key: '3',
+      stroke: 'currentColor',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      strokeWidth: '1.5',
+    },
+  ],
+  [
+    'path',
+    {
+      d: 'M11 18H3',
+      key: '4',
+      stroke: 'currentColor',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+      strokeWidth: '1.5',
+    },
+  ],
+] as const satisfies IconSvgElement;
 
 const HugeIcons = {
   alert: Alert02Icon,
@@ -234,11 +295,13 @@ const HugeIcons = {
   filesNav: Files01Icon,
   fileText: File02Icon,
   filter: FilterVerticalIcon,
+  fitToScreen: FitToScreenIcon,
   flashcards: [
     'M5 7h11a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V9a2 2 0 012-2z',
     'M8 4h11a2 2 0 012 2v8',
   ],
   folderCollapse: ListChevronsDownUpIcon,
+  folderExpand: ListChevronsUpDownIcon,
   globe: Globe02Icon,
   graph: ChartLineData01Icon,
   grid: Grid3X3Icon,

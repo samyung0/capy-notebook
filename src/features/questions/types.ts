@@ -152,7 +152,6 @@ export type GraphBlock = {
   height: number;
   /** Alt text and grading text (optional). */
   description?: string;
-  attribution?: string;
 };
 export type TableBlock = { type: 'table'; header: boolean; rows: string[][] };
 export type ImageBlock = {

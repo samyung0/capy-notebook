@@ -1,7 +1,8 @@
 import { createContext, useContext } from 'react';
 import {
   CategoryChart,
-  color,
+  type ChartFrameProps,
+  ChartLegend,
   format,
 } from '@/components/charts/CategoryChart';
 import { PlotChart } from '@/components/charts/PlotChart';
@@ -14,33 +15,13 @@ import { CiteFooter } from './Cite';
 /**
  * SVG charts drawn from the model's numbers, themed through --chart-1..6.
  * Marks follow the data-viz rules: thin bars with rounded ends and a surface
- * gap, 2px lines with ringed markers, a legend whenever there are two or more
- * series, a native tooltip per mark, and the values as a table for inspection.
+ * gap, 2px lines with ringed markers, the shared legend, a native tooltip
+ * per mark, and the values as a table for inspection.
  */
 
 export const InvalidChartContext = createContext<ReadonlySet<string>>(
   new Set()
 );
-
-function Legend({ names }: { names: string[] }) {
-  if (names.length < 2) return null;
-  return (
-    <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-fg-secondary text-xs">
-      {names.map((name, index) => (
-        <span
-          className="inline-flex items-center gap-1"
-          key={`${index}-${name}`}
-        >
-          <span
-            className="inline-block size-2 rounded-full"
-            style={{ background: color(index) }}
-          />
-          {name}
-        </span>
-      ))}
-    </div>
-  );
-}
 
 function Values({
   columns,
@@ -88,6 +69,8 @@ function Values({
   );
 }
 
+/** The question frame's centred title, chart and legend, then the values
+ * table and sources. */
 function Frame({
   title,
   unit,
@@ -96,24 +79,20 @@ function Frame({
   legend,
   values,
   children,
-}: {
-  title: string;
-  unit?: string;
-  illustrative?: boolean;
-  passages?: number[];
-  legend: string[];
-  values: { columns: string[]; rows: (string | number)[][] };
-  children?: React.ReactNode;
-}) {
+}: ChartFrameProps) {
   return (
     <figure className="flex flex-col gap-1.5">
-      <figcaption className="text-[13.5px]">
-        <span className="font-semibold">{title}</span>
-        {unit ? <span className="ml-1.5 text-fg-muted">{unit}</span> : null}
-      </figcaption>
-      {/* Charts scale with their box; past this their labels outgrow the text. */}
-      <div className="w-full max-w-[480px]">{children}</div>
-      <Legend names={legend} />
+      <div className="mx-auto w-full max-w-[480px]">
+        <figcaption className="wrap-anywhere mb-2 text-center font-semibold text-[13.5px]">
+          {title}
+          {unit ? (
+            <span className="ml-1.5 font-normal text-fg-muted">{unit}</span>
+          ) : null}
+        </figcaption>
+        {/* Charts scale with their box; past this their labels outgrow the text. */}
+        {children}
+        <ChartLegend names={legend} />
+      </div>
       <Values columns={values.columns} rows={values.rows} />
       <CiteFooter
         note={

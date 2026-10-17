@@ -5,23 +5,21 @@ import * as limits from '@/api/limits.generated';
 import { BlockToolbar } from '@/components/ui/BlockToolbar';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { CharCount } from '@/components/ui/Input';
 import { Popover, PopoverTrigger } from '@/components/ui/Popover';
 import { Switch } from '@/components/ui/Switch';
 import { ToolbarButton } from '@/components/ui/ToolbarButton';
 import { ToolbarPopoverContent } from '@/components/ui/ToolbarPopover';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '@/components/ui/Tooltip';
+import { FigurePreview } from '@/features/materials/staticViews';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
 import { Field, FieldInput, MenuItem, SelectField } from './editorFields';
 import { GraphRowField } from './GraphRowField';
-import { createGraphBoard, GraphError } from './graph';
+import { createGraphBoard, GraphError, validateGraphRecipe } from './graph';
 import {
   buildElements,
+  displayNumber,
   type GraphRow,
   type ParsedRow,
   parseRow,
@@ -31,6 +29,7 @@ import {
   rowsFromElements,
   styleKeys,
 } from './graphSyntax';
+import { IssueIcon, IssueSummary } from './IssueViews';
 import type { GraphBlock, GraphElement } from './types';
 
 type Board = Awaited<ReturnType<typeof createGraphBoard>>;
@@ -75,8 +74,34 @@ export function GraphEditor({
   const latest = useRef({ onChange, rows, value });
   latest.current = { onChange, rows, value };
   const fields = useRef(new Map<string, MathfieldElement>());
+  // Fresh labels open with their text selected, ready to type over.
+  const [freshLabel, setFreshLabel] = useState<string>();
   const { errors } = useMemo(() => buildElements(rows), [rows]);
-  const invalid = errors.size > 0;
+  // Issues read like the question dialog's (Epo 2026-10-15): the first one
+  // above the editor, a warning icon on each affected row and on Advanced.
+  const advancedIssues = boardIssues(value);
+  // Each row is one element: a full graph offers no new row.
+  const full = rows.length >= limits.QUESTION_GRAPH_ELEMENTS_MAX;
+  const order = [...rows.map((row) => row.key), ...(full ? [] : [draftKey])];
+  const issues = [
+    ...order.flatMap((key, index) => {
+      const message = errors.get(key);
+      return message
+        ? [m.question_ui_graph_row_issue({ message, number: index + 1 })]
+        : [];
+    }),
+    ...advancedIssues,
+  ];
+  // Anything else the board refuses still reads here, never as a blank board.
+  if (!issues.length) {
+    try {
+      validateGraphRecipe(value);
+    } catch (error) {
+      if (!(error instanceof GraphError)) throw error;
+      issues.push(error.message);
+    }
+  }
+  const invalid = issues.length > 0;
   useEffect(() => {
     onInvalidChange?.(invalid);
   }, [invalid, onInvalidChange]);
@@ -121,9 +146,6 @@ export function GraphEditor({
     );
   const remove = (key: string) =>
     commit(latest.current.rows.filter((row) => row.key !== key));
-  // Each row is one element: a full graph offers no new row.
-  const full = rows.length >= limits.QUESTION_GRAPH_ELEMENTS_MAX;
-  const order = [...rows.map((row) => row.key), ...(full ? [] : [draftKey])];
   const focus = (key: string | undefined) => {
     if (key) fields.current.get(key)?.focus();
   };
@@ -175,6 +197,7 @@ export function GraphEditor({
 
   return (
     <div className="@container min-w-0">
+      <IssueSummary className="mb-4" messages={issues} />
       <div className="grid min-w-0 @3xl:grid-cols-[20rem_minmax(0,1fr)] items-start gap-7">
         <GraphStage hooks={hooks} value={value} />
         <div className="@3xl:order-first flex min-w-0 flex-col gap-3.5">
@@ -184,6 +207,7 @@ export function GraphEditor({
               if (row?.kind === 'label')
                 return (
                   <LabelRow
+                    autoSelect={key === freshLabel}
                     error={errors.get(key)}
                     key={key}
                     onChange={(next) =>
@@ -225,43 +249,56 @@ export function GraphEditor({
               );
             })}
           </ol>
-          <Button
-            className="-mt-1.5 -ml-4 self-start"
-            disabled={full}
-            iconLeft="plus"
-            onClick={() => {
-              const [left, top, right, bottom] = value.board.bbox;
-              commit([
-                ...rows,
-                {
-                  coords: [
-                    Number(((left + right) / 2).toPrecision(6)),
-                    Number(((top + bottom) / 2).toPrecision(6)),
-                  ],
-                  key: crypto.randomUUID(),
-                  kind: 'label',
-                  text: '',
-                },
-              ]);
-            }}
-            size="sm"
-            type="button"
-            variant="ghost"
-          >
-            {m.question_ui_graph_add_label()}
-          </Button>
-          <Collapsible.Root>
-            <Collapsible.Trigger asChild>
-              <Button
-                className="-ml-4 self-start"
-                iconLeft="chevronDown"
-                size="sm"
-                type="button"
-                variant="ghost"
-              >
-                {m.question_ui_advanced()}
-              </Button>
-            </Collapsible.Trigger>
+          {/* Rows count like characters: the counter shows from 90%. */}
+          <div className="-mt-1.5 flex items-center justify-between gap-2">
+            <Button
+              className="-ml-4"
+              disabled={full}
+              iconLeft="plus"
+              onClick={() => {
+                const [left, top, right, bottom] = value.board.bbox;
+                const key = crypto.randomUUID();
+                setFreshLabel(key);
+                commit([
+                  ...rows,
+                  {
+                    coords: [
+                      Number(((left + right) / 2).toPrecision(12)),
+                      Number(((top + bottom) / 2).toPrecision(12)),
+                    ],
+                    key,
+                    kind: 'label',
+                    text: m.question_ui_label(),
+                  },
+                ]);
+              }}
+              size="sm"
+              type="button"
+              variant="ghost"
+            >
+              {m.question_ui_graph_add_label()}
+            </Button>
+            <CharCount
+              max={limits.QUESTION_GRAPH_ELEMENTS_MAX}
+              value={rows.length}
+            />
+          </div>
+          {/* Opens on its own when the graph already has a description. */}
+          <Collapsible.Root defaultOpen={Boolean(value.description)}>
+            <div className="flex items-center gap-1">
+              <Collapsible.Trigger asChild>
+                <Button
+                  className="-ml-4 self-start"
+                  iconLeft="chevronDown"
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  {m.question_ui_advanced()}
+                </Button>
+              </Collapsible.Trigger>
+              <IssueIcon messages={advancedIssues} />
+            </div>
             {/* Nudged under the chevron's ink, like the chart dialog. */}
             <Collapsible.Content className="translate-x-0.5 space-y-3 pt-3">
               <div className="grid grid-cols-2 gap-3">
@@ -275,7 +312,8 @@ export function GraphEditor({
                     }
                   >
                     <FieldInput
-                      min={1}
+                      max={limits.QUESTION_GRAPH_DIMENSION_MAX}
+                      min={limits.QUESTION_GRAPH_DIMENSION_MIN}
                       onChange={(event) =>
                         onChange({
                           ...value,
@@ -310,9 +348,10 @@ export function GraphEditor({
                         setBoard({ bbox });
                       }}
                       type="number"
+                      // Enough digits to tell a zoomed-in minimum from its maximum.
                       value={
                         Number.isFinite(value.board.bbox[i])
-                          ? Number(value.board.bbox[i].toPrecision(6))
+                          ? Number(value.board.bbox[i].toPrecision(12))
                           : ''
                       }
                     />
@@ -321,45 +360,44 @@ export function GraphEditor({
               </div>
               <Field
                 count={{
-                  max: limits.QUESTION_METADATA_MAX,
-                  value: textLength(value.attribution),
+                  max: descriptionMax,
+                  value: textLength(value.description),
                 }}
-                label={m.question_ui_attribution()}
+                label={m.question_ui_description()}
               >
                 <FieldInput
-                  maxLength={limits.QUESTION_METADATA_MAX}
+                  maxLength={descriptionMax}
                   onChange={(event) =>
-                    onChange({
-                      ...value,
-                      attribution: event.target.value || undefined,
-                    })
+                    onChange({ ...value, description: event.target.value })
                   }
-                  value={value.attribution ?? ''}
+                  value={value.description ?? ''}
                 />
               </Field>
             </Collapsible.Content>
           </Collapsible.Root>
-          <div className="translate-x-0.5">
-            <Field
-              count={{
-                max: descriptionMax,
-                value: textLength(value.description),
-              }}
-              label={m.question_ui_description()}
-            >
-              <FieldInput
-                maxLength={descriptionMax}
-                onChange={(event) =>
-                  onChange({ ...value, description: event.target.value })
-                }
-                value={value.description ?? ''}
-              />
-            </Field>
-          </div>
         </div>
       </div>
     </div>
   );
+}
+
+/** What keeps the Advanced fields from drawing. */
+function boardIssues({ width, height, board }: GraphBlock) {
+  const min = limits.QUESTION_GRAPH_DIMENSION_MIN;
+  const max = limits.QUESTION_GRAPH_DIMENSION_MAX;
+  const [left, top, right, bottom] = board.bbox;
+  return [
+    ...([width, height].every(
+      (n) => Number.isInteger(n) && n >= min && n <= max
+    )
+      ? []
+      : [m.question_ui_graph_size_invalid({ max, min })]),
+    ...([left, top, right, bottom].every(Number.isFinite) &&
+    left < right &&
+    bottom < top
+      ? []
+      : [m.question_ui_graph_bounds_invalid()]),
+  ];
 }
 
 /** The live board at the export's pixel size, scaled to the column. */
@@ -377,6 +415,7 @@ function GraphStage({
   latest.current = value;
   const [scale, setScale] = useState(0);
   const [error, setError] = useState('');
+  const [preview, setPreview] = useState<{ open: boolean; svg: string }>();
   const show = (error: unknown) =>
     setError(
       error instanceof GraphError
@@ -394,13 +433,22 @@ function GraphStage({
   }, []);
   const { width, height } = value;
   const { axis, grid } = value.board;
+  // The editor lists why a recipe cannot be drawn; the stage waits for a
+  // drawable one instead of failing.
+  let drawable = true;
+  try {
+    validateGraphRecipe(value);
+  } catch (error) {
+    if (!(error instanceof GraphError)) throw error;
+    drawable = false;
+  }
   useEffect(() => {
     setScale((wrapper.current?.clientWidth ?? 0) / width);
   }, [width]);
   // Size and axes are fixed when JSXGraph builds a board; anything else updates it.
   useEffect(() => {
     let cancelled = false;
-    if (!stage.current || !(width > 0) || !(height > 0)) return;
+    if (!stage.current || !drawable) return;
     // A fresh host per board: freeing a stale board clears its container.
     const target = document.createElement('div');
     target.style.cssText = `width:${width}px;height:${height}px`;
@@ -422,16 +470,16 @@ function GraphStage({
       board.current = null;
       target.remove();
     };
-  }, [width, height, axis, grid, hooks]);
+  }, [width, height, axis, grid, hooks, drawable]);
   useEffect(() => {
-    if (!board.current) return;
+    if (!board.current || !drawable) return;
     try {
       board.current.update(value);
       setError('');
     } catch (error) {
       show(error);
     }
-  }, [value]);
+  }, [value, drawable]);
   return (
     <div className="min-w-0">
       <div
@@ -447,7 +495,8 @@ function GraphStage({
           ref={stage}
           style={{ height, transform: `scale(${scale || 1})`, width }}
         />
-        <BlockToolbar className="absolute top-2 right-2">
+        {/* MediaFrame's toolbar, always shown. */}
+        <BlockToolbar className="absolute top-2 right-2 z-10 rounded-md p-0.5">
           <ToolbarButton
             label={m.material_zoom_in()}
             onClick={() => board.current?.zoom(1.5)}
@@ -467,6 +516,16 @@ function GraphStage({
             onClick={() => board.current?.fit()}
             type="button"
           >
+            <Icon name="fitToScreen" />
+          </ToolbarButton>
+          <ToolbarButton
+            label={m.material_fullscreen()}
+            onClick={() => {
+              if (board.current)
+                setPreview({ open: true, svg: board.current.exportSvg() });
+            }}
+            type="button"
+          >
             <Icon name="maximize" />
           </ToolbarButton>
         </BlockToolbar>
@@ -475,6 +534,14 @@ function GraphStage({
         <p className="mt-2 text-sm text-solid-error" role="alert">
           {error}
         </p>
+      )}
+      {/* What Save would export, full screen like a note figure. */}
+      {preview && (
+        <FigurePreview
+          block={{ ...value, image: { svg: preview.svg } }}
+          onOpenChange={(open) => setPreview({ ...preview, open })}
+          open={preview.open}
+        />
       )}
     </div>
   );
@@ -522,7 +589,7 @@ function ExpressionItem({
       }}
     >
       {error ? (
-        <RowErrorIcon message={error} />
+        <RowIssue message={error} />
       ) : type && row ? (
         <StyleMenu onChange={onRestyle} row={row} type={type} />
       ) : (
@@ -545,20 +612,12 @@ function ExpressionItem({
   );
 }
 
-/** A row that cannot be drawn: the warning icon, its message on hover. */
-function RowErrorIcon({ message }: { message: string }) {
+/** A row that cannot be drawn: the question dialog's warning icon. */
+function RowIssue({ message }: { message: string }) {
   return (
-    <Tooltip>
-      <TooltipTrigger
-        className="grid size-8 place-items-center rounded-button text-solid-error outline-none focus-visible:ring-2 focus-visible:ring-action"
-        render={<span role="img" />}
-        tabIndex={0}
-      >
-        <Icon className="size-4.5" name="alert" />
-        <span className="sr-only">{message}</span>
-      </TooltipTrigger>
-      <TooltipContent side="right">{message}</TooltipContent>
-    </Tooltip>
+    <span className="grid size-8 place-items-center">
+      <IssueIcon messages={[message]} />
+    </span>
   );
 }
 
@@ -645,13 +704,13 @@ function StyleMenu({
         {(type === 'point' || type === 'angle') && (
           <Field
             count={{
-              max: limits.QUESTION_METADATA_MAX,
+              max: limits.QUESTION_GRAPH_NAME_MAX,
               value: textLength(label),
             }}
             label={m.question_ui_label()}
           >
             <FieldInput
-              maxLength={limits.QUESTION_METADATA_MAX}
+              maxLength={limits.QUESTION_GRAPH_NAME_MAX}
               onChange={(event) => {
                 const next = event.target.value;
                 onChange({
@@ -691,16 +750,24 @@ function HideSwitch({
 }
 
 function LabelRow({
+  autoSelect,
   row,
   error,
   onChange,
   onRemove,
 }: {
+  autoSelect: boolean;
   row: Extract<GraphRow, { kind: 'label' }>;
   error: string | undefined;
   onChange: (row: Extract<GraphRow, { kind: 'label' }>) => void;
   onRemove: () => void;
 }) {
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    if (!autoSelect) return;
+    input.current?.focus();
+    input.current?.select();
+  }, [autoSelect]);
   return (
     <li
       className="group grid min-h-12 cursor-text grid-cols-[2rem_minmax(0,1fr)_1.75rem] items-center gap-2 border-divider border-b py-1 pl-1 focus-within:bg-tint-accent-1/25 focus-within:shadow-[inset_2px_0_0_var(--color-action-accent)]"
@@ -717,7 +784,7 @@ function LabelRow({
       }}
     >
       {error ? (
-        <RowErrorIcon message={error} />
+        <RowIssue message={error} />
       ) : (
         <Popover>
           <PopoverTrigger asChild>
@@ -738,16 +805,21 @@ function LabelRow({
       <span className="flex min-w-0 items-baseline gap-2">
         <FieldInput
           aria-label={m.question_ui_label()}
-          maxLength={limits.QUESTION_TEXT_MAX}
+          maxLength={limits.QUESTION_GRAPH_LABEL_MAX}
           onChange={(event) => onChange({ ...row, text: event.target.value })}
+          ref={input}
           value={row.text}
           variant="transparent"
           wrapperClassName="min-w-0 flex-1"
         />
+        <CharCount
+          max={limits.QUESTION_GRAPH_LABEL_MAX}
+          value={textLength(row.text)}
+        />
         <span className="shrink-0 text-fg-muted text-sm">
           {m.question_ui_graph_label_at({
-            x: String(row.coords[0]),
-            y: String(row.coords[1]),
+            x: displayNumber(row.coords[0]),
+            y: displayNumber(row.coords[1]),
           })}
         </span>
       </span>

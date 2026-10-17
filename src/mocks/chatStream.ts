@@ -9,6 +9,7 @@ import type {
 import {
   type ChatFixture,
   chatFixtures,
+  type FixtureEdit,
   fixtureCitations,
   fixtureResult,
   mockChatModel,
@@ -33,6 +34,27 @@ function undoable(
     resource: { id: item.id, kind, materialKind, title: item.title },
     undo: { operationId, status: 'available' },
   };
+}
+
+/** A fixture's change to a mock file or material, by id. */
+function fixtureEffect(
+  change: FixtureEdit['changes'][number]
+): ResourceEffect[] {
+  const file = files.find(({ id }) => id === change.id);
+  const material = materials.find(({ id }) => id === change.id);
+  const effect = file
+    ? undoable(change.operation, 'source_file', {
+        id: file.id,
+        title: file.name,
+      })
+    : material
+      ? undoable(change.operation, 'material', material, material.kind)
+      : undefined;
+  if (!effect?.undo) return [];
+  if (change.undo === 'none') return [{ ...effect, undo: undefined }];
+  if (change.undo === 'unavailable')
+    return [{ ...effect, undo: { ...effect.undo, status: 'unavailable' } }];
+  return [effect];
 }
 
 /** All rich-chat previews use the same persistence and SSE path as the default mock. */
@@ -183,6 +205,16 @@ export function mockChatStream(fixture?: ChatFixture) {
             activity.push({ id: narration, kind: 'narration', text: said });
             await delay(700);
             if (stopped()) return;
+            if (selected.edits) {
+              for (const edit of selected.edits) {
+                const effects = edit.changes.flatMap(fixtureEffect);
+                const detail = effects
+                  .map(({ resource }) => resource.title)
+                  .join(', ');
+                if (!(await run({ detail, name: edit.tool }, 800, effects)))
+                  return;
+              }
+            }
             const quiz = materials.find((item) => item.id === 'qz_1');
             const note = workspaceFiles.find((file) => file.id === 'f_2');
             const later: [MockStep, number, ResourceEffect[]?][] = [
@@ -203,12 +235,13 @@ export function mockChatStream(fixture?: ChatFixture) {
                 ],
               ],
             ];
-            for (const [step, ms, effects] of later) {
+            for (const [step, ms, effects] of selected.edits ? [] : later) {
               if (!(await run(step, ms, effects))) return;
             }
             await delay(600);
             if (stopped()) return;
             if (
+              !selected.edits &&
               note &&
               !(await run({ detail: note.name, name: 'edit_document' }, 900, [
                 undoable('edited', 'source_file', {

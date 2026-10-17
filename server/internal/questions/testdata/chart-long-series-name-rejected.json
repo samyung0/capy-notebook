@@ -1,0 +1,56 @@
+{
+  "name": "chart-long-series-name-rejected",
+  "valid": false,
+  "policy": {},
+  "question": {
+    "id": "q1",
+    "stem": [
+      {
+        "type": "chart",
+        "kind": "bar",
+        "title": "Rainfall (mm)",
+        "labels": [
+          "Jan",
+          "Feb",
+          "Mar"
+        ],
+        "series": [
+          {
+            "name": "nnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnnn",
+            "values": [
+              40,
+              55,
+              61
+            ]
+          }
+        ]
+      }
+    ],
+    "parts": [
+      {
+        "id": "part-1",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "Answer?"
+          }
+        ],
+        "answer": {
+          "type": "short",
+          "accepted": [
+            "alpha"
+          ]
+        },
+        "marks": 1,
+        "solution": [
+          {
+            "type": "text",
+            "text": "Because."
+          }
+        ]
+      }
+    ],
+    "layout": "paper",
+    "labels": "letters"
+  }
+}

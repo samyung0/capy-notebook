@@ -104,16 +104,15 @@ function AssistantBubble({
   onOpenCitation?: (citation: Citation) => void;
 }) {
   const live = streaming && msg.status === 'streaming';
-  const draft =
-    msg.phase === 'answering' || msg.currentBlockId
-      ? msg.currentBlockText
-      : undefined;
+  // Text streaming before the answer phase is narration, drawn below the
+  // trace until its block ends and the trace takes it.
+  const draft = msg.phase === 'answering' ? msg.currentBlockText : undefined;
   const answer = msg.content || draft || '';
   return (
     <div className="py-2.5">
       <ChatTrace handlers={handlers} live={live} mode={mode} msg={msg} />
       {msg.currentBlockText && msg.phase !== 'answering' && !msg.content ? (
-        <div className="mb-6">
+        <div className="mt-6 mb-4">
           <LangAnswer
             citations={msg.citations}
             complete={false}

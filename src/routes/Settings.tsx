@@ -115,7 +115,7 @@ const NOTIFICATION_ROWS: {
 
 function NotificationsTab() {
   const { data: prefs, isSuccess } = useNotificationPrefs();
-  const { isPending, mutate: setPrefs } = useSetNotificationPrefs();
+  const { mutate: setPrefs } = useSetNotificationPrefs();
   return (
     <>
       <TabHeader title={m.settings_tab_notifications()} />
@@ -125,9 +125,9 @@ function NotificationsTab() {
             <Switch
               aria-label={row.title()}
               checked={prefs?.[row.field] ?? false}
-              disabled={!isSuccess || isPending}
+              disabled={!isSuccess}
               onCheckedChange={(checked) => {
-                if (!prefs || isPending) return;
+                if (!prefs) return;
                 setPrefs({ ...prefs, [row.field]: checked });
               }}
             />

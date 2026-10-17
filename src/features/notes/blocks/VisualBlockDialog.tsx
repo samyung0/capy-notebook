@@ -1,12 +1,14 @@
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useRef, useState } from 'react';
-import { Controller, useForm } from 'react-hook-form';
+import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
 import { SimpleDialog } from '@/components/ui/Dialog';
 import { InputError } from '@/components/ui/Input';
 import { BlockEditor } from '@/features/questions/BlockEditor';
 import { renderGraphSvg } from '@/features/questions/graph';
+import { IssueSummary } from '@/features/questions/IssueViews';
+import { blockIssues } from '@/features/questions/issues';
 import {
   blockWithoutBlanks,
   type ChartBlock,
@@ -48,6 +50,8 @@ export default function VisualBlockDialog({
         options
       ),
   });
+  // What keeps Save off, worded as in the question dialog.
+  const issues = blockIssues(useWatch({ control, name: 'block' }));
   const save = handleSubmit(async ({ block: draft }) => {
     try {
       if (draft.type !== 'graph' && draft.type !== 'chart')
@@ -83,7 +87,7 @@ export default function VisualBlockDialog({
             {m.action_cancel()}
           </Button>
           <Button
-            disabled={isSubmitting || invalid}
+            disabled={isSubmitting || invalid || issues.length > 0}
             size="lg"
             type="submit"
             variant="accent"
@@ -100,6 +104,7 @@ export default function VisualBlockDialog({
       title={block.type === 'chart' ? m.editor_chart() : m.editor_graph()}
       width={1040}
     >
+      <IssueSummary className="mb-4" messages={issues} />
       <fieldset className="min-w-0" disabled={isSubmitting}>
         <Controller
           control={control}
@@ -113,7 +118,6 @@ export default function VisualBlockDialog({
           )}
         />
       </fieldset>
-      {errors.block && <InputError>{m.editor_embed_invalid()}</InputError>}
       {errors.root?.message && <InputError>{errors.root.message}</InputError>}
       <div
         aria-hidden

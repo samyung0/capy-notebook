@@ -222,9 +222,18 @@ component with matching fonts/layout and no keyboard or menu controls. `BlockToo
 is shared by question blocks, note embeds, tables and columns.
 
 Charts reuse the SVG renderer extracted from ChatChart. A chart's category
-labels may be empty, each at most `QUESTION_TEXT_MAX` (every validator and the
-embed catalog's chart schema, Epo 2026-10-14); `CategoryChart` draws an empty
-label as no tick text. A pie or stacked chart holds one series of values 0 or
+labels may be empty (every validator and the embed catalog's chart schema,
+Epo 2026-10-14); `CategoryChart` draws an empty
+label as no tick text. A chart holds at most `QUESTION_CHART_SERIES_MAX` (6,
+one per chart colour) series of `QUESTION_CHART_LABELS_MAX` (50) values; its
+title and axis titles stop at `QUESTION_CHART_TITLE_MAX` (100), each series
+name at `QUESTION_CHART_SERIES_NAME_MAX` (60) and each category label at
+`QUESTION_CHART_LABEL_MAX` (60) code points, and a value within
+±`QUESTION_CHART_VALUE_MAX` (1e12; the editor's cells stop there) (Epo
+2026-10-17). A
+note's chart dialog lists what keeps Save off in the question dialog's issue
+strip (`blockIssues`). Category labels wrap between letters where a word
+does not fit, and the tick column widens to its widest number. A pie or stacked chart holds one series of values 0 or
 more with a positive total among its non-empty values: the chart editor
 keeps one series and its value inputs stop at 0, and the pipeline cuts an
 agent's multi-series pie or stacked chart to its first series and pads an
@@ -251,7 +260,9 @@ series longer than its labels stays an error. The validators stay strict (even
 table rows, a value per label), so nothing uneven is stored (Epo
 2026-10-14). Image and graph descriptions are optional like chart and plot
 ones; a figure without one is `[Figure]` in the grading text and has empty
-alt text. An open part's marks are its marking items' total capped at
+alt text. Only an image carries an `attribution`, the figure's own printed
+credit (a library figure's caption); graphs, charts and plots have none
+(Epo 2026-10-17), and a question's credit is its bank `sources`. An open part's marks are its marking items' total capped at
 `QUESTION_MARKS_MAX` (`schemeMarks`, live and staged alike): items past the
 cap stay as entered, so the live room admits the edit and the dialog names
 the mismatch. Graphs store a bounded
@@ -269,13 +280,33 @@ and back: Desmos input (`y = 0.5x^2 - 3`, `{0 ≤ x ≤ 4}` restrictions,
 `arc(O, A, B)`, `sector(…)`) with implicit products, stored as JessieCode with
 explicit `*`; style (dash, equal-side marks, shading, labels, hide) sits in each
 row's style menu. A row's point names are its references; a saved point another
-element uses but whose label is not a name gets the row name `P_n`. Rows that
-cannot be drawn show a warning icon whose tooltip is the reason, and the dialog
-holds Save until they are fixed or deleted. Dragging, wheel or pinch zoom around
-the pointer, double-click and Fit move the board, and the visible area is the
-saved `bbox`; dragged points round to the board's precision (0.1 at the default
-zoom). The board compiles `pi` and `e` as JessieCode's `PI` and `EULER`.
-Implicit curves and inequalities are planned (`todo-graph.md`). Question charts sit
+element uses but whose label is not a name gets the row name `P_n`. Issues read
+like the question dialog's: the first one (with "+n more") above the editor, a
+warning icon on each row that cannot be drawn and beside Advanced when its size
+or bounds are invalid; the dialog holds Save until they are fixed. Dragging,
+wheel or pinch zoom around the pointer, double-click and Fit move the board, and
+the visible area is the saved `bbox`, reported once a gesture settles (wheel
+events zoom once per frame); dragged points round to the board's precision (0.1
+at the default zoom). Full screen opens the live board in the note figure
+preview. The board compiles `pi` and `e` as JessieCode's `PI` and `EULER`.
+Numbers follow GeoGebra (Epo 2026-10-17): ticks every 1, 2 or 5 × 10ⁿ from
+100px of units rounded down, a minor tick halfway, grid lines on the numbered
+ticks, tick numbers plain (`0.25`, `2010`) or scientific (`5E8`) when the step
+is under 10⁻⁵ or over 10⁷, an en dash for minus; an axis whose 0 is off the
+view sticks to the nearer edge with its numbers inside (JSXGraph's `sticky`
+position, inset in board units because JSXGraph converts a pixel inset with
+the other axis's scale); zoom spans 10⁻¹⁵ to 10¹⁵ pixels per unit. A graph is
+100–1200 px wide and tall (`QUESTION_GRAPH_DIMENSION_MIN/MAX`, every server);
+a size outside that is an issue, not clamped, and the row count shows the
+x/60 counter beside Add label from 90%.
+Rows and label positions write e-notation as `6.02·10²³` (LaTeX `\cdot 10^{23}`).
+JSXGraph treats anything under 10⁻⁶ as zero and its grid breaks far from the
+origin, so the board draws in a local frame (`origin + unit × board`, one unit
+for both axes, origins on a multiple of every tick step) and redraws in a new
+frame whenever the view jumps or the tick step changes.
+Label text holds at most 60 characters (`QUESTION_GRAPH_LABEL_MAX`) and wraps at
+200 board pixels into one SVG `tspan` per line; point names and angle labels hold
+at most 20 (`QUESTION_GRAPH_NAME_MAX`), on every server. Implicit curves and inequalities are planned (`todo-graph.md`). Question charts sit
 at about a graph's width with a centred title and never show a values table.
 A `plot` block holds numeric series over numeric axes: optional `kind` (`line`,
 the default, or `scatter`), `title`, `xTitle`, `yTitle`, optional `unit`, 1–4

@@ -65,14 +65,7 @@ const DRAWINGS: Record<
   bouncy: (
     <g fill="currentColor" stroke="none">
       <g className="bc">
-        <rect
-          className="bci"
-          height="4.4"
-          rx="1.1"
-          width="4.4"
-          x="2"
-          y="14.6"
-        />
+        <rect className="bci" height="4.4" rx="1.1" width="4.4" x="2" y="9.8" />
       </g>
       <g className="bc bc2">
         <rect
@@ -81,7 +74,7 @@ const DRAWINGS: Record<
           rx="1.1"
           width="4.4"
           x="9.8"
-          y="14.6"
+          y="9.8"
         />
       </g>
       <g className="bc bc3">
@@ -91,7 +84,7 @@ const DRAWINGS: Record<
           rx="1.1"
           width="4.4"
           x="17.6"
-          y="14.6"
+          y="9.8"
         />
       </g>
     </g>

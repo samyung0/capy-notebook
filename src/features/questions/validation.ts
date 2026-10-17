@@ -35,11 +35,12 @@ const text = z
   .refine((value) => [...value].length <= limits.QUESTION_TEXT_MAX, {
     error: () => m.question_validation_text_too_long(),
   });
-// A chart category label may be empty (Epo 2026-10-14).
+// A chart category label may be empty (Epo 2026-10-14), 60 at most
+// (Epo 2026-10-17).
 const label = z
   .string()
   .trim()
-  .refine((value) => [...value].length <= limits.QUESTION_TEXT_MAX, {
+  .refine((value) => [...value].length <= limits.QUESTION_CHART_LABEL_MAX, {
     error: () => m.question_validation_text_too_long(),
   });
 const identifier = z
@@ -56,6 +57,34 @@ const meta = z
   .refine((value) => [...value].length <= limits.QUESTION_METADATA_MAX, {
     error: () => m.question_validation_text_too_long(),
   });
+// A graph's point names and angle labels, and its label text (Epo 2026-10-17).
+const graphName = z
+  .string()
+  .refine((value) => [...value].length <= limits.QUESTION_GRAPH_NAME_MAX, {
+    error: () => m.question_validation_text_too_long(),
+  });
+const graphSize = {
+  height: z
+    .number()
+    .int()
+    .min(limits.QUESTION_GRAPH_DIMENSION_MIN)
+    .max(limits.QUESTION_GRAPH_DIMENSION_MAX),
+  width: z
+    .number()
+    .int()
+    .min(limits.QUESTION_GRAPH_DIMENSION_MIN)
+    .max(limits.QUESTION_GRAPH_DIMENSION_MAX),
+};
+const graphLabel = text.refine(
+  (value) => [...value].length <= limits.QUESTION_GRAPH_LABEL_MAX,
+  { error: () => m.question_validation_text_too_long() }
+);
+/** A chart's title, axis title or series name, within its own bound. */
+const chartText = (max: number) =>
+  z.string().refine((value) => [...value].length <= max, {
+    error: () => m.question_validation_text_too_long(),
+  });
+const chartTitle = chartText(limits.QUESTION_CHART_TITLE_MAX);
 const finite = z.number().finite();
 const index = z.number().int().nonnegative();
 const coords = z.tuple([finite, finite]);
@@ -158,7 +187,7 @@ const graphElement = z.discriminatedUnion('type', [
     coords,
     hidden: z.boolean().optional(),
     id: identifier,
-    name: meta.optional(),
+    name: graphName.optional(),
     type: z.literal('point'),
   }),
   z.strictObject({
@@ -185,13 +214,13 @@ const graphElement = z.discriminatedUnion('type', [
     coords,
     hidden: z.boolean().optional(),
     id: identifier,
-    text,
+    text: graphLabel,
     type: z.literal('text'),
   }),
   z.strictObject({
     hidden: z.boolean().optional(),
     id: identifier,
-    label: meta.optional(),
+    label: graphName.optional(),
     points: z.tuple([identifier, identifier, identifier]),
     type: z.literal('angle'),
   }),
@@ -254,20 +283,25 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       series: z
         .array(
           z.strictObject({
-            name: meta,
+            name: chartText(limits.QUESTION_CHART_SERIES_NAME_MAX),
             // null is an empty cell, drawn as nothing (Epo 2026-10-14).
             values: z
-              .array(finite.nullable())
+              .array(
+                finite
+                  .min(-limits.QUESTION_CHART_VALUE_MAX)
+                  .max(limits.QUESTION_CHART_VALUE_MAX)
+                  .nullable()
+              )
               .min(1)
               .max(limits.QUESTION_CHART_LABELS_MAX),
           })
         )
         .min(1)
         .max(limits.QUESTION_CHART_SERIES_MAX),
-      title: meta,
+      title: chartTitle,
       type: z.literal('chart'),
-      xTitle: meta.optional(),
-      yTitle: meta.optional(),
+      xTitle: chartTitle.optional(),
+      yTitle: chartTitle.optional(),
     })
     .superRefine((v, ctx) => {
       if (v.series.some((s) => s.values.length !== v.labels.length))
@@ -353,8 +387,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         }),
       ]),
       type: z.literal('graph'),
-      ...imageSize,
-      attribution: meta.optional(),
+      ...graphSize,
       description: text.optional(),
     })
     .superRefine((v, ctx) => {
