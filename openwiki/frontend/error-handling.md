@@ -230,9 +230,10 @@ A page has one main landmark. `AppShell` owns it and marks its children with
 outside the shell (the root boundary, a public route) the fallback is the
 `main`.
 
-A route chunk that comes back as HTML (a site deploy still propagating answers
-a missing `/assets/*` name with the SPA's `index.html`) fails as a chunk-load
-error: the router reloads once, then shows "An update is ready" with Reload.
+A route chunk the deploy removed (a missing `/assets/*` name is a 404
+`no-store` from the assets Worker, deployment-runbook §1) fails as a
+chunk-load error: the router reloads once, then shows "An update is ready"
+with Reload.
 
 A page whose entry script or a chunk it needs fails to load while the boot
 spinner shows (a fresh load in the deploy window, whose old `index.html`
