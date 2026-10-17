@@ -518,11 +518,19 @@ mod tests {
     /// An app whose database, Redis and gateway are never reached (lazy
     /// connections), for requests answered by their checks alone.
     fn offline_app() -> Shared {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let disk = std::env::temp_dir().join(format!(
+            "capy-offline-app-{}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        ));
         let config = crate::config::Config::load(
             &[
                 ("COLLABORATION_ENGINE_SAVE_PROCESSES", "1"),
                 ("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1"),
                 ("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "1"),
+                ("COLLABORATION_SOURCE_DISK_DIR", disk.to_str().unwrap()),
+                ("COLLABORATION_SOURCE_DISK_BYTES", "1"),
             ]
             .map(|(key, value)| (key.to_owned(), value.to_owned()))
             .into(),
@@ -543,23 +551,28 @@ mod tests {
         )
         .unwrap();
         let http = reqwest::Client::new();
-        let sources = std::sync::Arc::new(sources::Sources::new(
-            sources::SourcesConfig {
-                api_url: config.api_url.clone(),
-                secret: config.secret.clone(),
-                engine: sources::engine::PoolConfig {
-                    program: "unused".into(),
-                    args: Vec::new(),
-                    save_processes: 1,
-                    background_processes: 1,
-                    call_timeout: sources::engine::CALL_TIMEOUT,
-                    replica_budget_bytes: 0,
-                    memory_limit_bytes: None,
+        let sources = std::sync::Arc::new(
+            sources::Sources::new(
+                sources::SourcesConfig {
+                    api_url: config.api_url.clone(),
+                    secret: config.secret.clone(),
+                    engine: sources::engine::PoolConfig {
+                        program: "unused".into(),
+                        args: Vec::new(),
+                        save_processes: 1,
+                        background_processes: 1,
+                        call_timeout: sources::engine::CALL_TIMEOUT,
+                        replica_budget_bytes: 0,
+                        memory_limit_bytes: None,
+                    },
+                    disk_dir: config.source_disk_dir.clone(),
+                    disk_bytes: config.source_disk_bytes,
                 },
-            },
-            db.clone(),
-            http.clone(),
-        ));
+                db.clone(),
+                http.clone(),
+            )
+            .unwrap(),
+        );
         std::sync::Arc::new(crate::app::App {
             instance_id: "test".into(),
             config,

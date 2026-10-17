@@ -19,7 +19,6 @@ doc = false
 base64.workspace = true
 cpu-time = "1"
 deadpool-postgres.workspace = true
-indexmap = "2"
 memory-stats = "1"
 notes.workspace = true
 office-service = { package = "betteroffice-office-service", path = "../../../vendor/betteroffice/crates/office-service" }

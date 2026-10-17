@@ -7,7 +7,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used))]
 
 pub mod admit;
-mod cache;
+mod disk;
 pub mod edit;
 pub mod effects;
 pub mod engine;

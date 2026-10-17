@@ -338,7 +338,7 @@ async fn harness() -> Harness {
     }
 }
 
-/// A `Sources` against the stand-in gateway on `db`, its caches empty.
+/// A `Sources` against the stand-in gateway on `db`, its disk store empty.
 fn sources_on(fake: &Fake, db: deadpool_postgres::Pool) -> Sources {
     Sources::new(
         SourcesConfig {
@@ -353,10 +353,13 @@ fn sources_on(fake: &Fake, db: deadpool_postgres::Pool) -> Sources {
                 replica_budget_bytes: 1 << 30,
                 memory_limit_bytes: None,
             },
+            disk_dir: PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(unique("disk")),
+            disk_bytes: 1 << 30,
         },
         db,
         reqwest::Client::new(),
     )
+    .unwrap()
 }
 
 impl Harness {

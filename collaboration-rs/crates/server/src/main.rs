@@ -148,19 +148,24 @@ async fn serve(config: Config) -> Result<(), String> {
         .build()
         .map_err(|error| error.to_string())?;
     let address = format!("{}:{}", config.host, config.port);
-    let sources = Arc::new(sources::Sources::new(
-        sources::SourcesConfig {
-            api_url: config.api_url.clone(),
-            secret: config.secret.clone(),
-            engine: engine_pool(
-                config.engine_save_processes as usize,
-                config.engine_background_processes as usize,
-                Some(config.engine_memory_limit_bytes),
-            )?,
-        },
-        db.clone(),
-        http.clone(),
-    ));
+    let sources = Arc::new(
+        sources::Sources::new(
+            sources::SourcesConfig {
+                api_url: config.api_url.clone(),
+                secret: config.secret.clone(),
+                engine: engine_pool(
+                    config.engine_save_processes as usize,
+                    config.engine_background_processes as usize,
+                    Some(config.engine_memory_limit_bytes),
+                )?,
+                disk_dir: config.source_disk_dir.clone(),
+                disk_bytes: config.source_disk_bytes,
+            },
+            db.clone(),
+            http.clone(),
+        )
+        .map_err(|error| format!("source disk store: {error}"))?,
+    );
     let markdown = match &config.markdown_bundle {
         None => None,
         Some(path) => {

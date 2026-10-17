@@ -411,11 +411,24 @@ fn fresh_doc(held: &StateVector) -> Doc {
     }
 }
 
+/// Why a room did not load: a failure (reported), or an expected refusal
+/// (logged and counted where it is refused).
+enum LoadError {
+    Failed(String),
+    Refused(String),
+}
+
+impl From<String> for LoadError {
+    fn from(error: String) -> Self {
+        LoadError::Failed(error)
+    }
+}
+
 async fn load(
     app: &Shared,
     name: &RoomName,
     actor: &str,
-) -> Result<(Doc, Kindly, ydoc::Durable, Option<sources::LoadTimes>), String> {
+) -> Result<(Doc, Kindly, ydoc::Durable, Option<sources::LoadTimes>), LoadError> {
     match name {
         RoomName::Material {
             material_id,
@@ -441,7 +454,7 @@ async fn load(
             let kind = loaded.material_kind.clone();
             let model = if *keys {
                 if kind != "quiz" {
-                    return Err("only a quiz has a keys document".into());
+                    return Err("only a quiz has a keys document".to_owned().into());
                 }
                 crate::model::Model::Item(items::Kind::QuizKeys)
             } else {
@@ -543,11 +556,24 @@ async fn load(
                 .source_room()
                 .ok_or_else(|| "invalid source room".to_owned())?;
             let doc = Doc::with_options(ydoc::doc_options(0));
-            let loaded = app
-                .sources
-                .load(&room, actor, &doc)
-                .await
-                .map_err(|error| error.to_string())?;
+            let loaded = match app.sources.load(&room, actor, &doc).await {
+                Ok(loaded) => loaded,
+                // Expected while loaded rooms fill the disk store: logged and
+                // counted, not reported; Edit shows collaboration unavailable
+                // (the refusal retries) and View needs no room.
+                Err(error @ sources::SourceError::StoreFull { .. }) => {
+                    app.stats
+                        .source_disk_refusals
+                        .fetch_add(1, Ordering::Relaxed);
+                    log(
+                        Level::Warn,
+                        "source room refused: disk store full",
+                        json!({ "error": error.to_string(), "room": name.to_string() }),
+                    );
+                    return Err(LoadError::Refused(error.to_string()));
+                }
+                Err(error) => return Err(error.to_string().into()),
+            };
             // O(store) walks, on the blocking pool (the room is not serving yet).
             let checked = doc.clone();
             let durable = tokio::task::spawn_blocking(move || -> Result<_, String> {
@@ -560,7 +586,16 @@ async fn load(
                 Ok(ydoc::Durable::of(&txn))
             })
             .await
-            .map_err(|error| error.to_string())??;
+            .map_err(|error| error.to_string())
+            .and_then(|checked| checked);
+            let durable = match durable {
+                Ok(durable) => durable,
+                Err(error) => {
+                    // The room never serves: its load lets go of its files.
+                    app.sources.forget(&room, loaded.generation).await;
+                    return Err(error.into());
+                }
+            };
             let source = Source {
                 room,
                 format: loaded.format,
@@ -638,11 +673,17 @@ async fn run(
     let (doc, kind, durable, times) = match loaded {
         Ok(loaded) => loaded,
         Err(error) => {
-            observe::capture(
-                &error,
-                None,
-                &[("room", &room_name), ("stage", "room_load")],
-            );
+            let error = match error {
+                LoadError::Failed(error) => {
+                    observe::capture(
+                        &error,
+                        None,
+                        &[("room", &room_name), ("stage", "room_load")],
+                    );
+                    error
+                }
+                LoadError::Refused(error) => error,
+            };
             // Refuse every queued join and draft; the next one loads again.
             app.rooms.remove_if(&room_name, id, || true);
             rx.close();

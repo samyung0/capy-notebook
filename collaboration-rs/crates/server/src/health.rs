@@ -168,9 +168,10 @@ pub fn metrics(app: &Shared) -> String {
         })
         .collect::<String>()
         + &format!(
-            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {}\ncapy_collaboration_outdated_refusals_total{{family=\"source\"}} {}\n",
+            "capy_collaboration_outdated_refusals_total{{family=\"material\"}} {}\ncapy_collaboration_outdated_refusals_total{{family=\"source\"}} {}\ncapy_collaboration_source_disk_refusals_total {}\n",
             stats.outdated_refusals[0].load(Ordering::Relaxed),
             stats.outdated_refusals[1].load(Ordering::Relaxed),
+            stats.source_disk_refusals.load(Ordering::Relaxed),
         )
 }
 

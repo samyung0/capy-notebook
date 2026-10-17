@@ -91,6 +91,12 @@ async fn start_configured(env: &Env, api: Option<&str>, extra: &[(&str, &str)]) 
         .env("COLLABORATION_ENGINE_SAVE_PROCESSES", "1")
         .env("COLLABORATION_ENGINE_BACKGROUND_PROCESSES", "1")
         .env("COLLABORATION_ENGINE_MEMORY_LIMIT_BYTES", "3221225472")
+        // A disk store per server (it wipes its folder at start), UAT's cap.
+        .env(
+            "COLLABORATION_SOURCE_DISK_DIR",
+            std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join(format!("disk-{port}")),
+        )
+        .env("COLLABORATION_SOURCE_DISK_BYTES", "5368709120")
         .envs(extra.iter().copied())
         .stdout(if std::env::var_os("CAPY_IT_LOGS").is_some() {
             Stdio::inherit()
@@ -1856,6 +1862,74 @@ async fn a_clean_source_room_answers_a_checkpoint_request_after_a_reload() {
         .await
         .expect("a receipt for a clean room");
     assert_eq!(receipt["checkpoint"], 1);
+}
+
+/// Epo 2026-10-17: a source room load is refused only while loaded rooms'
+/// files fill the disk store. The JOIN gets the refusal the editor retries
+/// (it shows collaboration unavailable), the refusal is counted, and once
+/// the open room unloads its idle files make way for the next load.
+#[tokio::test]
+async fn a_source_room_is_refused_while_loaded_rooms_fill_the_disk_store() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let (first_text, second_text) = ("a".repeat(100), "b".repeat(100));
+    // One room's base and seed fit; a second base does not.
+    let held = first_text.len()
+        + sources::text::text_seed(first_text.as_bytes())
+            .unwrap()
+            .len();
+    let cap = (held + second_text.len() - 1).to_string();
+    let server = start_configured(
+        &env,
+        Some(&gateway.url),
+        &[("COLLABORATION_SOURCE_DISK_BYTES", cap.as_str())],
+    )
+    .await;
+    let (first_user, first) = text_file(&env, &gateway, &first_text).await;
+    let (second_user, second) = text_file(&env, &gateway, &second_text).await;
+    let (first_room, second_room) = (
+        format!("source:{first}:epoch:1"),
+        format!("source:{second}:epoch:1"),
+    );
+    let mut a = Client::open(server.port).await;
+    assert_eq!(
+        a.joined(&first_room, &token(&first_room, &first_user, "write"))
+            .await,
+        1
+    );
+    assert!(a.settle(|c| source_text(c) == first_text).await);
+    let mut b = Client::open(server.port).await;
+    let second_token = token(&second_room, &second_user, "write");
+    b.join(&second_room, &second_token).await;
+    let reason = text_payload(&b.until(2).await.expect("refused"));
+    assert_eq!(reason, "permission-denied");
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics.contains("capy_collaboration_source_disk_refusals_total 1\n"),
+        "{metrics}"
+    );
+    // The first room unloads; its files are idle and go for the second.
+    drop(a);
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    loop {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        b.inbox.clear();
+        b.join(&second_room, &second_token).await;
+        let answered = b
+            .settle(|c| c.inbox.iter().any(|m| m.kind == 1 || m.kind == 2))
+            .await;
+        assert!(answered, "no answer to the join");
+        if b.inbox.iter().any(|m| m.kind == 1) {
+            break;
+        }
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "the second room never loaded"
+        );
+    }
+    let sv = b.doc.transact().state_vector().encode_v1();
+    b.send(5, &sync(0, &sv)).await;
+    assert!(b.settle(|c| source_text(c) == second_text).await);
 }
 
 /// Security regression (rust-core REVIEW1 N3): a writer that answered a
