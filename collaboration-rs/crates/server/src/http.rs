@@ -645,6 +645,7 @@ mod tests {
                         .unwrap();
                     answers.push((status, serde_json::from_slice::<Value>(&bytes).unwrap()));
                 }
+                let _ = std::fs::remove_dir_all(&app.config.source_disk_dir);
             });
         });
         assert_eq!(events.len(), 0, "{events:?}");
