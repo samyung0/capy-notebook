@@ -461,6 +461,37 @@ fn a_plot_validates_as_go_validates_it() {
     assert!(embed(plot(refused[0].1)).is_err());
 }
 
+/// A plot's text is bounded as a chart's (Epo 2026-10-17): the shared plot
+/// fixtures at and past those bounds validate as Go and the browser validate
+/// them, and a live quiz's caps (`figure_caps`) refuse a title past its bound.
+#[test]
+fn plot_text_stops_at_the_charts_bounds() {
+    for name in [
+        "plot-at-limits",
+        "plot-long-title-rejected",
+        "plot-long-series-name-rejected",
+        "plot-long-mark-label-rejected",
+    ] {
+        let path = format!(
+            "{}/../../../server/internal/questions/testdata/{name}.json",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let fixture: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let ours =
+            questions::validate_question(&fixture["question"], &Policy::default()).map(|_| ());
+        assert_eq!(
+            ours.is_ok(),
+            fixture["valid"] == json!(true),
+            "{name}: {ours:?}"
+        );
+    }
+    let title = |n: usize| json!({ "title": "t".repeat(n) });
+    questions::figure_caps("plot", &title(questions::QUESTION_PLOT_TITLE_MAX)).unwrap();
+    assert!(
+        questions::figure_caps("plot", &title(questions::QUESTION_PLOT_TITLE_MAX + 1)).is_err()
+    );
+}
+
 /// An image's or graph's description holds QUESTION_DESCRIPTION_MAX in a
 /// quiz and a note, the bank's QUESTION_TEXT_MAX in the bank (Epo 2026-10-14).
 #[test]

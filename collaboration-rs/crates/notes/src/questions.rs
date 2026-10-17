@@ -24,10 +24,11 @@ pub use crate::catalog::{
     QUESTION_GRAPH_LABEL_MAX, QUESTION_GRAPH_NAME_MAX, QUESTION_GRAPH_POLYGON_MAX,
     QUESTION_GRAPH_TERM_MAX, QUESTION_ID_MAX, QUESTION_IMAGE_DIMENSION_MAX, QUESTION_MARK_ITEM_MAX,
     QUESTION_MARKS_MAX, QUESTION_MARKSCHEME_MAX, QUESTION_METADATA_MAX, QUESTION_PARTS_MAX,
-    QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX, QUESTION_PLOT_SERIES_MAX,
-    QUESTION_SVG_BYTES_MAX, QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX,
-    QUESTION_UNIT_MAX, QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX,
-    QUIZ_PARTS_MAX, QUIZ_QUESTION_PARTS_MAX,
+    QUESTION_PLOT_LABEL_MAX, QUESTION_PLOT_MARKS_MAX, QUESTION_PLOT_POINTS_MAX,
+    QUESTION_PLOT_SERIES_MAX, QUESTION_PLOT_TITLE_MAX, QUESTION_SVG_BYTES_MAX,
+    QUESTION_TABLE_COLUMNS_MAX, QUESTION_TABLE_ROWS_MAX, QUESTION_TEXT_MAX, QUESTION_UNIT_MAX,
+    QUIZ_MARKSCHEME_MAX, QUIZ_OPEN_ANSWER_MAX, QUIZ_OPEN_PARTS_MAX, QUIZ_PARTS_MAX,
+    QUIZ_QUESTION_PARTS_MAX,
 };
 
 /// `QuestionPolicy`, plus the host a quiz figure may link: the TS reads
@@ -182,8 +183,8 @@ fn meta(value: &Value, what: &str) -> Check {
     }
 }
 
-/// A chart's title, axis title or series name: at most `max` code points, as
-/// Go counts them.
+/// A chart's or plot's title, axis title, unit, series name or label: at most
+/// `max` code points, as Go counts them.
 fn chart_text(value: &Value, max: usize, what: &str) -> Check {
     match value.as_str() {
         Some(raw) if code_points(raw) <= max => Ok(()),
@@ -729,13 +730,15 @@ pub fn block(value: &Value) -> Result<Block, String> {
             let scatter = map.get("kind").and_then(Value::as_str) == Some("scatter");
             let min_points = if scatter { 1 } else { 2 };
             for key in ["title", "xTitle", "yTitle"] {
-                meta(&map[key], what)?;
+                chart_text(&map[key], QUESTION_PLOT_TITLE_MAX, what)?;
             }
-            optional(map, "unit", |v| meta(v, what))?;
+            optional(map, "unit", |v| {
+                chart_text(v, QUESTION_PLOT_TITLE_MAX, what)
+            })?;
             for curve in array(&map["series"], what, 1, QUESTION_PLOT_SERIES_MAX)? {
                 let curve = object(curve, what)?;
                 strict(curve, what, &["name", "points"], &[])?;
-                meta(&curve["name"], what)?;
+                chart_text(&curve["name"], QUESTION_PLOT_LABEL_MAX, what)?;
                 for point in array(&curve["points"], what, min_points, QUESTION_PLOT_POINTS_MAX)? {
                     coords(point, what)?;
                 }
@@ -746,7 +749,9 @@ pub fn block(value: &Value) -> Result<Block, String> {
                     strict(line, what, &["axis", "value"], &["label"])?;
                     one_of(&line["axis"], what, &["x", "y"])?;
                     number(&line["value"], what)?;
-                    optional(line, "label", |v| meta(v, what))?;
+                    optional(line, "label", |v| {
+                        chart_text(v, QUESTION_PLOT_LABEL_MAX, what)
+                    })?;
                 }
                 Ok(())
             })?;
@@ -754,7 +759,7 @@ pub fn block(value: &Value) -> Result<Block, String> {
                 for mark in array(v, what, 0, QUESTION_PLOT_MARKS_MAX)? {
                     let mark = object(mark, what)?;
                     strict(mark, what, &["label", "x", "y"], &[])?;
-                    meta(&mark["label"], what)?;
+                    chart_text(&mark["label"], QUESTION_PLOT_LABEL_MAX, what)?;
                     number(&mark["x"], what)?;
                     number(&mark["y"], what)?;
                 }
@@ -983,15 +988,15 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
         "plot" => {
             cap_description(map, what)?;
             for key in ["title", "xTitle", "yTitle", "unit"] {
-                cap_meta(map, key, what)?;
+                cap_chars(map, key, QUESTION_PLOT_TITLE_MAX, what)?;
             }
             for curve in objects(cap_list(map.get("series"), QUESTION_PLOT_SERIES_MAX, what)?) {
-                cap_meta(curve, "name", what)?;
+                cap_chars(curve, "name", QUESTION_PLOT_LABEL_MAX, what)?;
                 cap_list(curve.get("points"), QUESTION_PLOT_POINTS_MAX, what)?;
             }
             for key in ["lines", "marks"] {
                 for mark in objects(cap_list(map.get(key), QUESTION_PLOT_MARKS_MAX, what)?) {
-                    cap_meta(mark, "label", what)?;
+                    cap_chars(mark, "label", QUESTION_PLOT_LABEL_MAX, what)?;
                 }
             }
         }

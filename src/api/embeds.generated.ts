@@ -787,7 +787,7 @@ export const EMBED_CATALOG = {
                   ]
                 },
                 "label": {
-                  "maxLength": 1000,
+                  "maxLength": 60,
                   "type": "string"
                 },
                 "value": {
@@ -809,7 +809,7 @@ export const EMBED_CATALOG = {
               "additionalProperties": false,
               "properties": {
                 "label": {
-                  "maxLength": 1000,
+                  "maxLength": 60,
                   "type": "string"
                 },
                 "x": {
@@ -835,7 +835,7 @@ export const EMBED_CATALOG = {
               "additionalProperties": false,
               "properties": {
                 "name": {
-                  "maxLength": 1000,
+                  "maxLength": 60,
                   "type": "string"
                 },
                 "points": {
@@ -863,22 +863,22 @@ export const EMBED_CATALOG = {
             "type": "array"
           },
           "title": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "type": {
             "const": "plot"
           },
           "unit": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "xTitle": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           },
           "yTitle": {
-            "maxLength": 1000,
+            "maxLength": 100,
             "type": "string"
           }
         },
@@ -1087,9 +1087,11 @@ export const EMBED_CATALOG = {
     "QUESTION_MARK_ITEM_MAX": 1000,
     "QUESTION_METADATA_MAX": 1000,
     "QUESTION_PARTS_MAX": 26,
+    "QUESTION_PLOT_LABEL_MAX": 60,
     "QUESTION_PLOT_MARKS_MAX": 8,
     "QUESTION_PLOT_POINTS_MAX": 60,
     "QUESTION_PLOT_SERIES_MAX": 4,
+    "QUESTION_PLOT_TITLE_MAX": 100,
     "QUESTION_SVG_BYTES_MAX": 262144,
     "QUESTION_TABLE_COLUMNS_MAX": 10,
     "QUESTION_TABLE_ROWS_MAX": 30,

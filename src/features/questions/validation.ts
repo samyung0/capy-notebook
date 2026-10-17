@@ -79,12 +79,15 @@ const graphLabel = text.refine(
   (value) => [...value].length <= limits.QUESTION_GRAPH_LABEL_MAX,
   { error: () => m.question_validation_text_too_long() }
 );
-/** A chart's title, axis title or series name, within its own bound. */
+/** A chart's or plot's title, axis title, unit, series name or label, within
+ * its own bound (plots match charts, Epo 2026-10-17). */
 const chartText = (max: number) =>
   z.string().refine((value) => [...value].length <= max, {
     error: () => m.question_validation_text_too_long(),
   });
 const chartTitle = chartText(limits.QUESTION_CHART_TITLE_MAX);
+const plotTitle = chartText(limits.QUESTION_PLOT_TITLE_MAX);
+const plotLabel = chartText(limits.QUESTION_PLOT_LABEL_MAX);
 const finite = z.number().finite();
 const index = z.number().int().nonnegative();
 const coords = z.tuple([finite, finite]);
@@ -329,30 +332,30 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
         .array(
           z.strictObject({
             axis: z.enum(['x', 'y']),
-            label: meta.optional(),
+            label: plotLabel.optional(),
             value: finite,
           })
         )
         .max(limits.QUESTION_PLOT_MARKS_MAX)
         .optional(),
       marks: z
-        .array(z.strictObject({ label: meta, x: finite, y: finite }))
+        .array(z.strictObject({ label: plotLabel, x: finite, y: finite }))
         .max(limits.QUESTION_PLOT_MARKS_MAX)
         .optional(),
       series: z
         .array(
           z.strictObject({
-            name: meta,
+            name: plotLabel,
             points: z.array(coords).min(1).max(limits.QUESTION_PLOT_POINTS_MAX),
           })
         )
         .min(1)
         .max(limits.QUESTION_PLOT_SERIES_MAX),
-      title: meta,
+      title: plotTitle,
       type: z.literal('plot'),
-      unit: meta.optional(),
-      xTitle: meta,
-      yTitle: meta,
+      unit: plotTitle.optional(),
+      xTitle: plotTitle,
+      yTitle: plotTitle,
     })
     // A scatter series needs one point, a line two (Epo 2026-10-14).
     .refine(

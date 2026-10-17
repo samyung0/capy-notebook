@@ -487,10 +487,7 @@ func obj(props map[string]any, required ...string) map[string]any {
 	return schema
 }
 
-var (
-	label  = map[string]any{"type": "string", "maxLength": fieldlimits.QuestionMetadata}
-	number = map[string]any{"type": "number"}
-)
+var number = map[string]any{"type": "number"}
 
 func list(min, max int, items map[string]any) map[string]any {
 	return map[string]any{"type": "array", "minItems": min, "maxItems": max, "items": items}
@@ -517,19 +514,21 @@ func chartSchema() map[string]any {
 }
 
 func plotSchema() map[string]any {
+	title := map[string]any{"type": "string", "maxLength": fieldlimits.QuestionPlotTitle}
+	name := map[string]any{"type": "string", "maxLength": fieldlimits.QuestionPlotLabel}
 	return obj(map[string]any{
 		"type": map[string]any{"const": "plot"}, "kind": map[string]any{"enum": []string{"line", "scatter"}},
-		"title": label, "xTitle": label, "yTitle": label, "unit": label,
+		"title": title, "xTitle": title, "yTitle": title, "unit": title,
 		// A scatter series needs one point, a line two (questions.ValidateBlock).
 		"series": list(1, fieldlimits.QuestionPlotSeries, obj(map[string]any{
-			"name":   label,
+			"name":   name,
 			"points": list(1, fieldlimits.QuestionPlotPoints, list(2, 2, number)),
 		}, "name", "points")),
 		"lines": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
-			"axis": map[string]any{"enum": []string{"x", "y"}}, "value": number, "label": label,
+			"axis": map[string]any{"enum": []string{"x", "y"}}, "value": number, "label": name,
 		}, "axis", "value")),
 		"marks": list(0, fieldlimits.QuestionPlotMarks, obj(map[string]any{
-			"x": number, "y": number, "label": label,
+			"x": number, "y": number, "label": name,
 		}, "x", "y", "label")),
 	}, "type", "title", "xTitle", "yTitle", "series")
 }

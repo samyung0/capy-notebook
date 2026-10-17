@@ -367,11 +367,11 @@ func validatePlot(b map[string]any, policy Policy) error {
 		return fail("invalid plot kind")
 	}
 	for _, key := range []string{"title", "xTitle", "yTitle"} {
-		if !str(b[key], fieldlimits.QuestionMetadata, false) {
+		if !str(b[key], fieldlimits.QuestionPlotTitle, false) {
 			return fail("invalid plot label")
 		}
 	}
-	if !optionalString(b, "unit", fieldlimits.QuestionMetadata) {
+	if !optionalString(b, "unit", fieldlimits.QuestionPlotTitle) {
 		return fail("invalid plot unit")
 	}
 	series, ok := array(b["series"], 1, fieldlimits.QuestionPlotSeries)
@@ -392,7 +392,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 			return err
 		}
 		points, ok := array(s["points"], minPoints, fieldlimits.QuestionPlotPoints)
-		if !str(s["name"], fieldlimits.QuestionMetadata, false) || !ok {
+		if !str(s["name"], fieldlimits.QuestionPlotLabel, false) || !ok {
 			return fail("invalid plot curve")
 		}
 		for _, point := range points {
@@ -414,7 +414,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 			if err := keys(line, "axis value", "label"); err != nil {
 				return err
 			}
-			if _, ok := num(line["value"]); !ok || !enum(line["axis"], "x y") || !optionalString(line, "label", fieldlimits.QuestionMetadata) {
+			if _, ok := num(line["value"]); !ok || !enum(line["axis"], "x y") || !optionalString(line, "label", fieldlimits.QuestionPlotLabel) {
 				return fail("invalid plot line")
 			}
 		}
@@ -434,7 +434,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 			}
 			_, xOK := num(mark["x"])
 			_, yOK := num(mark["y"])
-			if !xOK || !yOK || !str(mark["label"], fieldlimits.QuestionMetadata, false) {
+			if !xOK || !yOK || !str(mark["label"], fieldlimits.QuestionPlotLabel, false) {
 				return fail("invalid plot mark")
 			}
 		}
