@@ -5,8 +5,8 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { ThemeProvider } from './ThemeProvider';
 import { useTheme } from './theme';
 
-const INITIAL_THEME_SCRIPT =
-  /<script blocking="render" type="module">([\s\S]*?)<\/script>/;
+// index.html's inline classic scripts; the theme one reads the saved theme.
+const INLINE_SCRIPTS = /<script>([\s\S]*?)<\/script>/g;
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -28,7 +28,9 @@ it.each(['macchiato', 'frappe'])(
       dataset: {} as Record<string, string>,
     };
     const html = readFileSync('index.html', 'utf8');
-    const script = html.match(INITIAL_THEME_SCRIPT)?.[1];
+    const script = [...html.matchAll(INLINE_SCRIPTS)]
+      .map((match) => match[1])
+      .find((body) => body.includes('capy.theme'));
     expect(script).toBeDefined();
     runInNewContext(script!, {
       document: { documentElement: root },
