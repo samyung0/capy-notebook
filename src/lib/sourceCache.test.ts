@@ -59,6 +59,14 @@ const stored = () => [
   ...(storage.caches.get('capy-source-bytes')?.entries.keys() ?? []),
 ];
 
+/** The SHAs the store's index counts. */
+async function indexed() {
+  const cache = await storage.open('capy-source-bytes');
+  const index = await cache.match('/capy-source-cache/index.json');
+  const { entries } = (await index!.json()) as { entries: { sha: string }[] };
+  return entries.map((entry) => entry.sha);
+}
+
 describe('source bytes kept on the device', () => {
   it('serves bytes back only under the SHA-256 they hash to', async () => {
     const deck = source('deck bytes');
@@ -79,6 +87,17 @@ describe('source bytes kept on the device', () => {
     await cache.put(entry, new Response(new TextEncoder().encode('changed')));
     expect(await readCachedSource(deck.sha)).toBeNull();
     expect(stored().some((url) => url.endsWith(deck.sha))).toBe(false);
+    // Its index entry goes too, so it no longer counts toward the limit.
+    expect(await indexed()).toEqual([]);
+  });
+
+  it('reads as a miss for a session naming no SHA', async () => {
+    const missing = undefined as unknown as string;
+    await expect(readCachedSource(missing)).resolves.toBeNull();
+    await expect(
+      cacheSource(missing, source('deck').bytes)
+    ).resolves.toBeUndefined();
+    expect(await readCachedSource('')).toBeNull();
   });
 
   it('drops the least recently opened past the limit', async () => {

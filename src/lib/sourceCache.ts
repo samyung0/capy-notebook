@@ -59,24 +59,27 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   );
 }
 
-/** The bytes stored under `sha`, or null (a miss, or bytes that no longer
- * hash to it, which are dropped). */
+/** The bytes stored under `sha`, or null (a miss, a session naming no SHA,
+ * or bytes that no longer hash to it, which are dropped with their index
+ * entry). */
 export async function readCachedSource(
   sha: string
 ): Promise<Uint8Array<ArrayBuffer> | null> {
-  const key = sha.toLowerCase();
-  if (!SHA256.test(key)) return null;
-  const cache = await open();
-  if (!cache) return null;
   try {
+    const key = sha.toLowerCase();
+    if (!SHA256.test(key)) return null;
+    const cache = await open();
+    if (!cache) return null;
     const stored = await cache.match(entryKey(key));
     if (!stored) return null;
     const bytes = new Uint8Array(await stored.arrayBuffer());
+    const index = await readIndex(cache);
     if ((await sha256Hex(bytes)) !== key) {
       await cache.delete(entryKey(key));
+      index.entries = index.entries.filter((item) => item.sha !== key);
+      await writeIndex(cache, index);
       return null;
     }
-    const index = await readIndex(cache);
     const entry = index.entries.find((item) => item.sha === key);
     if (entry) {
       entry.used = Date.now();
@@ -95,11 +98,11 @@ export async function cacheSource(
   bytes: Uint8Array<ArrayBuffer>,
   limit = SOURCE_CACHE_LIMIT_BYTES
 ): Promise<void> {
-  const key = sha.toLowerCase();
-  if (!SHA256.test(key) || bytes.byteLength > limit) return;
-  const cache = await open();
-  if (!cache) return;
   try {
+    const key = sha.toLowerCase();
+    if (!SHA256.test(key) || bytes.byteLength > limit) return;
+    const cache = await open();
+    if (!cache) return;
     if ((await sha256Hex(bytes)) !== key) return;
     await cache.put(entryKey(key), new Response(bytes));
     const index = await readIndex(cache);
