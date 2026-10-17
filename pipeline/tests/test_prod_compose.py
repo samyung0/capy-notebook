@@ -21,3 +21,21 @@ def test_collaboration_returns_freed_memory_to_the_system() -> None:
     environment = services["collaboration"]["environment"]
 
     assert {key: environment.get(key) for key in MALLOC} == MALLOC
+
+
+def test_collaboration_keeps_source_files_on_a_disk_volume() -> None:
+    """The source disk store's folder is a named volume at the image's folder,
+    never tmpfs, and its cap comes from each environment (Epo 2026-10-17)."""
+    compose = yaml.safe_load(COMPOSE.read_text(encoding="utf-8"))
+    service = compose["services"]["collaboration"]
+    dockerfile = COMPOSE.parents[1] / "collaboration-rs" / "Dockerfile"
+
+    assert "ENV COLLABORATION_SOURCE_DISK_DIR=/var/lib/capy/sources" in (
+        dockerfile.read_text(encoding="utf-8")
+    )
+    assert service["volumes"] == ["capy_collaboration_sources:/var/lib/capy/sources"]
+    assert "tmpfs" not in service
+    assert "capy_collaboration_sources" in compose["volumes"]
+    assert service["environment"]["COLLABORATION_SOURCE_DISK_BYTES"] == (
+        "${COLLABORATION_SOURCE_DISK_BYTES:?set COLLABORATION_SOURCE_DISK_BYTES}"
+    )
