@@ -143,7 +143,9 @@ function dropPending() {
 }
 
 /** The open the route started for this file and mode, or a new one; aborting
- * `signal` stops it either way. */
+ * `signal` stops it either way. One the route started for the file in the
+ * other mode (it guessed Edit, the view opens in View) is dropped, so the
+ * file never downloads twice in parallel. */
 export function takeSourceOpen(
   fileId: string,
   mode: SourceOpenMode,
@@ -152,6 +154,7 @@ export function takeSourceOpen(
   const controller = new AbortController();
   link(signal, controller);
   let open: Promise<SourceOpen>;
+  if (pending?.fileId === fileId && pending.mode !== mode) dropPending();
   if (pending?.fileId === fileId && pending.mode === mode) {
     const taken = pending;
     clearTimeout(taken.timer);

@@ -148,6 +148,17 @@ describe('opening a source from its route', () => {
     );
   });
 
+  it('drops the route open of the other mode when the view takes the file', async () => {
+    get.mockResolvedValue(SESSION);
+    post.mockResolvedValue(TOKEN);
+    // The route guessed Edit; the view mounts in View.
+    prefetchSourceOpen('f_guess', 'edit');
+    await vi.waitFor(() => expect(fetches).toHaveLength(1));
+    await (await takeSourceOpen('f_guess', 'view')).base;
+    expect(fetches[0]?.signal?.aborted).toBe(true);
+    expect(fetches).toHaveLength(2);
+  });
+
   it('stops the download when the session or token is refused', async () => {
     get.mockResolvedValue(SESSION);
     post.mockRejectedValue(new Error('403'));

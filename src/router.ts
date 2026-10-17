@@ -263,6 +263,7 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => ({ file: search.file }),
     loader: ({
+      abortController,
       context: { queryClient: qc },
       deps,
       location,
@@ -281,14 +282,12 @@ const appRoutes = [
       // document itself, and the heavy-document gate must see the list first.
       if (deps.file) {
         qc.prefetchQuery(fileQuery(deps.file));
-        // An Office file's open starts once its row arrives; a hover's
-        // preload stops at the row.
-        if (!preload)
-          prefetchOfficeFile(
-            qc,
-            deps.file,
-            parseDocumentModeSearch(location.search).mode
-          );
+        // An Office file's open starts once its row arrives.
+        prefetchOfficeFile(qc, deps.file, {
+          abortController,
+          location,
+          preload,
+        });
       }
     },
     path: '/workspaces/$workspaceId',
@@ -358,14 +357,19 @@ const appRoutes = [
   createRoute({
     component: lazyPage(() => import('@/routes/MaterialOpen')),
     getParentRoute: () => authShellRoute,
-    loader: ({ context: { queryClient: qc }, location, params, preload }) => {
+    loader: ({
+      abortController,
+      context: { queryClient: qc },
+      location,
+      params,
+      preload,
+    }) => {
       qc.prefetchQuery(fileQuery(params.fileId));
-      if (!preload)
-        prefetchOfficeFile(
-          qc,
-          params.fileId,
-          parseDocumentModeSearch(location.search).mode
-        );
+      prefetchOfficeFile(qc, params.fileId, {
+        abortController,
+        location,
+        preload,
+      });
     },
     path: '/files/$fileId',
     validateSearch: parseDocumentModeSearch,

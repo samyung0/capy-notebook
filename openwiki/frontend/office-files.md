@@ -132,15 +132,18 @@ the `outdated` save strip, and its drafts stay for the reloaded page
   (the URL's, else the saved one; Edit only for an editor): View reads
   `source-session?view=true`, Edit reads the editing session and the room
   token together. The base bytes start as soon as the session names them. A
-  hover's preload stops at the file row. One started open waits at a time: a
-  quick switch to another file aborts the earlier one (its download
-  included), and one nobody takes within 30 s is dropped. A file a mounted
-  view already shows starts nothing (the loader runs again on every search
-  change).
+  hover's preload stops at the file row, and a route left before the rows
+  arrive (its loader's abort signal) starts no open. One started open waits
+  at a time: a quick switch to another file aborts the earlier one (its
+  download included), and one nobody takes within 30 s is dropped. A file a
+  mounted view already shows starts nothing (the loader runs again on every
+  search change).
 - **View.** `FileViewer` mounts an Office view without `GET /files/{id}/links`
   (only the published file's link, which no Office view uses), once the
   workspace capability is known. The view takes the started open
-  (`takeSourceOpen`), or starts its own.
+  (`takeSourceOpen`), or starts its own; an open the route started for the
+  file in the other mode (it guessed Edit, the view opens in View) is
+  dropped, so the file never downloads twice in parallel.
 - **Frame.** The runtime frame's URL names the format and the mode it opened
   in (`runtimeFrameUrl`), fixed for the frame's life (a changed `src` would
   reload it; the maintenance pause's drop to View keeps the frame opened for
