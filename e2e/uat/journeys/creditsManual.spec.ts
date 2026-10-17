@@ -16,12 +16,12 @@ import {
   DECLINES,
   declinedReload,
   expectInvoice,
+  expectPurchasedOnUsage,
   expectVoided,
   MICROS,
   nested,
   openSubscription,
   processedEvent,
-  purchasedLeft,
   purchaseWhere,
   reloadCount,
   saveAutoReload,
@@ -46,8 +46,8 @@ import { type Actor, expect, test, type UatRun } from './runtime';
 const BY_HAND = 10 * 60_000;
 
 /** A top-up through hosted Checkout with 4242, credited once: back on the
- * plain Subscription tab, the ledger row, the balance on the tab by itself and
- * the processed `checkout.session.completed`. */
+ * plain Subscription tab, the ledger row, the balance on Usage without a page
+ * reload and the processed `checkout.session.completed`. */
 async function topUp(run: UatRun, owner: Actor, since: number) {
   const { page } = owner;
   await openSubscription(run, page);
@@ -85,9 +85,7 @@ async function topUp(run: UatRun, owner: Actor, since: number) {
   );
   const after = await creditsRow(run, owner);
   expect(after.purchased_micros - before).toBe(purchase.credits_micros);
-  await expect(purchasedLeft(page, after.purchased_micros)).toBeVisible({
-    timeout: 60_000,
-  });
+  await expectPurchasedOnUsage(page, after.purchased_micros);
   await processedEvent(
     run,
     'checkout.session.completed',
