@@ -81,7 +81,8 @@ base seeding the same bytes. Before deploying a pin to an environment, run the
 seed check there: `office-maintenance seed-manifest` in the gateway container
 lists every base a stored change names (format, base SHA, seed SHA-256, file
 count, a signed base link), and `pnpm office:seed-check <manifest>` re-seeds each
-with the new pin's engine (the collaboration server's `seed-check` subcommand). It exits 1 when
+with the new pin's engine (the collaboration server's `seed-check` subcommand). The signed links last 5 minutes, so build the
+new engine first and generate the manifest right before the check. It exits 1 when
 any seed hash differs; the pin then ships in a maintenance window whose reset
 covers the formats it lists.
 The Office parity checklists must also resolve on the new pin
