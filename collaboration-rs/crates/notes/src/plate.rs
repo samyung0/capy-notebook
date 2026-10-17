@@ -253,30 +253,50 @@ pub fn properties(branch: &Branch) -> Result<Vec<(Arc<str>, Any)>, ProjectionErr
             first = left;
         }
         firsts.push((first.id().client.get(), first.id().clock));
-        let value = match item.content() {
-            ItemContent::Any(values) => values.last().cloned().unwrap_or(Any::Undefined),
-            ItemContent::Embed(value) => value.clone(),
-            ItemContent::Binary(bytes) => Any::Buffer(bytes.clone().into()),
-            ItemContent::JSON(values) => values
-                .last()
-                .and_then(|text| serde_json::from_str::<Value>(text).ok())
-                .map_or(Any::Undefined, |value| json::value_to_any(&value)),
-            ItemContent::String(text) => Any::String(text.as_str().into()),
-            // A Mermaid block's source held as a text (shape A, Epo
-            // 2026-10-10) reads as its string, as the patched slate-yjs reads it.
-            ItemContent::Type(text)
-                if &**key == SHARED_TEXT_KEY && matches!(text.type_ref(), TypeRef::Text) =>
-            {
-                Any::String(shared_text(text)?.into())
-            }
-            _ => return Err(ProjectionError::Property(key.to_string())),
-        };
-        out.push((key.clone(), value));
+        out.push((key.clone(), entry_value(key, item)?));
     }
     let mut order: Vec<usize> = (0..out.len()).collect();
     order.sort_by_key(|&i| firsts[i]);
     let mut slots: Vec<Option<(Arc<str>, Any)>> = out.into_iter().map(Some).collect();
     Ok(order.into_iter().filter_map(|i| slots[i].take()).collect())
+}
+
+/// The value of an element's live property `key` (its map entry `item`).
+fn entry_value(key: &str, item: ItemPtr) -> Result<Any, ProjectionError> {
+    Ok(match item.content() {
+        ItemContent::Any(values) => values.last().cloned().unwrap_or(Any::Undefined),
+        ItemContent::Embed(value) => value.clone(),
+        ItemContent::Binary(bytes) => Any::Buffer(bytes.clone().into()),
+        ItemContent::JSON(values) => values
+            .last()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+            .map_or(Any::Undefined, |value| json::value_to_any(&value)),
+        ItemContent::String(text) => Any::String(text.as_str().into()),
+        // A Mermaid block's source held as a text (shape A, Epo
+        // 2026-10-10) reads as its string, as the patched slate-yjs reads it.
+        ItemContent::Type(text)
+            if key == SHARED_TEXT_KEY && matches!(text.type_ref(), TypeRef::Text) =>
+        {
+            Any::String(shared_text(text)?.into())
+        }
+        _ => return Err(ProjectionError::Property(key.to_string())),
+    })
+}
+
+/// A chart's, plot's or graph's `block` as JSON (`None` without one): the
+/// one read of a figure's block outside the whole-element projection, so a
+/// change to how a room holds it (embeds round, track `live`) lands here.
+pub fn block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionError> {
+    let Some(entry) = element
+        .entry_item("block")
+        .filter(|entry| !entry.is_deleted())
+    else {
+        return Ok(None);
+    };
+    match entry_value("block", entry)? {
+        Any::Undefined => Ok(None),
+        value => Ok(Some(json::any_to_value(&value)?)),
+    }
 }
 
 /// The attribute that may hold a text instead of a string: a `mermaid`
@@ -432,7 +452,7 @@ fn any_element<T: ReadTxn>(txn: &T, mut visit: impl FnMut(BranchPtr) -> bool) ->
 }
 
 /// An element's live string attribute `key`.
-fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
+pub fn string_attribute(element: BranchPtr, key: &str) -> Option<String> {
     let entry = element
         .entry_item(key)
         .filter(|entry| !entry.is_deleted())?;

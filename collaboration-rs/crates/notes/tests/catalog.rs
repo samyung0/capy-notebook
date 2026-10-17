@@ -4,11 +4,12 @@
 //! validator and the room's admission apply its rules to every element it
 //! lists and refuse a type it does not list (Epo 2026-10-13), and the
 //! shared-text key, the media types, inspect, the reference kinds, each
-//! material kind's required element and the figure messages follow it. A
-//! test names what a new element or kind lacks here.
+//! material kind's required element, the figure messages and the index text
+//! follow it. A test names what a new element or kind lacks here.
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use notes::index_text::{self, ItemText};
 use notes::limits::{self, Refusal, Validator};
 use notes::{catalog, edit, material, plate, slate_yjs};
 use serde_json::{Value, json};
@@ -731,4 +732,42 @@ fn figure_messages_are_gos() {
             "Go never says {message:?}"
         );
     }
+}
+
+/// What every catalog element gives the index text is its catalog rule
+/// (`index_text`, Go's `TestIndexTextFollowsTheCatalog`): a probe carrying
+/// a marker wherever a rule reads (its children, a figure's block, the
+/// Mermaid source, a question, a referenced item) shows it unless the rule
+/// is `none`. A type the catalog does not list gives its text, as the View
+/// shows an unsupported block's. The rule itself is a generated enum, so an
+/// element without one, or with one `index_text` does not handle, does not
+/// build.
+#[test]
+fn index_text_follows_the_catalog() {
+    struct Marked;
+    impl ItemText for Marked {
+        fn item_text(&self, _: &str) -> Option<String> {
+            Some("marker".into())
+        }
+    }
+    let probe = |name: &str| {
+        let note = json!({ "schemaVersion": 1, "value": [{
+            "type": name, "id": "probe", "materialId": "m", "source": "marker",
+            "block": { "type": name, "title": "marker", "description": "marker" },
+            "question": { "stem": [{ "type": "text", "text": "marker" }] },
+            "children": [{ "type": "p", "children": [{ "text": "marker" }] }],
+        }] });
+        index_text::join(&index_text::from_content(&note, &Marked))
+    };
+    for element in catalog::ELEMENTS {
+        let text = probe(element.name);
+        assert_eq!(
+            text.contains("marker"),
+            element.index != catalog::Index::None,
+            "a {} ({:?}) gives {text:?}",
+            element.name,
+            element.index
+        );
+    }
+    assert_eq!(probe("toggle"), "marker");
 }
