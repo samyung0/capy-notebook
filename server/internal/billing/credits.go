@@ -158,6 +158,9 @@ type ReloadResult struct {
 	Processing bool
 	// Void is an invoice voided in Stripe (by a top-up, a new card, or by hand).
 	Void bool
+	// Open is an invoice Stripe can still collect; a declined one with no
+	// NextAttempt waits for Stripe to schedule the retry or give up.
+	Open bool
 	// NextAttempt is when Stripe retries a failed charge; zero means it stopped.
 	NextAttempt   time.Time
 	DeclineReason string
@@ -227,6 +230,7 @@ func ReloadOutcome(invoiceID string) (ReloadResult, error) {
 		InvoiceID: inv.ID,
 		Paid:      inv.Status == stripe.InvoiceStatusPaid,
 		Void:      inv.Status == stripe.InvoiceStatusVoid,
+		Open:      inv.Status == stripe.InvoiceStatusOpen,
 	}
 	if inv.NextPaymentAttempt > 0 {
 		out.NextAttempt = time.Unix(inv.NextPaymentAttempt, 0).UTC()
@@ -330,11 +334,14 @@ func ResumeStaleReloads(ctx context.Context, st *store.Store, notify func(userID
 	return nil
 }
 
+// chargeReload is ChargeReload; tests replace it.
+var chargeReload = ChargeReload
+
 // ProcessReload charges one claimed reload and records the outcome. A Stripe
 // error leaves it charging for ResumeStaleReloads; the 60-second window has
 // ended by then, so new work at zero is refused meanwhile.
 func ProcessReload(ctx context.Context, st *store.Store, charge store.ReloadCharge) {
-	res, err := ChargeReload(charge)
+	res, err := chargeReload(charge)
 	if res.InvoiceID != "" {
 		if linkErr := st.SetReloadInvoice(ctx, charge.ID, res.InvoiceID); linkErr != nil {
 			obs.CaptureErr(ctx, linkErr, map[string]string{"stage": "reload_link_invoice"})
@@ -348,6 +355,11 @@ func ProcessReload(ctx context.Context, st *store.Store, charge store.ReloadChar
 	case res.Paid:
 		err = st.MarkReloadPaid(ctx, charge.ID, res.InvoiceID, res.PaymentIntentID)
 	case res.Processing:
+		return
+	case res.Open && res.NextAttempt.IsZero():
+		// Stripe schedules a decline's retry (or gives up) moments after the
+		// charge: it stays charging until invoice.payment_failed or the next
+		// resume reads that, so a reload Stripe retries is never first failed.
 		return
 	default:
 		err = st.MarkReloadFailed(ctx, charge.ID, res.InvoiceID, res.NextAttempt, res.DeclineReason)

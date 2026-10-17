@@ -127,10 +127,9 @@ export async function settledReload(run: UatRun, actor: Actor, index: number) {
 
 /**
  * The `index`th auto-reload, declined, once its invoice.payment_failed is
- * processed. The worker records the decline right after its charge, before
- * Stripe has scheduled the retry, so it first reads `failed`; the webhook
- * then records Stripe's next attempt. `recordedFirst` is what the worker
- * wrote.
+ * processed. A decline stays `charging` until Stripe schedules its retry (or
+ * gives up), so `recordedFirst`, the first status after charging, is already
+ * Stripe's decision.
  */
 export async function declinedReload(
   run: UatRun,

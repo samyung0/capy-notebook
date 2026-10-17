@@ -462,8 +462,10 @@ test('a declined auto-reload retries; a reload Stripe gave up on can still be pa
     nextAttemptAt: first.next_attempt_at,
     nextPaymentAttempt: firstInvoice.next_payment_attempt,
     purchaseStatus: first.status,
-    workerRecorded: recordedFirst,
+    recordedFirst,
   });
+  // Never first recorded failed before Stripe schedules the retry.
+  expect(recordedFirst).toBe('retrying');
   expect(first).toMatchObject({
     reload_pm_id: declining.reload_pm_id,
     status: 'retrying',
