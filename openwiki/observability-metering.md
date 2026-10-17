@@ -787,7 +787,11 @@ by the purchase id. Paid adds the credits (`MarkReloadPaid`, also reached by
 so does a decline until Stripe schedules its retry or gives up, moments after
 the charge (the worker's own read comes first; `invoice.payment_failed` or the
 stale-reload resume records it); a decline is `retrying` while Stripe has a
-next attempt and `failed` once it stops, and the switch stays on. A reload left
+next attempt and `failed` once it stops, and the switch stays on. A reload
+recorded `retrying` after auto-reload was turned off, or the saved card
+changed, while it was charging is voided by that same step
+(`ReloadRetryUnwanted`), as the switch and a new card void one already
+retrying. A reload left
 `charging` by a stopped worker is resumed after two minutes with the same keys
 and card; after 23 hours it is reported to Sentry, its invoice voided and
 marked `failed`. `GET /api/billing` returns

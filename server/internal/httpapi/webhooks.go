@@ -44,6 +44,7 @@ type webhookStore interface {
 	HoldDispute(ctx context.Context, paymentIntentID string) (string, error)
 	ReleaseDispute(ctx context.Context, paymentIntentID string) (string, error)
 	RetryingReloadInvoices(ctx context.Context, userID string) ([]string, error)
+	ReloadRetryUnwanted(ctx context.Context, invoiceID string) (bool, error)
 	ArmReload(ctx context.Context, userID string) error
 }
 
@@ -701,6 +702,14 @@ func (a *api) reloadInvoiceChanged(ctx context.Context, inv *stripe.Invoice) err
 		return nil
 	default:
 		err = a.wh.MarkReloadFailed(ctx, purchaseID, inv.ID, outcome.NextAttempt, outcome.DeclineReason)
+		// Turned off or given a new card while it charged: void it as they would have.
+		var unwanted bool
+		if err == nil {
+			unwanted, err = a.wh.ReloadRetryUnwanted(ctx, inv.ID)
+		}
+		if unwanted {
+			err = a.voidReloads(ctx, []string{inv.ID})
+		}
 	}
 	if err != nil || inv.Customer == nil {
 		return err

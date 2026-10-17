@@ -334,8 +334,11 @@ func ResumeStaleReloads(ctx context.Context, st *store.Store, notify func(userID
 	return nil
 }
 
-// chargeReload is ChargeReload; tests replace it.
-var chargeReload = ChargeReload
+// The Stripe calls ProcessReload makes; tests replace them.
+var (
+	chargeReload = ChargeReload
+	voidInvoice  = VoidInvoice
+)
 
 // ProcessReload charges one claimed reload and records the outcome. A Stripe
 // error leaves it charging for ResumeStaleReloads; the 60-second window has
@@ -363,6 +366,16 @@ func ProcessReload(ctx context.Context, st *store.Store, charge store.ReloadChar
 		return
 	default:
 		err = st.MarkReloadFailed(ctx, charge.ID, res.InvoiceID, res.NextAttempt, res.DeclineReason)
+		// Turned off or given a new card while it charged: void it as they would have.
+		var unwanted bool
+		if err == nil {
+			unwanted, err = st.ReloadRetryUnwanted(ctx, res.InvoiceID)
+		}
+		if unwanted {
+			if err = voidInvoice(res.InvoiceID); err == nil {
+				err = st.MarkReloadVoid(ctx, res.InvoiceID)
+			}
+		}
 	}
 	if err != nil {
 		obs.CaptureErr(ctx, err, map[string]string{"stage": "reload_record"})

@@ -76,6 +76,8 @@ type fakeStore struct {
 	creditCalls []string
 	// retryingReloads is what GrantTopUp reports for the caller to void.
 	retryingReloads []string
+	// reloadRetryUnwanted: the reload was turned off or given a new card.
+	reloadRetryUnwanted bool
 }
 
 func newFakeStore() *fakeStore {
@@ -243,6 +245,10 @@ func (f *fakeStore) HoldDispute(_ context.Context, paymentIntentID string) (stri
 func (f *fakeStore) ArmReload(_ context.Context, userID string) error {
 	f.creditCalls = append(f.creditCalls, "arm "+userID)
 	return nil
+}
+
+func (f *fakeStore) ReloadRetryUnwanted(context.Context, string) (bool, error) {
+	return f.reloadRetryUnwanted, nil
 }
 
 func (f *fakeStore) RetryingReloadInvoices(_ context.Context, userID string) ([]string, error) {

@@ -341,6 +341,19 @@ func retryingReloadInvoices(ctx context.Context, q interface {
 	return pgx.CollectRows(rows, pgx.RowTo[string])
 }
 
+// ReloadRetryUnwanted reports whether a reload Stripe is retrying was given up
+// while it charged: auto-reload is off now, or the saved card is not the one it
+// charged. The caller voids it as the switch or the new card would have.
+func (s *Store) ReloadRetryUnwanted(ctx context.Context, invoiceID string) (bool, error) {
+	var unwanted bool
+	err := s.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM credit_purchases p
+		JOIN user_credits c ON c.user_id = p.user_id
+		WHERE p.stripe_invoice_id = $1 AND p.kind = 'reload' AND p.status = 'retrying'
+		  AND (NOT c.auto_reload_enabled OR c.reload_pm_id IS DISTINCT FROM p.reload_pm_id))`,
+		invoiceID).Scan(&unwanted)
+	return unwanted, err
+}
+
 // MarkReloadVoid records a retrying reload invoice voided by a manual top-up.
 func (s *Store) MarkReloadVoid(ctx context.Context, invoiceID string) error {
 	_, err := s.pool.Exec(ctx, `UPDATE credit_purchases

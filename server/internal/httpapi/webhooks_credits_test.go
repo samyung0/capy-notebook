@@ -126,6 +126,24 @@ func TestStripeWebhook_ReloadInvoiceOutcomes(t *testing.T) {
 	}
 }
 
+// A reload turned off or given a new card while it charged is voided when
+// invoice.payment_failed records Stripe's retry.
+func TestStripeWebhook_RetryOfAReloadGivenUpWhileChargingIsVoided(t *testing.T) {
+	f := newFakeStore()
+	f.reloadRetryUnwanted = true
+	srv, voided := newCreditTestServer(t, f, billing.ReloadResult{
+		NextAttempt: time.Now().Add(time.Hour), DeclineReason: "card_declined",
+	})
+	sendStripe(t, srv, "evt_given_up", "invoice.payment_failed", map[string]any{
+		"id":       "in_reload",
+		"metadata": map[string]string{"kind": "reload", "purchase_id": "cp_1"},
+	})
+	want := []string{"failed cp_1 in_reload false card_declined", "void in_reload"}
+	if !slices.Equal(f.creditCalls, want) || !slices.Equal(*voided, []string{"in_reload"}) {
+		t.Fatalf("calls = %q voided = %q, want %q", f.creditCalls, *voided, want)
+	}
+}
+
 func TestStripeWebhook_ReloadStillProcessingStaysCharging(t *testing.T) {
 	f := newFakeStore()
 	srv, _ := newCreditTestServer(t, f, billing.ReloadResult{Processing: true})
