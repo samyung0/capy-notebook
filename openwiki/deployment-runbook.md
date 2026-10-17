@@ -192,7 +192,16 @@ If the domain is **already** on Cloudflare, skip nameserver migration.
    script then replaces the loading spinner with the reload message
    ([error-handling](frontend/error-handling.md#boundary-tiers)), and an open
    tab that lazy-loads an old chunk shows the app's. A reload once the app
-   Worker is live loads the new release. `scripts/deploy/verify-release.sh` checks the
+   Worker is live loads the new release. The deploy checks the app Worker's
+   secrets before publishing either Worker, and when the app Worker step
+   fails after the assets Worker went live, it rolls the assets Worker back
+   to its previous deployment (`wrangler rollback --config
+   wrangler.assets.jsonc --env <env>`): the old `index.html`, still served,
+   names chunks only that deployment has. Roll back by hand the same way,
+   both Workers back to back (`capy-notebook-<env>` and
+   `capy-notebook-assets-<env>`, in the dashboard or with `wrangler
+   rollback`), never one alone; redeploying a previous SHA moves both.
+   `scripts/deploy/verify-release.sh` checks the
    404 `no-store` after every deploy. The assets Worker has no Workers Cache
    block, so its static hits stay free requests. The app Worker keeps
    `dist/assets` as well: share pages read their stylesheets through its
