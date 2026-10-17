@@ -1,5 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const { prefetchSourceOpen, rows } = vi.hoisted(() => ({
   prefetchSourceOpen: vi.fn(),
@@ -55,6 +55,9 @@ beforeEach(() => {
   rows.clear();
   rows.set('workspace:ws_1', async () => WORKSPACE);
 });
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 
 const DECK = { hasBytes: true, name: 'deck.pptx', workspaceId: 'ws_1' };
 
@@ -65,6 +68,36 @@ describe("an Office file's open from its route", () => {
     await vi.waitFor(() =>
       expect(prefetchSourceOpen).toHaveBeenCalledWith('f_deck', 'edit')
     );
+  });
+
+  it('opens Edit only for an editor, and the saved mode when the URL names none', async () => {
+    rows.set('file:f_deck', async () => DECK);
+    rows.set('workspace:ws_1', async () => ({
+      capabilities: { canEditContent: false },
+    }));
+    load('f_deck', { mode: 'edit' });
+    await vi.waitFor(() =>
+      expect(prefetchSourceOpen).toHaveBeenCalledWith('f_deck', 'view')
+    );
+    rows.set('workspace:ws_1', async () => WORKSPACE);
+    vi.stubGlobal('localStorage', { getItem: () => 'edit' });
+    load('f_deck');
+    await vi.waitFor(() =>
+      expect(prefetchSourceOpen).toHaveBeenLastCalledWith('f_deck', 'edit')
+    );
+  });
+
+  it("starts nothing for a hover's preload, a file that is not Office or one without bytes", async () => {
+    const read = vi.fn(async () => DECK);
+    rows.set('file:f_hover', read);
+    load('f_hover', { preload: true });
+    rows.set('file:f_pdf', async () => ({ ...DECK, name: 'notes.pdf' }));
+    load('f_pdf');
+    rows.set('file:f_empty', async () => ({ ...DECK, hasBytes: false }));
+    load('f_empty');
+    await settle();
+    expect(read).not.toHaveBeenCalled();
+    expect(prefetchSourceOpen).not.toHaveBeenCalled();
   });
 
   it('starts no open once the route was left before the file row arrived', async () => {

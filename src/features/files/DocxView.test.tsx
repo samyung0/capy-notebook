@@ -60,6 +60,12 @@ describe('DocxView header', () => {
     expect(render({ analysis, ready: true })).toMatch(HEADER_ROW);
   });
 
+  it('shows the error id when the view read fails', () => {
+    const markup = render({ error: 'x', errorId: 'trace-1', mode: 'view' });
+    expect(markup).toContain('trace-1');
+    expect(markup).not.toContain('<iframe');
+  });
+
   it('asks for a reload when the Office runtime speaks another protocol version', () => {
     const markup = render({ unavailable: 'outdated' });
     expect(markup).toContain('An update is ready');

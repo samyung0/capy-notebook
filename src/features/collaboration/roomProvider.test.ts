@@ -18,6 +18,7 @@ import {
   Writer,
 } from './protocol';
 import { RoomProvider } from './roomProvider';
+import { CollabSocket } from './socket';
 
 vi.mock('@/api/auth', () => ({ USE_MSW: false }));
 
@@ -337,6 +338,28 @@ it('holds joins past the eight the server authenticates at once', async () => {
   const next = socket.take(MessageKind.Join);
   expect(next).toHaveLength(2);
   expect(new Reader(next[1].payload).varString()).toBe('material:m9:schema:1');
+});
+
+it('lets the room that joins use the socket its token warmed', async () => {
+  const address = `wss://collab.test/${url++}`;
+  CollabSocket.warm(address);
+  const { join } = await joined({ url: address });
+  expect(FakeSocket.instances).toHaveLength(1);
+  expect(join).toBeDefined();
+});
+
+it('closes a warmed socket no room joined once its hold and the idle delay pass', () => {
+  vi.useFakeTimers();
+  const address = `wss://collab.test/${url++}`;
+  CollabSocket.warm(address);
+  const socket = FakeSocket.instances.at(-1) as FakeSocket;
+  expect(socket.url).toBe(address);
+  socket.open();
+  // Held 10 s for the room, then the idle close's 5 s.
+  vi.advanceTimersByTime(15_000 - 1);
+  expect(socket.readyState).toBe(1);
+  vi.advanceTimersByTime(1);
+  expect(socket.readyState).toBe(3);
 });
 
 it('speaks the collaboration server’s client protocol', () => {
