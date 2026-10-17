@@ -182,8 +182,15 @@ signing in, deletes it before any route loads (`AuthProvider`), which also
 drops an open started for the previous account (`dropSourceOpens`); only a
 store an account claimed takes bytes, so a download landing after sign-out
 stores nothing. Private mode
-or a failing store reads as a miss and the open downloads, silently. Text
-views without an open session still render from the published file's link.
+or a failing store reads as a miss and the open downloads, silently. Offline
+drafts come first in the origin's storage quota (Epo 2026-10-17): a file is
+cached only when `navigator.storage.estimate()` says storing it leaves at
+least 100 MB free (no estimate, in a browser or context without one, caches
+nothing, as private mode does), and a draft write the quota refuses deletes
+copies here, least recently opened first, one at a time until the draft
+lands ([plate-editor "Offline editing and drafts"](plate-editor.md#offline-editing-and-drafts)).
+Text views without an open session still render from the published file's
+link.
 
 **Timing marks.** Each realm marks its stages as `capy:office:<stage>`
 performance marks (`src/lib/officeMarks.ts`), for UAT's measure lane and

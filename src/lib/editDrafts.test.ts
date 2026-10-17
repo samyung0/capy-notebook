@@ -36,6 +36,20 @@ class InProcessWorker {
 }
 vi.stubGlobal('Worker', InProcessWorker);
 
+// The device copies of source files (sourceCache.ts), oldest first: a draft
+// write the quota refuses deletes them one at a time.
+const copies = vi.hoisted(() => ({
+  evicted: [] as string[],
+  kept: [] as string[],
+}));
+vi.mock('./sourceCache', () => ({
+  evictOldestSource: async () => {
+    const oldest = copies.kept.shift();
+    if (oldest) copies.evicted.push(oldest);
+    return oldest !== undefined;
+  },
+}));
+
 // The sweep reports what it drops (edit_incidents) through the API client.
 const post = vi.hoisted(() => vi.fn(async () => undefined));
 vi.mock('@/api/client', async (load) => ({
@@ -414,6 +428,57 @@ describe('the draft store', () => {
     expect(
       (await fresh.readDrafts('u_old:file:f_old')).map((entry) => entry.session)
     ).toEqual(['old-session']);
+  });
+});
+
+describe('a draft write the storage quota refuses', () => {
+  /** The quota refuses draft rows while more than `room` copies are kept. */
+  function quotaWhileKept(room: number) {
+    const put = IDBObjectStore.prototype.put;
+    return vi
+      .spyOn(IDBObjectStore.prototype, 'put')
+      .mockImplementation(function (this: IDBObjectStore, ...args) {
+        if (this.name === 'drafts' && copies.kept.length > room)
+          throw new DOMException('Quota exceeded', 'QuotaExceededError');
+        return put.apply(this, args);
+      });
+  }
+
+  it('deletes device copies oldest first, one at a time, until the draft lands', async () => {
+    copies.kept = ['oldest', 'middle', 'newest'];
+    copies.evicted = [];
+    const spy = quotaWhileKept(1);
+    try {
+      const key = 'u_1:material:quota';
+      await putDrafts([draft('q', { key })]);
+      expect(copies.evicted).toEqual(['oldest', 'middle']);
+      expect(copies.kept).toEqual(['newest']);
+      expect((await readDrafts(key)).map((row) => row.id)).toEqual(['q']);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('fails as before once no copy is left, and deletes none for another failure', async () => {
+    copies.kept = ['only'];
+    copies.evicted = [];
+    const spy = quotaWhileKept(-1);
+    try {
+      await expect(
+        putDrafts([draft('q', { key: 'u_1:material:full' })])
+      ).rejects.toMatchObject({ name: 'QuotaExceededError' });
+      expect(copies.evicted).toEqual(['only']);
+      copies.kept = ['kept'];
+      spy.mockImplementation(() => {
+        throw new DOMException('Broken', 'UnknownError');
+      });
+      await expect(
+        putDrafts([draft('r', { key: 'u_1:material:broken' })])
+      ).rejects.toMatchObject({ name: 'UnknownError' });
+      expect(copies.kept).toEqual(['kept']);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 

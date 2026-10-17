@@ -7,10 +7,15 @@
  * served. About 200 MB, least recently opened first out. The store belongs
  * to the account that filled it: signing out, or another account signing in,
  * deletes it. Private mode or a failing store reads as a miss and the caller
- * downloads, silently.
+ * downloads, silently. Offline drafts come first in the storage quota:
+ * caching skips a file that would leave under 100 MB free, and a draft write
+ * the quota refuses deletes copies here, least recently opened first
+ * (`evictOldestSource`, draftStore.ts).
  */
 const NAME = 'capy-source-bytes';
 const SOURCE_CACHE_LIMIT_BYTES = 200 * 2 ** 20;
+/** Free quota a cached file must leave for offline drafts. */
+const DRAFT_RESERVE_BYTES = 100 * 2 ** 20;
 // Cache keys are requests; these paths are never fetched.
 const INDEX = '/capy-source-cache/index.json';
 const SHA256 = /^[0-9a-f]{64}$/;
@@ -59,6 +64,22 @@ async function sha256Hex(bytes: Uint8Array<ArrayBuffer>): Promise<string> {
   );
 }
 
+/** Whether storing `bytes` more leaves offline drafts their reserve. Without
+ * an estimate (a browser or context without one) nothing is cached, as in
+ * private mode. */
+async function leavesDraftReserve(bytes: number): Promise<boolean> {
+  try {
+    const { quota, usage } = await navigator.storage.estimate();
+    return (
+      quota !== undefined &&
+      usage !== undefined &&
+      quota - usage - bytes >= DRAFT_RESERVE_BYTES
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** The bytes stored under `sha`, or null (a miss, a session naming no SHA,
  * or bytes that no longer hash to it, which are dropped with their index
  * entry). */
@@ -102,6 +123,7 @@ export async function cacheSource(
   try {
     const key = sha.toLowerCase();
     if (!SHA256.test(key) || bytes.byteLength > limit) return;
+    if (!(await leavesDraftReserve(bytes.byteLength))) return;
     const cache = await open();
     if (!cache) return;
     const index = await readIndex(cache);
@@ -124,6 +146,33 @@ export async function cacheSource(
     await writeIndex(cache, { ...index, entries: kept });
   } catch {
     // Not stored: the next open downloads again.
+  }
+}
+
+/**
+ * Deletes the least recently opened file kept here, for a draft write the
+ * storage quota refused: offline drafts come first (Epo 2026-10-17), and the
+ * drafts worker calls this once per refusal until its write lands. False
+ * when nothing is left to delete (or no store is reachable).
+ */
+export async function evictOldestSource(): Promise<boolean> {
+  try {
+    const cache = await open();
+    if (!cache) return false;
+    const index = await readIndex(cache);
+    let evicted = false;
+    // A row whose bytes are already gone is dropped on the way.
+    for (const entry of [...index.entries].sort((a, b) => a.used - b.used)) {
+      index.entries = index.entries.filter((item) => item !== entry);
+      if (await cache.delete(entryKey(entry.sha))) {
+        evicted = true;
+        break;
+      }
+    }
+    await writeIndex(cache, index).catch(() => undefined);
+    return evicted;
+  } catch {
+    return false;
   }
 }
 

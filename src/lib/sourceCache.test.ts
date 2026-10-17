@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { cacheSource, claimSourceCache, readCachedSource } from './sourceCache';
+import {
+  cacheSource,
+  claimSourceCache,
+  evictOldestSource,
+  readCachedSource,
+} from './sourceCache';
 
 /** Cache Storage as the browser keeps it, in memory: requests by URL. */
 class MemoryCache {
@@ -41,9 +46,18 @@ class MemoryStorage {
 }
 
 let storage: MemoryStorage;
+const MB = 2 ** 20;
+/** The origin's quota as `navigator.storage.estimate` reports it. */
+function quota(estimate: StorageEstimate | undefined) {
+  vi.stubGlobal('navigator', {
+    storage: estimate && { estimate: async () => estimate },
+  });
+}
+
 beforeEach(async () => {
   storage = new MemoryStorage();
   vi.stubGlobal('caches', storage);
+  quota({ quota: 10_000 * MB, usage: 0 });
   await claimSourceCache('user_a');
 });
 afterEach(() => {
@@ -124,6 +138,41 @@ describe('source bytes kept on the device', () => {
     const big = source('much too large');
     await cacheSource(big.sha, big.bytes, 8);
     expect(await readCachedSource(big.sha)).toBeNull();
+  });
+
+  it('leaves offline drafts 100 MB of free quota, and caches nothing without an estimate', async () => {
+    const deck = source('deck bytes');
+    const size = deck.bytes.byteLength;
+    quota({ quota: 1000 * MB, usage: 900 * MB - size + 1 });
+    await cacheSource(deck.sha, deck.bytes);
+    expect(await readCachedSource(deck.sha)).toBeNull();
+    quota(undefined);
+    await cacheSource(deck.sha, deck.bytes);
+    expect(await readCachedSource(deck.sha)).toBeNull();
+    quota({ quota: 1000 * MB, usage: 900 * MB - size });
+    await cacheSource(deck.sha, deck.bytes);
+    expect(await readCachedSource(deck.sha)).toEqual(deck.bytes);
+  });
+
+  it('frees space for a draft one file at a time, least recently opened first', async () => {
+    vi.useFakeTimers();
+    const [a, b] = ['aaaa', 'bbbb'].map(source) as [
+      ReturnType<typeof source>,
+      ReturnType<typeof source>,
+    ];
+    vi.setSystemTime(1000);
+    await cacheSource(a.sha, a.bytes);
+    vi.setSystemTime(2000);
+    await cacheSource(b.sha, b.bytes);
+    // Reading `a` makes `b` the least recently opened.
+    vi.setSystemTime(3000);
+    await readCachedSource(a.sha);
+    expect(await evictOldestSource()).toBe(true);
+    expect(stored().some((url) => url.endsWith(b.sha))).toBe(false);
+    expect(await indexed()).toEqual([a.sha]);
+    expect(await evictOldestSource()).toBe(true);
+    expect(await indexed()).toEqual([]);
+    expect(await evictOldestSource()).toBe(false);
   });
 
   it('belongs to the account that filled it: signing out or another account deletes it', async () => {
