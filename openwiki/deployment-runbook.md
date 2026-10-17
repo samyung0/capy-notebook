@@ -600,8 +600,8 @@ The prod file runs `/migrate` once per deploy, starts the API with
    docker exec "$c" sh -c 'stat -c "%U %a" /var/lib/capy/sources; du -sh /var/lib/capy/sources'
    ```
 
-   It prints `nobody 700` and the bytes the open rooms hold (a few KB right
-   after a restart).
+   It prints `nobody 700` and the bytes on disk: the open rooms' files plus
+   idle ones still in their 3-minute grace (a few KB right after a restart).
 
    Every client socket, gateway call and database connection is an open
    file. The compose files give the collaboration service `nofile` 524288,
