@@ -433,11 +433,11 @@ export default function PdfView({
                   );
                   return (
                     <LazyPdfPage
+                      flashing={!!flashKey && flashKey === citationKey}
                       forceRender={p === 1 || p === targetPage}
                       key={p}
                       observeVisibility={observeVisibility}
                       onAspectRatio={p === 1 ? setPageAspectRatio : undefined}
-                      flashing={!!flashKey && flashKey === citationKey}
                       onMeasured={() =>
                         setPageMeasureVersion((value) => value + 1)
                       }

@@ -2,6 +2,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
 import { CategoryChart } from './CategoryChart';
 
+// The x position of the "1,500,000" axis number.
+const MILLION_TICK = /x="(\d+)"[^>]*>1,500,000</;
+
 it('renders all fifty categories with six series', () => {
   const labels = Array.from({ length: 50 }, (_, i) => `Category ${i + 1}`);
   const html = renderToStaticMarkup(
@@ -68,6 +71,6 @@ it('breaks a long word between letters and widens the tick column', () => {
   expect(html.match(/<tspan/g)).toHaveLength(3);
   expect(html).not.toContain('…');
   // "1,500,000" ends 4 units left of the plot, which starts past x = 36.
-  const tick = html.match(/x="(\d+)"[^>]*>1,500,000</);
+  const tick = html.match(MILLION_TICK);
   expect(Number(tick?.[1])).toBeGreaterThan(36);
 });
