@@ -164,7 +164,12 @@ async fn serve(config: Config) -> Result<(), String> {
             db.clone(),
             http.clone(),
         )
-        .map_err(|error| format!("source disk store: {error}"))?,
+        .map_err(|error| {
+            format!(
+                "source disk store {}: {error}",
+                config.source_disk_dir.display()
+            )
+        })?,
     );
     let markdown = match &config.markdown_bundle {
         None => None,
