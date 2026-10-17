@@ -102,9 +102,9 @@ export function FileBanner({
   return (
     <div
       className={cn(
-        // Tighter on small screens: less height from `md`, less inset on phones.
+        // Less inset on phones.
         'flex shrink-0 gap-3 border-b pr-1.5 pl-3 text-fg text-sm sm:pr-2 sm:pl-4',
-        inline ? 'h-9 items-center md:h-10' : 'items-start py-1 md:py-2',
+        inline ? 'h-9 items-center' : 'items-start py-1',
         tone === 'error'
           ? 'border-solid-error/40 bg-tint-error'
           : 'border-divider bg-surface-hover-bg'
