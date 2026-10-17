@@ -146,6 +146,14 @@ lane"), including the five that came with credit top-ups (`invoice.paid`,
 `invoice.paid` answers 200 and is processed in `webhook_events`. The Free row of
 `plan_limits` holds the 200-credit monthly allowance.
 
+The sandbox's failed-payment settings match the runbook ("Failed payments"):
+one-off invoices (auto-reload) retry the card three times a day apart and are
+then marked uncollectible; subscriptions cancel and mark the invoice
+uncollectible after their last retry. The app records a reload `failed` from
+the `invoice.payment_failed` that carries no next attempt (and the daily
+reconciliation repairs a missed one), so these settings only decide whether a
+given-up invoice can still be paid from the hosted link.
+
 Confirm the edge does not rate-limit or challenge `/webhooks/`. Both providers
 burst on retry and will trip a WAF rule written for browser traffic.
 
