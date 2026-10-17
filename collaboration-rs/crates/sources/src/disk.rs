@@ -111,6 +111,8 @@ struct Entry {
     idle_since: Option<Instant>,
     /// None until a holder writes it, or after a failed check deleted it.
     file: Option<File>,
+    /// Refused for the cap since rooms took it (a save logs the first one).
+    refused: bool,
 }
 
 #[derive(Default)]
@@ -181,8 +183,9 @@ impl Drop for Hold {
 
 #[derive(Debug, thiserror::Error)]
 pub enum PutError {
+    /// `again`: refused before while rooms hold the file.
     #[error("loaded rooms' files fill the source disk store ({held} of {cap} bytes)")]
-    Full { held: u64, cap: u64 },
+    Full { held: u64, cap: u64, again: bool },
     #[error("source disk store: {0}")]
     Io(#[from] std::io::Error),
 }
@@ -300,6 +303,7 @@ impl DiskStore {
             return Err(PutError::Full {
                 held,
                 cap: self.cap,
+                again: false,
             });
         }
         Ok(())
@@ -333,7 +337,14 @@ impl DiskStore {
                 return Ok(());
             }
             let need = bytes.len() as u64;
-            self.fits(entries, need)?;
+            if let Err(mut refused) = self.fits(entries, need) {
+                if let (PutError::Full { again, .. }, Some(entry)) =
+                    (&mut refused, entries.get_mut(key))
+                {
+                    *again = std::mem::replace(&mut entry.refused, true);
+                }
+                return Err(refused);
+            }
             let mut idle: Vec<(Instant, Key)> = entries
                 .iter()
                 .filter(|(_, entry)| entry.holders.is_empty() && entry.file.is_some())
@@ -641,8 +652,23 @@ pub(crate) mod tests {
             .put(&e, &[5; 40], &office_service::sha256_hex([5; 40]), 5)
             .await;
         assert!(
-            matches!(refused, Err(PutError::Full { held: 70, cap: 100 })),
+            matches!(
+                refused,
+                Err(PutError::Full {
+                    held: 70,
+                    cap: 100,
+                    again: false
+                })
+            ),
             "{refused:?}"
+        );
+        // Refused again while its room holds it: a save logs the first only.
+        let again = store
+            .put(&e, &[5; 40], &office_service::sha256_hex([5; 40]), 5)
+            .await;
+        assert!(
+            matches!(again, Err(PutError::Full { again: true, .. })),
+            "{again:?}"
         );
         assert_eq!(folder.files(), expected);
         // 30 fits once the idle file goes.
