@@ -19,7 +19,7 @@ use tokio::sync::oneshot;
 
 use crate::engine::CALL_TIMEOUT;
 use crate::gateway::{SourceSession, encode};
-use crate::store::{SourceRebase, Sources, rebase_refused};
+use crate::store::{Job, SourceRebase, Sources, rebase_refused};
 use crate::{ChannelId, Rooms, SourceError, SourceFormat, SourceRoom};
 
 pub const SOURCE_HANDOFF_CHANNEL: &str = "capy:collaboration:source-handoff";
@@ -761,9 +761,10 @@ impl Handoff {
             };
             // Text keeps its lineage: later edits stay a residual against the
             // exported text.
+            let job = Job::default();
             let baseline = self
                 .sources
-                .captured_text(&session, state.as_deref())
+                .captured_text(&session, state.as_deref(), &job)
                 .await?;
             let mut latest = session;
             for attempt in 0..4 {
@@ -772,7 +773,7 @@ impl Handoff {
                 }
                 let effects = self
                     .sources
-                    .effects_of_durable(&latest, Some(&baseline))
+                    .effects_of_durable(&latest, Some(&baseline), &job)
                     .await?;
                 let mut body = publication.clone();
                 body.insert("expectedLatestCheckpoint".into(), json!(latest.checkpoint));
@@ -832,6 +833,7 @@ impl Handoff {
         captured: (Option<Vec<u8>>, Option<String>),
     ) -> Result<Value, SourceError> {
         let mut latest = session;
+        let job = Job::default();
         for attempt in 0..4 {
             if attempt > 0 {
                 latest = self.sources.current(&input.file_id).await?;
@@ -848,7 +850,9 @@ impl Handoff {
                     rebuild_pending: true,
                     ..latest.clone()
                 };
-                self.sources.effects_of_durable(&published, None).await?
+                self.sources
+                    .effects_of_durable(&published, None, &job)
+                    .await?
             };
             let mut body = publication.clone();
             body.insert("deferred".into(), json!(true));
