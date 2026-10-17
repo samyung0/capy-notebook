@@ -247,7 +247,7 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 impl From<PutError> for SourceError {
     fn from(error: PutError) -> Self {
         match error {
-            PutError::Full { held, cap } => SourceError::StoreFull { held, cap },
+            PutError::Full { held, cap, .. } => SourceError::StoreFull { held, cap },
             PutError::Io(_) => SourceError::Other(error.to_string()),
         }
     }
@@ -398,6 +398,8 @@ impl Sources {
         match self.disk.put(key, bytes, sha256, holder).await {
             Ok(()) => Ok(()),
             Err(error) if load => Err(error.into()),
+            // Logged at the file's first refusal while rooms hold it.
+            Err(PutError::Full { again: true, .. }) => Ok(()),
             Err(error) => {
                 crate::observe::log(
                     "warn",

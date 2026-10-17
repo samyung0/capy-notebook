@@ -2308,7 +2308,9 @@ no room. Edit then shows collaboration unavailable and retries; View needs no
 room. The refusal is logged at warn (`source room refused: disk store full`),
 not captured, and counted in `capy_collaboration_source_disk_refusals_total`.
 A loaded room's save that misses a file (its first DOCX or PPTX baseline, say)
-writes it when the folder has room, and otherwise uses it for that call only.
+writes it when the folder has room, and otherwise uses it for that call only,
+with one warn line (`source file kept for this call only`) per file while
+rooms hold it, not one per save.
 Roomless jobs (folds, exports, inspection, rebuilds, rebases, refreshes, agent
 edits) read what is on disk, else download or seed into memory for the job,
 and write nothing. The server wipes the folder at start. A seed's state vector
