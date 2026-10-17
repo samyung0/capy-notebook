@@ -1289,9 +1289,11 @@ of the sheet, as in Excel (Tab and Shift+Tab stop at columns A and XFD), and a
 click, drag or Shift+click selects the cells under the pointer anywhere, while
 Ctrl/Cmd+arrow, End, Ctrl/Cmd+End and Select all stop at the used range, which
 the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
-cell). Clear, cut and copy act only on the selection's part inside the used
-range (inputs committed but not drawn yet count), so a whole column costs no
-more than its data and a selection of empty cells sends nothing. A cell the
+cell). Clear and cut act only on the selection's part inside the used range
+(inputs committed but not drawn yet count); copy keeps the selection's own
+top-left corner, leading blanks included as in Excel, and trims only past the
+used range's last row and column. A whole column costs no more than its data,
+and a selection wholly past the used range sends nothing. A cell the
 keyboard reaches past the used range grows the scroll area to it. The name box
 takes a cell address (`B7`, `$B$7`, `'Sheet 2'!B7`; a range goes to its first
 cell) and Enter selects and reveals that cell, opening the other sheet when it
