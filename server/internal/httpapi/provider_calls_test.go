@@ -66,6 +66,23 @@ func TestInternalProviderCallSettlementAuthenticatesAndDeduplicates(t *testing.T
 	if unauthorized.Code != http.StatusUnauthorized {
 		t.Fatalf("unauthorized status = %d", unauthorized.Code)
 	}
+	// A receipt that can never settle is a 4xx, so the pipeline does not retry it.
+	noThinking := make(map[string]any, len(body))
+	for key, value := range body {
+		noThinking[key] = value
+	}
+	noThinking["thinking"] = ""
+	invalid := doInternal(
+		t,
+		h,
+		http.MethodPost,
+		"/api/internal/provider-calls",
+		pipeSecret,
+		noThinking,
+	)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("empty thinking status = %d body=%s", invalid.Code, invalid.Body.String())
+	}
 	if _, err := st.Pool().Exec(ctx, `
 		INSERT INTO provider_calls
 			(id, reservation_id, actor_user_id, kind, purpose, thinking)

@@ -147,8 +147,12 @@ def test_no_reasoning_uses_provider_off_or_lowest_setting():
         slots=("captioning",),
     )
 
-    assert _thinking_for_call(vision, False) == ""
-    assert _thinking_for_call(_spec(thinking_levels=("low", "high")), False) == ""
+    # The receipt needs a known level: the gateway refuses an empty one.
+    assert _thinking_for_call(vision, False) == "instant"
+    assert _thinking_for_call(_spec(slots=("editor",)), False) == "instant"
+    assert (
+        _thinking_for_call(_spec(thinking_levels=("low", "high")), False) == "instant"
+    )
     zai_vision = _spec(
         provider_slug="zai",
         model_slug="glm-5.3-flash",

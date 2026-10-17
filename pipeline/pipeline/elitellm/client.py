@@ -1009,10 +1009,12 @@ async def rerank(
 
 
 def _thinking_for_call(spec: ModelConfig, reasoning: bool | None) -> str:
+    # Reasoning off is "instant", the level the receipt records; routed GLM
+    # cannot turn thinking off, so it runs at its low floor.
     if reasoning is False:
         if _is_routed_zai_glm(spec):
             return "low"
-        return ""
+        return "instant"
     return spec.resolve_thinking(_request_thinking())
 
 

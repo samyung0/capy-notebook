@@ -53,6 +53,10 @@ func (a *api) internalSettleProviderCall(w http.ResponseWriter, r *http.Request)
 		writeJSON(w, http.StatusNotFound, map[string]string{"message": "spend session not found"})
 		return
 	}
+	if errors.Is(err, store.ErrInvalidProviderCall) {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"message": err.Error()})
+		return
+	}
 	if errors.Is(err, store.ErrProviderSessionClosed) ||
 		errors.Is(err, store.ErrProviderCallConflict) ||
 		errors.Is(err, store.ErrProviderReceiptExpired) ||

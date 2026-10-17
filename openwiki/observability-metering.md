@@ -920,7 +920,9 @@ nothing to start. Ingest embeddings still bill through the worker.
 
 Every billed LLM path (chat, generate, editor, complete) opens a
 provider session and binds it in Python. Before the provider HTTP call,
-Python resolves the thinking level for that specific call, locks the open
+Python resolves the thinking level for that specific call (a reasoning-off call
+such as the editor's records `instant`; routed GLM, which cannot turn thinking
+off, records `low`), locks the open
 session, and inserts an exact `provider_calls` authorization row (`open`) with
 that level. Calls after exhaustion must be the one `terminal` LLM call; this
 check and terminal-slot claim happen before provider spend. A failed open does
@@ -935,7 +937,9 @@ actor counter, writes `usage_events`, applies the measured credits, and changes
 the provider call from `open` to `applied`. A failure rolls back all of those
 writes and returns an error, so Python's same-call-id retry repeats the whole
 operation. A committed retry observes the existing event and does not charge
-twice. There is no durable `received` state, `unsettled_bill` gate, or credit
+twice. A receipt that can never settle (missing ids, an unknown kind or
+thinking level, negative usage) is a 400, which Python does not retry; Python
+retries only 5xx, 429 and transport errors. There is no durable `received` state, `unsettled_bill` gate, or credit
 reconciliation repair job. `open` rows remain insight for calls that never
 reported usage, and provider invoices remain deliberately outside user pricing.
 

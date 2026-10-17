@@ -47,6 +47,10 @@ var ErrProviderCallConflict = errors.New("provider call id reused with different
 var ErrProviderReceiptExpired = errors.New("provider call receipt deadline elapsed")
 var ErrTerminalCallNotAllowed = errors.New("terminal provider call not allowed")
 
+// ErrInvalidProviderCall is a receipt that can never settle (missing ids, an
+// unknown kind or thinking level, negative usage); retrying it fails the same way.
+var ErrInvalidProviderCall = errors.New("invalid provider call")
+
 // ConcurrentLLMLeases caps unsettled platform-paid model calls per actor.
 // Worst-case overshoot is this many in-flight settlements. BYOK does not take
 // a lease. Ingest uses ConcurrentIngestLeases instead.
@@ -530,23 +534,23 @@ func (s *Store) SettleProviderCall(
 ) (ProviderCallSettlement, error) {
 	var out ProviderCallSettlement
 	if sessionID == "" || call.CallID == "" {
-		return out, fmt.Errorf("session id and provider call id are required")
+		return out, fmt.Errorf("%w: session id and provider call id are required", ErrInvalidProviderCall)
 	}
 	if call.Kind != KindLLM && call.Kind != KindEmbedding && call.Kind != KindRerank {
-		return out, fmt.Errorf("invalid provider call kind %q", call.Kind)
+		return out, fmt.Errorf("%w: kind %q", ErrInvalidProviderCall, call.Kind)
 	}
 	if (call.Kind == KindEmbedding || call.Kind == KindRerank) && call.Thinking != "" {
-		return out, errors.New("embedding and rerank provider calls cannot have thinking")
+		return out, fmt.Errorf("%w: embedding and rerank calls cannot have thinking", ErrInvalidProviderCall)
 	}
 	if call.Kind == KindLLM && !models.IsKnownThinking(call.Thinking) {
-		return out, fmt.Errorf("invalid provider call thinking %q", call.Thinking)
+		return out, fmt.Errorf("%w: thinking %q", ErrInvalidProviderCall, call.Thinking)
 	}
 	if call.InputTokens < 0 || call.OutputTokens < 0 || call.CachedReadTokens < 0 ||
 		call.CacheWriteTokens < 0 || call.ReasoningTokens < 0 {
-		return out, fmt.Errorf("provider usage cannot be negative")
+		return out, fmt.Errorf("%w: usage cannot be negative", ErrInvalidProviderCall)
 	}
 	if (call.Kind == KindRerank) != (call.ModelVersion > 0) || call.ModelVersion < 0 {
-		return out, errors.New("rerank calls, and only they, name their catalog version")
+		return out, fmt.Errorf("%w: rerank calls, and only they, name their catalog version", ErrInvalidProviderCall)
 	}
 	return s.settleProviderCallAtomic(ctx, sessionID, call)
 }
