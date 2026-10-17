@@ -65,9 +65,25 @@ judge it.
    every page), rendering, image insertion and the save. Skip pages the
    cheap per-page counts (`elements.py`) show as light before
    `get_cdrawings`.
+   **Done 2026-10-18 (output-neutral, no version change):** each flattened
+   page renders all its regions and reads its words from one display list,
+   so flatten is 10–19% faster on blind sets of 40 books. Skipping light
+   pages was measured and dropped: annotation appearances, tiling patterns,
+   soft masks and Type3 fonts draw paths outside the page content, so only a
+   third of the light pages can be skipped safely, and the bound that proves
+   it costs 48.5 s to save 5.4 s on the dev set. Saving the parse copy with
+   object streams was tried and dropped: it made every later open 3.4–3.7×
+   slower and tipped a book at the 1 GiB heap into 400 full GCs.
 4. **EBSE spends 184 s in the repair stages** (262 s parse; the
    no-vector variant took 190 s, so the cause is text, not flattening).
    Profile per stage (`_stages`) and find the slow repair.
+   **Done 2026-10-18 (output-neutral):** `scripts._lines_for_words`
+   compared every line with every line on a page; pages of R plot markers
+   set as text hold up to 24,366 lines. A line grid on pages of 500 or more
+   lines takes the stage from 147 to 29 s (EBSE parses in 149 s instead of
+   272). The column repair's per-glyph pymupdf calls are now one Python test
+   (39–41% faster on blind sets). A path box that is not finite no longer
+   fails the parse.
 5. **Rotated pages are skipped** (none in the corpus so far).
 6. **Picture count shrinks** where a flattened region holds several of ODL's
    pictures (biology textbook 2,531 → 1,592 image blocks): check that
