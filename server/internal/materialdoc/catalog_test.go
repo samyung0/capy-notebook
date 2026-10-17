@@ -212,3 +212,29 @@ func TestValidatorFollowsTheCatalog(t *testing.T) {
 		t.Errorf("a stored document with an unknown type does not read: %v", err)
 	}
 }
+
+// What every catalog element gives the index text is its catalog rule
+// (notes::index_text tests the same in the collaboration server): a probe
+// carrying a marker wherever a rule reads (its children, a figure's block,
+// the Mermaid source, a question, a referenced item) shows it unless the
+// rule is none. A type the catalog does not list gives its text, as the
+// View shows an unsupported block's.
+func TestIndexTextFollowsTheCatalog(t *testing.T) {
+	probe := func(typ string) string {
+		node := map[string]any{
+			"type": typ, "id": "probe", "materialId": "m", "source": "marker",
+			"block":    map[string]any{"type": typ, "title": "marker", "description": "marker"},
+			"question": map[string]any{"stem": []any{map[string]any{"type": "text", "text": "marker"}}},
+			"children": []any{map[string]any{"type": "p", "children": []any{textLeaf("marker")}}},
+		}
+		return strings.Join(indexPieces([]map[string]any{node}, map[string]string{"m": "marker"}), "\n\n")
+	}
+	for _, e := range embeds.Elements() {
+		if text := probe(e.Type); strings.Contains(text, "marker") != (e.Index != embeds.IndexNone) {
+			t.Errorf("a %s (%s) gives %q", e.Type, e.Index, text)
+		}
+	}
+	if text := probe("toggle"); text != "marker" {
+		t.Errorf("an unlisted type gives %q", text)
+	}
+}

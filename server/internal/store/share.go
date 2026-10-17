@@ -699,12 +699,14 @@ type workspaceCloneMaterial struct {
 
 // sameIndexText reports whether a note's copy indexes to the source's text,
 // so the copy can take the source's index instead of being indexed again.
-func sameIndexText(before, after string) (bool, error) {
-	a, err := materialdoc.ExtractIndexText(before)
+// Each side's items are its embedded rows' contents by id: their text is
+// part of the note's.
+func sameIndexText(before string, beforeItems map[string]string, after string, afterItems map[string]string) (bool, error) {
+	a, err := materialdoc.ExtractIndexText(before, beforeItems)
 	if err != nil {
 		return false, err
 	}
-	b, err := materialdoc.ExtractIndexText(after)
+	b, err := materialdoc.ExtractIndexText(after, afterItems)
 	return a == b, err
 }
 
@@ -930,13 +932,6 @@ func (s *Store) snapshotWorkspaceForClone(
 		); err != nil {
 			return workspaceCloneSnapshot{}, err
 		}
-		if materialSnapshot.material.Kind == "note" {
-			if materialSnapshot.indexKept, err = sameIndexText(
-				materialSnapshot.material.Content, materialSnapshot.content,
-			); err != nil {
-				return workspaceCloneSnapshot{}, err
-			}
-		}
 		materialSnapshot.metrics, err = materialdoc.Metrics(materialSnapshot.content)
 		if err != nil {
 			return workspaceCloneSnapshot{}, err
@@ -959,6 +954,21 @@ func (s *Store) snapshotWorkspaceForClone(
 		}
 		materialSnapshot.sizeBytes = sizeBytes
 		snapshot.bytes += sizeBytes
+	}
+	// Compared once every embedded row's copy is rewritten.
+	sourceItems, copyItems := map[string]string{}, map[string]string{}
+	for _, m := range snapshot.materials {
+		if m.material.ParentMaterialID != "" {
+			sourceItems[m.material.ID], copyItems[m.newID] = m.material.Content, m.content
+		}
+	}
+	for i := range snapshot.materials {
+		m := &snapshot.materials[i]
+		if m.material.Kind == "note" {
+			if m.indexKept, err = sameIndexText(m.material.Content, sourceItems, m.content, copyItems); err != nil {
+				return workspaceCloneSnapshot{}, err
+			}
+		}
 	}
 
 	return snapshot, nil
@@ -2085,7 +2095,11 @@ func (s *Store) cloneMaterialOnce(
 	if src.Kind == "note" && dest.workspaceID != "" {
 		indexed := map[string]bool{}
 		if src.WorkspaceID != "" {
-			same, err := sameIndexText(src.Content, root.content)
+			sourceItems, copyItems := map[string]string{}, map[string]string{}
+			for _, clone := range clones {
+				sourceItems[clone.src.ID], copyItems[clone.newID] = clone.src.Content, clone.content
+			}
+			same, err := sameIndexText(src.Content, sourceItems, root.content, copyItems)
 			if err != nil {
 				return "", err
 			}

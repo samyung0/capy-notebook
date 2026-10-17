@@ -93,8 +93,9 @@ func TestQuestionEmbedsValidateAndIndexWithoutSVGText(t *testing.T) {
 	if err := ValidateKind(encoded, "note"); err != nil {
 		t.Fatal(err)
 	}
-	text, err := ExtractIndexText(encoded)
-	if err != nil || text != "A graph\n\nData\n\nTrace" {
+	// The figures' text is in testdata/index_text; never the graph's SVG.
+	text, err := ExtractIndexText(encoded, nil)
+	if err != nil || strings.Contains(text, "svg") || !strings.HasPrefix(text, "A graph\n") {
 		t.Fatalf("index = %q, error = %v", text, err)
 	}
 	doc.Value = []map[string]any{{"type": "callout", "id": "container", "children": []any{graph}}}
@@ -115,7 +116,7 @@ func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if text, err := ExtractIndexText(encoded); err != nil || text != "intro" {
+	if text, err := ExtractIndexText(encoded, nil); err != nil || text != "intro" {
 		t.Fatalf("index = %q, error = %v", text, err)
 	}
 	for name, value := range map[string][]map[string]any{
@@ -796,29 +797,6 @@ func TestPlainMentionsKeepsOnlyLiveUsers(t *testing.T) {
 	if strings.Contains(out, "u_gone") || strings.Count(out, `"text":"@Bo"`) != 2 ||
 		!strings.Contains(out, `"key":"u_member"`) {
 		t.Fatalf("mentions = %s", out)
-	}
-}
-
-func TestExtractIndexTextRendersMarkdownLikeBlocks(t *testing.T) {
-	raw := `{"schemaVersion":1,"value":[
-		{"type":"h2","id":"b1","children":[{"text":"Cells"}]},
-		{"type":"p","id":"b2","children":[{"text":"Intro "},{"type":"a","url":"x","children":[{"text":"link"}]}]},
-		{"type":"p","id":"b3","listStyleType":"disc","indent":1,"children":[{"text":"first"}]},
-		{"type":"p","id":"b4","listStyleType":"decimal","indent":2,"children":[{"text":"nested"}]},
-		{"type":"callout","id":"b5","children":[{"type":"p","children":[{"text":"note"}]}]},
-		{"type":"table","id":"b6","children":[{"type":"tr","children":[{"type":"th","children":[{"type":"p","children":[{"text":"a"}]}]},{"type":"td","children":[{"type":"p","children":[{"text":"b"}]}]}]}]},
-		{"type":"code_block","id":"b7","lang":"go","children":[{"type":"code_line","children":[{"text":"x := 1"}]}]},
-		{"type":"material_ref","id":"b8","materialId":"m","refKind":"quiz","children":[{"text":""}]},
-		{"type":"mermaid","id":"b9","source":"flowchart","children":[{"type":"mermaid_caption","children":[{"text":"cap"}]}]},
-		{"type":"p","id":"b10","children":[{"text":"   "}]}
-	]}`
-	text, err := ExtractIndexText(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	want := "## Cells\n\nIntro link\n\n- first\n\n  1. nested\n\nnote\n\n| a | b |\n\n```go\nx := 1\n```"
-	if text != want {
-		t.Fatalf("index text = %q, want %q", text, want)
 	}
 }
 

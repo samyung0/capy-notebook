@@ -1772,6 +1772,11 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 			return Material{}, err
 		}
 	}
+	if p.Content != nil && (contentKind == "quiz" || contentKind == "flashcards") {
+		if err := markParentNoteDirtyTx(ctx, tx, id); err != nil {
+			return Material{}, err
+		}
+	}
 	if p.Content != nil && contentKind == "note" {
 		refs, err := materialdoc.ExtractMaterialRefs(*p.Content)
 		if err != nil {
