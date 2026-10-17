@@ -47,8 +47,14 @@ func ExtractIndexBlocks(raw string, items map[string]string) ([]IndexBlock, erro
 	if err != nil {
 		return nil, err
 	}
-	texts := make(map[string]string, len(items))
-	for id, content := range items {
+	// Only the referenced items are read; a reference is a top-level block.
+	texts := map[string]string{}
+	for _, node := range doc.Value {
+		id, _ := node["materialId"].(string)
+		content, ok := items[id]
+		if _, done := texts[id]; !ok || done || indexRule(node) != embeds.IndexItem {
+			continue
+		}
 		item, err := Parse(content)
 		if err != nil {
 			return nil, err
@@ -436,7 +442,11 @@ func graphElementText(e map[string]any, points map[string]string) string {
 }
 
 // questionIndexPieces renders a quiz question: its stem blocks, then each
-// part's blocks, its options and its worked solution.
+// part's blocks and options (mcq options; matching prompts, then choices,
+// both in stored order, which holds no key). Worked solutions and ordering
+// items (their stored order is the key) stay out: viewers chat over the
+// index and never get answer keys (Epo 2026-10-06), against "stems, options
+// and solutions" (Epo 2026-10-17); awaiting Epo's call.
 func questionIndexPieces(q map[string]any) []string {
 	var out []string
 	add := func(text string) {
@@ -473,10 +483,7 @@ func questionIndexPieces(q map[string]any) []string {
 			}
 			list(lefts)
 			list(strs(answer["options"]))
-		case "ordering":
-			list(strs(answer["items"]))
 		}
-		blocks(part["solution"])
 	}
 	return out
 }

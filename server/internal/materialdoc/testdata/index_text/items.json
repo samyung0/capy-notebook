@@ -238,18 +238,6 @@
                       {
                         "type": "text",
                         "text": "Explain the peak."
-                      }
-                    ],
-                    "answer": {
-                      "type": "open",
-                      "accepted": ["Sodium enters"],
-                      "hints": ["channels"]
-                    },
-                    "marks": 2,
-                    "solution": [
-                      {
-                        "type": "text",
-                        "text": "Voltage-gated channels open."
                       },
                       {
                         "type": "graph",
@@ -281,6 +269,18 @@
                         },
                         "width": 320,
                         "height": 190
+                      }
+                    ],
+                    "answer": {
+                      "type": "open",
+                      "accepted": ["Sodium enters"],
+                      "hints": ["channels"]
+                    },
+                    "marks": 2,
+                    "solution": [
+                      {
+                        "type": "text",
+                        "text": "Voltage-gated channels open."
                       }
                     ],
                     "markscheme": [
@@ -487,7 +487,7 @@
     },
     {
       "id": "ref_quiz",
-      "text": "Source A\nRead the source.\n\nA cell under a microscope\n\n| Cell | Size (µm) |\n| Red | 7.5 |\n|  | - |\n\nWhich organelle makes ATP?\n\n- Nucleus\n- Mitochondrion\n- Ribosome\n\nThe mitochondrion respires.\n\nMatch each term.\n\n- Osmosis\n- Diffusion\n\n- unused\n- Water moves\n- Solute moves\n\nOrder the stages.\n\n- Prophase\n- Metaphase\n- Anaphase\n\nGrowth\ny: cm\n|  | Height |\n| --- | --- |\n| Day 1 | -0.5 |\n| Day 2 |  |\n\nTrace\nx: t\ny: V\nV: (0, -70), (1.5, 30)\n\nHow tall on day 3?\n\nExplain the peak.\n\nVoltage-gated channels open.\n\npoint A: (0, 0)\npoint: (1, 1)\nsegment: A, (1, 1)\n\nFill: (1) ______ then (2) ______.\n\nTrue or false?"
+      "text": "Source A\nRead the source.\n\nA cell under a microscope\n\n| Cell | Size (µm) |\n| Red | 7.5 |\n|  | - |\n\nWhich organelle makes ATP?\n\n- Nucleus\n- Mitochondrion\n- Ribosome\n\nMatch each term.\n\n- Osmosis\n- Diffusion\n\n- unused\n- Water moves\n- Solute moves\n\nOrder the stages.\n\nGrowth\ny: cm\n|  | Height |\n| --- | --- |\n| Day 1 | -0.5 |\n| Day 2 |  |\n\nTrace\nx: t\ny: V\nV: (0, -70), (1.5, 30)\n\nHow tall on day 3?\n\nExplain the peak.\n\npoint A: (0, 0)\npoint: (1, 1)\nsegment: A, (1, 1)\n\nFill: (1) ______ then (2) ______.\n\nTrue or false?"
     },
     {
       "id": "ref_cards",
