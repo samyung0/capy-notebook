@@ -235,6 +235,16 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// A room load's refusal (a full store) or failure (its I/O).
+impl From<PutError> for SourceError {
+    fn from(error: PutError) -> Self {
+        match error {
+            PutError::Full { held, cap } => SourceError::StoreFull { held, cap },
+            PutError::Io(_) => SourceError::Other(error.to_string()),
+        }
+    }
+}
+
 fn db_error(error: impl std::fmt::Display) -> SourceError {
     SourceError::Other(format!("source database: {error}"))
 }
@@ -358,8 +368,7 @@ impl Sources {
         };
         match self.disk.put(key, bytes, sha256, holder).await {
             Ok(()) => Ok(()),
-            Err(PutError::Full { held, cap }) if load => Err(SourceError::StoreFull { held, cap }),
-            Err(error) if load => Err(SourceError::Other(error.to_string())),
+            Err(error) if load => Err(error.into()),
             Err(error) => {
                 crate::observe::log(
                     "warn",
@@ -384,7 +393,13 @@ impl Sources {
         {
             return Ok(found);
         }
-        let bytes = read_source_bytes(self.gateway.http(), &self.gateway.object_url(url)).await?;
+        let response = open_source(self.gateway.http(), &self.gateway.object_url(url)).await?;
+        // A room load the store has no room for is refused before the
+        // download: the store's own check, on the length the bucket sent.
+        if let (Reader::Load(_), Some(length)) = (reader, response.content_length()) {
+            self.disk.room_for(length).await?;
+        }
+        let bytes = read_body(response).await?;
         let actual = office_service::sha256_hex(&bytes);
         if !sha.is_empty() && actual != sha {
             return Err(SourceError::Other("Source SHA mismatch".into()));
@@ -410,6 +425,11 @@ impl Sources {
             && let Some((state, sha256)) = self.disk.get(key, reader.holder()).await
         {
             return Ok(Seed { state, sha256 });
+        }
+        // A room load is refused before the seed call when loaded rooms fill
+        // the store: a seed is never empty, so the store could not keep it.
+        if let (Some(_), Reader::Load(_)) = (&key, reader) {
+            self.disk.room_for(1).await?;
         }
         let state = match office(format) {
             None => text_seed(base).map_err(|error| {
@@ -1883,20 +1903,32 @@ async fn whole(format: SourceFormat, layers: Vec<Vec<u8>>) -> Result<Vec<u8>, So
     .map_err(|error| SourceError::Other(format!("state rebuild: {error}")))?
 }
 
-/// A source's bytes, at most [`MAX_SOURCE_STATE_BYTES`] (readSourceBytes).
-pub async fn read_source_bytes(http: &reqwest::Client, url: &str) -> Result<Vec<u8>, SourceError> {
-    let failed = || SourceError::Other("Source download failed".into());
-    let mut response = http
+fn download_failed() -> SourceError {
+    SourceError::Other("Source download failed".into())
+}
+
+/// A source download with its headers read and its body not yet.
+async fn open_source(http: &reqwest::Client, url: &str) -> Result<reqwest::Response, SourceError> {
+    let response = http
         .get(url)
         .timeout(DOWNLOAD_TIMEOUT)
         .send()
         .await
-        .map_err(|_| failed())?;
+        .map_err(|_| download_failed())?;
     if !response.status().is_success() {
-        return Err(failed());
+        return Err(download_failed());
     }
+    Ok(response)
+}
+
+/// A source's bytes, at most [`MAX_SOURCE_STATE_BYTES`] (readSourceBytes).
+pub async fn read_source_bytes(http: &reqwest::Client, url: &str) -> Result<Vec<u8>, SourceError> {
+    read_body(open_source(http, url).await?).await
+}
+
+async fn read_body(mut response: reqwest::Response) -> Result<Vec<u8>, SourceError> {
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| failed())? {
+    while let Some(chunk) = response.chunk().await.map_err(|_| download_failed())? {
         if bytes.len() + chunk.len() > MAX_SOURCE_STATE_BYTES {
             return Err(SourceError::Other(
                 "Source exceeds the supported byte limit".into(),
@@ -2057,6 +2089,61 @@ mod tests {
             assert_eq!(bytes, TEXT);
         }
         assert!(folder.files().is_empty());
+    }
+
+    /// Answers the length of a body that never comes.
+    async fn endless_blob() -> String {
+        let app = axum::Router::new().route(
+            "/endless",
+            axum::routing::get(|| async {
+                let body = futures::stream::pending::<Result<Vec<u8>, std::io::Error>>();
+                (
+                    [(axum::http::header::CONTENT_LENGTH, "1")],
+                    axum::body::Body::from_stream(body),
+                )
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}/endless", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        url
+    }
+
+    // Epo 2026-10-17, the refusal unchanged: a room load the store has no
+    // room for is refused before it downloads the original (only the length
+    // is read) and before the engine seed call (no engine runs here).
+    #[tokio::test]
+    async fn a_full_store_refuses_a_room_load_before_the_download_and_the_seed() {
+        let folder = Folder::new("early");
+        let cap = TEXT.len() as u64;
+        let sources = sources(&folder, cap);
+        let (url, _) = blob().await;
+        let sha = office_service::sha256_hex(TEXT);
+        sources.base(&url, &sha, Reader::Load(1)).await.unwrap();
+        let full = SourceError::StoreFull { held: cap, cap };
+        let endless = endless_blob().await;
+        let refused = tokio::time::timeout(
+            Duration::from_secs(10),
+            sources.base(&endless, "", Reader::Load(2)),
+        )
+        .await
+        .expect("refused before the body");
+        assert_eq!(refused.unwrap_err(), full);
+        let other = office_service::sha256_hex(b"an office file");
+        let refused = tokio::time::timeout(
+            Duration::from_secs(10),
+            sources.seed(
+                SourceFormat::Docx,
+                b"an office file",
+                &other,
+                None,
+                Reader::Load(2),
+            ),
+        )
+        .await
+        .expect("refused before the seed call");
+        assert_eq!(refused.err(), Some(full));
+        assert_eq!(folder.files(), [format!("base-{sha}")]);
     }
 
     #[tokio::test]

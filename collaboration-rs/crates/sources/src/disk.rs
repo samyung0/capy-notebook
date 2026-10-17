@@ -217,6 +217,29 @@ impl DiskStore {
         self.remove(key).await;
     }
 
+    /// Refused ([`PutError::Full`]) when a file of `need` bytes would not fit
+    /// beside the files loaded rooms hold: [`DiskStore::put`]'s own check,
+    /// for a room load to make before it downloads or builds the file.
+    pub async fn room_for(&self, need: u64) -> Result<(), PutError> {
+        self.fits(&self.index.lock().await.entries, need)
+    }
+
+    fn fits(&self, entries: &HashMap<Key, Entry>, need: u64) -> Result<(), PutError> {
+        let held: u64 = entries
+            .values()
+            .filter(|entry| !entry.holders.is_empty())
+            .filter_map(|entry| entry.file.as_ref())
+            .map(|file| file.bytes)
+            .sum();
+        if held + need > self.cap {
+            return Err(PutError::Full {
+                held,
+                cap: self.cap,
+            });
+        }
+        Ok(())
+    }
+
     /// Writes a loaded room's file, which it then holds. Idle files go first
     /// (oldest first) to make room; refused when the files loaded rooms hold
     /// leave none. A file another room wrote meanwhile is kept as it is.
@@ -240,18 +263,7 @@ impl DiskStore {
             return Ok(());
         }
         let need = bytes.len() as u64;
-        let held: u64 = entries
-            .values()
-            .filter(|entry| !entry.holders.is_empty())
-            .filter_map(|entry| entry.file.as_ref())
-            .map(|file| file.bytes)
-            .sum();
-        if held + need > self.cap {
-            return Err(PutError::Full {
-                held,
-                cap: self.cap,
-            });
-        }
+        self.fits(entries, need)?;
         let mut idle: Vec<(Instant, Key)> = entries
             .iter()
             .filter(|(_, entry)| entry.holders.is_empty() && entry.file.is_some())
