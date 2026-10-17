@@ -2049,21 +2049,43 @@ mod tests {
 
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    use crate::disk::GRACE;
     use crate::disk::tests::Folder;
 
     const TEXT: &[u8] = b"a text source";
 
-    /// Serves `TEXT` at the returned URL and counts its downloads.
+    /// Serves `TEXT` at the returned URL and counts its downloads. As a
+    /// gateway, the same server answers the session of the text file `file`
+    /// whose base it is.
     async fn blob() -> (String, Arc<AtomicUsize>) {
         let downloads = Arc::new(AtomicUsize::new(0));
         let counted = downloads.clone();
-        let app = axum::Router::new().route(
-            "/blob",
-            axum::routing::get(move || {
-                counted.fetch_add(1, Ordering::Relaxed);
-                async { TEXT }
-            }),
-        );
+        let session = json!({
+            "access": "write",
+            "baseRevision": 1,
+            "baseSourceSHA256": office_service::sha256_hex(TEXT),
+            "checkpoint": 0,
+            "epoch": 1,
+            "fileId": "file",
+            "format": "text",
+            "indexedCheckpoint": 0,
+            "netTokens": 0,
+            "room": "source:file:epoch:1",
+            "sourceURL": "/blob",
+            "workspaceId": "workspace",
+        });
+        let app = axum::Router::new()
+            .route(
+                "/blob",
+                axum::routing::get(move || {
+                    counted.fetch_add(1, Ordering::Relaxed);
+                    async { TEXT }
+                }),
+            )
+            .route(
+                "/internal/collaboration/files/file/bootstrap",
+                axum::routing::get(move || std::future::ready(axum::Json(session.clone()))),
+            );
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}/blob", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
@@ -2072,6 +2094,12 @@ mod tests {
 
     /// Sources whose database and engines are never reached.
     fn sources(folder: &Folder, disk_bytes: u64) -> Sources {
+        sources_on(folder, disk_bytes, "http://127.0.0.1:1")
+    }
+
+    /// Sources with `api` as the gateway (its database and engines never
+    /// reached).
+    fn sources_on(folder: &Folder, disk_bytes: u64, api: &str) -> Sources {
         let mut db = deadpool_postgres::Config::new();
         db.url = Some("postgres://unused@127.0.0.1:1/unused".into());
         let db = db
@@ -2090,7 +2118,7 @@ mod tests {
             memory_limit_bytes: None,
         };
         let config = SourcesConfig {
-            api_url: "http://127.0.0.1:1".into(),
+            api_url: api.into(),
             secret: "secret".into(),
             engine,
             disk_dir: folder.0.clone(),
@@ -2178,6 +2206,29 @@ mod tests {
             let (bytes, _) = sources.base(&url, &sha, reader).await.unwrap();
             assert_eq!(bytes, TEXT);
         }
+        assert!(folder.files().is_empty());
+    }
+
+    // A room load that fails after it took a file (here the database is out
+    // of reach once the base is down) lets go of it: it goes after the grace.
+    #[tokio::test]
+    async fn a_load_that_fails_midway_lets_go_of_its_files() {
+        let folder = Folder::new("failed-load");
+        let (url, downloads) = blob().await;
+        let sources = sources_on(&folder, 1 << 20, url.trim_end_matches("/blob"));
+        let room = SourceRoom {
+            file_id: "file".into(),
+            epoch: 1,
+        };
+        let loaded = sources.load(&room, "actor", &Doc::new()).await;
+        assert!(
+            matches!(&loaded, Err(SourceError::Other(message)) if message.starts_with("source database")),
+            "{loaded:?}"
+        );
+        assert_eq!(downloads.load(Ordering::Relaxed), 1);
+        let sha = office_service::sha256_hex(TEXT);
+        assert_eq!(folder.files(), [format!("base-{sha}")]);
+        sources.disk.sweep(Instant::now() + GRACE).await;
         assert!(folder.files().is_empty());
     }
 
