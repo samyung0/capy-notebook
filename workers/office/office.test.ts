@@ -10,7 +10,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import worker from './index';
 
 const origin = 'https://uat-office.capynotebook.com';
@@ -165,6 +165,20 @@ describe('isolated Office runtime', () => {
     expect(response.headers.has('content-length')).toBe(false);
   });
   it('serves WASM and uncompressed fonts from their brotli files, whole and cached for a year', async () => {
+    // Node ignores `encodeBody`; record the init so a Response built without
+    // 'manual' (which the Workers runtime would brotli-compress a second
+    // time) fails here.
+    class InitRecordingResponse extends Response {
+      readonly init?: ResponseInit & { encodeBody?: string };
+      constructor(body?: BodyInit | null, init?: ResponseInit) {
+        super(body, init);
+        this.init = init;
+      }
+    }
+    vi.stubGlobal('Response', InitRecordingResponse);
+    onTestFinished(() => {
+      vi.unstubAllGlobals();
+    });
     for (const [name, type] of [
       ['docx_bg-1.wasm', 'application/wasm'],
       ['Carlito-Regular-1.ttf', 'font/ttf'],
@@ -188,6 +202,9 @@ describe('isolated Office runtime', () => {
         bindings
       );
       expect(response.status).toBe(200);
+      expect((response as InitRecordingResponse).init?.encodeBody).toBe(
+        'manual'
+      );
       expect(await response.text()).toBe('brotli');
       expect(Object.fromEntries(response.headers)).toMatchObject({
         'cache-control': 'public, max-age=31536000, immutable',
