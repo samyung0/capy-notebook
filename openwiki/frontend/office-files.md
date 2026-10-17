@@ -2313,7 +2313,9 @@ with one warn line (`source file kept for this call only`) per file while
 rooms hold it, not one per save.
 Roomless jobs (folds, exports, inspection, rebuilds, rebases, refreshes, agent
 edits) read what is on disk, else download or seed into memory for the job,
-and write nothing. The server wipes the folder at start. A seed's state vector
+and write nothing. The server wipes the folder at start and deletes its files
+on a graceful stop once the rooms stored (a crash leaves them for the next
+start). A seed's state vector
 is derived per use (a fold, capture or rebase decodes the seed). A refresh candidate is copy-on-write:
 admission stores no state, the save that first replaces the captured state
 copies it into the candidate, and readers take the row's state while no save

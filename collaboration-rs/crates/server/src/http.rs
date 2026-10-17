@@ -480,7 +480,7 @@ async fn project(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use axum::body::Body;
     use axum::http::Request;
     use tower::ServiceExt;
@@ -517,7 +517,7 @@ mod tests {
 
     /// An app whose database, Redis and gateway are never reached (lazy
     /// connections), for requests answered by their checks alone.
-    fn offline_app() -> Shared {
+    pub(crate) fn offline_app() -> Shared {
         static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let disk = std::env::temp_dir().join(format!(
             "capy-offline-app-{}-{}",
