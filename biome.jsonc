@@ -39,7 +39,7 @@
         "noUnresolvedImports": "off", // biome resolver is wrong for template aliases and package exports
         "useImportExtensions": "off", // relative .ts/.tsx imports break template tsconfig
         "useExhaustiveDependencies": "off", // eslint
-        "useHookAtTopLevel": "off", // eslint
+        "useHookAtTopLevel": "error", // hooks in the same order on every render
         "noUndeclaredVariables": "off", // ts
         "noUnusedVariables": {
           "level": "error",
