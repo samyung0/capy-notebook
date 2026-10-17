@@ -283,7 +283,12 @@ Workspace and standalone file pages read `?mode=view|edit` on entry and update i
 
 View and edit use separate iframe lifetimes so the browser can reclaim each
 WASM realm. Entering Edit replaces the viewer iframe. Leaving Edit keeps durable
-shared changes and previews the exported current replica. Saving requests a database
+shared changes and previews the exported current replica. The DOCX editor's
+export (this preview and edit-mode Download) rebuilds every story (body,
+headers, footers, notes) from the replica on each export, as the server's
+export does, so co-editors' and earlier sessions' edits are always in it; the
+replica's projection memo reuses the stories nothing changed since the last
+export (`documentFromYrs` in the fork's `useYrsCoreSession.ts`). Saving requests a database
 checkpoint receipt and keeps the editor mounted. The workspace keeps the viewer
 under one parent at every breakpoint, since moving an iframe reloads it, so
 resizing never reopens the document. Ordinary metadata refetches do
