@@ -35,7 +35,8 @@ it, through `ErrorState`'s `errorId`:
 - a page or pane whose read failed, with Retry: the dashboard's recent
   workspaces, the billing usage and invoice tabs, the workspace statistics tab,
   the question bank, a review session, a quiz result, a file's download links
-  (`FileError`'s `errorId`) and a note's collaboration token;
+  or an Office file's view session (`FileError`'s `errorId`) and a note's
+  collaboration token;
 - form errors (`FormAlert`'s `errorId`).
 
 Typed refusals, exceptions without a request, toasts and status banners show
@@ -753,8 +754,10 @@ reader cannot draw keeps the icon too.
 File previews use `FileError` for Office, CSV/TSV, text/Markdown/JSON, image,
 audio and PDF failures. Manual retry refreshes signed links and restarts only
 the preview, even when the URL is unchanged. CSV/text retries retain their
-`SourceTextView` session. Office retry is view-only and reloads the source
-session, bytes and iframe. The Office iframe reports errors to the host,
+`SourceTextView` session. An Office view reads no download link: its
+source session (and bytes) failing shows its `FileError` with the error id.
+Office retry is view-only and reloads the source session, bytes and iframe.
+The Office iframe reports errors to the host,
 which owns error presentation; recoverable errors keep editors mounted. A
 refusal is a `notice` message instead, and the editor shows nothing of its
 own. The host shows each notice's message as a default toast from one table

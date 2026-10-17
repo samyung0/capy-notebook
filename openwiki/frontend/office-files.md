@@ -122,6 +122,78 @@ stops, the view stays read-only (`set-capabilities` with editing off) under
 the `outdated` save strip, and its drafts stay for the reloaded page
 ([plate-editor "Client protocol"](plate-editor.md#client-protocol-and-the-release-nudge)).
 
+**Open path.** An Office file opens without waiting on the page around it
+(`src/features/files/sourceOpen.ts`, `prefetchOfficeFile.ts`):
+
+- **Route.** The workspace and `/files/{id}` routes' loaders start the open
+  as soon as `GET /files/{id}` says the file is DOCX, XLSX or PPTX: the view's
+  code (`DocxView`/`SheetView`/`PptxView`), the workspace read whose
+  capability picks the mode, and the source session for the mode it opens in
+  (the URL's, else the saved one; Edit only for an editor): View reads
+  `source-session?view=true`, Edit reads the editing session and the room
+  token together. The base bytes start as soon as the session names them. A
+  hover's preload stops at the file row. One started open waits at a time: a
+  quick switch to another file aborts the earlier one (its download
+  included), and one nobody takes within 30 s is dropped. A file a mounted
+  view already shows starts nothing (the loader runs again on every search
+  change).
+- **View.** `FileViewer` mounts an Office view without `GET /files/{id}/links`
+  (only the published file's link, which no Office view uses), once the
+  workspace capability is known. The view takes the started open
+  (`takeSourceOpen`), or starts its own.
+- **Frame.** The runtime frame's URL names the format and the mode it opened
+  in (`runtimeFrameUrl`), fixed for the frame's life (a changed `src` would
+  reload it; the maintenance pause's drop to View keeps the frame opened for
+  Edit). At boot the runtime starts that viewer's or editor's module and its
+  engine (`src/office-runtime/prewarm.ts`): the DOCX viewer's worker (which
+  loads its WASM at once), the DOCX editor's, the XLSX and PPTX viewers' and
+  the PPTX editor's WASM, and for the XLSX editor a fetch that puts its
+  workbook worker's WASM in the HTTP cache; a PPTX frame also starts the faces
+  any deck needs (every face for the editor). The `load` message still
+  decides what opens; a head start that does not match it is dropped.
+- **Edit.** The room provider is created right after the session and token,
+  while the base downloads: the room's sync, a refusal or a recovery shows
+  the document once its base is in, and the draft recorder writes a whole
+  state only once the base is there (it is stored beside the rows). A base
+  that cannot be read ends the session with the file error, as before; a
+  session that opens into recovery (drafts of another lineage) stops the
+  download, since recovery draws the edits over their own base. The token's
+  arrival also opens the tab's collaboration socket (`CollabSocket.warm`,
+  held 10 s for the room).
+- **Connections.** The app page's `index.html` carries `preconnect` hints
+  for the runtime origin (with credentials, as the frame loads) and the
+  environment bucket (`crossorigin`, as the source bytes are fetched),
+  from the build's `VITE_OFFICE_RUNTIME_ORIGIN` and `B2_*` values.
+
+**Source bytes on the device** (`src/lib/sourceCache.ts`, Epo 2026-10-17).
+The base bytes of an opened Office or text source (View and Edit reads
+alike) are kept in the browser's Cache Storage (`capy-source-bytes`), keyed
+by the base SHA-256 the session names, so a reopen skips the download and a
+changed file (a new base) is never served stale. Bytes are hashed before
+they are stored (a download that does not hash to the session's base is not
+kept) and again when read (bytes that no longer match are deleted and
+downloaded again). The store keeps about 200 MB, least recently opened first
+out, with its index (sizes, last use, owner) as one entry beside the bytes.
+It belongs to the account that filled it: signing out, or another account
+signing in, deletes it before any route loads (`AuthProvider`). Private mode
+or a failing store reads as a miss and the open downloads, silently. Text
+views without an open session still render from the published file's link.
+
+**Timing marks.** Each realm marks its stages as `capy:office:<stage>`
+performance marks (`src/lib/officeMarks.ts`), for UAT's measure lane and
+later RUM; no telemetry is sent. Capy's page clears its marks when an open
+starts and marks `open`, `session`, `token`, `base` (`bytes`, `cached`),
+`provider`, `synced`, `load-posted` (`bytes`, `checkpointBytes`,
+`initialUpdateBytes`), `runtime-initialized`, `ready` and
+`collaboration-ready`. The frame marks `runtime-boot`, `load-received`
+(`bytes`), `chunk:<format>-<mode>:start`/`:end`,
+`wasm:<module>:start`/`:end` (`docx-edit`, `pptx-edit`, `pptx-view`,
+`xlsx-view`, and `xlsx-edit-fetch` for the cache warm-up), `fonts:start`/`:end`
+(DOCX view) and `fonts:faces` (PPTX view); the DOCX viewer worker posts
+`wasm:docx-view:start`/`:end`, `worker:open-start`, `worker:open-end` and
+`worker:display-list` back with its result, and the frame marks them at the
+worker's times.
+
 The runtime starts with a format-specific viewer entry point. XLSX/PPTX viewer
 WASM omits editing, collaboration, undo, and save machinery; the DOCX viewer
 does not expose those operations but still shares its one-time OOXML lowering
@@ -1652,9 +1724,23 @@ measurement store gives bytes identical to an earlier registration that
 registration's id instead of keeping a second copy. Each face the engine loads is also registered as a `FontFace`
 under the Office family it stands in for, in the runtime iframe, so the page
 paints what was measured (the viewer worker reports its faces with the display
-list). The runtime's own interface names only Fustat and generic families
+list). The DOCX viewer worker posts, with its display list, the bytes of
+the faces whose family a run's font shorthand names (`paintedFamilies`; the
+browser draws a run only with faces of the families it names, so a slot's
+East Asian face loaded for Latin text is left out), one face per family,
+weight and style (the first loaded, the rule the frame's registration always
+had: two FontFaces with the same descriptors paint with the later one), and
+the frame registers those from the bytes, never fetching a face a second
+time. The runtime's own
+interface names only Fustat and generic families
 (`office-runtime.css`), so a document's family never repaints it. PPTX loads
-the Liberation Sans faces as `Arial`. The CJK add-on (`@betteroffice/fonts-cjk`:
+the Liberation Sans faces as `Arial` and Caladea as `Cambria`. A PPTX viewer
+loads only what the deck can ask for, read from its XML parts
+(`pptxDeckFaces`): Arial regular, the fallback for every family without a
+face, and Arial bold (tables and chart titles are bold without saying so)
+always; the italics only when some part sets `i`; Cambria only when some part
+names it. The PPTX editor loads every face, since an edit can ask for any
+style or for Cambria. The CJK add-on (`@betteroffice/fonts-cjk`:
 Noto Sans TC, SC, JP, KR and Noto Serif SC, 4.5 to 11.6 MB each) ships as
 same-origin, content-hashed assets that load only when a document's text or
 fonts need that script, so the engine measures CJK text with the face the page
@@ -1824,7 +1910,8 @@ temporary LibreOffice output. Native PDFs alone may include a repaired `parsed.p
 Migration 0016 removes the obsolete preview schema. No legacy data migration is
 needed: production has no data and UAT data was cleared.
 
-`GET /api/files/{id}/links` signs source downloads and PDF preview links. Each
+`GET /api/files/{id}/links` signs source downloads and PDF preview links (an
+Office view never reads it: it opens from its source session). Each
 consumer reads its link on mount; links are dropped on unmount. Unsupported-file
 download signs on click, and audio retry signs a fresh link. Read links use
 `B2_LINK_TTL` and upload PUTs use `B2_PRESIGN_TTL`.
