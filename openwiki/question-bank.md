@@ -296,7 +296,7 @@ is under 10⁻⁵ or over 10⁷, an en dash for minus; an axis whose 0 is off th
 view sticks to the nearer edge with its numbers inside (JSXGraph's `sticky`
 position, inset in board units because JSXGraph converts a pixel inset with
 the other axis's scale); zoom spans 10⁻¹⁵ to 10¹⁵ pixels per unit. A graph is
-100–1200 px wide and tall (`QUESTION_GRAPH_DIMENSION_MIN/MAX`, every server);
+120–1200 px wide and tall (120 keeps the bank's 150 px box plots) (`QUESTION_GRAPH_DIMENSION_MIN/MAX`, every server);
 a size outside that is an issue, not clamped, and the row count shows the
 x/60 counter beside Add label from 90%.
 Rows and label positions write e-notation as `6.02·10²³` (LaTeX `\cdot 10^{23}`).
