@@ -23,7 +23,8 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
 
 - **`elements`**: every element type a stored document or a room may hold,
   including Plate's transient ones (a media `placeholder` while it uploads,
-  `mention_input` and `slash_input` while typing). The media blocks naming an
+  `mention_input` and `slash_input` while typing), each with its `index` rule
+  ([Index text](#index-text)). The media blocks naming an
   editor asset are `img` and `audio` only: notes embed no PDF or other file
   (Epo 2026-10-15), so a stored `file` block is an unlisted type, below.
   Markdown footnotes are not
@@ -134,12 +135,97 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   them there, with no copy of their own. The Rust file declares each as a
   constant (`QUESTION_IMAGE_DIMENSION_MAX` and `QUESTION_MARKS_MAX` as `f64`).
 
+## Index text
+
+A note's index text is what retrieval chunks and searches
+([agentic-retrieval](agentic-retrieval.md#note-indexing)) and what note
+effects compare. Every element names what it contributes, its `index` rule,
+with no default (Epo 2026-10-17). Go's `materialdoc.ExtractIndexBlocks` and
+the collaboration server's `notes::index_text` (`from_content` for stored
+content, `from_doc` for a live room) read it, and give the same text per
+top-level block, `{id, text}` in document order, a block without text left
+out; the note's text joins the blocks with a blank line. Both are tested on
+the golden fixtures in `server/internal/materialdoc/testdata/index_text`
+(a note, its items' stored content, the expected blocks).
+
+| Rule | Elements | Gives |
+| --- | --- | --- |
+| `text` | `p`, `h1`–`h6`, `blockquote`, `code_block`, `code_line`, `table`, `tr`, `td`, `th`, `callout`, `column_group`, `column`, `a`, `mermaid_caption`, `quiz`, `flashcards`, `flashcard`, `flashcard_front`, `flashcard_back` | its children's text, trimmed: a heading led by its `#`s, a list paragraph by its bullet (`- `, `1. `, `- [ ] `, `- [x] `, two spaces per indent past the first), a quote by `> `, a table as one `\| a \| b \|` row per row, code in a fence with its `lang`; a container (`callout`, columns, `quiz`, `flashcards`) gives each child's text, and a flashcard its front, then its back, on two lines |
+| `figure` | `chart`, `plot`, `graph` | its `block`, below |
+| `mermaid` | `mermaid` | the caption, then the whole source in a ```` ```mermaid ```` fence |
+| `question` | `quiz_question` | the question, below |
+| `item` | `material_ref` | the referenced quiz's or flashcard set's text, at the reference |
+| `none` | `hr`, `toc`, `equation`, `img`, `audio`, `video`, `placeholder`, `html_embed`, and the inline voids `inline_equation`, `mention`, `mention_input`, `slash_input` | nothing: media (and their captions), equations and the table of contents carry no text of their own, an inline void's children are empty (an equation's TeX and a mention's name stay out, as before), the transient elements hold nothing yet, and html_embed is out of the embeds round (Epo 2026-10-17) |
+
+A type the catalog does not list gives its text, as the read-only View shows
+an unsupported block's text. Inside a block's text an element whose rule is
+`none` gives nothing.
+
+**Formats.** Each field is on its own line, as stored; a missing or blank one
+is left out, as is a block with nothing left. Numbers are written in plain
+decimal, the shortest that reads back exactly, never with an exponent
+(`1000000000000`, `0.0000001`, `0.30000000000000004`), and `-0` as `0`: Go's
+`strconv.FormatFloat(n, 'f', -1, 64)`, Rust's `f64` `Display`.
+
+- **chart**: the title, the description, `x: ` the x title, `y: ` the y
+  title; then the values as a markdown table: a header row of the x title (or
+  an empty cell) and the series names, a `---` row, and one row per label
+  (`| Day 1 | 3 | -0.5 |`). A null is an empty cell; a series shorter than the
+  labels gives empty cells, a longer one's extra values are left out (as a
+  merged chart is repaired on read).
+- **plot**: the title, the description, `x: `, `y: ` and `unit: ` lines; one
+  line per series, `name: (x, y), (x, y), …`; each reference line as
+  `x = 3: label` (`y = …` for a y line) and each mark as `(x, y): label`.
+- **graph**: the description, then one line per element as stored, its type
+  first: `functiongraph: 0.5*x^2-3` (the term verbatim, ` on [a, b]` with a
+  domain), `point A: (0, 0)`, `line: A, B`, `segment: A, B`, `polygon: A, B,
+  C`, `angle θ: A, B, C` (its label after the type), `circle: center A,
+  radius 2`, `arc: center O, A, B`, `sector: center O, A, B`, `text: Region R`.
+  A point is named by its `name`, otherwise by its coordinates. A hidden
+  element is left out (a hidden point is still named where another element
+  uses it), as is an element naming a point that is gone (a merged graph is
+  repaired on read). Board, size, styles (dash, shade, ticks) and the SVG give
+  nothing.
+- **mermaid**: the caption's text, then ```` ```mermaid ````, the source as
+  stored and ```` ``` ```` on their own lines.
+- **question**: the stem's blocks, then each part's blocks and options, a
+  blank line between them. A text block gives its label and text on two
+  lines, a chart, plot or graph the figure formats above, a table one
+  `| a | b |` row per row, an image its description. Options: an mcq part's
+  options and a matching part's prompts, then its choices, each as a `- `
+  list in stored order (which holds no key). Worked solutions, ordering items
+  (their stored order is the key), accepted answers and marking schemes stay
+  out: workspace viewers chat over the index and never get answer keys
+  (`human/question-bank.md` 2026-10-06), which the 2026-10-17 decision's
+  "solutions" contradicts; Epo's call is pending (`todo-embeds.md`).
+- **item**: a quiz gives each question as above, a flashcard set each card,
+  a blank line apart. The store reads the note's active embedded items
+  (`parent_material_id` the note) in one query; a reference to any other row
+  gives nothing. Saving an item's content or projecting its room marks its
+  note dirty as the note's own edits do, so an item edit reindexes the note.
+  The Rust extraction does no I/O: its caller passes each item's text
+  (`ItemText`, from the item's room or `index_text::item_from_content` of its
+  stored content); `item_refs` (a live room) and `content_item_refs` name the
+  ids to load.
+
+`notes::index_text::from_doc` reads a room one top-level element at a time
+(`plate::element`, and a figure's `block` through `plate::block_value`, the
+one place a room's figure block is read for it), in a read transaction, with
+no encode and no JSON of the whole room. The rule is the generated
+`catalog::Index` enum, so an element without one, or a rule the extraction
+does not handle, does not build; the catalog tests in each language
+(`TestIndexTextFollowsTheCatalog`, `index_text_follows_the_catalog`) give
+every element a probe carrying a marker wherever a rule reads and check it
+shows unless the rule is `none`.
+
 ## Adding an element or an embed kind
 
 1. Add it to `Elements()` or `Embeds()` in `server/internal/embeds/embeds.go`
-   and run `pnpm gen:openapi`. `TestCatalogIsConsistent` checks that every
-   name it uses points at something listed (children, material kinds, the
-   element holding an embed, agent tools).
+   with its index rule and run `pnpm gen:openapi`. `TestCatalogIsConsistent`
+   checks that every name it uses points at something listed (children,
+   material kinds, the element holding an embed, agent tools), and that every
+   element names a known index rule (`figure` exactly for question-block
+   kinds, `item` for the reference).
 2. Each layer's catalog test then names what is missing there:
    `server/internal/materialdoc/catalog_test.go` (Go's validator, over the
    every-block note and a document of each material kind: add a sample of a

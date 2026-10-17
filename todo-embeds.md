@@ -297,18 +297,20 @@ effects. That means:
 
 Record the scope in `human/frontend/plate-editor.md` when the round starts.
 
-What an embed contributes to index text today (Go's `ExtractIndexText`,
-`server/internal/materialdoc/document.go`, used by `note_index.go` for
-`rag_material_contents`):
+What an embed contributes to index text now (embeds round, track `index`:
+each element's catalog `index` rule, read by Go's `ExtractIndexBlocks` and the
+collaboration server's `notes::index_text`, formats in `openwiki/embeds.md`
+"Index text", golden fixtures in `server/internal/materialdoc/testdata/index_text`):
 
 | Element | Index text |
 | --- | --- |
-| chart, plot | `block.title` only (no data) |
-| graph | `block.description` only |
-| mermaid (source and caption) | none |
-| html_embed | none |
-| material_ref (quiz, flashcards) | none; only `kind='note'` materials are indexed, so the quizzes and flashcard sets never are |
-| img, audio, video, equation, inline_equation, toc, hr | none (image captions too) |
+| chart | title, description, axis titles, then the values as a markdown table (labels by series names) |
+| plot | title, description, axis titles, unit, one `name: (x, y), …` line per series, reference lines and marks with their labels |
+| graph | description, then each visible element as stored (terms verbatim, points by name or coordinates, text, angle labels) |
+| mermaid | caption, then the whole source in a ```` ```mermaid ```` fence |
+| html_embed | none (out of the round) |
+| material_ref (quiz, flashcards) | the item's text at the reference: stems, part blocks and options (mcq options, matching prompts and choices); card fronts and backs. An item's save or room projection re-dirties the note. **Worked solutions and ordering items are left out pending Epo's call**: the 2026-10-17 decision lists solutions, but the 2026-10-06 answer-key rule keeps keys from viewers' chat, and workspace viewers chat over the index |
+| img, audio, video, equation, inline_equation, toc, hr, mention, placeholder | none (image captions too) |
 
 Note effects (decided 2026-10-17, `human/agentic-retrieval.md`: the per-turn
 read against the per-block index text the last index job recorded, aligned by
@@ -317,23 +319,12 @@ token threshold) cover an embed exactly where its index text does. A changed
 Mermaid source, chart data or HTML embed is invisible to the agent until the
 index text holds it, and holding it also makes it searchable.
 
-Proposed catalog change for this round: each element in
-`server/internal/embeds` declares what it contributes to index text (nothing,
-its children's text, or named fields such as `block.title`). Go's
-`ExtractIndexText` and the coming Rust extraction both read it, and each
-layer's catalog test fails on an element without a rule. Today the rule is a
-hand-written list (`indexSkipped` plus the chart, plot and graph case), and an
-element missing from it silently indexes its children's text.
-
-Open questions for that session:
-
-- How each kind's live state is shaped: shared Y types per field, as
-  `mermaid.source` is today, or whole-value replacement with merge rules.
-  Either way it is a client protocol decision (`CLIENT_PROTOCOL`,
-  `MIN_MATERIAL`).
-- What text each kind indexes: a chart's series names and labels, a Mermaid
-  source's node labels, an HTML embed's caption or visible text.
-- Whether quiz and flashcard items get index text of their own.
+The catalog change landed: each element in `server/internal/embeds` names
+its index rule (`none`, `text`, `figure`, `mermaid`, `question`, `item`), and
+the Go, TS and Rust catalog tests fail on an element without one. The live
+state's shape and the index text per kind are decided (2026-10-17, above);
+quizzes and flashcard sets get no index text of their own, only inside the
+note.
 
 The note effects themselves (pending effects plus the token threshold) are
 queued in the effects round (`todo-office-effects.md` and the decision

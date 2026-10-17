@@ -3770,13 +3770,16 @@ Workspace notes (`materials.kind='note'` with a workspace) are indexed into
 the same canonical content files use. `rag_material_contents` aliases a note
 to a ready `rag_contents` row exactly as `rag_file_contents` does for files,
 so chunks, vectors, summaries, orphan cleanup and clone copying are shared.
-Standalone notes have no workspace and are never indexed; embedded quiz and
-flashcard rows are separate materials and stay out of note text.
+Standalone notes have no workspace and are never indexed. Embedded quizzes
+and flashcard sets are not indexed on their own: their text is indexed inside
+the parent note, at their reference (Epo 2026-10-17).
 
 The trigger is the projection. `ProjectMaterialContent` (and the SQL content
 path of `UpdateMaterial`) sets `materials.index_dirty_at` when a workspace
 note's content changes, clears `index_error`, and skips unchanged writes; a
-new workspace note is dirty from creation. The collaboration server's 5 s
+new workspace note is dirty from creation. A content write to an embedded
+quiz or flashcard set (its room's projection or a save) marks its parent note
+the same way (`markParentNoteDirtyTx`), so an item edit reindexes the note. The collaboration server's 5 s
 timer (`schedule_note_indexes`) asks Go to admit dirty notes that have been idle
 15 s, have no running job and no parked error, in workspaces with
 `auto_process` on. `POST /internal/collaboration/materials/{id}/index`
@@ -3809,10 +3812,19 @@ restored or unsuspended, until an edit.
 
 The ingest worker branches on `materialId`: it fetches the note's
 markdown-like text from `GET /api/internal/materials/{id}/index-text?workspaceId=`
-(workspace-scoped, pipeline secret)
-(`materialdoc.ExtractIndexText`: headings keep their level, list items their
-bullets, table rows their cells, code its fence; references, diagrams and
-media are skipped), chunks it with `chunk_markdown`, hashes the chunks under a `note:` prefix
+(workspace-scoped, pipeline secret; `text`, and `blocks`, the same text per
+top-level block as `{id, text}`, which `text` joins with blank lines).
+`MaterialIndexText` reads the note and, in one query, its active embedded
+items, and `materialdoc.ExtractIndexBlocks` renders each element by its embed
+catalog index rule ([embeds](embeds.md#index-text)): headings keep their
+level, list items their bullets, table rows their cells, code its fence; a
+chart gives its titles and a markdown table of its values, a plot its points
+per series, a graph its elements as stored terms, a Mermaid diagram its
+caption and whole source in a ```` ```mermaid ```` fence, an embedded quiz its
+stems, options and solutions and a flashcard set its fronts and backs, at the
+reference; media, equations and interactive HTML give nothing. The
+collaboration server's `notes::index_text` gives the same blocks from a live
+room or stored content, for note effects. The worker chunks `text` with `chunk_markdown`, hashes the chunks under a `note:` prefix
 so a note never shares a content row with a file of identical text, and
 claims a new content row without moving the alias. It reuses vectors for
 unchanged chunk text from the note's previous content row, which stays
@@ -3836,8 +3848,8 @@ and kind, `read_document` pages a note's chunks like a file's, and the file
 lifecycle, edit and capture tools refuse a note id passed as a source file. Workspace
 clones copy note index rows with the file rows; a cloned note without an
 index, whose index is not current (dirty, a job rebuilding it, or a failed
-one), or whose index text the clone changed (a mention turned plain text),
-starts dirty.
+one), or whose index text the clone changed (a mention turned plain text, or
+an embedded item whose copy reads differently), starts dirty.
 
 ## Clone and teardown
 
@@ -3862,8 +3874,8 @@ limit, the dialog showing either message; a processed store-only Office file
 `reprocessTx`, and a file with nothing to process is copied unindexed. The
 pipeline's donor path reuses what it can. A note shares its index only while
 it is current (no `index_dirty_at`, `index_job_id` or `index_error`);
-otherwise, or when its copy reads differently (mentions turned plain), it is
-marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
+otherwise, or when its copy reads differently (mentions turned plain, or its
+embedded items' copies do), it is marked dirty for the scheduler. A copied file keeps `reprocess_at`, so a copy
 of bytes an export-only publication left unindexed is reprocessed like its
 source. A pipeline ingest that adds the same content to the destination after
 the snapshot conflicts on `rag_contents` and the clone retries as a
