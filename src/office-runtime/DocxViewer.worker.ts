@@ -7,6 +7,7 @@ import {
   openDocumentViewer,
 } from '@betteroffice/docx/viewer';
 import {
+  keepOfficeFontBytes,
   type OfficeFace,
   officeFonts,
   onOfficeFontFailure,
@@ -25,6 +26,7 @@ type Response =
 
 // The viewer registers the faces the layout requires before laying out.
 configureDefaultFonts({ fonts: officeFonts });
+keepOfficeFontBytes();
 let fontFailure: Error | undefined;
 onOfficeFontFailure((error) => {
   fontFailure ??= error;
@@ -42,12 +44,12 @@ self.onmessage = (event: MessageEvent<Request>) => {
         // A missing face would leave the fallback layout: fail instead.
         if (fontFailure) throw fontFailure;
         const displayList = document.displayList();
-        post({
-          displayList,
-          faces: usedOfficeFaces(),
-          id,
-          type: 'ready',
-        });
+        const faces = usedOfficeFaces(displayList);
+        post(
+          { displayList, faces, id, type: 'ready' },
+          // One face's bytes can stand for two family names.
+          [...new Set(faces.map((face) => face.bytes))]
+        );
       } catch (value) {
         post({ id, message: toError(value).message, type: 'error' });
       } finally {
@@ -60,8 +62,8 @@ self.onmessage = (event: MessageEvent<Request>) => {
   );
 };
 
-function post(message: Response) {
-  self.postMessage(message);
+function post(message: Response, transfer: Transferable[] = []) {
+  self.postMessage(message, transfer);
 }
 
 function toError(value: unknown): Error {

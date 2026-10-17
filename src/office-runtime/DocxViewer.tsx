@@ -160,7 +160,8 @@ export function DocxViewer({
       // during ordinary reading rather than waiting for edit/unmount.
       stopWorker();
       const { displayList, faces } = event.data;
-      // Paint with the faces the worker measured, under their Office names.
+      // Paint with the faces the worker measured, under their Office names,
+      // from the bytes it fetched.
       void registerOfficeFaces(faces).then(
         () => {
           if (!cancelled) setDisplayList(displayList);
