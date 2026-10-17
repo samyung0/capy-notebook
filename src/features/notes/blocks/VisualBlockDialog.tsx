@@ -1,5 +1,5 @@
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Controller, useForm, useWatch } from 'react-hook-form';
 import { z } from 'zod';
 import { Button } from '@/components/ui/Button';
@@ -19,6 +19,7 @@ import {
 import { questionBlockSchema } from '@/features/questions/validation';
 import { m } from '@/i18n';
 import { errorCopy } from '@/lib/errors';
+import { rebaseBlock } from './rebase';
 
 export type NoteVisualBlock = ChartBlock | PlotBlock | GraphBlock;
 
@@ -30,21 +31,32 @@ const titles = {
 
 const blockResolver = zodResolver(z.object({ block: questionBlockSchema }));
 
+/** Edits a chart or graph. `block` is the note's block as it is now: a peer's
+ * change while the dialog is open rebases the draft on it (Epo 2026-10-17),
+ * the user's changed fields keeping the user's value; Save hands over the
+ * draft with the block it was last rebased on, so the note writes only what
+ * the user changed. */
 export default function VisualBlockDialog({
   block,
   onSave,
   onClose,
 }: {
   block: NoteVisualBlock;
-  onSave: (block: NoteVisualBlock) => void | Promise<void>;
+  onSave: (
+    block: NoteVisualBlock,
+    base: NoteVisualBlock
+  ) => void | Promise<void>;
   onClose: () => void;
 }) {
   const exportHost = useRef<HTMLDivElement>(null);
   const [invalid, setInvalid] = useState(false);
+  const base = useRef(block);
   const {
     control,
+    getValues,
     handleSubmit,
     setError,
+    setValue,
     formState: { errors, isSubmitting },
   } = useForm<{ block: QuestionBlock }>({
     defaultValues: { block: structuredClone(block) },
@@ -57,6 +69,14 @@ export default function VisualBlockDialog({
         options
       ),
   });
+  useEffect(() => {
+    if (block === base.current) return;
+    setValue(
+      'block',
+      rebaseBlock(base.current, getValues('block') as NoteVisualBlock, block)
+    );
+    base.current = block;
+  }, [block, getValues, setValue]);
   // What keeps Save off, worded as in the question dialog.
   const issues = blockIssues(useWatch({ control, name: 'block' }));
   const save = handleSubmit(async ({ block: draft }) => {
@@ -76,7 +96,7 @@ export default function VisualBlockDialog({
             }
           : draft;
       questionBlockSchema.parse(next);
-      await onSave(next);
+      await onSave(next, base.current);
       onClose();
     } catch (error) {
       setError('root', {

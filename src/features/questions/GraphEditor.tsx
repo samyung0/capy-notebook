@@ -28,6 +28,7 @@ import {
   type RowStyle,
   rowsFromElements,
   styleKeys,
+  syncRows,
 } from './graphSyntax';
 import { IssueIcon, IssueSummary } from './IssueViews';
 import type { GraphBlock, GraphElement } from './types';
@@ -68,6 +69,12 @@ export function GraphEditor({
   onInvalidChange?: (invalid: boolean) => void;
 }) {
   const [rows, setRows] = useState(() => rowsFromElements(value.elements));
+  // Elements arriving that the rows did not give are a peer's change.
+  const [synced, setSynced] = useState(value.elements);
+  if (value.elements !== synced) {
+    setSynced(value.elements);
+    setRows(syncRows(rows, value.elements));
+  }
   const [draftKey, setDraftKey] = useState(() => crypto.randomUUID());
   // An empty graph starts in its first row.
   const [startKey] = useState(() => (rows.length ? undefined : draftKey));
@@ -76,7 +83,21 @@ export function GraphEditor({
   const fields = useRef(new Map<string, MathfieldElement>());
   // Fresh labels open with their text selected, ready to type over.
   const [freshLabel, setFreshLabel] = useState<string>();
-  const { errors } = useMemo(() => buildElements(rows), [rows]);
+  const { errors: rowErrors } = useMemo(() => buildElements(rows), [rows]);
+  // Rows past the cap (two editors' rows merged) are not drawn for readers:
+  // each says so until the graph is back within it.
+  const errors = useMemo(() => {
+    const over = rows.slice(limits.QUESTION_GRAPH_ELEMENTS_MAX);
+    if (!over.length) return rowErrors;
+    const out = new Map(rowErrors);
+    for (const row of over)
+      if (!out.has(row.key))
+        out.set(
+          row.key,
+          m.question_ui_a_graph_can_contain_at_most_60_elements()
+        );
+    return out;
+  }, [rowErrors, rows]);
   // Issues read like the question dialog's (Epo 2026-10-15): the first one
   // above the editor, a warning icon on each affected row and on Advanced.
   const advancedIssues = boardIssues(value);
@@ -110,6 +131,7 @@ export function GraphEditor({
   const commit = (next: GraphRow[]) => {
     setRows(next);
     const { elements } = buildElements(next);
+    setSynced(elements);
     latest.current.onChange({ ...latest.current.value, elements });
   };
   const edit = (key: string, latex: string, ascii: string) => {

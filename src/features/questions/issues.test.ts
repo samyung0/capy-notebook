@@ -11,7 +11,7 @@ import {
   withoutBlanks,
 } from '@/features/questions/types';
 import { m } from '@/i18n';
-import { issueMessages, questionIssues } from './issues';
+import { blockIssues, issueMessages, questionIssues } from './issues';
 
 const empty = { text: '  ', type: 'text' } as const;
 const messages = (question: Question, bank = false) =>
@@ -282,3 +282,23 @@ it('words each issue, names parts and points at rows and titles', () => {
 function stemRow(index: number) {
   return { kind: 'block', location: { index } } as const;
 }
+
+it('names what a merge of two editors’ charts left in a note chart', () => {
+  const chart = {
+    kind: 'bar',
+    labels: ['A'],
+    series: [{ name: 'S', values: [1, 2] }],
+    title: 'T',
+    type: 'chart',
+  } as QuestionBlock;
+  expect(blockIssues(chart)).toEqual([m.question_validation_series_values()]);
+  const series = Array.from({ length: 7 }, (_, i) => ({
+    name: `S${i}`,
+    values: [i],
+  }));
+  expect(blockIssues({ ...chart, series } as QuestionBlock)).toEqual([
+    m.question_ui_chart_series_over({
+      max: limits.QUESTION_CHART_SERIES_MAX,
+    }),
+  ]);
+});

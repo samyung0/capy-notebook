@@ -33,7 +33,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   `inline`, `topLevel` (only a top-level block), `required` keys besides
   `type` and `children`, `fields` (the closed key set, when there is one),
   `forbidden` keys, `sharedText` keys (held as a Y.Text so typing merges;
-  only `mermaid.source`), `assets` (paths naming editor assets, `[]` walking a
+  only `mermaid.source`), `sharedMap` keys (held as a Y.Map, each entry
+  replaced whole; a chart's, plot's and graph's `block`) and their
+  `sharedLists` (keys of that value held as a Y.Array of Y.Maps: `series`,
+  graph `elements`), `assets` (paths naming editor assets, `[]` walking a
   list), `resizable` (a width of `MEDIA_WIDTH_MIN`–`MEDIA_WIDTH_MAX` %),
   fixed `children`, and the `materials` kinds whose documents may hold it.
   A type the catalog does not list is refused by every write: a stored
@@ -95,18 +98,20 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   whose reference still carries an imported fence body (`pending`, the
   quiz's answer keys) is not served at
   all: its room refuses to load, as Go's reads refuse it (`Model::stored`). Only `mermaid.source` is shared
-  text: the server holds it as `plate::SHARED_TEXT_KEY` on
-  `SHARED_TEXT_ELEMENT`, the browser as `liveMermaid.ts`'s constants and in
-  the `@slate-yjs/core` patch.
+  text and only a figure's `block` a shared map: the server reads both from
+  the catalog (`plate::holds_text`, `plate::holds_map`, `plate::lists_of`),
+  the browser's live Mermaid from it too (`liveMermaid.ts`), and the
+  `@slate-yjs/core` patch holds its own tables, which
+  `liveCatalog.test.ts` keeps equal to the catalog.
 - **`embeds`**: the rich kinds, with their name per layer, storage class,
   where they render (`surfaces`) and who edits them (`edit.user` surfaces,
   `edit.agent` tools):
 
   | Kind | Class | Element | Fence | Chat | Material kinds |
   | --- | --- | --- | --- | --- | --- |
-  | chart | value | `chart` | ```` ```chart ```` JSON | `Chart` | – |
-  | plot | value | `plot` | ```` ```plot ```` JSON | `Plot` | – |
-  | graph | value | `graph` | ```` ```graph ```` JSON | – | – |
+  | chart | live_map | `chart` | ```` ```chart ```` JSON | `Chart` | – |
+  | plot | live_map | `plot` | ```` ```plot ```` JSON | `Plot` | – |
+  | graph | live_map | `graph` | ```` ```graph ```` JSON | – | – |
   | html_embed | value | `html_embed` | ```` ```html-embed ```` YAML | `HtmlEmbed` | – |
   | mermaid | live_source | `mermaid` | ```` ```mermaid ```` source | `Mermaid` | mindmap, diagram |
   | quiz | item | `material_ref` | ```` ```quiz ```` YAML | – | quiz |
@@ -117,8 +122,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   mermaid, quiz and flashcards in notes and as their own materials
   (`edit.user`).
 
-  A **value** is an attribute of its node, replaced whole. A **live source**
-  keeps its source in shared text. An **item** is a child material row with
+  A **value** is an attribute of its node, replaced whole. A **live map**
+  keeps its value in a shared map (below, [Live figures](#live-figures)). A
+  **live source** keeps its source in shared text. An **item** is a child
+  material row with
   its own rooms, which a note references through `material_ref` with
   `refKind` set to the kind; Go owns its access, trash, clone, share, assets
   and quota. Chart, plot and graph are question blocks too
@@ -223,6 +230,58 @@ does not handle, does not build; the catalog tests in each language
 every element a probe carrying a marker wherever a rule reads and check it
 shows unless the rule is `none`.
 
+## Live figures
+
+A chart's, plot's or graph's `block` is a live map in rooms (Epo 2026-10-17):
+a Y.Map whose entries are the block's fields, each replaced whole on its
+own, with its `sharedLists` key (a chart's or plot's `series`, a graph's
+`elements`) a Y.Array of Y.Maps whose fields are replaced whole too. So two
+editors' changes to different fields, series or graph elements merge, and
+the same field takes the last writer. Slate, the projection, Go, markdown,
+exports and share pages see the plain block. How the browser and the editors
+work with it is in [plate-editor](frontend/plate-editor.md) (Mermaid and
+figures).
+
+- **Writes.** The slate-yjs patch and the Rust server (`slate_yjs.rs`:
+  `ElementPrelim`, `edit_map`) make the map on an insert, a bootstrap and a
+  clone, and a `set_node` of `block` writes only its changed entries: a
+  list's entries by index (series) or, when every entry has an `id`, by that
+  id (graph elements; one out of place is removed and inserted anew). A
+  plain `block` value (the Node server's parity traffic writes one) is still
+  read and checked as before; the browser replaces it with a map on its next
+  save.
+- **Repair on read.** A merge can leave what neither writer wrote and the
+  validators refuse. Reads repair it, never refuse it: series and graph
+  elements past their cap keep the first ones in document order; a chart
+  series' values are padded with empty cells (null) or cut to its labels; a
+  graph element naming a point that is gone is skipped (only points are
+  referenced, so one pass). The same function on both sides:
+  `questions::repair_figure` in the collaboration server (called only by
+  `plate::map_value`, the one place a block map is read, behind
+  `plate::properties` and `plate::block_value`: the projection, the metrics,
+  admission's check and the index text) and `repairFigureBlock`
+  in the browser (`parseMaterialDocument`, the note's figure, a live View's
+  blocks in `liveNoteBlocks.ts`, the chart editor's preview, the graph
+  redraw), both run on
+  `server/internal/questions/testdata/repairs/figures.json`. The projection
+  stores the repaired value. Go reads only that projection and repairs
+  nothing. Editors show the raw block with its issues (the chart's rows past
+  its labels, series and graph rows past the cap, graph rows naming a gone
+  point), so the user fixes them.
+- **Admission.** An update writing into a figure's map is checked on a copy
+  of the room, measured exactly (a repair can make a deletion grow the
+  value): the map sits on a chart, plot or graph only, holds plain entries
+  and lists of maps of plain entries only (`FIGURE_SHAPE`, `STRAY_MAP`), and
+  its block read as above must be one the store takes (`BAD_VALUE`: an
+  unknown key, a wrong type, an oversize value). A merge whose repaired block
+  the store would still refuse (a pie or stacked chart given a second series
+  by one writer while another changed its kind) is refused for the writer
+  whose update makes it. Typing elsewhere in the note stays on the bound with
+  no copy.
+- **Graph SVG.** Saving draws the graph's SVG; an editor in Edit mode that
+  sees a graph's recipe change redraws it once in an idle callback and writes
+  `image` only when it differs, outside Undo; readers keep the stored SVG.
+
 ## Adding an element or an embed kind
 
 1. Add it to `Elements()` or `Embeds()` in `server/internal/embeds/embeds.go`
@@ -239,17 +298,17 @@ shows unless the rule is `none`.
    fence in and out: add a fence body for a new kind), the collaboration
    server's `collaboration-rs/crates/notes/tests/catalog.rs` (the store and
    room admission over a document of each material kind, the shared-text
-   key, the media types, inspect per embed kind, reference kinds, each
+   key and shared maps, the media types, inspect per embed kind, reference kinds, each
    kind's required element, Go's figure messages: add a sample of a new
    element to its `documents()`) and the items crate's
    (`item_kinds_are_the_catalogs`, `every_admitted_block_kind_round_trips`),
    and the live browser layer's: `src/features/collaboration/liveCatalog.test.ts`
-   (the shared-text key through the slate-yjs patch, each item kind's
-   read), `liveQuiz.test.ts` (every question block written and read back;
+   (the shared-text key and the shared maps through the slate-yjs patch,
+   each item kind's read), `liveQuiz.test.ts` (every question block written and read back;
    an unknown one throws), `pendingRefs.test.ts` and `AppEmbed.test.tsx`
    (each item kind drawn as itself; an unknown one throws).
 3. Decide the client protocol bump in the same commit: a new inline type, a
-   void/inline change, a new shared-text key or a changed meaning of a key
+   void/inline change, a new shared-text or shared-map key or a changed meaning of a key
    breaks the material family for older editors, so it raises
    `CLIENT_PROTOCOL` and `MIN_MATERIAL`; optional data older editors carry
    through untouched needs none

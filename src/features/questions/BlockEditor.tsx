@@ -15,7 +15,9 @@ import { IMAGE_ACCEPT } from '@/lib/fitImage';
 import { textLength } from '@/lib/textLength';
 import { Field, FieldInput, SelectField } from './editorFields';
 import { GraphEditor } from './GraphEditor';
+import { IssueIcon } from './IssueViews';
 import { QuestionBlockView } from './QuestionView';
+import { repairFigureBlock } from './repair';
 import { TextEditor } from './TextEditor';
 import {
   CHART_KINDS,
@@ -50,6 +52,17 @@ function ChartEditor({
   descriptionMax: number;
 }) {
   const single = block.kind === 'pie' || block.kind === 'stacked';
+  // A merge of two editors' changes (Epo 2026-10-17) can leave values past
+  // the labels or series past the cap: the table shows them with their
+  // issue, readers the repaired chart.
+  const rows = Math.max(
+    block.labels.length,
+    ...block.series.map((series) => series.values.length)
+  );
+  const setCell = <T,>(list: T[], at: number, value: T, empty: T) =>
+    Array.from({ length: Math.max(list.length, at + 1) }, (_, i) =>
+      i === at ? value : (list[i] ?? empty)
+    );
   return (
     // Two columns only once the editor itself is wide enough for the table.
     <div className="@container min-w-0">
@@ -132,6 +145,15 @@ function ChartEditor({
                       className="min-w-24 border border-divider bg-surface-hover-bg"
                       key={i}
                     >
+                      {i >= limits.QUESTION_CHART_SERIES_MAX && (
+                        <IssueIcon
+                          messages={[
+                            m.question_ui_chart_series_over({
+                              max: limits.QUESTION_CHART_SERIES_MAX,
+                            }),
+                          ]}
+                        />
+                      )}
                       <Input
                         aria-label={m.question_ui_series_name({
                           number: i + 1,
@@ -156,9 +178,14 @@ function ChartEditor({
                 </tr>
               </thead>
               <tbody>
-                {block.labels.map((label, row) => (
+                {Array.from({ length: rows }, (_, row) => (
                   <tr key={row}>
-                    <td className="w-0 pr-1">
+                    <td className="w-0 whitespace-nowrap pr-1">
+                      {row >= block.labels.length && (
+                        <IssueIcon
+                          messages={[m.question_validation_series_values()]}
+                        />
+                      )}
                       <ToolbarButton
                         label={m.question_ui_remove_row_number({
                           number: row + 1,
@@ -187,12 +214,15 @@ function ChartEditor({
                         onChange={(event) =>
                           onChange({
                             ...block,
-                            labels: block.labels.map((item, i) =>
-                              i === row ? event.target.value : item
+                            labels: setCell(
+                              block.labels,
+                              row,
+                              event.target.value,
+                              ''
                             ),
                           })
                         }
-                        value={label}
+                        value={block.labels[row] ?? ''}
                         wrapperClassName="rounded-none border-0 bg-transparent px-2 focus-within:ring-1 focus-within:ring-action-accent focus-within:ring-inset"
                       />
                     </td>
@@ -228,8 +258,11 @@ function ChartEditor({
                                 column === i
                                   ? {
                                       ...item,
-                                      values: item.values.map((number, j) =>
-                                        row === j ? value : number
+                                      values: setCell<number | null>(
+                                        item.values,
+                                        row,
+                                        value,
+                                        null
                                       ),
                                     }
                                   : item
@@ -366,7 +399,7 @@ function ChartEditor({
             block.series.length > 0 &&
             block.series.every((series) =>
               series.values.every((v) => v === null || Number.isFinite(v))
-            ) && <CategoryChart data={block} />}
+            ) && <CategoryChart data={repairFigureBlock(block)} />}
         </div>
       </div>
     </div>

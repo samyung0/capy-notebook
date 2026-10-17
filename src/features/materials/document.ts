@@ -1,5 +1,6 @@
 import { EMBED_CATALOG } from '@/api/embeds.generated';
 import type { Question, QuestionBlock } from '@/api/types';
+import { repairFigureBlock } from '@/features/questions/repair';
 import {
   descriptionFits,
   questionBlockSchema,
@@ -437,6 +438,25 @@ export function isMaterialDocument(value: unknown): value is MaterialDocument {
   return (value.value as MaterialValue).every(uniqueParts);
 }
 
+/** A document with its live figures' merges repaired as readers draw them
+ * (`repairFigureBlock`, Epo 2026-10-17): reads take one, writes
+ * (`createMaterialDocument`) refuse it. Figures are top-level blocks whose
+ * `block` the catalog shares as a map. */
+function withRepairedFigures(candidate: unknown): unknown {
+  if (!isRecord(candidate) || !Array.isArray(candidate.value)) return candidate;
+  let changed = false;
+  const value = candidate.value.map((node: unknown) => {
+    if (!isRecord(node) || typeof node.type !== 'string') return node;
+    const catalog = ELEMENTS.get(node.type);
+    if (!(catalog && 'sharedMap' in catalog)) return node;
+    const block = repairFigureBlock(node.block);
+    if (block === node.block) return node;
+    changed = true;
+    return { ...node, block };
+  });
+  return changed ? { ...candidate, value } : candidate;
+}
+
 function parseMaterialDocumentInput(input: unknown): MaterialDocument | null {
   let candidate = input;
   if (typeof input === 'string') {
@@ -446,6 +466,7 @@ function parseMaterialDocumentInput(input: unknown): MaterialDocument | null {
       return null;
     }
   }
+  candidate = withRepairedFigures(candidate);
   return isMaterialDocument(candidate) ? candidate : null;
 }
 

@@ -15,7 +15,7 @@ import {
   useEditorSelector,
   useReadOnly,
 } from 'platejs/react';
-import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import type * as Y from 'yjs';
 import { ContentSwap } from '@/components/ui/ContentSwap';
 import { CharCount } from '@/components/ui/Input';
@@ -58,6 +58,7 @@ import {
 import { FigureView } from '@/features/materials/staticViews';
 import { EditorIcon } from '@/features/notes/EditorIcon';
 import { QuestionView } from '@/features/questions/QuestionView';
+import { repairFigureBlock } from '@/features/questions/repair';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { textLength } from '@/lib/textLength';
@@ -76,7 +77,10 @@ import {
   ToolbarPopoverRow,
 } from '../toolbar/ToolbarPopover';
 import { useOptionalNoteBlockDialogs } from './dialogContext';
+import { useGraphRedraw } from './graphRedraw';
 import { mermaidSourceText, setMermaidCaption } from './mermaidBlock';
+import { rebaseBlock } from './rebase';
+import type { NoteVisualBlock } from './VisualBlockDialog';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyEditor = any;
@@ -397,6 +401,7 @@ export function MaterialRefElement(props: PlateElementProps) {
 
 const MermaidSourceDialog = lazy(() => import('./MermaidSourceDialog'));
 const HtmlEmbedSourceDialog = lazy(() => import('./HtmlEmbedSourceDialog'));
+const VisualBlockDialog = lazy(() => import('./VisualBlockDialog'));
 
 /**
  * Copies one block exactly as Cmd+C would: a real copy event the editor fills.
@@ -499,27 +504,43 @@ function MediaBlockActions({
 export function VisualBlockElement(props: PlateElementProps) {
   const editor = useEditorRef();
   const readOnly = useReadOnly();
-  const dialogs = useOptionalNoteBlockDialogs();
   const element = props.element as unknown as QuestionFigureNode;
   const { block } = element;
+  // The room holds the block as merged; readers draw it repaired, the
+  // dialog edits it as held (Epo 2026-10-17).
+  const shown = useMemo(() => repairFigureBlock(block), [block]);
+  const [editing, setEditing] = useState(false);
   const onMouseDown = useSelectOnMouseDown(props.element);
+  useGraphRedraw(props.element, readOnly);
   const update = (patch: Partial<QuestionFigureNode>) => {
     const at = editor.api.findPath(props.element);
     if (at) editor.tf.setNodes(patch, { at });
+  };
+  // The dialog's draft on the block as it is now: only what the user changed
+  // since `base` is written, so a peer's change meanwhile stays.
+  const save = (next: NoteVisualBlock, base: NoteVisualBlock) => {
+    const at = editor.children.findIndex((node) => node.id === element.id);
+    if (at < 0) throw new Error('The block was removed');
+    const current = (editor.children[at] as unknown as QuestionFigureNode)
+      .block as NoteVisualBlock;
+    editor.tf.setNodes(
+      {
+        block: rebaseBlock(base, next, current),
+      } as Partial<QuestionFigureNode>,
+      { at: [at] }
+    );
   };
   return (
     <PlateElement {...props} className="relative my-3">
       <div contentEditable={false} onMouseDown={onMouseDown}>
         <FigureView
-          block={block}
+          block={shown}
           onWidthChange={readOnly ? undefined : (width) => update({ width })}
           toolbar={
             readOnly ? undefined : (
               <MediaBlockActions
                 element={props.element}
-                onEdit={() =>
-                  dialogs?.openVisual(block, (next) => update({ block: next }))
-                }
+                onEdit={() => setEditing(true)}
               />
             )
           }
@@ -529,6 +550,15 @@ export function VisualBlockElement(props: PlateElementProps) {
       {/* Slate's void spacer is already invisible; display:none would leave
        * the caret without a position, so focusing scrolled the page away. */}
       <span className="absolute top-0 left-0">{props.children}</span>
+      {editing && (
+        <Suspense fallback={null}>
+          <VisualBlockDialog
+            block={block}
+            onClose={() => setEditing(false)}
+            onSave={save}
+          />
+        </Suspense>
+      )}
     </PlateElement>
   );
 }

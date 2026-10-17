@@ -1,5 +1,8 @@
 import type { z } from 'zod';
-import { QUESTION_MARKS_MAX } from '@/api/limits.generated';
+import {
+  QUESTION_CHART_SERIES_MAX,
+  QUESTION_MARKS_MAX,
+} from '@/api/limits.generated';
 import { m } from '@/i18n';
 import {
   blockWithoutBlanks,
@@ -46,6 +49,20 @@ function blockMessage(
     issue.message === m.question_validation_pie_series()
   )
     return m.question_issue_pie();
+  // What a merge of two editors' charts can leave (Epo 2026-10-17).
+  if (
+    block?.type === 'chart' &&
+    issue.message === m.question_validation_series_values()
+  )
+    return issue.message;
+  if (
+    block?.type === 'chart' &&
+    issue.code === 'too_big' &&
+    issue.path.at(-1) === 'series'
+  )
+    return m.question_ui_chart_series_over({
+      max: QUESTION_CHART_SERIES_MAX,
+    });
   if (block?.type === 'graph' && issue.code === 'custom')
     return m.question_issue_graph({ message: issue.message });
   return m.question_issue_generic();
