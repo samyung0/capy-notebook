@@ -37,7 +37,8 @@ export const runtimeChunks = {
 
 /** The engines Capy starts itself (the same instances the viewers and
  * editors then use); the DOCX viewer's runs in its worker, and the XLSX
- * editor's in its workbook worker, which reads it from the HTTP cache. */
+ * editor's in its workbook worker, which reads it from the HTTP cache: the
+ * warm-up reads the body to fill that cache and keeps none of it (5 MB). */
 export const runtimeEngines = {
   'docx:edit': once('wasm:docx-edit', () =>
     import('@betteroffice/docx/wasm/edit').then((module) =>
@@ -52,7 +53,9 @@ export const runtimeEngines = {
     import('@betteroffice/pptx/viewer').then((module) => module.initWasm())
   ),
   'xlsx:edit': once('wasm:xlsx-edit-fetch', () =>
-    fetch(xlsxEditWasmUrl).then((response) => response.arrayBuffer())
+    fetch(xlsxEditWasmUrl)
+      .then((response) => response.arrayBuffer())
+      .then(() => undefined)
   ),
   'xlsx:view': once('wasm:xlsx-view', () =>
     import('@betteroffice/xlsx/viewer').then((module) => module.initWasm())

@@ -148,7 +148,7 @@ the `outdated` save strip, and its drafts stay for the reloaded page
   engine (`src/office-runtime/prewarm.ts`): the DOCX viewer's worker (which
   loads its WASM at once), the DOCX editor's, the XLSX and PPTX viewers' and
   the PPTX editor's WASM, and for the XLSX editor a fetch that puts its
-  workbook worker's WASM in the HTTP cache; a PPTX frame also starts the faces
+  workbook worker's WASM in the HTTP cache (keeping none of it); a PPTX frame also starts the faces
   any deck needs (every face for the editor). The `load` message still
   decides what opens; a head start that does not match it is dropped.
 - **Edit.** The room provider is created right after the session and token,
