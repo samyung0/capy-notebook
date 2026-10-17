@@ -486,13 +486,15 @@ type RequestAccountDeletionReq struct {
 	LifecycleGeneration int64 `json:"lifecycleGeneration" required:"true" minimum:"0"`
 }
 
-// SetStudyEnabledReq turns study progress on or off, for one workspace or as
-// the account default.
-// SetChatStepsReq sets how much of a turn's tool work the chat shows.
-type SetChatStepsReq struct {
-	Steps string `json:"steps" enum:"normal,verbose"`
+// SetChatPrefsReq sets the Settings → Chat choices; an omitted field keeps
+// its value.
+type SetChatPrefsReq struct {
+	Steps   *string `json:"steps,omitempty" enum:"normal,verbose" doc:"How much of a turn's tool work the chat shows"`
+	SendKey *string `json:"sendKey,omitempty" enum:"enter,shift_enter" doc:"The key that sends a message; the other adds a new line"`
 }
 
+// SetStudyEnabledReq turns study progress on or off, for one workspace or as
+// the account default.
 type SetStudyEnabledReq struct {
 	Enabled bool `json:"enabled"`
 }

@@ -55,13 +55,13 @@ type IntegrationsStatus struct {
 func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	var u User
 	row := s.pool.QueryRow(ctx, `SELECT id, name, COALESCE(email,''), COALESCE('/icons/' || NULLIF(avatar_icon_id,'') || '.svg', avatar_url,''), COALESCE(avatar_icon_id,''),
-		COALESCE(class_label,''), streak, locale, study_progress, study_preferences, chat_steps,
+		COALESCE(class_label,''), streak, locale, study_progress, study_preferences, chat_steps, chat_send_key,
 		chat_model_provider_slug, chat_model_slug,
 		editor_model_provider_slug, editor_model_slug,
 		plan_tier, subscription_status
 		FROM users WHERE id=$1`, userID)
 	err := row.Scan(&u.ID, &u.Name, &u.Email, &u.AvatarURL, &u.AvatarIconID, &u.ClassLabel, &u.Streak,
-		&u.Locale, &u.StudyProgress, &u.StudyPreferences, &u.ChatSteps,
+		&u.Locale, &u.StudyProgress, &u.StudyPreferences, &u.ChatSteps, &u.ChatSendKey,
 		&u.ChatModel.ProviderSlug, &u.ChatModel.ModelSlug,
 		&u.EditorModel.ProviderSlug, &u.EditorModel.ModelSlug,
 		&u.PlanTier, &u.SubscriptionStatus)
@@ -76,10 +76,11 @@ func (s *Store) Me(ctx context.Context, userID string) (User, error) {
 	return u, err
 }
 
-// SetChatSteps stores the chat's Steps setting; the request schema bounds it
-// to normal or verbose and the column check repeats that.
-func (s *Store) SetChatSteps(ctx context.Context, userID, steps string) error {
-	_, err := s.pool.Exec(ctx, `UPDATE users SET chat_steps=$2, updated_at=now() WHERE id=$1`, userID, steps)
+// SetChatPrefs stores the chat's Steps and Send with settings; a nil one keeps
+// its value. The request schema bounds both and the column checks repeat it.
+func (s *Store) SetChatPrefs(ctx context.Context, userID string, steps, sendKey *string) error {
+	_, err := s.pool.Exec(ctx, `UPDATE users SET chat_steps=COALESCE($2, chat_steps),
+		chat_send_key=COALESCE($3, chat_send_key), updated_at=now() WHERE id=$1`, userID, steps, sendKey)
 	return err
 }
 

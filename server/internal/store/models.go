@@ -29,7 +29,9 @@ type User struct {
 	// pipeline's defaults.
 	StudyPreferences StudyPreferences `json:"studyPreferences"`
 	// ChatSteps is how much of a turn's tool work the chat shows.
-	ChatSteps          string             `json:"chatSteps" enum:"normal,verbose"`
+	ChatSteps string `json:"chatSteps" enum:"normal,verbose"`
+	// ChatSendKey is the key that sends a chat message; the other adds a line.
+	ChatSendKey        string             `json:"chatSendKey" enum:"enter,shift_enter"`
 	ChatModel          models.Ref         `json:"chatModel"`
 	EditorModel        models.Ref         `json:"editorModel"`
 	PlanTier           PlanTier           `json:"planTier"`

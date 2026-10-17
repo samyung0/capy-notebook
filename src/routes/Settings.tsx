@@ -20,7 +20,7 @@ import {
 import { Switch } from '@/components/ui/Switch';
 import { Tabs } from '@/components/ui/Tabs';
 import { AccountTab } from '@/features/settings/AccountTab';
-import { ChatStepsSection } from '@/features/settings/ChatStepsSection';
+import { ChatSection } from '@/features/settings/ChatSection';
 import { DeleteAccountDialog } from '@/features/settings/DeleteAccountDialog';
 import { LanguageRow } from '@/features/settings/LanguageRow';
 import { ModelPicker } from '@/features/settings/ModelPicker';
@@ -90,7 +90,7 @@ function CustomizationsTab() {
             </SelectContent>
           </Select>
         </SettingRow>
-        <ChatStepsSection />
+        <ChatSection />
       </div>
     </>
   );
