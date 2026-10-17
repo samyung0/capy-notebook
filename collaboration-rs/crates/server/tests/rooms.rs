@@ -1899,6 +1899,13 @@ async fn a_source_room_is_refused_while_loaded_rooms_fill_the_disk_store() {
         1
     );
     assert!(a.settle(|c| source_text(c) == first_text).await);
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics.contains(&format!(
+            "capy_collaboration_source_disk_held_bytes {held}\n"
+        )),
+        "{metrics}"
+    );
     let mut b = Client::open(server.port).await;
     let second_token = token(&second_room, &second_user, "write");
     b.join(&second_room, &second_token).await;

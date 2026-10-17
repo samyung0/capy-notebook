@@ -151,7 +151,7 @@ async fn metrics(State(app): State<Shared>, headers: HeaderMap) -> Response {
     (
         StatusCode::OK,
         [(header::CONTENT_TYPE, "text/plain; version=0.0.4")],
-        health::metrics(&app),
+        health::metrics(&app).await,
     )
         .into_response()
 }
