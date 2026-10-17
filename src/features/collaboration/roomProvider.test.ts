@@ -1,8 +1,11 @@
+import 'fake-indexeddb/auto';
 import { readFileSync } from 'node:fs';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { Awareness, encodeAwarenessUpdate } from 'y-protocols/awareness';
 import * as Y from 'yjs';
 import { createSourceProvider } from '@/features/files/sourceProvider';
+import type { DraftMessage, DraftReply } from '@/lib/draftStore';
+import { readDrafts, recordDrafts } from '@/lib/editDrafts';
 import {
   CLIENT_PROTOCOL,
   closedPayload,
@@ -18,7 +21,7 @@ import {
   Writer,
 } from './protocol';
 import { RoomProvider } from './roomProvider';
-import { CollabSocket } from './socket';
+import { CollabSocket, TOO_FAST_CODE } from './socket';
 
 vi.mock('@/api/auth', () => ({ USE_MSW: false }));
 
@@ -31,7 +34,7 @@ class FakeSocket {
   sent: Message[] = [];
   onopen: (() => void) | null = null;
   onmessage: ((event: { data: ArrayBuffer }) => void) | null = null;
-  onclose: (() => void) | null = null;
+  onclose: ((event: { code: number }) => void) | null = null;
   readonly url: string;
   constructor(url: string) {
     this.url = url;
@@ -40,9 +43,9 @@ class FakeSocket {
   send(bytes: Uint8Array) {
     this.sent.push(...decodeFrame(bytes));
   }
-  close() {
+  close(code = 1005) {
     this.readyState = 3;
-    this.onclose?.();
+    this.onclose?.({ code });
   }
   open() {
     this.readyState = 1;
@@ -60,10 +63,27 @@ class FakeSocket {
   }
 }
 
+// The drafts worker, run in this process (as in editDrafts.test.ts).
+class InProcessWorker {
+  onerror: ((event: Event) => void) | null = null;
+  onmessage: ((event: { data: DraftReply }) => void) | null = null;
+  store = import('@/lib/draftStore');
+  postMessage(message: DraftMessage) {
+    const copy = structuredClone(message);
+    void this.store.then(({ handleDraftMessage }) =>
+      handleDraftMessage(copy, (answer) =>
+        this.onmessage?.({ data: structuredClone(answer) })
+      )
+    );
+  }
+  terminate() {}
+}
+
 let url = 0;
 beforeEach(() => {
   FakeSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeSocket);
+  vi.stubGlobal('Worker', InProcessWorker);
 });
 afterEach(() => {
   vi.unstubAllGlobals();
@@ -266,6 +286,89 @@ it('ends the room when the socket drops and rejoins once it reopens', async () =
   second.open();
   await vi.advanceTimersByTimeAsync(0);
   expect(second.take(MessageKind.Join)).toHaveLength(1);
+});
+
+it('after a too-fast close, rejoins once its doubled backoff passes and resends what the server lacks, its drafts kept', async () => {
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+  // No jitter: each backoff is its base.
+  vi.spyOn(Math, 'random').mockReturnValue(0.5);
+  const document = new Y.Doc();
+  const key = 'u_1:material:too-fast';
+  const onClose = vi.fn();
+  const provider: RoomProvider = new RoomProvider({
+    document,
+    name: 'material:m1:schema:1',
+    onClose,
+    token: async () => 't',
+    url: `wss://collab.test/${url++}`,
+  });
+  recordDrafts({
+    doc: document,
+    ignore: (origin) => origin === provider,
+    key,
+    limitBytes: 1024 * 1024,
+    lineage: 'material:m1:schema:1',
+  });
+  const server = new Y.Doc();
+  server.getText('content').insert(0, 'shared ');
+  /** Opens `socket`, joins and syncs with the server's document. */
+  const sync = async (socket: FakeSocket) => {
+    socket.open();
+    await vi.advanceTimersByTimeAsync(0);
+    const [join] = socket.take(MessageKind.Join);
+    socket.deliver(
+      message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+      message(
+        join.channel,
+        MessageKind.Sync,
+        syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+      )
+    );
+    for (const sent of socket.take(MessageKind.Sync)) {
+      const { body, kind } = readSync(sent.payload);
+      if (kind === SyncKind.Step2) Y.applyUpdate(server, body);
+      else
+        socket.deliver(
+          message(
+            join.channel,
+            MessageKind.Sync,
+            syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(server, body))
+          )
+        );
+    }
+  };
+  provider.connect();
+  const first = FakeSocket.instances.at(-1) as FakeSocket;
+  await sync(first);
+  expect(provider.isSynced).toBe(true);
+
+  // An edit goes out, and the server closes the socket as too fast before
+  // applying it.
+  document.getText('content').insert(7, 'typed');
+  expect(first.take(MessageKind.Sync)).toHaveLength(1);
+  first.close(TOO_FAST_CODE);
+  expect(onClose).toHaveBeenCalled();
+  // The next socket waits out a backoff of 2 s, not the first drop's 1 s.
+  await vi.advanceTimersByTimeAsync(1999);
+  expect(FakeSocket.instances.at(-1)).toBe(first);
+  await vi.advanceTimersByTimeAsync(1);
+  const second = FakeSocket.instances.at(-1) as FakeSocket;
+  expect(second).not.toBe(first);
+  // The rejoin's step 2 carries the edit the server never applied.
+  await sync(second);
+  expect(server.getText('content').toString()).toBe('shared typed');
+  expect(FakeSocket.instances).toHaveLength(2);
+  // No receipt covered it: its row stays on this device.
+  const rows = await readDrafts(key);
+  expect(rows.filter((row) => row.kind === 'update')).toHaveLength(1);
+
+  // Another too-fast close in the page load waits twice as long again.
+  second.close(TOO_FAST_CODE);
+  await vi.advanceTimersByTimeAsync(3999);
+  expect(FakeSocket.instances).toHaveLength(2);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(FakeSocket.instances).toHaveLength(3);
+  provider.destroy();
 });
 
 // useSourceSession tells a peer's update from a local edit by

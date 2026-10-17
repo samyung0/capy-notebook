@@ -421,22 +421,7 @@ impl Client {
 
     /// Appends text to the first block (an XmlText inside `content`).
     async fn type_text(&mut self, text: &str) {
-        let before = self.doc.transact().state_vector();
-        {
-            let root = self.doc.get_or_insert_text("content");
-            let mut txn = self.doc.transact_mut();
-            let diff = root.diff(&txn, yrs::types::text::YChange::identity);
-            let block = diff
-                .into_iter()
-                .find_map(|chunk| match chunk.insert {
-                    yrs::Out::YXmlText(block) => Some(block),
-                    _ => None,
-                })
-                .expect("a block");
-            let len = block.len(&txn);
-            block.insert(&mut txn, len, text);
-        }
-        let update = self.doc.transact().encode_state_as_update_v1(&before);
+        let update = self.typed(text);
         self.send(5, &sync(2, &update)).await;
     }
 
@@ -472,6 +457,44 @@ impl Client {
             }
             before.push(message);
         }
+    }
+
+    /// Reads until the server closes the socket: its close code and reason,
+    /// or None if it stays open for 5 s.
+    async fn closed(&mut self) -> Option<(u16, String)> {
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        loop {
+            match tokio::time::timeout_at(deadline, self.ws.next())
+                .await
+                .ok()??
+            {
+                Ok(Ws::Close(frame)) => {
+                    return frame.map(|frame| (frame.code.into(), frame.reason.to_string()));
+                }
+                Ok(_) => {}
+                Err(_) => return None,
+            }
+        }
+    }
+
+    /// An update typing `text` into the first block, not sent.
+    fn typed(&mut self, text: &str) -> Vec<u8> {
+        let before = self.doc.transact().state_vector();
+        {
+            let root = self.doc.get_or_insert_text("content");
+            let mut txn = self.doc.transact_mut();
+            let diff = root.diff(&txn, yrs::types::text::YChange::identity);
+            let block = diff
+                .into_iter()
+                .find_map(|chunk| match chunk.insert {
+                    yrs::Out::YXmlText(block) => Some(block),
+                    _ => None,
+                })
+                .expect("a block");
+            let len = block.len(&txn);
+            block.insert(&mut txn, len, text);
+        }
+        self.doc.transact().encode_state_as_update_v1(&before)
     }
 
     fn block_text(&self) -> String {
@@ -1081,6 +1104,103 @@ async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconne
         String::from_utf8_lossy(&closed).contains("malformed update"),
         "{}",
         String::from_utf8_lossy(&closed)
+    );
+}
+
+/// Security regression (Epo 2026-10-18): each connection's SYNC messages
+/// have a burst and a sustained rate, in count and in bytes. A socket past
+/// either is closed as too fast (4429 `collaboration-too-fast`) and counted,
+/// while one typing at a person's pace stays open, and one message larger
+/// than the byte burst still goes in. Fails if the allowance is not enforced.
+#[tokio::test]
+async fn a_socket_past_its_update_allowance_closes_as_too_fast() {
+    let Some(env) = env() else { return };
+    let server = start_configured(
+        &env,
+        env.api.as_deref(),
+        &[
+            ("COLLABORATION_UPDATE_BURST", "40"),
+            ("COLLABORATION_UPDATES_PER_SECOND", "20"),
+            ("COLLABORATION_UPDATE_BURST_BYTES", "65536"),
+            ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "16384"),
+        ],
+    )
+    .await;
+    let (user, material) = note(&env, "rate").await;
+    let room = format!("material:{material}:schema:1");
+    let write = token(&room, &user, "write");
+    let mut typist = Client::open(server.port).await;
+    typist.joined(&room, &write).await;
+    assert!(typist.settle(|c| c.block_text() == "rate").await);
+    // Ten keys a second for three seconds: under the sustained rate.
+    for _ in 0..30 {
+        typist.type_text("a").await;
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(
+        typist
+            .settle(|c| c.block_text().ends_with(&"a".repeat(30)))
+            .await
+    );
+
+    // A flood of small updates runs out of the 40-update burst.
+    let mut flood = Client::open(server.port).await;
+    flood.joined(&room, &write).await;
+    assert!(flood.settle(|c| c.block_text().starts_with("rate")).await);
+    for _ in 0..300 {
+        let update = flood.typed("b");
+        if flood
+            .ws
+            .send(Ws::Binary(frame(1, 5, &sync(2, &update)).into()))
+            .await
+            .is_err()
+        {
+            break;
+        }
+    }
+    assert_eq!(
+        flood.closed().await,
+        Some((4429, "collaboration-too-fast".into()))
+    );
+
+    // One 200 KB paste past the 64 KiB byte burst goes in; the next update
+    // right after it is over (the debt takes 8 s to pay off).
+    let mut paster = Client::open(server.port).await;
+    paster.joined(&room, &write).await;
+    assert!(paster.settle(|c| c.block_text().starts_with("rate")).await);
+    paster.type_text(&"p".repeat(200_000)).await;
+    paster.type_text("q").await;
+    assert_eq!(
+        paster.closed().await,
+        Some((4429, "collaboration-too-fast".into()))
+    );
+
+    // The typist's socket stayed open: its next key, typed after the paste,
+    // reaches a new reader.
+    assert!(
+        typist
+            .settle(|c| c.block_text().contains(&"p".repeat(200_000)))
+            .await
+    );
+    typist.type_text("c").await;
+    let mut reader = Client::open(server.port).await;
+    reader.joined(&room, &write).await;
+    assert!(
+        reader
+            .settle(|c| {
+                let text = c.block_text();
+                text.contains(&"p".repeat(200_000)) && !text.contains('q') && text.ends_with('c')
+            })
+            .await,
+        "{} bytes",
+        reader.block_text().len()
+    );
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line == "capy_collaboration_rate_limited_total 2"),
+        "{metrics}"
     );
 }
 

@@ -45,6 +45,8 @@ pub const OUTDATED_REASON: &str = "collaboration-outdated";
 /// (`TOO_FAST_CODE` in src/features/collaboration/socket.ts).
 pub const TOO_FAST_CODE: u16 = 4429;
 pub const TOO_FAST_REASON: &str = "collaboration-too-fast";
+/// How long a too-fast socket is read for its client's close.
+const CLOSE_DRAIN: Duration = Duration::from_secs(2);
 
 enum Channel {
     /// Queued messages and the JOIN attempt (a later JOIN on the channel
@@ -412,15 +414,33 @@ pub async fn serve(app: Shared, socket: WebSocket) {
             () = sleep_until(next_timer) => connection.on_timers(),
         }
     }
-    if connection.too_fast {
-        let close = CloseFrame {
-            code: TOO_FAST_CODE,
-            reason: TOO_FAST_REASON.into(),
-        };
-        let _ = socket.send(WsMessage::Close(Some(close))).await;
-    }
     connection.close_all().await;
+    if connection.too_fast {
+        close_too_fast(&mut socket).await;
+    }
     app.stats.connections.fetch_sub(1, Ordering::Relaxed);
+}
+
+/// Sends the too-fast close, then reads what the client still sends until its
+/// close answers (at most `CLOSE_DRAIN`): a socket dropped with unread frames
+/// is reset, and the reset can lose the close frame on its way, so the client
+/// would not know why it was closed.
+async fn close_too_fast(socket: &mut WebSocket) {
+    let close = CloseFrame {
+        code: TOO_FAST_CODE,
+        reason: TOO_FAST_REASON.into(),
+    };
+    if socket.send(WsMessage::Close(Some(close))).await.is_err() {
+        return;
+    }
+    let _ = tokio::time::timeout(CLOSE_DRAIN, async {
+        while let Some(Ok(message)) = socket.recv().await {
+            if matches!(message, WsMessage::Close(_)) {
+                break;
+            }
+        }
+    })
+    .await;
 }
 
 async fn sleep_until(deadline: Option<Instant>) {
