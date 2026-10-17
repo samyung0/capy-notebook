@@ -386,13 +386,9 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         (crate::material::HTML_EMBED_TYPE, "caption", value) => {
             matches!(value, Any::String(caption) if caption.chars().count() <= catalog::BLOCK_CAPTION_MAX)
         }
-        // A live block (a map) is checked whole on the copy; a plain one,
-        // as the Node server's oracle traffic writes it, here.
-        (kind, key, value) if plate::holds_map(kind, key) => {
-            matches!(value, Any::Buffer(_))
-                || json::any_to_value(value)
-                    .is_ok_and(|block| crate::material::figure_block(kind, &block).is_ok())
-        }
+        // A figure's block only as its live map (Epo 2026-10-18), checked
+        // whole on the copy; never as one plain value.
+        (kind, key, value) if plate::holds_map(kind, key) => matches!(value, Any::Buffer(_)),
         (kind, key, value) if plate::holds_text(kind, key) => matches!(value, Any::String(_)),
         (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
             matches!(value, Any::String(width) if crate::material::valid_width(width))
@@ -992,6 +988,9 @@ pub const UNEXPECTED_KEY: &str = "an element with a key outside its fields";
 /// [Refusal::Content] for a figure's live block holding other than its
 /// entries: plain values, lists of maps of plain values.
 pub const FIGURE_SHAPE: &str = "a figure block holding other than its entries";
+/// [Refusal::Content] for a figure's block written as one plain value: rooms
+/// hold it as its map only (Epo 2026-10-18).
+pub const PLAIN_BLOCK: &str = "a figure block as one plain value";
 /// [Refusal::Content] for a live block map on an element that holds none.
 pub const STRAY_MAP: &str = "a figure block outside a chart, plot or graph";
 /// The key a markdown fence's body sat under on a reference without its row.
@@ -1243,7 +1242,12 @@ fn required_keys<T: ReadTxn>(
                     if let Some(value) = value.filter(|value| !matches!(value, Any::Undefined))
                         && !value_ok(name, key, &value)
                     {
-                        return Err(Refusal::Content(BAD_VALUE));
+                        // A figure's block takes its live map only.
+                        return Err(Refusal::Content(if plate::holds_map(name, key) {
+                            PLAIN_BLOCK
+                        } else {
+                            BAD_VALUE
+                        }));
                     }
                 }
             }
@@ -1311,7 +1315,13 @@ fn on_candidate(candidate: &yrs::Doc, touched: &HashSet<BranchID>) -> Result<(),
                 .transpose()
                 .map_err(ProjectionError::from)?
                 .unwrap_or(Value::Null);
-            if crate::material::figure_block(&kind, &block).is_err() {
+            // Every held list entry is one a writer could write, the ones a
+            // read leaves out too (Epo 2026-10-18); the repaired block is one
+            // the room's store takes.
+            let held = plate::held_block_value(branch)?.unwrap_or(Value::Null);
+            if crate::questions::figure_entries(&held).is_err()
+                || crate::material::live_figure_block(&kind, &block).is_err()
+            {
                 return Err(Refusal::Content(BAD_VALUE));
             }
         }

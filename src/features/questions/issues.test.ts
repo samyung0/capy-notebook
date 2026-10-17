@@ -302,3 +302,43 @@ it('names what a merge of two editors’ charts left in a note chart', () => {
     }),
   ]);
 });
+
+it('names what a merge of two editors left in a note pie, chart or plot', () => {
+  const pie = {
+    kind: 'pie',
+    labels: ['a', 'b'],
+    series: [{ name: 'S', values: [1, 2] }],
+    title: 'T',
+    type: 'chart',
+  } as QuestionBlock;
+  const issues = (block: object) => blockIssues(block as QuestionBlock);
+  expect(
+    issues({
+      ...pie,
+      series: [
+        ...(pie as { series: object[] }).series,
+        { name: 'R', values: [1, 1] },
+      ],
+    })
+  ).toEqual([m.question_issue_pie_series()]);
+  expect(issues({ ...pie, series: [{ name: 'S', values: [3, -1] }] })).toEqual([
+    m.question_issue_pie_negative(),
+  ]);
+  expect(
+    issues({ ...pie, series: [{ name: 'S', values: [0, null] }] })
+  ).toEqual([m.question_issue_pie()]);
+  expect(issues({ ...pie, kind: 'bar', series: [] })).toEqual([
+    m.question_issue_add_series(),
+  ]);
+  const plot = {
+    series: [],
+    title: 'P',
+    type: 'plot',
+    xTitle: 'x',
+    yTitle: 'y',
+  };
+  expect(issues(plot)).toEqual([m.question_issue_add_series()]);
+  expect(
+    issues({ ...plot, series: [{ name: 'S', points: [[0, 1]] }] })
+  ).toEqual([m.question_issue_plot_points()]);
+});

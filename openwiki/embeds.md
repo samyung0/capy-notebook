@@ -246,16 +246,24 @@ figures).
   `ElementPrelim`, `edit_map`) make the map on an insert, a bootstrap and a
   clone, and a `set_node` of `block` writes only its changed entries: a
   list's entries by index (series) or, when every entry has an `id`, by that
-  id (graph elements; one out of place is removed and inserted anew). A
-  plain `block` value (the Node server's parity traffic writes one) is still
-  read and checked as before; the browser replaces it with a map on its next
-  save.
+  id (graph elements; one out of place is removed and inserted anew). Rooms
+  hold `block` as its map only (Epo 2026-10-18): admission refuses one
+  written as a plain value (`PLAIN_BLOCK`), new or replacing a map. The
+  Node-era parity corpus (`collaboration-rs/crates/notes/tests/corpus`),
+  whose writers wrote plain blocks, counts those updates as tightened and
+  still applies them as Node took them, so later steps compare.
 - **Repair on read.** A merge can leave what neither writer wrote and the
-  validators refuse. Reads repair it, never refuse it: series and graph
-  elements past their cap keep the first ones in document order; a chart
-  series' values are padded with empty cells (null) or cut to its labels; a
-  graph element naming a point that is gone is skipped (only points are
-  referenced, so one pass). The same function on both sides:
+  validators refuse. The type wins on read and no merge is refused (Epo
+  2026-10-17, 2026-10-18): series and graph elements past their cap keep the
+  first ones in document order, and a pie or stacked chart its first series;
+  a chart series' values are padded with empty cells (null) or cut to its
+  labels; a line plot's series with fewer than two points is skipped (before
+  the cap); a graph element naming a point that is gone is skipped (only
+  points are referenced, so one pass). Two states stay as they are: a chart
+  or plot without series draws as an empty frame, and a pie or stacked chart
+  without a positive total (or with a negative value) draws through the
+  chart renderer's empty state, its values still listed. The same function
+  on both sides:
   `questions::repair_figure` in the collaboration server (called only by
   `plate::map_value`, the one place a block map is read, behind
   `plate::properties` and `plate::block_value`: the projection, the metrics,
@@ -265,19 +273,39 @@ figures).
   redraw), both run on
   `server/internal/questions/testdata/repairs/figures.json`. The projection
   stores the repaired value. Go reads only that projection and repairs
-  nothing. Editors show the raw block with its issues (the chart's rows past
-  its labels, series and graph rows past the cap, graph rows naming a gone
-  point), so the user fixes them.
+  nothing. Editors show the raw block with its issues, so the user fixes
+  them: the chart's rows past its labels, series and graph rows past the cap,
+  graph rows naming a gone point, a pie's other series ("one series only"), a
+  pie's negative or missing positive value, no series ("Add a series"), a
+  line plot's one-point series ("each series needs two points"; the plot
+  editor shows what `blockIssues` names).
+- **Where the relaxed check runs.** The two kept states are valid only for a
+  note figure read from a room or a stored note, never for a write from
+  outside a room:
+  - live: room admission's copy check and the room's store check
+    (`material::live_figure_block` through `assert_canonical`: every save,
+    the load check, an agent edit's whole-document check); Go's reads of a
+    stored note (`materialdoc.Parse`, `Metrics`: material reads, clones) and a
+    room's projection (`NewProjection`), both with `questions.Policy{Live:
+    true}`; the browser's `parseMaterialDocument` (`liveFigureSchema`);
+  - strict: an agent's edit blocks in Rust (`edit.rs` `assert_node_shape`
+    runs `material::figure_block` on every chart, plot and graph it writes)
+    and the content API's replacement block (`commands::replace_block`); Go's
+    `ValidateKind` (material create and update, API imports, an agent's
+    created notes), `ParseWrite` (an agent's markdown blocks) and
+    `questions.ValidateBlock` for quiz and bank questions and question media;
+    the browser's `createMaterialDocument` (imports, saves).
+  A crafted update gets nothing more from the live check: it relaxes only a
+  chart's or plot's series count to none and a pie's or stacked chart's
+  value rule, everything else (keys, types, lengths, the labels, a pie's
+  second series, which the repair drops first) as before.
 - **Admission.** An update writing into a figure's map is checked on a copy
   of the room, measured exactly (a repair can make a deletion grow the
   value): the map sits on a chart, plot or graph only, holds plain entries
   and lists of maps of plain entries only (`FIGURE_SHAPE`, `STRAY_MAP`), and
-  its block read as above must be one the store takes (`BAD_VALUE`: an
-  unknown key, a wrong type, an oversize value). A merge whose repaired block
-  the store would still refuse (a pie or stacked chart given a second series
-  by one writer while another changed its kind) is refused for the writer
-  whose update makes it. Typing elsewhere in the note stays on the bound with
-  no copy.
+  its block read as above must be one the room's store takes (`BAD_VALUE`:
+  an unknown key, a wrong type, an oversize value); a merge's kept states go
+  in. Typing elsewhere in the note stays on the bound with no copy.
 - **Graph SVG.** Saving draws the graph's SVG; an editor in Edit mode that
   sees a graph's recipe change redraws it once in an idle callback and writes
   `image` only when it differs, outside Undo; readers keep the stored SVG.

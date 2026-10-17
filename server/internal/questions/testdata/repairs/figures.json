@@ -929,5 +929,266 @@
       "width": 400,
       "height": 300
     }
+  },
+  {
+    "name": "a pie chart holding extra series draws its first series",
+    "block": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, 2]
+        },
+        {
+          "name": "B",
+          "values": [3, 4]
+        },
+        {
+          "name": "C",
+          "values": [5, 6]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, 2]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a stacked chart holding extra series draws its first series, padded",
+    "block": {
+      "type": "chart",
+      "kind": "stacked",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1]
+        },
+        {
+          "name": "B",
+          "values": [3, 4]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "stacked",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [1, null]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a pie chart with no positive total stays",
+    "block": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [0, null]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "pie",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": [
+        {
+          "name": "A",
+          "values": [0, null]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a chart with no series stays",
+    "block": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": []
+    },
+    "repaired": {
+      "type": "chart",
+      "kind": "bar",
+      "title": "Sales",
+      "labels": ["Jan", "Feb"],
+      "series": []
+    }
+  },
+  {
+    "name": "a line plot's series with fewer than two points is skipped, a scatter's kept",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ]
+    }
+  },
+  {
+    "name": "a scatter plot keeps a one-point series",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "scatter"
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "B",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "scatter"
+    }
+  },
+  {
+    "name": "a line plot skips its short series before the cap",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "S0",
+          "points": [[0, 0]]
+        },
+        {
+          "name": "S1",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S2",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S3",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S4",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S5",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "line"
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "S1",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S2",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S3",
+          "points": [[0, 0], [1, 1]]
+        },
+        {
+          "name": "S4",
+          "points": [[0, 0], [1, 1]]
+        }
+      ],
+      "kind": "line"
+    }
+  },
+  {
+    "name": "a plot left with no series stays",
+    "block": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": [
+        {
+          "name": "A",
+          "points": [[0, 0]]
+        }
+      ]
+    },
+    "repaired": {
+      "type": "plot",
+      "title": "P",
+      "xTitle": "x",
+      "yTitle": "y",
+      "series": []
+    }
   }
 ]

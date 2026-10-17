@@ -290,18 +290,120 @@ fn admission_refuses_what_the_store_would_inside_a_block_map() {
         );
     });
     refused(admit(&room, &other_key), "a non-plain attribute value");
-    // A plain block value is still checked as before.
+    // A block as one plain value, even a valid one: rooms hold the map only
+    // (Epo 2026-10-18).
     let plain = edit(&room, 15, |peer| {
-        let mut bad = chart();
-        bad["kind"] = json!("radar");
         let element = block_element(peer, 0);
-        element.insert_attribute(&mut peer.transact_mut(), "block", json_any(&bad));
+        element.insert_attribute(&mut peer.transact_mut(), "block", json_any(&chart()));
     });
-    refused(admit(&room, &plain), limits::BAD_VALUE);
+    refused(admit(&room, &plain), limits::PLAIN_BLOCK);
+    let new_plain = edit(&room, 17, |peer| {
+        let mut txn = peer.transact_mut();
+        let root = plate::content_root(&txn).unwrap();
+        let element = XmlTextRef::from(root).insert_embed(&mut txn, 0, yrs::XmlTextPrelim::new(""));
+        element.insert_attribute(&mut txn, "type", "chart");
+        element.insert_attribute(&mut txn, "id", "f_new");
+        element.insert_attribute(&mut txn, "block", json_any(&chart()));
+    });
+    refused(admit(&room, &new_plain), limits::PLAIN_BLOCK);
     // An honest edit goes in, and the room still reads.
     let honest = set(16, "title", Any::from("Revenue"));
     assert_eq!(admit(&room, &honest).unwrap(), Admission::Accepted);
     assert_eq!(projected(&room)[0]["block"]["title"], "Revenue");
+}
+
+/// The four states a merge may leave that the repair keeps or reads around
+/// (Epo 2026-10-18), each admitted as one update writes it (a merge is never
+/// refused) and stored: a pie given a second series reads its first, a line
+/// plot's one-point series is skipped, a pie without a positive total and a
+/// chart without series stay and draw empty. Anything else a crafted update
+/// puts in is still refused: the relaxed check takes these and no more.
+#[test]
+fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
+    let mut pie = chart();
+    pie["kind"] = json!("pie");
+    pie["series"] = json!([{ "name": "A", "values": [1, 2] }]);
+    let plot = json!({
+        "type": "plot", "title": "P", "xTitle": "x", "yTitle": "y",
+        "series": [
+            { "name": "A", "points": [[0, 0], [1, 1]] },
+            { "name": "B", "points": [[0, 1], [1, 2]] },
+        ],
+    });
+    let mut bar = figure(chart());
+    bar["id"] = json!("f_bar");
+    let room = room(&[figure(pie.clone()), figure(plot), bar]);
+    let series = |peer: &Doc, index: usize| list(peer, &block_map(peer, index), "series");
+    let second = edit(&room, 3, |peer| {
+        let series = series(peer, 0);
+        let entry = series.push_back(&mut peer.transact_mut(), MapPrelim::default());
+        let mut txn = peer.transact_mut();
+        entry.insert(&mut txn, "name", "B");
+        entry.insert(
+            &mut txn,
+            "values",
+            Any::from(vec![Any::from(3.0), Any::from(4.0)]),
+        );
+    });
+    assert_eq!(admit(&room, &second).unwrap(), Admission::Accepted);
+    assert_eq!(projected(&room)[0]["block"]["series"], pie["series"]);
+    let one_point = edit(&room, 4, |peer| {
+        let entry = entry(peer, &series(peer, 1), 0);
+        let point = Any::from(vec![Any::from(0.0), Any::from(0.0)]);
+        entry.insert(&mut peer.transact_mut(), "points", Any::from(vec![point]));
+    });
+    assert_eq!(admit(&room, &one_point).unwrap(), Admission::Accepted);
+    assert_eq!(
+        projected(&room)[1]["block"]["series"],
+        json!([{ "name": "B", "points": [[0, 1], [1, 2]] }])
+    );
+    let no_total = edit(&room, 5, |peer| {
+        let entry = entry(peer, &series(peer, 0), 0);
+        entry.insert(
+            &mut peer.transact_mut(),
+            "values",
+            Any::from(vec![Any::from(0.0), Any::Null]),
+        );
+    });
+    assert_eq!(admit(&room, &no_total).unwrap(), Admission::Accepted);
+    let no_series = edit(&room, 6, |peer| {
+        let series = series(peer, 2);
+        series.remove_range(&mut peer.transact_mut(), 0, 2);
+    });
+    assert_eq!(admit(&room, &no_series).unwrap(), Admission::Accepted);
+    let value = projected(&room);
+    assert_eq!(
+        value[0]["block"]["series"],
+        json!([{ "name": "A", "values": [0, null] }])
+    );
+    assert_eq!(value[2]["block"]["series"], json!([]));
+    material::assert_canonical(&value, "note").unwrap();
+    // Outside a room the same blocks are refused.
+    for node in [&value[0], &value[2]] {
+        let kind = node["type"].as_str().unwrap();
+        assert!(
+            material::figure_block(kind, &node["block"]).is_err(),
+            "{kind}"
+        );
+    }
+    // Beyond them, a crafted update is refused as before.
+    let no_labels = edit(&room, 7, |peer| {
+        block_map(peer, 2).insert(
+            &mut peer.transact_mut(),
+            "labels",
+            Any::from(Vec::<Any>::new()),
+        );
+    });
+    refused(admit(&room, &no_labels), limits::BAD_VALUE);
+    let bad_kind = edit(&room, 8, |peer| {
+        block_map(peer, 0).insert(&mut peer.transact_mut(), "kind", "radar");
+    });
+    refused(admit(&room, &bad_kind), limits::BAD_VALUE);
+    let long_name = edit(&room, 9, |peer| {
+        let entry = entry(peer, &series(peer, 0), 1);
+        entry.insert(&mut peer.transact_mut(), "name", "x".repeat(1_000));
+    });
+    refused(admit(&room, &long_name), limits::BAD_VALUE);
 }
 
 /// Typing next to a figure stays on the bound with no copy of the room; a
@@ -340,4 +442,63 @@ fn catalog_title_max() -> usize {
 
 fn json_any(value: &Value) -> Any {
     notes::json::value_to_any(value)
+}
+
+/// Writes from outside a room stay strict (Epo 2026-10-18): an agent's edit
+/// inserting or replacing a figure, and the content API's replacement, take
+/// no block the room's store takes only from a merge (no series, a pie
+/// without a positive total). Fails if `assert_node_shape` or
+/// `commands::replace_block` drop their figure check, since the whole
+/// document check after them is the room's, relaxed.
+#[test]
+fn agent_edits_and_the_content_api_write_figures_strictly() {
+    use notes::commands::{self, ReplaceBlock};
+    use notes::edit::{self, DocumentCommand};
+    let mut empty = chart();
+    empty["series"] = json!([]);
+    let mut flat = chart();
+    flat["kind"] = json!("pie");
+    flat["series"] = json!([{ "name": "A", "values": [0, 0] }]);
+    let doc = |value: &[Value]| common::doc(&slate_yjs::state_from_value(value, 3), 4);
+    for block in [empty, flat] {
+        let node = figure(block.clone());
+        let room = doc(&[paragraph("intro")]);
+        let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+        let inserted = edit::apply_material_commands(
+            &mut room.transact_mut(),
+            &root,
+            &[DocumentCommand::InsertBlock {
+                after_block_id: Some("p1".into()),
+                blocks: vec![node.clone()],
+            }],
+        );
+        assert!(inserted.is_err(), "an agent inserts {block}");
+        let room = doc(&[figure(chart())]);
+        let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+        let replaced = commands::replace_block(
+            &mut room.transact_mut(),
+            &root,
+            &ReplaceBlock {
+                actor_user_id: "u1".into(),
+                expected_block: figure(chart()),
+                expected_revision: None,
+                material_id: "m1".into(),
+                replacement_block: node,
+                room: "material:m1:schema:1".into(),
+            },
+        );
+        assert!(replaced.is_err(), "the content API writes {block}");
+    }
+    // A valid figure still goes in both ways.
+    let room = doc(&[paragraph("intro")]);
+    let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+    edit::apply_material_commands(
+        &mut room.transact_mut(),
+        &root,
+        &[DocumentCommand::InsertBlock {
+            after_block_id: Some("p1".into()),
+            blocks: vec![figure(chart())],
+        }],
+    )
+    .unwrap();
 }

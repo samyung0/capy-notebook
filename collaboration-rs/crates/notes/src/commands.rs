@@ -97,6 +97,20 @@ pub fn replace_block(
     {
         return refuse("replacement block requires children");
     }
+    // A figure the content API writes is checked whole, as outside a room
+    // (Epo 2026-10-18).
+    if let Some(Value::String(kind)) = kind
+        && crate::plate::holds_map(kind, "block")
+        && let Err(error) = crate::material::figure_block(
+            kind,
+            command
+                .replacement_block
+                .get("block")
+                .unwrap_or(&Value::Null),
+        )
+    {
+        return refuse(&error.0);
+    }
     let y_root = BranchPtr::from(root.as_ref() as &Branch);
     let mut editor = Editor::open(txn, y_root)?;
     let Some((current, path)) = find(&editor.root.children, &expected_id, &mut Vec::new()) else {

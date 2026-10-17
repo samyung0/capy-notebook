@@ -20,6 +20,11 @@ type Policy struct {
 	Bank          bool
 	BankAssetsURL string
 	Snapshot      bool
+	// Live takes a note figure as a room holds it, repaired (Epo 2026-10-18):
+	// a chart or plot may have no series, and a pie or stacked chart at most
+	// one, with any values. Only stored note documents (materialdoc.Parse)
+	// and room projections set it; agent writes, bank and quiz questions do not.
+	Live bool
 }
 
 // QuizBankAssetsURL is the bank's public asset base, set once at startup. A
@@ -353,6 +358,15 @@ func blocks(value any, policy Policy) error {
 	return nil
 }
 
+// minSeries is the fewest series a chart or plot holds: none for a live note
+// figure (Policy.Live), one otherwise.
+func minSeries(policy Policy) int {
+	if policy.Live {
+		return 0
+	}
+	return 1
+}
+
 // validatePlot checks a plot: one to four series of [x, y] points drawn as a
 // line or a scatter (kind), optional reference lines {axis x|y, value,
 // label?} and labelled points {x, y, label}.
@@ -374,7 +388,7 @@ func validatePlot(b map[string]any, policy Policy) error {
 	if !optionalString(b, "unit", fieldlimits.QuestionPlotTitle) {
 		return fail("invalid plot unit")
 	}
-	series, ok := array(b["series"], 1, fieldlimits.QuestionPlotSeries)
+	series, ok := array(b["series"], minSeries(policy), fieldlimits.QuestionPlotSeries)
 	if !ok {
 		return fail("invalid plot series")
 	}
@@ -503,11 +517,12 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 		if g, ok := b["gridlines"]; ok && !enum(g, "normal fine") {
 			return fail("invalid gridlines")
 		}
-		series, ok := array(b["series"], 1, fieldlimits.QuestionChartSeries)
+		series, ok := array(b["series"], minSeries(policy), fieldlimits.QuestionChartSeries)
 		if !ok {
 			return fail("invalid chart series")
 		}
-		if (b["kind"] == "pie" || b["kind"] == "stacked") && len(series) != 1 {
+		single := b["kind"] == "pie" || b["kind"] == "stacked"
+		if single && len(series) > 1 {
 			return fail("pie and stacked require one series")
 		}
 		for _, raw := range series {
@@ -531,12 +546,12 @@ func ValidateBlock(b map[string]any, policy Policy) error {
 					continue
 				}
 				n, ok := num(v)
-				if !ok || math.Abs(n) > fieldlimits.QuestionChartValue || ((b["kind"] == "pie" || b["kind"] == "stacked") && n < 0) {
+				if !ok || math.Abs(n) > fieldlimits.QuestionChartValue || (single && !policy.Live && n < 0) {
 					return fail("invalid chart value")
 				}
 			}
 		}
-		if b["kind"] == "pie" || b["kind"] == "stacked" {
+		if single && !policy.Live {
 			positive := false
 			for _, raw := range series[0].(map[string]any)["values"].([]any) {
 				n, _ := num(raw)

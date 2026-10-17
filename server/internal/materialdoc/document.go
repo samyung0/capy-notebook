@@ -167,8 +167,10 @@ type Projection struct {
 // NewProjection canonicalizes structurally valid content without applying
 // product caps: the collaboration service already enforces those caps and
 // permits valid shrink-only recovery for documents that start over a limit.
+// Its figures are checked as a room holds them (a room's projection; a write
+// from outside a room runs ValidateKind too).
 func NewProjection(doc Envelope) (Projection, error) {
-	if err := Validate(doc); err != nil {
+	if err := validate(doc, true); err != nil {
 		return Projection{}, err
 	}
 	doc.Value = stripRuntimeCommentMarks(doc.Value)
@@ -264,18 +266,32 @@ func stripRuntimeCommentMarks(nodes []map[string]any) []map[string]any {
 	return result
 }
 
-// Parse decodes and validates a stored document with Validate, its field caps
-// included (interactive html size and count, card text, quiz bounds, widths),
+// Parse decodes and validates a stored document as Validate does, its field
+// caps included (interactive html size and count, card text, quiz bounds, widths),
 // so a stored document breaking one does not decode. The document size limits
 // (bytes, nodes, depth: DocumentMetrics.LimitError) gate writes only: a read
 // that refused them would turn an over-limit material into a blank page.
 // Inbound request bodies are bounded by the HTTP layer, not here.
+//
+// A stored note's figures are read as a room holds them (questions.Policy
+// Live, Epo 2026-10-18): the projection keeps what a merge leaves that the
+// repair keeps. ParseWrite and ValidateKind check a document a writer sends.
 func Parse(raw string) (Envelope, error) {
+	return parse(raw, true)
+}
+
+// ParseWrite is Parse for a document a writer sends from outside a room (an
+// agent's blocks): its figures strictly, as Validate checks them.
+func ParseWrite(raw string) (Envelope, error) {
+	return parse(raw, false)
+}
+
+func parse(raw string, live bool) (Envelope, error) {
 	doc, err := decode(raw)
 	if err != nil {
 		return Envelope{}, err
 	}
-	if err := Validate(doc); err != nil {
+	if err := validate(doc, live); err != nil {
 		return Envelope{}, err
 	}
 	return doc, nil
@@ -299,7 +315,14 @@ func decode(raw string) (Envelope, error) {
 	return doc, nil
 }
 
+// Validate checks a document a writer sends, its figures strictly.
 func Validate(doc Envelope) error {
+	return validate(doc, false)
+}
+
+// validate checks a document; live takes its note figures as a room holds
+// them (questions.Policy Live).
+func validate(doc Envelope, live bool) error {
 	if doc.SchemaVersion != SchemaVersion {
 		return fmt.Errorf("%w: unsupported schemaVersion %d", ErrInvalid, doc.SchemaVersion)
 	}
@@ -308,7 +331,7 @@ func Validate(doc Envelope) error {
 	}
 	embeds := 0
 	for i, node := range doc.Value {
-		if err := validateNode(node, 0); err != nil {
+		if err := validateNode(node, 0, live); err != nil {
 			return fmt.Errorf("%w: value[%d]: %v", ErrInvalid, i, err)
 		}
 		if node["type"] == HTMLEmbedType {
@@ -353,9 +376,10 @@ func Validate(doc Envelope) error {
 	return nil
 }
 
-// ValidateKind ensures artifact rows contain their canonical custom element.
+// ValidateKind ensures artifact rows contain their canonical custom element:
+// a document a writer sends, its figures strictly.
 func ValidateKind(raw, kind string) error {
-	doc, err := Parse(raw)
+	doc, err := ParseWrite(raw)
 	if err != nil {
 		return err
 	}
@@ -587,7 +611,7 @@ func ResolvePendingRefs(raw string, ids []string) (string, error) {
 	return Marshal(doc)
 }
 
-func validateNode(node map[string]any, depth int) error {
+func validateNode(node map[string]any, depth int, live bool) error {
 	if depth > depthCeiling {
 		return errors.New("document nesting is too deep to decode")
 	}
@@ -618,7 +642,7 @@ func validateNode(node map[string]any, depth int) error {
 		if !ok {
 			return fmt.Errorf("children[%d] must be an object", i)
 		}
-		if err := validateNode(m, depth+1); err != nil {
+		if err := validateNode(m, depth+1, live); err != nil {
 			return fmt.Errorf("children[%d]: %w", i, err)
 		}
 	}
@@ -631,7 +655,7 @@ func validateNode(node map[string]any, depth int) error {
 		// readable; every write refuses it (validateKind, Epo 2026-10-13).
 		return nil
 	}
-	if err := validateElement(node, typ, depth, children); err != nil {
+	if err := validateElement(node, typ, depth, children, live); err != nil {
 		return err
 	}
 	return validateCatalogKeys(node, element, depth)
@@ -665,7 +689,7 @@ func validateCatalogKeys(node map[string]any, e embeds.Element, depth int) error
 }
 
 // validateElement checks one element's own values.
-func validateElement(node map[string]any, typ string, depth int, children []any) error {
+func validateElement(node map[string]any, typ string, depth int, children []any, live bool) error {
 	switch typ {
 	case "quiz":
 		return validateQuiz(node)
@@ -694,7 +718,7 @@ func validateElement(node map[string]any, typ string, depth int, children []any)
 		if err := validateMediaWidth(node); err != nil {
 			return err
 		}
-		if err := questions.ValidateBlock(block, questions.Policy{}); err != nil {
+		if err := questions.ValidateBlock(block, questions.Policy{Live: live}); err != nil {
 			return err
 		}
 		// A note draws a graph from its own SVG; a URL image is for questions.

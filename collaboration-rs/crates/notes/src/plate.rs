@@ -286,6 +286,24 @@ fn entry_value(key: &str, item: ItemPtr) -> Result<Any, ProjectionError> {
     })
 }
 
+/// A figure's live `block` map as the room holds it, before the repair
+/// (`None` without one, or when it is no map): room admission checks each of
+/// its list entries ([crate::questions::figure_entries]).
+pub fn held_block_value(element: BranchPtr) -> Result<Option<Value>, ProjectionError> {
+    let Some(entry) = element
+        .entry_item("block")
+        .filter(|entry| !entry.is_deleted())
+    else {
+        return Ok(None);
+    };
+    match entry.content() {
+        ItemContent::Type(map) if matches!(map.type_ref(), TypeRef::Map) => {
+            Ok(Some(map_entries(map, true)?))
+        }
+        _ => Ok(None),
+    }
+}
+
 /// A chart's, plot's or graph's `block` as JSON (`None` without one), as
 /// the projection reads it: a live map repaired (`map_value`), a plain value
 /// as it is.
@@ -341,45 +359,46 @@ pub fn lists_of(kind: &str) -> &'static [&'static str] {
 /// or lists of maps of plain values, in key order (as a plain object
 /// attribute reads, `json::any_to_value`); anything else is an error.
 fn map_value(branch: &Branch) -> Result<Value, ProjectionError> {
-    fn entries(branch: &Branch, lists: bool) -> Result<Value, ProjectionError> {
-        let mut out = std::collections::BTreeMap::new();
-        for (key, item) in branch.map_items() {
-            if item.is_deleted() {
-                continue;
-            }
-            let value = match item.content() {
-                ItemContent::Any(values) => match values.last() {
-                    None | Some(Any::Undefined) => continue,
-                    Some(value) => json::any_to_value(value)?,
-                },
-                ItemContent::Type(list) if lists && matches!(list.type_ref(), TypeRef::Array) => {
-                    let mut items = Vec::new();
-                    let mut next = list.start();
-                    while let Some(item) = next {
-                        next = item.right();
-                        if item.is_deleted() {
-                            continue;
-                        }
-                        match item.content() {
-                            ItemContent::Type(entry)
-                                if matches!(entry.type_ref(), TypeRef::Map) =>
-                            {
-                                items.push(entries(entry, false)?);
-                            }
-                            _ => return Err(ProjectionError::Property(key.to_string())),
-                        }
-                    }
-                    Value::Array(items)
-                }
-                _ => return Err(ProjectionError::Property(key.to_string())),
-            };
-            out.insert(key.to_string(), value);
-        }
-        Ok(Value::Object(out.into_iter().collect()))
-    }
-    let mut block = entries(branch, true)?;
+    let mut block = map_entries(branch, true)?;
     crate::questions::repair_figure(&mut block);
     Ok(block)
+}
+
+/// A block map's entries, read strictly: plain values, and with `lists`,
+/// lists of maps of plain values; anything else is an error.
+fn map_entries(branch: &Branch, lists: bool) -> Result<Value, ProjectionError> {
+    let mut out = std::collections::BTreeMap::new();
+    for (key, item) in branch.map_items() {
+        if item.is_deleted() {
+            continue;
+        }
+        let value = match item.content() {
+            ItemContent::Any(values) => match values.last() {
+                None | Some(Any::Undefined) => continue,
+                Some(value) => json::any_to_value(value)?,
+            },
+            ItemContent::Type(list) if lists && matches!(list.type_ref(), TypeRef::Array) => {
+                let mut items = Vec::new();
+                let mut next = list.start();
+                while let Some(item) = next {
+                    next = item.right();
+                    if item.is_deleted() {
+                        continue;
+                    }
+                    match item.content() {
+                        ItemContent::Type(entry) if matches!(entry.type_ref(), TypeRef::Map) => {
+                            items.push(map_entries(entry, false)?);
+                        }
+                        _ => return Err(ProjectionError::Property(key.to_string())),
+                    }
+                }
+                Value::Array(items)
+            }
+            _ => return Err(ProjectionError::Property(key.to_string())),
+        };
+        out.insert(key.to_string(), value);
+    }
+    Ok(Value::Object(out.into_iter().collect()))
 }
 
 /// The string of a source text: strings only, no formats or embeds.

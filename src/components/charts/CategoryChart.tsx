@@ -408,6 +408,9 @@ export function CategoryChart({
         ]),
       },
     };
+    // Nothing to share (a merge of two editors' changes left no positive
+    // value, Epo 2026-10-18): the empty frame, its values listed.
+    if (total <= 0) return <Frame {...pieFrame} />;
     if (props.kind === 'stacked') {
       let cursor = 0;
       const last = slices.reduce(

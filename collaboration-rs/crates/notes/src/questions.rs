@@ -614,6 +614,20 @@ fn optional_description(map: &Map<String, Value>, what: &str) -> Result<Option<S
 
 /// `questionBlockSchema`.
 pub fn block(value: &Value) -> Result<Block, String> {
+    block_in(value, false)
+}
+
+/// A live figure's block as a room holds it once repaired
+/// ([repair_figure]): [block], with the two states a merge leaves that the
+/// repair keeps (Epo 2026-10-18): a chart or plot without series, and a pie
+/// or stacked chart whose values have no positive total or a negative one.
+/// Only room documents take it (`material::live_figure_block`); every write
+/// from outside a room takes [block].
+pub fn live_block(value: &Value) -> Result<Block, String> {
+    block_in(value, true)
+}
+
+fn block_in(value: &Value, live: bool) -> Result<Block, String> {
     let what = "block";
     let map = object(value, what)?;
     let kind = map.get("type").and_then(Value::as_str).unwrap_or("");
@@ -673,7 +687,12 @@ pub fn block(value: &Value) -> Result<Block, String> {
             for entry in labels {
                 label(entry, what)?;
             }
-            let series = array(&map["series"], what, 1, QUESTION_CHART_SERIES_MAX)?;
+            let series = array(
+                &map["series"],
+                what,
+                usize::from(!live),
+                QUESTION_CHART_SERIES_MAX,
+            )?;
             let mut values_of = Vec::new();
             for entry in series {
                 let entry_map = object(entry, what)?;
@@ -697,7 +716,13 @@ pub fn block(value: &Value) -> Result<Block, String> {
             if values_of.iter().any(|v| v.len() != labels.len()) {
                 return fail("Each series needs a value for every label.");
             }
-            if matches!(chart, "pie" | "stacked")
+            // A live one keeps at most its first series and any values.
+            let single = matches!(chart, "pie" | "stacked");
+            if single && live && values_of.len() > 1 {
+                return fail("Pie and stacked charts have one series.");
+            }
+            if single
+                && !live
                 && (values_of.len() != 1
                     || values_of[0].iter().flatten().any(|n| *n < 0.0)
                     || !values_of[0].iter().flatten().any(|n| *n > 0.0))
@@ -735,7 +760,12 @@ pub fn block(value: &Value) -> Result<Block, String> {
             optional(map, "unit", |v| {
                 chart_text(v, QUESTION_PLOT_TITLE_MAX, what)
             })?;
-            for curve in array(&map["series"], what, 1, QUESTION_PLOT_SERIES_MAX)? {
+            for curve in array(
+                &map["series"],
+                what,
+                usize::from(!live),
+                QUESTION_PLOT_SERIES_MAX,
+            )? {
                 let curve = object(curve, what)?;
                 strict(curve, what, &["name", "points"], &[])?;
                 chart_text(&curve["name"], QUESTION_PLOT_LABEL_MAX, what)?;
@@ -1039,24 +1069,32 @@ pub fn figure_caps(kind: &str, value: &Value) -> Check {
     Ok(())
 }
 
-/// A live chart, plot or graph as its merges are read (Epo 2026-10-17): two
-/// editors' changes to one figure merge entry by entry, which can leave what
-/// neither wrote and the validators refuse. Series and graph elements past
-/// their cap keep the first ones in document order; a chart series' values
-/// are padded with empty cells (null) or cut to its labels; a graph element
-/// naming a point that is gone is skipped (only points are referenced, so one
-/// pass). A block needing none of it is left as it is; anything else stays
-/// for the validators. The browser's `repairFigureBlock` is the same.
+/// A live chart, plot or graph as its merges are read (Epo 2026-10-17,
+/// 2026-10-18): two editors' changes to one figure merge entry by entry,
+/// which can leave what neither wrote and the validators refuse; the type
+/// wins on read and no merge is refused. Series and graph elements past their
+/// cap keep the first ones in document order, a pie or stacked chart its
+/// first series; a chart series' values are padded with empty cells (null)
+/// or cut to its labels; a line plot's series with fewer than two points is
+/// skipped (before the cap); a graph element naming a point that is gone is
+/// skipped (only points are referenced, so one pass). A chart or plot left
+/// without series, and a pie or stacked chart without a positive total, stay
+/// as they are and draw empty ([live_block] takes them). A block needing none
+/// of it is left as it is; anything else stays for the validators. The
+/// browser's `repairFigureBlock` is the same.
 pub fn repair_figure(block: &mut Value) {
     let Some(map) = block.as_object_mut() else {
         return;
     };
+    let kind = map.get("kind").and_then(Value::as_str);
     let (list, cap) = match map.get("type").and_then(Value::as_str) {
+        Some("chart") if matches!(kind, Some("pie" | "stacked")) => ("series", 1),
         Some("chart") => ("series", QUESTION_CHART_SERIES_MAX),
         Some("plot") => ("series", QUESTION_PLOT_SERIES_MAX),
         Some("graph") => ("elements", QUESTION_GRAPH_ELEMENTS_MAX),
         _ => return,
     };
+    let line = map.get("type").and_then(Value::as_str) == Some("plot") && kind != Some("scatter");
     let labels = (map.get("type").and_then(Value::as_str) == Some("chart"))
         .then(|| map.get("labels").and_then(Value::as_array).map(Vec::len))
         .flatten();
@@ -1064,6 +1102,14 @@ pub fn repair_figure(block: &mut Value) {
     let Some(Value::Array(entries)) = map.get_mut(list) else {
         return;
     };
+    if line {
+        entries.retain(|series| {
+            series
+                .get("points")
+                .and_then(Value::as_array)
+                .is_none_or(|points| points.len() >= 2)
+        });
+    }
     entries.truncate(cap);
     if let Some(labels) = labels {
         for series in entries.iter_mut() {
@@ -1091,6 +1137,54 @@ pub fn repair_figure(block: &mut Value) {
                 .all(|id| points.contains(id))
         });
     }
+}
+
+/// Each entry of a live figure's list as the room holds it, before the
+/// repair drops any (Epo 2026-10-18): a chart's or plot's series and a
+/// graph's elements are each one a writer could write, as [block] checks
+/// them, so nothing the repair leaves out of a read (a pie's second series,
+/// a series or element past the cap, a line's one-point series) holds what
+/// no editor writes. The repair and [live_block] decide the rest.
+pub fn figure_entries(block: &Value) -> Check {
+    let what = "block";
+    let Some(map) = block.as_object() else {
+        return Ok(());
+    };
+    let list = |key: &str| match map.get(key) {
+        Some(Value::Array(items)) => items.as_slice(),
+        _ => &[],
+    };
+    match map.get("type").and_then(Value::as_str) {
+        Some("chart") => {
+            for entry in list("series") {
+                let entry = object(entry, what)?;
+                strict(entry, what, &["name", "values"], &[])?;
+                chart_text(&entry["name"], QUESTION_CHART_SERIES_NAME_MAX, what)?;
+                for value in array(&entry["values"], what, 0, QUESTION_CHART_LABELS_MAX)? {
+                    if !value.is_null() {
+                        chart_value(value, what)?;
+                    }
+                }
+            }
+        }
+        Some("plot") => {
+            for entry in list("series") {
+                let entry = object(entry, what)?;
+                strict(entry, what, &["name", "points"], &[])?;
+                chart_text(&entry["name"], QUESTION_PLOT_LABEL_MAX, what)?;
+                for point in array(&entry["points"], what, 1, QUESTION_PLOT_POINTS_MAX)? {
+                    coords(point, what)?;
+                }
+            }
+        }
+        Some("graph") => {
+            for entry in list("elements") {
+                graph_element(entry)?;
+            }
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 /// One part as the schema leaves it.

@@ -637,18 +637,23 @@ the draft field by field (`rebaseBlock`: the user's changed fields, series
 and elements keep the user's value, the rest follow the peer; the graph
 editor's rows follow the rebased elements, keeping a row still being typed),
 and Save writes the user's changes onto the block as it is then, so a peer's
-change that landed meanwhile stays. The editors show a merge's raw block with
-its issues: a chart's rows past its labels and series past the cap, and a
-graph's rows past the cap or naming a gone point, each marked, Save held until
-they are fixed. A graph's SVG is drawn on Save; an editor in Edit mode that
+change that landed meanwhile stays. No merge is refused (Epo 2026-10-18):
+readers draw it repaired, a chart or plot left without series as an empty
+frame and a pie without a positive value through the chart's empty state. The
+editors show a merge's raw block with its issues: a chart's rows past its
+labels and series past the cap, a pie's other series (Remove last series
+shows for it), its negative or missing positive value, no series (Add series
+shows even on a pie), and a graph's rows past the cap or naming a gone point,
+each marked, Save held until they are fixed. A graph's SVG is drawn on Save; an editor in Edit mode that
 sees a graph's recipe change (elements, board, size) redraws it in an idle
 callback (`graphRedraw.ts`) and writes `image`, outside Undo, only when the
 SVG differs, so its own write never redraws again; readers keep the stored
 SVG. The Rust server writes the same maps on bootstrap and an agent's insert
 and reads them in one place (`plate::map_value`, behind
-`plate::block_value`); room admission refuses a
-crafted update that puts an unknown key, a wrong type, an oversize value or
-another shape into one (`figure_map.rs`).
+`plate::block_value`); room admission takes a block as its map only and
+refuses a crafted update that puts an unknown key, a wrong type, an oversize
+value or another shape into one (`figure_map.rs`; where the relaxed check for
+a merge's kept states runs: [embeds](../embeds.md#live-figures)).
 
 Standalone mindmaps and diagrams render without Plate. View
 (`MermaidMaterialView`) draws the block's `MermaidView` straight from the

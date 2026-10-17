@@ -255,32 +255,9 @@ const graphElement = z.discriminatedUnion('type', [
   }),
 ]);
 
-export const questionBlockSchema = z.discriminatedUnion('type', [
-  z.strictObject({ label: meta.optional(), text, type: z.literal('text') }),
-  z
-    .strictObject({
-      header: z.boolean(),
-      rows: z
-        .array(
-          z
-            .array(
-              z
-                .string()
-                .refine(
-                  (value) => [...value].length <= limits.QUESTION_TEXT_MAX,
-                  { error: () => m.question_validation_text_too_long() }
-                )
-            )
-            .min(1)
-            .max(limits.QUESTION_TABLE_COLUMNS_MAX)
-        )
-        .min(1)
-        .max(limits.QUESTION_TABLE_ROWS_MAX),
-      type: z.literal('table'),
-    })
-    .refine((v) => v.rows.every((row) => row.length === v.rows[0].length), {
-      error: () => m.question_validation_table_rows(),
-    }),
+/** A chart block. A live one (a room's, repaired: `liveFigureSchema`) may
+ * also have no series, and as a pie or stacked chart no positive total. */
+const chartSchema = (live: boolean) =>
   z
     .strictObject({
       description: text.optional(),
@@ -303,7 +280,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
               .max(limits.QUESTION_CHART_LABELS_MAX),
           })
         )
-        .min(1)
+        .min(live ? 0 : 1)
         .max(limits.QUESTION_CHART_SERIES_MAX),
       title: chartTitle,
       type: z.literal('chart'),
@@ -316,18 +293,25 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
           code: 'custom',
           message: m.question_validation_series_values(),
         });
-      // Empty cells are skipped: the rest are nonnegative with a positive total.
+      // Empty cells are skipped: the rest are nonnegative with a positive
+      // total. A live chart keeps at most its first series and any values
+      // (Epo 2026-10-18).
       if (
         ['pie', 'stacked'].includes(v.kind) &&
-        (v.series.length !== 1 ||
-          v.series[0].values.some((n) => n !== null && n < 0) ||
-          !v.series[0].values.some((n) => n !== null && n > 0))
+        (live
+          ? v.series.length > 1
+          : v.series.length !== 1 ||
+            v.series[0].values.some((n) => n !== null && n < 0) ||
+            !v.series[0].values.some((n) => n !== null && n > 0))
       )
         ctx.addIssue({
           code: 'custom',
           message: m.question_validation_pie_series(),
         });
-    }),
+    });
+
+/** A plot block; a live one may also have no series. */
+const plotSchema = (live: boolean) =>
   z
     .strictObject({
       description: text.optional(),
@@ -358,7 +342,7 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
               .max(limits.QUESTION_PLOT_POINTS_MAX),
           })
         )
-        .min(1)
+        .min(live ? 0 : 1)
         .max(limits.QUESTION_PLOT_SERIES_MAX),
       title: plotTitle,
       type: z.literal('plot'),
@@ -371,7 +355,104 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
       (v) =>
         v.kind === 'scatter' || v.series.every((s) => s.points.length >= 2),
       { error: () => m.question_validation_plot_line_points() }
-    ),
+    );
+
+const graphSchema = z
+  .strictObject({
+    board: z.strictObject({
+      axis: z.boolean(),
+      bbox: z.tuple([finite, finite, finite, finite]),
+      grid: z.boolean(),
+    }),
+    elements: z.array(graphElement).max(limits.QUESTION_GRAPH_ELEMENTS_MAX),
+    image: z.union([
+      z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
+      z.strictObject({
+        svg: z.string().refine(validGraphSvg, {
+          error: () => m.question_validation_graph_svg(),
+        }),
+      }),
+    ]),
+    type: z.literal('graph'),
+    ...graphSize,
+    description: text.optional(),
+  })
+  .superRefine((v, ctx) => {
+    const [left, top, right, bottom] = v.board.bbox;
+    if (left >= right || bottom >= top)
+      ctx.addIssue({
+        code: 'custom',
+        message: m.question_validation_graph_bounds(),
+      });
+    const ids = new Set<string>();
+    const points = new Set(
+      v.elements.filter((e) => e.type === 'point').map((e) => e.id)
+    );
+    for (const element of v.elements) {
+      if (ids.has(element.id))
+        ctx.addIssue({
+          code: 'custom',
+          message: m.question_validation_graph_ids(),
+        });
+      ids.add(element.id);
+      if (
+        'points' in element &&
+        (element.points.some((id) => !points.has(id)) ||
+          new Set(element.points).size !== element.points.length)
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: m.question_validation_graph_lines(),
+        });
+      if (
+        'center' in element &&
+        (!points.has(element.center) ||
+          ('points' in element && element.points.includes(element.center)))
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: m.question_validation_graph_circles(),
+        });
+      if (
+        element.type === 'functiongraph' &&
+        element.domain &&
+        element.domain[0] >= element.domain[1]
+      )
+        ctx.addIssue({
+          code: 'custom',
+          message: m.question_validation_graph_domain(),
+        });
+    }
+  });
+
+export const questionBlockSchema = z.discriminatedUnion('type', [
+  z.strictObject({ label: meta.optional(), text, type: z.literal('text') }),
+  z
+    .strictObject({
+      header: z.boolean(),
+      rows: z
+        .array(
+          z
+            .array(
+              z
+                .string()
+                .refine(
+                  (value) => [...value].length <= limits.QUESTION_TEXT_MAX,
+                  { error: () => m.question_validation_text_too_long() }
+                )
+            )
+            .min(1)
+            .max(limits.QUESTION_TABLE_COLUMNS_MAX)
+        )
+        .min(1)
+        .max(limits.QUESTION_TABLE_ROWS_MAX),
+      type: z.literal('table'),
+    })
+    .refine((v) => v.rows.every((row) => row.length === v.rows[0].length), {
+      error: () => m.question_validation_table_rows(),
+    }),
+  chartSchema(false),
+  plotSchema(false),
   z.strictObject({
     image: z.union([
       z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
@@ -382,73 +463,17 @@ export const questionBlockSchema = z.discriminatedUnion('type', [
     attribution: meta.optional(),
     description: text.optional(),
   }),
-  z
-    .strictObject({
-      board: z.strictObject({
-        axis: z.boolean(),
-        bbox: z.tuple([finite, finite, finite, finite]),
-        grid: z.boolean(),
-      }),
-      elements: z.array(graphElement).max(limits.QUESTION_GRAPH_ELEMENTS_MAX),
-      image: z.union([
-        z.strictObject({ url: z.url().max(limits.QUESTION_ASSET_URL_MAX) }),
-        z.strictObject({
-          svg: z.string().refine(validGraphSvg, {
-            error: () => m.question_validation_graph_svg(),
-          }),
-        }),
-      ]),
-      type: z.literal('graph'),
-      ...graphSize,
-      description: text.optional(),
-    })
-    .superRefine((v, ctx) => {
-      const [left, top, right, bottom] = v.board.bbox;
-      if (left >= right || bottom >= top)
-        ctx.addIssue({
-          code: 'custom',
-          message: m.question_validation_graph_bounds(),
-        });
-      const ids = new Set<string>();
-      const points = new Set(
-        v.elements.filter((e) => e.type === 'point').map((e) => e.id)
-      );
-      for (const element of v.elements) {
-        if (ids.has(element.id))
-          ctx.addIssue({
-            code: 'custom',
-            message: m.question_validation_graph_ids(),
-          });
-        ids.add(element.id);
-        if (
-          'points' in element &&
-          (element.points.some((id) => !points.has(id)) ||
-            new Set(element.points).size !== element.points.length)
-        )
-          ctx.addIssue({
-            code: 'custom',
-            message: m.question_validation_graph_lines(),
-          });
-        if (
-          'center' in element &&
-          (!points.has(element.center) ||
-            ('points' in element && element.points.includes(element.center)))
-        )
-          ctx.addIssue({
-            code: 'custom',
-            message: m.question_validation_graph_circles(),
-          });
-        if (
-          element.type === 'functiongraph' &&
-          element.domain &&
-          element.domain[0] >= element.domain[1]
-        )
-          ctx.addIssue({
-            code: 'custom',
-            message: m.question_validation_graph_domain(),
-          });
-      }
-    }),
+  graphSchema,
+]);
+
+/** A figure as a room holds it, repaired (Epo 2026-10-18): what a merge
+ * leaves that the repair keeps, a chart or plot without series and a pie or
+ * stacked chart without a positive total, reads; every write still takes
+ * `questionBlockSchema`. */
+export const liveFigureSchema = z.discriminatedUnion('type', [
+  chartSchema(true),
+  plotSchema(true),
+  graphSchema,
 ]);
 
 const answerSchema = z.discriminatedUnion('type', [

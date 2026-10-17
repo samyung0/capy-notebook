@@ -565,9 +565,14 @@ fn admission_checks_placement_values_and_the_embed_count() {
             "caption",
             text(&"c".repeat(catalog::BLOCK_CAPTION_MAX + 1)),
         ),
-        ("chart", "block", text("not a block")),
         ("mermaid", "source", yrs::Any::Number(1.0)),
     ];
+    // A figure's block is its live map only, never one plain value
+    // (Epo 2026-10-18).
+    assert!(refused_as(
+        admit(&room, &set("chart", "block", text("not a block"))),
+        limits::PLAIN_BLOCK
+    ));
     for (name, key, value) in refused {
         assert!(
             refused_as(

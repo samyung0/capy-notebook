@@ -522,6 +522,16 @@ fn assert_node_shape(node: &Value, what: &str) -> Result<(), EditError> {
             "media nodes cannot be inserted by an edit",
         );
     }
+    // A figure an edit writes is checked whole, as outside a room: what a
+    // merge may leave in a room (no series, a pie without a positive total)
+    // is no block an agent writes (Epo 2026-10-18).
+    let kind = js_string(node.get("type"));
+    if crate::plate::holds_map(&kind, "block")
+        && let Err(error) =
+            crate::material::figure_block(&kind, node.get("block").unwrap_or(&Value::Null))
+    {
+        return edit(InvalidInput, format!("{what}: {}", error.0));
+    }
     Ok(())
 }
 

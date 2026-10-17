@@ -59,6 +59,16 @@ function ChartEditor({
     block.labels.length,
     ...block.series.map((series) => series.values.length)
   );
+  // A pie or stacked chart a merge left with another series, a negative or
+  // no positive value (Epo 2026-10-18): its first column says which.
+  const first = block.series[0]?.values ?? [];
+  const pieIssue = single
+    ? first.some((n) => n !== null && n < 0)
+      ? m.question_issue_pie_negative()
+      : first.some((n) => n !== null && n > 0)
+        ? undefined
+        : m.question_issue_pie()
+    : undefined;
   const setCell = <T,>(list: T[], at: number, value: T, empty: T) =>
     Array.from({ length: Math.max(list.length, at + 1) }, (_, i) =>
       i === at ? value : (list[i] ?? empty)
@@ -153,6 +163,12 @@ function ChartEditor({
                             }),
                           ]}
                         />
+                      )}
+                      {single && i > 0 && (
+                        <IssueIcon messages={[m.question_issue_pie_series()]} />
+                      )}
+                      {i === 0 && pieIssue && (
+                        <IssueIcon messages={[pieIssue]} />
                       )}
                       <Input
                         aria-label={m.question_ui_series_name({
@@ -303,40 +319,42 @@ function ChartEditor({
               >
                 {m.question_ui_add_row()}
               </Button>
-              {!single && (
-                <>
-                  <Button
-                    disabled={
-                      block.series.length >= limits.QUESTION_CHART_SERIES_MAX
-                    }
-                    iconLeft="plus"
-                    onClick={() =>
-                      onChange({
-                        ...block,
-                        series: [
-                          ...block.series,
-                          { name: '', values: block.labels.map(() => null) },
-                        ],
-                      })
-                    }
-                    size="sm"
-                    type="button"
-                    variant="ghost-hover"
-                  >
-                    {m.question_ui_add_series()}
-                  </Button>
-                  <Button
-                    disabled={block.series.length <= 1}
-                    onClick={() =>
-                      onChange({ ...block, series: block.series.slice(0, -1) })
-                    }
-                    size="sm"
-                    type="button"
-                    variant="danger-light"
-                  >
-                    {m.question_ui_remove_last_series()}
-                  </Button>
-                </>
+              {/* A pie or stacked chart offers a series only when it has
+               * none, and a removal only when a merge left it more than one. */}
+              {(!single || block.series.length === 0) && (
+                <Button
+                  disabled={
+                    block.series.length >= limits.QUESTION_CHART_SERIES_MAX
+                  }
+                  iconLeft="plus"
+                  onClick={() =>
+                    onChange({
+                      ...block,
+                      series: [
+                        ...block.series,
+                        { name: '', values: block.labels.map(() => null) },
+                      ],
+                    })
+                  }
+                  size="sm"
+                  type="button"
+                  variant="ghost-hover"
+                >
+                  {m.question_ui_add_series()}
+                </Button>
+              )}
+              {(!single || block.series.length > 1) && (
+                <Button
+                  disabled={block.series.length <= 1}
+                  onClick={() =>
+                    onChange({ ...block, series: block.series.slice(0, -1) })
+                  }
+                  size="sm"
+                  type="button"
+                  variant="danger-light"
+                >
+                  {m.question_ui_remove_last_series()}
+                </Button>
               )}
             </div>
             {/* Opens on its own when the chart already has a description. */}

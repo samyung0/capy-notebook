@@ -99,7 +99,9 @@ pub struct Room {
     pub exact_differs: usize,
     /// Updates Node took and the key rules refuse (REVIEW5 R2): the corpus's
     /// synthetic writers insert blocks without ids, and move references
-    /// below the top level, which the store refuses (live-items REVIEW5 R2).
+    /// below the top level, which the store refuses (live-items REVIEW5 R2);
+    /// and the Node-era writers' figures, whose `block` they wrote as one
+    /// plain value where rooms now hold its live map only (Epo 2026-10-18).
     pub tightened: usize,
 }
 
@@ -151,7 +153,9 @@ impl Room {
         // content the validator did not admit.
         let tightened = outcome["accepted"].as_bool() == Some(true)
             && matches!(&admitted, Err(Refusal::Content(what))
-                if *what == notes::limits::MISSING_KEY || *what == notes::limits::NESTED_BLOCK);
+                if *what == notes::limits::MISSING_KEY
+                    || *what == notes::limits::NESTED_BLOCK
+                    || *what == notes::limits::PLAIN_BLOCK);
         if tightened {
             self.tightened += 1;
             self.validator.invalidate();

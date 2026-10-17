@@ -1057,3 +1057,59 @@ func TestDiagramAndMindmapAreNotNodeTypes(t *testing.T) {
 		}
 	}
 }
+
+// TestLiveFiguresReadButAreNotWritten: what a merge of two editors' changes
+// leaves in a live figure and the repair keeps (Epo 2026-10-18), a chart or
+// plot without series and a pie without a positive total, is read in a
+// stored note and taken in a room's projection, while every write from
+// outside a room (ValidateKind, ParseWrite, a question block) refuses it.
+func TestLiveFiguresReadButAreNotWritten(t *testing.T) {
+	figure := func(block map[string]any) string {
+		raw, err := json.Marshal(Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{
+			"type": block["type"], "id": "f1", "block": block, "children": []any{map[string]any{"text": ""}},
+		}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+	chart := func(kind string, series []any) map[string]any {
+		return map[string]any{"type": "chart", "kind": kind, "title": "T", "labels": []any{"a", "b"}, "series": series}
+	}
+	merged := map[string]map[string]any{
+		"no series":             chart("bar", []any{}),
+		"no positive total":     chart("pie", []any{map[string]any{"name": "S", "values": []any{0, nil}}}),
+		"a negative pie":        chart("stacked", []any{map[string]any{"name": "S", "values": []any{2, -1}}}),
+		"a plot without series": {"type": "plot", "title": "P", "xTitle": "x", "yTitle": "y", "series": []any{}},
+	}
+	for name, block := range merged {
+		raw := figure(block)
+		if _, err := Parse(raw); err != nil {
+			t.Errorf("%s: a stored note does not read: %v", name, err)
+		}
+		doc, err := decode(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := NewProjection(doc); err != nil {
+			t.Errorf("%s: a room's projection is refused: %v", name, err)
+		}
+		if err := ValidateKind(raw, "note"); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: a written note takes it: %v", name, err)
+		}
+		if _, err := ParseWrite(raw); !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: an agent's blocks take it: %v", name, err)
+		}
+		if err := questions.ValidateBlock(block, questions.Policy{}); err == nil {
+			t.Errorf("%s: a question block takes it", name)
+		}
+	}
+	// A pie with a second series is no live figure: the repair keeps one.
+	two := chart("pie", []any{
+		map[string]any{"name": "S", "values": []any{1, 2}},
+		map[string]any{"name": "R", "values": []any{1, 2}},
+	})
+	if _, err := Parse(figure(two)); !errors.Is(err, ErrInvalid) {
+		t.Errorf("a pie with two series reads: %v", err)
+	}
+}

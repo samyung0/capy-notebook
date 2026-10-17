@@ -3,6 +3,7 @@ import type { Question, QuestionBlock } from '@/api/types';
 import { repairFigureBlock } from '@/features/questions/repair';
 import {
   descriptionFits,
+  liveFigureSchema,
   questionBlockSchema,
   validateQuestion,
   validateQuestions,
@@ -238,8 +239,13 @@ function followsCatalog(
   );
 }
 
-/** One element's own values; the catalog's key rules follow. */
-function validateCustomElement(element: MaterialElement): boolean {
+/** One element's own values; the catalog's key rules follow. A `live` read
+ * (a stored or room document) takes a figure as a room holds it, repaired
+ * (`liveFigureSchema`, Epo 2026-10-18); a write takes it strictly. */
+function validateCustomElement(
+  element: MaterialElement,
+  live: boolean
+): boolean {
   switch (element.type) {
     case 'chart':
     case 'plot':
@@ -251,7 +257,9 @@ function validateCustomElement(element: MaterialElement): boolean {
         element.children[0].text !== ''
       )
         return false;
-      const result = questionBlockSchema.safeParse(element.block);
+      const result = (live ? liveFigureSchema : questionBlockSchema).safeParse(
+        element.block
+      );
       return (
         result.success &&
         result.data.type === element.type &&
@@ -380,11 +388,12 @@ function validateMediaElement(
 
 export function isMaterialNode(
   value: unknown,
-  depth = 0
+  depth = 0,
+  live = false
 ): value is MaterialNode {
   if (isTextNode(value)) return true;
   if (!isElementNode(value)) return false;
-  if (!value.children.every((child) => isMaterialNode(child, depth + 1)))
+  if (!value.children.every((child) => isMaterialNode(child, depth + 1, live)))
     return false;
   const catalog = ELEMENTS.get(value.type);
   // A stored document holding a type the catalog does not list stays
@@ -392,7 +401,7 @@ export function isMaterialNode(
   if (!catalog) return true;
   return (
     validateMediaElement(value, catalog) &&
-    validateCustomElement(value) &&
+    validateCustomElement(value, live) &&
     followsCatalog(value, catalog, depth)
   );
 }
@@ -407,14 +416,21 @@ function unknownElementType(nodes: MaterialNode[]): string | undefined {
   }
 }
 
-export function isMaterialDocument(value: unknown): value is MaterialDocument {
+/** Whether `value` is a material document; `live` reads one stored or held
+ * by a room, whose figures may be what a merge leaves (`liveFigureSchema`). */
+export function isMaterialDocument(
+  value: unknown,
+  live = false
+): value is MaterialDocument {
   if (!isRecord(value)) return false;
   if (
     !(
       value.schemaVersion === MATERIAL_SCHEMA_VERSION &&
       Array.isArray(value.value) &&
       value.value.length > 0 &&
-      value.value.every((node) => isElementNode(node) && isMaterialNode(node))
+      value.value.every(
+        (node) => isElementNode(node) && isMaterialNode(node, 0, live)
+      )
     )
   )
     return false;
@@ -467,7 +483,7 @@ function parseMaterialDocumentInput(input: unknown): MaterialDocument | null {
     }
   }
   candidate = withRepairedFigures(candidate);
-  return isMaterialDocument(candidate) ? candidate : null;
+  return isMaterialDocument(candidate, true) ? candidate : null;
 }
 
 export function parseMaterialDocumentWithMetrics(
