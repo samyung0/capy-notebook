@@ -730,6 +730,7 @@ function OfficeRuntime() {
               onExporter={reportExporter}
               onFlusher={reportFlusher}
               onMenus={reportMenus}
+              onNotice={reportNotice}
               onPendingChange={reportHostPending}
               onRenderer={reportRenderer}
               onSave={save}

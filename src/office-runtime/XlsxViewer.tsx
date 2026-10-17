@@ -32,7 +32,7 @@ import { runtimeEngines } from './prewarm';
 import type { OfficeMenuReporter, OfficeRenderer } from './runtimeMenus';
 import { type CellCitation, xlsxCitation } from './xlsxCitation';
 import { xlsxViewMenus } from './xlsxMenus';
-import { nameBoxTarget, revealedExtent } from './xlsxNameBox';
+import { nameBoxTarget, revealedExtent, scrollSize } from './xlsxNameBox';
 import { sheetPages, viewportPage } from './xlsxRender';
 import './xlsx-runtime.css';
 
@@ -489,7 +489,11 @@ export function XlsxViewer({
           onChange={(event) => setNameDraft(event.target.value)}
           onFocus={(event) => event.currentTarget.select()}
           onKeyDown={(event) => {
-            if (event.key !== 'Enter' && event.key !== 'Escape') return;
+            if (
+              (event.key !== 'Enter' && event.key !== 'Escape') ||
+              event.nativeEvent.isComposing
+            )
+              return;
             event.preventDefault();
             // Text that names no cell stays in the box, as in the editor.
             if (
@@ -525,11 +529,10 @@ export function XlsxViewer({
         <div
           aria-hidden="true"
           style={{
-            height: extent.height * zoom,
+            ...scrollSize(extent, zoom),
             left: 0,
             position: 'absolute',
             top: 0,
-            width: extent.width * zoom,
           }}
         />
         <div aria-hidden="true" className="xlsx-canvas-layer">

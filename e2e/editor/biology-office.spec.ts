@@ -704,6 +704,17 @@ test('XLSX view mode name box goes to a typed cell on this sheet or another', as
   await expect
     .poll(() => grid.evaluate((node) => node.scrollTop))
     .toBeGreaterThan(50_000);
+  // Past the browsers' element size limit the cell is selected and the scroll
+  // area stops at the fork's 15,000,000 px cap (MAX_SCROLL_EXTENT_PX).
+  await nameBox.fill('a1048576');
+  await nameBox.press('Enter');
+  await expect(nameBox).toHaveValue('A1048576');
+  await expect
+    .poll(() => grid.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(14_000_000);
+  expect(await grid.evaluate((node) => node.scrollHeight)).toBeLessThanOrEqual(
+    15_000_000
+  );
 
   // Another sheet's address opens it; a range goes to its first cell.
   await nameBox.fill("'summary'!b3:c4");

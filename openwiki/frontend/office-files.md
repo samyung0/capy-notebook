@@ -1046,8 +1046,9 @@ and so is a new comment being written; neither takes the focus back); XLSX's
 Ctrl/Cmd+C copies the sheet (in the grid Tab moves between cells, as when
 editing). All three keep their toolbar row visible and disabled, and XLSX its
 formula bar visible and read-only (its text still selects and copies), so
-nothing moves when a pause starts or ends. The toolbar's zoom control is the
-exception and stays usable, as View › Zoom does: zoom edits nothing. Only an editor pauses: in view mode
+nothing moves when a pause starts or ends. The toolbar's zoom control and the
+XLSX name box are the exceptions and stay usable, as View › Zoom does: zooming
+and going to a cell edit nothing. Only an editor pauses: in view mode
 a `canEdit` of false (a view-only user's) changes nothing, and the viewer
 still selects and copies. The DOCX menu model refuses a disabled item's id
 too.
@@ -1289,12 +1290,22 @@ of the sheet, as in Excel (Tab and Shift+Tab stop at columns A and XFD), and a
 click, drag or Shift+click selects the cells under the pointer anywhere, while
 Ctrl/Cmd+arrow, End, Ctrl/Cmd+End and Select all stop at the used range, which
 the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
-cell). Clear and cut act only on the selection's part inside the used range
-(inputs committed but not drawn yet count); copy keeps the selection's own
+cell). Clear and cut act on the selection's part inside the used range
+(inputs committed but not drawn yet count) and resolve in the engine
+(`clearContents`) to edits for only the cells that hold a value or a formula,
+so their cost is bounded by the cells that hold content; a clear whose update
+could exceed the room's per-message limit (2 MiB, counted at 128 bytes per
+cleared cell) is refused with a notice and changes nothing, and a cut clears
+only after its copy reached the clipboard. Copy keeps the selection's own
 top-left corner, leading blanks included as in Excel, and trims only past the
-used range's last row and column. A whole column costs no more than its data,
-and a selection wholly past the used range sends nothing. A cell the
-keyboard reaches past the used range grows the scroll area to it. The name box
+used range's last row and column; a copy over the engine's 100,000-cell read
+is refused with a notice, and a selection wholly past the used range sends
+nothing. A cell the keyboard reaches past the used range grows the scroll area
+to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
+Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
+200% page zoom), so cells past it are selected but not scrolled to, as in
+Google Sheets' bounded grid; Capy's View caps its scroll area the same way. The
+name box
 takes a cell address (`B7`, `$B$7`, `'Sheet 2'!B7`; a range goes to its first
 cell) and Enter selects and reveals that cell, opening the other sheet when it
 names one; text that names no cell stays in the box and Escape restores the
