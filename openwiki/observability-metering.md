@@ -356,6 +356,14 @@ the gateway, retrieval, worker, and collaboration, which separate by the
 deployed, so operator alerts stay off the product rules. The browser DSN is
 public and belongs only to `capy-web`.
 
+The SPA's Session Replay (`src/lib/observability.ts`) is error-only and
+sampled per browser session: one session in ten, decided at its first page
+load and kept in sessionStorage, loads the replay integration lazily (its own
+chunk, `src/lib/sentryReplay.ts`) and keeps a replay for every error
+(`replaysOnErrorSampleRate` 1.0, text masked and media blocked); the others
+never load rrweb (Epo 2026-10-18). That is the same expected number of error
+replays as every session buffering at 0.1.
+
 The SPA build generates hidden source maps, uploads them, and deletes them
 before the bundle ships. `SENTRY_AUTH_TOKEN` being present is what turns this
 on, so CI uploads and a local build does not. `SENTRY_URL` must be the EU

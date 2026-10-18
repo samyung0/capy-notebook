@@ -29,7 +29,11 @@ vi.mock('@sentry/react', async (importOriginal) => {
   };
 });
 
-import { initErrorReporting, reportReactError } from './observability';
+import {
+  initErrorReporting,
+  replaySampled,
+  reportReactError,
+} from './observability';
 
 it('reports caught React crashes once and leaves API failures with the server', async () => {
   const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -48,6 +52,24 @@ it('reports caught React crashes once and leaves API failures with the server', 
   await Sentry.flush(1000);
   expect(probe.events).toHaveLength(1);
   consoleError.mockRestore();
+});
+
+it('decides error replays once per browser session, in one session of ten', () => {
+  const stored = new Map<string, string>();
+  vi.stubGlobal('sessionStorage', {
+    getItem: (key: string) => stored.get(key) ?? null,
+    setItem: (key: string, value: string) => stored.set(key, value),
+  });
+  const random = vi.spyOn(Math, 'random').mockReturnValue(0.05);
+  expect(replaySampled()).toBe(true);
+  random.mockReturnValue(0.9);
+  expect(replaySampled()).toBe(true);
+  stored.clear();
+  expect(replaySampled()).toBe(false);
+  random.mockReturnValue(0.05);
+  expect(replaySampled()).toBe(false);
+  random.mockRestore();
+  vi.unstubAllGlobals();
 });
 
 afterAll(async () => {
