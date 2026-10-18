@@ -449,8 +449,10 @@ that workspace list plus the chapters list after a 300 ms trailing debounce
 per kind, so one ingest's several writes cost one refetch; a hidden tab only
 marks them stale and reads them on focus). Neither Redis Pub/Sub nor Postgres
 NOTIFY replays missed events, so every successful connection refetches the
-notification list, the unread count, and the file, material and chapter
-lists. A connection that succeeds after a failed attempt (a redeploy, a
+notification list, the unread count (each once), and the file, material and
+chapter lists; the first connection leaves out a list being read or read
+since it began connecting, the page's own reads (2026-10-18). A connection
+that succeeds after a failed attempt (a redeploy, a
 dropped network) also refetches every active query in error, so the error
 states above recover without Retry. There is no polling while disconnected; the workspace lists keep only
 `refetchOnWindowFocus`. A list read carries the client-only `ingestPct` over

@@ -121,13 +121,19 @@ it('authenticates every connection, reconciles on connect, applies stream events
     materials.subscribe(() => {}),
     workspaces.subscribe(() => {}),
   ];
-  await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(3));
+  // Loaded before the stream connects (the page was open without it).
+  await vi.waitFor(() => {
+    expect(files.getCurrentResult().status).toBe('success');
+    expect(materials.getCurrentResult().status).toBe('success');
+    expect(workspaces.getCurrentResult().status).toBe('error');
+  });
+  await vi.advanceTimersByTimeAsync(1);
   const { fetchStream, requests, send, streams } = fakeStreamFetch();
   useEventStream(pending.workspaceId);
   const cleanup = state.effects.at(-1)?.();
   try {
-    // Connecting refetches both workspace lists; a first connect is no
-    // recovery, so the failed read stays failed.
+    // Connecting refetches both workspace lists, read before it; a first
+    // connect is no recovery, so the failed read stays failed.
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(5));
     expect(workspaceListReads()).toBe(1);
     expect(requests[0].url).toContain('/stream?workspace=ws_stream');
@@ -193,4 +199,76 @@ it('authenticates every connection, reconciles on connect, applies stream events
     client.clear();
   }
   expect(requests.at(-1)?.init.signal?.aborted).toBe(true);
+});
+
+it("leaves the page's own reads to it on the first connect and reads the unread count once", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  state.client = client;
+  let releaseFiles: (() => void) | undefined;
+  const get = vi
+    .spyOn(api, 'get')
+    .mockImplementation(async <T>(path: string) => {
+      if (path.endsWith('/files'))
+        await new Promise<void>((resolve) => {
+          releaseFiles = resolve;
+        });
+      return (path.endsWith('/unread-count') ? { count: 0 } : []) as T;
+    });
+  const reads = (suffix: string) =>
+    get.mock.calls.filter(([path]) => path.endsWith(suffix)).length;
+  const observers = [
+    new QueryObserver(client, {
+      queryFn: () => api.get('/notifications'),
+      queryKey: qk.notifications,
+      staleTime: Number.POSITIVE_INFINITY,
+    }),
+    new QueryObserver(client, {
+      queryFn: () => api.get('/notifications/unread-count'),
+      queryKey: qk.notificationUnread,
+      staleTime: Number.POSITIVE_INFINITY,
+    }),
+  ];
+  const unsubscribe = observers.map((observer) => observer.subscribe(() => {}));
+  await vi.waitFor(() => expect(reads('/unread-count')).toBe(1));
+  // The page refetches its file list, painted from the stored cache, when
+  // the stream connects.
+  client.setQueryData(qk.files(pending.workspaceId), [pending], {
+    updatedAt: 1,
+  });
+  const files = new QueryObserver(client, filesQuery(pending.workspaceId));
+  unsubscribe.push(files.subscribe(() => {}));
+  await vi.waitFor(() => expect(releaseFiles).toBeDefined());
+  const { fetchStream, streams } = fakeStreamFetch();
+  useEventStream(pending.workspaceId);
+  const cleanup = state.effects.at(-1)?.();
+  try {
+    await vi.waitFor(() =>
+      expect(client.getQueryData(qk.eventStream)).toEqual({
+        status: 'connected',
+      })
+    );
+    releaseFiles?.();
+    await vi.waitFor(() =>
+      expect(files.getCurrentResult().status).toBe('success')
+    );
+    // Read before the connect: once more each.
+    await vi.waitFor(() => expect(reads('/notifications')).toBe(2));
+    expect(reads('/unread-count')).toBe(2);
+    expect(reads('/files')).toBe(1);
+
+    // A reconnect reads every list again, the count once.
+    streams[0].close();
+    await vi.waitFor(() => expect(fetchStream).toHaveBeenCalledTimes(2), {
+      timeout: 3000,
+    });
+    await vi.waitFor(() => expect(reads('/files')).toBe(2));
+    expect(reads('/notifications')).toBe(3);
+    expect(reads('/unread-count')).toBe(3);
+  } finally {
+    cleanup?.();
+    for (const stop of unsubscribe) stop();
+    client.clear();
+  }
 });

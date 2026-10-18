@@ -387,7 +387,7 @@ export function applyNotificationEvent(
   // The list joins each row's workspace and member for its icon, which a
   // pushed row lacks, so a new notification refetches instead of inserting.
   if (event.type === 'created') {
-    void qc.invalidateQueries({ queryKey: qk.notifications });
+    void qc.invalidateQueries({ exact: true, queryKey: qk.notifications });
     void qc.invalidateQueries({ queryKey: qk.notificationUnread });
     return;
   }
@@ -406,7 +406,7 @@ export function applyNotificationEvent(
         };
       });
     } else {
-      void qc.invalidateQueries({ queryKey: qk.notifications });
+      void qc.invalidateQueries({ exact: true, queryKey: qk.notifications });
     }
     void qc.invalidateQueries({ queryKey: qk.notificationUnread });
     return;
@@ -430,7 +430,7 @@ export function applyNotificationEvent(
         };
       });
     } else {
-      void qc.invalidateQueries({ queryKey: qk.notifications });
+      void qc.invalidateQueries({ exact: true, queryKey: qk.notifications });
     }
     void qc.invalidateQueries({ queryKey: qk.notificationUnread });
   }
@@ -439,9 +439,11 @@ export function applyNotificationEvent(
 /** The one SSE connection a signed-in tab holds: notifications always, plus
  * ingest progress and tree changes for the workspace being viewed. Redis
  * Pub/Sub and Postgres NOTIFY replay nothing, so every connect refetches the
- * lists the stream feeds; while disconnected there is no polling, only the
- * banner and a backoff reconnect. No-op under MSW (the dev mock has no event
- * stream). */
+ * lists the stream feeds, except that the first leaves out a list being read
+ * or read since it began: the page's own reads, which already hold what the
+ * stream would have announced. While disconnected there is no polling, only
+ * the banner and a backoff reconnect. No-op under MSW (the dev mock has no
+ * event stream). */
 export function useEventStream(wsId: string) {
   const qc = useQueryClient();
   useEffect(() => {
@@ -456,17 +458,31 @@ export function useEventStream(wsId: string) {
 
     const setStatus = (status: EventStreamState['status']) =>
       qc.setQueryData<EventStreamState>(qk.eventStream, { status });
-    const reconcile = () => {
-      const keys: QueryKey[] = [
-        qk.notifications,
-        qk.notificationUnread,
-        qk.billing,
+    const reconcile = (firstSince?: number) => {
+      const lists: { exact?: true; queryKey: QueryKey }[] = [
+        // Exact: the unread count, under the same prefix, is its own entry.
+        { exact: true, queryKey: qk.notifications },
+        { queryKey: qk.notificationUnread },
+        { queryKey: qk.billing },
       ];
       if (wsId) {
-        keys.push(qk.files(wsId), qk.materials(wsId), qk.chapters(wsId));
+        lists.push(
+          { queryKey: qk.files(wsId) },
+          { queryKey: qk.materials(wsId) },
+          { queryKey: qk.chapters(wsId) }
+        );
       }
-      for (const queryKey of keys) {
-        void qc.refetchQueries({ queryKey, type: 'active' });
+      for (const list of lists) {
+        void qc.refetchQueries({
+          ...list,
+          predicate:
+            firstSince === undefined
+              ? undefined
+              : (query) =>
+                  query.state.fetchStatus !== 'fetching' &&
+                  query.state.dataUpdatedAt <= firstSince,
+          type: 'active',
+        });
       }
     };
     // One ingest raises several tree events seconds apart and a bulk write
@@ -502,9 +518,12 @@ export function useEventStream(wsId: string) {
         }
       }
     };
+    let connects = 0;
     const connect = async () => {
       if (stopped) return;
       controller = new AbortController();
+      const first = connects++ === 0;
+      const startedAt = Date.now();
       let clean = false;
       try {
         await readEventStream(wsId, handle, controller.signal, () => {
@@ -517,7 +536,7 @@ export function useEventStream(wsId: string) {
             });
           delay = 1000;
           setStatus('connected');
-          reconcile();
+          reconcile(first ? startedAt : undefined);
         });
         clean = true;
       } catch {
@@ -1999,7 +2018,7 @@ export function useAcceptWorkspaceInvite() {
       qc.invalidateQueries({
         queryKey: qk.workspaceMembers(member.workspaceId),
       });
-      qc.invalidateQueries({ queryKey: qk.notifications });
+      qc.invalidateQueries({ exact: true, queryKey: qk.notifications });
       qc.invalidateQueries({ queryKey: qk.notificationUnread });
     },
   });

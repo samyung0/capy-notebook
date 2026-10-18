@@ -227,7 +227,6 @@ const appRoutes = [
       qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
       qc.prefetchInfiniteQuery(recentFilesQuery());
       qc.prefetchInfiniteQuery(recentMaterialsQuery());
-      qc.prefetchQuery(canvasesQuery());
     },
     path: '/',
   }),
@@ -434,6 +433,8 @@ const appRoutes = [
     getParentRoute: () => authShellRoute,
     loaderDeps: ({ search }) => search,
     loader: ({ context: { queryClient: qc }, deps }) => {
+      // Every tab's rows carry their workspace's icon.
+      qc.prefetchQuery(workspacesQuery({ sort: 'accessed' }));
       if (deps.tab === 'blocks') {
         qc.prefetchInfiniteQuery(ownedMaterialsQuery(materialListParams(deps)));
       } else if (deps.tab !== 'trash') {
