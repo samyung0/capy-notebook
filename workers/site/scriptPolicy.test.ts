@@ -6,6 +6,7 @@ import {
   sharePath,
   shareToken,
 } from '../../src/lib/shareLink';
+import { clerkScriptTags } from '../../vite-clerk';
 import { appPolicy, pagePolicy } from '../../vite-image-policy';
 import { handleSiteRequest } from './handler';
 
@@ -220,5 +221,20 @@ describe('the SPA script report', () => {
     ]);
     expect(found['script-src-attr']).toEqual(["'none'"]);
     expect(found['report-uri']).toEqual([REPORT]);
+  });
+
+  it('allows the clerk-js script index.html starts, on the @6 major tag', () => {
+    const script = clerkScriptTags(DEPLOYED.VITE_CLERK_PUBLISHABLE_KEY).find(
+      (tag) => tag.tag === 'script'
+    );
+    const src = String(script?.attrs?.src);
+    expect(src).toBe(
+      'https://clerk.uat.capynotebook.com/npm/@clerk/clerk-js@6/dist/clerk.browser.js'
+    );
+    expect(
+      directives(appPolicy(DEPLOYED))['script-src'].some((source: string) =>
+        src.startsWith(source)
+      )
+    ).toBe(true);
   });
 });

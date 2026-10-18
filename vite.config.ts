@@ -7,6 +7,7 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
 import { summaryVitePlugin } from './src/summary/vite';
+import { clerkScript } from './vite-clerk';
 import { embedFrame } from './vite-embed';
 import { bucketOrigin, policyHeaders } from './vite-image-policy';
 import { mathliveFonts } from './vite-mathlive';
@@ -197,6 +198,8 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
               }))
             : [],
       },
+      // Under MSW the app runs without Clerk.
+      !(isSsrBuild || useMsw) && clerkScript(env.VITE_CLERK_PUBLISHABLE_KEY),
       react(),
       mathliveFonts(),
       embedFrame(env.VITE_EMBED_ORIGIN),

@@ -1228,7 +1228,10 @@ Two content security policies, both built once per SPA build by
   The SPA gets the same `script-src` report-only, inside its image header,
   plus `https://challenges.cloudflare.com` (Clerk's Turnstile on sign-up) and
   `https://apis.google.com` (the Drive picker), to learn what the app itself
-  would need before anything there is enforced.
+  would need before anything there is enforced. Its `index.html` starts
+  clerk-js itself (`vite-clerk.ts`, Epo 2026-10-18): an async script tag on
+  Clerk's `@6` major tag under the frontend API's `/npm/@clerk/`, which that
+  source covers, so the tag needs no hash.
 
 Go's own HTML behind `/api/*` (the unsubscribe page) has no images and no
 policy. The values reach the pages two ways:

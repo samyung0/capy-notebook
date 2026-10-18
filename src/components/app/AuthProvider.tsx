@@ -83,6 +83,9 @@ export function AppAuthProvider({ children, pending }: AuthProviderProps) {
   return (
     <ClerkProvider
       afterSignOutUrl="/sign-in"
+      // Capy draws its own auth forms, so Clerk's prebuilt UI never loads; a
+      // Clerk component added later needs it back (Epo 2026-10-18).
+      prefetchUI={false}
       publishableKey={PUBLISHABLE_KEY}
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
