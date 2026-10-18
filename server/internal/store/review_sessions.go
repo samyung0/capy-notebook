@@ -418,9 +418,6 @@ func (s *Store) WorkspaceReview(ctx context.Context, userID, wsID string, info R
 		return out, err
 	}
 	prefs := reviewPrefsOf(prefsRaw)
-	if info.Mode == nil {
-		prefs.Focus = "balanced"
-	}
 	items, history, err := s.scoredWorkspace(ctx, userID, wsID, prefs, now)
 	if err != nil {
 		return out, err
@@ -748,8 +745,6 @@ func (s *Store) ReviewOverview(ctx context.Context, userID string, now time.Time
 		return out, err
 	}
 	prefs := reviewPrefsOf(prefsRaw)
-	manual := prefs
-	manual.Focus = "balanced"
 	list, err := s.reviewableWorkspaces(ctx, userID)
 	if err != nil {
 		return out, err
@@ -839,25 +834,6 @@ func (s *Store) nameChapters(ctx context.Context, list []ReviewSuggestion) error
 		}
 	}
 	return rows.Err()
-}
-
-// workspaceSuggestion is the Study tab's: the workspace's strongest
-// suggestion among its scored items, nil when none passes.
-func (s *Store) workspaceSuggestion(ctx context.Context, wsID string, items []scored, history map[string][]review.Rating) (*ReviewSuggestion, error) {
-	// The learner is in the workspace now, so its interest is full.
-	list := groupSuggestions(items, history, 1)
-	if len(list) == 0 {
-		return nil, nil
-	}
-	top := list[:1]
-	top[0].WorkspaceID = wsID
-	if err := s.pool.QueryRow(ctx, `SELECT name, icon_id FROM workspaces WHERE id=$1`, wsID).Scan(&top[0].WorkspaceName, &top[0].IconID); err != nil {
-		return nil, err
-	}
-	if err := s.nameChapters(ctx, top); err != nil {
-		return nil, err
-	}
-	return &top[0], nil
 }
 
 /* ---------------------------------------------------------- past reviews */

@@ -225,7 +225,7 @@ function RoleSelect({
       <SelectTrigger aria-label={label} className={className}>
         <SelectValue />
       </SelectTrigger>
-      <SelectContent layout="row">
+      <SelectContent>
         <SelectGroup>
           {roleOptions().map((option) => (
             <SelectItem key={option.value} value={option.value}>

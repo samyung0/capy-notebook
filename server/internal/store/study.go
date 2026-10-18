@@ -33,11 +33,11 @@ type StudySummary struct {
 	// Reviewable counts the rated questions and cards a review session draws on.
 	Reviewable int `json:"reviewable"`
 	// QuickReview is the Study tab's short practice (quickReview): up to
-	// quickReviewCards flashcards; questions are left to review sessions.
+	// quickReviewItems flashcards and single-part quick questions.
 	QuickReview []ReviewItem `json:"quickReview" nullable:"false"`
-	// Suggestion is the workspace's strongest suggested review, for the
-	// refresh row; nil when nothing is worth reviewing.
-	Suggestion *ReviewSuggestion `json:"suggestion,omitempty"`
+	// Unfinished is the latest whole-workspace session left before its end,
+	// for the Study tab's Continue review; nil when there is none.
+	Unfinished *UnfinishedSession `json:"unfinished,omitempty"`
 }
 
 // ReviewItem is one card or question in a review session, with the content
@@ -54,8 +54,8 @@ type ReviewItem struct {
 	Question map[string]any         `json:"question,omitempty"`
 }
 
-// quickReviewCards caps a quick review.
-const quickReviewCards = 4
+// quickReviewItems caps a quick review.
+const quickReviewItems = 4
 
 // studyItem is a reviewable item read from a material's document.
 type studyItem struct {
@@ -270,6 +270,18 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	if err := rows.Err(); err != nil {
 		return out, err
 	}
+	var u UnfinishedSession
+	err = s.pool.QueryRow(ctx, `SELECT rs.id, rs.workspace_id, w.name, w.icon_id, rs.group_kind,
+			(SELECT count(*) FROM review_answers ra WHERE ra.session_id=rs.id), jsonb_array_length(rs.items), rs.last_answer_at
+		FROM review_sessions rs JOIN workspaces w ON w.id=rs.workspace_id
+		WHERE rs.user_id=$1 AND rs.workspace_id=$2 AND rs.group_kind='workspace' AND rs.finished_at IS NULL
+		ORDER BY rs.last_answer_at DESC LIMIT 1`, userID, wsID).
+		Scan(&u.ID, &u.WorkspaceID, &u.WorkspaceName, &u.IconID, &u.Group, &u.Answered, &u.Total, &u.LastAnswerAt)
+	if err == nil {
+		out.Unfinished = &u
+	} else if !errors.Is(err, pgx.ErrNoRows) {
+		return out, err
+	}
 	prefs, err := s.StudyPreferencesOf(ctx, userID)
 	if err != nil {
 		return out, err
@@ -288,31 +300,42 @@ func (s *Store) StudySummary(ctx context.Context, userID, wsID string, now time.
 	}
 	items := scoreItems(pool, history, reviewPrefsOf(prefs))
 	out.QuickReview = quickReview(items)
-	if out.Enabled {
-		if out.Suggestion, err = s.workspaceSuggestion(ctx, wsID, items, history); err != nil {
-			return out, err
-		}
-	}
 	return out, nil
 }
 
-// quickReview ranks the cards a suggested review would (scoreItems, so the
+// quickReview ranks the items a suggested review would (scoreItems, so the
 // focus and item preferences apply) among those probably fading
-// (suggestedRecall) and takes the top quickReviewCards. Questions never
-// enter: answering one is not quick and does not fit the Study panel.
+// (suggestedRecall) and takes the top quickReviewItems. Only cards and quick
+// questions enter: a question needs a single part answered by choice,
+// true/false, a short answer or gaps; longer ones are left to review sessions.
 func quickReview(items []scored) []ReviewItem {
 	var due []scored
 	for _, it := range items {
-		if it.Kind == "card" && it.r <= suggestedRecall {
+		if (it.Kind == "card" || quickQuestion(it.Question)) && it.r <= suggestedRecall {
 			due = append(due, it)
 		}
 	}
 	sort.SliceStable(due, func(i, j int) bool { return due[i].score() > due[j].score() })
 	out := []ReviewItem{}
-	for _, it := range due[:min(len(due), quickReviewCards)] {
+	for _, it := range due[:min(len(due), quickReviewItems)] {
 		out = append(out, it.ReviewItem)
 	}
 	return out
+}
+
+// quickQuestion is a question short enough for the Study panel.
+func quickQuestion(q map[string]any) bool {
+	parts, _ := q["parts"].([]any)
+	if len(parts) != 1 {
+		return false
+	}
+	p, _ := parts[0].(map[string]any)
+	a, _ := p["answer"].(map[string]any)
+	switch a["type"] {
+	case "mcq", "boolean", "short", "gaps":
+		return true
+	}
+	return false
 }
 
 // questionText is the first text block of the stem or the first part.

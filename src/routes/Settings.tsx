@@ -45,7 +45,7 @@ function CustomizationsTab() {
             <SelectTrigger aria-label={m.settings_theme()} layout="row">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent layout="row">
+            <SelectContent>
               {STYLES.map((t) => (
                 <SelectItem key={t.value} value={t.value}>
                   <span className="flex items-center gap-2">
@@ -71,7 +71,7 @@ function CustomizationsTab() {
             <SelectTrigger aria-label={m.settings_mode()} layout="row">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent layout="row">
+            <SelectContent>
               {THEMES.map((t) => (
                 <SelectItem key={t.value} value={t.value}>
                   <span className="flex items-center gap-2">

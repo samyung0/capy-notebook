@@ -1,4 +1,10 @@
-import { type CSSProperties, useEffect, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
 import { flushSync } from 'react-dom';
 import { Icon } from '@/components/ui/Icon';
 import { IconButton } from '@/components/ui/IconButton';
@@ -70,23 +76,31 @@ export function ChatDock({
   // The field lays out at the row's full width even while the surface is a
   // button, so its height is known before it opens (as Menu's morph).
   const fieldBox = useRef<HTMLDivElement>(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     const row = rowRef.current;
     const field = fieldBox.current;
     if (!(row && field)) return;
-    let height = field.offsetHeight;
+    let height: number | undefined;
     const measure = () => {
+      // The field lays out at --dock-width, which starts at the button's 52px:
+      // set the real width before reading, or the first read wraps the
+      // placeholder and the dock mounts several lines tall. The fix-up would
+      // wait for the next ResizeObserver frame, which a view transition holds
+      // back (returning from the chat page).
+      const width = row.offsetWidth;
+      row.style.setProperty('--dock-width', `${width}px`);
+      const next = field.offsetHeight;
       // A line added or removed while open: the text starts where it was and
       // slides with the surface's height transition instead of jumping. Runs
       // before paint, so the jump is never drawn.
-      const delta = field.offsetHeight - height;
-      height = field.offsetHeight;
+      const delta = height === undefined ? 0 : next - height;
+      height = next;
       if (delta && field.closest('[data-open=true]'))
         fieldRef.current?.animate(
           [{ transform: `translateY(${delta}px)` }, { transform: 'none' }],
           { duration: 350, easing: 'cubic-bezier(0.34, 1.25, 0.64, 1)' }
         );
-      setSize({ height, width: row.offsetWidth });
+      setSize({ height, width });
     };
     measure();
     const observer = new ResizeObserver(measure);

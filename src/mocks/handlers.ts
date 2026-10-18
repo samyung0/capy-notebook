@@ -129,7 +129,7 @@ function mockCatalogModels() {
     {
       available: true,
       isDefault: true,
-      modelName: 'Flash 4.1',
+      modelName: 'DeepSeek Flash',
       modelSlug: 'deepseek-flash',
       providerName: 'DeepSeek',
       providerSlug: 'deepseek',
@@ -139,7 +139,7 @@ function mockCatalogModels() {
     {
       available: true,
       isDefault: false,
-      modelName: 'GLM-5.3-Flash',
+      modelName: 'GLM 5.3 Flash',
       modelSlug: 'glm-5.3-flash',
       providerName: 'Z.ai',
       providerSlug: 'zai',

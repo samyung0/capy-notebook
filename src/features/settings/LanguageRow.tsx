@@ -59,7 +59,7 @@ export function LanguageRow() {
         <SelectTrigger aria-label={m.settings_language()} layout="row">
           <SelectValue />
         </SelectTrigger>
-        <SelectContent layout="row">
+        <SelectContent>
           {available.map((locale) => (
             <SelectItem key={locale} value={locale}>
               <span className="flex items-center gap-2">

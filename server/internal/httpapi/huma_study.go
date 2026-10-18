@@ -103,6 +103,12 @@ func (a *api) getWorkspaceStudy(ctx context.Context, in *workspaceIDInput) (*stu
 	if err != nil {
 		return nil, hErr(err)
 	}
+	// Quick review questions are checked on the server, like a session's.
+	for i, it := range res.QuickReview {
+		if it.Question != nil {
+			res.QuickReview[i].Question = questions.LearnerView(it.Question)
+		}
+	}
 	return &studyOutput{Body: res}, nil
 }
 

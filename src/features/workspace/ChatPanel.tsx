@@ -293,13 +293,17 @@ export function ChatPanel({
     startNew();
   }
 
-  // The dock sends, then grows into the chat page; the keyboard closes so the
-  // answer has the page.
+  // The dock always starts a new conversation (one still answering keeps
+  // streaming in the background), then grows into the chat page; the keyboard
+  // closes so the answer has the page.
   function sendFromDock() {
-    if (!text.trim() || streaming || overLimit) return;
+    const trimmed = text.trim();
+    if (!trimmed || overLimit) return;
     (document.activeElement as HTMLElement | null)?.blur();
     withViewTransition(() => {
-      submit();
+      openNew();
+      setText('');
+      void send(trimmed, chatTurn(library, openResource));
       setPageOpen(true);
       setBackShown(false);
     });
@@ -507,7 +511,7 @@ export function ChatPanel({
                 label={streaming ? m.chat_stop() : m.chat_send()}
                 onClick={streaming ? stop : submit}
                 size="sm"
-                variant="accent"
+                variant={streaming ? 'ghost' : 'accent'}
               >
                 <span
                   aria-hidden
@@ -518,7 +522,13 @@ export function ChatPanel({
                       : 'scale-25 opacity-0 blur-[2px]'
                   )}
                 >
-                  <Icon className="fill-current" name="stop" />
+                  {/* Flush with the send button's bottom-right edge, not centred in its padding */}
+                  <span className="translate-0.5 grid size-6.5 place-items-center rounded-full border-2 border-action-accent">
+                    <Icon
+                      className="size-3 fill-current text-action-accent"
+                      name="stop"
+                    />
+                  </span>
                 </span>
               </IconButton>
             </div>
@@ -615,7 +625,7 @@ export function ChatPanel({
           onSend={sendFromDock}
           onTextChange={setText}
           overLimit={overLimit}
-          sendDisabled={!text.trim() || streaming || overLimit}
+          sendDisabled={!text.trim() || overLimit}
           text={text}
         />
       )}

@@ -113,7 +113,7 @@ workspace; writes need read access plus an account that can sign in
 
 | Endpoint | Effect |
 | --- | --- |
-| `GET /api/workspaces/{id}/study` | `StudySummary`: `enabled`, `items` (rows of untrashed items), `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool) and `quickReview`. |
+| `GET /api/workspaces/{id}/study` | `StudySummary`: `enabled`, `items` (rows of untrashed items), `recentAttempts` (the last 5 on the workspace's untrashed, non-embedded quizzes), `reviewable` (size of the review pool), `quickReview` and `unfinished` (the latest whole-workspace session left before its end, for Continue review). |
 | `PUT /api/workspaces/{id}/study/enabled` | Upserts `workspace_study`. |
 | `PUT /api/workspaces/{id}/study/items` | `{fileId \| materialId, state?}`: `done` (Mark as read), `removed` (Stop tracking), omitted deletes the row (Mark as unread, Start tracking). The target must be an untrashed file or untrashed, non-embedded material of the workspace, else 404; both or neither id is 422. |
 | `POST /api/workspaces/{id}/study/reset` | Deletes the user's `study_progress` rows in the workspace and `review_states` of every material in it. Attempts, the review log and the switch stay. |
@@ -204,13 +204,16 @@ miss, items missed twice or more, probably forgotten items (the sum of
 
 A session takes the group's items by score up to the session size, items at
 R at most 0.9 only for a suggestion, then interleaves the modes so a run of
-missed items is broken up. A manual review (from the workspace list) takes
-the whole workspace with no recall cutoff and no focus.
+missed items is broken up. A manual review (the workspace list, the Study tab's Whole
+workspace) takes the whole workspace with no recall cutoff: every item is
+eligible, the score only decides which are picked first. The focus
+preference ranks it as it ranks suggestions.
 
 Preferences live in `users.study_preferences` with the chat's: `reviewSize`
 10, 20 (default), 30 or 50; `reviewItems` both (default), quiz or flashcards,
 for suggested and manual sessions; `reviewFocus` balanced (default), tricky,
-fading or learned, for suggestions only. The chat ignores them.
+fading or learned, for suggestions, suggested and manual sessions and Quick
+review. The chat ignores them.
 
 ## Study tab
 
@@ -229,20 +232,26 @@ line says quiz results are still kept. Top to bottom:
   `contentFor`) is chapters by `order`, each chapter's files and materials by
   position (files first on ties, then newest), then unfiled items. It is
   computed in the browser from the loaded tree; there is no plan order.
-  Continue is an accent underlined link with the forward arrow. Then, while
-  anything is reviewable, "Refresh your knowledge" with "done of tracked" at
-  its right, or, when the workspace has a suggested review (`suggestion` in
-  the summary, full interest), "<group> is tricky / fading / was just learned"
-  in the mode's colour with the reason under it, and, under it, the bank's small trail (total progress, so skipping
-  items does not move it; the workspace cover's colour, see below) and Review
-  as an underlined link, which opens the suggestion, or the whole workspace's
-  review without one.
+  Continue is an accent underlined link with the forward arrow. Then, always,
+  the workspace icon, "Whole workspace" and Review, which starts a
+  whole-workspace session (no mode, recorded with its first answer like any
+  session). When `unfinished` is set the link reads Continue review and
+  reopens that session, with "Progress: answered of total · when" (its last
+  answer) muted under the title. Review is disabled with nothing reviewable
+  and nothing to continue. Suggested reviews live on Learning's Review tab
+  only (Epo, 2026-10-18).
 - **Quick review**: `quickReview` (`quickReview` in `study.go`) ranks the
-  pool's cards as a suggested review does (`scoreItems`, so the focus and
-  item preferences apply) among those at or below `suggestedRecall`, so a
-  card just rated waits until it fades, and takes the top four. Questions
-  never enter (answering one is not quick and does not fit the panel); they
-  are reviewed in review sessions. A card shows on
+  pool's cards and quick questions as a suggested review does
+  (`scoreItems`, so the focus and item preferences apply) among those at or
+  below `suggestedRecall`, so an item just answered waits until it fades,
+  and takes the top four. A quick question (`quickQuestion`) has a single
+  part answered by choice, true/false, a short answer or gaps; open,
+  matching, ordering and multi-part questions are left to review sessions
+  (they run 350 to 1000px tall at phone width). A question shows with the
+  review session's runner and Check (`POST /api/review/check` without a
+  session, keys hidden by `questions.LearnerView` in the handler), then its
+  checked result read only until Next; Next past the last checked question
+  ends the round. A card shows on
   the shared card in its `panel` size (at most 360px wide, 160 to 190px
   tall, subtitle-size front text, denser rating tiles; smaller than a note
   embed's compact card) with the set's name under it, flips
@@ -279,7 +288,9 @@ lg the workspace has no Study tab; Study gets its own page later.
 
 `/learning/review/$workspaceId?from=workspace|review` with `group`,
 `chapterId` and `reviewMode` for a suggestion, or `session` to continue
-(`src/routes/ReviewSession.tsx`), a full page scoped to one workspace. The
+(`src/routes/ReviewSession.tsx`), a full page scoped to one workspace, under the flashcard and quiz pages'
+header (`QuizPageHeader`: back arrow and one crumb, Learning or the
+workspace per `from`, above the title). The
 session is the batch fetched when it began, so it does not reshuffle as
 ratings land; the browser mints its id and every answer carries it with the
 served items, so the first answer records the session. Items come one at a time
@@ -579,7 +590,7 @@ account on sign-in. `SrsState` is a hand-written type in `src/lib/srs.ts`.
 - `src/features/workspace/workspaceContent.test.ts`: reading order.
 - `src/features/study/ratings.test.ts`: the review session's rating queue and
   question scoring; `src/features/study/StudyPanel.test.tsx`: the Study tab
-  with progress off.
+  with progress off, and the whole workspace's Review / Continue review.
 - `e2e/study/study-progress.spec.ts` (Docker stack, the detailed checks): a
   file read and unread from its row menu and its header; quizzes and sets
   started and finished through the attempt and study pages; Continue skipping

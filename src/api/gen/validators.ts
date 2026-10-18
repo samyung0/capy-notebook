@@ -7082,20 +7082,14 @@ export const GetWorkspaceStudyResponse = zod.object({
   "workspaceName": zod.string()
 })),
   "reviewable": zod.int(),
-  "suggestion": zod.object({
-  "chapterId": zod.string().optional(),
+  "unfinished": zod.object({
+  "answered": zod.int(),
   "chapterName": zod.string().optional(),
-  "evidence": zod.object({
-  "forgotten": zod.int(),
-  "lastPractisedAt": zod.iso.datetime({"offset":true}),
-  "missed": zod.int(),
-  "repeated": zod.int(),
-  "young": zod.int()
-}),
   "group": zod.enum(['chapter', 'others', 'workspace']),
   "iconId": zod.string(),
-  "items": zod.int(),
-  "mode": zod.enum(['tricky', 'fading', 'learned']),
+  "id": zod.string(),
+  "lastAnswerAt": zod.iso.datetime({"offset":true}),
+  "total": zod.int(),
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 }).optional()

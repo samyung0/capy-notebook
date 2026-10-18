@@ -308,7 +308,7 @@ export function CloneItemDialog({
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent layout="row">
+              <SelectContent>
                 {!isFile && (
                   <SelectItem value={STANDALONE}>
                     <span className="text-fg-muted">

@@ -432,3 +432,32 @@ func TestReviewCardItemsCarryTheCardImage(t *testing.T) {
 		t.Fatalf("items = %+v", items)
 	}
 }
+
+func TestQuickQuestion(t *testing.T) {
+	part := func(kind string) map[string]any {
+		return map[string]any{"id": "p", "answer": map[string]any{"type": kind}}
+	}
+	q := func(parts ...map[string]any) map[string]any {
+		list := []any{}
+		for _, p := range parts {
+			list = append(list, p)
+		}
+		return map[string]any{"id": "q", "parts": list}
+	}
+	for _, kind := range []string{"mcq", "boolean", "short", "gaps"} {
+		if !quickQuestion(q(part(kind))) {
+			t.Errorf("single %s part left out", kind)
+		}
+	}
+	for name, question := range map[string]map[string]any{
+		"open":       q(part("open")),
+		"matching":   q(part("matching")),
+		"ordering":   q(part("ordering")),
+		"multi-part": q(part("mcq"), part("short")),
+		"card":       nil,
+	} {
+		if quickQuestion(question) {
+			t.Errorf("%s entered quick review", name)
+		}
+	}
+}

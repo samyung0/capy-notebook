@@ -55,8 +55,11 @@ for (const [card, lapses] of [
   ['c_1', 0],
 ] as const)
   rated.set(`dk_1/${card}`, { at: Date.now() - lapses * 3_600_000, lapses });
-// A missed quiz question, so a session has a question to check too.
+// Missed quiz questions, so a session and Quick review have questions to
+// check too: a short answer, gaps, and true/false under a chart.
 rated.set('qz_1/q4', { at: Date.now() - 7_200_000, lapses: 1 });
+rated.set('qz_1/q15', { at: Date.now() - 5_400_000, lapses: 1 });
+rated.set('qz_1/q12', { at: Date.now() - 3_600_000, lapses: 1 });
 // Calculus started yesterday; World History is finished on first read (below).
 items('ws_calc').set('f_6', { kind: 'file', state: 'done' });
 // A twice-missed ordering question: Calculus has a review but no Quick review.
@@ -323,13 +326,18 @@ function pool(wsId: string): ReviewItem[] {
     .map(({ rank: _, ...item }) => item);
 }
 
-/** The server ranks cards by suggestion score among fading ones; the mock has
- * no recall, so the most-missed cards lead, up to four. */
+const QUICK_ANSWERS = ['mcq', 'boolean', 'short', 'gaps'];
+
+/** The server ranks cards and single-part quick questions by suggestion
+ * score among fading ones; the mock has no recall, so the most-missed items
+ * lead, up to four. */
 function quickReview(all: ReviewItem[]): ReviewItem[] {
   return all
     .filter(
       (it) =>
-        it.kind === 'card' &&
+        (it.kind === 'card' ||
+          (it.question?.parts.length === 1 &&
+            QUICK_ANSWERS.includes(it.question.parts[0].answer.type))) &&
         (rated.get(`${it.materialId}/${it.itemId}`)?.lapses ?? 0) > 0
     )
     .slice(0, 4);
@@ -350,7 +358,9 @@ function summary(wsId: string): StudySummary {
       .slice(0, 5)
       .map(db.attemptSummary),
     reviewable: all.length,
-    suggestion: suggestionsOf(wsId)[0],
+    unfinished: unfinished().find(
+      (u) => u.workspaceId === wsId && u.group === 'workspace'
+    ),
   };
 }
 
@@ -545,6 +555,27 @@ const SHOWCASE_SUGGESTIONS: ReviewSuggestion[] = [
   },
 ];
 
+/** Sessions left before their end, newest answer first. */
+function unfinished() {
+  return [...sessions]
+    .filter(([, s]) => !s.finishedAt && s.answers.size > 0)
+    .sort(([, a], [, b]) => b.lastAnswerAt - a.lastAnswerAt)
+    .map(([id, s]) => {
+      const ws = db.workspaces.find((w) => w.id === s.workspaceId);
+      return {
+        answered: s.answers.size,
+        chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
+        group: s.group,
+        iconId: ws?.iconId ?? '',
+        id,
+        lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
+        total: s.items.length,
+        workspaceId: s.workspaceId,
+        workspaceName: ws?.name ?? s.workspaceId,
+      };
+    });
+}
+
 function overview() {
   const real = [...progress.keys()].filter(
     (wsId) => (enabled.get(wsId) ?? true) && items(wsId).size > 0
@@ -562,23 +593,7 @@ function overview() {
       ...real.flatMap(suggestionsOf),
       ...SHOWCASE_SUGGESTIONS,
     ].slice(0, 5),
-    unfinished: [...sessions]
-      .filter(([, s]) => !s.finishedAt && s.answers.size > 0)
-      .sort(([, a], [, b]) => b.lastAnswerAt - a.lastAnswerAt)
-      .map(([id, s]) => {
-        const ws = db.workspaces.find((w) => w.id === s.workspaceId);
-        return {
-          answered: s.answers.size,
-          chapterName: db.chapters.find((ch) => ch.id === s.chapterId)?.name,
-          group: s.group,
-          iconId: ws?.iconId ?? '',
-          id,
-          lastAnswerAt: new Date(s.lastAnswerAt).toISOString(),
-          total: s.items.length,
-          workspaceId: s.workspaceId,
-          workspaceName: ws?.name ?? s.workspaceId,
-        };
-      }),
+    unfinished: unfinished(),
     workspaces: [
       ...real.map((wsId) => {
         const ws = db.workspaces.find((w) => w.id === wsId);

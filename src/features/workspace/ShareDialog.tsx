@@ -246,7 +246,7 @@ export function ShareDialog({
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent layout="row">
+              <SelectContent>
                 <SelectGroup>
                   {options.map((o) => (
                     <SelectItem
@@ -289,7 +289,7 @@ export function ShareDialog({
                   >
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent layout="row">
+                  <SelectContent>
                     <SelectGroup>
                       {roleOptions.map((option) => (
                         <SelectItem

@@ -5644,8 +5644,8 @@ components:
         reviewable:
           format: int64
           type: integer
-        suggestion:
-          $ref: "#/components/schemas/ReviewSuggestion"
+        unfinished:
+          $ref: "#/components/schemas/UnfinishedSession"
       required:
         - enabled
         - items

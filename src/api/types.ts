@@ -345,7 +345,8 @@ export type ReviewSession = Omit<GenReviewSession, 'items' | 'done'> & {
   items: ReviewItem[];
   done: ReviewAnswer[];
 };
-/** The Study tab's summary; Quick review items are cards, never questions. */
+/** The Study tab's summary; Quick review holds cards and single-part quick
+ * questions. */
 export type StudySummary = Omit<GenStudySummary, 'quickReview'> & {
   quickReview: ReviewItem[];
 };

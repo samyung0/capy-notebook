@@ -197,7 +197,7 @@ export function CopyToQuizDialog({
               >
                 <SelectValue />
               </SelectTrigger>
-              <SelectContent layout="row">
+              <SelectContent>
                 {editable.map((ws) => (
                   <SelectItem key={ws.id} value={ws.id}>
                     <span className="flex min-w-0 items-center gap-2">
