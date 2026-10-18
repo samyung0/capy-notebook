@@ -507,6 +507,38 @@ fn agent_edits_write_figures_strictly_and_the_content_api_takes_the_live_policy(
     .unwrap();
 }
 
+/// Undo puts back a figure as the room held it, a kept state included: a pie
+/// without a positive total that an agent's edit removed or replaced comes
+/// back whole. Fails with Undo's figure check strict again.
+#[test]
+fn undo_puts_back_a_figure_in_a_kept_state() {
+    use notes::edit::{self, DocumentCommand};
+    let mut flat = chart();
+    flat["kind"] = json!("pie");
+    flat["series"] = json!([{ "name": "A", "values": [0, 0] }]);
+    let held = [paragraph("intro"), figure(flat)];
+    let mut chart_two = figure(chart());
+    chart_two["id"] = json!("f_new");
+    for command in [
+        DocumentCommand::RemoveBlock {
+            block_id: "f_chart".into(),
+            expected_text: String::new(),
+        },
+        DocumentCommand::ReplaceBlock {
+            block_id: "f_chart".into(),
+            expected_text: String::new(),
+            blocks: vec![chart_two.clone()],
+        },
+    ] {
+        let room = common::doc(&slate_yjs::state_from_value(&held, 3), 4);
+        let root = room.get_or_insert_text(plate::CONTENT_ROOT);
+        let outcome =
+            edit::apply_material_commands(&mut room.transact_mut(), &root, &[command]).unwrap();
+        edit::undo_material_commands(&mut room.transact_mut(), &root, &outcome.inverse).unwrap();
+        assert_eq!(projected(&room), held);
+    }
+}
+
 /// Runs `check` on a thread with the 2 MiB stack a server task has.
 fn on_task_stack<T: Send + 'static>(check: impl FnOnce() -> T + Send + 'static) -> T {
     std::thread::Builder::new()

@@ -503,7 +503,7 @@ fn surviving(candidates: &[String], exists: impl Fn(&str) -> bool) -> Option<Str
     candidates.iter().rev().find(|id| exists(id)).cloned()
 }
 
-fn assert_node_shape(node: &Value, what: &str) -> Result<(), EditError> {
+fn assert_node_shape(node: &Value, what: &str, undo: bool) -> Result<(), EditError> {
     if !node.is_object()
         || stable_id(node).is_empty()
         || !node.get("type").is_some_and(Value::is_string)
@@ -524,11 +524,16 @@ fn assert_node_shape(node: &Value, what: &str) -> Result<(), EditError> {
     }
     // A figure an edit writes is checked whole, as outside a room: what a
     // merge may leave in a room (no series, a pie without a positive total)
-    // is no block an agent writes (Epo 2026-10-18).
+    // is no block an agent writes (Epo 2026-10-18). An Undo puts back what
+    // the room held, so it takes the room's live check.
     let kind = js_string(node.get("type"));
+    let block = node.get("block").unwrap_or(&Value::Null);
     if crate::plate::holds_map(&kind, "block")
-        && let Err(error) =
-            crate::material::figure_block(&kind, node.get("block").unwrap_or(&Value::Null))
+        && let Err(error) = if undo {
+            crate::material::live_figure_block(&kind, block)
+        } else {
+            crate::material::figure_block(&kind, block)
+        }
     {
         return edit(InvalidInput, format!("{what}: {}", error.0));
     }
@@ -955,7 +960,7 @@ fn run_command(
                 return edit(InvalidInput, "insert_block needs blocks");
             }
             for block in blocks {
-                assert_node_shape(block, "insert_block")?;
+                assert_node_shape(block, "insert_block", *undo)?;
             }
             let index = match after_block_id {
                 None => 0,
@@ -1050,7 +1055,7 @@ fn run_command(
                 return edit(InvalidInput, "replace_block needs blocks");
             }
             for node in blocks {
-                assert_node_shape(node, "replace_block")?;
+                assert_node_shape(node, "replace_block", *undo)?;
             }
             let (block, index) = target_block(editor, block_id)?;
             let text = block_text(&block);
@@ -1099,7 +1104,7 @@ fn run_command(
             node_id,
             node,
         } => {
-            assert_node_shape(node, "replace_child")?;
+            assert_node_shape(node, "replace_child", *undo)?;
             let (parent, parent_index) = require_parent(editor, parent_type)?;
             let Some(at) = child_index(&parent, node_id) else {
                 return edit(UnavailableTarget, format!("{node_id} no longer exists"));
@@ -1125,7 +1130,7 @@ fn run_command(
             after_node_id,
             node,
         } => {
-            assert_node_shape(node, "insert_child")?;
+            assert_node_shape(node, "insert_child", *undo)?;
             let (parent, parent_index) = require_parent(editor, parent_type)?;
             let id = stable_id(node);
             if child_index(&parent, &id).is_some() {
