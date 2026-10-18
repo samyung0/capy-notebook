@@ -1026,7 +1026,7 @@ design, option d), and the nudge's release file on 2026-10-17.
   first rollout set `CLIENT_PROTOCOL` and both minimums to 1, so tabs from
   before the gate show Offline until reloaded, with their edits kept. The
   embeds round's live figure maps (a slate-yjs patch change, Epo 2026-10-17)
-  raised `CLIENT_PROTOCOL` to 3 and `MIN_MATERIAL` to 3; `MIN_SOURCE` stays 2.
+  raised `CLIENT_PROTOCOL` to 4 and `MIN_MATERIAL` to 4; `MIN_SOURCE` stays 3.
 
 #### When to bump
 
