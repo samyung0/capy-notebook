@@ -113,6 +113,10 @@ func TestConversationFollowsEffectiveRole(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET privacy='link' WHERE id=$1`, workspace.ID); err != nil {
 		t.Fatal(err)
 	}
+	// A link reaches the visitor only once its signed link is presented.
+	if _, err := s.CreateConversation(ctx, visitorID, workspace.ID, ""); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unredeemed link visitor chat error = %v, want not found", err)
+	}
 	redeemLink(t, s, visitorID, workspace.ID)
 	visitorConv, err := s.CreateConversation(ctx, visitorID, workspace.ID, "")
 	if err != nil {
