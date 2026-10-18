@@ -1,18 +1,20 @@
 """Blind fidelity judge for the parser audit packets.
 
-For every packet with both texts (`audit_packets.py`), one headless Claude call
-reads the page image and the two texts, labelled A and B in a per-packet
-random order, and returns per-block verdicts under a JSON schema. The judge
-prompt is frozen in `bench/rag/intake/fixtures/audit-judge-prompt.txt`.
-Verdicts are written next to the packets and the run is resumable; `summary`
-tallies faithful blocks and issues per parser.
+For every packet holding both texts of a pair of sides (`audit_packets.py`),
+one headless Claude call reads the page image and the two texts, labelled A
+and B in a per-packet random order, and returns per-block verdicts under a JSON
+schema. The judge prompt is frozen in
+`bench/rag/intake/fixtures/audit-judge-prompt.txt`. Verdicts are written next to
+the packets as `pNNNN.<side>-<side>.verdict.json`, one file per pair, and the
+run is resumable; `summary` tallies faithful blocks and issues per side.
 
-Transport: the Claude Code CLI on the developer's subscription, as in
-`bench/parsers/scripts/compare_claude_recovery.py` (tools off, no MCP servers,
-no session persistence; ANTHROPIC_* variables removed so the login is used).
+Transport: one Anthropic Messages API call per packet (adaptive thinking at the
+judge's effort, the schema as structured output), billed to `ANTHROPIC_API_KEY`.
+The 10-07 MinerU/reviewed verdicts ran the same model, effort, prompt and
+schema through the Claude Code CLI.
 
-    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py run [--book ahss4] [--limit N]
-    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py summary
+    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py run --sides mineru,reviewed [--book ahss4] [--limit N]
+    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py summary --sides mineru,reviewed
 """
 
 from __future__ import annotations
@@ -22,8 +24,9 @@ import base64
 import json
 import os
 import random
-import subprocess
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -31,7 +34,6 @@ AUDIT = ROOT / "bench/rag/reports/local/2026-10-intake-eval/audit"
 PROMPT = ROOT / "bench/rag/intake/fixtures/audit-judge-prompt.txt"
 MODEL = "claude-opus-5-5"
 EFFORT = "medium"
-SIDES = ("mineru", "reviewed")
 
 SCHEMA = {
     "type": "object",
@@ -67,25 +69,7 @@ SCHEMA = {
     },
 }
 
-FLAGS = [
-    "-p",
-    "--model",
-    MODEL,
-    "--effort",
-    EFFORT,
-    "--tools",
-    "",
-    "--strict-mcp-config",
-    "--mcp-config",
-    '{"mcpServers":{}}',
-    "--disable-slash-commands",
-    "--no-session-persistence",
-    "--input-format",
-    "stream-json",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-]
+API_URL = "https://api.anthropic.com/v1/messages"
 
 
 def blocks_text(label: str, blocks: list[dict]) -> str:
@@ -95,8 +79,12 @@ def blocks_text(label: str, blocks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def judge(packet: dict, seed: int) -> dict:
-    order = list(SIDES)
+def verdict_path(packet_path: Path, sides: tuple[str, str]) -> Path:
+    return packet_path.with_name(f"{packet_path.stem}.{sides[0]}-{sides[1]}.verdict.json")
+
+
+def judge(packet: dict, sides: tuple[str, str], seed: int) -> dict:
+    order = list(sides)
     random.Random(f"{seed}:{packet['book']}:{packet['page']}").shuffle(order)
     labels = dict(zip(("A", "B"), order))
     image = (ROOT / packet["image"]).read_bytes()
@@ -107,67 +95,75 @@ def judge(packet: dict, seed: int) -> dict:
         + "\n"
         + blocks_text("B", packet["texts"][labels["B"]])
     )
-    event = {
-        "type": "user",
-        "message": {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": text},
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(image).decode()}},
-            ],
-        },
+    body = {
+        "model": MODEL,
+        "max_tokens": 32000,
+        "system": PROMPT.read_text(encoding="utf-8"),
+        "thinking": {"type": "adaptive", "display": "omitted"},
+        "output_config": {"effort": EFFORT, "format": {"type": "json_schema", "schema": SCHEMA}},
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": text},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(image).decode()}},
+                ],
+            }
+        ],
     }
-    env = dict(os.environ)
-    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"):
-        env.pop(name, None)
-    cmd = ["claude", *FLAGS, "--system-prompt", PROMPT.read_text(encoding="utf-8"), "--json-schema", json.dumps(SCHEMA)]
+    request = urllib.request.Request(
+        API_URL,
+        data=json.dumps(body).encode(),
+        headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01", "content-type": "application/json"},
+    )
     started = time.monotonic()
-    proc = subprocess.run(cmd, input=json.dumps(event) + "\n", capture_output=True, text=True, encoding="utf-8", env=env, timeout=900)
-    result = None
-    for line in proc.stdout.splitlines():
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if e.get("type") == "result":
-            result = e
-    value = (result or {}).get("structured_output")
+    value = response = error = None
+    try:
+        with urllib.request.urlopen(request, timeout=900) as reply:
+            response = json.loads(reply.read())
+        answer = next(b["text"] for b in response["content"] if b["type"] == "text")
+        value = json.loads(answer)
+    except urllib.error.HTTPError as e:
+        error = {"status": e.code, "body": e.read().decode(errors="replace")[-800:]}
+    except (urllib.error.URLError, TimeoutError, StopIteration, ValueError) as e:
+        error = {"exception": repr(e)[-800:], "stop_reason": (response or {}).get("stop_reason")}
     return {
         "labels": labels,
         "verdict": value,
-        "error": None if value is not None else {"returncode": proc.returncode, "stderr": proc.stderr[-800:], "result": (result or {}).get("result")},
-        "usage": (result or {}).get("usage"),
+        "error": error,
+        "usage": (response or {}).get("usage"),
         "seconds": round(time.monotonic() - started, 1),
         "model": MODEL,
         "effort": EFFORT,
+        "transport": "anthropic-api",
     }
 
 
-def run(book: str | None, limit: int | None, seed: int) -> None:
+def run(sides: tuple[str, str], book: str | None, limit: int | None, seed: int) -> None:
     index = json.loads((AUDIT / "index.json").read_text(encoding="utf-8"))
     done = 0
     for item in index:
         if book and item["book"] != book:
             continue
-        if set(item["sides"]) != set(SIDES):
+        if not set(sides) <= set(item["sides"]):
             continue
         packet_path = ROOT / item["packet"]
-        verdict_path = packet_path.with_suffix(".verdict.json")
-        if verdict_path.exists() and json.loads(verdict_path.read_text(encoding="utf-8")).get("verdict") is not None:
+        out = verdict_path(packet_path, sides)
+        if out.exists() and json.loads(out.read_text(encoding="utf-8")).get("verdict") is not None:
             continue
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
-        outcome = judge(packet, seed)
-        verdict_path.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+        outcome = judge(packet, sides, seed)
+        out.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
         print(json.dumps({"book": item["book"], "page": item["page"], "ok": outcome["verdict"] is not None, "seconds": outcome["seconds"]}), flush=True)
         done += 1
         if limit and done >= limit:
             break
 
 
-def summary() -> None:
-    tally = {s: {"pages": 0, "blocks": 0, "faithful": 0, "issues": {}} for s in SIDES}
+def summary(sides: tuple[str, str]) -> None:
+    tally = {s: {"pages": 0, "blocks": 0, "faithful": 0, "silent_pages": 0, "issues": {}} for s in sides}
     by_book: dict[str, dict] = {}
-    for path in sorted(AUDIT.glob("*/p*.verdict.json")):
+    for path in sorted(AUDIT.glob(f"*/p*.{sides[0]}-{sides[1]}.verdict.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         if not data.get("verdict"):
             continue
@@ -178,10 +174,12 @@ def summary() -> None:
             t["pages"] += 1
             t["blocks"] += len(blocks)
             t["faithful"] += sum(1 for b in blocks if b["faithful"])
-            for b in blocks:
-                for issue in b["issues"]:
-                    t["issues"][issue["kind"]] = t["issues"].get(issue["kind"], 0) + 1
-            bb = by_book.setdefault(book, {s: {"blocks": 0, "faithful": 0} for s in SIDES})[side]
+            kinds = [issue["kind"] for b in blocks for issue in b["issues"]]
+            for kind in kinds:
+                t["issues"][kind] = t["issues"].get(kind, 0) + 1
+            # Silent errors (wrong or missing) are the ones that reach a learner.
+            t["silent_pages"] += any(kind in ("wrong", "missing") for kind in kinds)
+            bb = by_book.setdefault(book, {s: {"blocks": 0, "faithful": 0} for s in sides})[side]
             bb["blocks"] += len(blocks)
             bb["faithful"] += sum(1 for b in blocks if b["faithful"])
     for side, t in tally.items():
@@ -192,14 +190,18 @@ def summary() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["run", "summary"])
+    parser.add_argument("--sides", required=True, help="two packet sides, comma-separated, e.g. mineru,reviewed")
     parser.add_argument("--book")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--seed", type=int, default=20261006)
     args = parser.parse_args()
+    sides = tuple(args.sides.split(","))
+    if len(sides) != 2 or sides[0] == sides[1]:
+        raise SystemExit("--sides takes two different side names")
     if args.command == "run":
-        run(args.book, args.limit, args.seed)
+        run(sides, args.book, args.limit, args.seed)
     else:
-        summary()
+        summary(sides)
 
 
 if __name__ == "__main__":
