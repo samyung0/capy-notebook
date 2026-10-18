@@ -142,6 +142,7 @@ export type {
   RetryProcessingInputBody as RetryProcessingReq,
   SaveCanvasReq,
   SetModelPrefsReq,
+  ShareRedemption,
   SourceImportStatus,
   SourceUploadPolicy,
   SpendingLimitReq,

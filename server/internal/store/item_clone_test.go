@@ -320,6 +320,7 @@ func TestItemCloneRefusesWorkspaceLinkViewers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	redeemLink(t, s, visitor, source.ID)
 	if _, err := s.MaterialEffectiveRole(ctx, visitor, note.ID); err != nil {
 		t.Fatalf("the link visitor reads the note: %v", err)
 	}

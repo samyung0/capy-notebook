@@ -467,6 +467,7 @@ func TestAdoptEditorAssets(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE materials SET privacy='link' WHERE id=$1`, foreignNote.ID); err != nil {
 		t.Fatal(err)
 	}
+	redeemLink(t, s, ownerID, foreignNote.ID)
 	if adopted, _, err := s.AdoptEditorAssets(ctx, ownerID, workspace.ID, target.ID, []string{foreign.ID}, roomy); err != nil || adopted[foreign.ID] == "" {
 		t.Fatalf("adopt shared foreign asset = %v, %v", adopted, err)
 	}

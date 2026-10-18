@@ -1523,6 +1523,23 @@ export const handlers = [
     if (i >= 0) db.workspaces.splice(i, 1);
     return new HttpResponse(null, { status: 204 });
   }),
+  // A share link presented once (the server remembers the grant).
+  http.post('/api/share/redeem', async ({ request }) => {
+    const { token } = (await request.json()) as { token: string };
+    const id = token.split('.')[0];
+    if (db.workspaces.some((row) => row.id === id))
+      return HttpResponse.json({ id, kind: 'workspace' });
+    const material = db.materials.find(
+      (row) => row.id === id && !row.workspaceId
+    );
+    return material
+      ? HttpResponse.json({
+          id,
+          kind: 'material',
+          materialKind: material.kind,
+        })
+      : new HttpResponse(null, { status: 404 });
+  }),
   http.post('/api/workspaces/:id/clone', async ({ params, request }) => {
     const body = (await request.json()) as CreateWorkspaceReq;
     const source =

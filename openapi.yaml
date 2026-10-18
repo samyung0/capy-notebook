@@ -4034,6 +4034,22 @@ components:
         - itemId
         - rating
       type: object
+    RedeemShareLinkInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/RedeemShareLinkInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        token:
+          description: A share link's {id}.{signature}
+          maxLength: 128
+          type: string
+      required:
+        - token
+      type: object
     Ref:
       additionalProperties: false
       properties:
@@ -4759,6 +4775,28 @@ components:
             - done
             - removed
           type: string
+      type: object
+    ShareRedemption:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          example: https://example.com/schemas/ShareRedemption.json
+          format: uri
+          readOnly: true
+          type: string
+        id:
+          type: string
+        kind:
+          enum:
+            - workspace
+            - material
+          type: string
+        materialKind:
+          $ref: "#/components/schemas/MaterialKind"
+      required:
+        - kind
+        - id
       type: object
     ShareRole:
       enum:
@@ -9878,14 +9916,17 @@ paths:
       summary: Grade a signed-out attempt at a shared quiz
       tags:
         - Sharing
-  /api/public/workspaces/{id}/summary:
+  /api/public/workspaces/{token}/summary:
     get:
       operationId: getPublicWorkspaceSummary
       parameters:
-        - in: path
-          name: id
+        - description: The summary link's {id}.{signature}
+          in: path
+          name: token
           required: true
           schema:
+            description: The summary link's {id}.{signature}
+            maxLength: 128
             type: string
       responses:
         "200":
@@ -9910,10 +9951,13 @@ paths:
     head:
       operationId: headPublicWorkspaceSummary
       parameters:
-        - in: path
-          name: id
+        - description: The summary link's {id}.{signature}
+          in: path
+          name: token
           required: true
           schema:
+            description: The summary link's {id}.{signature}
+            maxLength: 128
             type: string
       responses:
         "200":
@@ -10366,6 +10410,31 @@ paths:
       summary: Global search
       tags:
         - Account
+  /api/share/redeem:
+    post:
+      operationId: redeemShareLink
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RedeemShareLinkInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ShareRedemption"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Open a signed share link once
+      tags:
+        - Sharing
   /api/source-upload-policy:
     get:
       operationId: getSourceUploadPolicy

@@ -128,6 +128,7 @@ import type {
   Quiz,
   RateReviewItemReq,
   ReadSourceRefreshParams,
+  RedeemShareLinkInputBody,
   ReorderChaptersReq,
   ReorderContentReq,
   ReportEditIncidentReq,
@@ -142,6 +143,7 @@ import type {
   SetModelPrefsReq,
   SetStudyEnabledReq,
   SetStudyItemReq,
+  ShareRedemption,
   SourceCandidateReadOutputBody,
   SourceCandidateResponse,
   SourceCheckpoint,
@@ -5980,20 +5982,20 @@ export type getPublicWorkspaceSummaryResponseError = (getPublicWorkspaceSummaryR
 
 export type getPublicWorkspaceSummaryResponse = (getPublicWorkspaceSummaryResponseSuccess | getPublicWorkspaceSummaryResponseError)
 
-export const getGetPublicWorkspaceSummaryUrl = (id: string,) => {
+export const getGetPublicWorkspaceSummaryUrl = (token: string,) => {
 
 
 
 
-  return `/api/public/workspaces/${id}/summary`
+  return `/api/public/workspaces/${token}/summary`
 }
 
 /**
  * @summary Get public workspace metadata
  */
-export const getPublicWorkspaceSummary = async (id: string, options?: RequestInit): Promise<getPublicWorkspaceSummaryResponse> => {
+export const getPublicWorkspaceSummary = async (token: string, options?: RequestInit): Promise<getPublicWorkspaceSummaryResponse> => {
 
-  const res = await fetch(getGetPublicWorkspaceSummaryUrl(id),
+  const res = await fetch(getGetPublicWorkspaceSummaryUrl(token),
   {
     ...options,
     method: 'GET'
@@ -6030,20 +6032,20 @@ export type headPublicWorkspaceSummaryResponseError = (headPublicWorkspaceSummar
 
 export type headPublicWorkspaceSummaryResponse = (headPublicWorkspaceSummaryResponseSuccess | headPublicWorkspaceSummaryResponseError)
 
-export const getHeadPublicWorkspaceSummaryUrl = (id: string,) => {
+export const getHeadPublicWorkspaceSummaryUrl = (token: string,) => {
 
 
 
 
-  return `/api/public/workspaces/${id}/summary`
+  return `/api/public/workspaces/${token}/summary`
 }
 
 /**
  * @summary Check public workspace metadata
  */
-export const headPublicWorkspaceSummary = async (id: string, options?: RequestInit): Promise<headPublicWorkspaceSummaryResponse> => {
+export const headPublicWorkspaceSummary = async (token: string, options?: RequestInit): Promise<headPublicWorkspaceSummaryResponse> => {
 
-  const res = await fetch(getHeadPublicWorkspaceSummaryUrl(id),
+  const res = await fetch(getHeadPublicWorkspaceSummaryUrl(token),
   {
     ...options,
     method: 'HEAD'
@@ -6833,6 +6835,56 @@ export const search = async (params?: SearchParams, options?: RequestInit): Prom
 
   const data: searchResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as searchResponse
+}
+
+
+
+export type redeemShareLinkResponse200 = {
+  data: ShareRedemption
+  status: 200
+}
+
+export type redeemShareLinkResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type redeemShareLinkResponseSuccess = (redeemShareLinkResponse200) & {
+  headers: Headers;
+};
+export type redeemShareLinkResponseError = (redeemShareLinkResponseDefault) & {
+  headers: Headers;
+};
+
+export type redeemShareLinkResponse = (redeemShareLinkResponseSuccess | redeemShareLinkResponseError)
+
+export const getRedeemShareLinkUrl = () => {
+
+
+
+
+  return `/api/share/redeem`
+}
+
+/**
+ * @summary Open a signed share link once
+ */
+export const redeemShareLink = async (redeemShareLinkInputBody: NonReadonly<RedeemShareLinkInputBody>, options?: RequestInit): Promise<redeemShareLinkResponse> => {
+
+  const res = await fetch(getRedeemShareLinkUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...options?.headers },
+    body: JSON.stringify(redeemShareLinkInputBody)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: redeemShareLinkResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as redeemShareLinkResponse
 }
 
 

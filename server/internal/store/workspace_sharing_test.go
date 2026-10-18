@@ -126,6 +126,18 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// A link reaches a signed-in nonmember only once it presents the signed
+	// link (Sam 2026-10-18); a forged one does nothing.
+	if _, err := s.MaterialEffectiveRole(ctx, "u_other", material.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("nonmember without the link = %v, want not found", err)
+	}
+	if _, err := s.RedeemShareToken(ctx, "u_other", ws.ID+".AAAAAAAAAAAAAAAA"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("forged link = %v, want not found", err)
+	}
+	if out, err := s.RedeemShareToken(ctx, "u_other", ShareToken(s.shareLinkSecret, ws.ID)); err != nil ||
+		out.Kind != "workspace" || out.ID != ws.ID {
+		t.Fatalf("redeem = %+v, %v", out, err)
+	}
 	role, err := s.MaterialEffectiveRole(ctx, "u_other", material.ID)
 	if err != nil || role != RoleEditor {
 		t.Fatalf("signed-in nonmember role = %q, %v", role, err)
@@ -185,9 +197,30 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = trashAndPurgeMaterial(ctx, s, "u_owner", standalone.ID) })
+	if _, err := s.MaterialEffectiveRole(ctx, "u_other", standalone.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("standalone link without the link = %v, want not found", err)
+	}
+	if _, err := s.RedeemShareToken(ctx, "u_other", ShareToken(s.shareLinkSecret, standalone.ID)); err != nil {
+		t.Fatal(err)
+	}
 	role, err = s.MaterialEffectiveRole(ctx, "u_other", standalone.ID)
 	if err != nil || role != RoleViewer {
 		t.Fatalf("standalone sharing must remain view-only: %q, %v", role, err)
+	}
+
+	// Making it private cuts the link off; sharing it again needs the link
+	// again.
+	private, link := PrivacyPrivate, PrivacyLink
+	if _, err := s.pool.Exec(ctx, `DELETE FROM workspace_members WHERE workspace_id=$1 AND user_id=$2`, ws.ID, "u_other"); err != nil {
+		t.Fatal(err)
+	}
+	for _, privacy := range []*Privacy{&private, &link} {
+		if _, err := s.UpdateWorkspaceSharing(ctx, "u_owner", ws.ID, privacy, nil); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := s.WorkspaceEffectiveRole(ctx, "u_other", ws.ID); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("after private and back to link = %v, want not found", err)
 	}
 }
 

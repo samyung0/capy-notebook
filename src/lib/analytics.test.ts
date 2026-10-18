@@ -15,6 +15,7 @@ import {
   quotaBlockedProps,
   scoreBucket,
   sizeBucket,
+  stripShareSignatures,
 } from './analytics';
 
 const ANALYTICS_EVENT_NAMES = {
@@ -173,5 +174,21 @@ describe('analytics helpers', () => {
     expect(tracker.takeTerminal('f1', 'failed', 13_000)?.durationMs).toBe(
       12_000
     );
+  });
+});
+
+describe('share link signatures', () => {
+  it('leave page URLs, keeping the id', () => {
+    expect(
+      stripShareSignatures({
+        $current_url: 'https://app.test/w/ws_1a2b.AAAAAAAAAAAAAAAA?x=1#top',
+        $referrer: 'https://app.test/?clone=quiz%3Amat_9.BBBBBBBBBBBBBBBB',
+        count: 3,
+      })
+    ).toEqual({
+      $current_url: 'https://app.test/w/ws_1a2b?x=1#top',
+      $referrer: 'https://app.test/?clone=quiz%3Amat_9',
+      count: 3,
+    });
   });
 });

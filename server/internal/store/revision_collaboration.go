@@ -307,8 +307,15 @@ func (s *Store) lockMaterialEditorTx(
 	if err != nil && !isNoRows(err) {
 		return "", err
 	}
+	var linkGranted bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM workspace_link_grants
+		WHERE workspace_id=$1 AND user_id=$2)`, *workspaceID, actorID).Scan(&linkGranted); err != nil {
+		return "", err
+	}
+	// A link workspace reaches a nonmember only through a redeemed link.
 	var sharedRole WorkspaceRole
-	if (privacy == PrivacyLink || privacy == PrivacyPublic) && shareRole != nil {
+	if shareRole != nil && (privacy == PrivacyPublic ||
+		(privacy == PrivacyLink && (memberRole != "" || linkGranted))) {
 		sharedRole = shareRole.WorkspaceRole()
 	}
 	role := MaxRole(memberRole, sharedRole)

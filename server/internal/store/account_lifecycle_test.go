@@ -607,6 +607,7 @@ func TestCancelDeletionRestoresOwnedWorkspaceAccessAndSharing(t *testing.T) {
 	if _, err := s.CloneWorkspace(ctx, clonerID, workspace.ID, WorkspaceCreate{Name: "Clone"}); err != nil {
 		t.Fatalf("public clone was not restored: %v", err)
 	}
+	redeemLink(t, s, clonerID, linkWorkspace.ID)
 	if _, err := s.WorkspaceAccess(ctx, clonerID, linkWorkspace.ID); err != nil {
 		t.Fatalf("link access was not restored: %v", err)
 	}

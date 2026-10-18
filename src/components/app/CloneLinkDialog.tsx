@@ -1,3 +1,4 @@
+import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { type RefObject, useRef } from 'react';
 import { useMaterial, useWorkspace } from '@/api/hooks';
@@ -9,8 +10,9 @@ import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { type CloneKind, cloneLabel, parseCloneTarget } from '@/lib/cloneLink';
 import { errorCopy } from '@/lib/errors';
+import { redeemShareToken } from '@/lib/shareRedeem';
 
-/** The dashboard's `?clone=<kind>:<id>`, which public pages' Clone opens:
+/** The dashboard's `?clone=<kind>:<token>`, which public pages' Clone opens:
  * loads the item into its clone form (a workspace's prefilled form, an item's
  * destination and name), shows a refusal (a link viewer cloning a workspace,
  * a full plan) in it, and opens the copy. */
@@ -24,6 +26,16 @@ export function CloneLinkDialog() {
   // A frozen account copies nothing; its canClone reads false everywhere, so
   // say why before the item-specific checks blame the workspace.
   const frozen = useAccountFrozen();
+  // The link's token is presented once (Google's resource key, Sam
+  // 2026-10-18), so the item then reads by id like any other.
+  const { error: redeemError, isSuccess: redeemed } = useQuery({
+    enabled: !!target && !frozen,
+    meta: { errorBoundary: false },
+    queryFn: () => redeemShareToken(target?.token ?? ''),
+    queryKey: ['share-redeem', target?.token],
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
   if (!target) return null;
 
   const close = () => {
@@ -38,6 +50,14 @@ export function CloneLinkDialog() {
       </SimpleDialog>
     );
   }
+  if (redeemError) {
+    return (
+      <SimpleDialog onClose={close} open title={cloneLabel(target.kind)}>
+        <WarningBanner message={errorCopy(redeemError, m.source_try_again())} />
+      </SimpleDialog>
+    );
+  }
+  if (!redeemed) return null;
   if (target.kind === 'workspace') {
     return (
       <WorkspaceCloneLink id={target.id} leaving={leaving} onClose={close} />

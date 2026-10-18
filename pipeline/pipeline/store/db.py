@@ -719,9 +719,17 @@ def _pipeline_source_cancellation(
         membership = cur.fetchone()
         shared_editor = False
         if payload.get("sourceRefresh") is True:
+            # A link workspace reaches a nonmember only through a redeemed
+            # link (Go's workspaceRoles); public is open, members always pass.
             cur.execute(
-                "SELECT privacy IN ('link','public') AND share_role='editor' FROM workspaces WHERE id=%s",
-                (workspace_id,),
+                """SELECT w.privacy IN ('link','public') AND w.share_role='editor'
+                  AND (w.privacy='public'
+                    OR EXISTS(SELECT 1 FROM workspace_members m
+                      WHERE m.workspace_id=w.id AND m.user_id=%s)
+                    OR EXISTS(SELECT 1 FROM workspace_link_grants g
+                      WHERE g.workspace_id=w.id AND g.user_id=%s))
+                FROM workspaces w WHERE w.id=%s""",
+                (actor_user_id, actor_user_id, workspace_id),
             )
             shared_editor = bool(cur.fetchone()[0])
         if not shared_editor and (membership is None or str(membership[0]) != "editor"):

@@ -23,7 +23,11 @@ import (
 Sharing model: workspace privacy is inherited by everything inside it, while
 standalone materials keep their own privacy.
   - owner / member → read (and write per role)
-  - link/public    → signed-in callers may read; nonmembers receive share_role
+  - public         → signed-in nonmembers receive share_role
+  - link           → a signed-in nonmember receives share_role only after
+                     presenting the signed link once (RedeemShareToken), as
+                     Google's "anyone with the link" plus resource key (Sam
+                     2026-10-18); making it private clears those grants
   - private        → owner/members only (404 for everyone else)
 A caller's effective role is the more permissive of their membership and the
 share role. Roles are grants rather than caps: capping a member at their
@@ -41,13 +45,15 @@ func workspaceRoles(ctx context.Context, q rowQueryer, userID, wsID string) (mem
 	var owner string
 	var privacy Privacy
 	var shareRole ShareRole
-	err = q.QueryRow(ctx, `SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,'')
+	var linkGranted bool
+	err = q.QueryRow(ctx, `SELECT w.user_id, w.privacy, w.share_role, COALESCE(wm.role,''),
+			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
 		FROM workspaces w
 		JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
 		WHERE w.id=$1 AND owner.deleted_at IS NULL
 			AND owner.deletion_requested_at IS NULL
-			AND (owner.suspended_at IS NULL OR owner.id=$2)`, wsID, userID).Scan(&owner, &privacy, &shareRole, &member)
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, wsID, userID).Scan(&owner, &privacy, &shareRole, &member, &linkGranted)
 	if isNoRows(err) {
 		return "", "", ErrNotFound
 	}
@@ -60,7 +66,20 @@ func workspaceRoles(ctx context.Context, q rowQueryer, userID, wsID string) (mem
 	if owner == userID {
 		member = RoleOwner
 	}
+	// A link workspace reaches a nonmember only through a redeemed link.
+	if member == "" && privacy == PrivacyLink && !linkGranted {
+		return "", "", nil
+	}
 	return member, EffectiveRole(member, privacy, shareRole), nil
+}
+
+// linkReachSQL is true when the signed-in user may take a shared workspace's
+// share role: public, a member, or holding a redeemed link (workspaceRoles).
+// ws names the workspaces row alias, user the parameter.
+func linkReachSQL(ws, user string) string {
+	return `(` + ws + `.privacy='public'
+		OR EXISTS(SELECT 1 FROM workspace_members lm WHERE lm.workspace_id=` + ws + `.id AND lm.user_id=` + user + `)
+		OR EXISTS(SELECT 1 FROM workspace_link_grants lg WHERE lg.workspace_id=` + ws + `.id AND lg.user_id=` + user + `))`
 }
 
 // EffectiveRole is a member's grant raised by what the workspace hands to
@@ -204,9 +223,12 @@ func materialEffectiveAccess(
 	var workspacePrivacy *Privacy
 	var shareRole *ShareRole
 	var memberRole WorkspaceRole
+	var linkGranted bool
 	err := q.QueryRow(ctx, `
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
-			COALESCE(wm.role, ''), m.parent_material_id
+			COALESCE(wm.role, ''), m.parent_material_id,
+			EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
+				OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2)
 		FROM materials m
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
 		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
@@ -223,6 +245,7 @@ func materialEffectiveAccess(
 		&shareRole,
 		&memberRole,
 		&parentID,
+		&linkGranted,
 	)
 	if isNoRows(err) {
 		return "", ErrNotFound
@@ -243,9 +266,12 @@ func materialEffectiveAccess(
 		return RoleOwner, nil
 	}
 
+	// A link resource reaches a nonmember only through a redeemed link.
 	workspaceShared := wsID != nil && workspacePrivacy != nil &&
-		(*workspacePrivacy == PrivacyLink || *workspacePrivacy == PrivacyPublic)
-	materialShared := wsID == nil && (materialPrivacy == PrivacyLink || materialPrivacy == PrivacyPublic)
+		(*workspacePrivacy == PrivacyPublic ||
+			(*workspacePrivacy == PrivacyLink && (memberRole != "" || linkGranted)))
+	materialShared := wsID == nil &&
+		(materialPrivacy == PrivacyPublic || (materialPrivacy == PrivacyLink && linkGranted))
 	var sharedRole WorkspaceRole
 	switch {
 	case workspaceShared && shareRole != nil:

@@ -206,6 +206,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 	if _, err := s.UpdateStandaloneMaterialPrivacy(ctx, ownerID, note.ID, "", PrivacyLink); err != nil {
 		t.Fatal(err)
 	}
+	redeemLink(t, s, readerID, note.ID)
 	role, err := s.MaterialEffectiveRole(ctx, readerID, quiz.ID)
 	if err != nil || role != RoleViewer {
 		t.Fatalf("link-shared note should expose its quiz to readers: role=%q err=%v", role, err)
@@ -748,6 +749,7 @@ func TestEmbeddedCopiesKeepTheirCredits(t *testing.T) {
 	if _, err := s.UpdateStandaloneMaterialPrivacy(ctx, ownerID, note.ID, "", PrivacyLink); err != nil {
 		t.Fatal(err)
 	}
+	redeemLink(t, s, readerID, note.ID)
 	clone, err := s.CloneMaterial(ctx, readerID, note.ID, CloneTarget{Name: "Clone"})
 	if err != nil {
 		t.Fatal(err)

@@ -479,7 +479,8 @@ and the **owner's** disk. The two errors are deliberately distinct: only one of
 them is actionable by the person reading it.
 
 Ingest follows the same split: the uploader (the actor on the job payload) pays
-for parse/caption/embed, and the workspace owner pays for the stored bytes.
+for parse/caption/embed and, since uploader pays (Sam 2026-10-18), for the
+stored bytes too.
 Every inference path is actor-billed.
 
 ### Model registry and pinning
@@ -1081,8 +1082,8 @@ Plate command streams, and in the JSON body for `/generate` and `/plate-ai/copil
 
 Inference is billed to whoever initiated it. The ingest completion path reads
 `actorUserId` from the job payload (written at enqueue in `jobs.go`) and records
-the ledger against that user. The workspace owner still pays for the file's
-bytes via `gateStorageTx`.
+the ledger against that user, who also pays for the file's bytes (uploader
+pays) via `gateStorageTx`.
 
 Claim-time gating is two lookups, not one widened check:
 

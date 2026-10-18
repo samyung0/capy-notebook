@@ -45,6 +45,7 @@ type publicFlashcardSetsOutput struct {
 
 func (a *api) registerShare(api huma.API) {
 	const tag = "Sharing"
+	reg(api, http.MethodPost, "/api/share/redeem", "redeemShareLink", tag, "Open a signed share link once", http.StatusOK, a.redeemShareLink)
 	reg(api, http.MethodPost, "/api/workspaces/{id}/clone", "cloneWorkspace", tag, "Clone a shared workspace", http.StatusCreated, a.cloneWorkspace)
 	reg(api, http.MethodPost, "/api/files/{id}/clone", "cloneFile", tag, "Clone a file into a workspace", http.StatusCreated, a.cloneFile)
 	reg(api, http.MethodPost, "/api/materials/{id}/clone", "cloneMaterial", tag, "Clone a material into a workspace or standalone", http.StatusCreated, a.cloneMaterial)
@@ -100,6 +101,27 @@ func (a *api) orPayer(ctx context.Context, kind agenttools.ResourceKind, id stri
 		return nil
 	}
 	return denied
+}
+
+type redeemShareLinkInput struct {
+	Body struct {
+		Token string `json:"token" maxLength:"128" doc:"A share link's {id}.{signature}"`
+	}
+}
+
+type redeemShareLinkOutput struct {
+	Body store.ShareRedemption
+}
+
+// redeemShareLink remembers that the signed-in caller came in through a
+// signed link, so later calls by bare id pass (Sam 2026-10-18). A forged
+// token or a private resource answers 404.
+func (a *api) redeemShareLink(ctx context.Context, in *redeemShareLinkInput) (*redeemShareLinkOutput, error) {
+	out, err := a.s.RedeemShareToken(ctx, userID(ctx), in.Body.Token)
+	if err != nil {
+		return nil, hErr(err)
+	}
+	return &redeemShareLinkOutput{Body: out}, nil
 }
 
 /* ------------------------------------------------------------------ cloning */

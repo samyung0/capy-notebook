@@ -145,6 +145,22 @@ export const ingestTracker = createIngestTracker();
 
 type PostHog = typeof import('posthog-js').default;
 
+// A share token is `{id}.{signature}`; the signature is the link's secret
+// (Google's resource key, Sam 2026-10-18), so it never leaves in a page URL.
+const SHARE_SIGNATURE =
+  /([a-z]+_[A-Za-z0-9_-]{1,64})\.[A-Za-z0-9_-]{16}(?![A-Za-z0-9_-])/g;
+
+/** Drops share-link signatures from every string property (page URLs, the
+ * referrer, `?clone=`), keeping the id. */
+export function stripShareSignatures(
+  properties: Record<string, unknown>
+): Record<string, unknown> {
+  for (const [key, value] of Object.entries(properties))
+    if (typeof value === 'string')
+      properties[key] = value.replace(SHARE_SIGNATURE, '$1');
+  return properties;
+}
+
 let posthogPromise: Promise<PostHog | null> | null = null;
 
 /**
@@ -167,6 +183,7 @@ function posthog(): Promise<PostHog | null> {
         // payload.
         mask_all_text: true,
         persistence: 'localStorage',
+        sanitize_properties: stripShareSignatures,
       });
       return client;
     })

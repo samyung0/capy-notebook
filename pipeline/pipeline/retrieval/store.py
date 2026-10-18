@@ -306,8 +306,16 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
     cur = await conn.execute(
         """SELECT 1 FROM workspaces w WHERE w.id=%s AND (w.user_id=%s OR
         EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s AND m.role='editor')
-        OR(w.privacy IN ('link','public') AND w.share_role='editor'))""",
-        (refresh["workspaceId"], refresh["actorUserId"], refresh["actorUserId"]),
+        OR(w.privacy IN ('link','public') AND w.share_role='editor' AND (w.privacy='public'
+          OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=%s)
+          OR EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=%s))))""",
+        (
+            refresh["workspaceId"],
+            refresh["actorUserId"],
+            refresh["actorUserId"],
+            refresh["actorUserId"],
+            refresh["actorUserId"],
+        ),
     )
     if await cur.fetchone() is None:
         raise TerminalError("source editing access was revoked")

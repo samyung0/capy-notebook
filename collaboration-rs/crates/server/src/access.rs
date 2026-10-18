@@ -205,6 +205,9 @@ pub async fn live_access<C: GenericClient>(
              OR payer.suspended_at IS NOT NULL) AS payer_locked,
            w.privacy AS workspace_privacy,
            w.share_role, COALESCE(wm.role, '') AS member_role,
+           (EXISTS(SELECT 1 FROM workspace_link_grants g WHERE g.workspace_id=w.id AND g.user_id=$2)
+             OR EXISTS(SELECT 1 FROM material_link_grants g WHERE g.material_id=m.id AND g.user_id=$2))
+             AS link_granted,
            {} AS payer_frozen,
            {} AS payer_full,
            {} AS actor_frozen
@@ -245,9 +248,18 @@ pub async fn live_access<C: GenericClient>(
         let workspace_privacy: Option<String> = row.get("workspace_privacy");
         let share_role: Option<String> = row.get("share_role");
         let member_role: String = row.get("member_role");
+        // A link resource reaches a nonmember only through a redeemed link
+        // (Go's workspaceRoles and materialEffectiveAccess).
+        let link_granted: bool = row.get("link_granted");
         let shared = match (&workspace_id, workspace_privacy.as_deref()) {
-            (Some(_), Some("link" | "public")) => share_role.unwrap_or_else(|| "viewer".into()),
-            (None, _) if material_privacy == "link" || material_privacy == "public" => {
+            (Some(_), Some("public")) => share_role.unwrap_or_else(|| "viewer".into()),
+            (Some(_), Some("link")) if !member_role.is_empty() || link_granted => {
+                share_role.unwrap_or_else(|| "viewer".into())
+            }
+            (None, _)
+                if material_privacy == "public"
+                    || (material_privacy == "link" && link_granted) =>
+            {
                 "viewer".into()
             }
             _ => String::new(),

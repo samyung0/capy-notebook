@@ -4459,8 +4459,12 @@ export const GradeAnonymousQuizResponse = zod.object({
 /**
  * @summary Get public workspace metadata
  */
+export const getPublicWorkspaceSummaryPathTokenMax = 128;
+
+
+
 export const GetPublicWorkspaceSummaryParams = zod.object({
-  "id": zod.string()
+  "token": zod.string().max(getPublicWorkspaceSummaryPathTokenMax).describe('The summary link\'s {id}.{signature}')
 })
 
 export const GetPublicWorkspaceSummaryResponse = zod.object({
@@ -4491,8 +4495,12 @@ export const GetPublicWorkspaceSummaryResponse = zod.object({
 /**
  * @summary Check public workspace metadata
  */
+export const headPublicWorkspaceSummaryPathTokenMax = 128;
+
+
+
 export const HeadPublicWorkspaceSummaryParams = zod.object({
-  "id": zod.string()
+  "token": zod.string().max(headPublicWorkspaceSummaryPathTokenMax).describe('The summary link\'s {id}.{signature}')
 })
 
 export const HeadPublicWorkspaceSummaryResponse = zod.unknown()
@@ -5228,6 +5236,25 @@ export const SearchResponseItem = zod.object({
   "title": zod.string()
 })
 export const SearchResponse = zod.array(SearchResponseItem)
+
+
+/**
+ * @summary Open a signed share link once
+ */
+export const redeemShareLinkBodyTokenMax = 128;
+
+
+
+export const RedeemShareLinkBody = zod.object({
+  "token": zod.string().max(redeemShareLinkBodyTokenMax).describe('A share link\'s {id}.{signature}')
+})
+
+export const RedeemShareLinkResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "id": zod.string(),
+  "kind": zod.enum(['workspace', 'material']),
+  "materialKind": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note']).optional()
+})
 
 
 /**

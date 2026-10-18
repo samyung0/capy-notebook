@@ -36,7 +36,12 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 	exec(`INSERT INTO workspaces (id,user_id,name,description,privacy,icon_id) VALUES ($1,$2,'<script>title</script>','Only metadata','public','waves-03')`, ws, owner)
 	exec(`INSERT INTO chapters (id,workspace_id,name) VALUES ($1,$2,'Chapter A')`, chapter, ws)
 	exec(`INSERT INTO files (id,workspace_id,user_id,name,kind,chapter_id) VALUES ($1,$2,$3,'Source.pdf','pdf',$4)`, file, ws, owner, chapter)
-	path := "/api/public/workspaces/" + ws + "/summary"
+	// The API takes the share token; the bare id never reaches it (Sam
+	// 2026-10-18).
+	if rec := doReq(t, h, http.MethodGet, "/api/public/workspaces/"+ws+"/summary", "", nil); rec.Code != 404 {
+		t.Fatalf("bare id summary: %d", rec.Code)
+	}
+	path := "/api/public/workspaces/" + store.ShareToken(nil, ws) + "/summary"
 	rec := doReq(t, h, http.MethodGet, path, "", nil)
 	if rec.Code != 200 {
 		t.Fatalf("summary: %d %s", rec.Code, rec.Body.String())
@@ -105,7 +110,7 @@ func TestPublicWorkspaceSummary(t *testing.T) {
 		}
 	}
 	for _, id := range []string{"invalid", "ws_missing", "ws_" + strings.Repeat("a", 65)} {
-		rec = doReq(t, h, http.MethodGet, "/api/public/workspaces/"+id+"/summary", "", nil)
+		rec = doReq(t, h, http.MethodGet, "/api/public/workspaces/"+store.ShareToken(nil, id)+"/summary", "", nil)
 		if rec.Code != 404 {
 			t.Fatalf("bad/missing ID %q: %d", id, rec.Code)
 		}
@@ -140,7 +145,7 @@ func TestWorkspaceDescriptionEditAndPrivateSummary(t *testing.T) {
 	if rec.Code != 422 {
 		t.Fatalf("description limit %d %s", rec.Code, rec.Body.String())
 	}
-	rec = doReq(t, h, http.MethodGet, "/api/public/workspaces/"+workspace.ID+"/summary", "u_owner", nil)
+	rec = doReq(t, h, http.MethodGet, "/api/public/workspaces/"+store.ShareToken(nil, workspace.ID)+"/summary", "u_owner", nil)
 	if rec.Code != 404 {
 		t.Fatalf("private owner summary %d", rec.Code)
 	}

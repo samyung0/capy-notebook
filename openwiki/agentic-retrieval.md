@@ -37,7 +37,8 @@ provider keys stay ciphertext on that hop; retrieval decrypts them with
 `LLM_CREDENTIALS_KEY`.
 
 Public workspace landing pages use a separate live metadata projection from Go
-at `GET /api/public/workspaces/{id}/summary`. It returns workspace metadata and
+at `GET /api/public/workspaces/{token}/summary` (the share token, not the bare
+id). It returns workspace metadata and
 chapter/file names for link/public workspaces, with `Cache-Control: no-store`.
 It never calls retrieval or returns source text, material bodies, file-content
 summaries or download URLs. Reading full workspace/study content requires a
