@@ -1771,6 +1771,8 @@
   "question_ui_correct_option": "Correct option {number}",
   "question_ui_option_number": "Option {number}",
   "question_ui_remove_option": "Remove option {number}",
+  "question_ui_move_option_up": "Move option {number} up",
+  "question_ui_move_option_down": "Move option {number} down",
   "question_ui_item_number": "Item {number}",
   "question_ui_remove_match": "Remove match {number}",
   "question_ui_graph_row_unreadable": "This row can't be read.",

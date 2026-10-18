@@ -136,7 +136,13 @@ has none; the editor sets a closed part's marks from a dropdown and an open
 part's from its items. Authored parts are told from learner parts by their
 worked solution (`isAuthoredPart`). A matching
 answer stores the full choice pool independently from its correct pairings, so
-unused and reused options survive generation, editing and rendering.
+unused and reused options survive generation, editing and rendering. The
+editor keeps the pool in the author's order, which readers and index text see
+too: each option row has move up and down buttons (off at the ends), and
+Alt+ArrowUp or Alt+ArrowDown moves the focused option with focus following it;
+a move swaps the two options and every pair's `right` with them, so each
+prompt keeps its answer, as removing an option does (Epo 2026-10-18,
+`StringList`'s `onMove` in `editorFields.tsx`).
 
 The Go validator is `server/internal/questions`; the browser and collaboration
 service share its JSON fixtures. Bounds originate in
