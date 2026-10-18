@@ -256,7 +256,7 @@ link once (`/w/{id}.{signature}`, the summary's Open going through
 page's Clone, which carries the token as `?clone=<kind>:<token>`). `POST
 /api/share/redeem` verifies the token, checks the resource is link or public
 now, and records the grant (`workspace_link_grants`, `material_link_grants`,
-migration 0094); later calls use the bare id. Members and owners never need it.
+migration 0095); later calls use the bare id. Members and owners never need it.
 Making the workspace or material private deletes every grant, so sharing it
 again needs the link again. The checks are `workspaceRoles`,
 `materialEffectiveAccess`, `linkReachSQL` (source access, chat), the comment

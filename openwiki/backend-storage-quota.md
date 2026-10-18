@@ -82,7 +82,7 @@ Storage is charged once per logical row owned by a user:
 of a row is the account that uploaded, imported, cloned or created it, in any
 workspace: `files.user_id`, `upload_sessions.user_id`, `editor_assets.user_id`
 and `materials.owner_user_id` are set once at insert from the actor (a BEFORE
-INSERT trigger fills an omitted one from `created_by`, migration 0093) and
+INSERT trigger fills an omitted one from `created_by`, migration 0094) and
 never re-derived. A collaborator's upload, note, quiz, flashcard set, embedded
 item, pasted or chat-placed image, clone or deck is charged to the
 collaborator, so nobody can fill another account's quota. A workspace
