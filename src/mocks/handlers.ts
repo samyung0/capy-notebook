@@ -3153,8 +3153,15 @@ export const handlers = [
                 currency: 'usd',
                 id: 'in_mock_reload',
                 kind: 'reload',
-                nextAttemptAt: new Date(Date.now() + 86_400_000).toISOString(),
-                status: 'open',
+                // Cancelling the retry voids it.
+                ...(mockCreditSettings.reload.status === 'void'
+                  ? { status: 'void' }
+                  : {
+                      nextAttemptAt: new Date(
+                        Date.now() + 86_400_000
+                      ).toISOString(),
+                      status: 'open',
+                    }),
                 total: 1000,
                 url: 'https://invoice.stripe.com/i/mock',
               },
@@ -3175,7 +3182,15 @@ export const handlers = [
                   currency: 'usd',
                   id: `in_mock_${months}`,
                   kind: 'plan',
-                  status: 'paid',
+                  // This month's renewal failed and Stripe retries it.
+                  ...(months === 0
+                    ? {
+                        nextAttemptAt: new Date(
+                          Date.now() + 3 * 86_400_000
+                        ).toISOString(),
+                        status: 'open',
+                      }
+                    : { status: 'paid' }),
                   total: 800,
                   url: 'https://invoice.stripe.com/i/mock',
                 };
@@ -3236,6 +3251,18 @@ export const handlers = [
   http.post('/api/billing/portal', async () =>
     HttpResponse.json({ url: '/billing?tab=subscription&mock_portal=1' })
   ),
+  http.post('/api/billing/portal/cancel-subscription', async () =>
+    HttpResponse.json({ url: '/billing?tab=subscription&mock_portal=cancel' })
+  ),
+  http.post('/api/billing/auto-reload/cancel-retry', async () => {
+    if (mockCreditSettings.reload.status === 'retrying')
+      mockCreditSettings.reload = {
+        ...mockCreditSettings.reload,
+        nextAttemptAt: undefined,
+        status: 'void',
+      };
+    return new HttpResponse(null, { status: 204 });
+  }),
 
   /* ---------------- integrations ---------------- */
   http.get('/api/integrations', async () =>

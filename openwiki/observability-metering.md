@@ -777,7 +777,15 @@ needs a saved instant method (409 `no_payment_method` /
 `payment_method_not_instant`). `POST /api/billing/payment-method` opens hosted
 Checkout in setup mode (card and Link, billing address required) and returns to
 `?tab=subscription&reload=method`, which reopens the dialog; a new card voids a
-reload invoice Stripe is still retrying. Turning auto-reload off voids it too.
+reload invoice Stripe is still retrying. Turning auto-reload off voids it too,
+and so does `POST /api/billing/auto-reload/cancel-retry` (Cancel retry on the
+notice and the invoice row), which leaves auto-reload on but disarmed. A
+retrying plan invoice's Cancel opens `POST
+/api/billing/portal/cancel-subscription`: the portal on the live subscription's
+cancel screen. Stripe stops collecting a customer's open invoices once a
+subscription is cancelled, so the retry ends only when the portal cancels
+immediately (its cancellation setting in the Stripe Dashboard), not at period
+end.
 
 Auto-reload fires once per arming (`reload_armed`). An account starts armed;
 a paid top-up, a new card, a paid reload that leaves credits above the

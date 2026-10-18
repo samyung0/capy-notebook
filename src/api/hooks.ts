@@ -819,6 +819,29 @@ export function useBillingPortal() {
   });
 }
 
+/** Opens the portal on the live subscription's cancel screen; cancelling
+ * stops Stripe retrying a failed plan invoice. */
+export function useBillingPortalCancel() {
+  return useMutation({
+    mutationFn: async () => {
+      const { url } = await api.post<URLResp>(
+        '/billing/portal/cancel-subscription'
+      );
+      window.location.href = url;
+    },
+  });
+}
+
+/** Voids the reloads Stripe is retrying; auto-reload stays on. */
+export function useCancelReloadRetry() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.post<void>('/billing/auto-reload/cancel-retry'),
+    mutationKey: qk.billing,
+    onSettled: () => refetchBillingIfLast(qc),
+  });
+}
+
 export const integrationsQuery = () =>
   queryOptions({
     ...persisted,

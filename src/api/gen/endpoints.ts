@@ -1265,6 +1265,56 @@ export const setAutoReload = async (autoReloadReq: NonReadonly<AutoReloadReq>, o
 
 
 
+export type cancelReloadRetryResponse204 = {
+  data: void
+  status: 204
+}
+
+export type cancelReloadRetryResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 204>
+}
+
+export type cancelReloadRetryResponseSuccess = (cancelReloadRetryResponse204) & {
+  headers: Headers;
+};
+export type cancelReloadRetryResponseError = (cancelReloadRetryResponseDefault) & {
+  headers: Headers;
+};
+
+export type cancelReloadRetryResponse = (cancelReloadRetryResponseSuccess | cancelReloadRetryResponseError)
+
+export const getCancelReloadRetryUrl = () => {
+
+
+
+
+  return `/api/billing/auto-reload/cancel-retry`
+}
+
+/**
+ * @summary Stop Stripe retrying failed reloads
+ */
+export const cancelReloadRetry = async ( options?: RequestInit): Promise<cancelReloadRetryResponse> => {
+
+  const res = await fetch(getCancelReloadRetryUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: cancelReloadRetryResponse['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as cancelReloadRetryResponse
+}
+
+
+
 export type billingCheckoutResponse200 = {
   data: URLResp
   status: 200
@@ -1461,6 +1511,56 @@ export const billingPortal = async ( options?: RequestInit): Promise<billingPort
 
   const data: billingPortalResponse['data'] = body ? JSON.parse(body) : {}
   return { data, status: res.status, headers: res.headers } as billingPortalResponse
+}
+
+
+
+export type billingPortalCancelResponse200 = {
+  data: URLResp
+  status: 200
+}
+
+export type billingPortalCancelResponseDefault = {
+  data: ErrorModel
+  status: Exclude<HTTPStatusCodes, 200>
+}
+
+export type billingPortalCancelResponseSuccess = (billingPortalCancelResponse200) & {
+  headers: Headers;
+};
+export type billingPortalCancelResponseError = (billingPortalCancelResponseDefault) & {
+  headers: Headers;
+};
+
+export type billingPortalCancelResponse = (billingPortalCancelResponseSuccess | billingPortalCancelResponseError)
+
+export const getBillingPortalCancelUrl = () => {
+
+
+
+
+  return `/api/billing/portal/cancel-subscription`
+}
+
+/**
+ * @summary Open the billing portal on its cancel screen
+ */
+export const billingPortalCancel = async ( options?: RequestInit): Promise<billingPortalCancelResponse> => {
+
+  const res = await fetch(getBillingPortalCancelUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+
+  const data: billingPortalCancelResponse['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as billingPortalCancelResponse
 }
 
 

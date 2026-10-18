@@ -930,6 +930,12 @@ export const SetAutoReloadResponse = zod.object({
 
 
 /**
+ * @summary Stop Stripe retrying failed reloads
+ */
+export const CancelReloadRetryResponse = zod.void()
+
+
+/**
  * @summary Start checkout
  */
 export const BillingCheckoutBody = zod.object({
@@ -974,6 +980,15 @@ export const BillingPaymentMethodResponse = zod.object({
  * @summary Open billing portal
  */
 export const BillingPortalResponse = zod.object({
+  "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
+  "url": zod.string()
+})
+
+
+/**
+ * @summary Open the billing portal on its cancel screen
+ */
+export const BillingPortalCancelResponse = zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
 })

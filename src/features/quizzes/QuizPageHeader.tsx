@@ -39,8 +39,12 @@ export function QuizPageHeader({
   byline,
   actions,
   topBar,
+  gutter = 'wide',
 }: {
   className?: string;
+  /** The page's gutter: wide on quiz and study pages, normal on the
+   * Question bank's topic page. */
+  gutter?: 'normal' | 'wide';
   onBack?: () => void;
   trail: Crumb[];
   title: ReactNode;
@@ -57,7 +61,8 @@ export function QuizPageHeader({
     <header className="flex items-start">
       <div
         className={cn(
-          'flex min-w-0 flex-1 flex-col gap-2 px-4 pt-4 sm:px-6 sm:pt-6 lg:px-10 xl:px-16',
+          'flex min-w-0 flex-1 flex-col gap-2 pt-4 sm:pt-6',
+          gutter === 'wide' ? 'page-px-wide' : 'page-px',
           className
         )}
       >

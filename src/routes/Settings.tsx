@@ -200,7 +200,7 @@ export default function Settings() {
       header={<PageHeader title={m.profile_menu_settings()} />}
     >
       <Tabs
-        className="px-1 sm:px-3"
+        className="page-tabs-px"
         onChange={(value) => {
           void navigate({
             replace: true,

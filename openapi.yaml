@@ -7436,6 +7436,21 @@ paths:
       summary: Save auto-reload
       tags:
         - Billing & integrations
+  /api/billing/auto-reload/cancel-retry:
+    post:
+      operationId: cancelReloadRetry
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Stop Stripe retrying failed reloads
+      tags:
+        - Billing & integrations
   /api/billing/checkout:
     post:
       operationId: billingCheckout
@@ -7516,6 +7531,25 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Error
       summary: Open billing portal
+      tags:
+        - Billing & integrations
+  /api/billing/portal/cancel-subscription:
+    post:
+      operationId: billingPortalCancel
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/URLResp"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Error
+      summary: Open the billing portal on its cancel screen
       tags:
         - Billing & integrations
   /api/billing/spending-limit:

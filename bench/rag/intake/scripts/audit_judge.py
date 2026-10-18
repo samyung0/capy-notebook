@@ -1,18 +1,19 @@
 """Blind fidelity judge for the parser audit packets.
 
-For every packet with both texts (`audit_packets.py`), one headless Claude call
-reads the page image and the two texts, labelled A and B in a per-packet
-random order, and returns per-block verdicts under a JSON schema. The judge
-prompt is frozen in `bench/rag/intake/fixtures/audit-judge-prompt.txt`.
-Verdicts are written next to the packets and the run is resumable; `summary`
-tallies faithful blocks and issues per parser.
+For every packet holding both texts of a pair of sides (`audit_packets.py`),
+one headless Claude call reads the page image and the two texts, labelled A
+and B in a per-packet random order, and returns per-block verdicts under a JSON
+schema. The judge prompt is frozen in
+`bench/rag/intake/fixtures/audit-judge-prompt.txt`. Verdicts are written next to
+the packets as `pNNNN.<side>-<side>.verdict.json`, one file per pair, and the
+run is resumable; `summary` tallies faithful blocks and issues per side.
 
 Transport: the Claude Code CLI on the developer's subscription, as in
 `bench/parsers/scripts/compare_claude_recovery.py` (tools off, no MCP servers,
 no session persistence; ANTHROPIC_* variables removed so the login is used).
 
-    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py run [--book ahss4] [--limit N]
-    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py summary
+    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py run --sides mineru,reviewed [--book ahss4] [--limit N]
+    uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py summary --sides mineru,reviewed
 """
 
 from __future__ import annotations
@@ -31,7 +32,6 @@ AUDIT = ROOT / "bench/rag/reports/local/2026-10-intake-eval/audit"
 PROMPT = ROOT / "bench/rag/intake/fixtures/audit-judge-prompt.txt"
 MODEL = "claude-opus-5-5"
 EFFORT = "medium"
-SIDES = ("mineru", "reviewed")
 
 SCHEMA = {
     "type": "object",
@@ -95,8 +95,12 @@ def blocks_text(label: str, blocks: list[dict]) -> str:
     return "\n".join(lines)
 
 
-def judge(packet: dict, seed: int) -> dict:
-    order = list(SIDES)
+def verdict_path(packet_path: Path, sides: tuple[str, str]) -> Path:
+    return packet_path.with_name(f"{packet_path.stem}.{sides[0]}-{sides[1]}.verdict.json")
+
+
+def judge(packet: dict, sides: tuple[str, str], seed: int) -> dict:
+    order = list(sides)
     random.Random(f"{seed}:{packet['book']}:{packet['page']}").shuffle(order)
     labels = dict(zip(("A", "B"), order))
     image = (ROOT / packet["image"]).read_bytes()
@@ -143,31 +147,31 @@ def judge(packet: dict, seed: int) -> dict:
     }
 
 
-def run(book: str | None, limit: int | None, seed: int) -> None:
+def run(sides: tuple[str, str], book: str | None, limit: int | None, seed: int) -> None:
     index = json.loads((AUDIT / "index.json").read_text(encoding="utf-8"))
     done = 0
     for item in index:
         if book and item["book"] != book:
             continue
-        if set(item["sides"]) != set(SIDES):
+        if not set(sides) <= set(item["sides"]):
             continue
         packet_path = ROOT / item["packet"]
-        verdict_path = packet_path.with_suffix(".verdict.json")
-        if verdict_path.exists() and json.loads(verdict_path.read_text(encoding="utf-8")).get("verdict") is not None:
+        out = verdict_path(packet_path, sides)
+        if out.exists() and json.loads(out.read_text(encoding="utf-8")).get("verdict") is not None:
             continue
         packet = json.loads(packet_path.read_text(encoding="utf-8"))
-        outcome = judge(packet, seed)
-        verdict_path.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
+        outcome = judge(packet, sides, seed)
+        out.write_text(json.dumps(outcome, ensure_ascii=False, indent=1) + "\n", encoding="utf-8", newline="\n")
         print(json.dumps({"book": item["book"], "page": item["page"], "ok": outcome["verdict"] is not None, "seconds": outcome["seconds"]}), flush=True)
         done += 1
         if limit and done >= limit:
             break
 
 
-def summary() -> None:
-    tally = {s: {"pages": 0, "blocks": 0, "faithful": 0, "issues": {}} for s in SIDES}
+def summary(sides: tuple[str, str]) -> None:
+    tally = {s: {"pages": 0, "blocks": 0, "faithful": 0, "issues": {}} for s in sides}
     by_book: dict[str, dict] = {}
-    for path in sorted(AUDIT.glob("*/p*.verdict.json")):
+    for path in sorted(AUDIT.glob(f"*/p*.{sides[0]}-{sides[1]}.verdict.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         if not data.get("verdict"):
             continue
@@ -181,7 +185,7 @@ def summary() -> None:
             for b in blocks:
                 for issue in b["issues"]:
                     t["issues"][issue["kind"]] = t["issues"].get(issue["kind"], 0) + 1
-            bb = by_book.setdefault(book, {s: {"blocks": 0, "faithful": 0} for s in SIDES})[side]
+            bb = by_book.setdefault(book, {s: {"blocks": 0, "faithful": 0} for s in sides})[side]
             bb["blocks"] += len(blocks)
             bb["faithful"] += sum(1 for b in blocks if b["faithful"])
     for side, t in tally.items():
@@ -192,14 +196,18 @@ def summary() -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", choices=["run", "summary"])
+    parser.add_argument("--sides", required=True, help="two packet sides, comma-separated, e.g. mineru,reviewed")
     parser.add_argument("--book")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--seed", type=int, default=20261006)
     args = parser.parse_args()
+    sides = tuple(args.sides.split(","))
+    if len(sides) != 2 or sides[0] == sides[1]:
+        raise SystemExit("--sides takes two different side names")
     if args.command == "run":
-        run(args.book, args.limit, args.seed)
+        run(sides, args.book, args.limit, args.seed)
     else:
-        summary()
+        summary(sides)
 
 
 if __name__ == "__main__":

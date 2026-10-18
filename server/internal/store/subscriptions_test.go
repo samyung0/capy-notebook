@@ -1423,3 +1423,28 @@ func TestUnpaidGraceStartStaysFixed(t *testing.T) {
 		t.Fatalf("a paid subscription kept ended_at %v", endedAt)
 	}
 }
+
+func TestLiveSubscriptionIDFindsAPastDueSubscriptionButNotACanceledOne(t *testing.T) {
+	s := openAccessTestStore(t)
+	ctx := context.Background()
+	user := newBlobTestUser(t, s, "sub_live")
+
+	if _, err := s.LiveSubscriptionID(ctx, user); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("no subscription: err = %v, want ErrNotFound", err)
+	}
+	sub := proSubscription(user, "sub_live_1", 1)
+	sub.Status = "past_due"
+	if err := s.UpsertSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	if id, err := s.LiveSubscriptionID(ctx, user); err != nil || id != "sub_live_1" {
+		t.Fatalf("past_due: id = %q, err = %v", id, err)
+	}
+	sub.Status, sub.StripeEventCreated = "canceled", 2
+	if err := s.UpsertSubscription(ctx, sub); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LiveSubscriptionID(ctx, user); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("canceled: err = %v, want ErrNotFound", err)
+	}
+}

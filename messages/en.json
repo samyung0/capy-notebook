@@ -1938,6 +1938,8 @@
   "billing_invoice_status_failed": "Failed",
   "billing_invoice_status_processing": "Processing",
   "billing_invoice_pay": "Pay",
+  "billing_invoice_cancel": "Cancel",
+  "billing_reload_cancel_retry": "Cancel retry",
   "billing_reload_amount": "Reload amount",
   "billing_reload_threshold": "When credits reach",
   "billing_credits_unit": "credits",

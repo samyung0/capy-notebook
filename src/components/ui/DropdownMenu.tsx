@@ -37,16 +37,34 @@ function DropdownMenu(
   );
 }
 
-function DropdownMenuTrigger(
-  props: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>
-) {
+/** Radix opens on pointerdown and the open menu takes the pointer, so the
+ * trigger loses `:active` before its press scale shows. `data-pressed` holds
+ * that state until the pointer is released (see BASE_BUTTON_STYLE). */
+function DropdownMenuTrigger({
+  onPointerDown,
+  ...props
+}: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>) {
   const scope = useDropdownMenuScope();
+  const [pressed, setPressed] = React.useState(false);
   return (
     <MenuAnchor asChild {...{ __scopeMenu: scope?.__scopeDropdownMenu }}>
       <span className="inline-flex min-w-0" data-slot="dropdown-menu-anchor">
         <DropdownMenuPrimitive.Trigger
           {...scope}
+          data-pressed={pressed || undefined}
           data-slot="dropdown-menu-trigger"
+          onPointerDown={(event) => {
+            onPointerDown?.(event);
+            if (event.button !== 0) return;
+            setPressed(true);
+            const release = () => {
+              setPressed(false);
+              window.removeEventListener('pointerup', release);
+              window.removeEventListener('pointercancel', release);
+            };
+            window.addEventListener('pointerup', release);
+            window.addEventListener('pointercancel', release);
+          }}
           {...props}
         />
       </span>

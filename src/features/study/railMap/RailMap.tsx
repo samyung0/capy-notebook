@@ -191,7 +191,7 @@ export function RailMap({
       <div
         aria-hidden
         className={cn(
-          'scroll-fade-x -mx-4 overflow-x-auto overflow-y-hidden [scrollbar-width:none] sm:-mx-6 lg:-mx-10 xl:-mx-16 [&::-webkit-scrollbar]:hidden',
+          'scroll-fade-x page-bleed-wide overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden',
           board && '@container'
         )}
         data-finish-scroll

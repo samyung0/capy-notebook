@@ -1938,6 +1938,8 @@
   "billing_invoice_status_failed": "失败",
   "billing_invoice_status_processing": "处理中",
   "billing_invoice_pay": "支付",
+  "billing_invoice_cancel": "取消",
+  "billing_reload_cancel_retry": "取消重试",
   "billing_reload_amount": "充值金额",
   "billing_reload_threshold": "当额度降到",
   "billing_credits_unit": "额度",

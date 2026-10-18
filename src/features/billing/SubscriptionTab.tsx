@@ -3,6 +3,8 @@ import {
   useBilling,
   useBillingCheckout,
   useBillingPortal,
+  useBillingPortalCancel,
+  useCancelReloadRetry,
   useInvoices,
   useUsage,
 } from '@/api/hooks';
@@ -75,7 +77,7 @@ export function SubscriptionTab() {
             disabled={portalIsPending}
             onClick={() => openPortal()}
             rounded="large"
-            variant="outline"
+            variant="ghost-hover"
           >
             {m.subscription_manage()}
           </Button>
@@ -171,20 +173,45 @@ function Invoices() {
             status,
             total: formatMoney(invoice.total, invoice.currency),
             type: KIND_LABEL[invoice.kind](),
-            view: invoice.url && (
-              <a
-                className="font-semibold text-fg underline underline-offset-4"
-                href={invoice.url}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {payable ? m.billing_invoice_pay() : m.billing_invoice_view()}
-              </a>
+            view: (
+              <span className="inline-flex items-center gap-3">
+                {retrying && <CancelRetry reload={reload} />}
+                {invoice.url && (
+                  <a
+                    className="font-semibold text-fg underline underline-offset-4"
+                    href={invoice.url}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    {payable
+                      ? m.billing_invoice_pay()
+                      : m.billing_invoice_view()}
+                  </a>
+                )}
+              </span>
             ),
           },
           key: invoice.id,
         };
       })}
     />
+  );
+}
+
+/** Stops Stripe retrying a failed invoice: a reload is voided here, a plan
+ * invoice ends with the subscription, cancelled on the portal's cancel
+ * screen. */
+function CancelRetry({ reload }: { reload: boolean }) {
+  const { isPending: voiding, mutate: cancelReload } = useCancelReloadRetry();
+  const { isPending: opening, mutate: openCancel } = useBillingPortalCancel();
+  return (
+    <Button
+      disabled={voiding || opening}
+      onClick={() => (reload ? cancelReload() : openCancel())}
+      size="sm"
+      variant="ghost-hover"
+    >
+      {m.billing_invoice_cancel()}
+    </Button>
   );
 }

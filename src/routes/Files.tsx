@@ -31,7 +31,11 @@ import {
   toggleValue,
   useListView,
 } from '@/components/app/ListToolbar';
-import { PageHeader, PanelWithInvertedRadius } from '@/components/app/layout';
+import {
+  PageBody,
+  PageHeader,
+  PanelWithInvertedRadius,
+} from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import type { ColumnSort } from '@/components/app/SortHeader';
 import { Button, ErrorAction } from '@/components/ui/Button';
@@ -100,7 +104,7 @@ export default function Files() {
     >
       <fieldset className="min-w-0" disabled={busy}>
         <Tabs
-          className="px-1 sm:px-3"
+          className="page-tabs-px"
           onChange={(value) => {
             void navigate({
               replace: true,
@@ -293,10 +297,7 @@ function ActiveFiles({
         view={view}
       />
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <div
-        className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6"
-        onClick={clearOnBlank(selection.clear)}
-      >
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         {waitsForConnection(fetchStatus, data) ? (
           <QueryPausedState />
         ) : isLoading ? (
@@ -345,7 +346,7 @@ function ActiveFiles({
             />
           </div>
         )}
-      </div>
+      </PageBody>
       <ConfirmDialog
         body={m.files_delete_selected_body({
           count: deleteTargets?.length ?? 0,
@@ -550,7 +551,7 @@ function TrashTab({
   }
   return (
     <>
-      <div className="-mb-3 flex items-center px-4 sm:px-6">
+      <div className="page-px -mb-3 flex items-center">
         {selection.selecting ? (
           <SelectionBar
             allSelected={
@@ -601,10 +602,7 @@ function TrashTab({
         )}
       </div>
       {/* Mouse only: the selection bar's clear button is the keyboard way. */}
-      <div
-        className="shrink-0 grow px-4 pt-2 pb-5 sm:px-6"
-        onClick={clearOnBlank(selection.clear)}
-      >
+      <PageBody belowToolbar onClick={clearOnBlank(selection.clear)}>
         <div className="flex flex-col gap-3">
           <p className="t-meta text-fg-muted" role="note">
             {m.trash_notice()}
@@ -680,7 +678,7 @@ function TrashTab({
             }
           />
         </div>
-      </div>
+      </PageBody>
     </>
   );
 }

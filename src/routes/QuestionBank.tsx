@@ -39,7 +39,12 @@ import {
   type FilterSection,
   toggleValue,
 } from '@/components/app/ListToolbar';
-import { PageHeader, Panel, PanelHeader } from '@/components/app/layout';
+import {
+  PageBody,
+  PageHeader,
+  Panel,
+  PanelHeader,
+} from '@/components/app/layout';
 import { QueryPausedState } from '@/components/app/QueryPausedState';
 import { PhoneTopRow } from '@/components/app/Sidebar';
 import { TopInsetBar } from '@/components/app/TopInsetBar';
@@ -653,8 +658,9 @@ export default function QuestionBank() {
                     )
                   )
                 }
-                // Dashboard's padding, as on the bank's main page.
-                className="lg:px-6 xl:px-6"
+                // The bank's normal gutter, as on its main page; the
+                // questions below sit inset at the wide one.
+                gutter="normal"
                 meta={
                   place &&
                   [
@@ -690,10 +696,12 @@ export default function QuestionBank() {
                 }
                 trail={trail}
               />
-              {/* Learning's page padding (40/64px), as the bank's topic lists. */}
-              <div className="px-4 pt-8 pb-28 sm:px-6 lg:px-10 xl:px-16 xl:pb-10">
-                <div className="max-w-3xl">{body}</div>
-              </div>
+              {/* Inset to the wide gutter, as the main page's topic lists. */}
+              <PageBody className="pt-8 pb-28 sm:pt-8 xl:pb-10">
+                <div className="wide-inset">
+                  <div className="max-w-3xl">{body}</div>
+                </div>
+              </PageBody>
             </>
           ) : (
             <>
@@ -717,9 +725,7 @@ export default function QuestionBank() {
                 subtitle={m.question_ui_bank_hint()}
                 title={m.question_ui_question_bank()}
               />
-              <div className="px-4 pt-5 pb-28 sm:px-6 sm:pt-8 xl:pb-10">
-                {body}
-              </div>
+              <PageBody className="pb-28 sm:pt-8 xl:pb-10">{body}</PageBody>
             </>
           )}
         </Panel>
@@ -1876,7 +1882,7 @@ function BankLanding({
         {listed.length > 0 && (
           // Inset and columned like the Other topics list, heading included, so
           // the date and Summary line up with its count and Continue.
-          <section className="lg:px-4 xl:px-10">
+          <section className="wide-inset">
             <h2 className="t-card-title mb-3">{m.question_ui_finished()}</h2>
             <div>
               {listed.map((topic) => (
@@ -2053,9 +2059,8 @@ function ContinueSection({
         // Rows lay out by the list's width: the side panel narrows it on wide
         // screens. The trail shares the row's spare width with the name (3:2)
         // so it shrinks to its 150px floor before the row wraps.
-        // From lg the list sits at Learning's page padding (40/64px), inset
-        // from the section's 24px.
-        <div className="@container mt-8 lg:px-4 xl:px-10">
+        // The list sits inset at the wide gutter.
+        <div className="@container wide-inset mt-8">
           <h3 className="mb-1 font-bold text-fg-muted text-sm">
             {m.question_ui_other_topics()}
           </h3>
