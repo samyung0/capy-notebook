@@ -1,4 +1,4 @@
-import type { Stats } from 'node:fs';
+import { readdirSync, readFileSync, type Stats, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
@@ -11,6 +11,7 @@ import { clerkScript } from './vite-clerk';
 import { embedFrame } from './vite-embed';
 import { bucketOrigin, policyHeaders } from './vite-image-policy';
 import { mathliveFonts } from './vite-mathlive';
+import { docxViewPreload } from './workers/office/docxViewPreload';
 
 const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
 /** Modules the share renderer imports but never runs: components load them
@@ -20,6 +21,7 @@ const BETTEROFFICE_DOCX_SUBPATH = /^@betteroffice\/docx\/(.+)$/;
 const BROWSER_ONLY =
   /^(jsxgraph|katex|mathlive|mermaid)$|\/(AppEmbed|editorAssets|HtmlEmbedSourceDialog|MediaPreview|mermaidPresets)$/;
 const DEV_ENV_FILE = /^deploy\/\.env(?:\.[^/]+)?$/;
+const DOCX_VIEW_WASM = /^docx_view_wasm_bg-[\w-]+\.wasm$/;
 /** MSW's entry points (src/main.tsx, src/share). A build without MSW never
  * runs them, but Rollup loads every dynamic import, dead code included, and
  * loading the mocks emits their `?url` fixtures (Office files up to 23 MB) into
@@ -176,6 +178,30 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             });
         },
         name: 'release-file',
+      },
+      // The Office runtime's page preloads the DOCX view engine, named once
+      // the build has hashed it; the office Worker keeps the link only in a
+      // frame opened to view a DOCX (workers/office/docxViewPreload.ts).
+      !isSsrBuild && {
+        apply: 'build' as const,
+        name: 'docx-view-wasm-preload',
+        writeBundle({ dir }: { dir?: string }) {
+          const wasm =
+            dir &&
+            readdirSync(path.join(dir, 'assets')).find((name) =>
+              DOCX_VIEW_WASM.test(name)
+            );
+          if (!(dir && wasm))
+            throw new Error('The build has no DOCX view engine.');
+          const page = path.join(dir, 'office-runtime.html');
+          writeFileSync(
+            page,
+            readFileSync(page, 'utf8').replace(
+              '</title>',
+              `</title>${docxViewPreload(`/assets/${wasm}`)}`
+            )
+          );
+        },
       },
       // The Office open's connections start while the app boots: the
       // runtime's origin (its frame, with credentials) and the bucket (the

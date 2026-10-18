@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { brotliDecompressSync } from 'node:zlib';
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
+import { docxViewPreload } from './docxViewPreload';
 import worker from './index';
 
 const origin = 'https://uat-office.capynotebook.com';
@@ -146,6 +147,34 @@ describe('isolated Office runtime', () => {
       ).toBe(503);
     }
     expect(bindings.ASSETS.fetch).not.toHaveBeenCalled();
+  });
+  it('keeps the DOCX view engine preload only in a frame opened to view a DOCX', async () => {
+    const preload = docxViewPreload('/assets/docx_view_wasm_bg-abc.wasm');
+    const page = `<head><title>Office file runtime</title>${preload}</head>`;
+    const open = async (search: string) => {
+      const bindings = env();
+      bindings.ASSETS.fetch.mockResolvedValue(
+        new Response(page, {
+          headers: { 'Content-Length': String(page.length), ETag: '"page"' },
+        })
+      );
+      const response = await worker.fetch(
+        new Request(`${origin}/office-runtime.html?${search}`),
+        bindings
+      );
+      expect(response.headers.has('etag')).toBe(false);
+      return response.text();
+    };
+    expect(await open('format=docx&mode=view')).toContain(preload);
+    for (const search of [
+      'format=docx&mode=edit',
+      'format=xlsx&mode=view',
+      'format=pptx&mode=edit',
+      '',
+    ])
+      expect(await open(search)).toBe(
+        '<head><title>Office file runtime</title></head>'
+      );
   });
   it('does not forward asset redirects or missing-page bodies', async () => {
     const bindings = env();

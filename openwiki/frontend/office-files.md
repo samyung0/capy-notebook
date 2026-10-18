@@ -154,7 +154,12 @@ the `outdated` save strip, and its drafts stay for the reloaded page
   the PPTX editor's WASM, and for the XLSX editor a fetch that puts its
   workbook worker's WASM in the HTTP cache (keeping none of it); a PPTX frame also starts the faces
   any deck needs (every face for the editor). The `load` message still
-  decides what opens; a head start that does not match it is dropped.
+  decides what opens; a head start that does not match it is dropped. Ahead
+  of all of it, the built page preloads the DOCX viewer's WASM, which the
+  office Worker keeps only in a frame opened to view a DOCX
+  (`workers/office/docxViewPreload.ts`, 2026-10-18), so the worker finds it
+  in the HTTP cache. The view's header loads no Plate: Insert › Table uses
+  the notes' `TablePicker`, a module of its own.
 - **Edit.** The room provider is created right after the session and token,
   while the base downloads: the room's sync, a refusal or a recovery shows
   the document once its base is in, and the draft recorder writes a whole

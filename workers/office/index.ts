@@ -1,3 +1,5 @@
+import { runtimePageFor } from './docxViewPreload';
+
 interface OfficeEnv {
   ASSETS: { fetch(request: Request): Promise<Response> };
   PARENT_ORIGINS: string;
@@ -74,6 +76,7 @@ export default {
         const value = request.headers.get(key);
         if (value) assetHeaders.set(key, value);
       }
+    const frame = new URLSearchParams(url.search);
     url.search = '';
     if (type) url.pathname += '.br';
     const asset = await env.ASSETS.fetch(
@@ -99,6 +102,17 @@ export default {
       headers.delete('Content-Length');
       headers.delete('Content-Encoding');
       return new Response(null, { headers, status: 404 });
+    }
+    // The runtime page keeps the DOCX view engine's preload only in a frame
+    // opened to view a DOCX; the body changes, so its length and tag go.
+    if (url.pathname === '/office-runtime.html' && asset.status === 200) {
+      for (const key of ['Content-Length', 'Content-Encoding', 'ETag'])
+        headers.delete(key);
+      const page = runtimePageFor(await asset.text(), frame);
+      return new Response(request.method === 'HEAD' ? null : page, {
+        headers,
+        status: 200,
+      });
     }
     // `encodeBody` is Workers-only: send the stored brotli bytes as they are;
     // the edge decodes them for a client that does not accept br.
