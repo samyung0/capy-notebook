@@ -217,7 +217,9 @@ fading or learned, for suggestions only. The chat ignores them.
 `src/features/study/StudyPanel.tsx`. Workspace tabs are Study, Files and Chat
 for every role that can read the workspace (`WorkspaceOpen.tsx`); Study opens
 first unless the URL already names an item. Sections hide while empty; with
-nothing tracked one centred line says how to start, and with progress off a
+nothing tracked (every item untouched counts as tracked, so this is an
+empty workspace or one whose items all stopped tracking), no attempts and
+nothing reviewable, one centred line says how to start, and with progress off a
 line says quiz results are still kept. Top to bottom:
 
 - **Quick actions**, two rows. The next item with Continue: the first item
