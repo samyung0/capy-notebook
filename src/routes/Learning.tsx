@@ -11,6 +11,7 @@ import { relativeTime } from '@/features/materials/MaterialListCard';
 import { finishKey } from '@/features/questions/trailMap/finish';
 import { MiniTrail } from '@/features/questions/trailMap/TrailMap';
 import { AllResults } from '@/features/study/AllResults';
+import { useStudySurface } from '@/features/study/finishToasts';
 import { PastReviews } from '@/features/study/PastReviews';
 import { RecordProgress } from '@/features/study/RecordProgress';
 import { ReviewTab } from '@/features/study/ReviewTab';
@@ -242,6 +243,7 @@ function WorkspaceName({
 }
 
 export default function Learning() {
+  useStudySurface();
   const { tab = 'progress', finished } = useSearch({ strict: false }) as {
     tab?: LearningTab;
     finished?: string;

@@ -52,6 +52,7 @@ import {
   searchFromOpenItem,
   type WorkspaceOpenSearch,
 } from '@/features/materials/openItem';
+import { useStudySurface } from '@/features/study/finishToasts';
 import { StudyPanel } from '@/features/study/StudyPanel';
 import {
   AddSourceDialog,
@@ -159,6 +160,8 @@ export default function WorkspaceOpen() {
 
   const searchedOpenItem = openItemFromSearch(search);
   const [tab, setTab] = useState<PanelTab>('files');
+  // The rail's Study panel shows from lg up.
+  useStudySurface(layout !== 'one' && tab === 'study');
   // One column: Files drops from the top, under the header it was opened from.
   const [filesOpen, setFilesOpen] = useState(false);
   // The Files dropdown hangs from the header, which lives in CenterContent.

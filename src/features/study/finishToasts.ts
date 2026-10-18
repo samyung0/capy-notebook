@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { useEffect, useRef } from 'react';
-import { useLearningProgress } from '@/api/hooks';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { learningProgressQuery } from '@/api/hooks';
 import type { BankProgress, LearningProgress } from '@/api/types';
 import { userToast } from '@/components/ui/userToast';
 import { bankProgressQuery } from '@/features/questions/bank';
@@ -40,21 +40,46 @@ function useChange<T>(
   }, [value]);
 }
 
+let studyOpened = false;
+const studyListeners = new Set<() => void>();
+const subscribeStudy = (listener: () => void) => {
+  studyListeners.add(listener);
+  return () => studyListeners.delete(listener);
+};
+
+/**
+ * A study surface (the workspace Study panel, the question bank, a review
+ * session, Learning) is open while `open`: from the first, the finish toasts'
+ * lists load as the snapshot later answers compare against, and stay
+ * observed for the rest of the page load (Epo 2026-10-18).
+ */
+export function useStudySurface(open = true) {
+  useEffect(() => {
+    if (!open || studyOpened) return;
+    studyOpened = true;
+    for (const listener of studyListeners) listener();
+  }, [open]);
+}
+
 /**
  * The finish toast: when the bank's or Learning's progress list refetches
  * (both do after every answer and study write) with a topic or workspace newly
  * finished, a success toast whose Go check opens its landing, where the map
- * leads with it and plays the finish once. Mounted in the app shell, so the
- * lists stay observed on every signed-in page.
+ * leads with it and plays the finish once. Mounted in the app shell; the
+ * lists load once a study surface opened, so other pages fetch neither.
  */
 export function useFinishToasts() {
   const navigate = useNavigate();
+  const enabled = useSyncExternalStore(subscribeStudy, () => studyOpened);
   const { data: bank } = useQuery({
     ...bankProgressQuery(),
+    enabled,
     meta: { errorBoundary: false },
   });
-  const { data: learning } = useLearningProgress(undefined, {
-    errorBoundary: false,
+  const { data: learning } = useQuery({
+    ...learningProgressQuery(),
+    enabled,
+    meta: { errorBoundary: false },
   });
   useChange(bank, (prev, next) => {
     for (const topic of newlyFinishedTopics(prev, next))

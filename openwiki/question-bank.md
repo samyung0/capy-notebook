@@ -748,9 +748,12 @@ would leave the map's top edge).
 Answering a topic's last unanswered question raises a success toast, "Topic
 finished" with Go check, which opens `/qb?finished=<topic>`. The toast comes
 from `useFinishToasts` (`src/features/study/finishToasts.ts`, mounted in
-`AppShell` so the progress route stays observed on every signed-in page): each
-refetch of the route is compared with the one before, and a topic finished now
-but not before toasts (answering any question refetches it). The first time a
+`AppShell`): the progress route loads when a study surface first opens in the
+page load (the workspace Study panel, the question bank, a review session,
+Learning; `useStudySurface`) as the snapshot, and stays observed after; other
+pages never fetch it (Epo 2026-10-18). Each refetch of the route is compared
+with the one before, and a topic finished now but not before toasts
+(answering any question refetches it). The first time a
 finished topic leads the landing in a browser, the map celebrates
 (`src/features/questions/trailMap/finish.tsx`, shared with Learning's railway
 map): the page scrolls the map into view, the last stop pops filled, the line

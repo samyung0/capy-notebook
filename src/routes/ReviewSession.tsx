@@ -25,6 +25,7 @@ import { CardStack, useCardStack } from '@/features/flashcards/CardStack';
 import { relativeTime } from '@/features/materials/MaterialListCard';
 import type { Question } from '@/features/questions/types';
 import type { Answers } from '@/features/quizzes/grade';
+import { useStudySurface } from '@/features/study/finishToasts';
 import { CheckedQuestion, QuestionItem } from '@/features/study/ReviewQuestion';
 import {
   type ReviewRecord,
@@ -76,6 +77,7 @@ function ratingFailed() {
  * or an unfinished session continued. Keyed by its search, so starting the
  * next suggestion from the summary is a new session. */
 export default function ReviewSession() {
+  useStudySurface();
   const { workspaceId } = useParams({ strict: false }) as {
     workspaceId: string;
   };

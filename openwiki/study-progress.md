@@ -437,7 +437,9 @@ Finished rows. Finishing a workspace's last tracked item raises a success
 toast, "Workspace finished" with Go check, which opens
 `/learning?tab=progress&finished=<workspace>`; it comes from
 `useFinishToasts`, which compares each refetch of the progress route (every
-study write refetches it) with the one before, as the bank's does. The first
+study write refetches it) with the one before, as the bank's does; both lists
+load only once a study surface opened in the page load (see
+[question-bank.md](question-bank.md)). The first
 time a finished workspace leads the tab in a browser, the railway map plays the
 finish animation described in [question-bank.md](question-bank.md) (key
 `workspace:<id>:<tracked count>`), so finishing again after new items

@@ -111,6 +111,7 @@ import {
 import type { Answers } from '@/features/quizzes/grade';
 import { QuestionRunner } from '@/features/quizzes/QuestionRunner';
 import { type Crumb, QuizPageHeader } from '@/features/quizzes/QuizPageHeader';
+import { useStudySurface } from '@/features/study/finishToasts';
 import { getLocale, m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { CopyError, describeError, unexpectedErrorId } from '@/lib/errors';
@@ -138,6 +139,7 @@ const PAGE = 10;
  * and bottom sheet on phones), where Clone picks questions for Copy to quiz.
  */
 export default function QuestionBank() {
+  useStudySurface();
   const { topicId = '', questionId = '' } = useParams({ strict: false }) as {
     topicId?: string;
     questionId?: string;
