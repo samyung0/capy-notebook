@@ -12,7 +12,7 @@ use serde_json::{Map, Value};
 
 use crate::catalog::{
     self, BLOCK_CAPTION_MAX, CARD_BACK_MAX, CARD_FRONT_MAX, HTML_EMBED_MAX_BYTES,
-    HTML_EMBED_MAX_COUNT, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
+    HTML_EMBED_MAX_COUNT, LIST_INDENT_MAX, MEDIA_WIDTH_MAX, MEDIA_WIDTH_MIN,
 };
 use crate::questions::{self, Policy, js_trim};
 
@@ -468,6 +468,15 @@ fn validate_node(node: &Node, depth: usize, policy: &Policy) -> Check {
     }
     if !has_text_descendant(node) {
         return fail("element must contain a text descendant");
+    }
+    // Any block's indent (lists, indented paragraphs) stops at the
+    // catalog's LIST_INDENT_MAX (Epo 2026-10-18).
+    if node
+        .get("indent")
+        .and_then(Value::as_f64)
+        .is_some_and(|indent| indent > LIST_INDENT_MAX as f64)
+    {
+        return fail(format!("indent is over {LIST_INDENT_MAX} levels"));
     }
     // A type the catalog does not list is refused by the placement walk
     // (`placement`), as Go's `validateKind` refuses it.

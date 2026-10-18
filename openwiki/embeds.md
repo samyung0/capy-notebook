@@ -142,7 +142,10 @@ lists to cover are in `todo-embeds.md`). Decisions: `human/frontend/plate-editor
   item (quiz, flashcards).
 - **`limits`**: `HTML_EMBED_MAX_BYTES`, `HTML_EMBED_MAX_COUNT`,
   `BLOCK_CAPTION_MAX` (an interactive block's caption),
-  `MEDIA_WIDTH_MIN`/`MAX`, `CARD_FRONT_MAX`/`CARD_BACK_MAX` and the question
+  `MEDIA_WIDTH_MIN`/`MAX`, `LIST_INDENT_MAX` (any block's indent, 8: the
+  editor's Tab stops there; Go's validator, `createMaterialDocument`, the
+  store and room admission refuse more, Epo 2026-10-18),
+  `CARD_FRONT_MAX`/`CARD_BACK_MAX` and the question
   bounds (`fieldlimits.QuestionBounds`). The notes and items crates read
   them there, with no copy of their own. The Rust file declares each as a
   constant (`QUESTION_IMAGE_DIMENSION_MAX` and `QUESTION_MARKS_MAX` as `f64`).
@@ -162,7 +165,7 @@ the golden fixtures in `server/internal/materialdoc/testdata/index_text`
 
 | Rule | Elements | Gives |
 | --- | --- | --- |
-| `text` | `p`, `h1`–`h6`, `blockquote`, `code_block`, `code_line`, `table`, `tr`, `td`, `th`, `callout`, `column_group`, `column`, `a`, `mermaid_caption`, `quiz`, `flashcards`, `flashcard`, `flashcard_front`, `flashcard_back` | its children's text, trimmed: a heading led by its `#`s, a list paragraph by its bullet (`- `, `1. `, `- [ ] `, `- [x] `, two spaces per indent past the first), a quote by `> `, a table as one `\| a \| b \|` row per row, code in a fence with its `lang`; a container (`callout`, columns, `quiz`, `flashcards`) gives each child's text, and a flashcard its front, then its back, on two lines |
+| `text` | `p`, `h1`–`h6`, `blockquote`, `code_block`, `code_line`, `table`, `tr`, `td`, `th`, `callout`, `column_group`, `column`, `a`, `mermaid_caption`, `quiz`, `flashcards`, `flashcard`, `flashcard_front`, `flashcard_back` | its children's text, trimmed: a heading led by its `#`s, a list paragraph by its bullet (`- `, `1. `, `- [ ] `, `- [x] `, two spaces per indent past the first, at most `LIST_INDENT_MAX`), a quote by `> `, a table as one `\| a \| b \|` row per row, code in a fence with its `lang`; a container (`callout`, columns, `quiz`, `flashcards`) gives each child's text, and a flashcard its front, then its back, on two lines |
 | `figure` | `chart`, `plot`, `graph` | its `block`, below |
 | `mermaid` | `mermaid` | the caption, then the whole source in a ```` ```mermaid ```` fence |
 | `question` | `quiz_question` | the question, below |

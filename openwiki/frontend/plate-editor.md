@@ -168,7 +168,9 @@ Heading handles use the computed line height to center on the first line,
 sharing one positioning rule across H1–H6 and wrapped headings.
 List and paragraph handles measure the first rendered text line to account
 for internal numbered/todo wrappers and paragraph padding. Todo checkboxes use the CSS line height to center on
-the first line, including wrapped rows. Todo rows use only Plate's indent;
+the first line, including wrapped rows. A block's indent stops at the embed
+catalog's `LIST_INDENT_MAX` (8, the indent plugin's `indentMax`); every
+validator refuses a deeper one. Todo rows use only Plate's indent;
 the checkbox sits 24px before the text in both editable and static renderers,
 so empty slash-command hints share the text position without overlapping it.
 

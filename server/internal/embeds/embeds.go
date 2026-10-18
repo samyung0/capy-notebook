@@ -31,6 +31,10 @@ const (
 	// A resizable block stores its width as a whole percentage in this range.
 	MediaWidthMin = 20
 	MediaWidthMax = 100
+	// ListIndentMax bounds any block's indent (lists and indented
+	// paragraphs): the editor stops at it and every validator refuses more
+	// (Epo 2026-10-18).
+	ListIndentMax = 8
 )
 
 // Material kinds.
@@ -449,6 +453,7 @@ func Limits() []Limit {
 		{"BLOCK_CAPTION_MAX", BlockCaptionMax},
 		{"MEDIA_WIDTH_MIN", MediaWidthMin},
 		{"MEDIA_WIDTH_MAX", MediaWidthMax},
+		{"LIST_INDENT_MAX", ListIndentMax},
 		{"CARD_FRONT_MAX", fieldlimits.CardFront},
 		{"CARD_BACK_MAX", fieldlimits.CardBack},
 	}

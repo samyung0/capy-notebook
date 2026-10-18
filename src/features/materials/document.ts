@@ -112,6 +112,9 @@ export const HTML_EMBED_MAX_BYTES = EMBED_CATALOG.limits.HTML_EMBED_MAX_BYTES;
 export const HTML_EMBED_MAX_COUNT = EMBED_CATALOG.limits.HTML_EMBED_MAX_COUNT;
 /** An HTML embed's caption, and the inline Mermaid caption's input bound. */
 export const BLOCK_CAPTION_MAX = EMBED_CATALOG.limits.BLOCK_CAPTION_MAX;
+/** Any block's indent (lists, indented paragraphs): the editor stops at it
+ * and every validator refuses more (Epo 2026-10-18). */
+export const LIST_INDENT_MAX = EMBED_CATALOG.limits.LIST_INDENT_MAX;
 
 export function htmlBytes(html: string): number {
   return new TextEncoder().encode(html).length;
@@ -394,6 +397,8 @@ export function isMaterialNode(
   if (isTextNode(value)) return true;
   if (!isElementNode(value)) return false;
   if (!value.children.every((child) => isMaterialNode(child, depth + 1, live)))
+    return false;
+  if (typeof value.indent === 'number' && value.indent > LIST_INDENT_MAX)
     return false;
   const catalog = ELEMENTS.get(value.type);
   // A stored document holding a type the catalog does not list stays

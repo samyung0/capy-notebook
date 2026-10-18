@@ -12,6 +12,7 @@ import {
   htmlEmbedNode,
   isMaterialDocument,
   isMaterialRefElement,
+  LIST_INDENT_MAX,
   type MaterialValue,
   materialRefNode,
   normalizeMaterialValue,
@@ -80,6 +81,21 @@ describe('Universal Plate material documents', () => {
       )
     ).toBe(false);
   });
+  // Epo 2026-10-18: as Go and the collaboration server refuse a deeper one.
+  it('caps a block indent at LIST_INDENT_MAX', () => {
+    const item = (indent: number): MaterialValue => [
+      {
+        children: [{ text: 'deep' }],
+        id: 'l1',
+        indent,
+        listStyleType: 'disc',
+        type: 'p',
+      },
+    ];
+    expect(() => createMaterialDocument(item(LIST_INDENT_MAX))).not.toThrow();
+    expect(() => createMaterialDocument(item(LIST_INDENT_MAX + 1))).toThrow();
+  });
+
   it('rejects shared part IDs across different quiz blocks', () => {
     const first = exampleQuestion('one');
     const second = exampleQuestion('two');

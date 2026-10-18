@@ -82,3 +82,20 @@ fn content_and_room_give_gos_index_text() {
         );
     }
 }
+
+/// A list indent past `LIST_INDENT_MAX`, which the store refuses, still
+/// reads as the deepest one instead of reaching the repeat.
+#[test]
+fn a_list_indent_is_bounded() {
+    let document = serde_json::json!({ "schemaVersion": 1, "value": [
+        { "type": "p", "id": "l1", "indent": 1e30, "listStyleType": "disc", "children": [{ "text": "deep" }] },
+    ] });
+    let text = format!("{}- deep", "  ".repeat(notes::catalog::LIST_INDENT_MAX - 1));
+    assert_eq!(
+        index_text::from_content(&document, &Items(BTreeMap::new())),
+        [IndexBlock {
+            id: "l1".into(),
+            text
+        }]
+    );
+}

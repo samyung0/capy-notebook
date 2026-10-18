@@ -651,6 +651,11 @@ func validateNode(node map[string]any, depth int, live bool) error {
 	if !hasTextDescendant(node) {
 		return errors.New("element must contain a text descendant")
 	}
+	// Any block's indent (lists, indented paragraphs) stops at the
+	// catalog's ListIndentMax (Epo 2026-10-18).
+	if indent, ok := number(node["indent"]); ok && indent > embeds.ListIndentMax {
+		return fmt.Errorf("indent is over %d levels", embeds.ListIndentMax)
+	}
 	element, known := elements[typ]
 	if !known {
 		// A stored document holding a type the catalog does not list stays

@@ -566,6 +566,11 @@ fn admission_checks_placement_values_and_the_embed_count() {
             text(&"c".repeat(catalog::BLOCK_CAPTION_MAX + 1)),
         ),
         ("mermaid", "source", yrs::Any::Number(1.0)),
+        (
+            "p",
+            "indent",
+            yrs::Any::Number((catalog::LIST_INDENT_MAX + 1) as f64),
+        ),
     ];
     // A figure's block is its live map only, never one plain value
     // (Epo 2026-10-18).
@@ -592,6 +597,11 @@ fn admission_checks_placement_values_and_the_embed_count() {
             "caption",
             text(&"c".repeat(catalog::BLOCK_CAPTION_MAX)),
         ),
+        (
+            "p",
+            "indent",
+            yrs::Any::Number(catalog::LIST_INDENT_MAX as f64),
+        ),
     ];
     for (name, key, value) in accepted {
         assert!(
@@ -599,6 +609,26 @@ fn admission_checks_placement_values_and_the_embed_count() {
             "a {name}'s {key} {value:?}"
         );
     }
+}
+
+/// Any block's indent stops at the catalog's `LIST_INDENT_MAX` in the
+/// store (Epo 2026-10-18), with Go's message; room admission refuses a
+/// deeper one written (`admission_checks_placement_values_and_the_embed_count`).
+#[test]
+fn a_block_indent_stops_at_the_catalog_max() {
+    let item = |indent: usize| {
+        [
+            json!({ "type": "p", "id": "l1", "indent": indent, "listStyleType": "disc",
+            "children": [{ "text": "deep" }] }),
+        ]
+    };
+    material::assert_canonical(&item(catalog::LIST_INDENT_MAX), "note").unwrap();
+    assert_eq!(
+        material::assert_canonical(&item(catalog::LIST_INDENT_MAX + 1), "note")
+            .unwrap_err()
+            .0,
+        format!("indent is over {} levels", catalog::LIST_INDENT_MAX)
+    );
 }
 
 /// The catalog's one shared-text key is the one the projection, the

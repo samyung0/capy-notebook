@@ -363,8 +363,8 @@ fn shared_keys(keys: fn(&catalog::Element) -> &'static [&'static str]) -> Vec<&'
 }
 
 /// The keys whose value the store checks beyond its presence ([value_ok]).
-const VALUE_KEYS: [&str; 8] = [
-    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source",
+const VALUE_KEYS: [&str; 9] = [
+    "refKind", "provider", "videoId", "width", "html", "caption", "block", "source", "indent",
 ];
 
 /// Whether the store takes `value` under `key` on an element of type `kind`
@@ -372,7 +372,7 @@ const VALUE_KEYS: [&str; 8] = [
 /// is a YouTube id, a resizable block's width is one the handles write, an
 /// interactive block's html and caption fit, a figure's
 /// block is a valid question block of its type, a Mermaid source is a string
-/// (or its shared text).
+/// (or its shared text), any block's indent stops at `LIST_INDENT_MAX`.
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
@@ -393,6 +393,7 @@ fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
         (_, "width", value) if catalog::element(kind).is_some_and(|e| e.resizable) => {
             matches!(value, Any::String(width) if crate::material::valid_width(width))
         }
+        (_, "indent", Any::Number(indent)) => *indent <= catalog::LIST_INDENT_MAX as f64,
         (crate::material::MATERIAL_REF_TYPE, "refKind", _)
         | ("video", "provider" | "videoId", _)
         | (crate::material::HTML_EMBED_TYPE, "html", _) => false,

@@ -9,6 +9,7 @@ pub const HTML_EMBED_MAX_COUNT: usize = 10;
 pub const BLOCK_CAPTION_MAX: usize = 300;
 pub const MEDIA_WIDTH_MIN: usize = 20;
 pub const MEDIA_WIDTH_MAX: usize = 100;
+pub const LIST_INDENT_MAX: usize = 8;
 pub const CARD_FRONT_MAX: usize = 4000;
 pub const CARD_BACK_MAX: usize = 2000;
 pub const QUESTION_ANSWERS_MAX: usize = 100;

@@ -132,6 +132,20 @@ func TestHTMLEmbedCapsSizeAndCountAndSkipsIndexing(t *testing.T) {
 	}
 }
 
+// Any block's indent stops at the catalog's ListIndentMax (Epo 2026-10-18),
+// as the browser and the collaboration server check.
+func TestBlockIndentStopsAtTheCatalogMax(t *testing.T) {
+	item := func(indent int) Envelope {
+		return Envelope{SchemaVersion: SchemaVersion, Value: []map[string]any{{"type": "p", "id": "l1", "indent": indent, "listStyleType": "disc", "children": []any{textLeaf("deep")}}}}
+	}
+	if err := Validate(item(embeds.ListIndentMax)); err != nil {
+		t.Fatalf("indent %d: %v", embeds.ListIndentMax, err)
+	}
+	if err := Validate(item(embeds.ListIndentMax + 1)); err == nil {
+		t.Fatalf("indent %d accepted", embeds.ListIndentMax+1)
+	}
+}
+
 func TestQuizRoundTripPreservesEveryQuestionTypeAndGrading(t *testing.T) {
 	questions := json.RawMessage(`[{"id": "q0", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p0", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q1", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p1", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "mcq", "options": ["A", "B"], "correct": [0, 1]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q2", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p2", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "boolean", "correct": false}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q3", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p3", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "short", "accepted": ["alpha"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q4", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p4", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "matching", "options": ["unused", "X", "Y"], "pairs": [{"left": "A", "right": 1}, {"left": "B", "right": 1}]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q5", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p5", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "ordering", "items": ["A", "B"]}, "marks": 1, "solution": []}], "layout": "paper", "labels": "letters"}, {"id": "q6", "stem": [{"type": "text", "text": "Shared $x$ context."}], "parts": [{"id": "p6", "blocks": [{"type": "text", "text": "Answer?"}], "answer": {"type": "open", "accepted": ["explanation"], "hints": ["reason"]}, "marks": 1, "markscheme": [{"text": "Correct answer", "marks": 1}], "solution": []}], "layout": "paper", "labels": "letters"}]`)
 	raw, err := QuizDocument(questions, nil)

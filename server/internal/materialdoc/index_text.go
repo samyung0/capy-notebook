@@ -181,8 +181,10 @@ func writeIndexBlock(node map[string]any, items map[string]string, out *[]string
 	case typ == "p":
 		if style, _ := node["listStyleType"].(string); style != "" {
 			indent := 0
+			// Validation refuses an indent past ListIndentMax; the bound
+			// keeps a deeper one from reaching strings.Repeat anyway.
 			if n, ok := number(node["indent"]); ok && n > 1 {
-				indent = int(n) - 1
+				indent = int(min(n, embeds.ListIndentMax)) - 1
 			}
 			prefix := "- "
 			switch style {

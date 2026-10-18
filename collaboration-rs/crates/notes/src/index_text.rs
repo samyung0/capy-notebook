@@ -237,9 +237,10 @@ fn write_block(node: &Value, items: &impl ItemText, out: &mut Vec<String>) {
         .as_str()
         .filter(|style| typ == "p" && !style.is_empty())
     {
-        // Go's int(n): toward zero.
+        // Go's int(n): toward zero. The store refuses an indent past
+        // LIST_INDENT_MAX; the bound keeps a deeper one from the repeat.
         let indent = match node["indent"].as_f64() {
-            Some(n) if n > 1.0 => n as usize - 1,
+            Some(n) if n > 1.0 => n.min(crate::catalog::LIST_INDENT_MAX as f64) as usize - 1,
             _ => 0,
         };
         let prefix = match style {
