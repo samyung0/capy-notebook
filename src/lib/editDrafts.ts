@@ -2,6 +2,7 @@ import * as Y from 'yjs';
 import { USE_MSW } from '@/api/auth';
 import { isAccountForbiddenError, isApiError } from '@/api/client';
 import type { MaterialCollaborationToken } from '@/api/types';
+import { tabAllowance } from '@/features/collaboration/allowance';
 import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
 import { markUpdateAvailable } from '@/lib/appRelease';
 import {
@@ -40,7 +41,7 @@ export interface EditDraft {
   base?: string;
   data: Uint8Array;
   /** A sweep left it for the editor's next open: the service could not take
-   * it (it needs the room's state, it is larger than a sync message, or it
+   * it (it needs the room's state, a piece is over the service's cap, or it
    * is of another lineage or Office base), so no sweep sends it again. */
   held?: true;
   /** `${session}:state`, or `${session}:${seq}` for an update (or a run
@@ -763,11 +764,6 @@ export interface SweepApi {
   post: (path: string, body: unknown) => Promise<unknown>;
 }
 
-/** The collaboration service's cap on a note room's sync message
- * (`NOTE_MAX_SYNC_BYTES`, Epo b80da056): a larger draft waits for the
- * editor, which sends only what the room lacks. */
-const NOTE_SYNC_MAX_BYTES = 4 * 1024 * 1024;
-
 /**
  * The document a stored key names: `${actor}:material:${id}` (a note, a
  * flashcard set, a quiz's content), `${actor}:material:${id}:keys` (a quiz's
@@ -799,8 +795,9 @@ function roomToken(
  * What sending one group of rows came to:
  * - `sent`: a store holds it (the answer is the receipt for every row sent);
  * - `refused`: over a limit or not an update a writer may send;
- * - `waits`: only the editor can send it (larger than a sync message, a base
- *   the room lacks, another lineage or Office base), at the file's next open;
+ * - `waits`: only the editor can send it (a piece over the service's cap, a
+ *   base the room lacks, another lineage or Office base), at the file's next
+ *   open;
  * - `later`: the service answered something else (busy, failing, lost
  *   access): tried again at the next page load;
  * - `retry`: no answer (offline) or the rows changed: tried at the next
@@ -831,15 +828,18 @@ function sendableGroups(rows: DraftInfo[], room: string) {
 }
 
 /** POST one group to the collaboration service's `/drafts` (its WebSocket
- * URL's host) with the editor's token, merged in the drafts worker. */
+ * URL's host) with the editor's token, merged in the drafts worker and sent
+ * as its pieces of at most 2 MiB, in order, each paced under the user's
+ * update allowance (Epo 2026-10-18). A piece the service refuses stops the
+ * send; the pieces before it are in the room, and the rows go again whole
+ * later (what the room holds already changes nothing). */
 async function sendGroup(
   token: RoomToken,
-  group: { base?: string; refs: DraftRef[] },
-  note: boolean
+  group: { base?: string; refs: DraftRef[] }
 ): Promise<Sent> {
-  let body: Uint8Array<ArrayBuffer> | null;
+  let pieces: Uint8Array<ArrayBuffer>[] | null;
   try {
-    body = await call<Uint8Array<ArrayBuffer> | null>({
+    pieces = await call<Uint8Array<ArrayBuffer>[] | null>({
       op: 'merged',
       rows: group.refs,
     });
@@ -847,8 +847,21 @@ async function sendGroup(
     console.warn('Drafts cannot be merged:', error);
     return 'waits';
   }
-  if (!body) return 'retry';
-  if (note && body.byteLength > NOTE_SYNC_MAX_BYTES) return 'waits';
+  if (!pieces) return 'retry';
+  for (const piece of pieces) {
+    const sent = await sendPiece(token, group, piece);
+    if (sent !== 'sent') return sent;
+  }
+  return 'sent';
+}
+
+async function sendPiece(
+  token: RoomToken,
+  group: { base?: string },
+  body: Uint8Array<ArrayBuffer>
+): Promise<Sent> {
+  const wait = tabAllowance.reserve(body.byteLength);
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
   const headers: Record<string, string> = {
     authorization: `Bearer ${token.token}`,
     'content-type': 'application/octet-stream',
@@ -946,7 +959,7 @@ async function sweepDocument(
   const rows = await call<DraftInfo[]>({ key, op: 'rows' });
   for (const group of sendableGroups(rows, token.room)) {
     if (!current()) return false;
-    const sent = await sendGroup(token, group, kind === 'material');
+    const sent = await sendGroup(token, group);
     if (!current()) return false;
     if (sent === 'outdated') {
       outdated = true;

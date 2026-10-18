@@ -1,7 +1,16 @@
 import 'fake-indexeddb/auto';
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import {
+  afterAll,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from 'vitest';
 import * as Y from 'yjs';
 import { ApiError } from '@/api/client';
+import { resetAllowance } from '@/features/collaboration/allowance';
 import { CLIENT_PROTOCOL } from '@/features/collaboration/protocol';
 import type { DraftMessage, DraftReply } from './draftStore';
 
@@ -1300,6 +1309,8 @@ async function leftRows(key: string, lineage = ROOM, base?: string) {
 
 describe('the draft sweep sending', () => {
   const locks = new Locks();
+  // Each test sends under a full update allowance (allowance.ts).
+  beforeEach(() => resetAllowance());
   beforeAll(() => {
     Object.defineProperty(navigator, 'locks', {
       configurable: true,
@@ -1439,28 +1450,71 @@ describe('the draft sweep sending', () => {
       (_, index) => `u_waits:material:mat_${index}`
     );
     for (const key of keys) await leftRows(key);
-    // A note's draft past the 4 MiB sync cap is not even uploaded.
-    const big = 'u_waits:material:mat_big';
-    const doc = new Y.Doc();
-    let update: Uint8Array = new Uint8Array();
-    doc.once('update', (bytes: Uint8Array) => {
-      update = bytes;
-    });
-    doc.getText('content').insert(0, 'x'.repeat(4 * 1024 * 1024 + 1));
-    await putDrafts([
-      draft(`big-${crypto.randomUUID()}`, { data: update, key: big }),
-    ]);
     requests.length = 0;
     answer(413, 'too_large');
     answer(409, 'unheld');
     answer(409, 'lineage');
     await sweepDrafts('u_waits', tokens(ROOM));
     expect(requests).toHaveLength(3);
-    for (const key of [...keys, big])
+    for (const key of keys)
       expect((await readDrafts(key)).every((row) => row.held)).toBe(true);
     const later = await nextPageLoad();
     await later.sweepDrafts('u_waits', tokens(ROOM));
     expect(requests).toHaveLength(3);
+  });
+
+  it('sends a group larger than a piece as pieces of at most 2 MiB, in order, and its rows go once the last is stored', async () => {
+    const big = 'u_pieces:material:mat_big';
+    const doc = new Y.Doc();
+    let update: Uint8Array = new Uint8Array();
+    doc.once('update', (bytes: Uint8Array) => {
+      update = bytes;
+    });
+    const text = 'x'.repeat(5 * 1024 * 1024);
+    doc.getText('content').insert(0, text);
+    await putDrafts([
+      draft(`big-${crypto.randomUUID()}`, { data: update, key: big }),
+    ]);
+    requests.length = 0;
+    await sweepDrafts('u_pieces', tokens(ROOM));
+    expect(requests.length).toBeGreaterThan(2);
+    const room = new Y.Doc();
+    for (const { body } of requests) {
+      expect(body.byteLength).toBeLessThanOrEqual(2 * 1024 * 1024);
+      Y.applyUpdate(room, body);
+      expect(room.store.pendingStructs).toBeNull();
+    }
+    expect(room.getText('content').toString()).toBe(text);
+    expect(await readDrafts(big)).toEqual([]);
+  });
+
+  it('keeps a group whose later piece is refused as too fast, until a later page load', async () => {
+    const big = 'u_fast:material:mat_big';
+    const doc = new Y.Doc();
+    let update: Uint8Array = new Uint8Array();
+    doc.once('update', (bytes: Uint8Array) => {
+      update = bytes;
+    });
+    doc.getText('content').insert(0, 'y'.repeat(5 * 1024 * 1024));
+    await putDrafts([
+      draft(`big-${crypto.randomUUID()}`, { data: update, key: big }),
+    ]);
+    requests.length = 0;
+    fetchDrafts.mockImplementationOnce(async (input, init) => {
+      requests.push({
+        body: new Uint8Array(init?.body as ArrayBuffer),
+        headers: new Headers(init?.headers),
+        url: new URL(String(input)),
+      });
+      return Response.json({ type: 'checkpoint-persisted' });
+    });
+    answer(429, 'too_fast');
+    await sweepDrafts('u_fast', tokens(ROOM));
+    // The send stops at the refused piece; the rows stay as they were.
+    expect(requests).toHaveLength(2);
+    expect((await readDrafts(big)).map((row) => row.held ?? false)).toEqual([
+      false,
+    ]);
   });
 
   it("sends a quiz's keys with the keys token, and a file's rows one request per base", async () => {

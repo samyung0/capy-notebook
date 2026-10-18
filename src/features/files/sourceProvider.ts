@@ -33,6 +33,8 @@ export interface SourceProviderConfig {
   /** The room closed; on an open socket the server closed only this room. */
   onClose?: () => void;
   onDisconnect?: () => void;
+  /** The session's own update is going out in pieces (RoomProvider). */
+  onSending?: (pending: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;

@@ -58,6 +58,20 @@ describe('office host protocol', () => {
     ).toBe(false);
   });
 
+  it('tells the runtime whether its update is still going out in pieces', () => {
+    for (const pending of [true, false])
+      expect(
+        isOfficeHostMessage({
+          pending,
+          type: 'sending',
+          version: OFFICE_PROTOCOL_VERSION,
+        })
+      ).toBe(true);
+    expect(
+      isOfficeHostMessage({ type: 'sending', version: OFFICE_PROTOCOL_VERSION })
+    ).toBe(false);
+  });
+
   it('accepts capability updates sent after the iframe loads', () => {
     expect(
       isOfficeHostMessage({

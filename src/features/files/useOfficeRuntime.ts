@@ -475,6 +475,16 @@ export function useOfficeRuntime({
       });
   }, [editable, frameBoot, frameLoaded, mode, post, source.doc]);
 
+  // The editor's update still going to the room in pieces.
+  useEffect(() => {
+    if (frameLoaded && mode === 'edit')
+      post({
+        pending: source.sending,
+        type: 'sending',
+        version: OFFICE_PROTOCOL_VERSION,
+      });
+  }, [frameBoot, frameLoaded, mode, post, source.sending]);
+
   useEffect(() => {
     const doc = source.doc;
     if (!doc || mode !== 'edit' || !source.session) return;

@@ -103,6 +103,17 @@ export type OfficeHostMessage =
    * in the sheet would end it.
    */
   | { version: typeof OFFICE_PROTOCOL_VERSION; type: 'focus-left' }
+  /**
+   * The editor's own update is going to the room in pieces (Epo 2026-10-18,
+   * over 2 MiB: `splitUpdate`): true when its first piece leaves, false once
+   * the room acknowledged the last one or the room closed. The XLSX editor
+   * shows a loading cursor and refuses other edits meanwhile.
+   */
+  | {
+      version: typeof OFFICE_PROTOCOL_VERSION;
+      type: 'sending';
+      pending: boolean;
+    }
   | {
       version: typeof OFFICE_PROTOCOL_VERSION;
       type: 'set-capabilities';
@@ -337,6 +348,8 @@ export function isOfficeHostMessage(
     return isCount(candidate.epoch) && typeof candidate.id === 'string';
   if (candidate.type === 'export') return typeof candidate.id === 'string';
   if (candidate.type === 'focus-left') return true;
+  if (candidate.type === 'sending')
+    return typeof candidate.pending === 'boolean';
   if (candidate.type === 'set-appearance')
     return (
       STYLES.some((style) => style.value === candidate.style) &&

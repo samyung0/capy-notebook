@@ -1,3 +1,4 @@
+import { Allowance, tabAllowance } from './allowance';
 import { decodeFrame, type Message, MessageKind } from './protocol';
 
 /** One room on the socket (a RoomProvider). */
@@ -21,11 +22,13 @@ const WARM_MS = 10_000;
  * one more (`MAX_PENDING_JOINS`, collaboration-rs/crates/server/src/socket.rs).
  * A note with many embeds on screen queues the rest here. */
 const MAX_PENDING_JOINS = 8;
-/** The server's close of a socket that sent updates past its rate limit
- * (`TOO_FAST_CODE`, collaboration-rs/crates/server/src/socket.rs). Each one
- * in the page load doubles the next reconnect's backoff, so a client that
- * keeps tripping it never loops; its rooms resync on the reconnect. */
+/** The server's close of a socket that sent updates past its user's rate
+ * limit, or an update over its cap (`TOO_FAST`, `TOO_LARGE`,
+ * collaboration-rs/crates/server/src/socket.rs). Each one in the page load
+ * doubles the next reconnect's backoff, so a client that keeps tripping it
+ * never loops; its rooms resync on the reconnect. */
 export const TOO_FAST_CODE = 4429;
+export const TOO_LARGE_CODE = 4413;
 
 /**
  * The tab's socket to one collaboration URL, shared by every room open in
@@ -35,9 +38,10 @@ export const TOO_FAST_CODE = 4429;
 export class CollabSocket {
   private static readonly sockets = new Map<string, CollabSocket>();
 
-  /** A socket of its own (a load generator's peer), not the tab's shared one. */
+  /** A socket of its own (a load generator's peer), not the tab's shared
+   * one, pacing its updates under an allowance of its own. */
   static create(url: string): CollabSocket {
-    return new CollabSocket(url);
+    return new CollabSocket(url, new Allowance());
   }
 
   static for(url: string): CollabSocket {
@@ -69,17 +73,24 @@ export class CollabSocket {
   /** Channels whose JOIN went out without an answer yet. */
   private readonly pending = new Set<number>();
   private queued: { bytes: Uint8Array<ArrayBuffer>; channel: number }[] = [];
+  /** Frames waiting for the allowance (`reserve`), in order, each with the
+   * time it may go; a frame sent behind them waits its turn. */
+  private outbox: { at: number; bytes: Uint8Array<ArrayBuffer> }[] = [];
+  private draining: ReturnType<typeof setTimeout> | undefined;
   private nextChannel = 1;
   private attempts = 0;
-  /** Too-fast closes this page load (TOO_FAST_CODE). */
+  /** Too-fast and too-large closes this page load. */
   private tooFast = 0;
   private retry: ReturnType<typeof setTimeout> | undefined;
   private idle: ReturnType<typeof setTimeout> | undefined;
 
   readonly url: string;
+  /** Its own allowance; the tab's (`tabAllowance`) when none. */
+  private readonly allowance: Allowance | null;
 
-  private constructor(url: string) {
+  private constructor(url: string, allowance: Allowance | null = null) {
     this.url = url;
+    this.allowance = allowance;
     // Back online: reconnect now instead of waiting out the backoff.
     if (typeof window !== 'undefined')
       window.addEventListener('online', () => {
@@ -126,8 +137,49 @@ export class CollabSocket {
     this.answered(channel);
   }
 
-  send(bytes: Uint8Array<ArrayBuffer>) {
-    if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(bytes);
+  /**
+   * Sends a frame now, or after the frames waiting before it. A SYNC frame
+   * (`sync`) takes its share of the user's update allowance first and waits
+   * while the allowance is spent; nothing overtakes it, so a checkpoint
+   * request still follows the updates it covers.
+   */
+  send(bytes: Uint8Array<ArrayBuffer>, sync = false) {
+    if (this.ws?.readyState !== WebSocket.OPEN) return;
+    const now = performance.now();
+    const at = Math.max(
+      now +
+        (sync ? (this.allowance ?? tabAllowance).reserve(bytes.byteLength) : 0),
+      this.outbox.at(-1)?.at ?? 0
+    );
+    if (at <= now && !this.outbox.length) {
+      this.ws.send(bytes);
+      return;
+    }
+    this.outbox.push({ at, bytes });
+    this.drainLater();
+  }
+
+  private drainLater() {
+    if (this.draining || !this.outbox.length) return;
+    this.draining = setTimeout(
+      () => {
+        this.draining = undefined;
+        const now = performance.now();
+        while (this.outbox.length && this.outbox[0].at <= now) {
+          const { bytes } = this.outbox.shift()!;
+          if (this.ws?.readyState === WebSocket.OPEN) this.ws.send(bytes);
+        }
+        this.drainLater();
+      },
+      Math.max(0, this.outbox[0].at - performance.now())
+    );
+  }
+
+  /** The socket ended: what waited is dropped (rooms resync on rejoin). */
+  private dropOutbox() {
+    clearTimeout(this.draining);
+    this.draining = undefined;
+    this.outbox = [];
   }
 
   /** Sends a channel's JOIN, or holds it while eight others wait for theirs. */
@@ -193,8 +245,10 @@ export class CollabSocket {
       this.status = 'disconnected';
       this.channels.clear();
       this.forgetJoins();
+      this.dropOutbox();
       for (const handler of [...this.handlers]) handler.onSocketClose();
-      if (event.code === TOO_FAST_CODE) this.attempts = ++this.tooFast;
+      if (event.code === TOO_FAST_CODE || event.code === TOO_LARGE_CODE)
+        this.attempts = ++this.tooFast;
       if (this.handlers.size > 0) this.scheduleRetry();
     };
   }
@@ -216,6 +270,7 @@ export class CollabSocket {
     this.status = 'disconnected';
     this.channels.clear();
     this.forgetJoins();
+    this.dropOutbox();
     ws?.close();
   }
 }

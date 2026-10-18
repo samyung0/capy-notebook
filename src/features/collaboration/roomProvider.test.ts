@@ -6,6 +6,8 @@ import * as Y from 'yjs';
 import { createSourceProvider } from '@/features/files/sourceProvider';
 import type { DraftMessage, DraftReply } from '@/lib/draftStore';
 import { readDrafts, recordDrafts } from '@/lib/editDrafts';
+import { resetAllowance } from './allowance';
+import { PIECE_BYTES } from './pieces';
 import {
   CLIENT_PROTOCOL,
   closedPayload,
@@ -81,6 +83,7 @@ class InProcessWorker {
 
 let url = 0;
 beforeEach(() => {
+  resetAllowance();
   FakeSocket.instances = [];
   vi.stubGlobal('WebSocket', FakeSocket);
   vi.stubGlobal('Worker', InProcessWorker);
@@ -369,6 +372,122 @@ it('after a too-fast close, rejoins once its doubled backoff passes and resends 
   await vi.advanceTimersByTimeAsync(1);
   expect(FakeSocket.instances).toHaveLength(3);
   provider.destroy();
+});
+
+/** A joined room whose server state is empty, synced both ways. */
+async function syncedRoom(
+  options: Partial<ConstructorParameters<typeof RoomProvider>[0]> = {}
+) {
+  const room = await joined(options);
+  const server = new Y.Doc();
+  room.socket.deliver(
+    message(room.join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      room.join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  room.socket.take(MessageKind.Sync);
+  // Its step 2 reply, acknowledged.
+  room.socket.deliver(
+    message(room.join.channel, MessageKind.Ack, new Writer().varUint(1).done())
+  );
+  return { ...room, server };
+}
+
+/** The SYNC frames `sent` applied to `server` in order: their kinds, the
+ * largest piece, and after how many something was pending. */
+function applyPieces(server: Y.Doc, sent: Message[]) {
+  const kinds = new Set<number>();
+  let largest = 0;
+  let pending = 0;
+  for (const { payload } of sent) {
+    const sync = readSync(payload);
+    kinds.add(sync.kind);
+    largest = Math.max(largest, sync.body.byteLength);
+    Y.applyUpdate(server, sync.body);
+    if (server.store.pendingStructs) pending += 1;
+  }
+  return { kinds: [...kinds], pending, small: largest <= PIECE_BYTES };
+}
+
+it('sends an update over 2 MiB in ordered pieces and reports sending until the last is acknowledged', async () => {
+  const onSending = vi.fn();
+  const { document, join, provider, server, socket } = await syncedRoom({
+    onSending,
+  });
+  const long = 'x'.repeat(5 * 1024 * 1024);
+  document.getText('content').insert(0, long);
+  const pieces = socket.take(MessageKind.Sync);
+  expect(pieces.length).toBeGreaterThan(2);
+  expect(applyPieces(server, pieces)).toEqual({
+    kinds: [SyncKind.Update],
+    pending: 0,
+    small: true,
+  });
+  expect(server.getText('content').toString()).toBe(long);
+  expect(onSending.mock.calls).toEqual([[true]]);
+  expect(provider.unsyncedChanges).toBe(pieces.length);
+  // Each piece is acknowledged on its own; sending ends with the last.
+  socket.deliver(
+    message(
+      join.channel,
+      MessageKind.Ack,
+      new Writer().varUint(pieces.length - 1).done()
+    )
+  );
+  expect(onSending.mock.calls).toEqual([[true]]);
+  socket.deliver(
+    message(join.channel, MessageKind.Ack, new Writer().varUint(1).done())
+  );
+  expect(onSending.mock.calls).toEqual([[true], [false]]);
+});
+
+it('answers a resync with its step 2 in pieces', async () => {
+  const onSending = vi.fn();
+  const { document, join, socket } = await joined({ onSending });
+  // Offline edits restored before the join: the step 2 carries them.
+  document.getText('content').insert(0, 'y'.repeat(5 * 1024 * 1024));
+  const server = new Y.Doc();
+  socket.deliver(
+    message(join.channel, MessageKind.Joined, Uint8Array.of(1)),
+    message(
+      join.channel,
+      MessageKind.Sync,
+      syncMessage(SyncKind.Step1, Y.encodeStateVector(server))
+    )
+  );
+  const [step1, ...pieces] = socket.take(MessageKind.Sync);
+  expect(readSync(step1.payload).kind).toBe(SyncKind.Step1);
+  expect(pieces.length).toBeGreaterThan(2);
+  expect(applyPieces(server, pieces)).toEqual({
+    kinds: [SyncKind.Step2],
+    pending: 0,
+    small: true,
+  });
+  expect(server.getText('content').length).toBe(5 * 1024 * 1024);
+  expect(onSending.mock.calls).toEqual([[true]]);
+});
+
+/**
+ * Past the user's 8 MiB burst, pieces wait for the allowance (2 MiB a
+ * second) instead of closing the socket, and a frame sent after them (a
+ * checkpoint request) waits behind them.
+ */
+it('paces pieces under the allowance and keeps later frames behind them', async () => {
+  const { document, provider, socket } = await syncedRoom();
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'performance'] });
+  resetAllowance();
+  document.getText('content').insert(0, 'z'.repeat(10 * 1024 * 1024));
+  provider.sendStateless('{"type":"checkpoint-request"}');
+  const now = socket.sent.length;
+  expect(now).toBeGreaterThan(0);
+  expect(socket.take(MessageKind.Stateless)).toEqual([]);
+  // At 2 MiB a second the rest goes within about 1.5 s, the request last.
+  await vi.advanceTimersByTimeAsync(3000);
+  expect(socket.sent.length).toBeGreaterThan(now);
+  expect(socket.sent.at(-1)?.kind).toBe(MessageKind.Stateless);
 });
 
 // useSourceSession tells a peer's update from a local edit by

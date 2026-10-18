@@ -182,6 +182,9 @@ export function useSourceSession(
   // Offline past the bound this device may hold: the editor stops taking
   // edits until the room is back.
   const [offlineLimit, setOfflineLimit] = useState(false);
+  // An update of this session's going to the room in pieces (the runtime's
+  // `sending`).
+  const [sending, setSending] = useState(false);
   // The room refuses this build (Capy was updated): the session stopped, the
   // view stays read-only under the outdated strip and the unsaved changes
   // stay stored for the reloaded page.
@@ -730,6 +733,9 @@ export function useSourceSession(
               setStatus(everSynced ? 'reconnecting' : 'connecting');
           }
         },
+        onSending: (pending) => {
+          if (!cancelled) setSending(pending);
+        },
         onStateless: ({ payload }) => {
           let event: {
             type?: string;
@@ -1008,6 +1014,7 @@ export function useSourceSession(
     readOnly,
     replaced,
     save,
+    sending,
     status: status === 'saved' && bufferDirty ? ('saving' as const) : status,
     synced,
     unavailable,

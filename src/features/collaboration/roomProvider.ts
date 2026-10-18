@@ -5,6 +5,7 @@ import {
   removeAwarenessStates,
 } from 'y-protocols/awareness';
 import * as Y from 'yjs';
+import { splitUpdate } from './pieces';
 import {
   joinPayload,
   type Message,
@@ -34,6 +35,10 @@ export interface RoomProviderConfig {
   onDestroy?: () => void;
   /** The socket dropped or the room was left. */
   onDisconnect?: () => void;
+  /** An update went out in pieces (`splitUpdate`): true when its first
+   * piece leaves, false once the server acknowledged the last one (or the
+   * room closed before it did). */
+  onSending?: (pending: boolean) => void;
   onStateless?: (event: { payload: string }) => void;
   onSynced?: (event: { state: boolean }) => void;
   onUnsyncedChanges?: (event: { number: number }) => void;
@@ -57,6 +62,12 @@ export class RoomProvider implements ChannelHandler {
   isSynced = false;
   /** Updates and step 2 replies sent that the server has not acknowledged. */
   unsyncedChanges = 0;
+  /** Updates and step 2 replies sent on this channel, and acknowledged. */
+  private sent = 0;
+  private acknowledged = 0;
+  /** The `sent` count of a split update's last piece, until it is
+   * acknowledged. */
+  private lastPiece: number | null = null;
   private readonly config: RoomProviderConfig;
   private readonly socket: CollabSocket;
   private channel: number | null = null;
@@ -144,7 +155,12 @@ export class RoomProvider implements ChannelHandler {
         return;
       case MessageKind.Ack: {
         const count = new Reader(payload).varUint();
+        this.acknowledged += count;
         this.setUnsynced(Math.max(0, this.unsyncedChanges - count));
+        if (this.lastPiece !== null && this.acknowledged >= this.lastPiece) {
+          this.lastPiece = null;
+          this.config.onSending?.(false);
+        }
         return;
       }
       case MessageKind.Awareness:
@@ -168,7 +184,28 @@ export class RoomProvider implements ChannelHandler {
 
   private send(kind: MessageKind, payload?: Uint8Array) {
     if (this.channel !== null)
-      this.socket.send(message(this.channel, kind, payload));
+      this.socket.send(
+        message(this.channel, kind, payload),
+        kind === MessageKind.Sync
+      );
+  }
+
+  /** An update or step 2 reply, in pieces of at most 2 MiB in order
+   * (Epo 2026-10-18), each acknowledged on its own. */
+  private sendUpdate(
+    kind: typeof SyncKind.Step2 | typeof SyncKind.Update,
+    update: Uint8Array
+  ) {
+    const pieces = splitUpdate(update);
+    if (pieces.length > 1 && this.lastPiece === null)
+      this.config.onSending?.(true);
+    for (const piece of pieces) {
+      this.sent += 1;
+      this.setUnsynced(this.unsyncedChanges + 1);
+      this.send(MessageKind.Sync, syncMessage(kind, piece));
+    }
+    if (pieces.length > 1 || this.lastPiece !== null)
+      this.lastPiece = this.sent;
   }
 
   private async join() {
@@ -216,10 +253,9 @@ export class RoomProvider implements ChannelHandler {
     if (kind === SyncKind.Step1) {
       // The server asks for everything it lacks: this reply carries this
       // client's offline or restored edits, and an unplaced update's resend.
-      this.setUnsynced(this.unsyncedChanges + 1);
-      this.send(
-        MessageKind.Sync,
-        syncMessage(SyncKind.Step2, Y.encodeStateAsUpdate(this.document, body))
+      this.sendUpdate(
+        SyncKind.Step2,
+        Y.encodeStateAsUpdate(this.document, body)
       );
       return;
     }
@@ -245,6 +281,12 @@ export class RoomProvider implements ChannelHandler {
     this.isConnected = false;
     this.isSynced = false;
     this.setUnsynced(0);
+    this.sent = 0;
+    this.acknowledged = 0;
+    if (this.lastPiece !== null) {
+      this.lastPiece = null;
+      this.config.onSending?.(false);
+    }
     // Remote cursors go with the room.
     const remote = [...this.awareness.getStates().keys()].filter(
       (client) => client !== this.document.clientID
@@ -255,8 +297,7 @@ export class RoomProvider implements ChannelHandler {
 
   private readonly documentUpdate = (update: Uint8Array, origin: unknown) => {
     if (origin === this || !this.isAuthenticated) return;
-    this.setUnsynced(this.unsyncedChanges + 1);
-    this.send(MessageKind.Sync, syncMessage(SyncKind.Update, update));
+    this.sendUpdate(SyncKind.Update, update);
   };
 
   private readonly awarenessUpdate = (
