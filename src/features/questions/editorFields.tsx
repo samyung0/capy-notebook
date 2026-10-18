@@ -8,6 +8,7 @@ import {
 import * as limits from '@/api/limits.generated';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
+import { IconButton } from '@/components/ui/IconButton';
 import {
   CharCount,
   type CountLimit,
@@ -170,24 +171,29 @@ export function StringList({
             value={value}
           />
           {onMove && (
-            <>
-              <ToolbarButton
+            // A tight pair, as the ordering answer's move buttons.
+            <span className="flex shrink-0 items-center">
+              <IconButton
                 disabled={index === 0}
+                icon="chevronUp"
                 label={m.question_ui_move_option_up({ number: index + 1 })}
                 onClick={() => onMove(index, index - 1)}
                 shortcut="Alt+↑"
-              >
-                <Icon name="arrowUp" />
-              </ToolbarButton>
-              <ToolbarButton
+                size="sm"
+                tooltip
+                variant="ghost-hover"
+              />
+              <IconButton
                 disabled={index === values.length - 1}
+                icon="chevronDown"
                 label={m.question_ui_move_option_down({ number: index + 1 })}
                 onClick={() => onMove(index, index + 1)}
                 shortcut="Alt+↓"
-              >
-                <Icon name="arrowDown" />
-              </ToolbarButton>
-            </>
+                size="sm"
+                tooltip
+                variant="ghost-hover"
+              />
+            </span>
           )}
           <ToolbarButton
             label={m.question_ui_remove_item({ label, number: index + 1 })}
