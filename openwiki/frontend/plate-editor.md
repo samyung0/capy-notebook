@@ -1427,8 +1427,9 @@ viewer header takes the title and kind from the list entry and the capabilities
 from the workspace (a workspace material's capabilities come from the same
 role), and reads the body only on the standalone page or for a material the
 list does not carry, which the gate cannot weigh anyway. The workspace route
-loader prefetches an open file for the same reason it leaves an open material
-alone. When the API cannot decode stored content it
+loader prefetches an open file, and an open material's body once the list
+arrives and weighs it under the warning (`prefetchMaterialBody`, 2026-10-18),
+so the gate still sees the list first. When the API cannot decode stored content it
 answers 422 `material_content_unreadable`, which `NoteEditor` and `MaterialBody`
 report as "this note could not be loaded" rather than "not found".
 

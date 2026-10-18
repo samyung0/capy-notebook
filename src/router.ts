@@ -51,6 +51,7 @@ import {
   parseDocumentModeSearch,
   parseWorkspaceOpenSearch,
 } from '@/features/materials/openItem';
+import { prefetchMaterialBody } from '@/features/materials/prefetchMaterialBody';
 import {
   PAST_REVIEW_SORT_DEFAULT,
   PAST_REVIEW_SORTS,
@@ -260,7 +261,10 @@ const appRoutes = [
   createRoute({
     component: lazyPage(() => import('@/routes/WorkspaceOpen')),
     getParentRoute: () => authShellRoute,
-    loaderDeps: ({ search }) => ({ file: search.file }),
+    loaderDeps: ({ search }) => ({
+      file: search.file,
+      material: search.material,
+    }),
     loader: ({
       abortController,
       context: { queryClient: qc },
@@ -277,8 +281,8 @@ const appRoutes = [
       qc.prefetchQuery(materialsQuery(id));
       qc.prefetchQuery(conversationsQuery(id));
       // The open file rides the first wave instead of waiting for the page to
-      // render. An open material is left out on purpose: its body is the
-      // document itself, and the heavy-document gate must see the list first.
+      // render; an open material's body follows its list.
+      if (deps.material) prefetchMaterialBody(qc, id, deps.material);
       if (deps.file) {
         qc.prefetchQuery(fileQuery(deps.file));
         // An Office file's open starts once its row arrives.
