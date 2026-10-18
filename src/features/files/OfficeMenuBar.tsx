@@ -21,7 +21,7 @@ import {
   MenubarTrigger,
 } from '@/components/ui/Menubar';
 import { ButtonTooltip } from '@/components/ui/Tooltip';
-import { TablePicker } from '@/features/notes/toolbar/ToolbarTableMenu';
+import { TablePicker } from '@/features/notes/toolbar/TablePicker';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { useHorizontalWheelScroll } from '@/lib/useHorizontalWheelScroll';
