@@ -7,6 +7,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/samyung0/capy-notebook/server/internal/agenttools"
 	"github.com/samyung0/capy-notebook/server/internal/httpapi/apimodel"
 	"github.com/samyung0/capy-notebook/server/internal/obs"
 	"github.com/samyung0/capy-notebook/server/internal/store"
@@ -87,6 +88,18 @@ func (a *api) assertFileEditor(ctx context.Context, fileID string) error {
 		return err
 	}
 	return a.assertWorkspaceEditor(ctx, wsID)
+}
+
+// orPayer lets the item's payer through a refused access check (denied), so
+// a member who left a workspace can still delete what it pays for.
+func (a *api) orPayer(ctx context.Context, kind agenttools.ResourceKind, id string, denied error) error {
+	if denied == nil {
+		return nil
+	}
+	if pays, err := a.s.PaysFor(ctx, kind, id, userID(ctx)); err == nil && pays {
+		return nil
+	}
+	return denied
 }
 
 /* ------------------------------------------------------------------ cloning */

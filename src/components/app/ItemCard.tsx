@@ -9,6 +9,7 @@ import {
 import { Card } from '@/components/ui/Card';
 import { FileIcon, type FileIconName } from '@/components/ui/FileIcon';
 import { Skeleton } from '@/components/ui/feedback';
+import { Icon } from '@/components/ui/Icon';
 import type { PickContext } from '@/features/files/useFileSelection';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
@@ -130,6 +131,7 @@ export function ItemCard({
   title,
   workspace,
   workspaceIconId,
+  workspaceLost = false,
   details,
   meta,
   link,
@@ -145,6 +147,8 @@ export function ItemCard({
   /** The list's column; the grid card's bottom line, before `meta`. */
   workspace?: string;
   workspaceIconId?: string;
+  /** The viewer lost access to the workspace but still pays for the item. */
+  workspaceLost?: boolean;
   /** Question or card count, file size. */
   details?: string;
   /** Updated, added or expiry line: the grid card's bottom line. */
@@ -192,7 +196,11 @@ export function ItemCard({
         </div>
         <div className="min-w-0">
           {workspace && (
-            <WorkspaceCell iconId={workspaceIconId} name={workspace} />
+            <WorkspaceCell
+              iconId={workspaceIconId}
+              lost={workspaceLost}
+              name={workspace}
+            />
           )}
         </div>
         <p>{details}</p>
@@ -242,15 +250,25 @@ export function ItemCard({
           pinned to the bottom when a wrapped title makes a row taller. */}
       <div className="mt-auto box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[13px] text-fg">
         {workspace && (
-          <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
-            {workspaceIconId && (
-              <img
-                alt=""
-                className="size-4 shrink-0 -translate-y-px rounded-[3px]"
-                height={16}
-                src={iconUrl(workspaceIconId)}
-                width={16}
-              />
+          <span
+            className={cn(
+              'hidden min-w-0 items-center gap-1.5 sm:flex',
+              workspaceLost && 'flex text-tint-error-fg'
+            )}
+            title={workspaceLost ? m.files_lost_access() : undefined}
+          >
+            {workspaceLost ? (
+              <Icon className="size-4 shrink-0 -translate-y-px" name="error" />
+            ) : (
+              workspaceIconId && (
+                <img
+                  alt=""
+                  className="size-4 shrink-0 -translate-y-px rounded-[3px]"
+                  height={16}
+                  src={iconUrl(workspaceIconId)}
+                  width={16}
+                />
+              )
             )}
             <span className="min-w-0 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight">
               {workspace}

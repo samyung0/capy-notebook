@@ -334,7 +334,7 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+lostAccessSQL("f.workspace_id", "w.user_id", "$1")+
+	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, w.name, `+lostAccessSQL("f.workspace_id", "w.user_id", "$1")+
 		` FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN users owner ON owner.id=w.user_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
@@ -343,11 +343,13 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	defer rows.Close()
 	page := FilePage{Items: []File{}}
 	for rows.Next() {
+		var workspaceName string
 		var lost bool
-		file, err := scanFile(withExtra{rows, []any{&lost}})
+		file, err := scanFile(withExtra{rows, []any{&workspaceName, &lost}})
 		if err != nil {
 			return FilePage{}, err
 		}
+		file.WorkspaceName = workspaceName
 		if lost {
 			file.LostAccess, file.ThumbnailKey, file.Preview = true, "", nil
 		}

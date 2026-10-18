@@ -1931,7 +1931,7 @@ components:
         kind:
           $ref: "#/components/schemas/FileKind"
         lostAccess:
-          description: The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only trash-purge it
+          description: The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
           type: boolean
         name:
           type: string
@@ -1961,6 +1961,8 @@ components:
           description: Hour-stable presigned GET of the page-1 thumbnail; list rows only
           type: string
         workspaceId:
+          type: string
+        workspaceName:
           type: string
       required:
         - id

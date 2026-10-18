@@ -331,6 +331,7 @@ export * from './sourceUploadPolicy.ts';
 export * from './sourceUploadReservation.ts';
 export * from './sourceUploadReservationHeaders.ts';
 export * from './spendingLimitReq.ts';
+export * from './storageFullBy.ts';
 export * from './storageUsageLevel.ts';
 export * from './studyItem.ts';
 export * from './studyItemState.ts';

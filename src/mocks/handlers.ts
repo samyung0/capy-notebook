@@ -1250,8 +1250,6 @@ export const handlers = [
       role: 'owner',
       sharePath: await sharePath(DEV_SHARE_LINK_SECRET, id),
       shareRole: 'viewer',
-      storageOwnerState: db.accountStatus.state,
-      storageOwnerUsage: db.accountStatus.storageUsage,
       tags: resolveTags('workspace', body.tags),
     };
     db.workspaces.unshift(ws);

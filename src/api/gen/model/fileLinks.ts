@@ -4,11 +4,13 @@
  * Capy Notebook API
  * OpenAPI spec version: 0.1.0
  */
+import type { StorageFullBy } from './storageFullBy.ts';
 
 export interface FileLinks {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
   expiresAt: string;
   previewUrl?: string;
+  storageFull?: StorageFullBy;
   url: string;
 }

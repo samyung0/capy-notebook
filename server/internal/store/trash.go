@@ -114,7 +114,7 @@ func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID stri
 		}
 		return AgentOperation{}, err
 	}
-	if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID); err != nil {
+	if err := s.lockTrashActorTx(ctx, tx, wsID, actorID, payerID); err != nil {
 		return AgentOperation{}, err
 	}
 	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
@@ -187,7 +187,7 @@ func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materia
 	}
 	// ownerID is the material's payer (owner_user_id), its creator.
 	if workspaceID != nil {
-		if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, *workspaceID, actorID); err != nil {
+		if err := s.lockTrashActorTx(ctx, tx, *workspaceID, actorID, ownerID); err != nil {
 			return AgentOperation{}, err
 		}
 	} else {
@@ -239,6 +239,32 @@ func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materia
 		return AgentOperation{}, err
 	}
 	return result, nil
+}
+
+// lockTrashActorTx admits trashing a workspace item: any editor of the
+// workspace, or the item's payer even without access, so a member who left
+// can free what it still pays for (Sam 2026-10-18).
+func (s *Store) lockTrashActorTx(ctx context.Context, tx pgx.Tx, workspaceID, actorID, payerID string) error {
+	if actorID != "" && actorID == payerID {
+		_, err := s.lockWorkspaceMutationTx(ctx, tx, workspaceID, actorID)
+		return err
+	}
+	_, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, workspaceID, actorID)
+	return err
+}
+
+// PaysFor reports whether userID is the payer of an active file or material.
+func (s *Store) PaysFor(ctx context.Context, kind agenttools.ResourceKind, id, userID string) (bool, error) {
+	query := `SELECT user_id=$2 FROM files WHERE id=$1 AND trashed_at IS NULL`
+	if kind == agenttools.KindMaterial {
+		query = `SELECT owner_user_id=$2 FROM materials WHERE id=$1 AND trashed_at IS NULL`
+	}
+	var pays bool
+	err := s.pool.QueryRow(ctx, query, id, userID).Scan(&pays)
+	if isNoRows(err) {
+		return false, ErrNotFound
+	}
+	return pays, err
 }
 
 func encodeTrashCursor(at time.Time, id string) string {

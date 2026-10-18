@@ -411,7 +411,7 @@ func (a *api) deleteMaterial(ctx context.Context, in *trashMaterialInput) (*Empt
 	if err := a.requireAccountMutate(ctx); err != nil {
 		return nil, err
 	}
-	if err := a.assertMaterialOwner(ctx, in.ID); err != nil {
+	if err := a.orPayer(ctx, agenttools.KindMaterial, in.ID, a.assertMaterialOwner(ctx, in.ID)); err != nil {
 		return nil, collaborationError(err)
 	}
 	op, err := trashOperation(ctx, in.RequestID, agenttools.KindMaterial, in.ID)

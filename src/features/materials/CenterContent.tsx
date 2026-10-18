@@ -47,6 +47,7 @@ import {
   FileError,
   FileLoading,
   FileNotIndexedBanner,
+  StorageFullBanner,
 } from '@/features/files/FileStates';
 import { FileViewer } from '@/features/files/FileViewer';
 import {
@@ -461,14 +462,20 @@ export function MaterialContent({
   const policy = materialModePolicy(material.capabilities);
   const activeMode =
     forceReadOnly || readOnly ? 'view' : resolveMaterialMode(mode, policy);
-  const readOnlyStrip = readOnly && (
-    <FileBanner
-      message={
-        readOnly === 'unsupported_block'
-          ? m.editor_unsupported_block_strip()
-          : m.editor_read_only_strip()
-      }
-    />
+  // Its payer (whoever created it) at the storage limit opens it view-only
+  // under a strip saying so (uploader pays).
+  const readOnlyStrip = material.storageFull ? (
+    <StorageFullBanner by={material.storageFull} />
+  ) : (
+    readOnly && (
+      <FileBanner
+        message={
+          readOnly === 'unsupported_block'
+            ? m.editor_unsupported_block_strip()
+            : m.editor_read_only_strip()
+        }
+      />
+    )
   );
   // Edit to View shows the note at once (NoteEditorCore hands over its live
   // value), so View must not suspend on loading its renderer: Edit loads it,
@@ -838,7 +845,7 @@ function EmptyCenter({
         {!(oneColumn && !sm) && (
           <>
             <OfflineStatus />
-            <WorkspaceStatusButton workspaceId={workspaceId} />
+            <WorkspaceStatusButton />
           </>
         )}
         {menuItems.length > 0 && (

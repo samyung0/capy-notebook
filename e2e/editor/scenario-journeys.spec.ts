@@ -567,7 +567,7 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
       await launch(page, id);
       await expect(page.getByText(title, { exact: true })).toBeVisible();
     }
-    // The workspace header triangle: own workspace, then the member wording.
+    // The workspace header triangle shows the viewer's own account.
     for (const [id, status, name] of [
       ['account-storage-near', 'near', m.workspace_storage_near_self_title()],
       ['account-storage-full', 'full', m.workspace_storage_owner_self_title()],
@@ -582,27 +582,30 @@ test('storage status reaches the dashboard, own and shared workspaces, and full 
         m.account_banner_frozen_title(),
       ],
       ['account-frozen-member', 'frozen-self', m.account_banner_frozen_title()],
-      ['workspace-owner-near', 'near', m.workspace_storage_owner_near_title()],
-      ['workspace-owner-full', 'full', m.workspace_storage_owner_full_title()],
-      ['workspace-owner-grace', 'full', m.workspace_storage_owner_full_title()],
-      [
-        'workspace-owner-frozen',
-        'frozen-owner',
-        m.workspace_storage_owner_frozen_title(),
-      ],
     ]) {
       await launch(page, id);
       await expect(
         page.getByRole('button', { exact: true, name })
       ).toHaveAttribute('data-storage-status', status);
     }
-    // The frozen owner's workspace is read-only for its members too.
+    // A frozen viewer edits nowhere, a healthy owner's workspace included.
     await page.goto(
       '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
     );
     await expect(
       page.getByText('A note for trying application errors.')
     ).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
+
+    // The owner's full storage makes its note view-only for a member, under
+    // the storage strip (uploader pays).
+    await launch(page, 'workspace-owner-full');
+    await page.goto(
+      '/workspaces/ws_scenarios?material=mock-scenario-note&mode=edit'
+    );
+    await expect(page.getByText(m.storage_payer_full_strip())).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.locator('[contenteditable="true"]')).toHaveCount(0);
 
     await launch(page, 'account-frozen-create');

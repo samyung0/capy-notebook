@@ -319,7 +319,7 @@ func (a *api) updateFile(ctx context.Context, in *updateFileInput) (*fileOutput,
 // until the owner purges it or the 30-day sweep does; the trash transition
 // trigger cancels pipeline work and evicts the source room.
 func (a *api) deleteFile(ctx context.Context, in *trashFileInput) (*Empty, error) {
-	if err := a.assertFileEditor(ctx, in.ID); err != nil {
+	if err := a.orPayer(ctx, agenttools.KindSourceFile, in.ID, a.assertFileEditor(ctx, in.ID)); err != nil {
 		return nil, hErr(err)
 	}
 	op, err := trashOperation(ctx, in.RequestID, agenttools.KindSourceFile, in.ID)

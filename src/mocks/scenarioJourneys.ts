@@ -464,10 +464,9 @@ export async function runJourney(
     'workspace-404': scenarioPath,
     'workspace-500': scenarioPath,
     'workspace-flaky': scenarioPath,
-    'workspace-owner-frozen': scenarioPath,
-    'workspace-owner-full': scenarioPath,
-    'workspace-owner-grace': scenarioPath,
-    'workspace-owner-near': scenarioPath,
+    'workspace-owner-frozen': `${scenarioPath}?material=${scenarioNote}`,
+    'workspace-owner-full': `${scenarioPath}?material=${scenarioNote}`,
+    'workspace-owner-grace': `${scenarioPath}?material=${scenarioNote}`,
     'workspace-timeout': scenarioPath,
   };
   const route = readRoutes[id];
@@ -507,10 +506,8 @@ export async function runJourney(
         'account-storage-near': m.workspace_storage_near_self_title,
         'account-storage-near-dashboard': m.account_banner_near_title,
         'account-suspended': m.account_blocked_suspended_title,
-        'workspace-owner-frozen': m.workspace_storage_owner_frozen_title,
-        'workspace-owner-full': m.workspace_storage_owner_full_title,
-        'workspace-owner-grace': m.workspace_storage_owner_full_title,
-        'workspace-owner-near': m.workspace_storage_owner_near_title,
+        'workspace-owner-full': m.storage_payer_full_strip,
+        'workspace-owner-grace': m.storage_payer_full_strip,
       } as Partial<Record<JourneyId, () => string>>
     )[id];
     if (accountTitle) {
@@ -538,7 +535,7 @@ export async function runJourney(
       if (id === 'account-frozen-member')
         return "Your own frozen account keeps this healthy owner's workspace read-only; the header shows your status.";
       if (id.startsWith('workspace-owner-'))
-        return 'The workspace header and entry toast show the owner status in member wording.';
+        return "The owner's note opens view-only under the storage strip; what the member adds is its own.";
       return route === scenarioPath
         ? 'The workspace header triangle and entry toast show your storage status.'
         : 'The dashboard banner slot or the blocked-account page shows the account status.';
