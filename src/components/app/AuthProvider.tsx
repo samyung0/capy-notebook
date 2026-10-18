@@ -1,12 +1,10 @@
-import { ClerkProvider, Show, useAuth } from '@clerk/react';
-import { useEffect, useRef, useState } from 'react';
+import { ClerkProvider, useAuth } from '@clerk/react';
+import { useEffect, useState } from 'react';
 import { setAuthTokenGetter, USE_MSW } from '@/api/auth';
 import { queryClient } from '@/api/queryClient';
-import { startQueryPersistence } from '@/api/queryPersistence';
 import { Spinner } from '@/components/ui/feedback';
 import { signInHref } from '@/features/auth/clerk';
-import { dropSourceOpens } from '@/features/files/sourceOpen';
-import { claimSourceCache } from '@/lib/sourceCache';
+import { paintStoredAccount, settleAccount } from './accountCache';
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY as
   | string
@@ -18,52 +16,49 @@ type AuthProviderProps = {
 };
 
 function AuthTokenBridge({ children, pending }: AuthProviderProps) {
-  const { getToken, isLoaded, isSignedIn, userId } = useAuth();
+  const { getToken, isLoaded, userId } = useAuth();
   const identity = isLoaded ? (userId ?? null) : undefined;
+  // The account the page renders for: the last visit's while Clerk loads,
+  // painted from its stored cache, then Clerk's answer.
   const [readyIdentity, setReadyIdentity] = useState<string | null | undefined>(
     undefined
   );
-  const previousIdentity = useRef<string | null | undefined>(undefined);
 
-  // Workspace/material responses contain requester-specific capabilities and
-  // ownership. Never reuse them after sign-in, sign-out, or account changes.
-  // The account's stored cache from its last visit goes in before the route
-  // loaders run; signing out deletes it, as it deletes the source bytes kept
-  // on the device (another account signing in does too) and drops an Office
-  // open started for the previous account.
   useEffect(() => {
-    if (identity === undefined) return;
-    if (previousIdentity.current !== identity) {
-      queryClient.clear();
-      dropSourceOpens();
-      previousIdentity.current = identity;
-    }
     let cancelled = false;
     let stop: (() => void) | undefined;
-    void Promise.all([
-      startQueryPersistence(queryClient, identity),
-      claimSourceCache(identity),
-    ]).then(([stopPersistence]) => {
-      if (cancelled) return stopPersistence();
-      stop = stopPersistence;
-      setReadyIdentity(identity);
-    });
+    if (identity === undefined)
+      void paintStoredAccount(queryClient).then((stored) => {
+        if (!cancelled && stored !== null) setReadyIdentity(stored);
+      });
+    else
+      void settleAccount(queryClient, identity).then((stopPersistence) => {
+        if (cancelled) return stopPersistence();
+        stop = stopPersistence;
+        setReadyIdentity(identity);
+      });
     return () => {
       cancelled = true;
       stop?.();
     };
   }, [identity]);
 
+  // getToken waits for Clerk, so what a painted page requests leaves once
+  // Clerk answers; signed out it resolves to no token.
   useEffect(() => {
-    if (!isLoaded) return;
-    setAuthTokenGetter(isSignedIn ? () => getToken() : null);
+    setAuthTokenGetter(() => getToken());
     return () => {
       setAuthTokenGetter(null);
     };
-  }, [getToken, isLoaded, isSignedIn]);
+  }, [getToken]);
 
-  // Route loaders must not run until the matching token getter is installed.
-  if (!isLoaded || readyIdentity !== identity) {
+  // Route loaders must not run until the cache matches the account: before
+  // Clerk answers that is the stored account, after it Clerk's.
+  const ready =
+    identity === undefined
+      ? typeof readyIdentity === 'string'
+      : readyIdentity === identity;
+  if (!ready) {
     if (pending !== undefined) return <>{pending}</>;
     return (
       <div className="flex h-dvh items-center justify-center">
@@ -107,12 +102,13 @@ function RedirectToSignIn() {
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
   if (USE_MSW || !PUBLISHABLE_KEY) return <>{children}</>;
-  return (
-    <>
-      <Show when="signed-in">{children}</Show>
-      <Show when="signed-out">
-        <RedirectToSignIn />
-      </Show>
-    </>
-  );
+  return <SignedInGate>{children}</SignedInGate>;
+}
+
+/** Signed out sends the visitor to sign-in. Before Clerk answers, the bridge
+ * renders a page only for the stored account, which shows meanwhile. */
+function SignedInGate({ children }: { children: React.ReactNode }) {
+  const { isLoaded, userId } = useAuth();
+  if (isLoaded && !userId) return <RedirectToSignIn />;
+  return <>{children}</>;
 }

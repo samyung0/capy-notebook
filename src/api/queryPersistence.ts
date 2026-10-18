@@ -21,11 +21,14 @@ export const persisted = { gcTime: PERSIST_MAX_AGE } as const;
 
 const KEY = 'capy-query-cache';
 const WRITE_DELAY = 1000;
-const RELEASE = import.meta.env.VITE_RELEASE_SHA as string | undefined;
+const RELEASE =
+  (import.meta.env.VITE_RELEASE_SHA as string | undefined) ?? 'dev';
 
 interface StoredCache {
-  /** The release and account it was written for; any other is discarded. */
-  buster: string;
+  /** The release it was written for; any other is discarded. */
+  release: string;
+  /** The account it holds. */
+  identity: string;
   savedAt: number;
   state: DehydratedState;
 }
@@ -61,46 +64,57 @@ export function dehydratePersisted(client: QueryClient): DehydratedState {
   });
 }
 
+/** Deletes the stored cache (signing out, another account). */
+export const deleteStoredQueries = () => del(KEY).catch(() => undefined);
+
 /**
- * Restores the account's stored cache into an empty client and keeps storing
- * it. Restored queries are marked stale, so each refetches on first use while
- * its stored data shows. `identity` null (signed out) deletes the store.
+ * Restores the last account's stored cache into the empty client, before
+ * Clerk confirms the session, so a page paints from it at once (Epo
+ * 2026-10-18). Restored queries are marked stale, so each refetches on first
+ * use while its stored data shows. Returns the account it holds, or null when
+ * nothing usable was stored (the store is then empty).
+ */
+export async function restoreStoredQueries(
+  client: QueryClient
+): Promise<string | null> {
+  const stored = await get<StoredCache>(KEY).catch(() => undefined);
+  if (!stored) return null;
+  if (
+    stored.release !== RELEASE ||
+    !stored.identity ||
+    Date.now() - stored.savedAt >= PERSIST_MAX_AGE
+  ) {
+    await deleteStoredQueries();
+    return null;
+  }
+  hydrate(client, stored.state, {
+    defaultOptions: { queries: { gcTime: PERSIST_MAX_AGE } },
+  });
+  for (const { queryKey } of stored.state.queries)
+    void client.invalidateQueries({
+      exact: true,
+      queryKey,
+      refetchType: 'none',
+    });
+  return stored.identity;
+}
+
+/**
+ * Keeps storing `identity`'s cache: at most once a second and at `pagehide`.
  * Returns the stop function.
  */
-export async function startQueryPersistence(
+export function startQueryPersistence(
   client: QueryClient,
-  identity: string | null
-): Promise<() => void> {
-  if (identity === null) {
-    await del(KEY).catch(() => undefined);
-    return () => undefined;
-  }
-  const buster = `${RELEASE ?? 'dev'}:${identity}`;
-
-  const stored = await get<StoredCache>(KEY).catch(() => undefined);
-  const fresh =
-    stored?.buster === buster && Date.now() - stored.savedAt < PERSIST_MAX_AGE;
-  if (fresh) {
-    hydrate(client, stored.state, {
-      defaultOptions: { queries: { gcTime: PERSIST_MAX_AGE } },
-    });
-    for (const { queryKey } of stored.state.queries)
-      void client.invalidateQueries({
-        exact: true,
-        queryKey,
-        refetchType: 'none',
-      });
-  } else if (stored) {
-    await del(KEY).catch(() => undefined);
-  }
-
+  identity: string
+): () => void {
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const write = () => {
     timer = undefined;
     if (stopped) return;
     const value: StoredCache = {
-      buster,
+      identity,
+      release: RELEASE,
       savedAt: Date.now(),
       state: dehydratePersisted(client),
     };

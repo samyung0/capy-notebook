@@ -202,10 +202,17 @@ not offline use: without a service worker the app itself does not load offline.
   policy, billing, usage, account deletion preflight, searches, members and
   discussions.
 - One IndexedDB entry (`keyval-store`, key `capy-query-cache`), written at most
-  once a second and at `pagehide`. Its buster is `VITE_RELEASE_SHA` plus the
-  user ID: a new release, another account, or an entry older than 7 days is
-  discarded. Signing out deletes it. Edit drafts live in their own database and
-  are not touched.
+  once a second and at `pagehide`. It records its `VITE_RELEASE_SHA` and
+  account: a new release or an entry older than 7 days is discarded. Signing
+  out deletes it. Edit drafts live in their own database and are not touched.
+- Painted before Clerk answers (`src/components/app/accountCache.ts`, Epo
+  2026-10-18): the page restores the last account's entry and renders from it
+  while clerk-js loads, and its requests wait for Clerk (`useAuth`'s
+  `getToken` waits for it to load). Clerk confirming that account changes
+  nothing; another account or signed out clears the client, deletes the entry
+  and drops an Office open before the page renders again, so after an expired
+  or revoked session the previous account's lists show until then. The page's
+  route chunks start downloading from `src/main.tsx` before any of this.
 - Restored queries are marked stale, so each refetches on first use regardless
   of `staleTime`. A stored query whose refetch answers 401 or 404 drops its data,
   so a workspace the account lost shows the private state, not last visit's copy.

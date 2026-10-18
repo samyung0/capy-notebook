@@ -37,6 +37,11 @@ document.documentElement.lang = getLocale();
 // Set here, not in @/i18n, so public pages that use copy load no zod.
 z.config(getLocale() === 'zh' ? zhCN() : en());
 
+// The page's code downloads while Clerk loads; the router renders once the
+// session, or the stored account, is known (Epo 2026-10-18).
+for (const route of router.getMatchedRoutes(location.pathname)[0])
+  void router.loadRouteChunk(route);
+
 // Mocks are on by default; set VITE_USE_MSW=false to hit the real Go gateway
 // (Vite proxies /api → http://localhost:8080).
 const USE_MOCKS =
