@@ -102,9 +102,8 @@ type editorAssetScope struct {
 }
 
 // editorAssetScopeFor admits an editor of the route's material and resolves the
-// scope: the material plus its workspace (charged to the workspace owner), or
-// for a standalone material the material alone (charged to its owner). The
-// store transaction rechecks both.
+// scope: the material plus its workspace when it has one. The uploader pays
+// (Sam 2026-10-18). The store transaction rechecks both.
 func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (editorAssetScope, bool) {
 	materialID := id(r)
 	err := a.s.AssertMaterialEditor(r.Context(), uid(r), materialID)
@@ -116,7 +115,7 @@ func (a *api) editorAssetScopeFor(w http.ResponseWriter, r *http.Request) (edito
 		a.fail(w, err)
 		return editorAssetScope{}, false
 	}
-	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID)
+	workspaceID, limits, err := a.s.EditorAssetMaterial(r.Context(), materialID, uid(r))
 	if err != nil {
 		a.fail(w, err)
 		return editorAssetScope{}, false
@@ -190,7 +189,8 @@ func (a *api) completeEditorAssetUpload(w http.ResponseWriter, r *http.Request) 
 		a.fail(w, err)
 		return
 	}
-	if upload.WorkspaceID != scope.workspaceID || upload.MaterialID != scope.materialID {
+	// Only the uploader, who pays, completes its reservation (Sam 2026-10-18).
+	if upload.WorkspaceID != scope.workspaceID || upload.MaterialID != scope.materialID || upload.UserID != uid(r) {
 		a.fail(w, store.ErrNotFound)
 		return
 	}

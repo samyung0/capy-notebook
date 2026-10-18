@@ -184,7 +184,7 @@ func CapabilitiesForRole(role WorkspaceRole, canView bool) AccessCapabilities {
 }
 
 // materialEffectiveAccess derives the caller's role on a material:
-//   - material or workspace owner: owner
+//   - standalone material's owner or workspace owner: owner
 //   - workspace member: their role, raised to the share role where the
 //     workspace is link/public
 //   - signed-in nonmember of a link/public workspace: the share role
@@ -208,13 +208,13 @@ func materialEffectiveAccess(
 		SELECT m.owner_user_id, m.privacy, m.workspace_id, w.user_id, w.privacy, w.share_role,
 			COALESCE(wm.role, ''), m.parent_material_id
 		FROM materials m
-		JOIN users material_owner ON material_owner.id=m.owner_user_id
 		LEFT JOIN workspaces w ON w.id=m.workspace_id
+		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN workspace_members wm
 			ON wm.workspace_id=w.id AND wm.user_id=$2
-		WHERE m.id=$1 AND m.trashed_at IS NULL AND material_owner.deleted_at IS NULL
-			AND material_owner.deletion_requested_at IS NULL
-			AND (material_owner.suspended_at IS NULL OR material_owner.id=$2)`, matID, userID).Scan(
+		WHERE m.id=$1 AND m.trashed_at IS NULL AND owner.deleted_at IS NULL
+			AND owner.deletion_requested_at IS NULL
+			AND (owner.suspended_at IS NULL OR owner.id=$2)`, matID, userID).Scan(
 		&materialOwner,
 		&materialPrivacy,
 		&wsID,
@@ -234,7 +234,9 @@ func materialEffectiveAccess(
 	if parentID != nil {
 		return materialEffectiveAccess(ctx, q, userID, *parentID)
 	}
-	if materialOwner != nil && *materialOwner == userID {
+	// A workspace material's owner_user_id is its payer (uploader pays) and
+	// grants nothing: access follows the workspace.
+	if wsID == nil && materialOwner != nil && *materialOwner == userID {
 		return RoleOwner, nil
 	}
 	if workspaceOwner != nil && *workspaceOwner == userID {
@@ -388,7 +390,7 @@ func exploreCanClone(workspaceID string, member WorkspaceRole, privacy Privacy, 
 func (s *Store) ListPublicQuizzes(ctx context.Context, userID string) ([]PublicQuiz, error) {
 	rows, err := s.pool.Query(ctx, `SELECT m.id, COALESCE(m.workspace_id,''), m.workspace_name, m.kind, m.title, m.content, m.chapter_id, m.scope_chapters, m.scope_file_names, m.privacy, m.color, m.created_at, m.provenance,
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
-		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
+		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='quiz' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
@@ -430,7 +432,7 @@ func (s *Store) ListPublicQuizzes(ctx context.Context, userID string) ([]PublicQ
 func (s *Store) ListPublicFlashcardSets(ctx context.Context, userID string) ([]PublicFlashcardSet, error) {
 	rows, err := s.pool.Query(ctx, `SELECT `+flashcardSetCols+`,
 			COALESCE(u.name,'Unknown'), COALESCE(cc.clone_count,0), `+exploreCloneCols+`
-		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=m.owner_user_id
+		FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id LEFT JOIN users u ON u.id=COALESCE(w.user_id, m.owner_user_id)
 		LEFT JOIN material_clone_counts cc ON cc.material_id=m.id
 		LEFT JOIN workspace_members me ON me.workspace_id=w.id AND me.user_id=$1
 		WHERE m.kind='flashcards' AND m.trashed_at IS NULL AND m.parent_material_id IS NULL
@@ -622,8 +624,7 @@ func insertCloneFileTx(
 	name string,
 	position int64,
 ) (*ThumbnailCopy, error) {
-	// files.user_id is the workspace owner (trigger); attribution travels with
-	// the copy, as it does for materials.
+	// The cloner pays and is credited (uploader pays).
 	if _, err := tx.Exec(ctx, `INSERT INTO files
 		(id, workspace_id, user_id, created_by, chapter_id, position, name, kind, size_bytes, added_at, status, indexed, parser, blob_path,
 		 source_etag, content_hash, source_sha256, parse_mode, ever_parsed_successfully, index_limit, provenance, preview, revision)
@@ -994,13 +995,10 @@ func (s *Store) CloneWorkspaceThumbnails(ctx context.Context, userID, srcID stri
 	if input.IconID != nil && !ValidIconID(*input.IconID) {
 		return Workspace{}, nil, ErrNotFound
 	}
-	payer, err := s.clonePayerLock(ctx, userID, "")
-	if err != nil {
-		return Workspace{}, nil, err
-	}
+	payer := clonePayerLock(userID)
 	var newID string
 	var copies []ThumbnailCopy
-	err = func() error {
+	err := func() error {
 		// A workspace snapshot owns the hierarchy fence so contained material
 		// deletion cannot race its counter and blob-reference copy.
 		conn, unlock, err := s.lockCloneSources(ctx, []cloneSourceLock{{
@@ -1104,23 +1102,10 @@ func bumpCloneCount(ctx context.Context, starter cloneTxStarter, query, sourceID
 }
 
 // clonePayerLock queues the clones one account pays for behind each other, so
-// they never collide on its storage counter: the actor pays for a workspace or
-// standalone copy, the target workspace's owner for a copy into it. The owner
-// read takes no lock; after a transfer in between the clone queues with the
-// old owner's clones (the backstop absorbs a collision), and the transaction
-// reads the payer again under the workspace row lock.
-func (s *Store) clonePayerLock(ctx context.Context, actorID, targetWorkspaceID string) (cloneSourceLock, error) {
-	payerID := actorID
-	if targetWorkspaceID != "" {
-		err := s.pool.QueryRow(ctx, `SELECT user_id FROM workspaces WHERE id=$1`, targetWorkspaceID).Scan(&payerID)
-		if isNoRows(err) {
-			return cloneSourceLock{}, ErrNotFound
-		}
-		if err != nil {
-			return cloneSourceLock{}, err
-		}
-	}
-	return cloneSourceLock{key: "clone-payer:" + payerID}, nil
+// they never collide on its storage counter. The cloner pays for every copy
+// (Sam 2026-10-18).
+func clonePayerLock(actorID string) cloneSourceLock {
+	return cloneSourceLock{key: "clone-payer:" + actorID}
 }
 
 func waitCloneRetry(ctx context.Context, attempt int) error {
@@ -1598,9 +1583,9 @@ type cloneDestination struct {
 }
 
 // lockCloneTargetTx admits a copy's destination in the order every workspace
-// write takes, workspace row then accounts: the target workspace's owner pays
-// and the actor must be its editor (a frozen owner or actor is refused); with
-// no workspace the actor pays. The source owner's account is locked with them.
+// write takes, workspace row then accounts: the actor must be the target
+// workspace's editor (a frozen owner or actor is refused). The actor pays
+// (Sam 2026-10-18). The source owner's account is locked with them.
 func (s *Store) lockCloneTargetTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -1621,7 +1606,7 @@ func (s *Store) lockCloneTargetTx(
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, target.WorkspaceID, actorID); err != nil {
 		return cloneDestination{}, err
 	}
-	dest := cloneDestination{workspaceID: target.WorkspaceID, payerID: ownerID, members: map[string]bool{ownerID: true}}
+	dest := cloneDestination{workspaceID: target.WorkspaceID, payerID: actorID, members: map[string]bool{ownerID: true}}
 	if dest.chapterID, err = resolveUploadChapterID(ctx, tx, target.WorkspaceID, target.ChapterID, target.ChapterName); err != nil {
 		return cloneDestination{}, err
 	}
@@ -1678,15 +1663,12 @@ func ownerHidden(err error, ownerID, actorID string) error {
 // CloneFile copies one ready or partial file into a workspace the actor
 // edits (files live in workspaces only): its published bytes (blob shared,
 // reference counted), saved edit state, captions, provenance and index, plus
-// the thumbnail the caller copies after the commit. The target owner pays.
+// the thumbnail the caller copies after the commit. The cloner pays.
 func (s *Store) CloneFile(ctx context.Context, userID, fileID string, target CloneTarget) (File, []ThumbnailCopy, error) {
-	payer, err := s.clonePayerLock(ctx, userID, target.WorkspaceID)
-	if err != nil {
-		return File{}, nil, err
-	}
+	payer := clonePayerLock(userID)
 	var newID string
 	var copies []ThumbnailCopy
-	err = func() error {
+	err := func() error {
 		// Copies of one file queue on its fence, so they never collide on its
 		// blob references.
 		conn, unlock, err := s.lockContainedCloneSource(ctx, "file", fileID, false, payer)
@@ -1744,7 +1726,7 @@ func (s *Store) cloneFileOnce(ctx context.Context, starter cloneTxStarter, userI
 	if err := s.gateWorkspaceFilesTx(ctx, tx, dest.workspaceID, 1); err != nil {
 		return "", nil, err
 	}
-	// The payer's plan caps one file as it caps an upload (Epo 2026-10-12).
+	// The cloner's plan caps one file as it caps an upload (Epo 2026-10-12).
 	tier, err := s.effectivePlanTierForUser(ctx, tx, dest.payerID)
 	if err != nil {
 		return "", nil, err
@@ -1839,15 +1821,11 @@ func (s *Store) queueCloneIngestTx(ctx context.Context, tx pgx.Tx, actorID, work
 // one of its chapters) or, with no workspace, into a private standalone copy.
 // A note brings its embedded rows along under fresh ids; flashcards get fresh
 // card ids; editor assets get fresh rows over shared blobs. Comments, Yjs
-// state and study progress are not copied. The target owner pays (the actor,
-// standalone).
+// state and study progress are not copied. The cloner pays.
 func (s *Store) CloneMaterial(ctx context.Context, userID, matID string, target CloneTarget) (Material, error) {
-	payer, err := s.clonePayerLock(ctx, userID, target.WorkspaceID)
-	if err != nil {
-		return Material{}, err
-	}
+	payer := clonePayerLock(userID)
 	var newID string
-	err = func() error {
+	err := func() error {
 		conn, unlock, err := s.lockContainedCloneSource(ctx, "material", matID, false, payer)
 		if err != nil {
 			return err

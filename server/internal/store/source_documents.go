@@ -42,15 +42,18 @@ type SourceSession struct {
 	NetTokens         int64           `json:"netTokens"`
 	BaseBlobPath      string          `json:"-"`
 	Access            string          `json:"access" enum:"write,read"`
+	// StorageFull: an editor's read access because the file's payer is at its
+	// storage limit; "self" when the editor pays for it.
+	StorageFull StorageFullBy `json:"storageFull,omitempty"`
 	// ImageMaxBytes: the browser's Office edit read only. The plan image cap
-	// of the workspace owner, who pays for the file: inserted images over it
-	// are shrunk in the browser first.
+	// of the file's payer (its uploader): inserted images over it are shrunk
+	// in the browser first.
 	ImageMaxBytes int64 `json:"imageMaxBytes,omitempty"`
 	// ThumbnailStale: the browser's Office edit read only. The file's card is
 	// older than its saved document (ThumbnailStale), so the editor uploads
 	// the page 1 it draws, once per open.
 	ThumbnailStale bool `json:"thumbnailStale,omitempty"`
-	// OwnerID is the storage owner (files.user_id) the session read locked.
+	// OwnerID is the file's payer (files.user_id, its uploader).
 	OwnerID string `json:"-"`
 	// RebuildPending: the file and its index were published while editing
 	// stayed on this base; the collaboration service rebuilds the editing
@@ -179,6 +182,17 @@ func (s *Store) sourceLockTx(ctx context.Context, tx pgx.Tx, fileID string, acto
 	return ws, owner, sourceActorsAllowed(ctx, tx, ws, actors, edit)
 }
 
+// filePayer is the account a file is charged to, its uploader (Sam
+// 2026-10-18): its account state and storage level gate content edits.
+func filePayer(ctx context.Context, q rowQueryer, fileID string) (string, error) {
+	var payer string
+	err := q.QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer)
+	if isNoRows(err) {
+		return "", ErrNotFound
+	}
+	return payer, err
+}
+
 // sourceActorsAllowed refuses an actor without read (edit: write) access to
 // the workspace, and every actor while the workspace owner is deleted or
 // pending deletion, every actor but the owner while the owner is suspended:
@@ -222,7 +236,7 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 		return SourceSession{}, err
 	}
 	defer tx.Rollback(ctx)
-	ws, owner, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false)
+	ws, _, err := s.sourceLockTx(ctx, tx, fileID, []string{actor}, false)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -243,7 +257,11 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	if err != nil {
 		return out, err
 	}
-	out.OwnerID = owner
+	payer, err := filePayer(ctx, tx, fileID)
+	if err != nil {
+		return out, err
+	}
+	out.OwnerID = payer
 	var canEdit bool
 	err = tx.QueryRow(ctx, `SELECT w.user_id=$2 OR EXISTS(SELECT 1 FROM workspace_members m WHERE m.workspace_id=w.id AND m.user_id=$2 AND m.role IN ('owner','editor')) OR(w.privacy IN ('link','public') AND w.share_role='editor') FROM workspaces w WHERE id=$1`, ws, actor).Scan(&canEdit)
 	if err != nil {
@@ -253,10 +271,12 @@ func (s *Store) SourceSession(ctx context.Context, actor, fileID string) (Source
 	if canEdit {
 		var locked *AccountLockedError
 		var full *QuotaExceededError
-		switch err := s.assertContentEditableTx(ctx, tx, owner, actor); {
+		switch err := s.assertContentEditableTx(ctx, tx, payer, actor); {
 		case err == nil:
 			out.Access = "write"
-		case !errors.As(err, &locked) && !errors.As(err, &full):
+		case errors.As(err, &full):
+			out.StorageFull = FullBy(true, payer, actor)
+		case !errors.As(err, &locked):
 			return out, err
 		}
 	}
@@ -310,7 +330,8 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 	defer tx.Rollback(ctx)
 	var ws, owner string
 	var current bool
-	err = tx.QueryRow(ctx, `SELECT f.workspace_id,w.user_id,EXISTS(SELECT 1 FROM source_documents d WHERE d.file_id=f.id AND d.epoch=$2 AND d.base_revision=f.revision) FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID, epoch).Scan(&ws, &owner, &current)
+	var payer string
+	err = tx.QueryRow(ctx, `SELECT f.workspace_id,w.user_id,f.user_id,EXISTS(SELECT 1 FROM source_documents d WHERE d.file_id=f.id AND d.epoch=$2 AND d.base_revision=f.revision) FROM files f JOIN workspaces w ON w.id=f.workspace_id WHERE f.id=$1 AND f.trashed_at IS NULL`, fileID, epoch).Scan(&ws, &owner, &payer, &current)
 	if isNoRows(err) {
 		return ErrNotFound
 	}
@@ -324,7 +345,7 @@ func (s *Store) CheckSourceAccess(ctx context.Context, actor, fileID string, epo
 		return err
 	}
 	if edit {
-		if err = s.assertContentEditableTx(ctx, tx, owner, actor); err != nil {
+		if err = s.assertContentEditableTx(ctx, tx, payer, actor); err != nil {
 			return err
 		}
 	}
@@ -526,9 +547,14 @@ func (s *Store) commitSourceOperationTx(ctx context.Context, tx pgx.Tx, fileID, 
 		return AgentOperation{}, err
 	}
 	if reversible {
+		// The stored inverse is charged to the file's payer, like the edit.
+		payer, err := filePayer(ctx, tx, fileID)
+		if err != nil {
+			return AgentOperation{}, err
+		}
 		if err := insertEditInverseTx(ctx, tx, EditInverse{
 			OperationID: receipt.ID, ResourceKind: agenttools.KindSourceFile, ResourceID: fileID,
-			ActorUserID: receipt.ActorUserID, OwnerUserID: owner, WorkspaceID: ws,
+			ActorUserID: receipt.ActorUserID, OwnerUserID: payer, WorkspaceID: ws,
 			Incarnation: epoch, Revision: checkpoint, Inverse: op.Inverse, Guards: op.Guards,
 			InverseBytes: int64(len(op.Inverse) + len(op.Guards)),
 		}); err != nil {

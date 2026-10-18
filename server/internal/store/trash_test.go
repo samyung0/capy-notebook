@@ -22,12 +22,13 @@ func trashFixture(t *testing.T, s *Store) (ownerID, editorID string, ws Workspac
 		ws.ID, editorID); err != nil {
 		t.Fatal(err)
 	}
-	file, err = s.createReadyFile(ctx, ws.ID, editorID, "notes.md", "md", nil, "", 4096, "sources/"+uid("blob")+"/notes.md")
+	// The owner uploads and creates them (and pays); the editor only trashes.
+	file, err = s.createReadyFile(ctx, ws.ID, ownerID, "notes.md", "md", nil, "", 4096, "sources/"+uid("blob")+"/notes.md")
 	if err != nil {
 		t.Fatal(err)
 	}
 	mt, err = s.CreateMaterial(ctx, Material{
-		CreatedBy: editorID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Trash note",
+		CreatedBy: ownerID, WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Trash note",
 		Content: "# Trash note\n\nbody", Privacy: "private",
 	})
 	if err != nil {
@@ -60,8 +61,8 @@ func fileCount(t *testing.T, s *Store, wsID string, includeTrashed bool) int {
 	return n
 }
 
-// An editor may trash workspace content; only the current owner sees, restores
-// or purges it. Trashed rows leave every active read but keep their bytes.
+// An editor may trash workspace content; only the current owner and the
+// item's payer see, restore or purge it. Trashed rows leave every active read but keep their bytes.
 func TestTrashLifecycleAuthorityAndVisibility(t *testing.T) {
 	s := openAccessTestStore(t)
 	ctx := context.Background()

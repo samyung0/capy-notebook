@@ -172,6 +172,8 @@ type File struct {
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of the page-1 thumbnail; list rows only"`
 	// Preview is a text source's opening characters.
 	Preview FilePreview `json:"preview,omitempty"`
+	// LostAccess: owned-list rows only (ListOwnedFiles).
+	LostAccess bool `json:"lostAccess,omitempty" doc:"The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only trash-purge it"`
 }
 
 // FilePreview is {"text": ...}, a text source's first ~600 characters written

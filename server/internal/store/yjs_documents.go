@@ -90,15 +90,16 @@ func (s *Store) ProjectMaterialContent(
 		return ProjectedMaterial{}, err
 	}
 	var workspaceID *string
-	var ownerID string
+	var payerID string
 	if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id
 		FROM materials WHERE id=$1 AND trashed_at IS NULL`, materialID).
-		Scan(&workspaceID, &ownerID); err != nil {
+		Scan(&workspaceID, &payerID); err != nil {
 		if isNoRows(err) {
 			return ProjectedMaterial{}, ErrNotFound
 		}
 		return ProjectedMaterial{}, err
 	}
+	ownerID := payerID
 	if workspaceID != nil {
 		ownerID, err = s.storageOwnerTx(ctx, tx, *workspaceID)
 		if err != nil {
@@ -140,7 +141,7 @@ func (s *Store) ProjectMaterialContent(
 		}
 		return ProjectedMaterial{}, err
 	}
-	if lockedOwnerID != ownerID {
+	if lockedOwnerID != payerID {
 		return ProjectedMaterial{}, ErrConflict
 	}
 	// Once a material has a Yjs document only this projection writes

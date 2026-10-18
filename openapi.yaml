@@ -1930,6 +1930,9 @@ components:
           type: boolean
         kind:
           $ref: "#/components/schemas/FileKind"
+        lostAccess:
+          description: The file sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only trash-purge it
+          type: boolean
         name:
           type: string
         position:
@@ -2034,6 +2037,8 @@ components:
           type: string
         previewUrl:
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         url:
           type: string
       required:
@@ -2736,6 +2741,8 @@ components:
           type: array
         sharePath:
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         title:
           type: string
         updatedAt:
@@ -2898,6 +2905,9 @@ components:
           type: string
         kind:
           $ref: "#/components/schemas/MaterialKind"
+        lostAccess:
+          description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it
+          type: boolean
         preview:
           additionalProperties: true
           description: List-card preview, a union on kind (note, quiz, flashcards, mindmap, diagram); see openwiki/thumbnails.md
@@ -3889,10 +3899,6 @@ components:
           type: string
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerState:
-          $ref: "#/components/schemas/AccountState"
-        storageOwnerUsage:
-          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"
@@ -5386,6 +5392,8 @@ components:
         stateSeedSHA256:
           nullable: true
           type: string
+        storageFull:
+          $ref: "#/components/schemas/StorageFullBy"
         thumbnailStale:
           type: boolean
         workspaceId:
@@ -5535,6 +5543,11 @@ components:
       required:
         - limitCents
       type: object
+    StorageFullBy:
+      enum:
+        - self
+        - payer
+      type: string
     StorageUsageLevel:
       enum:
         - ok
@@ -5953,6 +5966,9 @@ components:
             - source_file
             - material
           type: string
+        lostAccess:
+          description: The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only permanently delete it
+          type: boolean
         materialKind:
           type: string
         preview:
@@ -6607,10 +6623,6 @@ components:
           type: string
         shareRole:
           $ref: "#/components/schemas/ShareRole"
-        storageOwnerState:
-          $ref: "#/components/schemas/AccountState"
-        storageOwnerUsage:
-          $ref: "#/components/schemas/StorageUsageLevel"
         tags:
           items:
             $ref: "#/components/schemas/Tag"

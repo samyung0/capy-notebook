@@ -20,8 +20,9 @@ import (
 // trash_episode_id and purge_after are set together, editing and background
 // work are fenced (triggers cancel jobs and evict rooms), and every
 // active-resource query filters the row out. Bytes, blobs, index rows and
-// storage charges stay. Only the current workspace owner (or the standalone
-// material owner) lists, restores or permanently deletes trash; permanent
+// storage charges stay. The current workspace owner and the item's payer (its
+// uploader or creator; the owner of a standalone material) list, restore or
+// permanently delete trash (Sam 2026-10-18); permanent
 // deletion is the existing SQL DELETE with its cascades, refcounts and
 // accounting triggers. The maintenance sweep purges due episodes.
 
@@ -47,7 +48,8 @@ type TrashItem struct {
 	ThumbnailKey string  `json:"-"`
 	ThumbnailURL *string `json:"thumbnailUrl,omitempty" doc:"Hour-stable presigned GET of a source file's page-1 thumbnail"`
 	// Preview is a material's list-card preview, or {text} for a text file.
-	Preview MaterialPreview `json:"preview,omitempty" doc:"A material's list-card preview, or {text} for a text source file; see openwiki/thumbnails.md"`
+	Preview    MaterialPreview `json:"preview,omitempty" doc:"A material's list-card preview, or {text} for a text source file; see openwiki/thumbnails.md"`
+	LostAccess bool            `json:"lostAccess,omitempty" doc:"The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only permanently delete it"`
 }
 
 type TrashPage struct {
@@ -103,20 +105,19 @@ func (s *Store) TrashFile(ctx context.Context, actorID, fileID string, op AgentO
 }
 
 func (s *Store) trashFileTx(ctx context.Context, tx pgx.Tx, actorID, fileID string, op AgentOperation) (AgentOperation, error) {
-	var wsID, name, kind string
+	var wsID, payerID, name, kind string
 	var trashedAt *time.Time
-	if err := tx.QueryRow(ctx, `SELECT workspace_id, name, kind, trashed_at FROM files WHERE id=$1`, fileID).
-		Scan(&wsID, &name, &kind, &trashedAt); err != nil {
+	if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id, name, kind, trashed_at FROM files WHERE id=$1`, fileID).
+		Scan(&wsID, &payerID, &name, &kind, &trashedAt); err != nil {
 		if isNoRows(err) {
 			return AgentOperation{}, ErrNotFound
 		}
 		return AgentOperation{}, err
 	}
-	ownerID, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID)
-	if err != nil {
+	if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, wsID, actorID); err != nil {
 		return AgentOperation{}, err
 	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 		return AgentOperation{}, err
 	}
 	op.Kind, op.ActorUserID, op.WorkspaceID = "trash", actorID, wsID
@@ -184,10 +185,9 @@ func (s *Store) trashMaterialTx(ctx context.Context, tx pgx.Tx, actorID, materia
 	if (expectedKind != "" && kind != expectedKind) || parentID != nil {
 		return AgentOperation{}, ErrNotFound
 	}
+	// ownerID is the material's payer (owner_user_id), its creator.
 	if workspaceID != nil {
-		var err error
-		ownerID, err = s.lockWorkspaceEditorRecoveryTx(ctx, tx, *workspaceID, actorID)
-		if err != nil {
+		if _, err := s.lockWorkspaceEditorRecoveryTx(ctx, tx, *workspaceID, actorID); err != nil {
 			return AgentOperation{}, err
 		}
 	} else {
@@ -264,11 +264,12 @@ func decodeTrashCursor(cursor string) (*time.Time, string, error) {
 	return &parsed, id, nil
 }
 
-// ListTrash returns the owner's trashed files and materials, newest first.
-// Ownership is the storage owner column (workspace owner for workspace rows,
-// creator for standalone materials), which transfer rewrites, so an editor who
-// trashed an item never sees it here. workspaceID narrows to one owned
-// workspace; empty spans every owned workspace plus standalone materials.
+// ListTrash returns the trashed files and materials the caller controls,
+// newest first: what they pay for (uploaded or created, wherever it sits) and
+// what sits in workspaces they own (Sam 2026-10-18). An editor who trashed
+// someone else's item never sees it here. workspaceID narrows to one
+// workspace; empty spans them all plus standalone materials. LostAccess marks
+// an item in a workspace the caller no longer owns or belongs to.
 func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limit int, cursor string) (TrashPage, error) {
 	if limit <= 0 || limit > trashPageMax {
 		limit = trashPageMax
@@ -278,18 +279,18 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 		return TrashPage{}, err
 	}
 	rows, err := s.pool.Query(ctx, `SELECT kind, id, title, sub_kind, workspace_id, workspace_name, size_bytes,
-			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview
+			trashed_at, purge_after, trash_episode_id, thumbnail_key, preview, `+lostAccessSQL("t.workspace_id", "t.workspace_owner", "$1")+`
 		FROM (
 			SELECT 'source_file' AS kind, f.id, f.name AS title, f.kind AS sub_kind, f.workspace_id,
 				w.name AS workspace_name, f.size_bytes, f.trashed_at, f.purge_after, f.trash_episode_id,
-				COALESCE(f.thumbnail_key, '') AS thumbnail_key, f.preview
+				COALESCE(f.thumbnail_key, '') AS thumbnail_key, f.preview, w.user_id AS workspace_owner
 			FROM files f JOIN workspaces w ON w.id=f.workspace_id
-			WHERE f.trashed_at IS NOT NULL AND f.user_id=$1 AND ($2='' OR f.workspace_id=$2)
+			WHERE f.trashed_at IS NOT NULL AND (f.user_id=$1 OR w.user_id=$1) AND ($2='' OR f.workspace_id=$2)
 			UNION ALL
 			SELECT 'material', m.id, m.title, m.kind, COALESCE(m.workspace_id,''), m.workspace_name,
-				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id, '', m.preview
-			FROM materials m
-			WHERE m.trashed_at IS NOT NULL AND m.owner_user_id=$1 AND m.parent_material_id IS NULL
+				m.size_bytes, m.trashed_at, m.purge_after, m.trash_episode_id, '', m.preview, w.user_id
+			FROM materials m LEFT JOIN workspaces w ON w.id=m.workspace_id
+			WHERE m.trashed_at IS NOT NULL AND (m.owner_user_id=$1 OR w.user_id=$1) AND m.parent_material_id IS NULL
 				AND ($2='' OR m.workspace_id=$2)
 		) t
 		WHERE $3::timestamptz IS NULL OR (t.trashed_at, t.id) < ($3::timestamptz, $4::text)
@@ -305,8 +306,11 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 		var subKind string
 		if err := rows.Scan(&item.Kind, &item.ID, &item.Title, &subKind, &item.WorkspaceID, &item.WorkspaceName,
 			&item.SizeBytes, &item.TrashedAt, &item.PurgeAfter, &item.EpisodeID,
-			&item.ThumbnailKey, &item.Preview); err != nil {
+			&item.ThumbnailKey, &item.Preview, &item.LostAccess); err != nil {
 			return TrashPage{}, err
+		}
+		if item.LostAccess {
+			item.ThumbnailKey, item.Preview = "", nil
 		}
 		if item.Kind == agenttools.KindMaterial {
 			item.MaterialKind = subKind
@@ -326,16 +330,20 @@ func (s *Store) ListTrash(ctx context.Context, ownerID, workspaceID string, limi
 	return page, nil
 }
 
-// lockTrashOwnerTx verifies ownerID controls the trashed resource and takes the
-// same lock order as deletion: workspace (when present), then accounts, then
-// the storage row. It returns the workspace id ("" for standalone).
-func (s *Store) lockTrashOwnerTx(ctx context.Context, tx pgx.Tx, ownerID string, kind agenttools.ResourceKind, id string) (string, error) {
+// lockTrashOwnerTx verifies actorID controls the trashed resource, as the
+// current workspace owner or the item's payer (Sam 2026-10-18; a standalone
+// material's owner is both), and takes the same lock order as deletion:
+// workspace (when present), then accounts, then the payer's storage row.
+// restore additionally needs edit access to the workspace, so a payer who
+// left it can purge but not put content back. It returns the workspace id
+// ("" for standalone).
+func (s *Store) lockTrashOwnerTx(ctx context.Context, tx pgx.Tx, actorID string, kind agenttools.ResourceKind, id string, restore bool) (string, error) {
 	var wsID *string
-	var rowOwner string
+	var payerID string
 	switch kind {
 	case agenttools.KindSourceFile:
 		if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id FROM files WHERE id=$1 AND trashed_at IS NOT NULL`, id).
-			Scan(&wsID, &rowOwner); err != nil {
+			Scan(&wsID, &payerID); err != nil {
 			if isNoRows(err) {
 				return "", ErrNotFound
 			}
@@ -343,7 +351,7 @@ func (s *Store) lockTrashOwnerTx(ctx context.Context, tx pgx.Tx, ownerID string,
 		}
 	case agenttools.KindMaterial:
 		if err := tx.QueryRow(ctx, `SELECT workspace_id, owner_user_id FROM materials WHERE id=$1 AND trashed_at IS NOT NULL`, id).
-			Scan(&wsID, &rowOwner); err != nil {
+			Scan(&wsID, &payerID); err != nil {
 			if isNoRows(err) {
 				return "", ErrNotFound
 			}
@@ -352,22 +360,33 @@ func (s *Store) lockTrashOwnerTx(ctx context.Context, tx pgx.Tx, ownerID string,
 	default:
 		return "", ErrNotFound
 	}
-	if rowOwner != ownerID {
-		return "", ErrNotFound
-	}
 	if wsID != nil {
-		// Current owner only: the lock re-reads ownership under the workspace row.
-		currentOwner, err := s.lockWorkspaceMutationTx(ctx, tx, *wsID, ownerID)
+		// The lock re-reads ownership under the workspace row.
+		ownerID, err := s.lockWorkspaceMutationTx(ctx, tx, *wsID, actorID)
 		if err != nil {
 			return "", err
 		}
-		if currentOwner != ownerID {
+		if actorID != ownerID && actorID != payerID {
 			return "", ErrNotFound
 		}
-	} else if err := s.lockAccountSessionsTx(ctx, tx, ownerID); err != nil {
-		return "", err
+		if restore && actorID != ownerID {
+			_, role, err := workspaceRoles(ctx, tx, actorID, *wsID)
+			if err != nil {
+				return "", err
+			}
+			if !RoleCanEdit(role) {
+				return "", ErrNotFound
+			}
+		}
+	} else {
+		if actorID != payerID {
+			return "", ErrNotFound
+		}
+		if err := s.lockAccountSessionsTx(ctx, tx, actorID); err != nil {
+			return "", err
+		}
 	}
-	if err := s.lockStorageRowTx(ctx, tx, ownerID); err != nil {
+	if err := s.lockStorageRowTx(ctx, tx, payerID); err != nil {
 		return "", err
 	}
 	return deref(wsID), nil
@@ -390,7 +409,7 @@ func (s *Store) RestoreTrashed(ctx context.Context, ownerID string, kind agentto
 }
 
 func (s *Store) restoreTrashedTx(ctx context.Context, tx pgx.Tx, ownerID string, kind agenttools.ResourceKind, id, episodeID string, op AgentOperation) (AgentOperation, error) {
-	wsID, err := s.lockTrashOwnerTx(ctx, tx, ownerID, kind, id)
+	wsID, err := s.lockTrashOwnerTx(ctx, tx, ownerID, kind, id, true)
 	if err != nil {
 		return AgentOperation{}, err
 	}
@@ -505,7 +524,7 @@ func (s *Store) PurgeTrashed(ctx context.Context, ownerID string, kind agenttool
 		return AgentOperation{}, err
 	}
 	defer tx.Rollback(ctx)
-	wsID, err := s.lockTrashOwnerTx(ctx, tx, ownerID, kind, id)
+	wsID, err := s.lockTrashOwnerTx(ctx, tx, ownerID, kind, id, false)
 	if err != nil {
 		return AgentOperation{}, err
 	}

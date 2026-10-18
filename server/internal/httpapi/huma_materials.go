@@ -136,8 +136,12 @@ func (a *api) materialResponse(
 			return nil, hErr(err)
 		}
 	}
-	if body.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, material.OwnerUserID); err != nil {
+	// The viewer's plan: an image they add is charged to them.
+	if body.ImageMaxBytes, err = a.s.ImageMaxBytes(ctx, userID(ctx)); err != nil {
 		return nil, hErr(err)
+	}
+	if store.RoleCanEdit(role) && !readOnly {
+		body.StorageFull = store.FullBy(full, material.OwnerUserID, userID(ctx))
 	}
 	return &materialOutput{Body: body}, nil
 }

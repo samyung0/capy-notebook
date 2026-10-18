@@ -123,7 +123,7 @@ func (a *api) internalCreateFile(w http.ResponseWriter, r *http.Request) {
 	}
 	kind := kindFromName(name)
 	parseMode := sourceupload.DefaultParseMode(name, kind)
-	maxBytes, err := a.sourceMaxBytes(ctx, req.WorkspaceID)
+	maxBytes, err := a.sourceMaxBytes(ctx, req.UserID)
 	if err != nil {
 		a.fail(w, err)
 		return

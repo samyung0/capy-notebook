@@ -13,9 +13,28 @@ import (
 var ErrInvalidCursor = errors.New("invalid cursor")
 
 // Filtered, sorted, keyset-paginated listings behind the Create and Files
-// pages. Both list what the caller owns: materials and files in their own
-// workspaces plus their standalone materials. Member widens that to every
-// workspace the caller belongs to, as the dashboard recents do.
+// pages. Both list what the caller owns or pays for: materials and files in
+// their own workspaces, everything they uploaded or created wherever it sits
+// (uploader pays, Sam 2026-10-18), and their standalone materials. Member
+// widens that to every workspace the caller belongs to, as the dashboard
+// recents do. A row in a workspace the caller no longer owns or belongs to is
+// marked LostAccess and carries no preview or thumbnail: they may only delete
+// it.
+
+// lostAccessSQL is true for a row in a workspace (wsCol, "" or NULL when
+// standalone; ownerCol its owner) that user neither owns nor belongs to.
+func lostAccessSQL(wsCol, ownerCol, user string) string {
+	return `COALESCE(` + wsCol + ` <> '' AND ` + ownerCol + ` <> ` + user + `
+		AND NOT EXISTS (SELECT 1 FROM workspace_members lost WHERE lost.workspace_id=` + wsCol + ` AND lost.user_id=` + user + `), false)`
+}
+
+// withExtra scans a listing row's columns plus extra trailing ones.
+type withExtra struct {
+	row   interface{ Scan(...any) error }
+	extra []any
+}
+
+func (w withExtra) Scan(dest ...any) error { return w.row.Scan(append(dest, w.extra...)...) }
 
 // memberWorkspace is the Member predicate on a workspace id column: the
 // caller ($1) is a member and the owner's account is live (not deleted,
@@ -154,6 +173,7 @@ type MaterialListItem struct {
 	QuestionCount *int            `json:"questionCount,omitempty"`
 	CardCount     *int            `json:"cardCount,omitempty"`
 	Preview       MaterialPreview `json:"preview,omitempty"`
+	LostAccess    bool            `json:"lostAccess,omitempty" doc:"The item sits in a workspace the caller no longer owns or belongs to; they still pay for it and may only delete it"`
 }
 
 type MaterialPage struct {
@@ -178,9 +198,9 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		kinds = []string{"note", "quiz", "flashcards"}
 	}
 	args := []any{ownerID, kinds}
-	where := ` WHERE m.owner_user_id=$1`
+	where := ` WHERE (m.owner_user_id=$1 OR w.user_id=$1)`
 	if f.Member {
-		where = ` WHERE (m.owner_user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))`
+		where = ` WHERE (m.owner_user_id=$1 OR w.user_id=$1 OR (` + memberWorkspace("m.workspace_id") + `))`
 	}
 	where += ` AND m.trashed_at IS NULL AND m.parent_material_id IS NULL AND m.kind = ANY($2)`
 	if len(f.WorkspaceIDs) > 0 {
@@ -211,9 +231,10 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 			CASE WHEN m.kind='quiz' THEN (SELECT (SELECT count(*) FROM jsonb_array_elements(elem->'children') child WHERE child->>'type'='quiz_question')
 				FROM jsonb_array_elements(m.content->'value') elem WHERE elem->>'type'='quiz' LIMIT 1) END,
 			CASE WHEN m.kind='flashcards' THEN (SELECT count(*) FROM flashcard_cards fc WHERE fc.material_id=m.id) END,
-			m.preview
+			m.preview, `+lostAccessSQL("m.workspace_id", "w.user_id", "$1")+`
 		FROM materials m
-		JOIN users owner ON owner.id=m.owner_user_id
+		LEFT JOIN workspaces w ON w.id=m.workspace_id
+		LEFT JOIN users owner ON owner.id=w.user_id
 		LEFT JOIN chapters c ON c.id=m.chapter_id`+where+
 		orderClause(sort, "m.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
@@ -226,8 +247,11 @@ func (s *Store) ListOwnedMaterials(ctx context.Context, ownerID string, f Materi
 		if err := rows.Scan(&item.ID, &item.Kind, &item.Title, &item.WorkspaceID, &item.WorkspaceName,
 			&item.ChapterID, &item.ChapterName,
 			&item.Privacy, &item.CreatedAt, &item.UpdatedAt, &item.SizeBytes,
-			&item.QuestionCount, &item.CardCount, &item.Preview); err != nil {
+			&item.QuestionCount, &item.CardCount, &item.Preview, &item.LostAccess); err != nil {
 			return MaterialPage{}, err
+		}
+		if item.LostAccess {
+			item.Preview = nil
 		}
 		item.SharePath = materialSharePath(s.shareLinkSecret, string(item.Kind), item.ID, item.WorkspaceID, "")
 		page.Items = append(page.Items, item)
@@ -279,8 +303,9 @@ type FilePage struct {
 	NextCursor string `json:"nextCursor,omitempty"`
 }
 
-// ListOwnedFiles pages through the files of every workspace the caller owns,
-// or with Member every workspace they belong to.
+// ListOwnedFiles pages through the files of every workspace the caller owns
+// and every file they pay for, or with Member also every workspace they
+// belong to.
 func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFilter) (FilePage, error) {
 	sort, ok := fileListSorts[f.Sort]
 	if !ok {
@@ -290,9 +315,9 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 		f.Limit = listPageMax
 	}
 	args := []any{ownerID}
-	where := ` WHERE w.user_id=$1 AND f.trashed_at IS NULL`
+	where := ` WHERE (w.user_id=$1 OR f.user_id=$1) AND f.trashed_at IS NULL`
 	if f.Member {
-		where = ` WHERE (w.user_id=$1 OR (` + memberWorkspace("w.id") + `)) AND f.trashed_at IS NULL`
+		where = ` WHERE (w.user_id=$1 OR f.user_id=$1 OR (` + memberWorkspace("w.id") + `)) AND f.trashed_at IS NULL`
 	}
 	if len(f.Kinds) > 0 {
 		args = append(args, f.Kinds)
@@ -309,7 +334,8 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	where += clause
 	args = append(args, cursorArgs...)
 	args = append(args, f.Limit+1)
-	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+` FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN users owner ON owner.id=w.user_id`+
+	rows, err := s.pool.Query(ctx, `SELECT `+fileListCols+`, `+lostAccessSQL("f.workspace_id", "w.user_id", "$1")+
+		` FROM files f JOIN workspaces w ON w.id=f.workspace_id JOIN users owner ON owner.id=w.user_id`+
 		where+orderClause(sort, "f.id", f.Ascending)+fmt.Sprintf(` LIMIT $%d`, len(args)), args...)
 	if err != nil {
 		return FilePage{}, err
@@ -317,9 +343,13 @@ func (s *Store) ListOwnedFiles(ctx context.Context, ownerID string, f FileListFi
 	defer rows.Close()
 	page := FilePage{Items: []File{}}
 	for rows.Next() {
-		file, err := scanFile(rows)
+		var lost bool
+		file, err := scanFile(withExtra{rows, []any{&lost}})
 		if err != nil {
 			return FilePage{}, err
+		}
+		if lost {
+			file.LostAccess, file.ThumbnailKey, file.Preview = true, "", nil
 		}
 		page.Items = append(page.Items, file)
 	}

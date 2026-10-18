@@ -300,7 +300,7 @@ func TestEmbeddedMaterialAccessAndCloneFollowTheNote(t *testing.T) {
 // A pasted quiz or flashcard block becomes the target note's own: its own row
 // keeps its id unless the block asks for a copy, another readable note's row
 // (live or trashed) is copied with its images and fresh card ids and charged
-// to the target's payer, every duplicate block gets a copy of its own, and an
+// to the actor who pastes it (uploader pays), every duplicate block gets a copy of its own, and an
 // unreadable or purged one is left out.
 func TestAdoptEmbeddedMaterials(t *testing.T) {
 	s := openMaterialTestStore(t)
@@ -395,7 +395,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		if err != nil || adopted[id] == id {
 			t.Fatalf("copy of %s = %q, %v", id, adopted[id], err)
 		}
-		if copied.ParentMaterialID != target.ID || copied.WorkspaceID != ws.ID || copied.OwnerUserID != ownerID {
+		if copied.ParentMaterialID != target.ID || copied.WorkspaceID != ws.ID || copied.OwnerUserID != editorID {
 			t.Fatalf("copy = %+v", copied)
 		}
 	}
@@ -415,7 +415,7 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		t.Fatal(err)
 	}
 	if copiedImage.MaterialID != quizCopy.ID || copiedImage.WorkspaceID != ws.ID ||
-		copiedImage.UserID != ownerID || copiedImage.ObjectPath != image.ObjectPath || copiedImage.Status != "ready" {
+		copiedImage.UserID != editorID || copiedImage.ObjectPath != image.ObjectPath || copiedImage.Status != "ready" {
 		t.Fatalf("copied image = %+v", copiedImage)
 	}
 	sourceCards, err := s.ListCards(ctx, cards.ID)
@@ -432,8 +432,8 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 	if copiedCards[0].Image == nil || copiedCards[0].Image.AssetID == cardImage.ID {
 		t.Fatalf("copied card image = %+v, want its own copy", copiedCards[0].Image)
 	}
-	if f.used(ownerID) <= usedBefore+100 || f.used(editorID) != editorBefore {
-		t.Fatalf("charged owner %d, editor %d; want the target's payer charged",
+	if f.used(editorID) <= editorBefore+100 || f.used(ownerID) != usedBefore {
+		t.Fatalf("charged owner %d, editor %d; want the pasting editor charged",
 			f.used(ownerID)-usedBefore, f.used(editorID)-editorBefore)
 	}
 
@@ -472,10 +472,10 @@ func TestAdoptEmbeddedMaterials(t *testing.T) {
 		t.Fatal("a viewer adopted into the note")
 	}
 	limit := mustPlanLimits(t, s, PlanFree).StorageBytes
-	if _, err := s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, ownerID, limit); err != nil {
+	if _, err := s.pool.Exec(ctx, `UPDATE user_storage SET used_bytes=$2 WHERE user_id=$1`, editorID, limit); err != nil {
 		t.Fatal(err)
 	}
-	// Over the quota the copy is left out and the call says so; the own row
+	// Over the pasting editor's quota the copy is left out and the call says so; the own row
 	// still answers.
 	if list, refused, err := s.AdoptEmbeddedMaterials(ctx, editorID, target.ID, blocks(own.ID, quiz.ID)); err != nil || !refused ||
 		list[0] != own.ID || list[1] != "" {

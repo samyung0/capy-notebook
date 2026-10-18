@@ -184,8 +184,7 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 	if err != nil {
 		return err
 	}
-	_, owner, err := s.refreshLockTx(ctx, tx, fileID, job)
-	if err != nil {
+	if _, _, err := s.refreshLockTx(ctx, tx, fileID, job); err != nil {
 		return err
 	}
 	var format, mode, name, kind, sourcePath string
@@ -219,7 +218,11 @@ func (s *Store) FinalizeSourceRefresh(ctx context.Context, fileID string, in Sou
 			return err
 		}
 		if growth > 0 {
-			if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
+			payer, err := filePayer(ctx, tx, fileID)
+			if err != nil {
+				return err
+			}
+			if err = s.gateStorageTx(ctx, tx, payer, growth); err != nil {
 				return err
 			}
 		}
@@ -300,7 +303,7 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 	if err != nil {
 		return SourceSession{}, err
 	}
-	ws, owner, err := s.refreshLockTx(ctx, tx, fileID, job)
+	ws, _, err := s.refreshLockTx(ctx, tx, fileID, job)
 	if err != nil {
 		return SourceSession{}, err
 	}
@@ -391,7 +394,11 @@ func (s *Store) PublishSourceRefresh(ctx context.Context, fileID string, in Sour
 		return doc, err
 	}
 	if growth > 0 && !job.system {
-		if err = s.gateStorageTx(ctx, tx, owner, growth); err != nil {
+		payer, err := filePayer(ctx, tx, fileID)
+		if err != nil {
+			return doc, err
+		}
+		if err = s.gateStorageTx(ctx, tx, payer, growth); err != nil {
 			return doc, err
 		}
 	}

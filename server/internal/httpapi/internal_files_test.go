@@ -114,8 +114,8 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	if err := fx.st.Pool().QueryRow(ctx, `SELECT user_id FROM files WHERE id=$1`, fileID).Scan(&payer); err != nil {
 		t.Fatal(err)
 	}
-	if payer != fx.owner {
-		t.Fatalf("charged %s, want the workspace owner", payer)
+	if payer != fx.editor {
+		t.Fatalf("charged %s, want the chat's actor", payer)
 	}
 	if err := fx.st.Pool().QueryRow(ctx, `SELECT type FROM jobs WHERE payload->>'fileId'=$1`, fileID).Scan(&jobType); err != nil || jobType != "parse" {
 		t.Fatalf("job = %q, %v", jobType, err)
@@ -135,11 +135,11 @@ func TestInternalFileStoresTheDeckLikeAnUpload(t *testing.T) {
 	}
 }
 
-func TestInternalFileRefusesAFullOwnerQuota(t *testing.T) {
+func TestInternalFileRefusesAFullActorQuota(t *testing.T) {
 	fx := openDeckFiles(t)
 	ctx := context.Background()
 	limit := mustPlanLimits(t, fx.st, store.PlanFree).StorageBytes
-	if _, err := uploadSource(ctx, fx.st, fx.ws, fx.owner, "ballast.pdf", limit, "sources/ballast_"+fx.owner); err != nil {
+	if _, err := uploadSource(ctx, fx.st, fx.ws, fx.editor, "ballast.pdf", limit, "sources/ballast_"+fx.editor); err != nil {
 		t.Fatal(err)
 	}
 	msgID := seedAssistantMessage(t, fx.st, fx.editor, fx.ws)

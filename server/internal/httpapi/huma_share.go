@@ -102,12 +102,8 @@ func (a *api) cloneWorkspace(ctx context.Context, in *cloneWorkspaceInput) (*clo
 		return nil, hErr(err)
 	}
 	a.copyCloneThumbnails(ctx, copies)
-	statuses, err := a.accountStatuses(ctx, ws.OwnerUserID)
-	if err != nil {
-		return nil, err
-	}
 	return &cloneWorkspaceOutput{Body: apimodel.CloneWorkspaceResp{
-		Workspace: apimodel.FromWorkspace(ws, statuses[ws.OwnerUserID]),
+		Workspace: apimodel.FromWorkspace(ws),
 	}}, nil
 }
 

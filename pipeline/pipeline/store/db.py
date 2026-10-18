@@ -746,11 +746,10 @@ def _pipeline_source_cancellation(
     source = cur.fetchone()
     if source is None:
         return ("failed", "lifecycle", "source_deleted", "source deleted")
-    source_workspace, source_owner, current_revision, current_etag = source
-    if (
-        str(source_workspace or "") != workspace_id
-        or str(source_owner or "") != owner_user_id
-    ):
+    # files.user_id is the uploader who pays (uploader pays), not the
+    # workspace owner, so only the workspace has to match.
+    source_workspace, _, current_revision, current_etag = source
+    if str(source_workspace or "") != workspace_id:
         return ("failed", "lifecycle", "source_deleted", "source moved")
     if payload.get("sourceRefresh") is True:
         if payload.get("sourcePublishedCheckpoint") == payload.get("sourceCheckpoint"):

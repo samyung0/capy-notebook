@@ -79,64 +79,6 @@ func (a *api) requireAccountMutate(ctx context.Context) error {
 	return nil
 }
 
-// accountStatuses resolves each distinct account once, with its storage usage
-// level. Owners repeat heavily in a list (most rows in "my workspaces" share
-// one).
-func (a *api) accountStatuses(
-	ctx context.Context,
-	userIDs ...string,
-) (map[string]store.AccountStatus, error) {
-	out := make(map[string]store.AccountStatus, 1)
-	for _, id := range userIDs {
-		if id == "" {
-			continue
-		}
-		if _, done := out[id]; done {
-			continue
-		}
-		status, err := a.s.AccountAccess(ctx, id)
-		if err != nil {
-			return nil, hErr(err)
-		}
-		if status, err = a.s.WithStorageUsage(ctx, status); err != nil {
-			return nil, hErr(err)
-		}
-		out[id] = status
-	}
-	return out, nil
-}
-
-// workspaceStatuses resolves the requester and each workspace's storage owner.
-//
-// A workspace reports its owner's state and not the requester's: the owner is
-// the account charged for the workspace's bytes, so the owner is who has to
-// free space before anybody, member or owner, can add to it. The requester's
-// own state only decides whether they may edit at all.
-func (a *api) workspaceStatuses(
-	ctx context.Context,
-	ws ...store.Workspace,
-) (map[string]store.AccountStatus, error) {
-	ids := make([]string, len(ws))
-	for i, w := range ws {
-		ids[i] = w.OwnerUserID
-	}
-	statuses, err := a.accountStatuses(ctx, ids...)
-	if err != nil {
-		return nil, err
-	}
-	// The requester needs only their state (can they edit at all), not usage.
-	if requester := userID(ctx); requester != "" {
-		if _, done := statuses[requester]; !done {
-			status, err := a.s.AccountAccess(ctx, requester)
-			if err != nil {
-				return nil, hErr(err)
-			}
-			statuses[requester] = status
-		}
-	}
-	return statuses, nil
-}
-
 // editErr returns the locked error when a frozen (or locked) account makes
 // content paid for by ownerID read-only for the requester: their own account,
 // or the owner's.

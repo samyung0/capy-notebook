@@ -256,7 +256,9 @@ func TestIngestSlotsArePerActor(t *testing.T) {
 	}
 }
 
-func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
+// The uploader pays (Sam 2026-10-18): its own credits and its own storage
+// refuse an upload; a full workspace owner does not.
+func TestUploadRefusesActorCreditsAndStorageSeparately(t *testing.T) {
 	fx := openBilling(t)
 	body := map[string]any{
 		"name": "notes.pdf", "kind": "pdf", "parseMode": "fast",
@@ -277,10 +279,19 @@ func TestUploadRefusesActorCreditsAndOwnerStorageSeparately(t *testing.T) {
 		t.Fatal(err)
 	}
 	body["batchId"] = fx2.workspaceID
+	if rec := doReq(t, fx2.handler, http.MethodPost,
+		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body); rec.Code != http.StatusCreated {
+		t.Fatalf("upload beside a full owner: %d %s", rec.Code, rec.Body.String())
+	}
+	// The reservation above already holds 1024 bytes of the actor's quota.
+	if _, err := uploadSource(context.Background(), fx2.store, fx2.workspaceID, fx2.actorID,
+		"ballast.pdf", mustPlanLimits(t, fx2.store, store.PlanFree).StorageBytes-1024, "sources/"+fx2.actorID); err != nil {
+		t.Fatal(err)
+	}
 	storage := doReq(t, fx2.handler, http.MethodPost,
 		"/api/workspaces/"+fx2.workspaceID+"/sources/uploads", fx2.actorID, body)
 	if storage.Code != http.StatusForbidden || errorCode(t, storage) != "storage_quota_exceeded" {
-		t.Fatalf("owner storage: %d %s", storage.Code, storage.Body.String())
+		t.Fatalf("uploader storage: %d %s", storage.Code, storage.Body.String())
 	}
 }
 

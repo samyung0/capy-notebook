@@ -960,12 +960,12 @@ func TestExpiredPaidPeriodAppliesFreeLimitsBeforeWebhookProjection(t *testing.T)
 		t.Fatal(err)
 	}
 
-	ownerTier, err := s.WorkspaceOwnerPlan(ctx, workspace.ID)
+	limits, err := s.PayerPlanLimits(ctx, user)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ownerTier != PlanFree {
-		t.Fatalf("workspace owner tier=%s, want free after period end", ownerTier)
+	if limits != mustPlanLimits(t, s, PlanFree) {
+		t.Fatalf("payer limits=%+v, want free after period end", limits)
 	}
 	usage, err := s.StorageUsage(ctx, user)
 	if err != nil {

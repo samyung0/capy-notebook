@@ -317,7 +317,7 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
         JOIN jobs j ON j.id=c.job_id
         WHERE c.file_id=%s AND c.job_id=%s AND c.epoch=%s AND c.checkpoint=%s AND c.lease_token=%s
           AND d.epoch=c.epoch AND d.running_job_id=c.job_id AND d.base_revision=f.revision AND f.revision=%s
-          AND f.workspace_id=%s AND f.user_id=%s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
+          AND f.workspace_id=%s AND f.trashed_at IS NULL AND j.payload->>'sourceETag'=%s
           AND d.checkpoint>=c.checkpoint
           AND j.status='running' AND j.attempts=%s AND j.lease_expires_at>now()
         FOR UPDATE OF f,c,d,j""",
@@ -329,7 +329,6 @@ async def _lock_source_candidate(conn, refresh: dict[str, Any]) -> None:
             refresh["sourceLeaseToken"],
             refresh["sourceRevision"],
             refresh["workspaceId"],
-            owner,
             refresh["sourceETag"],
             refresh["_attempt"],
         ),

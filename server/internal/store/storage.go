@@ -130,27 +130,6 @@ func (s *Store) effectiveSubscriptionStateForUser(
 	return tier, status, err
 }
 
-// WorkspaceOwnerID names the account that pays for the workspace.
-func (s *Store) WorkspaceOwnerID(ctx context.Context, workspaceID string) (string, error) {
-	var ownerID string
-	err := s.pool.QueryRow(ctx, `
-		SELECT w.user_id FROM workspaces w WHERE w.id=$1`, workspaceID).Scan(&ownerID)
-	if isNoRows(err) {
-		return "", ErrNotFound
-	}
-	return ownerID, err
-}
-
-// WorkspaceOwnerPlan is the plan of the account that pays for the workspace.
-// Per-file upload caps follow this, not the editor who is uploading.
-func (s *Store) WorkspaceOwnerPlan(ctx context.Context, workspaceID string) (PlanTier, error) {
-	ownerID, err := s.WorkspaceOwnerID(ctx, workspaceID)
-	if err != nil {
-		return "", err
-	}
-	return s.effectivePlanTierForUser(ctx, s.pool, ownerID)
-}
-
 func storageJSONSizeTx(ctx context.Context, tx pgx.Tx, content string) (int64, error) {
 	var size int64
 	err := tx.QueryRow(
@@ -198,8 +177,9 @@ func (s *Store) lockWorkspaceMutationTx(
 }
 
 // lockWorkspaceEditorMutationTx adds the content permission check required by
-// workspace mutations, and refuses the edit when the actor or the owner is
-// frozen (or otherwise cannot edit).
+// workspace mutations, and refuses the edit when the actor is frozen (or
+// otherwise cannot edit). The owner's frozen state narrows only what the
+// owner pays for (uploader pays, Sam 2026-10-18).
 func (s *Store) lockWorkspaceEditorMutationTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -209,7 +189,7 @@ func (s *Store) lockWorkspaceEditorMutationTx(
 	if err != nil {
 		return "", err
 	}
-	if err := s.assertEditableTx(ctx, tx, ownerID, actorID); err != nil {
+	if err := s.assertEditableTx(ctx, tx, actorID); err != nil {
 		return "", err
 	}
 	return ownerID, nil

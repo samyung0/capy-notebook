@@ -119,7 +119,7 @@ func TestEffectiveMaterialAccessUnionsMembershipAndShareRole(t *testing.T) {
 		t.Fatal(err)
 	}
 	material, err := s.CreateMaterial(ctx, Material{
-		WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Shared note",
+		CreatedBy: "u_owner", WorkspaceID: ws.ID, WorkspaceName: ws.Name, Kind: "note", Title: "Shared note",
 		Content: content, Privacy: PrivacyPrivate,
 	})
 	if err != nil {

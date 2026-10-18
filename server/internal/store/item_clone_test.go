@@ -79,7 +79,7 @@ func TestFileCloneCarriesSavedEditsIndexAndThumbnail(t *testing.T) {
 		Scan(&payer, &docPayer, &state, &baseRevision, &revision); err != nil {
 		t.Fatal(err)
 	}
-	if payer != targetOwner || docPayer != targetOwner || state != "saved-edits" || baseRevision != revision {
+	if payer != owner || docPayer != owner || state != "saved-edits" || baseRevision != revision {
 		t.Fatalf("payer=%s doc payer=%s state=%q base_revision=%d revision=%d", payer, docPayer, state, baseRevision, revision)
 	}
 	// Nothing was published since the edit, so the base is also the published
@@ -141,7 +141,7 @@ func TestFileCloneCarriesUnfoldedSaves(t *testing.T) {
 		t.Fatal(err)
 	}
 	itemCloneMember(t, s, target.ID, owner, "editor")
-	before := chargeTestCharged(t, s, targetOwner)
+	before := chargeTestCharged(t, s, owner)
 
 	clone, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "Lesson copy.docx"})
 	if err != nil {
@@ -172,7 +172,7 @@ func TestFileCloneCarriesUnfoldedSaves(t *testing.T) {
 	if sourceBytes <= 0 || cloneBytes != sourceBytes || cloneRows != 2 {
 		t.Fatalf("storage bytes source=%d clone=%d, clone log rows=%d", sourceBytes, cloneBytes, cloneRows)
 	}
-	if charged := chargeTestCharged(t, s, targetOwner) - before; charged != fileBytes+cloneBytes {
+	if charged := chargeTestCharged(t, s, owner) - before; charged != fileBytes+cloneBytes {
 		t.Fatalf("payer charged %d, want the file %d plus its document %d", charged, fileBytes, cloneBytes)
 	}
 }
@@ -248,7 +248,7 @@ func TestMaterialCloneDestinationsMentionsAndTitles(t *testing.T) {
 		t.Fatal(err)
 	}
 	if clone.WorkspaceID != target.ID || clone.ChapterID == nil || *clone.ChapterID != chapter.ID ||
-		clone.OwnerUserID != owner || clone.CreatedBy != actor || len(clone.ScopeChapters) != 0 {
+		clone.OwnerUserID != actor || clone.CreatedBy != actor || len(clone.ScopeChapters) != 0 {
 		t.Fatalf("workspace clone = %+v", clone)
 	}
 	if !strings.Contains(clone.Content, actor) || strings.Contains(clone.Content, outsider) ||
@@ -490,7 +490,7 @@ func TestFileClonePinMismatchQueuesIngest(t *testing.T) {
 	if _, err := s.pool.Exec(ctx, `UPDATE workspaces SET embedding_model_version=embedding_model_version+1 WHERE id=$1`, target.ID); err != nil {
 		t.Fatal(err)
 	}
-	used := userUsedBytes(t, s, targetOwner)
+	used := userUsedBytes(t, s, owner)
 
 	clone, _, err := s.CloneFile(ctx, owner, file.ID, CloneTarget{WorkspaceID: target.ID, Name: "lesson.docx"})
 	if err != nil {
@@ -507,7 +507,7 @@ func TestFileClonePinMismatchQueuesIngest(t *testing.T) {
 	if mode != "fast" || actor != owner || reservation == "" {
 		t.Fatalf("ingest job mode=%s actor=%s reservation=%q, want fast, the cloner, a reservation", mode, actor, reservation)
 	}
-	if got := userUsedBytes(t, s, targetOwner); got != used+file.SizeBytes {
+	if got := userUsedBytes(t, s, owner); got != used+file.SizeBytes {
 		t.Fatalf("payer used %d, want %d (the pending copy charged)", got, used+file.SizeBytes)
 	}
 
@@ -680,35 +680,41 @@ func TestCloneRefusesAFilePastThePayersCap(t *testing.T) {
 		return source, file
 	}
 
-	// A Pro editor copies into a Free owner's workspace: the owner pays, so
-	// the Free cap applies although the cloner's plan would take the file.
-	cloner := newBlobTestUser(t, s, "u_clone_cap_pro")
-	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, cloner); err != nil {
+	// The cloner pays (Sam 2026-10-18), so its plan caps the copy wherever it
+	// lands: a Free editor is refused in a Pro owner's workspace, a Pro editor
+	// takes the file into a Free owner's.
+	freeCloner := newBlobTestUser(t, s, "u_clone_cap_free")
+	proOwner := newBlobTestUser(t, s, "u_clone_cap_pro")
+	if _, err := s.pool.Exec(ctx, `UPDATE users SET plan_tier='pro' WHERE id=$1`, proOwner); err != nil {
 		t.Fatal(err)
 	}
-	_, file := bigFile(cloner)
-	freeOwner := newBlobTestUser(t, s, "u_clone_cap_free")
-	freeSpace, err := s.CreateWorkspace(ctx, freeOwner, WorkspaceCreate{Name: "Free target"})
+	_, file := bigFile(proOwner)
+	proSpace, err := s.CreateWorkspace(ctx, proOwner, WorkspaceCreate{Name: "Pro target"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	itemCloneMember(t, s, freeSpace.ID, cloner, "editor")
+	itemCloneMember(t, s, proSpace.ID, freeCloner, "editor")
+	if _, err := s.pool.Exec(ctx, `INSERT INTO workspace_members (workspace_id, user_id, role)
+		SELECT f.workspace_id, $2, 'viewer' FROM files f WHERE f.id=$1`, file.ID, freeCloner); err != nil {
+		t.Fatal(err)
+	}
 	var tooLarge *FileTooLargeError
-	if _, _, err := s.CloneFile(ctx, cloner, file.ID, CloneTarget{WorkspaceID: freeSpace.ID, Name: "big.pdf"}); !errors.As(err, &tooLarge) || tooLarge.LimitBytes != limit {
-		t.Fatalf("clone into a Free owner's workspace = %v, want FileTooLargeError at %d", err, limit)
+	if _, _, err := s.CloneFile(ctx, freeCloner, file.ID, CloneTarget{WorkspaceID: proSpace.ID, Name: "big.pdf"}); !errors.As(err, &tooLarge) || tooLarge.LimitBytes != limit {
+		t.Fatalf("Free cloner into a Pro owner's workspace = %v, want FileTooLargeError at %d", err, limit)
 	}
-	proSpace, err := s.CreateWorkspace(ctx, cloner, WorkspaceCreate{Name: "Pro target"})
+	freeSpace, err := s.CreateWorkspace(ctx, freeCloner, WorkspaceCreate{Name: "Free target"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := s.CloneFile(ctx, cloner, file.ID, CloneTarget{WorkspaceID: proSpace.ID, Name: "big.pdf"}); err != nil {
-		t.Fatalf("clone into the Pro cloner's own workspace: %v", err)
+	itemCloneMember(t, s, freeSpace.ID, proOwner, "editor")
+	if _, _, err := s.CloneFile(ctx, proOwner, file.ID, CloneTarget{WorkspaceID: freeSpace.ID, Name: "big.pdf"}); err != nil {
+		t.Fatalf("Pro cloner into a Free owner's workspace: %v", err)
 	}
 
-	// A workspace clone is the cloner's to pay, and is refused as a whole.
-	freeCloner := newBlobTestUser(t, s, "u_clone_cap")
-	source, _ := bigFile(freeCloner)
-	if _, err := s.CloneWorkspace(ctx, freeCloner, source.ID, WorkspaceCreate{Name: "Copy"}); !errors.As(err, &tooLarge) {
+	// A workspace clone is refused as a whole.
+	soloCloner := newBlobTestUser(t, s, "u_clone_cap")
+	source, _ := bigFile(soloCloner)
+	if _, err := s.CloneWorkspace(ctx, soloCloner, source.ID, WorkspaceCreate{Name: "Copy"}); !errors.As(err, &tooLarge) {
 		t.Fatalf("workspace clone = %v, want FileTooLargeError", err)
 	}
 }

@@ -235,8 +235,8 @@ func (s *Store) lockCommentAccountsTx(
 // write, then rechecks both lifecycle and effective editor permission. This
 // closes the gap between the handler's initial access lookup and the INSERT or
 // UPDATE without changing link/public share-role behavior. Writing a comment
-// (edit) is refused when the actor or the storage owner is frozen or the owner
-// is at its storage limit; deleting one is not.
+// (edit) is refused when the actor or the material's payer is frozen or the
+// payer is at its storage limit; deleting one is not.
 func (s *Store) lockMaterialEditorTx(
 	ctx context.Context,
 	tx pgx.Tx,
@@ -277,8 +277,9 @@ func (s *Store) lockMaterialEditorTx(
 	if err := s.lockCommentAccountsTx(ctx, tx, ownerID, actorID); err != nil {
 		return "", err
 	}
+	// The material's payer (its creator) gates content edits.
 	if edit {
-		if err := s.assertContentEditableTx(ctx, tx, ownerID, actorID); err != nil {
+		if err := s.assertContentEditableTx(ctx, tx, materialOwner, actorID); err != nil {
 			return "", err
 		}
 	}

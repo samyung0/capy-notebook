@@ -982,7 +982,7 @@ pub async fn edit_material(
                 &operation.id,
                 &material_id,
                 &actor,
-                &boundary.owner_user_id,
+                &boundary.payer_user_id,
                 &workspace_id,
                 &schema,
                 &version,

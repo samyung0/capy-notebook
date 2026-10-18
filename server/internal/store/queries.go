@@ -128,8 +128,9 @@ func (s *Store) Search(ctx context.Context, userID, q string) ([]SearchResult, e
 
 	rows, err = s.pool.Query(ctx, `SELECT m.id, m.title, m.workspace_name, m.preview
 		FROM materials m
-		JOIN users owner ON owner.id=m.owner_user_id
-		WHERE m.trashed_at IS NULL AND (m.owner_user_id=$2 OR EXISTS (
+		LEFT JOIN workspaces w ON w.id=m.workspace_id
+		JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
+		WHERE m.trashed_at IS NULL AND (owner.id=$2 OR EXISTS (
 			SELECT 1 FROM workspace_members wm WHERE wm.workspace_id=m.workspace_id AND wm.user_id=$2
 		)) AND owner.deleted_at IS NULL AND owner.deletion_requested_at IS NULL AND owner.suspended_at IS NULL
 			AND m.kind='flashcards' AND m.parent_material_id IS NULL AND lower(m.title) LIKE $1`, like, userID)
@@ -1036,15 +1037,19 @@ func (s *Store) UpdateFile(ctx context.Context, actorID, id string, p FilePatch)
 		return File{}, err
 	}
 	defer tx.Rollback(ctx)
-	var wsID string
-	if err := tx.QueryRow(ctx, `SELECT workspace_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
-		Scan(&wsID); err != nil {
+	var wsID, payerID string
+	if err := tx.QueryRow(ctx, `SELECT workspace_id, user_id FROM files WHERE id=$1 AND trashed_at IS NULL`, id).
+		Scan(&wsID, &payerID); err != nil {
 		if isNoRows(err) {
 			return File{}, ErrNotFound
 		}
 		return File{}, err
 	}
 	if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, wsID, actorID); err != nil {
+		return File{}, err
+	}
+	// Nobody edits what a frozen account pays for.
+	if err := s.assertEditableTx(ctx, tx, payerID); err != nil {
 		return File{}, err
 	}
 	if p.Name != nil {
@@ -1179,32 +1184,18 @@ func (s *Store) createMaterialTx(ctx context.Context, tx pgx.Tx, mt Material) (s
 			cardIDs[i] = card.ID
 		}
 	}
+	// The creator pays, in a workspace too (Sam 2026-10-18).
 	creatorID := mt.CreatedBy
-	var ownerID string
-	if mt.WorkspaceID != "" {
-		ownerID, err = s.storageOwnerTx(ctx, tx, mt.WorkspaceID)
-		if err != nil {
-			return "", err
-		}
-		if creatorID == "" {
-			creatorID = ownerID
-		}
-		ownerID, err = s.lockWorkspaceEditorMutationTx(
-			ctx, tx, mt.WorkspaceID, creatorID,
-		)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		ownerID = creatorID
-	}
-	if creatorID == "" || ownerID == "" {
+	ownerID := creatorID
+	if creatorID == "" {
 		return "", ErrNotFound
 	}
-	if mt.WorkspaceID == "" {
-		if err := s.lockAccountSessionsTx(ctx, tx, creatorID, ownerID); err != nil {
+	if mt.WorkspaceID != "" {
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, mt.WorkspaceID, creatorID); err != nil {
 			return "", err
 		}
+	} else if err := s.lockAccountSessionsTx(ctx, tx, creatorID); err != nil {
+		return "", err
 	}
 	storedSize, err := storageJSONSizeTx(ctx, tx, mt.Content)
 	if err != nil {
@@ -1421,12 +1412,9 @@ func (s *Store) CreateMaterialOperation(ctx context.Context, draft MaterialDraft
 		return AgentOperation{}, false, err
 	}
 	if len(draft.Assets) > 0 {
-		// createMaterialTx locked the note's scope; its payer pays for the images.
-		var ownerID string
-		if err := tx.QueryRow(ctx, `SELECT owner_user_id FROM materials WHERE id=$1`, id).Scan(&ownerID); err != nil {
-			return AgentOperation{}, false, err
-		}
-		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, ownerID, draft.ActorUserID, draft.Assets); err != nil {
+		// createMaterialTx locked the note's scope; the actor pays for the
+		// images, as for the note.
+		if err := s.insertAgentAssetsTx(ctx, tx, mt.WorkspaceID, id, draft.ActorUserID, draft.ActorUserID, draft.Assets); err != nil {
 			return AgentOperation{}, false, err
 		}
 	}
@@ -1720,11 +1708,9 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 		return Material{}, err
 	}
 	if workspaceID != nil {
-		lockedOwnerID, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, p.UpdatedBy)
-		if err != nil {
+		if _, err := s.lockWorkspaceEditorMutationTx(ctx, tx, *workspaceID, p.UpdatedBy); err != nil {
 			return Material{}, err
 		}
-		ownerID = lockedOwnerID
 	} else {
 		if err := s.lockAccountSessionsTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
 			return Material{}, err
@@ -1742,12 +1728,12 @@ func (s *Store) UpdateMaterial(ctx context.Context, id string, p MaterialPatch) 
 	if lockedOwnerID != ownerID {
 		return Material{}, ErrConflict
 	}
-	// The workspace lock already refused a frozen actor or owner. Standalone, a
-	// frozen owner keeps narrowing the material's privacy.
+	// Nobody edits what a frozen account pays for (ownerID is the material's
+	// payer). Standalone, a frozen owner keeps narrowing its privacy.
 	narrowsOnly := p.Privacy != nil && len(sets) == 1 &&
 		!(*p.Privacy == PrivacyPublic && privacy != PrivacyPublic) &&
 		!(*p.Privacy == PrivacyLink && privacy == PrivacyPrivate)
-	if workspaceID == nil && !narrowsOnly {
+	if !narrowsOnly {
 		if err := s.assertEditableTx(ctx, tx, ownerID, p.UpdatedBy); err != nil {
 			return Material{}, err
 		}
@@ -1919,7 +1905,11 @@ func (s *Store) CreateQuiz(ctx context.Context, q Quiz) (Quiz, error) {
 	if err != nil {
 		return Quiz{}, err
 	}
-	created.IsOwner = mt.OwnerUserID == q.UserID
+	role, err := s.MaterialEffectiveRole(ctx, q.UserID, mt.ID)
+	if err != nil {
+		return Quiz{}, err
+	}
+	created.IsOwner = role == RoleOwner
 	created.CanEdit, created.CanEditContent = true, true
 	return created, nil
 }
@@ -2175,7 +2165,11 @@ func (s *Store) CreateFlashcardSetWithCards(
 	if err != nil {
 		return FlashcardSet{}, err
 	}
-	created.IsOwner = mt.OwnerUserID == userID
+	role, err := s.MaterialEffectiveRole(ctx, userID, mt.ID)
+	if err != nil {
+		return FlashcardSet{}, err
+	}
+	created.IsOwner = role == RoleOwner
 	created.CanEdit, created.CanEditContent = true, true
 	return created, nil
 }

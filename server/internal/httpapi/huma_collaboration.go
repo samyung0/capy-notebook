@@ -194,7 +194,7 @@ func (a *api) adoptMaterialChildren(ctx context.Context, in *materialChildrenInp
 	out.Body.Assets = []adoptedMaterialChild{}
 	out.Body.Materials = []adoptedMaterialChild{}
 	if len(in.Body.AssetIDs) > 0 {
-		workspaceID, limits, err := a.s.EditorAssetMaterial(ctx, in.ID)
+		workspaceID, limits, err := a.s.EditorAssetMaterial(ctx, in.ID, actor)
 		if err != nil {
 			return nil, hErr(err)
 		}

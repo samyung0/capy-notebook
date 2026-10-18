@@ -191,34 +191,41 @@ pub async fn live_access<C: GenericClient>(
     };
     let parent: Option<String> = row.get("parent_material_id");
     let material_id = parent.as_deref().unwrap_or(material_id);
+    // `owner` is the lifecycle owner (the workspace owner, or a standalone
+    // material's owner); `payer` is owner_user_id, the account the material is
+    // charged to (uploader pays): its frozen, locked or full state makes the
+    // material read-only (Go's canEditMaterial).
     let sql = format!(
-        "SELECT m.owner_user_id, m.privacy, m.workspace_id,
+        "SELECT m.owner_user_id, m.privacy, m.workspace_id, owner.id AS owner_id,
            (owner.deleted_at IS NOT NULL OR owner.deletion_requested_at IS NOT NULL) AS owner_gone,
            (owner.suspended_at IS NOT NULL) AS owner_suspended,
            (actor.deleted_at IS NOT NULL OR actor.deletion_requested_at IS NOT NULL
              OR actor.suspended_at IS NOT NULL) AS actor_locked,
-           w.user_id AS workspace_owner_id, w.privacy AS workspace_privacy,
+           (payer.deleted_at IS NOT NULL OR payer.deletion_requested_at IS NOT NULL
+             OR payer.suspended_at IS NOT NULL) AS payer_locked,
+           w.privacy AS workspace_privacy,
            w.share_role, COALESCE(wm.role, '') AS member_role,
-           {} AS owner_frozen,
-           {} AS owner_full,
+           {} AS payer_frozen,
+           {} AS payer_full,
            {} AS actor_frozen
          FROM materials m
-         JOIN users owner ON owner.id=m.owner_user_id
+         JOIN users payer ON payer.id=m.owner_user_id
          JOIN users actor ON actor.id=$2
          LEFT JOIN workspaces w ON w.id=m.workspace_id
+         JOIN users owner ON owner.id=COALESCE(w.user_id, m.owner_user_id)
          LEFT JOIN workspace_members wm ON wm.workspace_id=w.id AND wm.user_id=$2
-         LEFT JOIN user_storage owner_storage ON owner_storage.user_id=owner.id
+         LEFT JOIN user_storage payer_storage ON payer_storage.user_id=payer.id
          LEFT JOIN user_storage actor_storage ON actor_storage.user_id=actor.id
          WHERE m.id=$1 AND m.trashed_at IS NULL",
-        frozen_sql("owner", "owner_storage"),
-        full_sql("owner", "owner_storage"),
+        frozen_sql("payer", "payer_storage"),
+        full_sql("payer", "payer_storage"),
         frozen_sql("actor", "actor_storage"),
     );
     let rows = client.query(&sql, &[&material_id, &actor]).await?;
     let Some(row) = rows.first() else {
         return Err(AccessError::NotFound("material not found".into()));
     };
-    let owner_id: String = row.get("owner_user_id");
+    let owner_id: String = row.get("owner_id");
     let material_privacy: String = row.get("privacy");
     let workspace_id: Option<String> = row.get("workspace_id");
     // A deleted or deletion-pending owner's material is gone for everyone, a
@@ -232,8 +239,7 @@ pub async fn live_access<C: GenericClient>(
     if row.get::<_, bool>("actor_locked") {
         return Err(AccessError::Forbidden("actor account is locked".into()));
     }
-    let workspace_owner: Option<String> = row.get("workspace_owner_id");
-    let role = if actor == owner_id || workspace_owner.as_deref() == Some(actor) {
+    let role = if actor == owner_id {
         "owner".to_owned()
     } else {
         let workspace_privacy: Option<String> = row.get("workspace_privacy");
@@ -258,8 +264,10 @@ pub async fn live_access<C: GenericClient>(
     }
     Ok(LiveAccess {
         editor: rank(&role) >= rank("editor"),
-        frozen: row.get::<_, bool>("owner_frozen") || row.get::<_, bool>("actor_frozen"),
-        full: row.get("owner_full"),
+        frozen: row.get::<_, bool>("payer_frozen")
+            || row.get::<_, bool>("payer_locked")
+            || row.get::<_, bool>("actor_frozen"),
+        full: row.get("payer_full"),
     })
 }
 
@@ -295,7 +303,11 @@ pub struct LockedAccount {
 }
 
 pub struct Boundary {
+    /// The lifecycle owner: the workspace owner, or a standalone material's
+    /// owner. A workspace material's `owner_user_id` is only its payer.
     pub owner_user_id: String,
+    /// The account the material is charged to (`owner_user_id`).
+    pub payer_user_id: String,
     pub accounts: HashMap<String, LockedAccount>,
 }
 
@@ -338,19 +350,21 @@ pub async fn lock_boundary<C: GenericClient>(
     let Some(expected) = placement.first() else {
         return Err(AccessError::NotFound("material not found".into()));
     };
-    let owner: String = expected.get("owner_user_id");
+    let payer: String = expected.get("owner_user_id");
     let workspace: Option<String> = expected.get("workspace_id");
     let kind: String = expected.get("kind");
+    let mut owner = payer.clone();
     if let Some(workspace) = &workspace {
         let found = client
             .query(
-                "SELECT id FROM workspaces WHERE id=$1 FOR SHARE",
+                "SELECT user_id FROM workspaces WHERE id=$1 FOR SHARE",
                 &[workspace],
             )
             .await?;
-        if found.is_empty() {
+        let Some(found) = found.first() else {
             return Err(AccessError::NotFound("material not found".into()));
-        }
+        };
+        owner = found.get("user_id");
     }
     let mut ids: Vec<String> = actors.to_vec();
     ids.push(owner.clone());
@@ -389,7 +403,7 @@ pub async fn lock_boundary<C: GenericClient>(
     let Some(locked) = locked.first() else {
         return Err(AccessError::NotFound("material not found".into()));
     };
-    if locked.get::<_, String>("owner_user_id") != owner
+    if locked.get::<_, String>("owner_user_id") != payer
         || locked.get::<_, Option<String>>("workspace_id") != workspace
         || locked.get::<_, String>("kind") != kind
     {
@@ -397,6 +411,7 @@ pub async fn lock_boundary<C: GenericClient>(
     }
     Ok(Boundary {
         owner_user_id: owner,
+        payer_user_id: payer,
         accounts,
     })
 }

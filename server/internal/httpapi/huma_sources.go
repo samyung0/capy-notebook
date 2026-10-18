@@ -55,7 +55,7 @@ func (a *api) getSourceUploadPolicy(
 			return nil, hErr(err)
 		}
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, in.WorkspaceID)
+	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -224,7 +224,7 @@ func (a *api) reserveSourceUpload(ctx context.Context, in *createSourceUploadInp
 	if body.ParseMode == "" {
 		body.ParseMode = sourceupload.DefaultParseMode(name, body.Kind)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, wsID)
+	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -294,14 +294,15 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 	if err != nil {
 		return nil, hErr(err)
 	}
-	if session.WorkspaceID != in.ID {
+	// Only the uploader completes its reservation (Sam 2026-10-18).
+	if session.WorkspaceID != in.ID || session.CreatedBy == nil || *session.CreatedBy != userID(ctx) {
 		return nil, hErr(store.ErrNotFound)
 	}
 	if err := a.assertWorkspaceEditor(ctx, session.WorkspaceID); err != nil {
 		return nil, hErr(err)
 	}
 	if session.Status == "completed" {
-		res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, "", "", a.parser)
+		res, err := a.s.FinalizeUploadSession(ctx, userID(ctx), in.UploadID, "", "", a.parser)
 		if err != nil {
 			return nil, hErr(err)
 		}
@@ -342,7 +343,7 @@ func (a *api) completeSourceUpload(ctx context.Context, in *completeSourceUpload
 	if err != nil {
 		return nil, hErr(err)
 	}
-	res, err := a.s.FinalizeUploadSession(ctx, in.UploadID, info.ETag, sha, a.parser)
+	res, err := a.s.FinalizeUploadSession(ctx, userID(ctx), in.UploadID, info.ETag, sha, a.parser)
 	if errors.Is(err, store.ErrUploadExpired) || errors.Is(err, store.ErrUploadState) {
 		return nil, huma.Error409Conflict(err.Error())
 	}
@@ -516,7 +517,7 @@ func (a *api) queueSourceImports(ctx context.Context, in *importSourcesInput) (*
 	if err != nil {
 		return nil, hErr(err)
 	}
-	maxBytes, err := a.sourceMaxBytes(ctx, wsID)
+	maxBytes, err := a.sourceMaxBytes(ctx, userID(ctx))
 	if err != nil {
 		return nil, hErr(err)
 	}
@@ -720,23 +721,10 @@ func (a *api) checkParsePages(parseMode string, pages int) error {
 	return nil
 }
 
-func (a *api) sourceMaxBytes(ctx context.Context, wsID string) (int64, error) {
-	if wsID != "" {
-		tier, err := a.s.WorkspaceOwnerPlan(ctx, wsID)
-		if err != nil {
-			return 0, err
-		}
-		limits, err := a.s.PlanLimits(tier)
-		if err != nil {
-			return 0, err
-		}
-		return limits.SourceFileBytes, nil
-	}
-	me, err := a.s.Me(ctx, userID(ctx))
-	if err != nil {
-		return 0, err
-	}
-	limits, err := a.s.PlanLimits(me.PlanTier)
+// sourceMaxBytes is the per-file cap of the uploader's plan: the uploader
+// pays (Sam 2026-10-18).
+func (a *api) sourceMaxBytes(ctx context.Context, uploaderID string) (int64, error) {
+	limits, err := a.s.PayerPlanLimits(ctx, uploaderID)
 	if err != nil {
 		return 0, err
 	}
