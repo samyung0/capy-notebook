@@ -79,7 +79,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
     repaired, repaired_fonts = fonts.repair_fonts(data)
     phases["fonts"] = time.perf_counter() - started
     started = time.perf_counter()
-    repaired, flattened = flatten.flatten(repaired)
+    repaired, flattened, quiet = flatten.flatten(repaired)
     pdf = work_dir / "document.pdf"
     pdf.write_bytes(repaired)
     phases["flatten"] = time.perf_counter() - started
@@ -130,7 +130,7 @@ def parse_pdf(data: bytes, work_dir: Path, *, java_timeout_s: float) -> ParseOut
         blocks = step(pictures.classify)(
             blocks, document, java.image_objects(native_dir)
         )
-        blocks = step(pictures.flattened_figures)(blocks, document, flattened)
+        blocks = step(pictures.flattened_figures)(blocks, document, flattened, quiet)
         # One document's drawing clusters, for vector figures and heading recall.
         drawings = pictures.Drawings()
         blocks = step(pictures.add_vector_figures)(blocks, document, drawings)
