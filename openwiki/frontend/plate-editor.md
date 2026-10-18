@@ -852,35 +852,72 @@ the server's hidden `404`, so their editor shows the file-missing panel, not
 no access: by decision (Epo, 2026-10-14) the app never tells a user whether
 something they can't reach is blocked or gone.
 
-Each connection may send SYNC messages (updates, step 2 replies, its step
-1s) at a burst of 10,000 messages or 8 MiB, then 200 messages and 2 MiB a
-second (Epo 2026-10-18; `rate.rs`, `COLLABORATION_UPDATE_BURST`,
-`COLLABORATION_UPDATE_BURST_BYTES`, `COLLABORATION_UPDATES_PER_SECOND`,
-`COLLABORATION_UPDATE_BYTES_PER_SECOND`, the same in every environment).
-The sizes come from what the editors send
+**Update allowance and pieces** (Epo 2026-10-18). Each user may send SYNC
+messages (updates, step 2 replies, step 1s) at a burst of 10,000 messages or
+8 MiB, then 200 messages and 2 MiB a second (`rate.rs`,
+`COLLABORATION_UPDATE_BURST`, `COLLABORATION_UPDATE_BURST_BYTES`,
+`COLLABORATION_UPDATES_PER_SECOND`, `COLLABORATION_UPDATE_BYTES_PER_SECOND`,
+the same in every environment). The allowance is the user's: every socket
+of theirs and every draft send (`POST /drafts`) takes from one allowance in
+the server process, kept at least a minute after its last use and until it
+has refilled, so a reconnect goes on from what was left rather than with a
+fresh burst. Awareness, stateless, token, JOIN and LEAVE messages do not
+count. A message is over the limit when either bucket holds less than it
+costs (one message, its bytes). The sizes come from what the editors send
 (`bench/collaboration/reports/2026-10-18-update-rates.md`, `pnpm bench:rates`):
 notes and PPTX send one update per key, at most 68 a second with a key held
 at macOS's fastest repeat and 105 when keys come as fast as the page takes
-them; DOCX coalesces keys; a note, XLSX or PPTX paste, a photo and a
-reconnect's replayed drafts are one update each (1.5 MB at most measured);
-a DOCX paste is a burst of two updates per paragraph (4,999 in 0.7 s for
-2,500 lines), which the burst covers to about 5,000 paragraphs. Awareness,
-stateless, token and LEAVE messages do not count, nor does a draft send
-(`POST /drafts`, not a socket). A message is over the limit when either
-allowance is empty as it arrives; otherwise it takes one message and its
-bytes, the byte allowance possibly going into debt, so one message larger
-than the byte burst (still within the 4 MiB note sync cap or a source's
-frame cap) goes in on a full allowance and only a message sent while the
-debt lasts is over. A socket over the limit is closed with WebSocket close
-code 4429, reason `collaboration-too-fast`, and the message that tripped it
-is not applied; the server then reads what the client still sends for up
-to 2 s, until its close, since dropping a socket with unread frames resets
-it and the reset can lose the close frame. The tab's socket
-(`CollabSocket`) handles it as any drop: every room on it ends and rejoins
-once the socket reopens, its step 2 carrying the edits the server lacks, and
-unsent edits stay in drafts until a receipt covers them; only each such
-close in the page load doubles the backoff before that reconnect (2 s, 4 s,
-up to 30 s), so a client that keeps tripping the limit cannot loop. The server logs it at warn and counts it
+them; DOCX coalesces keys; a note, XLSX or PPTX paste, a photo, a redo and a
+reconnect's replayed drafts are one update each (about 2 MB at most
+measured, 5 MB for a Pro photo); a DOCX paste is a burst of two updates per
+paragraph (4,999 in 0.8 s for 2,500 lines) and Replace All one per
+replacement, which the burst covers to a paste of about 5,000 paragraphs.
+
+No room takes an update over 8 MiB (`ydoc::MAX_UPDATE_BYTES`, the byte
+burst, which `COLLABORATION_UPDATE_BURST_BYTES` may not go below): the
+server reads WebSocket frames only up to it and its framing, closes a socket
+that sends a larger update with close code 4413, reason
+`collaboration-update-too-large`, refuses a larger draft send `too_large`
+(413; a note's stays at its 4 MiB sync cap), and refuses an agent edit or a
+replace-block command whose update would be larger before it commits (the
+agent hears `quota_rejected`, "make it as several smaller edits"; the
+content command's 413 is a document limit). Capy's send path therefore cuts
+every update over 2 MiB into pieces (`splitUpdate`,
+`src/features/collaboration/pieces.ts`), for every format (notes, items,
+DOCX, PPTX, XLSX and text sources), the step 2 after a reconnect and draft
+sends alike: the update's structs go in dependency order, each piece a clock
+range per client, a struct only after the structs of the update its origin,
+right origin and parent name, so pieces applied in order never leave
+anything pending; a text or value run over the limit becomes runs of the
+same item, as Yjs splits items (never inside a surrogate pair); the delete
+set goes last. A struct that cannot be cut (a photo's binary, a format mark,
+a type) goes whole. The room provider sends each piece as its own SYNC
+message, acknowledged on its own, and tells its owner (`onSending`) when the
+first piece of a split update leaves and when the server acknowledged the
+last; a source session passes that to the Office runtime as `sending`
+([office-files](office-files.md)). The tab's socket paces SYNC frames under
+the same allowance (`allowance.ts`, mirroring the defaults; a load
+generator's own socket has its own): a frame waits while the allowance is
+spent, and every frame sent after it, a checkpoint request among them, waits
+behind it, so a receipt never covers a piece still waiting. Draft groups are
+cut in the drafts worker and sent one request per piece, in order, under the
+tab's allowance. Another tab of the same user is not paced against this one;
+both together can still go over.
+
+A socket over the allowance is closed with WebSocket close code 4429,
+reason `collaboration-too-fast`, and the message that tripped it is not
+applied; a draft send over it is refused `too_fast` (429). After either close
+the server reads what the client still sends for up to 2 s, until its close,
+since dropping a socket with unread frames resets it and the reset can lose
+the close frame. The tab's socket (`CollabSocket`) handles 4429 and 4413 as
+any drop: every room on it ends and rejoins once the socket reopens, its step
+2 carrying the edits the server lacks (in pieces), and unsent edits stay in
+drafts until a receipt covers them; only each such close in the page load
+doubles the backoff before that reconnect (with the backoff's 0.5–1.5×
+jitter: 1–3 s, then 2–6 s, up to 45 s), so a client that keeps tripping the
+limit cannot loop. An `online` event, or the tab's last room leaving and
+another joining, opens at once as for any drop; the server still enforces
+the allowance. The server logs each close at warn and counts too fast ones
 ([observability](../observability-metering.md)); the user sees Reconnecting
 for those seconds.
 
@@ -1182,20 +1219,24 @@ go with the keys token (`{ document: 'keys' }`, room `keys:<id>:schema:<n>`);
 flashcard sets and a quiz's content go as notes do. With a write token the
 sweep takes the rows of the token's room that are neither refused nor
 `held` (left for the editor, below), one group per lineage (an Office file's rows of another base
-apart). The drafts worker merges each group (`merged`: the page's main
-thread pays about 4 ms for a 20 MB Office state, against 160-192 ms with a
-132-158 ms task when it merged there), and the page POSTs it to the
-collaboration service's `/drafts` on the host of the token's URL, the same
-URL for every document (so one preflight, kept 2 h, covers a sweep):
+apart). The drafts worker merges each group and cuts it into its pieces of
+at most 2 MiB (`merged`: the page's main thread pays about 4 ms for a 20 MB
+Office state, against 160-192 ms with a 132-158 ms task when it merged
+there), and the page POSTs each piece in order, paced under the tab's update
+allowance (see [Connection lifetime](#connection-lifetime-and-refusals)), to
+the collaboration service's `/drafts` on the host of the token's URL, the
+same URL for every document (so one preflight, kept 2 h, covers a sweep):
 `Authorization: Bearer <token>`, `X-Capy-Room: <room>`, `X-Capy-Base: <sha>`
-for a source, `X-Capy-Protocol: <client protocol>`, the update as the body
-(`collaboration-rs/crates/server/src/drafts.rs`). A note group past the
-4 MiB sync cap is not uploaded.
+for a source, `X-Capy-Protocol: <client protocol>`, the piece as the body
+(`collaboration-rs/crates/server/src/drafts.rs`). A refused piece stops the
+group's send; the pieces before it are in the room, and the rows go again
+whole later (what the room holds already changes nothing).
 
 The service runs a channel's JOIN checks (origin, token, access, the room's
 eviction and pause state), refuses a read-only token, checks the note's
 current schema, reads the body within a writer's sync message cap (4 MiB for
-a note, the frame cap for a source), checks the eviction lease and a local
+a note, 8 MiB for a source), takes it from the user's update allowance (the
+one their sockets take from), checks the eviction lease and a local
 reset again (the body may have arrived after them), and hands the update to
 the room, loading it if need be: the same writer admission and apply as a
 channel's update (`admit_update` in `room.rs`, a read token's draft as a
@@ -1225,7 +1266,8 @@ detail with the room and counts it by class
 - `outdated` (426, the page's client protocol is refused): kept unmarked,
   and no sweep runs again until the page reloads (see
   [Client protocol](#client-protocol-and-the-release-nudge));
-- `permission` (403), `unavailable` (503) and any other answer: kept, and
+- `permission` (403), `unavailable` (503), `too_fast` (429, over the user's
+  update allowance) and any other answer: kept, and
   not sent again until the next page load;
 - no answer (offline) or rows that changed meanwhile: kept for the next
   trigger.

@@ -633,18 +633,24 @@ The prod file runs `/migrate` once per deploy, starts the API with
    reuses them for later joins, so RSS stays near its peak instead of falling
    back.
 
-   Each connection's SYNC messages have an allowance (Epo 2026-10-18,
+   Each user's SYNC messages, over all their sockets and draft sends, have
+   an allowance kept in the process (Epo 2026-10-18,
    [plate-editor](frontend/plate-editor.md#connection-lifetime-and-refusals)):
    a burst of `COLLABORATION_UPDATE_BURST` messages or
    `COLLABORATION_UPDATE_BURST_BYTES`, then
    `COLLABORATION_UPDATES_PER_SECOND` and
    `COLLABORATION_UPDATE_BYTES_PER_SECOND`. They default to 10,000 messages
    or 8 MiB, then 200 and 2 MiB a second, the same in every environment, so
-   nothing renders or sets them. A socket over it closes with 4429 and shows
-   as `capy_collaboration_rate_limited_total` on `/metrics` and a
+   nothing renders or sets them. The byte burst may not be set below 8 MiB,
+   the largest update a room takes (the server refuses to start). A socket
+   over it closes with 4429 and shows as
+   `capy_collaboration_rate_limited_total` on `/metrics` and a
    `connection over its update rate` warn line naming the room, socket and
    user. A count from many users means real editing reaches it: measure with
-   `pnpm bench:rates` before raising a value in the compose environment.
+   `pnpm bench:rates` before raising a value in the compose environment. A
+   load test whose peers are one user (the local stress stack's `u_owner`)
+   shares one allowance: past about 200 updates a second it needs
+   `COLLABORATION_UPDATES_PER_SECOND` raised on that stack.
 
    A warm deploy rebuilds only what changed: `go build`, the Vite/collab
    bundles and the pipeline source copy. Dependency installs, the BetterOffice
