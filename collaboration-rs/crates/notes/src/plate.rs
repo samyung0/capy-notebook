@@ -346,6 +346,13 @@ pub fn map_key(key: &str) -> bool {
         .any(|element| element.shared_map.contains(&key))
 }
 
+/// Whether some element's map holds `key` as a list of maps.
+pub fn list_key(key: &str) -> bool {
+    catalog::ELEMENTS
+        .iter()
+        .any(|element| element.shared_lists.contains(&key))
+}
+
 /// The keys of an element's map held as lists of maps (`sharedLists`: a
 /// chart's or plot's series, a graph's elements).
 pub fn lists_of(kind: &str) -> &'static [&'static str] {

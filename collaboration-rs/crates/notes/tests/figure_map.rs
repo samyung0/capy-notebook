@@ -502,3 +502,87 @@ fn agent_edits_and_the_content_api_write_figures_strictly() {
     )
     .unwrap();
 }
+
+/// Runs `check` on a thread with the 2 MiB stack a server task has.
+fn on_task_stack<T: Send + 'static>(check: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new()
+        .stack_size(2 << 20)
+        .spawn(check)
+        .unwrap()
+        .join()
+        .unwrap()
+}
+
+/// A chain of maps and lists `depth` levels deep under a paragraph's
+/// attribute, in its own peer's update, and the deepest map.
+fn deep_chain(room: &Doc, client: u64, depth: usize) -> (Doc, Vec<u8>) {
+    let peer = common::doc(&common::state(room), client);
+    {
+        let paragraph = block_element(&peer, 0);
+        let mut txn = peer.transact_mut();
+        let mut map: MapRef = paragraph.insert_attribute(&mut txn, "x", MapPrelim::default());
+        for _ in 0..depth {
+            let list: ArrayRef = map.insert(&mut txn, "y", ArrayPrelim::default());
+            map = list.push_back(&mut txn, MapPrelim::default());
+        }
+    }
+    let update = peer
+        .transact()
+        .encode_state_as_update_v1(&room.transact().state_vector());
+    (peer, update)
+}
+
+fn deepest(doc: &Doc) -> MapRef {
+    let txn = doc.transact();
+    let mut map = match block_element(doc, 0).get_attribute(&txn, "x") {
+        Some(Out::YMap(map)) => map,
+        other => panic!("no chain: {other:?}"),
+    };
+    while let Some(Out::YArray(list)) = map.get(&txn, "y") {
+        map = match list.get(&txn, 0) {
+            Some(Out::YMap(next)) => next,
+            other => panic!("broken chain: {other:?}"),
+        };
+    }
+    map
+}
+
+/// Security regression: placing an item written into a nested map looks up
+/// a bounded number of holders, so admission returns on a server task's
+/// stack at any depth. Two shapes: the chain already held, with one entry
+/// written into its deepest map; and one update from two clients, a chain
+/// and an entry into its deepest map, refused whichever client's items come
+/// first. Fails with the lookup recursive again.
+#[test]
+fn a_deep_map_chain_is_placed_within_a_bounded_walk() {
+    const DEPTH: usize = 20_000;
+    let room = room(&[paragraph("text")]);
+    let (chained, chain) = deep_chain(&room, 3, DEPTH);
+    let held = common::doc(&common::state(&room), 2);
+    common::apply(&held, &chain);
+    let entry = edit(&held, 4, |peer| {
+        deepest(peer).insert(&mut peer.transact_mut(), "z", "deep");
+    });
+    let held_state = common::state(&held);
+    // Returning at all is the point: the chain is no figure, so its outcome
+    // is the ordinary path's.
+    on_task_stack(move || {
+        let held = common::doc(&held_state, 2);
+        drop(Validator::new("note").admit_bytes(&held, &entry));
+    });
+    let tail = {
+        let writer = common::doc(&common::state(&chained), 5);
+        deepest(&writer).insert(&mut writer.transact_mut(), "z", "deep");
+        writer
+            .transact()
+            .encode_state_as_update_v1(&chained.transact().state_vector())
+    };
+    let both = yrs::merge_updates_v1([chain.as_slice(), tail.as_slice()]).unwrap();
+    let room_state = common::state(&room);
+    let refused = on_task_stack(move || {
+        let room = common::doc(&room_state, 2);
+        // Each try walks the update's items in a fresh hash order.
+        (0..8).all(|_| Validator::new("note").admit_bytes(&room, &both).is_err())
+    });
+    assert!(refused, "a deep chain went in");
+}

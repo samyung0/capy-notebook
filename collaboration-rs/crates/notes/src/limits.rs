@@ -556,8 +556,8 @@ fn plain_content<T: ReadTxn>(
                 (Place::Entry(..), Part::Block(_) | Part::Entry(_), ItemContent::Any(values)) => {
                     values.iter().all(plain)
                 }
-                (Place::Entry(..), Part::Block(_), ItemContent::Type(branch)) => {
-                    matches!(branch.type_ref(), TypeRef::Array)
+                (Place::Entry(key, _), Part::Block(_), ItemContent::Type(branch)) => {
+                    matches!(branch.type_ref(), TypeRef::Array) && plate::list_key(key)
                 }
                 (Place::Sequence(_), Part::List(_), ItemContent::Type(branch)) => {
                     matches!(branch.type_ref(), TypeRef::Map)
@@ -921,33 +921,47 @@ impl<T: ReadTxn> Parts<'_, T> {
     }
 
     /// The part of a figure's block the type made by item `id` is: the
-    /// element's `block` map, a list in it, or a map in that list.
+    /// element's `block` map, a list in it, or a map in that list. At most
+    /// three holder lookups, however deep the update nests: a part is known
+    /// from its own holder and at most its parent's and grandparent's.
     fn of(&mut self, id: &yrs::ID) -> Option<Part> {
         if let Some(known) = self.known.get(id) {
             return *known;
         }
         let part = match self.holder(id) {
-            Some((TypeRef::Map, Some(Place::Entry(key, Some(BranchID::Nested(element))))))
-                if plate::map_key(&key) && self.is_element(&BranchID::Nested(element)) =>
-            {
-                Some(Part::Block(element))
+            Some((TypeRef::Map, Some(Place::Sequence(Some(BranchID::Nested(list)))))) => {
+                self.list_of(&list).map(Part::Entry)
             }
-            Some((TypeRef::Array, Some(Place::Entry(_, Some(BranchID::Nested(parent)))))) => {
-                match self.of(&parent) {
-                    Some(Part::Block(element)) => Some(Part::List(element)),
-                    _ => None,
-                }
-            }
-            Some((TypeRef::Map, Some(Place::Sequence(Some(BranchID::Nested(parent)))))) => {
-                match self.of(&parent) {
-                    Some(Part::List(element)) => Some(Part::Entry(element)),
-                    _ => None,
-                }
-            }
+            Some((TypeRef::Array, _)) => self.list_of(id).map(Part::List),
+            Some((TypeRef::Map, _)) => self.block_of(id).map(Part::Block),
             _ => None,
         };
         self.known.insert(*id, part);
         part
+    }
+
+    /// The figure element whose `block` map the item `id` makes.
+    fn block_of(&self, id: &yrs::ID) -> Option<yrs::ID> {
+        match self.holder(id) {
+            Some((TypeRef::Map, Some(Place::Entry(key, Some(BranchID::Nested(element))))))
+                if plate::map_key(&key) && self.is_element(&BranchID::Nested(element)) =>
+            {
+                Some(element)
+            }
+            _ => None,
+        }
+    }
+
+    /// The figure element whose block holds the list the item `id` makes.
+    fn list_of(&self, id: &yrs::ID) -> Option<yrs::ID> {
+        match self.holder(id) {
+            Some((TypeRef::Array, Some(Place::Entry(key, Some(BranchID::Nested(block))))))
+                if plate::list_key(&key) =>
+            {
+                self.block_of(&block)
+            }
+            _ => None,
+        }
     }
 }
 
