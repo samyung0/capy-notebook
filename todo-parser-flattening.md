@@ -129,3 +129,7 @@ From blind round 6 (40 books) and the dev set:
   carry `[formula]` (5 logos on dev; 3 logos and 3 labels quiet blind),
   accepted as v12's logos were. A rule giving no placeholder on a book's
   first two and last two pages would cover the dev logos; it is untested.
+- A formula drawn as several outline pieces gets one `[formula]` per quiet
+  region, so a line can read `[formula] [formula] [formula]` (16 of 53
+  formula lines in blind round 7 carry 2 or 3). Joining the regions of one
+  text line into one placeholder would fix it.

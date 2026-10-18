@@ -47,7 +47,7 @@ Round 3 (all of them, object streams reverted): identical 40/40, whole parse
 | 4 | Headings beside a region under 3% of the page stay headings (C5) | 5 real headings back, 1 defect | 0 real headings restored, 7 labels made headings again (+10 label headings in 3 books, all beside a small part of a larger figure). Dropped. |
 | 5 | Growth to the drawing cluster, label text only (C4, C4b), plus C5 (C45) | regions 2,599 → 2,452; headings −19/+7 (unflattened −15/+4); 8 tables lost | 7 fewer label headings; 1 real heading lost to growth; 146 tables lost (of 83 sampled 80 fake, 2 figure grids, 1 real); of 30 sampled changed regions 14 good, 6 neutral, 8 grown over formula or answer-table text, 1 into body text; full collections on the heap-limit book 53 → 18 |
 | 6 | The v18 stack (C18) | below | below |
-| 7 | C18 plus `[formula]` on quiet regions (C20) | below | pending at the time of writing |
+| 7 | C18 plus `[formula]` on quiet regions (C20) | below | identical to C18 apart from placeholders on 40/40; 72 placeholders, all display blocks: 71 on formulas, 1 on a logo; 2 logos correctly given none; no quiet formula without one. 16 of 53 formula lines carry 2 or 3 placeholders (one per outline piece). Against v17: real headings lost 96 → 92, labels removed from the outline 24 → 37, label headings 4 → 4, full collections 53 → 17, Java peak 29,195 → 27,805 MiB |
 
 The v18 stack on dev (24 books):
 
