@@ -29,7 +29,7 @@ export const getDeletionPreflightResponseWorkspacesToDestroyItemTagsItemValueMax
 
 
 
-export const GetDeletionPreflightResponse = zod.object({
+export const GetDeletionPreflightResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "canDelete": zod.boolean(),
   "graceDays": zod.int(),
@@ -131,12 +131,12 @@ export const requestAccountDeletionBodyLifecycleGenerationMin = 0;
 
 
 
-export const RequestAccountDeletionBody = zod.object({
+export const RequestAccountDeletionBody = /* @__PURE__ */ zod.object({
   "confirmEmail": zod.string().min(1).max(requestAccountDeletionBodyConfirmEmailMax),
   "lifecycleGeneration": zod.int().min(requestAccountDeletionBodyLifecycleGenerationMin)
 })
 
-export const RequestAccountDeletionResponse = zod.object({
+export const RequestAccountDeletionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "deletionRequestedAt": zod.iso.datetime({"offset":true}).optional(),
   "graceEndsAt": zod.iso.datetime({"offset":true}).optional(),
@@ -163,7 +163,7 @@ export const listAttemptsQueryLimitMax = 100;
 
 
 
-export const ListAttemptsQueryParams = zod.object({
+export const ListAttemptsQueryParams = /* @__PURE__ */ zod.object({
   "sort": zod.enum(['date', 'score', 'quiz', 'workspace']).default(listAttemptsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listAttemptsQueryDirDefault),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids; the quiz\'s current workspace'),
@@ -171,7 +171,7 @@ export const ListAttemptsQueryParams = zod.object({
   "limit": zod.int().min(1).max(listAttemptsQueryLimitMax).default(listAttemptsQueryLimitDefault)
 })
 
-export const ListAttemptsResponse = zod.object({
+export const ListAttemptsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "chapters": zod.array(zod.string()),
@@ -193,11 +193,11 @@ export const ListAttemptsResponse = zod.object({
 /**
  * @summary Get an attempt's result breakdown
  */
-export const GetAttemptParams = zod.object({
+export const GetAttemptParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetAttemptResponse = zod.object({
+export const GetAttemptResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.record(zod.string(), zod.unknown()),
   "chapters": zod.array(zod.string()),
@@ -218,11 +218,11 @@ export const GetAttemptResponse = zod.object({
 /**
  * @summary Upload a public question figure
  */
-export const UploadBankAssetBody = zod.object({
+export const UploadBankAssetBody = /* @__PURE__ */ zod.object({
   "file": zod.instanceof(File)
 })
 
-export const UploadBankAssetResponse = zod.object({
+export const UploadBankAssetResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
 })
@@ -240,7 +240,7 @@ export const copyBankQuestionsBodyQuizNameMax = 120;
 
 
 
-export const CopyBankQuestionsBody = zod.object({
+export const CopyBankQuestionsBody = /* @__PURE__ */ zod.object({
   "chapterId": zod.string().optional().describe('Where a new quiz is filed; goes with quizName'),
   "chapterName": zod.string().max(copyBankQuestionsBodyChapterNameMax).optional().describe('Files a new quiz in the chapter of this name (any case), created when missing; goes with quizName, exclusive with chapterId'),
   "questionIds": zod.array(zod.string()).min(1).max(copyBankQuestionsBodyQuestionIdsMax).describe('Bank questions to copy, in this order'),
@@ -249,7 +249,7 @@ export const CopyBankQuestionsBody = zod.object({
   "workspaceId": zod.string().min(1)
 })
 
-export const CopyBankQuestionsResponse = zod.object({
+export const CopyBankQuestionsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "quizId": zod.string(),
   "workspaceId": zod.string()
@@ -259,7 +259,7 @@ export const CopyBankQuestionsResponse = zod.object({
 /**
  * @summary Topics the learner has answered questions in
  */
-export const BankProgressResponse = zod.object({
+export const BankProgressResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "topics": zod.array(zod.object({
   "answered": zod.int().describe('Current questions with a result for their current content'),
@@ -287,11 +287,11 @@ export const bankQuestionBatchQueryIdsMax = 50;
 
 
 
-export const BankQuestionBatchQueryParams = zod.object({
+export const BankQuestionBatchQueryParams = /* @__PURE__ */ zod.object({
   "ids": zod.array(zod.string()).min(1).max(bankQuestionBatchQueryIdsMax).nullable().describe('Comma-separated question ids, returned in this order')
 })
 
-export const BankQuestionBatchResponse = zod.object({
+export const BankQuestionBatchResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "questions": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -372,11 +372,11 @@ export const BankQuestionBatchResponse = zod.object({
 /**
  * @summary Read a bank question without answers
  */
-export const BankQuestionParams = zod.object({
+export const BankQuestionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const BankQuestionResponse = zod.object({
+export const BankQuestionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "editor": zod.boolean(),
   "examLabel": zod.string(),
@@ -454,16 +454,16 @@ export const BankQuestionResponse = zod.object({
 /**
  * @summary Edit a bank question
  */
-export const SaveBankQuestionParams = zod.object({
+export const SaveBankQuestionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const SaveBankQuestionBody = zod.object({
+export const SaveBankQuestionBody = /* @__PURE__ */ zod.object({
   "question": zod.record(zod.string(), zod.unknown()),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
 
-export const SaveBankQuestionResponse = zod.object({
+export const SaveBankQuestionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "editor": zod.boolean(),
   "examLabel": zod.string(),
@@ -541,15 +541,15 @@ export const SaveBankQuestionResponse = zod.object({
 /**
  * @summary Grade and record one question's answers
  */
-export const CheckBankQuestionParams = zod.object({
+export const CheckBankQuestionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CheckBankQuestionBody = zod.object({
+export const CheckBankQuestionBody = /* @__PURE__ */ zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id')
 })
 
-export const CheckBankQuestionResponse = zod.object({
+export const CheckBankQuestionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "correct": zod.number(),
   "question": zod.record(zod.string(), zod.unknown()),
@@ -560,7 +560,7 @@ export const CheckBankQuestionResponse = zod.object({
 /**
  * @summary Email a question comment
  */
-export const CommentBankQuestionParams = zod.object({
+export const CommentBankQuestionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -568,21 +568,21 @@ export const commentBankQuestionBodyTextMax = 2000;
 
 
 
-export const CommentBankQuestionBody = zod.object({
+export const CommentBankQuestionBody = /* @__PURE__ */ zod.object({
   "text": zod.string().min(1).max(commentBankQuestionBodyTextMax)
 })
 
-export const CommentBankQuestionResponse = zod.void()
+export const CommentBankQuestionResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Read a bank question with its answers to edit it
  */
-export const BankQuestionForEditParams = zod.object({
+export const BankQuestionForEditParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const BankQuestionForEditResponse = zod.object({
+export const BankQuestionForEditResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "editor": zod.boolean(),
   "examLabel": zod.string(),
@@ -660,15 +660,15 @@ export const BankQuestionForEditResponse = zod.object({
 /**
  * @summary Set the review marker
  */
-export const ReviewBankQuestionParams = zod.object({
+export const ReviewBankQuestionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ReviewBankQuestionBody = zod.object({
+export const ReviewBankQuestionBody = /* @__PURE__ */ zod.object({
   "reviewed": zod.boolean()
 })
 
-export const ReviewBankQuestionResponse = zod.object({
+export const ReviewBankQuestionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "editor": zod.boolean(),
   "examLabel": zod.string(),
@@ -755,7 +755,7 @@ export const bankSyllabusResponseExamsItemCoverSeedMax = 16;
 export const bankSyllabusResponseExamsItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 
 
-export const BankSyllabusResponse = zod.object({
+export const BankSyllabusResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "assetsUrl": zod.string(),
   "editor": zod.boolean(),
@@ -789,11 +789,11 @@ export const BankSyllabusResponse = zod.object({
 /**
  * @summary Latest scores for a topic's questions
  */
-export const BankTopicMarksParams = zod.object({
+export const BankTopicMarksParams = /* @__PURE__ */ zod.object({
   "topicId": zod.string()
 })
 
-export const BankTopicMarksResponse = zod.object({
+export const BankTopicMarksResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "marks": zod.record(zod.string(), zod.number()).describe('Answered current questions by id: the latest answer\'s score, 0 to 1')
 })
@@ -802,7 +802,7 @@ export const BankTopicMarksResponse = zod.object({
 /**
  * @summary List topic questions
  */
-export const BankQuestionsParams = zod.object({
+export const BankQuestionsParams = /* @__PURE__ */ zod.object({
   "topicId": zod.string()
 })
 
@@ -813,7 +813,7 @@ export const bankQuestionsQueryLimitMax = 100;
 
 
 
-export const BankQuestionsQueryParams = zod.object({
+export const BankQuestionsQueryParams = /* @__PURE__ */ zod.object({
   "type": zod.string().optional().describe('Comma-separated answer types; a question matches if any of its parts has one'),
   "status": zod.string().optional().describe('Comma-separated latest results: correct, wrong, partial, notDone'),
   "q": zod.string().max(bankQuestionsQueryQMax).optional().describe('Case-insensitive text in the question preview'),
@@ -823,7 +823,7 @@ export const BankQuestionsQueryParams = zod.object({
   "around": zod.string().optional().describe('A question id: the page holding it, when no cursor is given')
 })
 
-export const BankQuestionsResponse = zod.object({
+export const BankQuestionsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answerTypes": zod.array(zod.string()).describe('The answer types present in the topic, for the Question type filter'),
   "items": zod.array(zod.object({
@@ -846,11 +846,11 @@ export const BankQuestionsResponse = zod.object({
 /**
  * @summary A topic's questions with the learner's latest results, for its summary page
  */
-export const BankTopicSummaryParams = zod.object({
+export const BankTopicSummaryParams = /* @__PURE__ */ zod.object({
   "topicId": zod.string()
 })
 
-export const BankTopicSummaryResponse = zod.object({
+export const BankTopicSummaryResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "questions": zod.array(zod.object({
   "answerTypes": zod.array(zod.string()).describe('The distinct answer types of the question\'s parts, in part order'),
@@ -866,7 +866,7 @@ export const BankTopicSummaryResponse = zod.object({
 /**
  * @summary Billing info
  */
-export const GetBillingResponse = zod.object({
+export const GetBillingResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "cancelAtPeriodEnd": zod.boolean(),
   "creditSettings": zod.object({
@@ -917,13 +917,13 @@ export const setAutoReloadBodyThresholdCreditsMax = 1000000;
 
 
 
-export const SetAutoReloadBody = zod.object({
+export const SetAutoReloadBody = /* @__PURE__ */ zod.object({
   "amountCents": zod.int().min(setAutoReloadBodyAmountCentsMin).max(setAutoReloadBodyAmountCentsMax),
   "enabled": zod.boolean(),
   "thresholdCredits": zod.int().min(setAutoReloadBodyThresholdCreditsMin).max(setAutoReloadBodyThresholdCreditsMax)
 })
 
-export const SetAutoReloadResponse = zod.object({
+export const SetAutoReloadResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "armed": zod.boolean()
 })
@@ -932,11 +932,11 @@ export const SetAutoReloadResponse = zod.object({
 /**
  * @summary Start checkout
  */
-export const BillingCheckoutBody = zod.object({
+export const BillingCheckoutBody = /* @__PURE__ */ zod.object({
   "planTier": zod.enum(['pro'])
 })
 
-export const BillingCheckoutResponse = zod.object({
+export const BillingCheckoutResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
 })
@@ -945,7 +945,7 @@ export const BillingCheckoutResponse = zod.object({
 /**
  * @summary Stripe invoices
  */
-export const ListInvoicesResponse = zod.object({
+export const ListInvoicesResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -964,7 +964,7 @@ export const ListInvoicesResponse = zod.object({
 /**
  * @summary Start a checkout that saves the auto-reload card
  */
-export const BillingPaymentMethodResponse = zod.object({
+export const BillingPaymentMethodResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
 })
@@ -973,7 +973,7 @@ export const BillingPaymentMethodResponse = zod.object({
 /**
  * @summary Open billing portal
  */
-export const BillingPortalResponse = zod.object({
+export const BillingPortalResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
 })
@@ -987,11 +987,11 @@ export const setSpendingLimitBodyLimitCentsMax = 100000000;
 
 
 
-export const SetSpendingLimitBody = zod.object({
+export const SetSpendingLimitBody = /* @__PURE__ */ zod.object({
   "limitCents": zod.int().min(setSpendingLimitBodyLimitCentsMin).max(setSpendingLimitBodyLimitCentsMax)
 })
 
-export const SetSpendingLimitResponse = zod.void()
+export const SetSpendingLimitResponse = /* @__PURE__ */ zod.void()
 
 
 /**
@@ -1002,11 +1002,11 @@ export const billingTopUpBodyAmountCentsMax = 10000;
 
 
 
-export const BillingTopUpBody = zod.object({
+export const BillingTopUpBody = /* @__PURE__ */ zod.object({
   "amountCents": zod.int().min(billingTopUpBodyAmountCentsMin).max(billingTopUpBodyAmountCentsMax)
 })
 
-export const BillingTopUpResponse = zod.object({
+export const BillingTopUpResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "url": zod.string()
 })
@@ -1015,17 +1015,17 @@ export const BillingTopUpResponse = zod.object({
 /**
  * @summary Delete a chapter
  */
-export const DeleteChapterParams = zod.object({
+export const DeleteChapterParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const DeleteChapterResponse = zod.void()
+export const DeleteChapterResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Update a chapter
  */
-export const UpdateChapterParams = zod.object({
+export const UpdateChapterParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -1033,12 +1033,12 @@ export const updateChapterBodyNameMax = 60;
 
 
 
-export const UpdateChapterBody = zod.object({
+export const UpdateChapterBody = /* @__PURE__ */ zod.object({
   "name": zod.string().min(1).max(updateChapterBodyNameMax).optional(),
   "order": zod.int().optional()
 })
 
-export const UpdateChapterResponse = zod.object({
+export const UpdateChapterResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "fileIds": zod.array(zod.string()),
   "id": zod.string(),
@@ -1051,7 +1051,7 @@ export const UpdateChapterResponse = zod.object({
 /**
  * @summary Reverse one direct AI edit
  */
-export const UndoEditOperationParams = zod.object({
+export const UndoEditOperationParams = /* @__PURE__ */ zod.object({
   "operationId": zod.string()
 })
 
@@ -1059,11 +1059,11 @@ export const undoEditOperationBodyRequestIdMax = 64;
 
 
 
-export const UndoEditOperationBody = zod.object({
+export const UndoEditOperationBody = /* @__PURE__ */ zod.object({
   "requestId": zod.string().min(1).max(undoEditOperationBodyRequestIdMax).describe('Client-generated idempotency key for this action')
 })
 
-export const UndoEditOperationResponse = zod.object({
+export const UndoEditOperationResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
   "effect": zod.object({
@@ -1106,28 +1106,28 @@ export const UndoEditOperationResponse = zod.object({
 /**
  * @summary Soft-delete a comment
  */
-export const DeleteMaterialCommentParams = zod.object({
+export const DeleteMaterialCommentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const DeleteMaterialCommentResponse = zod.void()
+export const DeleteMaterialCommentResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Edit an authored comment
  */
-export const UpdateMaterialCommentParams = zod.object({
+export const UpdateMaterialCommentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
 
 
 
-export const UpdateMaterialCommentBody = zod.object({
+export const UpdateMaterialCommentBody = /* @__PURE__ */ zod.object({
   "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
 })
 
-export const UpdateMaterialCommentResponse = zod.object({
+export const UpdateMaterialCommentResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
@@ -1145,21 +1145,21 @@ export const UpdateMaterialCommentResponse = zod.object({
 /**
  * @summary Delete a conversation
  */
-export const DeleteConversationParams = zod.object({
+export const DeleteConversationParams = /* @__PURE__ */ zod.object({
   "id": zod.string().describe('Conversation id')
 })
 
-export const DeleteConversationResponse = zod.void()
+export const DeleteConversationResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Load a conversation's message history
  */
-export const ListMessagesParams = zod.object({
+export const ListMessagesParams = /* @__PURE__ */ zod.object({
   "id": zod.string().describe('Conversation id')
 })
 
-export const ListMessagesResponseItem = zod.object({
+export const ListMessagesResponseItem = /* @__PURE__ */ zod.object({
   "activity": zod.array(zod.object({
   "callId": zod.string().optional(),
   "capture": zod.object({
@@ -1233,34 +1233,34 @@ export const ListMessagesResponseItem = zod.object({
   "role": zod.string(),
   "status": zod.string()
 })
-export const ListMessagesResponse = zod.array(ListMessagesResponseItem)
+export const ListMessagesResponse = /* @__PURE__ */ zod.array(ListMessagesResponseItem)
 
 
 /**
  * @summary Soft-delete a comment discussion
  */
-export const DeleteMaterialDiscussionParams = zod.object({
+export const DeleteMaterialDiscussionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const DeleteMaterialDiscussionResponse = zod.void()
+export const DeleteMaterialDiscussionResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Add a comment to a discussion
  */
-export const CreateMaterialCommentParams = zod.object({
+export const CreateMaterialCommentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
 
 
 
-export const CreateMaterialCommentBody = zod.object({
+export const CreateMaterialCommentBody = /* @__PURE__ */ zod.object({
   "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
 })
 
-export const CreateMaterialCommentResponse = zod.object({
+export const CreateMaterialCommentResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorAvatarUrl": zod.string().optional(),
   "authorName": zod.string(),
@@ -1287,7 +1287,7 @@ export const reportEditIncidentBodySizeBytesMax = 1073741824;
 
 
 
-export const ReportEditIncidentBody = zod.object({
+export const ReportEditIncidentBody = /* @__PURE__ */ zod.object({
   "fileId": zod.string().min(1).max(reportEditIncidentBodyFileIdMax).regex(reportEditIncidentBodyFileIdRegExp).describe('The note (material) or source file'),
   "fileKind": zod.enum(['material', 'source_file']),
   "kind": zod.enum(['other_epoch_draft', 'draft_unrestorable', 'draft_storage_failed', 'unconfirmed_edit', 'offline_episode', 'discard_unsaved']),
@@ -1295,13 +1295,13 @@ export const ReportEditIncidentBody = zod.object({
   "sizeBytes": zod.int().min(reportEditIncidentBodySizeBytesMin).max(reportEditIncidentBodySizeBytesMax).optional()
 })
 
-export const ReportEditIncidentResponse = zod.void()
+export const ReportEditIncidentResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary List events
  */
-export const ListEventsResponseItem = zod.object({
+export const ListEventsResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "end": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -1311,7 +1311,7 @@ export const ListEventsResponseItem = zod.object({
   "start": zod.iso.datetime({"offset":true}),
   "title": zod.string()
 })
-export const ListEventsResponse = zod.array(ListEventsResponseItem)
+export const ListEventsResponse = /* @__PURE__ */ zod.array(ListEventsResponseItem)
 
 
 /**
@@ -1325,7 +1325,7 @@ export const createEventBodyTitleMax = 60;
 
 
 
-export const CreateEventBody = zod.object({
+export const CreateEventBody = /* @__PURE__ */ zod.object({
   "end": zod.iso.datetime({"offset":true}),
   "labelIds": zod.array(zod.string()).nullish(),
   "location": zod.string().max(createEventBodyLocationMax).optional(),
@@ -1334,7 +1334,7 @@ export const CreateEventBody = zod.object({
   "title": zod.string().min(1).max(createEventBodyTitleMax)
 })
 
-export const CreateEventResponse = zod.object({
+export const CreateEventResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "end": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -1349,17 +1349,17 @@ export const CreateEventResponse = zod.object({
 /**
  * @summary Delete an event
  */
-export const DeleteEventParams = zod.object({
+export const DeleteEventParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const DeleteEventResponse = zod.void()
+export const DeleteEventResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Update an event
  */
-export const UpdateEventParams = zod.object({
+export const UpdateEventParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -1371,7 +1371,7 @@ export const updateEventBodyTitleMax = 60;
 
 
 
-export const UpdateEventBody = zod.object({
+export const UpdateEventBody = /* @__PURE__ */ zod.object({
   "end": zod.iso.datetime({"offset":true}).optional(),
   "labelIds": zod.array(zod.string()).optional(),
   "location": zod.string().max(updateEventBodyLocationMax).optional(),
@@ -1380,7 +1380,7 @@ export const UpdateEventBody = zod.object({
   "title": zod.string().min(1).max(updateEventBodyTitleMax).optional()
 })
 
-export const UpdateEventResponse = zod.object({
+export const UpdateEventResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "end": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -1395,7 +1395,7 @@ export const UpdateEventResponse = zod.object({
 /**
  * @summary Public flashcards
  */
-export const ExploreFlashcardSetsResponseItem = zod.object({
+export const ExploreFlashcardSetsResponseItem = /* @__PURE__ */ zod.object({
   "author": zod.string(),
   "canClone": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -1459,13 +1459,13 @@ export const ExploreFlashcardSetsResponseItem = zod.object({
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
-export const ExploreFlashcardSetsResponse = zod.array(ExploreFlashcardSetsResponseItem)
+export const ExploreFlashcardSetsResponse = /* @__PURE__ */ zod.array(ExploreFlashcardSetsResponseItem)
 
 
 /**
  * @summary Public quizzes
  */
-export const ExploreQuizzesResponseItem = zod.object({
+export const ExploreQuizzesResponseItem = /* @__PURE__ */ zod.object({
   "author": zod.string(),
   "canClone": zod.boolean(),
   "canEdit": zod.boolean(),
@@ -1530,7 +1530,7 @@ export const ExploreQuizzesResponseItem = zod.object({
   "workspaceId": zod.string(),
   "workspaceName": zod.string()
 })
-export const ExploreQuizzesResponse = zod.array(ExploreQuizzesResponseItem)
+export const ExploreQuizzesResponse = /* @__PURE__ */ zod.array(ExploreQuizzesResponseItem)
 
 
 /**
@@ -1547,7 +1547,7 @@ export const exploreWorkspacesResponseTagsItemValueMax = 35;
 
 
 
-export const ExploreWorkspacesResponseItem = zod.object({
+export const ExploreWorkspacesResponseItem = /* @__PURE__ */ zod.object({
   "author": zod.string(),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -1587,7 +1587,7 @@ export const ExploreWorkspacesResponseItem = zod.object({
   "value": zod.string().min(1).max(exploreWorkspacesResponseTagsItemValueMax)
 }))
 })
-export const ExploreWorkspacesResponse = zod.array(ExploreWorkspacesResponseItem)
+export const ExploreWorkspacesResponse = /* @__PURE__ */ zod.array(ExploreWorkspacesResponseItem)
 
 
 /**
@@ -1601,7 +1601,7 @@ export const listOwnedFilesQueryLimitMax = 100;
 
 
 
-export const ListOwnedFilesQueryParams = zod.object({
+export const ListOwnedFilesQueryParams = /* @__PURE__ */ zod.object({
   "kind": zod.string().optional().describe('Comma-separated file kinds'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "scope": zod.enum(['owned', 'member']).default(listOwnedFilesQueryScopeDefault).describe('owned: the caller\'s workspaces; member: also every workspace they are a member of'),
@@ -1611,7 +1611,7 @@ export const ListOwnedFilesQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListOwnedFilesResponse = zod.object({
+export const ListOwnedFilesResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -1687,7 +1687,7 @@ export const ListOwnedFilesResponse = zod.object({
 /**
  * @summary Move a file to the trash
  */
-export const DeleteFileParams = zod.object({
+export const DeleteFileParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -1695,21 +1695,21 @@ export const deleteFileQueryRequestIdMax = 64;
 
 
 
-export const DeleteFileQueryParams = zod.object({
+export const DeleteFileQueryParams = /* @__PURE__ */ zod.object({
   "requestId": zod.string().max(deleteFileQueryRequestIdMax).optional().describe('Optional idempotency key for this trash action')
 })
 
-export const DeleteFileResponse = zod.void()
+export const DeleteFileResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Get a file
  */
-export const GetFileParams = zod.object({
+export const GetFileParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetFileResponse = zod.object({
+export const GetFileResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
@@ -1781,7 +1781,7 @@ export const GetFileResponse = zod.object({
 /**
  * @summary Update a file
  */
-export const UpdateFileParams = zod.object({
+export const UpdateFileParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -1789,12 +1789,12 @@ export const updateFileBodyNameMax = 120;
 
 
 
-export const UpdateFileBody = zod.object({
+export const UpdateFileBody = /* @__PURE__ */ zod.object({
   "chapterId": zod.string().optional(),
   "name": zod.string().min(1).max(updateFileBodyNameMax).optional()
 })
 
-export const UpdateFileResponse = zod.object({
+export const UpdateFileResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
@@ -1866,7 +1866,7 @@ export const UpdateFileResponse = zod.object({
 /**
  * @summary Read private PDF annotations
  */
-export const ListPDFAnnotationsParams = zod.object({
+export const ListPDFAnnotationsParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -1880,7 +1880,7 @@ export const listPDFAnnotationsResponseTextMax = 2000;
 
 
 
-export const ListPDFAnnotationsResponseItem = zod.object({
+export const ListPDFAnnotationsResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorId": zod.string(),
   "color": zod.string().regex(listPDFAnnotationsResponseColorRegExp),
@@ -1903,13 +1903,13 @@ export const ListPDFAnnotationsResponseItem = zod.object({
   "text": zod.string().max(listPDFAnnotationsResponseTextMax).optional(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
-export const ListPDFAnnotationsResponse = zod.array(ListPDFAnnotationsResponseItem)
+export const ListPDFAnnotationsResponse = /* @__PURE__ */ zod.array(ListPDFAnnotationsResponseItem)
 
 
 /**
  * @summary Create a private PDF annotation
  */
-export const CreatePDFAnnotationParams = zod.object({
+export const CreatePDFAnnotationParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -1923,7 +1923,7 @@ export const createPDFAnnotationBodyTextMax = 2000;
 
 
 
-export const CreatePDFAnnotationBody = zod.object({
+export const CreatePDFAnnotationBody = /* @__PURE__ */ zod.object({
   "color": zod.string().regex(createPDFAnnotationBodyColorRegExp),
   "kind": zod.enum(['highlight', 'rectangle', 'ellipse', 'pen', 'text']),
   "page": zod.int().min(1),
@@ -1951,7 +1951,7 @@ export const createPDFAnnotationResponseTextMax = 2000;
 
 
 
-export const CreatePDFAnnotationResponse = zod.object({
+export const CreatePDFAnnotationResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorId": zod.string(),
   "color": zod.string().regex(createPDFAnnotationResponseColorRegExp),
@@ -1979,18 +1979,18 @@ export const CreatePDFAnnotationResponse = zod.object({
 /**
  * @summary Delete an authored PDF annotation
  */
-export const DeletePDFAnnotationParams = zod.object({
+export const DeletePDFAnnotationParams = /* @__PURE__ */ zod.object({
   "id": zod.string(),
   "annotationId": zod.string()
 })
 
-export const DeletePDFAnnotationResponse = zod.void()
+export const DeletePDFAnnotationResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Update an authored PDF annotation
  */
-export const UpdatePDFAnnotationParams = zod.object({
+export const UpdatePDFAnnotationParams = /* @__PURE__ */ zod.object({
   "id": zod.string(),
   "annotationId": zod.string()
 })
@@ -2005,7 +2005,7 @@ export const updatePDFAnnotationBodyTextMax = 2000;
 
 
 
-export const UpdatePDFAnnotationBody = zod.object({
+export const UpdatePDFAnnotationBody = /* @__PURE__ */ zod.object({
   "color": zod.string().regex(updatePDFAnnotationBodyColorRegExp),
   "kind": zod.enum(['highlight', 'rectangle', 'ellipse', 'pen', 'text']),
   "page": zod.int().min(1),
@@ -2033,7 +2033,7 @@ export const updatePDFAnnotationResponseTextMax = 2000;
 
 
 
-export const UpdatePDFAnnotationResponse = zod.object({
+export const UpdatePDFAnnotationResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "authorId": zod.string(),
   "color": zod.string().regex(updatePDFAnnotationResponseColorRegExp),
@@ -2061,7 +2061,7 @@ export const UpdatePDFAnnotationResponse = zod.object({
 /**
  * @summary Clone a file into a workspace
  */
-export const CloneFileParams = zod.object({
+export const CloneFileParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -2072,14 +2072,14 @@ export const cloneFileBodyNameMax = 120;
 
 
 
-export const CloneFileBody = zod.object({
+export const CloneFileBody = /* @__PURE__ */ zod.object({
   "chapterId": zod.string().optional().describe('A chapter of the workspace; exclusive with chapterName'),
   "chapterName": zod.string().max(cloneFileBodyChapterNameMax).optional().describe('A chapter of this name (any case), created when missing'),
   "name": zod.string().min(1).max(cloneFileBodyNameMax).describe('The copy\'s name'),
   "workspaceId": zod.string().min(1)
 })
 
-export const CloneFileResponse = zod.object({
+export const CloneFileResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
@@ -2151,11 +2151,11 @@ export const CloneFileResponse = zod.object({
 /**
  * @summary Create source room token
  */
-export const CreateSourceCollaborationTokenParams = zod.object({
+export const CreateSourceCollaborationTokenParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CreateSourceCollaborationTokenResponse = zod.object({
+export const CreateSourceCollaborationTokenResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
   "epoch": zod.int(),
@@ -2169,11 +2169,11 @@ export const CreateSourceCollaborationTokenResponse = zod.object({
 /**
  * @summary Get presigned file reads
  */
-export const GetFileLinksParams = zod.object({
+export const GetFileLinksParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetFileLinksResponse = zod.object({
+export const GetFileLinksResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "expiresAt": zod.iso.datetime({"offset":true}),
   "previewUrl": zod.string().optional(),
@@ -2184,21 +2184,21 @@ export const GetFileLinksResponse = zod.object({
 /**
  * @summary Cancel queued processing of source changes
  */
-export const CancelSourceChangesParams = zod.object({
+export const CancelSourceChangesParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CancelSourceChangesResponse = zod.void()
+export const CancelSourceChangesResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Process the latest saved source changes
  */
-export const ProcessSourceChangesParams = zod.object({
+export const ProcessSourceChangesParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ProcessSourceChangesResponse = zod.object({
+export const ProcessSourceChangesResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "checkpoint": zod.int(),
   "fileId": zod.string(),
@@ -2210,29 +2210,29 @@ export const ProcessSourceChangesResponse = zod.object({
 /**
  * @summary Process a failed file again
  */
-export const RetryFileProcessingParams = zod.object({
+export const RetryFileProcessingParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const RetryFileProcessingBody = zod.object({
+export const RetryFileProcessingBody = /* @__PURE__ */ zod.object({
   "parseMode": zod.enum(['fast', 'none'])
 })
 
-export const RetryFileProcessingResponse = zod.void()
+export const RetryFileProcessingResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Read source editing session
  */
-export const GetSourceSessionParams = zod.object({
+export const GetSourceSessionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetSourceSessionQueryParams = zod.object({
+export const GetSourceSessionQueryParams = /* @__PURE__ */ zod.object({
   "view": zod.boolean().optional().describe('Viewer read: read access only, omits pendingEffects, and state unless checkpoint is ahead of indexedCheckpoint')
 })
 
-export const GetSourceSessionResponse = zod.object({
+export const GetSourceSessionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
   "baseRevision": zod.int(),
@@ -2264,11 +2264,11 @@ export const GetSourceSessionResponse = zod.object({
 /**
  * @summary Store a browser capture of an edited Office file as its thumbnail
  */
-export const CaptureFileThumbnailParams = zod.object({
+export const CaptureFileThumbnailParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CaptureFileThumbnailResponse = zod.void()
+export const CaptureFileThumbnailResponse = /* @__PURE__ */ zod.void()
 
 
 /**
@@ -2279,13 +2279,13 @@ export const createFlashcardSetBodyNameMax = 120;
 
 
 
-export const CreateFlashcardSetBody = zod.object({
+export const CreateFlashcardSetBody = /* @__PURE__ */ zod.object({
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).default(createFlashcardSetBodyColorDefault),
   "name": zod.string().max(createFlashcardSetBodyNameMax).optional(),
   "workspaceId": zod.string().optional()
 })
 
-export const CreateFlashcardSetResponse = zod.object({
+export const CreateFlashcardSetResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -2356,11 +2356,11 @@ export const CreateFlashcardSetResponse = zod.object({
 /**
  * @summary Get flashcards
  */
-export const GetFlashcardSetParams = zod.object({
+export const GetFlashcardSetParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetFlashcardSetResponse = zod.object({
+export const GetFlashcardSetResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -2431,11 +2431,11 @@ export const GetFlashcardSetResponse = zod.object({
 /**
  * @summary List cards
  */
-export const ListCardsParams = zod.object({
+export const ListCardsParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListCardsResponseItem = zod.object({
+export const ListCardsResponseItem = /* @__PURE__ */ zod.object({
   "back": zod.string(),
   "front": zod.string(),
   "id": zod.string(),
@@ -2445,13 +2445,13 @@ export const ListCardsResponseItem = zod.object({
   "materialId": zod.string(),
   "revision": zod.int()
 })
-export const ListCardsResponse = zod.array(ListCardsResponseItem)
+export const ListCardsResponse = /* @__PURE__ */ zod.array(ListCardsResponseItem)
 
 
 /**
  * @summary Update flashcard metadata
  */
-export const UpdateFlashcardSetParams = zod.object({
+export const UpdateFlashcardSetParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -2459,12 +2459,12 @@ export const updateFlashcardSetBodyNameMax = 120;
 
 
 
-export const UpdateFlashcardSetBody = zod.object({
+export const UpdateFlashcardSetBody = /* @__PURE__ */ zod.object({
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
   "name": zod.string().min(1).max(updateFlashcardSetBodyNameMax).optional()
 })
 
-export const UpdateFlashcardSetResponse = zod.object({
+export const UpdateFlashcardSetResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -2535,15 +2535,15 @@ export const UpdateFlashcardSetResponse = zod.object({
 /**
  * @summary Update standalone flashcard sharing
  */
-export const UpdateFlashcardSetSharingParams = zod.object({
+export const UpdateFlashcardSetSharingParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const UpdateFlashcardSetSharingBody = zod.object({
+export const UpdateFlashcardSetSharingBody = /* @__PURE__ */ zod.object({
   "privacy": zod.enum(['private', 'public', 'link']).describe('Visibility for a standalone material')
 })
 
-export const UpdateFlashcardSetSharingResponse = zod.object({
+export const UpdateFlashcardSetSharingResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -2614,7 +2614,7 @@ export const UpdateFlashcardSetSharingResponse = zod.object({
 /**
  * @summary Integration status
  */
-export const GetIntegrationsResponse = zod.object({
+export const GetIntegrationsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "google": zod.boolean(),
   "googleDriveReadonly": zod.boolean(),
@@ -2626,7 +2626,7 @@ export const GetIntegrationsResponse = zod.object({
 /**
  * @summary Google picker token
  */
-export const GooglePickerTokenResponse = zod.object({
+export const GooglePickerTokenResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "accessToken": zod.string()
 })
@@ -2635,7 +2635,7 @@ export const GooglePickerTokenResponse = zod.object({
 /**
  * @summary OneDrive host for File Picker
  */
-export const MicrosoftDriveResponse = zod.object({
+export const MicrosoftDriveResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "driveType": zod.string(),
   "id": zod.string(),
@@ -2646,39 +2646,39 @@ export const MicrosoftDriveResponse = zod.object({
 /**
  * @summary Disconnect a provider
  */
-export const DeleteIntegrationParams = zod.object({
+export const DeleteIntegrationParams = /* @__PURE__ */ zod.object({
   "provider": zod.string()
 })
 
-export const DeleteIntegrationResponse = zod.void()
+export const DeleteIntegrationResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary List labels
  */
-export const ListLabelsResponseItem = zod.object({
+export const ListLabelsResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "id": zod.string(),
   "name": zod.string()
 })
-export const ListLabelsResponse = zod.array(ListLabelsResponseItem)
+export const ListLabelsResponse = /* @__PURE__ */ zod.array(ListLabelsResponseItem)
 
 
 /**
  * @summary Delete a label
  */
-export const DeleteLabelParams = zod.object({
+export const DeleteLabelParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const DeleteLabelResponse = zod.void()
+export const DeleteLabelResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Update a label
  */
-export const UpdateLabelParams = zod.object({
+export const UpdateLabelParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -2686,12 +2686,12 @@ export const updateLabelBodyNameMax = 35;
 
 
 
-export const UpdateLabelBody = zod.object({
+export const UpdateLabelBody = /* @__PURE__ */ zod.object({
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']).optional(),
   "name": zod.string().min(1).max(updateLabelBodyNameMax).optional()
 })
 
-export const UpdateLabelResponse = zod.object({
+export const UpdateLabelResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "color": zod.enum(['green', 'purple', 'blue', 'amber', 'coral', 'graphite', 'transparent']),
   "id": zod.string(),
@@ -2702,7 +2702,7 @@ export const UpdateLabelResponse = zod.object({
 /**
  * @summary Learning's Progress tab: workspaces in progress and finished, the leading one's items
  */
-export const GetLearningProgressQueryParams = zod.object({
+export const GetLearningProgressQueryParams = /* @__PURE__ */ zod.object({
   "lead": zod.string().optional().describe('A listed workspace whose map to return instead of the most recently studied one')
 })
 
@@ -2722,7 +2722,7 @@ export const getLearningProgressResponseFinishedItemCoverSeedMax = 16;
 export const getLearningProgressResponseFinishedItemCoverSeedRegExp = new RegExp('^[a-z0-9]*$');
 
 
-export const GetLearningProgressResponse = zod.object({
+export const GetLearningProgressResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "active": zod.array(zod.object({
   "cover": zod.object({
@@ -2787,7 +2787,7 @@ export const listOwnedMaterialsQueryLimitMax = 100;
 
 
 
-export const ListOwnedMaterialsQueryParams = zod.object({
+export const ListOwnedMaterialsQueryParams = /* @__PURE__ */ zod.object({
   "kind": zod.string().optional().describe('Comma-separated kinds: note, quiz, flashcards, mindmap, diagram; empty means note, quiz, flashcards'),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
   "location": zod.string().optional().describe('Comma-separated places the material lives: workspace, standalone; empty means anywhere. Note-embedded quizzes and flashcard sets are never listed'),
@@ -2798,7 +2798,7 @@ export const ListOwnedMaterialsQueryParams = zod.object({
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListOwnedMaterialsResponse = zod.object({
+export const ListOwnedMaterialsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "cardCount": zod.int().optional(),
@@ -2828,7 +2828,7 @@ export const createStandaloneMaterialBodyTitleMax = 120;
 
 
 
-export const CreateStandaloneMaterialBody = zod.object({
+export const CreateStandaloneMaterialBody = /* @__PURE__ */ zod.object({
   "content": zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
@@ -2839,7 +2839,7 @@ export const CreateStandaloneMaterialBody = zod.object({
   "title": zod.string().max(createStandaloneMaterialBodyTitleMax).optional()
 })
 
-export const CreateStandaloneMaterialResponse = zod.object({
+export const CreateStandaloneMaterialResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -2971,7 +2971,7 @@ export const CreateStandaloneMaterialResponse = zod.object({
 /**
  * @summary Move a material to the trash
  */
-export const DeleteMaterialParams = zod.object({
+export const DeleteMaterialParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -2979,21 +2979,21 @@ export const deleteMaterialQueryRequestIdMax = 64;
 
 
 
-export const DeleteMaterialQueryParams = zod.object({
+export const DeleteMaterialQueryParams = /* @__PURE__ */ zod.object({
   "requestId": zod.string().max(deleteMaterialQueryRequestIdMax).optional().describe('Optional idempotency key for this trash action')
 })
 
-export const DeleteMaterialResponse = zod.void()
+export const DeleteMaterialResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Get a material
  */
-export const GetMaterialParams = zod.object({
+export const GetMaterialParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetMaterialResponse = zod.object({
+export const GetMaterialResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3125,7 +3125,7 @@ export const GetMaterialResponse = zod.object({
 /**
  * @summary Clone a material into a workspace or standalone
  */
-export const CloneMaterialParams = zod.object({
+export const CloneMaterialParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -3135,14 +3135,14 @@ export const cloneMaterialBodyTitleMax = 120;
 
 
 
-export const CloneMaterialBody = zod.object({
+export const CloneMaterialBody = /* @__PURE__ */ zod.object({
   "chapterId": zod.string().optional().describe('A chapter of the workspace; exclusive with chapterName'),
   "chapterName": zod.string().max(cloneMaterialBodyChapterNameMax).optional().describe('A chapter of this name (any case), created when missing'),
   "title": zod.string().min(1).max(cloneMaterialBodyTitleMax).describe('The copy\'s title, unique in its workspace'),
   "workspaceId": zod.string().optional().describe('Omitted for a standalone copy')
 })
 
-export const CloneMaterialResponse = zod.object({
+export const CloneMaterialResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3274,16 +3274,16 @@ export const CloneMaterialResponse = zod.object({
 /**
  * @summary Create a short-lived material room token
  */
-export const CreateMaterialCollaborationTokenParams = zod.object({
+export const CreateMaterialCollaborationTokenParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CreateMaterialCollaborationTokenBody = zod.object({
+export const CreateMaterialCollaborationTokenBody = /* @__PURE__ */ zod.object({
   "access": zod.enum(['read']).optional(),
   "document": zod.enum(['content', 'keys']).optional()
 })
 
-export const CreateMaterialCollaborationTokenResponse = zod.object({
+export const CreateMaterialCollaborationTokenResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
   "expiresAt": zod.int(),
@@ -3296,11 +3296,11 @@ export const CreateMaterialCollaborationTokenResponse = zod.object({
 /**
  * @summary List nested material comment discussions
  */
-export const ListMaterialDiscussionsParams = zod.object({
+export const ListMaterialDiscussionsParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListMaterialDiscussionsResponseItem = zod.object({
+export const ListMaterialDiscussionsResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "anchorEnd": zod.string().optional(),
   "anchorQuote": zod.string(),
@@ -3329,13 +3329,13 @@ export const ListMaterialDiscussionsResponseItem = zod.object({
   "updatedAt": zod.iso.datetime({"offset":true}),
   "userId": zod.string()
 })
-export const ListMaterialDiscussionsResponse = zod.array(ListMaterialDiscussionsResponseItem)
+export const ListMaterialDiscussionsResponse = /* @__PURE__ */ zod.array(ListMaterialDiscussionsResponseItem)
 
 
 /**
  * @summary Create a comment discussion
  */
-export const CreateMaterialDiscussionParams = zod.object({
+export const CreateMaterialDiscussionParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -3349,7 +3349,7 @@ export const createMaterialDiscussionBodyAnchorStartMax = 4096;
 
 
 
-export const CreateMaterialDiscussionBody = zod.object({
+export const CreateMaterialDiscussionBody = /* @__PURE__ */ zod.object({
   "anchorEnd": zod.string().max(createMaterialDiscussionBodyAnchorEndMax).optional(),
   "anchorQuote": zod.string().max(createMaterialDiscussionBodyAnchorQuoteMax).optional(),
   "anchorStart": zod.string().max(createMaterialDiscussionBodyAnchorStartMax).optional(),
@@ -3358,7 +3358,7 @@ export const CreateMaterialDiscussionBody = zod.object({
   "contentRich": zod.array(zod.record(zod.string(), zod.unknown())).min(1).nullable()
 })
 
-export const CreateMaterialDiscussionResponse = zod.object({
+export const CreateMaterialDiscussionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "anchorEnd": zod.string().optional(),
   "anchorQuote": zod.string(),
@@ -3392,11 +3392,11 @@ export const CreateMaterialDiscussionResponse = zod.object({
 /**
  * @summary Create a quiz or flashcard set embedded in a note
  */
-export const CreateEmbeddedMaterialParams = zod.object({
+export const CreateEmbeddedMaterialParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CreateEmbeddedMaterialBody = zod.object({
+export const CreateEmbeddedMaterialBody = /* @__PURE__ */ zod.object({
   "cards": zod.array(zod.object({
   "back": zod.string(),
   "front": zod.string()
@@ -3405,7 +3405,7 @@ export const CreateEmbeddedMaterialBody = zod.object({
   "questions": zod.array(zod.record(zod.string(), zod.unknown())).nullish()
 })
 
-export const CreateEmbeddedMaterialResponse = zod.object({
+export const CreateEmbeddedMaterialResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3537,7 +3537,7 @@ export const CreateEmbeddedMaterialResponse = zod.object({
 /**
  * @summary Update material metadata
  */
-export const UpdateMaterialParams = zod.object({
+export const UpdateMaterialParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -3545,14 +3545,14 @@ export const updateMaterialBodyTitleMax = 120;
 
 
 
-export const UpdateMaterialBody = zod.object({
+export const UpdateMaterialBody = /* @__PURE__ */ zod.object({
   "chapterId": zod.string().optional().describe('Chapter to file under; empty string unfiles; omit to leave unchanged'),
   "scopeChapters": zod.array(zod.string()).optional(),
   "scopeFileNames": zod.array(zod.string()).optional(),
   "title": zod.string().min(1).max(updateMaterialBodyTitleMax).optional()
 })
 
-export const UpdateMaterialResponse = zod.object({
+export const UpdateMaterialResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "id": zod.string(),
@@ -3566,15 +3566,15 @@ export const UpdateMaterialResponse = zod.object({
 /**
  * @summary Update standalone material sharing
  */
-export const UpdateMaterialSharingParams = zod.object({
+export const UpdateMaterialSharingParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const UpdateMaterialSharingBody = zod.object({
+export const UpdateMaterialSharingBody = /* @__PURE__ */ zod.object({
   "privacy": zod.enum(['private', 'public', 'link']).describe('Visibility for a standalone material')
 })
 
-export const UpdateMaterialSharingResponse = zod.object({
+export const UpdateMaterialSharingResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -3706,7 +3706,7 @@ export const UpdateMaterialSharingResponse = zod.object({
 /**
  * @summary Current user
  */
-export const GetMeResponse = zod.object({
+export const GetMeResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -3765,12 +3765,12 @@ export const updateMeBodyNameMax = 60;
 
 
 
-export const UpdateMeBody = zod.object({
+export const UpdateMeBody = /* @__PURE__ */ zod.object({
   "avatarIconId": zod.string().regex(updateMeBodyAvatarIconIdRegExp).optional().describe('Curated icon ID; empty restores the current Clerk photo; omitted preserves the selection'),
   "name": zod.string().min(1).max(updateMeBodyNameMax).describe('Display name')
 })
 
-export const UpdateMeResponse = zod.object({
+export const UpdateMeResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "account": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -3824,18 +3824,18 @@ export const UpdateMeResponse = zod.object({
 /**
  * @summary Set the chat settings
  */
-export const SetChatPrefsBody = zod.object({
+export const SetChatPrefsBody = /* @__PURE__ */ zod.object({
   "sendKey": zod.enum(['enter', 'shift_enter']).optional().describe('The key that sends a message; the other adds a new line'),
   "steps": zod.enum(['normal', 'verbose']).optional().describe('How much of a turn\'s tool work the chat shows')
 })
 
-export const SetChatPrefsResponse = zod.void()
+export const SetChatPrefsResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Actor ingest slot remaining
  */
-export const GetIngestSlotsResponse = zod.object({
+export const GetIngestSlotsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "slotsFree": zod.int(),
   "slotsLimit": zod.int(),
@@ -3846,7 +3846,7 @@ export const GetIngestSlotsResponse = zod.object({
 /**
  * @summary Saved provider keys
  */
-export const ListLLMCredentialsResponse = zod.object({
+export const ListLLMCredentialsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "credentials": zod.array(zod.object({
   "last4": zod.string(),
@@ -3869,38 +3869,38 @@ export const upsertLLMCredentialBodyApiKeyMax = 512;
 
 
 
-export const UpsertLLMCredentialBody = zod.object({
+export const UpsertLLMCredentialBody = /* @__PURE__ */ zod.object({
   "apiKey": zod.string().max(upsertLLMCredentialBodyApiKeyMax),
   "providerSlug": zod.string()
 })
 
-export const UpsertLLMCredentialResponse = zod.void()
+export const UpsertLLMCredentialResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Remove a provider key
  */
-export const DeleteLLMCredentialParams = zod.object({
+export const DeleteLLMCredentialParams = /* @__PURE__ */ zod.object({
   "provider": zod.string()
 })
 
-export const DeleteLLMCredentialResponse = zod.void()
+export const DeleteLLMCredentialResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Set account locale
  */
-export const SetLocaleBody = zod.object({
+export const SetLocaleBody = /* @__PURE__ */ zod.object({
   "locale": zod.enum(['en', 'zh'])
 })
 
-export const SetLocaleResponse = zod.void()
+export const SetLocaleResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Set chat, generate and editor model preferences
  */
-export const SetModelPrefsBody = zod.object({
+export const SetModelPrefsBody = /* @__PURE__ */ zod.object({
   "chatModel": zod.object({
   "modelSlug": zod.string(),
   "providerSlug": zod.string()
@@ -3912,13 +3912,13 @@ export const SetModelPrefsBody = zod.object({
 }).optional()
 })
 
-export const SetModelPrefsResponse = zod.void()
+export const SetModelPrefsResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Save study preferences
  */
-export const SetStudyPreferencesBody = zod.object({
+export const SetStudyPreferencesBody = /* @__PURE__ */ zod.object({
   "flashcards": zod.enum(['more', 'less', 'off']).optional(),
   "knowledgeChecks": zod.boolean().optional(),
   "mainFormat": zod.enum(['note', 'deck']).optional(),
@@ -3930,23 +3930,23 @@ export const SetStudyPreferencesBody = zod.object({
   "writingStyle": zod.enum(['brief', 'normal', 'verbose']).optional()
 })
 
-export const SetStudyPreferencesResponse = zod.void()
+export const SetStudyPreferencesResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Default study progress setting
  */
-export const SetStudyProgressDefaultBody = zod.object({
+export const SetStudyProgressDefaultBody = /* @__PURE__ */ zod.object({
   "enabled": zod.boolean()
 })
 
-export const SetStudyProgressDefaultResponse = zod.void()
+export const SetStudyProgressDefaultResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Known model slots
  */
-export const ListModelSlotsResponse = zod.object({
+export const ListModelSlotsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "slots": zod.array(zod.enum(['chat', 'editor', 'ingest', 'retrieval', 'captioning', 'rerank']))
 })
@@ -3955,11 +3955,11 @@ export const ListModelSlotsResponse = zod.object({
 /**
  * @summary Enabled models for a slot
  */
-export const ListModelsQueryParams = zod.object({
+export const ListModelsQueryParams = /* @__PURE__ */ zod.object({
   "slot": zod.enum(['chat', 'editor']).optional()
 })
 
-export const ListModelsResponse = zod.object({
+export const ListModelsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "defaultModel": zod.object({
   "modelSlug": zod.string(),
@@ -3989,7 +3989,7 @@ export const ListModelsResponse = zod.object({
 /**
  * @summary Get notification preferences
  */
-export const GetNotificationPrefsResponse = zod.object({
+export const GetNotificationPrefsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "emailBilling": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
@@ -3999,12 +3999,12 @@ export const GetNotificationPrefsResponse = zod.object({
 /**
  * @summary Set notification preferences
  */
-export const SetNotificationPrefsBody = zod.object({
+export const SetNotificationPrefsBody = /* @__PURE__ */ zod.object({
   "emailBilling": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
 })
 
-export const SetNotificationPrefsResponse = zod.object({
+export const SetNotificationPrefsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "emailBilling": zod.boolean(),
   "emailWorkspaceInvite": zod.boolean()
@@ -4019,12 +4019,12 @@ export const listNotificationsQueryLimitMax = 100;
 
 
 
-export const ListNotificationsQueryParams = zod.object({
+export const ListNotificationsQueryParams = /* @__PURE__ */ zod.object({
   "limit": zod.int().min(1).max(listNotificationsQueryLimitMax).default(listNotificationsQueryLimitDefault),
   "before": zod.string().optional()
 })
 
-export const ListNotificationsResponse = zod.object({
+export const ListNotificationsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "at": zod.iso.datetime({"offset":true}),
@@ -4044,13 +4044,13 @@ export const ListNotificationsResponse = zod.object({
 /**
  * @summary Mark notifications read
  */
-export const ReadNotificationsResponse = zod.void()
+export const ReadNotificationsResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Unread notification count
  */
-export const GetUnreadNotificationCountResponse = zod.object({
+export const GetUnreadNotificationCountResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "count": zod.int()
 })
@@ -4059,21 +4059,21 @@ export const GetUnreadNotificationCountResponse = zod.object({
 /**
  * @summary Mark one notification read
  */
-export const ReadNotificationParams = zod.object({
+export const ReadNotificationParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ReadNotificationResponse = zod.void()
+export const ReadNotificationResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Get a shared flashcard set for signed-out visitors
  */
-export const GetAnonymousFlashcardsParams = zod.object({
+export const GetAnonymousFlashcardsParams = /* @__PURE__ */ zod.object({
   "token": zod.string()
 })
 
-export const GetAnonymousFlashcardsResponse = zod.object({
+export const GetAnonymousFlashcardsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4144,12 +4144,12 @@ export const GetAnonymousFlashcardsResponse = zod.object({
 /**
  * @summary Get a shared flashcard image URL
  */
-export const GetAnonymousFlashcardAssetParams = zod.object({
+export const GetAnonymousFlashcardAssetParams = /* @__PURE__ */ zod.object({
   "token": zod.string(),
   "assetId": zod.string()
 })
 
-export const GetAnonymousFlashcardAssetResponse = zod.object({
+export const GetAnonymousFlashcardAssetResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentType": zod.string(),
   "expiresAt": zod.iso.datetime({"offset":true}),
@@ -4160,11 +4160,11 @@ export const GetAnonymousFlashcardAssetResponse = zod.object({
 /**
  * @summary Get a shared note for signed-out visitors
  */
-export const GetAnonymousNoteParams = zod.object({
+export const GetAnonymousNoteParams = /* @__PURE__ */ zod.object({
   "token": zod.string()
 })
 
-export const GetAnonymousNoteResponse = zod.object({
+export const GetAnonymousNoteResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4286,12 +4286,12 @@ export const GetAnonymousNoteResponse = zod.object({
 /**
  * @summary Get a shared note image URL
  */
-export const GetAnonymousNoteAssetParams = zod.object({
+export const GetAnonymousNoteAssetParams = /* @__PURE__ */ zod.object({
   "token": zod.string(),
   "assetId": zod.string()
 })
 
-export const GetAnonymousNoteAssetResponse = zod.object({
+export const GetAnonymousNoteAssetResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentType": zod.string(),
   "expiresAt": zod.iso.datetime({"offset":true}),
@@ -4302,7 +4302,7 @@ export const GetAnonymousNoteAssetResponse = zod.object({
 /**
  * @summary Grade an attempt at a quiz embedded in a shared note
  */
-export const GradeAnonymousNoteQuizParams = zod.object({
+export const GradeAnonymousNoteQuizParams = /* @__PURE__ */ zod.object({
   "token": zod.string(),
   "quizId": zod.string()
 })
@@ -4311,12 +4311,12 @@ export const gradeAnonymousNoteQuizBodyLocalIdMax = 64;
 
 
 
-export const GradeAnonymousNoteQuizBody = zod.object({
+export const GradeAnonymousNoteQuizBody = /* @__PURE__ */ zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
   "localId": zod.string().max(gradeAnonymousNoteQuizBodyLocalIdMax).optional()
 })
 
-export const GradeAnonymousNoteQuizResponse = zod.object({
+export const GradeAnonymousNoteQuizResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "correct": zod.number(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
@@ -4327,11 +4327,11 @@ export const GradeAnonymousNoteQuizResponse = zod.object({
 /**
  * @summary Get a shared quiz for signed-out visitors
  */
-export const GetAnonymousQuizParams = zod.object({
+export const GetAnonymousQuizParams = /* @__PURE__ */ zod.object({
   "token": zod.string()
 })
 
-export const GetAnonymousQuizResponse = zod.object({
+export const GetAnonymousQuizResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4394,12 +4394,12 @@ export const GetAnonymousQuizResponse = zod.object({
 /**
  * @summary Get a shared quiz image URL
  */
-export const GetAnonymousQuizAssetParams = zod.object({
+export const GetAnonymousQuizAssetParams = /* @__PURE__ */ zod.object({
   "token": zod.string(),
   "assetId": zod.string()
 })
 
-export const GetAnonymousQuizAssetResponse = zod.object({
+export const GetAnonymousQuizAssetResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentType": zod.string(),
   "expiresAt": zod.iso.datetime({"offset":true}),
@@ -4410,7 +4410,7 @@ export const GetAnonymousQuizAssetResponse = zod.object({
 /**
  * @summary Grade a signed-out attempt at a shared quiz
  */
-export const GradeAnonymousQuizParams = zod.object({
+export const GradeAnonymousQuizParams = /* @__PURE__ */ zod.object({
   "token": zod.string()
 })
 
@@ -4418,12 +4418,12 @@ export const gradeAnonymousQuizBodyLocalIdMax = 64;
 
 
 
-export const GradeAnonymousQuizBody = zod.object({
+export const GradeAnonymousQuizBody = /* @__PURE__ */ zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
   "localId": zod.string().max(gradeAnonymousQuizBodyLocalIdMax).optional()
 })
 
-export const GradeAnonymousQuizResponse = zod.object({
+export const GradeAnonymousQuizResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "correct": zod.number(),
   "questions": zod.array(zod.record(zod.string(), zod.unknown())),
@@ -4434,11 +4434,11 @@ export const GradeAnonymousQuizResponse = zod.object({
 /**
  * @summary Get public workspace metadata
  */
-export const GetPublicWorkspaceSummaryParams = zod.object({
+export const GetPublicWorkspaceSummaryParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetPublicWorkspaceSummaryResponse = zod.object({
+export const GetPublicWorkspaceSummaryResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.string(),
   "authorAvatarUrl": zod.string().optional(),
@@ -4466,22 +4466,22 @@ export const GetPublicWorkspaceSummaryResponse = zod.object({
 /**
  * @summary Check public workspace metadata
  */
-export const HeadPublicWorkspaceSummaryParams = zod.object({
+export const HeadPublicWorkspaceSummaryParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const HeadPublicWorkspaceSummaryResponse = zod.unknown()
+export const HeadPublicWorkspaceSummaryResponse = /* @__PURE__ */ zod.unknown()
 
 
 /**
  * @summary Check whether an open part needs computation to grade
  */
-export const CheckQuestionComputationBody = zod.object({
+export const CheckQuestionComputationBody = /* @__PURE__ */ zod.object({
   "partId": zod.string(),
   "question": zod.record(zod.string(), zod.unknown())
 })
 
-export const CheckQuestionComputationResponse = zod.object({
+export const CheckQuestionComputationResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "computational": zod.boolean(),
   "probability": zod.number()
@@ -4495,7 +4495,7 @@ export const createQuizBodyNameMax = 120;
 
 
 
-export const CreateQuizBody = zod.object({
+export const CreateQuizBody = /* @__PURE__ */ zod.object({
   "chapters": zod.array(zod.string()).nullish(),
   "name": zod.string().max(createQuizBodyNameMax).optional(),
   "privacy": zod.enum(['private', 'public', 'link']).optional(),
@@ -4503,7 +4503,7 @@ export const CreateQuizBody = zod.object({
   "workspaceId": zod.string().optional()
 })
 
-export const CreateQuizResponse = zod.object({
+export const CreateQuizResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4575,7 +4575,7 @@ export const CreateQuizResponse = zod.object({
 /**
  * @summary Delete a quiz
  */
-export const DeleteQuizParams = zod.object({
+export const DeleteQuizParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -4583,21 +4583,21 @@ export const deleteQuizQueryRequestIdMax = 64;
 
 
 
-export const DeleteQuizQueryParams = zod.object({
+export const DeleteQuizQueryParams = /* @__PURE__ */ zod.object({
   "requestId": zod.string().max(deleteQuizQueryRequestIdMax).optional().describe('Optional idempotency key for this trash action')
 })
 
-export const DeleteQuizResponse = zod.void()
+export const DeleteQuizResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Get a quiz to view or take, without answers
  */
-export const GetQuizParams = zod.object({
+export const GetQuizParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetQuizResponse = zod.object({
+export const GetQuizResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4669,15 +4669,15 @@ export const GetQuizResponse = zod.object({
 /**
  * @summary Grade and record a quiz attempt
  */
-export const CreateAttemptParams = zod.object({
+export const CreateAttemptParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CreateAttemptBody = zod.object({
+export const CreateAttemptBody = /* @__PURE__ */ zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id')
 })
 
-export const CreateAttemptResponse = zod.object({
+export const CreateAttemptResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answers": zod.record(zod.string(), zod.unknown()),
   "chapters": zod.array(zod.string()),
@@ -4698,11 +4698,11 @@ export const CreateAttemptResponse = zod.object({
 /**
  * @summary Get a quiz with its answers to edit it
  */
-export const GetQuizForEditParams = zod.object({
+export const GetQuizForEditParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetQuizForEditResponse = zod.object({
+export const GetQuizForEditResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4774,7 +4774,7 @@ export const GetQuizForEditResponse = zod.object({
 /**
  * @summary Update quiz metadata
  */
-export const UpdateQuizMetadataParams = zod.object({
+export const UpdateQuizMetadataParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -4782,12 +4782,12 @@ export const updateQuizMetadataBodyNameMax = 120;
 
 
 
-export const UpdateQuizMetadataBody = zod.object({
+export const UpdateQuizMetadataBody = /* @__PURE__ */ zod.object({
   "chapters": zod.array(zod.string()).optional(),
   "name": zod.string().min(1).max(updateQuizMetadataBodyNameMax).optional()
 })
 
-export const UpdateQuizMetadataResponse = zod.object({
+export const UpdateQuizMetadataResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4859,15 +4859,15 @@ export const UpdateQuizMetadataResponse = zod.object({
 /**
  * @summary Update standalone quiz sharing
  */
-export const UpdateQuizSharingParams = zod.object({
+export const UpdateQuizSharingParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const UpdateQuizSharingBody = zod.object({
+export const UpdateQuizSharingBody = /* @__PURE__ */ zod.object({
   "privacy": zod.enum(['private', 'public', 'link']).describe('Visibility for a standalone material')
 })
 
-export const UpdateQuizSharingResponse = zod.object({
+export const UpdateQuizSharingResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "author": zod.object({
   "avatarUrl": zod.string().optional(),
@@ -4948,7 +4948,7 @@ export const checkReviewItemBodySessionItemsMax = 50;
 
 
 
-export const CheckReviewItemBody = zod.object({
+export const CheckReviewItemBody = /* @__PURE__ */ zod.object({
   "answers": zod.record(zod.string(), zod.unknown()).describe('The learner\'s answers by part id'),
   "itemId": zod.string().min(1),
   "materialId": zod.string().min(1),
@@ -4972,7 +4972,7 @@ export const CheckReviewItemBody = zod.object({
 }).optional().describe('The review session the answer belongs to; the first answer records it')
 })
 
-export const CheckReviewItemResponse = zod.object({
+export const CheckReviewItemResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "correct": zod.number(),
   "question": zod.record(zod.string(), zod.unknown()),
@@ -4983,7 +4983,7 @@ export const CheckReviewItemResponse = zod.object({
 /**
  * @summary Learning's Review tab: suggested reviews, sessions to continue, every workspace
  */
-export const GetReviewOverviewResponse = zod.object({
+export const GetReviewOverviewResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "suggestions": zod.array(zod.object({
   "chapterId": zod.string().optional(),
@@ -5037,7 +5037,7 @@ export const rateReviewItemBodySessionItemsMax = 50;
 
 
 
-export const RateReviewItemBody = zod.object({
+export const RateReviewItemBody = /* @__PURE__ */ zod.object({
   "itemId": zod.string().min(1),
   "materialId": zod.string().min(1),
   "rating": zod.int().min(1).max(rateReviewItemBodyRatingMax).describe('A flashcard\'s button: 1 Again .. 4 Easy; questions are rated by POST \/api\/review\/check'),
@@ -5061,7 +5061,7 @@ export const RateReviewItemBody = zod.object({
 }).optional().describe('The review session the rating belongs to; the first answer records it')
 })
 
-export const RateReviewItemResponse = zod.void()
+export const RateReviewItemResponse = /* @__PURE__ */ zod.void()
 
 
 /**
@@ -5076,7 +5076,7 @@ export const listPastReviewsQueryLimitMax = 100;
 
 
 
-export const ListPastReviewsQueryParams = zod.object({
+export const ListPastReviewsQueryParams = /* @__PURE__ */ zod.object({
   "sort": zod.enum(['date', 'quiz', 'cards', 'time', 'workspace', 'chapter', 'status']).default(listPastReviewsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listPastReviewsQueryDirDefault),
   "workspaceId": zod.string().optional().describe('Comma-separated workspace ids'),
@@ -5085,7 +5085,7 @@ export const ListPastReviewsQueryParams = zod.object({
   "limit": zod.int().min(1).max(listPastReviewsQueryLimitMax).default(listPastReviewsQueryLimitDefault)
 })
 
-export const ListPastReviewsResponse = zod.object({
+export const ListPastReviewsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "answered": zod.int(),
@@ -5117,7 +5117,7 @@ export const ListPastReviewsResponse = zod.object({
 /**
  * @summary An unfinished review session's items still to answer
  */
-export const ResumeReviewSessionParams = zod.object({
+export const ResumeReviewSessionParams = /* @__PURE__ */ zod.object({
   "id": zod.uuid()
 })
 
@@ -5125,7 +5125,7 @@ export const resumeReviewSessionResponseDoneItemRatingMax = 4;
 
 
 
-export const ResumeReviewSessionResponse = zod.object({
+export const ResumeReviewSessionResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
   "chapterId": zod.string().optional(),
@@ -5173,11 +5173,11 @@ export const ResumeReviewSessionResponse = zod.object({
 /**
  * @summary End a review session before its last item
  */
-export const FinishReviewSessionParams = zod.object({
+export const FinishReviewSessionParams = /* @__PURE__ */ zod.object({
   "id": zod.uuid()
 })
 
-export const FinishReviewSessionResponse = zod.void()
+export const FinishReviewSessionResponse = /* @__PURE__ */ zod.void()
 
 
 /**
@@ -5187,11 +5187,11 @@ export const searchQueryQMax = 200;
 
 
 
-export const SearchQueryParams = zod.object({
+export const SearchQueryParams = /* @__PURE__ */ zod.object({
   "q": zod.string().max(searchQueryQMax).optional()
 })
 
-export const SearchResponseItem = zod.object({
+export const SearchResponseItem = /* @__PURE__ */ zod.object({
   "fileKind": zod.enum(['pdf', 'doc', 'md', 'image', 'txt', 'sheet', 'slides', 'audio', 'json', 'unknown']).optional(),
   "href": zod.string(),
   "iconId": zod.string().optional(),
@@ -5202,17 +5202,17 @@ export const SearchResponseItem = zod.object({
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of a file\'s page-1 thumbnail'),
   "title": zod.string()
 })
-export const SearchResponse = zod.array(SearchResponseItem)
+export const SearchResponse = /* @__PURE__ */ zod.array(SearchResponseItem)
 
 
 /**
  * @summary Get source upload policy
  */
-export const GetSourceUploadPolicyQueryParams = zod.object({
+export const GetSourceUploadPolicyQueryParams = /* @__PURE__ */ zod.object({
   "workspaceId": zod.string().optional()
 })
 
-export const GetSourceUploadPolicyResponse = zod.object({
+export const GetSourceUploadPolicyResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "accept": zod.string(),
   "allowNoExtension": zod.boolean(),
@@ -5237,7 +5237,7 @@ export const GetSourceUploadPolicyResponse = zod.object({
 /**
  * @summary List the user's tag catalog for a kind
  */
-export const ListTagsQueryParams = zod.object({
+export const ListTagsQueryParams = /* @__PURE__ */ zod.object({
   "kind": zod.string().optional().describe('Tag kind: workspace | quiz | card')
 })
 
@@ -5245,17 +5245,17 @@ export const listTagsResponseValueMax = 35;
 
 
 
-export const ListTagsResponseItem = zod.object({
+export const ListTagsResponseItem = /* @__PURE__ */ zod.object({
   "id": zod.string(),
   "value": zod.string().min(1).max(listTagsResponseValueMax)
 })
-export const ListTagsResponse = zod.array(ListTagsResponseItem)
+export const ListTagsResponse = /* @__PURE__ */ zod.array(ListTagsResponseItem)
 
 
 /**
  * @summary List tasks
  */
-export const ListTasksResponseItem = zod.object({
+export const ListTasksResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "done": zod.boolean(),
   "dueDate": zod.iso.datetime({"offset":true}),
@@ -5263,23 +5263,23 @@ export const ListTasksResponseItem = zod.object({
   "meta": zod.string().optional(),
   "title": zod.string()
 })
-export const ListTasksResponse = zod.array(ListTasksResponseItem)
+export const ListTasksResponse = /* @__PURE__ */ zod.array(ListTasksResponseItem)
 
 
 /**
  * @summary Delete a task
  */
-export const DeleteTaskParams = zod.object({
+export const DeleteTaskParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const DeleteTaskResponse = zod.void()
+export const DeleteTaskResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Update a task
  */
-export const UpdateTaskParams = zod.object({
+export const UpdateTaskParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -5289,13 +5289,13 @@ export const updateTaskBodyTitleMax = 80;
 
 
 
-export const UpdateTaskBody = zod.object({
+export const UpdateTaskBody = /* @__PURE__ */ zod.object({
   "done": zod.boolean().optional(),
   "meta": zod.string().max(updateTaskBodyMetaMax).optional(),
   "title": zod.string().min(1).max(updateTaskBodyTitleMax).optional()
 })
 
-export const UpdateTaskResponse = zod.object({
+export const UpdateTaskResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "done": zod.boolean(),
   "dueDate": zod.iso.datetime({"offset":true}),
@@ -5308,14 +5308,14 @@ export const UpdateTaskResponse = zod.object({
 /**
  * @summary List thinking canvases
  */
-export const ListCanvasesResponseItem = zod.object({
+export const ListCanvasesResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "id": zod.string(),
   "name": zod.string(),
   "scene": zod.unknown().optional(),
   "updatedAt": zod.iso.datetime({"offset":true})
 })
-export const ListCanvasesResponse = zod.array(ListCanvasesResponseItem)
+export const ListCanvasesResponse = /* @__PURE__ */ zod.array(ListCanvasesResponseItem)
 
 
 /**
@@ -5325,11 +5325,11 @@ export const createCanvasBodyNameMax = 120;
 
 
 
-export const CreateCanvasBody = zod.object({
+export const CreateCanvasBody = /* @__PURE__ */ zod.object({
   "name": zod.string().max(createCanvasBodyNameMax).optional()
 })
 
-export const CreateCanvasResponse = zod.object({
+export const CreateCanvasResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "id": zod.string(),
   "name": zod.string(),
@@ -5341,11 +5341,11 @@ export const CreateCanvasResponse = zod.object({
 /**
  * @summary Get a canvas
  */
-export const GetCanvasParams = zod.object({
+export const GetCanvasParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetCanvasResponse = zod.object({
+export const GetCanvasResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "id": zod.string(),
   "name": zod.string(),
@@ -5357,7 +5357,7 @@ export const GetCanvasResponse = zod.object({
 /**
  * @summary Save a canvas
  */
-export const SaveCanvasParams = zod.object({
+export const SaveCanvasParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -5365,12 +5365,12 @@ export const saveCanvasBodyNameMax = 120;
 
 
 
-export const SaveCanvasBody = zod.object({
+export const SaveCanvasBody = /* @__PURE__ */ zod.object({
   "name": zod.string().min(1).max(saveCanvasBodyNameMax).optional(),
   "scene": zod.unknown().optional()
 })
 
-export const SaveCanvasResponse = zod.object({
+export const SaveCanvasResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "id": zod.string(),
   "name": zod.string(),
@@ -5387,13 +5387,13 @@ export const listTrashQueryLimitMax = 100;
 
 
 
-export const ListTrashQueryParams = zod.object({
+export const ListTrashQueryParams = /* @__PURE__ */ zod.object({
   "workspaceId": zod.string().optional().describe('Limit to one owned workspace; empty spans every owned workspace and standalone materials'),
   "limit": zod.int().min(1).max(listTrashQueryLimitMax).default(listTrashQueryLimitDefault),
   "cursor": zod.string().optional().describe('Opaque cursor from the previous page')
 })
 
-export const ListTrashResponse = zod.object({
+export const ListTrashResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "episodeId": zod.string(),
@@ -5417,7 +5417,7 @@ export const ListTrashResponse = zod.object({
 /**
  * @summary Permanently delete a trashed file or material
  */
-export const PurgeTrashedParams = zod.object({
+export const PurgeTrashedParams = /* @__PURE__ */ zod.object({
   "kind": zod.enum(['source_file', 'material']),
   "id": zod.string()
 })
@@ -5427,12 +5427,12 @@ export const purgeTrashedQueryRequestIdMax = 64;
 
 
 
-export const PurgeTrashedQueryParams = zod.object({
+export const PurgeTrashedQueryParams = /* @__PURE__ */ zod.object({
   "episodeId": zod.string().min(1).optional(),
   "requestId": zod.string().min(1).max(purgeTrashedQueryRequestIdMax).optional()
 })
 
-export const PurgeTrashedResponse = zod.object({
+export const PurgeTrashedResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
   "effect": zod.object({
@@ -5475,7 +5475,7 @@ export const PurgeTrashedResponse = zod.object({
 /**
  * @summary Restore a trashed file or material
  */
-export const RestoreTrashedParams = zod.object({
+export const RestoreTrashedParams = /* @__PURE__ */ zod.object({
   "kind": zod.enum(['source_file', 'material']),
   "id": zod.string()
 })
@@ -5485,12 +5485,12 @@ export const restoreTrashedBodyRequestIdMax = 64;
 
 
 
-export const RestoreTrashedBody = zod.object({
+export const RestoreTrashedBody = /* @__PURE__ */ zod.object({
   "episodeId": zod.string().min(1).describe('Trash episode returned by the trash listing'),
   "requestId": zod.string().min(1).max(restoreTrashedBodyRequestIdMax).describe('Client-generated idempotency key for this action')
 })
 
-export const RestoreTrashedResponse = zod.object({
+export const RestoreTrashedResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "callId": zod.string().optional(),
   "effect": zod.object({
@@ -5533,7 +5533,7 @@ export const RestoreTrashedResponse = zod.object({
 /**
  * @summary Current-period AI usage
  */
-export const GetUsageResponse = zod.object({
+export const GetUsageResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "bySurface": zod.array(zod.object({
   "creditMicros": zod.int(),
@@ -5553,14 +5553,14 @@ export const listUsageEventsQueryLimitMax = 20;
 
 
 
-export const ListUsageEventsQueryParams = zod.object({
+export const ListUsageEventsQueryParams = /* @__PURE__ */ zod.object({
   "sort": zod.enum(['date', 'model', 'tokens', 'credits']).default(listUsageEventsQuerySortDefault),
   "dir": zod.enum(['asc', 'desc']).default(listUsageEventsQueryDirDefault),
   "limit": zod.int().min(1).max(listUsageEventsQueryLimitMax).default(listUsageEventsQueryLimitDefault),
   "before": zod.string().optional().describe('The previous page\'s next, from the same sort')
 })
 
-export const ListUsageEventsResponse = zod.object({
+export const ListUsageEventsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -5581,11 +5581,11 @@ export const ListUsageEventsResponse = zod.object({
 /**
  * @summary Accept a workspace invite
  */
-export const AcceptWorkspaceInviteParams = zod.object({
+export const AcceptWorkspaceInviteParams = /* @__PURE__ */ zod.object({
   "token": zod.string()
 })
 
-export const AcceptWorkspaceInviteResponse = zod.object({
+export const AcceptWorkspaceInviteResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "avatarUrl": zod.string().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -5599,7 +5599,7 @@ export const AcceptWorkspaceInviteResponse = zod.object({
 /**
  * @summary List workspaces
  */
-export const ListWorkspacesQueryParams = zod.object({
+export const ListWorkspacesQueryParams = /* @__PURE__ */ zod.object({
   "q": zod.string().optional(),
   "sort": zod.string().optional(),
   "tag": zod.string().optional().describe('Comma-separated tags')
@@ -5616,7 +5616,7 @@ export const listWorkspacesResponseTagsItemValueMax = 35;
 
 
 
-export const ListWorkspacesResponseItem = zod.object({
+export const ListWorkspacesResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -5655,7 +5655,7 @@ export const ListWorkspacesResponseItem = zod.object({
   "value": zod.string().min(1).max(listWorkspacesResponseTagsItemValueMax)
 }))
 })
-export const ListWorkspacesResponse = zod.array(ListWorkspacesResponseItem)
+export const ListWorkspacesResponse = /* @__PURE__ */ zod.array(ListWorkspacesResponseItem)
 
 
 /**
@@ -5681,7 +5681,7 @@ export const createWorkspaceBodyTagsMax = 5;
 
 
 
-export const CreateWorkspaceBody = zod.object({
+export const CreateWorkspaceBody = /* @__PURE__ */ zod.object({
   "cover": zod.object({
   "color": zod.string().regex(createWorkspaceBodyCoverColorRegExp),
   "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
@@ -5710,7 +5710,7 @@ export const createWorkspaceResponseTagsItemValueMax = 35;
 
 
 
-export const CreateWorkspaceResponse = zod.object({
+export const CreateWorkspaceResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -5754,17 +5754,17 @@ export const CreateWorkspaceResponse = zod.object({
 /**
  * @summary Delete a workspace
  */
-export const DeleteWorkspaceParams = zod.object({
+export const DeleteWorkspaceParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const DeleteWorkspaceResponse = zod.void()
+export const DeleteWorkspaceResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Get a workspace
  */
-export const GetWorkspaceParams = zod.object({
+export const GetWorkspaceParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -5779,7 +5779,7 @@ export const getWorkspaceResponseTagsItemValueMax = 35;
 
 
 
-export const GetWorkspaceResponse = zod.object({
+export const GetWorkspaceResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -5823,7 +5823,7 @@ export const GetWorkspaceResponse = zod.object({
 /**
  * @summary Update a workspace
  */
-export const UpdateWorkspaceParams = zod.object({
+export const UpdateWorkspaceParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -5847,7 +5847,7 @@ export const updateWorkspaceBodyTagsMax = 5;
 
 
 
-export const UpdateWorkspaceBody = zod.object({
+export const UpdateWorkspaceBody = /* @__PURE__ */ zod.object({
   "autoProcess": zod.boolean().optional(),
   "clearCover": zod.boolean().optional().describe('true removes the cover; refused together with cover'),
   "cover": zod.object({
@@ -5878,7 +5878,7 @@ export const updateWorkspaceResponseTagsItemValueMax = 35;
 
 
 
-export const UpdateWorkspaceResponse = zod.object({
+export const UpdateWorkspaceResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -5922,11 +5922,11 @@ export const UpdateWorkspaceResponse = zod.object({
 /**
  * @summary List chapters
  */
-export const ListChaptersParams = zod.object({
+export const ListChaptersParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListChaptersResponseItem = zod.object({
+export const ListChaptersResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "fileIds": zod.array(zod.string()),
   "id": zod.string(),
@@ -5934,13 +5934,13 @@ export const ListChaptersResponseItem = zod.object({
   "order": zod.int(),
   "workspaceId": zod.string()
 })
-export const ListChaptersResponse = zod.array(ListChaptersResponseItem)
+export const ListChaptersResponse = /* @__PURE__ */ zod.array(ListChaptersResponseItem)
 
 
 /**
  * @summary Add a chapter
  */
-export const AddChapterParams = zod.object({
+export const AddChapterParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -5948,11 +5948,11 @@ export const addChapterBodyNameMax = 60;
 
 
 
-export const AddChapterBody = zod.object({
+export const AddChapterBody = /* @__PURE__ */ zod.object({
   "name": zod.string().min(1).max(addChapterBodyNameMax).describe('Chapter name')
 })
 
-export const AddChapterResponse = zod.object({
+export const AddChapterResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "fileIds": zod.array(zod.string()),
   "id": zod.string(),
@@ -5965,24 +5965,24 @@ export const AddChapterResponse = zod.object({
 /**
  * @summary Reorder chapters
  */
-export const ReorderChaptersParams = zod.object({
+export const ReorderChaptersParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
 
 
 
-export const ReorderChaptersBody = zod.object({
+export const ReorderChaptersBody = /* @__PURE__ */ zod.object({
   "ids": zod.array(zod.string()).min(1).nullable().describe('Chapter ids in the desired order')
 })
 
-export const ReorderChaptersResponse = zod.void()
+export const ReorderChaptersResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Clone a shared workspace
  */
-export const CloneWorkspaceParams = zod.object({
+export const CloneWorkspaceParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6006,7 +6006,7 @@ export const cloneWorkspaceBodyTagsMax = 5;
 
 
 
-export const CloneWorkspaceBody = zod.object({
+export const CloneWorkspaceBody = /* @__PURE__ */ zod.object({
   "cover": zod.object({
   "color": zod.string().regex(cloneWorkspaceBodyCoverColorRegExp),
   "kind": zod.enum(['math', 'latin', 'kana']).optional().describe('The symbols, icons or paper of a symbols, doodles or paper cover'),
@@ -6035,7 +6035,7 @@ export const cloneWorkspaceResponseWorkspaceTagsItemValueMax = 35;
 
 
 
-export const CloneWorkspaceResponse = zod.object({
+export const CloneWorkspaceResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "workspace": zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -6082,22 +6082,22 @@ export const CloneWorkspaceResponse = zod.object({
 /**
  * @summary List mentionable workspace collaborators
  */
-export const ListWorkspaceCollaboratorsParams = zod.object({
+export const ListWorkspaceCollaboratorsParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListWorkspaceCollaboratorsResponseItem = zod.object({
+export const ListWorkspaceCollaboratorsResponseItem = /* @__PURE__ */ zod.object({
   "avatarUrl": zod.string().optional(),
   "name": zod.string(),
   "userId": zod.string()
 })
-export const ListWorkspaceCollaboratorsResponse = zod.array(ListWorkspaceCollaboratorsResponseItem)
+export const ListWorkspaceCollaboratorsResponse = /* @__PURE__ */ zod.array(ListWorkspaceCollaboratorsResponseItem)
 
 
 /**
  * @summary Move and reorder chapter content
  */
-export const ReorderContentParams = zod.object({
+export const ReorderContentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6105,7 +6105,7 @@ export const ReorderContentParams = zod.object({
 
 
 
-export const ReorderContentBody = zod.object({
+export const ReorderContentBody = /* @__PURE__ */ zod.object({
   "chapterId": zod.string().nullable().describe('Destination chapter; null means the unfiled bucket'),
   "items": zod.array(zod.object({
   "id": zod.string().min(1),
@@ -6113,17 +6113,17 @@ export const ReorderContentBody = zod.object({
 })).min(1).nullable().describe('Destination content in the desired mixed order')
 })
 
-export const ReorderContentResponse = zod.void()
+export const ReorderContentResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary List a workspace's chat conversations
  */
-export const ListConversationsParams = zod.object({
+export const ListConversationsParams = /* @__PURE__ */ zod.object({
   "id": zod.string().describe('Workspace id')
 })
 
-export const ListConversationsResponseItem = zod.object({
+export const ListConversationsResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -6131,13 +6131,13 @@ export const ListConversationsResponseItem = zod.object({
   "updatedAt": zod.iso.datetime({"offset":true}),
   "workspaceId": zod.string()
 })
-export const ListConversationsResponse = zod.array(ListConversationsResponseItem)
+export const ListConversationsResponse = /* @__PURE__ */ zod.array(ListConversationsResponseItem)
 
 
 /**
  * @summary Start a new chat conversation
  */
-export const CreateConversationParams = zod.object({
+export const CreateConversationParams = /* @__PURE__ */ zod.object({
   "id": zod.string().describe('Workspace id')
 })
 
@@ -6145,11 +6145,11 @@ export const createConversationBodyTitleMax = 60;
 
 
 
-export const CreateConversationBody = zod.object({
+export const CreateConversationBody = /* @__PURE__ */ zod.object({
   "title": zod.string().max(createConversationBodyTitleMax).optional().describe('Optional thread title')
 })
 
-export const CreateConversationResponse = zod.object({
+export const CreateConversationResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -6162,11 +6162,11 @@ export const CreateConversationResponse = zod.object({
 /**
  * @summary List workspace files
  */
-export const ListWorkspaceFilesParams = zod.object({
+export const ListWorkspaceFilesParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListWorkspaceFilesResponseItem = zod.object({
+export const ListWorkspaceFilesResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
@@ -6233,13 +6233,13 @@ export const ListWorkspaceFilesResponseItem = zod.object({
   "thumbnailUrl": zod.string().optional().describe('Hour-stable presigned GET of the page-1 thumbnail; list rows only'),
   "workspaceId": zod.string()
 })
-export const ListWorkspaceFilesResponse = zod.array(ListWorkspaceFilesResponseItem)
+export const ListWorkspaceFilesResponse = /* @__PURE__ */ zod.array(ListWorkspaceFilesResponseItem)
 
 
 /**
  * @summary Generate a quiz, flashcards, mindmap, or diagram
  */
-export const GenerateParams = zod.object({
+export const GenerateParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6252,7 +6252,7 @@ export const generateBodyTitleMax = 120;
 
 
 
-export const GenerateBody = zod.object({
+export const GenerateBody = /* @__PURE__ */ zod.object({
   "chapters": zod.array(zod.string()).optional(),
   "count": zod.int().min(1).max(generateBodyCountMax).optional(),
   "detail": zod.enum(['brief', 'standard', 'detailed']).default(generateBodyDetailDefault),
@@ -6264,13 +6264,13 @@ export const GenerateBody = zod.object({
   "types": zod.array(zod.enum(['mcq', 'boolean', 'short', 'open', 'ordering', 'matching'])).min(1).default([`mcq`])
 })
 
-export const GenerateResponse = zod.record(zod.string(), zod.unknown())
+export const GenerateResponse = /* @__PURE__ */ zod.record(zod.string(), zod.unknown())
 
 
 /**
  * @summary Privately invite a workspace member
  */
-export const CreateWorkspaceInviteParams = zod.object({
+export const CreateWorkspaceInviteParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6278,22 +6278,22 @@ export const createWorkspaceInviteBodyIdentifierMax = 254;
 
 
 
-export const CreateWorkspaceInviteBody = zod.object({
+export const CreateWorkspaceInviteBody = /* @__PURE__ */ zod.object({
   "identifier": zod.string().min(1).max(createWorkspaceInviteBodyIdentifierMax).describe('Exact user ID or email address'),
   "role": zod.enum(['editor', 'viewer'])
 })
 
-export const CreateWorkspaceInviteResponse = zod.void()
+export const CreateWorkspaceInviteResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary List study materials
  */
-export const ListMaterialsParams = zod.object({
+export const ListMaterialsParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListMaterialsResponseItem = zod.object({
+export const ListMaterialsResponseItem = /* @__PURE__ */ zod.object({
   "chapterId": zod.string().nullable(),
   "createdAt": zod.iso.datetime({"offset":true}),
   "id": zod.string(),
@@ -6350,13 +6350,13 @@ export const ListMaterialsResponseItem = zod.object({
   "title": zod.string(),
   "type": zod.enum(['mindmap', 'diagram', 'quiz', 'flashcards', 'note'])
 })
-export const ListMaterialsResponse = zod.array(ListMaterialsResponseItem)
+export const ListMaterialsResponse = /* @__PURE__ */ zod.array(ListMaterialsResponseItem)
 
 
 /**
  * @summary Create a note material
  */
-export const CreateMaterialParams = zod.object({
+export const CreateMaterialParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6364,7 +6364,7 @@ export const createMaterialBodyTitleMax = 120;
 
 
 
-export const CreateMaterialBody = zod.object({
+export const CreateMaterialBody = /* @__PURE__ */ zod.object({
   "content": zod.object({
   "schemaVersion": zod.int(),
   "value": zod.array(zod.record(zod.string(), zod.unknown())).nullable()
@@ -6375,7 +6375,7 @@ export const CreateMaterialBody = zod.object({
   "title": zod.string().max(createMaterialBodyTitleMax).optional()
 })
 
-export const CreateMaterialResponse = zod.object({
+export const CreateMaterialResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "capabilities": zod.object({
   "canEdit": zod.boolean(),
@@ -6507,11 +6507,11 @@ export const CreateMaterialResponse = zod.object({
 /**
  * @summary List workspace members
  */
-export const ListWorkspaceMembersParams = zod.object({
+export const ListWorkspaceMembersParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListWorkspaceMembersResponseItem = zod.object({
+export const ListWorkspaceMembersResponseItem = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "avatarUrl": zod.string().optional(),
   "createdAt": zod.iso.datetime({"offset":true}),
@@ -6520,43 +6520,43 @@ export const ListWorkspaceMembersResponseItem = zod.object({
   "userId": zod.string(),
   "workspaceId": zod.string()
 })
-export const ListWorkspaceMembersResponse = zod.array(ListWorkspaceMembersResponseItem)
+export const ListWorkspaceMembersResponse = /* @__PURE__ */ zod.array(ListWorkspaceMembersResponseItem)
 
 
 /**
  * @summary Remove a workspace member
  */
-export const RemoveWorkspaceMemberParams = zod.object({
+export const RemoveWorkspaceMemberParams = /* @__PURE__ */ zod.object({
   "id": zod.string(),
   "memberId": zod.string()
 })
 
-export const RemoveWorkspaceMemberResponse = zod.void()
+export const RemoveWorkspaceMemberResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Change a workspace member role
  */
-export const UpdateWorkspaceMemberParams = zod.object({
+export const UpdateWorkspaceMemberParams = /* @__PURE__ */ zod.object({
   "id": zod.string(),
   "memberId": zod.string()
 })
 
-export const UpdateWorkspaceMemberBody = zod.object({
+export const UpdateWorkspaceMemberBody = /* @__PURE__ */ zod.object({
   "role": zod.enum(['editor', 'viewer'])
 })
 
-export const UpdateWorkspaceMemberResponse = zod.void()
+export const UpdateWorkspaceMemberResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary List a workspace's newest files and materials
  */
-export const ListWorkspaceRecentParams = zod.object({
+export const ListWorkspaceRecentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ListWorkspaceRecentResponse = zod.object({
+export const ListWorkspaceRecentResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "files": zod.array(zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
@@ -6648,13 +6648,13 @@ export const ListWorkspaceRecentResponse = zod.object({
 /**
  * @summary A new review session: a suggestion's items, or the whole workspace's
  */
-export const GetWorkspaceReviewParams = zod.object({
+export const GetWorkspaceReviewParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
 export const getWorkspaceReviewQueryGroupDefault = `workspace`;
 
-export const GetWorkspaceReviewQueryParams = zod.object({
+export const GetWorkspaceReviewQueryParams = /* @__PURE__ */ zod.object({
   "group": zod.enum(['chapter', 'others', 'workspace']).default(getWorkspaceReviewQueryGroupDefault),
   "chapterId": zod.string().optional().describe('The chapter of a chapter group'),
   "mode": zod.enum(['tricky', 'fading', 'learned']).optional().describe('A suggestion\'s mode; omitted for a review from the workspace list')
@@ -6664,7 +6664,7 @@ export const getWorkspaceReviewResponseDoneItemRatingMax = 4;
 
 
 
-export const GetWorkspaceReviewResponse = zod.object({
+export const GetWorkspaceReviewResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "answered": zod.int(),
   "chapterId": zod.string().optional(),
@@ -6712,11 +6712,11 @@ export const GetWorkspaceReviewResponse = zod.object({
 /**
  * @summary Update workspace sharing
  */
-export const UpdateWorkspaceSharingParams = zod.object({
+export const UpdateWorkspaceSharingParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const UpdateWorkspaceSharingBody = zod.object({
+export const UpdateWorkspaceSharingBody = /* @__PURE__ */ zod.object({
   "privacy": zod.enum(['private', 'public', 'link']).optional(),
   "shareRole": zod.enum(['editor', 'viewer']).optional()
 })
@@ -6732,7 +6732,7 @@ export const updateWorkspaceSharingResponseTagsItemValueMax = 35;
 
 
 
-export const UpdateWorkspaceSharingResponse = zod.object({
+export const UpdateWorkspaceSharingResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -6776,7 +6776,7 @@ export const UpdateWorkspaceSharingResponse = zod.object({
 /**
  * @summary Queue sources from a connected drive
  */
-export const ImportSourcesParams = zod.object({
+export const ImportSourcesParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6794,7 +6794,7 @@ export const importSourcesBodyRequestIdMax = 128;
 
 
 
-export const ImportSourcesBody = zod.object({
+export const ImportSourcesBody = /* @__PURE__ */ zod.object({
   "batchId": zod.string().min(1).max(importSourcesBodyBatchIdMax).regex(importSourcesBodyBatchIdRegExp),
   "batchTotal": zod.int().min(1).max(importSourcesBodyBatchTotalMax),
   "chapterId": zod.string().optional(),
@@ -6806,7 +6806,7 @@ export const ImportSourcesBody = zod.object({
   "requestId": zod.string().max(importSourcesBodyRequestIdMax).optional()
 })
 
-export const ImportSourcesResponse = zod.object({
+export const ImportSourcesResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "jobs": zod.array(zod.object({
   "jobId": zod.string(),
@@ -6823,7 +6823,7 @@ export const ImportSourcesResponse = zod.object({
 /**
  * @summary Inspect sources selected from a connected drive
  */
-export const InspectSourceImportsParams = zod.object({
+export const InspectSourceImportsParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6831,13 +6831,13 @@ export const inspectSourceImportsBodyFileIdsMax = 20;
 
 
 
-export const InspectSourceImportsBody = zod.object({
+export const InspectSourceImportsBody = /* @__PURE__ */ zod.object({
   "driveIds": zod.array(zod.string()).optional(),
   "fileIds": zod.array(zod.string()).min(1).max(inspectSourceImportsBodyFileIdsMax),
   "provider": zod.enum(['google', 'microsoft'])
 })
 
-export const InspectSourceImportsResponse = zod.object({
+export const InspectSourceImportsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "items": zod.array(zod.object({
   "analysisUrl": zod.string(),
@@ -6859,12 +6859,12 @@ export const InspectSourceImportsResponse = zod.object({
 /**
  * @summary Get source import status
  */
-export const GetSourceImportParams = zod.object({
+export const GetSourceImportParams = /* @__PURE__ */ zod.object({
   "id": zod.string(),
   "jobId": zod.string()
 })
 
-export const GetSourceImportResponse = zod.object({
+export const GetSourceImportResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "errorCode": zod.string().optional(),
   "fileId": zod.string().optional(),
@@ -6877,7 +6877,7 @@ export const GetSourceImportResponse = zod.object({
 /**
  * @summary Reserve a direct source upload
  */
-export const CreateSourceUploadParams = zod.object({
+export const CreateSourceUploadParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
@@ -6897,7 +6897,7 @@ export const createSourceUploadBodyPageCountMin = 0;
 
 
 
-export const CreateSourceUploadBody = zod.object({
+export const CreateSourceUploadBody = /* @__PURE__ */ zod.object({
   "batchId": zod.string().min(1).max(createSourceUploadBodyBatchIdMax).regex(createSourceUploadBodyBatchIdRegExp),
   "batchTotal": zod.int().min(1).max(createSourceUploadBodyBatchTotalMax),
   "chapterId": zod.string().optional(),
@@ -6911,7 +6911,7 @@ export const CreateSourceUploadBody = zod.object({
   "sizeBytes": zod.int()
 })
 
-export const CreateSourceUploadResponse = zod.object({
+export const CreateSourceUploadResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "expiresAt": zod.iso.datetime({"offset":true}),
   "headers": zod.record(zod.string(), zod.string()),
@@ -6924,12 +6924,12 @@ export const CreateSourceUploadResponse = zod.object({
 /**
  * @summary Complete a direct source upload
  */
-export const CompleteSourceUploadParams = zod.object({
+export const CompleteSourceUploadParams = /* @__PURE__ */ zod.object({
   "id": zod.string(),
   "uploadId": zod.string()
 })
 
-export const CompleteSourceUploadResponse = zod.object({
+export const CompleteSourceUploadResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "addedAt": zod.iso.datetime({"offset":true}),
   "chapterId": zod.string().nullable(),
@@ -7001,11 +7001,11 @@ export const CompleteSourceUploadResponse = zod.object({
 /**
  * @summary Workspace stats
  */
-export const GetWorkspaceStatsParams = zod.object({
+export const GetWorkspaceStatsParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetWorkspaceStatsResponse = zod.object({
+export const GetWorkspaceStatsResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "attempts": zod.int(),
   "avgScore": zod.int(),
@@ -7029,11 +7029,11 @@ export const GetWorkspaceStatsResponse = zod.object({
 /**
  * @summary Study progress in a workspace
  */
-export const GetWorkspaceStudyParams = zod.object({
+export const GetWorkspaceStudyParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const GetWorkspaceStudyResponse = zod.object({
+export const GetWorkspaceStudyResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "enabled": zod.boolean(),
   "items": zod.array(zod.object({
@@ -7090,54 +7090,54 @@ export const GetWorkspaceStudyResponse = zod.object({
 /**
  * @summary Turn study progress on or off in a workspace
  */
-export const SetWorkspaceStudyParams = zod.object({
+export const SetWorkspaceStudyParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const SetWorkspaceStudyBody = zod.object({
+export const SetWorkspaceStudyBody = /* @__PURE__ */ zod.object({
   "enabled": zod.boolean()
 })
 
-export const SetWorkspaceStudyResponse = zod.void()
+export const SetWorkspaceStudyResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Mark a file or material read, unread or removed
  */
-export const SetStudyItemParams = zod.object({
+export const SetStudyItemParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const SetStudyItemBody = zod.object({
+export const SetStudyItemBody = /* @__PURE__ */ zod.object({
   "fileId": zod.string().optional(),
   "materialId": zod.string().optional(),
   "state": zod.enum(['done', 'removed']).optional().describe('Omitted marks the item unread')
 })
 
-export const SetStudyItemResponse = zod.void()
+export const SetStudyItemResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Clear study progress in a workspace
  */
-export const ResetWorkspaceStudyParams = zod.object({
+export const ResetWorkspaceStudyParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ResetWorkspaceStudyResponse = zod.void()
+export const ResetWorkspaceStudyResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Transfer workspace ownership to another member
  */
-export const TransferWorkspaceParams = zod.object({
+export const TransferWorkspaceParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
 
 
 
-export const TransferWorkspaceBody = zod.object({
+export const TransferWorkspaceBody = /* @__PURE__ */ zod.object({
   "recipientId": zod.string().min(1)
 })
 
@@ -7152,7 +7152,7 @@ export const transferWorkspaceResponseTagsItemValueMax = 35;
 
 
 
-export const TransferWorkspaceResponse = zod.object({
+export const TransferWorkspaceResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "autoProcess": zod.boolean(),
   "canClone": zod.boolean(),
@@ -7196,42 +7196,42 @@ export const TransferWorkspaceResponse = zod.object({
 /**
  * @summary Revalidate source room access
  */
-export const CheckSourceAccessParams = zod.object({
+export const CheckSourceAccessParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
 
 
 
-export const CheckSourceAccessQueryParams = zod.object({
+export const CheckSourceAccessQueryParams = /* @__PURE__ */ zod.object({
   "actorId": zod.string().optional(),
   "epoch": zod.int().min(1).optional(),
   "edit": zod.boolean().optional()
 })
 
-export const CheckSourceAccessHeader = zod.object({
+export const CheckSourceAccessHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const CheckSourceAccessResponse = zod.void()
+export const CheckSourceAccessResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Bootstrap an authorized source room
  */
-export const BootstrapSourceDocumentParams = zod.object({
+export const BootstrapSourceDocumentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const BootstrapSourceDocumentQueryParams = zod.object({
+export const BootstrapSourceDocumentQueryParams = /* @__PURE__ */ zod.object({
   "actorId": zod.string().optional()
 })
 
-export const BootstrapSourceDocumentHeader = zod.object({
+export const BootstrapSourceDocumentHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const BootstrapSourceDocumentResponse = zod.object({
+export const BootstrapSourceDocumentResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
   "baseRevision": zod.int(),
@@ -7263,11 +7263,11 @@ export const BootstrapSourceDocumentResponse = zod.object({
 /**
  * @summary Persist an authorized source checkpoint
  */
-export const CheckpointSourceDocumentParams = zod.object({
+export const CheckpointSourceDocumentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const CheckpointSourceDocumentHeader = zod.object({
+export const CheckpointSourceDocumentHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
@@ -7282,7 +7282,7 @@ export const checkpointSourceDocumentBodySeedBytesMin = 0;
 
 
 
-export const CheckpointSourceDocumentBody = zod.object({
+export const CheckpointSourceDocumentBody = /* @__PURE__ */ zod.object({
   "actorIds": zod.array(zod.string()).min(1).nullable(),
   "baseRevision": zod.int().min(1),
   "baseSourceSHA256": zod.string().optional(),
@@ -7310,7 +7310,7 @@ export const CheckpointSourceDocumentBody = zod.object({
   "update": zod.string()
 })
 
-export const CheckpointSourceDocumentResponse = zod.object({
+export const CheckpointSourceDocumentResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "checkpoint": zod.int(),
   "operation": zod.object({
@@ -7357,22 +7357,22 @@ export const CheckpointSourceDocumentResponse = zod.object({
 /**
  * @summary Move editing to a new epoch after a discarded room
  */
-export const ResetSourceEpochParams = zod.object({
+export const ResetSourceEpochParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ResetSourceEpochHeader = zod.object({
+export const ResetSourceEpochHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
 
 
 
-export const ResetSourceEpochBody = zod.object({
+export const ResetSourceEpochBody = /* @__PURE__ */ zod.object({
   "epoch": zod.int().min(1)
 })
 
-export const ResetSourceEpochResponse = zod.object({
+export const ResetSourceEpochResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "moved": zod.boolean()
 })
@@ -7381,18 +7381,18 @@ export const ResetSourceEpochResponse = zod.object({
 /**
  * @summary Publish a processed source checkpoint
  */
-export const PublishSourceRefreshParams = zod.object({
+export const PublishSourceRefreshParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const PublishSourceRefreshHeader = zod.object({
+export const PublishSourceRefreshHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
 
 
 
-export const PublishSourceRefreshBody = zod.object({
+export const PublishSourceRefreshBody = /* @__PURE__ */ zod.object({
   "attemptId": zod.int().min(1),
   "checkpoint": zod.int(),
   "contentHash": zod.string(),
@@ -7409,7 +7409,7 @@ export const PublishSourceRefreshBody = zod.object({
   "sourceETag": zod.string()
 })
 
-export const PublishSourceRefreshResponse = zod.object({
+export const PublishSourceRefreshResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "access": zod.enum(['write', 'read']),
   "baseRevision": zod.int(),
@@ -7441,11 +7441,11 @@ export const PublishSourceRefreshResponse = zod.object({
 /**
  * @summary Move editing onto the published file
  */
-export const RebuildSourceParams = zod.object({
+export const RebuildSourceParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const RebuildSourceHeader = zod.object({
+export const RebuildSourceHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
@@ -7456,7 +7456,7 @@ export const rebuildSourceBodyNetTokensMin = 0;
 
 
 
-export const RebuildSourceBody = zod.object({
+export const RebuildSourceBody = /* @__PURE__ */ zod.object({
   "epoch": zod.int().min(1),
   "expectedCheckpoint": zod.int().min(rebuildSourceBodyExpectedCheckpointMin),
   "netTokens": zod.int().min(rebuildSourceBodyNetTokensMin),
@@ -7466,49 +7466,49 @@ export const RebuildSourceBody = zod.object({
   "stateSeedSHA256": zod.string().optional()
 })
 
-export const RebuildSourceResponse = zod.void()
+export const RebuildSourceResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Record a refused rebuild and leave the file due
  */
-export const RefuseSourceRebuildParams = zod.object({
+export const RefuseSourceRebuildParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const RefuseSourceRebuildHeader = zod.object({
+export const RefuseSourceRebuildHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
 
 
 
-export const RefuseSourceRebuildBody = zod.object({
+export const RefuseSourceRebuildBody = /* @__PURE__ */ zod.object({
   "epoch": zod.int().min(1),
   "error": zod.string(),
   "publishedSourceSHA256": zod.string()
 })
 
-export const RefuseSourceRebuildResponse = zod.void()
+export const RefuseSourceRebuildResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Admit a saved source refresh
  */
-export const RequestSourceRefreshParams = zod.object({
+export const RequestSourceRefreshParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const RequestSourceRefreshHeader = zod.object({
+export const RequestSourceRefreshHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const RequestSourceRefreshBody = zod.object({
+export const RequestSourceRefreshBody = /* @__PURE__ */ zod.object({
   "actorId": zod.string(),
   "automatic": zod.boolean()
 })
 
-export const RequestSourceRefreshResponse = zod.object({
+export const RequestSourceRefreshResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "checkpoint": zod.int(),
   "fileId": zod.string(),
@@ -7520,19 +7520,19 @@ export const RequestSourceRefreshResponse = zod.object({
 /**
  * @summary Claim a fixed source export
  */
-export const ClaimSourceRefreshParams = zod.object({
+export const ClaimSourceRefreshParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ClaimSourceRefreshQueryParams = zod.object({
+export const ClaimSourceRefreshQueryParams = /* @__PURE__ */ zod.object({
   "jobId": zod.string().optional()
 })
 
-export const ClaimSourceRefreshHeader = zod.object({
+export const ClaimSourceRefreshHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const ClaimSourceRefreshResponse = zod.object({
+export const ClaimSourceRefreshResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "baseRevision": zod.int(),
   "baseSourceSHA256": zod.string(),
@@ -7552,15 +7552,15 @@ export const ClaimSourceRefreshResponse = zod.object({
 /**
  * @summary Enqueue an uploaded candidate
  */
-export const FinalizeSourceRefreshParams = zod.object({
+export const FinalizeSourceRefreshParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const FinalizeSourceRefreshHeader = zod.object({
+export const FinalizeSourceRefreshHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const FinalizeSourceRefreshBody = zod.object({
+export const FinalizeSourceRefreshBody = /* @__PURE__ */ zod.object({
   "checkpoint": zod.int(),
   "epoch": zod.int(),
   "jobId": zod.string(),
@@ -7572,47 +7572,47 @@ export const FinalizeSourceRefreshBody = zod.object({
   "stateSeedSHA256": zod.string().nullish()
 })
 
-export const FinalizeSourceRefreshResponse = zod.void()
+export const FinalizeSourceRefreshResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Discard an unsuccessful candidate
  */
-export const FailSourceRefreshParams = zod.object({
+export const FailSourceRefreshParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const FailSourceRefreshHeader = zod.object({
+export const FailSourceRefreshHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const FailSourceRefreshBody = zod.object({
+export const FailSourceRefreshBody = /* @__PURE__ */ zod.object({
   "error": zod.string(),
   "jobId": zod.string(),
   "leaseToken": zod.string(),
   "stale": zod.boolean()
 })
 
-export const FailSourceRefreshResponse = zod.void()
+export const FailSourceRefreshResponse = /* @__PURE__ */ zod.void()
 
 
 /**
  * @summary Read a leased source export
  */
-export const ReadSourceRefreshParams = zod.object({
+export const ReadSourceRefreshParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ReadSourceRefreshQueryParams = zod.object({
+export const ReadSourceRefreshQueryParams = /* @__PURE__ */ zod.object({
   "jobId": zod.string().optional(),
   "leaseToken": zod.string().optional()
 })
 
-export const ReadSourceRefreshHeader = zod.object({
+export const ReadSourceRefreshHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const ReadSourceRefreshResponse = zod.object({
+export const ReadSourceRefreshResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "sourceURL": zod.string()
 })
@@ -7621,11 +7621,11 @@ export const ReadSourceRefreshResponse = zod.object({
 /**
  * @summary Make the images and quiz or flashcard blocks an update brought in the material's own
  */
-export const AdoptMaterialChildrenParams = zod.object({
+export const AdoptMaterialChildrenParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const AdoptMaterialChildrenHeader = zod.object({
+export const AdoptMaterialChildrenHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
@@ -7637,7 +7637,7 @@ export const adoptMaterialChildrenBodyMaterialsMax = 20;
 
 
 
-export const AdoptMaterialChildrenBody = zod.object({
+export const AdoptMaterialChildrenBody = /* @__PURE__ */ zod.object({
   "actorUserId": zod.string().min(1),
   "assetIds": zod.array(zod.string()).max(adoptMaterialChildrenBodyAssetIdsMax),
   "materials": zod.array(zod.object({
@@ -7646,7 +7646,7 @@ export const AdoptMaterialChildrenBody = zod.object({
 })).max(adoptMaterialChildrenBodyMaterialsMax)
 })
 
-export const AdoptMaterialChildrenResponse = zod.object({
+export const AdoptMaterialChildrenResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "assets": zod.array(zod.object({
   "id": zod.string(),
@@ -7663,15 +7663,15 @@ export const AdoptMaterialChildrenResponse = zod.object({
 /**
  * @summary Queue a dirty idle note for retrieval indexing
  */
-export const RequestMaterialIndexParams = zod.object({
+export const RequestMaterialIndexParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const RequestMaterialIndexHeader = zod.object({
+export const RequestMaterialIndexHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
-export const RequestMaterialIndexResponse = zod.object({
+export const RequestMaterialIndexResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "jobId": zod.string()
 })
@@ -7680,18 +7680,18 @@ export const RequestMaterialIndexResponse = zod.object({
 /**
  * @summary Project a durably stored Yjs document
  */
-export const ProjectMaterialYjsDocumentParams = zod.object({
+export const ProjectMaterialYjsDocumentParams = /* @__PURE__ */ zod.object({
   "id": zod.string()
 })
 
-export const ProjectMaterialYjsDocumentHeader = zod.object({
+export const ProjectMaterialYjsDocumentHeader = /* @__PURE__ */ zod.object({
   "X-Collaboration-Secret": zod.string().optional()
 })
 
 
 
 
-export const ProjectMaterialYjsDocumentBody = zod.object({
+export const ProjectMaterialYjsDocumentBody = /* @__PURE__ */ zod.object({
   "assetIds": zod.array(zod.string()).nullish(),
   "content": zod.object({
   "schemaVersion": zod.int(),
@@ -7700,7 +7700,7 @@ export const ProjectMaterialYjsDocumentBody = zod.object({
   "yjsVersion": zod.int().min(1)
 })
 
-export const ProjectMaterialYjsDocumentResponse = zod.object({
+export const ProjectMaterialYjsDocumentResponse = /* @__PURE__ */ zod.object({
   "$schema": zod.url().optional().describe('A URL to the JSON Schema for this object.'),
   "contentBytes": zod.int().describe('UTF-8 byte length of persisted content JSON'),
   "id": zod.string(),

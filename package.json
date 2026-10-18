@@ -191,7 +191,7 @@
     "chaos:peers": "tsx bench/collaboration/scripts/chaos-peers.ts",
     "check": "ultracite check && pnpm run typecheck",
     "gen:openapi": "cd server && go run ./cmd/openapi -o ../openapi.yaml -python-slots ../pipeline/pipeline/generated/slot.py -python-limits ../pipeline/pipeline/generated/limits.py -typescript-limits ../src/api/limits.generated.ts -agent-tools ../pipeline/pipeline/generated/agent_tools.json -embeds ..",
-    "gen:api": "pnpm gen:api:clean && orval && node scripts/sync-slot-contracts.mjs",
+    "gen:api": "pnpm gen:api:clean && orval && node scripts/mark-pure-validators.mjs && node scripts/sync-slot-contracts.mjs",
     "gen:api:clean": "node scripts/clean-api-gen.mjs",
     "gen:api:full": "pnpm gen:openapi && pnpm gen:api",
     "fix": "ultracite fix",
