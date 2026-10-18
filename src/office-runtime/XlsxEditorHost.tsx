@@ -15,6 +15,7 @@ import {
 import type {
   OfficeAnalysis,
   OfficeLocale,
+  OfficeNotice,
   OfficeRenderedPage,
 } from '@/features/files/officeProtocol';
 import type {
@@ -38,6 +39,12 @@ import {
 } from './xlsxRender';
 import './xlsx-runtime.css';
 
+/**
+ * The largest update one XLSX clear may send: the collaboration server's
+ * per-message payload limit (`COLLABORATION_MAX_PAYLOAD_BYTES`, 2 MiB).
+ */
+const OFFICE_MESSAGE_MAX_BYTES = 2 * 1024 * 1024;
+
 export function XlsxEditorHost({
   bytes,
   collaboration,
@@ -46,6 +53,7 @@ export function XlsxEditorHost({
   onExporter,
   onFlusher,
   onMenus,
+  onNotice,
   onRenderer,
   narrow,
   onPendingChange,
@@ -68,6 +76,8 @@ export function XlsxEditorHost({
   onExporter: (exporter: OfficeExporter | null) => void;
   onFlusher: (flusher: OfficeFlusher | null) => void;
   onMenus: OfficeMenuReporter;
+  /** A clear too big for the room, or a copy too big to read: nothing changed. */
+  onNotice: (notice: OfficeNotice) => void;
   onRenderer: (renderer: OfficeRenderer | null) => void;
   onPendingChange: (pending: boolean) => void;
   fileName: string;
@@ -186,6 +196,7 @@ export function XlsxEditorHost({
     >
       <XlsxEditor
         className="office-editor-host"
+        clearLimitBytes={OFFICE_MESSAGE_MAX_BYTES}
         collaboration={collaboration}
         file={bytes}
         fileName={fileName}
@@ -197,6 +208,7 @@ export function XlsxEditorHost({
           const info = apiRef.current?.sheetInfo();
           if (info) onAnalysis(analyzeOpenWorkbook({ sheetInfo: () => info }));
         }}
+        onNotice={onNotice}
         onPendingChange={onPendingChange}
         onReady={(api) => {
           apiRef.current = api;

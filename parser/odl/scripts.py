@@ -32,6 +32,7 @@ import bisect
 import copy
 import functools
 import itertools
+import math
 import re
 import statistics
 import unicodedata
@@ -49,6 +50,8 @@ SUB_SHIFT = 0.08  # baseline drop, in base ems
 WORD_GAP = 0.2  # ems; a wider gap separates words
 ROW_GAP = 2.0  # ems; glyphs chained to a display structure along its axis
 MAX_STROKES = 5000  # drawn segments on a page past which bars are not read
+ROW_CELL = 16.0  # points; reader lines are indexed by the grid cells they cover
+ROW_INDEX = 500  # lines on a page from which they are indexed; fewer are scanned
 
 MATH_CHARS = set("=+×÷−±∓<>≤≥≠≈≡∝∑∏∫∮√∞∂∇→←↔⇌⇒⇔·∈∉⊂⊃∪∩")
 BIG_OPS = set("∑∏∫∮")
@@ -257,13 +260,17 @@ def _needs_page(text: dict) -> tuple[bool, bool]:
             lines.append((line["bbox"], big, len(text)))
     if not scripts:
         # A script set as its own line beside a bigger line.
+        index = _box_index([box for box, _, _ in lines])
+        reach = max((size for _, size, _ in lines), default=0)
         for box, size, n in lines:
+            # The lines a line's start lies beside, within the other's size.
+            span = (box[0] - reach, box[1], box[0] + reach, box[3])
             if n <= 12 and any(
                 size <= SCRIPT_RATIO * other
                 and box[1] < ob[3]
                 and ob[1] < box[3]
                 and ob[0] - other <= box[0] <= ob[2] + other
-                for ob, other, _ in lines
+                for ob, other, _ in (lines[k] for k in _beside(index, span, len(lines)))
             ):
                 scripts = True
                 break
@@ -1422,6 +1429,54 @@ def _plain_words(line: list[Glyph]) -> list[str]:
     return words
 
 
+def _cells(a: float, b: float) -> range | None:
+    """The ROW_CELL cells from ``a`` to ``b`` (either order) along one axis,
+    or None when the two are not finite or lie further apart than a page."""
+    if not (math.isfinite(a) and math.isfinite(b)) or abs(b - a) > 64 * ROW_CELL:
+        return None
+    return range(int(min(a, b) // ROW_CELL), int(max(a, b) // ROW_CELL) + 1)
+
+
+def _box_index(
+    boxes: list[tuple[float, float, float, float]],
+) -> tuple[dict[tuple[int, int], list[int]], list[int]] | None:
+    """Boxes (x0, y0, x1, y1) by the grid cells they cover, and apart the
+    boxes without cells, which ``_beside`` returns for every query. None for
+    fewer than ROW_INDEX boxes: scanning them all is cheaper."""
+    if len(boxes) < ROW_INDEX:
+        return None
+    cells: dict[tuple[int, int], list[int]] = {}
+    unbound: list[int] = []
+    for i, (x0, y0, x1, y1) in enumerate(boxes):
+        xs, ys = _cells(x0, x1), _cells(y0, y1)
+        if xs is None or ys is None:
+            unbound.append(i)
+            continue
+        for cell in itertools.product(xs, ys):
+            cells.setdefault(cell, []).append(i)
+    return cells, unbound
+
+
+def _beside(
+    index: tuple[dict[tuple[int, int], list[int]], list[int]] | None,
+    box: tuple[float, float, float, float],
+    count: int,
+) -> list[int] | range:
+    """In ascending order, the indexed boxes that may meet ``box`` (edges
+    included): every one that does, and others; all ``count`` without an
+    index or when ``box`` has no cells."""
+    if index is None:
+        return range(count)
+    cells, unbound = index
+    xs, ys = _cells(box[0], box[2]), _cells(box[1], box[3])
+    if xs is None or ys is None:
+        return range(count)
+    found = set(unbound)
+    for cell in itertools.product(xs, ys):
+        found.update(cells.get(cell, ()))
+    return sorted(found)
+
+
 def _lines_for_words(lines: list[list[Glyph]], done: set[Glyph]) -> list[list[Glyph]]:
     """Reader lines with misplaced scripts moved to the line of their base.
 
@@ -1436,6 +1491,14 @@ def _lines_for_words(lines: list[list[Glyph]], done: set[Glyph]) -> list[list[Gl
     owner = {g: i for i, row in enumerate(rows) for g in row}
     spans = [(min(g.y0 for g in row), max(g.y1 for g in row)) for row in rows]
     biggest = max((g.size for row in rows for g in row), default=0)
+    # A page of plot markers set as text holds thousands of rows: a run is
+    # compared only with the rows that reach the gap a base may leave.
+    index = _box_index(
+        [
+            (min(g.x0 for g in row), y0, max(g.x1 for g in row), y1)
+            for row, (y0, y1) in zip(rows, spans)
+        ]
+    )
     for i, row in enumerate(rows):
         size = max(g.size for g in row)
         run = []
@@ -1449,7 +1512,9 @@ def _lines_for_words(lines: list[list[Glyph]], done: set[Glyph]) -> list[list[Gl
             continue
         head = run[0]
         best = None
-        for j, other in enumerate(rows):
+        gap = (head.x0 - 0.45 * biggest, head.y0, head.x0, head.y1)
+        for j in _beside(index, gap, len(rows)):
+            other = rows[j]
             if j == i or spans[j][0] > head.y1 or spans[j][1] < head.y0:
                 continue
             for h in other:

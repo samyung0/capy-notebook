@@ -58,7 +58,7 @@ const UNAVAILABLE = {
   documentFontsReady:
     "document.fonts.ready: the runtime loads each face from bytes before adding it, so the frame's FontFaceSet reports no loading; fontsAdded (the last face added) stands in.",
   workerWasmCompile:
-    "WASM compile and instantiate inside a worker: Playwright cannot run a script in a worker before the worker's own. Needs performance.mark around the engine's WASM init, which the test can read from the worker's timeline.",
+    "WASM compile and instantiate inside a worker: Playwright cannot run a script in a worker before the worker's own. Only the stages the worker posts back and its frame marks (`marks`) show it.",
 };
 
 type MeasuredFile = {
@@ -275,6 +275,18 @@ function timeline() {
     transferSize: entry.transferSize,
   });
   return {
+    // The product's own stage marks (src/lib/officeMarks.ts); a worker's
+    // stages are marked in its frame.
+    marks: (performance.getEntriesByType('mark') as PerformanceMark[])
+      .filter((entry) => entry.name.startsWith('capy:office:'))
+      .map((entry) => ({
+        detail: (entry.detail ?? null) as Record<
+          string,
+          boolean | number | string
+        > | null,
+        name: entry.name.slice('capy:office:'.length),
+        start: entry.startTime,
+      })),
     navigation: navigation
       ? {
           ...timing(navigation),
@@ -470,6 +482,16 @@ function summarize(
     start: at(frame, entry.start),
   }));
   const fontsAdded = (runtime?.fontsAdded ?? []).map((time) => at(frame, time));
+  const marks = realms
+    .flatMap((realm) =>
+      realm.marks.map((mark) => ({
+        at: at(realm, mark.start),
+        detail: mark.detail,
+        name: mark.name,
+        realm: realm.name,
+      }))
+    )
+    .sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
   const milestones = {
     collaborationGrant: span(api('collaboration-token')),
     documentLoaded: at(app, app?.navigation?.load),
@@ -527,6 +549,7 @@ function summarize(
       ),
     },
     indexHtml,
+    marks,
     milestones,
     navigationStart: app ? new Date(zero).toISOString() : null,
     open,
@@ -676,6 +699,21 @@ function writeSummary(run: UatRun, directory: string, results: OpenResult[]) {
         return `| ${open} | ${label} | ${times.map(ms).join(' | ')} | ${kb(entry.transferSize)} | ${kb(entry.encodedBodySize)} / ${kb(entry.decodedBodySize)} | ${network?.cacheStatus ?? '–'} | ${ms(network?.age)} | ${network?.colo ?? '–'} |`;
       });
     }),
+    '',
+    '## Marks',
+    '',
+    "The product's `capy:office:*` stage marks in time order, ms after navigation start (details in the JSON).",
+    '',
+    '| Open | Marks |',
+    '| --- | --- |',
+    ...results.map(
+      (result) =>
+        `| ${result.file.format} ${result.file.size} ${result.open} | ${
+          result.marks
+            .map((mark) => `${mark.name} ${ms(mark.at)}`)
+            .join(' · ') || '–'
+        } |`
+    ),
   ];
   writeFileSync(
     path.join(directory, 'office-load.md'),

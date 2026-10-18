@@ -289,32 +289,57 @@ ported from the `bench/parsers` lab into `parser/odl/`: font `ToUnicode`
 repairs, picture triage, table-cell styles, column reading order, hidden-OCR-layer order, heading
 and table context, footer ancestry, list geometry and text-overprint repair,
 exponents, column continuations, source-geometry table recovery and negation
-composition, and formula pictures retyped with a `[formula]` placeholder. Pages
+composition, and formula pictures retyped with a `[formula]` placeholder.
 Before Java, dense vector figures are flattened in the parse copy
-(`flatten.py`, parser v17, decision 2026-10-16): plotting tools draw scatter
-markers, image pixels and curves as thousands of tiny paths, and OpenDataLoader
-keeps an object per path segment for the whole document, so plot-heavy books
-exhausted its 1 GiB heap (the five largest library books did). On a page with
-at least 800 path segments, each path's segments count toward the 12 pt cell
-under its centre; touching cells with at least 15 segments form a region, kept
-from 300 segments. Paths wider and taller than half the page (frames,
-backgrounds) never join one, and a region whose words cover more than 15% of
-it (a ruled table, a text box) stays vector. Each region is rendered at 150 dpi,
-the vector art it fully covers is removed (text and images stay, as text) and
-the render goes beneath the remaining content; rotated pages are skipped. The
-upload is unchanged; the flattened copy is what Java and the repairs read and
-the bundle's `parsed.pdf`. After picture triage, `pictures.flattened_figures`
-makes each region one `image` block with `_source_role: flattened-figure` in
-the region's box (ODL's picture of the render, or a new one), drops pieces ODL
-read as pictures or formulas, and folds the text inside and short labels
-beside it (at most six words, no `=`, within 30 pt, as for vector figures) into
-`figure_labels` (a source line into `image_footnote`); a sentence stays in the
-body. On 669 books it touches 2–3% of pages and takes 0.5–25 s a book. On 11
-books that parsed before, 8 of 4,279 headings left (mostly figure labels v16
-had promoted), 15 label headings appeared and at most 206 words a book left
-the text; the five failing books parse in 78–262 s, and floods of 1.76 and 2
-million paint operators parse in 16–23 s
-([report](../bench/parsers/reports/2026-10-16-element-limit.md)). Pages
+(`flatten.py`; parser v17, decision 2026-10-16, tuned in v18, decisions
+2026-10-18): plotting tools draw scatter markers, image pixels and curves as
+thousands of tiny paths, and OpenDataLoader keeps an object per path segment
+for the whole document, so plot-heavy books exhausted its 1 GiB heap (the five
+largest library books did). Only pages with at least 800 path segments are
+worked on, a rotated page at rotation 0 (restored after; its regions are
+reported as the page shows them). First, ruled answer blanks drawn as ticks
+are merged: one-segment butt-capped strokes at most 2.5 widths long, side by
+side one width apart, become one filled rectangle of their colour per run of
+at least 20 (overlapping run boxes are merged before the redaction, or MuPDF
+leaves the second run's ticks), so they stay vector and make no picture. Then
+each path's segments count toward the 12 pt cell under its centre; touching
+cells with at least 15 segments form a core, kept from 300 segments. Paths
+wider and taller than half the page (frames, backgrounds) never join one, and
+a core whose words cover more than 15% of it (a ruled table, a text box)
+stays vector. A core of filled paths nearly all under 12 pt, under 3% of the
+page and with no figure-sized drawing within 30 pt, is quiet: a formula drawn
+as glyph outlines. Every other core grows to the drawing clusters it meets
+(`pictures.Drawings`, plus 2 pt), stopping at the outermost rectangle drawn
+around it (plus 8 pt for ticks outside a frame; not at one panel's frame when
+another core in the grown box lies outside it); a grown box that is
+page-sized, over 15% text, holds a whole text line of 8 or more words, cuts
+across such a line half of whose words have letters (a run of axis ticks is a
+label), or takes in 30 words keeps its core. Each region is rendered at
+150 dpi, the vector art it fully covers is removed (text and images stay, as
+text) and the render goes beneath the remaining content. The upload is
+unchanged; the flattened copy is what Java and the repairs read and the
+bundle's `parsed.pdf`. After picture triage, `pictures.flattened_figures`
+makes each figure region one `image` block with
+`_source_role: flattened-figure` in the region's box (ODL's picture of the
+render, or a new one), drops pieces ODL read as pictures or formulas, and
+folds the text inside and short labels beside it (at most six words, no `=`,
+within 30 pt, as for vector figures; a heading above or below the region only
+when centred on it) into `figure_labels` (a source line into
+`image_footnote`); a sentence stays in the body. A quiet region makes no
+figure and takes no labels: its pieces go and an `equation` block carrying
+`[formula]` takes the place of ODL's picture of it, as for formula pictures
+(below) with two differences: it is spliced inline
+only where the picture rule finds it in a text line and is otherwise its own
+block (after the table it sits in, if any), and words over it are no
+precision test (they belong to the formula). Outline logos get one too
+(accepted, as v12's logos were). On a blind set of 40 books against v17,
+Java reads 12% fewer path segments, the book at the heap limit falls from 53
+to 19 full collections and the whole parse is 9% faster; real headings lost
+against an unflattened parse go from 94 to 91 and 13 fewer figure labels are
+headings; 148 tables are lost, none real among 126 viewed; 56 regions are
+quiet, none a chart, and tick merges change at most 0.042% of a page's
+pixels ([v18 report](../bench/parsers/reports/2026-10-18-flatten-tuning.md),
+[v17 report](../bench/parsers/reports/2026-10-16-element-limit.md)). Pages
 with fewer than 40 kept characters (blank pages included) are text-less
 (`textless.textless_pages`); the parse renders each as a grey JPEG and the
 ingest worker's VLM reads it ([VLM page read](#vlm-page-read)). The parser holds
@@ -329,7 +354,7 @@ captions and units expand citation bounds without consuming adjacent prose.
 Existing supported numeric/native tables are protected. Ambiguous headers,
 partial emphasis and unsupported background scope leave the original text.
 Font repair abstains for an encoding containing an unsupported glyph name. The parser identity is
-`odl-2.5.7-refined-vlm-v17` plus the release SHA (the donor key uses the first
+`odl-2.5.7-refined-vlm-v18` plus the release SHA (the donor key uses the first
 part alone, see Donor reuse), and the bundle schema `capy-parser-bundle-v6`.
 Parser v7 (decision 2026-09-24; evidence in
 `bench/parsers/reports/2026-09-23-odl-thin-images-and-accuracy.md`, gate in

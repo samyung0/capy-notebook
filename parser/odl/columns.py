@@ -10,7 +10,7 @@ from pathlib import Path
 import pymupdf
 
 from . import page_text
-from .source_text import center_inside, compact, rect_for, source_text
+from .source_text import c_center, c_float, compact, rect_for, source_text
 
 
 def canonical(text: str) -> str:
@@ -36,17 +36,29 @@ def _source_page(page: pymupdf.Page):
         for code, _, origin, box in span["chars"]:
             if chr(code).isalnum():
                 glyphs.append((box, origin, span["font"], span["size"]))
-    return groups, glyphs
+    return groups, (glyphs, [c_center(g[0]) for g in glyphs])
 
 
-def _selected_glyphs(glyphs, area):
-    return sorted(
-        [g for g in glyphs if center_inside(g[0], area)],
-        key=lambda g: (round(g[1][1], 1), g[1][0]),
-    )
+def _selected_glyphs(page_glyphs, area):
+    """The glyphs ``center_inside`` the area, sorted by line: each centre is
+    converted once a page and the area once a call (a page is tested by every
+    candidate pair of blocks), with the same results and errors."""
+    glyphs, centers = page_glyphs
+    selected = []
+    bounds = None
+    for glyph, center in zip(glyphs, centers):
+        if center is None:
+            raise TypeError(f"{glyph[0]} is out of range for C floats")
+        if bounds is None:
+            bounds = [c_float(v, OverflowError) for v in area]
+        x0, y0, x1, y1 = bounds
+        if x0 <= center[0] < x1 and y0 <= center[1] < y1:
+            selected.append(glyph)
+    return sorted(selected, key=lambda g: (round(g[1][1], 1), g[1][0]))
 
 
 def _prove(page, groups, glyphs, left, right, intervening) -> bool:
+    """``glyphs`` is ``_source_page``'s pair: the glyphs and their centres."""
     a, b = rect_for(left, page), rect_for(right, page)
     first, following = _text(left).strip(), _text(right).strip()
     stop = re.search(r"[.!?](?=\s|$)", following)
@@ -72,7 +84,7 @@ def _prove(page, groups, glyphs, left, right, intervening) -> bool:
             or b.x0 <= g[1][0] <= b.x1
             and g[1][1] < b.y0 - 1
         )
-        for g in glyphs
+        for g in glyphs[0]
     ):
         return False
     for block in intervening:

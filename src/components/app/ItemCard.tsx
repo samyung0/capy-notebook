@@ -204,7 +204,8 @@ export function ItemCard({
     );
   }
   // Drive's card: icon, title and ⋯ on top, the thumbnail, then the hint.
-  // One-line titles keep every card in a row the same height.
+  // From `sm` one-line titles keep every card in a row the same height;
+  // narrower cards wrap the title to two lines and drop the workspace.
   return (
     <Card
       border="solid"
@@ -219,25 +220,29 @@ export function ItemCard({
       interactive={!!link && !pickable}
     >
       {overlay}
-      <div className="flex h-8.5 min-w-0 items-center gap-2 pb-1.5 pl-1.5">
-        <FileIcon className="size-4 shrink-0 -translate-y-px" name={icon} />
+      <div className="flex min-h-8.5 min-w-0 items-start gap-2 pt-1.5 pb-1.5 pl-1.5 sm:h-8.5 sm:items-center sm:pt-0">
+        <FileIcon
+          className="mt-px size-4 shrink-0 sm:mt-0 sm:-translate-y-px"
+          name={icon}
+        />
         <Title
-          className="min-w-0 flex-1 truncate font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card"
+          className="line-clamp-2 min-w-0 flex-1 break-words font-semibold @min-[200px]:text-[14.5px] text-[13.5px] leading-tight after:rounded-card sm:line-clamp-none sm:truncate"
           link={titleLink}
         >
           {title}
         </Title>
         {actions ? (
-          <div className="relative z-10 -my-0.5 shrink-0 [&_button]:p-1.5">
+          <div className="relative z-10 -mt-1.5 shrink-0 sm:-my-0.5 [&_button]:p-1.5">
             {actions}
           </div>
         ) : null}
       </div>
       <ThumbnailPanel dense={dense} icon={icon} {...thumbnail} />
-      {/* A fixed-height line, so cards with and without a workspace match. */}
-      <div className="box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[13px] text-fg">
+      {/* A fixed-height line, so cards with and without a workspace match;
+          pinned to the bottom when a wrapped title makes a row taller. */}
+      <div className="mt-auto box-content flex h-5 min-w-0 items-center gap-1.5 px-1.5 pt-2.5 pb-1 text-[13px] text-fg">
         {workspace && (
-          <>
+          <span className="hidden min-w-0 items-center gap-1.5 sm:flex">
             {workspaceIconId && (
               <img
                 alt=""
@@ -253,7 +258,7 @@ export function ItemCard({
             <span aria-hidden className="shrink-0">
               ·
             </span>
-          </>
+          </span>
         )}
         <span className="shrink-0 whitespace-nowrap text-fg-muted">{meta}</span>
       </div>
@@ -334,13 +339,14 @@ export function ItemList<S extends string = string>({
   );
 }
 
-/** The card grid: as many columns as fit at 150px (180px from `sm`), each
- * card at most 220px wide and centred in a column that grows past that. */
+/** The card grid: as many columns as fit at 140px (two on a 360px phone),
+ * growing to 180px from `sm`, 210px from `lg` and 240px from `xl`; each card
+ * at most 320px wide and centred in a column that grows past that. */
 export function ItemGrid({ className, ...rest }: ComponentProps<'div'>) {
   return (
     <div
       className={cn(
-        'grid w-full grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] sm:gap-4 [&>*]:w-full [&>*]:max-w-55 [&>*]:justify-self-center',
+        'grid w-full grid-cols-[repeat(auto-fill,minmax(140px,1fr))] gap-3 sm:grid-cols-[repeat(auto-fill,minmax(180px,1fr))] sm:gap-4 lg:grid-cols-[repeat(auto-fill,minmax(210px,1fr))] xl:grid-cols-[repeat(auto-fill,minmax(240px,1fr))] [&>*]:w-full [&>*]:max-w-80 [&>*]:justify-self-center',
         className
       )}
       {...rest}

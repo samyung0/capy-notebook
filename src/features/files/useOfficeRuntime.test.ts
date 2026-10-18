@@ -109,4 +109,19 @@ describe('the notices a frame shows', () => {
       [m.image_unreadable()],
     ]);
   });
+
+  it('toasts every refused spreadsheet clear and copy', () => {
+    const toast = vi.fn();
+    const notices = officeNotices(toast);
+    for (let key = 0; key < 2; key += 1) {
+      notices.show('clear-too-large', 2_097_152);
+      notices.show('copy-too-large', 2_097_152);
+    }
+    expect(toast.mock.calls).toEqual([
+      [m.files_office_clear_too_large()],
+      [m.files_office_copy_too_large()],
+      [m.files_office_clear_too_large()],
+      [m.files_office_copy_too_large()],
+    ]);
+  });
 });

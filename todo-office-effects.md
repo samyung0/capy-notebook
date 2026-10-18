@@ -134,11 +134,20 @@ Until that job finishes, chat gets no notice that the note changed.
 Notes are cheaper than Office here, because every save already builds the
 whole Plate value in-process (`validate`).
 
-- **Baseline:** the note's per-block index text at its last index, matching
-  `materialdoc.ExtractIndexText` (blocks joined by blank lines, media and quiz
-  blocks skipped). Port that extraction to Rust so the two always agree, or
-  have Go use the Rust one. Align by stable element id where blocks have one,
-  else by hash.
+- **Baseline:** the note's per-block index text at its last index:
+  `store.MaterialIndexText.Blocks` from Go's `materialdoc.ExtractIndexBlocks`.
+  The embeds round built the matching Rust extraction (`notes::index_text` on
+  branch `embeds/index`, golden fixtures shared with Go in
+  `server/internal/materialdoc/testdata/index_text/`). It follows the embed
+  catalog's per-element rules: titles and captions, labels, chart, plot and
+  graph data, the whole Mermaid source, no HTML embed, and embedded quizzes
+  and flashcard sets inside the note at their reference (quiz stems and
+  options only, never answer keys, worked solutions or ordering items; Epo
+  2026-10-18). Use `from_doc` for a live room and `from_content` for stored
+  content. Align blocks by element id (an id-less block gets ""), and diff
+  the live list against the recorded one. A heavy data diff (over ~150
+  tokens) becomes a placeholder resolved through `resolve_source_change`,
+  which returns only what index text holds.
 - **At save:** compare the value just built with the baseline, and write
   `pending_effects` and `net_tokens` on the material.
 - **Clear** both when the index job completes.

@@ -164,13 +164,17 @@ export interface OfficeReadyTimings {
 
 /**
  * Refusals the runtime reports for the host to show, not errors: typing into
- * a PPTX equation, or an inserted image over the payer's plan cap or of a
- * type the browser cannot decode (nothing is inserted).
+ * a PPTX equation, an inserted image over the payer's plan cap or of a type
+ * the browser cannot decode (nothing is inserted), an XLSX clear too big for
+ * the room or a copy (or cut) of more cells than the engine reads at once
+ * (nothing changes).
  */
 export const OFFICE_NOTICES = [
   'equation-text',
   'image-too-large',
   'image-type',
+  'clear-too-large',
+  'copy-too-large',
 ] as const;
 export type OfficeNotice = (typeof OFFICE_NOTICES)[number];
 

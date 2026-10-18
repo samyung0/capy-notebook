@@ -102,8 +102,9 @@ export function FileBanner({
   return (
     <div
       className={cn(
-        'flex shrink-0 gap-3 border-b pr-2 pl-4 text-fg text-sm',
-        inline ? 'h-10 items-center' : 'items-start py-2',
+        // Less inset on phones.
+        'flex shrink-0 gap-3 border-b pr-1.5 pl-3 text-fg text-sm sm:pr-2 sm:pl-4',
+        inline ? 'h-9 items-center' : 'items-start py-1',
         tone === 'error'
           ? 'border-solid-error/40 bg-tint-error'
           : 'border-divider bg-surface-hover-bg'

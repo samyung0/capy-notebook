@@ -1892,9 +1892,9 @@ stays retained behind it. Nothing is pinned per environment.
    repository or in chat.
 5. Backups. `/etc/cron.d/capy-library-db` runs `library-db-backup.sh` at
    03:15 Europe/Berlin (01:15 UTC during summer, 02:15 UTC during winter): a
-   custom-format `pg_dump` into `/opt/capy-library-db/backups`,
-   kept seven days. The library is rebuildable from its PDFs and builder
-   receipts, so local dumps are enough until it is not; add a B2 upload then.
+   custom-format `pg_dump` of the library and of the bank into
+   `/opt/capy-library-db/backups`, each uploaded to the private bank bucket
+   (step 5 of the bank setup), keeping the two newest of each on the host.
 6. Sizing. The host has 15 GiB and the parser is capped at 6 GiB; the
    container is capped at 3 GiB with `shared_buffers` 768 MB and
    `maintenance_work_mem` 512 MB. Raise `LIBRARY_DB_MAINTENANCE_WORK_MEM` for
@@ -1973,7 +1973,8 @@ content. Never point the ordinary app migrator at `bank`.
 5. Install the updated `library-db-backup.sh` only after the bank exists. Add
    the `BANK_PRIVATE_B2_*` entries from `deploy/library-db.env.example` to the
    host's mode-0600 `.env`. Use a bucket-scoped write-only backup key. The script
-   runs rclone in a container and writes `backups/bank-<UTC>.dump`. Apply a
+   runs rclone in a container and writes `backups/library-<UTC>.dump` and
+   `backups/bank-<UTC>.dump`. Apply a
    **backups-prefix-only** lifecycle rule retaining 30 days; keep references
    and run records. Verify one dump upload and restore it to a disposable
    database with `pg_restore` before relying on the cron.

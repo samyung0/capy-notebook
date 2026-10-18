@@ -394,9 +394,12 @@ class Drawings:
     def spent(self) -> int:
         return self.steps - self.left
 
-    def clusters(self, page: pymupdf.Page) -> list[tuple[pymupdf.Rect, int, int]]:
+    def clusters(
+        self, page: pymupdf.Page, paths: list[dict] | None = None
+    ) -> list[tuple[pymupdf.Rect, int, int]]:
+        """``paths``: the page's ``get_cdrawings()`` when the caller holds it."""
         if page.number not in self.pages:
-            found = _figure_clusters(page, self) if self.left >= 0 else []
+            found = _figure_clusters(page, self, paths) if self.left >= 0 else []
             if self.left < 0 and self.stopped_at is None:
                 self.stopped_at = page.number
             self.pages[page.number] = [
@@ -411,7 +414,7 @@ class Drawings:
 
 
 def _figure_clusters(
-    page: pymupdf.Page, drawings: Drawings
+    page: pymupdf.Page, drawings: Drawings, paths: list[dict] | None = None
 ) -> list[tuple[pymupdf.Rect, int, int]]:
     """Drawing clusters with their segment counts and how many of those are
     axis-aligned lines or boxes. Page-wide rules and frames, hairline specks
@@ -512,7 +515,7 @@ def _figure_clusters(
             grid[at].append(node)
         return True
 
-    for path in page.get_cdrawings():
+    for path in page.get_cdrawings() if paths is None else paths:
         x0, y0, x1, y1 = path["rect"]
         w, h = x1 - x0, y1 - y0
         if (w < 0.5 and h < 0.5) or (w >= 0.9 * width and h >= 0.9 * height):
@@ -733,15 +736,48 @@ def add_vector_figures(
     return out
 
 
+def _off_centre(rect: pymupdf.Rect, region: pymupdf.Rect) -> bool:
+    """``rect`` is above or below ``region`` but not centred on it: a section
+    heading at the margin, where a chart's title or axis title is centred."""
+    if rect.x1 <= region.x0 or rect.x0 >= region.x1:
+        return False  # beside it: a vertical axis title
+    centre, middle = (rect.x0 + rect.x1) / 2, (region.x0 + region.x1) / 2
+    return abs(centre - middle) > 0.25 * region.width
+
+
+def _quiet_kind(
+    page: pymupdf.Page, rect: pymupdf.Rect, facts: tuple | None
+) -> str | None:
+    """How a quiet region (a formula drawn as outlines, flatten.py) carries
+    PLACEHOLDER: "inline" where classify's rule finds it in a text line, to be
+    spliced by ``place_inline``, else "display", its own block; None on a page
+    without text lines or where the precision tests (``_not_formula``) find no
+    formula. Words over it are no test here: a quiet region's words belong to
+    its formula, not to a badge drawn under them."""
+    if facts is None:
+        return None
+    lines, body, size, _ = facts
+    if _not_formula(page, rect, (lines, body, size, [])):
+        return None
+    inline = _formula_kind(rect, [r for r, _ in lines], body) == "inline"
+    return "inline" if inline else "display"
+
+
 def flattened_figures(
     blocks: list[dict],
     document: pymupdf.Document,
     regions: dict[int, list[pymupdf.Rect]],
+    quiet: dict[int, list[pymupdf.Rect]] | None = None,
 ) -> list[dict]:
     """One figure per flattened region (flatten.py), in the region's box: ODL's
     picture of the render, or a new one. Pieces of it ODL read as pictures or
     formulas go; the text inside and short labels beside it join the figure as
-    its labels, like a vector figure's; a sentence stays in the body."""
+    its labels, like a vector figure's; a sentence stays in the body. A region
+    in ``quiet`` (a formula drawn as outlines) loses its pieces and makes no
+    figure: its text stays in the body, and a formula block carrying
+    PLACEHOLDER takes the place of its first piece (``_quiet_kind``), or comes
+    after the table it sits in."""
+    quiet = quiet or {}
     if not regions:
         return blocks
     by_page: dict[int, list[int]] = defaultdict(list)
@@ -749,11 +785,13 @@ def flattened_figures(
         if len(block.get("bbox") or []) == 4:
             by_page[block["page_idx"]].append(index)
     gone: set[int] = set()
-    inserts: dict[int, dict] = {}
+    inserts: dict[int, list[dict]] = defaultdict(list)  # before a block
+    after: dict[int, list[dict]] = defaultdict(list)
     tail: dict[int, list[dict]] = defaultdict(list)
     for number, boxes in regions.items():
         page = document[number]
         w, h = page.rect.width / 1000, page.rect.height / 1000
+        facts: tuple | None = None  # classify's page facts, read once if needed
         for region in boxes:
             pieces, inside = [], []
             reach = region + (
@@ -780,8 +818,48 @@ def flattened_figures(
                         rect in reach
                         and len(text.split()) <= VECTOR_LABEL_WORDS
                         and "=" not in text
+                        and not (block.get("text_level") and _off_centre(rect, region))
                     ):
                         inside.append(i)
+            if region in quiet.get(number, []):
+                gone.update(pieces)
+                if facts is None:
+                    # Rotated pages are skipped as in classify.
+                    facts = () if page.rotation else (_page_facts(page) or ())
+                kind = _quiet_kind(page, region, facts or None)
+                if kind is None:
+                    continue
+                centre = ((region.x0 + region.x1) / 2, (region.y0 + region.y1) / 2)
+                table = next(
+                    (
+                        i
+                        for i in by_page.get(number, [])
+                        if blocks[i].get("type") == "table"
+                        and _rect(blocks[i], page).contains(centre)
+                    ),
+                    None,
+                )
+                # Inside a table no paragraph can take it: its own block.
+                kind = "display" if table is not None else kind
+                formula = {
+                    "type": "equation",
+                    "text": PLACEHOLDER if kind == "display" else "",
+                    "_picture": kind,
+                    "bbox": [
+                        region.x0 / w,
+                        region.y0 / h,
+                        region.x1 / w,
+                        region.y1 / h,
+                    ],
+                    "page_idx": number,
+                }
+                if table is not None:
+                    after[table].append(formula)
+                elif pieces:
+                    inserts[min(pieces)].append(formula)
+                else:
+                    tail[number].append(formula)
+                continue
             base = next((blocks[i] for i in pieces if blocks[i]["type"] == "image"), {})
             texts = [str(blocks[i].get("text", "")).strip() for i in inside]
             figure = {
@@ -799,14 +877,14 @@ def flattened_figures(
             if anchor is None:
                 tail[number].append(figure)
             else:
-                inserts[anchor] = figure
+                inserts[anchor].append(figure)
     out: list[dict] = []
     last_on_page = {page: max(indices) for page, indices in by_page.items()}
     for index, block in enumerate(blocks):
-        if index in inserts:
-            out.append(inserts[index])
+        out.extend(inserts.get(index, ()))
         if index not in gone:
             out.append(block)
+        out.extend(after.get(index, ()))
         if index == last_on_page.get(block.get("page_idx")):
             out.extend(tail.pop(block["page_idx"], []))
     for figures in tail.values():  # pages without any block

@@ -681,6 +681,58 @@ test('XLSX view mode opens a sheet at its saved scroll after a short sheet, zoom
     .toBeGreaterThan(2000);
 });
 
+test('XLSX view mode name box goes to a typed cell on this sheet or another', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.setViewportSize({ height: 800, width: 1280 });
+  await page.goto('/workspaces/ws_bio?file=bio-office-xlsx');
+  const frame = page.frameLocator('iframe[src*="office-runtime"]');
+  await expect(frame.locator('canvas').first()).toBeVisible({
+    timeout: 60_000,
+  });
+  const grid = frame.getByRole('tabpanel');
+  const nameBox = frame.getByRole('textbox', {
+    name: m.files_office_spreadsheet_name_box(),
+  });
+  await expect(nameBox).toHaveValue('A1');
+
+  // Far past the used range: the scroll area grows to show the cell.
+  await nameBox.fill('h5000');
+  await nameBox.press('Enter');
+  await expect(nameBox).toHaveValue('H5000');
+  await expect
+    .poll(() => grid.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(50_000);
+  // Past the browsers' element size limit the cell is selected and the scroll
+  // area stops at the fork's 15,000,000 px cap (MAX_SCROLL_EXTENT_PX).
+  await nameBox.fill('a1048576');
+  await nameBox.press('Enter');
+  await expect(nameBox).toHaveValue('A1048576');
+  await expect
+    .poll(() => grid.evaluate((node) => node.scrollTop))
+    .toBeGreaterThan(14_000_000);
+  expect(await grid.evaluate((node) => node.scrollHeight)).toBeLessThanOrEqual(
+    15_000_000
+  );
+
+  // Another sheet's address opens it; a range goes to its first cell.
+  await nameBox.fill("'summary'!b3:c4");
+  await nameBox.press('Enter');
+  await expect(frame.getByRole('tab', { name: 'Summary' })).toHaveAttribute(
+    'aria-selected',
+    'true'
+  );
+  await expect(nameBox).toHaveValue('B3');
+
+  // Text that names no cell stays in the box until Escape restores it.
+  await nameBox.fill('nowhere');
+  await nameBox.press('Enter');
+  await expect(nameBox).toHaveValue('nowhere');
+  await nameBox.press('Escape');
+  await expect(nameBox).toHaveValue('B3');
+});
+
 for (const format of ['docx', 'xlsx', 'pptx'] as const) {
   test(`${format} zoom carries across View and Edit while the file is open, and stays usable while paused`, async ({
     page,
