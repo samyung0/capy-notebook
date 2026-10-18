@@ -52,12 +52,15 @@ async function save(scenario: string, summary: object) {
   );
 }
 
-/** The plan's starting allowance, evaluated per scenario (`headroom`). */
-const PROPOSED = {
+/**
+ * The server's allowance per user as shipped (collaboration-rs/crates/server/
+ * src/config.rs defaults), evaluated per scenario (`headroom`).
+ */
+const ALLOWANCE = {
   burstBytes: 8 * 1024 * 1024,
-  burstUpdates: 300,
+  burstUpdates: 10_000,
   bytesPerSecond: 2 * 1024 * 1024,
-  updatesPerSecond: 60,
+  updatesPerSecond: 200,
 };
 
 const PROSE = 'the quick brown fox jumps over the lazy dog while we measure ';
@@ -153,7 +156,7 @@ async function record(page: Page, scenario: string, extra: object = {}) {
 /**
  * Counts and bytes: the most in any 1 s (sliding), the 99th percentile of
  * consecutive 1 s windows over the scenario, the most in any 100 ms, the
- * largest message, and the proposed allowance's least headroom.
+ * largest message, and the shipped allowance's headroom (`headroom`).
  */
 function summarize(events: Sent[]) {
   if (!events.length) return { updates: 0 };
@@ -193,40 +196,51 @@ function summarize(events: Sent[]) {
     countMax1s: second.count,
     countP99of1s: p99(counts),
     largestBytes: Math.max(...sorted.map((event) => event.bytes)),
-    proposed: headroom(sorted),
+    allowance: headroom(sorted),
     seconds: Math.round((sorted.at(-1)!.at - first) / 100) / 10,
     updates: sorted.length,
   };
 }
 
 /**
- * The proposed token buckets over the events: a message is over the limit
- * when either allowance is empty when it arrives; it then takes one update
- * and its bytes, the byte allowance possibly going into debt. Returns the
- * least either allowance held before a message, and the messages over.
+ * The allowance over the events. Unpaced (as the editors emit them): a
+ * message is over when either bucket holds less than it costs, and is then
+ * dropped; the least either bucket held before a message. Paced (as the
+ * tab's socket sends them, `allowance.ts`): the longest any message waits.
  */
 function headroom(events: Sent[]) {
-  let updates = PROPOSED.burstUpdates;
-  let bytes = PROPOSED.burstBytes;
+  const a = ALLOWANCE;
+  let updates = a.burstUpdates;
+  let bytes = a.burstBytes;
   let last = events[0].at;
   let least = { bytes, updates };
   let over = 0;
+  // The pacer's own buckets, which may go below zero.
+  let pacedUpdates = a.burstUpdates;
+  let pacedBytes = a.burstBytes;
+  let waitMs = 0;
   for (const event of events) {
     const elapsed = (event.at - last) / 1000;
     last = event.at;
-    updates = Math.min(
-      PROPOSED.burstUpdates,
-      updates + elapsed * PROPOSED.updatesPerSecond
+    updates = Math.min(a.burstUpdates, updates + elapsed * a.updatesPerSecond);
+    bytes = Math.min(a.burstBytes, bytes + elapsed * a.bytesPerSecond);
+    pacedUpdates = Math.min(
+      a.burstUpdates,
+      pacedUpdates + elapsed * a.updatesPerSecond
     );
-    bytes = Math.min(
-      PROPOSED.burstBytes,
-      bytes + elapsed * PROPOSED.bytesPerSecond
+    pacedBytes = Math.min(a.burstBytes, pacedBytes + elapsed * a.bytesPerSecond);
+    pacedUpdates -= 1;
+    pacedBytes -= event.bytes;
+    waitMs = Math.max(
+      waitMs,
+      1000 *
+        Math.max(0, -pacedUpdates / a.updatesPerSecond, -pacedBytes / a.bytesPerSecond)
     );
     least = {
       bytes: Math.min(least.bytes, bytes),
       updates: Math.min(least.updates, updates),
     };
-    if (updates <= 0 || bytes <= 0) {
+    if (updates < 1 || bytes < event.bytes) {
       over += 1;
       continue;
     }
@@ -237,6 +251,7 @@ function headroom(events: Sent[]) {
     leastBytes: Math.round(least.bytes),
     leastUpdates: Math.round(least.updates * 10) / 10,
     over,
+    pacedWaitMs: Math.round(waitMs),
   };
 }
 
@@ -625,7 +640,15 @@ for (const { format, id } of OFFICE)
 
 /** A DOCX paste sends updates in a burst: how many, for a few sizes and
  * shapes of clipboard text. */
-test('docx: paste sizes', async ({ context, page }) => {
+/**
+ * A DOCX paste sends updates in a burst: how many, for a few sizes and
+ * shapes of clipboard text; then undo and redo of the largest, Replace All
+ * over it, and select all with bold.
+ */
+test('docx: paste sizes, undo, redo, replace all, select all and format', async ({
+  context,
+  page,
+}) => {
   test.setTimeout(900_000);
   const frame = await openOffice(page, 'bio-office-docx');
   for (const origin of [
@@ -636,19 +659,54 @@ test('docx: paste sizes', async ({ context, page }) => {
       origin,
     });
   await placeCaret(page, frame, 'docx');
+  const settle = (bytes: number) =>
+    page.waitForTimeout(bytes > 100_000 ? 30_000 : 10_000);
+  const lines = Array.from({ length: 2500 }, (_, i) => `line ${i} ok`).join('\n');
   for (const [label, clip] of [
     ['one 2 KB paragraph', PROSE.repeat(40).slice(0, 2000)],
     ['50 KB in 100 paragraphs', paragraphs(50_000).join('\n')],
-    [
-      '50 KB in 2,500 short lines',
-      Array.from({ length: 2500 }, (_, i) => `line ${i} ok`).join('\n'),
-    ],
-    ['1 MB in 2,000 paragraphs', paragraphs(1_000_000).join('\n')],
+    ['31 KB in 2,500 short lines', lines],
   ] as const) {
     await frame.evaluate((value) => navigator.clipboard.writeText(value), clip);
     await reset(page);
     await page.keyboard.press('ControlOrMeta+v');
-    await page.waitForTimeout(clip.length > 100_000 ? 30_000 : 10_000);
+    await settle(clip.length);
     await record(page, `docx paste ${label}`, { pastedBytes: clip.length });
   }
+  // The 2,500-line paste undone and redone.
+  await reset(page);
+  await page.keyboard.press('ControlOrMeta+z');
+  await settle(0);
+  await record(page, 'docx undo the 2,500-line paste');
+  await reset(page);
+  await page.keyboard.press('ControlOrMeta+y');
+  await settle(0);
+  await record(page, 'docx redo the 2,500-line paste');
+  // Replace All: "line" in each of the 2,500 lines.
+  await page.keyboard.press('ControlOrMeta+h');
+  const dialog = frame.getByTestId('find-replace-dialog');
+  await expect(dialog).toBeVisible();
+  await dialog.getByLabel('Find text').fill('line');
+  await dialog.getByLabel('Replace text').fill('row');
+  await reset(page);
+  await dialog.getByRole('button', { exact: true, name: 'Replace All' }).click();
+  await settle(0);
+  await record(page, 'docx Replace All over 2,500 lines');
+  await page.keyboard.press('Escape');
+  await placeCaret(page, frame, 'docx');
+  await reset(page);
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.press('ControlOrMeta+b');
+  await settle(0);
+  await record(page, 'docx select all and bold');
+  await placeCaret(page, frame, 'docx');
+  await page.keyboard.press('ControlOrMeta+End');
+  const big = paragraphs(1_000_000).join('\n');
+  await frame.evaluate((value) => navigator.clipboard.writeText(value), big);
+  await reset(page);
+  await page.keyboard.press('ControlOrMeta+v');
+  await settle(big.length);
+  await record(page, 'docx paste 1 MB in 2,000 paragraphs', {
+    pastedBytes: big.length,
+  });
 });
