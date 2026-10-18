@@ -9,7 +9,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use yrs::block::{ItemContent, UpdateParent};
-use yrs::branch::{Branch, BranchID};
+use yrs::branch::{Branch, BranchID, BranchPtr};
 use yrs::types::TypeRef;
 use yrs::updates::encoder::Encode;
 use yrs::{Any, ReadTxn, Update};
@@ -211,12 +211,24 @@ fn element_len(
         if &**key == "children" || (leaf && runtime_comment(key)) {
             continue;
         }
-        if let Some(value) = json::any_len(value)? {
+        if let Some(value) = property_len(branch, key, value)? {
             len += json::escaped_len(key) + 3 + value;
             entries += 1;
         }
     }
     Ok(len + entries - 1)
+}
+
+/// Bytes of an element's property `key`: a figure's live block as the room
+/// holds it, the entries a read drops included (Epo 2026-10-18). Its own
+/// frame, so the element walk's stays as small as before.
+fn property_len(branch: &Branch, key: &str, value: &Any) -> Result<Option<usize>, ProjectionError> {
+    if plate::map_key(key)
+        && let Some(held) = plate::held_block_value(BranchPtr::from(branch))?
+    {
+        return Ok(Some(json::value_len(&held)));
+    }
+    Ok(json::any_len(value)?)
 }
 
 /// A writer's update the room may take (`validateUpdate`).

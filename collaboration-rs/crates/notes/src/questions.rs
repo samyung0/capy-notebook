@@ -1144,19 +1144,21 @@ pub fn repair_figure(block: &mut Value) {
 /// graph's elements are each one a writer could write, as [block] checks
 /// them, so nothing the repair leaves out of a read (a pie's second series,
 /// a series or element past the cap, a line's one-point series) holds what
-/// no editor writes. The repair and [live_block] decide the rest.
+/// no editor writes, and a list holds at most twice its cap (a merge past
+/// the cap reads its first ones). The repair and [live_block] decide the
+/// rest.
 pub fn figure_entries(block: &Value) -> Check {
     let what = "block";
     let Some(map) = block.as_object() else {
         return Ok(());
     };
-    let list = |key: &str| match map.get(key) {
-        Some(Value::Array(items)) => items.as_slice(),
-        _ => &[],
+    let list = |key: &str, cap: usize| match map.get(key) {
+        Some(items @ Value::Array(_)) => array(items, what, 0, 2 * cap),
+        _ => Ok(&[][..]),
     };
     match map.get("type").and_then(Value::as_str) {
         Some("chart") => {
-            for entry in list("series") {
+            for entry in list("series", QUESTION_CHART_SERIES_MAX)? {
                 let entry = object(entry, what)?;
                 strict(entry, what, &["name", "values"], &[])?;
                 chart_text(&entry["name"], QUESTION_CHART_SERIES_NAME_MAX, what)?;
@@ -1168,7 +1170,7 @@ pub fn figure_entries(block: &Value) -> Check {
             }
         }
         Some("plot") => {
-            for entry in list("series") {
+            for entry in list("series", QUESTION_PLOT_SERIES_MAX)? {
                 let entry = object(entry, what)?;
                 strict(entry, what, &["name", "points"], &[])?;
                 chart_text(&entry["name"], QUESTION_PLOT_LABEL_MAX, what)?;
@@ -1178,7 +1180,7 @@ pub fn figure_entries(block: &Value) -> Check {
             }
         }
         Some("graph") => {
-            for entry in list("elements") {
+            for entry in list("elements", QUESTION_GRAPH_ELEMENTS_MAX)? {
                 graph_element(entry)?;
             }
         }

@@ -322,7 +322,12 @@ figures).
   and lists of maps of plain entries only (`FIGURE_SHAPE`, `STRAY_MAP`), and
   its block read as above must be one the room's store takes (`BAD_VALUE`:
   an unknown key, a wrong type, an oversize value); a merge's kept states go
-  in. Typing elsewhere in the note stays on the bound with no copy.
+  in. A list holds at most twice its cap (12 chart series, 8 plot series,
+  120 graph elements), so a merge past the cap goes in and an update holding
+  more is refused (`BAD_VALUE`); the room's size limits (`limits::measure`)
+  count the block as the map holds it, the entries a read drops included
+  (Epo 2026-10-18). Typing elsewhere in the note stays on the bound with no
+  copy.
 - **Graph SVG.** Saving draws the graph's SVG; an editor in Edit mode that
   sees a graph's recipe change redraws it once in an idle callback and writes
   `image` only when it differs, outside Undo; readers keep the stored SVG.

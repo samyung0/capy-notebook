@@ -406,6 +406,74 @@ fn the_merge_states_the_repair_keeps_are_admitted_and_nothing_more() {
     refused(admit(&room, &long_name), limits::BAD_VALUE);
 }
 
+/// A live figure's lists hold up to twice their cap (Epo 2026-10-18): a
+/// merge to one past the cap goes in and reads the first ones, one past
+/// twice the cap is refused, for a chart's and a plot's series and a graph's
+/// elements; the room's size measure counts what the map holds, the entries
+/// a read drops included. Fails with either reverted.
+#[test]
+fn a_figure_list_holds_up_to_twice_its_cap_and_counts_as_held() {
+    use notes::catalog::{
+        QUESTION_CHART_SERIES_MAX, QUESTION_GRAPH_ELEMENTS_MAX, QUESTION_PLOT_SERIES_MAX,
+    };
+    let plot = json!({
+        "type": "plot", "title": "P", "xTitle": "x", "yTitle": "y",
+        "series": [{ "name": "A", "points": [[0, 0], [1, 1]] }],
+    });
+    let entry_of = |kind: &str, n: u32| -> Value {
+        match kind {
+            "chart" => json!({ "name": format!("S{n}"), "values": [1, 2] }),
+            "plot" => json!({ "name": format!("S{n}"), "points": [[0, 0], [1, 1]] }),
+            _ => json!({ "type": "point", "id": format!("q{n}"), "coords": [0, 0] }),
+        }
+    };
+    let figures = [
+        ("chart", "series", QUESTION_CHART_SERIES_MAX, chart()),
+        ("plot", "series", QUESTION_PLOT_SERIES_MAX, plot),
+        ("graph", "elements", QUESTION_GRAPH_ELEMENTS_MAX, graph()),
+    ];
+    for (kind, key, cap, block) in figures {
+        // Grows the figure's list to `to` entries in one writer's update.
+        let grow = |room: &Doc, to: usize| {
+            edit(room, 7, |peer| {
+                let list = list(peer, &block_map(peer, 0), key);
+                let held = list.len(&peer.transact());
+                for n in held..to as u32 {
+                    let entry: MapRef =
+                        list.push_back(&mut peer.transact_mut(), MapPrelim::default());
+                    let mut txn = peer.transact_mut();
+                    for (field, value) in entry_of(kind, n).as_object().unwrap() {
+                        entry.insert(&mut txn, field.as_str(), json_any(value));
+                    }
+                }
+            })
+        };
+        let room = room(&[figure(block.clone()), paragraph("text")]);
+        assert_eq!(
+            admit(&room, &grow(&room, cap + 1)).unwrap(),
+            Admission::Accepted,
+            "{kind} at its cap and one"
+        );
+        let mut stored = projected(&room);
+        assert_eq!(
+            stored[0]["block"][key].as_array().unwrap().len(),
+            cap,
+            "{kind}"
+        );
+        let mut held = block[key].as_array().unwrap().clone();
+        let start = held.len() as u32;
+        held.extend((start..cap as u32 + 1).map(|n| entry_of(kind, n)));
+        stored[0]["block"][key] = Value::Array(held);
+        assert_eq!(
+            limits::measure(&room.transact()).unwrap(),
+            limits::measure_value(&stored),
+            "{kind} measured as held"
+        );
+        let room = self::room(&[figure(block), paragraph("text")]);
+        refused(admit(&room, &grow(&room, 2 * cap + 1)), limits::BAD_VALUE);
+    }
+}
+
 /// Typing next to a figure stays on the bound with no copy of the room; a
 /// change inside its block is measured exactly on one copy.
 #[test]
