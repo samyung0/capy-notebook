@@ -622,7 +622,9 @@ pub fn block(value: &Value) -> Result<Block, String> {
 /// repair keeps (Epo 2026-10-18): a chart or plot without series, and a pie
 /// or stacked chart whose values have no positive total or a negative one.
 /// Only room documents take it (`material::live_figure_block`); every write
-/// from outside a room takes [block].
+/// from outside a room takes [block]. It reads a repaired block only, so it
+/// is narrower than Go's `Policy.Live` (a pie's extra series, a line's
+/// one-point series): never pass it a raw one.
 pub fn live_block(value: &Value) -> Result<Block, String> {
     block_in(value, true)
 }

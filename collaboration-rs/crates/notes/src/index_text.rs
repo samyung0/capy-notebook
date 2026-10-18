@@ -494,8 +494,8 @@ fn graph_element(e: &Value, points: &[(&str, String)]) -> String {
 
 /// A quiz question: its stem blocks, then each part's blocks and options
 /// (mcq options; matching prompts, then choices). Worked solutions and
-/// ordering items stay out, as in Go's `questionIndexPieces` (answer keys,
-/// awaiting Epo's call).
+/// ordering items stay out, as in Go's `questionIndexPieces` (no answer
+/// keys, Epo 2026-10-18).
 fn question(q: &Value) -> Vec<String> {
     let mut out = Vec::new();
     let blocks = |value: &Value, out: &mut Vec<String>| {

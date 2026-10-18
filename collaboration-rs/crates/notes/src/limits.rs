@@ -382,9 +382,10 @@ const VALUE_KEYS: [&str; 9] = [
 /// Whether the store takes `value` under `key` on an element of type `kind`
 /// (`material::assert_canonical`): a reference names an item kind, a video
 /// is a YouTube id, a resizable block's width is one the handles write, an
-/// interactive block's html and caption fit, a figure's
-/// block is a valid question block of its type, a Mermaid source is a string
-/// (or its shared text), any block's indent stops at `LIST_INDENT_MAX`.
+/// interactive block's html and caption fit, a figure's block is its live
+/// map (checked whole on the copy, [on_candidate]), a Mermaid source is a
+/// string (or its shared text), any block's indent stops at
+/// `LIST_INDENT_MAX`.
 fn value_ok(kind: &str, key: &str, value: &Any) -> bool {
     match (kind, key, value) {
         (crate::material::MATERIAL_REF_TYPE, "refKind", Any::String(item)) => {
@@ -981,9 +982,9 @@ impl<T: ReadTxn> Parts<'_, T> {
 /// Whether admitting `update` takes the room's thread off the async workers
 /// (`block_in_place`): a large update ([ydoc::applies_inline]), or one that
 /// [Validator::admit] checks on a copy of the room: it touches a media
-/// block's attributes (REVIEW5 M1) or a closed element's keys, or writes a
-/// required key that Yjs's conflict order places (REVIEW5 R2b). `material`
-/// is the room's material kind.
+/// block's attributes (REVIEW5 M1), a closed element's keys or a figure's
+/// live block, or writes a required key that Yjs's conflict order places
+/// (REVIEW5 R2b). `material` is the room's material kind.
 pub fn heavy<T: ReadTxn>(txn: &T, update: &Update, bytes: usize, material: &str) -> bool {
     let incoming = ydoc::Incoming::new(update);
     if !ydoc::applies_inline(txn, &incoming, bytes) {
@@ -1441,7 +1442,8 @@ pub struct Validator {
     pub metrics: Option<Metrics>,
     /// Exact measurements taken (a copy of the room each).
     pub exact_checks: u64,
-    /// Copies of the room taken for the media and closed-field checks alone.
+    /// Copies of the room taken for the media, closed-field and figure
+    /// checks alone.
     pub media_copies: u64,
     /// Copies of the room taken to read required keys whose entries Yjs's
     /// conflict order places ([required_keys]).
@@ -1486,8 +1488,8 @@ impl Validator {
         if keeps_roots {
             let media = plain_content(&txn, &incoming, &mut shape, &self.material)?;
             if !media.is_empty() {
-                // Rare (an image inserted, a file named): the room is copied
-                // only when inspect did not already.
+                // An image inserted, a file named, a figure written: the room
+                // is copied only when inspect did not already.
                 let candidate = match trial.take() {
                     Some(trial) => trial,
                     None => {
