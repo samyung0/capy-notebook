@@ -460,6 +460,7 @@
    Base layer
    ============================================================ */
 @layer base {
+  a:focus-visible,
   button:focus-visible,
   [role="button"]:focus-visible {
     @apply outline-none ring-2 ring-action;

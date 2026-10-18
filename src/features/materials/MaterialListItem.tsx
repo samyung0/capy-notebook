@@ -87,7 +87,7 @@ export function MaterialListItem({
             'absolute top-1/2 right-1 -translate-y-1/2 pl-0 [--scroll-fade-start:0px]',
             active && 'bg-surface-hover-bg'
           )}
-          hoverIconContainerClassName="p-1"
+          hoverIconContainerClassName="p-1 focus-visible:ring-inset"
           leadingItems={readOnly ? [] : study?.menuItems}
           onDeleted={onDeleted}
           onMove={(chapterId) => onMove?.(chapterId)}

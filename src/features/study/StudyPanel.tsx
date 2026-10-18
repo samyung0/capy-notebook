@@ -105,8 +105,10 @@ export function StudyPanel({
   const tracked = ordered.filter((it) => states.get(it.id) !== 'removed');
   const doneCount = tracked.filter((it) => states.get(it.id) === 'done').length;
   const cover = coverInk(workspace?.cover);
+  // Untouched items are tracked too, so only a workspace with nothing tracked,
+  // no attempts and nothing to review is empty.
   const nothingYet =
-    !study?.items.length && !study?.recentAttempts.length && !study?.reviewable;
+    !tracked.length && !study?.recentAttempts.length && !study?.reviewable;
 
   const chapterRows = [
     ...[...(chapters ?? [])]

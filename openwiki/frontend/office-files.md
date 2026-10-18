@@ -81,7 +81,8 @@ base seeding the same bytes. Before deploying a pin to an environment, run the
 seed check there: `office-maintenance seed-manifest` in the gateway container
 lists every base a stored change names (format, base SHA, seed SHA-256, file
 count, a signed base link), and `pnpm office:seed-check <manifest>` re-seeds each
-with the new pin's engine (the collaboration server's `seed-check` subcommand). It exits 1 when
+with the new pin's engine (the collaboration server's `seed-check` subcommand). The signed links last 5 minutes, so build the
+new engine first and generate the manifest right before the check. It exits 1 when
 any seed hash differs; the pin then ships in a maintenance window whose reset
 covers the formats it lists.
 The Office parity checklists must also resolve on the new pin
@@ -1045,8 +1046,9 @@ and so is a new comment being written; neither takes the focus back); XLSX's
 Ctrl/Cmd+C copies the sheet (in the grid Tab moves between cells, as when
 editing). All three keep their toolbar row visible and disabled, and XLSX its
 formula bar visible and read-only (its text still selects and copies), so
-nothing moves when a pause starts or ends. The toolbar's zoom control is the
-exception and stays usable, as View › Zoom does: zoom edits nothing. Only an editor pauses: in view mode
+nothing moves when a pause starts or ends. The toolbar's zoom control and the
+XLSX name box are the exceptions and stay usable, as View › Zoom does: zooming
+and going to a cell edit nothing. Only an editor pauses: in view mode
 a `canEdit` of false (a view-only user's) changes nothing, and the viewer
 still selects and copies. The DOCX menu model refuses a disabled item's id
 too.
@@ -1283,8 +1285,33 @@ XLSX keyboard moves (arrows, Home/End, Page Up/Down, Enter and Tab commits
 from the cell, Enter from the formula bar) and opening the in-cell editor
 (typing, F2, double click) scroll the active cell fully into view, moving as
 little as possible and clear of frozen panes; Ctrl/Cmd+A keeps the view, as
-the menu's Select all does. A cell the keyboard reaches past the used range
-grows the scroll area to it. An open cell edit keeps its input mounted and
+the menu's Select all does. Arrows, Page Up/Down, Enter and Tab reach any cell
+of the sheet, as in Excel (Tab and Shift+Tab stop at columns A and XFD), and a
+click, drag or Shift+click selects the cells under the pointer anywhere, while
+Ctrl/Cmd+arrow, End, Ctrl/Cmd+End and Select all stop at the used range, which
+the engine reports with the sheet info (Ctrl/Cmd+End lands on the last used
+cell). Clear and cut act on the selection's part inside the used range
+(inputs committed but not drawn yet count) and resolve in the engine
+(`clearContents`) to edits for only the cells that hold a value or a formula,
+so their cost is bounded by the cells that hold content; a clear whose update
+could exceed the room's per-message limit (2 MiB, counted at 128 bytes per
+cleared cell) is refused with a notice and changes nothing, and a cut clears
+only after its copy reached the clipboard. Copy keeps the selection's own
+top-left corner, leading blanks included as in Excel, and trims only past the
+used range's last row and column; a copy over the engine's 100,000-cell read
+is refused with a notice, and a selection wholly past the used range sends
+nothing. A cell the keyboard reaches past the used range grows the scroll area
+to it, never past 15,000,000 CSS px (the fork's `MAX_SCROLL_EXTENT_PX`, under
+Firefox's element size limit of about 17.9M px and Chrome's of about 16.7M at
+200% page zoom), so cells past it are selected but not scrolled to, as in
+Google Sheets' bounded grid; Capy's View caps its scroll area the same way. The
+name box
+takes a cell address (`B7`, `$B$7`, `'Sheet 2'!B7`; a range goes to its first
+cell) and Enter selects and reveals that cell, opening the other sheet when it
+names one; text that names no cell stays in the box and Escape restores the
+address. Capy's own View (`XlsxViewer`) reads the address with the fork's
+parser (`parseHyperlinkLocation` from `@betteroffice/xlsx/viewer`), switches
+the sheet and grows its scroll area to scroll to the cell (`xlsxNameBox.ts`). An open cell edit keeps its input mounted and
 focused while its cell scrolls away, so the next key that types, composition
 included, is typed into the edit and scrolls the cell back whole, as in Excel
 and Sheets; modifier keys and Ctrl/Cmd shortcuts leave the view alone. An edit
@@ -2138,7 +2165,7 @@ int32 above the small ids Word writes; two editor ids, or one and an id from an
 earlier publication, colliding is possible but unlikely. The engine's suggesting-mode
 paragraph property changes (unused in Capy) save, but with the editor's
 resolved values as the previous pPr rather than the paragraph's own.
-PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
+PPTX uses a native textarea for typing, clipboard copy and paste, and IME composition. Copy puts the selected text on the clipboard as plain text and HTML (bold, italic and underline set on the run); a selected shape copies its whole text, one story per line. Read-only allows selecting and copying text, with typing, paste and cut refused; there is no cut. Keystrokes in one text box less than 500 ms apart form one undo step (the browser engine reads `Date.now`); a caret move (a click or an arrow key), a paste or any other edit (slide, shape, image, formatting) starts a new step (IME composition stays part of typing), and Undo/Redo end the run. Edits over a selection that crosses paragraphs (typing, paste, IME, Enter, Backspace, Delete) replace it in one transaction and one undo step, joining the paragraphs under the first one's id and properties; a split (Enter or a newline) keeps the original paragraph's id on the first half and its properties on both halves, as PowerPoint continues a list, so Enter then Backspace restores the paragraph exactly (in a list item Backspace first removes the new item's marker, then joins); a refused edit changes nothing and no longer blocks later saves. Read-only speaker notes are `readOnly`, so they can be selected and copied.
 Save waits for composition to commit, and refuses an unmounted presentation or
 an interrupted composition instead of claiming it was saved.
 DOCX's accepted input queue and PPTX image decoding report pending work to the
@@ -2188,7 +2215,9 @@ go from any open Capy page without the file open, an Office file's only over
 the room's base (see
 [plate-editor.md](plate-editor.md#sending-drafts-without-the-editor-open)). Save, export and handoff first
 commit open spreadsheet inputs and wait for active composition or gestures.
-Pending input counts as unsaved even before it reaches the shared document.
+Pending input counts as unsaved even before it reaches the shared document; a
+held pointer is a gesture, not input, so a press with no edit leaves the header
+at Saved and the View/Edit switch enabled.
 Draft storage that fails (private mode, a full disk, a draft whose base is
 gone) is skipped, never an editing error; a reopened draft whose base is gone
 is dropped with "Some unsaved edits from your last session couldn't be

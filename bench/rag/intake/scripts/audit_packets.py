@@ -98,7 +98,8 @@ def main() -> None:
             if not image.exists():
                 render(pdf, page, image)
             packet["image"] = str(image.relative_to(ROOT)).replace("\\", "/")
-            if corpus is not None:
+            # The judged MinerU side stays: the corpus on disk was rebuilt after the 10-07 verdicts.
+            if corpus is not None and "mineru" not in packet["texts"]:
                 packet["texts"]["mineru"] = corpus_texts(corpus, page)
             for name, run_dir in run_sides.items():
                 side_corpus = json.loads((Path(run_dir) / book / "books" / book / "corpus.json").read_text(encoding="utf-8"))

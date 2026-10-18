@@ -1,0 +1,1709 @@
+<!doctype html>
+<html data-theme="latte" lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta content="width=device-width,initial-scale=1" name="viewport">
+    <title>Study progress page: mocks</title>
+    <style>
+    :root {
+      --page: #f7f7f7;
+      --canvas: #f4f6f5;
+      --surface: #fff;
+      --surface-hover: #f7f8f8;
+      --surface-dark: #e6e9ea;
+      --fg: #222;
+      --fg-2: #4b4b4b;
+      --muted: #6b6b6b;
+      --link: #5b4aa8;
+      --accent: #8c7bd9;
+      --accent-ink: #5b4aa8;
+      --line: #d6d6d6;
+      --divider: #e6e6e6;
+      --action: #222;
+      --action-fg: #fff;
+      --tint-accent: #ece6f6;
+      --tint-info: #e4ecf8;
+      --info-fg: #2e6bb0;
+      --tint-success: #e7f6ee;
+      --success-fg: #2f7d56;
+      --tint-warning: #f7f0e5;
+      --warning-fg: #a9772a;
+      --tint-error: #fdeaec;
+      --error-fg: #b8475a;
+      --code: #ece6f6;
+      --code-fg: #5b4aa8;
+      --ink: #1b9e6f;
+      --solid: #7bd9ab;
+      --shaky: #f4c878;
+      --fading: #f49aa8;
+      --shadow-card:
+        0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.05);
+      --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.14);
+      --c-pdf: #d20f39;
+      --c-md: #1e66f5;
+      --c-txt: #6c6f85;
+      --c-png: #8839ef;
+      --c-quiz: #df8e1d;
+      --c-cards: #fe640b;
+      --c-map: #ea76cb;
+      --c-diag: #40a02b;
+    }
+    [data-theme="mocha"] {
+      --page: #0d1219;
+      --canvas: #121821;
+      --surface: #161d27;
+      --surface-hover: #232c3a;
+      --surface-dark: #222c3a;
+      --fg: #e6e9ef;
+      --fg-2: #c0c8d4;
+      --muted: #9aa4b3;
+      --link: #b4befe;
+      --accent: #b5a1f8;
+      --accent-ink: #cfc4f2;
+      --line: #323e52;
+      --divider: rgba(255, 255, 255, 0.07);
+      --action: #cdd4de;
+      --action-fg: #0d1219;
+      --tint-accent: #31334b;
+      --tint-info: #2a374b;
+      --info-fg: #89b4fa;
+      --tint-success: #2e3f3c;
+      --success-fg: #a6e3a1;
+      --tint-warning: #423c2e;
+      --warning-fg: #f9e2af;
+      --tint-error: #3c303d;
+      --error-fg: #f38ba8;
+      --code: #31334b;
+      --code-fg: #c8b8fa;
+      --ink: #4cc296;
+      --solid: #a6e3a1;
+      --shaky: #f9e2af;
+      --fading: #f38ba8;
+      --shadow-card:
+        0 1px 2px rgba(0, 0, 0, 0.4), 0 12px 32px rgba(0, 0, 0, 0.45);
+      --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.6);
+      --c-pdf: #f38ba8;
+      --c-md: #89b4fa;
+      --c-txt: #a6adc8;
+      --c-png: #cba6f7;
+      --c-quiz: #f9e2af;
+      --c-cards: #fab387;
+      --c-map: #f5c2e7;
+      --c-diag: #a6e3a1;
+    }
+    * { box-sizing: border-box; }
+    html { background: var(--page); }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      font-size: 15px;
+      font-weight: 500;
+      line-height: 1.5;
+      color: var(--fg);
+      background: var(--page);
+      -webkit-font-smoothing: antialiased;
+    }
+    .wrap { max-width: 1240px; padding: 30px 20px 90px; margin: 0 auto; }
+    h1 {
+      margin: 0 0 6px;
+      font-size: 30px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+    .meta { margin: 0 0 12px; font-size: 13px; color: var(--muted); }
+    .lead { max-width: 780px; margin: 0; color: var(--fg-2); }
+    h2 {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      margin: 46px 0 10px;
+      font-size: 21px;
+      font-weight: 800;
+      letter-spacing: -0.015em;
+    }
+    h3 { margin: 20px 0 6px; font-size: 15px; font-weight: 700; }
+    p { margin: 0 0 10px; color: var(--fg-2); }
+    ul, ol { padding-left: 20px; margin: 6px 0 12px; color: var(--fg-2); }
+    li { margin: 3px 0; }
+    b, strong { color: var(--fg); }
+    code {
+      padding: 1px 5px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 12.5px;
+      color: var(--code-fg);
+      background: var(--code);
+      border-radius: 6px;
+    }
+    table { width: 100%; font-size: 13.5px; border-collapse: collapse; }
+    th, td {
+      padding: 8px 10px;
+      color: var(--fg-2);
+      text-align: left;
+      vertical-align: top;
+      border-bottom: 1px solid var(--divider);
+    }
+    th { font-weight: 700; color: var(--fg); }
+    .note { font-size: 13px; color: var(--muted); }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      align-items: center;
+      margin: 18px 0 0;
+    }
+    .toolbar button {
+      padding: 7px 13px;
+      font-family: inherit;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--fg);
+      cursor: pointer;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .toolbar button:hover { background: var(--surface-hover); }
+    .keys { display: flex; flex-wrap: wrap; gap: 14px; font-size: 12.5px; color: var(--muted); }
+    .keys span { display: inline-flex; gap: 5px; align-items: center; }
+    .ltr {
+      display: inline-grid;
+      flex: none;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--action-fg);
+      background: var(--action);
+      border-radius: 10px;
+    }
+    .tag {
+      display: inline-block;
+      padding: 1px 7px;
+      font-size: 11px;
+      font-weight: 700;
+      white-space: nowrap;
+      border-radius: 999px;
+    }
+    .tag.have { color: var(--success-fg); background: var(--tint-success); }
+    .tag.new { color: var(--warning-fg); background: var(--tint-warning); }
+    .tag.part { color: var(--info-fg); background: var(--tint-info); }
+    .tag.none { color: var(--fg-2); background: var(--surface-dark); }
+    .variant-desc { max-width: 780px; }
+    .blocks {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 4px 20px;
+      padding: 0;
+      margin: 8px 0 0;
+      list-style: none;
+    }
+    .blocks li { font-size: 13px; color: var(--fg-2); }
+    .shots {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin: 16px 0 0;
+    }
+    .vplabel { font-size: 11.5px; font-weight: 700; color: var(--muted); }
+
+    /* ---------- mock frames ---------- */
+    .vp { position: relative; min-width: 0; }
+    .vp.desk { width: 100%; }
+    .vp.phone { order: -1; align-self: center; width: 390px; max-width: 100%; }
+    .vp.phone .vplabel { text-align: center; }
+    .vp.desk::before {
+      display: block;
+      margin-bottom: 7px;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--muted);
+      content: "Desktop, 1180 window";
+    }
+    .vp.desk .frame { width: 1180px; zoom: 1; }
+    @media (max-width: 1240px) { .vp.desk .frame { zoom: 0.9; } }
+    @media (max-width: 1120px) { .vp.desk .frame { zoom: 0.78; } }
+    @media (max-width: 980px) { .vp.desk .frame { zoom: 0.64; } }
+    @media (max-width: 820px) { .vp.desk .frame { zoom: 0.5; } }
+    @media (max-width: 660px) { .vp.desk .frame { zoom: 0.38; } }
+    @media (max-width: 500px) { .vp.desk .frame { zoom: 0.28; } }
+    @media (max-width: 430px) {
+      .vp.phone { width: 100%; }
+      .vp.phone .frame { zoom: 0.88; }
+    }
+    .frame {
+      display: flex;
+      gap: 8px;
+      padding: 10px;
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.45;
+      color: var(--fg);
+      background: var(--page);
+    }
+    .rail {
+      display: flex;
+      flex: none;
+      flex-direction: column;
+      width: 186px;
+      padding: 6px 8px;
+    }
+    .brand { padding: 8px 8px 14px; font-size: 15px; font-weight: 800; }
+    .rg {
+      padding: 12px 8px 4px;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+    .ri {
+      display: flex;
+      gap: 9px;
+      align-items: center;
+      padding: 7px 9px;
+      font-size: 13px;
+      color: var(--fg-2);
+      border-radius: 10px;
+    }
+    .ri.on { font-weight: 700; color: var(--fg); background: var(--surface-dark); }
+    .ri i {
+      display: block;
+      width: 13px;
+      height: 13px;
+      opacity: 0.32;
+      background: currentColor;
+      border-radius: 4px;
+    }
+    .panel {
+      position: relative;
+      flex: 1;
+      min-width: 0;
+      padding: 20px 26px 26px;
+      background: var(--surface);
+      border-radius: 24px;
+      box-shadow: var(--shadow-card);
+    }
+    .topbar {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      padding: 5px 6px;
+      background: var(--surface-dark);
+      border-radius: 15px;
+    }
+    .tbb {
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      color: var(--fg);
+      border-radius: 8px;
+    }
+    .tbb i {
+      display: block;
+      width: 13px;
+      height: 13px;
+      border: 1.5px solid currentColor;
+      border-radius: 3px;
+    }
+    .who { display: flex; gap: 6px; align-items: center; padding: 0 2px 0 4px; }
+    .av {
+      display: grid;
+      place-items: center;
+      width: 24px;
+      height: 24px;
+      font-size: 10px;
+      font-weight: 800;
+      color: #fff;
+      background: var(--accent);
+      border-radius: 8px;
+    }
+    .who b { font-size: 11.5px; font-weight: 700; }
+
+    .back {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+      font-size: 11.5px;
+      color: var(--muted);
+    }
+    .ph {
+      margin: 3px 0 0;
+      font-size: 25px;
+      font-weight: 800;
+      line-height: 1.2;
+      letter-spacing: -0.02em;
+    }
+    .ph .wsname {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--muted);
+      letter-spacing: 0;
+    }
+    .sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+    .sec { margin-top: 22px; }
+    .sec-h {
+      display: flex;
+      gap: 12px;
+      align-items: baseline;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .s-title { font-size: 13px; font-weight: 700; color: var(--muted); }
+    .s-title.lg { font-size: 16px; color: var(--fg); }
+    .card {
+      padding: 14px 16px;
+      background: var(--canvas);
+      border-radius: 16px;
+    }
+    .card.plain { padding: 0; background: transparent; }
+    .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+    .stat { padding: 9px 12px 11px; background: var(--canvas); border-radius: 14px; }
+    .stat .n { font-size: 19px; font-weight: 800; letter-spacing: -0.02em; }
+    .stat .l { font-size: 11px; color: var(--muted); }
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 2px;
+      border-top: 1px solid var(--divider);
+    }
+    .row.first, .row:first-child { border-top: 0; }
+    .row .t { flex: 1; min-width: 0; }
+    .name { font-size: 13px; font-weight: 600; }
+    .name.sm { font-size: 12.5px; }
+    .rmeta { font-size: 11px; color: var(--muted); }
+    .al {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--link);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      white-space: nowrap;
+    }
+    .al.accent { color: var(--accent-ink); }
+    .arw {
+      width: 10px;
+      height: 10px;
+      margin-left: 4px;
+      vertical-align: -1px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.8;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .mk {
+      width: 13px;
+      height: 13px;
+      flex: none;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 1.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .mk.done { color: var(--success-fg); }
+    .mk.started { color: var(--muted); }
+    .mk.todo { color: var(--line); stroke-dasharray: 2.2 2.2; }
+    .fic {
+      position: relative;
+      width: 15px;
+      height: 15px;
+      flex: none;
+      color: var(--c-txt);
+      border: 1.4px solid currentColor;
+      border-radius: 4px;
+    }
+    .fic::after {
+      position: absolute;
+      top: 4px;
+      right: 2.5px;
+      left: 2.5px;
+      height: 1.2px;
+      content: "";
+      background: currentColor;
+      box-shadow: 0 3px 0 currentColor;
+    }
+    .fic.pdf { color: var(--c-pdf); }
+    .fic.md { color: var(--c-md); }
+    .fic.txt { color: var(--c-txt); }
+    .fic.png { color: var(--c-png); }
+    .fic.map { color: var(--c-map); }
+    .fic.diag { color: var(--c-diag); }
+    .fic.quiz, .fic.cards { background: currentColor; border-color: currentColor; }
+    .fic.quiz { color: var(--c-quiz); }
+    .fic.cards { color: var(--c-cards); }
+    .fic.quiz::after, .fic.cards::after {
+      top: 6px;
+      height: 1.2px;
+      background: var(--surface);
+      box-shadow: 0 3px 0 var(--surface);
+    }
+    .bar {
+      display: flex;
+      width: 100%;
+      height: 6px;
+      overflow: hidden;
+      background: var(--divider);
+      border-radius: 999px;
+    }
+    .bar i { display: block; height: 100%; }
+    .bar .s { background: var(--solid); }
+    .bar .k { background: var(--shaky); }
+    .bar .f { background: var(--fading); }
+    .lgd {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 5px;
+      font-size: 10px;
+      color: var(--muted);
+    }
+    .lgd span { display: inline-flex; gap: 4px; align-items: center; }
+    .lgd em {
+      display: block;
+      width: 6px;
+      height: 6px;
+      border-radius: 3px;
+    }
+    .chip {
+      display: inline-flex;
+      gap: 4px;
+      align-items: center;
+      padding: 1px 7px;
+      font-size: 10.5px;
+      font-weight: 700;
+      border-radius: 999px;
+    }
+    .chip.tricky { color: var(--warning-fg); background: var(--tint-warning); }
+    .chip.fading { color: var(--info-fg); background: var(--tint-info); }
+    .chip.learned { color: var(--success-fg); background: var(--tint-success); }
+    .chip.soft { color: var(--fg-2); background: var(--surface-dark); }
+    table.ch { width: 100%; font-size: 12.5px; border-collapse: collapse; }
+    table.ch th {
+      padding: 6px 8px;
+      font-size: 10.5px;
+      font-weight: 700;
+      color: var(--muted);
+      border-bottom: 1px solid var(--divider);
+    }
+    table.ch td {
+      padding: 9px 8px;
+      color: var(--fg-2);
+      vertical-align: middle;
+      border-bottom: 1px solid var(--divider);
+    }
+    table.ch tr:last-child td { border-bottom: 0; }
+    .cov { display: flex; gap: 8px; align-items: center; }
+    .cov svg { flex: none; width: 64px; height: 20px; }
+    svg.map { display: block; width: 100%; height: auto; }
+    svg.ptrail { display: block; width: 100%; height: auto; }
+    svg.map text { font-family: inherit; }
+    .trailbox { display: flex; flex-direction: column; gap: 6px; }
+    .srow {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      padding: 8px 2px;
+      border-top: 1px solid var(--divider);
+    }
+    .srow .t { flex: 1; min-width: 0; }
+    .q {
+      margin: 0;
+      font-size: 12.5px;
+      font-weight: 600;
+      line-height: 1.35;
+      color: var(--fg);
+    }
+    .why { margin: 2px 0 0; font-size: 11px; color: var(--muted); }
+    .rbar { display: flex; gap: 8px; align-items: center; width: 92px; }
+    .rbar .bar { height: 5px; }
+    .pct { font-size: 11px; color: var(--fg-2); }
+    .do-next { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .act { display: flex; flex-direction: column; gap: 5px; }
+    .act .k { font-size: 10.5px; font-weight: 700; color: var(--muted); }
+    .act .big { font-size: 14px; font-weight: 700; }
+    .act .why { margin: 0; }
+    .phone-frame { display: flex; flex-direction: column; width: 390px; min-height: 760px; padding: 0; background: var(--page); border-radius: 26px; box-shadow: 0 0 0 1px var(--line), var(--shadow-card); overflow: hidden; }
+    .ptop { display: flex; gap: 8px; align-items: center; padding: 12px 14px 8px; }
+    .ptop .menu { display: flex; flex-direction: column; gap: 3px; width: 18px; }
+    .ptop .menu i { height: 1.6px; background: var(--fg-2); border-radius: 2px; }
+    .ptop .grow { flex: 1; }
+    .ptop .btn { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; }
+    .ptop .btn i { width: 14px; height: 14px; border: 1.5px solid var(--fg-2); border-radius: 4px; }
+    .pbody { flex: 1; padding: 0 16px 20px; }
+    .pbody .ph { font-size: 21px; }
+    .pbody .sec { margin-top: 18px; }
+    .pstat { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .pstat .stat { padding: 8px 10px 9px; }
+    .pstat .stat .n { font-size: 17px; }
+    .pchap {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      padding: 9px 2px;
+      border-top: 1px solid var(--divider);
+    }
+    .pchap .top { display: flex; gap: 8px; align-items: baseline; justify-content: space-between; }
+    .pchap .cnt { font-size: 11px; color: var(--muted); }
+    .pitem {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      padding: 7px 2px;
+      border-top: 1px solid var(--divider);
+    }
+    .pitem .t { flex: 1; min-width: 0; }
+    .pitem .name { font-size: 12.5px; }
+    .pitem .rmeta { font-size: 10.5px; }
+    .psec-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 4px; }
+    .foot { margin-top: 46px; font-size: 12.5px; color: var(--muted); }
+    .js .theme-only { display: none; }
+    .js [data-theme="latte"] .theme-only { display: inline; }
+    .divider { height: 1px; margin: 26px 0; background: var(--divider); }
+    .verdict {
+      padding: 2px 0 2px 12px;
+      margin: 14px 0 0;
+      color: var(--fg-2);
+      border-left: 3px solid var(--accent);
+    }
+    @media (max-width: 640px) {
+      table.resp, table.resp tbody, table.resp tr, table.resp td { display: block; width: auto; }
+      table.resp thead { display: none; }
+      table.resp tr { padding: 9px 0; border-bottom: 1px solid var(--divider); }
+      table.resp td { padding: 1px 0; font-size: 13px; border: 0; }
+      table.resp td:nth-child(1) { font-weight: 600; color: var(--fg); }
+      table.resp td:nth-child(2) code { word-break: break-all; }
+      table.resp td:nth-child(3) { margin-top: 4px; }
+      table.resp td:nth-child(3)::before { font-weight: 700; color: var(--muted); content: "Cost: "; }
+      .wrap { padding: 22px 14px 70px; }
+      h1 { font-size: 24px; }
+      h2 { font-size: 18px; }
+      table { font-size: 12.5px; }
+      th, td { padding: 7px 6px; }
+    }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Study progress: a page of its own</h1>
+      <p class="meta">Mock round 2, 18 Oct 2026. Biology 101 data. Nothing implemented.</p>
+      <p class="note">Round 2 fixes, checked against the code and recorded decisions: scores are plain "x / y" and recall is a word, with no percentages anywhere (Learning's 10 Oct rule, Study tab's "no percentage"); every quiz and set sits in its one tree chapter, as review groups do, so no quiz is shared between chapters; files are only done or untouched (nothing records opening a file), so Mendelian genetics.pdf is "not read yet"; the weak-items button opens the existing whole-workspace review instead of a new item-list session; the attempts filter is <code>workspaceId</code>.</p>
+      <p class="lead">
+        The workspace Study tab stays the quick view: next item, suggestion, four cards, per-chapter done counts.
+        This page is the long version: coverage, chapters, files, quizzes and cards in one place, plus what to review.
+        Below are three shapes with the same data, a desktop and a phone rendering of each, then the decisions I need before code.
+      </p>
+      <div class="toolbar">
+        <button id="theme" type="button">Dark</button>
+        <div class="keys">
+          <span><svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg> done</span>
+          <span><svg class="mk started" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M8 1.9a6.1 6.1 0 0 1 0 12.2z" fill="currentColor" stroke="none"/></svg> started</span>
+          <span><svg class="mk todo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/></svg> untouched</span>
+          <span><svg class="mk" viewBox="0 0 16 16" style="color:var(--solid)"><circle cx="8" cy="8" r="6.1" fill="currentColor" stroke="none"/></svg> solid</span>
+          <span><svg class="mk" viewBox="0 0 16 16" style="color:var(--shaky)"><circle cx="8" cy="8" r="6.1" fill="currentColor" stroke="none"/></svg> shaky</span>
+          <span><svg class="mk" viewBox="0 0 16 16" style="color:var(--fading)"><circle cx="8" cy="8" r="6.1" fill="currentColor" stroke="none"/></svg> fading</span>
+        </div>
+      </div>
+
+      <h2>1. What the page can show, and what each block costs</h2>
+      <p>
+        Checked against the running API and the tables behind it. <span class="tag have">today</span> means the data
+        already reaches the browser. <span class="tag part">partial</span> means the data exists but one part is
+        missing. <span class="tag new">new</span> means server work.
+      </p>
+      <table class="resp">
+        <thead>
+          <tr><th style="width:26%">Block</th><th style="width:46%">Source today</th><th>Cost</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>Coverage</b>: done, started, untouched per item and per chapter</td>
+            <td><code>GET /api/workspaces/{id}/study</code> plus the chapter, file and material lists. The Study tab already derives this in the browser.</td>
+            <td><span class="tag have">today</span></td>
+          </tr>
+          <tr>
+            <td><b>Workspace map</b> with a stop per item</td>
+            <td><code>GET /api/learning/progress?lead={id}</code> returns the leading workspace's items. Built already for Learning.</td>
+            <td><span class="tag have">today</span>, but it is a global endpoint capped at 10 workspaces</td>
+          </tr>
+          <tr>
+            <td><b>Next action</b>: Continue and the workspace suggestion</td>
+            <td><code>StudySummary.suggestion</code>, and the unfinished sessions in <code>GET /api/review/overview</code></td>
+            <td><span class="tag have">today</span></td>
+          </tr>
+          <tr>
+            <td><b>Quiz attempts</b> for this workspace</td>
+            <td><code>GET /api/attempts?workspaceId=</code>, 30 a page, each with score, date, quiz name, chapter names</td>
+            <td><span class="tag have">today</span></td>
+          </tr>
+          <tr>
+            <td><b>Review sessions</b> for this workspace</td>
+            <td><code>GET /api/review/sessions?workspaceId=</code>, with quiz marks, cards remembered, answered of total</td>
+            <td><span class="tag have">today</span></td>
+          </tr>
+          <tr>
+            <td><b>Per set</b>: cards rated of the set's cards, rating mix, last studied</td>
+            <td>Tables only: <code>review_states</code>, <code>review_log</code>, <code>flashcard_cards</code>, and the set's current cards for the total</td>
+            <td><span class="tag new">new aggregate</span></td>
+          </tr>
+          <tr>
+            <td><b>Recall</b> per item, set and chapter (solid, shaky, fading)</td>
+            <td><code>review_states</code> stability and last review, through <code>review.Retrievability</code> in Go. Nothing computes it per item today.</td>
+            <td><span class="tag new">new aggregate</span></td>
+          </tr>
+          <tr>
+            <td><b>Weak items</b> with the prompt or card front, misses and last rating</td>
+            <td><code>review_states</code> and <code>review_log</code> joined to the parsed document items (<code>itemsOf</code>)</td>
+            <td><span class="tag new">new endpoint</span></td>
+          </tr>
+          <tr>
+            <td><b>Time studied</b></td>
+            <td>A session's <code>started_at</code> to <code>last_answer_at</code>. Attempts carry no duration, and reading a file records nothing but its latest change.</td>
+            <td><span class="tag part">partial</span>: review sessions only</td>
+          </tr>
+          <tr>
+            <td><b>Activity by day</b>, streaks</td>
+            <td>Timestamps exist in <code>review_log</code>, <code>attempts</code> and <code>review_sessions</code>. Reading activity is not recorded.</td>
+            <td><span class="tag new">new query</span>, incomplete picture</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="note" style="margin-top:10px">
+        Constraints the design has to live with:
+      </p>
+      <ul>
+        <li><b>No schedule.</b> Signed-in users see no due date, due count or interval preview (decision of 9 Oct). Memory shows up as recall, never as "due tomorrow".</li>
+        <li><b>Embedded quizzes and sets record nothing</b>, so they never appear here.</li>
+        <li><b>Every number is the signed-in user's own.</b> There is no class or teacher view.</li>
+        <li><b>Chapter names are snapshotted into attempts.</b> Renaming a chapter breaks a name join, which is why the mock keeps quiz scores on the quiz, not averaged per chapter.</li>
+        <li><b>Marking a file read keeps one timestamp</b> that the next mark overwrites, so "read on" is the last change, not a history.</li>
+      </ul>
+      <p class="verdict">
+        Recommendation: ship <b>one new endpoint</b>, <code>GET /api/workspaces/{id}/study/progress</code>, returning chapter and material rollups plus the weak items.
+        Coverage, attempts, sessions, Continue and the suggestion come from endpoints that already exist, so the endpoint stays small.
+      </p>
+
+      <h2><span class="ltr">A</span> Report</h2>
+      <p class="variant-desc">
+        Coverage and chapters first, practice second, history last. Densest of the three, and the one that reads like a
+        term report: you can answer "how much, how well, what is left" without scrolling past coaching copy.
+      </p>
+      <ul class="blocks">
+        <li>Map with Continue</li>
+        <li>Four totals</li>
+        <li>Chapter table: done, practised, recall, last studied</li>
+        <li>Flashcards and quizzes side by side</li>
+        <li>Three items to look at again</li>
+        <li>Recent review sessions</li>
+      </ul>
+      <div class="shots">
+        <div class="vp desk"><div class="frame" style="min-height:1120px">
+          <aside class="rail">
+            <div class="brand">Capy Notebook</div>
+            <div class="rg">General</div>
+            <div class="ri"><i></i>Dashboard</div>
+            <div class="ri on"><i></i>Workspaces</div>
+            <div class="ri"><i></i>Learning</div>
+            <div class="rg">Tools</div>
+            <div class="ri"><i></i>Files</div>
+            <div class="rg">Explore</div>
+            <div class="ri"><i></i>Question bank</div>
+            <div style="flex:1"></div>
+            <div class="ri"><i></i>Settings</div>
+            <div class="ri"><i></i>Billing &amp; usage</div>
+          </aside>
+          <div class="panel">
+            <div class="topbar">
+              <div class="tbb"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 13.4 13.4"/></svg></div>
+              <div class="tbb"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1.2H3z"/><path d="M6.6 13.6c.4.6 1 .9 1.4.9s1-.3 1.4-.9"/></svg></div>
+              <div class="who"><div class="av">KM</div><b>Kate Malone</b></div>
+            </div>
+            <div class="back">
+              <svg class="arw" style="margin:0 2px 0 0;transform:rotate(180deg)" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+              Biology 101
+            </div>
+            <h1 class="ph">Progress <span class="wsname">· last studied 5 days ago</span></h1>
+            <p class="sub">Your study in this workspace. 6 of 10 items done, 36 practised.</p>
+
+            <div class="sec" style="margin-top:16px">
+              <div class="card plain">
+                <svg class="map" viewBox="0 0 900 170">
+                  <path d="M40 96 C69 96 99 88 128 88 C157 88 187 100 216 100 C245 100 275 90 304 90 C333 90 363 102 392 102 C421 102 451 92 480 92 C509 92 539 104 568 104 C597 104 627 94 656 94 C685 94 715 104 744 104 C773 104 803 92 832 92"
+                        fill="none" stroke="var(--line)" stroke-width="2.2" stroke-linecap="round"/>
+                  <path d="M40 96 C69 96 99 88 128 88 C157 88 187 100 216 100 C245 100 275 90 304 90 C333 90 363 102 392 102 C421 102 451 92 480 92"
+                        fill="none" stroke="var(--ink)" stroke-width="2.6" stroke-linecap="round"/>
+                  <g stroke="var(--ink)" stroke-width="1.6" fill="none">
+                    <circle cx="40" cy="96" r="5.2" fill="var(--ink)"/>
+                    <circle cx="128" cy="88" r="5.2" fill="var(--ink)"/>
+                    <circle cx="216" cy="100" r="5.2" fill="var(--ink)"/>
+                    <circle cx="304" cy="90" r="5.2" fill="var(--ink)"/>
+                    <circle cx="392" cy="102" r="5.2" fill="var(--ink)"/>
+                  </g>
+                  <g stroke="var(--line)" stroke-width="1.8" fill="var(--surface)">
+                    <circle cx="568" cy="104" r="5.2"/>
+                    <circle cx="832" cy="92" r="5.2"/>
+                  </g>
+                  <g stroke="var(--ink)" stroke-width="1.4" fill="var(--ink)">
+                    <circle cx="656" cy="94" r="5.2"/>
+                  </g>
+                  <g stroke="var(--ink)" stroke-width="1.8" fill="var(--surface)">
+                    <circle cx="744" cy="104" r="5.2" fill="color-mix(in oklab, var(--ink) 50%, var(--surface))"/>
+                  </g>
+                  <circle cx="480" cy="92" r="8.6" fill="none" stroke="var(--ink)" stroke-width="2"/>
+                  <circle cx="480" cy="92" r="5.2" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.8"/>
+                  <g>
+                    <rect x="20" y="54" width="94" height="17" rx="4" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.2"/>
+                    <text x="67" y="66" font-size="9.5" font-weight="700" fill="var(--fg)" text-anchor="middle">Cell structure</text>
+                    <rect x="300" y="54" width="124" height="17" rx="4" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.2"/>
+                    <text x="362" y="66" font-size="9.5" font-weight="700" fill="var(--fg)" text-anchor="middle">Membranes &amp; transport</text>
+                    <rect x="470" y="54" width="66" height="17" rx="4" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.2"/>
+                    <text x="503" y="66" font-size="9.5" font-weight="700" fill="var(--fg)" text-anchor="middle">Genetics</text>
+                    <rect x="710" y="54" width="56" height="17" rx="4" fill="var(--surface)" stroke="var(--ink)" stroke-width="1.2"/>
+                    <text x="738" y="66" font-size="9.5" font-weight="700" fill="var(--fg)" text-anchor="middle">Others</text>
+                    <rect x="452" y="118" width="188" height="19" rx="6" fill="var(--tint-accent)" stroke="none"/>
+                    <text x="462" y="131.5" font-size="10" font-weight="700" fill="var(--accent-ink)">Next: Mendelian genetics.pdf</text>
+                  </g>
+                  <g transform="translate(832 92)" stroke="var(--fg-2)" stroke-width="1.6" fill="none">
+                    <path d="M0 0V-26"/><path d="M1-25c5-2 9 2 14 0l-4 6 4 6c-5 2-9-2-14 0z" fill="var(--surface)"/>
+                  </g>
+                </svg>
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:10px">
+                  <div>
+                    <div class="name">6 of 10 done</div>
+                    <div class="rmeta">1 started, 3 untouched, 2 stopped tracking</div>
+                  </div>
+                  <span class="al accent">Continue: Mendelian genetics.pdf
+                    <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="stats">
+                <div class="stat"><div class="n">6/10</div><div class="l">items done</div></div>
+                <div class="stat"><div class="n">36</div><div class="l">items practised</div></div>
+                <div class="stat"><div class="n">96</div><div class="l">card reviews</div></div>
+                <div class="stat"><div class="n">3</div><div class="l">quiz attempts</div></div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h">
+                <div class="s-title">Chapters</div>
+                <span class="al">Open files</span>
+              </div>
+              <table class="ch">
+                <thead>
+                  <tr><th>Chapter</th><th>Done</th><th>Practised</th><th>Recall</th><th>Last studied</th></tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td><b>Cell structure</b></td>
+                    <td>4 of 4</td>
+                    <td>10 items</td>
+                    <td>
+                      <div class="bar"><i class="s" style="width:70%"></i><i class="k" style="width:20%"></i><i class="f" style="width:10%"></i></div>
+                      <div class="lgd"><span><em style="background:var(--solid)"></em>solid 7</span><span><em style="background:var(--shaky)"></em>shaky 2</span><span><em style="background:var(--fading)"></em>fading 1</span></div>
+                    </td>
+                    <td class="rmeta">5 days ago</td>
+                  </tr>
+                  <tr>
+                    <td><b>Membranes &amp; transport</b></td>
+                    <td>1 of 1</td>
+                    <td>none</td>
+                    <td>
+                      <div class="bar"></div>
+                      <div class="lgd"><span>no quiz or set</span></div>
+                    </td>
+                    <td class="rmeta">5 days ago</td>
+                  </tr>
+                  <tr>
+                    <td><b>Genetics</b></td>
+                    <td>1 of 3</td>
+                    <td>8 items</td>
+                    <td>
+                      <div class="bar"><i class="s" style="width:50%"></i><i class="k" style="width:25%"></i><i class="f" style="width:25%"></i></div>
+                      <div class="lgd"><span><em style="background:var(--solid)"></em>solid 4</span><span><em style="background:var(--shaky)"></em>shaky 2</span><span><em style="background:var(--fading)"></em>fading 2</span></div>
+                    </td>
+                    <td class="rmeta">8 days ago</td>
+                  </tr>
+                  <tr>
+                    <td><b>Others</b></td>
+                    <td>0 of 2</td>
+                    <td>18 items</td>
+                    <td>
+                      <div class="bar"><i class="s" style="width:72%"></i><i class="k" style="width:22%"></i><i class="f" style="width:6%"></i></div>
+                      <div class="lgd"><span><em style="background:var(--solid)"></em>solid 13</span><span><em style="background:var(--shaky)"></em>shaky 4</span><span><em style="background:var(--fading)"></em>fading 1</span></div>
+                    </td>
+                    <td class="rmeta">6 days ago</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="sec">
+              <div class="grid2">
+                <div>
+                  <div class="sec-h"><div class="s-title">Flashcards</div><span class="rmeta">96 reviews</span></div>
+                  <div class="card">
+                    <div class="row first">
+                      <span class="fic cards"></span>
+                      <div class="t">
+                        <div class="name">Cell organelles</div>
+                        <div class="rmeta">18 of 32 cards rated · last studied 6 days ago</div>
+                        <div class="bar" style="margin-top:6px"><i class="f" style="width:15%"></i><i class="k" style="width:20%"></i><i class="s" style="width:49%"></i><i style="width:16%;background:color-mix(in oklab, var(--solid) 65%, var(--ink))"></i></div>
+                        <div class="lgd"><span><em style="background:var(--fading)"></em>again 14</span><span><em style="background:var(--shaky)"></em>hard 19</span><span><em style="background:var(--solid)"></em>good 47</span><span><em style="background:color-mix(in oklab, var(--solid) 65%, var(--ink))"></em>easy 16</span></div>
+                      </div>
+                      <div style="text-align:right">
+                        <div class="pct">63 / 96</div>
+                        <div class="rmeta">good or easy</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div class="sec-h"><div class="s-title">Quizzes</div><span class="rmeta">3 attempts</span></div>
+                  <div class="card">
+                    <div class="row first">
+                      <span class="fic quiz"></span>
+                      <div class="t"><div class="name">Cell biology basics</div><div class="rmeta">2 attempts · best 9 of 10 · 5 days ago</div></div>
+                      <div class="pct">9 / 10</div>
+                    </div>
+                    <div class="row">
+                      <span class="fic quiz"></span>
+                      <div class="t"><div class="name">Genetics check-in</div><div class="rmeta">1 attempt · 8 days ago</div></div>
+                      <div class="pct">5 / 8</div>
+                    </div>
+                    <div class="row">
+                      <span class="fic quiz"></span>
+                      <div class="t"><div class="name">Cell biology basics</div><div class="rmeta">first attempt · 12 days ago</div></div>
+                      <div class="pct">7 / 10</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h">
+                <div class="s-title">Look at again</div>
+                <span class="rmeta">lowest recall first</span>
+              </div>
+              <div class="card plain">
+                <div class="srow first">
+                  <span class="fic quiz"></span>
+                  <div class="t">
+                    <p class="q">Aa × Aa gives what genotype ratio?</p>
+                    <p class="why">Genetics check-in · last answer wrong, 2 of the last 3 missed</p>
+                  </div>
+                  <div class="rbar"><div class="bar"><i class="f" style="width:41%"></i></div><span class="pct">fading</span></div>
+                  <span class="al">Open</span>
+                </div>
+                <div class="srow">
+                  <span class="fic cards"></span>
+                  <div class="t">
+                    <p class="q">What is a hypertonic solution?</p>
+                    <p class="why">Cell organelles · 2 lapses, rated Again twice</p>
+                  </div>
+                  <div class="rbar"><div class="bar"><i class="f" style="width:38%"></i></div><span class="pct">fading</span></div>
+                  <span class="al">Open</span>
+                </div>
+                <div class="srow">
+                  <span class="fic quiz"></span>
+                  <div class="t">
+                    <p class="q">Which organelle packages proteins for secretion?</p>
+                    <p class="why">Cell biology basics · answered twice, last one a miss</p>
+                  </div>
+                  <div class="rbar"><div class="bar"><i class="k" style="width:52%"></i></div><span class="pct">shaky</span></div>
+                  <span class="al">Open</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="s-title">Recent review sessions</div><span class="al">Past reviews</span></div>
+              <div class="card plain">
+                <div class="row first">
+                  <span class="rmeta" style="width:64px">17 Oct</span>
+                  <div class="t"><div class="name sm">Genetics</div><div class="rmeta">quiz 5 of 8 · 6 cards remembered</div></div>
+                  <span class="rmeta">18m</span>
+                </div>
+                <div class="row">
+                  <span class="rmeta" style="width:64px">14 Oct</span>
+                  <div class="t"><div class="name sm">Cell structure</div><div class="rmeta">quiz 8 of 10 · 12 cards remembered</div></div>
+                  <span class="rmeta">22m</span>
+                </div>
+                <div class="row">
+                  <span class="rmeta" style="width:64px">11 Oct</span>
+                  <div class="t"><div class="name sm">Others</div><div class="rmeta">18 cards remembered</div></div>
+                  <span class="rmeta">14m</span>
+                </div>
+                <div class="row">
+                  <span class="rmeta" style="width:64px">8 Oct</span>
+                  <div class="t"><div class="name sm">Cell structure</div><div class="rmeta">9 cards remembered</div></div>
+                  <span class="rmeta">9m</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+
+        <div class="vp phone"><div class="vplabel" style="margin-bottom:7px">Phone, 390</div><div class="frame phone-frame">
+          <div class="ptop">
+            <div class="menu"><i></i><i></i><i></i></div>
+            <div class="grow"></div>
+            <div class="btn"><i></i></div>
+            <div class="btn"><i></i></div>
+            <div class="av" style="width:26px;height:26px;border-radius:9px">KM</div>
+          </div>
+          <div class="pbody">
+            <div class="back">
+              <svg class="arw" style="margin:0 2px 0 0;transform:rotate(180deg)" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+              Biology 101
+            </div>
+            <h1 class="ph">Progress</h1>
+            <p class="sub">6 of 10 done · 36 practised · last studied 5 days ago</p>
+
+            <div class="sec" style="margin-top:12px">
+              <div class="card" style="padding:12px">
+                <svg class="ptrail" viewBox="0 16 330 32">
+                  <path d="M10 34 C26 34 34 24 50 24 C66 24 74 40 90 40 C106 40 114 26 130 26 C146 26 154 38 170 38 C186 38 194 26 210 26 C226 26 234 36 250 36 C266 36 274 24 290 24 C306 24 314 30 320 30"
+                        fill="none" stroke="var(--line)" stroke-width="2"/>
+                  <path d="M10 34 C26 34 34 24 50 24 C66 24 74 40 90 40 C106 40 114 26 130 26 C146 26 154 38 170 38 C186 38 194 26 210 26"
+                        fill="none" stroke="var(--ink)" stroke-width="2.4"/>
+                  <g stroke="var(--ink)" stroke-width="1.4">
+                    <circle cx="10" cy="34" r="3.6" fill="var(--ink)"/>
+                    <circle cx="50" cy="24" r="3.6" fill="var(--ink)"/>
+                    <circle cx="90" cy="40" r="3.6" fill="var(--ink)"/>
+                    <circle cx="130" cy="26" r="3.6" fill="var(--ink)"/>
+                    <circle cx="170" cy="38" r="3.6" fill="var(--ink)"/>
+                  </g>
+                  <circle cx="210" cy="26" r="6.4" fill="none" stroke="var(--ink)" stroke-width="1.8"/>
+                  <circle cx="210" cy="26" r="3.6" fill="color-mix(in oklab, var(--ink) 50%, var(--surface))"/>
+                  <g stroke="var(--line)" stroke-width="1.4" fill="var(--surface)">
+                    <circle cx="250" cy="36" r="3.6"/>
+                    <circle cx="320" cy="30" r="3.6"/>
+                  </g>
+                  <circle cx="290" cy="24" r="3.6" fill="color-mix(in oklab, var(--ink) 50%, var(--surface))" stroke="var(--ink)" stroke-width="1.4"/>
+                </svg>
+                <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:8px">
+                  <div class="name">6 of 10 done</div>
+                  <span class="al accent">Continue
+                    <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+                  </span>
+                </div>
+                <div class="rmeta" style="margin-top:3px">Next: Mendelian genetics.pdf</div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="pstat">
+                <div class="stat"><div class="n">36</div><div class="l">items practised</div></div>
+                <div class="stat"><div class="n">96</div><div class="l">card reviews</div></div>
+                <div class="stat"><div class="n">18 / 32</div><div class="l">cards rated</div></div>
+                <div class="stat"><div class="n">3</div><div class="l">quiz attempts</div></div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="psec-h"><div class="s-title">Chapters</div><span class="rmeta">6 of 10 done</span></div>
+              <div class="pchap">
+                <div class="top"><b style="font-size:12.5px">Cell structure</b><span class="cnt">4 of 4</span></div>
+                <div class="bar"><i class="s" style="width:70%"></i><i class="k" style="width:20%"></i><i class="f" style="width:10%"></i></div>
+              </div>
+              <div class="pchap">
+                <div class="top"><b style="font-size:12.5px">Membranes &amp; transport</b><span class="cnt">1 of 1</span></div>
+                <div class="bar"></div>
+              </div>
+              <div class="pchap">
+                <div class="top"><b style="font-size:12.5px">Genetics</b><span class="cnt">1 of 3</span></div>
+                <div class="bar"><i class="s" style="width:50%"></i><i class="k" style="width:25%"></i><i class="f" style="width:25%"></i></div>
+              </div>
+              <div class="pchap">
+                <div class="top"><b style="font-size:12.5px">Others</b><span class="cnt">0 of 2</span></div>
+                <div class="bar"><i class="s" style="width:72%"></i><i class="k" style="width:22%"></i><i class="f" style="width:6%"></i></div>
+              </div>
+              <div class="lgd" style="margin-top:6px"><span><em style="background:var(--solid)"></em>solid</span><span><em style="background:var(--shaky)"></em>shaky</span><span><em style="background:var(--fading)"></em>fading</span></div>
+            </div>
+
+            <div class="sec">
+              <div class="psec-h"><div class="s-title">Look at again</div><span class="rmeta">3 items</span></div>
+              <div class="srow first" style="align-items:flex-start">
+                <span class="fic quiz" style="margin-top:2px"></span>
+                <div class="t">
+                  <p class="q">Aa × Aa gives what genotype ratio?</p>
+                  <p class="why">Genetics check-in · fading</p>
+                </div>
+                <span class="al">Open</span>
+              </div>
+              <div class="srow" style="align-items:flex-start">
+                <span class="fic cards" style="margin-top:2px"></span>
+                <div class="t">
+                  <p class="q">What is a hypertonic solution?</p>
+                  <p class="why">Cell organelles · fading</p>
+                </div>
+                <span class="al">Open</span>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="psec-h"><div class="s-title">Recent</div><span class="al">All sessions</span></div>
+              <div class="row first" style="padding:7px 2px">
+                <div class="t"><div class="name sm">Genetics</div><div class="rmeta">17 Oct · quiz 5 of 8 · 18m</div></div>
+              </div>
+              <div class="row" style="padding:7px 2px">
+                <div class="t"><div class="name sm">Cell structure</div><div class="rmeta">14 Oct · quiz 8 of 10 · 22m</div></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <!-- B -->
+      <h2><span class="ltr">B</span> Coach</h2>
+      <p class="variant-desc">
+        Opens with what to do now: one Continue, one suggested review, then the items most likely to be forgotten.
+        Coverage drops to a compact strip, history to three rows. Best if the page is opened daily and expected to act.
+      </p>
+      <ul class="blocks">
+        <li>Do next: Continue and suggested review</li>
+        <li>Look at again, ranked</li>
+        <li>Coverage strip per chapter</li>
+        <li>Practice snapshot</li>
+        <li>Three recent sessions</li>
+      </ul>
+      <div class="shots">
+        <div class="vp desk"><div class="frame" style="min-height:1000px">
+          <aside class="rail">
+            <div class="brand">Capy Notebook</div>
+            <div class="rg">General</div>
+            <div class="ri"><i></i>Dashboard</div>
+            <div class="ri on"><i></i>Workspaces</div>
+            <div class="ri"><i></i>Learning</div>
+            <div class="rg">Tools</div>
+            <div class="ri"><i></i>Files</div>
+            <div class="rg">Explore</div>
+            <div class="ri"><i></i>Question bank</div>
+            <div style="flex:1"></div>
+            <div class="ri"><i></i>Settings</div>
+            <div class="ri"><i></i>Billing &amp; usage</div>
+          </aside>
+          <div class="panel">
+            <div class="topbar">
+              <div class="tbb"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 13.4 13.4"/></svg></div>
+              <div class="tbb"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1.2H3z"/><path d="M6.6 13.6c.4.6 1 .9 1.4.9s1-.3 1.4-.9"/></svg></div>
+              <div class="who"><div class="av">KM</div><b>Kate Malone</b></div>
+            </div>
+            <div class="back">
+              <svg class="arw" style="margin:0 2px 0 0;transform:rotate(180deg)" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+              Biology 101
+            </div>
+            <h1 class="ph">Progress</h1>
+            <p class="sub">6 of 10 items done · 36 practised · last studied 5 days ago</p>
+
+            <div class="sec" style="margin-top:16px">
+              <div class="do-next">
+                <div class="card">
+                  <div class="act">
+                    <div class="k">Continue</div>
+                    <div class="big">Mendelian genetics.pdf</div>
+                    <p class="why">Next in reading order, not read yet.</p>
+                    <div style="margin-top:6px"><span class="al accent">Open item
+                      <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg></span></div>
+                  </div>
+                </div>
+                <div class="card">
+                  <div class="act">
+                    <div class="k">Review</div>
+                    <div style="display:flex;gap:8px;align-items:center">
+                      <span class="chip tricky">Tricky</span>
+                      <span class="big">Genetics</span>
+                    </div>
+                    <p class="why">2 of its 8 items were missed last time and 2 were missed twice. 8 items would come up.</p>
+                    <div style="margin-top:6px"><span class="al accent">Start review
+                      <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg></span></div>
+                  </div>
+                </div>
+              </div>
+              <div style="display:flex;gap:16px;align-items:center;margin-top:8px">
+                <span class="rmeta">1 review session left unfinished: Others, 18 of 22 answered</span>
+                <span class="al">Continue</span>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="s-title">Look at again</div><span class="rmeta">weakest first, 5 most at risk</span></div>
+              <div class="card plain">
+                <div class="srow first">
+                  <span class="fic quiz"></span>
+                  <div class="t"><p class="q">What is a hypertonic solution?</p><p class="why">Cell organelles · rated Again twice · fading</p></div>
+                  <div class="rbar"><div class="bar"><i class="f" style="width:38%"></i></div><span class="pct">fading</span></div>
+                  <span class="al">Open</span>
+                </div>
+                <div class="srow">
+                  <span class="fic quiz"></span>
+                  <div class="t"><p class="q">Aa × Aa gives what genotype ratio?</p><p class="why">Genetics check-in · last answer wrong · fading</p></div>
+                  <div class="rbar"><div class="bar"><i class="f" style="width:41%"></i></div><span class="pct">fading</span></div>
+                  <span class="al">Open</span>
+                </div>
+                <div class="srow">
+                  <span class="fic quiz"></span>
+                  <div class="t"><p class="q">Which organelle packages proteins for secretion?</p><p class="why">Cell biology basics · shaky · answered twice</p></div>
+                  <div class="rbar"><div class="bar"><i class="k" style="width:52%"></i></div><span class="pct">shaky</span></div>
+                  <span class="al">Open</span>
+                </div>
+                <div class="srow">
+                  <span class="fic cards"></span>
+                  <div class="t"><p class="q">What happens to a cell in a hypotonic solution?</p><p class="why">Cell organelles · shaky · 1 lapse</p></div>
+                  <div class="rbar"><div class="bar"><i class="k" style="width:55%"></i></div><span class="pct">shaky</span></div>
+                  <span class="al">Open</span>
+                </div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:6px">
+                <span class="rmeta">11 items are shaky or fading, 5 of them questions.</span>
+                <span class="al">Review workspace</span>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="s-title">Coverage</div><span class="rmeta">6 of 10 done · 36 practised</span></div>
+              <div class="card plain">
+                <div class="row first" style="align-items:center">
+                  <div style="width:180px"><div class="name">Cell structure</div><div class="rmeta">4 items · 10 practised</div></div>
+                  <svg viewBox="0 0 180 24" style="width:180px;height:24px;flex:none">
+                    <path d="M2 14 C20 14 28 8 44 8 C60 8 68 18 84 18 C100 18 108 8 124 8 C140 8 148 16 164 16 C172 16 176 13 178 13" fill="none" stroke="var(--line)" stroke-width="2.2"/>
+                    <path d="M2 14 C20 14 28 8 44 8 C60 8 68 18 84 18 C100 18 108 8 124 8 C140 8 148 16 164 16 C172 16 176 13 178 13" pathLength="100" stroke-dasharray="100 100" fill="none" stroke="var(--ink)" stroke-width="2.4"/>
+                  </svg>
+                  <div class="t"><div class="bar"><i class="s" style="width:70%"></i><i class="k" style="width:20%"></i><i class="f" style="width:10%"></i></div></div>
+                  <span class="pct" style="width:44px;text-align:right">4 of 4</span>
+                </div>
+                <div class="row" style="align-items:center">
+                  <div style="width:180px"><div class="name">Membranes &amp; transport</div><div class="rmeta">1 item · nothing to practise</div></div>
+                  <svg viewBox="0 0 180 24" style="width:180px;height:24px;flex:none">
+                    <path d="M2 14 C20 14 28 8 44 8 C60 8 68 18 84 18 C100 18 108 8 124 8 C140 8 148 16 164 16 C172 16 176 13 178 13" fill="none" stroke="var(--line)" stroke-width="2.2"/>
+                    <path d="M2 14 C20 14 28 8 44 8 C60 8 68 18 84 18 C100 18 108 8 124 8 C140 8 148 16 164 16 C172 16 176 13 178 13" pathLength="100" stroke-dasharray="100 100" fill="none" stroke="var(--ink)" stroke-width="2.4"/>
+                  </svg>
+                  <div class="t"><div class="bar"></div></div>
+                  <span class="pct" style="width:44px;text-align:right">1 of 1</span>
+                </div>
+                <div class="row" style="align-items:center">
+                  <div style="width:180px"><div class="name">Genetics</div><div class="rmeta">3 items · 8 practised</div></div>
+                  <svg viewBox="0 0 180 24" style="width:180px;height:24px;flex:none">
+                    <path d="M2 14 C20 14 28 8 44 8 C60 8 68 18 84 18 C100 18 108 8 124 8 C140 8 148 16 164 16 C172 16 176 13 178 13" fill="none" stroke="var(--line)" stroke-width="2.2"/>
+                    <path d="M2 14 C20 14 28 8 44 8 C60 8 68 18 84 18 C100 18 108 8 124 8 C140 8 148 16 164 16 C172 16 176 13 178 13" pathLength="100" stroke-dasharray="34 100" fill="none" stroke="var(--ink)" stroke-width="2.4"/>
+                  </svg>
+                  <div class="t"><div class="bar"><i class="s" style="width:50%"></i><i class="k" style="width:25%"></i><i class="f" style="width:25%"></i></div></div>
+                  <span class="pct" style="width:44px;text-align:right">1 of 3</span>
+                </div>
+                <div class="row" style="align-items:center">
+                  <div style="width:180px"><div class="name">Others</div><div class="rmeta">2 items · 18 practised</div></div>
+                  <svg viewBox="0 0 180 24" style="width:180px;height:24px;flex:none">
+                    <path d="M2 14 C20 14 28 8 44 8 C60 8 68 18 84 18 C100 18 108 8 124 8 C140 8 148 16 164 16 C172 16 176 13 178 13" fill="none" stroke="var(--line)" stroke-width="2.2"/>
+                  </svg>
+                  <div class="t"><div class="bar"><i class="s" style="width:72%"></i><i class="k" style="width:22%"></i><i class="f" style="width:6%"></i></div></div>
+                  <span class="pct" style="width:44px;text-align:right">0 of 2</span>
+                </div>
+                <div class="lgd" style="margin-top:8px"><span><em style="background:var(--solid)"></em>bars: recall</span><span><em style="background:var(--shaky)"></em>solid / shaky / fading</span></div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="grid2">
+                <div class="card">
+                  <div class="k rmeta">Quizzes</div>
+                  <div style="display:flex;gap:10px;align-items:baseline;margin-top:2px"><div class="n" style="font-size:20px;font-weight:800">3</div><div class="rmeta">attempts · best 9 / 10</div></div>
+                                    <div class="rmeta" style="margin-top:6px">Cell biology basics 9/10 · Genetics check-in 5/8</div>
+                </div>
+                <div class="card">
+                  <div class="k rmeta">Flashcards</div>
+                  <div style="display:flex;gap:10px;align-items:baseline;margin-top:2px"><div class="n" style="font-size:20px;font-weight:800">18/32</div><div class="rmeta">cards rated · 96 reviews</div></div>
+                  <div class="bar" style="margin-top:8px"><i class="f" style="width:15%"></i><i class="k" style="width:20%"></i><i class="s" style="width:49%"></i><i style="width:16%;background:color-mix(in oklab, var(--solid) 65%, var(--ink))"></i></div>
+                  <div class="rmeta" style="margin-top:6px">Good or Easy on 63 of 96 · Cell organelles</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="s-title">Recent</div><span class="al">Past reviews</span></div>
+              <div class="card plain">
+                <div class="row first"><span class="rmeta" style="width:64px">17 Oct</span><div class="t"><div class="name sm">Genetics</div><div class="rmeta">quiz 5 of 8 · 6 cards remembered</div></div><span class="rmeta">18m</span></div>
+                <div class="row"><span class="rmeta" style="width:64px">14 Oct</span><div class="t"><div class="name sm">Cell structure</div><div class="rmeta">quiz 8 of 10 · 12 cards remembered</div></div><span class="rmeta">22m</span></div>
+                <div class="row"><span class="rmeta" style="width:64px">11 Oct</span><div class="t"><div class="name sm">Others</div><div class="rmeta">18 cards remembered</div></div><span class="rmeta">14m</span></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+
+        <div class="vp phone"><div class="vplabel" style="margin-bottom:7px">Phone, 390</div><div class="frame phone-frame">
+          <div class="ptop">
+            <div class="menu"><i></i><i></i><i></i></div>
+            <div class="grow"></div>
+            <div class="btn"><i></i></div>
+            <div class="btn"><i></i></div>
+            <div class="av" style="width:26px;height:26px;border-radius:9px">KM</div>
+          </div>
+          <div class="pbody">
+            <div class="back">
+              <svg class="arw" style="margin:0 2px 0 0;transform:rotate(180deg)" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+              Biology 101
+            </div>
+            <h1 class="ph">Progress</h1>
+            <p class="sub">6 of 10 done · 36 practised</p>
+
+            <div class="sec" style="margin-top:12px">
+              <div class="card" style="padding:12px">
+                <div class="k" style="font-size:10.5px;font-weight:700;color:var(--muted)">Continue</div>
+                <div class="big" style="font-size:14px;font-weight:700;margin-top:2px">Mendelian genetics.pdf</div>
+                <p class="why" style="margin:0">Next in reading order, not read yet.</p>
+                <div style="margin-top:6px"><span class="al accent">Open item
+                  <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg></span></div>
+              </div>
+            </div>
+
+            <div class="sec" style="margin-top:10px">
+              <div class="card" style="padding:12px">
+                <div style="display:flex;gap:8px;align-items:center">
+                  <span class="chip tricky">Tricky</span>
+                  <span style="font-size:13.5px;font-weight:700">Genetics</span>
+                </div>
+                <p class="why" style="margin:4px 0 0">2 of its 8 items missed last time, 2 missed twice. 8 items.</p>
+                <div style="margin-top:6px"><span class="al accent">Start review
+                  <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg></span></div>
+              </div>
+              <div style="display:flex;justify-content:space-between;margin-top:8px">
+                <span class="rmeta">1 session left unfinished</span>
+                <span class="al">Continue</span>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="psec-h"><div class="s-title">Look at again</div><span class="rmeta">5 of 11</span></div>
+              <div class="srow first" style="align-items:flex-start">
+                <span class="fic quiz" style="margin-top:2px"></span>
+                <div class="t"><p class="q">What is a hypertonic solution?</p><p class="why">Cell organelles · fading</p></div>
+                <span class="al">Open</span>
+              </div>
+              <div class="srow" style="align-items:flex-start">
+                <span class="fic quiz" style="margin-top:2px"></span>
+                <div class="t"><p class="q">Aa × Aa gives what genotype ratio?</p><p class="why">Genetics check-in · fading</p></div>
+                <span class="al">Open</span>
+              </div>
+              <div class="srow" style="align-items:flex-start">
+                <span class="fic quiz" style="margin-top:2px"></span>
+                <div class="t"><p class="q">Which organelle packages proteins?</p><p class="why">Cell biology basics · shaky</p></div>
+                <span class="al">Open</span>
+              </div>
+              <div style="margin-top:6px"><span class="al">Review workspace</span></div>
+            </div>
+
+            <div class="sec">
+              <div class="psec-h"><div class="s-title">Coverage</div><span class="rmeta">6 of 10</span></div>
+              <div class="pchap"><div class="top"><b style="font-size:12.5px">Cell structure</b><span class="cnt">4 of 4</span></div><div class="bar"><i class="s" style="width:70%"></i><i class="k" style="width:20%"></i><i class="f" style="width:10%"></i></div></div>
+              <div class="pchap"><div class="top"><b style="font-size:12.5px">Membranes &amp; transport</b><span class="cnt">1 of 1</span></div><div class="bar"></div></div>
+              <div class="pchap"><div class="top"><b style="font-size:12.5px">Genetics</b><span class="cnt">1 of 3</span></div><div class="bar"><i class="s" style="width:50%"></i><i class="k" style="width:25%"></i><i class="f" style="width:25%"></i></div></div>
+              <div class="pchap"><div class="top"><b style="font-size:12.5px">Others</b><span class="cnt">0 of 2</span></div><div class="bar"><i class="s" style="width:72%"></i><i class="k" style="width:22%"></i><i class="f" style="width:6%"></i></div></div>
+            </div>
+
+            <div class="sec">
+              <div class="pstat">
+                <div class="stat"><div class="n">3</div><div class="l">quiz attempts</div></div>
+                <div class="stat"><div class="n">18/32</div><div class="l">cards rated</div></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <!-- C -->
+      <h2><span class="ltr">C</span> Dossier</h2>
+      <p class="variant-desc">
+        Chapters are the spine and every file, quiz and set carries its own line, so the page consolidates the tree
+        with the practice numbers. Best fit for "files and chapters together", weakest as a quick overview: you must
+        read down the page to total things up.
+      </p>
+      <ul class="blocks">
+        <li>Header with inline totals</li>
+        <li>One section per chapter</li>
+        <li>Item rows with state and per-item numbers</li>
+        <li>Practice history at the end</li>
+      </ul>
+      <div class="shots">
+        <div class="vp desk"><div class="frame" style="min-height:1080px">
+          <aside class="rail">
+            <div class="brand">Capy Notebook</div>
+            <div class="rg">General</div>
+            <div class="ri"><i></i>Dashboard</div>
+            <div class="ri on"><i></i>Workspaces</div>
+            <div class="ri"><i></i>Learning</div>
+            <div class="rg">Tools</div>
+            <div class="ri"><i></i>Files</div>
+            <div class="rg">Explore</div>
+            <div class="ri"><i></i>Question bank</div>
+            <div style="flex:1"></div>
+            <div class="ri"><i></i>Settings</div>
+            <div class="ri"><i></i>Billing &amp; usage</div>
+          </aside>
+          <div class="panel">
+            <div class="topbar">
+              <div class="tbb"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.2"/><path d="M10.2 10.2 13.4 13.4"/></svg></div>
+              <div class="tbb"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1.2H3z"/><path d="M6.6 13.6c.4.6 1 .9 1.4.9s1-.3 1.4-.9"/></svg></div>
+              <div class="who"><div class="av">KM</div><b>Kate Malone</b></div>
+            </div>
+            <div class="back">
+              <svg class="arw" style="margin:0 2px 0 0;transform:rotate(180deg)" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+              Biology 101
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;justify-content:space-between">
+              <div>
+                <h1 class="ph">Progress</h1>
+                <p class="sub">6 of 10 done · 36 practised · 96 card reviews · 3 quiz attempts</p>
+              </div>
+              <div style="text-align:right">
+                <span class="al accent">Continue: Mendelian genetics.pdf
+                  <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+                </span>
+                <div class="rmeta">Next in reading order</div>
+              </div>
+            </div>
+
+            <div class="sec" style="margin-top:18px">
+              <div class="card" style="display:flex;gap:18px;align-items:center">
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline">
+                    <div class="name">Cell structure</div>
+                    <div class="rmeta">4 of 4 done · 10 practised · last studied 5 days ago</div>
+                  </div>
+                  <div class="bar" style="margin-top:7px;height:7px">
+                    <i class="s" style="width:70%"></i><i class="k" style="width:20%"></i><i class="f" style="width:10%"></i>
+                  </div>
+                  <div class="lgd"><span><em style="background:var(--solid)"></em>recall of 10 rated items: solid 7 · shaky 2 · fading 1</span></div>
+                </div>
+              </div>
+              <div class="card plain" style="margin-top:6px">
+                <div class="row first">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic pdf"></span>
+                  <div class="t"><div class="name">Cell structure.pdf</div><div class="rmeta">read 9 days ago</div></div>
+                  <span class="rmeta">done</span>
+                </div>
+                <div class="row">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic md"></span>
+                  <div class="t"><div class="name">Organelles cheatsheet.md</div><div class="rmeta">read 9 days ago</div></div>
+                  <span class="rmeta">done</span>
+                </div>
+                <div class="row">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic map"></span>
+                  <div class="t"><div class="name">Cell biology mindmap</div><div class="rmeta">read 3 days ago</div></div>
+                  <span class="rmeta">done</span>
+                </div>
+                <div class="row">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic quiz"></span>
+                  <div class="t">
+                    <div class="name">Cell biology basics</div>
+                    <div class="rmeta">2 attempts · best 9 of 10</div>
+                  </div>
+                  <div class="rbar"><div class="bar"><i class="s" style="width:70%"></i><i class="k" style="width:20%"></i><i class="f" style="width:10%"></i></div><span class="pct">9 / 10</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="card" style="display:flex;gap:18px;align-items:center">
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline">
+                    <div class="name">Membranes &amp; transport</div>
+                    <div class="rmeta">1 of 1 done · nothing to practise · 7 days ago</div>
+                  </div>
+                  <div class="bar" style="margin-top:7px;height:7px"></div>
+                  <div class="lgd"><span>no quiz or set in this chapter</span></div>
+                </div>
+              </div>
+              <div class="card plain" style="margin-top:6px">
+                <div class="row first">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic txt"></span>
+                  <div class="t"><div class="name">Osmosis notes.txt</div><div class="rmeta">read 7 days ago</div></div>
+                  <span class="rmeta">done</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="card" style="display:flex;gap:18px;align-items:center">
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline">
+                    <div class="name">Genetics <span class="chip soft">Next up</span></div>
+                    <div class="rmeta">1 of 3 done · 8 practised · 8 days ago</div>
+                  </div>
+                  <div class="bar" style="margin-top:7px;height:7px"><i class="s" style="width:50%"></i><i class="k" style="width:25%"></i><i class="f" style="width:25%"></i></div>
+                  <div class="lgd"><span><em style="background:var(--solid)"></em>recall, 8 rated items: solid 4 · shaky 2 · fading 2</span></div>
+                </div>
+              </div>
+              <div class="card plain" style="margin-top:6px">
+                <div class="row first" style="background:var(--tint-accent);border-radius:10px;padding:8px">
+                  <svg class="mk started" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M8 1.9a6.1 6.1 0 0 1 0 12.2z" fill="currentColor" stroke="none"/></svg>
+                  <span class="fic pdf"></span>
+                  <div class="t"><div class="name">Mendelian genetics.pdf</div><div class="rmeta">not read yet</div></div>
+                  <span class="al accent">Continue
+                    <svg class="arw" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg></span>
+                </div>
+                <div class="row">
+                  <svg class="mk todo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/></svg>
+                  <span class="fic png"></span>
+                  <div class="t"><div class="name">Punnett squares.png</div><div class="rmeta">not read yet</div></div>
+                  <span class="rmeta">untouched</span>
+                </div>
+                <div class="row">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic quiz"></span>
+                  <div class="t"><div class="name">Genetics check-in</div><div class="rmeta">1 attempt · 5 of 8 · 8 days ago</div></div>
+                  <div class="rbar"><div class="bar"><i class="s" style="width:50%"></i><i class="k" style="width:25%"></i><i class="f" style="width:25%"></i></div><span class="pct">5 / 8</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="card" style="display:flex;gap:18px;align-items:center">
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;justify-content:space-between;align-items:baseline">
+                    <div class="name">Others <span class="rmeta">no chapter</span></div>
+                    <div class="rmeta">0 of 2 done · 18 practised · 6 days ago</div>
+                  </div>
+                  <div class="bar" style="margin-top:7px;height:7px"><i class="s" style="width:72%"></i><i class="k" style="width:22%"></i><i class="f" style="width:6%"></i></div>
+                  <div class="lgd"><span><em style="background:var(--solid)"></em>recall, 18 rated cards: solid 13 · shaky 4 · fading 1</span></div>
+                </div>
+              </div>
+              <div class="card plain" style="margin-top:6px">
+                <div class="row first">
+                  <svg class="mk started" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M8 1.9a6.1 6.1 0 0 1 0 12.2z" fill="currentColor" stroke="none"/></svg>
+                  <span class="fic cards"></span>
+                  <div class="t">
+                    <div class="name">Cell organelles</div>
+                    <div class="rmeta">18 of 32 cards rated · 96 reviews · good or easy 63 of 96</div>
+                  </div>
+                  <div class="rbar"><div class="bar"><i class="s" style="width:72%"></i><i class="k" style="width:22%"></i><i class="f" style="width:6%"></i></div><span class="pct">63 / 96</span></div>
+                </div>
+                <div class="row">
+                  <svg class="mk todo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/></svg>
+                  <span class="fic diag"></span>
+                  <div class="t"><div class="name">Protein secretion pathway</div><div class="rmeta">not read yet</div></div>
+                  <span class="rmeta">untouched</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="sec-h"><div class="s-title">Practice history</div><span class="al">Past reviews</span></div>
+              <div class="grid2">
+                <div class="card">
+                  <div class="rmeta" style="margin-bottom:4px">Quiz attempts</div>
+                  <div class="row first"><div class="t"><div class="name sm">Cell biology basics</div><div class="rmeta">5 days ago</div></div><span class="pct">9 / 10</span></div>
+                  <div class="row"><div class="t"><div class="name sm">Genetics check-in</div><div class="rmeta">8 days ago</div></div><span class="pct">5 / 8</span></div>
+                  <div class="row"><div class="t"><div class="name sm">Cell biology basics</div><div class="rmeta">12 days ago</div></div><span class="pct">7 / 10</span></div>
+                </div>
+                <div class="card">
+                  <div class="rmeta" style="margin-bottom:4px">Review sessions</div>
+                  <div class="row first"><div class="t"><div class="name sm">Genetics</div><div class="rmeta">17 Oct · quiz 5/8 · cards 6/9</div></div><span class="rmeta">18m</span></div>
+                  <div class="row"><div class="t"><div class="name sm">Cell structure</div><div class="rmeta">14 Oct · quiz 8/10 · cards 12/16</div></div><span class="rmeta">22m</span></div>
+                  <div class="row"><div class="t"><div class="name sm">Others</div><div class="rmeta">11 Oct · cards 18/22</div></div><span class="rmeta">14m</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+
+        <div class="vp phone"><div class="vplabel" style="margin-bottom:7px">Phone, 390</div><div class="frame phone-frame">
+          <div class="ptop">
+            <div class="menu"><i></i><i></i><i></i></div>
+            <div class="grow"></div>
+            <div class="btn"><i></i></div>
+            <div class="btn"><i></i></div>
+            <div class="av" style="width:26px;height:26px;border-radius:9px">KM</div>
+          </div>
+          <div class="pbody">
+            <div class="back">
+              <svg class="arw" style="margin:0 2px 0 0;transform:rotate(180deg)" viewBox="0 0 10 10"><path d="M2 5.5h7M6 2.5l3 3-3 3"/></svg>
+              Biology 101
+            </div>
+            <h1 class="ph">Progress</h1>
+            <p class="sub">6 of 10 done · 36 practised · 3 quiz attempts</p>
+
+            <div class="sec" style="margin-top:12px">
+              <div class="card" style="padding:12px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <b style="font-size:13px">Genetics</b><span class="cnt" style="font-size:11px;color:var(--muted)">1 of 3</span>
+                </div>
+                <div class="bar" style="margin-top:6px"><i class="s" style="width:50%"></i><i class="k" style="width:25%"></i><i class="f" style="width:25%"></i></div>
+                <div class="rmeta" style="margin-top:4px">8 practised · solid 4 · shaky 2 · fading 2</div>
+              </div>
+              <div style="margin-top:4px">
+                <div class="pitem first">
+                  <svg class="mk started" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M8 1.9a6.1 6.1 0 0 1 0 12.2z" fill="currentColor" stroke="none"/></svg>
+                  <span class="fic pdf"></span>
+                  <div class="t"><div class="name">Mendelian genetics.pdf</div><div class="rmeta">not read yet</div></div>
+                  <span class="al accent">Continue</span>
+                </div>
+                <div class="pitem">
+                  <svg class="mk todo" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/></svg>
+                  <span class="fic png"></span>
+                  <div class="t"><div class="name">Punnett squares.png</div><div class="rmeta">not read yet</div></div>
+                </div>
+                <div class="pitem">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic quiz"></span>
+                  <div class="t"><div class="name">Genetics check-in</div><div class="rmeta">1 attempt · 5 of 8</div></div>
+                  <span class="pct" style="font-size:11px;color:var(--fg-2)">5 / 8</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="card" style="padding:12px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <b style="font-size:13px">Cell structure</b><span class="cnt" style="font-size:11px;color:var(--muted)">4 of 4</span>
+                </div>
+                <div class="bar" style="margin-top:6px"><i class="s" style="width:70%"></i><i class="k" style="width:20%"></i><i class="f" style="width:10%"></i></div>
+                <div class="rmeta" style="margin-top:4px">10 practised · solid 7 · shaky 2 · fading 1</div>
+              </div>
+              <div style="margin-top:4px">
+                <div class="pitem first">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic quiz"></span>
+                  <div class="t"><div class="name">Cell biology basics</div><div class="rmeta">2 attempts · best 9 of 10</div></div>
+                  <span class="pct" style="font-size:11px;color:var(--fg-2)">9 / 10</span>
+                </div>
+                <div class="pitem">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic pdf"></span>
+                  <div class="t"><div class="name">Cell structure.pdf</div><div class="rmeta">read 9 days ago</div></div>
+                </div>
+                <div class="pitem">
+                  <svg class="mk done" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M5 8.2l2 2 4-4.5"/></svg>
+                  <span class="fic map"></span>
+                  <div class="t"><div class="name">Cell biology mindmap</div><div class="rmeta">read 3 days ago</div></div>
+                </div>
+              </div>
+              <div style="margin-top:6px"><span class="al">3 more in this chapter</span></div>
+            </div>
+
+            <div class="sec">
+              <div class="card" style="padding:12px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline">
+                  <b style="font-size:13px">Others</b><span class="cnt" style="font-size:11px;color:var(--muted)">0 of 2</span>
+                </div>
+                <div class="bar" style="margin-top:6px"><i class="s" style="width:72%"></i><i class="k" style="width:22%"></i><i class="f" style="width:6%"></i></div>
+                <div class="rmeta" style="margin-top:4px">18 practised · cards 18 of 32</div>
+              </div>
+              <div style="margin-top:4px">
+                <div class="pitem first">
+                  <svg class="mk started" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.1"/><path d="M8 1.9a6.1 6.1 0 0 1 0 12.2z" fill="currentColor" stroke="none"/></svg>
+                  <span class="fic cards"></span>
+                  <div class="t"><div class="name">Cell organelles</div><div class="rmeta">96 reviews · good or easy 63</div></div>
+                  <span class="pct" style="font-size:11px;color:var(--fg-2)">63 / 96</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="sec">
+              <div class="psec-h"><div class="s-title">Practice history</div><span class="al">Past reviews</span></div>
+              <div class="row first" style="padding:7px 2px">
+                <div class="t"><div class="name sm">Cell biology basics</div><div class="rmeta">5 days ago · 9 of 10</div></div>
+              </div>
+              <div class="row" style="padding:7px 2px">
+                <div class="t"><div class="name sm">Genetics session</div><div class="rmeta">17 Oct · quiz 5/8 · 18m</div></div>
+              </div>
+            </div>
+          </div>
+        </div></div>
+      </div>
+
+      <h2>2. Decisions I need before code</h2>
+      <p class="note">My recommendation is in each line; say "all as proposed" if they all read right.</p>
+      <ol>
+        <li>
+          <b>Shape.</b> A, B or C, or a mix of their blocks. Recommendation: <b>B's opening blocks on A's body</b>
+          (do next, look at again, chapter table, practice, recent), since the weak items are the reason to leave the
+          Study tab at all.
+        </li>
+        <li>
+          <b>Scope and URL.</b> One workspace per page at <code>/workspaces/{id}/study</code>, not a global study page.
+          Recommendation: yes, and make it the phone Study page, which the workspace does not have below lg today.
+        </li>
+        <li>
+          <b>Entry points.</b> A "Progress" link in the Study tab's tab row, the workspace header's menu, and Learning's
+          Progress rows. Recommendation: the Study tab row plus Learning's rows; no extra header button.
+        </li>
+        <li>
+          <b>Blocks to ship.</b> Coverage per chapter, map, Continue, suggested review and unfinished session, chapter
+          practice and recall, per-set and per-quiz numbers, weak items, recent sessions. Recommendation: all of them,
+          with the map only when it fits (desktop), a compact trail on phones.
+        </li>
+        <li>
+          <b>New server work.</b> One endpoint, <code>GET /api/workspaces/{id}/study/progress</code>, returning chapter
+          and material rollups and the weak items, with recall computed in Go. Recommendation: yes. Without it the page
+          is coverage and attempts only, which is what the Study tab already shows.
+        </li>
+        <li>
+          <b>Recall buckets.</b> Solid at 0.9 and above, shaky 0.7 to 0.9, fading below 0.7, the target retention the
+          server already uses. Words on item rows, counts and a bar per chapter, no percentages. Recommendation: as stated. Note that
+          "fading" also names a review mode (blue, from Learning's Review tab); if that clash reads wrong, the third bucket
+          becomes "weak".
+        </li>
+        <li>
+          <b>What counts as a weak item.</b> Recall below 0.7, or the latest answer was a miss. Sort by recall, show at
+          most 5, then "Review workspace", which starts today's whole-workspace review. Recommendation: as stated; a
+          session made of exactly the weak items would be a new review group.
+        </li>
+        <li>
+          <b>Chapter grouping.</b> A quiz or set counts under its tree chapter (<code>chapter_id</code>), the same grouping
+          review suggestions use; its generation scope (<code>scope_chapters</code>) is ignored. Quiz scores stay on the
+          quiz, never averaged per chapter. Recommendation: as stated.
+        </li>
+        <li>
+          <b>Actions on the page.</b> Read-only apart from navigation and starting a review. Recommendation: no marking
+          read, no stopping tracking, no quick review; the Study tab and the Files panel own those.
+        </li>
+        <li>
+          <b>Stopped items.</b> Hidden from the chapter lists, with a "2 stopped tracking" count that opens Files.
+          Recommendation: as stated.
+        </li>
+        <li>
+          <b>Time studied.</b> Show per-session time only, from recorded review sessions, and no workspace total while
+          attempts and reading have no duration. Recommendation: per-session only, labelled "review time".
+        </li>
+        <li>
+          <b>Progress off or empty.</b> With progress off, one line explaining that quiz results are still kept and a
+          link to Settings. With nothing tracked, the page falls back to the map placeholder and the three recording
+          actions, as Learning's Progress does. Recommendation: as stated.
+        </li>
+      </ol>
+
+      <p class="foot">
+        local: artifacts/2026-10-18-study-progress-mocks.html · same file is re-uploaded for later rounds
+      </p>
+    </div>
+    <script>
+    (function () {
+      var root = document.documentElement;
+      var btn = document.getElementById('theme');
+      function label() { btn.textContent = root.dataset.theme === 'mocha' ? 'Light' : 'Dark'; }
+      btn.addEventListener('click', function () {
+        root.dataset.theme = root.dataset.theme === 'mocha' ? 'latte' : 'mocha';
+        label();
+      });
+      label();
+    })();
+    </script>
+  </body>
+</html>

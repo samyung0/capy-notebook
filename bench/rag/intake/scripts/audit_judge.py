@@ -8,9 +8,10 @@ schema. The judge prompt is frozen in
 the packets as `pNNNN.<side>-<side>.verdict.json`, one file per pair, and the
 run is resumable; `summary` tallies faithful blocks and issues per side.
 
-Transport: the Claude Code CLI on the developer's subscription, as in
-`bench/parsers/scripts/compare_claude_recovery.py` (tools off, no MCP servers,
-no session persistence; ANTHROPIC_* variables removed so the login is used).
+Transport: one Anthropic Messages API call per packet (adaptive thinking at the
+judge's effort, the schema as structured output), billed to `ANTHROPIC_API_KEY`.
+The 10-07 MinerU/reviewed verdicts ran the same model, effort, prompt and
+schema through the Claude Code CLI.
 
     uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py run --sides mineru,reviewed [--book ahss4] [--limit N]
     uv run --project pipeline python bench/rag/intake/scripts/audit_judge.py summary --sides mineru,reviewed
@@ -23,8 +24,9 @@ import base64
 import json
 import os
 import random
-import subprocess
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -67,25 +69,7 @@ SCHEMA = {
     },
 }
 
-FLAGS = [
-    "-p",
-    "--model",
-    MODEL,
-    "--effort",
-    EFFORT,
-    "--tools",
-    "",
-    "--strict-mcp-config",
-    "--mcp-config",
-    '{"mcpServers":{}}',
-    "--disable-slash-commands",
-    "--no-session-persistence",
-    "--input-format",
-    "stream-json",
-    "--output-format",
-    "stream-json",
-    "--verbose",
-]
+API_URL = "https://api.anthropic.com/v1/messages"
 
 
 def blocks_text(label: str, blocks: list[dict]) -> str:
@@ -111,39 +95,47 @@ def judge(packet: dict, sides: tuple[str, str], seed: int) -> dict:
         + "\n"
         + blocks_text("B", packet["texts"][labels["B"]])
     )
-    event = {
-        "type": "user",
-        "message": {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": text},
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(image).decode()}},
-            ],
-        },
+    body = {
+        "model": MODEL,
+        "max_tokens": 32000,
+        "system": PROMPT.read_text(encoding="utf-8"),
+        "thinking": {"type": "adaptive", "display": "omitted"},
+        "output_config": {"effort": EFFORT, "format": {"type": "json_schema", "schema": SCHEMA}},
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": text},
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": base64.b64encode(image).decode()}},
+                ],
+            }
+        ],
     }
-    env = dict(os.environ)
-    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL"):
-        env.pop(name, None)
-    cmd = ["claude", *FLAGS, "--system-prompt", PROMPT.read_text(encoding="utf-8"), "--json-schema", json.dumps(SCHEMA)]
+    request = urllib.request.Request(
+        API_URL,
+        data=json.dumps(body).encode(),
+        headers={"x-api-key": os.environ["ANTHROPIC_API_KEY"], "anthropic-version": "2023-06-01", "content-type": "application/json"},
+    )
     started = time.monotonic()
-    proc = subprocess.run(cmd, input=json.dumps(event) + "\n", capture_output=True, text=True, encoding="utf-8", env=env, timeout=900)
-    result = None
-    for line in proc.stdout.splitlines():
-        try:
-            e = json.loads(line)
-        except ValueError:
-            continue
-        if e.get("type") == "result":
-            result = e
-    value = (result or {}).get("structured_output")
+    value = response = error = None
+    try:
+        with urllib.request.urlopen(request, timeout=900) as reply:
+            response = json.loads(reply.read())
+        answer = next(b["text"] for b in response["content"] if b["type"] == "text")
+        value = json.loads(answer)
+    except urllib.error.HTTPError as e:
+        error = {"status": e.code, "body": e.read().decode(errors="replace")[-800:]}
+    except (urllib.error.URLError, TimeoutError, StopIteration, ValueError) as e:
+        error = {"exception": repr(e)[-800:], "stop_reason": (response or {}).get("stop_reason")}
     return {
         "labels": labels,
         "verdict": value,
-        "error": None if value is not None else {"returncode": proc.returncode, "stderr": proc.stderr[-800:], "result": (result or {}).get("result")},
-        "usage": (result or {}).get("usage"),
+        "error": error,
+        "usage": (response or {}).get("usage"),
         "seconds": round(time.monotonic() - started, 1),
         "model": MODEL,
         "effort": EFFORT,
+        "transport": "anthropic-api",
     }
 
 
@@ -169,7 +161,7 @@ def run(sides: tuple[str, str], book: str | None, limit: int | None, seed: int) 
 
 
 def summary(sides: tuple[str, str]) -> None:
-    tally = {s: {"pages": 0, "blocks": 0, "faithful": 0, "issues": {}} for s in sides}
+    tally = {s: {"pages": 0, "blocks": 0, "faithful": 0, "silent_pages": 0, "issues": {}} for s in sides}
     by_book: dict[str, dict] = {}
     for path in sorted(AUDIT.glob(f"*/p*.{sides[0]}-{sides[1]}.verdict.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
@@ -182,9 +174,11 @@ def summary(sides: tuple[str, str]) -> None:
             t["pages"] += 1
             t["blocks"] += len(blocks)
             t["faithful"] += sum(1 for b in blocks if b["faithful"])
-            for b in blocks:
-                for issue in b["issues"]:
-                    t["issues"][issue["kind"]] = t["issues"].get(issue["kind"], 0) + 1
+            kinds = [issue["kind"] for b in blocks for issue in b["issues"]]
+            for kind in kinds:
+                t["issues"][kind] = t["issues"].get(kind, 0) + 1
+            # Silent errors (wrong or missing) are the ones that reach a learner.
+            t["silent_pages"] += any(kind in ("wrong", "missing") for kind in kinds)
             bb = by_book.setdefault(book, {s: {"blocks": 0, "faithful": 0} for s in sides})[side]
             bb["blocks"] += len(blocks)
             bb["faithful"] += sum(1 for b in blocks if b["faithful"])

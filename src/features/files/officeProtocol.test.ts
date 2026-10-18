@@ -297,7 +297,13 @@ describe('office host protocol', () => {
       type: 'notice',
       version: OFFICE_PROTOCOL_VERSION,
     });
-    for (const value of ['equation-text', 'image-too-large', 'image-type'])
+    for (const value of [
+      'equation-text',
+      'image-too-large',
+      'image-type',
+      'clear-too-large',
+      'copy-too-large',
+    ])
       expect(isOfficeRuntimeMessage(notice(value))).toBe(true);
     expect(isOfficeRuntimeMessage(notice('anything'))).toBe(false);
     // A failed render is its own reply, not the runtime's error.

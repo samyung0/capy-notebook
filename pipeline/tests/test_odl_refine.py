@@ -1751,6 +1751,49 @@ def test_a_raised_unit_exponent_is_restored_in_the_block_text() -> None:
     assert result["text"] == "The tank holds 10,597.5 ft^3 of water."
 
 
+def test_center_inside_answers_as_pymupdfs_own_test() -> None:
+    # MuPDF compares single-precision floats with the right and bottom edges
+    # open, and its binding refuses finite coordinates past the float range.
+    def binding(box, area):
+        centre = pymupdf.Point((box[0] + box[2]) / 2, (box[1] + box[3]) / 2)
+        try:
+            return bool(area.contains(centre))
+        except (TypeError, OverflowError) as exc:
+            return type(exc)
+
+    def ours(box, area):
+        try:
+            return source_text.center_inside(box, area)
+        except (TypeError, OverflowError) as exc:
+            return type(exc)
+
+    values = [0.0, 10.0, 9.99999999, 10.00000001, 1e39, math.inf, math.nan, -0.0]
+    area = pymupdf.Rect(0, 0, 10, 10)
+    for x in values:
+        for y in (5.0, 0.0, 10.0):
+            assert ours((x, y, x, y), area) == binding((x, y, x, y), area)
+    for edge in (1e39, math.inf, 9.99999999):
+        wide = pymupdf.Rect(0, 0, edge, 10)
+        assert ours((5, 5, 5, 5), wide) == binding((5, 5, 5, 5), wide)
+
+
+def test_the_line_grid_returns_every_box_a_query_meets(monkeypatch) -> None:
+    # The index behind _lines_for_words and _needs_page: boxes across cell
+    # edges, touching the query, or without cells (not finite, wider than a
+    # page) come back; a box it cannot meet stays out.
+    monkeypatch.setattr(scripts, "ROW_INDEX", 1)
+    boxes = [
+        (15.9, 15.9, 16.1, 16.1),
+        (40.0, 40.0, 50.0, 50.0),
+        (math.nan, 0.0, 1.0, 1.0),
+        (0.0, 0.0, 2000.0, 1.0),
+        (200.0, 200.0, 210.0, 210.0),
+    ]
+    index = scripts._box_index(boxes)
+    assert scripts._beside(index, (16.0, 16.0, 40.0, 40.0), 5) == [0, 1, 2, 3]
+    assert scripts._beside(index, (math.inf, 0.0, 1.0, 1.0), 5) == range(5)
+
+
 def test_empty_tables_are_only_tables_without_any_cell_text_or_caption() -> None:
     empty = {
         "type": "table",

@@ -130,7 +130,8 @@ Untick `browser_suite` to keep UAT quiet meanwhile. Locally, as in
 The artifact's `evidence/` holds `office-load.md` (a row per open with the
 milestones and the bytes and cache hits of bundles, WASM and fonts, then the
 open's key requests: the document, the SPA entry `main-*.js`, each WASM and
-the largest font with start, TTFB, download, sizes and Cloudflare headers),
+the largest font with start, TTFB, download, sizes and Cloudflare headers,
+then each open's `capy:office:*` stage marks in time order),
 `office-load-<format>-<size>-<open>-<id>.json` (every milestone, the runtime's
 own `timings`, the header's save states, WASM compiles, fonts, the document as
 `indexHtml` and every resource of the page, the runtime frame and its
@@ -138,7 +139,8 @@ workers, in start order: origin and path, realm, start, `requestStart`,
 `responseStart`, end (`responseEnd`), transfer, encoded and decoded sizes,
 `nextHopProtocol` and cache state from Resource Timing, and under `network`
 the status and `cf-cache-status`, `age` and the `cf-ray` colo of its
-response) and `office-load-<format>-<size>-<open>.zip`,
+response, and under `marks` the product's `capy:office:*` marks from every
+realm with their details, a worker's stages as its frame marked them) and `office-load-<format>-<size>-<open>.zip`,
 the Playwright trace with screenshots (`npx playwright show-trace <zip>`;
 its screencast costs every open alike). Traces keep the run's short-lived
 session headers; cleanup deletes the accounts before the upload.
