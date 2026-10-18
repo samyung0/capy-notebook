@@ -444,14 +444,16 @@ fn json_any(value: &Value) -> Any {
     notes::json::value_to_any(value)
 }
 
-/// Writes from outside a room stay strict (Epo 2026-10-18): an agent's edit
-/// inserting or replacing a figure, and the content API's replacement, take
-/// no block the room's store takes only from a merge (no series, a pie
-/// without a positive total). Fails if `assert_node_shape` or
-/// `commands::replace_block` drop their figure check, since the whole
-/// document check after them is the room's, relaxed.
+/// An agent's edit stays strict while the content API's whole-document
+/// note write takes the room's live policy (Epo 2026-10-18): an agent cannot
+/// insert a block the room's store takes only from a merge (no series, a pie
+/// without a positive total), and the content API's replacement of a figure
+/// with one goes in and passes the room's store check. Fails if
+/// `assert_node_shape` drops its figure check, since the whole-document
+/// check after it is the room's, relaxed, or if `commands::replace_block`
+/// checks figures strictly again.
 #[test]
-fn agent_edits_and_the_content_api_write_figures_strictly() {
+fn agent_edits_write_figures_strictly_and_the_content_api_takes_the_live_policy() {
     use notes::commands::{self, ReplaceBlock};
     use notes::edit::{self, DocumentCommand};
     let mut empty = chart();
@@ -475,7 +477,7 @@ fn agent_edits_and_the_content_api_write_figures_strictly() {
         assert!(inserted.is_err(), "an agent inserts {block}");
         let room = doc(&[figure(chart())]);
         let root = room.get_or_insert_text(plate::CONTENT_ROOT);
-        let replaced = commands::replace_block(
+        commands::replace_block(
             &mut room.transact_mut(),
             &root,
             &ReplaceBlock {
@@ -486,10 +488,12 @@ fn agent_edits_and_the_content_api_write_figures_strictly() {
                 replacement_block: node,
                 room: "material:m1:schema:1".into(),
             },
-        );
-        assert!(replaced.is_err(), "the content API writes {block}");
+        )
+        .unwrap_or_else(|error| panic!("the content API writes {block}: {error}"));
+        material::assert_canonical(&projected(&room), "note")
+            .unwrap_or_else(|error| panic!("the store takes {block}: {}", error.0));
     }
-    // A valid figure still goes in both ways.
+    // A valid figure still goes in as an agent's edit.
     let room = doc(&[paragraph("intro")]);
     let root = room.get_or_insert_text(plate::CONTENT_ROOT);
     edit::apply_material_commands(

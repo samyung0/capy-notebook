@@ -297,12 +297,13 @@ figures).
     through the content API (`ValidateKind` for a note: create with content,
     `huma_materials.go`, and `UpdateMaterial`), all with
     `questions.Policy{Live: true}`, which takes the raw states too (a pie's
-    extra series, a line's one-point series); the browser's
+    extra series, a line's one-point series), and in a live room the block
+    that update changes (`commands::replace_block` checks no figure itself;
+    the room's store check after it does); the browser's
     `parseMaterialDocument` (`liveFigureSchema`, after the repair);
   - strict: an agent's edit blocks in Rust (`edit.rs` `assert_node_shape`
-    runs `material::figure_block` on every chart, plot and graph it writes)
-    and the content API's replacement block (`commands::replace_block`, the
-    block a whole-document update changes in a live room); Go's `ParseWrite`
+    runs `material::figure_block` on every chart, plot and graph it writes);
+    Go's `ParseWrite`
     (an agent's note, `convertAgentNote`, and its markdown blocks) and
     `questions.ValidateBlock` for quiz and bank questions and question media;
     `ValidateKind` for other material kinds; the browser's
