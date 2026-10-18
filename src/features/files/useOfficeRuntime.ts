@@ -63,14 +63,6 @@ interface OfficeRuntimeOptions {
   revision: number;
 }
 
-export function officeRuntimeKey(
-  file: Pick<SourceFile, 'id'>,
-  revision: number
-): string {
-  void revision;
-  return file.id;
-}
-
 /**
  * What a runtime replica that reported `replicaState` still lacks of `doc`.
  * The engines refuse a single incoming update above 64 MiB, so a large room is

@@ -5,8 +5,8 @@ import { IconButton } from '@/components/ui/IconButton';
 import { m } from '@/i18n';
 import { cn } from '@/lib/cn';
 import { TopInsetFrame } from '@/summary/TopInsetFrame';
+import { LazySearchDialog } from './LazySearchDialog';
 import { ProfileMenu } from './ProfileMenu';
-import { SearchDialog } from './SearchDialog';
 import { MobileNavDrawer } from './Sidebar';
 
 function SearchButton() {
@@ -21,7 +21,7 @@ function SearchButton() {
         size="md"
         variant="dark"
       />
-      <SearchDialog open={open} setOpen={setOpen} />
+      <LazySearchDialog open={open} setOpen={setOpen} />
     </>
   );
 }

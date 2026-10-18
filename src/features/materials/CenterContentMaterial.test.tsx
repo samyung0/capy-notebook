@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 import { prerenderToNodeStream } from 'react-dom/static';
 import { describe, expect, it, vi } from 'vitest';
 import type { Material } from '@/api/types';
-import { MaterialContent } from './CenterContent';
+import { MaterialContent } from './CenterContentMaterial';
 
 const provenance = {
   books: [

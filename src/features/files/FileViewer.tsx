@@ -13,7 +13,6 @@ import { AppErrorBoundary } from '@/components/app/AppErrorBoundary';
 import { Button } from '@/components/ui/Button';
 import { Icon } from '@/components/ui/Icon';
 import { userToast } from '@/components/ui/userToast';
-import { ImageViewer } from '@/features/files/ImageViewer';
 import { useAccountFrozen } from '@/features/workspace/WorkspaceHealth';
 import { m } from '@/i18n';
 import { unexpectedErrorId } from '@/lib/errors';
@@ -25,11 +24,19 @@ import {
   officeFormatOf,
 } from './fileUtils';
 import type { OfficeCitation, OfficeFormat } from './officeProtocol';
-import { SourceTextView } from './SourceTextView';
-import { officeRuntimeKey } from './useOfficeRuntime';
+import { officeRuntimeKey } from './officeRuntimeConfig';
 import { pdfAnnotationsQuery } from './usePdfAnnotations';
 
 const PdfView = lazy(() => import('./PdfView'));
+// Each kind's viewer loads with its kind.
+const ImageViewer = lazy(() =>
+  import('./ImageViewer').then((module) => ({ default: module.ImageViewer }))
+);
+const SourceTextView = lazy(() =>
+  import('./SourceTextView').then((module) => ({
+    default: module.SourceTextView,
+  }))
+);
 const SheetView = lazy(() => import('./SheetView'));
 const CsvView = lazy(() => import('./CsvView'));
 const DocxView = lazy(() => import('./DocxView'));
@@ -319,7 +326,7 @@ function ResolvedFileView({
   }
 
   if (isImageFile(file)) {
-    return (
+    return lazyView(
       <ImageViewer
         alt={file.name}
         key={`${file.url}:${previewAttempt}`}

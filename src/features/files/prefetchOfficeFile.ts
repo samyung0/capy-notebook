@@ -5,7 +5,6 @@ import {
   readDocumentMode,
 } from '@/features/materials/openItem';
 import { officeFormatOf } from './fileUtils';
-import { prefetchSourceOpen } from './sourceOpen';
 
 const VIEW_CHUNKS = {
   docx: () => import('./DocxView'),
@@ -44,6 +43,9 @@ export function prefetchOfficeFile(
     const format = file.hasBytes ? officeFormatOf(file) : null;
     if (!format) return;
     void VIEW_CHUNKS[format]();
+    // Loaded here, not imported: the router is in the entry, and the open
+    // code would bring Yjs with it.
+    const sourceOpen = import('./sourceOpen');
     // The view mounts once the capability that picks its mode is known.
     void qc.prefetchQuery(workspaceQuery(file.workspaceId));
     const mode = requested ?? readDocumentMode({ id: fileId, kind: 'file' });
@@ -51,6 +53,7 @@ export function prefetchOfficeFile(
       mode === 'edit' &&
       (await qc.ensureQueryData(workspaceQuery(file.workspaceId))).capabilities
         .canEditContent;
+    const { prefetchSourceOpen } = await sourceOpen;
     if (signal.aborted) return;
     prefetchSourceOpen(fileId, canEdit ? 'edit' : 'view');
   })().catch(() => {

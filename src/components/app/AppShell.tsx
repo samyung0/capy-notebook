@@ -4,7 +4,6 @@ import { api } from '@/api/client';
 import { useEventStream, useMe } from '@/api/hooks';
 import { scheduleAutoScroll } from '@/features/schedule/scrollState';
 import { useFinishToasts } from '@/features/study/finishToasts';
-import { startDraftSweeps } from '@/lib/editDrafts';
 import { useKeyboardHeight } from '@/lib/useKeyboardHeight';
 import { AccountBlockedScreen } from './AccountBlockedScreen';
 import { InShellMain } from './AppErrorBoundary';
@@ -28,11 +27,15 @@ export function AppShell() {
   }, [pathname]);
 
   // Stored edits go to their rooms from any page; those of documents this
-  // account no longer has are deleted.
+  // account no longer has are deleted. Loaded, not imported: the drafts
+  // bring Yjs, which the entry leaves to the pages that edit.
   const { data: me } = useMe({ errorBoundary: false });
   const actorId = me?.id;
   useEffect(() => {
-    if (actorId) startDraftSweeps(actorId, api);
+    if (actorId)
+      void import('@/lib/editDrafts').then((drafts) =>
+        drafts.startDraftSweeps(actorId, api)
+      );
   }, [actorId]);
   useFinishToasts();
   useKeyboardHeight();

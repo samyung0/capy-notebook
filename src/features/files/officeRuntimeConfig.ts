@@ -46,6 +46,17 @@ export function resolveOfficeRuntimeConfig({
   };
 }
 
+/** The key of an Office file's runtime frame: the file alone, so a new
+ * revision keeps the open frame. Here, not in useOfficeRuntime, so the file
+ * viewer keys the frame without loading the runtime host. */
+export function officeRuntimeKey(
+  file: { id: string },
+  revision: number
+): string {
+  void revision;
+  return file.id;
+}
+
 export function getOfficeRuntimeConfig(): OfficeRuntimeConfig {
   return resolveOfficeRuntimeConfig({
     appOrigin: window.location.origin,

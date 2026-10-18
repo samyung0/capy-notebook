@@ -1,6 +1,5 @@
-import {
-  type Configuration,
-  InteractionRequiredAuthError,
+import type {
+  Configuration,
   PublicClientApplication,
 } from '@azure/msal-browser';
 import {
@@ -16,6 +15,10 @@ const KIND_AUTHORITY = {
 } as const;
 
 let appPromise: Promise<PublicClientApplication> | undefined;
+
+/** MSAL loads with the first Microsoft picker open, not with every page that
+ * can show the source chooser. */
+const loadMsal = () => import('@azure/msal-browser');
 
 function configuredAuthority(): string | undefined {
   const value = import.meta.env.VITE_MSAL_AUTHORITY?.trim();
@@ -45,8 +48,13 @@ export async function msalPickerApp(): Promise<PublicClientApplication> {
         cacheLocation: 'sessionStorage',
       },
     };
-    const app = new PublicClientApplication(config);
-    appPromise = app.initialize().then(() => app);
+    appPromise = loadMsal().then(
+      async ({ PublicClientApplication: Client }) => {
+        const app = new Client(config);
+        await app.initialize();
+        return app;
+      }
+    );
   }
   return appPromise;
 }
@@ -91,7 +99,7 @@ export async function acquirePickerToken(input: {
     }
     if (
       isPickerConsentBlocked(err) ||
-      err instanceof InteractionRequiredAuthError
+      err instanceof (await loadMsal()).InteractionRequiredAuthError
     ) {
       throw new Error('PICKER_CONSENT', { cause: err });
     }

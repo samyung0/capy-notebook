@@ -6,9 +6,9 @@ import {
   isOutdatedOfficeRuntime,
   OFFICE_PROTOCOL_VERSION,
 } from './officeProtocol';
+import { officeRuntimeKey } from './officeRuntimeConfig';
 import {
   isCurrentOfficeRuntimeMessage,
-  officeRuntimeKey,
   replicaCatchUp,
 } from './useOfficeRuntime';
 

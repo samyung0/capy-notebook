@@ -11,8 +11,8 @@ import { Card } from '../ui/Card';
 import { Drawer, DrawerContent, DrawerTrigger } from '../ui/Drawer';
 import { IconButton } from '../ui/IconButton';
 import { LogoMark } from '../ui/Logo';
+import { LazySearchDialog } from './LazySearchDialog';
 import { ProfileMenu, ProfileRow } from './ProfileMenu';
-import { SearchDialog } from './SearchDialog';
 
 interface NavItem {
   exact?: boolean;
@@ -165,7 +165,7 @@ function SearchRow() {
           {m.nav_search()}
         </span>
       </button>
-      <SearchDialog open={open} setOpen={setOpen} />
+      <LazySearchDialog open={open} setOpen={setOpen} />
     </>
   );
 }
