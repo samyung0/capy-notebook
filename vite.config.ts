@@ -4,7 +4,7 @@ import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { sentryVitePlugin } from '@sentry/vite-plugin';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type Rollup } from 'vite';
 import { DEV_SHARE_LINK_SECRET } from './src/lib/shareLink';
 import { summaryVitePlugin } from './src/summary/vite';
 import { clerkScript } from './vite-clerk';
@@ -40,6 +40,29 @@ const WATCH_DIRECTORIES = [
   'vendor/betteroffice/packages',
   'workers/site',
 ];
+
+const IN_PACKAGE = /^.*\/node_modules\//;
+
+/** Each JS chunk's file and the modules it holds code from, as paths from
+ * the repository root, a package's as `node_modules/<name>/...` wherever the
+ * install keeps it. */
+function chunkModules(bundle: Rollup.OutputBundle) {
+  const chunks: Record<string, string[]> = {};
+  for (const item of Object.values(bundle))
+    if (item.type === 'chunk')
+      chunks[item.fileName] = Object.entries(item.modules)
+        .filter(([, module]) => module.renderedLength > 0)
+        .map(([id]) => {
+          const file = id.split(path.sep).join('/');
+          return IN_PACKAGE.test(file)
+            ? file.replace(IN_PACKAGE, 'node_modules/')
+            : path
+                .relative(import.meta.dirname, id)
+                .split(path.sep)
+                .join('/');
+        });
+  return chunks;
+}
 
 /** The origins an Office open connects to first, when the build knows them. */
 function preconnects(env: Record<string, string>) {
@@ -106,6 +129,9 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
   return {
     assetsInclude: ['**/*.wasm'],
     build: ssrBuild ?? {
+      // dist/.vite/manifest.json, which the bundle budget reads (bench/bundle);
+      // public/.assetsignore keeps dist/.vite out of the deployed assets.
+      manifest: true,
       rollupOptions: {
         input: {
           main: path.resolve(import.meta.dirname, 'index.html'),
@@ -178,6 +204,25 @@ export default defineConfig(({ command, isSsrBuild, mode }) => {
             });
         },
         name: 'release-file',
+      },
+      // Each chunk's modules, for the bundle budget's never-in rules
+      // (bench/bundle): a route Rollup merges into a shared chunk has no
+      // manifest entry of its own.
+      !isSsrBuild && {
+        apply: 'build' as const,
+        // After Vite drops the chunks that held only CSS.
+        enforce: 'post' as const,
+        generateBundle: {
+          handler(_options, bundle) {
+            this.emitFile({
+              fileName: '.vite/chunk-modules.json',
+              source: JSON.stringify(chunkModules(bundle)),
+              type: 'asset',
+            });
+          },
+          order: 'post' as const,
+        },
+        name: 'chunk-modules',
       },
       // The Office runtime's page preloads the DOCX view engine, named once
       // the build has hashed it; the office Worker keeps the link only in a

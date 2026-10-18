@@ -155,6 +155,9 @@ jobs:
       - run: pnpm run email:check
       - run: pnpm run check
       - run: pnpm run build
+      # The SPA bundle budget (bench/bundle/budget.json): byte limits and
+      # never-in rules, as a table in the step summary.
+      - run: pnpm bench:bundle
       - run: pnpm review:validate-boundaries
       - run: pnpm test:deployment
       - run: pnpm typecheck:site

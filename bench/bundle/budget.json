@@ -1,0 +1,53 @@
+{
+  "entryJsKB": 295,
+  "entryJsFiles": 28,
+  "entryCssKB": 35,
+  "officeRuntimeJsKB": 102,
+  "routeJsKB": {
+    "default": 120,
+    "Dashboard": 170,
+    "Explore": 160,
+    "MaterialOpen": 90,
+    "QuestionBank": 145,
+    "WorkspaceOpen": 410,
+    "Workspaces": 160
+  },
+  "chunksUnder1KB": 120,
+  "largestChunkKB": 350,
+  "never": {
+    "index.html": [
+      "node_modules/yjs/",
+      "node_modules/@sentry/replay/",
+      "node_modules/@sentry-internal/replay/",
+      "node_modules/@azure/msal-",
+      "node_modules/platejs",
+      "node_modules/@platejs/",
+      "node_modules/slate"
+    ],
+    "src/routes/Dashboard.tsx": ["node_modules/@azure/msal-"],
+    "src/routes/Workspaces.tsx": ["node_modules/@azure/msal-"],
+    "src/routes/Explore.tsx": ["node_modules/@azure/msal-"],
+    "src/routes/WorkspaceOpen.tsx": ["node_modules/@azure/msal-"],
+    "src/routes/MaterialOpen.tsx": [
+      "src/features/quizzes/QuizPage.tsx",
+      "src/features/quizzes/QuestionRunner.tsx",
+      "src/features/flashcards/CardView.tsx",
+      "node_modules/react-zoom-pan-pinch/"
+    ],
+    "src/features/files/DocxView.tsx": [
+      "node_modules/platejs",
+      "node_modules/@platejs/",
+      "node_modules/slate"
+    ],
+    "src/features/files/PptxView.tsx": [
+      "node_modules/platejs",
+      "node_modules/@platejs/",
+      "node_modules/slate"
+    ],
+    "src/features/files/SheetView.tsx": [
+      "node_modules/platejs",
+      "node_modules/@platejs/",
+      "node_modules/slate"
+    ]
+  }
+}

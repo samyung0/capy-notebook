@@ -100,6 +100,7 @@ changing any of them.
 
 | Family          | Measures                                                                         | Runs in CI |
 | --------------- | -------------------------------------------------------------------------------- | ---------- |
+| `bench/bundle`  | The production SPA build: entry, per-route and largest-chunk brotli bytes, file counts, never-in rules (`pnpm bench:bundle`) | Yes, every push |
 | `bench/collaboration` | Many peers typing with reconnects in one Office and one Plate room: convergence, lost updates, latency (`pnpm bench:stress`) | Yes, manual |
 | `bench/editor`  | Editor open cost, typing latency, save cycle, scroll FPS (`pnpm bench:editor`)    | Yes        |
 | `bench/share-pages` | Shared pages on deployed UAT: Lighthouse paint, shift, blocking and bytes; Workers Cache hits (`pnpm bench:share-pages`) | Yes, manual |

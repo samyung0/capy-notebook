@@ -3,8 +3,8 @@
 Every performance, capacity, and model-quality measurement in the repository,
 plus the Office parity reports. Only the editor, collaboration and shared page
 suites run in CI (the `Performance` workflow, dispatched by hand), and CI checks
-the parity checklists on every push; the rest are manual, and most need a VM or
-a downloaded model runtime.
+the parity checklists and the SPA bundle budget on every push; the rest are
+manual, and most need a VM or a downloaded model runtime.
 
 Each family uses the same three buckets:
 
@@ -23,6 +23,7 @@ place (Epo 2026-10-10).
 
 | Family                     | Measures                                                                                        | Run with                                    |
 | -------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| [`bundle/`](bundle/)       | The production SPA build's bytes: entry, per-route and largest-chunk brotli size, file counts, and never-in rules (no Plate in the Office views, no MSAL on the dashboard), limits in one budget file | `pnpm bench:bundle` (CI: `frontend_check`) |
 | [`collaboration/`](collaboration/) | Collaboration stress: many peers typing with reconnects in one Office and one Plate room, then in a near-limit note and a text source; convergence, lost updates, latency | `pnpm bench:stress` (Docker)     |
 | [`editor/`](editor/)       | Plate editor open cost, typing latency, save cycle, scroll FPS under CPU throttle; DOCX, XLSX and PPTX open, View to Edit, typing at both ends, co-editor update timings and heap (workers from the typing on) in the Office runtime; Office size-ladder fixtures; formula View/Edit parity | `pnpm bench:editor`, `pnpm bench:office`, `pnpm bench:formula` |
 | [`share-pages/`](share-pages/) | Shared workspace, quiz, flashcard and note pages on the deployed UAT site: Lighthouse FCP, LCP, CLS, TBT and bytes, cold and warm at the edge; Workers Cache hits | `pnpm bench:share-pages` (UAT) |

@@ -187,6 +187,7 @@
     "bench:office": "playwright test --config=bench/editor/scripts/playwright.office.config.ts",
     "bench:formula": "playwright test --config=bench/editor/scripts/playwright.formula.config.ts",
     "bench:share-pages": "tsx bench/share-pages/scripts/share-pages.ts",
+    "bench:bundle": "node bench/bundle/scripts/budget.mjs",
     "bench:stress": "tsx bench/collaboration/scripts/stress.ts",
     "chaos:peers": "tsx bench/collaboration/scripts/chaos-peers.ts",
     "check": "ultracite check && pnpm run typecheck",
