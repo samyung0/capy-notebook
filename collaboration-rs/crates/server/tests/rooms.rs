@@ -1107,31 +1107,62 @@ async fn a_note_room_caps_a_sync_message_at_4_mib_and_takes_a_near_2_mib_reconne
     );
 }
 
-/// Security regression (Epo 2026-10-18): each connection's SYNC messages
-/// have a burst and a sustained rate, in count and in bytes. A socket past
-/// either is closed as too fast (4429 `collaboration-too-fast`) and counted,
-/// while one typing at a person's pace stays open, and one message larger
-/// than the byte burst still goes in. Fails if the allowance is not enforced.
+/// A small update allowance (40 messages, then 20 a second; the 8 MiB byte
+/// burst, refilled 1 byte a second), so a test can spend it.
+const SMALL_ALLOWANCE: [(&str, &str); 4] = [
+    ("COLLABORATION_UPDATE_BURST", "40"),
+    ("COLLABORATION_UPDATES_PER_SECOND", "20"),
+    ("COLLABORATION_UPDATE_BURST_BYTES", "8388608"),
+    ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1"),
+];
+
+/// The same burst refilled one message a second: what a test spent stays
+/// spent for its few seconds.
+const SLOW_ALLOWANCE: [(&str, &str); 4] = [
+    ("COLLABORATION_UPDATE_BURST", "40"),
+    ("COLLABORATION_UPDATES_PER_SECOND", "1"),
+    ("COLLABORATION_UPDATE_BURST_BYTES", "8388608"),
+    ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "1"),
+];
+
+/// A writer of a fresh note of its own, joined and synced: (user, room, client).
+async fn writer(env: &Env, port: u16, text: &str) -> (String, String, Client) {
+    let (user, material) = note(env, text).await;
+    let room = format!("material:{material}:schema:1");
+    let mut client = Client::open(port).await;
+    client.joined(&room, &token(&room, &user, "write")).await;
+    assert!(client.settle(|c| c.block_text() == text).await);
+    (user, room, client)
+}
+
+impl Client {
+    /// Sends `count` one-letter updates at once; stops when the socket is
+    /// closed under it.
+    async fn flood(&mut self, count: usize) {
+        for _ in 0..count {
+            let update = self.typed("b");
+            if self
+                .ws
+                .send(Ws::Binary(frame(1, 5, &sync(2, &update)).into()))
+                .await
+                .is_err()
+            {
+                break;
+            }
+        }
+    }
+}
+
+/// Security regression (Epo 2026-10-18): each user's SYNC messages have a
+/// burst and a sustained rate, in count and in bytes. A socket past either is
+/// closed as too fast (4429 `collaboration-too-fast`) and counted, while one
+/// typing at a person's pace stays open. Fails if the allowance is not
+/// enforced.
 #[tokio::test]
 async fn a_socket_past_its_update_allowance_closes_as_too_fast() {
     let Some(env) = env() else { return };
-    let server = start_configured(
-        &env,
-        env.api.as_deref(),
-        &[
-            ("COLLABORATION_UPDATE_BURST", "40"),
-            ("COLLABORATION_UPDATES_PER_SECOND", "20"),
-            ("COLLABORATION_UPDATE_BURST_BYTES", "65536"),
-            ("COLLABORATION_UPDATE_BYTES_PER_SECOND", "16384"),
-        ],
-    )
-    .await;
-    let (user, material) = note(&env, "rate").await;
-    let room = format!("material:{material}:schema:1");
-    let write = token(&room, &user, "write");
-    let mut typist = Client::open(server.port).await;
-    typist.joined(&room, &write).await;
-    assert!(typist.settle(|c| c.block_text() == "rate").await);
+    let server = start_configured(&env, env.api.as_deref(), &SMALL_ALLOWANCE).await;
+    let (typist_user, typist_room, mut typist) = writer(&env, server.port, "rate").await;
     // Ten keys a second for three seconds: under the sustained rate.
     for _ in 0..30 {
         typist.type_text("a").await;
@@ -1143,64 +1174,138 @@ async fn a_socket_past_its_update_allowance_closes_as_too_fast() {
             .await
     );
 
-    // A flood of small updates runs out of the 40-update burst.
-    let mut flood = Client::open(server.port).await;
-    flood.joined(&room, &write).await;
-    assert!(flood.settle(|c| c.block_text().starts_with("rate")).await);
-    for _ in 0..300 {
-        let update = flood.typed("b");
-        if flood
-            .ws
-            .send(Ws::Binary(frame(1, 5, &sync(2, &update)).into()))
-            .await
-            .is_err()
-        {
-            break;
-        }
-    }
+    // Another user's flood of small updates runs out of the 40-update burst.
+    let (_, _, mut flood) = writer(&env, server.port, "flood").await;
+    flood.flood(300).await;
     assert_eq!(
         flood.closed().await,
         Some((4429, "collaboration-too-fast".into()))
     );
 
-    // One 200 KB paste past the 64 KiB byte burst goes in; the next update
-    // right after it is over (the debt takes 8 s to pay off).
-    let mut paster = Client::open(server.port).await;
-    paster.joined(&room, &write).await;
-    assert!(paster.settle(|c| c.block_text().starts_with("rate")).await);
-    paster.type_text(&"p".repeat(200_000)).await;
-    paster.type_text("q").await;
+    // A third user's 1 MB update, sent again (it changes nothing more) until
+    // the 8 MiB byte burst is spent: the ninth is over.
+    let (_, _, mut paster) = writer(&env, server.port, "paste").await;
+    let paste = paster.typed(&"p".repeat(1_000_000));
+    for _ in 0..9 {
+        paster.send(5, &sync(2, &paste)).await;
+    }
     assert_eq!(
         paster.closed().await,
         Some((4429, "collaboration-too-fast".into()))
     );
 
-    // The typist's socket stayed open: its next key, typed after the paste,
-    // reaches a new reader.
-    assert!(
-        typist
-            .settle(|c| c.block_text().contains(&"p".repeat(200_000)))
-            .await
-    );
+    // The typist's socket stayed open: its next update reaches a reader.
     typist.type_text("c").await;
     let mut reader = Client::open(server.port).await;
-    reader.joined(&room, &write).await;
-    assert!(
-        reader
-            .settle(|c| {
-                let text = c.block_text();
-                text.contains(&"p".repeat(200_000)) && !text.contains('q') && text.ends_with('c')
-            })
-            .await,
-        "{} bytes",
-        reader.block_text().len()
-    );
+    reader
+        .joined(&typist_room, &token(&typist_room, &typist_user, "read"))
+        .await;
+    assert!(reader.settle(|c| c.block_text().ends_with('c')).await);
     let metrics = metrics_text(server.port).await;
     assert!(
         metrics
             .lines()
             .any(|line| line == "capy_collaboration_rate_limited_total 2"),
         "{metrics}"
+    );
+}
+
+/// Security regression (Epo 2026-10-18): the allowance is the user's, not
+/// the socket's. A socket that spent most of it, closed, leaves its user a
+/// reconnect that goes on from what was left: the second socket is over
+/// within a few updates, not after a fresh burst. Fails if each
+/// socket (or each reconnect) gets its own allowance.
+#[tokio::test]
+async fn a_users_allowance_is_shared_by_their_sockets_and_reconnects() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
+    let (user, room, mut first) = writer(&env, server.port, "shared").await;
+    // Its join took two (step 1, step 2); 36 more leave two.
+    first.flood(36).await;
+    assert!(first.until(6).await.is_some());
+    drop(first);
+    let mut second = Client::open(server.port).await;
+    second.joined(&room, &token(&room, &user, "write")).await;
+    assert!(
+        second
+            .settle(|c| c.block_text().starts_with("shared"))
+            .await
+    );
+    // A fresh allowance would take 30 more after the join's two.
+    second.flood(30).await;
+    assert_eq!(
+        second.closed().await,
+        Some((4429, "collaboration-too-fast".into()))
+    );
+}
+
+/// Security regression (Epo 2026-10-18): a draft send takes from the same
+/// allowance as its user's sockets. With the allowance spent on a socket, a
+/// send is refused 429 `too_fast` and counted; nothing reaches the room.
+/// Fails if draft sends bypass the allowance.
+#[tokio::test]
+async fn a_draft_send_takes_from_the_users_allowance() {
+    let Some(env) = env() else { return };
+    let server = start_configured(&env, env.api.as_deref(), &SLOW_ALLOWANCE).await;
+    let (user, room, mut editor) = writer(&env, server.port, "drafts").await;
+    editor.flood(100).await;
+    assert_eq!(
+        editor.closed().await,
+        Some((4429, "collaboration-too-fast".into()))
+    );
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        drafted(&editor.doc, typed_into_note(" late")),
+    )
+    .await;
+    assert_eq!(
+        (status, answer),
+        (429, serde_json::json!({ "class": "too_fast" }))
+    );
+    let metrics = metrics_text(server.port).await;
+    assert!(
+        metrics
+            .lines()
+            .any(|line| line == "capy_collaboration_draft_refusals_total{class=\"too_fast\"} 1"),
+        "{metrics}"
+    );
+}
+
+/// Security regression (Epo 2026-10-18): no room takes an update over 8 MiB.
+/// A socket sending one is closed (4413 `collaboration-update-too-large`)
+/// before the room reads it, and a text source's draft send over it is
+/// refused 413 `too_large` before the body is read past the cap. Fails if
+/// either cap is removed (a note room would answer its own 4 MiB refusal on
+/// the channel; the source send would reach the allowance or the room).
+#[tokio::test]
+async fn an_update_over_8_mib_is_refused_on_a_socket_and_a_draft_send() {
+    let Some(env) = env() else { return };
+    let gateway = gateway(&env).await;
+    let server = start_with(&env, Some(&gateway.url)).await;
+    let (_, _, mut sender) = writer(&env, server.port, "cap").await;
+    sender
+        .send(5, &sync(2, &vec![0u8; 8 * 1024 * 1024 + 1]))
+        .await;
+    assert_eq!(
+        sender.closed().await,
+        Some((4413, "collaboration-update-too-large".into()))
+    );
+    let (user, file) = text_file(&env, &gateway, "hello").await;
+    let room = format!("source:{file}:epoch:1");
+    let (status, answer) = send_drafts(
+        server.port,
+        &room,
+        Some(&token(&room, &user, "write")),
+        Some(ORIGIN),
+        vec![0u8; 8 * 1024 * 1024 + 1],
+    )
+    .await;
+    assert_eq!(
+        (status, answer),
+        (413, serde_json::json!({ "class": "too_large" }))
     );
 }
 

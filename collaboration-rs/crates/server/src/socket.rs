@@ -2,8 +2,9 @@
 //! own (JOIN runs every `onAuthenticate` check, which a draft send runs too),
 //! their messages queue until JOINED and then go to the room in order; a
 //! writer's access is rechecked at most every 5 s before its updates go on;
-//! tokens refresh in band. A socket sending SYNC messages past its allowance
-//! (`rate.rs`) closes as too fast.
+//! tokens refresh in band. A socket sending SYNC messages past its user's
+//! allowance (`rate.rs`), or an update over `ydoc::MAX_UPDATE_BYTES`, is
+//! closed.
 
 use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::Ordering;
@@ -40,12 +41,14 @@ pub const DEFAULT_REFUSAL: &str = "permission-denied";
 /// A client protocol its room family no longer (or not yet) accepts: the
 /// client stops and asks for a reload.
 pub const OUTDATED_REASON: &str = "collaboration-outdated";
-/// The close of a socket over its update allowance; the client reconnects
-/// once its backoff (doubled by each such close) passes, and resyncs
-/// (`TOO_FAST_CODE` in src/features/collaboration/socket.ts).
-pub const TOO_FAST_CODE: u16 = 4429;
-pub const TOO_FAST_REASON: &str = "collaboration-too-fast";
-/// How long a too-fast socket is read for its client's close.
+/// The close of a socket over its user's update allowance; the client
+/// reconnects once its backoff (doubled by each such close) passes, and
+/// resyncs (`TOO_FAST_CODE` in src/features/collaboration/socket.ts).
+pub const TOO_FAST: (u16, &str) = (4429, "collaboration-too-fast");
+/// The close of a socket that sent an update over the cap; the client backs
+/// off as for too fast (it sends pieces of at most 2 MiB).
+pub const TOO_LARGE: (u16, &str) = (4413, "collaboration-update-too-large");
+/// How long a closed socket is read for its client's close.
 const CLOSE_DRAIN: Duration = Duration::from_secs(2);
 
 enum Channel {
@@ -343,10 +346,8 @@ struct Connection {
     joined_once: bool,
     /// Token deadlines: (when, channel, expiry instead of refresh).
     timers: BTreeMap<(Instant, u64), bool>,
-    /// The SYNC messages this socket may still send (`rate.rs`).
-    allowance: crate::rate::Allowance,
-    /// Over the allowance: the socket closes as too fast.
-    too_fast: bool,
+    /// Why the socket closes after this frame: too fast or too large.
+    close: Option<(u16, &'static str)>,
 }
 
 pub async fn serve(app: Shared, socket: WebSocket) {
@@ -368,8 +369,7 @@ pub async fn serve(app: Shared, socket: WebSocket) {
         attempts: 0,
         joined_once: false,
         timers: BTreeMap::new(),
-        allowance: crate::rate::Allowance::new(app.config.update_limits, Instant::now()),
-        too_fast: false,
+        close: None,
     };
     let mut socket = socket;
     loop {
@@ -403,7 +403,7 @@ pub async fn serve(app: Shared, socket: WebSocket) {
             Some((channel, attempt, name, context, result)) = join_rx.recv() => {
                 // Its queued messages go to the room now, and count.
                 connection.joined(channel, attempt, name, context, result).await;
-                if connection.too_fast {
+                if connection.close.is_some() {
                     break;
                 }
             }
@@ -415,20 +415,20 @@ pub async fn serve(app: Shared, socket: WebSocket) {
         }
     }
     connection.close_all().await;
-    if connection.too_fast {
-        close_too_fast(&mut socket).await;
+    if let Some(close) = connection.close {
+        close_with(&mut socket, close).await;
     }
     app.stats.connections.fetch_sub(1, Ordering::Relaxed);
 }
 
-/// Sends the too-fast close, then reads what the client still sends until its
-/// close answers (at most `CLOSE_DRAIN`): a socket dropped with unread frames
-/// is reset, and the reset can lose the close frame on its way, so the client
+/// Sends the close, then reads what the client still sends until its close
+/// answers (at most `CLOSE_DRAIN`): a socket dropped with unread frames is
+/// reset, and the reset can lose the close frame on its way, so the client
 /// would not know why it was closed.
-async fn close_too_fast(socket: &mut WebSocket) {
+async fn close_with(socket: &mut WebSocket, (code, reason): (u16, &'static str)) {
     let close = CloseFrame {
-        code: TOO_FAST_CODE,
-        reason: TOO_FAST_REASON.into(),
+        code,
+        reason: reason.into(),
     };
     if socket.send(WsMessage::Close(Some(close))).await.is_err() {
         return;
@@ -499,7 +499,7 @@ impl Connection {
             return false;
         };
         for message in messages {
-            if !self.on_message(message).await || self.too_fast {
+            if !self.on_message(message).await || self.close.is_some() {
                 return false;
             }
         }
@@ -562,7 +562,7 @@ impl Connection {
     /// A joined channel's message goes to its room, after the writer recheck
     /// for updates.
     async fn forward(&mut self, message: Message) {
-        if self.too_fast {
+        if self.close.is_some() {
             return;
         }
         let channel = message.channel;
@@ -580,11 +580,29 @@ impl Connection {
         let key = (self.id, channel);
         let command = match message.kind {
             Kind::Sync => {
-                if !self.allowance.take(message.payload.len(), Instant::now()) {
-                    self.over_allowance(&name, &context);
+                let decoded = protocol::sync::decode(&message.payload);
+                if decoded
+                    .as_ref()
+                    .is_ok_and(|(_, body)| body.len() > ydoc::MAX_UPDATE_BYTES)
+                {
+                    self.refuse_socket(TOO_LARGE, "update over the cap", &name, &context);
                     return;
                 }
-                let writes = protocol::sync::decode(&message.payload)
+                if !self.app.allowances.take(
+                    &context.user_id,
+                    message.payload.len(),
+                    Instant::now(),
+                ) {
+                    self.app.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
+                    self.refuse_socket(
+                        TOO_FAST,
+                        "connection over its update rate",
+                        &name,
+                        &context,
+                    );
+                    return;
+                }
+                let writes = decoded
                     .map(|(kind, _)| kind != protocol::sync::STEP1)
                     .unwrap_or(false);
                 if writes
@@ -636,14 +654,19 @@ impl Connection {
         let _ = room.tx.send(command).await;
     }
 
-    /// Expected only from a runaway or hostile client: logged and counted,
-    /// not reported; the socket closes as too fast.
-    fn over_allowance(&mut self, name: &RoomName, context: &Context) {
-        self.too_fast = true;
-        self.app.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
+    /// Expected only from a runaway or hostile client: logged, not reported;
+    /// the socket closes with `close`.
+    fn refuse_socket(
+        &mut self,
+        close: (u16, &'static str),
+        line: &str,
+        name: &RoomName,
+        context: &Context,
+    ) {
+        self.close = Some(close);
         log(
             Level::Warn,
-            "connection over its update rate",
+            line,
             json!({ "room": name.to_string(), "socket_id": self.socket_id, "user_id": context.user_id }),
         );
     }

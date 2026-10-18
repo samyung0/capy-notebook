@@ -22,7 +22,6 @@ pub struct Config {
     pub debounce: Duration,
     pub max_debounce: Duration,
     pub host: String,
-    pub max_payload_bytes: u64,
     pub port: u16,
     pub redis_url: String,
     pub secret: String,
@@ -55,11 +54,12 @@ pub struct Config {
     /// 10 GiB, UAT 5 GiB). No default.
     pub source_disk_dir: std::path::PathBuf,
     pub source_disk_bytes: u64,
-    /// Each connection's update allowance (Epo 2026-10-18, `rate.rs`),
-    /// the same everywhere: sized from what editors send
+    /// Each user's update allowance (Epo 2026-10-18, `rate.rs`), the same
+    /// everywhere: sized from what editors send
     /// (bench/collaboration/reports/2026-10-18-update-rates.md), the burst
     /// for a DOCX paste of about 5,000 paragraphs (two updates each), the
-    /// rate three times the fastest key repeat.
+    /// rate three times the fastest key repeat. The byte burst is at least
+    /// the largest update (`ydoc::MAX_UPDATE_BYTES`).
     pub update_limits: crate::rate::Limits,
 }
 
@@ -134,6 +134,19 @@ impl Config {
             ));
         }
         let port = positive(env, "PORT", 1234)?;
+        let update_limits = crate::rate::Limits {
+            burst_updates: positive(env, "COLLABORATION_UPDATE_BURST", 10_000)?,
+            burst_bytes: positive(env, "COLLABORATION_UPDATE_BURST_BYTES", 8 << 20)?,
+            updates_per_second: positive(env, "COLLABORATION_UPDATES_PER_SECOND", 200)?,
+            bytes_per_second: positive(env, "COLLABORATION_UPDATE_BYTES_PER_SECOND", 2 << 20)?,
+        };
+        // A smaller burst would refuse an update the rooms take, every time.
+        if update_limits.burst_bytes < ydoc::MAX_UPDATE_BYTES as u64 {
+            return Err(ConfigError(format!(
+                "COLLABORATION_UPDATE_BURST_BYTES must be at least {}",
+                ydoc::MAX_UPDATE_BYTES
+            )));
+        }
         Ok(Config {
             allowed_origins,
             api_url: optional(env, "API_URL", dev::API_URL)
@@ -156,7 +169,6 @@ impl Config {
             debounce: millis(env, "COLLABORATION_DEBOUNCE_MS", 2000)?,
             max_debounce: millis(env, "COLLABORATION_MAX_DEBOUNCE_MS", 10_000)?,
             host: optional(env, "HOST", "0.0.0.0"),
-            max_payload_bytes: positive(env, "COLLABORATION_MAX_PAYLOAD_BYTES", 2 * 1024 * 1024)?,
             port: u16::try_from(port)
                 .map_err(|_| ConfigError("PORT must be a positive integer".into()))?,
             redis_url: optional(env, "REDIS_URL", dev::REDIS_URL),
@@ -191,19 +203,14 @@ impl Config {
                 }
             },
             source_disk_bytes: required(env, "COLLABORATION_SOURCE_DISK_BYTES")?,
-            update_limits: crate::rate::Limits {
-                burst_updates: positive(env, "COLLABORATION_UPDATE_BURST", 10_000)?,
-                burst_bytes: positive(env, "COLLABORATION_UPDATE_BURST_BYTES", 8 << 20)?,
-                updates_per_second: positive(env, "COLLABORATION_UPDATES_PER_SECOND", 200)?,
-                bytes_per_second: positive(env, "COLLABORATION_UPDATE_BYTES_PER_SECOND", 2 << 20)?,
-            },
+            update_limits,
         })
     }
 
-    /// The largest WebSocket frame: a whole source state fits.
+    /// The largest WebSocket frame a client may send: the largest update
+    /// and its framing (`socket.rs` refuses an update over the cap inside it).
     pub fn max_frame_bytes(&self) -> usize {
-        let source = sources::MAX_SOURCE_STATE_BYTES as u64 + 1024;
-        usize::try_from(self.max_payload_bytes.max(source)).unwrap_or(usize::MAX)
+        ydoc::MAX_UPDATE_BYTES + 64 * 1024
     }
 }
 
@@ -341,5 +348,11 @@ mod tests {
         );
         assert!(Config::load(&env(&[("PORT", "0")])).is_err());
         assert!(Config::load(&env(&[("COLLABORATION_DEBOUNCE_MS", "x")])).is_err());
+        assert_eq!(
+            Config::load(&env(&[("COLLABORATION_UPDATE_BURST_BYTES", "8388607")]))
+                .unwrap_err()
+                .to_string(),
+            "COLLABORATION_UPDATE_BURST_BYTES must be at least 8388608"
+        );
     }
 }

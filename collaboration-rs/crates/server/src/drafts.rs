@@ -5,14 +5,15 @@
 //! JOIN's) and, for a source, their base (`X-Capy-Base`), and the merged rows
 //! as one Yjs update; the URL is the same for every
 //! document, so one preflight covers a sweep. The request runs a channel's
-//! JOIN checks, reads the body within a writer's sync cap, checks the
-//! eviction lease again, and goes through the room's writer admission (the
-//! room loads if need be and unloads when idle, as usual), so open editors
-//! receive the update live; the answer waits for the store that holds it and
-//! is the receipt for every row the request carried. A refusal answers its
-//! class alone; its detail is logged and counted by class. There is no rate
-//! limit of its own: a socket writer has none either, the token comes from
-//! the API's default class, and a room runs one store at a time.
+//! JOIN checks, reads the body within a writer's sync cap (at most
+//! `ydoc::MAX_UPDATE_BYTES`), takes it from the user's update allowance (the
+//! one their sockets take from, `rate.rs`), checks the eviction lease again,
+//! and goes through the room's writer admission (the room loads if need be
+//! and unloads when idle, as usual), so open editors receive the update live;
+//! the answer waits for the store that holds it and is the receipt for every
+//! row the request carried. The page sends a large group as pieces of at most
+//! 2 MiB, one request each, in order. A refusal answers its class alone; its
+//! detail is logged and counted by class.
 
 use axum::body::{Body, Bytes};
 use axum::extract::State;
@@ -59,10 +60,12 @@ pub enum Class {
     /// The page's client protocol is outside its room family's (a stale
     /// tab): nothing more goes until the page reloads.
     Outdated,
+    /// Over the user's update allowance: tried again at a later page load.
+    TooFast,
 }
 
 impl Class {
-    pub const ALL: [Class; 8] = [
+    pub const ALL: [Class; 9] = [
         Class::Lineage,
         Class::Limit,
         Class::Permission,
@@ -71,6 +74,7 @@ impl Class {
         Class::Unheld,
         Class::Unavailable,
         Class::Outdated,
+        Class::TooFast,
     ];
 
     pub fn as_str(self) -> &'static str {
@@ -83,6 +87,7 @@ impl Class {
             Class::Unheld => "unheld",
             Class::Unavailable => "unavailable",
             Class::Outdated => "outdated",
+            Class::TooFast => "too_fast",
         }
     }
 
@@ -95,6 +100,7 @@ impl Class {
             Class::TooLarge => StatusCode::PAYLOAD_TOO_LARGE,
             Class::Unavailable => StatusCode::SERVICE_UNAVAILABLE,
             Class::Outdated => StatusCode::UPGRADE_REQUIRED,
+            Class::TooFast => StatusCode::TOO_MANY_REQUESTS,
         }
     }
 }
@@ -253,11 +259,21 @@ async fn checked_and_stored(
     }
     let cap = match name {
         RoomName::Material { .. } => NOTE_MAX_SYNC_BYTES,
-        RoomName::Source { .. } => app.config.max_frame_bytes(),
+        RoomName::Source { .. } => ydoc::MAX_UPDATE_BYTES,
     };
     let update = axum::body::to_bytes(body, cap)
         .await
         .map_err(|_| Refused::new(Class::TooLarge, "past the writer's sync cap"))?;
+    if !app
+        .allowances
+        .take(&context.user_id, update.len(), std::time::Instant::now())
+    {
+        app.stats.rate_limited.fetch_add(1, Ordering::Relaxed);
+        return Err(Refused::new(
+            Class::TooFast,
+            format!("{} is over its update rate", context.user_id),
+        ));
+    }
     // The lease and a local reset may have begun while the body arrived: a
     // JOIN joins at once after its checks, a send only now (REVIEW1 S2).
     let evicting = crate::socket::room_evicting(app, room)

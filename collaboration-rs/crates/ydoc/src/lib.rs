@@ -117,6 +117,12 @@ pub mod steps {
 /// The most structs, and delete ranges, of a small edit.
 pub const SMALL_EDIT: usize = 16;
 
+/// The largest single update any room takes, from a socket, a draft send or
+/// an agent or content-API write (Epo 2026-10-18): the byte burst of a
+/// user's allowance. Clients send in pieces of at most 2 MiB; a 5 MiB Pro
+/// photo is the largest piece that cannot be split.
+pub const MAX_UPDATE_BYTES: usize = 8 * 1024 * 1024;
+
 /// Whether `incoming` is a small edit the room applies directly, without a
 /// trial (Epo, 2026-10-08): structs of one client, at most [SMALL_EDIT] of
 /// them and of delete ranges, each an item placed where its conflict scan can

@@ -184,6 +184,7 @@ async fn serve(config: Config) -> Result<(), String> {
         }
     };
     let publication_hold = config.uat_publication_hold;
+    let allowances = crate::rate::Allowances::new(config.update_limits, std::time::Instant::now());
     let app = Arc::new(App {
         instance_id: format!("{}-{}", std::process::id(), uuid::Uuid::new_v4()),
         config,
@@ -194,6 +195,7 @@ async fn serve(config: Config) -> Result<(), String> {
         rooms: Default::default(),
         evictions: Default::default(),
         stats: Default::default(),
+        allowances,
         health: Default::default(),
         unplaced: Default::default(),
         projection_failures: Default::default(),

@@ -66,6 +66,16 @@ fn edit_error(code: &str, message: impl Into<String>) -> SourceError {
     }
 }
 
+/// An agent edit whose update is over `ydoc::MAX_UPDATE_BYTES` (Epo
+/// 2026-10-18): the gateway hears `quota_rejected` and tells the agent to
+/// make smaller edits.
+fn check_update_size(update: &[u8]) -> Result<(), SourceError> {
+    if update.len() > ydoc::MAX_UPDATE_BYTES {
+        return Err(edit_error("quota_rejected", "update_size_exceeded"));
+    }
+    Ok(())
+}
+
 fn parse<T: serde::de::DeserializeOwned>(value: Value, what: &str) -> Result<T, SourceError> {
     serde_json::from_value(value)
         .map_err(|error| edit_error("invalid_input", format!("invalid {what}: {error}")))
@@ -434,6 +444,9 @@ impl Sources {
             let hidden = ydoc::live_markers(&txn);
             ydoc::delta_update(&txn, &durable, &hidden)
         };
+        // The edit's own update, before a text source's first row takes its
+        // seed: over the update cap it is refused before anything commits.
+        check_update_size(&row)?;
         // A text source's first row carries its seed (see store).
         let row = if seeded && office(session.format).is_none() {
             whole
@@ -491,6 +504,22 @@ impl Sources {
 mod tests {
     use super::*;
     use yrs::{MapPrelim, TextPrelim, WriteTxn};
+
+    /// An agent edit's update over the cap is a `quota_rejected` refusal the
+    /// agent can act on; one at the cap goes (Epo 2026-10-18).
+    #[test]
+    fn an_edit_over_the_update_cap_is_refused() {
+        assert!(check_update_size(&vec![0; ydoc::MAX_UPDATE_BYTES]).is_ok());
+        match check_update_size(&vec![0; ydoc::MAX_UPDATE_BYTES + 1]) {
+            Err(SourceError::Edit { code, message, .. }) => {
+                assert_eq!(
+                    (code.as_str(), message.as_str()),
+                    ("quota_rejected", "update_size_exceeded")
+                );
+            }
+            other => panic!("{other:?}"),
+        }
+    }
 
     fn story_doc() -> Doc {
         let doc = Doc::new();

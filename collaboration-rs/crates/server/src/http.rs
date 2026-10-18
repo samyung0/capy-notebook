@@ -341,6 +341,11 @@ async fn command(State(app): State<Shared>, headers: HeaderMap, body: Bytes) -> 
         Err(message) if message.starts_with("invalid collaboration command") => {
             json_response(StatusCode::BAD_REQUEST, json!({ "message": message }))
         }
+        // Over the update cap: refused before anything committed, not reported.
+        Err(message) if message == crate::edits::UPDATE_TOO_LARGE => json_response(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            json!({ "code": "update_too_large", "message": message }),
+        ),
         Err(message)
             if message == crate::edits::ROOM_RESET || message == crate::edits::ROOM_COMPACTING =>
         {
@@ -573,6 +578,7 @@ pub(crate) mod tests {
             )
             .unwrap(),
         );
+        let limits = config.update_limits;
         std::sync::Arc::new(crate::app::App {
             instance_id: "test".into(),
             config,
@@ -583,6 +589,7 @@ pub(crate) mod tests {
             rooms: Default::default(),
             evictions: Default::default(),
             stats: Default::default(),
+            allowances: crate::rate::Allowances::new(limits, std::time::Instant::now()),
             health: Default::default(),
             unplaced: Default::default(),
             projection_failures: Default::default(),
